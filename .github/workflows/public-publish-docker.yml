@@ -22,6 +22,14 @@ on:
     paths-ignore:
       - "docs/**"
 
+env:
+  CARGO_TERM_COLOR: always
+  MACOSX_DEPLOYMENT_TARGET: "12.0"
+
+defaults:
+  run:
+    shell: bash
+
 permissions:
   contents: read
   packages: write
@@ -29,11 +37,87 @@ permissions:
   id-token: write
 
 jobs:
+  build-linux-binaries:
+    if: github.repository == 'oxy-hq/oxy'
+    name: Build Linux binary for ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    concurrency:
+      group: docker-build-binary-${{ inputs.tag || github.ref_name }}-${{ matrix.target }}
+      cancel-in-progress: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-22.04
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-22.04-arm
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref_name }}
+
+      - uses: rui314/setup-mold@v1
+        with:
+          make-default: true
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: build-cli-${{ matrix.target }}
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: "pnpm"
+
+      - name: Install dependencies & Build web-app
+        env:
+          NODE_OPTIONS: "--max_old_space_size=4096"
+        run: |
+          pnpm install --prefer-frozen-lockfile
+          pnpm -C web-app build
+
+      - name: Build oxy CLI
+        run: |
+          cargo build --release --target ${{ matrix.target }}
+          mkdir -p artifacts
+          mv target/${{ matrix.target }}/release/oxy artifacts/oxy-${{ matrix.target }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: cli-${{ matrix.target }}
+          path: artifacts/oxy-${{ matrix.target }}
+          if-no-files-found: error
+          retention-days: 1
+
   build-and-publish:
     if: github.repository == 'oxy-hq/oxy'
+    name: Build ${{ matrix.target.name }} Docker image for ${{ matrix.arch }}
+    needs: build-linux-binaries
     concurrency:
-      group: docker-publish-${{ github.ref_name }}-${{ matrix.target.name }}-${{ matrix.arch }}
+      group: docker-publish-${{ inputs.tag || github.ref_name }}-${{ matrix.target.name }}-${{ matrix.arch }}
       cancel-in-progress: true
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: true
       matrix:
@@ -41,29 +125,20 @@ jobs:
         target:
           - name: runtime
             image: oxy
+            target: runtime
           - name: semantic-engine
             image: oxy-semantic-engine
-    runs-on: ${{ matrix.arch == 'linux/amd64' && 'ubuntu-latest' || 'ubuntu-24.04-arm' }}
+            target: semantic-engine
+        include:
+          - arch: linux/amd64
+            runner: ubuntu-latest
+            rust_target: x86_64-unknown-linux-gnu
+            arch_tag: amd64
+          - arch: linux/arm64
+            runner: ubuntu-24.04-arm
+            rust_target: aarch64-unknown-linux-gnu
+            arch_tag: arm64
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          ref: ${{ inputs.tag || github.ref_name  }}
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set Docker tag
-        id: docker_tag
-        run: |
-          TAG_NAME="${{ inputs.tag || github.ref_name }}"
-          echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
-
       - name: Check if should build ${{ matrix.target.name }}
         id: should_build
         run: |
@@ -72,39 +147,74 @@ jobs:
 
           if [ "$BUILD_TARGETS" = "both" ] || [ "$BUILD_TARGETS" = "$TARGET" ]; then
             echo "should_build=true" >> $GITHUB_OUTPUT
-            echo "✅ Building $TARGET"
           else
             echo "should_build=false" >> $GITHUB_OUTPUT
             echo "⏭️  Skipping $TARGET"
           fi
 
-      - name: Build and push ${{ matrix.arch }} image for ${{ matrix.target.name }}
+      - name: Checkout code
+        if: steps.should_build.outputs.should_build == 'true'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+
+      - name: Download pre-built binary
+        if: steps.should_build.outputs.should_build == 'true'
+        uses: actions/download-artifact@v7
+        with:
+          name: cli-${{ matrix.rust_target }}
+          path: artifacts
+
+      - name: Prepare binary for Docker build
         if: steps.should_build.outputs.should_build == 'true'
         run: |
-          ARCH_TAG=$(echo "${{ matrix.arch }}" | awk -F'/' '{print $2}')
-          TARGET_NAME="${{ matrix.target.name }}"
-          IMAGE_NAME="${{ matrix.target.image }}"
+          cp artifacts/oxy-${{ matrix.rust_target }} oxy
+          chmod +x oxy
 
-          echo "Building $TARGET_NAME for ${{ matrix.arch }}..."
+      - name: Set up Docker Buildx
+        if: steps.should_build.outputs.should_build == 'true'
+        uses: docker/setup-buildx-action@v3
 
-          # Build with appropriate target flag
-          if [ "$TARGET_NAME" = "runtime" ]; then
-            docker build --target runtime \
-              -t ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:${{ steps.docker_tag.outputs.tag }}-$ARCH_TAG \
-              .
-          else
-            docker build --target semantic-engine \
-              -t ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:${{ steps.docker_tag.outputs.tag }}-$ARCH_TAG \
-              .
-          fi
+      - name: Log in to GitHub Container Registry
+        if: steps.should_build.outputs.should_build == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-          echo "Pushing ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:${{ steps.docker_tag.outputs.tag }}-$ARCH_TAG"
-          docker push ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:${{ steps.docker_tag.outputs.tag }}-$ARCH_TAG
+      - name: Determine tags
+        if: steps.should_build.outputs.should_build == 'true'
+        id: meta
+        run: |
+          VERSION="${{ inputs.tag || github.ref_name }}"
+          IMAGE="ghcr.io/${{ github.repository_owner }}/${{ matrix.target.image }}"
+          ARCH="${{ matrix.arch_tag }}"
+
+          TAGS="${IMAGE}:${VERSION}-${ARCH}"
+          TAGS="${TAGS},${IMAGE}:latest-${ARCH}"
+
+          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Build and push ${{ matrix.target.name }} image
+        if: steps.should_build.outputs.should_build == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.prebuilt
+          target: ${{ matrix.target.target }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          build-args: BINARY_PATH=oxy
+          cache-from: type=gha,scope=release-${{ matrix.target.name }}-${{ matrix.arch_tag }}
+          cache-to: type=gha,mode=min,scope=release-${{ matrix.target.name }}-${{ matrix.arch_tag }}
 
   create-and-push-manifest:
     if: github.repository == 'oxy-hq/oxy'
+    name: Create ${{ matrix.target.name }} manifest
     needs: build-and-publish
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         target:
@@ -121,7 +231,6 @@ jobs:
 
           if [ "$BUILD_TARGETS" = "both" ] || [ "$BUILD_TARGETS" = "$TARGET" ]; then
             echo "should_publish=true" >> $GITHUB_OUTPUT
-            echo "✅ Publishing manifest for $TARGET"
           else
             echo "should_publish=false" >> $GITHUB_OUTPUT
             echo "⏭️  Skipping manifest for $TARGET"
@@ -135,50 +244,45 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set Docker tag
-        if: steps.should_publish.outputs.should_publish == 'true'
-        id: docker_tag
-        run: |
-          TAG_NAME="${{ inputs.tag || github.ref_name }}"
-          echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
-
-      - name: Create and push multi-arch manifest for ${{ matrix.target.name }}
+      - name: Create and push multi-arch manifest
         if: steps.should_publish.outputs.should_publish == 'true'
         run: |
-          IMAGE_NAME="${{ matrix.target.image }}"
-          TAG="${{ steps.docker_tag.outputs.tag }}"
+          VERSION="${{ inputs.tag || github.ref_name }}"
+          IMAGE="ghcr.io/${{ github.repository_owner }}/${{ matrix.target.image }}"
 
-          echo "Creating manifest for ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:$TAG"
+          echo "Creating manifest for ${IMAGE}:${VERSION}..."
 
-          docker manifest create ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:$TAG \
-            ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:$TAG-amd64 \
-            ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:$TAG-arm64
+          # Version tag manifest
+          docker manifest create ${IMAGE}:${VERSION} \
+            ${IMAGE}:${VERSION}-amd64 \
+            ${IMAGE}:${VERSION}-arm64
+          docker manifest push ${IMAGE}:${VERSION}
 
-          docker manifest push ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:$TAG
+          # Latest tag manifest
+          docker manifest create ${IMAGE}:latest \
+            ${IMAGE}:latest-amd64 \
+            ${IMAGE}:latest-arm64
+          docker manifest push ${IMAGE}:latest
 
-          echo "✅ Published ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME:$TAG"
+          echo "✅ Published ${IMAGE}:${VERSION} and ${IMAGE}:latest"
 
   create-deployment-summary:
     if: github.repository == 'oxy-hq/oxy'
     needs: create-and-push-manifest
     runs-on: ubuntu-latest
     steps:
-      - name: Set Docker tag
-        id: docker_tag
-        run: |
-          TAG_NAME="${{ inputs.tag || github.ref_name }}"
-          echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
-
       - name: Determine which images were built
         id: images
         run: |
+          VERSION="${{ inputs.tag || github.ref_name }}"
           BUILD_TARGETS="${{ inputs.build_targets || 'both' }}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "targets=$BUILD_TARGETS" >> $GITHUB_OUTPUT
 
       - name: Create deployment summary
         run: |
           BUILD_TARGETS="${{ steps.images.outputs.targets }}"
-          TAG="${{ steps.docker_tag.outputs.tag }}"
+          VERSION="${{ steps.images.outputs.version }}"
 
           cat >> $GITHUB_STEP_SUMMARY << 'EOF'
           # 🚀 Docker Images Published
@@ -190,11 +294,11 @@ jobs:
           if [ "$BUILD_TARGETS" = "both" ] || [ "$BUILD_TARGETS" = "runtime" ]; then
             cat >> $GITHUB_STEP_SUMMARY << EOF
           ### Oxy Runtime
-          - **Image:** \`ghcr.io/${{ github.repository_owner }}/oxy:$TAG\`
+          - **Image:** \`ghcr.io/${{ github.repository_owner }}/oxy:$VERSION\`
           - **Architectures:** linux/amd64, linux/arm64
           - **Pull:**
             \`\`\`bash
-            docker pull ghcr.io/${{ github.repository_owner }}/oxy:$TAG
+            docker pull ghcr.io/${{ github.repository_owner }}/oxy:$VERSION
             \`\`\`
 
           EOF
@@ -203,11 +307,11 @@ jobs:
           if [ "$BUILD_TARGETS" = "both" ] || [ "$BUILD_TARGETS" = "semantic-engine" ]; then
             cat >> $GITHUB_STEP_SUMMARY << EOF
           ### Oxy Semantic Engine
-          - **Image:** \`ghcr.io/${{ github.repository_owner }}/oxy-semantic-engine:$TAG\`
+          - **Image:** \`ghcr.io/${{ github.repository_owner }}/oxy-semantic-engine:$VERSION\`
           - **Architectures:** linux/amd64, linux/arm64
           - **Pull:**
             \`\`\`bash
-            docker pull ghcr.io/${{ github.repository_owner }}/oxy-semantic-engine:$TAG
+            docker pull ghcr.io/${{ github.repository_owner }}/oxy-semantic-engine:$VERSION
             \`\`\`
 
           EOF

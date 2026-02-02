@@ -1,0 +1,92 @@
+# Dockerfile for using pre-built binaries (faster CI builds)
+# This expects the oxy binary to be passed via build context
+# Note: Binaries are built on Ubuntu 22.04 (glibc 2.35), compatible with Debian 12+
+
+# Stage 1: Runtime image
+FROM debian:stable-slim AS runtime
+WORKDIR /app
+
+RUN apt-get update && \
+    apt-get install -y ca-certificates tini git && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy pre-built binary from build context
+ARG BINARY_PATH=oxy
+COPY ${BINARY_PATH} /usr/local/bin/oxy
+RUN chmod +x /usr/local/bin/oxy
+
+# Directory for persistent app data inside the container
+ENV OXY_STATE_DIR=/var/lib/oxy/data
+RUN mkdir -p ${OXY_STATE_DIR} && chown -R root:root /var/lib/oxy
+VOLUME ["${OXY_STATE_DIR}"]
+
+# Set tini as the entrypoint
+ENTRYPOINT ["/usr/bin/tini", "--"]
+
+# Default command
+EXPOSE 3000
+CMD ["oxy", "serve", "--port", "3000"]
+
+# Stage 2: Semantic Engine (Cube.js)
+FROM cubejs/cube:v1.3.81 AS semantic-engine
+
+# Copy pre-built binary from build context
+ARG BINARY_PATH=oxy
+COPY ${BINARY_PATH} /usr/local/bin/oxy
+RUN chmod +x /usr/local/bin/oxy
+
+# Set working directory for the project
+WORKDIR /app
+
+# Environment variables for Cube.js
+ENV CUBEJS_DEV_MODE=true \
+    CUBEJS_DB_TYPE=duckdb \
+    NODE_ENV=development
+
+# Expose Cube.js default port
+EXPOSE 4000
+
+# Wrapper script to generate config and start Cube.js
+COPY <<'EOF' /usr/local/bin/start-semantic-engine.sh
+#!/bin/sh
+set -e
+
+# Use environment variable or current working directory
+WORK_DIR="${OXY_WORK_DIR:-$(pwd)}"
+OUTPUT_DIR="${OXY_CUBE_OUTPUT_DIR:-/cube/conf}"
+
+# Generate Cube.js configuration from semantic layer
+if [ -d "${WORK_DIR}/semantics" ]; then
+    echo "Generating Cube.js configuration from semantic layer..."
+    echo "Working directory: ${WORK_DIR}"
+    echo "Output directory: ${OUTPUT_DIR}"
+    cd "${WORK_DIR}" && oxy prepare-semantic-engine --force --output-dir "${OUTPUT_DIR}"
+else
+    echo "Warning: No semantics directory found in ${WORK_DIR}. Using existing configuration."
+fi
+
+echo "📦 Cube.js configuration is ready for deployment"
+echo "You can now run Cube.js natively or in a container using the generated config"
+echo "Starting Cube.js server..."
+echo "Schema path: ${CUBEJS_SCHEMA_PATH}"
+echo "Dev mode: ${CUBEJS_DEV_MODE}"
+echo ""
+echo "Database configuration:"
+echo "  CUBEJS_DB_TYPE: ${CUBEJS_DB_TYPE}"
+echo "  CUBEJS_DB_URL: ${CUBEJS_DB_URL}"
+echo "  CUBEJS_DB_HOST: ${CUBEJS_DB_HOST}"
+echo "  CUBEJS_DB_PORT: ${CUBEJS_DB_PORT}"
+echo "  CUBEJS_DB_NAME: ${CUBEJS_DB_NAME}"
+echo "  CUBEJS_DB_USER: ${CUBEJS_DB_USER}"
+echo ""
+
+# Change to output directory where cube.js and model files are located
+cd "${OUTPUT_DIR}"
+
+# Use the cubejs command from the base image
+exec cubejs server
+EOF
+
+RUN chmod +x /usr/local/bin/start-semantic-engine.sh
+
+CMD ["/usr/local/bin/start-semantic-engine.sh"]

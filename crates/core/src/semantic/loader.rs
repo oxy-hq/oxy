@@ -1,8 +1,6 @@
-use std::path::Path;
-use std::{collections::HashMap, fs, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use crate::adapters::secrets::SecretsManager;
-use crate::config::model::DuckDBOptions;
 use crate::connector::DOMO;
 use crate::{
     config::{
@@ -10,7 +8,6 @@ use crate::{
         model::{Database, DatabaseType, Dimension, SemanticModels},
     },
     connector::Connector,
-    utils::extract_csv_dimensions,
 };
 use oxy_shared::errors::OxyError;
 
@@ -509,7 +506,7 @@ impl SchemaLoader {
 
     pub async fn load_schema(
         &self,
-        config: &ConfigManager,
+        _config: &ConfigManager,
     ) -> Result<HashMap<String, HashMap<String, SemanticModels>>, OxyError> {
         match &self.database.database_type {
             DatabaseType::DOMO(domo) => {
@@ -556,7 +553,7 @@ impl SchemaLoader {
                     DatabaseType::Bigquery(_) => "BigQuery",
                     DatabaseType::Snowflake(_) => "Snowflake",
                     DatabaseType::MotherDuck(_) => "MotherDuck",
-                    DatabaseType::DuckDB(c) => "DuckDB",
+                    DatabaseType::DuckDB(_c) => "DuckDB",
                     _ => "Unknown",
                 };
                 tracing::debug!(
@@ -654,7 +651,7 @@ impl SchemaLoader {
 
     pub async fn load_ddl(
         &self,
-        config: &ConfigManager,
+        _config: &ConfigManager,
     ) -> Result<HashMap<String, String>, OxyError> {
         match &self.database.database_type {
             DatabaseType::ClickHouse(_)

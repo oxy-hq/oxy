@@ -119,7 +119,7 @@ impl Engine for ConnectorX {
                         .map_err(|err| connector_internal_error(EXECUTE_QUERY, &err))
                 }
             }?;
-            let schema = destination.arrow_schema();
+            let _schema = destination.arrow_schema();
             let result = destination
                 .arrow()
                 .map_err(|err| connector_internal_error(LOAD_ARROW_RESULT, &err))?;

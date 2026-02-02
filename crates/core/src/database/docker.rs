@@ -101,13 +101,12 @@ async fn get_docker_client() -> Result<Docker, OxyError> {
 
         for socket_path in alternative_paths {
             // Check if socket file exists before attempting connection
-            if std::path::Path::new(&socket_path).exists() {
-                if let Ok(docker) =
+            if std::path::Path::new(&socket_path).exists()
+                && let Ok(docker) =
                     Docker::connect_with_unix(&socket_path, 120, bollard::API_DEFAULT_VERSION)
-                {
-                    tracing::debug!("Connected to Docker using socket: {}", socket_path);
-                    return Ok(docker);
-                }
+            {
+                tracing::debug!("Connected to Docker using socket: {}", socket_path);
+                return Ok(docker);
             }
         }
     }
