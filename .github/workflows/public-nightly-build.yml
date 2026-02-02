@@ -188,7 +188,7 @@ jobs:
 
           # Transitional compatibility tag (to be deprecated later) only for push edge builds
           if [ "$CHANNEL" = "edge" ]; then
-            COMPAT_TAG="nightly-main-${SHORT_SHA}"
+            COMPAT_TAG="edge-main-${SHORT_SHA}"
           else
             COMPAT_TAG=""
           fi
@@ -303,7 +303,7 @@ jobs:
             TAGS="${TAGS},${IMAGE}:edge-${SHORT_SHA}-${ARCH}"
             TAGS="${TAGS},${IMAGE}:edge-latest-${ARCH}"
             # Transitional compatibility tag
-            TAGS="${TAGS},${IMAGE}:nightly-main-${SHORT_SHA}-${ARCH}"
+            TAGS="${TAGS},${IMAGE}:edge-main-${SHORT_SHA}-${ARCH}"
           fi
 
           echo "tags=${TAGS}" >> $GITHUB_OUTPUT
@@ -360,7 +360,7 @@ jobs:
             DATE_TAG="edge-${DATE}"
             LATEST_TAG="edge-latest"
             # Transitional compatibility tag
-            COMPAT_TAG="nightly-main-${SHORT_SHA}"
+            COMPAT_TAG="edge-main-${SHORT_SHA}"
           fi
           echo "channel=${CHANNEL}" >> $GITHUB_OUTPUT
           echo "date_tag=${DATE_TAG}" >> $GITHUB_OUTPUT
