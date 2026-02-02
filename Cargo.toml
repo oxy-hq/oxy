@@ -46,7 +46,7 @@ serde_yaml = { version = "0.9.34" }
 indexmap = { version = "2.13.0", features = ["serde"] }
 thiserror = { version = "2.0.18" }
 regex = { version = "1.12.2" }
-minijinja = { version = "2.14.0" }
+minijinja = { version = "2.15.1" }
 tracing = { version = "0.1.44" }
 tempfile = { version = "3.24.0" }
 axum = { version = "0.8.8", features = ["macros", "http2"] }

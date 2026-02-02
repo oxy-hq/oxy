@@ -40,7 +40,7 @@ log = { workspace = true }
 
 # Utilities
 chrono = { workspace = true }
-uuid = { version = "1.19", features = ["v4", "serde"] }
+uuid = { version = "1.20", features = ["v4", "serde"] }
 
 # Shared infrastructure
 oxy-shared = { path = "../shared" }

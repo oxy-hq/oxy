@@ -42,7 +42,7 @@ slugify = "0.1.0"
 sqlformat = { git = "https://github.com/shssoichiro/sqlformat-rs.git", rev = "80255c7" }
 strip-ansi-escapes = "=0.2.1"
 utoipa = {git="https://github.com/haitrr/utoipa.git", rev="776f86e", features = ["uuid", "chrono", "axum_extras"] }
-uuid = { version = "1.19.0", features = ["v4", "serde"] }
+uuid = { version = "1.20.0", features = ["v4", "serde"] }
 
 # Database
 sea-orm = { workspace = true }

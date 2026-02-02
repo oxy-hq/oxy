@@ -14,7 +14,7 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 url = { version = "2.5", features = ["serde"] }
-uuid = { version = "1.19", features = ["serde", "v4"] }
+uuid = { version = "1.20", features = ["serde", "v4"] }
 async-trait = "0.1"
 futures = "0.3"
 http = "1.4"
