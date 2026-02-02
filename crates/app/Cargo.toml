@@ -156,4 +156,4 @@ dirs = "6.0.0"
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }
 assert_cmd = "2.1.2"
-serial_test = "3.2.0"
+serial_test = "3.3.1"
