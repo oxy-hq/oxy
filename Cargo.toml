@@ -58,7 +58,7 @@ sentry = { version = "0.46.1", features = ["tower-axum-matched-path", "rustls", 
 # TODO: turn this on when https://github.com/googleapis/release-please/issues number 2111 is fixed
 # version = "0.1.32"
 edition = "2024"
-rust-version = "1.92.0"
+rust-version = "1.93.0"
 publish = false
 description = "Oxy"
 authors = ["oxy engineers"]

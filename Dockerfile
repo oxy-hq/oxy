@@ -4,7 +4,7 @@
 # ---------------------------------------------------------------------------------
 
 # Base image for Rust and Cargo Chef
-FROM lukemathwalker/cargo-chef:latest-rust-1.92.0-bookworm AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1.93.0-bookworm AS chef
 WORKDIR /app
 
 # Stage 1: Dependency planner
