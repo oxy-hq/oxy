@@ -31,14 +31,13 @@ export class DatabaseService {
     pathb64: string,
     sql: string,
     database: string,
-    resultFormat: "json" | "parquet" = "json",
   ): Promise<ExecuteSqlResponse> {
     const response = await apiClient.post(
       `/${projectId}/sql/${pathb64}`,
       {
         sql,
         database,
-        result_format: resultFormat,
+        result_format: "parquet",
       },
       { params: { branch: branchName } },
     );
@@ -50,14 +49,13 @@ export class DatabaseService {
     branchName: string,
     sql: string,
     database: string,
-    resultFormat: "json" | "parquet" = "json",
   ): Promise<ExecuteSqlResponse> {
     const response = await apiClient.post(
       `/${projectId}/sql/query`,
       {
         sql,
         database,
-        result_format: resultFormat,
+        result_format: "parquet",
       },
       { params: { branch: branchName } },
     );
