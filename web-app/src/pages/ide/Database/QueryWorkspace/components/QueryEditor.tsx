@@ -33,9 +33,6 @@ export default function QueryEditor({ onSave }: QueryEditorProps) {
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
 
-  // Setup Monaco with save keybinding
-  useMonacoSetup({ onSave });
-
   const handleRunQuery = useCallback(async () => {
     if (!activeTab || !activeTab.content.trim()) {
       toast.error("No query to execute");
@@ -94,6 +91,8 @@ export default function QueryEditor({ onSave }: QueryEditorProps) {
     setTabResults,
     setTabError,
   ]);
+
+  useMonacoSetup({ onSave, onExecute: handleRunQuery });
 
   const handleNewTab = () => {
     const result = addTab({ selectedDatabase: activeTab?.selectedDatabase });

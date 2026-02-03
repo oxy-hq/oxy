@@ -9,13 +9,17 @@ configureMonacoEnvironment();
 
 interface UseMonacoSetupProps {
   onSave?: () => void;
+  onExecute?: () => void;
 }
 
 /**
  * Hook to configure Monaco editor with shared settings (theme, YAML schema, etc.)
- * and optionally register a Cmd/Ctrl+S save keybinding.
+ * and optionally register a Cmd/Ctrl+S save keybinding and Cmd/Ctrl+Enter execute keybinding.
  */
-export default function useMonacoSetup({ onSave }: UseMonacoSetupProps = {}) {
+export default function useMonacoSetup({
+  onSave,
+  onExecute,
+}: UseMonacoSetupProps = {}) {
   const monaco = useMonaco();
   const isConfigured = useRef<boolean>(false);
 
@@ -30,7 +34,7 @@ export default function useMonacoSetup({ onSave }: UseMonacoSetupProps = {}) {
     if (!monaco || !onSave) return;
 
     const commandId = "save-file";
-    monaco.editor.registerCommand(commandId, () => {
+    const command = monaco.editor.registerCommand(commandId, () => {
       onSave();
     });
     const keybindingRule = monaco.editor.addKeybindingRule({
@@ -39,9 +43,28 @@ export default function useMonacoSetup({ onSave }: UseMonacoSetupProps = {}) {
     });
 
     return () => {
+      command.dispose();
       keybindingRule?.dispose();
     };
   }, [monaco, onSave]);
+
+  useEffect(() => {
+    if (!monaco || !onExecute) return;
+
+    const commandId = "execute-file";
+    const command = monaco.editor.registerCommand(commandId, () => {
+      onExecute();
+    });
+    const keybindingRule = monaco.editor.addKeybindingRule({
+      keybinding: monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
+      command: commandId,
+    });
+
+    return () => {
+      command.dispose();
+      keybindingRule?.dispose();
+    };
+  }, [monaco, onExecute]);
 
   return { monaco };
 }
