@@ -30,6 +30,7 @@ export const QueryResultTable = ({
         <VirtualizedTable
           filePath={resultFile}
           pageSize={100}
+          key={resultFile}
           maxHeight="32rem"
         />
         {isTruncated && (

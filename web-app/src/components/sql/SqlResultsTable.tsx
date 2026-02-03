@@ -228,7 +228,7 @@ const ArrayBasedTable = ({ result }: { result: string[][] }) => {
 const SqlResultsTable = ({ result, resultFile }: ResultsProps) => {
   // If we have a result file, use the VirtualizedTable component
   if (resultFile) {
-    return <VirtualizedTable filePath={resultFile} />;
+    return <VirtualizedTable key={resultFile} filePath={resultFile} />;
   }
 
   // If we have array results, use the array-based table
