@@ -1,12 +1,14 @@
 name: Public Announce Release to Slack
 
 on:
-  release:
-    types: [created, released, published]
+  workflow_run:
+    workflows: ["Public Release", "Publish Docker Images"]
+    types:
+      - completed
 
 jobs:
   announce-to-slack:
-    if: github.repository == 'oxy-hq/oxy' && github.event.release.draft == false && github.event.release.prerelease == false
+    if: github.repository == 'oxy-hq/oxy' && github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
 
     steps:
@@ -22,10 +24,11 @@ jobs:
           SLACK_CHANNEL: general
           SLACK_FOOTER: ""
           SLACK_TITLE: |
-            :tada: New Release Published: *${{ github.event.release.name }}* :tada:
+            :tada: ${{ github.event.workflow_run.name }} Completed :tada:
           SLACK_MESSAGE: |
-            *Release Details:*
-            - *Tag:* ${{ github.event.release.tag_name }}
-            - *Published At:* ${{ github.event.release.published_at }}
+            *Details:*
+            - *Workflow:* ${{ github.event.workflow_run.name }}
+            - *Branch/Tag:* ${{ github.event.workflow_run.head_branch }}
+            - *Completed At:* ${{ github.event.workflow_run.updated_at }}
 
-            View the full release notes and download links here: ${{ github.event.release.html_url }}
+            View the workflow run: ${{ github.event.workflow_run.html_url }}

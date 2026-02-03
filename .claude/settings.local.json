@@ -21,7 +21,11 @@
       "Bash(npx tsc:*)",
       "Bash(npx eslint:*)",
       "Bash(npm run lint:ts:*)",
-      "Bash(pgrep:*)"
+      "Bash(pgrep:*)",
+      "Bash(wc:*)",
+      "Bash(while read f)",
+      "Bash(echo:*)",
+      "Bash(done)"
     ],
     "deny": [],
     "ask": []

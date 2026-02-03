@@ -2,7 +2,7 @@ name: Public Announce Nightly Build to Slack
 
 on:
   workflow_run:
-    workflows: ["Public Nightly Build"]
+    workflows: ["Public Nightly & Edge Build"]
     types:
       - completed
 
@@ -12,23 +12,90 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changelog since last successful build
+        id: changelog
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          CURRENT_SHA="${{ github.event.workflow_run.head_sha }}"
+          WORKFLOW_NAME="${{ github.event.workflow_run.name }}"
+          CURRENT_RUN_ID="${{ github.event.workflow_run.id }}"
+
+          # Find the previous successful run (excluding current)
+          PREV_SHA=$(gh api "/repos/${{ github.repository }}/actions/workflows/public-nightly-build.yml/runs?status=success&per_page=10" \
+            --jq "[.workflow_runs[] | select(.id != ${CURRENT_RUN_ID} and .head_sha != \"${CURRENT_SHA}\")] | .[0].head_sha // empty")
+
+          if [ -z "$PREV_SHA" ]; then
+            echo "No previous successful run found"
+            echo "changelog=_First successful build or no previous builds found_" >> $GITHUB_OUTPUT
+            echo "commit_count=0" >> $GITHUB_OUTPUT
+          else
+            echo "Previous successful build SHA: $PREV_SHA"
+            echo "Current build SHA: $CURRENT_SHA"
+
+            # Get commit count
+            COMMIT_COUNT=$(git rev-list --count ${PREV_SHA}..${CURRENT_SHA} 2>/dev/null || echo "0")
+            echo "commit_count=${COMMIT_COUNT}" >> $GITHUB_OUTPUT
+
+            # Generate changelog (limit to 10 commits for Slack message size)
+            CHANGELOG=$(git log --pretty=format:"• %s (%h)" ${PREV_SHA}..${CURRENT_SHA} --no-merges 2>/dev/null | head -20)
+
+            if [ -z "$CHANGELOG" ]; then
+              CHANGELOG="_No new commits_"
+            elif [ "$COMMIT_COUNT" -gt 20 ]; then
+              CHANGELOG="${CHANGELOG}
+            _...and $((COMMIT_COUNT - 20)) more commits_"
+            fi
+
+            # Escape for GitHub Actions output
+            {
+              echo "changelog<<EOF"
+              echo "$CHANGELOG"
+              echo "EOF"
+            } >> $GITHUB_OUTPUT
+          fi
+
+      - name: Determine build type
+        id: build_type
+        run: |
+          EVENT="${{ github.event.workflow_run.event }}"
+          if [ "$EVENT" = "schedule" ]; then
+            echo "type=Nightly" >> $GITHUB_OUTPUT
+            echo "emoji=:crescent_moon:" >> $GITHUB_OUTPUT
+          else
+            echo "type=Edge" >> $GITHUB_OUTPUT
+            echo "emoji=:zap:" >> $GITHUB_OUTPUT
+          fi
+
       - name: Send Slack Notification
         uses: rtCamp/action-slack-notify@v2
         env:
-          SLACK_USERNAME: "Nightly Build Notifier"
+          SLACK_USERNAME: "${{ steps.build_type.outputs.type }} Build Notifier"
           MSG_MINIMAL: ref,commit
-          SLACK_ICON_EMOJI: ":crescent_moon:"
+          SLACK_ICON_EMOJI: "${{ steps.build_type.outputs.emoji }}"
           SLACK_LINK_NAMES: true
           SLACKIFY_MARKDOWN: true
           SLACK_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL: product-releases-dev
           SLACK_FOOTER: ""
-          SLACK_TITLE: ":crescent_moon: Nightly Build Completed :crescent_moon:"
+          SLACK_TITLE: "${{ steps.build_type.outputs.emoji }} ${{ steps.build_type.outputs.type }} Build Completed ${{ steps.build_type.outputs.emoji }}"
           SLACK_MESSAGE: |
             *Details:*
-            - *Event:* Nightly Build
-            - *Completed At:* ${{ github.event.workflow_run.created_at }}
+            - *Build Type:* ${{ steps.build_type.outputs.type }}
+            - *Branch:* ${{ github.event.workflow_run.head_branch }}
+            - *Commit:* `${{ github.event.workflow_run.head_sha }}`
+            - *Completed At:* ${{ github.event.workflow_run.updated_at }}
 
-            View the latest release here: https://github.com/oxy-hq/oxy-nightly/releases/latest
+            *Changes (${{ steps.changelog.outputs.commit_count }} commits):*
+            ${{ steps.changelog.outputs.changelog }}
 
-            To install the latest release: `bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)`
+            *Links:*
+            • <https://github.com/oxy-hq/oxy-nightly/releases/latest|Latest Release>
+            • <${{ github.event.workflow_run.html_url }}|Workflow Run>
+
+            To install: `bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)`
