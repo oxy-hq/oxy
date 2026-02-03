@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.2](https://github.com/oxy-hq/oxy-internal/compare/0.5.1...0.5.2) (2026-02-03)
+
+
+### <!-- 0 -->🚀 Features
+
+* add execute sql query shortcut ([#1591](https://github.com/oxy-hq/oxy-internal/issues/1591)) ([a9ba17a](https://github.com/oxy-hq/oxy-internal/commit/a9ba17ad68a914dac30da77bb2ee8f6846fa3c8d))
+* sql ide ([#1556](https://github.com/oxy-hq/oxy-internal/issues/1556)) ([d367afb](https://github.com/oxy-hq/oxy-internal/commit/d367afb6df0102b113d0301b84873e529b7dc01a))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* add paging and sort for sql result table ([#1594](https://github.com/oxy-hq/oxy-internal/issues/1594)) ([d1d0011](https://github.com/oxy-hq/oxy-internal/commit/d1d0011035318784df756e52d9959d90ccf073ce))
+* result query table state reset ([#1590](https://github.com/oxy-hq/oxy-internal/issues/1590)) ([e3eb358](https://github.com/oxy-hq/oxy-internal/commit/e3eb358884619c4d63eca1e126fe6be7531139a5))
+
 ## [0.5.1](https://github.com/oxy-hq/oxy-internal/compare/0.5.0...0.5.1) (2026-01-29)
 
 

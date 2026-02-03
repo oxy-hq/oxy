@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.5](https://github.com/oxy-hq/oxy-internal/compare/0.5.4...0.5.5) (2026-02-03)
+
+
+### <!-- 0 -->🚀 Features
+
+* sql ide ([#1556](https://github.com/oxy-hq/oxy-internal/issues/1556)) ([d367afb](https://github.com/oxy-hq/oxy-internal/commit/d367afb6df0102b113d0301b84873e529b7dc01a))
+
 ## [0.5.4](https://github.com/oxy-hq/oxy-internal/compare/0.5.3...0.5.4) (2026-01-30)
 
 
