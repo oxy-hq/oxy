@@ -15,63 +15,57 @@ static LOG_GUARD: OnceCell<tracing_appender::non_blocking::WorkerGuard> = OnceCe
 
 #[derive(Debug, Clone)]
 enum LogFormat {
-    Pretty, // Human-readable format for development
-    Json,
-    CloudRun, // Google Cloud Run optimized format
-    Compact,  // Compact format for other cloud platforms
+    Local, // Human-readable format with colors for local development
+    Cloud, // Plain text format for Kubernetes/cloud (no ANSI, compact)
 }
 
 impl LogFormat {
     fn detect() -> Self {
-        // Check environment variables to determine the platform
-        if env::var("K_SERVICE").is_ok() || env::var("CLOUD_RUN_JOB").is_ok() {
-            LogFormat::CloudRun
-        // AWS environments - use JSON for better CloudWatch integration
-        } else if env::var("AWS_LAMBDA_FUNCTION_NAME").is_ok()
-            || env::var("AWS_EXECUTION_ENV").is_ok()
-            || env::var("AWS_COGNITO_USER_POOL_ID").is_ok()
-        {
-            LogFormat::Json
-        } else if env::var("VERCEL").is_ok() {
-            LogFormat::Json
-        } else if cfg!(debug_assertions) {
-            LogFormat::Pretty
+        // Check if running in Kubernetes
+        if env::var("KUBERNETES_SERVICE_HOST").is_ok() || env::var("KUBERNETES_PORT").is_ok() {
+            LogFormat::Cloud
         } else {
-            LogFormat::Compact
+            LogFormat::Local
         }
+    }
+
+    fn is_cloud() -> bool {
+        matches!(Self::detect(), LogFormat::Cloud)
     }
 }
 
 fn init_tracing_logging(log_to_stdout: bool) {
+    let log_format = LogFormat::detect();
+    let is_cloud = LogFormat::is_cloud();
+
+    // In cloud, default to WARN level unless explicitly overridden
+    // In local, default to INFO for better debugging
+    let default_level = if is_cloud { "warn" } else { "info" };
     let log_level = env::var("OXY_LOG_LEVEL")
         .as_deref()
-        .unwrap_or("warn")
+        .unwrap_or(default_level)
         .to_lowercase();
-    // Default all crates to WARN level to reduce noise, then selectively enable INFO for critical components
-    // This approach is more maintainable and ensures we don't miss any noisy dependencies
+
+    // In cloud environments, significantly reduce logging noise
+    // - Turn off HTTP request/response logs (we'll use TRACE level which won't be logged)
+    // - Turn off SQL query logs (they're extremely verbose)
+    // - Only show WARN+ for most crates
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        EnvFilter::new(log_level)
-            // HTTP request/response logging (on_request is DEBUG, on_response is INFO in the trace layer)
-            .add_directive("tower_http::trace=info".parse().unwrap())
-            // Database-related logging - SQLx can be very verbose
-            .add_directive("sqlx=warn".parse().unwrap())
-            .add_directive("sea_orm=warn".parse().unwrap())
-            // Completely suppress deser_incomplete crate - it's too noisy with DEBUG logs
-            .add_directive("deser_incomplete=off".parse().unwrap())
-            .add_directive("deser_incomplete::options_impl=off".parse().unwrap())
+        if is_cloud {
+            EnvFilter::new(&log_level)
+                .add_directive("tower_http=warn".parse().unwrap()) // Only log HTTP errors
+                .add_directive("sqlx=warn".parse().unwrap()) // Only log SQL errors
+                .add_directive("sea_orm=warn".parse().unwrap())
+                .add_directive("deser_incomplete=off".parse().unwrap())
+        } else {
+            // Local: more verbose for development
+            EnvFilter::new(&log_level)
+                .add_directive("tower_http::trace=info".parse().unwrap())
+                .add_directive("sqlx=warn".parse().unwrap())
+                .add_directive("sea_orm=warn".parse().unwrap())
+                .add_directive("deser_incomplete=off".parse().unwrap())
+        }
     });
-    // Allow override via environment variable
-    // If not set, auto-detects based on environment (Cloud Run, AWS Lambda, etc.)
-    let log_format = env::var("OXY_LOG_FORMAT")
-        .ok()
-        .and_then(|f| match f.to_lowercase().as_str() {
-            "pretty" => Some(LogFormat::Pretty),
-            "json" => Some(LogFormat::Json),
-            "cloudrun" => Some(LogFormat::CloudRun),
-            "compact" => Some(LogFormat::Compact),
-            _ => None,
-        })
-        .unwrap_or_else(LogFormat::detect);
 
     let (non_blocking, guard) = if log_to_stdout {
         tracing_appender::non_blocking(std::io::stdout())
@@ -86,7 +80,7 @@ fn init_tracing_logging(log_to_stdout: bool) {
     LOG_GUARD.set(guard).ok();
 
     match log_format {
-        LogFormat::Pretty => {
+        LogFormat::Local => {
             tracing_subscriber::registry()
                 .with(env_filter)
                 .with(sentry::integrations::tracing::layer())
@@ -95,40 +89,11 @@ fn init_tracing_logging(log_to_stdout: bool) {
                         .with_target(true)
                         .with_level(true)
                         .with_writer(non_blocking)
-                        .pretty(),
+                        .with_ansi(true),
                 )
                 .init();
         }
-        LogFormat::Json => {
-            tracing_subscriber::registry()
-                .with(env_filter)
-                .with(sentry::integrations::tracing::layer())
-                .with(
-                    fmt::layer()
-                        .with_target(true)
-                        .with_level(true)
-                        .with_writer(non_blocking)
-                        .json(),
-                )
-                .init();
-        }
-        LogFormat::CloudRun => {
-            // the cloud run web ui log browser is optimized for compact logs
-            tracing_subscriber::registry()
-                .with(env_filter)
-                .with(sentry::integrations::tracing::layer())
-                .with(
-                    fmt::layer()
-                        .with_target(true)
-                        .with_level(true)
-                        .with_writer(non_blocking)
-                        .with_ansi(false)
-                        .without_time()
-                        .compact(),
-                )
-                .init();
-        }
-        LogFormat::Compact => {
+        LogFormat::Cloud => {
             tracing_subscriber::registry()
                 .with(env_filter)
                 .with(sentry::integrations::tracing::layer())
@@ -137,6 +102,7 @@ fn init_tracing_logging(log_to_stdout: bool) {
                         .with_target(false)
                         .with_level(true)
                         .with_writer(non_blocking)
+                        .with_ansi(false) // No colors in cloud
                         .compact(),
                 )
                 .init();

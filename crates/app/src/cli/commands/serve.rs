@@ -190,21 +190,37 @@ async fn create_web_application(cloud: bool, enterprise: bool) -> Result<Router,
                 ),
         )
         .fallback_service(static_service)
-        .layer(create_trace_layer()))
+        .layer(create_trace_layer(cloud)))
 }
 
-fn create_trace_layer()
--> TraceLayer<tower_http::classify::SharedClassifier<tower_http::classify::ServerErrorsAsFailures>>
+fn create_trace_layer(
+    is_cloud: bool,
+) -> TraceLayer<tower_http::classify::SharedClassifier<tower_http::classify::ServerErrorsAsFailures>>
 {
-    TraceLayer::new_for_http()
-        .make_span_with(trace::DefaultMakeSpan::new().level(Level::INFO))
-        .on_request(trace::DefaultOnRequest::new().level(Level::DEBUG))
-        .on_response(
-            trace::DefaultOnResponse::new()
-                .level(Level::INFO)
-                .latency_unit(tower_http::LatencyUnit::Millis),
-        )
-        .on_failure(trace::DefaultOnFailure::new().level(Level::ERROR))
+    if is_cloud {
+        // In cloud: only log failures (errors), skip all successful requests
+        // Use TRACE level (below DEBUG) so requests/responses aren't logged
+        TraceLayer::new_for_http()
+            .make_span_with(trace::DefaultMakeSpan::new().level(Level::TRACE))
+            .on_request(trace::DefaultOnRequest::new().level(Level::TRACE))
+            .on_response(
+                trace::DefaultOnResponse::new()
+                    .level(Level::TRACE)
+                    .latency_unit(tower_http::LatencyUnit::Millis),
+            )
+            .on_failure(trace::DefaultOnFailure::new().level(Level::ERROR))
+    } else {
+        // Local: verbose logging for development
+        TraceLayer::new_for_http()
+            .make_span_with(trace::DefaultMakeSpan::new().level(Level::INFO))
+            .on_request(trace::DefaultOnRequest::new().level(Level::DEBUG))
+            .on_response(
+                trace::DefaultOnResponse::new()
+                    .level(Level::INFO)
+                    .latency_unit(tower_http::LatencyUnit::Millis),
+            )
+            .on_failure(trace::DefaultOnFailure::new().level(Level::ERROR))
+    }
 }
 
 async fn handle_static_files(
