@@ -14,7 +14,7 @@
     "@commitlint/config-conventional": "^20.4.1",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",
-    "markdownlint-cli2": "^0.17.2",
+    "markdownlint-cli2": "^0.20.0",
     "turbo": "^2.8.3",
     "typescript": "^5.9.3"
   },
