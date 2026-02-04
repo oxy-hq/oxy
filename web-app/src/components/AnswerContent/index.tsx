@@ -1,9 +1,8 @@
 "use client";
 
 import { memo } from "react";
-
-import { cn } from "@/libs/shadcn/utils";
 import Markdown from "@/components/Markdown";
+import { cn } from "@/libs/shadcn/utils";
 
 type Props = {
   content: string;
@@ -13,10 +12,7 @@ type Props = {
 
 function AnswerContent({ content, className, onArtifactClick }: Props) {
   return (
-    <div
-      className={cn("flex flex-col gap-4", className)}
-      data-testid="agent-response-text"
-    >
+    <div className={cn("flex flex-col gap-4", className)} data-testid='agent-response-text'>
       <Markdown onArtifactClick={onArtifactClick}>{content}</Markdown>
     </div>
   );

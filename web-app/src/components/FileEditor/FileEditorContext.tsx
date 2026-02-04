@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from "react";
-import { FileEditorContext } from "./useFileEditorContext";
-import { decodeFilePath } from "@/utils/fileTypes";
+import type React from "react";
+import { useEffect, useState } from "react";
 import useFile from "@/hooks/api/files/useFile";
 import useFileGit from "@/hooks/api/files/useFileGit";
 import useSaveFile from "@/hooks/api/files/useSaveFile";
+import { decodeFilePath } from "@/utils/fileTypes";
+import { FileEditorContext } from "./useFileEditorContext";
 
 interface EditorProviderProps {
   children: React.ReactNode;
@@ -18,14 +19,12 @@ export function FileEditorProvider({
   pathb64,
   git = false,
   onSaved,
-  onChanged,
+  onChanged
 }: EditorProviderProps) {
   const { mutate: saveFile } = useSaveFile();
   const fileName = decodeFilePath(pathb64);
   const { data: fileContent, isPending, isSuccess } = useFile(pathb64);
-  const [fileState, setFileState] = useState<"saved" | "modified" | "saving">(
-    "saved",
-  );
+  const [fileState, setFileState] = useState<"saved" | "modified" | "saving">("saved");
   const { data: originalContent } = useFileGit(pathb64, git);
   const [showDiff, setShowDiff] = useState(false);
   const [content, setContent] = useState(fileContent || "");
@@ -39,7 +38,7 @@ export function FileEditorProvider({
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setContent(fileContent || "");
     }
-  }, [fileContent, isSuccess, setContent]);
+  }, [fileContent, isSuccess]);
 
   const actions = {
     setContent: (newContent: string) => {
@@ -59,10 +58,10 @@ export function FileEditorProvider({
             onSaved?.(content);
             onSuccess?.();
           },
-          onError: () => setFileState("modified"),
-        },
+          onError: () => setFileState("modified")
+        }
       );
-    },
+    }
   };
 
   const contextValue = {
@@ -73,14 +72,10 @@ export function FileEditorProvider({
       originalContent,
       fileState,
       showDiff,
-      git,
+      git
     },
-    actions: actions,
+    actions: actions
   };
 
-  return (
-    <FileEditorContext.Provider value={contextValue}>
-      {children}
-    </FileEditorContext.Provider>
-  );
+  return <FileEditorContext.Provider value={contextValue}>{children}</FileEditorContext.Provider>;
 }

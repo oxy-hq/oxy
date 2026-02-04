@@ -2,7 +2,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { TableCell, TableRow } from "@/components/ui/shadcn/table";
 import { formatDate } from "@/libs/utils/date";
-import { LogItem } from "@/types/logs";
+import type { LogItem } from "@/types/logs";
 import LogInfo from "./LogInfo";
 
 interface Props {
@@ -24,26 +24,26 @@ const LogRow: React.FC<Props> = ({ log }) => {
       <TableRow
         key={log.id}
         onClick={() => setOpen(true)}
-        className="cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+        className='cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800'
       >
-        <TableCell className="whitespace-pre-wrap break-words">
+        <TableCell className='whitespace-pre-wrap break-words'>
           <Link
             to={`/threads/${log.thread_id}`}
             onClick={(e) => {
               e.stopPropagation();
             }}
-            className="text-blue-600 dark:text-blue-400 hover:underline"
+            className='text-blue-600 hover:underline dark:text-blue-400'
           >
             {log.thread?.title || "Untitled Thread"}
           </Link>
         </TableCell>
-        <TableCell className="whitespace-pre-wrap break-words">
+        <TableCell className='whitespace-pre-wrap break-words'>
           {log.prompts || "No prompt provided"}
         </TableCell>
-        <TableCell className="max-w-[300px] truncate font-mono text-sm">
+        <TableCell className='max-w-[300px] truncate font-mono text-sm'>
           {getFirstQuery()}
         </TableCell>
-        <TableCell className="w-[170px] whitespace-nowrap break-words">
+        <TableCell className='w-[170px] whitespace-nowrap break-words'>
           {formatDate(log.created_at)}
         </TableCell>
       </TableRow>

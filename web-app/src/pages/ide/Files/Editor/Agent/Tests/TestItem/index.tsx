@@ -1,19 +1,19 @@
 import { CirclePlay, LoaderCircle } from "lucide-react";
 import { Badge } from "@/components/ui/shadcn/badge";
 import { Button } from "@/components/ui/shadcn/button";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { cn } from "@/libs/shadcn/utils";
 import { capitalize } from "@/libs/utils/string";
-import { Eval } from "@/types/agent";
-import { EvalEventState } from "@/types/eval";
 import useTests from "@/stores/useTests";
+import type { Eval } from "@/types/agent";
+import { EvalEventState } from "@/types/eval";
 import Result from "./Result";
 import State from "./State";
-import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 const TestItem = ({
   test,
   agentPathb64,
-  index,
+  index
 }: {
   test: Eval;
   agentPathb64: string;
@@ -31,33 +31,27 @@ const TestItem = ({
   };
 
   return (
-    <div className="bg-card-accent rounded-lg">
+    <div className='rounded-lg bg-card-accent'>
       <div
         className={cn(
-          "flex justify-between gap-1 p-6 border border-border rounded-lg shadow-sm gap-3",
-          "hover:bg-card-accent transition-colors",
-          "group focus-within:bg-card-accent bg-card",
+          "flex justify-between gap-1 gap-3 rounded-lg border border-border p-6 shadow-sm",
+          "transition-colors hover:bg-card-accent",
+          "group bg-card focus-within:bg-card-accent"
         )}
       >
-        <div className="flex flex-col gap-1 flex-1">
-          <Badge variant="secondary" className="w-fit">
+        <div className='flex flex-1 flex-col gap-1'>
+          <Badge variant='secondary' className='w-fit'>
             {capitalize(test.type)}
           </Badge>
-          <p className="font-semibold text-sm text-left">
-            {test.task_description}
-          </p>
-          {!!test.n && <p className="text-muted-foreground">{test.n} tries</p>}
+          <p className='text-left font-semibold text-sm'>{test.task_description}</p>
+          {!!test.n && <p className='text-muted-foreground'>{test.n} tries</p>}
         </div>
-        <div className="flex flex-col gap-2 items-end">
-          <Button
-            variant="outline"
-            onClick={handleRunTest}
-            disabled={!!isRunning}
-          >
+        <div className='flex flex-col items-end gap-2'>
+          <Button variant='outline' onClick={handleRunTest} disabled={!!isRunning}>
             {isRunning ? (
-              <LoaderCircle className="w-4 h-4 animate-spin" />
+              <LoaderCircle className='h-4 w-4 animate-spin' />
             ) : (
-              <CirclePlay className="w-4 h-4" />
+              <CirclePlay className='h-4 w-4' />
             )}
             Run
           </Button>

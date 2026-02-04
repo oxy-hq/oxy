@@ -1,18 +1,18 @@
-import SqlArtifactPanel from "./ArtifactsContent/sql";
-import SemanticQueryArtifactPanel from "./ArtifactsContent/semantic-query";
-import OmniQueryArtifactPanel from "./ArtifactsContent/omni-query";
-import AgentArtifactPanel from "./ArtifactsContent/agent";
-import WorkflowArtifactPanel from "./ArtifactsContent/workflow";
-import SandboxArtifactPanel from "./ArtifactsContent/sandbox-app";
 import { useQueries } from "@tanstack/react-query";
-import { ArtifactService } from "@/services/api";
-import Header from "./Header";
-import { useCallback } from "react";
-import { Button } from "../ui/shadcn/button";
-import { Alert, AlertDescription, AlertTitle } from "../ui/shadcn/alert";
 import { Loader2, X, XCircle } from "lucide-react";
-import { Artifact } from "@/types/artifact";
+import { useCallback } from "react";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { ArtifactService } from "@/services/api";
+import type { Artifact } from "@/types/artifact";
+import { Alert, AlertDescription, AlertTitle } from "../ui/shadcn/alert";
+import { Button } from "../ui/shadcn/button";
+import AgentArtifactPanel from "./ArtifactsContent/agent";
+import OmniQueryArtifactPanel from "./ArtifactsContent/omni-query";
+import SandboxArtifactPanel from "./ArtifactsContent/sandbox-app";
+import SemanticQueryArtifactPanel from "./ArtifactsContent/semantic-query";
+import SqlArtifactPanel from "./ArtifactsContent/sql";
+import WorkflowArtifactPanel from "./ArtifactsContent/workflow";
+import Header from "./Header";
 
 type Props = {
   selectedArtifactIds: string[];
@@ -25,20 +25,20 @@ const ArtifactPanel = ({
   selectedArtifactIds,
   artifactStreamingData,
   onClose,
-  setSelectedArtifactIds,
+  setSelectedArtifactIds
 }: Props) => {
   const onArtifactClick = useCallback(
     (id: string) => {
       setSelectedArtifactIds((prev) => [...prev, id]);
     },
-    [setSelectedArtifactIds],
+    [setSelectedArtifactIds]
   );
   const { project, branchName } = useCurrentProjectBranch();
   const artifactQueries = useQueries({
     queries: selectedArtifactIds.map((id) => ({
       queryKey: ["artifact", project.id, branchName, id],
-      queryFn: () => ArtifactService.getArtifact(project.id, branchName, id),
-    })),
+      queryFn: () => ArtifactService.getArtifact(project.id, branchName, id)
+    }))
   });
 
   const isLoading = artifactQueries.some((query) => query.isLoading);
@@ -53,11 +53,11 @@ const ArtifactPanel = ({
         }
         return acc;
       },
-      {} as { [key: string]: Artifact },
+      {} as { [key: string]: Artifact }
     );
   const artifactData = {
     ...artifactStreamingData,
-    ...artifactAPIData,
+    ...artifactAPIData
   };
 
   const currentArtifactId = selectedArtifactIds[selectedArtifactIds.length - 1];
@@ -68,15 +68,15 @@ const ArtifactPanel = ({
 
   if (isCurrentArtifactLoading) {
     return (
-      <div className="h-full flex flex-col">
-        <div className="w-full flex px-4 py-2 justify-end">
-          <Button variant="outline" size="icon" onClick={onClose}>
+      <div className='flex h-full flex-col'>
+        <div className='flex w-full justify-end px-4 py-2'>
+          <Button variant='outline' size='icon' onClick={onClose}>
             <X />
           </Button>
         </div>
 
-        <div className="flex-1 flex flex-col items-center justify-center space-y-4 text-gray-600">
-          <Loader2 className="animate-spin" />
+        <div className='flex flex-1 flex-col items-center justify-center space-y-4 text-gray-600'>
+          <Loader2 className='animate-spin' />
           <p>Loading artifact...</p>
         </div>
       </div>
@@ -85,27 +85,22 @@ const ArtifactPanel = ({
 
   if (hasError && !currentArtifact) {
     return (
-      <div className="flex h-full w-full flex-col">
-        <div className="w-full flex px-4 py-2 justify-end">
-          <Button variant="outline" size="icon" onClick={onClose}>
+      <div className='flex h-full w-full flex-col'>
+        <div className='flex w-full justify-end px-4 py-2'>
+          <Button variant='outline' size='icon' onClick={onClose}>
             <X />
           </Button>
         </div>
 
-        <div className="p-4 gap-4 flex-1 flex-col flex items-center justify-center">
-          <Alert variant="destructive">
+        <div className='flex flex-1 flex-col items-center justify-center gap-4 p-4'>
+          <Alert variant='destructive'>
             <XCircle />
             <AlertTitle>Error</AlertTitle>
             <AlertDescription>
-              Unable to load the selected artifact. Please check your connection
-              or try again later.
+              Unable to load the selected artifact. Please check your connection or try again later.
             </AlertDescription>
           </Alert>
-          <Button
-            onClick={() => artifactQueries.forEach((query) => query.refetch())}
-          >
-            Retry
-          </Button>
+          <Button onClick={() => artifactQueries.forEach((query) => query.refetch())}>Retry</Button>
         </div>
       </div>
     );
@@ -130,29 +125,21 @@ const ArtifactPanel = ({
 
     if (currentArtifact.kind === "agent") {
       return (
-        <div className="h-full p-4 overflow-y-auto customScrollbar">
-          <AgentArtifactPanel
-            artifact={currentArtifact}
-            onArtifactClick={onArtifactClick}
-          />
+        <div className='customScrollbar h-full overflow-y-auto p-4'>
+          <AgentArtifactPanel artifact={currentArtifact} onArtifactClick={onArtifactClick} />
         </div>
       );
     }
 
     if (currentArtifact.kind === "workflow") {
-      return (
-        <WorkflowArtifactPanel
-          onArtifactClick={onArtifactClick}
-          artifact={currentArtifact}
-        />
-      );
+      return <WorkflowArtifactPanel onArtifactClick={onArtifactClick} artifact={currentArtifact} />;
     }
 
     if (currentArtifact.kind === "sandbox_app") {
       return <SandboxArtifactPanel artifact={currentArtifact} />;
     }
 
-    return <div className="artifact-unknown">Unsupported artifact type</div>;
+    return <div className='artifact-unknown'>Unsupported artifact type</div>;
   };
 
   const handleClose = () => {
@@ -161,7 +148,7 @@ const ArtifactPanel = ({
   };
 
   return (
-    <div className="h-full flex flex-col">
+    <div className='flex h-full flex-col'>
       <Header
         currentArtifact={currentArtifact}
         artifactData={artifactData}
@@ -169,7 +156,7 @@ const ArtifactPanel = ({
         selectedArtifactIds={selectedArtifactIds}
         onClose={handleClose}
       />
-      <div className="flex-1 min-h-0">{renderContent()}</div>
+      <div className='min-h-0 flex-1'>{renderContent()}</div>
     </div>
   );
 };

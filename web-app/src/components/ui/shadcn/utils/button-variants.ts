@@ -8,24 +8,23 @@ export const buttonVariants = cva(
         default: "bg-primary text-white shadow-xs hover:bg-primary/90",
         destructive:
           "bg-destructive text-white shadow-xs hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40",
-        outline:
-          "border border-input bg-background shadow-xs hover:bg-accent text-white",
+        outline: "border border-input bg-background text-white shadow-xs hover:bg-accent",
         secondary: "bg-secondary text-white shadow-xs hover:bg-secondary/80",
-        ghost: "hover:bg-accent text-white",
+        ghost: "text-white hover:bg-accent",
         link: "text-white underline-offset-4 hover:underline",
         white:
-          "bg-white text-white border border-gray-300 shadow-xs hover:bg-gray-50 focus-visible:ring-gray-300/50",
+          "border border-gray-300 bg-white text-white shadow-xs hover:bg-gray-50 focus-visible:ring-gray-300/50"
       },
       size: {
         default: "h-9 px-4 py-2 has-[>svg]:px-3",
-        sm: "h-8 rounded-md gap-1.5 px-3 has-[>svg]:px-2.5",
+        sm: "h-8 gap-1.5 rounded-md px-3 has-[>svg]:px-2.5",
         lg: "h-10 rounded-md px-6 has-[>svg]:px-4",
-        icon: "size-9",
-      },
+        icon: "size-9"
+      }
     },
     defaultVariants: {
       variant: "default",
-      size: "default",
-    },
-  },
+      size: "default"
+    }
+  }
 );

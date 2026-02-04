@@ -1,18 +1,18 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { toast } from "sonner";
 import {
-  ResizablePanelGroup,
-  ResizablePanel,
   ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup
 } from "@/components/ui/shadcn/resizable";
+import queryKeys from "@/hooks/api/queryKey";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { FileService } from "@/services/api";
 import useDatabaseClient from "@/stores/useDatabaseClient";
 import QueryEditor from "./components/QueryEditor";
 import QueryResults from "./components/QueryResults";
 import SaveQueryDialog from "./components/SaveQueryDialog";
-import { FileService } from "@/services/api";
-import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
-import { toast } from "sonner";
-import { useQueryClient } from "@tanstack/react-query";
-import queryKeys from "@/hooks/api/queryKey";
 
 export default function QueryWorkspacePage() {
   const { tabs, activeTabId, updateTab } = useDatabaseClient();
@@ -29,18 +29,13 @@ export default function QueryWorkspacePage() {
     if (activeTab.savedPath) {
       try {
         const pathb64 = btoa(activeTab.savedPath);
-        await FileService.saveFile(
-          project.id,
-          pathb64,
-          activeTab.content,
-          branchName,
-        );
+        await FileService.saveFile(project.id, pathb64, activeTab.content, branchName);
 
         updateTab(activeTab.id, { isDirty: false });
 
         // Invalidate file tree query to refresh the sidebar
         queryClient.removeQueries({
-          queryKey: queryKeys.file.tree(project.id, branchName),
+          queryKey: queryKeys.file.tree(project.id, branchName)
         });
 
         toast.success(`Saved to ${activeTab.savedPath}`);
@@ -54,9 +49,9 @@ export default function QueryWorkspacePage() {
   };
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex-1 overflow-hidden">
-        <ResizablePanelGroup direction="vertical">
+    <div className='flex h-full flex-col'>
+      <div className='flex-1 overflow-hidden'>
+        <ResizablePanelGroup direction='vertical'>
           <ResizablePanel defaultSize={60} minSize={30}>
             <QueryEditor onSave={handleSaveQuery} />
           </ResizablePanel>
@@ -69,11 +64,7 @@ export default function QueryWorkspacePage() {
         </ResizablePanelGroup>
       </div>
 
-      <SaveQueryDialog
-        open={isSaveDialogOpen}
-        onOpenChange={setIsSaveDialogOpen}
-        tab={activeTab}
-      />
+      <SaveQueryDialog open={isSaveDialogOpen} onOpenChange={setIsSaveDialogOpen} tab={activeTab} />
     </div>
   );
 }

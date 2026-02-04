@@ -1,32 +1,24 @@
+import { History, List as ListIcon, ShieldCheck, Sparkles } from "lucide-react";
 import { useState } from "react";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/shadcn/tabs";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/shadcn/select";
-import { ShieldCheck, Sparkles, List as ListIcon, History } from "lucide-react";
-import { ExecutionType, EXECUTION_TYPES } from "../types";
-import ExecutionCard from "./ExecutionCard";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle,
+  CardTitle
 } from "@/components/ui/shadcn/card";
 import {
-  useExecutions,
-  useExecutionSummary,
-} from "@/hooks/api/useExecutionAnalytics";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/shadcn/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
 import TablePagination from "@/components/ui/TablePagination";
+import { useExecutionSummary, useExecutions } from "@/hooks/api/useExecutionAnalytics";
+import { EXECUTION_TYPES, type ExecutionType } from "../types";
+import ExecutionCard from "./ExecutionCard";
 
 const PAGE_SIZE = 10;
 
@@ -61,7 +53,7 @@ export default function ExecutionList({ projectId, days }: ExecutionListProps) {
     offset,
     executionType,
     isVerified: isVerifiedFilter,
-    status: statusParam,
+    status: statusParam
   });
 
   // Fetch summary for counts
@@ -77,7 +69,7 @@ export default function ExecutionList({ projectId, days }: ExecutionListProps) {
   const counts = {
     all: (summary?.verifiedCount ?? 0) + (summary?.generatedCount ?? 0),
     verified: summary?.verifiedCount ?? 0,
-    generated: summary?.generatedCount ?? 0,
+    generated: summary?.generatedCount ?? 0
   };
 
   // Available execution types from EXECUTION_TYPES constant
@@ -103,16 +95,16 @@ export default function ExecutionList({ projectId, days }: ExecutionListProps) {
     return (
       <Card>
         <CardHeader>
-          <div className="flex items-center gap-2">
-            <History className="h-5 w-5 text-primary" />
+          <div className='flex items-center gap-2'>
+            <History className='h-5 w-5 text-primary' />
             <CardTitle>Recent Executions</CardTitle>
           </div>
           <CardDescription>Browse and filter execution history</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
+          <div className='space-y-3'>
             {[1, 2, 3].map((i) => (
-              <div key={i} className="h-40 bg-muted rounded-lg animate-pulse" />
+              <div key={i} className='h-40 animate-pulse rounded-lg bg-muted' />
             ))}
           </div>
         </CardContent>
@@ -122,51 +114,46 @@ export default function ExecutionList({ projectId, days }: ExecutionListProps) {
 
   return (
     <Card>
-      <CardHeader className="pb-0">
-        <div className="flex items-center gap-2">
-          <History className="h-5 w-5 text-primary" />
+      <CardHeader className='pb-0'>
+        <div className='flex items-center gap-2'>
+          <History className='h-5 w-5 text-primary' />
           <CardTitle>Recent Executions</CardTitle>
         </div>
         <CardDescription>Browse and filter execution history</CardDescription>
       </CardHeader>
-      <CardContent className="pt-4">
+      <CardContent className='pt-4'>
         <Tabs value={activeTab} onValueChange={handleTabChange}>
-          <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+          <div className='mb-4 flex flex-wrap items-center justify-between gap-3'>
             <TabsList>
-              <TabsTrigger value="all" className="flex items-center gap-2">
-                <ListIcon className="w-4 h-4" />
+              <TabsTrigger value='all' className='flex items-center gap-2'>
+                <ListIcon className='h-4 w-4' />
                 All
-                <span className="ml-1 text-xs bg-muted px-1.5 py-0.5 rounded">
-                  {counts.all}
-                </span>
+                <span className='ml-1 rounded bg-muted px-1.5 py-0.5 text-xs'>{counts.all}</span>
               </TabsTrigger>
-              <TabsTrigger value="verified" className="flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4" />
+              <TabsTrigger value='verified' className='flex items-center gap-2'>
+                <ShieldCheck className='h-4 w-4' />
                 Verified
-                <span className="ml-1 text-xs bg-muted px-1.5 py-0.5 rounded">
+                <span className='ml-1 rounded bg-muted px-1.5 py-0.5 text-xs'>
                   {counts.verified}
                 </span>
               </TabsTrigger>
-              <TabsTrigger
-                value="generated"
-                className="flex items-center gap-2"
-              >
-                <Sparkles className="w-4 h-4" />
+              <TabsTrigger value='generated' className='flex items-center gap-2'>
+                <Sparkles className='h-4 w-4' />
                 Generated
-                <span className="ml-1 text-xs bg-muted px-1.5 py-0.5 rounded">
+                <span className='ml-1 rounded bg-muted px-1.5 py-0.5 text-xs'>
                   {counts.generated}
                 </span>
               </TabsTrigger>
             </TabsList>
 
-            <div className="flex items-center gap-2">
+            <div className='flex items-center gap-2'>
               {/* Type Filter */}
               <Select value={typeFilter} onValueChange={handleTypeFilterChange}>
-                <SelectTrigger className="w-40">
-                  <SelectValue placeholder="Type" />
+                <SelectTrigger className='w-40'>
+                  <SelectValue placeholder='Type' />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value='all'>All Types</SelectItem>
                   {availableTypes.map((type) => (
                     <SelectItem key={type} value={type}>
                       {EXECUTION_TYPES[type].shortLabel}
@@ -176,40 +163,34 @@ export default function ExecutionList({ projectId, days }: ExecutionListProps) {
               </Select>
 
               {/* Status Filter */}
-              <Select
-                value={statusFilter}
-                onValueChange={handleStatusFilterChange}
-              >
-                <SelectTrigger className="w-32">
-                  <SelectValue placeholder="Status" />
+              <Select value={statusFilter} onValueChange={handleStatusFilterChange}>
+                <SelectTrigger className='w-32'>
+                  <SelectValue placeholder='Status' />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="success">Success</SelectItem>
-                  <SelectItem value="error">Error</SelectItem>
+                  <SelectItem value='all'>All Status</SelectItem>
+                  <SelectItem value='success'>Success</SelectItem>
+                  <SelectItem value='error'>Error</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
 
-          <TabsContent value={activeTab} className="mt-0">
+          <TabsContent value={activeTab} className='mt-0'>
             {isLoading && (
-              <div className="space-y-3">
+              <div className='space-y-3'>
                 {[1, 2, 3].map((i) => (
-                  <div
-                    key={i}
-                    className="h-40 bg-muted rounded-lg animate-pulse"
-                  />
+                  <div key={i} className='h-40 animate-pulse rounded-lg bg-muted' />
                 ))}
               </div>
             )}
             {!isLoading && executions.length === 0 && (
-              <div className="text-center py-8 text-muted-foreground">
+              <div className='py-8 text-center text-muted-foreground'>
                 No executions found matching the current filters
               </div>
             )}
             {!isLoading && executions.length > 0 && (
-              <div className="space-y-3">
+              <div className='space-y-3'>
                 {executions.map((execution) => (
                   <ExecutionCard
                     key={`${execution.traceId}-${execution.spanId}`}
@@ -227,7 +208,7 @@ export default function ExecutionList({ projectId, days }: ExecutionListProps) {
                 totalItems={total}
                 pageSize={PAGE_SIZE}
                 onPageChange={setCurrentPage}
-                itemLabel="executions"
+                itemLabel='executions'
               />
             )}
           </TabsContent>

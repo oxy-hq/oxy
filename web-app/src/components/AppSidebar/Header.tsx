@@ -1,21 +1,21 @@
-import { Home, DiamondPlus, ChevronsLeft } from "lucide-react";
+import { ChevronsLeft, DiamondPlus, Home } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
+import { Button } from "@/components/ui/shadcn/button";
 import {
   SidebarGroup,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
-  SidebarMenuItem,
+  SidebarMenuItem
 } from "@/components/ui/shadcn/sidebar";
 import useSidebar from "@/components/ui/shadcn/sidebar-context";
-import useTheme from "@/stores/useTheme";
-import { Button } from "@/components/ui/shadcn/button";
-import ROUTES from "@/libs/utils/routes";
-import Workspaces from "./Workspaces";
-import Ontology from "./Ontology";
-import Ide from "./Ide";
-import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { useAuth } from "@/contexts/AuthContext";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import ROUTES from "@/libs/utils/routes";
+import useTheme from "@/stores/useTheme";
+import Ide from "./Ide";
+import Ontology from "./Ontology";
+import Workspaces from "./Workspaces";
 
 export function Header() {
   const location = useLocation();
@@ -30,23 +30,15 @@ export function Header() {
   const isHome = location.pathname === homeUri;
 
   return (
-    <SidebarGroup className="gap-4 pb-6 pt-2 px-2">
-      <SidebarHeader className="pb-0 pl-1-5 h-[32px] flex-row items-center justify-between">
-        <Link to={homeUri} className="flex gap-2 items-center min-w-0">
-          <img
-            src={theme === "dark" ? "/oxy-dark.svg" : "/oxy-light.svg"}
-            alt="Oxy"
-          />
-          <span className="text-sm font-medium truncate">{project.name}</span>
+    <SidebarGroup className='gap-4 px-2 pt-2 pb-6'>
+      <SidebarHeader className='h-[32px] flex-row items-center justify-between pb-0 pl-1-5'>
+        <Link to={homeUri} className='flex min-w-0 items-center gap-2'>
+          <img src={theme === "dark" ? "/oxy-dark.svg" : "/oxy-light.svg"} alt='Oxy' />
+          <span className='truncate font-medium text-sm'>{project.name}</span>
         </Link>
 
         {open && (
-          <Button
-            onClick={toggleSidebar}
-            variant="ghost"
-            className="p-0 m-0"
-            size="icon"
-          >
+          <Button onClick={toggleSidebar} variant='ghost' className='m-0 p-0' size='icon'>
             <ChevronsLeft />
           </Button>
         )}
@@ -56,7 +48,7 @@ export function Header() {
           <SidebarMenuButton asChild>
             <Link to={homeUri}>
               <DiamondPlus />
-              <span data-testid="start-new-thread">Start new thread</span>
+              <span data-testid='start-new-thread'>Start new thread</span>
             </Link>
           </SidebarMenuButton>
         </SidebarMenuItem>

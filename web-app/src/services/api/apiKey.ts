@@ -1,34 +1,27 @@
-import { apiClient } from "./axios";
-import {
+import type {
   ApiKey,
   ApiKeyListResponse,
   CreateApiKeyRequest,
-  CreateApiKeyResponse,
+  CreateApiKeyResponse
 } from "@/types/apiKey";
+import { apiClient } from "./axios";
 
 export class ApiKeyService {
   static async createApiKey(
     projectId: string,
-    request: CreateApiKeyRequest,
+    request: CreateApiKeyRequest
   ): Promise<CreateApiKeyResponse> {
-    const response = await apiClient.post<CreateApiKeyResponse>(
-      `/${projectId}/api-keys`,
-      request,
-    );
+    const response = await apiClient.post<CreateApiKeyResponse>(`/${projectId}/api-keys`, request);
     return response.data;
   }
 
   static async listApiKeys(projectId: string): Promise<ApiKeyListResponse> {
-    const response = await apiClient.get<ApiKeyListResponse>(
-      `/${projectId}/api-keys`,
-    );
+    const response = await apiClient.get<ApiKeyListResponse>(`/${projectId}/api-keys`);
     return response.data;
   }
 
   static async getApiKey(projectId: string, id: string): Promise<ApiKey> {
-    const response = await apiClient.get<ApiKey>(
-      `/${projectId}/api-keys/${id}`,
-    );
+    const response = await apiClient.get<ApiKey>(`/${projectId}/api-keys/${id}`);
     return response.data;
   }
 
@@ -47,7 +40,7 @@ export class ApiKeyService {
       month: "short",
       day: "numeric",
       hour: "2-digit",
-      minute: "2-digit",
+      minute: "2-digit"
     });
   }
 

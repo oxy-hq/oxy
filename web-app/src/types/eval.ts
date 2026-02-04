@@ -3,7 +3,7 @@ export const EVAL_METRICS_POSTFIX = "metrics";
 export enum EvalEventState {
   Started = "Started",
   Progress = "Progress",
-  Finished = "Finished",
+  Finished = "Finished"
 }
 
 export interface TestStreamMessage {
@@ -39,7 +39,7 @@ export interface RecallRecord {
 
 export enum MetricKind {
   Similarity = "Similarity",
-  Recall = "Recall",
+  Recall = "Recall"
 }
 
 export type SimilarityMetric = {

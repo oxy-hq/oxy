@@ -1,14 +1,14 @@
-import { ThreadService } from "@/services/api";
 import { useQuery } from "@tanstack/react-query";
-import queryKeys from "../queryKey";
-import { ThreadItem } from "@/types/chat";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { ThreadService } from "@/services/api";
+import type { ThreadItem } from "@/types/chat";
+import queryKeys from "../queryKey";
 
 const useThread = (
   threadId: string,
   enabled = true,
   refetchOnWindowFocus = true,
-  refetchOnMount: boolean | "always" = false,
+  refetchOnMount: boolean | "always" = false
 ) => {
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
@@ -17,7 +17,7 @@ const useThread = (
     queryFn: () => ThreadService.getThread(projectId, threadId),
     enabled,
     refetchOnWindowFocus,
-    refetchOnMount,
+    refetchOnMount
   });
 };
 

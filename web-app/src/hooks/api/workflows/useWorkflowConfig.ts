@@ -1,20 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import queryKeys from "../queryKey";
-import { WorkflowService } from "@/services/api";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
-import { TaskConfig } from "@/stores/useWorkflow.ts";
+import { WorkflowService } from "@/services/api";
+import type { TaskConfig } from "@/stores/useWorkflow.ts";
+import queryKeys from "../queryKey";
 
-const fetchWorkflow = async (
-  projectId: string,
-  branchName: string,
-  relative_path: string,
-) => {
+const fetchWorkflow = async (projectId: string, branchName: string, relative_path: string) => {
   const pathb64 = btoa(relative_path);
-  const workflowConfig = await WorkflowService.getWorkflow(
-    projectId,
-    branchName,
-    pathb64,
-  );
+  const workflowConfig = await WorkflowService.getWorkflow(projectId, branchName, pathb64);
 
   const deepFlatten = (task: TaskConfig): TaskConfig[] => {
     if (task.type === "loop_sequential") {
@@ -31,8 +23,8 @@ const fetchWorkflow = async (
         fetchWorkflow(projectId, branchName, task.src).then((subWorkflow) => {
           task.tasks = subWorkflow.tasks;
           return task;
-        }),
-      ),
+        })
+      )
   );
 
   return workflowConfig;
@@ -44,7 +36,7 @@ const useWorkflowConfig = (relative_path: string) => {
     queryKey: queryKeys.workflow.get(project.id, branchName, relative_path),
     queryFn: () => fetchWorkflow(project.id, branchName, relative_path),
     enabled: true,
-    retry: false,
+    retry: false
   });
 };
 

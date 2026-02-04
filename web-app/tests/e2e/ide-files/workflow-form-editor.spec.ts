@@ -1,11 +1,8 @@
-import { test, expect, Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { IDEPage } from "../pages/IDEPage";
 
 // Helper function to open a workflow file
-async function openWorkflowFile(
-  page: Page,
-  mode: "files" | "objects" = "files",
-) {
+async function openWorkflowFile(page: Page, mode: "files" | "objects" = "files") {
   if (mode === "objects") {
     await page.getByRole("tab", { name: "Objects" }).click();
     await page.waitForTimeout(500);
@@ -34,7 +31,7 @@ async function openWorkflowFile(
 
     const workflowsFolder = page.getByRole("button", {
       name: "workflows",
-      exact: true,
+      exact: true
     });
 
     if (await workflowsFolder.isVisible()) {
@@ -62,7 +59,7 @@ test.describe("IDE Files - Workflow Form Editor - Mode Switching", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -87,9 +84,7 @@ test.describe("IDE Files - Workflow Form Editor - Mode Switching", () => {
   });
 
   // 7.2 Open in Files mode → Output default
-  test("7.2 - should default to Output view in Files mode", async ({
-    page,
-  }) => {
+  test("7.2 - should default to Output view in Files mode", async ({ page }) => {
     const opened = await openWorkflowFile(page, "files");
     if (!opened) {
       test.skip();
@@ -116,7 +111,7 @@ test.describe("IDE Files - Workflow Form Editor - Mode Switching", () => {
 
     const workflowsFolder = page.getByRole("button", {
       name: "workflows",
-      exact: true,
+      exact: true
     });
     if (await workflowsFolder.isVisible()) {
       await workflowsFolder.click();
@@ -141,16 +136,14 @@ test.describe("IDE Files - Workflow Form Editor - Mode Switching", () => {
   });
 
   // 7.4 URL with ?run=<id>
-  test("7.4 - should load specific run from URL parameter", async ({
-    page,
-  }) => {
+  test("7.4 - should load specific run from URL parameter", async ({ page }) => {
     const idePage = new IDEPage(page);
     await page.getByRole("tab", { name: "Files" }).click();
     await idePage.verifyFilesMode();
 
     const workflowsFolder = page.getByRole("button", {
       name: "workflows",
-      exact: true,
+      exact: true
     });
     if (await workflowsFolder.isVisible()) {
       await workflowsFolder.click();
@@ -167,7 +160,7 @@ test.describe("IDE Files - Workflow Form Editor - Mode Switching", () => {
 
         // Navigate with run parameter
         const currentUrl = page.url();
-        await page.goto(currentUrl + "?run=1");
+        await page.goto(`${currentUrl}?run=1`);
         await page.waitForLoadState("networkidle");
       }
     }
@@ -186,7 +179,7 @@ test.describe("IDE Files - Workflow Form Editor - Basic Fields", () => {
   test("7.7 - should save workflow name", async ({ page }) => {
     const workflowsFolder = page.getByRole("button", {
       name: "workflows",
-      exact: true,
+      exact: true
     });
     if (await workflowsFolder.isVisible()) {
       await workflowsFolder.click();
@@ -229,7 +222,7 @@ test.describe("IDE Files - Workflow Form Editor - Tasks", () => {
   test("7.10 - should add agent task with default fields", async ({ page }) => {
     const workflowsFolder = page.getByRole("button", {
       name: "workflows",
-      exact: true,
+      exact: true
     });
     if (await workflowsFolder.isVisible()) {
       await workflowsFolder.click();
@@ -250,7 +243,7 @@ test.describe("IDE Files - Workflow Form Editor - Tasks", () => {
           await page.waitForTimeout(500);
 
           const addTaskButton = page.getByRole("button", {
-            name: /add.*task/i,
+            name: /add.*task/i
           });
           if (await addTaskButton.isVisible()) {
             await addTaskButton.click();
@@ -262,12 +255,10 @@ test.describe("IDE Files - Workflow Form Editor - Tasks", () => {
   });
 
   // 7.11 Add execute_sql task
-  test("7.11 - should show SQL field for execute_sql task", async ({
-    page,
-  }) => {
+  test("7.11 - should show SQL field for execute_sql task", async ({ page }) => {
     const workflowsFolder = page.getByRole("button", {
       name: "workflows",
-      exact: true,
+      exact: true
     });
     if (await workflowsFolder.isVisible()) {
       await workflowsFolder.click();
@@ -304,7 +295,7 @@ test.describe("IDE Files - Workflow Form Editor - Tasks", () => {
   test("7.20 - should handle adding many tasks", async ({ page }) => {
     const workflowsFolder = page.getByRole("button", {
       name: "workflows",
-      exact: true,
+      exact: true
     });
     if (await workflowsFolder.isVisible()) {
       await workflowsFolder.click();
@@ -325,7 +316,7 @@ test.describe("IDE Files - Workflow Form Editor - Tasks", () => {
           await page.waitForTimeout(500);
 
           const addTaskButton = page.getByRole("button", {
-            name: /add.*task/i,
+            name: /add.*task/i
           });
           if (await addTaskButton.isVisible()) {
             // Add multiple tasks
@@ -355,7 +346,7 @@ test.describe("IDE Files - Workflow Form Editor - Task Name Validation", () => {
   test("7.23 - should accept valid task name format", async ({ page }) => {
     const workflowsFolder = page.getByRole("button", {
       name: "workflows",
-      exact: true,
+      exact: true
     });
     if (await workflowsFolder.isVisible()) {
       await workflowsFolder.click();
@@ -388,12 +379,10 @@ test.describe("IDE Files - Workflow Form Editor - Task Name Validation", () => {
   });
 
   // 7.25 Task name: "1task" (starts with number)
-  test("7.25 - should invalidate task name starting with number", async ({
-    page,
-  }) => {
+  test("7.25 - should invalidate task name starting with number", async ({ page }) => {
     const workflowsFolder = page.getByRole("button", {
       name: "workflows",
-      exact: true,
+      exact: true
     });
     if (await workflowsFolder.isVisible()) {
       await workflowsFolder.click();
@@ -440,7 +429,7 @@ test.describe("IDE Files - Workflow Form Editor - Variables", () => {
   test("7.41 - should show Monaco editor for variables", async ({ page }) => {
     const workflowsFolder = page.getByRole("button", {
       name: "workflows",
-      exact: true,
+      exact: true
     });
     if (await workflowsFolder.isVisible()) {
       await workflowsFolder.click();
@@ -484,7 +473,7 @@ test.describe("IDE Files - Workflow Form Editor - Run History", () => {
   test("7.48 - should paginate through run history", async ({ page }) => {
     const workflowsFolder = page.getByRole("button", {
       name: "workflows",
-      exact: true,
+      exact: true
     });
     if (await workflowsFolder.isVisible()) {
       await workflowsFolder.click();
@@ -505,9 +494,7 @@ test.describe("IDE Files - Workflow Form Editor - Run History", () => {
           await page.waitForTimeout(1000);
 
           // Look for pagination controls
-          const pagination = page.locator(
-            '[data-testid*="pagination"], .pagination',
-          );
+          const pagination = page.locator('[data-testid*="pagination"], .pagination');
           const hasPagination = await pagination.isVisible().catch(() => false);
           // May or may not have runs to paginate
           expect(hasPagination || true).toBeTruthy();
@@ -520,7 +507,7 @@ test.describe("IDE Files - Workflow Form Editor - Run History", () => {
   test("7.49 - should update URL when clicking a run", async ({ page }) => {
     const workflowsFolder = page.getByRole("button", {
       name: "workflows",
-      exact: true,
+      exact: true
     });
     if (await workflowsFolder.isVisible()) {
       await workflowsFolder.click();
@@ -541,9 +528,7 @@ test.describe("IDE Files - Workflow Form Editor - Run History", () => {
           await page.waitForTimeout(1000);
 
           // Look for run list
-          const runItem = page
-            .locator('[data-testid*="run-item"], .run-item')
-            .first();
+          const runItem = page.locator('[data-testid*="run-item"], .run-item').first();
           if (await runItem.isVisible()) {
             await runItem.click();
             await page.waitForTimeout(500);

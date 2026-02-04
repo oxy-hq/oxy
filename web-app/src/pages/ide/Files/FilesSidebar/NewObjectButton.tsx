@@ -1,40 +1,33 @@
-import React, { useState, useRef, useEffect } from "react";
-import {
-  Plus,
-  Bot,
-  Workflow,
-  Eye,
-  BookOpen,
-  AppWindow,
-  Layers2,
-} from "lucide-react";
+import { AppWindow, BookOpen, Bot, Eye, Layers2, Plus, Workflow } from "lucide-react";
+import type React from "react";
+import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/shadcn/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from "@/components/ui/shadcn/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuTrigger,
   DropdownMenuSub,
-  DropdownMenuSubTrigger,
   DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger
 } from "@/components/ui/shadcn/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/shadcn/dialog";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import useCreateFile from "@/hooks/api/files/useCreateFile";
-import useSaveFile from "@/hooks/api/files/useSaveFile";
 import useFileTree from "@/hooks/api/files/useFileTree";
-import { useNavigate } from "react-router-dom";
-import ROUTES from "@/libs/utils/routes";
+import useSaveFile from "@/hooks/api/files/useSaveFile";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
-import { FileTreeModel } from "@/types/file";
-import { toast } from "sonner";
+import ROUTES from "@/libs/utils/routes";
+import type { FileTreeModel } from "@/types/file";
 
 type ObjectType = "agent" | "workflow" | "view" | "topic" | "app";
 
@@ -59,7 +52,7 @@ system_instructions: |
   You are a helpful assistant.
 
 tools: []
-`,
+`
   },
   {
     type: "workflow",
@@ -70,7 +63,7 @@ tools: []
 description: ""
 
 tasks: []
-`,
+`
   },
   {
     type: "app",
@@ -80,8 +73,8 @@ tasks: []
     defaultContent: `tasks:
 
 display:
-`,
-  },
+`
+  }
 ];
 
 const SEMANTIC_LAYER_CONFIGS: ObjectTypeConfig[] = [
@@ -100,7 +93,7 @@ dimensions: []
 measures: []
 
 entities: []
-`,
+`
   },
   {
     type: "topic",
@@ -111,8 +104,8 @@ entities: []
 description: ""
 
 views: []
-`,
-  },
+`
+  }
 ];
 
 interface NewObjectButtonProps {
@@ -120,9 +113,7 @@ interface NewObjectButtonProps {
 }
 
 const NewObjectButton: React.FC<NewObjectButtonProps> = ({ disabled }) => {
-  const [selectedType, setSelectedType] = useState<ObjectTypeConfig | null>(
-    null,
-  );
+  const [selectedType, setSelectedType] = useState<ObjectTypeConfig | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [fileName, setFileName] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -202,7 +193,7 @@ const NewObjectButton: React.FC<NewObjectButtonProps> = ({ disabled }) => {
       // Then save the default content
       await saveFile.mutateAsync({
         pathb64,
-        data: selectedType.defaultContent,
+        data: selectedType.defaultContent
       });
 
       // Refresh file tree
@@ -217,10 +208,7 @@ const NewObjectButton: React.FC<NewObjectButtonProps> = ({ disabled }) => {
       navigate(ROUTES.PROJECT(project.id).IDE.FILES.FILE(pathb64));
     } catch (err) {
       toast.error("Failed to create file", {
-        description:
-          err instanceof Error
-            ? err.message
-            : "There was a problem creating the file.",
+        description: err instanceof Error ? err.message : "There was a problem creating the file."
       });
       console.error("Failed to create file:", err);
     } finally {
@@ -240,37 +228,31 @@ const NewObjectButton: React.FC<NewObjectButtonProps> = ({ disabled }) => {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
-            variant="ghost"
-            size="sm"
+            variant='ghost'
+            size='sm'
             disabled={disabled}
             tooltip={disabled ? "Read-only mode" : "New Object"}
           >
-            <Plus className="h-4 w-4" />
+            <Plus className='h-4 w-4' />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
+        <DropdownMenuContent align='start'>
           {OBJECT_TYPE_CONFIGS.map((config) => (
-            <DropdownMenuItem
-              key={config.type}
-              onClick={() => handleTypeSelect(config)}
-            >
-              <config.icon className="mr-2 h-4 w-4" />
+            <DropdownMenuItem key={config.type} onClick={() => handleTypeSelect(config)}>
+              <config.icon className='mr-2 h-4 w-4' />
               {config.label}
             </DropdownMenuItem>
           ))}
           <DropdownMenuSub>
-            <DropdownMenuSubTrigger className="px-3 py-2">
-              <Layers2 className="mr-4 h-4 w-4" />
+            <DropdownMenuSubTrigger className='px-3 py-2'>
+              <Layers2 className='mr-4 h-4 w-4' />
               Semantic Layer
-              <div className="mr-2"></div>
+              <div className='mr-2'></div>
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
               {SEMANTIC_LAYER_CONFIGS.map((config) => (
-                <DropdownMenuItem
-                  key={config.type}
-                  onClick={() => handleTypeSelect(config)}
-                >
-                  <config.icon className="mr-2 h-4 w-4" />
+                <DropdownMenuItem key={config.type} onClick={() => handleTypeSelect(config)}>
+                  <config.icon className='mr-2 h-4 w-4' />
                   {config.label}
                 </DropdownMenuItem>
               ))}
@@ -280,19 +262,19 @@ const NewObjectButton: React.FC<NewObjectButtonProps> = ({ disabled }) => {
       </DropdownMenu>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className='sm:max-w-md'>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              {selectedType && <selectedType.icon className="h-5 w-5" />}
+            <DialogTitle className='flex items-center gap-2'>
+              {selectedType && <selectedType.icon className='h-5 w-5' />}
               New {selectedType?.label}
             </DialogTitle>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="fileName">Name</Label>
-              <div className="flex items-center gap-2">
+          <div className='grid gap-4 py-4'>
+            <div className='grid gap-2'>
+              <Label htmlFor='fileName'>Name</Label>
+              <div className='flex items-center gap-2'>
                 <Input
-                  id="fileName"
+                  id='fileName'
                   ref={inputRef}
                   value={fileName}
                   onChange={(e) => {
@@ -300,28 +282,21 @@ const NewObjectButton: React.FC<NewObjectButtonProps> = ({ disabled }) => {
                     setError(null);
                   }}
                   onKeyDown={handleKeyDown}
-                  placeholder="my-file"
+                  placeholder='my-file'
                   className={error ? "border-destructive" : ""}
                 />
-                <span className="text-sm text-muted-foreground whitespace-nowrap">
+                <span className='whitespace-nowrap text-muted-foreground text-sm'>
                   {selectedType?.extension}
                 </span>
               </div>
-              {error && <p className="text-sm text-destructive">{error}</p>}
+              {error && <p className='text-destructive text-sm'>{error}</p>}
             </div>
           </div>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setDialogOpen(false)}
-              disabled={isCreating}
-            >
+            <Button variant='outline' onClick={() => setDialogOpen(false)} disabled={isCreating}>
               Cancel
             </Button>
-            <Button
-              onClick={handleCreate}
-              disabled={isCreating || !fileName.trim()}
-            >
+            <Button onClick={handleCreate} disabled={isCreating || !fileName.trim()}>
               {isCreating ? "Creating..." : "Create"}
             </Button>
           </DialogFooter>

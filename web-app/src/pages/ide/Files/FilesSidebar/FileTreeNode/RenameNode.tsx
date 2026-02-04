@@ -1,14 +1,13 @@
-import { FileTreeModel } from "@/types/file";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, File } from "lucide-react";
 import React from "react";
-import useRenameFolder from "@/hooks/api/files/useRenameFolder";
 import { useLocation, useNavigate } from "react-router-dom";
-import useRenameFile from "@/hooks/api/files/useRenameFile";
-import { File } from "lucide-react";
-import useFileTree from "@/hooks/api/files/useFileTree";
 import { toast } from "sonner";
-import ROUTES from "@/libs/utils/routes";
+import useFileTree from "@/hooks/api/files/useFileTree";
+import useRenameFile from "@/hooks/api/files/useRenameFile";
+import useRenameFolder from "@/hooks/api/files/useRenameFolder";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import ROUTES from "@/libs/utils/routes";
+import type { FileTreeModel } from "@/types/file";
 
 interface RenameNodeProps {
   fileTree: FileTreeModel;
@@ -48,10 +47,7 @@ const RenameNode = React.forwardRef<HTMLInputElement, RenameNodeProps>(
     const handleRename = async () => {
       if (editingName !== fileTree.name) {
         try {
-          const dirPath = fileTree.path.substring(
-            0,
-            fileTree.path.lastIndexOf("/") + 1,
-          );
+          const dirPath = fileTree.path.substring(0, fileTree.path.lastIndexOf("/") + 1);
           const newPath = dirPath + editingName;
 
           if (!onValidateName(newPath)) {
@@ -62,12 +58,12 @@ const RenameNode = React.forwardRef<HTMLInputElement, RenameNodeProps>(
           if (isDir) {
             await renameFolder.mutateAsync({
               pathb64: btoa(fileTree.path),
-              newName: newPath,
+              newName: newPath
             });
           } else {
             await renameFile.mutateAsync({
               pathb64: btoa(fileTree.path),
-              newName: newPath,
+              newName: newPath
             });
           }
           const currentPath = atob(pathname.split("/").pop() ?? "");
@@ -80,7 +76,7 @@ const RenameNode = React.forwardRef<HTMLInputElement, RenameNodeProps>(
           onRenamed();
         } catch (error) {
           toast.error("Failed to rename", {
-            description: "There was a problem with your request.",
+            description: "There was a problem with your request."
           });
           console.error("Failed to rename:", error);
           setEditingName(fileTree.name);
@@ -100,18 +96,14 @@ const RenameNode = React.forwardRef<HTMLInputElement, RenameNodeProps>(
     };
 
     return (
-      <div className="flex flex-col w-full">
-        <div className="flex items-center gap-2 w-full text-sm p-2">
-          {isDir ? (
-            <ChevronRight className="h-4 w-4" />
-          ) : (
-            <File className="h-4 w-4" />
-          )}
-          <div className="relative flex-1">
+      <div className='flex w-full flex-col'>
+        <div className='flex w-full items-center gap-2 p-2 text-sm'>
+          {isDir ? <ChevronRight className='h-4 w-4' /> : <File className='h-4 w-4' />}
+          <div className='relative flex-1'>
             <input
               ref={ref}
               onBlur={onCancel}
-              className={`w-full bg-transparent border border-2 shadow-none outline-none ${
+              className={`w-full border border-2 bg-transparent shadow-none outline-none ${
                 error ? "border-red-500" : "border-gray-600"
               }`}
               value={editingName}
@@ -122,7 +114,7 @@ const RenameNode = React.forwardRef<HTMLInputElement, RenameNodeProps>(
               onKeyDown={handleKeyDown}
             />
             {error && (
-              <div className="text-xs text-white absolute left-0 top-full w-full z-10 bg-red-500 p-1">
+              <div className='absolute top-full left-0 z-10 w-full bg-red-500 p-1 text-white text-xs'>
                 A {isDir ? "folder" : "file"} with this name already exists
               </div>
             )}
@@ -130,7 +122,7 @@ const RenameNode = React.forwardRef<HTMLInputElement, RenameNodeProps>(
         </div>
       </div>
     );
-  },
+  }
 );
 
 export default RenameNode;

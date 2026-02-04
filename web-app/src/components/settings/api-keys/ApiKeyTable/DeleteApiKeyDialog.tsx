@@ -1,4 +1,4 @@
-import React from "react";
+import type React from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -7,10 +7,10 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialogTitle
 } from "@/components/ui/shadcn/alert-dialog";
-import { ApiKey } from "@/types/apiKey";
 import { buttonVariants } from "@/components/ui/shadcn/utils/button-variants";
+import type { ApiKey } from "@/types/apiKey";
 
 interface Props {
   open: boolean;
@@ -19,21 +19,15 @@ interface Props {
   onConfirm: () => void;
 }
 
-const DeleteApiKeyDialog: React.FC<Props> = ({
-  open,
-  onOpenChange,
-  apiKey,
-  onConfirm,
-}) => {
+const DeleteApiKeyDialog: React.FC<Props> = ({ open, onOpenChange, apiKey, onConfirm }) => {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent className="sm:max-w-md bg-neutral-900">
+      <AlertDialogContent className='bg-neutral-900 sm:max-w-md'>
         <AlertDialogHeader>
           <AlertDialogTitle>Revoke API Key</AlertDialogTitle>
           <AlertDialogDescription>
-            Are you sure you want to revoke "{apiKey?.name}"? This action cannot
-            be undone, and any applications using this API key will lose access
-            immediately.
+            Are you sure you want to revoke "{apiKey?.name}"? This action cannot be undone, and any
+            applications using this API key will lose access immediately.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

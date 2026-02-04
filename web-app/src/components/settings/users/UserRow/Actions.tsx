@@ -1,13 +1,6 @@
-import React, { useState } from "react";
-import { Button } from "@/components/ui/shadcn/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/shadcn/dropdown-menu";
-import { MoreHorizontal, Trash2, Loader2, RotateCcw } from "lucide-react";
-import { UserInfo } from "@/types/auth";
+import { Loader2, MoreHorizontal, RotateCcw, Trash2 } from "lucide-react";
+import type React from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -17,21 +10,26 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialogTitle
 } from "@/components/ui/shadcn/alert-dialog";
-import { buttonVariants } from "@/components/ui/shadcn/utils/button-variants";
+import { Button } from "@/components/ui/shadcn/button";
 import {
-  useRemoveUser,
-  useUpdateUserRole,
-} from "@/hooks/api/users/useUserMutations";
-import useCurrentUser from "@/hooks/api/users/useCurrentUser";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from "@/components/ui/shadcn/dropdown-menu";
 import {
   Select,
-  SelectTrigger,
-  SelectValue,
   SelectContent,
   SelectItem,
+  SelectTrigger,
+  SelectValue
 } from "@/components/ui/shadcn/select";
+import { buttonVariants } from "@/components/ui/shadcn/utils/button-variants";
+import useCurrentUser from "@/hooks/api/users/useCurrentUser";
+import { useRemoveUser, useUpdateUserRole } from "@/hooks/api/users/useUserMutations";
+import type { UserInfo } from "@/types/auth";
 
 interface Props {
   user: UserInfo;
@@ -65,7 +63,7 @@ const Actions: React.FC<Props> = ({ user, workspaceId }) => {
       onError: () => {
         toast.error("Failed to delete user");
         setIsDeleting(false);
-      },
+      }
     });
   };
 
@@ -84,8 +82,8 @@ const Actions: React.FC<Props> = ({ user, workspaceId }) => {
         },
         onError: () => {
           toast.error("Failed to update user role");
-        },
-      },
+        }
+      }
     );
   };
 
@@ -93,43 +91,29 @@ const Actions: React.FC<Props> = ({ user, workspaceId }) => {
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="sm" disabled={isDeleting}>
-            {isDeleting ? (
-              <Loader2 className="animate-spin" />
-            ) : (
-              <MoreHorizontal />
-            )}
+          <Button variant='ghost' size='sm' disabled={isDeleting}>
+            {isDeleting ? <Loader2 className='animate-spin' /> : <MoreHorizontal />}
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem
-            className="cursor-pointer"
-            onClick={handleOpenDeleteDialog}
-          >
-            <Trash2 className="text-destructive" />
+        <DropdownMenuContent align='end'>
+          <DropdownMenuItem className='cursor-pointer' onClick={handleOpenDeleteDialog}>
+            <Trash2 className='text-destructive' />
             Remove User
           </DropdownMenuItem>
-          <DropdownMenuItem
-            className="cursor-pointer"
-            onClick={handleOpenRoleDialog}
-          >
-            <RotateCcw className="mr-2" />
+          <DropdownMenuItem className='cursor-pointer' onClick={handleOpenRoleDialog}>
+            <RotateCcw className='mr-2' />
             Change Role
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      <AlertDialog
-        open={isRemoveUserAlertOpen}
-        onOpenChange={setIsRemoveUserAlertOpen}
-      >
-        <AlertDialogContent className="sm:max-w-md bg-neutral-900">
+      <AlertDialog open={isRemoveUserAlertOpen} onOpenChange={setIsRemoveUserAlertOpen}>
+        <AlertDialogContent className='bg-neutral-900 sm:max-w-md'>
           <AlertDialogHeader>
             <AlertDialogTitle>Remove User from Workspace</AlertDialogTitle>
             <AlertDialogDescription>
               Are you sure you want to remove user{" "}
-              <span className="font-semibold">{user.name}</span>? This action
-              cannot be undone. If the user is currently active, they will be
-              logged out immediately.
+              <span className='font-semibold'>{user.name}</span>? This action cannot be undone. If
+              the user is currently active, they will be logged out immediately.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -138,34 +122,27 @@ const Actions: React.FC<Props> = ({ user, workspaceId }) => {
               onClick={onConfirmDelete}
               className={buttonVariants({ variant: "destructive" })}
             >
-              {removeUserMutation.isPending ? (
-                <Loader2 className="animate-spin" />
-              ) : (
-                "Remove"
-              )}
+              {removeUserMutation.isPending ? <Loader2 className='animate-spin' /> : "Remove"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
       <AlertDialog open={isRoleDialogOpen} onOpenChange={setIsRoleDialogOpen}>
-        <AlertDialogContent className="sm:max-w-md bg-neutral-900">
+        <AlertDialogContent className='bg-neutral-900 sm:max-w-md'>
           <AlertDialogHeader>
             <AlertDialogTitle>Change User Role</AlertDialogTitle>
             <AlertDialogDescription>
-              Select a new role for{" "}
-              <span className="font-semibold">{user.name}</span>.
+              Select a new role for <span className='font-semibold'>{user.name}</span>.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="my-4">
+          <div className='my-4'>
             <Select
               value={selectedRole}
-              onValueChange={(value) =>
-                setSelectedRole(value as typeof user.role)
-              }
+              onValueChange={(value) => setSelectedRole(value as typeof user.role)}
               disabled={user.role === "owner"}
             >
-              <SelectTrigger id="role">
-                <SelectValue placeholder="Select role" />
+              <SelectTrigger id='role'>
+                <SelectValue placeholder='Select role' />
               </SelectTrigger>
               <SelectContent>
                 {roleOptions.map((role) => (
@@ -185,12 +162,10 @@ const Actions: React.FC<Props> = ({ user, workspaceId }) => {
             <AlertDialogAction
               onClick={onConfirmRoleUpdate}
               className={buttonVariants({ variant: "default" })}
-              disabled={
-                selectedRole === user.role || updateUserRoleMutation.isPending
-              }
+              disabled={selectedRole === user.role || updateUserRoleMutation.isPending}
             >
               {updateUserRoleMutation.isPending ? (
-                <Loader2 className="animate-spin" />
+                <Loader2 className='animate-spin' />
               ) : (
                 "Update Role"
               )}

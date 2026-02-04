@@ -1,4 +1,4 @@
-import { Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
 
 /**
  * Snapshot/Restore System for Editor Tests
@@ -51,7 +51,7 @@ export async function captureFileTree(page: Page): Promise<void> {
 
     // Get all file and folder links
     const fileLinks = page.locator(
-      '[data-testid*="file-tree"] a, [data-testid*="file-tree"] button',
+      '[data-testid*="file-tree"] a, [data-testid*="file-tree"] button'
     );
     const count = await fileLinks.count();
 
@@ -60,11 +60,11 @@ export async function captureFileTree(page: Page): Promise<void> {
       const name = await link.textContent().catch(() => "");
       const href = await link.getAttribute("href").catch(() => null);
 
-      if (name && name.trim()) {
+      if (name?.trim()) {
         const node: FileTreeNode = {
           name: name.trim(),
           path: href || name.trim(),
-          isFolder: !href, // Folders don't have href
+          isFolder: !href // Folders don't have href
         };
         fileTreeSnapshot.set(node.path, node);
       }
@@ -95,7 +95,7 @@ export async function restoreFileTree(page: Page): Promise<void> {
     // Get current file tree
     const currentFiles = new Set<string>();
     const fileLinks = page.locator(
-      '[data-testid*="file-tree"] a, [data-testid*="file-tree"] button',
+      '[data-testid*="file-tree"] a, [data-testid*="file-tree"] button'
     );
     const count = await fileLinks.count();
 
@@ -109,13 +109,11 @@ export async function restoreFileTree(page: Page): Promise<void> {
 
     // Find deleted files (in snapshot but not in current)
     const deletedFiles = Array.from(fileTreeSnapshot.values()).filter(
-      (node) => !currentFiles.has(node.path),
+      (node) => !currentFiles.has(node.path)
     );
 
     // Find created files (in current but not in snapshot)
-    const createdPaths = Array.from(currentFiles).filter(
-      (path) => !fileTreeSnapshot.has(path),
-    );
+    const createdPaths = Array.from(currentFiles).filter((path) => !fileTreeSnapshot.has(path));
 
     // Recreate deleted files
     for (const deletedFile of deletedFiles) {
@@ -128,7 +126,7 @@ export async function restoreFileTree(page: Page): Promise<void> {
     }
 
     console.log(
-      `✅ File tree restored (${deletedFiles.length} recreated, ${createdPaths.length} deleted)`,
+      `✅ File tree restored (${deletedFiles.length} recreated, ${createdPaths.length} deleted)`
     );
   } catch (error) {
     console.warn("⚠️ Could not restore file tree:", error);
@@ -138,14 +136,9 @@ export async function restoreFileTree(page: Page): Promise<void> {
 /**
  * Recreate a deleted file or folder through UI
  */
-async function recreateFileOrFolder(
-  page: Page,
-  node: FileTreeNode,
-): Promise<void> {
+async function recreateFileOrFolder(page: Page, node: FileTreeNode): Promise<void> {
   try {
-    console.log(
-      `🔄 Recreating ${node.isFolder ? "folder" : "file"}: ${node.name}`,
-    );
+    console.log(`🔄 Recreating ${node.isFolder ? "folder" : "file"}: ${node.name}`);
 
     // Click the appropriate "New" button
     const newButton = node.isFolder
@@ -157,9 +150,7 @@ async function recreateFileOrFolder(
       await page.waitForTimeout(500);
 
       // Enter the name
-      const nameInput = page
-        .locator('input[placeholder*="name"], input[type="text"]')
-        .first();
+      const nameInput = page.locator('input[placeholder*="name"], input[type="text"]').first();
       if (await nameInput.isVisible({ timeout: 1000 }).catch(() => false)) {
         await nameInput.fill(node.name);
         await page.keyboard.press("Enter");
@@ -182,9 +173,7 @@ async function deleteFileOrFolder(page: Page, path: string): Promise<void> {
     console.log(`🗑️ Deleting: ${name}`);
 
     // Find the file/folder and right-click
-    const target = page
-      .locator(`a[href*="${path}"], button:has-text("${name}")`)
-      .first();
+    const target = page.locator(`a[href*="${path}"], button:has-text("${name}")`).first();
 
     if (await target.isVisible({ timeout: 1000 }).catch(() => false)) {
       await target.click({ button: "right" });
@@ -198,11 +187,9 @@ async function deleteFileOrFolder(page: Page, path: string): Promise<void> {
 
         // Confirm deletion
         const confirmButton = page.getByRole("button", {
-          name: /confirm|delete|yes/i,
+          name: /confirm|delete|yes/i
         });
-        if (
-          await confirmButton.isVisible({ timeout: 2000 }).catch(() => false)
-        ) {
+        if (await confirmButton.isVisible({ timeout: 2000 }).catch(() => false)) {
           await confirmButton.click();
           await page.waitForTimeout(500);
           console.log(`✅ Deleted: ${name}`);
@@ -248,7 +235,7 @@ export async function saveFileSnapshot(page: Page): Promise<void> {
       filePath,
       content: content || "",
       exists: true,
-      url,
+      url
     };
 
     fileSnapshots.set(filePath, snapshot);
@@ -303,10 +290,7 @@ export async function restoreFileSnapshot(page: Page): Promise<void> {
 /**
  * Restore file content to original state
  */
-async function restoreFileContent(
-  page: Page,
-  snapshot: FileSnapshot,
-): Promise<void> {
+async function restoreFileContent(page: Page, snapshot: FileSnapshot): Promise<void> {
   try {
     const editor = page.locator(".monaco-editor .view-lines").first();
 
@@ -356,9 +340,7 @@ async function checkFileExists(page: Page, fileName: string): Promise<boolean> {
     }
 
     // Check if file is in tree
-    const fileLink = page
-      .locator(`a[href*="/ide/"]:visible`)
-      .filter({ hasText: fileName });
+    const fileLink = page.locator(`a[href*="/ide/"]:visible`).filter({ hasText: fileName });
     return await fileLink.isVisible({ timeout: 1000 }).catch(() => false);
   } catch {
     return false;
@@ -381,7 +363,7 @@ async function recreateFile(page: Page, snapshot: FileSnapshot): Promise<void> {
 
     // Find new file button
     const newFileButton = page.getByRole("button", {
-      name: /new file|create file/i,
+      name: /new file|create file/i
     });
     if (await newFileButton.isVisible({ timeout: 1000 }).catch(() => false)) {
       await newFileButton.click();
@@ -459,9 +441,7 @@ export async function discardUnsavedChanges(page: Page): Promise<void> {
     const dialogDiscardButton = page
       .locator('[role="dialog"]')
       .getByRole("button", { name: /discard|don't save/i });
-    if (
-      await dialogDiscardButton.isVisible({ timeout: 500 }).catch(() => false)
-    ) {
+    if (await dialogDiscardButton.isVisible({ timeout: 500 }).catch(() => false)) {
       await dialogDiscardButton.click();
       await page.waitForTimeout(500);
     }
@@ -481,9 +461,7 @@ export async function reloadFileFromDisk(page: Page): Promise<void> {
     }
 
     // Alternative: Close and reopen file (discards both saved and unsaved changes)
-    const closeButton = page
-      .locator('[aria-label*="close"], button[title*="Close"]')
-      .first();
+    const closeButton = page.locator('[aria-label*="close"], button[title*="Close"]').first();
     if (await closeButton.isVisible({ timeout: 1000 }).catch(() => false)) {
       await closeButton.click();
       await page.waitForTimeout(500);
@@ -499,9 +477,7 @@ export async function reloadFileFromDisk(page: Page): Promise<void> {
 export async function closeAllFiles(page: Page): Promise<void> {
   try {
     // Close all tabs
-    const closeTabs = page.locator(
-      '[aria-label*="close"], button[title*="Close"]',
-    );
+    const closeTabs = page.locator('[aria-label*="close"], button[title*="Close"]');
     const count = await closeTabs.count();
     for (let i = 0; i < Math.min(count, 10); i++) {
       const closeButton = closeTabs.first();

@@ -1,25 +1,21 @@
-import { useState, useMemo, useCallback } from "react";
-import { Button } from "@/components/ui/shadcn/button";
+import { Eye, EyeOff, LayoutGrid, List, Map, ScatterChart } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/shadcn/badge";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/shadcn/tooltip";
-import {
-  ResizablePanelGroup,
-  ResizablePanel,
-  ResizableHandle,
-} from "@/components/ui/shadcn/resizable";
+import { Button } from "@/components/ui/shadcn/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle,
+  CardTitle
 } from "@/components/ui/shadcn/card";
-import { Eye, EyeOff, List, ScatterChart, LayoutGrid, Map } from "lucide-react";
-import type { ClusterSummary, ClusterMapPoint } from "@/services/api/traces";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup
+} from "@/components/ui/shadcn/resizable";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/tooltip";
+import type { ClusterMapPoint, ClusterSummary } from "@/services/api/traces";
 import QuestionDetailPanel from "./QuestionDetailPanel";
 import ScatterPlot from "./ScatterPlot";
 import WaffleChart from "./WaffleChart";
@@ -35,28 +31,25 @@ interface ClusterVisualizationProps {
 export default function ClusterVisualization({
   clusters,
   points,
-  clusterColorMap,
+  clusterColorMap
 }: ClusterVisualizationProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("waffle");
   const [showClusterList, setShowClusterList] = useState(true);
   const [hiddenClusters, setHiddenClusters] = useState<Set<number>>(new Set());
   const [selectedCluster, setSelectedCluster] = useState<number | null>(null);
-  const [internalSelectedPoint, setInternalSelectedPoint] =
-    useState<ClusterMapPoint | null>(null);
+  const [internalSelectedPoint, setInternalSelectedPoint] = useState<ClusterMapPoint | null>(null);
 
   const filteredPoints = useMemo(() => {
     return points.filter((p) => {
       if (hiddenClusters.has(p.clusterId)) return false;
-      if (selectedCluster !== null && p.clusterId !== selectedCluster)
-        return false;
+      if (selectedCluster !== null && p.clusterId !== selectedCluster) return false;
       return true;
     });
   }, [points, hiddenClusters, selectedCluster]);
 
   const getPointColor = useCallback(
-    (point: ClusterMapPoint) =>
-      clusterColorMap.get(point.clusterId) || "#9ca3af",
-    [clusterColorMap],
+    (point: ClusterMapPoint) => clusterColorMap.get(point.clusterId) || "#9ca3af",
+    [clusterColorMap]
   );
 
   const toggleClusterVisibility = useCallback((clusterId: number) => {
@@ -77,38 +70,35 @@ export default function ClusterVisualization({
 
   const selectedPointCluster = useMemo(() => {
     if (!internalSelectedPoint) return undefined;
-    return clusters.find(
-      (c) => c.clusterId === internalSelectedPoint.clusterId,
-    );
+    return clusters.find((c) => c.clusterId === internalSelectedPoint.clusterId);
   }, [internalSelectedPoint, clusters]);
 
   return (
-    <Card className="h-[800px] flex flex-col">
-      <CardHeader className="pb-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Map className="h-5 w-5 text-primary" />
+    <Card className='flex h-[800px] flex-col'>
+      <CardHeader className='pb-4'>
+        <div className='flex items-center justify-between'>
+          <div className='flex items-center gap-2'>
+            <Map className='h-5 w-5 text-primary' />
             <CardTitle>Cluster Visualization</CardTitle>
           </div>
-          <div className="flex items-center gap-2">
+          <div className='flex items-center gap-2'>
             {/* View Mode Toggle */}
-            <div className="flex items-center rounded-md border border-input">
+            <div className='flex items-center rounded-md border border-input'>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     variant={viewMode === "waffle" ? "secondary" : "ghost"}
-                    size="sm"
-                    className="rounded-r-none border-0 h-7"
+                    size='sm'
+                    className='h-7 rounded-r-none border-0'
                     onClick={() => setViewMode("waffle")}
                   >
-                    <LayoutGrid className="h-4 w-4" />
+                    <LayoutGrid className='h-4 w-4' />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom" className="max-w-xs">
-                  <p className="font-medium">Grid View</p>
-                  <p className="text-xs opacity-80">
-                    Display clusters as grouped grids showing success/failure
-                    status
+                <TooltipContent side='bottom' className='max-w-xs'>
+                  <p className='font-medium'>Grid View</p>
+                  <p className='text-xs opacity-80'>
+                    Display clusters as grouped grids showing success/failure status
                   </p>
                 </TooltipContent>
               </Tooltip>
@@ -116,18 +106,18 @@ export default function ClusterVisualization({
                 <TooltipTrigger asChild>
                   <Button
                     variant={viewMode === "scatter" ? "secondary" : "ghost"}
-                    size="sm"
-                    className="rounded-l-none border-0 h-7"
+                    size='sm'
+                    className='h-7 rounded-l-none border-0'
                     onClick={() => setViewMode("scatter")}
                   >
-                    <ScatterChart className="h-4 w-4" />
+                    <ScatterChart className='h-4 w-4' />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom" className="max-w-xs">
-                  <p className="font-medium">Semantic Cluster Map</p>
-                  <p className="text-xs opacity-80">
-                    Visualize queries by semantic similarity. Points closer
-                    together have similar meaning.
+                <TooltipContent side='bottom' className='max-w-xs'>
+                  <p className='font-medium'>Semantic Cluster Map</p>
+                  <p className='text-xs opacity-80'>
+                    Visualize queries by semantic similarity. Points closer together have similar
+                    meaning.
                   </p>
                 </TooltipContent>
               </Tooltip>
@@ -135,12 +125,12 @@ export default function ClusterVisualization({
 
             {/* Toggle Cluster List */}
             <Button
-              variant="outline"
-              size="sm"
-              className="h-7"
+              variant='outline'
+              size='sm'
+              className='h-7'
               onClick={() => setShowClusterList(!showClusterList)}
             >
-              <List className="h-4 w-4 mr-1" />
+              <List className='mr-1 h-4 w-4' />
               {showClusterList ? "Hide" : "Show"} list
             </Button>
           </div>
@@ -149,19 +139,11 @@ export default function ClusterVisualization({
           Points represent user queries, positioned by semantic similarity
         </CardDescription>
       </CardHeader>
-      <CardContent className="pt-0 flex-1 min-h-0">
-        <ResizablePanelGroup
-          direction="horizontal"
-          className="h-full rounded-lg border"
-        >
+      <CardContent className='min-h-0 flex-1 pt-0'>
+        <ResizablePanelGroup direction='horizontal' className='h-full rounded-lg border'>
           {showClusterList && (
             <>
-              <ResizablePanel
-                defaultSize={25}
-                minSize={20}
-                maxSize={40}
-                className="min-w-0"
-              >
+              <ResizablePanel defaultSize={25} minSize={20} maxSize={40} className='min-w-0'>
                 <ClusterList
                   clusters={clusters}
                   hiddenClusters={hiddenClusters}
@@ -177,9 +159,9 @@ export default function ClusterVisualization({
           <ResizablePanel
             defaultSize={internalSelectedPoint ? 50 : 75}
             minSize={30}
-            className="min-w-0"
+            className='min-w-0'
           >
-            <div className="h-full relative overflow-hidden bg-muted/20">
+            <div className='relative h-full overflow-hidden bg-muted/20'>
               {viewMode === "scatter" ? (
                 <ScatterPlot
                   points={filteredPoints}
@@ -203,12 +185,7 @@ export default function ClusterVisualization({
           {internalSelectedPoint && (
             <>
               <ResizableHandle withHandle />
-              <ResizablePanel
-                defaultSize={25}
-                minSize={20}
-                maxSize={40}
-                className="min-w-0"
-              >
+              <ResizablePanel defaultSize={25} minSize={20} maxSize={40} className='min-w-0'>
                 <QuestionDetailPanel
                   point={internalSelectedPoint}
                   cluster={selectedPointCluster}
@@ -237,17 +214,17 @@ function ClusterList({
   hiddenClusters,
   selectedCluster,
   onToggleVisibility,
-  onSelectCluster,
+  onSelectCluster
 }: ClusterListProps) {
   return (
-    <div className="h-full overflow-y-auto p-3 space-y-1.5 customScrollbar bg-background">
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="font-medium text-sm">Clusters</h3>
+    <div className='customScrollbar h-full space-y-1.5 overflow-y-auto bg-background p-3'>
+      <div className='mb-2 flex items-center justify-between'>
+        <h3 className='font-medium text-sm'>Clusters</h3>
         {selectedCluster !== null && (
           <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 text-xs"
+            variant='ghost'
+            size='sm'
+            className='h-6 text-xs'
             onClick={() => onSelectCluster(null)}
           >
             Show All
@@ -262,9 +239,7 @@ function ClusterList({
           isSelected={selectedCluster === cluster.clusterId}
           onToggleVisibility={() => onToggleVisibility(cluster.clusterId)}
           onSelect={() =>
-            onSelectCluster(
-              selectedCluster === cluster.clusterId ? null : cluster.clusterId,
-            )
+            onSelectCluster(selectedCluster === cluster.clusterId ? null : cluster.clusterId)
           }
         />
       ))}
@@ -285,7 +260,7 @@ function ClusterListItem({
   isHidden,
   isSelected,
   onToggleVisibility,
-  onSelect,
+  onSelect
 }: ClusterListItemProps) {
   const containerClasses = `p-2 rounded-lg border cursor-pointer transition-colors ${
     isSelected ? "border-primary bg-primary/5" : "hover:bg-muted/50"
@@ -293,34 +268,28 @@ function ClusterListItem({
 
   return (
     <div className={containerClasses} onClick={onSelect}>
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0 flex-1">
+      <div className='flex items-center justify-between gap-2'>
+        <div className='flex min-w-0 flex-1 items-center gap-2'>
           <div
-            className="w-2.5 h-2.5 rounded-full shrink-0"
+            className='h-2.5 w-2.5 shrink-0 rounded-full'
             style={{ backgroundColor: cluster.color }}
           />
-          <span className="text-xs font-medium truncate">
-            {cluster.intentName}
-          </span>
+          <span className='truncate font-medium text-xs'>{cluster.intentName}</span>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
-          <Badge variant="secondary" className="text-xs h-5 px-1.5">
+        <div className='flex shrink-0 items-center gap-1'>
+          <Badge variant='secondary' className='h-5 px-1.5 text-xs'>
             {cluster.count}
           </Badge>
           <Button
-            variant="ghost"
-            size="icon"
-            className="h-5 w-5"
+            variant='ghost'
+            size='icon'
+            className='h-5 w-5'
             onClick={(e) => {
               e.stopPropagation();
               onToggleVisibility();
             }}
           >
-            {isHidden ? (
-              <EyeOff className="h-3 w-3" />
-            ) : (
-              <Eye className="h-3 w-3" />
-            )}
+            {isHidden ? <EyeOff className='h-3 w-3' /> : <Eye className='h-3 w-3' />}
           </Button>
         </div>
       </div>

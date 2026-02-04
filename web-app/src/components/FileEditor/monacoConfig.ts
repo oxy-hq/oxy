@@ -1,6 +1,6 @@
-import { Monaco } from "@monaco-editor/react";
-import { monacoGitHubDarkDefaultTheme } from "@/components/FileEditor/hooks/github-dark-theme";
+import type { Monaco } from "@monaco-editor/react";
 import { configureMonacoYaml } from "monaco-yaml";
+import { monacoGitHubDarkDefaultTheme } from "@/components/FileEditor/hooks/github-dark-theme";
 import YamlWorker from "@/components/FileEditor/hooks/yaml.worker.js?worker";
 
 type WindowWithMonaco = Window & {
@@ -11,24 +11,17 @@ type WindowWithMonaco = Window & {
 
 export const configureMonacoEnvironment = () => {
   (window as WindowWithMonaco).MonacoEnvironment = {
-    getWorker: function (
-      _workerId?: string,
-      label?: string,
-    ): Worker | Promise<Worker> {
+    getWorker: (_workerId?: string, label?: string): Worker | Promise<Worker> => {
       switch (label) {
         case "yaml":
           return new YamlWorker();
-        case "editorWorkerService":
         default:
           return new Worker(
-            new URL(
-              "monaco-editor/esm/vs/editor/editor.worker.js",
-              import.meta.url,
-            ),
-            { type: "module" },
+            new URL("monaco-editor/esm/vs/editor/editor.worker.js", import.meta.url),
+            { type: "module" }
           );
       }
-    },
+    }
   };
 };
 
@@ -45,20 +38,20 @@ export const configureMonaco = (monaco: Monaco) => {
     schemas: [
       {
         fileMatch: ["**/*.app.yml", "**/*.app.yaml"],
-        uri: "https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/app.json",
+        uri: "https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/app.json"
       },
       {
         fileMatch: ["**/*.agent.yml", "**/*.agent.yaml"],
-        uri: "https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/agent.json",
+        uri: "https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/agent.json"
       },
       {
         fileMatch: ["**/*.workflow.yml", "**/*.workflow.yaml"],
-        uri: "https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/workflow.json",
+        uri: "https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/workflow.json"
       },
       {
         fileMatch: ["**/config.yml", "**/config.yaml"],
-        uri: "https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/config.json",
-      },
-    ],
+        uri: "https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/config.json"
+      }
+    ]
   });
 };

@@ -1,14 +1,14 @@
-import { apiClient } from "./axios";
-import {
-  LoginRequest,
-  RegisterRequest,
-  GoogleAuthRequest,
-  OktaAuthRequest,
-  ValidateEmailRequest,
-  AuthResponse,
-  MessageResponse,
+import type {
   AuthConfigResponse,
+  AuthResponse,
+  GoogleAuthRequest,
+  LoginRequest,
+  MessageResponse,
+  OktaAuthRequest,
+  RegisterRequest,
+  ValidateEmailRequest
 } from "@/types/auth";
+import { apiClient } from "./axios";
 
 export class AuthService {
   static async login(request: LoginRequest): Promise<AuthResponse> {
@@ -31,9 +31,7 @@ export class AuthService {
     return response.data;
   }
 
-  static async validateEmail(
-    request: ValidateEmailRequest,
-  ): Promise<AuthResponse> {
+  static async validateEmail(request: ValidateEmailRequest): Promise<AuthResponse> {
     const response = await apiClient.post("/auth/validate_email", request);
     return response.data;
   }

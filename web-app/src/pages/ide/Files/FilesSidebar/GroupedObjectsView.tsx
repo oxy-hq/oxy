@@ -1,22 +1,22 @@
+import { AppWindow, ChevronDown, ChevronRight, Workflow } from "lucide-react";
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronDown, ChevronRight, Workflow, AppWindow } from "lucide-react";
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger
+} from "@/components/ui/shadcn/collapsible";
+import {
+  SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuSub,
-  SidebarMenuSubItem,
   SidebarMenuSubButton,
-  SidebarGroupLabel,
+  SidebarMenuSubItem
 } from "@/components/ui/shadcn/sidebar";
-import {
-  Collapsible,
-  CollapsibleTrigger,
-  CollapsibleContent,
-} from "@/components/ui/shadcn/collapsible";
-import { detectFileType } from "@/utils/fileTypes";
-import { FileTreeModel } from "@/types/file";
 import ROUTES from "@/libs/utils/routes";
+import type { FileTreeModel } from "@/types/file";
+import { detectFileType } from "@/utils/fileTypes";
 import { getFileTypeIcon, getObjectName, groupObjectsByType } from "./utils";
 
 interface GroupedObjectsViewProps {
@@ -28,7 +28,7 @@ interface GroupedObjectsViewProps {
 const GroupedObjectsView: React.FC<GroupedObjectsViewProps> = ({
   files,
   activePath,
-  projectId,
+  projectId
 }) => {
   const grouped = React.useMemo(() => groupObjectsByType(files), [files]);
   const navigate = useNavigate();
@@ -36,7 +36,7 @@ const GroupedObjectsView: React.FC<GroupedObjectsViewProps> = ({
     automations: true,
     agents: true,
     apps: true,
-    semanticObjects: true,
+    semanticObjects: true
   });
 
   const toggleGroup = (group: keyof typeof openGroups) => {
@@ -49,7 +49,7 @@ const GroupedObjectsView: React.FC<GroupedObjectsViewProps> = ({
   };
 
   return (
-    <SidebarMenu className="pb-20">
+    <SidebarMenu className='pb-20'>
       {grouped.semanticObjects.length > 0 && (
         <Collapsible
           open={openGroups.semanticObjects}
@@ -57,17 +57,17 @@ const GroupedObjectsView: React.FC<GroupedObjectsViewProps> = ({
         >
           <SidebarMenuItem>
             <CollapsibleTrigger asChild>
-              <SidebarGroupLabel className="group/label flex justify-between text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-150 ease-in font-semibold">
+              <SidebarGroupLabel className='group/label flex justify-between font-semibold text-muted-foreground transition-colors duration-150 ease-in hover:bg-sidebar-accent hover:text-sidebar-foreground'>
                 <span>Semantic Layer</span>
                 {openGroups.semanticObjects ? (
-                  <ChevronDown className="transition-transform" />
+                  <ChevronDown className='transition-transform' />
                 ) : (
-                  <ChevronRight className="transition-transform" />
+                  <ChevronRight className='transition-transform' />
                 )}
               </SidebarGroupLabel>
             </CollapsibleTrigger>
             <CollapsibleContent>
-              <SidebarMenuSub className="border-l-0">
+              <SidebarMenuSub className='border-l-0'>
                 {grouped.semanticObjects.map((file) => {
                   const fileType = detectFileType(file.path);
                   const Icon = getFileTypeIcon(fileType, file.name);
@@ -76,7 +76,7 @@ const GroupedObjectsView: React.FC<GroupedObjectsViewProps> = ({
                       <SidebarMenuSubButton
                         onClick={() => handleFileClick(file)}
                         isActive={activePath === file.path}
-                        className="text-muted-foreground hover:text-sidebar-foreground transition-colors duration-150 ease-in"
+                        className='text-muted-foreground transition-colors duration-150 ease-in hover:text-sidebar-foreground'
                       >
                         {Icon && <Icon />}
                         <span>{getObjectName(file)}</span>
@@ -91,29 +91,26 @@ const GroupedObjectsView: React.FC<GroupedObjectsViewProps> = ({
       )}
 
       {grouped.automations.length > 0 && (
-        <Collapsible
-          open={openGroups.automations}
-          onOpenChange={() => toggleGroup("automations")}
-        >
+        <Collapsible open={openGroups.automations} onOpenChange={() => toggleGroup("automations")}>
           <SidebarMenuItem>
             <CollapsibleTrigger asChild>
-              <SidebarGroupLabel className="group/label flex justify-between text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-150 ease-in font-semibold">
+              <SidebarGroupLabel className='group/label flex justify-between font-semibold text-muted-foreground transition-colors duration-150 ease-in hover:bg-sidebar-accent hover:text-sidebar-foreground'>
                 <span>Automations</span>
                 {openGroups.automations ? (
-                  <ChevronDown className="transition-transform" />
+                  <ChevronDown className='transition-transform' />
                 ) : (
-                  <ChevronRight className="transition-transform" />
+                  <ChevronRight className='transition-transform' />
                 )}
               </SidebarGroupLabel>
             </CollapsibleTrigger>
             <CollapsibleContent>
-              <SidebarMenuSub className="border-l-0">
+              <SidebarMenuSub className='border-l-0'>
                 {grouped.automations.map((file) => (
                   <SidebarMenuSubItem key={file.path}>
                     <SidebarMenuSubButton
                       onClick={() => handleFileClick(file)}
                       isActive={activePath === file.path}
-                      className="text-muted-foreground hover:text-sidebar-foreground transition-colors duration-150 ease-in"
+                      className='text-muted-foreground transition-colors duration-150 ease-in hover:text-sidebar-foreground'
                     >
                       <Workflow />
                       <span>{getObjectName(file)}</span>
@@ -127,23 +124,20 @@ const GroupedObjectsView: React.FC<GroupedObjectsViewProps> = ({
       )}
 
       {grouped.agents.length > 0 && (
-        <Collapsible
-          open={openGroups.agents}
-          onOpenChange={() => toggleGroup("agents")}
-        >
+        <Collapsible open={openGroups.agents} onOpenChange={() => toggleGroup("agents")}>
           <SidebarMenuItem>
             <CollapsibleTrigger asChild>
-              <SidebarGroupLabel className="group/label flex justify-between text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-150 ease-in font-semibold">
+              <SidebarGroupLabel className='group/label flex justify-between font-semibold text-muted-foreground transition-colors duration-150 ease-in hover:bg-sidebar-accent hover:text-sidebar-foreground'>
                 <span>Agents</span>
                 {openGroups.agents ? (
-                  <ChevronDown className="transition-transform" />
+                  <ChevronDown className='transition-transform' />
                 ) : (
-                  <ChevronRight className="transition-transform" />
+                  <ChevronRight className='transition-transform' />
                 )}
               </SidebarGroupLabel>
             </CollapsibleTrigger>
             <CollapsibleContent>
-              <SidebarMenuSub className="border-l-0">
+              <SidebarMenuSub className='border-l-0'>
                 {grouped.agents.map((file) => {
                   const fileType = detectFileType(file.path);
                   const Icon = getFileTypeIcon(fileType, file.name);
@@ -152,7 +146,7 @@ const GroupedObjectsView: React.FC<GroupedObjectsViewProps> = ({
                       <SidebarMenuSubButton
                         onClick={() => handleFileClick(file)}
                         isActive={activePath === file.path}
-                        className="text-muted-foreground hover:text-sidebar-foreground transition-colors duration-150 ease-in"
+                        className='text-muted-foreground transition-colors duration-150 ease-in hover:text-sidebar-foreground'
                       >
                         {Icon && <Icon />}
                         <span>{getObjectName(file)}</span>
@@ -167,29 +161,26 @@ const GroupedObjectsView: React.FC<GroupedObjectsViewProps> = ({
       )}
 
       {grouped.apps.length > 0 && (
-        <Collapsible
-          open={openGroups.apps}
-          onOpenChange={() => toggleGroup("apps")}
-        >
+        <Collapsible open={openGroups.apps} onOpenChange={() => toggleGroup("apps")}>
           <SidebarMenuItem>
             <CollapsibleTrigger asChild>
-              <SidebarGroupLabel className="group/label flex justify-between text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-150 ease-in font-semibold">
+              <SidebarGroupLabel className='group/label flex justify-between font-semibold text-muted-foreground transition-colors duration-150 ease-in hover:bg-sidebar-accent hover:text-sidebar-foreground'>
                 <span>Apps</span>
                 {openGroups.apps ? (
-                  <ChevronDown className="transition-transform" />
+                  <ChevronDown className='transition-transform' />
                 ) : (
-                  <ChevronRight className="transition-transform" />
+                  <ChevronRight className='transition-transform' />
                 )}
               </SidebarGroupLabel>
             </CollapsibleTrigger>
             <CollapsibleContent>
-              <SidebarMenuSub className="border-l-0">
+              <SidebarMenuSub className='border-l-0'>
                 {grouped.apps.map((file) => (
                   <SidebarMenuSubItem key={file.path}>
                     <SidebarMenuSubButton
                       onClick={() => handleFileClick(file)}
                       isActive={activePath === file.path}
-                      className="text-muted-foreground hover:text-sidebar-foreground transition-colors duration-150 ease-in"
+                      className='text-muted-foreground transition-colors duration-150 ease-in hover:text-sidebar-foreground'
                     >
                       <AppWindow />
                       <span>{getObjectName(file)}</span>

@@ -18,9 +18,7 @@ export interface Trace {
 }
 
 // Helper function to convert array of tuples to object
-function tupleArrayToRecord(
-  arr: Array<[string, string]>,
-): Record<string, string> {
+function tupleArrayToRecord(arr: Array<[string, string]>): Record<string, string> {
   return Object.fromEntries(arr);
 }
 
@@ -33,8 +31,8 @@ export function getAgentRef(trace: Trace): string | undefined {
 export function getPrompt(trace: Trace): string | undefined {
   for (const eventAttrs of trace.eventsAttributes) {
     const attrs = tupleArrayToRecord(eventAttrs);
-    if (attrs["name"] === "run_agent.input") {
-      return attrs["prompt"];
+    if (attrs.name === "run_agent.input") {
+      return attrs.prompt;
     }
   }
   return undefined;
@@ -61,15 +59,11 @@ export function getDurationMs(trace: Trace): number {
   return trace.durationNs / 1_000_000;
 }
 
-export function getSpanAttributesAsRecord(
-  trace: Trace,
-): Record<string, string> {
+export function getSpanAttributesAsRecord(trace: Trace): Record<string, string> {
   return tupleArrayToRecord(trace.spanAttributes);
 }
 
-export function getEventsAttributesAsRecords(
-  trace: Trace,
-): Array<Record<string, string>> {
+export function getEventsAttributesAsRecords(trace: Trace): Array<Record<string, string>> {
   return trace.eventsAttributes.map(tupleArrayToRecord);
 }
 
@@ -188,9 +182,7 @@ export interface TraceDetailSpan {
 }
 
 // Helper to convert [key, value] tuples to Record
-export function tuplesToRecord(
-  tuples: Array<[string, string]>,
-): Record<string, string> {
+export function tuplesToRecord(tuples: Array<[string, string]>): Record<string, string> {
   return Object.fromEntries(tuples);
 }
 
@@ -230,7 +222,7 @@ export class TracesService {
     limit?: number,
     offset?: number,
     status?: string,
-    duration?: string,
+    duration?: string
   ): Promise<PaginatedTraceResponse> {
     const params = new URLSearchParams();
     if (limit !== undefined) params.append("limit", limit.toString());
@@ -241,35 +233,24 @@ export class TracesService {
     let url = `/${projectId}/traces`;
     const paramsStr = params.toString();
     if (paramsStr) {
-      url += "?" + paramsStr;
+      url += `?${paramsStr}`;
     }
     const response = await apiClient.get(url);
     return response.data;
   }
 
-  static async getTrace(
-    projectId: string,
-    traceId: string,
-  ): Promise<TraceDetail> {
+  static async getTrace(projectId: string, traceId: string): Promise<TraceDetail> {
     const response = await apiClient.get(`/${projectId}/traces/${traceId}`);
     return response.data;
   }
 
-  static async getTraceDetail(
-    projectId: string,
-    traceId: string,
-  ): Promise<TraceDetailSpan[]> {
+  static async getTraceDetail(projectId: string, traceId: string): Promise<TraceDetailSpan[]> {
     const response = await apiClient.get(`/${projectId}/traces/${traceId}`);
     return response.data;
   }
 
-  static async getTraceWaterfall(
-    projectId: string,
-    traceId: string,
-  ): Promise<WaterfallResponse> {
-    const response = await apiClient.get(
-      `/${projectId}/traces/${traceId}/waterfall`,
-    );
+  static async getTraceWaterfall(projectId: string, traceId: string): Promise<WaterfallResponse> {
+    const response = await apiClient.get(`/${projectId}/traces/${traceId}/waterfall`);
     return response.data;
   }
 
@@ -277,7 +258,7 @@ export class TracesService {
     projectId: string,
     limit?: number,
     days?: number,
-    source?: string,
+    source?: string
   ): Promise<ClusterMapResponse> {
     const params = new URLSearchParams();
     if (limit !== undefined) params.append("limit", limit.toString());
@@ -287,7 +268,7 @@ export class TracesService {
     let url = `/${projectId}/traces/clusters/map`;
     const paramsStr = params.toString();
     if (paramsStr) {
-      url += "?" + paramsStr;
+      url += `?${paramsStr}`;
     }
     const response = await apiClient.get(url);
     return response.data;

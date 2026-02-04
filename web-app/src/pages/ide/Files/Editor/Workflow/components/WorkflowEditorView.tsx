@@ -1,13 +1,9 @@
 import { AlertCircle } from "lucide-react";
-import {
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-} from "@/components/ui/shadcn/tooltip";
+import type { JSX } from "react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/tooltip";
 import EditorPageWrapper from "../../components/EditorPageWrapper";
 import ModeSwitcher from "./ModeSwitcher";
-import { WorkflowViewMode } from "./types";
-import { JSX } from "react";
+import type { WorkflowViewMode } from "./types";
 
 interface WorkflowEditorViewProps {
   viewMode: WorkflowViewMode;
@@ -34,27 +30,25 @@ const WorkflowEditorView = ({
   customEditor,
   gitEnabled,
   onChanged,
-  preview,
+  preview
 }: WorkflowEditorViewProps) => {
   return (
-    <div className="h-full flex flex-col animate-in fade-in duration-200">
-      <div className="flex items-center gap-2 px-3 py-1 border-b bg-editor-background">
+    <div className='fade-in flex h-full animate-in flex-col duration-200'>
+      <div className='flex items-center gap-2 border-b bg-editor-background px-3 py-1'>
         <ModeSwitcher viewMode={viewMode} onViewModeChange={onViewModeChange} />
-        <div className="text-sm font-medium text-muted-foreground flex-1">
-          {workflowPath}
-        </div>
+        <div className='flex-1 font-medium text-muted-foreground text-sm'>{workflowPath}</div>
         {validationError && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <AlertCircle className="w-4 h-4 cursor-pointer text-destructive" />
+              <AlertCircle className='h-4 w-4 cursor-pointer text-destructive' />
             </TooltipTrigger>
-            <TooltipContent className="max-w-md">
-              <p className="text-sm">{validationError}</p>
+            <TooltipContent className='max-w-md'>
+              <p className='text-sm'>{validationError}</p>
             </TooltipContent>
           </Tooltip>
         )}
       </div>
-      <div className="flex-1 overflow-hidden">
+      <div className='flex-1 overflow-hidden'>
         <EditorPageWrapper
           headerActions={<></>}
           pathb64={pathb64}

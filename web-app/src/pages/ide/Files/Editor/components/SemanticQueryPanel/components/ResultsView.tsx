@@ -6,15 +6,11 @@ interface ResultsViewProps {
   executionError: string | null;
 }
 
-const ResultsView = ({
-  result,
-  resultFile,
-  executionError,
-}: ResultsViewProps) => {
+const ResultsView = ({ result, resultFile, executionError }: ResultsViewProps) => {
   if (executionError) {
     return (
-      <div className="h-full overflow-auto customScrollbar p-4">
-        <div className="text-xs font-mono bg-destructive/10 text-destructive p-4 rounded whitespace-pre-wrap">
+      <div className='customScrollbar h-full overflow-auto p-4'>
+        <div className='whitespace-pre-wrap rounded bg-destructive/10 p-4 font-mono text-destructive text-xs'>
           {executionError}
         </div>
       </div>
@@ -22,7 +18,7 @@ const ResultsView = ({
   }
 
   return (
-    <div className="h-full min-h-0">
+    <div className='h-full min-h-0'>
       <SqlResultsTable result={result} resultFile={resultFile} />
     </div>
   );

@@ -1,15 +1,16 @@
-import React, { useEffect, useState } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
-import { useAuth } from "@/contexts/AuthContext";
+import { CheckCircle, Loader2, XCircle } from "lucide-react";
+import type React from "react";
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/shadcn/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle,
+  CardTitle
 } from "@/components/ui/shadcn/card";
-import { CheckCircle, XCircle, Loader2 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 import useEmailVerification from "@/hooks/api/users/useEmailVerification";
 import ROUTES from "@/libs/utils/routes";
 
@@ -46,12 +47,10 @@ const EmailVerificationPage: React.FC = () => {
             }, 2000);
           },
           onError: (error) => {
-            setMessage(
-              "Failed to verify email. The token may be invalid or expired.",
-            );
+            setMessage("Failed to verify email. The token may be invalid or expired.");
             console.error("Email verification error:", error);
-          },
-        },
+          }
+        }
       );
     }
   }, [searchParams, navigate, login, verifyEmail, status]);
@@ -61,39 +60,33 @@ const EmailVerificationPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen w-full bg-background flex items-center justify-center p-4">
-      <Card className="max-w-md w-full">
-        <CardHeader className="text-center">
-          <div className="flex justify-center mb-4">
+    <div className='flex min-h-screen w-full items-center justify-center bg-background p-4'>
+      <Card className='w-full max-w-md'>
+        <CardHeader className='text-center'>
+          <div className='mb-4 flex justify-center'>
             {(status === "idle" || status === "pending") && !noToken && (
-              <Loader2 className="h-12 w-12 text-primary animate-spin" />
+              <Loader2 className='h-12 w-12 animate-spin text-primary' />
             )}
-            {status === "success" && (
-              <CheckCircle className="h-12 w-12 text-green-500" />
-            )}
-            {(status === "error" || noToken) && (
-              <XCircle className="h-12 w-12 text-red-500" />
-            )}
+            {status === "success" && <CheckCircle className='h-12 w-12 text-green-500' />}
+            {(status === "error" || noToken) && <XCircle className='h-12 w-12 text-red-500' />}
           </div>
-          <CardTitle className="text-2xl">
-            {(status === "idle" || status === "pending") &&
-              !noToken &&
-              "Verifying Email..."}
+          <CardTitle className='text-2xl'>
+            {(status === "idle" || status === "pending") && !noToken && "Verifying Email..."}
             {status === "success" && "Email Verified!"}
             {(status === "error" || noToken) && "Verification Failed"}
           </CardTitle>
           <CardDescription>{message}</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className='space-y-4'>
           {status === "error" && (
-            <div className="space-y-2">
-              <Button onClick={handleBackToLogin} className="w-full">
+            <div className='space-y-2'>
+              <Button onClick={handleBackToLogin} className='w-full'>
                 Back to Login
               </Button>
             </div>
           )}
           {status === "success" && (
-            <div className="text-center text-sm text-muted-foreground">
+            <div className='text-center text-muted-foreground text-sm'>
               Redirecting to home page...
             </div>
           )}

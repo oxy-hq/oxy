@@ -1,9 +1,6 @@
 import { useMonaco } from "@monaco-editor/react";
 import { useEffect, useRef } from "react";
-import {
-  configureMonaco,
-  configureMonacoEnvironment,
-} from "@/components/FileEditor/monacoConfig";
+import { configureMonaco, configureMonacoEnvironment } from "@/components/FileEditor/monacoConfig";
 
 configureMonacoEnvironment();
 
@@ -16,10 +13,7 @@ interface UseMonacoSetupProps {
  * Hook to configure Monaco editor with shared settings (theme, YAML schema, etc.)
  * and optionally register a Cmd/Ctrl+S save keybinding and Cmd/Ctrl+Enter execute keybinding.
  */
-export default function useMonacoSetup({
-  onSave,
-  onExecute,
-}: UseMonacoSetupProps = {}) {
+export default function useMonacoSetup({ onSave, onExecute }: UseMonacoSetupProps = {}) {
   const monaco = useMonaco();
   const isConfigured = useRef<boolean>(false);
 
@@ -39,7 +33,7 @@ export default function useMonacoSetup({
     });
     const keybindingRule = monaco.editor.addKeybindingRule({
       keybinding: monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS,
-      command: commandId,
+      command: commandId
     });
 
     return () => {
@@ -57,7 +51,7 @@ export default function useMonacoSetup({
     });
     const keybindingRule = monaco.editor.addKeybindingRule({
       keybinding: monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
-      command: commandId,
+      command: commandId
     });
 
     return () => {

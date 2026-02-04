@@ -1,4 +1,4 @@
-import { Reference, ReferenceType } from "@/types/chat";
+import { type Reference, ReferenceType } from "@/types/chat";
 import { QueryReference } from "./QueryReference";
 
 type ReferenceProps = {

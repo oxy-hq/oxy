@@ -1,6 +1,6 @@
-import { FileState } from "@/components/FileEditor";
-import { Button } from "@/components/ui/shadcn/button";
 import { Loader2 } from "lucide-react";
+import type { FileState } from "@/components/FileEditor";
+import { Button } from "@/components/ui/shadcn/button";
 
 interface PageHeaderProps {
   onSave: () => void;
@@ -10,24 +10,19 @@ interface PageHeaderProps {
 
 const PageHeader = ({ onSave, filePath, fileState }: PageHeaderProps) => {
   return (
-    <div className="h-12 flex items-center justify-between p-4 bg-sidebar-background">
+    <div className='flex h-12 items-center justify-between bg-sidebar-background p-4'>
       <div></div>
-      <p className="text-sm" data-testid="ide-breadcrumb">
+      <p className='text-sm' data-testid='ide-breadcrumb'>
         {filePath}
       </p>
-      <div className="flex items-center">
-        {fileState == "modified" && (
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={onSave}
-            data-testid="ide-save-button"
-          >
+      <div className='flex items-center'>
+        {fileState === "modified" && (
+          <Button variant='secondary' size='sm' onClick={onSave} data-testid='ide-save-button'>
             Save changes
           </Button>
         )}
-        {fileState == "saving" && (
-          <Loader2 className="w-4 h-4 text-yellow-500 animate-[spin_0.2s_linear_infinite]" />
+        {fileState === "saving" && (
+          <Loader2 className='h-4 w-4 animate-[spin_0.2s_linear_infinite] text-yellow-500' />
         )}
       </div>
     </div>

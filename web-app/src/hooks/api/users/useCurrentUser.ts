@@ -7,7 +7,7 @@ const useCurrentUser = () => {
     queryKey: queryKeys.user.current(),
     queryFn: () => UserService.getCurrentUser(),
     staleTime: 5 * 60 * 1000, // 5 minutes
-    retry: false,
+    retry: false
   });
 };
 

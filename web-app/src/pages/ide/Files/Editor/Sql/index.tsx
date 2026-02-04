@@ -1,11 +1,11 @@
 import { useState } from "react";
-import useExecuteSql from "@/hooks/api/useExecuteSql";
-import HeaderActions from "./HeaderActions";
-import EditorPageWrapper from "../components/EditorPageWrapper";
-import { useEditorContext } from "../contexts/useEditorContext";
 import SqlResultsTable from "@/components/sql/SqlResultsTable";
+import useExecuteSql from "@/hooks/api/useExecuteSql";
 import useDatabaseClient from "@/stores/useDatabaseClient";
 import { decodeFilePath } from "@/utils/fileTypes";
+import EditorPageWrapper from "../components/EditorPageWrapper";
+import { useEditorContext } from "../contexts/useEditorContext";
+import HeaderActions from "./HeaderActions";
 
 const SqlEditor = () => {
   const { pathb64, isReadOnly, gitEnabled } = useEditorContext();
@@ -21,7 +21,7 @@ const SqlEditor = () => {
       {
         pathb64,
         sql,
-        database,
+        database
       },
       {
         onSuccess: (data) => {
@@ -34,8 +34,8 @@ const SqlEditor = () => {
             setResultFile((data as { file_name: string }).file_name);
             setResult([]);
           }
-        },
-      },
+        }
+      }
     );
   };
 
@@ -52,13 +52,11 @@ const SqlEditor = () => {
       onChanged={setSql}
       readOnly={isReadOnly}
       git={gitEnabled}
-      defaultDirection="vertical"
-      headerActions={
-        <HeaderActions onExecuteSql={handleExecuteSql} loading={loading} />
-      }
+      defaultDirection='vertical'
+      headerActions={<HeaderActions onExecuteSql={handleExecuteSql} loading={loading} />}
       preview={
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-hidden">
+        <div className='flex flex-1 flex-col overflow-hidden'>
+          <div className='flex-1 overflow-hidden'>
             <SqlResultsTable result={result} resultFile={resultFile} />
           </div>
         </div>

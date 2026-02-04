@@ -28,7 +28,7 @@ export type TimeRange = "7d" | "30d" | "90d";
 export const TIME_RANGE_OPTIONS: { value: TimeRange; label: string }[] = [
   { value: "7d", label: "7d" },
   { value: "30d", label: "30d" },
-  { value: "90d", label: "90d" },
+  { value: "90d", label: "90d" }
 ];
 
 export function timeRangeToDays(range: TimeRange): number {
@@ -46,5 +46,5 @@ export const LIMIT_OPTIONS = [
   { value: 100, label: "100" },
   { value: 250, label: "250" },
   { value: 500, label: "500" },
-  { value: 1000, label: "1000" },
+  { value: 1000, label: "1000" }
 ];

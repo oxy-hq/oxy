@@ -1,15 +1,11 @@
-import { useMemo } from "react";
-import { RefreshCcw } from "lucide-react";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
-import { cn } from "@/libs/shadcn/utils";
+import { RefreshCcw } from "lucide-react";
+import { useMemo } from "react";
 import { Button } from "@/components/ui/shadcn/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/shadcn/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/tooltip";
 import useThread from "@/hooks/api/threads/useThread";
+import { cn } from "@/libs/shadcn/utils";
 
 dayjs.extend(relativeTime);
 
@@ -20,17 +16,12 @@ interface Props {
   onRefresh: () => void;
 }
 
-const ProcessingWarning = ({
-  threadId,
-  isLoading,
-  className,
-  onRefresh,
-}: Props) => {
+const ProcessingWarning = ({ threadId, isLoading, className, onRefresh }: Props) => {
   const { data: thread, isFetching } = useThread(threadId ?? "");
 
   const shouldShowProcessingWarning = useMemo(
     () => !isFetching && thread && thread.is_processing && !isLoading,
-    [isLoading, thread, isFetching],
+    [isLoading, thread, isFetching]
   );
 
   if (!shouldShowProcessingWarning) return null;
@@ -38,17 +29,17 @@ const ProcessingWarning = ({
   return (
     <div
       className={cn(
-        "w-full px-3 bg-blue-900/20 border border-blue-600/30 rounded-lg mb-2",
-        className,
+        "mb-2 w-full rounded-lg border border-blue-600/30 bg-blue-900/20 px-3",
+        className
       )}
     >
-      <div className="flex items-center justify-between">
-        <span className="text-blue-100 text-sm font-medium">
+      <div className='flex items-center justify-between'>
+        <span className='font-medium text-blue-100 text-sm'>
           Thread is still processing. The last message may not be complete yet.
         </span>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" onClick={onRefresh}>
+            <Button variant='ghost' onClick={onRefresh}>
               <RefreshCcw />
             </Button>
           </TooltipTrigger>

@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Variable } from "../components/SemanticQueryPanel";
-import { Filter, Order } from "../types";
+import type { Variable } from "../components/SemanticQueryPanel";
+import type { Filter, Order } from "../types";
 
 export const useSemanticQueryState = () => {
   const [result, setResult] = useState<string[][]>([]);
@@ -21,8 +21,8 @@ export const useSemanticQueryState = () => {
       {
         field: initialField,
         op: "eq",
-        value: "",
-      },
+        value: ""
+      }
     ]);
   };
 
@@ -41,8 +41,8 @@ export const useSemanticQueryState = () => {
       ...orders,
       {
         field: initialField,
-        direction: "asc",
-      },
+        direction: "asc"
+      }
     ]);
   };
 
@@ -71,9 +71,7 @@ export const useSemanticQueryState = () => {
   };
 
   const removeOrdersForField = (fieldName: string) => {
-    setOrders((prevOrders) =>
-      prevOrders.filter((order) => order.field !== fieldName),
-    );
+    setOrders((prevOrders) => prevOrders.filter((order) => order.field !== fieldName));
   };
 
   const toggleDimension = (fullName: string) => {
@@ -129,6 +127,6 @@ export const useSemanticQueryState = () => {
     updateVariable,
     removeVariable,
     toggleDimension,
-    toggleMeasure,
+    toggleMeasure
   };
 };

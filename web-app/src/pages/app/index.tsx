@@ -1,31 +1,27 @@
-import React, { useEffect, useMemo } from "react";
+import type React from "react";
+import { useEffect, useMemo } from "react";
 import { useParams } from "react-router-dom";
-import AppPageHeader from "./AppPageHeader";
-import useRunAppMutation from "@/hooks/api/apps/useRunAppMutation";
 import { toast } from "sonner";
 import AppPreview from "@/components/AppPreview";
+import useRunAppMutation from "@/hooks/api/apps/useRunAppMutation";
+import AppPageHeader from "./AppPageHeader";
 
 // Main page
 const AppPage: React.FC = () => {
   const pathb64 = useParams<{ pathb64: string }>().pathb64!;
   const path = useMemo(() => atob(pathb64), [pathb64]);
-  const {
-    mutate: runApp,
-    isPending: isRunning,
-    isError,
-  } = useRunAppMutation(() => {});
+  const { mutate: runApp, isPending: isRunning, isError } = useRunAppMutation(() => {});
 
   useEffect(() => {
-    if (isError)
-      toast.error("Error refreshing app. Check configuration and try again.");
+    if (isError) toast.error("Error refreshing app. Check configuration and try again.");
   }, [isError]);
 
   const handleRun = () => runApp(pathb64);
 
   return (
-    <div className="w-full h-full flex flex-col">
+    <div className='flex h-full w-full flex-col'>
       <AppPageHeader path={path} onRun={handleRun} isRunning={isRunning} />
-      <div className="flex-1 w-full flex justify-center items-start overflow-auto">
+      <div className='flex w-full flex-1 items-start justify-center overflow-auto'>
         <AppPreview appPath64={pathb64} runButton={false} />
       </div>
     </div>

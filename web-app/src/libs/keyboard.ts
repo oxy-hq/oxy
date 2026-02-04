@@ -1,16 +1,14 @@
-const isMac =
-  typeof window !== "undefined" && window.navigator.platform === "MacIntel";
+const isMac = typeof window !== "undefined" && window.navigator.platform === "MacIntel";
 
 export type ModifierKey = "Alt" | "Control" | "Meta" | "Shift";
 
-const getKeyRepresentation = (mac: string, other: string) =>
-  isMac ? mac : other;
+const getKeyRepresentation = (mac: string, other: string) => (isMac ? mac : other);
 
 export const ModifierKeyMap: Record<ModifierKey, string> = {
   Alt: getKeyRepresentation("⌥", "alt"),
   Control: getKeyRepresentation("⌃", "ctrl"),
   Meta: getKeyRepresentation("⌘", "ctrl"),
-  Shift: "⇧",
+  Shift: "⇧"
 };
 
 export type ActionHotKeyType =
@@ -33,42 +31,42 @@ interface Key {
 export const HotKeys: Record<ActionHotKeyType, Key> = {
   CreateNewQuestion: {
     value: "c",
-    text: "C",
+    text: "C"
   },
   GoToSettings: {
     value: "g+s",
-    text: "G + S",
+    text: "G + S"
   },
   GoToSettingsByKeySequences: {
     value: ["g", "s"],
-    text: "G then S",
+    text: "G then S"
   },
   JumpToPrompt: {
     value: "/",
-    text: "/",
+    text: "/"
   },
   MoveUp: {
     value: ["ArrowUp", "k"],
-    text: "↑",
+    text: "↑"
   },
   MoveDown: {
     value: ["ArrowDown", "j"],
-    text: "↓",
+    text: "↓"
   },
   OpenFocusItem: {
     value: "Enter",
-    text: "Enter",
+    text: "Enter"
   },
   ClearSelection: {
     value: "Escape",
-    text: "Escape",
+    text: "Escape"
   },
   DeleteFocusedChat: {
     value: [`Control+Backspace`, `Meta+Backspace`],
-    text: "⌘+delete",
+    text: "⌘+delete"
   },
   ExitPrompt: {
     value: "Escape",
-    text: "esc",
-  },
+    text: "esc"
+  }
 };

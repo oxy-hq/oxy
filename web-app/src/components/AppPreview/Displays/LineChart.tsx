@@ -1,32 +1,27 @@
-import { useCallback } from "react";
 import type { LineSeriesOption } from "echarts";
-import { DataContainer, LineChartDisplay } from "@/types/app";
+import { useCallback } from "react";
 import { Echarts } from "@/components/Echarts";
+import type { DataContainer, LineChartDisplay } from "@/types/app";
 import {
-  useChartBase,
-  getXAxisData,
+  type ChartBuilderParams,
+  createBaseChartOptions,
+  createXYAxisOptions,
   getSeriesData,
   getSeriesValues,
   getSimpleAggregatedData,
-  createBaseChartOptions,
-  createXYAxisOptions,
-  type ChartBuilderParams,
+  getXAxisData,
+  useChartBase
 } from "./hooks";
 
 export const LineChart = ({
   display,
-  data,
+  data
 }: {
   display: LineChartDisplay;
   data?: DataContainer;
 }) => {
   const buildChartOptions = useCallback(
-    async ({
-      display,
-      connection,
-      fileName,
-      isDarkMode,
-    }: ChartBuilderParams<LineChartDisplay>) => {
+    async ({ display, connection, fileName, isDarkMode }: ChartBuilderParams<LineChartDisplay>) => {
       const baseOptions = createBaseChartOptions(isDarkMode);
       const xData = await getXAxisData(connection, fileName, display.x);
       const xyAxisOptions = createXYAxisOptions(xData, isDarkMode);
@@ -35,18 +30,14 @@ export const LineChart = ({
       const tooltipOptions = {
         trigger: "axis" as const,
         axisPointer: {
-          type: "line" as const,
-        },
+          type: "line" as const
+        }
       };
 
       let series: LineSeriesOption[];
 
       if (display.series) {
-        const seriesNames = await getSeriesData(
-          connection,
-          fileName,
-          display.series,
-        );
+        const seriesNames = await getSeriesData(connection, fileName, display.series);
         series = await Promise.all(
           seriesNames.map(async (seriesName): Promise<LineSeriesOption> => {
             const values = await getSeriesValues(
@@ -55,7 +46,7 @@ export const LineChart = ({
               display.x,
               display.y,
               display.series!,
-              seriesName,
+              seriesName
             );
             // Create a map of x -> y for this series
             const valueMap = new Map(values.map((v) => [v.x, v.y]));
@@ -65,24 +56,19 @@ export const LineChart = ({
               name: JSON.stringify(seriesName),
               type: "line",
               data: alignedData,
-              showSymbol: false,
+              showSymbol: false
             };
-          }),
+          })
         );
       } else {
-        const values = await getSimpleAggregatedData(
-          connection,
-          fileName,
-          display.x,
-          display.y,
-        );
+        const values = await getSimpleAggregatedData(connection, fileName, display.x, display.y);
         series = [
           {
             name: display.y,
             type: "line",
             data: values,
-            showSymbol: false,
-          },
+            showSymbol: false
+          }
         ];
       }
 
@@ -90,16 +76,16 @@ export const LineChart = ({
         ...baseOptions,
         ...xyAxisOptions,
         tooltip: tooltipOptions,
-        series,
+        series
       };
     },
-    [],
+    []
   );
 
   const { isLoading, chartOptions } = useChartBase({
     display,
     data,
-    buildChartOptions,
+    buildChartOptions
   });
 
   return (
@@ -107,7 +93,7 @@ export const LineChart = ({
       options={chartOptions}
       isLoading={isLoading}
       title={display.title}
-      testId="app-line-chart"
+      testId='app-line-chart'
     />
   );
 };

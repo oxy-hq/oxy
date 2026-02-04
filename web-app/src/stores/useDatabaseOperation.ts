@@ -1,6 +1,6 @@
-import { create } from "zustand";
 import { persistNSync } from "persist-and-sync";
 import { toast } from "sonner";
+import { create } from "zustand";
 
 export interface DatabaseSyncState {
   operation: "sync" | "build" | "clean" | null;
@@ -17,11 +17,7 @@ interface DatabaseOperationState {
   isBuilding: () => boolean;
   isCleaning: () => boolean;
   handleSyncSuccess: (database: string, message?: string) => void;
-  handleSyncError: (
-    database: string,
-    error?: unknown,
-    message?: string,
-  ) => void;
+  handleSyncError: (database: string, error?: unknown, message?: string) => void;
   handleCleanSuccess: (message?: string) => void;
   handleCleanError: (error?: unknown, message?: string) => void;
 }
@@ -29,7 +25,7 @@ interface DatabaseOperationState {
 const defaultSyncState: DatabaseSyncState = {
   operation: null,
   database: null,
-  datasets: undefined,
+  datasets: undefined
 };
 
 const useDatabaseOperationStore = create<DatabaseOperationState>()(
@@ -67,11 +63,7 @@ const useDatabaseOperationStore = create<DatabaseOperationState>()(
         get().clearSyncState();
       },
 
-      handleSyncError: (
-        database: string,
-        error?: unknown,
-        message?: string,
-      ) => {
+      handleSyncError: (database: string, error?: unknown, message?: string) => {
         console.error("Database sync error:", error);
         toast.error(message || `Failed to sync database "${database}"`);
         get().clearSyncState();
@@ -86,12 +78,12 @@ const useDatabaseOperationStore = create<DatabaseOperationState>()(
         console.error("Clean error:", error);
         toast.error(message || "Failed to clean data");
         get().clearSyncState();
-      },
+      }
     }),
     {
-      name: "database-operation-storage",
-    },
-  ),
+      name: "database-operation-storage"
+    }
+  )
 );
 
 export default function useDatabaseOperation() {

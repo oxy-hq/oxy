@@ -10,11 +10,7 @@ export const usePersistedViewport = (key: string) => {
       const parsed = JSON.parse(raw);
       if (typeof parsed === "object" && parsed !== null) {
         const p = parsed as Record<string, unknown>;
-        if (
-          typeof p.x === "number" &&
-          typeof p.y === "number" &&
-          typeof p.zoom === "number"
-        ) {
+        if (typeof p.x === "number" && typeof p.y === "number" && typeof p.zoom === "number") {
           return parsed as Viewport;
         }
       }
@@ -33,7 +29,7 @@ export const usePersistedViewport = (key: string) => {
         /* ignore */
       }
     },
-    [key],
+    [key]
   );
 
   return { load, save };

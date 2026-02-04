@@ -1,11 +1,10 @@
-import { ComponentProps, memo } from "react";
-
 import { python } from "@codemirror/lang-python";
 import { sql } from "@codemirror/lang-sql";
-import { LanguageSupport } from "@codemirror/language";
-import CodeMirror from "@uiw/react-codemirror";
+import type { LanguageSupport } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
 import { createTheme } from "@uiw/codemirror-themes";
+import CodeMirror from "@uiw/react-codemirror";
+import { type ComponentProps, memo } from "react";
 
 export type SupportedLanguages = "python" | "sql";
 
@@ -14,10 +13,7 @@ const getLangs = (name?: SupportedLanguages, codeContent?: string) => {
     // Simple heuristic to detect language based on code content
     if (codeContent.includes("def ") || codeContent.includes("import ")) {
       name = "python";
-    } else if (
-      codeContent.includes("SELECT ") ||
-      codeContent.includes("FROM ")
-    ) {
+    } else if (codeContent.includes("SELECT ") || codeContent.includes("FROM ")) {
       name = "sql";
     }
   }
@@ -26,20 +22,19 @@ const getLangs = (name?: SupportedLanguages, codeContent?: string) => {
 
   const langs: Record<SupportedLanguages, () => LanguageSupport> = {
     python,
-    sql,
+    sql
   };
   return langs[name] || python;
 };
 
-const containerStyles =
-  "p-4 rounded-lg border border-border bg-zinc-900 overflow-x-auto";
+const containerStyles = "p-4 rounded-lg border border-border bg-zinc-900 overflow-x-auto";
 
 const theme = createTheme({
   theme: "light",
   settings: {
     background: "var(--colors-zinc-900)",
     foreground: "var(--color-code-primary)",
-    fontFamily: "var(--font-family-geist-mono)",
+    fontFamily: "var(--font-family-geist-mono)"
   },
   styles: [
     // { tag: t.comment, color: "var(--color-code-primary)" },
@@ -49,8 +44,8 @@ const theme = createTheme({
     { tag: t.moduleKeyword, color: "var(--color-code-primary)" },
     { tag: t.keyword, color: "var(--color-code-primary)" },
     { tag: t.number, color: "var(--color-code-primary)" },
-    { tag: t.function(t.propertyName), color: "var(--color-code-primary)" },
-  ],
+    { tag: t.function(t.propertyName), color: "var(--color-code-primary)" }
+  ]
 });
 
 type Props = {
@@ -70,7 +65,7 @@ const CodePreview = memo(function Code(props: Props) {
         basicSetup={{
           lineNumbers: false,
           foldGutter: false,
-          highlightActiveLine: false,
+          highlightActiveLine: false
         }}
         theme={theme}
         readOnly

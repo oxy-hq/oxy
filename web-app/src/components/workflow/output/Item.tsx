@@ -1,10 +1,10 @@
-import { LogItem } from "@/services/types";
+import { Check, ChevronDown, ChevronRight, Copy } from "lucide-react";
+import { useCallback } from "react";
 import Markdown from "@/components/Markdown";
-import { ChevronDown, ChevronRight, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
 import { cn } from "@/libs/shadcn/utils";
+import type { LogItem } from "@/services/types";
 import { useCopyTimeout } from "./useCopyTimeout";
-import { useCallback } from "react";
 
 type OutputItemProps = {
   onArtifactClick?: (id: string) => void;
@@ -22,7 +22,7 @@ const getAllChildrenContent = (item: LogItem): string => {
     return item.content;
   }
   item.children.forEach((child) => {
-    content += getAllChildrenContent(child) + "\n\n";
+    content += `${getAllChildrenContent(child)}\n\n`;
   });
   return content.trim();
 };
@@ -33,7 +33,7 @@ const OutputItem = ({
   onArtifactClick,
   isExpandable = false,
   isExpanded = false,
-  onToggleExpanded,
+  onToggleExpanded
 }: OutputItemProps) => {
   const { copied, handleCopy: copyToClipboard } = useCopyTimeout();
 
@@ -41,49 +41,41 @@ const OutputItem = ({
     async (e: React.MouseEvent) => {
       e.stopPropagation();
       // For expandable items, copy all children content
-      const contentToCopy = isExpandable
-        ? getAllChildrenContent(log)
-        : log.content;
+      const contentToCopy = isExpandable ? getAllChildrenContent(log) : log.content;
       await copyToClipboard(contentToCopy);
     },
-    [isExpandable, log, copyToClipboard],
+    [isExpandable, log, copyToClipboard]
   );
 
   if (isExpandable && onToggleExpanded) {
     return (
       <div
-        className="w-full min-w-[500px] group"
+        className='group w-full min-w-[500px]'
         style={{ paddingLeft: depth > 0 ? `${depth * 24}px` : undefined }}
-        data-testid="workflow-output-item"
+        data-testid='workflow-output-item'
       >
         <div
-          className="w-full flex items-center justify-center py-2 gap-2 cursor-pointer hover:bg-accent/50 rounded"
+          className='flex w-full cursor-pointer items-center justify-center gap-2 rounded py-2 hover:bg-accent/50'
           onClick={onToggleExpanded}
         >
           {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
 
-          <div className="flex-1 text-sm flex justify-between items-center">
+          <div className='flex flex-1 items-center justify-between text-sm'>
             <span>{log.content}</span>
-            <div className="flex items-center gap-2">
+            <div className='flex items-center gap-2'>
               <Button
-                variant="ghost"
-                size="sm"
+                variant='ghost'
+                size='sm'
                 className={cn(
-                  "h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity",
-                  copied && "opacity-100",
+                  "h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100",
+                  copied && "opacity-100"
                 )}
                 onClick={handleCopy}
-                title="Copy all results from this step"
+                title='Copy all results from this step'
               >
-                {copied ? (
-                  <Check size={14} className="text-green-500" />
-                ) : (
-                  <Copy size={14} />
-                )}
+                {copied ? <Check size={14} className='text-green-500' /> : <Copy size={14} />}
               </Button>
-              <span className="text-gray-400 text-xs flex justify-end">
-                {log.timestamp}
-              </span>
+              <span className='flex justify-end text-gray-400 text-xs'>{log.timestamp}</span>
             </div>
           </div>
         </div>
@@ -93,31 +85,27 @@ const OutputItem = ({
 
   return (
     <div
-      className="min-w-[500px] group relative"
+      className='group relative min-w-[500px]'
       style={{
-        paddingLeft: depth > 0 ? `${depth * 24}px` : undefined,
+        paddingLeft: depth > 0 ? `${depth * 24}px` : undefined
       }}
-      data-testid="workflow-output-item"
+      data-testid='workflow-output-item'
     >
-      <div className="flex items-start gap-2">
-        <div className="flex-1">
+      <div className='flex items-start gap-2'>
+        <div className='flex-1'>
           <Markdown onArtifactClick={onArtifactClick}>{log.content}</Markdown>
         </div>
         <Button
-          variant="ghost"
-          size="sm"
+          variant='ghost'
+          size='sm'
           className={cn(
-            "h-6 w-6 p-0 mt-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0",
-            copied && "opacity-100",
+            "mt-1 h-6 w-6 flex-shrink-0 p-0 opacity-0 transition-opacity group-hover:opacity-100",
+            copied && "opacity-100"
           )}
           onClick={handleCopy}
-          title="Copy output"
+          title='Copy output'
         >
-          {copied ? (
-            <Check size={14} className="text-green-500" />
-          ) : (
-            <Copy size={14} />
-          )}
+          {copied ? <Check size={14} className='text-green-500' /> : <Copy size={14} />}
         </Button>
       </div>
     </div>

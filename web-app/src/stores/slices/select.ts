@@ -1,6 +1,6 @@
-import { StateCreator } from "zustand";
-import { GroupSlice } from "./group";
-import { TaskConfigWithId } from "../useWorkflow";
+import type { StateCreator } from "zustand";
+import type { TaskConfigWithId } from "../useWorkflow";
+import type { GroupSlice } from "./group";
 
 export interface SelectSlice {
   selectedIndexes: Record<string, number | undefined>;
@@ -23,30 +23,28 @@ export const createSelectSlice: StateCreator<
   selectedBlockId: null,
   setSelectedGroupId: (groupId: string | null) => {
     set(() => ({
-      selectedGroupId: groupId,
+      selectedGroupId: groupId
     }));
   },
   setSelectedBlockId: (blockId: string | null) => {
     set(() => ({
-      selectedBlockId: blockId,
+      selectedBlockId: blockId
     }));
   },
   setSelectedLoopIndex: (task: TaskConfigWithId, index: number) =>
     set((state) => {
-      const groupId = task.runId
-        ? `${task.workflowId}::${task.runId}`
-        : task.workflowId;
+      const groupId = task.runId ? `${task.workflowId}::${task.runId}` : task.workflowId;
       const selectedId = `${groupId}.${task.id}`;
       const isSelected = state.selectedIndexes[selectedId] === index;
       return {
         selectedIndexes: {
           ...state.selectedIndexes,
-          [selectedId]: isSelected ? undefined : index,
-        },
+          [selectedId]: isSelected ? undefined : index
+        }
       };
     }),
   resetSelectedIndexes: () =>
     set(() => ({
-      selectedIndexes: {},
-    })),
+      selectedIndexes: {}
+    }))
 });

@@ -1,3 +1,6 @@
+import { Loader2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -6,14 +9,11 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialogTitle
 } from "@/components/ui/shadcn/alert-dialog";
 import { usePullChanges } from "@/hooks/api/projects/useProjects";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import ROUTES from "@/libs/utils/routes";
-import { Loader2 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
-import { toast } from "sonner";
 
 interface Props {
   open: boolean;
@@ -36,7 +36,7 @@ export const PullDialog = ({ open, onOpenChange }: Props) => {
     try {
       const result = await pullChangesMutation.mutateAsync({
         projectId: project.id,
-        branchName,
+        branchName
       });
 
       if (result.success) {
@@ -54,8 +54,7 @@ export const PullDialog = ({ open, onOpenChange }: Props) => {
     }
   };
 
-  const isDisabled =
-    pullChangesMutation.isPending || !project?.id || !branchName;
+  const isDisabled = pullChangesMutation.isPending || !project?.id || !branchName;
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -63,8 +62,8 @@ export const PullDialog = ({ open, onOpenChange }: Props) => {
         <AlertDialogHeader>
           <AlertDialogTitle>Pull Latest Changes</AlertDialogTitle>
           <AlertDialogDescription>
-            This action will discard all local changes and pull the latest from
-            the remote repository. This action cannot be undone.
+            This action will discard all local changes and pull the latest from the remote
+            repository. This action cannot be undone.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -72,11 +71,9 @@ export const PullDialog = ({ open, onOpenChange }: Props) => {
           <AlertDialogAction
             onClick={onConfirm}
             disabled={isDisabled}
-            className="bg-destructive hover:bg-destructive/90"
+            className='bg-destructive hover:bg-destructive/90'
           >
-            {pullChangesMutation.isPending && (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            )}
+            {pullChangesMutation.isPending && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
             Pull Changes
           </AlertDialogAction>
         </AlertDialogFooter>

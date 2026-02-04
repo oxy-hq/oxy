@@ -1,30 +1,30 @@
 import PageHeader from "@/components/PageHeader";
-import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import { Separator } from "@/components/ui/shadcn/separator";
+import { Skeleton } from "@/components/ui/shadcn/skeleton";
 
 const PageSkeleton = () => {
   return (
-    <div className="flex flex-col h-full">
-      <PageHeader className="border-b-1 border-border items-center">
-        <div className="p-2 flex items-center justify-center flex-1 h-full w-full">
-          <div className="flex gap-1 items-center text-muted-foreground">
-            <Skeleton className="h-4 min-w-24" />
+    <div className='flex h-full flex-col'>
+      <PageHeader className='items-center border-border border-b-1'>
+        <div className='flex h-full w-full flex-1 items-center justify-center p-2'>
+          <div className='flex items-center gap-1 text-muted-foreground'>
+            <Skeleton className='h-4 min-w-24' />
           </div>
-          <div className="px-4 h-full flex items-stretch">
-            <Separator orientation="vertical" />
+          <div className='flex h-full items-stretch px-4'>
+            <Separator orientation='vertical' />
           </div>
 
-          <Skeleton className="h-4 min-w-24" />
+          <Skeleton className='h-4 min-w-24' />
         </div>
       </PageHeader>
 
-      <div className="flex-1 w-full">
-        <div className="flex flex-col gap-10 max-w-page-content mx-auto py-10">
+      <div className='w-full flex-1'>
+        <div className='mx-auto flex max-w-page-content flex-col gap-10 py-10'>
           {Array.from({ length: 3 }).map((_, index) => (
-            <div key={index} className="flex flex-col gap-4">
-              <Skeleton className="h-4 max-w-[200px]" />
-              <Skeleton className="h-4 max-w-[500px]" />
-              <Skeleton className="h-4 max-w-[500px]" />
+            <div key={index} className='flex flex-col gap-4'>
+              <Skeleton className='h-4 max-w-[200px]' />
+              <Skeleton className='h-4 max-w-[500px]' />
+              <Skeleton className='h-4 max-w-[500px]' />
             </div>
           ))}
         </div>

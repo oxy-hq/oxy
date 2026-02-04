@@ -2,8 +2,8 @@ import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 
 import ArtifactPanel from "@/components/ArtifactPanel";
-import { Message } from "@/types/chat";
 import { Dialog, DialogContent } from "@/components/ui/shadcn/dialog";
+import type { Message } from "@/types/chat";
 
 dayjs.extend(relativeTime);
 
@@ -30,9 +30,9 @@ const ArtifactPanelContainer = ({ selectedIds, onSelect, messages }: Props) => {
       <DialogContent
         onOpenAutoFocus={(e) => e.preventDefault()}
         showCloseButton={false}
-        className="p-0 max-w-4xl! w-full h-[80vh]"
+        className='h-[80vh] w-full max-w-4xl! p-0'
       >
-        <div className="h-[80vh]">
+        <div className='h-[80vh]'>
           <ArtifactPanel
             selectedArtifactIds={selectedIds}
             artifactStreamingData={artifactStreamingData}

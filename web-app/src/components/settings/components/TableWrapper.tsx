@@ -1,7 +1,7 @@
-import React from "react";
+import type React from "react";
 
 const TableWrapper: React.FC<React.PropsWithChildren> = ({ children }) => {
-  return <div className="border rounded-lg">{children}</div>;
+  return <div className='rounded-lg border'>{children}</div>;
 };
 
 export default TableWrapper;

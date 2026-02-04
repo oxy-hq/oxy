@@ -1,23 +1,23 @@
-import { useState, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { AlertCircle, Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Alert, AlertDescription } from "@/components/ui/shadcn/alert";
+import { Button } from "@/components/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogHeader,
+  DialogTitle
 } from "@/components/ui/shadcn/dialog";
-import { Button } from "@/components/ui/shadcn/button";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
-import { Alert, AlertDescription } from "@/components/ui/shadcn/alert";
-import { AlertCircle, Loader2 } from "lucide-react";
-import useDatabaseClient, { QueryTab } from "@/stores/useDatabaseClient";
-import { FileService } from "@/services/api";
-import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
-import { useQueryClient } from "@tanstack/react-query";
 import queryKeys from "@/hooks/api/queryKey";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { FileService } from "@/services/api";
+import useDatabaseClient, { type QueryTab } from "@/stores/useDatabaseClient";
 
 interface SaveQueryDialogProps {
   open: boolean;
@@ -25,11 +25,7 @@ interface SaveQueryDialogProps {
   tab: QueryTab | undefined;
 }
 
-export default function SaveQueryDialog({
-  open,
-  onOpenChange,
-  tab,
-}: SaveQueryDialogProps) {
+export default function SaveQueryDialog({ open, onOpenChange, tab }: SaveQueryDialogProps) {
   const { updateTab } = useDatabaseClient();
   const { project, branchName } = useCurrentProjectBranch();
   const queryClient = useQueryClient();
@@ -42,11 +38,9 @@ export default function SaveQueryDialog({
   useEffect(() => {
     if (open && tab) {
       // Default to the tab name, but ensure it ends with .sql
-      let name = tab.savedPath
-        ? tab.savedPath.split("/").pop() || tab.name
-        : tab.name;
+      let name = tab.savedPath ? tab.savedPath.split("/").pop() || tab.name : tab.name;
       if (!name.endsWith(".sql")) {
-        name = name.replace(/\.[^/.]+$/, "") + ".sql";
+        name = `${name.replace(/\.[^/.]+$/, "")}.sql`;
       }
       setFileName(name);
       setError(null);
@@ -59,9 +53,7 @@ export default function SaveQueryDialog({
       return;
     }
 
-    const finalFileName = fileName.endsWith(".sql")
-      ? fileName
-      : `${fileName}.sql`;
+    const finalFileName = fileName.endsWith(".sql") ? fileName : `${fileName}.sql`;
     const filePath = finalFileName; // Save in root directory
     const pathb64 = btoa(filePath);
 
@@ -75,11 +67,11 @@ export default function SaveQueryDialog({
       updateTab(tab.id, {
         name: finalFileName,
         savedPath: filePath,
-        isDirty: false,
+        isDirty: false
       });
 
       queryClient.removeQueries({
-        queryKey: queryKeys.file.tree(project.id, branchName),
+        queryKey: queryKeys.file.tree(project.id, branchName)
       });
 
       toast.success(`Saved to ${filePath}`);
@@ -94,26 +86,24 @@ export default function SaveQueryDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className='max-w-md'>
         <DialogHeader>
           <DialogTitle>Save Query</DialogTitle>
-          <DialogDescription>
-            Save this query to the root directory
-          </DialogDescription>
+          <DialogDescription>Save this query to the root directory</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className='space-y-4'>
           {error && (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
+            <Alert variant='destructive'>
+              <AlertCircle className='h-4 w-4' />
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
 
-          <div className="space-y-2">
-            <Label htmlFor="filename">File Name</Label>
+          <div className='space-y-2'>
+            <Label htmlFor='filename'>File Name</Label>
             <Input
-              id="filename"
+              id='filename'
               value={fileName}
               onChange={(e) => setFileName(e.target.value)}
               onKeyDown={(e) => {
@@ -121,22 +111,22 @@ export default function SaveQueryDialog({
                   handleSave();
                 }
               }}
-              placeholder="my_query.sql"
+              placeholder='my_query.sql'
             />
-            <p className="text-xs text-muted-foreground">
+            <p className='text-muted-foreground text-xs'>
               File will be saved in the root directory
             </p>
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant='outline' onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button onClick={handleSave} disabled={isSaving || !fileName.trim()}>
             {isSaving ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                <Loader2 className='mr-1 h-4 w-4 animate-spin' />
                 Saving...
               </>
             ) : (

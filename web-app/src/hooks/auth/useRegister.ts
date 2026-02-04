@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { AuthService } from "@/services/api";
-import { RegisterRequest, MessageResponse } from "@/types/auth";
+import type { MessageResponse, RegisterRequest } from "@/types/auth";
 
 export const useRegister = () => {
   return useMutation<MessageResponse, Error, RegisterRequest>({
@@ -10,6 +10,6 @@ export const useRegister = () => {
     },
     onError: (error) => {
       console.error("Registration failed:", error);
-    },
+    }
   });
 };

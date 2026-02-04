@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef } from "react";
 import type { EChartsOption } from "echarts";
-import { init, getInstanceByDom } from "echarts";
-import theme from "@/components/Echarts/theme.json";
+import { getInstanceByDom, init } from "echarts";
+import { useCallback, useEffect, useRef } from "react";
 import { useResizeDetector } from "react-resize-detector";
+import theme from "@/components/Echarts/theme.json";
 
 interface MiniChartProps {
   options: EChartsOption;
@@ -22,7 +22,7 @@ export default function MiniChart({ options, isLoading }: MiniChartProps) {
 
   useResizeDetector({
     targetRef: chartRef,
-    onResize,
+    onResize
   });
 
   useEffect(() => {
@@ -54,8 +54,8 @@ export default function MiniChart({ options, isLoading }: MiniChartProps) {
   }, [isLoading]);
 
   return (
-    <div className="flex flex-col bg-card border border-border rounded-lg p-3">
-      <div ref={chartRef} className="w-full h-[100px]" />
+    <div className='flex flex-col rounded-lg border border-border bg-card p-3'>
+      <div ref={chartRef} className='h-[100px] w-full' />
     </div>
   );
 }

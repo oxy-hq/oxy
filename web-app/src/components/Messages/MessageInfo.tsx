@@ -1,13 +1,12 @@
-import { InfoIcon } from "lucide-react";
 import dayjs from "dayjs";
-
+import { InfoIcon } from "lucide-react";
+import type { FunctionComponent } from "react";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
-  TooltipTrigger,
+  TooltipTrigger
 } from "@/components/ui/shadcn/tooltip";
-import { FunctionComponent } from "react";
 
 interface MessageInfoProps {
   createdAt?: string;
@@ -17,38 +16,29 @@ interface MessageInfoProps {
   };
 }
 
-const MessageInfo: FunctionComponent<MessageInfoProps> = ({
-  createdAt,
-  tokensUsage,
-}) => {
+const MessageInfo: FunctionComponent<MessageInfoProps> = ({ createdAt, tokensUsage }) => {
   return (
-    <span className="text-xs text-muted-foreground ml-auto">
+    <span className='ml-auto text-muted-foreground text-xs'>
       {createdAt ? dayjs(createdAt).fromNow() : null}
-      {tokensUsage &&
-      (tokensUsage.inputTokens !== 0 || tokensUsage.outputTokens !== 0) ? (
+      {tokensUsage && (tokensUsage.inputTokens !== 0 || tokensUsage.outputTokens !== 0) ? (
         <TooltipProvider>
           <Tooltip>
-            <TooltipTrigger className="inline ml-1" asChild>
-              <InfoIcon className="w-3 h-3" />
+            <TooltipTrigger className='ml-1 inline' asChild>
+              <InfoIcon className='h-3 w-3' />
             </TooltipTrigger>
-            <TooltipContent arrowClassName="invisible" className="bg-muted">
-              <div className="flex flex-col space-y-1">
-                <div className="font-medium text-sm">
-                  {tokensUsage.inputTokens + tokensUsage.outputTokens} tokens
-                  used
+            <TooltipContent arrowClassName='invisible' className='bg-muted'>
+              <div className='flex flex-col space-y-1'>
+                <div className='font-medium text-sm'>
+                  {tokensUsage.inputTokens + tokensUsage.outputTokens} tokens used
                 </div>
-                <div className="border-t pt-1 space-y-0.5">
-                  <div className="flex justify-between gap-4">
-                    <span className="text-muted-foreground">Input:</span>
-                    <span className="font-medium">
-                      {tokensUsage.inputTokens}
-                    </span>
+                <div className='space-y-0.5 border-t pt-1'>
+                  <div className='flex justify-between gap-4'>
+                    <span className='text-muted-foreground'>Input:</span>
+                    <span className='font-medium'>{tokensUsage.inputTokens}</span>
                   </div>
-                  <div className="flex justify-between gap-4">
-                    <span className="text-muted-foreground">Output:</span>
-                    <span className="font-medium">
-                      {tokensUsage.outputTokens}
-                    </span>
+                  <div className='flex justify-between gap-4'>
+                    <span className='text-muted-foreground'>Output:</span>
+                    <span className='font-medium'>{tokensUsage.outputTokens}</span>
                   </div>
                 </div>
               </div>

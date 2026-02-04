@@ -9,16 +9,16 @@ interface LoadingStateProps {
 const LoadingState = ({ error, onRetry }: LoadingStateProps) => {
   if (error) {
     return (
-      <div className="p-4">
-        <div className="text-red-600 mb-4">Error loading workspaces</div>
+      <div className='p-4'>
+        <div className='mb-4 text-red-600'>Error loading workspaces</div>
         {onRetry && <Button onClick={onRetry}>Try Again</Button>}
       </div>
     );
   }
 
   return (
-    <div className="flex items-center justify-center h-64 w-full">
-      <Loader2 className="h-8 w-8 animate-spin" />
+    <div className='flex h-64 w-full items-center justify-center'>
+      <Loader2 className='h-8 w-8 animate-spin' />
     </div>
   );
 };

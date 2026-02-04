@@ -1,13 +1,13 @@
-import {
-  TracesService,
-  TraceDetailSpan,
-  TimelineSpan,
-  SpanEvent,
-  tuplesToRecord,
-} from "@/services/api/traces";
 import { useQuery } from "@tanstack/react-query";
-import queryKeys from "../queryKey";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import {
+  type SpanEvent,
+  type TimelineSpan,
+  type TraceDetailSpan,
+  TracesService,
+  tuplesToRecord
+} from "@/services/api/traces";
+import queryKeys from "../queryKey";
 
 export interface ProcessedTrace {
   traceId: string;
@@ -25,7 +25,7 @@ function processTraceSpans(rawSpans: TraceDetailSpan[]): ProcessedTrace | null {
 
   // Sort by timestamp
   const sortedSpans = [...rawSpans].sort(
-    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
   );
 
   const startTime = sortedSpans[0].timestamp;
@@ -78,7 +78,7 @@ function processTraceSpans(rawSpans: TraceDetailSpan[]): ProcessedTrace | null {
     const events: SpanEvent[] = span.eventsName.map((name, i) => ({
       timestamp: span.timestamp,
       name: name || "",
-      attributes: tuplesToRecord(span.eventsAttributes[i] || []),
+      attributes: tuplesToRecord(span.eventsAttributes[i] || [])
     }));
 
     return {
@@ -93,7 +93,7 @@ function processTraceSpans(rawSpans: TraceDetailSpan[]): ProcessedTrace | null {
       spanKind: span.spanKind,
       attributes: tuplesToRecord(span.spanAttributes),
       events,
-      children: childrenMap.get(span.spanId) || [],
+      children: childrenMap.get(span.spanId) || []
     };
   });
 
@@ -111,7 +111,7 @@ function processTraceSpans(rawSpans: TraceDetailSpan[]): ProcessedTrace | null {
     spans: timelineSpans,
     totalDurationMs: maxEndMs,
     startTime,
-    endTime,
+    endTime
   };
 }
 
@@ -125,7 +125,7 @@ const useTraceDetail = (traceId: string, enabled = true) => {
       const rawSpans = await TracesService.getTraceDetail(projectId, traceId);
       return processTraceSpans(rawSpans);
     },
-    enabled: enabled && !!traceId,
+    enabled: enabled && !!traceId
   });
 };
 

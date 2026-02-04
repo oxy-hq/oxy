@@ -5,46 +5,36 @@ import {
   TableCell,
   TableHead,
   TableHeader,
-  TableRow,
+  TableRow
 } from "@/components/ui/shadcn/table";
-import { getDuckDB } from "@/libs/duckdb";
-import { DataContainer, TableData, TableDisplay } from "@/types/app";
-import {
-  getData,
-  registerAuthenticatedFile,
-  getArrowValueWithType,
-  getArrowFieldType,
-} from "./utils";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { getDuckDB } from "@/libs/duckdb";
+import type { DataContainer, TableData, TableDisplay } from "@/types/app";
+import {
+  getArrowFieldType,
+  getArrowValueWithType,
+  getData,
+  registerAuthenticatedFile
+} from "./utils";
 
-const load_table = async (
-  filePath: string,
-  projectId: string,
-  branchName: string,
-) => {
+const load_table = async (filePath: string, projectId: string, branchName: string) => {
   const db = await getDuckDB();
   const conn = await db.connect();
-  const file_name = await registerAuthenticatedFile(
-    filePath,
-    projectId,
-    branchName,
-  );
+  const file_name = await registerAuthenticatedFile(filePath, projectId, branchName);
   const rs = await conn.query(`select * from "${file_name}"`);
   return rs;
 };
 
 export const DataTableBlock = ({
   display,
-  data,
+  data
 }: {
   display: TableDisplay;
   data?: DataContainer;
 }) => {
   const [isLoading, setIsLoading] = useState(true);
   const { project, branchName } = useCurrentProjectBranch();
-  const [table, setTable] = useState<Awaited<
-    ReturnType<typeof load_table>
-  > | null>(null);
+  const [table, setTable] = useState<Awaited<ReturnType<typeof load_table>> | null>(null);
 
   const dataAvailable = data && display.data;
 
@@ -69,24 +59,18 @@ export const DataTableBlock = ({
   }, [branchName, data, dataAvailable, display.data, project.id]);
 
   if (isLoading)
-    return (
-      <div className="w-full h-full flex items-center justify-center">
-        Loading...
-      </div>
-    );
+    return <div className='flex h-full w-full items-center justify-center'>Loading...</div>;
 
   let tableContent;
   if (!table) {
-    tableContent = (
-      <div className="text-center text-gray-500 p-2">No data found</div>
-    );
+    tableContent = <div className='p-2 text-center text-gray-500'>No data found</div>;
   } else {
     tableContent = (
-      <DataTable className="border">
+      <DataTable className='border'>
         <TableHeader>
           <TableRow>
             {table.schema.fields.map((field) => (
-              <TableHead className="text-gray-500 border" key={field.name}>
+              <TableHead className='border text-gray-500' key={field.name}>
                 {field.name}
               </TableHead>
             ))}
@@ -94,15 +78,13 @@ export const DataTableBlock = ({
         </TableHeader>
         <TableBody>
           {table.toArray().map((row, idx) => (
-            <TableRow key={idx} className="border">
+            <TableRow key={idx} className='border'>
               {table.schema.fields.map((field) => {
                 const fieldType = getArrowFieldType(field.name, table.schema);
                 const value = row[field.name];
-                const formattedValue = fieldType
-                  ? getArrowValueWithType(value, fieldType)
-                  : value;
+                const formattedValue = fieldType ? getArrowValueWithType(value, fieldType) : value;
                 return (
-                  <TableCell className="border" key={field.name}>
+                  <TableCell className='border' key={field.name}>
                     {String(formattedValue)}
                   </TableCell>
                 );
@@ -115,11 +97,8 @@ export const DataTableBlock = ({
   }
 
   return (
-    <div
-      className="flex flex-col gap-4 items-left"
-      data-testid="app-data-table-block"
-    >
-      <h2 className="text-xl font-bold text-foreground">{display.title}</h2>
+    <div className='items-left flex flex-col gap-4' data-testid='app-data-table-block'>
+      <h2 className='font-bold text-foreground text-xl'>{display.title}</h2>
       {tableContent}
     </div>
   );

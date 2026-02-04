@@ -1,6 +1,5 @@
-import { FileState } from ".";
-import { Check, Loader2 } from "lucide-react";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, Check, Loader2 } from "lucide-react";
+import type { FileState } from ".";
 
 interface Props {
   fileState: FileState;
@@ -11,24 +10,22 @@ const FileStatus = ({ fileState }: Props) => {
     case "saved":
       return (
         <>
-          <Check className="w-4 h-4 text-green-500" />
-          <span className="text-sm text-muted-foreground">
-            All changes saved
-          </span>
+          <Check className='h-4 w-4 text-green-500' />
+          <span className='text-muted-foreground text-sm'>All changes saved</span>
         </>
       );
     case "modified":
       return (
         <>
-          <AlertCircle className="w-4 h-4 text-yellow-500" />
-          <span className="text-sm text-muted-foreground">Unsaved changes</span>
+          <AlertCircle className='h-4 w-4 text-yellow-500' />
+          <span className='text-muted-foreground text-sm'>Unsaved changes</span>
         </>
       );
     case "saving":
       return (
         <>
-          <Loader2 className="w-4 h-4 text-yellow-500 animate-[spin_0.2s_linear_infinite]" />
-          <span className="text-sm text-muted-foreground">Saving...</span>
+          <Loader2 className='h-4 w-4 animate-[spin_0.2s_linear_infinite] text-yellow-500' />
+          <span className='text-muted-foreground text-sm'>Saving...</span>
         </>
       );
   }

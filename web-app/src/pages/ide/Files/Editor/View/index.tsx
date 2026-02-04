@@ -1,17 +1,13 @@
-import { useMemo, useState, useEffect } from "react";
-import EditorPageWrapper from "../components/EditorPageWrapper";
-import { useEditorContext } from "../contexts/useEditorContext";
-
-import SemanticQueryPanel from "../components/SemanticQueryPanel";
-import FieldsSelectionPanel from "./FieldsSelectionPanel";
-import ModeSwitcher from "./components/ModeSwitcher";
-import { ViewMode } from "./components/types";
-import {
-  ViewExplorerProvider,
-  useViewExplorerContext,
-} from "./contexts/ViewExplorerContext";
+import { useEffect, useMemo, useState } from "react";
 import { useFilesContext } from "../../FilesContext";
 import { FilesSubViewMode } from "../../FilesSidebar/constants";
+import EditorPageWrapper from "../components/EditorPageWrapper";
+import SemanticQueryPanel from "../components/SemanticQueryPanel";
+import { useEditorContext } from "../contexts/useEditorContext";
+import ModeSwitcher from "./components/ModeSwitcher";
+import { ViewMode } from "./components/types";
+import { useViewExplorerContext, ViewExplorerProvider } from "./contexts/ViewExplorerContext";
+import FieldsSelectionPanel from "./FieldsSelectionPanel";
 
 type ViewPreviewProps = {
   pathb64: string;
@@ -26,9 +22,7 @@ const ViewPreview = (props: ViewPreviewProps) => {
 
   // Default to Explorer for object mode, Editor for file mode
   const defaultViewMode =
-    filesSubViewMode === FilesSubViewMode.OBJECTS
-      ? ViewMode.Explorer
-      : ViewMode.Editor;
+    filesSubViewMode === FilesSubViewMode.OBJECTS ? ViewMode.Explorer : ViewMode.Editor;
 
   const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
 
@@ -38,15 +32,15 @@ const ViewPreview = (props: ViewPreviewProps) => {
   }, [defaultViewMode]);
 
   return (
-    <div className="flex flex-1 flex-col h-full">
-      <div className="flex items-center justify-start p-1 border-b border-b-border gap-1">
+    <div className='flex h-full flex-1 flex-col'>
+      <div className='flex items-center justify-start gap-1 border-b border-b-border p-1'>
         <ModeSwitcher viewMode={viewMode} onViewModeChange={setViewMode} />
-        <div className="text-sm font-medium text-muted-foreground">{path}</div>
+        <div className='font-medium text-muted-foreground text-sm'>{path}</div>
       </div>
       <EditorPageWrapper
         pathb64={pathb64}
         readOnly={isReadOnly}
-        defaultDirection="horizontal"
+        defaultDirection='horizontal'
         preview={<ViewExplorer />}
         previewOnly={viewMode === ViewMode.Explorer}
       />
@@ -59,11 +53,7 @@ const ViewEditor = () => {
 
   return (
     <ViewExplorerProvider>
-      <ViewPreview
-        pathb64={pathb64}
-        isReadOnly={isReadOnly}
-        gitEnabled={gitEnabled}
-      />
+      <ViewPreview pathb64={pathb64} isReadOnly={isReadOnly} gitEnabled={gitEnabled} />
     </ViewExplorerProvider>
   );
 };
@@ -73,25 +63,25 @@ const ViewExplorer = () => {
 
   if (viewError) {
     return (
-      <div className="flex flex-1 flex-col h-full items-center justify-center p-4">
-        <div className="text-destructive text-center max-w-2xl">
-          <div className="font-semibold mb-2">Error loading view</div>
-          <div className="text-sm">{viewError?.message}</div>
+      <div className='flex h-full flex-1 flex-col items-center justify-center p-4'>
+        <div className='max-w-2xl text-center text-destructive'>
+          <div className='mb-2 font-semibold'>Error loading view</div>
+          <div className='text-sm'>{viewError?.message}</div>
         </div>
       </div>
     );
   }
   if (viewLoading || !viewData) {
     return (
-      <div className="flex flex-1 flex-col h-full items-center justify-center">
-        <div className="text-muted-foreground">Loading view data...</div>
+      <div className='flex h-full flex-1 flex-col items-center justify-center'>
+        <div className='text-muted-foreground'>Loading view data...</div>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 flex flex-col min-h-0">
-      <div className="flex-1 flex gap-4 min-h-0">
+    <div className='flex min-h-0 flex-1 flex-col'>
+      <div className='flex min-h-0 flex-1 gap-4'>
         {/* Left Sidebar - Tree Structure */}
         <FieldsSelectionPanel />
 

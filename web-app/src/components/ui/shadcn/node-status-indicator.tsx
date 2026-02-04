@@ -1,5 +1,5 @@
-import { ReactNode } from "react";
 import { LoaderCircle } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { cn } from "@/libs/shadcn/utils";
 
@@ -13,33 +13,25 @@ export type NodeStatusIndicatorProps = {
   children: ReactNode;
 };
 
-export const SpinnerLoadingIndicator = ({
-  children,
-}: {
-  children: ReactNode;
-}) => {
+export const SpinnerLoadingIndicator = ({ children }: { children: ReactNode }) => {
   return (
-    <div className="-z-1 relative">
-      <StatusBorder className="border-blue-700/40">{children}</StatusBorder>
+    <div className='relative -z-1'>
+      <StatusBorder className='border-blue-700/40'>{children}</StatusBorder>
 
-      <div className="absolute inset-0 z-50 rounded-[7px] bg-background/50 backdrop-blur-sm" />
-      <div className="absolute inset-0 z-50">
-        <span className="absolute left-[calc(50%-1.25rem)] top-[calc(50%-1.25rem)] inline-block h-10 w-10 animate-ping rounded-full bg-blue-700/20" />
+      <div className='absolute inset-0 z-50 rounded-[7px] bg-background/50 backdrop-blur-sm' />
+      <div className='absolute inset-0 z-50'>
+        <span className='absolute top-[calc(50%-1.25rem)] left-[calc(50%-1.25rem)] inline-block h-10 w-10 animate-ping rounded-full bg-blue-700/20' />
 
-        <LoaderCircle className="absolute left-[calc(50%-0.75rem)] top-[calc(50%-0.75rem)] size-6 animate-spin text-blue-700" />
+        <LoaderCircle className='absolute top-[calc(50%-0.75rem)] left-[calc(50%-0.75rem)] size-6 animate-spin text-blue-700' />
       </div>
     </div>
   );
 };
 
-export const BorderLoadingIndicator = ({
-  children,
-}: {
-  children: ReactNode;
-}) => {
+export const BorderLoadingIndicator = ({ children }: { children: ReactNode }) => {
   return (
     <>
-      <div className="-z-1 absolute -left-[1px] -top-[1px] h-[calc(100%+2px)] w-[calc(100%+2px)]">
+      <div className='absolute -top-[1px] -left-[1px] -z-1 h-[calc(100%+2px)] w-[calc(100%+2px)]'>
         <style>
           {`
         @keyframes spin {
@@ -57,8 +49,8 @@ export const BorderLoadingIndicator = ({
         }
       `}
         </style>
-        <div className="absolute inset-0 overflow-hidden rounded-[10px]">
-          <div className="spinner rounded-full bg-[conic-gradient(from_0deg_at_50%_50%,_rgb(42,67,233)_0deg,_rgba(42,138,246,0)_360deg)]" />
+        <div className='absolute inset-0 overflow-hidden rounded-[10px]'>
+          <div className='spinner rounded-full bg-[conic-gradient(from_0deg_at_50%_50%,_rgb(42,67,233)_0deg,_rgba(42,138,246,0)_360deg)]' />
         </div>
       </div>
       {children}
@@ -66,21 +58,15 @@ export const BorderLoadingIndicator = ({
   );
 };
 
-const StatusBorder = ({
-  children,
-  className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) => {
+const StatusBorder = ({ children, className }: { children: ReactNode; className?: string }) => {
   return (
     <>
       <div
         className={cn(
-          "-z-1 absolute -left-[1px] -top-[1px] h-[calc(100%+2px)] w-[calc(100%+2px)] rounded-[10px] border-2",
-          className,
+          "absolute -top-[1px] -left-[1px] -z-1 h-[calc(100%+2px)] w-[calc(100%+2px)] rounded-[10px] border-2",
+          className
         )}
-        data-testid="workflow-node-status-border"
+        data-testid='workflow-node-status-border'
       />
       {children}
     </>
@@ -90,7 +76,7 @@ const StatusBorder = ({
 export const NodeStatusIndicator = ({
   status,
   variant = "border",
-  children,
+  children
 }: NodeStatusIndicatorProps) => {
   switch (status) {
     case "loading":
@@ -103,11 +89,9 @@ export const NodeStatusIndicator = ({
           return <>{children}</>;
       }
     case "success":
-      return (
-        <StatusBorder className="border-emerald-600">{children}</StatusBorder>
-      );
+      return <StatusBorder className='border-emerald-600'>{children}</StatusBorder>;
     case "error":
-      return <StatusBorder className="border-red-400">{children}</StatusBorder>;
+      return <StatusBorder className='border-red-400'>{children}</StatusBorder>;
     default:
       return <>{children}</>;
   }

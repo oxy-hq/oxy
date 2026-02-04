@@ -5,14 +5,11 @@ type ReferenceItemContainerProps = {
   isOpen: boolean;
 };
 
-export const ReferenceItemContainer = ({
-  children,
-  isOpen,
-}: ReferenceItemContainerProps) => {
+export const ReferenceItemContainer = ({ children, isOpen }: ReferenceItemContainerProps) => {
   return (
     <div
-      className={cn("h-21 bg-sidebar-accent hover:bg-input border rounded-md", {
-        "bg-input": isOpen,
+      className={cn("h-21 rounded-md border bg-sidebar-accent hover:bg-input", {
+        "bg-input": isOpen
       })}
     >
       {children}

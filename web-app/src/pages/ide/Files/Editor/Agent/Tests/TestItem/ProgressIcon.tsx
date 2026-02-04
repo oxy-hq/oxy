@@ -1,19 +1,13 @@
-const ProgressIcon = ({
-  progress,
-  total,
-}: {
-  progress: number;
-  total: number;
-}) => {
+const ProgressIcon = ({ progress, total }: { progress: number; total: number }) => {
   const percentage = (progress / total) * 100;
 
   return (
-    <div className="relative w-4 h-4 p-[1px] border border-border rounded-full">
-      <div className="w-full h-full rounded-full bg-muted-foreground/20">
+    <div className='relative h-4 w-4 rounded-full border border-border p-[1px]'>
+      <div className='h-full w-full rounded-full bg-muted-foreground/20'>
         <div
-          className="w-full h-full rounded-full transition-all duration-300 ease-in-out"
+          className='h-full w-full rounded-full transition-all duration-300 ease-in-out'
           style={{
-            background: `conic-gradient(currentColor ${percentage}%, transparent ${percentage}%)`,
+            background: `conic-gradient(currentColor ${percentage}%, transparent ${percentage}%)`
           }}
         />
       </div>

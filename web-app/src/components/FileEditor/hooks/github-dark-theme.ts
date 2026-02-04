@@ -57,7 +57,7 @@ export const monacoGitHubDarkDefaultTheme = {
     {
       token: "invalid.deprecated",
       foreground: "ffa198",
-      fontStyle: "italic",
+      fontStyle: "italic"
     },
     { token: "invalid.illegal", foreground: "ffa198", fontStyle: "italic" },
 
@@ -69,7 +69,7 @@ export const monacoGitHubDarkDefaultTheme = {
     {
       token: "string.regexp constant.character.escape",
       foreground: "7ee787",
-      fontStyle: "bold",
+      fontStyle: "bold"
     },
 
     { token: "support.type.property-name.json", foreground: "7ee787" },
@@ -92,7 +92,7 @@ export const monacoGitHubDarkDefaultTheme = {
 
     {
       token: "punctuation.definition.list.begin.markdown",
-      foreground: "ffa657",
+      foreground: "ffa657"
     },
     { token: "punctuation.definition.embedded", foreground: "ff7b72" },
 
@@ -113,7 +113,7 @@ export const monacoGitHubDarkDefaultTheme = {
     { token: "delimiter.square", foreground: "e6edf3" },
     { token: "delimiter.curly", foreground: "e6edf3" },
     { token: "delimiter.parenthesis", foreground: "e6edf3" },
-    { token: "type", foreground: "7EE787" },
+    { token: "type", foreground: "7EE787" }
   ],
   colors: {
     focusBorder: "#1f6feb",
@@ -338,6 +338,6 @@ export const monacoGitHubDarkDefaultTheme = {
     "editorBracketHighlight.foreground4": "#ffa198",
     "editorBracketHighlight.foreground5": "#ff9bce",
     "editorBracketHighlight.foreground6": "#d2a8ff",
-    "editorBracketHighlight.unexpectedBracket.foreground": "#7d8590",
-  },
+    "editorBracketHighlight.unexpectedBracket.foreground": "#7d8590"
+  }
 };

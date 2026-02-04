@@ -1,17 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
-import {
-  ExecutionAnalyticsService,
-  TimeSeriesQuery,
-  AgentStatsQuery,
-  ExecutionsQuery,
-  SummaryQuery,
-} from "@/services/api/executionAnalytics";
-import {
-  ExecutionSummary,
-  ExecutionTimeBucket,
+import type {
   AgentExecutionStats,
   ExecutionDetail,
+  ExecutionSummary,
+  ExecutionTimeBucket
 } from "@/pages/ide/observability/execution-analytics/types";
+import {
+  type AgentStatsQuery,
+  ExecutionAnalyticsService,
+  type ExecutionsQuery,
+  type SummaryQuery,
+  type TimeSeriesQuery
+} from "@/services/api/executionAnalytics";
 
 // Query keys for execution analytics
 export const executionAnalyticsKeys = {
@@ -23,49 +23,49 @@ export const executionAnalyticsKeys = {
   agentStats: (projectId: string, params?: AgentStatsQuery) =>
     [...executionAnalyticsKeys.all, "agentStats", projectId, params] as const,
   executions: (projectId: string, params?: ExecutionsQuery) =>
-    [...executionAnalyticsKeys.all, "executions", projectId, params] as const,
+    [...executionAnalyticsKeys.all, "executions", projectId, params] as const
 };
 
 export const useExecutionSummary = (
   projectId: string | undefined,
   params?: SummaryQuery,
-  enabled = true,
+  enabled = true
 ) =>
   useQuery<ExecutionSummary, Error>({
     queryKey: executionAnalyticsKeys.summary(projectId!, params),
     queryFn: () => ExecutionAnalyticsService.getSummary(projectId!, params),
-    enabled: enabled && !!projectId,
+    enabled: enabled && !!projectId
   });
 
 export const useExecutionTimeSeries = (
   projectId: string | undefined,
   params?: TimeSeriesQuery,
-  enabled = true,
+  enabled = true
 ) =>
   useQuery<ExecutionTimeBucket[], Error>({
     queryKey: executionAnalyticsKeys.timeSeries(projectId!, params),
     queryFn: () => ExecutionAnalyticsService.getTimeSeries(projectId!, params),
-    enabled: enabled && !!projectId,
+    enabled: enabled && !!projectId
   });
 
 export const useExecutionAgentStats = (
   projectId: string | undefined,
   params?: AgentStatsQuery,
-  enabled = true,
+  enabled = true
 ) =>
   useQuery<AgentExecutionStats[], Error>({
     queryKey: executionAnalyticsKeys.agentStats(projectId!, params),
     queryFn: () => ExecutionAnalyticsService.getAgentStats(projectId!, params),
-    enabled: enabled && !!projectId,
+    enabled: enabled && !!projectId
   });
 
 export const useExecutions = (
   projectId: string | undefined,
   params?: ExecutionsQuery,
-  enabled = true,
+  enabled = true
 ) =>
   useQuery<{ executions: ExecutionDetail[]; total: number }, Error>({
     queryKey: executionAnalyticsKeys.executions(projectId!, params),
     queryFn: () => ExecutionAnalyticsService.getExecutions(projectId!, params),
-    enabled: enabled && !!projectId,
+    enabled: enabled && !!projectId
   });

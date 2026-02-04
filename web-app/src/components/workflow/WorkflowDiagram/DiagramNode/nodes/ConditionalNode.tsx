@@ -1,15 +1,15 @@
+import { useMemo } from "react";
 import useWorkflow, {
-  ConditionalTaskConfigWithId,
-  TaskConfigWithId,
+  type ConditionalTaskConfigWithId,
+  type TaskConfigWithId
 } from "@/stores/useWorkflow.ts";
-import { NodeHeader } from "./NodeHeader";
 import {
   distanceBetweenHeaderAndContent,
   headerHeight,
   nodeBorderHeight,
-  paddingHeight,
+  paddingHeight
 } from "../../layout/constants";
-import { useMemo } from "react";
+import { NodeHeader } from "./NodeHeader";
 
 type Props = {
   task: TaskConfigWithId;
@@ -30,10 +30,7 @@ export default function ConditionalNode({ task, expanded }: Props) {
   };
   if (!node || !node.height) return null;
   const usedHeight =
-    headerHeight +
-    distanceBetweenHeaderAndContent +
-    paddingHeight +
-    nodeBorderHeight;
+    headerHeight + distanceBetweenHeaderAndContent + paddingHeight + nodeBorderHeight;
   const childSpace = node.height - usedHeight;
   return (
     <>

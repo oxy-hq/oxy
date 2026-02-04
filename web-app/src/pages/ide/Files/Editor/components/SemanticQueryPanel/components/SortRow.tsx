@@ -1,6 +1,6 @@
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
-import { Field, Order } from "../../../types";
+import type { Field, Order } from "../../../types";
 
 interface SortRowProps {
   order: Order;
@@ -9,23 +9,18 @@ interface SortRowProps {
   onRemove: () => void;
 }
 
-const SortRow = ({
-  order,
-  availableFields,
-  onUpdate,
-  onRemove,
-}: SortRowProps) => {
+const SortRow = ({ order, availableFields, onUpdate, onRemove }: SortRowProps) => {
   return (
-    <div className="flex items-center gap-2 w-full flex-1">
+    <div className='flex w-full flex-1 items-center gap-2'>
       <select
         value={order.field}
         onChange={(e) =>
           onUpdate({
             ...order,
-            field: e.target.value,
+            field: e.target.value
           })
         }
-        className="text-xs border rounded px-2 py-1 bg-background"
+        className='rounded border bg-background px-2 py-1 text-xs'
       >
         {availableFields.map((field) => (
           <option key={field.fullName} value={field.fullName}>
@@ -38,21 +33,16 @@ const SortRow = ({
         onChange={(e) =>
           onUpdate({
             ...order,
-            direction: e.target.value as "asc" | "desc",
+            direction: e.target.value as "asc" | "desc"
           })
         }
-        className="text-xs flex-1 w-34 border rounded px-2 py-1 bg-background"
+        className='w-34 flex-1 rounded border bg-background px-2 py-1 text-xs'
       >
-        <option value="asc">Ascending</option>
-        <option value="desc">Descending</option>
+        <option value='asc'>Ascending</option>
+        <option value='desc'>Descending</option>
       </select>
-      <Button
-        size="sm"
-        variant="ghost"
-        onClick={onRemove}
-        className="h-7 w-7 p-0"
-      >
-        <X className="w-3 h-3" />
+      <Button size='sm' variant='ghost' onClick={onRemove} className='h-7 w-7 p-0'>
+        <X className='h-3 w-3' />
       </Button>
     </div>
   );

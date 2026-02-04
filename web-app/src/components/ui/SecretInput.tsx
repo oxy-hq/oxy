@@ -1,7 +1,8 @@
-import React, { useState, forwardRef } from "react";
-import { Input } from "@/components/ui/shadcn/input";
+import { Check, Copy, Eye, EyeOff } from "lucide-react";
+import type React from "react";
+import { forwardRef, useState } from "react";
 import { Button } from "@/components/ui/shadcn/button";
-import { Eye, EyeOff, Copy, Check } from "lucide-react";
+import { Input } from "@/components/ui/shadcn/input";
 import { cn } from "@/libs/shadcn/utils";
 
 interface SecretInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
@@ -32,48 +33,40 @@ const SecretInput = forwardRef<HTMLInputElement, SecretInputProps>(
     };
 
     return (
-      <div className="relative">
+      <div className='relative'>
         <Input
           {...props}
           ref={ref}
           type={showSecret ? "text" : "password"}
           className={cn("pr-20", showCopyButton && "pr-32", className)}
         />
-        <div className="absolute inset-y-0 right-0 flex items-center gap-1 pr-1">
+        <div className='absolute inset-y-0 right-0 flex items-center gap-1 pr-1'>
           {showCopyButton && props.value && (
             <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-7 w-7 p-0"
+              type='button'
+              variant='ghost'
+              size='sm'
+              className='h-7 w-7 p-0'
               onClick={handleCopy}
               title={copied ? "Copied!" : "Copy to clipboard"}
             >
-              {copied ? (
-                <Check className="h-3 w-3 text-green-600" />
-              ) : (
-                <Copy className="h-3 w-3" />
-              )}
+              {copied ? <Check className='h-3 w-3 text-green-600' /> : <Copy className='h-3 w-3' />}
             </Button>
           )}
           <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0"
+            type='button'
+            variant='ghost'
+            size='sm'
+            className='h-7 w-7 p-0'
             onClick={handleToggleVisibility}
             title={showSecret ? "Hide secret" : "Show secret"}
           >
-            {showSecret ? (
-              <EyeOff className="h-3 w-3" />
-            ) : (
-              <Eye className="h-3 w-3" />
-            )}
+            {showSecret ? <EyeOff className='h-3 w-3' /> : <Eye className='h-3 w-3' />}
           </Button>
         </div>
       </div>
     );
-  },
+  }
 );
 
 SecretInput.displayName = "SecretInput";

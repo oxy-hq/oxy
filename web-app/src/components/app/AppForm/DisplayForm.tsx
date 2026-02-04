@@ -1,28 +1,29 @@
-import React, { useState } from "react";
-import { useFormContext, Controller } from "react-hook-form";
-import { Label } from "@/components/ui/shadcn/label";
+import { ChevronDown, ChevronRight, Trash2 } from "lucide-react";
+import type React from "react";
+import { useState } from "react";
+import { Controller, useFormContext } from "react-hook-form";
 import { Button } from "@/components/ui/shadcn/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger
+} from "@/components/ui/shadcn/collapsible";
+import { Label } from "@/components/ui/shadcn/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from "@/components/ui/shadcn/select";
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/shadcn/collapsible";
-import { ChevronDown, ChevronRight, Trash2 } from "lucide-react";
-import { AppFormData } from "./index";
-import {
-  MarkdownDisplayFields,
-  LineChartDisplayFields,
   BarChartDisplayFields,
+  LineChartDisplayFields,
+  MarkdownDisplayFields,
   PieChartDisplayFields,
-  TableDisplayFields,
+  TableDisplayFields
 } from "./DisplayFields";
+import type { AppFormData } from "./index";
 
 interface DisplayFormProps {
   index: number;
@@ -34,19 +35,16 @@ const DISPLAY_TYPES = [
   { value: "line_chart", label: "Line Chart" },
   { value: "pie_chart", label: "Pie Chart" },
   { value: "bar_chart", label: "Bar Chart" },
-  { value: "table", label: "Table" },
+  { value: "table", label: "Table" }
 ];
 
-export const DisplayForm: React.FC<DisplayFormProps> = ({
-  index,
-  onRemove,
-}) => {
+export const DisplayForm: React.FC<DisplayFormProps> = ({ index, onRemove }) => {
   const [isOpen, setIsOpen] = useState(false);
   const {
     control,
     watch,
     setValue,
-    formState: { errors },
+    formState: { errors }
   } = useFormContext<AppFormData>();
 
   const displayType = watch(`display.${index}.type`);
@@ -81,51 +79,51 @@ export const DisplayForm: React.FC<DisplayFormProps> = ({
   const onTypeChange = (value: string) => {
     if (value !== displayType) {
       setValue(`display.${index}`, {
-        type: value,
+        type: value
       });
     }
   };
 
   return (
-    <div className="rounded-lg border bg-card p-3">
+    <div className='rounded-lg border bg-card p-3'>
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-        <CollapsibleTrigger className="rounded-lg transition-colors w-full">
-          <div className="flex items-center justify-between transition-colors">
+        <CollapsibleTrigger className='w-full rounded-lg transition-colors'>
+          <div className='flex items-center justify-between transition-colors'>
             {isOpen ? (
-              <ChevronDown className="h-5 w-5 text-muted-foreground" />
+              <ChevronDown className='h-5 w-5 text-muted-foreground' />
             ) : (
-              <ChevronRight className="h-5 w-5 text-muted-foreground" />
+              <ChevronRight className='h-5 w-5 text-muted-foreground' />
             )}
-            <div className="flex items-center gap-3 flex-1">
-              <span className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-semibold text-sm">
+            <div className='flex flex-1 items-center gap-3'>
+              <span className='flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 font-semibold text-primary text-sm'>
                 {index + 1}
               </span>
-              <div className="flex items-center gap-2 flex-1">
-                <span className="font-medium text-sm">Display {index + 1}</span>
+              <div className='flex flex-1 items-center gap-2'>
+                <span className='font-medium text-sm'>Display {index + 1}</span>
                 {displayType && (
-                  <span className="text-xs px-2 py-1 rounded-md bg-muted text-muted-foreground">
+                  <span className='rounded-md bg-muted px-2 py-1 text-muted-foreground text-xs'>
                     {getDisplayTypeLabel(displayType)}
                   </span>
                 )}
               </div>
             </div>
             <Button
-              type="button"
+              type='button'
               onClick={(e) => {
                 e.stopPropagation();
                 onRemove();
               }}
-              variant="ghost"
-              size="sm"
+              variant='ghost'
+              size='sm'
             >
-              <Trash2 className="w-4 h-4" />
+              <Trash2 className='h-4 w-4' />
             </Button>
           </div>
         </CollapsibleTrigger>
 
-        <CollapsibleContent className="space-y-4 mt-4">
-          <div className="space-y-4">
-            <div className="space-y-2">
+        <CollapsibleContent className='mt-4 space-y-4'>
+          <div className='space-y-4'>
+            <div className='space-y-2'>
               <Label htmlFor={`display.${index}.type`}>Type *</Label>
               <Controller
                 name={`display.${index}.type`}
@@ -140,7 +138,7 @@ export const DisplayForm: React.FC<DisplayFormProps> = ({
                     defaultValue={field.value}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select display type" />
+                      <SelectValue placeholder='Select display type' />
                     </SelectTrigger>
                     <SelectContent>
                       {DISPLAY_TYPES.map((type) => (
@@ -153,9 +151,7 @@ export const DisplayForm: React.FC<DisplayFormProps> = ({
                 )}
               />
               {displayErrors?.type && (
-                <p className="text-sm text-red-500">
-                  {String(displayErrors.type.message || "")}
-                </p>
+                <p className='text-red-500 text-sm'>{String(displayErrors.type.message || "")}</p>
               )}
             </div>
 

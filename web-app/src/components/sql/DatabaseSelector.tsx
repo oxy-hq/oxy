@@ -1,14 +1,14 @@
-import { Button } from "@/components/ui/shadcn/button";
-import {
-  DropdownMenuContent,
-  DropdownMenuCheckboxItem,
-  DropdownMenuTrigger,
-  DropdownMenu,
-} from "@/components/ui/shadcn/dropdown-menu";
 import { ChevronDown, Loader2 } from "lucide-react";
 import { useEffect, useMemo } from "react";
+import { Button } from "@/components/ui/shadcn/button";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger
+} from "@/components/ui/shadcn/dropdown-menu";
 import useDatabases from "@/hooks/api/databases/useDatabases";
-import { DatabaseInfo } from "@/types/database";
+import type { DatabaseInfo } from "@/types/database";
 
 export interface DatabaseSelectorProps {
   onSelect: (database: string) => void;
@@ -22,7 +22,7 @@ const DatabaseSelector = ({
   onSelect,
   database,
   placeholder = "Select database",
-  className,
+  className
 }: DatabaseSelectorProps) => {
   const { data: databases, isLoading, isSuccess } = useDatabases();
 
@@ -31,10 +31,10 @@ const DatabaseSelector = ({
       databases
         ?.map((databaseInfo: DatabaseInfo) => ({
           id: databaseInfo.name,
-          name: databaseInfo.name,
+          name: databaseInfo.name
         }))
         .sort((a, b) => a.name.localeCompare(b.name)) ?? [],
-    [databases],
+    [databases]
   );
 
   useEffect(() => {
@@ -46,16 +46,9 @@ const DatabaseSelector = ({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
-          size="sm"
-          disabled={isLoading}
-          variant="outline"
-          className={className}
-        >
-          <span className="truncate max-w-[120px] block">
-            {database ?? placeholder}
-          </span>
-          {isLoading ? <Loader2 className="animate-spin" /> : <ChevronDown />}
+        <Button size='sm' disabled={isLoading} variant='outline' className={className}>
+          <span className='block max-w-[120px] truncate'>{database ?? placeholder}</span>
+          {isLoading ? <Loader2 className='animate-spin' /> : <ChevronDown />}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent>

@@ -1,15 +1,15 @@
 import { useEffect, useRef } from "react";
-import { useFormContext, useFieldArray } from "react-hook-form";
-import { WorkflowFormData } from "../../..";
-import useTopicFiles from "@/hooks/api/useTopicFiles";
+import { useFieldArray, useFormContext } from "react-hook-form";
 import useTopicFieldOptions from "@/hooks/api/useTopicFieldOptions";
+import useTopicFiles from "@/hooks/api/useTopicFiles";
+import type { WorkflowFormData } from "../../..";
 
 export const useSemanticQueryFields = (index: number, basePath: string) => {
   const {
     register,
     control,
     watch,
-    formState: { errors },
+    formState: { errors }
   } = useFormContext<WorkflowFormData>();
 
   const taskPath = `${basePath}.${index}`;
@@ -24,87 +24,74 @@ export const useSemanticQueryFields = (index: number, basePath: string) => {
   const prevTopicRef = useRef<string | undefined>(topicValue);
 
   // Fetch available topics
-  const {
-    topicFiles,
-    isLoading: topicsLoading,
-    error: topicsError,
-  } = useTopicFiles();
+  const { topicFiles, isLoading: topicsLoading, error: topicsError } = useTopicFiles();
 
   // Fetch field options based on selected topic
   const {
     dimensions: dimensionOptions,
     measures: measureOptions,
     allFields: allFieldOptions,
-    isLoading: fieldsLoading,
+    isLoading: fieldsLoading
   } = useTopicFieldOptions(topicValue);
 
   // Use useFieldArray for dynamic arrays - only for clearing on topic change
   const { replace: replaceDimensions } = useFieldArray({
     control,
     // @ts-expect-error - dynamic field path
-    name: `${taskPath}.dimensions`,
+    name: `${taskPath}.dimensions`
   });
 
   const { replace: replaceMeasures } = useFieldArray({
     control,
     // @ts-expect-error - dynamic field path
-    name: `${taskPath}.measures`,
+    name: `${taskPath}.measures`
   });
 
   const { replace: replaceFilters } = useFieldArray({
     control,
     // @ts-expect-error - dynamic field path
-    name: `${taskPath}.filters`,
+    name: `${taskPath}.filters`
   });
 
   const { replace: replaceOrders } = useFieldArray({
     control,
     // @ts-expect-error - dynamic field path
-    name: `${taskPath}.orders`,
+    name: `${taskPath}.orders`
   });
 
   // Clear fields when topic changes
   useEffect(() => {
-    if (
-      prevTopicRef.current !== undefined &&
-      topicValue !== prevTopicRef.current
-    ) {
+    if (prevTopicRef.current !== undefined && topicValue !== prevTopicRef.current) {
       replaceDimensions([]);
       replaceMeasures([]);
       replaceFilters([]);
       replaceOrders([]);
     }
     prevTopicRef.current = topicValue;
-  }, [
-    topicValue,
-    replaceDimensions,
-    replaceMeasures,
-    replaceFilters,
-    replaceOrders,
-  ]);
+  }, [topicValue, replaceDimensions, replaceMeasures, replaceFilters, replaceOrders]);
 
   const topicItems = topicFiles.map((t) => ({
     value: t.value,
     label: t.label,
-    searchText: t.searchText,
+    searchText: t.searchText
   }));
 
   const dimensionItems = dimensionOptions.map((d) => ({
     value: d.value,
     label: d.label,
-    searchText: d.searchText,
+    searchText: d.searchText
   }));
 
   const measureItems = measureOptions.map((m) => ({
     value: m.value,
     label: m.label,
-    searchText: m.searchText,
+    searchText: m.searchText
   }));
 
   const allFieldItems = allFieldOptions.map((f) => ({
     value: f.value,
     label: f.label,
-    searchText: f.searchText,
+    searchText: f.searchText
   }));
 
   return {
@@ -119,6 +106,6 @@ export const useSemanticQueryFields = (index: number, basePath: string) => {
     topicItems,
     dimensionItems,
     measureItems,
-    allFieldItems,
+    allFieldItems
   };
 };

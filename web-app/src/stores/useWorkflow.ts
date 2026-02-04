@@ -1,12 +1,12 @@
-import { create } from "zustand";
 import {
+  applyEdgeChanges,
+  applyNodeChanges,
   type Edge,
   type Node,
-  type OnNodesChange,
   type OnEdgesChange,
-  applyNodeChanges,
-  applyEdgeChanges,
+  type OnNodesChange
 } from "@xyflow/react";
+import { create } from "zustand";
 import { buildWorkflowNodes } from "@/components/workflow/WorkflowDiagram/layout/nodeBuilder";
 
 export type NodeData = {
@@ -25,12 +25,12 @@ export enum TaskType {
   AGENT = "agent",
   LOOP_SEQUENTIAL = "loop_sequential",
   WORKFLOW = "workflow",
-  CONDITIONAL = "conditional",
+  CONDITIONAL = "conditional"
 }
 
 export enum NoneTaskNodeType {
   CONDITIONAL_ELSE = "conditional-else",
-  CONDITIONAL_IF = "conditional-if",
+  CONDITIONAL_IF = "conditional-if"
 }
 
 export type NodeType = TaskType | NoneTaskNodeType;
@@ -200,19 +200,19 @@ const useWorkflow = create<WorkflowState>((set, get) => ({
   setNodes: (nodes: TaskNode[]) => set({ nodes }),
   onNodesChange: (changes) => {
     set({
-      nodes: applyNodeChanges(changes, get().nodes),
+      nodes: applyNodeChanges(changes, get().nodes)
     });
   },
   onEdgesChange: (changes) => {
     set({
-      edges: applyEdgeChanges(changes, get().edges),
+      edges: applyEdgeChanges(changes, get().edges)
     });
   },
   initFromTasks: async (tasks: TaskConfigWithId[]) => {
     const { nodes, edges } = buildWorkflowNodes(tasks);
     set({
       baseNodes: nodes,
-      edges,
+      edges
     });
   },
   setNodeExpanded: async (nodeId: string, expanded: boolean) => {
@@ -220,7 +220,7 @@ const useWorkflow = create<WorkflowState>((set, get) => ({
       if (node.id === nodeId) {
         return {
           ...node,
-          data: { ...node.data, expanded },
+          data: { ...node.data, expanded }
         };
       }
 
@@ -228,9 +228,9 @@ const useWorkflow = create<WorkflowState>((set, get) => ({
     });
 
     set({
-      baseNodes: nodes,
+      baseNodes: nodes
     });
-  },
+  }
 }));
 
 export default useWorkflow;

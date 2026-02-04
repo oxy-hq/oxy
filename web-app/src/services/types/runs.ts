@@ -1,9 +1,4 @@
-import {
-  Block,
-  GroupAgenticType,
-  GroupArtifactType,
-  GroupWorkflowType,
-} from "./blocks";
+import type { Block, GroupAgenticType, GroupArtifactType, GroupWorkflowType } from "./blocks";
 
 export interface Retry {
   type: "retry";
@@ -53,12 +48,7 @@ export type StreamEventsPayload = {
   runIndex: number;
 };
 
-export type RunStatus =
-  | "pending"
-  | "running"
-  | "canceled"
-  | "completed"
-  | "failed";
+export type RunStatus = "pending" | "running" | "canceled" | "completed" | "failed";
 
 export type RunInfo = {
   source_id: string;
@@ -87,10 +77,7 @@ export type GetBlocksRequest = {
   run_index?: number;
 };
 
-export type GroupKind =
-  | GroupArtifactType
-  | GroupWorkflowType
-  | GroupAgenticType;
+export type GroupKind = GroupArtifactType | GroupWorkflowType | GroupAgenticType;
 
 export type GetBlocksResponse = RunInfo & {
   blocks?: Record<string, Block>;

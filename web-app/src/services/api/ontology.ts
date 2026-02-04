@@ -1,32 +1,23 @@
-import {
-  OntologyGraph,
-  OntologyNode,
-  OntologyEdge,
-  View,
-  Topic,
-} from "@/types/ontology";
+import { parse } from "yaml";
+import type { FileTreeModel } from "@/types/file";
+import type { OntologyEdge, OntologyGraph, OntologyNode, Topic, View } from "@/types/ontology";
 import { DatabaseService } from "./database";
 import { FileService } from "./files";
-import { FileTreeModel } from "@/types/file";
-import { parse } from "yaml";
 
 export class OntologyService {
   /**
    * Builds the complete ontology graph by fetching all assets and computing linkages
    */
-  static async getOntologyGraph(
-    projectId: string,
-    branchName: string,
-  ): Promise<OntologyGraph> {
+  static async getOntologyGraph(projectId: string, branchName: string): Promise<OntologyGraph> {
     // Fetch all necessary data in parallel
     const [databases, fileTree] = await Promise.all([
       DatabaseService.listDatabases(projectId, branchName),
-      FileService.getFileTree(projectId, branchName),
+      FileService.getFileTree(projectId, branchName)
     ]);
 
     // Parse semantic models, agents, queries, workflows, and apps from file tree
     const { views, topics, agents, sqlQueries, workflows } =
-      await this.parseProjectFiles(projectId, branchName, fileTree);
+      await OntologyService.parseProjectFiles(projectId, branchName, fileTree);
 
     // Build nodes
     const nodes: OntologyNode[] = [];
@@ -47,9 +38,9 @@ export class OntologyService {
               description: `Table in ${db.name}.${dataset}`,
               metadata: {
                 dataset,
-                dialect: db.dialect,
-              },
-            },
+                dialect: db.dialect
+              }
+            }
           });
         });
       });
@@ -69,18 +60,16 @@ export class OntologyService {
           datasource: view.datasource,
           metadata: {
             dimensions: view.dimensions?.length || 0,
-            measures: view.measures?.length || 0,
-          },
-        },
+            measures: view.measures?.length || 0
+          }
+        }
       });
 
       // Link view to its source table
       // Try to find the table node by matching datasource and table name
       const tableNode = nodes.find(
         (n) =>
-          n.type === "table" &&
-          n.data.database === view.datasource &&
-          n.data.name === view.table,
+          n.type === "table" && n.data.database === view.datasource && n.data.name === view.table
       );
 
       if (tableNode) {
@@ -89,7 +78,7 @@ export class OntologyService {
           source: viewId,
           target: tableNode.id,
           label: "uses",
-          type: "uses",
+          type: "uses"
         });
       }
     });
@@ -119,9 +108,9 @@ export class OntologyService {
                 metadata: {
                   type: entity.type,
                   description: entity.description,
-                  keys: entity.keys,
-                },
-              },
+                  keys: entity.keys
+                }
+              }
             });
           }
 
@@ -131,7 +120,7 @@ export class OntologyService {
             source: entityId,
             target: viewId,
             label: "defined in",
-            type: "uses",
+            type: "uses"
           });
         });
       }
@@ -150,23 +139,21 @@ export class OntologyService {
           description: topic.description,
           metadata: {
             views: topic.views,
-            base_view: topic.base_view,
-          },
-        },
+            base_view: topic.base_view
+          }
+        }
       });
 
       // Link topic to its views
       topic.views.forEach((viewName) => {
-        const viewNode = nodes.find(
-          (n) => n.type === "view" && n.data.name === viewName,
-        );
+        const viewNode = nodes.find((n) => n.type === "view" && n.data.name === viewName);
         if (viewNode) {
           edges.push({
             id: `${topicId}->${viewNode.id}`,
             source: topicId,
             target: viewNode.id,
             label: "contains",
-            type: "contains",
+            type: "contains"
           });
         }
       });
@@ -200,13 +187,13 @@ export class OntologyService {
           path: workflow.path,
           description: workflow.description,
           metadata: {
-            tasks: workflow.tasks,
-          },
-        },
+            tasks: workflow.tasks
+          }
+        }
       });
 
       // Analyze workflow/app tasks to find dependencies
-      this.extractWorkflowDependencies(workflow.tasks, nodeId, nodes, edges);
+      OntologyService.extractWorkflowDependencies(workflow.tasks, nodeId, nodes, edges);
     });
 
     // Helper function to check if a path matches a pattern (with wildcards)
@@ -227,10 +214,7 @@ export class OntologyService {
         if (typeof task !== "object" || task === null) return;
         const taskObj = task as Record<string, unknown>;
 
-        if (
-          taskObj.type === "execute_sql" &&
-          typeof taskObj.sql_file === "string"
-        ) {
+        if (taskObj.type === "execute_sql" && typeof taskObj.sql_file === "string") {
           sqlQueries.forEach((query) => {
             if (matchesPattern(query.path, taskObj.sql_file as string)) {
               referencedSqlQueries.add(query.path);
@@ -262,19 +246,13 @@ export class OntologyService {
 
     // Helper to extract SQL paths from context item
     const extractSqlPathsFromContext = (
-      contextItem: string | { name?: string; type?: string; src?: string[] },
+      contextItem: string | { name?: string; type?: string; src?: string[] }
     ): string[] => {
       if (typeof contextItem === "string") {
         return [contextItem];
       }
-      if (
-        contextItem &&
-        typeof contextItem === "object" &&
-        Array.isArray(contextItem.src)
-      ) {
-        return contextItem.src.filter(
-          (srcPath): srcPath is string => typeof srcPath === "string",
-        );
+      if (contextItem && typeof contextItem === "object" && Array.isArray(contextItem.src)) {
+        return contextItem.src.filter((srcPath): srcPath is string => typeof srcPath === "string");
       }
       return [];
     };
@@ -310,8 +288,8 @@ export class OntologyService {
           data: {
             name: query.name,
             path: query.path,
-            metadata: {},
-          },
+            metadata: {}
+          }
         });
       }
     });
@@ -329,25 +307,23 @@ export class OntologyService {
           description: agent.description,
           metadata: {
             type: agent.agentType,
-            model: agent.model,
-          },
-        },
+            model: agent.model
+          }
+        }
       });
 
       // Link agent to topics (for default agents with semantic_query tools)
       if (agent.tools) {
         agent.tools.forEach((tool) => {
           if (tool.type === "semantic_query" && tool.topic) {
-            const topicNode = nodes.find(
-              (n) => n.type === "topic" && n.data.name === tool.topic,
-            );
+            const topicNode = nodes.find((n) => n.type === "topic" && n.data.name === tool.topic);
             if (topicNode) {
               edges.push({
                 id: `${agentId}->${topicNode.id}`,
                 source: agentId,
                 target: topicNode.id,
                 label: "uses",
-                type: "uses",
+                type: "uses"
               });
             }
           }
@@ -355,7 +331,7 @@ export class OntologyService {
           // Link agent to workflows
           if (tool.type === "workflow" && tool.workflow_ref) {
             const workflowNode = nodes.find(
-              (n) => n.type === "workflow" && n.data.path === tool.workflow_ref,
+              (n) => n.type === "workflow" && n.data.path === tool.workflow_ref
             );
             if (workflowNode) {
               edges.push({
@@ -363,7 +339,7 @@ export class OntologyService {
                 source: agentId,
                 target: workflowNode.id,
                 label: "uses",
-                type: "uses",
+                type: "uses"
               });
             }
           }
@@ -378,10 +354,7 @@ export class OntologyService {
           // Handle topic routes
           if (route.endsWith(".topic.yml") || route.endsWith(".topic.yaml")) {
             const matchedTopics = nodes.filter(
-              (n) =>
-                n.type === "topic" &&
-                n.data.path &&
-                matchesPattern(n.data.path, route),
+              (n) => n.type === "topic" && n.data.path && matchesPattern(n.data.path, route)
             );
             matchedTopics.forEach((topicNode) => {
               edges.push({
@@ -389,7 +362,7 @@ export class OntologyService {
                 source: agentId,
                 target: topicNode.id,
                 label: "routes to",
-                type: "uses",
+                type: "uses"
               });
             });
           }
@@ -397,10 +370,7 @@ export class OntologyService {
           // Handle workflow routes
           if (route.endsWith(".workflow.yml")) {
             const matchedWorkflows = nodes.filter(
-              (n) =>
-                n.type === "workflow" &&
-                n.data.path &&
-                matchesPattern(n.data.path, route),
+              (n) => n.type === "workflow" && n.data.path && matchesPattern(n.data.path, route)
             );
             matchedWorkflows.forEach((workflowNode) => {
               edges.push({
@@ -408,7 +378,7 @@ export class OntologyService {
                 source: agentId,
                 target: workflowNode.id,
                 label: "routes to",
-                type: "uses",
+                type: "uses"
               });
             });
           }
@@ -416,10 +386,7 @@ export class OntologyService {
           // Handle SQL query routes
           if (route.endsWith(".sql")) {
             const matchedQueries = nodes.filter(
-              (n) =>
-                n.type === "sql_query" &&
-                n.data.path &&
-                matchesPattern(n.data.path, route),
+              (n) => n.type === "sql_query" && n.data.path && matchesPattern(n.data.path, route)
             );
             matchedQueries.forEach((queryNode) => {
               edges.push({
@@ -427,7 +394,7 @@ export class OntologyService {
                 source: agentId,
                 target: queryNode.id,
                 label: "routes to",
-                type: "uses",
+                type: "uses"
               });
             });
           }
@@ -437,7 +404,7 @@ export class OntologyService {
       // Link routing agent to fallback agent
       if (agent.agentType === "routing" && agent.route_fallback) {
         const fallbackAgentNode = nodes.find(
-          (n) => n.type === "agent" && n.data.path === agent.route_fallback,
+          (n) => n.type === "agent" && n.data.path === agent.route_fallback
         );
         if (fallbackAgentNode) {
           edges.push({
@@ -445,7 +412,7 @@ export class OntologyService {
             source: agentId,
             target: fallbackAgentNode.id,
             label: "fallback",
-            type: "uses",
+            type: "uses"
           });
         }
       }
@@ -457,10 +424,7 @@ export class OntologyService {
 
         sqlPaths.forEach((contextPath) => {
           const matchedQueries = nodes.filter(
-            (n) =>
-              n.type === "sql_query" &&
-              n.data.path &&
-              matchesPattern(n.data.path, contextPath),
+            (n) => n.type === "sql_query" && n.data.path && matchesPattern(n.data.path, contextPath)
           );
           matchedQueries.forEach((queryNode) => {
             edges.push({
@@ -468,7 +432,7 @@ export class OntologyService {
               source: agentId,
               target: queryNode.id,
               label: "uses",
-              type: "uses",
+              type: "uses"
             });
           });
         });
@@ -484,7 +448,7 @@ export class OntologyService {
   private static async parseProjectFiles(
     projectId: string,
     branchName: string,
-    fileTree: FileTreeModel[],
+    fileTree: FileTreeModel[]
   ): Promise<{
     views: View[];
     topics: Topic[];
@@ -501,9 +465,7 @@ export class OntologyService {
       }>;
       routes?: string[];
       route_fallback?: string;
-      context?: Array<
-        string | { name?: string; type?: string; src?: string[] }
-      >;
+      context?: Array<string | { name?: string; type?: string; src?: string[] }>;
     }>;
     sqlQueries: Array<{
       name: string;
@@ -531,9 +493,7 @@ export class OntologyService {
       }>;
       routes?: string[];
       route_fallback?: string;
-      context?: Array<
-        string | { name?: string; type?: string; src?: string[] }
-      >;
+      context?: Array<string | { name?: string; type?: string; src?: string[] }>;
     }> = [];
     const sqlQueries: Array<{
       name: string;
@@ -547,17 +507,13 @@ export class OntologyService {
     }> = [];
 
     // Find all relevant files
-    const projectFiles = this.findProjectFiles(fileTree);
+    const projectFiles = OntologyService.findProjectFiles(fileTree);
 
     // Fetch and parse each file
     await Promise.all(
       projectFiles.map(async (file) => {
         try {
-          const content = await FileService.getFile(
-            projectId,
-            btoa(file.path),
-            branchName,
-          );
+          const content = await FileService.getFile(projectId, btoa(file.path), branchName);
 
           if (
             file.type === "view" ||
@@ -578,7 +534,7 @@ export class OntologyService {
                 table: parsed.table,
                 entities: parsed.entities,
                 dimensions: parsed.dimensions,
-                measures: parsed.measures,
+                measures: parsed.measures
               });
             } else if (file.type === "topic") {
               topics.push({
@@ -587,12 +543,10 @@ export class OntologyService {
                 description: parsed.description,
                 views: parsed.views || [],
                 base_view: parsed.base_view,
-                default_filters: parsed.default_filters,
+                default_filters: parsed.default_filters
               });
             } else if (file.type === "agent") {
-              const agentName =
-                file.path.split("/").pop()?.replace(".agent.yml", "") ||
-                "unknown";
+              const agentName = file.path.split("/").pop()?.replace(".agent.yml", "") || "unknown";
               agents.push({
                 name: agentName,
                 path: file.path,
@@ -602,7 +556,7 @@ export class OntologyService {
                 tools: parsed.tools,
                 routes: parsed.routes,
                 route_fallback: parsed.route_fallback,
-                context: parsed.context,
+                context: parsed.context
               });
             } else if (
               file.type === "workflow" ||
@@ -620,21 +574,20 @@ export class OntologyService {
                 name: workflowName,
                 path: file.path,
                 description: parsed.description,
-                tasks: parsed.tasks || [],
+                tasks: parsed.tasks || []
               });
             }
           } else if (file.type === "sql") {
-            const queryName =
-              file.path.split("/").pop()?.replace(".sql", "") || "unknown";
+            const queryName = file.path.split("/").pop()?.replace(".sql", "") || "unknown";
             sqlQueries.push({
               name: queryName,
-              path: file.path,
+              path: file.path
             });
           }
         } catch (error) {
           console.error(`Failed to parse ${file.path}:`, error);
         }
-      }),
+      })
     );
 
     return { views, topics, agents, sqlQueries, workflows };
@@ -645,7 +598,7 @@ export class OntologyService {
    */
   private static findProjectFiles(
     fileTree: FileTreeModel[],
-    basePath = "",
+    basePath = ""
   ): Array<{ path: string; type: string }> {
     const files: Array<{ path: string; type: string }> = [];
 
@@ -653,34 +606,19 @@ export class OntologyService {
       const currentPath = basePath ? `${basePath}/${node.name}` : node.name;
 
       if (node.is_dir && node.children) {
-        files.push(...this.findProjectFiles(node.children, currentPath));
+        files.push(...OntologyService.findProjectFiles(node.children, currentPath));
       } else if (!node.is_dir) {
-        if (
-          node.name.endsWith(".view.yml") ||
-          node.name.endsWith(".view.yaml")
-        ) {
+        if (node.name.endsWith(".view.yml") || node.name.endsWith(".view.yaml")) {
           files.push({ path: currentPath, type: "view" });
-        } else if (
-          node.name.endsWith(".topic.yml") ||
-          node.name.endsWith(".topic.yaml")
-        ) {
+        } else if (node.name.endsWith(".topic.yml") || node.name.endsWith(".topic.yaml")) {
           files.push({ path: currentPath, type: "topic" });
-        } else if (
-          node.name.endsWith(".agent.yml") ||
-          node.name.endsWith(".agent.yaml")
-        ) {
+        } else if (node.name.endsWith(".agent.yml") || node.name.endsWith(".agent.yaml")) {
           files.push({ path: currentPath, type: "agent" });
         } else if (node.name.endsWith(".sql")) {
           files.push({ path: currentPath, type: "sql" });
-        } else if (
-          node.name.endsWith(".workflow.yml") ||
-          node.name.endsWith(".workflow.yaml")
-        ) {
+        } else if (node.name.endsWith(".workflow.yml") || node.name.endsWith(".workflow.yaml")) {
           files.push({ path: currentPath, type: "workflow" });
-        } else if (
-          node.name.endsWith(".app.yml") ||
-          node.name.endsWith(".app.yaml")
-        ) {
+        } else if (node.name.endsWith(".app.yml") || node.name.endsWith(".app.yaml")) {
           files.push({ path: currentPath, type: "app" });
         } else if (
           node.name.endsWith(".automation.yml") ||
@@ -701,7 +639,7 @@ export class OntologyService {
     tasks: unknown[],
     workflowId: string,
     nodes: OntologyNode[],
-    edges: OntologyEdge[],
+    edges: OntologyEdge[]
   ): void {
     if (!Array.isArray(tasks)) return;
 
@@ -713,20 +651,15 @@ export class OntologyService {
       const taskObj = task as Record<string, unknown>;
 
       // Link to semantic queries (topics)
-      if (
-        taskObj.type === "semantic_query" &&
-        typeof taskObj.topic === "string"
-      ) {
-        const topicNode = nodes.find(
-          (n) => n.type === "topic" && n.data.name === taskObj.topic,
-        );
+      if (taskObj.type === "semantic_query" && typeof taskObj.topic === "string") {
+        const topicNode = nodes.find((n) => n.type === "topic" && n.data.name === taskObj.topic);
         if (topicNode) {
           edges.push({
             id: `${workflowId}->${topicNode.id}`,
             source: workflowId,
             target: topicNode.id,
             label: "uses",
-            type: "uses",
+            type: "uses"
           });
         }
 
@@ -755,28 +688,23 @@ export class OntologyService {
 
         // Link to views
         viewNames.forEach((viewName) => {
-          const viewNode = nodes.find(
-            (n) => n.type === "view" && n.data.name === viewName,
-          );
+          const viewNode = nodes.find((n) => n.type === "view" && n.data.name === viewName);
           if (viewNode) {
             edges.push({
               id: `${workflowId}->${viewNode.id}`,
               source: workflowId,
               target: viewNode.id,
               label: "queries",
-              type: "uses",
+              type: "uses"
             });
           }
         });
       }
 
       // Link to SQL query files
-      if (
-        taskObj.type === "execute_sql" &&
-        typeof taskObj.sql_file === "string"
-      ) {
+      if (taskObj.type === "execute_sql" && typeof taskObj.sql_file === "string") {
         const queryNode = nodes.find(
-          (n) => n.type === "sql_query" && n.data.path === taskObj.sql_file,
+          (n) => n.type === "sql_query" && n.data.path === taskObj.sql_file
         );
         if (queryNode) {
           edges.push({
@@ -784,7 +712,7 @@ export class OntologyService {
             source: workflowId,
             target: queryNode.id,
             label: "uses",
-            type: "uses",
+            type: "uses"
           });
         }
       }
@@ -792,7 +720,7 @@ export class OntologyService {
       // Link to agents
       if (taskObj.type === "agent" && typeof taskObj.agent_ref === "string") {
         const agentNode = nodes.find(
-          (n) => n.type === "agent" && n.data.path === taskObj.agent_ref,
+          (n) => n.type === "agent" && n.data.path === taskObj.agent_ref
         );
         if (agentNode) {
           edges.push({
@@ -800,18 +728,15 @@ export class OntologyService {
             source: workflowId,
             target: agentNode.id,
             label: "uses",
-            type: "uses",
+            type: "uses"
           });
         }
       }
 
       // Link to other workflows
-      if (
-        taskObj.type === "workflow" &&
-        typeof taskObj.workflow_ref === "string"
-      ) {
+      if (taskObj.type === "workflow" && typeof taskObj.workflow_ref === "string") {
         const subWorkflowNode = nodes.find(
-          (n) => n.type === "workflow" && n.data.path === taskObj.workflow_ref,
+          (n) => n.type === "workflow" && n.data.path === taskObj.workflow_ref
         );
         if (subWorkflowNode) {
           edges.push({
@@ -819,19 +744,14 @@ export class OntologyService {
             source: workflowId,
             target: subWorkflowNode.id,
             label: "uses",
-            type: "uses",
+            type: "uses"
           });
         }
       }
 
       // Recursively handle nested tasks
       if (Array.isArray(taskObj.tasks)) {
-        this.extractWorkflowDependencies(
-          taskObj.tasks,
-          workflowId,
-          nodes,
-          edges,
-        );
+        OntologyService.extractWorkflowDependencies(taskObj.tasks, workflowId, nodes, edges);
       }
     });
   }

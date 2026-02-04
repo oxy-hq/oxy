@@ -1,11 +1,11 @@
-import {
-  Secret,
-  SecretListResponse,
-  CreateSecretRequest,
-  CreateSecretResponse,
-  UpdateSecretRequest,
+import type {
   BulkCreateSecretsRequest,
   BulkCreateSecretsResponse,
+  CreateSecretRequest,
+  CreateSecretResponse,
+  Secret,
+  SecretListResponse,
+  UpdateSecretRequest
 } from "@/types/secret";
 import { apiClient } from "./api/axios";
 
@@ -15,12 +15,9 @@ export class SecretService {
    */
   static async createSecret(
     projectId: string,
-    request: CreateSecretRequest,
+    request: CreateSecretRequest
   ): Promise<CreateSecretResponse> {
-    const response = await apiClient.post<CreateSecretResponse>(
-      `/${projectId}/secrets`,
-      request,
-    );
+    const response = await apiClient.post<CreateSecretResponse>(`/${projectId}/secrets`, request);
     return response.data;
   }
 
@@ -29,11 +26,11 @@ export class SecretService {
    */
   static async bulkCreateSecrets(
     projectId: string,
-    request: BulkCreateSecretsRequest,
+    request: BulkCreateSecretsRequest
   ): Promise<BulkCreateSecretsResponse> {
     const response = await apiClient.post<BulkCreateSecretsResponse>(
       `/${projectId}/secrets/bulk`,
-      request,
+      request
     );
     return response.data;
   }
@@ -42,9 +39,7 @@ export class SecretService {
    * List all secrets for the current user
    */
   static async listSecrets(projectId: string): Promise<SecretListResponse> {
-    const response = await apiClient.get<SecretListResponse>(
-      `/${projectId}/secrets`,
-    );
+    const response = await apiClient.get<SecretListResponse>(`/${projectId}/secrets`);
     return response.data;
   }
 
@@ -62,12 +57,9 @@ export class SecretService {
   static async updateSecret(
     projectId: string,
     id: string,
-    request: UpdateSecretRequest,
+    request: UpdateSecretRequest
   ): Promise<Secret> {
-    const response = await apiClient.put<Secret>(
-      `/${projectId}/secrets/${id}`,
-      request,
-    );
+    const response = await apiClient.put<Secret>(`/${projectId}/secrets/${id}`, request);
     return response.data;
   }
 

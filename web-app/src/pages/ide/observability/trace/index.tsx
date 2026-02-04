@@ -1,16 +1,16 @@
-import { useState, useCallback } from "react";
+import { useCallback, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
-  ResizablePanelGroup,
-  ResizablePanel,
   ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup
 } from "@/components/ui/shadcn/resizable";
 import useTraceDetail from "@/hooks/api/traces/useTraceDetail";
 import type { TimelineSpan } from "@/services/api/traces";
-import { TraceHeader } from "./components/TraceHeader";
-import { Timeline } from "./components/Timeline";
-import { SpanDetailPanel } from "./components/SpanDetailPanel";
 import { ErrorPage } from "../components/ErrorPage";
+import { SpanDetailPanel } from "./components/SpanDetailPanel";
+import { Timeline } from "./components/Timeline";
+import { TraceHeader } from "./components/TraceHeader";
 
 export default function TraceDetailPage() {
   const { traceId } = useParams<{ traceId: string }>();
@@ -18,8 +18,7 @@ export default function TraceDetailPage() {
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
 
   // Only show selected span when explicitly clicked (no auto-select)
-  const selectedSpan =
-    trace?.spans.find((s) => s.spanId === selectedSpanId) ?? null;
+  const selectedSpan = trace?.spans.find((s) => s.spanId === selectedSpanId) ?? null;
 
   const handleSelectSpan = useCallback((span: TimelineSpan) => {
     setSelectedSpanId(span.spanId);
@@ -31,23 +30,20 @@ export default function TraceDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-muted-foreground">Loading trace...</div>
+      <div className='flex h-full items-center justify-center'>
+        <div className='text-muted-foreground'>Loading trace...</div>
       </div>
     );
   }
 
   if (error || !trace) {
     return (
-      <ErrorPage
-        message="Failed to load trace"
-        description={error?.message || "Trace not found"}
-      />
+      <ErrorPage message='Failed to load trace' description={error?.message || "Trace not found"} />
     );
   }
 
   return (
-    <div className="flex flex-col h-full bg-background">
+    <div className='flex h-full flex-col bg-background'>
       <TraceHeader
         traceId={traceId || ""}
         totalDurationMs={trace.totalDurationMs}
@@ -56,15 +52,15 @@ export default function TraceDetailPage() {
       />
 
       {/* Main Content with Resizable Panels */}
-      <div className="flex-1 overflow-hidden">
-        <ResizablePanelGroup direction="horizontal">
+      <div className='flex-1 overflow-hidden'>
+        <ResizablePanelGroup direction='horizontal'>
           {/* Timeline Panel */}
           <ResizablePanel
             defaultSize={selectedSpan ? 50 : 100}
             minSize={30}
-            className="flex flex-col"
+            className='flex flex-col'
           >
-            <div className="flex-1 overflow-auto customScrollbar scrollbar-gutter-auto">
+            <div className='customScrollbar scrollbar-gutter-auto flex-1 overflow-auto'>
               <Timeline
                 spans={trace.spans}
                 totalDuration={trace.totalDurationMs}
@@ -78,11 +74,7 @@ export default function TraceDetailPage() {
           {selectedSpan && (
             <>
               <ResizableHandle withHandle />
-              <ResizablePanel
-                defaultSize={50}
-                minSize={25}
-                className="flex flex-col"
-              >
+              <ResizablePanel defaultSize={50} minSize={25} className='flex flex-col'>
                 <SpanDetailPanel
                   key={selectedSpan.spanId}
                   span={selectedSpan}

@@ -1,16 +1,16 @@
-import { JSX, useState, useEffect, useMemo } from "react";
+import { type JSX, useEffect, useMemo, useState } from "react";
 import FileEditor from "@/components/FileEditor";
-import EditorHeader from "../EditorHeader";
-import { cn } from "@/libs/shadcn/utils";
-import {
-  ResizablePanelGroup,
-  ResizablePanel,
-  ResizableHandle,
-} from "@/components/ui/shadcn/resizable";
 import { FileEditorProvider } from "@/components/FileEditor/FileEditorContext";
 import { useNavigationBlock } from "@/components/FileEditor/hooks/useNavigationBlock";
 import UnsavedChangesDialog from "@/components/FileEditor/UnsavedChangesDialog";
 import { useFileEditorContext } from "@/components/FileEditor/useFileEditorContext";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup
+} from "@/components/ui/shadcn/resizable";
+import { cn } from "@/libs/shadcn/utils";
+import EditorHeader from "../EditorHeader";
 
 const MIN_PANE_SIZE_PERCENT = 10;
 const NARROW_VIEWPORT_BREAKPOINT = 800;
@@ -35,9 +35,7 @@ export interface EditorPageWrapperProps {
   previewOnly?: boolean;
 }
 
-const useViewportDetection = (
-  breakpoint: number = NARROW_VIEWPORT_BREAKPOINT,
-) => {
+const useViewportDetection = (breakpoint: number = NARROW_VIEWPORT_BREAKPOINT) => {
   const [isNarrowViewport, setIsNarrowViewport] = useState(false);
 
   useEffect(() => {
@@ -68,7 +66,7 @@ const EditorPageWrapper = ({
   onChanged,
   defaultDirection = "horizontal",
   customEditor,
-  previewOnly = false,
+  previewOnly = false
 }: EditorPageWrapperProps) => {
   const filePath = atob(pathb64 ?? "");
 
@@ -83,23 +81,14 @@ const EditorPageWrapper = ({
 
   const renderEditor = () => (
     <div
-      className={cn(
-        "flex flex-col bg-editor-background overflow-hidden min-h-0",
-      )}
+      className={cn("flex min-h-0 flex-col overflow-hidden bg-editor-background")}
       style={{ width: "100%", height: "100%" }}
     >
-      <EditorHeader
-        readOnly={readOnly}
-        actions={headerActions}
-        filePath={filePath}
-      />
+      <EditorHeader readOnly={readOnly} actions={headerActions} filePath={filePath} />
       {customEditor ? (
         customEditor
       ) : (
-        <FileEditor
-          readOnly={readOnly}
-          className={customEditor ? "hidden" : ""}
-        />
+        <FileEditor readOnly={readOnly} className={customEditor ? "hidden" : ""} />
       )}
     </div>
   );
@@ -107,7 +96,7 @@ const EditorPageWrapper = ({
   const renderPreview = () =>
     preview ? (
       <div
-        className="flex-1 flex flex-col overflow-hidden min-h-0"
+        className='flex min-h-0 flex-1 flex-col overflow-hidden'
         style={{ width: "100%", height: "100%" }}
       >
         {preview}
@@ -115,12 +104,7 @@ const EditorPageWrapper = ({
     ) : null;
 
   return (
-    <FileEditorProvider
-      pathb64={pathb64}
-      git={git}
-      onSaved={onSaved}
-      onChanged={onChanged}
-    >
+    <FileEditorProvider pathb64={pathb64} git={git} onSaved={onSaved} onChanged={onChanged}>
       <EditorPageWrapperContent
         className={className}
         hasPreview={hasPreview}
@@ -151,11 +135,11 @@ const EditorPageWrapperContent = ({
   storageKey,
   layoutDirection,
   renderEditor,
-  renderPreview,
+  renderPreview
 }: EditorPageWrapperContentProps) => {
   const {
     state: { fileState },
-    actions,
+    actions
   } = useFileEditorContext();
 
   const { unsavedChangesDialogOpen, setUnsavedChangesDialogOpen, blocker } =
@@ -174,7 +158,7 @@ const EditorPageWrapperContent = ({
         <ResizablePanelGroup
           autoSaveId={storageKey}
           direction={layoutDirection}
-          className="h-full flex-1 flex overflow-hidden"
+          className='flex h-full flex-1 overflow-hidden'
         >
           <ResizablePanel minSize={MIN_PANE_SIZE_PERCENT} defaultSize={50}>
             {renderEditor()}
@@ -192,9 +176,7 @@ const EditorPageWrapperContent = ({
   return (
     <>
       <div className={cn("flex h-full flex-col", className)}>
-        <div className={cn("flex-1 flex overflow-hidden")}>
-          {renderContent()}
-        </div>
+        <div className={cn("flex flex-1 overflow-hidden")}>{renderContent()}</div>
       </div>
 
       <UnsavedChangesDialog

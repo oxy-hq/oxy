@@ -1,4 +1,5 @@
-import { Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
+
 /**
  * Thread Mocks for E2E Tests
  * -----------------------------------------------
@@ -35,19 +36,17 @@ interface MockThreadItem {
 
 // Generate 10 identical mock threads with stable timestamps.
 const NOW = new Date().toISOString();
-const MOCK_THREADS: MockThreadItem[] = Array.from({ length: 10 }).map(
-  (_, i) => ({
-    id: `00000000-0000-0000-0000-00000000000${i}`,
-    title: "top 3 fruits",
-    input: "top 3 fruits",
-    output: "",
-    source_type: "agent",
-    source: "agents/duckdb.agent.yml",
-    created_at: NOW,
-    references: [],
-    is_processing: false,
-  }),
-);
+const MOCK_THREADS: MockThreadItem[] = Array.from({ length: 10 }).map((_, i) => ({
+  id: `00000000-0000-0000-0000-00000000000${i}`,
+  title: "top 3 fruits",
+  input: "top 3 fruits",
+  output: "",
+  source_type: "agent",
+  source: "agents/duckdb.agent.yml",
+  created_at: NOW,
+  references: [],
+  is_processing: false
+}));
 
 const PROJECT_ID = "00000000-0000-0000-0000-000000000000";
 const API_BASE = "http://localhost:3000/api";
@@ -70,8 +69,8 @@ const MOCK_MESSAGES = [
       run_index: null,
       lookup_id: null,
       root_ref: null,
-      status: null,
-    },
+      status: null
+    }
   },
   {
     id: "22222222-2222-2222-2222-222222222222",
@@ -90,9 +89,9 @@ const MOCK_MESSAGES = [
       run_index: null,
       lookup_id: null,
       root_ref: null,
-      status: null,
-    },
-  },
+      status: null
+    }
+  }
 ];
 
 // Attach network route interceptions for threads list, single thread, messages.
@@ -107,13 +106,13 @@ export async function mockThreadsEndpoints(page: Page) {
         total: MOCK_THREADS.length,
         total_pages: 1,
         has_next: false,
-        has_previous: false,
-      },
+        has_previous: false
+      }
     };
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify(json),
+      body: JSON.stringify(json)
     });
   });
 
@@ -131,9 +130,9 @@ export async function mockThreadsEndpoints(page: Page) {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(thread),
+        body: JSON.stringify(thread)
       });
-    },
+    }
   );
 
   // Messages endpoint (returns 2 messages referencing the thread)
@@ -144,13 +143,13 @@ export async function mockThreadsEndpoints(page: Page) {
       const threadId = parts[parts.length - 2];
       const messages = MOCK_MESSAGES.map((m) => ({
         ...m,
-        thread_id: threadId,
+        thread_id: threadId
       }));
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify(messages),
+        body: JSON.stringify(messages)
       });
-    },
+    }
   );
 }

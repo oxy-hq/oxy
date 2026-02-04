@@ -1,19 +1,15 @@
-import { RunInfo } from "@/services/types";
-import { Message } from "@/types/chat";
+import type { RunInfo } from "@/services/types";
+import type { Message } from "@/types/chat";
 
 export const STREAMING_MESSAGE_PREFIX = "temp-";
 
 export const DEFAULT_USAGE = {
   inputTokens: 0,
-  outputTokens: 0,
+  outputTokens: 0
 } as const;
 
 export class MessageFactory {
-  static createAgenticMessage(
-    messageId: string,
-    threadId: string,
-    runInfo: RunInfo,
-  ): Message {
+  static createAgenticMessage(messageId: string, threadId: string, runInfo: RunInfo): Message {
     return {
       id: messageId,
       thread_id: threadId,
@@ -26,14 +22,11 @@ export class MessageFactory {
       artifacts: {},
       created_at: new Date().toISOString(),
       file_path: "",
-      run_info: runInfo,
+      run_info: runInfo
     };
   }
 
-  static createStreamingMessage(
-    threadId: string,
-    prefix = "streaming",
-  ): Message {
+  static createStreamingMessage(threadId: string, prefix = "streaming"): Message {
     return {
       id: `${STREAMING_MESSAGE_PREFIX}${prefix}-${Date.now()}`,
       content: "",
@@ -45,7 +38,7 @@ export class MessageFactory {
       artifacts: {},
       thread_id: threadId,
       created_at: new Date().toISOString(),
-      file_path: "",
+      file_path: ""
     };
   }
 
@@ -61,14 +54,14 @@ export class MessageFactory {
       artifacts: {},
       thread_id: threadId,
       created_at: new Date().toISOString(),
-      file_path: "",
+      file_path: ""
     };
   }
 
   static createErrorMessage(
     threadId: string,
     errorContent: string,
-    existingMessageId?: string,
+    existingMessageId?: string
   ): Message {
     return {
       id: existingMessageId ?? `${STREAMING_MESSAGE_PREFIX}error-${Date.now()}`,
@@ -81,14 +74,14 @@ export class MessageFactory {
       artifacts: {},
       thread_id: threadId,
       created_at: new Date().toISOString(),
-      file_path: "",
+      file_path: ""
     };
   }
 
   static completeStreamingMessage(message: Message): Message {
     return {
       ...message,
-      isStreaming: false,
+      isStreaming: false
     };
   }
 }

@@ -20,9 +20,7 @@ export interface TopicFieldOptions {
   error: Error | null;
 }
 
-export default function useTopicFieldOptions(
-  topicName: string | undefined,
-): TopicFieldOptions {
+export default function useTopicFieldOptions(topicName: string | undefined): TopicFieldOptions {
   const { topicFiles, isLoading: topicFilesLoading } = useTopicFiles();
 
   // Resolve topic name to file path
@@ -36,11 +34,7 @@ export default function useTopicFieldOptions(
     return btoa(topicFilePath);
   }, [topicFilePath]);
 
-  const {
-    data,
-    isLoading: detailsLoading,
-    error,
-  } = useTopicDetails(filePathB64);
+  const { data, isLoading: detailsLoading, error } = useTopicDetails(filePathB64);
 
   const options = useMemo(() => {
     if (!data) {
@@ -57,12 +51,11 @@ export default function useTopicFieldOptions(
         dimensions.push({
           value,
           label: value,
-          searchText:
-            `${value} ${dim.description || ""} ${dim.type}`.toLowerCase(),
+          searchText: `${value} ${dim.description || ""} ${dim.type}`.toLowerCase(),
           description: dim.description,
           type: "dimension",
           viewName: view.view_name,
-          fieldName: dim.name,
+          fieldName: dim.name
         });
       }
 
@@ -72,12 +65,11 @@ export default function useTopicFieldOptions(
         measures.push({
           value,
           label: value,
-          searchText:
-            `${value} ${measure.description || ""} ${measure.type}`.toLowerCase(),
+          searchText: `${value} ${measure.description || ""} ${measure.type}`.toLowerCase(),
           description: measure.description,
           type: "measure",
           viewName: view.view_name,
-          fieldName: measure.name,
+          fieldName: measure.name
         });
       }
     }
@@ -85,13 +77,13 @@ export default function useTopicFieldOptions(
     return {
       dimensions,
       measures,
-      allFields: [...dimensions, ...measures],
+      allFields: [...dimensions, ...measures]
     };
   }, [data]);
 
   return {
     ...options,
     isLoading: topicFilesLoading || detailsLoading,
-    error: error as Error | null,
+    error: error as Error | null
   };
 }

@@ -1,12 +1,6 @@
-import {
-  Block,
-  BlockContent,
-  Group,
-  GroupKind,
-  RunInfo,
-} from "@/services/types";
-import { BlockSlice, BlockSliceSetter, createBlockSlice } from "./block";
-import { StateCreator } from "zustand";
+import type { StateCreator } from "zustand";
+import type { Block, BlockContent, Group, GroupKind, RunInfo } from "@/services/types";
+import { type BlockSlice, type BlockSliceSetter, createBlockSlice } from "./block";
 
 export interface GroupSlice {
   groupBlocks: Record<string, BlockSlice>;
@@ -20,7 +14,7 @@ export interface GroupSlice {
     children?: string[],
     error?: string,
     metadata?: GroupKind,
-    force?: boolean,
+    force?: boolean
   ) => void;
   addGroup: (groupId: string, groupData: Group) => void;
   removeGroup: (groupId: string, error?: string) => void;
@@ -38,14 +32,11 @@ const wrapChildrenSet =
           | GroupSlice
           | Partial<GroupSlice>
           | ((state: GroupSlice) => GroupSlice | Partial<GroupSlice>),
-        replace?: false,
+        replace?: false
       ): void;
-      (
-        state: GroupSlice | ((state: GroupSlice) => GroupSlice),
-        replace: true,
-      ): void;
+      (state: GroupSlice | ((state: GroupSlice) => GroupSlice), replace: true): void;
     },
-    groupId: string,
+    groupId: string
   ): BlockSliceSetter =>
   (partial) =>
     set((state) => {
@@ -56,9 +47,9 @@ const wrapChildrenSet =
           ...state.groupBlocks,
           [groupId]: {
             ...groupBlock,
-            ...value,
-          },
-        },
+            ...value
+          }
+        }
       };
     });
 
@@ -79,7 +70,7 @@ export const createGroupSlice: StateCreator<
     children?: string[],
     error?: string,
     metadata?: GroupKind,
-    force?: boolean,
+    force?: boolean
   ) =>
     set((state) => {
       const groupId = `${runInfo.source_id}::${runInfo.run_index}`;
@@ -87,14 +78,14 @@ export const createGroupSlice: StateCreator<
         ? {
             id: groupId,
             error,
-            ...metadata,
+            ...metadata
           }
         : {
             id: groupId,
             type: "workflow",
             workflow_id: runInfo.source_id,
             run_id: runInfo.run_index.toString(),
-            error,
+            error
           };
 
       if (state.processingGroups[groupId] && !force) {
@@ -107,27 +98,25 @@ export const createGroupSlice: StateCreator<
           ...state.groupBlocks,
           [groupId]: createBlockSlice(wrapChildrenSet(set, groupId), {
             blocks: blocks || {},
-            root: children || [],
-          }),
+            root: children || []
+          })
         },
         groupStack: [],
         groups: {
           ...state.groups,
-          [groupId]: groupData,
+          [groupId]: groupData
         },
         groupAliases: {
           ...state.groupAliases,
-          ...(runInfo.lookup_id ? { [runInfo.lookup_id]: groupId } : {}),
-        },
+          ...(runInfo.lookup_id ? { [runInfo.lookup_id]: groupId } : {})
+        }
       };
     }),
   addGroup: (groupId: string, groupData: Group) => {
     const groupStack = get().groupStack;
     const groupBlocks = get().groupBlocks;
     const currentGroup = groupStack[groupStack.length - 1];
-    const currentGroupBlocks = currentGroup
-      ? groupBlocks[currentGroup]
-      : undefined;
+    const currentGroupBlocks = currentGroup ? groupBlocks[currentGroup] : undefined;
     if (currentGroupBlocks) {
       currentGroupBlocks.addGroupBlock(groupId);
     }
@@ -139,12 +128,12 @@ export const createGroupSlice: StateCreator<
           : [...state.groupStack, groupId],
         groupBlocks: {
           ...state.groupBlocks,
-          [groupId]: createBlockSlice(wrapChildrenSet(set, groupId)),
+          [groupId]: createBlockSlice(wrapChildrenSet(set, groupId))
         },
         groups: {
           ...state.groups,
-          [groupId]: groupData,
-        },
+          [groupId]: groupData
+        }
       };
     });
   },
@@ -156,18 +145,16 @@ export const createGroupSlice: StateCreator<
           ...state.groups,
           [groupId]: {
             ...state.groups[groupId],
-            error,
-          },
-        },
+            error
+          }
+        }
       };
     }),
   upsertBlockToStack: (blockId: string, blockData: BlockContent) => {
     const groupStack = get().groupStack;
     const groupBlocks = get().groupBlocks;
     const currentGroup = groupStack[groupStack.length - 1];
-    const currentGroupBlocks = currentGroup
-      ? groupBlocks[currentGroup]
-      : undefined;
+    const currentGroupBlocks = currentGroup ? groupBlocks[currentGroup] : undefined;
     if (currentGroupBlocks) {
       currentGroupBlocks.upsertBlockToStack(blockId, blockData);
     }
@@ -176,9 +163,7 @@ export const createGroupSlice: StateCreator<
     const groupStack = get().groupStack;
     const groupBlocks = get().groupBlocks;
     const currentGroup = groupStack[groupStack.length - 1];
-    const currentGroupBlocks = currentGroup
-      ? groupBlocks[currentGroup]
-      : undefined;
+    const currentGroupBlocks = currentGroup ? groupBlocks[currentGroup] : undefined;
     if (currentGroupBlocks) {
       currentGroupBlocks.removeBlockStack(blockId, error);
     }
@@ -198,7 +183,7 @@ export const createGroupSlice: StateCreator<
     set((state) => ({
       processingGroups: {
         ...state.processingGroups,
-        [groupId]: isProcessing,
-      },
-    })),
+        [groupId]: isProcessing
+      }
+    }))
 });

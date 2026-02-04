@@ -1,15 +1,15 @@
-import { ThreadService } from "@/services/api";
 import { useQuery } from "@tanstack/react-query";
-import queryKeys from "../queryKey";
-import { ThreadsResponse } from "@/types/chat";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { ThreadService } from "@/services/api";
+import type { ThreadsResponse } from "@/types/chat";
+import queryKeys from "../queryKey";
 
 const useThreads = (
   page: number = 1,
   limit: number = 100,
   enabled = true,
   refetchOnWindowFocus = true,
-  refetchOnMount: boolean | "always" = false,
+  refetchOnMount: boolean | "always" = false
 ) => {
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
@@ -18,7 +18,7 @@ const useThreads = (
     queryFn: () => ThreadService.listThreads(projectId, page, limit),
     enabled,
     refetchOnWindowFocus,
-    refetchOnMount,
+    refetchOnMount
   });
 };
 

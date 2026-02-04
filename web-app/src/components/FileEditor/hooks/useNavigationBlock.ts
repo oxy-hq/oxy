@@ -1,10 +1,9 @@
-import { useBlocker } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { FileState } from "@/components/FileEditor";
+import { useBlocker } from "react-router-dom";
+import type { FileState } from "@/components/FileEditor";
 
 export function useNavigationBlock(fileState: FileState) {
-  const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] =
-    useState(false);
+  const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
 
   const blocker = useBlocker(() => {
     if (fileState === "modified") {
@@ -31,6 +30,6 @@ export function useNavigationBlock(fileState: FileState) {
   return {
     unsavedChangesDialogOpen,
     setUnsavedChangesDialogOpen,
-    blocker,
+    blocker
   };
 }

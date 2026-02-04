@@ -1,19 +1,20 @@
-import React from "react";
-import { TableRow, TableCell } from "@/components/ui/shadcn/table";
+import { Loader2, RefreshCw } from "lucide-react";
+import type React from "react";
 import { Button } from "@/components/ui/shadcn/button";
-import { RefreshCw, Loader2 } from "lucide-react";
+import { TableCell, TableRow } from "@/components/ui/shadcn/table";
 
 interface TableRowWrapperProps {
   colSpan: number;
 }
 
-const TableRowWrapper: React.FC<
-  React.PropsWithChildren<TableRowWrapperProps>
-> = ({ colSpan, children }) => {
+const TableRowWrapper: React.FC<React.PropsWithChildren<TableRowWrapperProps>> = ({
+  colSpan,
+  children
+}) => {
   return (
     <TableRow>
-      <TableCell colSpan={colSpan} className="text-center py-12">
-        <div className="flex flex-col items-center space-y-1">{children}</div>
+      <TableCell colSpan={colSpan} className='py-12 text-center'>
+        <div className='flex flex-col items-center space-y-1'>{children}</div>
       </TableCell>
     </TableRow>
   );
@@ -37,13 +38,13 @@ const TableContentWrapper: React.FC<React.PropsWithChildren<Props>> = ({
   noFoundTitle = "No found",
   noFoundDescription,
   error,
-  onRetry,
+  onRetry
 }) => {
   if (loading) {
     return (
       <TableRowWrapper colSpan={colSpan}>
-        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">Loading...</p>
+        <Loader2 className='h-8 w-8 animate-spin text-muted-foreground' />
+        <p className='text-muted-foreground text-sm'>Loading...</p>
       </TableRowWrapper>
     );
   }
@@ -51,15 +52,10 @@ const TableContentWrapper: React.FC<React.PropsWithChildren<Props>> = ({
   if (error) {
     return (
       <TableRowWrapper colSpan={colSpan}>
-        <h3 className="text-lg font-medium text-destructive">Error</h3>
-        <p className="text-sm text-muted-foreground max-w-md">{error}</p>
+        <h3 className='font-medium text-destructive text-lg'>Error</h3>
+        <p className='max-w-md text-muted-foreground text-sm'>{error}</p>
         {onRetry && (
-          <Button
-            onClick={onRetry}
-            variant="outline"
-            size="sm"
-            className="mt-2"
-          >
+          <Button onClick={onRetry} variant='outline' size='sm' className='mt-2'>
             <RefreshCw />
             Try Again
           </Button>
@@ -71,11 +67,9 @@ const TableContentWrapper: React.FC<React.PropsWithChildren<Props>> = ({
   if (isEmpty) {
     return (
       <TableRowWrapper colSpan={colSpan}>
-        <h3 className="text-lg font-medium text-foreground">{noFoundTitle}</h3>
+        <h3 className='font-medium text-foreground text-lg'>{noFoundTitle}</h3>
         {noFoundDescription && (
-          <p className="text-sm text-muted-foreground max-w-md">
-            {noFoundDescription}
-          </p>
+          <p className='max-w-md text-muted-foreground text-sm'>{noFoundDescription}</p>
         )}
       </TableRowWrapper>
     );

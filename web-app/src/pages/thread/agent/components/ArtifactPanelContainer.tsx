@@ -3,7 +3,7 @@ import relativeTime from "dayjs/plugin/relativeTime";
 
 import ArtifactPanel from "@/components/ArtifactPanel";
 import { Separator } from "@/components/ui/shadcn/separator";
-import { Message } from "@/types/chat";
+import type { Message } from "@/types/chat";
 
 dayjs.extend(relativeTime);
 
@@ -27,8 +27,8 @@ const ArtifactPanelContainer = ({ selectedIds, onSelect, messages }: Props) => {
 
   return (
     <>
-      <Separator orientation="vertical" />
-      <div className="flex-1 h-full overflow-hidden">
+      <Separator orientation='vertical' />
+      <div className='h-full flex-1 overflow-hidden'>
         <ArtifactPanel
           selectedArtifactIds={selectedIds}
           artifactStreamingData={artifactStreamingData}

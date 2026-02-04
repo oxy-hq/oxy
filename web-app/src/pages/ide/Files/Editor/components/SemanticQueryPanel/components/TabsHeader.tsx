@@ -1,21 +1,17 @@
-import { useRef, useState, useEffect } from "react";
 import { ArrowUpDown, Download, Filter, Plus, Variable } from "lucide-react";
+import Papa from "papaparse";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/shadcn/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/shadcn/tooltip";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuTrigger,
+  DropdownMenuTrigger
 } from "@/components/ui/shadcn/dropdown-menu";
-import Papa from "papaparse";
+import { TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/tooltip";
 import { handleDownloadFile } from "@/libs/utils/string";
 import HeaderActions from "../HeaderActions";
-import { TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
 
 const COLLAPSE_THRESHOLD = 500;
 
@@ -44,7 +40,7 @@ const TabsHeader = ({
   loading,
   canExecuteQuery,
   disabledMessage,
-  hasSelectedFields,
+  hasSelectedFields
 }: TabsHeaderProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -67,10 +63,10 @@ const TabsHeader = ({
     const csvContent = Papa.unparse(result, {
       delimiter: ",",
       header: true,
-      skipEmptyLines: true,
+      skipEmptyLines: true
     });
     const blob = new Blob([csvContent], {
-      type: "text/csv;charset=utf-8;",
+      type: "text/csv;charset=utf-8;"
     });
     handleDownloadFile(blob, "query_results.csv");
   };
@@ -78,23 +74,23 @@ const TabsHeader = ({
   return (
     <div
       ref={containerRef}
-      className="flex items-center justify-between gap-4 px-4 py-2 border-b overflow-x-auto scrollbar-none customScrollbar"
+      className='scrollbar-none customScrollbar flex items-center justify-between gap-4 overflow-x-auto border-b px-4 py-2'
     >
-      <TabsList className="flex-shrink-0">
-        <TabsTrigger value="results">Results</TabsTrigger>
-        <TabsTrigger value="sql">SQL</TabsTrigger>
+      <TabsList className='flex-shrink-0'>
+        <TabsTrigger value='results'>Results</TabsTrigger>
+        <TabsTrigger value='sql'>SQL</TabsTrigger>
       </TabsList>
-      <div className="flex items-center gap-2 flex-shrink-0">
+      <div className='flex flex-shrink-0 items-center gap-2'>
         {!showSql && hasResults && (
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
-                size="sm"
-                variant="ghost"
+                size='sm'
+                variant='ghost'
                 onClick={handleDownloadCsv}
-                className="h-7 w-7 p-0 flex-shrink-0"
+                className='h-7 w-7 flex-shrink-0 p-0'
               >
-                <Download className="w-4 h-4" />
+                <Download className='h-4 w-4' />
               </Button>
             </TooltipTrigger>
             <TooltipContent>Download results as CSV</TooltipContent>
@@ -103,62 +99,54 @@ const TabsHeader = ({
         {isCollapsed ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="outline" className="h-7 flex-shrink-0">
-                <Plus className="w-3 h-3 mr-1" />
+              <Button size='sm' variant='outline' className='h-7 flex-shrink-0'>
+                <Plus className='mr-1 h-3 w-3' />
                 Add
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align='end'>
               <DropdownMenuItem onClick={onAddFilter}>
-                <Filter className="w-4 h-4" />
+                <Filter className='h-4 w-4' />
                 Add Filter
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={onAddOrder}
-                disabled={!hasSelectedFields}
-              >
-                <ArrowUpDown className="w-4 h-4" />
+              <DropdownMenuItem onClick={onAddOrder} disabled={!hasSelectedFields}>
+                <ArrowUpDown className='h-4 w-4' />
                 Add Sort
               </DropdownMenuItem>
               <DropdownMenuItem onClick={onAddVariable}>
-                <Variable className="w-4 h-4" />
+                <Variable className='h-4 w-4' />
                 Add Variable
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         ) : (
           <>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onAddFilter}
-              className="h-7 flex-shrink-0"
-            >
-              <Plus className="w-3 h-3 mr-1" />
+            <Button size='sm' variant='outline' onClick={onAddFilter} className='h-7 flex-shrink-0'>
+              <Plus className='mr-1 h-3 w-3' />
               Add Filter
             </Button>
             <Button
-              size="sm"
-              variant="outline"
+              size='sm'
+              variant='outline'
               onClick={onAddOrder}
-              className="h-7 flex-shrink-0"
+              className='h-7 flex-shrink-0'
               disabled={!hasSelectedFields}
             >
-              <Plus className="w-3 h-3 mr-1" />
+              <Plus className='mr-1 h-3 w-3' />
               Add Sort
             </Button>
             <Button
-              size="sm"
-              variant="outline"
+              size='sm'
+              variant='outline'
               onClick={onAddVariable}
-              className="h-7 flex-shrink-0"
+              className='h-7 flex-shrink-0'
             >
-              <Plus className="w-3 h-3 mr-1" />
+              <Plus className='mr-1 h-3 w-3' />
               Add Variable
             </Button>
           </>
         )}
-        <div className="flex-shrink-0">
+        <div className='flex-shrink-0'>
           <HeaderActions
             onExecuteQuery={onExecuteQuery}
             loading={loading}

@@ -1,5 +1,5 @@
-import { Project } from "@/types/project";
 import { create } from "zustand";
+import type { Project } from "@/types/project";
 
 interface CurrentProjectState {
   project: Project | null;
@@ -8,7 +8,7 @@ interface CurrentProjectState {
 
 const useCurrentProject = create<CurrentProjectState>()((set) => ({
   project: null,
-  setProject: (project: Project | null) => set({ project }),
+  setProject: (project: Project | null) => set({ project })
 }));
 
 export default useCurrentProject;

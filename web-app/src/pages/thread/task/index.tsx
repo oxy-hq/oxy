@@ -1,24 +1,24 @@
-import MessageInput from "@/components/MessageInput";
-import EditorTab from "@/pages/thread/task/EditorTab";
-import Messages from "@/pages/thread/messages";
-import { ThreadService } from "@/services/api";
-import { ThreadItem } from "@/types/chat";
-import { useRef, useEffect, useState } from "react";
-import useTaskThreadStore from "@/stores/useTaskThread";
-import useAskTask from "@/hooks/messaging/task";
-import Header from "./Header";
-import ProcessingWarning from "../ProcessingWarning";
+import { ArrowDown } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import MessageInput from "@/components/MessageInput";
+import { Button } from "@/components/ui/shadcn/button";
+import useAskTask from "@/hooks/messaging/task";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { useSmartScroll } from "@/hooks/useSmartScroll";
-import { Button } from "@/components/ui/shadcn/button";
-import { ArrowDown } from "lucide-react";
+import Messages from "@/pages/thread/messages";
+import EditorTab from "@/pages/thread/task/EditorTab";
+import { ThreadService } from "@/services/api";
+import useTaskThreadStore from "@/stores/useTaskThread";
+import type { ThreadItem } from "@/types/chat";
+import ProcessingWarning from "../ProcessingWarning";
+import Header from "./Header";
 
 const MESSAGES_WARNING_THRESHOLD = 10;
 
 const TaskThread = ({
   thread,
-  refetchThread,
+  refetchThread
 }: {
   thread: ThreadItem;
   refetchThread: () => void;
@@ -35,8 +35,9 @@ const TaskThread = ({
 
   const [followUpQuestion, setFollowUpQuestion] = useState("");
 
-  const { scrollContainerRef, bottomRef, isAtBottom, scrollToBottom } =
-    useSmartScroll({ messages });
+  const { scrollContainerRef, bottomRef, isAtBottom, scrollToBottom } = useSmartScroll({
+    messages
+  });
 
   const isThreadBusy = isLoading || thread.is_processing;
   const shouldShowWarning = messages.length > MESSAGES_WARNING_THRESHOLD;
@@ -56,10 +57,7 @@ const TaskThread = ({
 
     const fetchMessages = async () => {
       try {
-        const messages = await ThreadService.getThreadMessages(
-          project.id,
-          thread.id,
-        );
+        const messages = await ThreadService.getThreadMessages(project.id, thread.id);
         setMessages(thread.id, messages);
         setFilePath(thread.id, thread.source);
       } catch (error) {
@@ -68,15 +66,7 @@ const TaskThread = ({
     };
 
     fetchMessages();
-  }, [
-    isLoading,
-    messages.length,
-    project.id,
-    thread.id,
-    thread.source,
-    setMessages,
-    setFilePath,
-  ]);
+  }, [isLoading, messages.length, project.id, thread.id, thread.source, setMessages, setFilePath]);
 
   const handleSendMessage = async () => {
     if (!followUpQuestion.trim() || isLoading) return;
@@ -88,10 +78,7 @@ const TaskThread = ({
 
   const handleRefresh = async () => {
     try {
-      const messages = await ThreadService.getThreadMessages(
-        project.id,
-        thread.id,
-      );
+      const messages = await ThreadService.getThreadMessages(project.id, thread.id);
       setMessages(thread.id, messages);
       setFilePath(thread.id, thread.source);
     } catch (error) {
@@ -108,10 +95,7 @@ const TaskThread = ({
       refetchThread();
 
       // Re-fetch messages after stopping
-      const messages = await ThreadService.getThreadMessages(
-        project.id,
-        thread.id,
-      );
+      const messages = await ThreadService.getThreadMessages(project.id, thread.id);
       setMessages(thread.id, messages);
       setFilePath(thread.id, thread.source);
     } catch (error) {
@@ -121,32 +105,32 @@ const TaskThread = ({
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className='flex h-full flex-col'>
       <Header thread={thread} />
-      <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 flex flex-col h-full overflow-hidden">
-          <div className="flex-1 w-full relative overflow-hidden">
+      <div className='flex flex-1 overflow-hidden'>
+        <div className='flex h-full flex-1 flex-col overflow-hidden'>
+          <div className='relative w-full flex-1 overflow-hidden'>
             <div
               ref={scrollContainerRef}
-              className="h-full py-4 [scrollbar-gutter:stable_both-edges] overflow-y-auto customScrollbar w-full"
+              className='customScrollbar h-full w-full overflow-y-auto py-4 [scrollbar-gutter:stable_both-edges]'
             >
               <Messages messages={messages} />
               <div ref={bottomRef} />
             </div>
             {!isAtBottom && (
               <Button
-                variant="outline"
-                size="icon"
+                variant='outline'
+                size='icon'
                 onClick={scrollToBottom}
-                className="rounded-full absolute bottom-2 left-1/2 -translate-x-1/2 transition-all z-10"
-                aria-label="Scroll to latest"
+                className='absolute bottom-2 left-1/2 z-10 -translate-x-1/2 rounded-full transition-all'
+                aria-label='Scroll to latest'
               >
                 <ArrowDown />
               </Button>
             )}
           </div>
 
-          <div className="flex-shrink-0 p-6 pt-0 max-w-page-content mx-auto w-full">
+          <div className='mx-auto w-full max-w-page-content flex-shrink-0 p-6 pt-0'>
             <ProcessingWarning
               threadId={thread.id}
               isLoading={isLoading}
@@ -163,7 +147,7 @@ const TaskThread = ({
             />
           </div>
         </div>
-        <div className="border-l flex-1 h-full">
+        <div className='h-full flex-1 border-l'>
           <EditorTab pathb64={filePathB64} />
         </div>
       </div>

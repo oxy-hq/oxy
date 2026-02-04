@@ -1,13 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
-import queryKeys from "../queryKey";
-import { AppService } from "@/services/api";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { AppService } from "@/services/api";
+import queryKeys from "../queryKey";
 
 export default function useAppData(
   appPath64: string,
   enabled = true,
   refetchOnWindowFocus = true,
-  refetchOnMount: boolean | "always" = false,
+  refetchOnMount: boolean | "always" = false
 ) {
   const { project, branchName } = useCurrentProjectBranch();
 
@@ -16,7 +16,7 @@ export default function useAppData(
     queryFn: () => AppService.getAppData(project.id, branchName, appPath64),
     enabled,
     refetchOnWindowFocus: refetchOnWindowFocus,
-    refetchOnMount,
+    refetchOnMount
   });
 }
 
@@ -24,7 +24,7 @@ export function useData(
   filePath: string,
   enabled = true,
   refetchOnWindowFocus = true,
-  refetchOnMount: boolean | "always" = false,
+  refetchOnMount: boolean | "always" = false
 ) {
   const { project, branchName } = useCurrentProjectBranch();
 
@@ -33,7 +33,7 @@ export function useData(
     queryFn: () => AppService.getData(project.id, branchName, filePath),
     enabled,
     refetchOnWindowFocus: refetchOnWindowFocus,
-    refetchOnMount,
+    refetchOnMount
   });
 }
 
@@ -41,7 +41,7 @@ export function useAppDisplays(
   filePath: string,
   enabled = true,
   refetchOnWindowFocus = true,
-  refetchOnMount: boolean | "always" = false,
+  refetchOnMount: boolean | "always" = false
 ) {
   const { project, branchName } = useCurrentProjectBranch();
 
@@ -50,6 +50,6 @@ export function useAppDisplays(
     queryFn: () => AppService.getDisplays(project.id, branchName, filePath),
     enabled,
     refetchOnWindowFocus: refetchOnWindowFocus,
-    refetchOnMount,
+    refetchOnMount
   });
 }

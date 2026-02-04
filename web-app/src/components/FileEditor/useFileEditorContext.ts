@@ -1,5 +1,5 @@
 import React, { useContext } from "react";
-import { FileState } from ".";
+import type { FileState } from ".";
 
 export interface EditorContextActions {
   setContent: (content: string) => void;
@@ -22,9 +22,7 @@ export interface EditorContextValue {
   actions: EditorContextActions;
 }
 
-export const FileEditorContext = React.createContext<EditorContextValue | null>(
-  null,
-);
+export const FileEditorContext = React.createContext<EditorContextValue | null>(null);
 
 export function useFileEditorContext(): EditorContextValue {
   const context = useContext(FileEditorContext);

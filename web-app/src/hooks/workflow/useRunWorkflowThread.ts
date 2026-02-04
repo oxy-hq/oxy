@@ -1,12 +1,12 @@
 import { useQueryClient } from "@tanstack/react-query";
-import queryKeys from "../api/queryKey";
-import { ThreadItem, ThreadsResponse } from "@/types/chat";
-import useWorkflowThreadStore from "@/stores/useWorkflowThread";
-import { LogItem } from "@/services/types";
-import { useCallback } from "react";
 import throttle from "lodash/throttle";
-import { WorkflowService } from "@/services/api";
+import { useCallback } from "react";
 import { toast } from "sonner";
+import { WorkflowService } from "@/services/api";
+import type { LogItem } from "@/services/types";
+import useWorkflowThreadStore from "@/stores/useWorkflowThread";
+import type { ThreadItem, ThreadsResponse } from "@/types/chat";
+import queryKeys from "../api/queryKey";
 import useCurrentProjectBranch from "../useCurrentProjectBranch";
 
 const useRunWorkflowThread = () => {
@@ -19,7 +19,7 @@ const useRunWorkflowThread = () => {
     (newLogs: LogItem[], threadId: string) => {
       setLogs(threadId, (pre) => [...pre, ...newLogs]);
     },
-    [setLogs],
+    [setLogs]
   );
 
   const processLogs = useCallback(
@@ -32,7 +32,7 @@ const useRunWorkflowThread = () => {
           buffer = [];
         },
         500,
-        { leading: true, trailing: true },
+        { leading: true, trailing: true }
       );
 
       return (logItem: LogItem) => {
@@ -40,7 +40,7 @@ const useRunWorkflowThread = () => {
         flushLogs();
       };
     },
-    [appendLogs],
+    [appendLogs]
   );
 
   const run = async (threadId: string) => {
@@ -55,23 +55,18 @@ const useRunWorkflowThread = () => {
           return {
             ...old,
             threads: old.threads.map((item) =>
-              item.id === threadId ? { ...item, is_processing: true } : item,
-            ),
+              item.id === threadId ? { ...item, is_processing: true } : item
+            )
           };
         }
         return old;
-      },
+      }
     );
 
     setIsLoading(threadId, true);
     setLogs(threadId, () => []);
 
-    WorkflowService.runWorkflowThread(
-      projectId,
-      branchName,
-      threadId,
-      processLogs(threadId),
-    )
+    WorkflowService.runWorkflowThread(projectId, branchName, threadId, processLogs(threadId))
       .finally(() => {
         queryClient.setQueryData(
           queryKeys.thread.item(projectId, threadId),
@@ -80,19 +75,17 @@ const useRunWorkflowThread = () => {
               return { ...old, is_processing: false };
             }
             return old;
-          },
+          }
         );
 
         queryClient.invalidateQueries({
-          queryKey: queryKeys.thread.all,
+          queryKey: queryKeys.thread.all
         });
         setIsLoading(threadId, false);
       })
       .catch((error) => {
         console.error("Error running workflow thread:", error);
-        toast.error(
-          "An error occurred while running the workflow thread. Please try again.",
-        );
+        toast.error("An error occurred while running the workflow thread. Please try again.");
       });
   };
 

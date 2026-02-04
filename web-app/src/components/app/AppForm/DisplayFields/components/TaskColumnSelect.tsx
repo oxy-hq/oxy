@@ -1,14 +1,15 @@
-import React, { useMemo } from "react";
+import type React from "react";
+import { useMemo } from "react";
 import { useFormContext } from "react-hook-form";
+import { Input } from "@/components/ui/shadcn/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from "@/components/ui/shadcn/select";
-import { Input } from "@/components/ui/shadcn/input";
-import { AppFormData } from "../../index";
+import type { AppFormData } from "../../index";
 
 interface TaskColumnSelectProps {
   taskName: string | undefined;
@@ -37,7 +38,7 @@ export const TaskColumnSelect: React.FC<TaskColumnSelectProps> = ({
   taskName,
   value,
   onChange,
-  placeholder = "Column name",
+  placeholder = "Column name"
 }) => {
   const { watch } = useFormContext<AppFormData>();
   const tasks = watch("tasks");
@@ -45,8 +46,7 @@ export const TaskColumnSelect: React.FC<TaskColumnSelectProps> = ({
   // Find the relevant task and create stable string keys for memoization
   const task = (tasks || []).find((t) => t?.name === taskName);
   const taskType = task?.type;
-  const rawDimensions = (task as Record<string, unknown> | undefined)
-    ?.dimensions;
+  const rawDimensions = (task as Record<string, unknown> | undefined)?.dimensions;
   const rawMeasures = (task as Record<string, unknown> | undefined)?.measures;
 
   // Memoize JSON serialization to avoid stringify on every render
@@ -62,16 +62,12 @@ export const TaskColumnSelect: React.FC<TaskColumnSelectProps> = ({
 
     if (Array.isArray(dimensions)) {
       cols.push(
-        ...dimensions.filter(
-          (d: unknown): d is string => typeof d === "string" && d.length > 0,
-        ),
+        ...dimensions.filter((d: unknown): d is string => typeof d === "string" && d.length > 0)
       );
     }
     if (Array.isArray(measures)) {
       cols.push(
-        ...measures.filter(
-          (m: unknown): m is string => typeof m === "string" && m.length > 0,
-        ),
+        ...measures.filter((m: unknown): m is string => typeof m === "string" && m.length > 0)
       );
     }
     return [...new Set(cols)];
@@ -80,14 +76,14 @@ export const TaskColumnSelect: React.FC<TaskColumnSelectProps> = ({
   const columnItems = useMemo(() => {
     const items = columns.map((col) => ({
       value: col.replaceAll(".", "__"),
-      label: col.replaceAll(".", "__"),
+      label: col.replaceAll(".", "__")
     }));
 
     // If current value exists but not in columns, add it to items
     if (value && !items.some((item) => item.value === value)) {
       items.unshift({
         value,
-        label: value,
+        label: value
       });
     }
 
@@ -106,7 +102,7 @@ export const TaskColumnSelect: React.FC<TaskColumnSelectProps> = ({
 
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="w-full">
+      <SelectTrigger className='w-full'>
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>

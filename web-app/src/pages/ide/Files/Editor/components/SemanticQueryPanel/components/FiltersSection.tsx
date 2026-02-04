@@ -1,5 +1,5 @@
+import type { Filter } from "../../../types";
 import FilterRow from "./FilterRow";
-import { Filter } from "../../../types";
 
 interface FiltersSectionProps {
   filters: Filter[];
@@ -12,12 +12,12 @@ const FiltersSection = ({
   filters,
   availableDimensions,
   onUpdateFilter,
-  onRemoveFilter,
+  onRemoveFilter
 }: FiltersSectionProps) => {
   if (filters.length === 0) return null;
 
   return (
-    <div className="border-b p-3 space-y-2">
+    <div className='space-y-2 border-b p-3'>
       <div>Filters</div>
       {filters.map((filter, index) => (
         <FilterRow

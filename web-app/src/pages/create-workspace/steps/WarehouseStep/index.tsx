@@ -1,27 +1,26 @@
-import React from "react";
+import { Plus, Trash2 } from "lucide-react";
+import type React from "react";
+import { FormProvider, useFieldArray, useForm } from "react-hook-form";
+import {
+  BigQueryIcon,
+  ClickHouseIcon,
+  DuckDBIcon,
+  MysqlIcon,
+  PostgresIcon,
+  RedshiftIcon,
+  SnowflakeIcon
+} from "@/components/icons";
 import { Button } from "@/components/ui/shadcn/button";
 import { Input } from "@/components/ui/shadcn/input";
 import { cn } from "@/libs/utils/cn";
-import { FormProvider, useFieldArray, useForm } from "react-hook-form";
-import { Plus, Trash2 } from "lucide-react";
-
+import Header from "../Header";
 import BigQueryForm from "./BigQueryForm";
+import ClickHouseForm from "./ClickHouseForm";
 import DuckDBForm from "./DuckDBForm";
-import SnowflakeForm from "./SnowflakeForm";
+import MysqlForm from "./MysqlForm";
 import PostgresForm from "./PostgresForm";
 import RedshiftForm from "./RedshiftForm";
-import MysqlForm from "./MysqlForm";
-import ClickHouseForm from "./ClickHouseForm";
-import Header from "../Header";
-import {
-  BigQueryIcon,
-  SnowflakeIcon,
-  PostgresIcon,
-  RedshiftIcon,
-  MysqlIcon,
-  DuckDBIcon,
-  ClickHouseIcon,
-} from "@/components/icons";
+import SnowflakeForm from "./SnowflakeForm";
 
 export type WarehouseType =
   | "bigquery"
@@ -110,38 +109,38 @@ const warehouseOptions: WarehouseOption[] = [
   {
     type: "bigquery",
     label: "BigQuery",
-    icon: <BigQueryIcon />,
+    icon: <BigQueryIcon />
   },
   {
     type: "snowflake",
     label: "Snowflake",
-    icon: <SnowflakeIcon />,
+    icon: <SnowflakeIcon />
   },
   {
     type: "postgres",
     label: "PostgreSQL",
-    icon: <PostgresIcon />,
+    icon: <PostgresIcon />
   },
   {
     type: "redshift",
     label: "Redshift",
-    icon: <RedshiftIcon />,
+    icon: <RedshiftIcon />
   },
   {
     type: "mysql",
     label: "MySQL",
-    icon: <MysqlIcon />,
+    icon: <MysqlIcon />
   },
   {
     type: "duckdb",
     label: "DuckDB",
-    icon: <DuckDBIcon />,
+    icon: <DuckDBIcon />
   },
   {
     type: "clickhouse",
     label: "ClickHouse",
-    icon: <ClickHouseIcon />,
-  },
+    icon: <ClickHouseIcon />
+  }
 ];
 
 interface WarehouseStepProps {
@@ -150,28 +149,24 @@ interface WarehouseStepProps {
   onBack: () => void;
 }
 
-export default function WarehouseStep({
-  initialData,
-  onNext,
-  onBack,
-}: WarehouseStepProps) {
+export default function WarehouseStep({ initialData, onNext, onBack }: WarehouseStepProps) {
   const methods = useForm<WarehousesFormData>({
     defaultValues: initialData || {
       warehouses: [
         {
           type: "bigquery",
           name: "BIGQUERY_1",
-          config: {},
-        },
-      ],
-    },
+          config: {}
+        }
+      ]
+    }
   });
 
   const { register, control, handleSubmit, watch, setValue } = methods;
 
   const { fields, append, remove } = useFieldArray({
     control,
-    name: "warehouses",
+    name: "warehouses"
   });
 
   const handleTypeChange = (index: number, value: WarehouseType) => {
@@ -206,29 +201,23 @@ export default function WarehouseStep({
 
   return (
     <FormProvider {...methods}>
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-        <div className="space-y-6">
-          <Header
-            title="Add connections"
-            description="Securely connect your data sources."
-          />
+      <form onSubmit={handleSubmit(onSubmit)} className='space-y-6'>
+        <div className='space-y-6'>
+          <Header title='Add connections' description='Securely connect your data sources.' />
 
           {fields.map((field, index) => {
-            const warehouseType = watch(
-              `warehouses.${index}.type`,
-            ) as WarehouseType;
+            const warehouseType = watch(`warehouses.${index}.type`) as WarehouseType;
 
             const defaultName = `${warehouseType.toUpperCase()}_${index + 1}`;
-            const nameError =
-              methods.formState.errors?.warehouses?.[index]?.name;
+            const nameError = methods.formState.errors?.warehouses?.[index]?.name;
 
             return (
               <div
                 key={field.id}
-                className="bg-muted/40 border rounded-md p-3 mb-4 gap-4 flex flex-col"
+                className='mb-4 flex flex-col gap-4 rounded-md border bg-muted/40 p-3'
               >
                 <div>
-                  <div className="flex flex-row items-center justify-between gap-4">
+                  <div className='flex flex-row items-center justify-between gap-4'>
                     <Input
                       {...register(`warehouses.${index}.name`, {
                         required: "Connection name is required",
@@ -236,50 +225,42 @@ export default function WarehouseStep({
                           unique: (value) => {
                             const warehouseNames = methods
                               .getValues("warehouses")
-                              .map((warehouse, i) =>
-                                i !== index ? warehouse.name : null,
-                              );
+                              .map((warehouse, i) => (i !== index ? warehouse.name : null));
                             return (
-                              !warehouseNames.includes(value) ||
-                              "Warehouse name must be unique"
+                              !warehouseNames.includes(value) || "Warehouse name must be unique"
                             );
-                          },
-                        },
+                          }
+                        }
                       })}
                       defaultValue={defaultName}
-                      placeholder="Connection Name"
+                      placeholder='Connection Name'
                     />
                     {fields.length > 1 && (
                       <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
+                        type='button'
+                        variant='ghost'
+                        size='icon'
                         onClick={() => remove(index)}
-                        className="h-8 w-8"
+                        className='h-8 w-8'
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <Trash2 className='h-4 w-4' />
                       </Button>
                     )}
                   </div>
                   {nameError && (
-                    <p className="text-xs text-destructive mt-1">
-                      {nameError.message?.toString()}
-                    </p>
+                    <p className='mt-1 text-destructive text-xs'>{nameError.message?.toString()}</p>
                   )}
                 </div>
 
-                <div className="flex flex-wrap gap-4">
+                <div className='flex flex-wrap gap-4'>
                   {warehouseOptions.map((option) => (
                     <Button
                       key={option.type}
-                      type="button"
-                      variant="outline"
-                      size="icon"
+                      type='button'
+                      variant='outline'
+                      size='icon'
                       onClick={() => handleTypeChange(index, option.type)}
-                      className={cn(
-                        "px-8 py-4",
-                        warehouseType === option.type && "border-primary",
-                      )}
+                      className={cn("px-8 py-4", warehouseType === option.type && "border-primary")}
                     >
                       {option.icon}
                     </Button>
@@ -292,27 +273,27 @@ export default function WarehouseStep({
           })}
 
           <Button
-            type="button"
-            variant="outline"
-            size="sm"
+            type='button'
+            variant='outline'
+            size='sm'
             onClick={() =>
               append({
                 type: "bigquery",
                 name: `BIGQUERY_${fields.length + 1}`,
-                config: {},
+                config: {}
               })
             }
-            className="w-full"
+            className='w-full'
           >
-            <Plus className="h-4 w-4" /> Add Another Connection
+            <Plus className='h-4 w-4' /> Add Another Connection
           </Button>
         </div>
 
-        <div className="flex justify-between">
-          <Button type="button" variant="outline" onClick={onBack}>
+        <div className='flex justify-between'>
+          <Button type='button' variant='outline' onClick={onBack}>
             Back
           </Button>
-          <Button type="submit">Next</Button>
+          <Button type='submit'>Next</Button>
         </div>
       </form>
     </FormProvider>

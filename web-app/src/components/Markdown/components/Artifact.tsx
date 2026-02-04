@@ -1,16 +1,10 @@
+import { CircleAlert, CircleCheck, MessagesSquare, SquareTerminal, Workflow } from "lucide-react";
 import React from "react";
-import {
-  CircleAlert,
-  CircleCheck,
-  MessagesSquare,
-  SquareTerminal,
-  Workflow,
-} from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
-  TooltipTrigger,
+  TooltipTrigger
 } from "@/components/ui/shadcn/tooltip";
 
 type Props = {
@@ -24,14 +18,7 @@ type Props = {
 
 const ArtifactContainer = React.memo(
   function ArtifactContainer(props: Props) {
-    const {
-      artifactId,
-      kind,
-      title,
-      is_verified,
-      children: propChildren,
-      onClick,
-    } = props;
+    const { artifactId, kind, title, is_verified, children: propChildren, onClick } = props;
 
     const handleClick = React.useCallback(() => {
       onClick?.(artifactId);
@@ -70,22 +57,18 @@ const ArtifactContainer = React.memo(
     return (
       <>
         <div
-          className="cursor-pointer hover:bg-muted transition-colors skip-revert w-fit flex items-center space-x-4 rounded-md border border-base-border shadow-sm p-4 mb-1"
+          className='skip-revert mb-1 flex w-fit cursor-pointer items-center space-x-4 rounded-md border border-base-border p-4 shadow-sm transition-colors hover:bg-muted'
           onClick={handleClick}
-          data-testid="agent-artifact"
+          data-testid='agent-artifact'
           data-artifact-kind={kind}
           data-artifact-id={artifactId}
         >
           {icon}
-          <div className="flex-1 space-y-1">
-            <p className="text-sm font-medium leading-none">{title}</p>
-            <p className="text-sm text-muted-foreground">
-              Click to view the artifact.
-            </p>
+          <div className='flex-1 space-y-1'>
+            <p className='font-medium text-sm leading-none'>{title}</p>
+            <p className='text-muted-foreground text-sm'>Click to view the artifact.</p>
           </div>
-          <div
-            className={`flex items-start justify-center ${verifiedClassName}`}
-          >
+          <div className={`flex items-start justify-center ${verifiedClassName}`}>
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -98,15 +81,13 @@ const ArtifactContainer = React.memo(
             </TooltipProvider>
           </div>
         </div>
-        {children ? (
-          <div className="mb-1 artifactContent">{children}</div>
-        ) : null}
+        {children ? <div className='artifactContent mb-1'>{children}</div> : null}
       </>
     );
   },
   (prevProps, nextProps) => {
     return prevProps.artifactId === nextProps.artifactId;
-  },
+  }
 );
 
 export default ArtifactContainer;

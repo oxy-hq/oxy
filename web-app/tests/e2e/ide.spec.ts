@@ -1,6 +1,6 @@
-import { test, expect } from "@playwright/test";
-import { resetTestFile, resetTestAgentFile } from "./utils";
+import { expect, test } from "@playwright/test";
 import { IDEPage } from "./pages/IDEPage";
+import { resetTestAgentFile, resetTestFile } from "./utils";
 
 test.describe("IDE Functionality", () => {
   test.beforeEach(async ({ page }) => {
@@ -12,7 +12,7 @@ test.describe("IDE Functionality", () => {
 
     // Wait for IDE sidebar tabs to be visible
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
 
     // Switch to Files view mode (default is Objects mode)
@@ -20,9 +20,7 @@ test.describe("IDE Functionality", () => {
     await page.waitForTimeout(500);
   });
 
-  test("should display file browser with folders and files in Files mode", async ({
-    page,
-  }) => {
+  test("should display file browser with folders and files in Files mode", async ({ page }) => {
     const idePage = new IDEPage(page);
 
     // Verify we're in Files mode (switched in beforeEach)
@@ -31,15 +29,15 @@ test.describe("IDE Functionality", () => {
     // Verify at least some folders are visible (folders that actually exist in test env)
     const workflowsFolder = page.getByRole("button", {
       name: "workflows",
-      exact: true,
+      exact: true
     });
     const generatedFolder = page.getByRole("button", {
       name: "generated",
-      exact: true,
+      exact: true
     });
     const exampleSqlFolder = page.getByRole("button", {
       name: "example_sql",
-      exact: true,
+      exact: true
     });
 
     // At least one folder should be visible
@@ -58,7 +56,7 @@ test.describe("IDE Functionality", () => {
     // Use workflows folder which exists in the test environment
     const folder = page.getByRole("button", { name: "workflows", exact: true });
     const fileInFolder = page.getByRole("link", {
-      name: "fruit_sales_analyst.workflow.yml",
+      name: "fruit_sales_analyst.workflow.yml"
     });
 
     // Ensure folder starts in a known state (collapsed)
@@ -88,9 +86,7 @@ test.describe("IDE Functionality", () => {
 
   test("should display empty state when no file is open", async ({ page }) => {
     await expect(page.getByText("No file is open")).toBeVisible();
-    await expect(
-      page.getByText("Select a file from the sidebar to start editing"),
-    ).toBeVisible();
+    await expect(page.getByText("Select a file from the sidebar to start editing")).toBeVisible();
   });
 
   test("should switch between Files and Objects modes", async ({ page }) => {
@@ -108,9 +104,7 @@ test.describe("IDE Functionality", () => {
     await idePage.verifyFilesMode();
   });
 
-  test("should display objects grouped by type in Objects mode", async ({
-    page,
-  }) => {
+  test("should display objects grouped by type in Objects mode", async ({ page }) => {
     const idePage = new IDEPage(page);
 
     // Switch to Objects mode
@@ -119,7 +113,7 @@ test.describe("IDE Functionality", () => {
     // Verify we're in Objects mode (check the tab is active)
     await expect(page.getByRole("tab", { name: "Objects" })).toHaveAttribute(
       "data-state",
-      "active",
+      "active"
     );
 
     // Check for at least one object group (the specific groups depend on what files exist)
@@ -166,7 +160,7 @@ test.describe("IDE Functionality", () => {
         "Content for section 1",
         "",
         "## Section 2",
-        "Content for section 2",
+        "Content for section 2"
       ]);
       await idePage.verifySaveButtonVisible();
     });
@@ -204,9 +198,7 @@ test.describe("IDE Functionality", () => {
       const idePage = new IDEPage(page);
 
       await idePage.openFile("test-file-for-e2e.txt");
-      await idePage.replaceAllContent(
-        "# Completely New Content\n\nThis replaces everything.",
-      );
+      await idePage.replaceAllContent("# Completely New Content\n\nThis replaces everything.");
       await idePage.verifySaveButtonVisible();
     });
 
@@ -228,9 +220,7 @@ test.describe("IDE Functionality", () => {
       await idePage.verifySaveButtonHidden();
     });
 
-    test("should verify breadcrumb updates when switching files", async ({
-      page,
-    }) => {
+    test("should verify breadcrumb updates when switching files", async ({ page }) => {
       const idePage = new IDEPage(page);
 
       // Open first file

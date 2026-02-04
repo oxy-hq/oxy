@@ -1,13 +1,9 @@
-import React from "react";
-import { useListWorkflowRuns, useDeleteWorkflowRun } from "../useWorkflowRun";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { get } from "lodash";
-import { RunInfo } from "@/services/types/runs";
-import { createSearchParams, useLocation, useNavigate } from "react-router-dom";
-import { Button } from "@/components/ui/shadcn/button";
 import { Trash2 } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
-import queryKeys from "@/hooks/api/queryKey";
-import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import React from "react";
+import { createSearchParams, useLocation, useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,30 +12,29 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialogTitle
 } from "@/components/ui/shadcn/alert-dialog";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/shadcn/avatar";
+import { Button } from "@/components/ui/shadcn/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from "@/components/ui/shadcn/select";
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-} from "@/components/ui/shadcn/avatar";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
-  TooltipTrigger,
+  TooltipTrigger
 } from "@/components/ui/shadcn/tooltip";
-import { toast } from "sonner";
+import queryKeys from "@/hooks/api/queryKey";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { UserService } from "@/services/api/users";
-import { UserInfo } from "@/types/auth";
-import { useQuery } from "@tanstack/react-query";
+import type { RunInfo } from "@/services/types/runs";
+import type { UserInfo } from "@/types/auth";
+import { useDeleteWorkflowRun, useListWorkflowRuns } from "../useWorkflowRun";
 
 interface Props {
   workflowId: string;
@@ -52,16 +47,14 @@ const RunSelection: React.FC<Props> = ({ workflowId, runId }) => {
 
   const { data, isPending } = useListWorkflowRuns(workflowId, {
     pageIndex: 0,
-    pageSize: 10000,
+    pageSize: 10000
   });
 
   const items = get(data, "items", []);
 
   // Extract unique user_ids from runs
   const userIds = React.useMemo(() => {
-    const ids = items
-      .map((run: RunInfo) => run.user_id)
-      .filter((id): id is string => id != null);
+    const ids = items.map((run: RunInfo) => run.user_id).filter((id): id is string => id != null);
     return Array.from(new Set(ids));
   }, [items]);
 
@@ -70,7 +63,7 @@ const RunSelection: React.FC<Props> = ({ workflowId, runId }) => {
     queryKey: ["users", "batch", userIds],
     queryFn: () => UserService.batchGetUsers(userIds),
     enabled: userIds.length > 0,
-    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    staleTime: 5 * 60 * 1000 // Cache for 5 minutes
   });
 
   // Create a map of user_id to user info for quick lookup
@@ -95,8 +88,8 @@ const RunSelection: React.FC<Props> = ({ workflowId, runId }) => {
     navigate({
       pathname: location.pathname,
       search: createSearchParams({
-        run: newRunId.toString(),
-      }).toString(),
+        run: newRunId.toString()
+      }).toString()
     });
   };
 
@@ -111,25 +104,21 @@ const RunSelection: React.FC<Props> = ({ workflowId, runId }) => {
     try {
       await deleteRun.mutateAsync({
         workflowId,
-        runIndex: runToDelete,
+        runIndex: runToDelete
       });
       toast.success("Run deleted successfully");
 
       // Invalidate the runs list query to refetch
       queryClient.invalidateQueries({
-        queryKey: queryKeys.workflow.getRuns(
-          projectBranch.id,
-          branchName,
-          workflowId,
-          { pageIndex: 0, pageSize: 10000 },
-        ),
+        queryKey: queryKeys.workflow.getRuns(projectBranch.id, branchName, workflowId, {
+          pageIndex: 0,
+          pageSize: 10000
+        })
       });
 
       // If the currently viewed run was deleted, navigate to the first available run
-      if (runId && parseInt(runId) === runToDelete) {
-        const remainingRuns = items.filter(
-          (run: RunInfo) => run.run_index !== runToDelete,
-        );
+      if (runId && parseInt(runId, 10) === runToDelete) {
+        const remainingRuns = items.filter((run: RunInfo) => run.run_index !== runToDelete);
         if (remainingRuns.length > 0) {
           onRunIdChange(remainingRuns[0].run_index.toString());
         } else {
@@ -149,17 +138,16 @@ const RunSelection: React.FC<Props> = ({ workflowId, runId }) => {
     <>
       <Select value={runId} onValueChange={onRunIdChange}>
         <SelectTrigger>
-          <SelectValue placeholder="Select the run" />
+          <SelectValue placeholder='Select the run' />
         </SelectTrigger>
         <SelectContent>
-          {isPending && <div className="p-4">Loading...</div>}
+          {isPending && <div className='p-4'>Loading...</div>}
           {items.map((run: RunInfo) => {
             const user = run.user_id ? usersMap.get(run.user_id) : null;
 
             // Show user email if available, otherwise show truncated user_id
             const displayName =
-              user?.email ||
-              (run.user_id ? `User ${run.user_id.slice(0, 8)}...` : "Unknown");
+              user?.email || (run.user_id ? `User ${run.user_id.slice(0, 8)}...` : "Unknown");
             const avatarFallback =
               user?.name?.charAt(0).toUpperCase() ||
               user?.email?.charAt(0).toUpperCase() ||
@@ -167,24 +155,19 @@ const RunSelection: React.FC<Props> = ({ workflowId, runId }) => {
 
             return (
               <SelectItem key={run.run_index} value={run.run_index.toString()}>
-                <div className="flex items-center justify-between w-full gap-2">
+                <div className='flex w-full items-center justify-between gap-2'>
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <div className="flex items-center gap-2 flex-1 min-w-0">
-                          <Avatar className="h-5 w-5 flex-shrink-0">
-                            <AvatarImage
-                              src={user?.picture}
-                              alt={displayName}
-                            />
-                            <AvatarFallback className="text-xs">
-                              {avatarFallback}
-                            </AvatarFallback>
+                        <div className='flex min-w-0 flex-1 items-center gap-2'>
+                          <Avatar className='h-5 w-5 flex-shrink-0'>
+                            <AvatarImage src={user?.picture} alt={displayName} />
+                            <AvatarFallback className='text-xs'>{avatarFallback}</AvatarFallback>
                           </Avatar>
-                          <span className="text-sm font-medium flex-shrink-0">
+                          <span className='flex-shrink-0 font-medium text-sm'>
                             Run {run.run_index}
                           </span>
-                          <span className="text-xs text-muted-foreground flex-shrink-0">
+                          <span className='flex-shrink-0 text-muted-foreground text-xs'>
                             {new Date(run.updated_at).toLocaleTimeString()}
                           </span>
                         </div>
@@ -195,15 +178,15 @@ const RunSelection: React.FC<Props> = ({ workflowId, runId }) => {
                     </Tooltip>
                   </TooltipProvider>
                   <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-5 w-5 hover:bg-destructive/10 hover:text-destructive flex-shrink-0"
+                    variant='ghost'
+                    size='icon'
+                    className='h-5 w-5 flex-shrink-0 hover:bg-destructive/10 hover:text-destructive'
                     onClick={(e) => {
                       e.stopPropagation();
                       handleDeleteClick(run.run_index);
                     }}
                   >
-                    <Trash2 className="h-3 w-3" />
+                    <Trash2 className='h-3 w-3' />
                   </Button>
                 </div>
               </SelectItem>
@@ -217,15 +200,14 @@ const RunSelection: React.FC<Props> = ({ workflowId, runId }) => {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Workflow Run</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this workflow run? This action
-              cannot be undone.
+              Are you sure you want to delete this workflow run? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className='bg-destructive text-destructive-foreground hover:bg-destructive/90'
             >
               Delete
             </AlertDialogAction>

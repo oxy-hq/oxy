@@ -85,14 +85,12 @@ export interface MetricDetailResponse {
 export class MetricsService {
   static async getAnalytics(
     projectId: string,
-    days: number = 30,
+    days: number = 30
   ): Promise<MetricAnalyticsResponse> {
     const params = new URLSearchParams();
     params.append("days", days.toString());
 
-    const response = await apiClient.get(
-      `/${projectId}/metrics/analytics?${params.toString()}`,
-    );
+    const response = await apiClient.get(`/${projectId}/metrics/analytics?${params.toString()}`);
     return response.data;
   }
 
@@ -100,29 +98,27 @@ export class MetricsService {
     projectId: string,
     days: number = 30,
     limit: number = 20,
-    offset: number = 0,
+    offset: number = 0
   ): Promise<MetricsListResponse> {
     const params = new URLSearchParams();
     params.append("days", days.toString());
     params.append("limit", limit.toString());
     params.append("offset", offset.toString());
 
-    const response = await apiClient.get(
-      `/${projectId}/metrics/list?${params.toString()}`,
-    );
+    const response = await apiClient.get(`/${projectId}/metrics/list?${params.toString()}`);
     return response.data;
   }
 
   static async getMetricDetail(
     projectId: string,
     metricName: string,
-    days: number = 30,
+    days: number = 30
   ): Promise<MetricDetailResponse> {
     const params = new URLSearchParams();
     params.append("days", days.toString());
 
     const response = await apiClient.get(
-      `/${projectId}/metrics/${encodeURIComponent(metricName)}?${params.toString()}`,
+      `/${projectId}/metrics/${encodeURIComponent(metricName)}?${params.toString()}`
     );
     return response.data;
   }

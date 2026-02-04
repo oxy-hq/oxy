@@ -1,12 +1,12 @@
+import { useFormContext } from "react-hook-form";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
-import { WarehousesFormData } from ".";
-import { useFormContext } from "react-hook-form";
+import type { WarehousesFormData } from ".";
 
 export default function ClickHouseForm({ index }: { index: number }) {
   const {
     formState: { errors },
-    register,
+    register
   } = useFormContext<WarehousesFormData>();
 
   const configErrors = errors?.warehouses?.[index]?.config as
@@ -14,75 +14,73 @@ export default function ClickHouseForm({ index }: { index: number }) {
     | undefined;
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-2">
+    <div className='space-y-4'>
+      <div className='space-y-2'>
         <Label htmlFor={`host-${index}`}>Host</Label>
         <Input
           id={`host-${index}`}
-          placeholder="http://localhost:8123"
+          placeholder='http://localhost:8123'
           {...register(`warehouses.${index}.config.host`, {
             required: "Host is required",
             pattern: {
               value: /^(https?:\/\/)?([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(\/.*)?$/,
-              message: "Enter a valid URL or host",
-            },
+              message: "Enter a valid URL or host"
+            }
           })}
         />
         {configErrors?.host && (
-          <p className="text-xs text-destructive mt-1">
-            {configErrors.host.message?.toString()}
-          </p>
+          <p className='mt-1 text-destructive text-xs'>{configErrors.host.message?.toString()}</p>
         )}
       </div>
 
-      <div className="space-y-2">
+      <div className='space-y-2'>
         <Label htmlFor={`username-${index}`}>User</Label>
         <Input
           id={`username-${index}`}
-          placeholder="default"
+          placeholder='default'
           {...register(`warehouses.${index}.config.username`, {
             required: "User is required",
             pattern: {
               value: /^\w+$/,
-              message: "Enter a valid username",
-            },
+              message: "Enter a valid username"
+            }
           })}
         />
         {configErrors?.username && (
-          <p className="text-xs text-destructive mt-1">
+          <p className='mt-1 text-destructive text-xs'>
             {configErrors.username.message?.toString()}
           </p>
         )}
       </div>
 
-      <div className="space-y-2">
+      <div className='space-y-2'>
         <Label htmlFor={`password-${index}`}>Password</Label>
         <Input
           id={`password-${index}`}
-          type="password"
-          placeholder="••••••••"
+          type='password'
+          placeholder='••••••••'
           {...register(`warehouses.${index}.config.password`, {
-            required: "Password is required",
+            required: "Password is required"
           })}
         />
         {configErrors?.password && (
-          <p className="text-xs text-destructive mt-1">
+          <p className='mt-1 text-destructive text-xs'>
             {configErrors.password.message?.toString()}
           </p>
         )}
       </div>
 
-      <div className="space-y-2">
+      <div className='space-y-2'>
         <Label htmlFor={`database-${index}`}>Database</Label>
         <Input
           id={`database-${index}`}
-          placeholder="default"
+          placeholder='default'
           {...register(`warehouses.${index}.config.database`, {
-            required: "Database is required",
+            required: "Database is required"
           })}
         />
         {configErrors?.database && (
-          <p className="text-xs text-destructive mt-1">
+          <p className='mt-1 text-destructive text-xs'>
             {configErrors.database.message?.toString()}
           </p>
         )}

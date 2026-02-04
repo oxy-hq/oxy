@@ -1,13 +1,13 @@
-import { apiClient } from "./axios";
-import fetchSSE from "./fetchSSE";
-import {
+import type {
+  ConnectionTestEvent,
+  CreateDatabaseConfigResponse,
   DatabaseInfo,
   DatabaseSyncResponse,
-  WarehousesFormData,
-  CreateDatabaseConfigResponse,
   TestDatabaseConnectionRequest,
-  ConnectionTestEvent,
+  WarehousesFormData
 } from "@/types/database";
+import { apiClient } from "./axios";
+import fetchSSE from "./fetchSSE";
 
 // Response can be either:
 // - string[][] (default JSON format) - the result array directly
@@ -15,12 +15,9 @@ import {
 export type ExecuteSqlResponse = string[][] | { file_name: string };
 
 export class DatabaseService {
-  static async listDatabases(
-    projectId: string,
-    branchName: string,
-  ): Promise<DatabaseInfo[]> {
+  static async listDatabases(projectId: string, branchName: string): Promise<DatabaseInfo[]> {
     const response = await apiClient.get(`/${projectId}/databases`, {
-      params: { branch: branchName },
+      params: { branch: branchName }
     });
     return response.data;
   }
@@ -30,16 +27,16 @@ export class DatabaseService {
     branchName: string,
     pathb64: string,
     sql: string,
-    database: string,
+    database: string
   ): Promise<ExecuteSqlResponse> {
     const response = await apiClient.post(
       `/${projectId}/sql/${pathb64}`,
       {
         sql,
         database,
-        result_format: "parquet",
+        result_format: "parquet"
       },
-      { params: { branch: branchName } },
+      { params: { branch: branchName } }
     );
     return response.data;
   }
@@ -48,16 +45,16 @@ export class DatabaseService {
     projectId: string,
     branchName: string,
     sql: string,
-    database: string,
+    database: string
   ): Promise<ExecuteSqlResponse> {
     const response = await apiClient.post(
       `/${projectId}/sql/query`,
       {
         sql,
         database,
-        result_format: "parquet",
+        result_format: "parquet"
       },
-      { params: { branch: branchName } },
+      { params: { branch: branchName } }
     );
     return response.data;
   }
@@ -66,7 +63,7 @@ export class DatabaseService {
     projectId: string,
     branchName: string,
     database?: string,
-    options?: { datasets?: string[] },
+    options?: { datasets?: string[] }
   ): Promise<DatabaseSyncResponse> {
     const params = new URLSearchParams();
     params.append("branch", branchName);
@@ -77,21 +74,19 @@ export class DatabaseService {
       });
     }
 
-    const response = await apiClient.post(
-      `/${projectId}/databases/sync?${params.toString()}`,
-    );
+    const response = await apiClient.post(`/${projectId}/databases/sync?${params.toString()}`);
     return response.data;
   }
 
   static async buildDatabase(
     projectId: string,
-    branchName: string,
+    branchName: string
   ): Promise<{
     success: boolean;
     message?: string;
   }> {
     const response = await apiClient.post(`/${projectId}/databases/build`, {
-      params: { branch: branchName },
+      params: { branch: branchName }
     });
     return response.data;
   }
@@ -99,7 +94,7 @@ export class DatabaseService {
   static async cleanData(
     projectId: string,
     branchName: string,
-    target?: string,
+    target?: string
   ): Promise<{
     success: boolean;
     message: string;
@@ -109,24 +104,18 @@ export class DatabaseService {
     params.append("branch", branchName);
     if (target) params.append("target", target);
 
-    const response = await apiClient.post(
-      `/${projectId}/databases/clean?${params.toString()}`,
-    );
+    const response = await apiClient.post(`/${projectId}/databases/clean?${params.toString()}`);
     return response.data;
   }
 
   static async createDatabaseConfig(
     projectId: string,
     branchName: string,
-    warehouses: WarehousesFormData,
+    warehouses: WarehousesFormData
   ): Promise<CreateDatabaseConfigResponse> {
-    const response = await apiClient.post(
-      `/${projectId}/databases`,
-      warehouses,
-      {
-        params: { branch: branchName },
-      },
-    );
+    const response = await apiClient.post(`/${projectId}/databases`, warehouses, {
+      params: { branch: branchName }
+    });
     return response.data;
   }
 
@@ -142,7 +131,7 @@ export class DatabaseService {
     projectId: string,
     branchName: string,
     request: TestDatabaseConnectionRequest,
-    onEvent: (event: ConnectionTestEvent) => void,
+    onEvent: (event: ConnectionTestEvent) => void
   ): Promise<void> {
     const baseUrl = apiClient.defaults.baseURL || "";
     const url = `${baseUrl}/${projectId}/databases/test-connection?branch=${encodeURIComponent(branchName)}`;
@@ -150,7 +139,7 @@ export class DatabaseService {
     await fetchSSE<ConnectionTestEvent>(url, {
       method: "POST",
       body: request,
-      onMessage: onEvent,
+      onMessage: onEvent
     });
   }
 }

@@ -1,19 +1,12 @@
-import { ProjectStatus } from "@/types/github";
+import type { ProjectStatus } from "@/types/github";
+import type { Project, ProjectBranch, ProjectBranchesResponse } from "@/types/project";
+import type { RevisionInfo } from "@/types/settings";
 import { apiClient } from "./axios";
-import {
-  Project,
-  ProjectBranchesResponse,
-  ProjectBranch,
-} from "@/types/project";
-import { RevisionInfo } from "@/types/settings";
 
 export class ProjectService {
-  static async getGithubRevisionInfo(
-    projectId: string,
-    branchName: string,
-  ): Promise<RevisionInfo> {
+  static async getGithubRevisionInfo(projectId: string, branchName: string): Promise<RevisionInfo> {
     const response = await apiClient.get(`/${projectId}/revision-info`, {
-      params: { branch: branchName },
+      params: { branch: branchName }
     });
     return response.data;
   }
@@ -23,64 +16,50 @@ export class ProjectService {
     return response.data;
   }
 
-  static async deleteProject(
-    workspaceId: string,
-    projectId: string,
-  ): Promise<void> {
+  static async deleteProject(workspaceId: string, projectId: string): Promise<void> {
     await apiClient.delete(`/workspaces/${workspaceId}/projects/${projectId}`);
   }
 
-  static async getProjectBranches(
-    projectId: string,
-  ): Promise<ProjectBranchesResponse> {
+  static async getProjectBranches(projectId: string): Promise<ProjectBranchesResponse> {
     const response = await apiClient.get(`/${projectId}/branches`);
     return response.data;
   }
 
-  static async getProjectStatus(
-    project_id: string,
-    branch_name?: string,
-  ): Promise<ProjectStatus> {
+  static async getProjectStatus(project_id: string, branch_name?: string): Promise<ProjectStatus> {
     const response = await apiClient.get<ProjectStatus>(
       `/${project_id}/status`,
       branch_name
         ? {
-            params: { branch: branch_name },
+            params: { branch: branch_name }
           }
-        : undefined,
+        : undefined
     );
     return response.data;
   }
 
-  static async switchProjectBranch(
-    projectId: string,
-    branchName: string,
-  ): Promise<ProjectBranch> {
+  static async switchProjectBranch(projectId: string, branchName: string): Promise<ProjectBranch> {
     const response = await apiClient.post(`/${projectId}/switch-branch`, {
-      branch: branchName,
+      branch: branchName
     });
     return response.data;
   }
 
   static async switchProjectActiveBranch(
     projectId: string,
-    branchName: string,
+    branchName: string
   ): Promise<ProjectBranch> {
-    const response = await apiClient.post(
-      `/${projectId}/switch-active-branch`,
-      {
-        branch: branchName,
-      },
-    );
+    const response = await apiClient.post(`/${projectId}/switch-active-branch`, {
+      branch: branchName
+    });
     return response.data;
   }
 
   static async pullChanges(
     projectId: string,
-    branchName: string,
+    branchName: string
   ): Promise<{ success: boolean; message: string }> {
     const response = await apiClient.post(`/${projectId}/pull-changes`, null, {
-      params: { branch: branchName },
+      params: { branch: branchName }
     });
     return response.data;
   }
@@ -88,23 +67,23 @@ export class ProjectService {
   static async pushChanges(
     projectId: string,
     branchName: string,
-    commitMessage?: string,
+    commitMessage?: string
   ): Promise<{ success: boolean; message: string }> {
     const response = await apiClient.post(
       `/${projectId}/push-changes`,
       {
-        commit_message: commitMessage,
+        commit_message: commitMessage
       },
       {
-        params: { branch: branchName },
-      },
+        params: { branch: branchName }
+      }
     );
     return response.data;
   }
 
   static async updateGitHubToken(
     token: string,
-    projectId: string,
+    projectId: string
   ): Promise<{ success: boolean; message: string }> {
     const response = await apiClient.post(`/${projectId}/git-token`, { token });
     return response.data;
@@ -113,11 +92,11 @@ export class ProjectService {
   static async createRepoFromProject(
     projectId: string,
     gitNamespaceId: string,
-    repoName: string,
+    repoName: string
   ): Promise<{ success: boolean; message: string }> {
     const response = await apiClient.post(`/${projectId}/create-repo`, {
       git_namespace_id: gitNamespaceId,
-      repo_name: repoName,
+      repo_name: repoName
     });
     return response.data;
   }

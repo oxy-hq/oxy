@@ -1,18 +1,18 @@
-import React from "react";
-import { useFieldArray, Controller } from "react-hook-form";
-import { Label } from "@/components/ui/shadcn/label";
+import { Plus, X } from "lucide-react";
+import type React from "react";
+import { Controller, useFieldArray } from "react-hook-form";
 import { Button } from "@/components/ui/shadcn/button";
+import { Combobox } from "@/components/ui/shadcn/combobox";
+import { Label } from "@/components/ui/shadcn/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from "@/components/ui/shadcn/select";
-import { Combobox } from "@/components/ui/shadcn/combobox";
-import { Plus, X } from "lucide-react";
-import { OrdersFieldProps } from "./types";
 import { ORDER_DIRECTIONS } from "./constants";
+import type { OrdersFieldProps } from "./types";
 import { getItemsWithUnknownValue } from "./utils";
 
 export const OrdersField: React.FC<OrdersFieldProps> = ({
@@ -20,55 +20,52 @@ export const OrdersField: React.FC<OrdersFieldProps> = ({
   control,
   topicValue,
   fieldsLoading,
-  allFieldItems,
+  allFieldItems
 }) => {
   const {
     fields: orderFields,
     append: appendOrder,
-    remove: removeOrder,
+    remove: removeOrder
   } = useFieldArray({
     control,
     // @ts-expect-error - dynamic field path
-    name: `${taskPath}.orders`,
+    name: `${taskPath}.orders`
   });
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
+    <div className='space-y-2'>
+      <div className='flex items-center justify-between'>
         <Label>Order By</Label>
         <Button
-          type="button"
+          type='button'
           onClick={() => appendOrder({ field: "", direction: "asc" } as never)}
-          variant="outline"
-          size="sm"
+          variant='outline'
+          size='sm'
           disabled={!topicValue}
         >
-          <Plus className="w-4 h-4 mr-1" />
+          <Plus className='mr-1 h-4 w-4' />
           Add Order
         </Button>
       </div>
       {orderFields.length > 0 && (
-        <div className="space-y-2">
+        <div className='space-y-2'>
           {orderFields.map((field, orderIndex) => (
-            <div key={field.id} className="flex gap-2 items-center">
-              <div className="flex-1">
+            <div key={field.id} className='flex items-center gap-2'>
+              <div className='flex-1'>
                 <Controller
                   control={control}
                   // @ts-expect-error - dynamic field path
                   name={`${taskPath}.orders.${orderIndex}.field`}
                   render={({ field: controllerField }) => {
                     const value = controllerField.value as string;
-                    const items = getItemsWithUnknownValue(
-                      allFieldItems,
-                      value,
-                    );
+                    const items = getItemsWithUnknownValue(allFieldItems, value);
                     return (
                       <Combobox
                         items={items}
                         value={value}
                         onValueChange={controllerField.onChange}
-                        placeholder="Select field..."
-                        searchPlaceholder="Search fields..."
+                        placeholder='Select field...'
+                        searchPlaceholder='Search fields...'
                         disabled={!topicValue || fieldsLoading}
                       />
                     );
@@ -81,10 +78,7 @@ export const OrdersField: React.FC<OrdersFieldProps> = ({
                 // @ts-expect-error - dynamic field path
                 name={`${taskPath}.orders.${orderIndex}.direction`}
                 render={({ field }) => (
-                  <Select
-                    value={field.value as string}
-                    onValueChange={field.onChange}
-                  >
+                  <Select value={field.value as string} onValueChange={field.onChange}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -100,20 +94,18 @@ export const OrdersField: React.FC<OrdersFieldProps> = ({
               />
 
               <Button
-                type="button"
+                type='button'
                 onClick={() => removeOrder(orderIndex)}
-                variant="ghost"
-                size="sm"
+                variant='ghost'
+                size='sm'
               >
-                <X className="w-4 h-4" />
+                <X className='h-4 w-4' />
               </Button>
             </div>
           ))}
         </div>
       )}
-      <p className="text-sm text-muted-foreground">
-        Specify how to sort the query results
-      </p>
+      <p className='text-muted-foreground text-sm'>Specify how to sort the query results</p>
     </div>
   );
 };

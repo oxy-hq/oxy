@@ -15,9 +15,7 @@ export const isMeaningfulValue = (value: unknown): boolean => {
   return true;
 };
 
-export const cleanObject = (
-  obj: Record<string, unknown>,
-): Record<string, unknown> | null => {
+export const cleanObject = (obj: Record<string, unknown>): Record<string, unknown> | null => {
   const cleaned: Record<string, unknown> = {};
 
   Object.entries(obj).forEach(([key, value]) => {

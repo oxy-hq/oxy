@@ -1,6 +1,6 @@
 import { useMemo, useRef } from "react";
-import type { ClusterMapPoint, ClusterSummary } from "@/services/api/traces";
 import { cn } from "@/libs/shadcn/utils";
+import type { ClusterMapPoint, ClusterSummary } from "@/services/api/traces";
 
 interface WaffleChartProps {
   points: ClusterMapPoint[];
@@ -14,12 +14,7 @@ interface ClusterGroup {
   points: ClusterMapPoint[];
 }
 
-export function WaffleChart({
-  points,
-  clusters,
-  onPointClick,
-  selectedPoint,
-}: WaffleChartProps) {
+export function WaffleChart({ points, clusters, onPointClick, selectedPoint }: WaffleChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const clusterGroups = useMemo(() => {
@@ -34,14 +29,12 @@ export function WaffleChart({
     const groups: ClusterGroup[] = [];
 
     // Sort by cluster count (outliers first if they exist, then by count)
-    const sortedEntries = Array.from(grouped.entries()).sort(
-      ([idA, pointsA], [idB, pointsB]) => {
-        // Outliers (clusterId === -1) should come first
-        if (idA === -1) return -1;
-        if (idB === -1) return 1;
-        return pointsB.length - pointsA.length;
-      },
-    );
+    const sortedEntries = Array.from(grouped.entries()).sort(([idA, pointsA], [idB, pointsB]) => {
+      // Outliers (clusterId === -1) should come first
+      if (idA === -1) return -1;
+      if (idB === -1) return 1;
+      return pointsB.length - pointsA.length;
+    });
 
     sortedEntries.forEach(([clusterId, clusterPoints]) => {
       const cluster = clusters.find((c) => c.clusterId === clusterId);
@@ -49,7 +42,7 @@ export function WaffleChart({
 
       groups.push({
         cluster,
-        points: clusterPoints,
+        points: clusterPoints
       });
     });
 
@@ -57,9 +50,9 @@ export function WaffleChart({
   }, [points, clusters]);
 
   return (
-    <div className="h-full flex flex-col">
-      <div ref={containerRef} className="flex-1 overflow-auto p-4">
-        <div className="flex flex-wrap gap-6 content-start">
+    <div className='flex h-full flex-col'>
+      <div ref={containerRef} className='flex-1 overflow-auto p-4'>
+        <div className='flex flex-wrap content-start gap-6'>
           {clusterGroups.map((group) => (
             <ClusterBox
               key={group.cluster.clusterId}
@@ -89,24 +82,21 @@ function ClusterBox({ group, onPointClick, selectedPoint }: ClusterBoxProps) {
   const rows = Math.ceil(totalPoints / cols);
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className='flex flex-col gap-2'>
       {/* Header */}
-      <div className="flex items-center gap-2 text-xs">
-        <span
-          className="font-medium truncate max-w-[120px]"
-          title={cluster.intentName}
-        >
+      <div className='flex items-center gap-2 text-xs'>
+        <span className='max-w-[120px] truncate font-medium' title={cluster.intentName}>
           {cluster.intentName}
         </span>
-        <span className="text-muted-foreground">{points.length}</span>
+        <span className='text-muted-foreground'>{points.length}</span>
       </div>
 
       {/* Waffle grid */}
       <div
-        className="grid gap-[2px]"
+        className='grid gap-[2px]'
         style={{
           gridTemplateColumns: `repeat(${cols}, 10px)`,
-          gridTemplateRows: `repeat(${rows}, 10px)`,
+          gridTemplateRows: `repeat(${rows}, 10px)`
         }}
       >
         {points.map((point) => (
@@ -130,18 +120,13 @@ interface WaffleCellProps {
   onClick: () => void;
 }
 
-function WaffleCell({
-  point,
-  clusterColor,
-  isSelected,
-  onClick,
-}: WaffleCellProps) {
+function WaffleCell({ point, clusterColor, isSelected, onClick }: WaffleCellProps) {
   return (
     <button
       className={cn(
-        "w-[10px] h-[10px] rounded-sm transition-all cursor-pointer",
-        "hover:scale-125 hover:z-10 hover:ring-2 hover:ring-white hover:ring-offset-1",
-        isSelected && "ring-2 ring-white ring-offset-1 scale-125 z-10",
+        "h-[10px] w-[10px] cursor-pointer rounded-sm transition-all",
+        "hover:z-10 hover:scale-125 hover:ring-2 hover:ring-white hover:ring-offset-1",
+        isSelected && "z-10 scale-125 ring-2 ring-white ring-offset-1"
       )}
       style={{ backgroundColor: clusterColor }}
       onClick={onClick}

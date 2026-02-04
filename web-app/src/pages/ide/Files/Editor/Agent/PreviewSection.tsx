@@ -1,16 +1,13 @@
+import { BrushCleaning, Play } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/shadcn/button";
-import {
-  ToggleGroup,
-  ToggleGroupItem,
-} from "@/components/ui/shadcn/toggle-group";
-import { BrushCleaning, Play } from "lucide-react";
-import AgentPreview from "./Preview";
-import AgentTests from "./Tests";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/shadcn/toggle-group";
+import useAgent from "@/hooks/api/agents/useAgent";
 import useAgentThreadStore from "@/stores/useAgentThread";
 import useTests from "@/stores/useTests";
-import useAgent from "@/hooks/api/agents/useAgent";
 import { useEditorContext } from "../contexts/useEditorContext";
+import AgentPreview from "./Preview";
+import AgentTests from "./Tests";
 
 interface PreviewSectionProps {
   pathb64: string;
@@ -33,47 +30,37 @@ const PreviewSection = ({ pathb64, previewKey }: PreviewSectionProps) => {
   };
 
   return (
-    <div className="flex-1 overflow-hidden flex flex-col">
-      <div className="flex justify-between p-4 flex-shrink-0 relative z-10 bg-background">
-        <ToggleGroup
-          size="sm"
-          value={selected}
-          onValueChange={setSelected}
-          type="single"
-        >
-          <ToggleGroupItem value="preview" aria-label="Preview">
+    <div className='flex flex-1 flex-col overflow-hidden'>
+      <div className='relative z-10 flex flex-shrink-0 justify-between bg-background p-4'>
+        <ToggleGroup size='sm' value={selected} onValueChange={setSelected} type='single'>
+          <ToggleGroupItem value='preview' aria-label='Preview'>
             Preview
           </ToggleGroupItem>
-          <ToggleGroupItem value="test" aria-label="Test">
+          <ToggleGroupItem value='test' aria-label='Test'>
             Test
           </ToggleGroupItem>
         </ToggleGroup>
         {selected === "test" && (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={handleRunAllTests}
-            title={"Run all tests"}
-          >
-            <Play className="w-4 h-4" />
+          <Button size='sm' variant='ghost' onClick={handleRunAllTests} title={"Run all tests"}>
+            <Play className='h-4 w-4' />
             Run all tests
           </Button>
         )}
         {selected === "preview" && (
           <Button
-            size="sm"
+            size='sm'
             variant={"ghost"}
             onClick={() => {
               setMessages(pathb64, []);
             }}
           >
-            <BrushCleaning className="w-4 h-4" />
+            <BrushCleaning className='h-4 w-4' />
             Clean
           </Button>
         )}
       </div>
 
-      <div className="flex-1 overflow-auto">
+      <div className='flex-1 overflow-auto'>
         {selected === "preview" ? (
           <AgentPreview key={previewKey} agentPathb64={pathb64} />
         ) : (

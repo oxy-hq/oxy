@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
 import type { EChartsOption } from "echarts";
-import { DataContainer, TableData } from "@/types/app";
-import { getData, registerAuthenticatedFile } from "../utils";
+import { useEffect, useState } from "react";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { getDuckDB } from "@/libs/duckdb";
 import useTheme from "@/stores/useTheme";
+import type { DataContainer, TableData } from "@/types/app";
+import { getData, registerAuthenticatedFile } from "../utils";
 import type { BaseChartDisplay, ChartOptionsBuilder } from "./types";
-import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 interface UseChartBaseOptions<T extends BaseChartDisplay> {
   display: T;
@@ -16,7 +16,7 @@ interface UseChartBaseOptions<T extends BaseChartDisplay> {
 export const useChartBase = <T extends BaseChartDisplay>({
   display,
   data,
-  buildChartOptions,
+  buildChartOptions
 }: UseChartBaseOptions<T>) => {
   const [isLoading, setIsLoading] = useState(true);
   const { project, branchName } = useCurrentProjectBranch();
@@ -47,7 +47,7 @@ export const useChartBase = <T extends BaseChartDisplay>({
         const fileName = await registerAuthenticatedFile(
           tableData.file_path,
           project.id,
-          branchName,
+          branchName
         );
         const connection = await db.connect();
 
@@ -55,7 +55,7 @@ export const useChartBase = <T extends BaseChartDisplay>({
           display,
           connection,
           fileName,
-          isDarkMode,
+          isDarkMode
         });
 
         setChartOptions(options);
@@ -68,25 +68,22 @@ export const useChartBase = <T extends BaseChartDisplay>({
     };
 
     loadChart();
-  }, [display, data, isDarkMode, dataAvailable, buildChartOptions]);
+  }, [display, data, isDarkMode, dataAvailable, buildChartOptions, branchName, project.id]);
 
   return {
     isLoading,
     chartOptions,
-    isDarkMode,
+    isDarkMode
   };
 };
 
-const createNoDataOptions = (
-  title?: string,
-  isDarkMode = false,
-): EChartsOption => ({
+const createNoDataOptions = (title?: string, isDarkMode = false): EChartsOption => ({
   darkMode: isDarkMode,
   title: {
     text: title,
     textStyle: {
-      color: isDarkMode ? "#ffffff" : "#333333",
-    },
+      color: isDarkMode ? "#ffffff" : "#333333"
+    }
   },
   graphic: {
     type: "text",
@@ -96,37 +93,34 @@ const createNoDataOptions = (
       text: "No data found",
       fontSize: 16,
       fontWeight: "bold",
-      fill: isDarkMode ? "#888888" : "#666666",
-    },
+      fill: isDarkMode ? "#888888" : "#666666"
+    }
   },
   xAxis: {
     type: "category",
-    show: false,
+    show: false
   },
   yAxis: {
     type: "value",
-    show: false,
+    show: false
   },
   series: [],
   grid: {
     containLabel: true,
-    show: false,
-  },
+    show: false
+  }
 });
 
 /**
  * Creates standard error state chart options
  */
-const createErrorOptions = (
-  title?: string,
-  isDarkMode = false,
-): EChartsOption => ({
+const createErrorOptions = (title?: string, isDarkMode = false): EChartsOption => ({
   darkMode: isDarkMode,
   title: {
     text: title,
     textStyle: {
-      color: isDarkMode ? "#ffffff" : "#333333",
-    },
+      color: isDarkMode ? "#ffffff" : "#333333"
+    }
   },
   graphic: {
     type: "text",
@@ -136,20 +130,20 @@ const createErrorOptions = (
       text: "Error loading chart",
       fontSize: 16,
       fontWeight: "bold",
-      fill: isDarkMode ? "#ff6b6b" : "#e74c3c",
-    },
+      fill: isDarkMode ? "#ff6b6b" : "#e74c3c"
+    }
   },
   xAxis: {
     type: "category",
-    show: false,
+    show: false
   },
   yAxis: {
     type: "value",
-    show: false,
+    show: false
   },
   series: [],
   grid: {
     containLabel: true,
-    show: false,
-  },
+    show: false
+  }
 });

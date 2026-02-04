@@ -14,5 +14,5 @@ export interface ChartBuilderParams<T extends BaseChartDisplay> {
 }
 
 export type ChartOptionsBuilder<T extends BaseChartDisplay> = (
-  params: ChartBuilderParams<T>,
+  params: ChartBuilderParams<T>
 ) => Promise<EChartsOption>;

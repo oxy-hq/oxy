@@ -1,21 +1,21 @@
+import { PlusIcon, X as XIcon } from "lucide-react";
+import { useFieldArray, useFormContext } from "react-hook-form";
 import { v4 as uuidv4 } from "uuid";
+import { Badge } from "@/components/ui/shadcn/badge";
+import { Button } from "@/components/ui/shadcn/button";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
-import { Textarea } from "@/components/ui/shadcn/textarea";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from "@/components/ui/shadcn/select";
-import { Button } from "@/components/ui/shadcn/button";
-import { PlusIcon, X as XIcon } from "lucide-react";
-import { Badge } from "@/components/ui/shadcn/badge";
-import { useFormContext, useFieldArray } from "react-hook-form";
-import { AgentConfig, ToolConfig, ExecuteSQLToolConfig } from "./index";
-import { ModelsFormData } from "../ModelStep";
-import { WarehousesFormData } from "../WarehouseStep";
+import { Textarea } from "@/components/ui/shadcn/textarea";
+import type { ModelsFormData } from "../ModelStep";
+import type { WarehousesFormData } from "../WarehouseStep";
+import type { AgentConfig, ExecuteSQLToolConfig, ToolConfig } from "./index";
 
 type ToolType = "execute_sql" | "visualize";
 
@@ -30,16 +30,16 @@ export default function AgentForm({ models, databases }: AgentFormProps) {
     control,
     setValue,
     watch,
-    formState: { errors },
+    formState: { errors }
   } = useFormContext<AgentConfig>();
 
   const {
     fields: toolFields,
     append: appendTool,
-    remove: removeTool,
+    remove: removeTool
   } = useFieldArray({
     control,
-    name: "tools",
+    name: "tools"
   });
 
   const tools = watch("tools") || [];
@@ -57,7 +57,7 @@ export default function AgentForm({ models, databases }: AgentFormProps) {
       const modelName = model.name ? String(model.name) : "";
       return {
         value: modelName,
-        label: `${model.vendor} - ${modelName}`,
+        label: `${model.vendor} - ${modelName}`
       };
     }) || [];
 
@@ -66,7 +66,7 @@ export default function AgentForm({ models, databases }: AgentFormProps) {
       const dbName = db.name ? String(db.name) : "";
       return {
         value: dbName,
-        label: `${db.type} - ${dbName}`,
+        label: `${db.type} - ${dbName}`
       };
     }) || [];
 
@@ -75,34 +75,27 @@ export default function AgentForm({ models, databases }: AgentFormProps) {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor="name">Agent Name</Label>
+    <div className='space-y-4'>
+      <div className='space-y-2'>
+        <Label htmlFor='name'>Agent Name</Label>
         <Input
-          id="name"
-          placeholder="My Agent"
+          id='name'
+          placeholder='My Agent'
           {...register("name", {
-            required: "Agent name is required",
+            required: "Agent name is required"
           })}
         />
         {errors.name && (
-          <p className="text-xs text-destructive mt-1">
-            {errors.name.message?.toString()}
-          </p>
+          <p className='mt-1 text-destructive text-xs'>{errors.name.message?.toString()}</p>
         )}
-        <p className="text-xs text-muted-foreground">
-          A unique name for your agent
-        </p>
+        <p className='text-muted-foreground text-xs'>A unique name for your agent</p>
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="model">Model</Label>
-        <Select
-          value={watch("model") || modelOptions[0]?.value}
-          onValueChange={handleModelChange}
-        >
+      <div className='space-y-2'>
+        <Label htmlFor='model'>Model</Label>
+        <Select value={watch("model") || modelOptions[0]?.value} onValueChange={handleModelChange}>
           <SelectTrigger>
-            <SelectValue placeholder="Select a model" />
+            <SelectValue placeholder='Select a model' />
           </SelectTrigger>
           <SelectContent>
             {modelOptions.map((option) => (
@@ -113,95 +106,83 @@ export default function AgentForm({ models, databases }: AgentFormProps) {
           </SelectContent>
         </Select>
         {errors.model && (
-          <p className="text-xs text-destructive mt-1">
-            {errors.model.message?.toString()}
-          </p>
+          <p className='mt-1 text-destructive text-xs'>{errors.model.message?.toString()}</p>
         )}
-        <p className="text-xs text-muted-foreground">
-          The model your agent will use
-        </p>
+        <p className='text-muted-foreground text-xs'>The model your agent will use</p>
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="systemInstructions">System Instructions</Label>
+      <div className='space-y-2'>
+        <Label htmlFor='systemInstructions'>System Instructions</Label>
         <Textarea
-          id="systemInstructions"
-          placeholder="You are an AI assistant tasked with..."
-          className="min-h-[150px]"
+          id='systemInstructions'
+          placeholder='You are an AI assistant tasked with...'
+          className='min-h-[150px]'
           {...register("system_instructions", {
-            required: "System instructions are required",
+            required: "System instructions are required"
           })}
         />
         {errors.system_instructions && (
-          <p className="text-xs text-destructive mt-1">
+          <p className='mt-1 text-destructive text-xs'>
             {errors.system_instructions.message?.toString()}
           </p>
         )}
-        <p className="text-xs text-muted-foreground">
+        <p className='text-muted-foreground text-xs'>
           Instructions that define the agent's behavior
         </p>
       </div>
 
-      <div className="space-y-2">
+      <div className='space-y-2'>
         <Label>Description (Optional)</Label>
         <Textarea
-          id="description"
-          placeholder="This agent helps with..."
+          id='description'
+          placeholder='This agent helps with...'
           {...register("description")}
         />
-        <p className="text-xs text-muted-foreground">
-          A brief description of what the agent does
-        </p>
+        <p className='text-muted-foreground text-xs'>A brief description of what the agent does</p>
       </div>
 
-      <div className="space-y-2">
+      <div className='space-y-2'>
         <Label>Agent Tools</Label>
-        <div className="flex flex-col space-y-4">
+        <div className='flex flex-col space-y-4'>
           {toolFields.map((field, index) => {
             const tool = watch(`tools.${index}`) as ToolConfig;
             return (
-              <div key={field.id} className="border rounded-md p-3">
-                <div className="flex justify-between items-center mb-3">
+              <div key={field.id} className='rounded-md border p-3'>
+                <div className='mb-3 flex items-center justify-between'>
                   <Badge>{tool.type}</Badge>
                   <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 w-6 p-0"
+                    variant='ghost'
+                    size='sm'
+                    className='h-6 w-6 p-0'
                     onClick={() => removeTool(index)}
-                    type="button"
+                    type='button'
                   >
-                    <XIcon className="h-3 w-3" />
+                    <XIcon className='h-3 w-3' />
                   </Button>
                 </div>
-                <div className="space-y-3">
-                  <div className="space-y-2">
+                <div className='space-y-3'>
+                  <div className='space-y-2'>
                     <Label htmlFor={`tools.${index}.name`}>Name</Label>
                     <Input
                       id={`tools.${index}.name`}
-                      placeholder={
-                        tool.type === "execute_sql"
-                          ? "SQL Executor"
-                          : "Data Visualizer"
-                      }
+                      placeholder={tool.type === "execute_sql" ? "SQL Executor" : "Data Visualizer"}
                       {...register(`tools.${index}.name`, {
                         required: "Tool name is required",
                         pattern: {
                           value: /^\w+$/,
                           message:
-                            "Tool name must start with a letter or underscore and contain only letters, numbers, and underscores",
-                        },
+                            "Tool name must start with a letter or underscore and contain only letters, numbers, and underscores"
+                        }
                       })}
                     />
                     {errors.tools?.[index]?.name && (
-                      <p className="text-xs text-destructive mt-1">
+                      <p className='mt-1 text-destructive text-xs'>
                         {errors.tools[index]?.name?.message?.toString()}
                       </p>
                     )}
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor={`tools.${index}.description`}>
-                      Description
-                    </Label>
+                  <div className='space-y-2'>
+                    <Label htmlFor={`tools.${index}.description`}>Description</Label>
                     <Input
                       id={`tools.${index}.description`}
                       placeholder={
@@ -210,31 +191,24 @@ export default function AgentForm({ models, databases }: AgentFormProps) {
                           : "Create visualizations from data"
                       }
                       {...register(`tools.${index}.description`, {
-                        required: "Tool description is required",
+                        required: "Tool description is required"
                       })}
                     />
                     {errors.tools?.[index]?.description && (
-                      <p className="text-xs text-destructive mt-1">
+                      <p className='mt-1 text-destructive text-xs'>
                         {errors.tools[index]?.description?.message?.toString()}
                       </p>
                     )}
                   </div>
                   {tool.type === "execute_sql" && (
-                    <div className="space-y-2">
-                      <Label htmlFor={`tools.${index}.database`}>
-                        Database
-                      </Label>
+                    <div className='space-y-2'>
+                      <Label htmlFor={`tools.${index}.database`}>Database</Label>
                       <Select
-                        value={
-                          watch(`tools.${index}.database`) ||
-                          databasesOptions[0]?.value
-                        }
-                        onValueChange={(value) =>
-                          handleDatabaseChange(value, index)
-                        }
+                        value={watch(`tools.${index}.database`) || databasesOptions[0]?.value}
+                        onValueChange={(value) => handleDatabaseChange(value, index)}
                       >
                         <SelectTrigger>
-                          <SelectValue placeholder="Select a database" />
+                          <SelectValue placeholder='Select a database' />
                         </SelectTrigger>
                         <SelectContent>
                           {databasesOptions.map((option) => (
@@ -245,12 +219,9 @@ export default function AgentForm({ models, databases }: AgentFormProps) {
                         </SelectContent>
                       </Select>
                       {errors.tools?.[index] && (
-                        <p className="text-xs text-destructive mt-1">
+                        <p className='mt-1 text-destructive text-xs'>
                           {(
-                            errors.tools[index] as Record<
-                              string,
-                              { message?: string }
-                            >
+                            errors.tools[index] as Record<string, { message?: string }>
                           )?.database?.message?.toString()}
                         </p>
                       )}
@@ -261,43 +232,43 @@ export default function AgentForm({ models, databases }: AgentFormProps) {
             );
           })}
 
-          <div className="flex flex-wrap gap-2">
+          <div className='flex flex-wrap gap-2'>
             {!hasToolType("execute_sql") && (
               <Button
-                variant="outline"
-                size="sm"
-                className="gap-1"
+                variant='outline'
+                size='sm'
+                className='gap-1'
                 onClick={() => {
                   appendTool({
                     id: uuidv4(),
                     type: "execute_sql",
                     name: "",
                     description: "",
-                    database: "",
+                    database: ""
                   } as ExecuteSQLToolConfig);
                 }}
-                type="button"
+                type='button'
               >
-                <PlusIcon className="h-3 w-3" /> ExecuteSQL Tool
+                <PlusIcon className='h-3 w-3' /> ExecuteSQL Tool
               </Button>
             )}
 
             {!hasToolType("visualize") && (
               <Button
-                variant="outline"
-                size="sm"
-                className="gap-1"
+                variant='outline'
+                size='sm'
+                className='gap-1'
                 onClick={() => {
                   appendTool({
                     id: uuidv4(),
                     type: "visualize",
                     name: "",
-                    description: "",
+                    description: ""
                   });
                 }}
-                type="button"
+                type='button'
               >
-                <PlusIcon className="h-3 w-3" /> Visualize Tool
+                <PlusIcon className='h-3 w-3' /> Visualize Tool
               </Button>
             )}
           </div>

@@ -1,4 +1,4 @@
-import { Message } from "@/types/chat";
+import type { Message } from "@/types/chat";
 
 export interface MessageHandlers {
   onMessageUpdate: (message: Message) => void;
@@ -18,10 +18,7 @@ export interface SendMessageOptions {
 }
 
 export interface MessageSender {
-  sendMessage(
-    options: SendMessageOptions,
-    handlers: MessageHandlers,
-  ): Promise<void>;
+  sendMessage(options: SendMessageOptions, handlers: MessageHandlers): Promise<void>;
 }
 
 export interface ThreadStore {

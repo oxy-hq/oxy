@@ -1,4 +1,4 @@
-import { Page, Locator, expect } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 export class ChatPage {
   readonly page: Page;
@@ -29,13 +29,11 @@ export class ChatPage {
     this.stopButton = page.getByTestId("message-input-stop-button");
     this.sendButton = page.getByTestId("message-input-send-button");
     this.responseText = page.getByTestId("agent-response-text").last();
-    this.agentMessageContainer = page
-      .getByTestId("agent-message-container")
-      .last();
+    this.agentMessageContainer = page.getByTestId("agent-message-container").last();
     this.agentMessageContainers = page.getByTestId("agent-message-container");
     this.userMessageContainer = page.getByTestId("user-message-container");
     this.followUpInput = page.getByRole("textbox", {
-      name: "Ask a follow-up question...",
+      name: "Ask a follow-up question..."
     });
     // ToggleGroup with type="single" renders as radio buttons
     this.askModeButton = page.getByRole("radio", { name: "Ask" });
@@ -46,7 +44,7 @@ export class ChatPage {
   async askQuestion(
     question: string,
     agentName: string = "duckdb",
-    options?: { mode?: "Ask" | "Build" | "Workflow"; workflowName?: string },
+    options?: { mode?: "Ask" | "Build" | "Workflow"; workflowName?: string }
   ) {
     // Switch mode if specified
     if (options?.mode === "Build") {
@@ -60,9 +58,7 @@ export class ChatPage {
       // Select workflow
       if (options.workflowName) {
         await this.workflowSelectorButton.click();
-        await this.page
-          .getByRole("menuitemcheckbox", { name: options.workflowName })
-          .click();
+        await this.page.getByRole("menuitemcheckbox", { name: options.workflowName }).click();
       }
 
       await this.submitButton.click();
@@ -106,13 +102,13 @@ export class ChatPage {
     // Wait for loading to finish
     await this.loadingState.waitFor({
       state: "hidden",
-      timeout: 60000,
+      timeout: 60000
     });
 
     // Wait for streaming to stop
     await this.stopButton.waitFor({
       state: "hidden",
-      timeout: 60000,
+      timeout: 60000
     });
 
     // Verify send button is visible
@@ -130,9 +126,7 @@ export class ChatPage {
   }
 
   async verifyUserMessage(text: string) {
-    const userMessage = this.page
-      .getByTestId("user-message-text")
-      .filter({ hasText: text });
+    const userMessage = this.page.getByTestId("user-message-text").filter({ hasText: text });
     await expect(userMessage).toBeVisible();
   }
 

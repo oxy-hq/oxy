@@ -1,12 +1,12 @@
+import { useAutoAnimate } from "@formkit/auto-animate/react";
+import type { EChartsOption } from "echarts";
+import { ErrorBoundary } from "react-error-boundary";
 import { Echarts } from "@/components/Echarts";
 import useChart from "@/hooks/api/useChart";
 import useTheme from "@/stores/useTheme";
-import { ChartConfig } from "@/types/chart";
-import { EChartsOption } from "echarts";
+import type { ChartConfig } from "@/types/chart";
 import ChartError from "./Error";
 import ChartLoading from "./Loading";
-import { useAutoAnimate } from "@formkit/auto-animate/react";
-import { ErrorBoundary } from "react-error-boundary";
 
 type ChartProps = {
   data: string | undefined;
@@ -30,10 +30,9 @@ const Chart = (props: ChartProps) => {
   if (error) {
     return (
       <ChartError
-        title="Failed to load chart"
+        title='Failed to load chart'
         description={
-          error?.message ??
-          "There was an error loading the chart data. Please try again."
+          error?.message ?? "There was an error loading the chart data. Please try again."
         }
         refetch={refetch}
       />
@@ -46,8 +45,8 @@ const Chart = (props: ChartProps) => {
   } catch {
     return (
       <ChartError
-        title="Invalid chart data"
-        description="The chart data format is invalid and cannot be displayed."
+        title='Invalid chart data'
+        description='The chart data format is invalid and cannot be displayed.'
         refetch={refetch}
       />
     );
@@ -60,32 +59,28 @@ const Chart = (props: ChartProps) => {
     tooltip: {},
     xAxis: config.xAxis
       ? {
-          type:
-            (config.xAxis?.type as "category" | "value" | "time" | "log") ||
-            "category",
+          type: (config.xAxis?.type as "category" | "value" | "time" | "log") || "category",
           name: config.xAxis?.name,
           nameTextStyle: {
             color: isDarkMode ? "oklch(0.708 0 0)" : "oklch(0.556 0 0)",
-            padding: [15, 0, 0, 0],
+            padding: [15, 0, 0, 0]
           },
           nameLocation: "middle",
           data: (config.xAxis?.data || []).map((d: string | number | Date) =>
-            d instanceof Date ? d.toISOString() : d,
-          ),
+            d instanceof Date ? d.toISOString() : d
+          )
         }
       : undefined,
     yAxis: config.yAxis
       ? {
-          type:
-            (config.yAxis?.type as "category" | "value" | "time" | "log") ||
-            "category",
+          type: (config.yAxis?.type as "category" | "value" | "time" | "log") || "category",
           name: config.yAxis?.name,
           nameTextStyle: {
-            color: isDarkMode ? "oklch(0.708 0 0)" : "oklch(0.556 0 0)",
+            color: isDarkMode ? "oklch(0.708 0 0)" : "oklch(0.556 0 0)"
           },
           data: (config.yAxis?.data || []).map((d: string | number | Date) =>
-            d instanceof Date ? d.toISOString() : d,
-          ),
+            d instanceof Date ? d.toISOString() : d
+          )
         }
       : undefined,
     series: config.series.map((s) => ({
@@ -93,21 +88,17 @@ const Chart = (props: ChartProps) => {
       type: s.type,
       data:
         s.data?.map((d) =>
-          d && typeof d === "object" && "value" in d
-            ? { name: d.name, value: d.value }
-            : d,
-        ) || [],
-    })),
+          d && typeof d === "object" && "value" in d ? { name: d.name, value: d.value } : d
+        ) || []
+    }))
   };
 
-  return (
-    <Echarts options={options} isLoading={isPending} title={config.title} />
-  );
+  return <Echarts options={options} isLoading={isPending} title={config.title} />;
 };
 
 const ChartContainer = (props: Props) => {
   const [parent] = useAutoAnimate({
-    duration: 300,
+    duration: 300
   });
   const encodedPath = encodeURIComponent(props.chart_src);
   const { data, isPending, error, refetch } = useChart(encodedPath);
@@ -117,18 +108,13 @@ const ChartContainer = (props: Props) => {
       <ErrorBoundary
         fallback={
           <ChartError
-            title="Chart error"
-            description="An unexpected error occurred while rendering the chart."
+            title='Chart error'
+            description='An unexpected error occurred while rendering the chart.'
             refetch={refetch}
           />
         }
       >
-        <Chart
-          data={data}
-          isPending={isPending}
-          error={error}
-          refetch={refetch}
-        />
+        <Chart data={data} isPending={isPending} error={error} refetch={refetch} />
       </ErrorBoundary>
     </div>
   );

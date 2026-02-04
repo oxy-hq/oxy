@@ -1,24 +1,21 @@
-import React, { useState } from "react";
+import type React from "react";
+import { useState } from "react";
+import { SecretInput } from "@/components/ui/SecretInput";
 import { Button } from "@/components/ui/shadcn/button";
-import { Input } from "@/components/ui/shadcn/input";
-import { Label } from "@/components/ui/shadcn/label";
-import { Textarea } from "@/components/ui/shadcn/textarea";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
-  DialogTitle,
+  DialogTitle
 } from "@/components/ui/shadcn/dialog";
-import { SecretInput } from "@/components/ui/SecretInput";
-import { validateSecretName } from "@/libs/utils";
-import {
-  SecretFormData,
-  CreateSecretRequest,
-  CreateSecretResponse,
-} from "@/types/secret";
+import { Input } from "@/components/ui/shadcn/input";
+import { Label } from "@/components/ui/shadcn/label";
+import { Textarea } from "@/components/ui/shadcn/textarea";
 import { useCreateSecret } from "@/hooks/api/secrets/useSecretMutations";
+import { validateSecretName } from "@/libs/utils";
+import type { CreateSecretRequest, CreateSecretResponse, SecretFormData } from "@/types/secret";
 
 interface CreateSecretDialogProps {
   open: boolean;
@@ -29,13 +26,13 @@ interface CreateSecretDialogProps {
 export const CreateSecretDialog: React.FC<CreateSecretDialogProps> = ({
   open,
   onOpenChange,
-  onSecretCreated,
+  onSecretCreated
 }) => {
   const createSecretMutation = useCreateSecret();
   const [formData, setFormData] = useState<SecretFormData>({
     name: "",
     value: "",
-    description: "",
+    description: ""
   });
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
@@ -65,7 +62,7 @@ export const CreateSecretDialog: React.FC<CreateSecretDialogProps> = ({
       const request: CreateSecretRequest = {
         name: formData.name.trim(),
         value: formData.value,
-        description: formData.description?.trim() || undefined,
+        description: formData.description?.trim() || undefined
       };
 
       const response = await createSecretMutation.mutateAsync(request);
@@ -75,7 +72,7 @@ export const CreateSecretDialog: React.FC<CreateSecretDialogProps> = ({
       setFormData({
         name: "",
         value: "",
-        description: "",
+        description: ""
       });
       setErrors({});
     } catch (error) {
@@ -88,7 +85,7 @@ export const CreateSecretDialog: React.FC<CreateSecretDialogProps> = ({
     setFormData({
       name: "",
       value: "",
-      description: "",
+      description: ""
     });
     setErrors({});
     onOpenChange(false);
@@ -96,70 +93,57 @@ export const CreateSecretDialog: React.FC<CreateSecretDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className='sm:max-w-[425px]'>
         <DialogHeader>
           <DialogTitle>Create New Secret</DialogTitle>
           <DialogDescription>
-            Store a new secret value securely. The value will be encrypted and
-            cannot be viewed after creation.
+            Store a new secret value securely. The value will be encrypted and cannot be viewed
+            after creation.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 py-4">
-          <div className="grid gap-2">
-            <Label htmlFor="name">Name *</Label>
+        <div className='grid gap-4 py-4'>
+          <div className='grid gap-2'>
+            <Label htmlFor='name'>Name *</Label>
             <Input
-              id="name"
-              placeholder="e.g., DATABASE_PASSWORD, API_KEY"
+              id='name'
+              placeholder='e.g., DATABASE_PASSWORD, API_KEY'
               value={formData.name}
-              onChange={(e) =>
-                setFormData({ ...formData, name: e.target.value })
-              }
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               className={errors.name ? "border-destructive" : ""}
             />
-            {errors.name && (
-              <p className="text-sm text-destructive">{errors.name}</p>
-            )}
+            {errors.name && <p className='text-destructive text-sm'>{errors.name}</p>}
           </div>
 
-          <div className="grid gap-2">
-            <Label htmlFor="value">Value *</Label>
+          <div className='grid gap-2'>
+            <Label htmlFor='value'>Value *</Label>
             <SecretInput
-              id="value"
-              placeholder="Enter secret value"
+              id='value'
+              placeholder='Enter secret value'
               value={formData.value}
-              onChange={(e) =>
-                setFormData({ ...formData, value: e.target.value })
-              }
+              onChange={(e) => setFormData({ ...formData, value: e.target.value })}
               className={errors.value ? "border-destructive" : ""}
             />
-            {errors.value && (
-              <p className="text-sm text-destructive">{errors.value}</p>
-            )}
+            {errors.value && <p className='text-destructive text-sm'>{errors.value}</p>}
           </div>
 
-          <div className="grid gap-2">
-            <Label htmlFor="description">Description</Label>
+          <div className='grid gap-2'>
+            <Label htmlFor='description'>Description</Label>
             <Textarea
-              id="description"
-              placeholder="Optional description of this secret"
+              id='description'
+              placeholder='Optional description of this secret'
               value={formData.description}
-              onChange={(e) =>
-                setFormData({ ...formData, description: e.target.value })
-              }
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               rows={3}
             />
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={handleCancel}>
+          <Button variant='outline' onClick={handleCancel}>
             Cancel
           </Button>
-          <Button
-            onClick={handleCreateSecret}
-            disabled={createSecretMutation.isPending}
-          >
+          <Button onClick={handleCreateSecret} disabled={createSecretMutation.isPending}>
             {createSecretMutation.isPending ? "Creating..." : "Create Secret"}
           </Button>
         </DialogFooter>

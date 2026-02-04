@@ -1,4 +1,4 @@
-import { CreateWorkspaceState } from "@/pages/create-workspace";
+import type { CreateWorkspaceState } from "@/pages/create-workspace";
 
 export interface ProjectInfo {
   id: string;

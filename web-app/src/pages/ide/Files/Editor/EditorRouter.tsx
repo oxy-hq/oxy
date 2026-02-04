@@ -2,12 +2,12 @@ import { memo } from "react";
 import { FileType } from "@/utils/fileTypes";
 import AgentEditor from "./Agent";
 import AppEditor from "./App";
-import DefaultEditor from "./Default";
-import WorkflowEditor from "./Workflow";
-import SqlEditor from "./Sql";
-import ViewEditor from "./View";
-import TopicEditor from "./Topic";
 import { useEditorContext } from "./contexts/useEditorContext";
+import DefaultEditor from "./Default";
+import SqlEditor from "./Sql";
+import TopicEditor from "./Topic";
+import ViewEditor from "./View";
+import WorkflowEditor from "./Workflow";
 
 const EditorRouterComponent = () => {
   const { fileType } = useEditorContext();
@@ -25,7 +25,6 @@ const EditorRouterComponent = () => {
       return <ViewEditor />;
     case FileType.TOPIC:
       return <TopicEditor />;
-    case FileType.DEFAULT:
     default:
       return <DefaultEditor />;
   }

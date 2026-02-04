@@ -1,18 +1,19 @@
-import React, { useMemo } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import type React from "react";
+import { useMemo } from "react";
+import { useMediaQuery } from "usehooks-ts";
+import { Button } from "@/components/ui/shadcn/button";
 import {
   Pagination,
   PaginationContent,
-  PaginationItem,
-  PaginationLink,
   PaginationEllipsis,
+  PaginationItem,
+  PaginationLink
 } from "@/components/ui/shadcn/pagination";
-import { ChevronLeft, ChevronRight } from "lucide-react";
-import { PaginationInfo } from "@/types/chat";
-import { useMediaQuery } from "usehooks-ts";
-import { cn } from "@/libs/shadcn/utils";
-import ItemsPerPageFilter from "./ItemsPerPageFilter";
-import { Button } from "@/components/ui/shadcn/button";
 import { buttonVariants } from "@/components/ui/shadcn/utils/button-variants";
+import { cn } from "@/libs/shadcn/utils";
+import type { PaginationInfo } from "@/types/chat";
+import ItemsPerPageFilter from "./ItemsPerPageFilter";
 
 interface ThreadsPaginationProps {
   pagination: PaginationInfo;
@@ -25,7 +26,7 @@ interface ThreadsPaginationProps {
 function getVisiblePages(
   page: number,
   totalPages: number,
-  maxVisible: number,
+  maxVisible: number
 ): (number | "ellipsis")[] {
   if (totalPages <= maxVisible) {
     return Array.from({ length: totalPages }, (_, i) => i + 1);
@@ -57,7 +58,7 @@ const ThreadsPagination: React.FC<ThreadsPaginationProps> = ({
   onPageChange,
   onLimitChange,
   currentLimit,
-  isLoading = false,
+  isLoading = false
 }) => {
   const { page, total_pages, has_previous, has_next } = pagination;
   const isMobile = useMediaQuery("(max-width: 767px)");
@@ -69,7 +70,7 @@ const ThreadsPagination: React.FC<ThreadsPaginationProps> = ({
 
   const visiblePages = useMemo(
     () => getVisiblePages(page, total_pages, maxVisiblePages),
-    [page, total_pages, maxVisiblePages],
+    [page, total_pages, maxVisiblePages]
   );
 
   if (total_pages <= 1 && !onLimitChange) return null;
@@ -79,11 +80,7 @@ const ThreadsPagination: React.FC<ThreadsPaginationProps> = ({
   };
 
   return (
-    <div
-      className={cn(
-        "flex w-full max-w-page-content mx-auto px-2 items-center justify-between",
-      )}
-    >
+    <div className={cn("mx-auto flex w-full max-w-page-content items-center justify-between px-2")}>
       <ItemsPerPageFilter
         currentLimit={currentLimit}
         onLimitChange={onLimitChange}
@@ -93,13 +90,13 @@ const ThreadsPagination: React.FC<ThreadsPaginationProps> = ({
       {total_pages > 1 && (
         <div
           className={cn("flex-shrink-0", isMobile && "justify-center")}
-          data-testid="threads-pagination"
+          data-testid='threads-pagination'
         >
           <Pagination>
-            <PaginationContent className="flex-wrap justify-center">
+            <PaginationContent className='flex-wrap justify-center'>
               <PaginationItem>
                 <Button
-                  variant="ghost"
+                  variant='ghost'
                   disabled={!has_previous || isLoading}
                   onClick={(e) => {
                     e.preventDefault();
@@ -110,14 +107,12 @@ const ThreadsPagination: React.FC<ThreadsPaginationProps> = ({
                 </Button>
               </PaginationItem>
               {visiblePages.map((pageNum, idx) => (
-                <PaginationItem
-                  key={pageNum === "ellipsis" ? `ellipsis-${idx}` : pageNum}
-                >
+                <PaginationItem key={pageNum === "ellipsis" ? `ellipsis-${idx}` : pageNum}>
                   {pageNum === "ellipsis" ? (
                     <PaginationEllipsis />
                   ) : (
                     <PaginationLink
-                      href="#"
+                      href='#'
                       onClick={(e) => {
                         e.preventDefault();
                         handlePageChange(pageNum as number);
@@ -126,8 +121,8 @@ const ThreadsPagination: React.FC<ThreadsPaginationProps> = ({
                       className={cn(
                         isLoading ? "pointer-events-none opacity-50" : "",
                         buttonVariants({
-                          variant: pageNum === page ? "default" : "outline",
-                        }),
+                          variant: pageNum === page ? "default" : "outline"
+                        })
                       )}
                     >
                       {pageNum}
@@ -137,7 +132,7 @@ const ThreadsPagination: React.FC<ThreadsPaginationProps> = ({
               ))}
               <PaginationItem>
                 <Button
-                  variant="ghost"
+                  variant='ghost'
                   disabled={!has_next || isLoading}
                   onClick={(e) => {
                     e.preventDefault();

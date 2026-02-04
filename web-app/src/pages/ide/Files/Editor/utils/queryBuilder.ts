@@ -1,9 +1,9 @@
-import {
-  SemanticQueryRequest,
+import type {
   SemanticQueryFilter,
   SemanticQueryOrder,
+  SemanticQueryRequest
 } from "@/services/api/semantic";
-import { Variable } from "../components/SemanticQueryPanel";
+import type { Variable } from "../components/SemanticQueryPanel";
 
 interface BuildSemanticQueryOptions {
   topic?: string;
@@ -24,7 +24,7 @@ export function buildSemanticQuery({
   measures,
   filters,
   orders,
-  variables,
+  variables
 }: BuildSemanticQueryOptions): SemanticQueryRequest {
   const processedFilters = filters
     .filter((f) => {
@@ -50,12 +50,12 @@ export function buildSemanticQuery({
       if (v.key) acc[v.key] = v.value;
       return acc;
     },
-    {} as Record<string, unknown>,
+    {} as Record<string, unknown>
   );
 
   const processedOrders = orders.map((order) => ({
     field: order.field,
-    direction: order.direction,
+    direction: order.direction
   }));
 
   return {
@@ -65,8 +65,8 @@ export function buildSemanticQuery({
       measures: measures,
       filters: processedFilters,
       orders: processedOrders,
-      variables: processedVariables,
+      variables: processedVariables
     },
-    result_format: "parquet",
+    result_format: "parquet"
   };
 }

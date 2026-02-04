@@ -1,46 +1,43 @@
-import React from "react";
-import { Button } from "@/components/ui/shadcn/button";
 import { Pencil, Workflow } from "lucide-react";
-import PageHeader from "@/components/PageHeader";
+import type React from "react";
 import { useNavigate } from "react-router-dom";
-import ROUTES from "@/libs/utils/routes";
+import PageHeader from "@/components/PageHeader";
+import { Button } from "@/components/ui/shadcn/button";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import ROUTES from "@/libs/utils/routes";
 
 type WorkflowPageHeaderProps = {
   path: string;
   runId?: string;
 };
 
-const WorkflowPageHeader: React.FC<WorkflowPageHeaderProps> = ({
-  path,
-  runId,
-}) => {
+const WorkflowPageHeader: React.FC<WorkflowPageHeaderProps> = ({ path, runId }) => {
   const relativePath = path;
   const pathb64 = btoa(path);
   const navigate = useNavigate();
   const { project } = useCurrentProjectBranch();
 
   return (
-    <PageHeader className="border-b-1 border-border items-center">
-      <div className="flex justify-between items-center w-full">
+    <PageHeader className='items-center border-border border-b-1'>
+      <div className='flex w-full items-center justify-between'>
         <div></div>
-        <div className="flex items-center justify-center gap-0.5">
-          <Workflow className="h-4 w-4" />
-          <span className="text-sm truncate">
+        <div className='flex items-center justify-center gap-0.5'>
+          <Workflow className='h-4 w-4' />
+          <span className='truncate text-sm'>
             {relativePath}
             {runId ? `/runs/${runId}` : ""}
           </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className='flex items-center gap-2'>
           <Button
-            size="sm"
-            variant="ghost"
+            size='sm'
+            variant='ghost'
             onClick={() => {
               const fileUri = ROUTES.PROJECT(project.id).IDE.FILES.FILE(pathb64);
               navigate(fileUri);
             }}
           >
-            <Pencil className="w-4 h-4" />
+            <Pencil className='h-4 w-4' />
             <span>Edit</span>
           </Button>
         </div>

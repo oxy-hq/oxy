@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { BuilderService } from "@/services/api";
 import useCurrentProjectBranch from "../useCurrentProjectBranch";
 
@@ -13,8 +13,7 @@ export default function useBuilderAvailable() {
   const [isAvailable, setIsAvailable] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [builderPath, setBuilderPath] = useState<string>("");
-  const isAgentic =
-    builderPath.endsWith(".aw.yaml") || builderPath.endsWith(".aw.yml");
+  const isAgentic = builderPath.endsWith(".aw.yaml") || builderPath.endsWith(".aw.yml");
 
   useEffect(() => {
     const checkBuilderAvailability = async () => {

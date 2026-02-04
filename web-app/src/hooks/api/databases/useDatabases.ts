@@ -1,14 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
-import { DatabaseInfo } from "@/types/database";
-
-import queryKeys from "../queryKey";
-import { DatabaseService } from "@/services/api";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { DatabaseService } from "@/services/api";
+import type { DatabaseInfo } from "@/types/database";
+import queryKeys from "../queryKey";
 
 export default function useDatabases(
   enabled = true,
   refetchOnWindowFocus = true,
-  refetchOnMount: boolean | "always" = false,
+  refetchOnMount: boolean | "always" = false
 ) {
   const { project, branchName } = useCurrentProjectBranch();
   const projectId = project.id;
@@ -17,6 +16,6 @@ export default function useDatabases(
     queryFn: () => DatabaseService.listDatabases(projectId, branchName),
     enabled,
     refetchOnWindowFocus: refetchOnWindowFocus,
-    refetchOnMount,
+    refetchOnMount
   });
 }

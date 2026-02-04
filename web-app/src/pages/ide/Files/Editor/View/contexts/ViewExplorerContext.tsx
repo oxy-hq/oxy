@@ -1,11 +1,11 @@
-import { ReactNode, useMemo, createContext, useContext } from "react";
+import { createContext, type ReactNode, useContext, useMemo } from "react";
 import { useViewDetails } from "@/hooks/api/useSemanticQuery";
-import { ViewData } from "../../types";
-import { useEditorContext } from "../../contexts/useEditorContext";
 import {
   SemanticExplorerProvider,
-  useSemanticExplorerContext,
+  useSemanticExplorerContext
 } from "../../contexts/SemanticExplorerContext";
+import { useEditorContext } from "../../contexts/useEditorContext";
+import type { ViewData } from "../../types";
 
 type ViewExplorerProviderProps = {
   children: ReactNode;
@@ -27,7 +27,7 @@ const ViewExplorerProviderInner = ({ children }: ViewExplorerProviderProps) => {
     data: viewDetails,
     isLoading: viewLoading,
     error: viewError,
-    refetch: refetchViewDetails,
+    refetch: refetchViewDetails
   } = useViewDetails(pathb64);
 
   const viewData = useMemo<ViewData | null>(() => {
@@ -38,7 +38,7 @@ const ViewExplorerProviderInner = ({ children }: ViewExplorerProviderProps) => {
       datasource: viewDetails.datasource || "",
       table: viewDetails.table || "",
       dimensions: viewDetails.dimensions || [],
-      measures: viewDetails.measures || [],
+      measures: viewDetails.measures || []
     };
   }, [viewDetails]);
 
@@ -46,7 +46,7 @@ const ViewExplorerProviderInner = ({ children }: ViewExplorerProviderProps) => {
     if (!viewData) return [];
     return viewData.dimensions.map((d) => ({
       name: d.name,
-      fullName: `${viewData.name}.${d.name}`,
+      fullName: `${viewData.name}.${d.name}`
     }));
   }, [viewData]);
 
@@ -54,7 +54,7 @@ const ViewExplorerProviderInner = ({ children }: ViewExplorerProviderProps) => {
     if (!viewData) return [];
     return viewData.measures.map((m) => ({
       name: m.name,
-      fullName: `${viewData.name}.${m.name}`,
+      fullName: `${viewData.name}.${m.name}`
     }));
   }, [viewData]);
 
@@ -68,7 +68,7 @@ const ViewExplorerProviderInner = ({ children }: ViewExplorerProviderProps) => {
         viewData,
         viewError,
         viewLoading,
-        refetchViewDetails,
+        refetchViewDetails
       }}
     >
       <SemanticExplorerProvider
@@ -85,9 +85,7 @@ const ViewExplorerProviderInner = ({ children }: ViewExplorerProviderProps) => {
   );
 };
 
-export const ViewExplorerProvider = ({
-  children,
-}: ViewExplorerProviderProps) => {
+export const ViewExplorerProvider = ({ children }: ViewExplorerProviderProps) => {
   return <ViewExplorerProviderInner>{children}</ViewExplorerProviderInner>;
 };
 
@@ -96,13 +94,11 @@ export const useViewExplorerContext = () => {
   const viewContext = useContext(ViewExplorerContext);
 
   if (!viewContext) {
-    throw new Error(
-      "useViewExplorerContext must be used within ViewExplorerProvider",
-    );
+    throw new Error("useViewExplorerContext must be used within ViewExplorerProvider");
   }
 
   return {
     ...semanticContext,
-    ...viewContext,
+    ...viewContext
   };
 };

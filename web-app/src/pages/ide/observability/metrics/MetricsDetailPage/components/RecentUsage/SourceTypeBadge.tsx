@@ -10,9 +10,9 @@ export default function SourceTypeBadge({ sourceType }: SourceTypeBadgeProps) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border",
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-medium text-xs",
         config.bgColor,
-        config.color,
+        config.color
       )}
     >
       {config.icon}

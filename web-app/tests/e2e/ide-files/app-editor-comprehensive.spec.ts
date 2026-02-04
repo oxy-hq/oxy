@@ -1,9 +1,5 @@
-import { test, expect, Page } from "@playwright/test";
-import {
-  saveFileSnapshot,
-  restoreFileSnapshot,
-  cleanupAfterTest,
-} from "./test-cleanup";
+import { expect, type Page, test } from "@playwright/test";
+import { cleanupAfterTest, restoreFileSnapshot, saveFileSnapshot } from "./test-cleanup";
 
 /**
  * Comprehensive App Editor Tests
@@ -16,10 +12,7 @@ import {
  * - Save/reload scenarios
  */
 
-async function openAppFile(
-  page: Page,
-  mode: "files" | "objects" = "files",
-): Promise<boolean> {
+async function openAppFile(page: Page, mode: "files" | "objects" = "files"): Promise<boolean> {
   if (mode === "objects") {
     await page.getByRole("tab", { name: "Objects" }).click();
     await page.waitForTimeout(500);
@@ -29,10 +22,7 @@ async function openAppFile(
       await appsSection.click();
       await page.waitForTimeout(300);
 
-      const appFile = page
-        .locator('a[href*="/ide/"]:visible')
-        .filter({ hasText: "app" })
-        .first();
+      const appFile = page.locator('a[href*="/ide/"]:visible').filter({ hasText: "app" }).first();
 
       if (await appFile.isVisible()) {
         await appFile.click();
@@ -61,10 +51,7 @@ async function openAppFile(
   }
 }
 
-async function switchMode(
-  page: Page,
-  mode: "editor" | "form" | "visualization",
-): Promise<boolean> {
+async function switchMode(page: Page, mode: "editor" | "form" | "visualization"): Promise<boolean> {
   const tab = page.getByRole("tab", { name: new RegExp(mode, "i") });
   if (await tab.isVisible()) {
     await tab.click();
@@ -83,7 +70,7 @@ test.describe("App Editor - Form & Editor Synchronization", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
 
     // 📸 Save file state before test starts
@@ -198,7 +185,7 @@ components: []`);
   });
 
   test("should persist saved changes after navigating to another file and back", async ({
-    page,
+    page
   }) => {
     const opened = await openAppFile(page);
     if (!opened) {
@@ -238,10 +225,7 @@ components: []`);
 
             // Verify saved changes persisted
             await switchMode(page, "editor");
-            const content = await page
-              .locator(".view-lines")
-              .first()
-              .textContent();
+            const content = await page.locator(".view-lines").first().textContent();
             expect(content).toContain(uniqueName);
           }
         }
@@ -279,7 +263,7 @@ test.describe("App Editor - Visualization Mode", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -302,9 +286,7 @@ test.describe("App Editor - Visualization Mode", () => {
 
     await page.waitForTimeout(1000);
 
-    const previewPanel = page.locator(
-      '[data-testid*="preview"], .preview-panel, iframe',
-    );
+    const previewPanel = page.locator('[data-testid*="preview"], .preview-panel, iframe');
     const hasPreview = await previewPanel.isVisible().catch(() => false);
     expect(hasPreview || true).toBeTruthy();
   });
@@ -348,9 +330,7 @@ test.describe("App Editor - Visualization Mode", () => {
     await switchMode(page, "visualization");
     await page.waitForTimeout(500);
 
-    const content = page.locator(
-      "[data-testid*='preview'], .monaco-editor, form",
-    );
+    const content = page.locator("[data-testid*='preview'], .monaco-editor, form");
     await expect(content).toBeVisible();
   });
 });
@@ -364,7 +344,7 @@ test.describe("App Editor - Component Configuration", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -381,9 +361,7 @@ test.describe("App Editor - Component Configuration", () => {
 
     await switchMode(page, "form");
 
-    const addComponentButton = page
-      .getByRole("button", { name: /add.*component/i })
-      .first();
+    const addComponentButton = page.getByRole("button", { name: /add.*component/i }).first();
     if (await addComponentButton.isVisible()) {
       await addComponentButton.click();
       await page.waitForTimeout(500);
@@ -402,9 +380,7 @@ test.describe("App Editor - Component Configuration", () => {
 
     await switchMode(page, "form");
 
-    const removeButton = page
-      .getByRole("button", { name: /remove|delete/i })
-      .first();
+    const removeButton = page.getByRole("button", { name: /remove|delete/i }).first();
     if (await removeButton.isVisible()) {
       await removeButton.click();
       await page.waitForTimeout(500);
@@ -420,9 +396,7 @@ test.describe("App Editor - Component Configuration", () => {
 
     await switchMode(page, "form");
 
-    const componentInput = page
-      .locator('input[name*="component"], input[name*="title"]')
-      .first();
+    const componentInput = page.locator('input[name*="component"], input[name*="title"]').first();
     if (await componentInput.isVisible()) {
       await componentInput.fill("Test Component");
       await page.waitForTimeout(600);
@@ -441,9 +415,7 @@ test.describe("App Editor - Component Configuration", () => {
 
     await switchMode(page, "form");
 
-    const addButton = page
-      .getByRole("button", { name: /add.*component/i })
-      .first();
+    const addButton = page.getByRole("button", { name: /add.*component/i }).first();
     if (await addButton.isVisible()) {
       for (let i = 0; i < 10; i++) {
         await addButton.click();
@@ -467,7 +439,7 @@ test.describe("App Editor - Character Input & Edge Cases", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -553,9 +525,7 @@ test.describe("App Editor - Character Input & Edge Cases", () => {
     await page.keyboard.type("invalid::: yaml::: syntax");
     await page.waitForTimeout(1000);
 
-    const errorIndicator = page.locator(
-      '[class*="error"], [aria-label*="error"]',
-    );
+    const errorIndicator = page.locator('[class*="error"], [aria-label*="error"]');
     const hasError = await errorIndicator.isVisible().catch(() => false);
     expect(hasError || true).toBeTruthy();
   });
@@ -596,7 +566,7 @@ test.describe("App Editor - Keyboard Shortcuts", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -660,7 +630,7 @@ test.describe("App Editor - Keyboard Shortcuts", () => {
 
       const activeElement = await page.evaluate(
         // @ts-expect-error document is available in browser context
-        () => document.activeElement?.tagName,
+        () => document.activeElement?.tagName
       );
       expect(activeElement).toBeTruthy();
     }
@@ -676,7 +646,7 @@ test.describe("App Editor - Responsive Layout", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -724,7 +694,7 @@ test.describe("App Editor - Stress Tests", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 

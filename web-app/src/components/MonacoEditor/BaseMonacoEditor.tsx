@@ -1,6 +1,6 @@
 import Editor, { DiffEditor } from "@monaco-editor/react";
-import type { editor } from "monaco-editor";
 import { Loader2 } from "lucide-react";
+import type { editor } from "monaco-editor";
 import { cn } from "@/libs/shadcn/utils";
 
 export interface BaseMonacoEditorOptions {
@@ -44,12 +44,12 @@ const defaultOptions: BaseMonacoEditorOptions = {
   fontSize: 13,
   lineNumbers: "on",
   tabSize: 2,
-  wordWrap: "on",
+  wordWrap: "on"
 };
 
 const LoadingSpinner = () => (
-  <div className="flex items-center justify-center h-full">
-    <Loader2 className="w-4 h-4 animate-spin" />
+  <div className='flex h-full items-center justify-center'>
+    <Loader2 className='h-4 w-4 animate-spin' />
   </div>
 );
 
@@ -66,7 +66,7 @@ export default function BaseMonacoEditor({
   options = {},
   isLoading = false,
   diffMode = false,
-  original,
+  original
 }: BaseMonacoEditorProps) {
   const mergedOptions = { ...defaultOptions, ...options };
 
@@ -89,7 +89,7 @@ export default function BaseMonacoEditor({
           e.stopPropagation();
         }}
       >
-        <div className="absolute inset-0">
+        <div className='absolute inset-0'>
           {diffMode && original !== undefined ? (
             <DiffEditor
               theme={theme}
@@ -102,7 +102,7 @@ export default function BaseMonacoEditor({
               options={{
                 ...mergedOptions,
                 readOnly: true,
-                renderSideBySide: options.renderSideBySide ?? true,
+                renderSideBySide: options.renderSideBySide ?? true
               }}
             />
           ) : (

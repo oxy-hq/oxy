@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import SwitchBranchConfirm from "./SwitchBranchConfirm";
-import { useSwitchProjectBranch } from "@/hooks/api/projects/useProjects";
-import useIdeBranch from "@/stores/useIdeBranch";
-import ROUTES from "@/libs/utils/routes";
 import BranchSelector from "@/components/BranchSelector";
-import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { Label } from "@/components/ui/shadcn/label";
+import { useSwitchProjectBranch } from "@/hooks/api/projects/useProjects";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import ROUTES from "@/libs/utils/routes";
+import useIdeBranch from "@/stores/useIdeBranch";
+import SwitchBranchConfirm from "./SwitchBranchConfirm";
 
 const SwitchBranch = () => {
   const navigate = useNavigate();
@@ -35,7 +35,7 @@ const SwitchBranch = () => {
     try {
       await switchBranchMutation.mutateAsync({
         projectId: projectId,
-        branchName: pendingBranch,
+        branchName: pendingBranch
       });
 
       setCurrentBranch(projectId, pendingBranch);
@@ -55,11 +55,8 @@ const SwitchBranch = () => {
   return (
     <>
       <div>
-        <Label className="text-sm font-medium pb-2">Current branch</Label>
-        <BranchSelector
-          selectedBranch={selectedBranch}
-          setSelectedBranch={handleBranchSelect}
-        />
+        <Label className='pb-2 font-medium text-sm'>Current branch</Label>
+        <BranchSelector selectedBranch={selectedBranch} setSelectedBranch={handleBranchSelect} />
       </div>
 
       <SwitchBranchConfirm

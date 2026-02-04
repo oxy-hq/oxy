@@ -1,14 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
-import { SecretService } from "@/services/secretService";
-import { Secret } from "@/types/secret";
-import queryKeys from "../queryKey";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { SecretService } from "@/services/secretService";
+import type { Secret } from "@/types/secret";
+import queryKeys from "../queryKey";
 
 const useSecret = (
   id: string,
   enabled = true,
   refetchOnWindowFocus = true,
-  refetchOnMount: boolean | "always" = false,
+  refetchOnMount: boolean | "always" = false
 ) => {
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
@@ -18,7 +18,7 @@ const useSecret = (
     queryFn: () => SecretService.getSecret(projectId, id),
     enabled: enabled && !!id,
     refetchOnWindowFocus,
-    refetchOnMount,
+    refetchOnMount
   });
 };
 

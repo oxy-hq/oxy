@@ -1,20 +1,20 @@
+import { Database, Loader2, Plus, Trash2 } from "lucide-react";
 import { useCallback, useState } from "react";
-import { Separator } from "@/components/ui/shadcn/separator";
 import { Button } from "@/components/ui/shadcn/button";
-import { Trash2, Loader2, Plus, Database } from "lucide-react";
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
   DialogDescription,
+  DialogHeader,
+  DialogTitle
 } from "@/components/ui/shadcn/dialog";
+import { Separator } from "@/components/ui/shadcn/separator";
+import { useDataClean } from "@/hooks/api/databases/useDataClean";
+import PageHeader from "@/pages/ide/components/PageHeader";
+import useDatabaseOperation from "@/stores/useDatabaseOperation";
+import { AddDatabaseForm } from "./AddDatabaseForm";
 import DatabaseTable from "./DatabaseTable";
 import { EmbeddingsManagement } from "./EmbeddingsManagement";
-import useDatabaseOperation from "@/stores/useDatabaseOperation";
-import { useDataClean } from "@/hooks/api/databases/useDataClean";
-import { AddDatabaseForm } from "./AddDatabaseForm";
-import PageHeader from "@/pages/ide/components/PageHeader";
 
 export default function DatabasesPage() {
   const { isCleaning } = useDatabaseOperation();
@@ -35,29 +35,20 @@ export default function DatabasesPage() {
   };
 
   const listViewActions = (
-    <div className="flex gap-2">
-      <Button
-        size="sm"
-        variant="default"
-        onClick={() => setIsAddDialogOpen(true)}
-      >
-        <Plus className="h-4 w-4" />
+    <div className='flex gap-2'>
+      <Button size='sm' variant='default' onClick={() => setIsAddDialogOpen(true)}>
+        <Plus className='h-4 w-4' />
         Add Database
       </Button>
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={handleCleanAll}
-        disabled={cleaningInProgress}
-      >
+      <Button size='sm' variant='outline' onClick={handleCleanAll} disabled={cleaningInProgress}>
         {cleaningInProgress ? (
           <>
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <Loader2 className='h-4 w-4 animate-spin' />
             Resetting...
           </>
         ) : (
           <>
-            <Trash2 className="h-4 w-4" />
+            <Trash2 className='h-4 w-4' />
             Reset Oxy State
           </>
         )}
@@ -66,35 +57,30 @@ export default function DatabasesPage() {
   );
 
   return (
-    <div className="flex flex-col h-full">
+    <div className='flex h-full flex-col'>
       <PageHeader
         icon={Database}
-        title="Databases"
-        description="Manage database connections and embeddings"
+        title='Databases'
+        description='Manage database connections and embeddings'
         actions={listViewActions}
       />
 
-      <div className="p-4 flex-1 overflow-auto min-h-0 customScrollbar scrollbar-gutter-auto">
+      <div className='customScrollbar scrollbar-gutter-auto min-h-0 flex-1 overflow-auto p-4'>
         <DatabaseTable />
 
-        <Separator className="my-6" />
+        <Separator className='my-6' />
 
         <EmbeddingsManagement />
       </div>
 
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent className="p-0 max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
-          <DialogHeader className="p-6 pb-0">
+        <DialogContent className='flex max-h-[85vh] max-w-2xl flex-col overflow-hidden p-0'>
+          <DialogHeader className='p-6 pb-0'>
             <DialogTitle>Add Database Connection</DialogTitle>
-            <DialogDescription>
-              Configure a new database connection
-            </DialogDescription>
+            <DialogDescription>Configure a new database connection</DialogDescription>
           </DialogHeader>
-          <div className="p-6 pt-0 flex-1 overflow-auto min-h-0 customScrollbar">
-            <AddDatabaseForm
-              onSuccess={handleAddDatabaseSuccess}
-              onCancel={handleCloseDialog}
-            />
+          <div className='customScrollbar min-h-0 flex-1 overflow-auto p-6 pt-0'>
+            <AddDatabaseForm onSuccess={handleAddDatabaseSuccess} onCancel={handleCloseDialog} />
           </div>
         </DialogContent>
       </Dialog>

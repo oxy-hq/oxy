@@ -1,28 +1,23 @@
+import { X } from "lucide-react";
 import Reasoning from "@/components/Reasoning";
-import { Separator } from "@/components/ui/shadcn/separator";
-import { useSelectedMessageReasoning } from "@/stores/agentic";
-import { Block } from "@/services/types";
-import DataApp from "./AgenticArtifacts/DataApp";
-import ExecuteSQL from "./AgenticArtifacts/ExecuteSQL";
-import Visualization from "./AgenticArtifacts/Visualization";
 import {
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbLink,
   BreadcrumbList,
-  BreadcrumbSeparator,
+  BreadcrumbSeparator
 } from "@/components/ui/shadcn/breadcrumb";
 import { Button } from "@/components/ui/shadcn/button";
-import { X } from "lucide-react";
+import { Separator } from "@/components/ui/shadcn/separator";
+import type { Block } from "@/services/types";
+import { useSelectedMessageReasoning } from "@/stores/agentic";
+import DataApp from "./AgenticArtifacts/DataApp";
+import ExecuteSQL from "./AgenticArtifacts/ExecuteSQL";
+import Visualization from "./AgenticArtifacts/Visualization";
 
 const SidePanel = () => {
-  const {
-    selectedGroupId,
-    reasoningSteps,
-    selectedBlock,
-    setSelectedBlockId,
-    setSelectedGroupId,
-  } = useSelectedMessageReasoning();
+  const { selectedGroupId, reasoningSteps, selectedBlock, setSelectedBlockId, setSelectedGroupId } =
+    useSelectedMessageReasoning();
 
   const renderArtifact = () => {
     if (!selectedBlock) return null;
@@ -36,7 +31,7 @@ const SidePanel = () => {
         return <Visualization block={selectedBlock} />;
       default:
         return (
-          <div className="flex h-full items-center justify-center p-4">
+          <div className='flex h-full items-center justify-center p-4'>
             <p>Unsupported artifact type: {selectedBlock.type}</p>
           </div>
         );
@@ -45,17 +40,13 @@ const SidePanel = () => {
 
   const renderContent = () => {
     if (selectedBlock) {
-      return (
-        <div className="h-full w-full overflow-hidden relative">
-          {renderArtifact()}
-        </div>
-      );
+      return <div className='relative h-full w-full overflow-hidden'>{renderArtifact()}</div>;
     }
 
     return selectedGroupId ? (
       <Reasoning steps={reasoningSteps} onFullscreen={setSelectedBlockId} />
     ) : (
-      <div className="h-full w-full overflow-hidden relative">
+      <div className='relative h-full w-full overflow-hidden'>
         Please select a reasoning step to view details.
       </div>
     );
@@ -63,8 +54,8 @@ const SidePanel = () => {
 
   return (
     <>
-      <Separator orientation="vertical" />
-      <div className="flex-1 h-full w-full flex flex-col overflow-hidden">
+      <Separator orientation='vertical' />
+      <div className='flex h-full w-full flex-1 flex-col overflow-hidden'>
         <Header
           block={selectedBlock || undefined}
           onBack={() => {
@@ -83,18 +74,18 @@ const SidePanel = () => {
 const Header = ({
   block,
   onBack,
-  onClose,
+  onClose
 }: {
   block?: Block;
   onBack: () => void;
   onClose: () => void;
 }) => {
   return (
-    <div className="w-full flex px-4 py-2 align-center">
-      <Breadcrumb className="flex-1 flex align-center items-center">
+    <div className='flex w-full px-4 py-2 align-center'>
+      <Breadcrumb className='flex flex-1 items-center align-center'>
         <BreadcrumbList>
           <BreadcrumbItem>
-            <BreadcrumbLink className="cursor-pointer" onClick={onBack}>
+            <BreadcrumbLink className='cursor-pointer' onClick={onBack}>
               Reasoning
             </BreadcrumbLink>
           </BreadcrumbItem>
@@ -106,8 +97,8 @@ const Header = ({
           )}
         </BreadcrumbList>
       </Breadcrumb>
-      <div className="flex gap-2">
-        <Button variant="outline" size="icon" onClick={onClose}>
+      <div className='flex gap-2'>
+        <Button variant='outline' size='icon' onClick={onClose}>
           <X />
         </Button>
       </div>

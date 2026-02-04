@@ -1,13 +1,7 @@
+import { AlertTriangle, CheckCircle, Layers, Target, Users } from "lucide-react";
 import { useMemo } from "react";
-import {
-  Layers,
-  Users,
-  AlertTriangle,
-  CheckCircle,
-  Target,
-} from "lucide-react";
+import type { ClusterMapPoint, ClusterSummary } from "@/services/api/traces";
 import StatsCard from "./StatsCard";
-import type { ClusterSummary, ClusterMapPoint } from "@/services/api/traces";
 
 interface SummaryCardsProps {
   clusters: ClusterSummary[];
@@ -21,11 +15,7 @@ function formatNumber(num: number): string {
   return num.toString();
 }
 
-export default function SummaryCards({
-  clusters,
-  points,
-  isLoading,
-}: SummaryCardsProps) {
+export default function SummaryCards({ clusters, points, isLoading }: SummaryCardsProps) {
   const stats = useMemo(() => {
     const validClusters = clusters.filter((c) => c.clusterId !== -1);
     const outlierCluster = clusters.find((c) => c.clusterId === -1);
@@ -40,13 +30,12 @@ export default function SummaryCards({
     });
 
     const totalPoints = points.length;
-    const successRate =
-      totalPoints > 0 ? (successCount / totalPoints) * 100 : 0;
+    const successRate = totalPoints > 0 ? (successCount / totalPoints) * 100 : 0;
 
     // Top cluster
     const topCluster = validClusters.reduce(
       (max, c) => (c.count > (max?.count ?? 0) ? c : max),
-      null as ClusterSummary | null,
+      null as ClusterSummary | null
     );
 
     return {
@@ -55,48 +44,48 @@ export default function SummaryCards({
       outlierCount,
       successRate: successRate.toFixed(1),
       topClusterName: topCluster?.intentName ?? "-",
-      topClusterCount: topCluster?.count ?? 0,
+      topClusterCount: topCluster?.count ?? 0
     };
   }, [clusters, points]);
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+    <div className='grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5'>
       <StatsCard
-        title="Top Cluster"
+        title='Top Cluster'
         value={stats.topClusterName}
         subtitle={`${formatNumber(stats.topClusterCount)} queries`}
-        icon={<Target className="h-5 w-5" />}
+        icon={<Target className='h-5 w-5' />}
         isLoading={isLoading}
       />
       <StatsCard
-        title="Clusters Found"
+        title='Clusters Found'
         value={stats.totalClusters}
-        subtitle="semantic groups"
-        icon={<Layers className="h-5 w-5" />}
+        subtitle='semantic groups'
+        icon={<Layers className='h-5 w-5' />}
         isLoading={isLoading}
       />
       <StatsCard
-        title="Total Questions"
+        title='Total Questions'
         value={formatNumber(stats.totalQuestions)}
-        subtitle="sampled traces"
-        icon={<Users className="h-5 w-5" />}
+        subtitle='sampled traces'
+        icon={<Users className='h-5 w-5' />}
         isLoading={isLoading}
       />
       <StatsCard
-        title="Outliers"
+        title='Outliers'
         value={formatNumber(stats.outlierCount)}
-        subtitle="unclustered queries"
-        icon={<AlertTriangle className="h-5 w-5" />}
+        subtitle='unclustered queries'
+        icon={<AlertTriangle className='h-5 w-5' />}
         isLoading={isLoading}
-        variant="warning"
+        variant='warning'
       />
       <StatsCard
-        title="Success Rate"
+        title='Success Rate'
         value={`${stats.successRate}%`}
-        subtitle="successfully answered"
-        icon={<CheckCircle className="h-5 w-5" />}
+        subtitle='successfully answered'
+        icon={<CheckCircle className='h-5 w-5' />}
         isLoading={isLoading}
-        variant="success"
+        variant='success'
       />
     </div>
   );

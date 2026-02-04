@@ -1,12 +1,12 @@
 export { useCreateRepoFromProject } from "./useCreateRepoFromProject";
 export { useProjectStatus } from "./useProjectStatus";
 export {
+  useDeleteProject,
   useProject,
   useProjectBranches,
-  useDeleteProject,
-  useSwitchProjectBranch,
   usePullChanges,
   usePushChanges,
+  useSwitchProjectBranch
 } from "./useProjects";
 export { default as useRevisionInfo } from "./useRevisionInfo";
 export { useSwitchProjectActiveBranch } from "./useSwitchProjectActiveBranch";

@@ -1,7 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
-import { AuthService } from "@/services/api";
-import { LoginRequest, AuthResponse } from "@/types/auth";
 import { useAuth } from "@/contexts/AuthContext";
+import { AuthService } from "@/services/api";
+import type { AuthResponse, LoginRequest } from "@/types/auth";
 
 export const useLogin = () => {
   const { login } = useAuth();
@@ -13,6 +13,6 @@ export const useLogin = () => {
     },
     onError: (error) => {
       console.error("Login failed:", error);
-    },
+    }
   });
 };

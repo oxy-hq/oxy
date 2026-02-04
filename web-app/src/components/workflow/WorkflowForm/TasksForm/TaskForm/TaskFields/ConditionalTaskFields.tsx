@@ -1,12 +1,12 @@
-import React from "react";
-import { useFormContext, useFieldArray } from "react-hook-form";
-import { Input } from "@/components/ui/shadcn/input";
-import { Label } from "@/components/ui/shadcn/label";
+import { Plus, X } from "lucide-react";
+import type React from "react";
+import { useFieldArray, useFormContext } from "react-hook-form";
 import { Button } from "@/components/ui/shadcn/button";
 import { CardTitle } from "@/components/ui/shadcn/card";
-import { Plus, X } from "lucide-react";
-import { WorkflowFormData } from "../..";
+import { Input } from "@/components/ui/shadcn/input";
+import { Label } from "@/components/ui/shadcn/label";
 import { NestedTasksForm } from "@/components/workflow/WorkflowForm/TasksForm/NestedTasksForm";
+import type { WorkflowFormData } from "../..";
 
 interface ConditionalTaskFieldsProps {
   index: number;
@@ -15,12 +15,12 @@ interface ConditionalTaskFieldsProps {
 
 export const ConditionalTaskFields: React.FC<ConditionalTaskFieldsProps> = ({
   index,
-  basePath = "tasks",
+  basePath = "tasks"
 }) => {
   const {
     register,
     control,
-    formState: { errors },
+    formState: { errors }
   } = useFormContext<WorkflowFormData>();
 
   const taskPath = `${basePath}.${index}`;
@@ -31,58 +31,51 @@ export const ConditionalTaskFields: React.FC<ConditionalTaskFieldsProps> = ({
   const {
     fields: conditionFields,
     append: appendCondition,
-    remove: removeCondition,
+    remove: removeCondition
   } = useFieldArray({
     control,
     // @ts-expect-error - dynamic field path
-    name: `${taskPath}.conditions`,
+    name: `${taskPath}.conditions`
   });
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <Label className="text-base font-semibold">Conditions</Label>
+    <div className='space-y-4'>
+      <div className='space-y-4'>
+        <div className='flex items-center justify-between'>
+          <Label className='font-semibold text-base'>Conditions</Label>
           <Button
-            type="button"
+            type='button'
             onClick={() => appendCondition({ if_expr: "", tasks: [] } as never)}
-            variant="outline"
-            size="sm"
+            variant='outline'
+            size='sm'
           >
-            <Plus className="w-4 h-4 mr-1" />
+            <Plus className='mr-1 h-4 w-4' />
             Add Condition
           </Button>
         </div>
 
         {conditionFields.length === 0 && (
-          <p className="text-sm text-muted-foreground">
+          <p className='text-muted-foreground text-sm'>
             No conditions defined. Add at least one condition.
           </p>
         )}
 
         {conditionFields.map((field, conditionIndex) => (
-          <div
-            key={field.id}
-            className="space-y-4 p-4 border rounded-lg bg-muted/30"
-          >
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm">
-                Condition {conditionIndex + 1}
-              </CardTitle>
+          <div key={field.id} className='space-y-4 rounded-lg border bg-muted/30 p-4'>
+            <div className='flex items-center justify-between'>
+              <CardTitle className='text-sm'>Condition {conditionIndex + 1}</CardTitle>
               <Button
-                type="button"
+                type='button'
                 onClick={() => removeCondition(conditionIndex)}
-                variant="ghost"
-                size="sm"
+                variant='ghost'
+                size='sm'
               >
-                <X className="w-4 h-4 text-destructive" />
+                <X className='h-4 w-4 text-destructive' />
               </Button>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor={`${taskPath}.conditions.${conditionIndex}.if`}>
-                If Expression
-              </Label>
+            <div className='space-y-2'>
+              <Label htmlFor={`${taskPath}.conditions.${conditionIndex}.if`}>If Expression</Label>
               <Input
                 id={`${taskPath}.conditions.${conditionIndex}.if`}
                 placeholder="e.g., {{ task_name.result }} == 'success'"
@@ -90,23 +83,22 @@ export const ConditionalTaskFields: React.FC<ConditionalTaskFieldsProps> = ({
                   // @ts-expect-error - dynamic field path
                   `${taskPath}.conditions.${conditionIndex}.if`,
                   {
-                    required: "Condition expression is required",
-                  },
+                    required: "Condition expression is required"
+                  }
                 )}
               />
               {taskErrors?.conditions?.[conditionIndex]?.if && (
-                <p className="text-sm text-red-500">
+                <p className='text-red-500 text-sm'>
                   {taskErrors.conditions[conditionIndex].if.message}
                 </p>
               )}
-              <p className="text-xs text-muted-foreground">
-                Use template syntax to reference task outputs (e.g.,{" "}
-                {`{{ task_name.field }}`})
+              <p className='text-muted-foreground text-xs'>
+                Use template syntax to reference task outputs (e.g., {`{{ task_name.field }}`})
               </p>
             </div>
 
             {/* Nested tasks for this condition */}
-            <div className="space-y-2 pt-2 border-t">
+            <div className='space-y-2 border-t pt-2'>
               <NestedTasksForm
                 name={`${taskPath}.conditions.${conditionIndex}.tasks`}
                 label={<Label>Tasks to execute when condition is true</Label>}
@@ -118,21 +110,19 @@ export const ConditionalTaskFields: React.FC<ConditionalTaskFieldsProps> = ({
         ))}
 
         {taskErrors?.conditions && !Array.isArray(taskErrors.conditions) && (
-          <p className="text-sm text-red-500">
-            {taskErrors.conditions.message}
-          </p>
+          <p className='text-red-500 text-sm'>{taskErrors.conditions.message}</p>
         )}
       </div>
 
       {/* Else tasks (optional) */}
-      <div className="space-y-4 pt-4 border-t">
+      <div className='space-y-4 border-t pt-4'>
         <NestedTasksForm
           label={<Label>Else Tasks (optional)</Label>}
           name={`${taskPath}.else`}
           minTasks={0}
           showAddButton={true}
         />
-        <p className="text-xs text-muted-foreground">
+        <p className='text-muted-foreground text-xs'>
           These tasks will execute if none of the conditions above are true
         </p>
       </div>

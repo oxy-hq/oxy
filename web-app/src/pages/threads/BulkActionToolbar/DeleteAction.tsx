@@ -1,5 +1,5 @@
-import React from "react";
-import { Button } from "@/components/ui/shadcn/button";
+import { Trash2 } from "lucide-react";
+import type React from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -9,9 +9,9 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
+  AlertDialogTrigger
 } from "@/components/ui/shadcn/alert-dialog";
-import { Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/shadcn/button";
 import { buttonVariants } from "@/components/ui/shadcn/utils/button-variants";
 
 interface Props {
@@ -27,10 +27,9 @@ const DeleteAction: React.FC<Props> = ({
   totalAcrossAll,
   isSelectAllPages,
   onBulkDelete,
-  isLoading = false,
+  isLoading = false
 }) => {
-  const threadsToDelete =
-    isSelectAllPages && totalAcrossAll ? totalAcrossAll : selectedCount;
+  const threadsToDelete = isSelectAllPages && totalAcrossAll ? totalAcrossAll : selectedCount;
 
   const threadText = threadsToDelete === 1 ? "thread" : "threads";
   const description =
@@ -41,8 +40,8 @@ const DeleteAction: React.FC<Props> = ({
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
-        <Button variant="destructive" size="sm" disabled={isLoading}>
-          <Trash2 className="h-4 w-4" />
+        <Button variant='destructive' size='sm' disabled={isLoading}>
+          <Trash2 className='h-4 w-4' />
           Delete {threadsToDelete}
         </Button>
       </AlertDialogTrigger>

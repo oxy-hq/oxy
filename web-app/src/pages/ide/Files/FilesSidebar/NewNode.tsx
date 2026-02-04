@@ -1,17 +1,14 @@
-import {
-  SidebarMenuButton,
-  SidebarMenuItem,
-} from "@/components/ui/shadcn/sidebar";
 import { FilePlus, FolderPlus } from "lucide-react";
 import React from "react";
+import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
+import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/shadcn/sidebar";
 import useCreateFile from "@/hooks/api/files/useCreateFile";
 import useCreateFolder from "@/hooks/api/files/useCreateFolder";
-import { useNavigate } from "react-router-dom";
 import useFileTree from "@/hooks/api/files/useFileTree";
-import { FileTreeModel } from "@/types/file";
-import { toast } from "sonner";
-import ROUTES from "@/libs/utils/routes";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import ROUTES from "@/libs/utils/routes";
+import type { FileTreeModel } from "@/types/file";
 
 export type CreationType = "file" | "folder";
 
@@ -53,9 +50,7 @@ const NewNode = React.forwardRef<HTMLInputElement, NewNodeProps>(
       if (!newItemName) return;
 
       try {
-        const newPath = currentPath
-          ? `${currentPath}/${newItemName}`
-          : newItemName;
+        const newPath = currentPath ? `${currentPath}/${newItemName}` : newItemName;
 
         if (!onValidateName(newPath)) {
           setError(true);
@@ -73,7 +68,7 @@ const NewNode = React.forwardRef<HTMLInputElement, NewNodeProps>(
         onCreated();
       } catch (error) {
         toast.error("Failed to create", {
-          description: "There was a problem with your request.",
+          description: "There was a problem with your request."
         });
         console.error("Failed to create", error);
       }
@@ -89,14 +84,13 @@ const NewNode = React.forwardRef<HTMLInputElement, NewNodeProps>(
 
     return (
       <SidebarMenuItem>
-        <SidebarMenuButton className="overflow-visible">
+        <SidebarMenuButton className='overflow-visible'>
           {creationType === "file" ? <FilePlus /> : <FolderPlus />}
-          <div className="relative flex-1">
+          <div className='relative flex-1'>
             <input
-              autoFocus
               ref={ref}
               onBlur={onCancel}
-              className={`w-full bg-transparent border border-2 shadow-none outline-none ${
+              className={`w-full border border-2 bg-transparent shadow-none outline-none ${
                 error ? "border-red-500" : "border-gray-600"
               }`}
               value={newItemName}
@@ -107,16 +101,15 @@ const NewNode = React.forwardRef<HTMLInputElement, NewNodeProps>(
               onKeyDown={handleKeyDown}
             />
             {error && (
-              <div className="text-xs text-white absolute left-0 top-full w-full z-10 bg-red-500 p-1">
-                A {creationType === "file" ? "file" : "folder"} with this name
-                already exists
+              <div className='absolute top-full left-0 z-10 w-full bg-red-500 p-1 text-white text-xs'>
+                A {creationType === "file" ? "file" : "folder"} with this name already exists
               </div>
             )}
           </div>
         </SidebarMenuButton>
       </SidebarMenuItem>
     );
-  },
+  }
 );
 
 NewNode.displayName = "NewNode";

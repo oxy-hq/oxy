@@ -11,6 +11,7 @@ The `oxy start` command is the recommended way to run Oxy with a production-read
 **Container Runtime Required:** `oxy start` needs a Docker API-compatible container runtime (e.g., Docker Engine, Podman with Docker socket).
 
 You can use:
+
 - Docker Engine (standalone, no GUI needed)
 - Docker Desktop, Rancher Desktop, Colima, OrbStack, or Podman
 - Any runtime that provides a Docker API
@@ -51,15 +52,18 @@ oxy start --clean --enterprise  # clean + start with enterprise features
 The `--clean` flag removes all existing Oxy-managed Docker resources before starting:
 
 **Standard mode (`oxy start --clean`):**
+
 - Removes `oxy-postgres` container
 - Removes `oxy-postgres-data` volume (⚠️ **all data lost**)
 
 **Enterprise mode (`oxy start --clean --enterprise`):**
+
 - Removes `oxy-postgres`, `oxy-clickhouse`, `oxy-otel-collector` containers
 - Removes `oxy-postgres-data` and `oxy-clickhouse-data` volumes (⚠️ **all data lost**)
 - Removes the `oxy-enterprise-network` Docker network
 
 **Use cases:**
+
 - Troubleshooting database issues
 - Resetting to a fresh state for development
 - Clearing corrupted data

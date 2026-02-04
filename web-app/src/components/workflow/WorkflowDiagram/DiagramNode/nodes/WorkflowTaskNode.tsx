@@ -1,16 +1,16 @@
-import useWorkflow, {
-  TaskConfigWithId,
-  WorkflowTaskConfigWithId,
-} from "@/stores/useWorkflow";
-import { NodeHeader } from "./NodeHeader";
-import { TaskRun } from "@/services/types";
 import { useMemo } from "react";
+import type { TaskRun } from "@/services/types";
+import useWorkflow, {
+  type TaskConfigWithId,
+  type WorkflowTaskConfigWithId
+} from "@/stores/useWorkflow";
 import {
   distanceBetweenHeaderAndContent,
   headerHeight,
   nodeBorderHeight,
-  paddingHeight,
+  paddingHeight
 } from "../../layout/constants";
+import { NodeHeader } from "./NodeHeader";
 
 type Props = {
   task: TaskConfigWithId;
@@ -30,10 +30,7 @@ export function WorkflowTaskNode({ task, taskRun, expanded }: Props) {
   };
   if (!node || !node.height) return null;
   const usedHeight =
-    headerHeight +
-    distanceBetweenHeaderAndContent +
-    paddingHeight +
-    nodeBorderHeight;
+    headerHeight + distanceBetweenHeaderAndContent + paddingHeight + nodeBorderHeight;
   const childSpace = node.height - usedHeight;
 
   return (
@@ -47,9 +44,7 @@ export function WorkflowTaskNode({ task, taskRun, expanded }: Props) {
         expanded={expanded}
         onExpandClick={onExpandClick}
       />
-      {expandable && expanded && (
-        <div style={{ height: `${childSpace}px` }}></div>
-      )}
+      {expandable && expanded && <div style={{ height: `${childSpace}px` }}></div>}
     </>
   );
 }

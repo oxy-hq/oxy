@@ -1,4 +1,4 @@
-export { SchemaTreeItem } from "./SchemaTreeItem";
-export { ConnectionSchemaContent } from "./ConnectionSchemaContent";
 export { ConnectionItem } from "./ConnectionItem";
+export { ConnectionSchemaContent } from "./ConnectionSchemaContent";
 export { DatabaseSidebar } from "./DatabaseSidebar";
+export { SchemaTreeItem } from "./SchemaTreeItem";

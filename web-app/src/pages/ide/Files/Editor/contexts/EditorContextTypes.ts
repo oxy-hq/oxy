@@ -1,6 +1,6 @@
 import { createContext } from "react";
-import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
-import { FileType } from "@/utils/fileTypes";
+import type useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import type { FileType } from "@/utils/fileTypes";
 
 export interface EditorContextValue {
   pathb64: string;

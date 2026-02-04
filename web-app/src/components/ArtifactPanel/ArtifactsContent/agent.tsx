@@ -1,5 +1,5 @@
-import { AgentArtifact } from "@/types/artifact";
 import AnswerContent from "@/components/AnswerContent";
+import type { AgentArtifact } from "@/types/artifact";
 
 type Props = {
   artifact: AgentArtifact;
@@ -8,10 +8,7 @@ type Props = {
 
 const AgentArtifactPanel = ({ artifact, onArtifactClick }: Props) => {
   return (
-    <AnswerContent
-      content={artifact.content.value.output}
-      onArtifactClick={onArtifactClick}
-    />
+    <AnswerContent content={artifact.content.value.output} onArtifactClick={onArtifactClick} />
   );
 };
 

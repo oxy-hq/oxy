@@ -1,5 +1,6 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { mockThreadsEndpoints } from "./mocks/threads";
+
 /**
  * Threads Listing Spec (Mocked Data)
  * ----------------------------------
@@ -21,9 +22,7 @@ test.describe("Threads Listing Page", () => {
 
   test("should display threads list", async ({ page }) => {
     // Verify the page title
-    await expect(
-      page.getByRole("heading", { name: "Threads", level: 1 }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Threads", level: 1 })).toBeVisible();
 
     // Verify thread items are visible
     const threadItems = page.locator('[data-testid="thread-item"]');
@@ -53,16 +52,14 @@ test.describe("Threads Listing Page", () => {
 
     // Wait for the thread page to load - the page shows a skeleton first, then loads data
     // Give it more time to complete the loading and render the message input
-    await expect(
-      page.getByRole("textbox", { name: "Ask a follow-up question..." }),
-    ).toBeVisible({ timeout: 3000 });
+    await expect(page.getByRole("textbox", { name: "Ask a follow-up question..." })).toBeVisible({
+      timeout: 3000
+    });
   });
 
   test("should display pagination controls", async ({ page }) => {
     // With mocked single page data, pagination nav should not exist; assert absence
-    await expect(
-      page.getByRole("navigation", { name: "pagination" }),
-    ).toHaveCount(0);
+    await expect(page.getByRole("navigation", { name: "pagination" })).toHaveCount(0);
   });
 
   test("should not navigate to a second page", async ({ page }) => {
@@ -72,9 +69,9 @@ test.describe("Threads Listing Page", () => {
 
   test("should display items per page selector", async ({ page }) => {
     // Wait for threads to load
-    await expect(
-      page.locator('[data-testid="thread-item"]').first(),
-    ).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('[data-testid="thread-item"]').first()).toBeVisible({
+      timeout: 10000
+    });
 
     // Verify items per page combobox
     const itemsPerPage = page.locator("role=combobox").first();
@@ -84,9 +81,9 @@ test.describe("Threads Listing Page", () => {
 
   test("should display select mode button", async ({ page }) => {
     // Wait for threads to load
-    await expect(
-      page.locator('[data-testid="thread-item"]').first(),
-    ).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('[data-testid="thread-item"]').first()).toBeVisible({
+      timeout: 10000
+    });
 
     // Verify Select button exists
     await expect(page.getByRole("button", { name: "Select" })).toBeVisible();
@@ -94,9 +91,9 @@ test.describe("Threads Listing Page", () => {
 
   test("should enable checkboxes in select mode", async ({ page }) => {
     // Wait for threads to load
-    await expect(
-      page.locator('[data-testid="thread-item"]').first(),
-    ).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('[data-testid="thread-item"]').first()).toBeVisible({
+      timeout: 10000
+    });
 
     // Click Select button
     await page.getByRole("button", { name: "Select" }).click();

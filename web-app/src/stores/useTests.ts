@@ -1,6 +1,6 @@
-import { AgentService } from "@/services/api";
-import { EvalEventState, MetricValue } from "@/types/eval";
 import { create } from "zustand";
+import { AgentService } from "@/services/api";
+import { EvalEventState, type MetricValue } from "@/types/eval";
 
 interface TestProgress {
   id: string | null;
@@ -24,7 +24,7 @@ const defaultTestState: TestState = {
   state: null,
   progress: { id: null, progress: 0, total: 0 },
   error: null,
-  result: null,
+  result: null
 };
 
 interface TestsState {
@@ -34,27 +34,18 @@ interface TestsState {
     branchName: string,
     agentPathb64: string,
     index: number,
-    test: TestState,
+    test: TestState
   ) => void;
   getTest: (
     projectId: string,
     branchName: string,
     agentPathb64: string,
-    index: number,
+    index: number
   ) => TestState;
-  runTest: (
-    projectId: string,
-    branchName: string,
-    agentPathb64: string,
-    index: number,
-  ) => void;
+  runTest: (projectId: string, branchName: string, agentPathb64: string, index: number) => void;
 }
 
-const createTestKey = (
-  projectId: string,
-  branchName: string,
-  agentPathb64: string,
-): string => {
+const createTestKey = (projectId: string, branchName: string, agentPathb64: string): string => {
   return `${projectId}:${branchName}:${agentPathb64}`;
 };
 
@@ -65,69 +56,53 @@ const useTests = create<TestsState>()((set, get) => ({
     branchName: string,
     agentPathb64: string,
     index: number,
-    test: TestState,
+    test: TestState
   ) => {
     const testMap = get().testMap;
     const testKey = createTestKey(projectId, branchName, agentPathb64);
     const agentTestMap = testMap.get(testKey) ?? new Map();
     agentTestMap.set(index, test);
     set({
-      testMap: testMap.set(testKey, agentTestMap),
+      testMap: testMap.set(testKey, agentTestMap)
     });
   },
-  getTest: (
-    projectId: string,
-    branchName: string,
-    agentPathb64: string,
-    index: number,
-  ) => {
+  getTest: (projectId: string, branchName: string, agentPathb64: string, index: number) => {
     const testMap = get().testMap;
     const testKey = createTestKey(projectId, branchName, agentPathb64);
     const agentTestMap = testMap.get(testKey) ?? new Map();
     return agentTestMap.get(index) ?? { ...defaultTestState };
   },
-  runTest: (
-    projectId: string,
-    branchName: string,
-    agentPathb64: string,
-    index: number,
-  ) => {
+  runTest: (projectId: string, branchName: string, agentPathb64: string, index: number) => {
     get().setTest(projectId, branchName, agentPathb64, index, {
-      ...defaultTestState,
+      ...defaultTestState
     });
-    AgentService.runTestAgent(
-      projectId,
-      branchName,
-      agentPathb64,
-      index,
-      (message) => {
-        const test = get().getTest(projectId, branchName, agentPathb64, index);
+    AgentService.runTestAgent(projectId, branchName, agentPathb64, index, (message) => {
+      const test = get().getTest(projectId, branchName, agentPathb64, index);
 
-        if (message.error) {
-          test.error = message.error;
-          test.state = null;
-        } else if (message.event) {
-          test.state = message.event.type;
-          switch (message.event.type) {
-            case EvalEventState.Progress:
-              test.progress = {
-                id: message.event.id,
-                progress: message.event.progress,
-                total: message.event.total,
-              };
-              break;
-            case EvalEventState.Finished:
-              test.result = {
-                errors: message.event.metric.errors,
-                metrics: message.event.metric.metrics,
-              };
-              break;
-          }
+      if (message.error) {
+        test.error = message.error;
+        test.state = null;
+      } else if (message.event) {
+        test.state = message.event.type;
+        switch (message.event.type) {
+          case EvalEventState.Progress:
+            test.progress = {
+              id: message.event.id,
+              progress: message.event.progress,
+              total: message.event.total
+            };
+            break;
+          case EvalEventState.Finished:
+            test.result = {
+              errors: message.event.metric.errors,
+              metrics: message.event.metric.metrics
+            };
+            break;
         }
-        get().setTest(projectId, branchName, agentPathb64, index, test);
-      },
-    );
-  },
+      }
+      get().setTest(projectId, branchName, agentPathb64, index, test);
+    });
+  }
 }));
 
 export default useTests;

@@ -1,4 +1,4 @@
-import { Page, Locator, expect } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 export class IDEPage {
   readonly page: Page;
@@ -24,9 +24,7 @@ export class IDEPage {
 
   async openFile(fileName: string) {
     // Click the IDE file link (using locator that matches href pattern)
-    const fileLink = this.page
-      .locator(`a[href*="/ide/"]:has-text("${fileName}")`)
-      .first();
+    const fileLink = this.page.locator(`a[href*="/ide/"]:has-text("${fileName}")`).first();
 
     await fileLink.click();
     await this.page.waitForURL(/\/ide\/.+/);
@@ -38,7 +36,7 @@ export class IDEPage {
   async expandFolder(folderName: string, knownFile?: string) {
     const folder = this.page.getByRole("button", {
       name: folderName,
-      exact: true,
+      exact: true
     });
 
     // Wait for folder to be visible first
@@ -65,7 +63,7 @@ export class IDEPage {
   async collapseFolder(folderName: string) {
     const folder = this.page.getByRole("button", {
       name: folderName,
-      exact: true,
+      exact: true
     });
 
     await folder.click();
@@ -255,20 +253,14 @@ export class IDEPage {
 
     // At least one folder or file should be visible
     expect(
-      hasWorkflowsFolder ||
-        hasGeneratedFolder ||
-        hasExampleSqlFolder ||
-        hasConfigFile,
+      hasWorkflowsFolder || hasGeneratedFolder || hasExampleSqlFolder || hasConfigFile
     ).toBeTruthy();
   }
 
   async verifyObjectsMode() {
     // Verify the Objects tab is active
     await expect(this.objectsModeButton).toBeVisible();
-    await expect(this.objectsModeButton).toHaveAttribute(
-      "data-state",
-      "active",
-    );
+    await expect(this.objectsModeButton).toHaveAttribute("data-state", "active");
 
     // In Objects mode, we should see grouped sections
     const semanticLayerHeading = this.page.locator("text=Semantic Layer");
@@ -281,7 +273,7 @@ export class IDEPage {
       semanticLayerHeading.isVisible().catch(() => false),
       automationsHeading.isVisible().catch(() => false),
       agentsHeading.isVisible().catch(() => false),
-      appsHeading.isVisible().catch(() => false),
+      appsHeading.isVisible().catch(() => false)
     ]).then((results) => results.filter(Boolean).length);
 
     expect(visibleCount).toBeGreaterThan(0);

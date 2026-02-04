@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import SwitchBranchConfirm from "./SwitchBranchConfirm";
-import useIdeBranch from "@/stores/useIdeBranch";
 import BranchSelector from "@/components/BranchSelector";
-import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { useSwitchProjectActiveBranch } from "@/hooks/api/projects/useSwitchProjectActiveBranch";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import useIdeBranch from "@/stores/useIdeBranch";
+import SwitchBranchConfirm from "./SwitchBranchConfirm";
 
 const SwitchBranch = () => {
   const { project, branchName: selectedBranch } = useCurrentProjectBranch();
@@ -31,7 +31,7 @@ const SwitchBranch = () => {
     try {
       await switchBranchMutation.mutateAsync({
         projectId: projectId,
-        branchName: pendingBranch,
+        branchName: pendingBranch
       });
 
       setCurrentBranch(projectId, pendingBranch);
@@ -50,10 +50,7 @@ const SwitchBranch = () => {
 
   return (
     <>
-      <BranchSelector
-        selectedBranch={selectedBranch}
-        setSelectedBranch={handleBranchSelect}
-      />
+      <BranchSelector selectedBranch={selectedBranch} setSelectedBranch={handleBranchSelect} />
 
       <SwitchBranchConfirm
         open={dialogOpen}

@@ -1,7 +1,7 @@
+import { AlertCircle, Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/shadcn/button";
 import { Input } from "@/components/ui/shadcn/input";
-import { AlertCircle, Eye, EyeOff } from "lucide-react";
 
 interface OpenAIKeyStepProps {
   initialData?: string;
@@ -14,7 +14,7 @@ export default function OpenAIKeyStep({
   initialData,
   isCreating = false,
   onNext,
-  onBack,
+  onBack
 }: OpenAIKeyStepProps) {
   const [apiKey, setApiKey] = useState(initialData || "");
   const [showKey, setShowKey] = useState(false);
@@ -36,57 +36,53 @@ export default function OpenAIKeyStep({
   };
 
   return (
-    <div className="space-y-6">
+    <div className='space-y-6'>
       <div>
-        <h2 className="text-2xl font-bold">OpenAI API Key</h2>
-        <p className="text-muted-foreground mt-2">
+        <h2 className='font-bold text-2xl'>OpenAI API Key</h2>
+        <p className='mt-2 text-muted-foreground'>
           Enter your OpenAI API key to enable AI features in the demo project.
         </p>
       </div>
 
-      <div className="space-y-4">
+      <div className='space-y-4'>
         {error && (
-          <div className="flex items-start gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded-md">
-            <AlertCircle className="h-4 w-4 text-destructive mt-0.5 flex-shrink-0" />
-            <p className="text-sm text-destructive">{error}</p>
+          <div className='flex items-start gap-2 rounded-md border border-destructive/20 bg-destructive/10 p-3'>
+            <AlertCircle className='mt-0.5 h-4 w-4 flex-shrink-0 text-destructive' />
+            <p className='text-destructive text-sm'>{error}</p>
           </div>
         )}
 
         <div>
-          <label htmlFor="api-key" className="text-sm font-medium">
+          <label htmlFor='api-key' className='font-medium text-sm'>
             API Key
           </label>
-          <div className="relative mt-2">
+          <div className='relative mt-2'>
             <Input
-              id="api-key"
+              id='api-key'
               type={showKey ? "text" : "password"}
-              placeholder="sk-..."
+              placeholder='sk-...'
               value={apiKey}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                 setApiKey(e.target.value);
                 setError("");
               }}
-              className="pr-10"
+              className='pr-10'
             />
             <button
-              type="button"
+              type='button'
               onClick={() => setShowKey(!showKey)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+              className='absolute top-1/2 right-3 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground'
             >
-              {showKey ? (
-                <EyeOff className="h-4 w-4" />
-              ) : (
-                <Eye className="h-4 w-4" />
-              )}
+              {showKey ? <EyeOff className='h-4 w-4' /> : <Eye className='h-4 w-4' />}
             </button>
           </div>
-          <p className="text-xs text-muted-foreground mt-1">
+          <p className='mt-1 text-muted-foreground text-xs'>
             Get your API key from{" "}
             <a
-              href="https://platform.openai.com/api-keys"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-primary hover:underline"
+              href='https://platform.openai.com/api-keys'
+              target='_blank'
+              rel='noopener noreferrer'
+              className='text-primary hover:underline'
             >
               platform.openai.com/api-keys
             </a>
@@ -94,8 +90,8 @@ export default function OpenAIKeyStep({
         </div>
       </div>
 
-      <div className="flex gap-3">
-        <Button variant="outline" onClick={onBack} disabled={isCreating}>
+      <div className='flex gap-3'>
+        <Button variant='outline' onClick={onBack} disabled={isCreating}>
           Back
         </Button>
         <Button onClick={handleNext} disabled={isCreating || !apiKey.trim()}>

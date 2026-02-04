@@ -1,15 +1,10 @@
-import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";
-import { type VariantProps } from "class-variance-authority";
+import type { VariantProps } from "class-variance-authority";
+import * as React from "react";
 
 import { cn } from "@/libs/shadcn/utils";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./tooltip";
 import { buttonVariants } from "./utils/button-variants";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-  TooltipProvider,
-} from "./tooltip";
 
 type TooltipConfig = {
   content: React.ReactNode;
@@ -30,7 +25,7 @@ const Button = React.forwardRef<
   const buttonElement = (
     <Comp
       ref={ref}
-      data-slot="button"
+      data-slot='button'
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
     />

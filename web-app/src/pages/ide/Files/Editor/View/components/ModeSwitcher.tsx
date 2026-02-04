@@ -1,5 +1,5 @@
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
 import { Code, View } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
 import { ViewMode } from "./types";
 
 interface ModeSwitcherProps {
@@ -16,20 +16,12 @@ const ModeSwitcher = ({ viewMode, onViewModeChange }: ModeSwitcherProps) => (
       }
     }}
   >
-    <TabsList className="h-8">
-      <TabsTrigger
-        value={ViewMode.Explorer}
-        className="h-6 px-2"
-        aria-label="Explorer view"
-      >
-        <View className="w-4 h-4" />
+    <TabsList className='h-8'>
+      <TabsTrigger value={ViewMode.Explorer} className='h-6 px-2' aria-label='Explorer view'>
+        <View className='h-4 w-4' />
       </TabsTrigger>
-      <TabsTrigger
-        value={ViewMode.Editor}
-        className="h-6 px-2"
-        aria-label="Editor view"
-      >
-        <Code className="w-4 h-4" />
+      <TabsTrigger value={ViewMode.Editor} className='h-6 px-2' aria-label='Editor view'>
+        <Code className='h-4 w-4' />
       </TabsTrigger>
     </TabsList>
   </Tabs>

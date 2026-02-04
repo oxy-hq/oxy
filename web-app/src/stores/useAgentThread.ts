@@ -1,5 +1,5 @@
-import { Message } from "@/types/chat";
 import { create } from "zustand";
+import type { Message } from "@/types/chat";
 
 export interface AgentThread {
   messages: Message[];
@@ -19,13 +19,11 @@ const useAgentThreadStore = create<AgentThreadState>()((set, get) => {
     agentThread: new Map(),
     setAgentThread: (threadId: string, agentThread: AgentThread) => {
       set((state) => ({
-        agentThread: new Map(state.agentThread).set(threadId, agentThread),
+        agentThread: new Map(state.agentThread).set(threadId, agentThread)
       }));
     },
     getAgentThread: (threadId: string) => {
-      return (
-        get().agentThread.get(threadId) || { messages: [], isLoading: false }
-      );
+      return get().agentThread.get(threadId) || { messages: [], isLoading: false };
     },
     setMessages: (threadId: string, messages: Message[]) => {
       const currentAgentThread = get().getAgentThread(threadId);
@@ -34,7 +32,7 @@ const useAgentThreadStore = create<AgentThreadState>()((set, get) => {
     setIsLoading: (threadId: string, isLoading: boolean) => {
       const currentAgentThread = get().getAgentThread(threadId);
       get().setAgentThread(threadId, { ...currentAgentThread, isLoading });
-    },
+    }
   };
 });
 

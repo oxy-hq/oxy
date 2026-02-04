@@ -1,29 +1,29 @@
+import { ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { useFormContext, useFieldArray, Controller } from "react-hook-form";
+import { Controller, useFieldArray, useFormContext } from "react-hook-form";
+import { Button } from "@/components/ui/shadcn/button";
+import { CardTitle } from "@/components/ui/shadcn/card";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger
+} from "@/components/ui/shadcn/collapsible";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
-import { Button } from "@/components/ui/shadcn/button";
-import { Plus, Trash2, ChevronDown, ChevronRight } from "lucide-react";
-import { CardTitle } from "@/components/ui/shadcn/card";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from "@/components/ui/shadcn/select";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/shadcn/collapsible";
-import { AgentFormData } from "./index";
 import { FileContextForm } from "./FileContextForm";
+import type { AgentFormData } from "./index";
 import { SemanticModelContextForm } from "./SemanticModelContextForm";
 
 const CONTEXT_TYPES = [
   { value: "file", label: "File" },
-  { value: "semantic_model", label: "Semantic Model" },
+  { value: "semantic_model", label: "Semantic Model" }
 ];
 
 interface ContextItemFormProps {
@@ -31,16 +31,13 @@ interface ContextItemFormProps {
   onRemove: () => void;
 }
 
-const ContextItemForm: React.FC<ContextItemFormProps> = ({
-  index,
-  onRemove,
-}) => {
+const ContextItemForm: React.FC<ContextItemFormProps> = ({ index, onRemove }) => {
   const [isOpen, setIsOpen] = useState(false);
   const {
     register,
     control,
     watch,
-    formState: { errors },
+    formState: { errors }
   } = useFormContext<AgentFormData>();
 
   const contextType = watch(`context.${index}.type`);
@@ -48,64 +45,59 @@ const ContextItemForm: React.FC<ContextItemFormProps> = ({
   const contextErrors = errors.context?.[index];
 
   return (
-    <div className="rounded-lg border bg-card p-3">
+    <div className='rounded-lg border bg-card p-3'>
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-        <CollapsibleTrigger className="rounded-lg transition-colors w-full">
-          <div className="flex items-center justify-between transition-colors">
+        <CollapsibleTrigger className='w-full rounded-lg transition-colors'>
+          <div className='flex items-center justify-between transition-colors'>
             {isOpen ? (
-              <ChevronDown className="h-5 w-5 text-muted-foreground" />
+              <ChevronDown className='h-5 w-5 text-muted-foreground' />
             ) : (
-              <ChevronRight className="h-5 w-5 text-muted-foreground" />
+              <ChevronRight className='h-5 w-5 text-muted-foreground' />
             )}
-            <div className="flex items-center gap-3 flex-1">
-              <span className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-semibold text-sm">
+            <div className='flex flex-1 items-center gap-3'>
+              <span className='flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 font-semibold text-primary text-sm'>
                 {index + 1}
               </span>
-              <div className="flex items-center gap-2 flex-1">
-                <span className="font-medium text-sm">
-                  {contextName || `Context ${index + 1}`}
-                </span>
+              <div className='flex flex-1 items-center gap-2'>
+                <span className='font-medium text-sm'>{contextName || `Context ${index + 1}`}</span>
                 {contextType && (
-                  <span className="text-xs px-2 py-1 rounded-md bg-muted text-muted-foreground">
-                    {CONTEXT_TYPES.find((t) => t.value === contextType)
-                      ?.label || contextType}
+                  <span className='rounded-md bg-muted px-2 py-1 text-muted-foreground text-xs'>
+                    {CONTEXT_TYPES.find((t) => t.value === contextType)?.label || contextType}
                   </span>
                 )}
               </div>
             </div>
             <Button
-              type="button"
+              type='button'
               onClick={(e) => {
                 e.stopPropagation();
                 onRemove();
               }}
-              variant="ghost"
-              size="sm"
+              variant='ghost'
+              size='sm'
             >
-              <Trash2 className="w-4 h-4" />
+              <Trash2 className='h-4 w-4' />
             </Button>
           </div>
         </CollapsibleTrigger>
 
-        <CollapsibleContent className="space-y-4 mt-4">
-          <div className="space-y-4">
-            <div className="space-y-2">
+        <CollapsibleContent className='mt-4 space-y-4'>
+          <div className='space-y-4'>
+            <div className='space-y-2'>
               <Label htmlFor={`context.${index}.name`}>Name *</Label>
               <Input
                 id={`context.${index}.name`}
-                placeholder="Context name"
+                placeholder='Context name'
                 {...register(`context.${index}.name`, {
-                  required: "Context name is required",
+                  required: "Context name is required"
                 })}
               />
               {contextErrors?.name && (
-                <p className="text-sm text-red-500">
-                  {String(contextErrors.name.message || "")}
-                </p>
+                <p className='text-red-500 text-sm'>{String(contextErrors.name.message || "")}</p>
               )}
             </div>
 
-            <div className="space-y-2">
+            <div className='space-y-2'>
               <Label htmlFor={`context.${index}.type`}>Type *</Label>
               <Controller
                 name={`context.${index}.type`}
@@ -114,7 +106,7 @@ const ContextItemForm: React.FC<ContextItemFormProps> = ({
                 render={({ field }) => (
                   <Select onValueChange={field.onChange} value={field.value}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Select context type" />
+                      <SelectValue placeholder='Select context type' />
                     </SelectTrigger>
                     <SelectContent>
                       {CONTEXT_TYPES.map((type) => (
@@ -127,16 +119,12 @@ const ContextItemForm: React.FC<ContextItemFormProps> = ({
                 )}
               />
               {contextErrors?.type && (
-                <p className="text-sm text-red-500">
-                  {String(contextErrors.type.message || "")}
-                </p>
+                <p className='text-red-500 text-sm'>{String(contextErrors.type.message || "")}</p>
               )}
             </div>
 
             {contextType === "file" && <FileContextForm index={index} />}
-            {contextType === "semantic_model" && (
-              <SemanticModelContextForm index={index} />
-            )}
+            {contextType === "semantic_model" && <SemanticModelContextForm index={index} />}
           </div>
         </CollapsibleContent>
       </Collapsible>
@@ -150,46 +138,42 @@ export const ContextForm: React.FC = () => {
   const {
     fields: contextFields,
     append: appendContext,
-    remove: removeContext,
+    remove: removeContext
   } = useFieldArray({
     control,
-    name: "context",
+    name: "context"
   });
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className='space-y-4'>
+      <div className='flex items-center justify-between'>
         <CardTitle>Context</CardTitle>
         <Button
-          type="button"
+          type='button'
           onClick={() =>
             appendContext({
               name: "",
               type: "file",
-              src: "",
+              src: ""
             })
           }
-          variant="outline"
-          size="sm"
+          variant='outline'
+          size='sm'
         >
-          <Plus className="w-4 h-4 mr-2" />
+          <Plus className='mr-2 h-4 w-4' />
           Add Context
         </Button>
       </div>
 
       {contextFields.length === 0 && (
-        <p className="text-center text-muted-foreground py-4">
+        <p className='py-4 text-center text-muted-foreground'>
           No context defined. Add context sources for the agent.
         </p>
       )}
 
-      <div className="space-y-3">
+      <div className='space-y-3'>
         {contextFields.map((field, index) => (
-          <ContextItemForm
-            key={field.id}
-            index={index}
-            onRemove={() => removeContext(index)}
-          />
+          <ContextItemForm key={field.id} index={index} onRemove={() => removeContext(index)} />
         ))}
       </div>
     </div>

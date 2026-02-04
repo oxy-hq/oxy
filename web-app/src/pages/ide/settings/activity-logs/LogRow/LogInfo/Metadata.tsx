@@ -1,6 +1,6 @@
-import { Badge } from "@/components/ui/shadcn/badge";
-import { QueryItem } from "@/types/logs";
 import { Bot, Database } from "lucide-react";
+import { Badge } from "@/components/ui/shadcn/badge";
+import type { QueryItem } from "@/types/logs";
 
 const Metadata = ({ queryItem }: { queryItem: QueryItem }) => {
   const database = queryItem.database as string | undefined;
@@ -8,17 +8,17 @@ const Metadata = ({ queryItem }: { queryItem: QueryItem }) => {
   const source = queryItem.source ?? "";
 
   return (
-    <div className="flex items-center justify-between">
-      <div className="flex items-center gap-2">
+    <div className='flex items-center justify-between'>
+      <div className='flex items-center gap-2'>
         {database && (
           <Badge>
-            <Database className="h-4 w-4 mr-1" /> {database}
+            <Database className='mr-1 h-4 w-4' /> {database}
           </Badge>
         )}
 
         {source && (
-          <Badge variant="outline">
-            <Bot className="h-4 w-4 mr-1" /> {source.toString()}
+          <Badge variant='outline'>
+            <Bot className='mr-1 h-4 w-4' /> {source.toString()}
           </Badge>
         )}
       </div>

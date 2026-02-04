@@ -1,18 +1,17 @@
+import { formatDistanceToNow } from "date-fns";
+import { ChevronDown, ChevronRight, Clock, ExternalLink } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronDown, ChevronRight, ExternalLink, Clock } from "lucide-react";
 import { cn } from "@/libs/shadcn/utils";
-import { formatDistanceToNow } from "date-fns";
-import useCurrentProject from "@/stores/useCurrentProject";
 import ROUTES from "@/libs/utils/routes";
-import { ExecutionDetail } from "../../types";
-
+import useCurrentProject from "@/stores/useCurrentProject";
+import type { ExecutionDetail } from "../../types";
+import DataDisplay from "./DataDisplay";
+import ErrorDisplay from "./ErrorDisplay";
 import ExecutionTypeBadge from "./ExecutionTypeBadge";
+import SqlDisplay from "./SqlDisplay";
 import StatusBadge from "./StatusBadge";
 import VerifiedBadge from "./VerifiedBadge";
-import SqlDisplay from "./SqlDisplay";
-import ErrorDisplay from "./ErrorDisplay";
-import DataDisplay from "./DataDisplay";
 
 interface ExecutionCardProps {
   execution: ExecutionDetail;
@@ -36,8 +35,7 @@ export default function ExecutionCard({ execution }: ExecutionCardProps) {
   const isSuccess = execution.status === "success";
   const sql = execution.sql || execution.generatedSql || "";
   const hasSql = !!sql;
-  const hasExpandableContent =
-    hasSql || execution.error || execution.output || execution.toolInput;
+  const hasExpandableContent = hasSql || execution.error || execution.output || execution.toolInput;
 
   return (
     <div
@@ -45,71 +43,65 @@ export default function ExecutionCard({ execution }: ExecutionCardProps) {
         "group relative rounded-xl border transition-all duration-200",
         "bg-gradient-to-br from-card to-card/50",
         "hover:border-primary/30 hover:shadow-md hover:shadow-primary/5",
-        isExpanded && "border-primary/30",
+        isExpanded && "border-primary/30"
       )}
     >
       {/* Main content */}
-      <div className="p-4 space-y-3">
+      <div className='space-y-3 p-4'>
         {/* Header */}
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-2 flex-wrap">
+        <div className='flex items-start justify-between gap-3'>
+          <div className='flex flex-wrap items-center gap-2'>
             <ExecutionTypeBadge executionType={execution.executionType} />
             <VerifiedBadge isVerified={execution.isVerified} />
             <StatusBadge isSuccess={isSuccess} />
           </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Clock className="h-3 w-3" />
+          <div className='flex items-center gap-2 text-muted-foreground text-xs'>
+            <Clock className='h-3 w-3' />
             <span>
               {formatDistanceToNow(new Date(execution.timestamp), {
-                addSuffix: true,
+                addSuffix: true
               })}
             </span>
           </div>
         </div>
 
         {execution.sourceRef && (
-          <div className="text-sm">
+          <div className='text-sm'>
             <button
               onClick={() => {
                 const pathb64 = btoa(execution.sourceRef);
                 navigate(ROUTES.PROJECT(project?.id || "").IDE.FILES.FILE(pathb64));
               }}
-              className="text-muted-foreground hover:text-primary font-mono text-xs transition-colors underline-offset-4 hover:underline text-left"
+              className='text-left font-mono text-muted-foreground text-xs underline-offset-4 transition-colors hover:text-primary hover:underline'
             >
               {execution.sourceRef}
             </button>
           </div>
         )}
 
-        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+        <div className='flex items-center gap-4 text-muted-foreground text-xs'>
           {execution.topic && (
             <span>
-              <span className="text-muted-foreground">Topic:</span>{" "}
-              <span className="font-medium text-foreground">
-                {execution.topic}
-              </span>
+              <span className='text-muted-foreground'>Topic:</span>{" "}
+              <span className='font-medium text-foreground'>{execution.topic}</span>
             </span>
           )}
           {execution.database && (
             <span>
-              <span className="text-muted-foreground">Database:</span>{" "}
-              <span className="font-medium text-foreground">
-                {execution.database}
-              </span>
+              <span className='text-muted-foreground'>Database:</span>{" "}
+              <span className='font-medium text-foreground'>{execution.database}</span>
             </span>
           )}
           {execution.workflowRef && (
             <span>
-              <span className="text-muted-foreground">Workflow ref:</span>{" "}
-              <span className="font-medium text-foreground">
+              <span className='text-muted-foreground'>Workflow ref:</span>{" "}
+              <span className='font-medium text-foreground'>
                 <button
                   onClick={() => {
                     const pathb64 = btoa(execution.workflowRef || "");
-                    navigate(
-                      ROUTES.PROJECT(project?.id || "").IDE.FILES.FILE(pathb64),
-                    );
+                    navigate(ROUTES.PROJECT(project?.id || "").IDE.FILES.FILE(pathb64));
                   }}
-                  className="hover:text-primary font-mono text-xs transition-colors underline-offset-4 hover:underline text-left"
+                  className='text-left font-mono text-xs underline-offset-4 transition-colors hover:text-primary hover:underline'
                 >
                   {execution.workflowRef}
                 </button>
@@ -118,16 +110,14 @@ export default function ExecutionCard({ execution }: ExecutionCardProps) {
           )}
           {execution.agentRef && (
             <span>
-              <span className="text-muted-foreground">Agent ref:</span>{" "}
-              <span className="font-medium text-foreground">
+              <span className='text-muted-foreground'>Agent ref:</span>{" "}
+              <span className='font-medium text-foreground'>
                 <button
                   onClick={() => {
                     const pathb64 = btoa(execution.agentRef || "");
-                    navigate(
-                      ROUTES.PROJECT(project?.id || "").IDE.FILES.FILE(pathb64),
-                    );
+                    navigate(ROUTES.PROJECT(project?.id || "").IDE.FILES.FILE(pathb64));
                   }}
-                  className="hover:text-primary font-mono text-xs transition-colors underline-offset-4 hover:underline text-left"
+                  className='text-left font-mono text-xs underline-offset-4 transition-colors hover:text-primary hover:underline'
                 >
                   {execution.agentRef}
                 </button>
@@ -136,23 +126,19 @@ export default function ExecutionCard({ execution }: ExecutionCardProps) {
           )}
           {execution.integration && (
             <span>
-              <span className="text-muted-foreground">Integration:</span>{" "}
-              <span className="font-medium text-foreground">
-                {execution.integration}
-              </span>
+              <span className='text-muted-foreground'>Integration:</span>{" "}
+              <span className='font-medium text-foreground'>{execution.integration}</span>
             </span>
           )}
           {execution.endpoint && (
             <span>
-              <span className="text-muted-foreground">Endpoint:</span>{" "}
-              <span className="font-medium text-foreground">
-                {execution.endpoint}
-              </span>
+              <span className='text-muted-foreground'>Endpoint:</span>{" "}
+              <span className='font-medium text-foreground'>{execution.endpoint}</span>
             </span>
           )}
           <span>
-            <span className="text-muted-foreground">Duration:</span>{" "}
-            <span className="font-medium text-foreground">
+            <span className='text-muted-foreground'>Duration:</span>{" "}
+            <span className='font-medium text-foreground'>
               {formatDuration(execution.durationMs)}
             </span>
           </span>
@@ -161,26 +147,24 @@ export default function ExecutionCard({ execution }: ExecutionCardProps) {
         {/* Quick previews when collapsed */}
         {!isExpanded && hasSql && <SqlDisplay sql={sql} isPreview />}
 
-        <div className="flex items-center gap-3 text-xs">
+        <div className='flex items-center gap-3 text-xs'>
           <button
             onClick={() => handleViewTrace(execution.traceId)}
-            className="flex items-center gap-1 text-muted-foreground hover:text-primary transition-colors"
+            className='flex items-center gap-1 text-muted-foreground transition-colors hover:text-primary'
           >
-            <ExternalLink className="h-3 w-3" />
-            <span className="font-mono">
-              {execution.traceId.slice(0, 8)}...
-            </span>
+            <ExternalLink className='h-3 w-3' />
+            <span className='font-mono'>{execution.traceId.slice(0, 8)}...</span>
           </button>
 
           {hasExpandableContent && (
             <button
               onClick={() => setIsExpanded(!isExpanded)}
-              className="ml-auto flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
+              className='ml-auto flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground'
             >
               {isExpanded ? (
-                <ChevronDown className="h-3 w-3" />
+                <ChevronDown className='h-3 w-3' />
               ) : (
-                <ChevronRight className="h-3 w-3" />
+                <ChevronRight className='h-3 w-3' />
               )}
               <span>{isExpanded ? "Less" : "More"}</span>
             </button>
@@ -189,34 +173,23 @@ export default function ExecutionCard({ execution }: ExecutionCardProps) {
       </div>
 
       {isExpanded && hasExpandableContent && (
-        <div className="border-t px-4 py-3 space-y-4 bg-muted/20">
+        <div className='space-y-4 border-t bg-muted/20 px-4 py-3'>
           {hasSql && (
             <SqlDisplay
               sql={sql}
-              label={
-                execution.executionType === "semantic_query"
-                  ? "Generated SQL"
-                  : "SQL Query"
-              }
+              label={execution.executionType === "semantic_query" ? "Generated SQL" : "SQL Query"}
             />
           )}
 
           {execution.semanticQueryParams && (
-            <DataDisplay
-              value={execution.semanticQueryParams}
-              label="Semantic Query Parameters"
-            />
+            <DataDisplay value={execution.semanticQueryParams} label='Semantic Query Parameters' />
           )}
 
-          {execution.toolInput && (
-            <DataDisplay value={execution.toolInput} label="Input" />
-          )}
+          {execution.toolInput && <DataDisplay value={execution.toolInput} label='Input' />}
 
           {execution.error && <ErrorDisplay error={execution.error} />}
 
-          {execution.output && (
-            <DataDisplay value={execution.output} label="Output" />
-          )}
+          {execution.output && <DataDisplay value={execution.output} label='Output' />}
         </div>
       )}
     </div>

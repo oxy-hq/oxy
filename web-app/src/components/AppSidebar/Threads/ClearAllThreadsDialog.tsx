@@ -1,6 +1,5 @@
 import { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import useDeleteAllThread from "@/hooks/api/threads/useDeleteAllThread";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -9,20 +8,18 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialogTitle
 } from "@/components/ui/shadcn/alert-dialog";
-import ROUTES from "@/libs/utils/routes";
+import useDeleteAllThread from "@/hooks/api/threads/useDeleteAllThread";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import ROUTES from "@/libs/utils/routes";
 
 interface ClearAllThreadsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-const ClearAllThreadsDialog = ({
-  open,
-  onOpenChange,
-}: ClearAllThreadsDialogProps) => {
+const ClearAllThreadsDialog = ({ open, onOpenChange }: ClearAllThreadsDialogProps) => {
   const navigate = useNavigate();
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
@@ -34,7 +31,7 @@ const ClearAllThreadsDialog = ({
         if (projectId) {
           navigate(ROUTES.PROJECT(projectId).THREADS);
         }
-      },
+      }
     });
   }, [clearAllThreads, navigate, projectId]);
 
@@ -44,8 +41,7 @@ const ClearAllThreadsDialog = ({
         <AlertDialogHeader>
           <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
           <AlertDialogDescription>
-            This action cannot be undone. This will permanently delete all
-            threads.
+            This action cannot be undone. This will permanently delete all threads.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

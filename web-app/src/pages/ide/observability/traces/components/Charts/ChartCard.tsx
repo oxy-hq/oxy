@@ -9,20 +9,12 @@ interface ChartCardProps {
   isLoading: boolean;
 }
 
-export default function ChartCard({
-  title,
-  value,
-  subtitle,
-  options,
-  isLoading,
-}: ChartCardProps) {
+export default function ChartCard({ title, value, subtitle, options, isLoading }: ChartCardProps) {
   return (
-    <div className="flex flex-col">
-      <div className="flex items-baseline gap-2 mb-1 px-3">
-        <span className="text-lg font-semibold">{value}</span>
-        {subtitle && (
-          <span className="text-xs text-muted-foreground">{subtitle}</span>
-        )}
+    <div className='flex flex-col'>
+      <div className='mb-1 flex items-baseline gap-2 px-3'>
+        <span className='font-semibold text-lg'>{value}</span>
+        {subtitle && <span className='text-muted-foreground text-xs'>{subtitle}</span>}
       </div>
       <MiniChart options={options} isLoading={isLoading} title={title} />
     </div>

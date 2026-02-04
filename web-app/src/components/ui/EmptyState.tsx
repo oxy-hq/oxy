@@ -10,20 +10,15 @@ interface EmptyStateProps {
 const EmptyState = ({ title, description, className }: EmptyStateProps) => {
   const { theme } = useTheme();
   return (
-    <div
-      className={cn(
-        "flex items-center justify-center flex-col gap-1",
-        className,
-      )}
-    >
+    <div className={cn("flex flex-col items-center justify-center gap-1", className)}>
       <img
         src={theme === "dark" ? "/oxy-light.svg" : "/oxy-dark.svg"}
-        alt="No file"
-        className="w-full max-w-1/5 max-h-1/2 opacity-20"
+        alt='No file'
+        className='max-h-1/2 w-full max-w-1/5 opacity-20'
       />
-      <div className="text-center text-muted-foreground gap-1">
-        <p className="text-lg">{title}</p>
-        <p className="text-sm">{description}</p>
+      <div className='gap-1 text-center text-muted-foreground'>
+        <p className='text-lg'>{title}</p>
+        <p className='text-sm'>{description}</p>
       </div>
     </div>
   );

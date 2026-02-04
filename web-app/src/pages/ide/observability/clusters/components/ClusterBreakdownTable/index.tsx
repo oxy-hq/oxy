@@ -1,23 +1,15 @@
+import { CheckCircle, Hash, Layers, Loader2, MessageSquare, Quote, XCircle } from "lucide-react";
 import { useMemo } from "react";
 import { Badge } from "@/components/ui/shadcn/badge";
-import { cn } from "@/libs/shadcn/utils";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle,
+  CardTitle
 } from "@/components/ui/shadcn/card";
-import {
-  Layers,
-  Loader2,
-  MessageSquare,
-  Hash,
-  Quote,
-  CheckCircle,
-  XCircle,
-} from "lucide-react";
-import type { ClusterSummary, ClusterMapPoint } from "@/services/api/traces";
+import { cn } from "@/libs/shadcn/utils";
+import type { ClusterMapPoint, ClusterSummary } from "@/services/api/traces";
 
 interface ClusterBreakdownTableProps {
   clusters: ClusterSummary[];
@@ -48,22 +40,16 @@ function getSuccessRateBadgeColor(successRate: number): string {
   return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400";
 }
 
-function DistributionBar({
-  success,
-  error,
-}: {
-  success: number;
-  error: number;
-}) {
+function DistributionBar({ success, error }: { success: number; error: number }) {
   return (
-    <div className="flex h-2 w-full rounded-full overflow-hidden bg-muted">
+    <div className='flex h-2 w-full overflow-hidden rounded-full bg-muted'>
       <div
-        className="bg-emerald-500 transition-all"
+        className='bg-emerald-500 transition-all'
         style={{ width: `${success}%` }}
         title={`Success: ${success.toFixed(1)}%`}
       />
       <div
-        className="bg-rose-500 transition-all"
+        className='bg-rose-500 transition-all'
         style={{ width: `${error}%` }}
         title={`Error: ${error.toFixed(1)}%`}
       />
@@ -74,7 +60,7 @@ function DistributionBar({
 export default function ClusterBreakdownTable({
   clusters,
   points,
-  isLoading,
+  isLoading
 }: ClusterBreakdownTableProps) {
   const clusterStats = useMemo(() => {
     // Group points by cluster
@@ -114,7 +100,7 @@ export default function ClusterBreakdownTable({
           failedCount,
           successRate,
           color: cluster.color,
-          sampleQuestions: cluster.sampleQuestions,
+          sampleQuestions: cluster.sampleQuestions
         };
       })
       .sort((a, b) => b.count - a.count);
@@ -126,17 +112,17 @@ export default function ClusterBreakdownTable({
     return (
       <Card>
         <CardHeader>
-          <div className="flex items-center gap-2">
-            <Layers className="h-5 w-5 text-primary" />
+          <div className='flex items-center gap-2'>
+            <Layers className='h-5 w-5 text-primary' />
             <CardTitle>Cluster Breakdown</CardTitle>
-            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            <Loader2 className='h-4 w-4 animate-spin text-muted-foreground' />
           </div>
           <CardDescription>Performance metrics by cluster</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="animate-pulse space-y-2">
+          <div className='animate-pulse space-y-2'>
             {[1, 2, 3].map((i) => (
-              <div key={i} className="h-10 bg-muted rounded" />
+              <div key={i} className='h-10 rounded bg-muted' />
             ))}
           </div>
         </CardContent>
@@ -148,14 +134,14 @@ export default function ClusterBreakdownTable({
     return (
       <Card>
         <CardHeader>
-          <div className="flex items-center gap-2">
-            <Layers className="h-5 w-5 text-primary" />
+          <div className='flex items-center gap-2'>
+            <Layers className='h-5 w-5 text-primary' />
             <CardTitle>Cluster Breakdown</CardTitle>
           </div>
           <CardDescription>Performance metrics by cluster</CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground text-center py-4">
+          <p className='py-4 text-center text-muted-foreground text-sm'>
             No cluster data available
           </p>
         </CardContent>
@@ -166,36 +152,34 @@ export default function ClusterBreakdownTable({
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center gap-2">
-          <Layers className="h-5 w-5 text-primary" />
+        <div className='flex items-center gap-2'>
+          <Layers className='h-5 w-5 text-primary' />
           <CardTitle>Cluster Breakdown</CardTitle>
         </div>
         <CardDescription>Performance metrics by cluster</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="space-y-4">
+        <div className='space-y-4'>
           {clusterStats.map((cluster, index) => (
             <div
               key={cluster.clusterId}
-              className="relative border rounded-xl p-5 bg-card hover:bg-muted/30 transition-colors"
+              className='relative rounded-xl border bg-card p-5 transition-colors hover:bg-muted/30'
             >
               {/* Top Row: Color badge, Intent Name, Tags */}
-              <div className="flex items-start justify-between gap-4 mb-3">
-                <div className="flex items-center gap-3 min-w-0 flex-1">
+              <div className='mb-3 flex items-start justify-between gap-4'>
+                <div className='flex min-w-0 flex-1 items-center gap-3'>
                   <div
-                    className="w-3 h-3 rounded-full shrink-0"
+                    className='h-3 w-3 shrink-0 rounded-full'
                     style={{ backgroundColor: cluster.color }}
                   />
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h4 className="font-semibold text-base">
-                      {cluster.intentName}
-                    </h4>
-                    <Badge variant="outline" className="text-xs font-normal">
-                      <Hash className="h-3 w-3 mr-1" />
+                  <div className='flex flex-wrap items-center gap-2'>
+                    <h4 className='font-semibold text-base'>{cluster.intentName}</h4>
+                    <Badge variant='outline' className='font-normal text-xs'>
+                      <Hash className='mr-1 h-3 w-3' />
                       {cluster.clusterId}
                     </Badge>
-                    <Badge variant="outline" className="text-xs font-normal">
-                      <MessageSquare className="h-3 w-3 mr-1" />
+                    <Badge variant='outline' className='font-normal text-xs'>
+                      <MessageSquare className='mr-1 h-3 w-3' />
                       {cluster.count} questions
                     </Badge>
                   </div>
@@ -203,8 +187,8 @@ export default function ClusterBreakdownTable({
                 {/* Success Rate Badge - prominent on the right */}
                 <Badge
                   className={cn(
-                    "font-semibold text-sm px-3 py-1 shrink-0",
-                    getSuccessRateBadgeColor(cluster.successRate),
+                    "shrink-0 px-3 py-1 font-semibold text-sm",
+                    getSuccessRateBadgeColor(cluster.successRate)
                   )}
                 >
                   {cluster.successRate.toFixed(1)}% success
@@ -213,45 +197,35 @@ export default function ClusterBreakdownTable({
 
               {/* Description - Full display */}
               {cluster.description && (
-                <p className="text-sm text-muted-foreground mb-4 leading-relaxed">
+                <p className='mb-4 text-muted-foreground text-sm leading-relaxed'>
                   {cluster.description}
                 </p>
               )}
 
               {/* Success/Error Stats */}
-              <div className="flex items-center gap-6 text-sm mb-4">
-                <div className="flex items-center gap-1.5">
-                  <CheckCircle className="h-4 w-4 text-emerald-500" />
-                  <span className="font-medium text-emerald-600 dark:text-emerald-400">
+              <div className='mb-4 flex items-center gap-6 text-sm'>
+                <div className='flex items-center gap-1.5'>
+                  <CheckCircle className='h-4 w-4 text-emerald-500' />
+                  <span className='font-medium text-emerald-600 dark:text-emerald-400'>
                     {cluster.answeredCount}
                   </span>
-                  <span className="text-muted-foreground">success</span>
+                  <span className='text-muted-foreground'>success</span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <XCircle className="h-4 w-4 text-rose-500" />
-                  <span className="font-medium text-rose-600 dark:text-rose-400">
+                <div className='flex items-center gap-1.5'>
+                  <XCircle className='h-4 w-4 text-rose-500' />
+                  <span className='font-medium text-rose-600 dark:text-rose-400'>
                     {cluster.failedCount}
                   </span>
-                  <span className="text-muted-foreground">error</span>
+                  <span className='text-muted-foreground'>error</span>
                 </div>
-                <div className="flex-1 flex items-center gap-3">
+                <div className='flex flex-1 items-center gap-3'>
                   <DistributionBar
-                    success={
-                      cluster.count > 0
-                        ? (cluster.answeredCount / cluster.count) * 100
-                        : 0
-                    }
-                    error={
-                      cluster.count > 0
-                        ? (cluster.failedCount / cluster.count) * 100
-                        : 0
-                    }
+                    success={cluster.count > 0 ? (cluster.answeredCount / cluster.count) * 100 : 0}
+                    error={cluster.count > 0 ? (cluster.failedCount / cluster.count) * 100 : 0}
                   />
-                  <span className="text-xs text-muted-foreground shrink-0">
+                  <span className='shrink-0 text-muted-foreground text-xs'>
                     {cluster.count > 0
-                      ? ((cluster.answeredCount / cluster.count) * 100).toFixed(
-                          0,
-                        )
+                      ? ((cluster.answeredCount / cluster.count) * 100).toFixed(0)
                       : 0}
                     % /{" "}
                     {cluster.count > 0
@@ -264,27 +238,23 @@ export default function ClusterBreakdownTable({
 
               {/* Sample Questions */}
               {cluster.sampleQuestions.length > 0 && (
-                <div className="pt-4 border-t mt-4">
+                <div className='mt-4 border-t pt-4'>
                   {(() => {
-                    const uniqueQuestions = [
-                      ...new Set(cluster.sampleQuestions),
-                    ];
+                    const uniqueQuestions = [...new Set(cluster.sampleQuestions)];
                     return (
                       <>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
-                          <Quote className="h-3.5 w-3.5" />
-                          <span>
-                            Sample Questions ({uniqueQuestions.length})
-                          </span>
+                        <div className='mb-2 flex items-center gap-2 text-muted-foreground text-xs'>
+                          <Quote className='h-3.5 w-3.5' />
+                          <span>Sample Questions ({uniqueQuestions.length})</span>
                         </div>
-                        <div className="flex flex-col gap-2">
+                        <div className='flex flex-col gap-2'>
                           {uniqueQuestions.map((q, idx) => (
                             <Badge
                               key={idx}
-                              variant="secondary"
-                              className="font-normal text-xs py-1.5 px-3 w-fit max-w-full"
+                              variant='secondary'
+                              className='w-fit max-w-full px-3 py-1.5 font-normal text-xs'
                             >
-                              <span className="truncate">{q}</span>
+                              <span className='truncate'>{q}</span>
                             </Badge>
                           ))}
                         </div>
@@ -296,13 +266,13 @@ export default function ClusterBreakdownTable({
 
               {/* Rank indicator */}
               {index < 3 && (
-                <div className="absolute -top-2 -right-2">
+                <div className='absolute -top-2 -right-2'>
                   <Badge
                     className={cn(
-                      "text-xs font-bold",
+                      "font-bold text-xs",
                       index === 0 && "bg-yellow-500 text-yellow-950",
                       index === 1 && "bg-slate-400 text-slate-950",
-                      index === 2 && "bg-amber-600 text-amber-950",
+                      index === 2 && "bg-amber-600 text-amber-950"
                     )}
                   >
                     #{index + 1}

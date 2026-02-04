@@ -1,5 +1,5 @@
-import { apiClient } from "./axios";
 import { AxiosError } from "axios";
+import { apiClient } from "./axios";
 
 type FilterValue = string | number | boolean | null;
 
@@ -91,13 +91,13 @@ export type ExecuteSemanticQueryResponse =
 export class SemanticService {
   static async executeSemanticQuery(
     projectId: string,
-    request: SemanticQueryRequest,
+    request: SemanticQueryRequest
   ): Promise<ExecuteSemanticQueryResponse> {
     const { query, ...rest } = request;
     try {
       const response = await apiClient.post(`/${projectId}/semantic`, {
         ...query,
-        ...rest,
+        ...rest
       });
       return response.data;
     } catch (error) {
@@ -110,13 +110,13 @@ export class SemanticService {
 
   static async compileSemanticQuery(
     projectId: string,
-    request: SemanticQueryRequest,
+    request: SemanticQueryRequest
   ): Promise<SemanticQueryCompileResponse> {
     const { query, ...rest } = request;
     try {
       const response = await apiClient.post(`/${projectId}/semantic/compile`, {
         ...query,
-        ...rest,
+        ...rest
       });
       return response.data;
     } catch (error) {
@@ -129,12 +129,10 @@ export class SemanticService {
 
   static async getTopicDetails(
     projectId: string,
-    filePathB64: string,
+    filePathB64: string
   ): Promise<TopicDetailsResponse> {
     try {
-      const response = await apiClient.get(
-        `/${projectId}/semantic/topic/${filePathB64}`,
-      );
+      const response = await apiClient.get(`/${projectId}/semantic/topic/${filePathB64}`);
       return response.data;
     } catch (error) {
       if (error instanceof AxiosError && error.response?.data?.message) {
@@ -144,14 +142,9 @@ export class SemanticService {
     }
   }
 
-  static async getViewDetails(
-    projectId: string,
-    filePathB64: string,
-  ): Promise<ViewResponse> {
+  static async getViewDetails(projectId: string, filePathB64: string): Promise<ViewResponse> {
     try {
-      const response = await apiClient.get(
-        `/${projectId}/semantic/view/${filePathB64}`,
-      );
+      const response = await apiClient.get(`/${projectId}/semantic/view/${filePathB64}`);
       return response.data;
     } catch (error) {
       if (error instanceof AxiosError && error.response?.data?.message) {

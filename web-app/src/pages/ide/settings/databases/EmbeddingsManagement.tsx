@@ -1,10 +1,11 @@
-import React, { useCallback } from "react";
-import { Button } from "@/components/ui/shadcn/button";
 import { Hammer, Loader2, Trash2 } from "lucide-react";
-import useDatabaseOperation from "@/stores/useDatabaseOperation";
+import type React from "react";
+import { useCallback } from "react";
+import { Button } from "@/components/ui/shadcn/button";
+import { Label } from "@/components/ui/shadcn/label";
 import { useDataBuild } from "@/hooks/api/databases/useDataBuild";
 import { useDataClean } from "@/hooks/api/databases/useDataClean";
-import { Label } from "@/components/ui/shadcn/label";
+import useDatabaseOperation from "@/stores/useDatabaseOperation";
 
 export const EmbeddingsManagement: React.FC = () => {
   const { isBuilding, isCleaning } = useDatabaseOperation();
@@ -22,24 +23,23 @@ export const EmbeddingsManagement: React.FC = () => {
   }, [cleanMutation]);
 
   return (
-    <div className="flex items-start justify-between">
-      <div className="space-y-1">
-        <Label className="text-sm">AI & Embeddings</Label>
-        <p className="text-sm text-muted-foreground">
-          Build embeddings for AI-powered search and analysis, or clean
-          embeddings data.
+    <div className='flex items-start justify-between'>
+      <div className='space-y-1'>
+        <Label className='text-sm'>AI & Embeddings</Label>
+        <p className='text-muted-foreground text-sm'>
+          Build embeddings for AI-powered search and analysis, or clean embeddings data.
         </p>
       </div>
-      <div className="flex gap-2">
+      <div className='flex gap-2'>
         <Button
-          size="sm"
-          variant="destructive"
+          size='sm'
+          variant='destructive'
           onClick={handleCleanData}
           disabled={cleaningInProgress || buildingInProgress}
         >
           {cleaningInProgress ? (
             <>
-              <Loader2 className="animate-spin" />
+              <Loader2 className='animate-spin' />
               Cleaning...
             </>
           ) : (
@@ -50,13 +50,13 @@ export const EmbeddingsManagement: React.FC = () => {
           )}
         </Button>
         <Button
-          size="sm"
+          size='sm'
           onClick={handleBuildEmbeddings}
           disabled={buildingInProgress || cleaningInProgress}
         >
           {buildingInProgress ? (
             <>
-              <Loader2 className="animate-spin" />
+              <Loader2 className='animate-spin' />
               Building...
             </>
           ) : (

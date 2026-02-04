@@ -1,5 +1,6 @@
 import { cx } from "class-variance-authority";
-import React, { ReactNode } from "react";
+import type React from "react";
+import type { ReactNode } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 
@@ -13,12 +14,12 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ children, className }) => {
   return match ? (
     <SyntaxHighlighter
       className={cx(
-        "p-4! m-0! max-h-96! rounded-lg! border! border-[#27272A]! bg-zinc-900! [&>code]:bg-transparent! text-sm font-mono",
-        className,
+        "border! m-0! max-h-96! rounded-lg! border-[#27272A]! bg-zinc-900! p-4! font-mono text-sm [&>code]:bg-transparent!",
+        className
       )}
       language={match ? match[1] : undefined}
       style={oneDark}
-      PreTag="div"
+      PreTag='div'
       lineProps={{ style: { wordBreak: "break-all", whiteSpace: "pre-wrap" } }}
       wrapLines={true}
     >
@@ -27,8 +28,8 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ children, className }) => {
   ) : (
     <code
       className={cx(
-        "bg-zinc-900! px-1.5 py-0.5 rounded-lg! border! border-[#27272A]! text-xs font-mono",
-        className,
+        "border! rounded-lg! border-[#27272A]! bg-zinc-900! px-1.5 py-0.5 font-mono text-xs",
+        className
       )}
     >
       {children}

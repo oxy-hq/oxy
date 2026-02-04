@@ -24,12 +24,5 @@
     }
   },
   "include": ["src"],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "tests",
-    "**/*.spec.*",
-    "**/*.test.*",
-    "**/__tests__/**"
-  ]
+  "exclude": ["node_modules", "dist", "tests", "**/*.spec.*", "**/*.test.*", "**/__tests__/**"]
 }

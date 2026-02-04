@@ -1,12 +1,12 @@
 "use client";
 
-import * as React from "react";
 import { format } from "date-fns";
 import { Calendar as CalendarIcon } from "lucide-react";
-import { Popover, PopoverContent, PopoverTrigger } from "./popover";
+import * as React from "react";
+import { cn } from "@/libs/shadcn/utils";
 import { Button } from "./button";
 import { Calendar } from "./calendar";
-import { cn } from "@/libs/shadcn/utils";
+import { Popover, PopoverContent, PopoverTrigger } from "./popover";
 
 interface DatePickerProps {
   date?: Date;
@@ -23,27 +23,27 @@ export function DatePicker({
   placeholder = "Pick a date",
   disabled = false,
   className,
-  minDate,
+  minDate
 }: DatePickerProps) {
   return (
     <Popover>
       <PopoverTrigger asChild>
         <Button
-          variant="outline"
+          variant='outline'
           disabled={disabled}
           data-empty={!date}
           className={cn(
-            "data-[empty=true]:text-muted-foreground w-full justify-start text-left font-normal",
-            className,
+            "w-full justify-start text-left font-normal data-[empty=true]:text-muted-foreground",
+            className
           )}
         >
-          <CalendarIcon className="mr-2 h-4 w-4" />
+          <CalendarIcon className='mr-2 h-4 w-4' />
           {date ? format(date, "PPP") : <span>{placeholder}</span>}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align="start">
+      <PopoverContent className='w-auto p-0' align='start'>
         <Calendar
-          mode="single"
+          mode='single'
           selected={date}
           onSelect={onSelect}
           disabled={(date) => (minDate ? date < minDate : false)}

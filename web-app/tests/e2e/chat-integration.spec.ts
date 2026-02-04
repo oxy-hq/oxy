@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { ChatPage } from "./pages/ChatPage";
 
 test.describe("Home Page Chat Box Test", () => {
@@ -9,13 +9,11 @@ test.describe("Home Page Chat Box Test", () => {
 
     // Wait for ChatPanel to be visible
     await expect(page.locator("textarea[name='question']")).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
-  test("should be able to ask a question and get a response", async ({
-    page,
-  }) => {
+  test("should be able to ask a question and get a response", async ({ page }) => {
     const chatPage = new ChatPage(page);
 
     // Ask question
@@ -29,7 +27,7 @@ test.describe("Home Page Chat Box Test", () => {
 
     // Verify artifacts (SQL queries) are visible
     await expect(page.getByTestId("agent-artifact").first()).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
 
     const artifact = page.getByTestId("agent-artifact").first();
@@ -39,9 +37,7 @@ test.describe("Home Page Chat Box Test", () => {
     await expect(chatPage.followUpInput).toBeEnabled();
   });
 
-  test("should be able to cancel streaming with stop button", async ({
-    page,
-  }) => {
+  test("should be able to cancel streaming with stop button", async ({ page }) => {
     const chatPage = new ChatPage(page);
 
     // Ask question
@@ -55,7 +51,7 @@ test.describe("Home Page Chat Box Test", () => {
 
     // Verify cancellation message
     await expect(page.getByText("🔴 Operation cancelled")).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
 
     // Verify follow-up input is enabled
@@ -71,7 +67,7 @@ test.describe("Home Page Chat Box Test", () => {
     // Run workflow
     await chatPage.askQuestion("run this workflow", "duckdb", {
       mode: "Workflow",
-      workflowName: "fruit_sales_report",
+      workflowName: "fruit_sales_report"
     });
 
     // Wait for workflow completion
@@ -85,23 +81,19 @@ test.describe("Home Page Chat Box Test", () => {
           response.status() === 200
         );
       },
-      { timeout: 60000 },
+      { timeout: 60000 }
     );
 
     await expect(page.getByText("⏳Starting query_data").first()).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
 
-    await expect(
-      page.getByText("✅Workflow executed successfully").first(),
-    ).toBeVisible({
-      timeout: 30000,
+    await expect(page.getByText("✅Workflow executed successfully").first()).toBeVisible({
+      timeout: 30000
     });
   });
 
-  test("should be able to ask a follow-up question in thread", async ({
-    page,
-  }) => {
+  test("should be able to ask a follow-up question in thread", async ({ page }) => {
     const chatPage = new ChatPage(page);
 
     // Ask initial question
@@ -131,17 +123,13 @@ test.describe("Home Page Chat Box Test", () => {
     await page.waitForTimeout(500);
 
     // Verify multiple agents are available (update with actual agent names in your environment)
-    await expect(
-      page.getByRole("menuitemcheckbox", { name: "duckdb" }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("menuitemcheckbox", { name: "_routing" }),
-    ).toBeVisible();
+    await expect(page.getByRole("menuitemcheckbox", { name: "duckdb" })).toBeVisible();
+    await expect(page.getByRole("menuitemcheckbox", { name: "_routing" })).toBeVisible();
 
     // Select semantic agent if available
     const semanticAgent = page.getByRole("menuitemcheckbox", {
       name: "semantic",
-      exact: true,
+      exact: true
     });
     if (await semanticAgent.isVisible()) {
       await semanticAgent.click();
@@ -154,9 +142,7 @@ test.describe("Home Page Chat Box Test", () => {
     }
   });
 
-  test("should show submit button disabled when input is empty", async ({
-    page,
-  }) => {
+  test("should show submit button disabled when input is empty", async ({ page }) => {
     const chatPage = new ChatPage(page);
 
     // Verify submit button is disabled initially
@@ -187,9 +173,7 @@ test.describe("Home Page Chat Box Test", () => {
     await chatPage.verifyUserMessage(userQuestion);
   });
 
-  test("should switch between Ask, Build, and Workflow modes", async ({
-    page,
-  }) => {
+  test("should switch between Ask, Build, and Workflow modes", async ({ page }) => {
     const chatPage = new ChatPage(page);
 
     // Wait for mode buttons to be visible
@@ -203,7 +187,7 @@ test.describe("Home Page Chat Box Test", () => {
     await expect(chatPage.buildModeButton).toBeChecked();
     await expect(chatPage.questionInput).toHaveAttribute(
       "placeholder",
-      "Enter anything you want to build",
+      "Enter anything you want to build"
     );
 
     // Switch to Workflow mode
@@ -211,16 +195,13 @@ test.describe("Home Page Chat Box Test", () => {
     await expect(chatPage.workflowModeButton).toBeChecked();
     await expect(chatPage.questionInput).toHaveAttribute(
       "placeholder",
-      "Enter a title for this workflow run",
+      "Enter a title for this workflow run"
     );
     await expect(chatPage.workflowSelectorButton).toBeVisible();
 
     // Switch back to Ask
     await chatPage.switchMode("Ask");
     await expect(chatPage.askModeButton).toBeChecked();
-    await expect(chatPage.questionInput).toHaveAttribute(
-      "placeholder",
-      "Ask anything",
-    );
+    await expect(chatPage.questionInput).toHaveAttribute("placeholder", "Ask anything");
   });
 });

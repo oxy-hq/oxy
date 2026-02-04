@@ -1,5 +1,5 @@
+import { AlertCircle, ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
-import { ChevronDown, ChevronRight, AlertCircle } from "lucide-react";
 import type { TimelineSpan } from "@/services/api/traces";
 import { formatDuration, formatSpanLabel, SpanIcon } from "../../utils/index";
 import { getTimelineSpanColor } from "./utils";
@@ -23,7 +23,7 @@ export function TimelineSpanRow({
   selectedSpanId,
   onSelectSpan,
   ancestorHasMoreSiblings = [],
-  isLastChild = true,
+  isLastChild = true
 }: TimelineSpanRowProps) {
   const [expanded, setExpanded] = useState(span.depth < 3);
   const children = spans.filter((s) => s.parentSpanId === span.spanId);
@@ -36,19 +36,17 @@ export function TimelineSpanRow({
 
   // Build tree connector lines for ancestors
   const treeConnectors = ancestorHasMoreSiblings.map((hasMore, index) => (
-    <div key={index} className="w-5 h-full flex-shrink-0 relative">
-      {hasMore && (
-        <div className="absolute left-2.5 top-0 bottom-0 w-px bg-border" />
-      )}
+    <div key={index} className='relative h-full w-5 flex-shrink-0'>
+      {hasMore && <div className='absolute top-0 bottom-0 left-2.5 w-px bg-border' />}
     </div>
   ));
 
   return (
     <>
       <div
-        className={`group flex items-center py-1.5 px-2 cursor-pointer transition-colors ${
+        className={`group flex cursor-pointer items-center px-2 py-1.5 transition-colors ${
           isSelected
-            ? "bg-primary/15 border-l-2 border-l-primary"
+            ? "border-l-2 border-l-primary bg-primary/15"
             : "border-l-2 border-l-transparent hover:bg-accent/50"
         }`}
         onClick={() => {
@@ -56,72 +54,72 @@ export function TimelineSpanRow({
         }}
       >
         {/* Tree structure with connectors */}
-        <div className="flex items-center h-6 flex-shrink-0">
+        <div className='flex h-6 flex-shrink-0 items-center'>
           {/* Ancestor vertical lines */}
           {treeConnectors}
 
           {/* Current level connector */}
           {span.depth > 0 && (
-            <div className="w-5 h-full flex-shrink-0 relative">
+            <div className='relative h-full w-5 flex-shrink-0'>
               {/* Vertical line from top (connects to parent) */}
               <div
-                className={`absolute left-2.5 top-0 w-px bg-border ${
+                className={`absolute top-0 left-2.5 w-px bg-border ${
                   isLastChild ? "h-1/2" : "h-full"
                 }`}
               />
               {/* Horizontal line to node */}
-              <div className="absolute left-2.5 top-1/2 w-2.5 h-px bg-border" />
+              <div className='absolute top-1/2 left-2.5 h-px w-2.5 bg-border' />
             </div>
           )}
 
           {/* Expand/collapse button or leaf indicator */}
-          <div className="w-5 h-5 flex-shrink-0 flex items-center justify-center relative">
+          <div className='relative flex h-5 w-5 flex-shrink-0 items-center justify-center'>
             {hasChildren ? (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   setExpanded(!expanded);
                 }}
-                className="w-4 h-4 flex items-center justify-center rounded border border-border bg-background hover:bg-muted transition-colors z-10"
+                className='z-10 flex h-4 w-4 items-center justify-center rounded border border-border bg-background transition-colors hover:bg-muted'
               >
                 {expanded ? (
-                  <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                  <ChevronDown className='h-3 w-3 text-muted-foreground' />
                 ) : (
-                  <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                  <ChevronRight className='h-3 w-3 text-muted-foreground' />
                 )}
               </button>
             ) : (
-              <div className="w-1.5 h-1.5 rounded-full bg-border" />
+              <div className='h-1.5 w-1.5 rounded-full bg-border' />
             )}
           </div>
         </div>
 
         {/* Span info */}
-        <div className="flex items-center gap-2 w-52 flex-shrink-0 ml-1">
+        <div className='ml-1 flex w-52 flex-shrink-0 items-center gap-2'>
           <SpanIcon
             spanName={span.spanName}
-            className="h-4 w-4 flex-shrink-0 text-muted-foreground"
+            className='h-4 w-4 flex-shrink-0 text-muted-foreground'
           />
-          <span className="text-sm font-medium truncate" title={span.spanName}>
+          <span className='truncate font-medium text-sm' title={span.spanName}>
             {formatSpanLabel(span.spanName)}
           </span>
           {/* Duration badge inline */}
-          <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded flex-shrink-0">
+          <span className='flex-shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground'>
             {formatDuration(span.durationMs)}
           </span>
           {span.statusCode === "Error" && (
-            <AlertCircle className="h-3.5 w-3.5 text-destructive flex-shrink-0" />
+            <AlertCircle className='h-3.5 w-3.5 flex-shrink-0 text-destructive' />
           )}
         </div>
 
         {/* Timeline bar */}
-        <div className="flex-1 relative h-5 bg-muted/30 rounded overflow-hidden min-w-[200px]">
+        <div className='relative h-5 min-w-[200px] flex-1 overflow-hidden rounded bg-muted/30'>
           {/* Grid lines */}
-          <div className="absolute inset-0 flex pointer-events-none">
-            <div className="flex-1 border-r border-border/20" />
-            <div className="flex-1 border-r border-border/20" />
-            <div className="flex-1 border-r border-border/20" />
-            <div className="flex-1" />
+          <div className='pointer-events-none absolute inset-0 flex'>
+            <div className='flex-1 border-border/20 border-r' />
+            <div className='flex-1 border-border/20 border-r' />
+            <div className='flex-1 border-border/20 border-r' />
+            <div className='flex-1' />
           </div>
           {/* Span bar */}
           <div
@@ -129,12 +127,12 @@ export function TimelineSpanRow({
             style={{
               left: `${Math.max(0, offset)}%`,
               width: `${Math.max(width, 0.5)}%`,
-              minWidth: "3px",
+              minWidth: "3px"
             }}
             title={`${span.spanName}: ${formatDuration(span.durationMs)}`}
           >
             {width > 12 && (
-              <span className="absolute inset-0 flex items-center px-1.5 text-[10px] font-medium text-white truncate">
+              <span className='absolute inset-0 flex items-center truncate px-1.5 font-medium text-[10px] text-white'>
                 {formatDuration(span.durationMs)}
               </span>
             )}
@@ -142,37 +140,32 @@ export function TimelineSpanRow({
         </div>
 
         {/* Duration column */}
-        <div className="w-20 text-right text-xs text-muted-foreground font-medium pr-2">
+        <div className='w-20 pr-2 text-right font-medium text-muted-foreground text-xs'>
           {formatDuration(span.durationMs)}
         </div>
       </div>
 
       {/* Children */}
-      {expanded && hasChildren && (
-        <>
-          {children.map((child, index) => {
-            const isLast = index === children.length - 1;
-            // Pass down ancestor info: current span's continuation status
-            const newAncestorHasMoreSiblings = [
-              ...ancestorHasMoreSiblings,
-              !isLastChild,
-            ];
+      {expanded &&
+        hasChildren &&
+        children.map((child, index) => {
+          const isLast = index === children.length - 1;
+          // Pass down ancestor info: current span's continuation status
+          const newAncestorHasMoreSiblings = [...ancestorHasMoreSiblings, !isLastChild];
 
-            return (
-              <TimelineSpanRow
-                key={child.spanId}
-                span={child}
-                spans={spans}
-                totalDuration={totalDuration}
-                selectedSpanId={selectedSpanId}
-                onSelectSpan={onSelectSpan}
-                ancestorHasMoreSiblings={newAncestorHasMoreSiblings}
-                isLastChild={isLast}
-              />
-            );
-          })}
-        </>
-      )}
+          return (
+            <TimelineSpanRow
+              key={child.spanId}
+              span={child}
+              spans={spans}
+              totalDuration={totalDuration}
+              selectedSpanId={selectedSpanId}
+              onSelectSpan={onSelectSpan}
+              ancestorHasMoreSiblings={newAncestorHasMoreSiblings}
+              isLastChild={isLast}
+            />
+          );
+        })}
     </>
   );
 }

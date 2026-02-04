@@ -1,14 +1,5 @@
-import React, { Suspense, useEffect, useMemo } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
-import useWorkflowConfig from "@/hooks/api/workflows/useWorkflowConfig";
-import WorkflowOutput from "./output";
-import { ResizableHandle } from "@/components/ui/shadcn/resizable";
-import {
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/components/ui/shadcn/resizable";
-import { cn } from "@/libs/shadcn/utils";
-import { Button } from "@/components/ui/shadcn/button";
+import { get } from "lodash";
 import {
   ChevronDownIcon,
   CircleAlert,
@@ -17,35 +8,44 @@ import {
   LogsIcon,
   PlayIcon,
   RotateCcw,
-  StopCircle,
+  StopCircle
 } from "lucide-react";
+import React, { Suspense, useEffect, useMemo } from "react";
+import { Button } from "@/components/ui/shadcn/button";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup
+} from "@/components/ui/shadcn/resizable";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
+import useWorkflowConfig from "@/hooks/api/workflows/useWorkflowConfig";
+import { cn } from "@/libs/shadcn/utils";
+import { useBlockStore } from "@/stores/block";
+import { Alert, AlertDescription, AlertTitle } from "../ui/shadcn/alert";
+import { ButtonGroup } from "../ui/shadcn/button-group";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from "../ui/shadcn/dropdown-menu";
+import WorkflowOutput from "./output";
 import {
   useCancelWorkflowRun,
   useGetBlocks,
   useIsProcessing,
   useStreamEvents,
   useWorkflowLogs,
-  useWorkflowRun,
+  useWorkflowRun
 } from "./useWorkflowRun";
-import { useBlockStore } from "@/stores/block";
 import { useVariables, Variables } from "./WorkflowDiagram/Variables";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "../ui/shadcn/dropdown-menu";
-import { ButtonGroup } from "../ui/shadcn/button-group";
-import { Alert, AlertDescription, AlertTitle } from "../ui/shadcn/alert";
-import { get } from "lodash";
 
 const WorkflowDiagram = React.lazy(() => import("./WorkflowDiagram"));
 
 export const WorkflowPreview = ({
   pathb64,
   runId,
-  direction = "horizontal",
+  direction = "horizontal"
 }: {
   pathb64: string;
   runId?: string;
@@ -73,16 +73,12 @@ export const WorkflowPreview = ({
   const variablesSchema = useMemo(() => {
     return {
       type: "object",
-      properties: workflowConfig?.variables,
+      properties: workflowConfig?.variables
     };
   }, [workflowConfig]);
   const { setIsOpen } = useVariables();
 
-  const groups = useGetBlocks(
-    path,
-    runId ? +runId : undefined,
-    !!runId && !isProcessing,
-  ).data;
+  const groups = useGetBlocks(path, runId ? +runId : undefined, !!runId && !isProcessing).data;
   useEffect(() => {
     const abortRef = new AbortController();
     const streamCall = async (relativePath: string, runId: string) => {
@@ -90,7 +86,7 @@ export const WorkflowPreview = ({
         .mutateAsync({
           sourceId: relativePath,
           runIndex: parseInt(runId, 10),
-          abortRef: abortRef.signal,
+          abortRef: abortRef.signal
         })
         .catch((error) => {
           console.error("Error streaming events:", error);
@@ -103,23 +99,17 @@ export const WorkflowPreview = ({
         abortRef.abort();
       };
     }
-  }, [runId, relativePath]);
+  }, [runId, relativePath, stream]);
 
   useEffect(() => {
-    const firstGroup = groups && groups[0];
+    const firstGroup = groups?.[0];
     if (
       firstGroup &&
-      firstGroup.source_id == relativePath &&
+      firstGroup.source_id === relativePath &&
       firstGroup.run_index.toString() === runId
     ) {
       groups.forEach((group) => {
-        setGroupBlocks(
-          group,
-          group.blocks,
-          group.children,
-          group.error,
-          group.metadata,
-        );
+        setGroupBlocks(group, group.blocks, group.children, group.error, group.metadata);
       });
     }
   }, [groups, relativePath, runId, setGroupBlocks]);
@@ -137,8 +127,8 @@ export const WorkflowPreview = ({
           workflowId: relativePath,
           retryType: {
             type: "no_retry",
-            variables: data,
-          },
+            variables: data
+          }
         });
       });
       return;
@@ -146,8 +136,8 @@ export const WorkflowPreview = ({
     await run.mutateAsync({
       workflowId: relativePath,
       retryType: {
-        type: "no_retry",
-      },
+        type: "no_retry"
+      }
     });
   };
 
@@ -155,7 +145,7 @@ export const WorkflowPreview = ({
     if (runId) {
       await cancelRun.mutateAsync({
         sourceId: relativePath,
-        runIndex: parseInt(runId, 10),
+        runIndex: parseInt(runId, 10)
       });
     }
   };
@@ -167,13 +157,13 @@ export const WorkflowPreview = ({
         retryType: {
           type: "retry",
           run_index: parseInt(runId, 10),
-          replay_id: "",
-        },
+          replay_id: ""
+        }
       });
       setShowOutput(true);
       await stream.mutateAsync({
         sourceId: relativePath,
-        runIndex: parseInt(runId, 10),
+        runIndex: parseInt(runId, 10)
       });
     }
   };
@@ -184,13 +174,13 @@ export const WorkflowPreview = ({
 
   if (!workflowConfig && !error) {
     return (
-      <div className="w-full">
-        <div className="flex flex-col gap-10 max-w-page-content mx-auto p-10">
+      <div className='w-full'>
+        <div className='mx-auto flex max-w-page-content flex-col gap-10 p-10'>
           {Array.from({ length: 3 }).map((_, index) => (
-            <div key={index} className="flex flex-col gap-4">
-              <Skeleton className="h-4 max-w-[200px]" />
-              <Skeleton className="h-4 max-w-[500px]" />
-              <Skeleton className="h-4 max-w-[500px]" />
+            <div key={index} className='flex flex-col gap-4'>
+              <Skeleton className='h-4 max-w-[200px]' />
+              <Skeleton className='h-4 max-w-[500px]' />
+              <Skeleton className='h-4 max-w-[500px]' />
             </div>
           ))}
         </div>
@@ -201,8 +191,8 @@ export const WorkflowPreview = ({
   if (error) {
     const errorMessage = get(error, "response.data.error", error.message);
     return (
-      <div className="p-4">
-        <Alert variant="destructive">
+      <div className='p-4'>
+        <Alert variant='destructive'>
           <CircleAlert />
           <AlertTitle>Error Loading Automation</AlertTitle>
           <AlertDescription>{errorMessage}</AlertDescription>
@@ -213,72 +203,57 @@ export const WorkflowPreview = ({
 
   return (
     <ResizablePanelGroup direction={direction}>
-      <ResizablePanel
-        defaultSize={50}
-        minSize={20}
-        className={cn(!showOutput && "flex-1!")}
-      >
-        <div className="relative h-full w-full">
+      <ResizablePanel defaultSize={50} minSize={20} className={cn(!showOutput && "flex-1!")}>
+        <div className='relative h-full w-full'>
           <ReactFlowProvider>
             <Suspense
               fallback={
-                <div className="flex items-center justify-center h-full w-full">
-                  <LoaderCircleIcon className="animate-spin" />
+                <div className='flex h-full w-full items-center justify-center'>
+                  <LoaderCircleIcon className='animate-spin' />
                 </div>
               }
             >
-              <WorkflowDiagram
-                workflowId={path}
-                workflowConfig={workflowConfig}
-                runId={runId}
-              />
+              <WorkflowDiagram workflowId={path} workflowConfig={workflowConfig} runId={runId} />
             </Suspense>
           </ReactFlowProvider>
-          <div className="absolute bottom-4 right-4 flex items-center gap-2">
+          <div className='absolute right-4 bottom-4 flex items-center gap-2'>
             {!showOutput && (
-              <Button
-                variant="outline"
-                onClick={toggleOutput}
-                tooltip={"Show Logs Output"}
-              >
-                <LogsIcon className="w-4 h-4" />
+              <Button variant='outline' onClick={toggleOutput} tooltip={"Show Logs Output"}>
+                <LogsIcon className='h-4 w-4' />
               </Button>
             )}
           </div>
 
-          <div className="absolute top-4 right-4 flex items-center gap-2">
+          <div className='absolute top-4 right-4 flex items-center gap-2'>
             {!!runId &&
               (isProcessing ? (
                 <Button
-                  variant="outline"
+                  variant='outline'
                   onClick={cancelRunHandler}
                   disabled={cancelRun.isPending}
                   tooltip={"Cancel Automation Run"}
                 >
-                  <StopCircle className="w-4 h-4" />
+                  <StopCircle className='h-4 w-4' />
                 </Button>
               ) : (
                 <ButtonGroup>
                   <Button
-                    variant="outline"
+                    variant='outline'
                     onClick={replayAllHandler}
                     disabled={run.isPending}
                     tooltip={"Replay Automation Run"}
                   >
-                    <RotateCcw className="w-4 h-4" />
+                    <RotateCcw className='h-4 w-4' />
                     Replay
                   </Button>
                   {workflowConfig.variables ? (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="outline" className="!pl-2">
+                        <Button variant='outline' className='!pl-2'>
                           <ChevronDownIcon />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent
-                        align="end"
-                        className="[--radius:1rem]"
-                      >
+                      <DropdownMenuContent align='end' className='[--radius:1rem]'>
                         <DropdownMenuItem
                           onClick={() => {
                             setIsOpen(true, (data) => {
@@ -288,8 +263,8 @@ export const WorkflowPreview = ({
                                   type: "retry_with_variables",
                                   run_index: parseInt(runId, 10),
                                   replay_id: "",
-                                  variables: data,
-                                },
+                                  variables: data
+                                }
                               });
                             });
                           }}
@@ -302,32 +277,26 @@ export const WorkflowPreview = ({
                 </ButtonGroup>
               ))}
             <Button
-              variant="default"
+              variant='default'
               onClick={runHandler}
               disabled={run.isPending}
               tooltip={run.isPending ? "Running..." : "Run Automation"}
-              data-testid="run-workflow-button"
+              data-testid='run-workflow-button'
             >
               {run.isPending ? (
-                <LoaderCircle className="animate-spin" />
+                <LoaderCircle className='animate-spin' />
               ) : (
-                <PlayIcon className="w-4 h-4" />
+                <PlayIcon className='h-4 w-4' />
               )}
             </Button>
-            {workflowConfig.variables ? (
-              <Variables schema={variablesSchema} />
-            ) : null}
+            {workflowConfig.variables ? <Variables schema={variablesSchema} /> : null}
           </div>
         </div>
       </ResizablePanel>
 
       <ResizableHandle />
 
-      <ResizablePanel
-        defaultSize={50}
-        minSize={20}
-        className={cn(!showOutput && "flex-[unset]!")}
-      >
+      <ResizablePanel defaultSize={50} minSize={20} className={cn(!showOutput && "flex-[unset]!")}>
         {showOutput && (
           <WorkflowOutput
             workflowId={path}

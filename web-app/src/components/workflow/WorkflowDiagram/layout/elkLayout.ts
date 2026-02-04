@@ -1,21 +1,18 @@
-import ELK, { ElkExtendedEdge, ElkNode } from "elkjs";
-import { TaskNode as Node } from "@/stores/useWorkflow";
+import type { Edge } from "@xyflow/react";
+import ELK, { type ElkExtendedEdge, type ElkNode } from "elkjs";
+import type { TaskNode as Node } from "@/stores/useWorkflow";
 import {
   contentPadding,
   distanceBetweenHeaderAndContent,
   distanceBetweenNodes,
   headerHeight,
   nodeBorder,
-  nodePadding,
+  nodePadding
 } from "./constants";
-import { Edge } from "@xyflow/react";
 
 const elk = new ELK();
 
-export const createElkLayout = async (
-  nodes: Node[],
-  edges: Edge[],
-): Promise<Node[]> => {
+export const createElkLayout = async (nodes: Node[], edges: Edge[]): Promise<Node[]> => {
   const elkGraph = createElkGraph(nodes, edges);
   const layout = await elk.layout(elkGraph);
   return extractLayoutedNodes(layout, nodes);
@@ -26,36 +23,34 @@ const createElkGraph = (nodes: Node[], edges: Edge[]) => {
     id: "root",
     layoutOptions: {
       "elk.algorithm": "layered",
-      "elk.direction": "DOWN",
+      "elk.direction": "DOWN"
     },
     ...buildElkNodes(
       nodes.filter((node) => !node.parentId),
       nodes,
-      edges,
-    ),
+      edges
+    )
   };
 };
 
 const buildElkNodes = (
   nodes: Node[],
   allNodes: Node[],
-  allEdges: Edge[],
+  allEdges: Edge[]
 ): {
   children: ElkNode[];
   edges: ElkExtendedEdge[];
 } => {
   return {
     children: nodes.map((node) => {
-      const childNodes = node.data.expanded
-        ? allNodes.filter((n) => n.parentId === node.id)
-        : [];
+      const childNodes = node.data.expanded ? allNodes.filter((n) => n.parentId === node.id) : [];
       const padding = calculateNodePadding(childNodes.length);
       return {
         id: node.id,
         width: node.width,
         height: node.height,
         layoutOptions: createLayoutOptions(node, padding),
-        ...buildElkNodes(childNodes, allNodes, allEdges),
+        ...buildElkNodes(childNodes, allNodes, allEdges)
       };
     }),
     edges: allEdges
@@ -67,8 +62,8 @@ const buildElkNodes = (
       .map((edge) => ({
         id: edge.id,
         sources: [edge.source],
-        targets: [edge.target],
-      })),
+        targets: [edge.target]
+      }))
   };
 };
 
@@ -83,10 +78,10 @@ const extractLayoutedNodes = (layout: ElkNode, flatNodes: Node[]): Node[] => {
       ...originalNode,
       position: {
         x: node.x || 0,
-        y: node.y || 0,
+        y: node.y || 0
       },
       width: node.width || 0,
-      height: node.height || 0,
+      height: node.height || 0
     });
     layoutedNodes = layoutedNodes.concat(extractLayoutedNodes(node, flatNodes));
   });
@@ -105,10 +100,7 @@ const calculateNodePadding = (childCount: number) => {
   return { top: topPadding, side: sidePadding };
 };
 
-const createLayoutOptions = (
-  node: Node,
-  padding: { top: number; side: number },
-) => {
+const createLayoutOptions = (node: Node, padding: { top: number; side: number }) => {
   return {
     "elk.algorithm": "layered",
     "elk.direction": node.type === "conditional" ? "RIGHT" : "DOWN",
@@ -116,6 +108,6 @@ const createLayoutOptions = (
     "elk.spacing.nodeNode": `${distanceBetweenNodes}`,
     "elk.nodeSize.constraints": "MINIMUM_SIZE",
     "elk.layered.spacing.nodeNodeBetweenLayers": `${distanceBetweenNodes}`,
-    "elk.nodeSize.minimum": `(${node.width},${node.height})`,
+    "elk.nodeSize.minimum": `(${node.width},${node.height})`
   };
 };

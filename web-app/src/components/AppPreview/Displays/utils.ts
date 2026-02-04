@@ -1,8 +1,8 @@
-import { DataContainer } from "@/types/app";
-import { apiClient } from "@/services/api/axios";
-import { getDuckDB } from "@/libs/duckdb";
-import { DataType, Schema, Table, Type } from "apache-arrow";
+import { DataType, type Schema, type Table, type Type } from "apache-arrow";
 import dayjs from "dayjs";
+import { getDuckDB } from "@/libs/duckdb";
+import { apiClient } from "@/services/api/axios";
+import type { DataContainer } from "@/types/app";
 
 const getArrowValue = (value: unknown): number | string | unknown => {
   if (value instanceof Uint32Array) return formatNumber(value[0]);
@@ -21,7 +21,7 @@ const getArrowValue = (value: unknown): number | string | unknown => {
 export const getArrowColumnValues = (
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   table: Table<any>,
-  columnName: string,
+  columnName: string
 ) => {
   const fieldType = getArrowFieldType(columnName, table.schema);
   return table.toArray().map((row: unknown) => {
@@ -30,10 +30,7 @@ export const getArrowColumnValues = (
   });
 };
 
-export const getArrowValueWithType = (
-  value: unknown,
-  type: Type,
-): number | string | unknown => {
+export const getArrowValueWithType = (value: unknown, type: Type): number | string | unknown => {
   if (DataType.isDate(type)) {
     return formatDate(value as number);
   }
@@ -45,7 +42,7 @@ export const getArrowValueWithType = (
   }
   if (DataType.isDecimal(type)) {
     const scale = (type as { scale: number }).scale;
-    const numValue = Number(value) / Math.pow(10, scale);
+    const numValue = Number(value) / 10 ** scale;
     return formatNumber(numValue);
   }
   return getArrowValue(value);
@@ -75,7 +72,7 @@ type KeyPart = {
 const getKeyParts = (key: string) => {
   const parts: KeyPart[] = [];
   let currentPart = "";
-  let currentIndex: number | undefined = undefined;
+  let currentIndex: number | undefined;
   for (let i = 0; i < key.length; i++) {
     const char = key[i];
     if (char === ".") {
@@ -105,10 +102,7 @@ const getKeyParts = (key: string) => {
   return parts;
 };
 
-const getNextDataFromArray = (
-  array: DataContainer,
-  index?: number,
-): DataContainer | null => {
+const getNextDataFromArray = (array: DataContainer, index?: number): DataContainer | null => {
   if (!Array.isArray(array) || index === undefined || index >= array.length) {
     return null;
   }
@@ -116,10 +110,7 @@ const getNextDataFromArray = (
   return value === null || value === undefined ? null : value;
 };
 
-const getNextDataFromObject = (
-  obj: DataContainer,
-  key: string,
-): DataContainer | null => {
+const getNextDataFromObject = (obj: DataContainer, key: string): DataContainer | null => {
   if (typeof obj !== "object" || obj === null || !(key in obj)) {
     return null;
   }
@@ -127,10 +118,7 @@ const getNextDataFromObject = (
   return value === null ? null : value;
 };
 
-const getNextData = (
-  currentData: DataContainer,
-  part: KeyPart,
-): DataContainer | null => {
+const getNextData = (currentData: DataContainer, part: KeyPart): DataContainer | null => {
   if (currentData === null || currentData === undefined) {
     return null;
   }
@@ -159,7 +147,7 @@ const getNextData = (
 export const getData = (data: DataContainer, key: string) => {
   if (isFilePath(key)) {
     return {
-      file_path: key,
+      file_path: key
     };
   }
   const parts = getKeyParts(key);
@@ -174,15 +162,13 @@ export const getData = (data: DataContainer, key: string) => {
 };
 
 const isFilePath = (key: string) => {
-  return (
-    key.endsWith(".parquet") || key.endsWith(".csv") || key.endsWith(".json")
-  );
+  return key.endsWith(".parquet") || key.endsWith(".csv") || key.endsWith(".json");
 };
 
 export const registerAuthenticatedFile = async (
   filePath: string,
   projectId: string,
-  branchName: string,
+  branchName: string
 ): Promise<string> => {
   const db = await getDuckDB();
   const file_name = `${btoa(filePath)}.parquet`;
@@ -190,7 +176,7 @@ export const registerAuthenticatedFile = async (
   const pathb64 = btoa(filePath);
   const response = await apiClient.get(`/${projectId}/app/file/${pathb64}`, {
     responseType: "arraybuffer",
-    params: { branch: branchName },
+    params: { branch: branchName }
   });
   const fileData = new Uint8Array(response.data);
 
@@ -201,6 +187,5 @@ export const registerAuthenticatedFile = async (
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const getArrowFieldType = (fieldName: string, schema: Schema<any>) => {
-  return schema.fields.find((f: { name: string }) => f.name === fieldName)
-    ?.type;
+  return schema.fields.find((f: { name: string }) => f.name === fieldName)?.type;
 };

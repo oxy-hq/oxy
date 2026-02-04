@@ -1,15 +1,15 @@
+import { Network } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from "@/components/ui/shadcn/select";
-import { Network } from "lucide-react";
-import { TIME_RANGE_OPTIONS, LIMIT_OPTIONS, type TimeRange } from "../../types";
-import SourceFilter from "./SourceFilter";
 import PageHeader from "@/pages/ide/components/PageHeader";
+import { LIMIT_OPTIONS, TIME_RANGE_OPTIONS, type TimeRange } from "../../types";
+import SourceFilter from "./SourceFilter";
 
 interface ClustersHeaderProps {
   timeRange: TimeRange;
@@ -26,7 +26,7 @@ export default function ClustersHeader({
   source,
   onTimeRangeChange,
   onLimitChange,
-  onSourceChange,
+  onSourceChange
 }: ClustersHeaderProps) {
   const actions = (
     <>
@@ -34,12 +34,9 @@ export default function ClustersHeader({
       <SourceFilter onSelect={onSourceChange} selectedSource={source} />
 
       {/* Limit Selector */}
-      <Select
-        value={limit.toString()}
-        onValueChange={(v) => onLimitChange(parseInt(v))}
-      >
-        <SelectTrigger className="w-28">
-          <SelectValue placeholder="Points" />
+      <Select value={limit.toString()} onValueChange={(v) => onLimitChange(parseInt(v, 10))}>
+        <SelectTrigger className='w-28'>
+          <SelectValue placeholder='Points' />
         </SelectTrigger>
         <SelectContent>
           {LIMIT_OPTIONS.map((option) => (
@@ -51,13 +48,13 @@ export default function ClustersHeader({
       </Select>
 
       {/* Time Filter */}
-      <div className="flex gap-1 border rounded-lg p-1 bg-muted/30">
+      <div className='flex gap-1 rounded-lg border bg-muted/30 p-1'>
         {TIME_RANGE_OPTIONS.map((option) => (
           <Button
             key={option.value}
             variant={timeRange === option.value ? "default" : "ghost"}
-            size="sm"
-            className="h-7 px-3"
+            size='sm'
+            className='h-7 px-3'
             onClick={() => onTimeRangeChange(option.value)}
           >
             {option.label}
@@ -70,8 +67,8 @@ export default function ClustersHeader({
   return (
     <PageHeader
       icon={Network}
-      title="Semantic Cluster Map"
-      description="Analyze user queries by semantic similarity"
+      title='Semantic Cluster Map'
+      description='Analyze user queries by semantic similarity'
       actions={actions}
     />
   );

@@ -1,6 +1,6 @@
-import { useRef, useEffect, useMemo } from "react";
-import * as echarts from "echarts";
 import { formatDistanceToNow } from "date-fns";
+import * as echarts from "echarts";
+import { useEffect, useMemo, useRef } from "react";
 import type { ClusterMapPoint, ClusterSummary } from "@/services/api/traces";
 
 interface ScatterPlotProps {
@@ -16,7 +16,7 @@ export function ScatterPlot({
   getPointColor,
   clusters,
   onPointClick,
-  selectedPoint,
+  selectedPoint
 }: ScatterPlotProps) {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
@@ -30,7 +30,7 @@ export function ScatterPlot({
     if (!chartRef.current) return;
 
     chartInstance.current = echarts.init(chartRef.current, undefined, {
-      renderer: "canvas",
+      renderer: "canvas"
     });
 
     const handleResize = () => {
@@ -63,7 +63,7 @@ export function ScatterPlot({
 
       return () => clearTimeout(timeoutId);
     }
-  }, [clusters.length, seriesData.length]);
+  }, []);
 
   useEffect(() => {
     if (!chartInstance.current) return;
@@ -87,25 +87,19 @@ export function ScatterPlot({
 
     // Always clear previous highlights first
     chartInstance.current.dispatchAction({
-      type: "downplay",
+      type: "downplay"
     });
 
     // Then highlight the new selected point
     if (selectedPoint) {
-      for (
-        let seriesIndex = 0;
-        seriesIndex < seriesData.length;
-        seriesIndex++
-      ) {
+      for (let seriesIndex = 0; seriesIndex < seriesData.length; seriesIndex++) {
         const series = seriesData[seriesIndex];
-        const dataIndex = series.data.findIndex(
-          (d) => d.point.traceId === selectedPoint.traceId,
-        );
+        const dataIndex = series.data.findIndex((d) => d.point.traceId === selectedPoint.traceId);
         if (dataIndex !== -1) {
           chartInstance.current.dispatchAction({
             type: "highlight",
             seriesIndex,
-            dataIndex,
+            dataIndex
           });
           break;
         }
@@ -113,13 +107,10 @@ export function ScatterPlot({
     }
   }, [selectedPoint, seriesData]);
 
-  return <div ref={chartRef} className="w-full h-full" />;
+  return <div ref={chartRef} className='h-full w-full' />;
 }
 
-function buildSeriesData(
-  points: ClusterMapPoint[],
-  clusters: ClusterSummary[],
-) {
+function buildSeriesData(points: ClusterMapPoint[], clusters: ClusterSummary[]) {
   // Create a lookup map for clusters for O(1) access
   const clusterMap = new Map(clusters.map((c) => [c.clusterId, c]));
   const grouped = new Map<number, ClusterMapPoint[]>();
@@ -146,28 +137,28 @@ function buildSeriesData(
       largeThreshold: 100,
       data: clusterPoints.map((p) => ({
         value: [p.x, p.y],
-        point: p,
+        point: p
       })),
       itemStyle: {
         color,
         borderColor: "#fff",
-        borderWidth: 1,
+        borderWidth: 1
         // Removed shadowBlur/shadowColor - expensive to render
       },
       emphasis: {
         itemStyle: {
           borderColor: "#fff",
-          borderWidth: 2,
+          borderWidth: 2
         },
-        scale: 1.5,
-      },
+        scale: 1.5
+      }
     };
   });
 }
 
 function buildChartOption(
   seriesData: ReturnType<typeof buildSeriesData>,
-  getPointColor: (point: ClusterMapPoint) => string,
+  getPointColor: (point: ClusterMapPoint) => string
 ): echarts.EChartsOption {
   return {
     animation: false,
@@ -179,14 +170,14 @@ function buildChartOption(
       left: "center",
       top: 8,
       textStyle: { color: "#ccc", fontSize: 14, fontWeight: "normal" },
-      subtextStyle: { color: "#888", fontSize: 11 },
+      subtextStyle: { color: "#888", fontSize: 11 }
     },
     grid: {
       left: 60,
       right: 40,
       top: 70,
       bottom: 80,
-      containLabel: false,
+      containLabel: false
     },
     xAxis: {
       type: "value",
@@ -197,9 +188,9 @@ function buildChartOption(
       nameTextStyle: { color: "#888", fontSize: 12 },
       axisLine: { lineStyle: { color: "#666" } },
       splitLine: {
-        lineStyle: { color: "rgba(128, 128, 128, 0.2)", type: "dashed" },
+        lineStyle: { color: "rgba(128, 128, 128, 0.2)", type: "dashed" }
       },
-      axisLabel: { color: "#888" },
+      axisLabel: { color: "#888" }
     },
     yAxis: {
       type: "value",
@@ -210,9 +201,9 @@ function buildChartOption(
       nameTextStyle: { color: "#888", fontSize: 12 },
       axisLine: { lineStyle: { color: "#666" } },
       splitLine: {
-        lineStyle: { color: "rgba(128, 128, 128, 0.2)", type: "dashed" },
+        lineStyle: { color: "rgba(128, 128, 128, 0.2)", type: "dashed" }
       },
-      axisLabel: { color: "#888" },
+      axisLabel: { color: "#888" }
     },
     tooltip: {
       trigger: "item",
@@ -225,7 +216,7 @@ function buildChartOption(
       appendToBody: true, // Render outside chart container for better perf
       formatter: (params: unknown) => {
         return formatTooltip(params, getPointColor);
-      },
+      }
     },
     legend: {
       show: true,
@@ -237,20 +228,17 @@ function buildChartOption(
       pageTextStyle: { color: "#888" },
       itemWidth: 12,
       itemHeight: 12,
-      itemGap: 20,
+      itemGap: 20
     },
     dataZoom: [
       { type: "inside", xAxisIndex: 0, filterMode: "none" },
-      { type: "inside", yAxisIndex: 0, filterMode: "none" },
+      { type: "inside", yAxisIndex: 0, filterMode: "none" }
     ],
-    series: seriesData,
+    series: seriesData
   };
 }
 
-function formatTooltip(
-  params: unknown,
-  getPointColor: (point: ClusterMapPoint) => string,
-): string {
+function formatTooltip(params: unknown, getPointColor: (point: ClusterMapPoint) => string): string {
   const p = params as { data?: { point?: ClusterMapPoint } };
   const point = p.data?.point;
   if (!point) return "";

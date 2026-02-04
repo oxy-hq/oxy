@@ -1,11 +1,12 @@
-import React, { useState } from "react";
 import { Trash2 } from "lucide-react";
+import type React from "react";
+import { useState } from "react";
+import { Badge } from "@/components/ui/shadcn/badge";
 import { Button } from "@/components/ui/shadcn/button";
 import { TableCell, TableRow } from "@/components/ui/shadcn/table";
-import { Badge } from "@/components/ui/shadcn/badge";
-import { ApiKeyService } from "@/services/api/apiKey";
-import { ApiKey } from "@/types/apiKey";
 import { useRevokeApiKey } from "@/hooks/api/apiKeys/useApiKeyMutations";
+import { ApiKeyService } from "@/services/api/apiKey";
+import type { ApiKey } from "@/types/apiKey";
 import DeleteApiKeyDialog from "./DeleteApiKeyDialog";
 
 interface Props {
@@ -43,26 +44,22 @@ const ApiKeyRow: React.FC<Props> = ({ apiKey }) => {
 
   const getStatusBadge = () => {
     if (!apiKey.is_active) {
-      return <Badge variant="destructive">Revoked</Badge>;
+      return <Badge variant='destructive'>Revoked</Badge>;
     }
 
     if (ApiKeyService.isExpired(apiKey.expires_at)) {
-      return <Badge variant="destructive">Expired</Badge>;
+      return <Badge variant='destructive'>Expired</Badge>;
     }
 
-    const timeUntilExpiration = ApiKeyService.getTimeUntilExpiration(
-      apiKey.expires_at,
-    );
+    const timeUntilExpiration = ApiKeyService.getTimeUntilExpiration(apiKey.expires_at);
     if (timeUntilExpiration === null) {
-      return <Badge variant="default">Active</Badge>;
+      return <Badge variant='default'>Active</Badge>;
     }
 
     return (
-      <div className="flex items-center gap-2">
-        <Badge variant="default">Active</Badge>
-        <span className="text-sm text-muted-foreground">
-          Expires in {timeUntilExpiration}
-        </span>
+      <div className='flex items-center gap-2'>
+        <Badge variant='default'>Active</Badge>
+        <span className='text-muted-foreground text-sm'>Expires in {timeUntilExpiration}</span>
       </div>
     );
   };
@@ -71,11 +68,9 @@ const ApiKeyRow: React.FC<Props> = ({ apiKey }) => {
     <TableRow key={apiKey.id}>
       <TableCell>
         <div>
-          <div className="font-medium">{apiKey.name}</div>
+          <div className='font-medium'>{apiKey.name}</div>
           {apiKey.masked_key && (
-            <div className="text-sm text-muted-foreground font-mono">
-              {apiKey.masked_key}
-            </div>
+            <div className='font-mono text-muted-foreground text-sm'>{apiKey.masked_key}</div>
           )}
         </div>
       </TableCell>
@@ -83,13 +78,8 @@ const ApiKeyRow: React.FC<Props> = ({ apiKey }) => {
       <TableCell>{formatLastUsed()}</TableCell>
       <TableCell>{ApiKeyService.formatDate(apiKey.created_at)}</TableCell>
       <TableCell>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={openDeleteDialog}
-          disabled={!apiKey.is_active}
-        >
-          <Trash2 className="!text-destructive" />
+        <Button variant='ghost' size='sm' onClick={openDeleteDialog} disabled={!apiKey.is_active}>
+          <Trash2 className='!text-destructive' />
         </Button>
       </TableCell>
       <DeleteApiKeyDialog

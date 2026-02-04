@@ -7,19 +7,12 @@ export const openSecureWindow = (url: string): Window | null => {
   const dualScreenLeft = window.screenLeft ?? window.screenX;
   const dualScreenTop = window.screenTop ?? window.screenY;
   const windowWidth = window.innerWidth ?? document.documentElement.clientWidth;
-  const windowHeight =
-    window.innerHeight ?? document.documentElement.clientHeight;
+  const windowHeight = window.innerHeight ?? document.documentElement.clientHeight;
 
   // Calculate centered position
   const left = dualScreenLeft + (windowWidth - 600) / 2;
   const top = dualScreenTop + (windowHeight - 700) / 2;
-  const features = [
-    "popup=yes",
-    "width=600",
-    "height=700",
-    `left=${left}`,
-    `top=${top}`,
-  ].join(",");
+  const features = ["popup=yes", "width=600", "height=700", `left=${left}`, `top=${top}`].join(",");
 
   const newWindow = window.open(url, "_blank", features);
   if (newWindow) {
@@ -33,9 +26,7 @@ export const openSecureWindow = (url: string): Window | null => {
  * @param installUrl The installation URL from the API
  * @returns Window reference or null if blocked
  */
-export const openGitHubAppInstallation = async (
-  installUrl: string,
-): Promise<Window | null> => {
+export const openGitHubAppInstallation = async (installUrl: string): Promise<Window | null> => {
   return openSecureWindow(installUrl);
 };
 

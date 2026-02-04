@@ -1,21 +1,20 @@
 import { useMemo } from "react";
-
+import { Combobox, type ComboboxStyles } from "@/components/ui/shadcn/combobox";
+import { NodeAppendix } from "@/components/ui/shadcn/node-appendix";
+import { useSelectedLoopIndex } from "@/components/workflow/useWorkflowRun";
+import type { TaskRun } from "@/services/types";
+import { useBlockStore } from "@/stores/block";
 import useWorkflow, {
-  LoopSequentialTaskConfig,
-  TaskConfigWithId,
+  type LoopSequentialTaskConfig,
+  type TaskConfigWithId
 } from "@/stores/useWorkflow";
 import {
   distanceBetweenHeaderAndContent,
   headerHeight,
   nodeBorderHeight,
-  paddingHeight,
+  paddingHeight
 } from "../../layout/constants";
 import { NodeHeader } from "./NodeHeader";
-import { NodeAppendix } from "@/components/ui/shadcn/node-appendix";
-import { TaskRun } from "@/services/types";
-import { Combobox, ComboboxStyles } from "@/components/ui/shadcn/combobox";
-import { useBlockStore } from "@/stores/block";
-import { useSelectedLoopIndex } from "@/components/workflow/useWorkflowRun";
 
 type Props = {
   parentId?: string;
@@ -25,24 +24,15 @@ type Props = {
   expanded?: boolean;
 };
 
-export function LoopSequentialNode({
-  parentId,
-  task,
-  taskRun,
-  loopRuns,
-  expanded,
-}: Props) {
+export function LoopSequentialNode({ parentId, task, taskRun, loopRuns, expanded }: Props) {
   const nodes = useWorkflow((state) => state.nodes);
   const setNodeExpanded = useWorkflow((state) => state.setNodeExpanded);
   const tasks = (task as LoopSequentialTaskConfig).tasks;
   const expandable = useMemo(() => tasks.length > 0, [tasks]);
-  const setSelectedLoopIndex = useBlockStore(
-    (state) => state.setSelectedLoopIndex,
-  );
+  const setSelectedLoopIndex = useBlockStore((state) => state.setSelectedLoopIndex);
   const selectedLoopIndex = useSelectedLoopIndex(task);
   const parentNode = nodes.find((n) => n.id === parentId);
-  const appendixPosition =
-    parentNode?.data.task.type === "loop_sequential" ? "left" : "right";
+  const appendixPosition = parentNode?.data.task.type === "loop_sequential" ? "left" : "right";
 
   const node = nodes.find((n) => n.id === task.id);
   const onExpandClick = () => {
@@ -50,16 +40,13 @@ export function LoopSequentialNode({
   };
   if (!node || !node.height) return null;
   const usedHeight =
-    headerHeight +
-    distanceBetweenHeaderAndContent +
-    paddingHeight +
-    nodeBorderHeight;
+    headerHeight + distanceBetweenHeaderAndContent + paddingHeight + nodeBorderHeight;
   const childSpace = node.height - usedHeight;
   return (
     <>
       {!!taskRun?.loopValue?.length && expanded ? (
         <NodeAppendix position={appendixPosition}>
-          <p className="text-muted-foreground text-sm pb-2">Loop value</p>
+          <p className='pb-2 text-muted-foreground text-sm'>Loop value</p>
           <Combobox
             value={selectedLoopIndex?.toString()}
             onValueChange={(value) => setSelectedLoopIndex(task, +value)}
@@ -78,8 +65,8 @@ export function LoopSequentialNode({
                     }
                     return "success";
                   },
-                  undefined as ComboboxStyles | undefined,
-                ),
+                  undefined as ComboboxStyles | undefined
+                )
             }))}
           />
         </NodeAppendix>
@@ -91,11 +78,7 @@ export function LoopSequentialNode({
         expanded={expanded}
         onExpandClick={onExpandClick}
       />
-      {expandable && expanded && (
-        <>
-          <div style={{ height: `${childSpace}px` }}></div>
-        </>
-      )}
+      {expandable && expanded && <div style={{ height: `${childSpace}px` }}></div>}
     </>
   );
 }

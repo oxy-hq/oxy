@@ -1,4 +1,4 @@
-import { Page, Locator, expect } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 export class ThreadsPage {
   readonly page: Page;
@@ -44,9 +44,7 @@ export class ThreadsPage {
   }
 
   async verifyThreadHasAgent(index: number, agentType: string) {
-    const agentBadge = this.threadItems
-      .nth(index)
-      .getByTestId("thread-agent-type");
+    const agentBadge = this.threadItems.nth(index).getByTestId("thread-agent-type");
     await expect(agentBadge).toContainText(agentType);
   }
 
@@ -69,28 +67,22 @@ export class ThreadsPage {
 
   async verifyCurrentPage(pageNumber: number) {
     const currentPageLink = this.page.getByRole("link", {
-      name: String(pageNumber),
+      name: String(pageNumber)
     });
     await expect(currentPageLink).toHaveAttribute("aria-current", "page");
   }
 
   async verifyNextButtonDisabled() {
-    await expect(
-      this.page.getByRole("button", { name: /next/i }),
-    ).toBeDisabled();
+    await expect(this.page.getByRole("button", { name: /next/i })).toBeDisabled();
   }
 
   async verifyPreviousButtonDisabled() {
-    await expect(
-      this.page.getByRole("button", { name: /previous/i }),
-    ).toBeDisabled();
+    await expect(this.page.getByRole("button", { name: /previous/i })).toBeDisabled();
   }
 
   async selectItemsPerPage(count: number) {
     await this.itemsPerPageSelector.click();
-    await this.page
-      .getByRole("menuitemcheckbox", { name: String(count) })
-      .click();
+    await this.page.getByRole("menuitemcheckbox", { name: String(count) }).click();
     await this.page.waitForURL(new RegExp(`limit=${count}`));
   }
 
@@ -99,9 +91,7 @@ export class ThreadsPage {
   }
 
   async selectThread(index: number) {
-    const checkbox = this.threadItems
-      .nth(index)
-      .locator('input[type="checkbox"]');
+    const checkbox = this.threadItems.nth(index).locator('input[type="checkbox"]');
     await checkbox.click();
   }
 
@@ -118,9 +108,7 @@ export class ThreadsPage {
   }
 
   async verifyThreadTimestamp(index: number) {
-    const timestamp = this.threadItems
-      .nth(index)
-      .getByTestId("thread-timestamp");
+    const timestamp = this.threadItems.nth(index).getByTestId("thread-timestamp");
     await expect(timestamp).toBeVisible();
   }
 }

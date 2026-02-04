@@ -1,10 +1,10 @@
-import { apiClient } from "./axios";
-import {
-  ExecutionSummary,
-  ExecutionTimeBucket,
+import type {
   AgentExecutionStats,
   ExecutionDetail,
+  ExecutionSummary,
+  ExecutionTimeBucket
 } from "@/pages/ide/observability/execution-analytics/types";
+import { apiClient } from "./axios";
 
 export interface ExecutionListResponse {
   executions: ExecutionDetail[];
@@ -37,18 +37,14 @@ export interface ExecutionsQuery {
 }
 
 export class ExecutionAnalyticsService {
-  static async getSummary(
-    projectId: string,
-    params?: SummaryQuery,
-  ): Promise<ExecutionSummary> {
+  static async getSummary(projectId: string, params?: SummaryQuery): Promise<ExecutionSummary> {
     const urlParams = new URLSearchParams();
-    if (params?.days !== undefined)
-      urlParams.append("days", params.days.toString());
+    if (params?.days !== undefined) urlParams.append("days", params.days.toString());
 
     let url = `/${projectId}/execution-analytics/summary`;
     const paramsStr = urlParams.toString();
     if (paramsStr) {
-      url += "?" + paramsStr;
+      url += `?${paramsStr}`;
     }
     const response = await apiClient.get(url);
     return response.data;
@@ -56,16 +52,15 @@ export class ExecutionAnalyticsService {
 
   static async getTimeSeries(
     projectId: string,
-    params?: TimeSeriesQuery,
+    params?: TimeSeriesQuery
   ): Promise<ExecutionTimeBucket[]> {
     const urlParams = new URLSearchParams();
-    if (params?.days !== undefined)
-      urlParams.append("days", params.days.toString());
+    if (params?.days !== undefined) urlParams.append("days", params.days.toString());
 
     let url = `/${projectId}/execution-analytics/time-series`;
     const paramsStr = urlParams.toString();
     if (paramsStr) {
-      url += "?" + paramsStr;
+      url += `?${paramsStr}`;
     }
     const response = await apiClient.get(url);
     return response.data;
@@ -73,18 +68,16 @@ export class ExecutionAnalyticsService {
 
   static async getAgentStats(
     projectId: string,
-    params?: AgentStatsQuery,
+    params?: AgentStatsQuery
   ): Promise<AgentExecutionStats[]> {
     const urlParams = new URLSearchParams();
-    if (params?.days !== undefined)
-      urlParams.append("days", params.days.toString());
-    if (params?.limit !== undefined)
-      urlParams.append("limit", params.limit.toString());
+    if (params?.days !== undefined) urlParams.append("days", params.days.toString());
+    if (params?.limit !== undefined) urlParams.append("limit", params.limit.toString());
 
     let url = `/${projectId}/execution-analytics/agents`;
     const paramsStr = urlParams.toString();
     if (paramsStr) {
-      url += "?" + paramsStr;
+      url += `?${paramsStr}`;
     }
     const response = await apiClient.get(url);
     return response.data;
@@ -92,17 +85,13 @@ export class ExecutionAnalyticsService {
 
   static async getExecutions(
     projectId: string,
-    params?: ExecutionsQuery,
+    params?: ExecutionsQuery
   ): Promise<ExecutionListResponse> {
     const urlParams = new URLSearchParams();
-    if (params?.days !== undefined)
-      urlParams.append("days", params.days.toString());
-    if (params?.limit !== undefined)
-      urlParams.append("limit", params.limit.toString());
-    if (params?.offset !== undefined)
-      urlParams.append("offset", params.offset.toString());
-    if (params?.executionType)
-      urlParams.append("execution_type", params.executionType);
+    if (params?.days !== undefined) urlParams.append("days", params.days.toString());
+    if (params?.limit !== undefined) urlParams.append("limit", params.limit.toString());
+    if (params?.offset !== undefined) urlParams.append("offset", params.offset.toString());
+    if (params?.executionType) urlParams.append("execution_type", params.executionType);
     if (params?.isVerified !== undefined)
       urlParams.append("is_verified", params.isVerified.toString());
     if (params?.sourceRef) urlParams.append("source_ref", params.sourceRef);
@@ -111,7 +100,7 @@ export class ExecutionAnalyticsService {
     let url = `/${projectId}/execution-analytics/executions`;
     const paramsStr = urlParams.toString();
     if (paramsStr) {
-      url += "?" + paramsStr;
+      url += `?${paramsStr}`;
     }
     const response = await apiClient.get(url);
     return response.data;

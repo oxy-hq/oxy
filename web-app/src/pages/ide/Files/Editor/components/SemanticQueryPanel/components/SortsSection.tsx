@@ -1,5 +1,5 @@
+import type { Field, Order } from "../../../types";
 import SortRow from "./SortRow";
-import { Field, Order } from "../../../types";
 
 interface SortsSectionProps {
   orders: Order[];
@@ -12,12 +12,12 @@ const SortsSection = ({
   orders,
   availableFields,
   onUpdateOrder,
-  onRemoveOrder,
+  onRemoveOrder
 }: SortsSectionProps) => {
   if (orders.length === 0) return null;
 
   return (
-    <div className="border-b p-3 space-y-2 w-full flex flex-col">
+    <div className='flex w-full flex-col space-y-2 border-b p-3'>
       <div>Sorts</div>
       {orders.map((order, index) => (
         <SortRow

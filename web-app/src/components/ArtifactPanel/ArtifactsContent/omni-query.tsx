@@ -1,7 +1,7 @@
-import SqlResultsTable from "@/components/sql/SqlResultsTable";
-import { OmniQueryArtifact } from "@/types/artifact";
 import { Editor } from "@monaco-editor/react";
 import { Loader2 } from "lucide-react";
+import SqlResultsTable from "@/components/sql/SqlResultsTable";
+import type { OmniQueryArtifact } from "@/types/artifact";
 
 type Props = {
   artifact: OmniQueryArtifact;
@@ -24,28 +24,18 @@ const getCleanOmniObject = (value: OmniQueryArtifact["content"]["value"]) => {
 
 const OmniQueryArtifactPanel = ({ artifact }: Props) => {
   return (
-    <div className="flex flex-col h-full">
+    <div className='flex h-full flex-col'>
       {/* Omni Query JSON Section */}
-      <div className="p-4 border-b">
-        <h4 className="font-medium text-sm mb-2">Omni Query</h4>
+      <div className='border-b p-4'>
+        <h4 className='mb-2 font-medium text-sm'>Omni Query</h4>
         <Editor
-          height="200px"
-          width="100%"
-          theme="vs-dark"
-          defaultValue={JSON.stringify(
-            getCleanOmniObject(artifact.content.value),
-            null,
-            2,
-          )}
-          language="json"
-          value={JSON.stringify(
-            getCleanOmniObject(artifact.content.value),
-            null,
-            2,
-          )}
-          loading={
-            <Loader2 className="w-4 h-4 animate-[spin_0.2s_linear_infinite] text-[white]" />
-          }
+          height='200px'
+          width='100%'
+          theme='vs-dark'
+          defaultValue={JSON.stringify(getCleanOmniObject(artifact.content.value), null, 2)}
+          language='json'
+          value={JSON.stringify(getCleanOmniObject(artifact.content.value), null, 2)}
+          loading={<Loader2 className='h-4 w-4 animate-[spin_0.2s_linear_infinite] text-[white]' />}
           options={{
             readOnly: true,
             scrollBeyondLastLine: false,
@@ -53,38 +43,35 @@ const OmniQueryArtifactPanel = ({ artifact }: Props) => {
             formatOnType: true,
             automaticLayout: true,
             minimap: { enabled: false },
-            wordWrap: "on",
+            wordWrap: "on"
           }}
         />
       </div>
 
-      <h4 className="font-medium text-sm mb-2">Generated SQL</h4>
+      <h4 className='mb-2 font-medium text-sm'>Generated SQL</h4>
       {/* Generated SQL Section */}
-      <div className="flex-1">
+      <div className='flex-1'>
         <Editor
-          height="100%"
-          width="100%"
-          theme="vs-dark"
+          height='100%'
+          width='100%'
+          theme='vs-dark'
           defaultValue={artifact.content.value.sql}
-          language="sql"
+          language='sql'
           value={artifact.content.value.sql}
-          loading={
-            <Loader2 className="w-4 h-4 animate-[spin_0.2s_linear_infinite] text-[white]" />
-          }
+          loading={<Loader2 className='h-4 w-4 animate-[spin_0.2s_linear_infinite] text-[white]' />}
           options={{
             readOnly: true,
             scrollBeyondLastLine: true,
             formatOnPaste: true,
             formatOnType: true,
-            automaticLayout: true,
+            automaticLayout: true
           }}
         />
       </div>
 
       {/* Results Section */}
-      <div className="flex-1 overflow-auto">
-        {(artifact.content.value.result ||
-          artifact.content.value.result_file) && (
+      <div className='flex-1 overflow-auto'>
+        {(artifact.content.value.result || artifact.content.value.result_file) && (
           <SqlResultsTable
             result={artifact.content.value.result}
             resultFile={artifact.content.value.result_file}

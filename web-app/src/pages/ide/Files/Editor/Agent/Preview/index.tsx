@@ -1,16 +1,16 @@
-import { Button } from "@/components/ui/shadcn/button";
-import { Textarea } from "@/components/ui/shadcn/textarea";
 import { cx } from "class-variance-authority";
 import { ArrowUp, Loader2 } from "lucide-react";
-import { useEnterSubmit } from "@/hooks/useEnterSubmit";
-import Messages from "./Messages";
-import useAgent from "@/hooks/api/agents/useAgent";
-import EmptyState from "@/components/ui/EmptyState";
-import useAskAgent from "@/hooks/messaging/agent";
-import useAgentThreadStore from "@/stores/useAgentThread";
 import { useState } from "react";
-import ArtifactPanelContainer from "./ArtifactPanelContainer";
+import EmptyState from "@/components/ui/EmptyState";
+import { Button } from "@/components/ui/shadcn/button";
+import { Textarea } from "@/components/ui/shadcn/textarea";
+import useAgent from "@/hooks/api/agents/useAgent";
+import useAskAgent from "@/hooks/messaging/agent";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { useEnterSubmit } from "@/hooks/useEnterSubmit";
+import useAgentThreadStore from "@/stores/useAgentThread";
+import ArtifactPanelContainer from "./ArtifactPanelContainer";
+import Messages from "./Messages";
 
 const getAgentNameFromPath = (path: string) => {
   const parts = path.split("/");
@@ -43,32 +43,29 @@ const AgentPreview = ({ agentPathb64 }: { agentPathb64: string }) => {
   const agentName = agent?.name ?? getAgentNameFromPath(path);
 
   return (
-    <div className="flex flex-col h-full justify-between overflow-hidden">
-      <div className="flex-1 flex flex-col overflow-auto customScrollbar scrollbar-gutter-auto">
-        <div className="flex flex-col gap-4 p-4">
+    <div className='flex h-full flex-col justify-between overflow-hidden'>
+      <div className='customScrollbar scrollbar-gutter-auto flex flex-1 flex-col overflow-auto'>
+        <div className='flex flex-col gap-4 p-4'>
           {messages.length === 0 ? (
             <EmptyState
-              className="h-full"
-              title="No messages yet"
+              className='h-full'
+              title='No messages yet'
               description={`Ask the ${agentName} agent a question to get started`}
             />
           ) : (
-            <Messages
-              messages={messages}
-              onArtifactClick={handleArtifactClick}
-            />
+            <Messages messages={messages} onArtifactClick={handleArtifactClick} />
           )}
         </div>
       </div>
-      <div className="p-4">
+      <div className='p-4'>
         <form
           ref={formRef}
           onSubmit={handleFormSubmit}
-          className="w-full max-w-[672px] flex p-2 flex gap-1 shadow-sm rounded-md border-2 mx-auto"
+          className='mx-auto flex w-full max-w-[672px] gap-1 rounded-md border-2 p-2 shadow-sm'
         >
           <Textarea
             disabled={isLoading}
-            name="question"
+            name='question'
             autoFocus
             onKeyDown={onKeyDown}
             onChange={(e) => setQuestion(e.target.value)}
@@ -77,13 +74,13 @@ const AgentPreview = ({ agentPathb64 }: { agentPathb64: string }) => {
               "border-none shadow-none",
               "hover:border-none focus-visible:border-none focus-visible:shadow-none",
               "focus-visible:ring-0 focus-visible:ring-offset-0",
-              "outline-none resize-none",
-              "min-h-[32px] box-border",
+              "resize-none outline-none",
+              "box-border min-h-[32px]"
             )}
             placeholder={`Ask the ${agentName} agent a question`}
           />
-          <Button className="w-8 h-8" disabled={!question} type="submit">
-            {isLoading ? <Loader2 className="animate-spin" /> : <ArrowUp />}
+          <Button className='h-8 w-8' disabled={!question} type='submit'>
+            {isLoading ? <Loader2 className='animate-spin' /> : <ArrowUp />}
           </Button>
         </form>
       </div>

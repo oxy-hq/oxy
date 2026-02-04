@@ -1,7 +1,4 @@
-export function getTimelineSpanColor(
-  spanName: string,
-  statusCode: string,
-): string {
+export function getTimelineSpanColor(spanName: string, statusCode: string): string {
   if (statusCode === "ERROR") return "bg-destructive";
   if (spanName.includes("llm")) return "bg-purple-500";
   if (spanName.includes("tool")) return "bg-amber-500";

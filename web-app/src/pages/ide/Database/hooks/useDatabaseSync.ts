@@ -42,7 +42,7 @@ export const useDatabaseSync = ({ projectId, branchName, refetch }: UseDatabaseS
         setSyncingDatabase(null);
       }
     },
-    [projectId, branchName, refetch],
+    [projectId, branchName, refetch]
   );
 
   return { syncingDatabase, syncErrors, handleSyncDatabase };

@@ -5,12 +5,12 @@ import {
   SidebarMenuItem,
   SidebarMenuSub,
   SidebarMenuSubButton,
-  SidebarMenuSubItem,
+  SidebarMenuSubItem
 } from "@/components/ui/shadcn/sidebar";
 import useApps from "@/hooks/api/apps/useApps";
-import ItemsSkeleton from "./ItemsSkeleton";
-import ROUTES from "@/libs/utils/routes";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import ROUTES from "@/libs/utils/routes";
+import ItemsSkeleton from "./ItemsSkeleton";
 
 export function Apps() {
   const location = useLocation();
@@ -26,7 +26,7 @@ export function Apps() {
           <span>Apps</span>
         </div>
       </SidebarMenuButton>
-      <SidebarMenuSub className="ml-4">
+      <SidebarMenuSub className='ml-4'>
         {isPending && <ItemsSkeleton />}
 
         {!isPending &&
@@ -35,10 +35,7 @@ export function Apps() {
             const appUri = ROUTES.PROJECT(projectId).APP(pathb64);
             return (
               <SidebarMenuSubItem key={pathb64}>
-                <SidebarMenuSubButton
-                  asChild
-                  isActive={location.pathname === appUri}
-                >
+                <SidebarMenuSubButton asChild isActive={location.pathname === appUri}>
                   <Link to={appUri} data-testid={`app-link-${app.name}`}>
                     <span>{app.name}</span>
                   </Link>

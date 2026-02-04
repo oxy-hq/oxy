@@ -1,4 +1,4 @@
-import { Page, Locator, expect } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 export class NavigationPage {
   readonly page: Page;
@@ -40,15 +40,11 @@ export class NavigationPage {
   }
 
   async verifyPageLoaded(pageName: string) {
-    await expect(
-      this.page.getByRole("heading", { name: pageName, level: 1 }),
-    ).toBeVisible();
+    await expect(this.page.getByRole("heading", { name: pageName, level: 1 })).toBeVisible();
   }
 
   async verifySidebarThreadLinkExists(threadId: string) {
-    await expect(
-      this.page.getByTestId(`sidebar-thread-link-${threadId}`),
-    ).toBeVisible();
+    await expect(this.page.getByTestId(`sidebar-thread-link-${threadId}`)).toBeVisible();
   }
 
   async clickSidebarThreadLink(threadId: string) {
@@ -65,9 +61,7 @@ export class NavigationPage {
   }
 
   async verifyWorkflowLink(workflowName: string) {
-    await expect(
-      this.page.getByTestId(`workflow-link-${workflowName}`),
-    ).toBeVisible();
+    await expect(this.page.getByTestId(`workflow-link-${workflowName}`)).toBeVisible();
   }
 
   async clickWorkflowLink(workflowName: string) {

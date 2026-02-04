@@ -7,7 +7,7 @@ export enum FileType {
   SQL = "sql",
   VIEW = "view",
   TOPIC = "topic",
-  DEFAULT = "default",
+  DEFAULT = "default"
 }
 
 export interface FileTypeConfig {
@@ -19,54 +19,49 @@ export interface FileTypeConfig {
 export const FILE_TYPE_CONFIGS: Record<FileType, FileTypeConfig> = {
   [FileType.WORKFLOW]: {
     type: FileType.WORKFLOW,
-    extensions: [
-      ".workflow.yml",
-      ".workflow.yaml",
-      ".automation.yml",
-      ".automation.yaml",
-    ],
-    editorComponent: "WorkflowEditor",
+    extensions: [".workflow.yml", ".workflow.yaml", ".automation.yml", ".automation.yaml"],
+    editorComponent: "WorkflowEditor"
   },
   [FileType.AUTOMATION]: {
     type: FileType.AUTOMATION,
     extensions: [".automation.yml", ".automation.yaml"],
-    editorComponent: "WorkflowEditor",
+    editorComponent: "WorkflowEditor"
   },
   [FileType.AGENT]: {
     type: FileType.AGENT,
     extensions: [".agent.yml", ".agent.yaml"],
-    editorComponent: "AgentEditor",
+    editorComponent: "AgentEditor"
   },
   [FileType.AGENTIC_WORKFLOW]: {
     type: FileType.AGENTIC_WORKFLOW,
     extensions: [".aw.yml", ".aw.yaml"],
-    editorComponent: "WorkflowEditor",
+    editorComponent: "WorkflowEditor"
   },
   [FileType.APP]: {
     type: FileType.APP,
     extensions: [".app.yml", ".app.yaml"],
-    editorComponent: "AppEditor",
+    editorComponent: "AppEditor"
   },
   [FileType.SQL]: {
     type: FileType.SQL,
     extensions: [".sql"],
-    editorComponent: "SqlEditor",
+    editorComponent: "SqlEditor"
   },
   [FileType.VIEW]: {
     type: FileType.VIEW,
     extensions: [".view.yml", ".view.yaml"],
-    editorComponent: "ViewEditor",
+    editorComponent: "ViewEditor"
   },
   [FileType.TOPIC]: {
     type: FileType.TOPIC,
     extensions: [".topic.yml", ".topic.yaml"],
-    editorComponent: "TopicEditor",
+    editorComponent: "TopicEditor"
   },
   [FileType.DEFAULT]: {
     type: FileType.DEFAULT,
     extensions: [],
-    editorComponent: "DefaultEditor",
-  },
+    editorComponent: "DefaultEditor"
+  }
 };
 
 export const detectFileType = (filePath: string): FileType => {

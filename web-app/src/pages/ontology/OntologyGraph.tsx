@@ -1,43 +1,43 @@
-import { useMemo, useState, useEffect, useCallback } from "react";
 import {
-  ReactFlow,
-  Node,
-  Edge,
-  useNodesState,
-  useEdgesState,
   Background,
-  Panel,
-  NodeProps,
+  type Edge,
   Handle,
+  type Node,
+  type NodeProps,
+  Panel,
   Position,
+  ReactFlow,
   ReactFlowProvider,
+  useEdgesState,
+  useNodesState
 } from "@xyflow/react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import "@xyflow/react/dist/style.css";
 import {
-  OntologyGraph as OntologyGraphType,
-  OntologyNode as OntologyNodeType,
-} from "@/types/ontology";
-import {
-  Table2,
-  Layout,
   BookOpen,
-  Workflow as WorkflowIcon,
-  FileCode2,
   Bot,
-  Filter,
   Box,
+  FileCode2,
+  Filter,
+  Layout,
+  Table2,
+  Workflow as WorkflowIcon
 } from "lucide-react";
+import { useMediaQuery } from "usehooks-ts";
+import { Button } from "@/components/ui/shadcn/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from "@/components/ui/shadcn/select";
-import { Button } from "@/components/ui/shadcn/button";
 import { SidebarTrigger } from "@/components/ui/shadcn/sidebar";
 import useSidebar from "@/components/ui/shadcn/sidebar-context";
-import { useMediaQuery } from "usehooks-ts";
+import type {
+  OntologyGraph as OntologyGraphType,
+  OntologyNode as OntologyNodeType
+} from "@/types/ontology";
 import { NodeDetailPanel } from "./NodeDetailPanel";
 
 type FocusType =
@@ -68,19 +68,19 @@ const OntologyNode = ({ data }: NodeProps) => {
     view: "view",
     sql_query: "sql_query",
     table: "table",
-    entity: "entity",
+    entity: "entity"
   };
 
   const icons = {
-    agent: <Bot className="w-4 h-4" />,
-    workflow: <WorkflowIcon className="w-4 h-4" />,
-    app: <WorkflowIcon className="w-4 h-4" />,
-    automation: <WorkflowIcon className="w-4 h-4" />,
-    topic: <BookOpen className="w-4 h-4" />,
-    view: <Layout className="w-4 h-4" />,
-    sql_query: <FileCode2 className="w-4 h-4" />,
-    table: <Table2 className="w-4 h-4" />,
-    entity: <Box className="w-4 h-4" />,
+    agent: <Bot className='h-4 w-4' />,
+    workflow: <WorkflowIcon className='h-4 w-4' />,
+    app: <WorkflowIcon className='h-4 w-4' />,
+    automation: <WorkflowIcon className='h-4 w-4' />,
+    topic: <BookOpen className='h-4 w-4' />,
+    view: <Layout className='h-4 w-4' />,
+    sql_query: <FileCode2 className='h-4 w-4' />,
+    table: <Table2 className='h-4 w-4' />,
+    entity: <Box className='h-4 w-4' />
   };
 
   const bgColors = {
@@ -92,7 +92,7 @@ const OntologyNode = ({ data }: NodeProps) => {
     view: "#dcfce7",
     sql_query: "#fef3c7",
     table: "#dbeafe",
-    entity: "#fce7f3",
+    entity: "#fce7f3"
   };
 
   const borderColors = {
@@ -104,7 +104,7 @@ const OntologyNode = ({ data }: NodeProps) => {
     view: "#86efac",
     sql_query: "#fcd34d",
     table: "#93c5fd",
-    entity: "#f9a8d4",
+    entity: "#f9a8d4"
   };
 
   const opacity = nodeData.opacity ?? 1;
@@ -119,12 +119,12 @@ const OntologyNode = ({ data }: NodeProps) => {
         transform: `scale(${scale})`,
         transition: "opacity 0.3s ease, transform 0.3s ease",
         pointerEvents: opacity === 0 ? "none" : "auto",
-        zIndex: 10,
+        zIndex: 10
       }}
     >
       {/* Invisible handles centered for connections */}
       <Handle
-        type="target"
+        type='target'
         position={Position.Left}
         style={{
           opacity: 0,
@@ -134,11 +134,11 @@ const OntologyNode = ({ data }: NodeProps) => {
           background: "transparent",
           left: "50%",
           top: "50%",
-          transform: "translate(-50%, -50%)",
+          transform: "translate(-50%, -50%)"
         }}
       />
       <Handle
-        type="source"
+        type='source'
         position={Position.Right}
         style={{
           opacity: 0,
@@ -148,7 +148,7 @@ const OntologyNode = ({ data }: NodeProps) => {
           background: "transparent",
           left: "50%",
           top: "50%",
-          transform: "translate(-50%, -50%)",
+          transform: "translate(-50%, -50%)"
         }}
       />
       <div
@@ -163,13 +163,11 @@ const OntologyNode = ({ data }: NodeProps) => {
           color: "#000",
           cursor: "pointer",
           position: "relative",
-          zIndex: 1,
+          zIndex: 1
         }}
       >
         {icons[nodeData.type as keyof typeof icons]}
-        <div style={{ fontWeight: 600, fontSize: "14px", color: "#000" }}>
-          {nodeData.label}
-        </div>
+        <div style={{ fontWeight: 600, fontSize: "14px", color: "#000" }}>{nodeData.label}</div>
         <span
           style={{
             fontSize: "11px",
@@ -177,7 +175,7 @@ const OntologyNode = ({ data }: NodeProps) => {
             borderRadius: "4px",
             border: `1px solid ${borderColors[nodeData.type as keyof typeof borderColors]}`,
             background: "white",
-            color: "#000",
+            color: "#000"
           }}
         >
           {typeLabels[nodeData.type] || nodeData.type}
@@ -188,7 +186,7 @@ const OntologyNode = ({ data }: NodeProps) => {
 };
 
 const nodeTypes = {
-  ontology: OntologyNode,
+  ontology: OntologyNode
 };
 
 interface OntologyGraphProps {
@@ -203,9 +201,7 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
   });
 
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
-  const [selectedNode, setSelectedNode] = useState<OntologyNodeType | null>(
-    null,
-  );
+  const [selectedNode, setSelectedNode] = useState<OntologyNodeType | null>(null);
   const [expandAll, setExpandAll] = useState<boolean>(() => {
     const saved = localStorage.getItem("ontology-expand-all");
     return saved === "true";
@@ -235,8 +231,8 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
       if (!graph.has(edge.target)) {
         graph.set(edge.target, new Set());
       }
-      graph.get(edge.source)!.add(edge.target);
-      graph.get(edge.target)!.add(edge.source);
+      graph.get(edge.source)?.add(edge.target);
+      graph.get(edge.target)?.add(edge.source);
     });
     return graph;
   }, [data.edges]);
@@ -247,7 +243,7 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
       const connected = new Set<string>();
       const queue: Array<{ id: string; depth: number }> = nodeIds.map((id) => ({
         id,
-        depth: 0,
+        depth: 0
       }));
 
       while (queue.length > 0) {
@@ -272,7 +268,7 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
 
       return connected;
     },
-    [connectionGraph],
+    [connectionGraph]
   );
 
   // Handle node click
@@ -283,7 +279,7 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
       const ontologyNode = data.nodes.find((n) => n.id === node.id);
       setSelectedNode(ontologyNode || null);
     },
-    [data.nodes],
+    [data.nodes]
   );
 
   // Determine which nodes to show based on focus
@@ -293,9 +289,7 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
     }
 
     // Get nodes of the focused type
-    const focusedTypeNodes = data.nodes
-      .filter((n) => n.type === focusType)
-      .map((n) => n.id);
+    const focusedTypeNodes = data.nodes.filter((n) => n.type === focusType).map((n) => n.id);
 
     // Get all nodes connected to focused type
     return getConnectedNodes(focusedTypeNodes);
@@ -324,7 +318,7 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
 
       return { opacity, scale };
     },
-    [focusType, visibleNodes],
+    [focusType, visibleNodes]
   );
 
   // Helper function to group nodes into rows based on width
@@ -332,7 +326,7 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
     (
       nodeInfos: Array<{ node: OntologyNodeType; estimatedWidth: number }>,
       maxRowWidth: number,
-      padding: number,
+      padding: number
     ) => {
       const rows: Array<typeof nodeInfos> = [];
       let currentRow: typeof nodeInfos = [];
@@ -341,10 +335,7 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
       nodeInfos.forEach((nodeInfo) => {
         const nodeWidthWithPadding = nodeInfo.estimatedWidth + padding;
 
-        if (
-          currentRowWidth + nodeWidthWithPadding > maxRowWidth &&
-          currentRow.length > 0
-        ) {
+        if (currentRowWidth + nodeWidthWithPadding > maxRowWidth && currentRow.length > 0) {
           rows.push(currentRow);
           currentRow = [nodeInfo];
           currentRowWidth = nodeWidthWithPadding;
@@ -360,7 +351,7 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
 
       return rows;
     },
-    [],
+    []
   );
 
   // Helper function to convert a single row into ReactFlow nodes
@@ -369,11 +360,10 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
       row: Array<{ node: OntologyNodeType; estimatedWidth: number }>,
       rowIndex: number,
       padding: number,
-      rowHeight: number,
+      rowHeight: number
     ): Node[] => {
       const totalRowWidth =
-        row.reduce((sum, info) => sum + info.estimatedWidth + padding, 0) -
-        padding;
+        row.reduce((sum, info) => sum + info.estimatedWidth + padding, 0) - padding;
 
       let currentX = -totalRowWidth / 2;
       const nodes: Node[] = [];
@@ -388,13 +378,13 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
             label: node.label,
             type: node.type,
             opacity,
-            scale,
+            scale
           },
           position: {
             x: currentX,
-            y: rowIndex * rowHeight,
+            y: rowIndex * rowHeight
           },
-          zIndex: 10,
+          zIndex: 10
         });
 
         currentX += estimatedWidth + padding;
@@ -402,7 +392,7 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
 
       return nodes;
     },
-    [getNodeStyle],
+    [getNodeStyle]
   );
 
   // Transform ontology data into ReactFlow nodes
@@ -425,17 +415,13 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
       "view",
       "sql_query",
       "table",
-      "entity",
+      "entity"
     ];
 
     if (focusType !== "auto") {
       const otherTypes = types.filter((t) => t !== focusType);
       const halfLength = Math.floor(otherTypes.length / 2);
-      types = [
-        ...otherTypes.slice(0, halfLength),
-        focusType,
-        ...otherTypes.slice(halfLength),
-      ];
+      types = [...otherTypes.slice(0, halfLength), focusType, ...otherTypes.slice(halfLength)];
     }
 
     const rowHeight = 150;
@@ -458,26 +444,14 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
       const rows = groupNodesIntoRows(nodeInfos, maxRowWidth, padding);
 
       rows.forEach((row) => {
-        const rowNodes = createNodesFromRow(
-          row,
-          globalRowIndex,
-          padding,
-          rowHeight,
-        );
+        const rowNodes = createNodesFromRow(row, globalRowIndex, padding, rowHeight);
         reactFlowNodes.push(...rowNodes);
         globalRowIndex++;
       });
     });
 
     return reactFlowNodes;
-  }, [
-    data.nodes,
-    focusType,
-    visibleNodes,
-    getNodeStyle,
-    groupNodesIntoRows,
-    createNodesFromRow,
-  ]);
+  }, [data.nodes, focusType, groupNodesIntoRows, createNodesFromRow]);
 
   // Transform ontology edges into ReactFlow edges
   const initialEdges = useMemo(() => {
@@ -503,9 +477,9 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
           stroke: "#9ca3af",
           strokeWidth: 2,
           opacity: edgeVisible ? 1 : 0,
-          transition: "opacity 0.3s ease",
+          transition: "opacity 0.3s ease"
         },
-        zIndex: 0,
+        zIndex: 0
       };
     });
   }, [data.edges, initialNodes]);
@@ -528,9 +502,9 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
           data: {
             ...node.data,
             opacity: 1,
-            scale: 1,
-          },
-        })),
+            scale: 1
+          }
+        }))
       );
       return;
     }
@@ -547,8 +521,8 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
             data: {
               ...node.data,
               opacity: 1,
-              scale: 1,
-            },
+              scale: 1
+            }
           };
         } else if (connectedToFocused.has(node.id)) {
           return {
@@ -556,8 +530,8 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
             data: {
               ...node.data,
               opacity: 0.7,
-              scale: 0.8,
-            },
+              scale: 0.8
+            }
           };
         } else {
           return {
@@ -565,11 +539,11 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
             data: {
               ...node.data,
               opacity: 0,
-              scale: 0.6,
-            },
+              scale: 0.6
+            }
           };
         }
-      }),
+      })
     );
   }, [focusedNodeId, expandAll, getConnectedNodes, setNodes]);
 
@@ -597,10 +571,10 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
           ...edge,
           style: {
             ...edge.style,
-            opacity: edgeVisible ? 1 : 0,
-          },
+            opacity: edgeVisible ? 1 : 0
+          }
         };
-      }),
+      })
     );
   }, [nodes, setEdges]);
 
@@ -622,7 +596,7 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
     view: "Views",
     sql_query: "SQL Queries",
     table: "Tables",
-    entity: "Entities",
+    entity: "Entities"
   };
 
   return (
@@ -633,7 +607,7 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
             position: "absolute",
             top: "16px",
             left: "16px",
-            zIndex: 1000,
+            zIndex: 1000
           }}
         >
           <SidebarTrigger />
@@ -658,57 +632,53 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
       >
         <Background />
         <Panel
-          position="top-left"
-          className="bg-sidebar-background border border-sidebar-border rounded-lg shadow-lg p-4"
+          position='top-left'
+          className='rounded-lg border border-sidebar-border bg-sidebar-background p-4 shadow-lg'
           style={
             !open || isMobile
               ? { marginTop: "56px", transition: "margin-top 0.2s ease" }
               : { transition: "margin-top 0.2s ease" }
           }
         >
-          <div className="text-sm font-semibold mb-2 text-sidebar-foreground">
+          <div className='mb-2 font-semibold text-sidebar-foreground text-sm'>
             Ontology Overview
           </div>
           <div
-            className="space-y-1 text-sm text-sidebar-foreground/70"
-            data-testid="ontology-stats"
+            className='space-y-1 text-sidebar-foreground/70 text-sm'
+            data-testid='ontology-stats'
           >
-            <div className="flex justify-between gap-4">
+            <div className='flex justify-between gap-4'>
               <span>Total Nodes:</span>
               <span
-                className="font-medium text-sidebar-foreground"
-                data-testid="ontology-total-nodes"
+                className='font-medium text-sidebar-foreground'
+                data-testid='ontology-total-nodes'
               >
                 {nodeCount}
               </span>
             </div>
-            <div className="flex justify-between gap-4">
+            <div className='flex justify-between gap-4'>
               <span>Total Edges:</span>
               <span
-                className="font-medium text-sidebar-foreground"
-                data-testid="ontology-total-edges"
+                className='font-medium text-sidebar-foreground'
+                data-testid='ontology-total-edges'
               >
                 {edgeCount}
               </span>
             </div>
-            <div className="border-t border-sidebar-border pt-2 mt-2">
+            <div className='mt-2 border-sidebar-border border-t pt-2'>
               {Object.entries(typeCounts).map(([type, count]) => (
-                <div key={type} className="flex justify-between gap-4">
+                <div key={type} className='flex justify-between gap-4'>
                   <span>{typeLabels[type] || type}:</span>
-                  <span className="font-medium text-sidebar-foreground">
-                    {count}
-                  </span>
+                  <span className='font-medium text-sidebar-foreground'>{count}</span>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="border-t border-sidebar-border pt-3 mt-3">
-            <div className="flex items-center gap-2 mb-2">
-              <Filter className="w-4 h-4 text-sidebar-foreground/70" />
-              <span className="text-sm font-semibold text-sidebar-foreground">
-                Focus View
-              </span>
+          <div className='mt-3 border-sidebar-border border-t pt-3'>
+            <div className='mb-2 flex items-center gap-2'>
+              <Filter className='h-4 w-4 text-sidebar-foreground/70' />
+              <span className='font-semibold text-sidebar-foreground text-sm'>Focus View</span>
             </div>
             <Select
               value={focusType}
@@ -718,68 +688,68 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
               }}
             >
               <SelectTrigger
-                className="h-9 text-sm bg-sidebar-accent border-sidebar-border text-sidebar-foreground"
-                data-testid="ontology-filter-type"
+                className='h-9 border-sidebar-border bg-sidebar-accent text-sidebar-foreground text-sm'
+                data-testid='ontology-filter-type'
               >
-                <SelectValue placeholder="Select focus" />
+                <SelectValue placeholder='Select focus' />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="auto" className="text-sm">
-                  <div className="flex items-center gap-2">
+                <SelectItem value='auto' className='text-sm'>
+                  <div className='flex items-center gap-2'>
                     <span>All Types</span>
                   </div>
                 </SelectItem>
-                <SelectItem value="agent" className="text-sm">
-                  <div className="flex items-center gap-2">
-                    <Bot className="w-4 h-4" />
+                <SelectItem value='agent' className='text-sm'>
+                  <div className='flex items-center gap-2'>
+                    <Bot className='h-4 w-4' />
                     <span>Agents</span>
                   </div>
                 </SelectItem>
-                <SelectItem value="workflow" className="text-sm">
-                  <div className="flex items-center gap-2">
-                    <WorkflowIcon className="w-4 h-4" />
+                <SelectItem value='workflow' className='text-sm'>
+                  <div className='flex items-center gap-2'>
+                    <WorkflowIcon className='h-4 w-4' />
                     <span>Automations</span>
                   </div>
                 </SelectItem>
-                <SelectItem value="app" className="text-sm">
-                  <div className="flex items-center gap-2">
-                    <WorkflowIcon className="w-4 h-4" />
+                <SelectItem value='app' className='text-sm'>
+                  <div className='flex items-center gap-2'>
+                    <WorkflowIcon className='h-4 w-4' />
                     <span>Apps</span>
                   </div>
                 </SelectItem>
-                <SelectItem value="automation" className="text-sm">
-                  <div className="flex items-center gap-2">
-                    <WorkflowIcon className="w-4 h-4" />
+                <SelectItem value='automation' className='text-sm'>
+                  <div className='flex items-center gap-2'>
+                    <WorkflowIcon className='h-4 w-4' />
                     <span>Automations</span>
                   </div>
                 </SelectItem>
-                <SelectItem value="topic" className="text-sm">
-                  <div className="flex items-center gap-2">
-                    <BookOpen className="w-4 h-4" />
+                <SelectItem value='topic' className='text-sm'>
+                  <div className='flex items-center gap-2'>
+                    <BookOpen className='h-4 w-4' />
                     <span>Topics</span>
                   </div>
                 </SelectItem>
-                <SelectItem value="view" className="text-sm">
-                  <div className="flex items-center gap-2">
-                    <Layout className="w-4 h-4" />
+                <SelectItem value='view' className='text-sm'>
+                  <div className='flex items-center gap-2'>
+                    <Layout className='h-4 w-4' />
                     <span>Views</span>
                   </div>
                 </SelectItem>
-                <SelectItem value="sql_query" className="text-sm">
-                  <div className="flex items-center gap-2">
-                    <FileCode2 className="w-4 h-4" />
+                <SelectItem value='sql_query' className='text-sm'>
+                  <div className='flex items-center gap-2'>
+                    <FileCode2 className='h-4 w-4' />
                     <span>SQL Queries</span>
                   </div>
                 </SelectItem>
-                <SelectItem value="table" className="text-sm">
-                  <div className="flex items-center gap-2">
-                    <Table2 className="w-4 h-4" />
+                <SelectItem value='table' className='text-sm'>
+                  <div className='flex items-center gap-2'>
+                    <Table2 className='h-4 w-4' />
                     <span>Tables</span>
                   </div>
                 </SelectItem>
-                <SelectItem value="entity" className="text-sm">
-                  <div className="flex items-center gap-2">
-                    <Box className="w-4 h-4" />
+                <SelectItem value='entity' className='text-sm'>
+                  <div className='flex items-center gap-2'>
+                    <Box className='h-4 w-4' />
                     <span>Entities</span>
                   </div>
                 </SelectItem>
@@ -787,37 +757,33 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
             </Select>
 
             {/* Expansion mode toggle */}
-            <div className="mt-2 pt-2 border-t border-sidebar-border">
+            <div className='mt-2 border-sidebar-border border-t pt-2'>
               <label
                 className={`flex items-center gap-2 ${
-                  focusedNodeId
-                    ? "cursor-pointer"
-                    : "cursor-not-allowed opacity-50"
+                  focusedNodeId ? "cursor-pointer" : "cursor-not-allowed opacity-50"
                 }`}
               >
                 <input
-                  type="checkbox"
+                  type='checkbox'
                   checked={expandAll}
                   onChange={(e) => setExpandAll(e.target.checked)}
                   disabled={!focusedNodeId}
-                  className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary disabled:cursor-not-allowed"
+                  className='h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary disabled:cursor-not-allowed'
                 />
-                <span className="text-sm">Expand all connected</span>
+                <span className='text-sm'>Expand all connected</span>
               </label>
-              <p className="text-xs text-muted-foreground mt-1">
-                Show entire cluster when clicked
-              </p>
+              <p className='mt-1 text-muted-foreground text-xs'>Show entire cluster when clicked</p>
             </div>
 
             {focusedNodeId && (
-              <div className="mt-2 pt-2 border-t border-sidebar-border">
+              <div className='mt-2 border-sidebar-border border-t pt-2'>
                 <Button
                   onClick={() => {
                     setFocusedNodeId(null);
                   }}
-                  variant="outline"
-                  size="sm"
-                  className="w-full text-sm"
+                  variant='outline'
+                  size='sm'
+                  className='w-full text-sm'
                 >
                   Reset View
                 </Button>
@@ -826,10 +792,7 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
           </div>
         </Panel>
       </ReactFlow>
-      <NodeDetailPanel
-        node={selectedNode}
-        onClose={() => setSelectedNode(null)}
-      />
+      <NodeDetailPanel node={selectedNode} onClose={() => setSelectedNode(null)} />
     </div>
   );
 }

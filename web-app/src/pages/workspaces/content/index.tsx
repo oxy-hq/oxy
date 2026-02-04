@@ -1,4 +1,4 @@
-import { Workspace } from "@/types/workspace";
+import type { Workspace } from "@/types/workspace";
 import EmptyState from "./EmptyState";
 import LoadingState from "./LoadingState";
 import WorkspaceCard from "./WorkspaceCard";
@@ -22,7 +22,7 @@ const Content = ({
   error,
   onWorkspaceClick,
   onClearSearch,
-  onRetry,
+  onRetry
 }: Props) => {
   if (isLoading) {
     return <LoadingState />;
@@ -33,17 +33,15 @@ const Content = ({
   }
 
   if (!workspaces || workspaces.length === 0) {
-    return <EmptyState type="no-workspaces" />;
+    return <EmptyState type='no-workspaces' />;
   }
 
   if (filteredWorkspaces.length === 0 && searchQuery.trim()) {
-    return (
-      <EmptyState type="no-search-results" onClearSearch={onClearSearch} />
-    );
+    return <EmptyState type='no-search-results' onClearSearch={onClearSearch} />;
   }
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+    <div className='grid gap-4 md:grid-cols-2 lg:grid-cols-3'>
       {filteredWorkspaces.map((workspace) => (
         <WorkspaceCard
           key={workspace.id}

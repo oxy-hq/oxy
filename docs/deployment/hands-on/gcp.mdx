@@ -45,7 +45,7 @@ Follow these steps to create a VM instance in Google Cloud Platform:
 
   <Step title="Navigate to Compute Engine">
     From the navigation menu, select **Compute Engine** > **VM instances**.
-    
+
     If this is your first time using Compute Engine, you might need to enable the API.
   </Step>
 
@@ -95,7 +95,7 @@ Connect to your VM instance and prepare it for Oxy deployment:
 <Steps>
   <Step title="Connect to Your VM">
     You can connect directly from the Google Cloud Console by clicking the "SSH" button next to your instance, or use a terminal:
-    
+
     ```bash
     # If using gcloud CLI
     gcloud compute ssh --project=YOUR_PROJECT_ID --zone=YOUR_ZONE oxy-server
@@ -135,7 +135,7 @@ Let's install Oxy directly on the VM:
 
   <Step title="Install Oxy">
     Run the official Oxy installation script:
-    
+
     ```bash
     bash <(curl --proto '=https' --tlsv1.2 -sSf https://get.oxy.tech)
     ```
@@ -145,7 +145,7 @@ Let's install Oxy directly on the VM:
 
   <Step title="Verify the Installation">
     Confirm that Oxy is installed correctly:
-    
+
     ```bash
     oxy --version
     ```
@@ -200,7 +200,7 @@ Let's use the built-in `oxy init` command to initialize a new workspace with all
 
   <Step title="Configure Environment Variables">
     Create a standard `.env` file in the workspace directory:
-    
+
     ```bash
     cd ~/oxy-workspace
     nano .env
@@ -244,7 +244,7 @@ To ensure your Oxy deployment is accessible, you need to create a firewall rule 
 
   <Step title="Apply Tag to Your VM">
     Go back to **Compute Engine** > **VM instances**, select your VM instance, and click **EDIT**.
-    
+
     In the **Network tags** field, add `oxy-server` (or whatever tag you used in the firewall rule).
     
     Click **SAVE**.
@@ -266,7 +266,7 @@ Let's configure Oxy to run automatically on system startup and restart if it fai
     ```bash
     sudo nano /etc/systemd/system/oxy.service
     ```
-    
+
     Add the following content:
     
     ```ini
@@ -318,7 +318,7 @@ Let's configure Oxy to run automatically on system startup and restart if it fai
 
   <Step title="Access Your Deployment">
     You can now access your Oxy deployment using:
-    
+
     If you've configured a domain name:
     ```
     http://yourdomain.com:3000
@@ -369,7 +369,7 @@ See our [Migration Guide](/migration/migration-guide) for detailed PostgreSQL se
 <Steps>
   <Step title="Stopping the Service">
     If you need to stop the Oxy service temporarily:
-    
+
     ```bash
     sudo systemctl stop oxy
     ```
@@ -377,7 +377,7 @@ See our [Migration Guide](/migration/migration-guide) for detailed PostgreSQL se
 
   <Step title="Updating Oxy">
     To update Oxy to the latest version:
-    
+
     ```bash
     # Stop the service first
     sudo systemctl stop oxy
@@ -394,7 +394,7 @@ See our [Migration Guide](/migration/migration-guide) for detailed PostgreSQL se
     ```bash
     # Create a backup of your Oxy data
     tar -czf oxy-backup-$(date +%Y%m%d).tar.gz ~/oxy-data/
-    
+
     # Optional: Upload to Google Cloud Storage
     gsutil cp oxy-backup-*.tar.gz gs://your-bucket-name/
     ```
@@ -427,6 +427,7 @@ As your usage grows, you may need to scale your deployment:
 2. Edit the VM configuration to increase CPU and memory
 3. Start the VM again
 4. Reconnect and start your Oxy service:
+
    ```bash
    sudo systemctl start oxy
    ```
@@ -455,6 +456,7 @@ If you need more storage for your Oxy data:
    ```
 
 3. To make the mount persistent across reboots, add it to fstab:
+
    ```bash
    echo "/dev/disk/by-id/google-[DISK_NAME] /mnt/oxy-data ext4 discard,defaults 0 2" | sudo tee -a /etc/fstab
    ```

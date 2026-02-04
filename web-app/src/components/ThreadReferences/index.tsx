@@ -1,4 +1,4 @@
-import { Reference } from "@/types/chat";
+import type { Reference } from "@/types/chat";
 import { ReferenceItem } from "./ReferenceItem";
 
 type ThreadReferencesProps = {
@@ -8,7 +8,7 @@ type ThreadReferencesProps = {
 
 const ThreadReferences = ({ references, prompt }: ThreadReferencesProps) => {
   return (
-    <div className="gap-2 flex flex-wrap font-sans">
+    <div className='flex flex-wrap gap-2 font-sans'>
       {references.map((reference, index) => (
         <ReferenceItem key={index} reference={reference} prompt={prompt} />
       ))}

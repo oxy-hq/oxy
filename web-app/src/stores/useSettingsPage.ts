@@ -7,7 +7,7 @@ interface SettingsState {
 
 const useSettings = create<SettingsState>()((set) => ({
   isOpen: false,
-  setIsOpen: (isOpen: boolean) => set({ isOpen }),
+  setIsOpen: (isOpen: boolean) => set({ isOpen })
 }));
 
 export default useSettings;

@@ -1,5 +1,5 @@
-import { useAuth } from "@/contexts/AuthContext";
 import { Navigate, useLocation } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 import ROUTES from "@/libs/utils/routes";
 
 interface ProtectedRouteProps {
@@ -17,9 +17,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
 
   // Authentication is enabled - check if user is authenticated
   if (!isAuthenticated()) {
-    return (
-      <Navigate to={ROUTES.AUTH.LOGIN} state={{ from: location }} replace />
-    );
+    return <Navigate to={ROUTES.AUTH.LOGIN} state={{ from: location }} replace />;
   }
 
   return <>{children}</>;

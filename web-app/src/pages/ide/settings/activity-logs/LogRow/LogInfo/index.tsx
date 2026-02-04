@@ -1,15 +1,15 @@
-import { LogItem } from "@/types/logs";
+import { Link } from "react-router-dom";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
-  DialogTitle,
+  DialogTitle
 } from "@/components/ui/shadcn/dialog";
-import { Link } from "react-router-dom";
-import Query from "./Query";
-import { formatDate } from "@/libs/utils/date";
 import { Label } from "@/components/ui/shadcn/label";
+import { formatDate } from "@/libs/utils/date";
+import type { LogItem } from "@/types/logs";
+import Query from "./Query";
 
 interface Props {
   log: LogItem;
@@ -22,8 +22,8 @@ const LogInfo = ({ log, open, onOpenChange }: Props) => {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl! max-h-[80vh] overflow-hidden flex flex-col p-0 gap-0">
-        <DialogHeader className="p-4 gap-1">
+      <DialogContent className='flex max-h-[80vh] max-w-4xl! flex-col gap-0 overflow-hidden p-0'>
+        <DialogHeader className='gap-1 p-4'>
           <DialogTitle>
             <Link
               to={`/threads/${log.thread_id}`}
@@ -31,19 +31,17 @@ const LogInfo = ({ log, open, onOpenChange }: Props) => {
                 e.stopPropagation();
                 onOpenChange(false);
               }}
-              className="text-blue-600 dark:text-blue-400 hover:underline"
+              className='text-blue-600 hover:underline dark:text-blue-400'
             >
               {log.thread?.title || "Untitled Thread"}
             </Link>
           </DialogTitle>
           <DialogDescription>{formatDate(log.created_at)}</DialogDescription>
         </DialogHeader>
-        <div className="flex-1 overflow-y-auto customScrollbar space-y-4 p-4">
+        <div className='customScrollbar flex-1 space-y-4 overflow-y-auto p-4'>
           <div>
-            <Label className="text-sm font-medium">Prompts</Label>
-            <p className="text-sm text-muted-foreground">
-              {log.prompts || "No prompt provided"}
-            </p>
+            <Label className='font-medium text-sm'>Prompts</Label>
+            <p className='text-muted-foreground text-sm'>{log.prompts || "No prompt provided"}</p>
           </div>
 
           {queries.map((queryItem, index: number) => (

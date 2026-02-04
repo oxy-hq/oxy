@@ -1,17 +1,14 @@
-import { apiClient } from "./axios";
-import { AgentConfig, AgentInfo } from "@/types/agent";
-import { TestStreamMessage } from "@/types/eval";
-import { Answer } from "@/types/chat";
-import fetchSSE from "./fetchSSE";
+import type { AgentConfig, AgentInfo } from "@/types/agent";
+import type { Answer } from "@/types/chat";
+import type { TestStreamMessage } from "@/types/eval";
 import { apiBaseURL } from "../env";
+import { apiClient } from "./axios";
+import fetchSSE from "./fetchSSE";
 
 export class AgentService {
-  static async listAgents(
-    projectId: string,
-    branchName: string,
-  ): Promise<AgentInfo[]> {
+  static async listAgents(projectId: string, branchName: string): Promise<AgentInfo[]> {
     const response = await apiClient.get(`/${projectId}/agents`, {
-      params: { branch: branchName },
+      params: { branch: branchName }
     });
     return response.data;
   }
@@ -19,14 +16,11 @@ export class AgentService {
   static async getAgent(
     projectId: string,
     branchName: string,
-    pathb64: string,
+    pathb64: string
   ): Promise<AgentConfig> {
-    const response = await apiClient.get(
-      `/${projectId}/agents/${encodeURIComponent(pathb64)}`,
-      {
-        params: { branch: branchName },
-      },
-    );
+    const response = await apiClient.get(`/${projectId}/agents/${encodeURIComponent(pathb64)}`, {
+      params: { branch: branchName }
+    });
     return response.data;
   }
 
@@ -35,14 +29,14 @@ export class AgentService {
     branchName: string,
     pathb64: string,
     testIndex: number,
-    onReadStream: (event: TestStreamMessage) => void,
+    onReadStream: (event: TestStreamMessage) => void
   ): Promise<void> {
     const searchParams = new URLSearchParams({
-      branch: branchName,
+      branch: branchName
     });
     const url = `${apiBaseURL}/${projectId}/agents/${encodeURIComponent(pathb64)}/tests/${testIndex}?${searchParams.toString()}`;
     await fetchSSE(url, {
-      onMessage: onReadStream,
+      onMessage: onReadStream
     });
   }
 
@@ -51,15 +45,15 @@ export class AgentService {
     branchName: string,
     agentPathb64: string,
     question: string,
-    onReadStream: (answer: Answer) => void,
+    onReadStream: (answer: Answer) => void
   ): Promise<void> {
     const searchParams = new URLSearchParams({
-      branch: branchName,
+      branch: branchName
     });
     const url = `${apiBaseURL}/${projectId}/agents/${encodeURIComponent(agentPathb64)}/ask?${searchParams.toString()}`;
     await fetchSSE(url, {
       body: { question },
-      onMessage: onReadStream,
+      onMessage: onReadStream
     });
   }
 }

@@ -1,35 +1,30 @@
+import { Loader2, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { Button } from "@/components/ui/shadcn/button";
-import { Input } from "@/components/ui/shadcn/input";
-import { cn } from "@/libs/utils/cn";
 import { FormProvider, useFieldArray, useForm } from "react-hook-form";
-import { Trash2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-
-import BigQueryForm from "@/pages/create-workspace/steps/WarehouseStep/BigQueryForm";
-import DuckDBForm from "@/pages/create-workspace/steps/WarehouseStep/DuckDBForm";
-import SnowflakeForm from "@/pages/create-workspace/steps/WarehouseStep/SnowflakeForm";
-import PostgresForm from "@/pages/create-workspace/steps/WarehouseStep/PostgresForm";
-import RedshiftForm from "@/pages/create-workspace/steps/WarehouseStep/RedshiftForm";
-import MysqlForm from "@/pages/create-workspace/steps/WarehouseStep/MysqlForm";
-import ClickHouseForm from "@/pages/create-workspace/steps/WarehouseStep/ClickHouseForm";
-import { TestConnectionSection } from "./TestConnectionSection";
 import {
   BigQueryIcon,
-  SnowflakeIcon,
+  ClickHouseIcon,
+  DuckDBIcon,
+  MysqlIcon,
   PostgresIcon,
   RedshiftIcon,
-  MysqlIcon,
-  DuckDBIcon,
-  ClickHouseIcon,
+  SnowflakeIcon
 } from "@/components/icons";
-import {
-  WarehousesFormData,
-  DatabaseConfigType,
-  WarehouseConfig,
-} from "@/types/database";
+import { Button } from "@/components/ui/shadcn/button";
+import { Input } from "@/components/ui/shadcn/input";
 import { useCreateDatabaseConfig } from "@/hooks/api/databases/useCreateDatabaseConfig";
 import { useTestDatabaseConnection } from "@/hooks/api/databases/useTestDatabaseConnection";
+import { cn } from "@/libs/utils/cn";
+import BigQueryForm from "@/pages/create-workspace/steps/WarehouseStep/BigQueryForm";
+import ClickHouseForm from "@/pages/create-workspace/steps/WarehouseStep/ClickHouseForm";
+import DuckDBForm from "@/pages/create-workspace/steps/WarehouseStep/DuckDBForm";
+import MysqlForm from "@/pages/create-workspace/steps/WarehouseStep/MysqlForm";
+import PostgresForm from "@/pages/create-workspace/steps/WarehouseStep/PostgresForm";
+import RedshiftForm from "@/pages/create-workspace/steps/WarehouseStep/RedshiftForm";
+import SnowflakeForm from "@/pages/create-workspace/steps/WarehouseStep/SnowflakeForm";
+import type { DatabaseConfigType, WarehouseConfig, WarehousesFormData } from "@/types/database";
+import { TestConnectionSection } from "./TestConnectionSection";
 
 interface WarehouseOption {
   type: DatabaseConfigType;
@@ -41,38 +36,38 @@ const warehouseOptions: WarehouseOption[] = [
   {
     type: "bigquery",
     label: "BigQuery",
-    icon: <BigQueryIcon />,
+    icon: <BigQueryIcon />
   },
   {
     type: "snowflake",
     label: "Snowflake",
-    icon: <SnowflakeIcon />,
+    icon: <SnowflakeIcon />
   },
   {
     type: "postgres",
     label: "PostgreSQL",
-    icon: <PostgresIcon />,
+    icon: <PostgresIcon />
   },
   {
     type: "redshift",
     label: "Redshift",
-    icon: <RedshiftIcon />,
+    icon: <RedshiftIcon />
   },
   {
     type: "mysql",
     label: "MySQL",
-    icon: <MysqlIcon />,
+    icon: <MysqlIcon />
   },
   {
     type: "duckdb",
     label: "DuckDB",
-    icon: <DuckDBIcon />,
+    icon: <DuckDBIcon />
   },
   {
     type: "clickhouse",
     label: "ClickHouse",
-    icon: <ClickHouseIcon />,
-  },
+    icon: <ClickHouseIcon />
+  }
 ];
 
 interface AddDatabaseFormProps {
@@ -85,13 +80,9 @@ export function AddDatabaseForm({ onSuccess, onCancel }: AddDatabaseFormProps) {
   const testConnection = useTestDatabaseConnection();
 
   // Track which warehouses have been tested successfully
-  const [currentTestingIndex, setCurrentTestingIndex] = useState<number | null>(
-    null,
-  );
+  const [currentTestingIndex, setCurrentTestingIndex] = useState<number | null>(null);
   // Track which warehouse's results are currently being displayed
-  const [displayResultsForIndex, setDisplayResultsForIndex] = useState<
-    number | null
-  >(null);
+  const [displayResultsForIndex, setDisplayResultsForIndex] = useState<number | null>(null);
 
   const methods = useForm<WarehousesFormData>({
     defaultValues: {
@@ -99,17 +90,17 @@ export function AddDatabaseForm({ onSuccess, onCancel }: AddDatabaseFormProps) {
         {
           type: "bigquery",
           name: "BIGQUERY_1",
-          config: {},
-        },
-      ],
-    },
+          config: {}
+        }
+      ]
+    }
   });
 
   const { register, control, handleSubmit, watch, setValue, reset } = methods;
 
   const { fields, remove } = useFieldArray({
     control,
-    name: "warehouses",
+    name: "warehouses"
   });
 
   const handleTypeChange = (index: number, value: DatabaseConfigType) => {
@@ -136,7 +127,7 @@ export function AddDatabaseForm({ onSuccess, onCancel }: AddDatabaseFormProps) {
       // The hook will update its state, we'll check it in the render
     } catch (error) {
       toast.error("Connection test failed", {
-        description: error instanceof Error ? error.message : "Unknown error",
+        description: error instanceof Error ? error.message : "Unknown error"
       });
     } finally {
       setCurrentTestingIndex(null);
@@ -169,10 +160,7 @@ export function AddDatabaseForm({ onSuccess, onCancel }: AddDatabaseFormProps) {
     remove(index);
   };
 
-  const renderWarehouseForm = (
-    index: number,
-    warehouseType: DatabaseConfigType,
-  ) => {
+  const renderWarehouseForm = (index: number, warehouseType: DatabaseConfigType) => {
     switch (warehouseType) {
       case "bigquery":
         return <BigQueryForm index={index} />;
@@ -194,33 +182,27 @@ export function AddDatabaseForm({ onSuccess, onCancel }: AddDatabaseFormProps) {
   };
 
   return (
-    <div className="space-y-6">
+    <div className='space-y-6'>
       <FormProvider {...methods}>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-          <div className="space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} className='space-y-6'>
+          <div className='space-y-4'>
             {fields.map((field, index) => {
-              const warehouseType = watch(
-                `warehouses.${index}.type`,
-              ) as DatabaseConfigType;
+              const warehouseType = watch(`warehouses.${index}.type`) as DatabaseConfigType;
 
               const defaultName = `${warehouseType.toUpperCase()}_${index + 1}`;
-              const nameError =
-                methods.formState.errors?.warehouses?.[index]?.name;
+              const nameError = methods.formState.errors?.warehouses?.[index]?.name;
 
-              const isTesting =
-                currentTestingIndex === index && testConnection.isLoading;
+              const isTesting = currentTestingIndex === index && testConnection.isLoading;
               const showTestResult = displayResultsForIndex === index;
 
               return (
                 <div
                   key={field.id}
-                  className={cn(
-                    "bg-muted/40 border rounded-md p-3 gap-4 flex flex-col",
-                  )}
+                  className={cn("flex flex-col gap-4 rounded-md border bg-muted/40 p-3")}
                 >
                   <div>
-                    <div className="flex flex-row items-center justify-between gap-4">
-                      <div className="flex items-center gap-2 flex-1">
+                    <div className='flex flex-row items-center justify-between gap-4'>
+                      <div className='flex flex-1 items-center gap-2'>
                         <Input
                           {...register(`warehouses.${index}.name`, {
                             required: "Connection name is required",
@@ -228,50 +210,47 @@ export function AddDatabaseForm({ onSuccess, onCancel }: AddDatabaseFormProps) {
                               unique: (value) => {
                                 const warehouseNames = methods
                                   .getValues("warehouses")
-                                  .map((warehouse, i) =>
-                                    i !== index ? warehouse.name : null,
-                                  );
+                                  .map((warehouse, i) => (i !== index ? warehouse.name : null));
                                 return (
-                                  !warehouseNames.includes(value) ||
-                                  "Warehouse name must be unique"
+                                  !warehouseNames.includes(value) || "Warehouse name must be unique"
                                 );
-                              },
-                            },
+                              }
+                            }
                           })}
                           defaultValue={defaultName}
-                          placeholder="Connection Name"
+                          placeholder='Connection Name'
                         />
                       </div>
                       {fields.length > 1 && (
                         <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
+                          type='button'
+                          variant='ghost'
+                          size='icon'
                           onClick={() => handleRemove(index)}
-                          className="h-8 w-8"
+                          className='h-8 w-8'
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className='h-4 w-4' />
                         </Button>
                       )}
                     </div>
                     {nameError && (
-                      <p className="text-xs text-destructive mt-1">
+                      <p className='mt-1 text-destructive text-xs'>
                         {nameError.message?.toString()}
                       </p>
                     )}
                   </div>
 
-                  <div className="flex flex-wrap gap-4">
+                  <div className='flex flex-wrap gap-4'>
                     {warehouseOptions.map((option) => (
                       <Button
                         key={option.type}
-                        type="button"
-                        variant="outline"
-                        size="icon"
+                        type='button'
+                        variant='outline'
+                        size='icon'
                         onClick={() => handleTypeChange(index, option.type)}
                         className={cn(
                           "px-8 py-4",
-                          warehouseType === option.type && "border-primary",
+                          warehouseType === option.type && "border-primary"
                         )}
                       >
                         {option.icon}
@@ -292,20 +271,20 @@ export function AddDatabaseForm({ onSuccess, onCancel }: AddDatabaseFormProps) {
             })}
           </div>
 
-          <div className="space-y-3">
-            <div className="flex justify-end gap-2">
+          <div className='space-y-3'>
+            <div className='flex justify-end gap-2'>
               <Button
-                type="button"
-                variant="outline"
+                type='button'
+                variant='outline'
                 onClick={handleCancel}
                 disabled={createMutation.isPending}
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={createMutation.isPending}>
+              <Button type='submit' disabled={createMutation.isPending}>
                 {createMutation.isPending ? (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Loader2 className='h-4 w-4 animate-spin' />
                     Creating...
                   </>
                 ) : (

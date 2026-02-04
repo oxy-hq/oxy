@@ -1,20 +1,13 @@
 import { ThreadService } from "@/services/api";
-import { Answer } from "@/types/chat";
-import {
-  MessageSender,
-  SendMessageOptions,
-  MessageHandlers,
-} from "../core/types";
+import type { Answer } from "@/types/chat";
 import { MessageFactory } from "../core/messageFactory";
 import { MessageProcessor } from "../core/processors/processor";
+import type { MessageHandlers, MessageSender, SendMessageOptions } from "../core/types";
 
 export class TaskMessageSender implements MessageSender {
   private processor = new MessageProcessor();
 
-  async sendMessage(
-    options: SendMessageOptions,
-    handlers: MessageHandlers,
-  ): Promise<void> {
+  async sendMessage(options: SendMessageOptions, handlers: MessageHandlers): Promise<void> {
     const { content, threadId, projectId } = options;
     const { onMessageUpdate, onUserMessage, onFilePathUpdate } = handlers;
 
@@ -31,17 +24,14 @@ export class TaskMessageSender implements MessageSender {
       threadId,
       content,
       (answer: Answer) => {
-        streamingMessage = this.processor.processContent(
-          streamingMessage,
-          answer,
-        );
+        streamingMessage = this.processor.processContent(streamingMessage, answer);
         onMessageUpdate(streamingMessage);
 
         if (streamingMessage.file_path && onFilePathUpdate) {
           onFilePathUpdate(streamingMessage.file_path);
         }
       },
-      () => {},
+      () => {}
     );
   }
 }

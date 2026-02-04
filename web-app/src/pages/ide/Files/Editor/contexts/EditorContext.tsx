@@ -1,7 +1,7 @@
-import { ReactNode } from "react";
+import type { ReactNode } from "react";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { decodeFilePath, detectFileType } from "@/utils/fileTypes";
-import { EditorContext, EditorContextValue } from "./EditorContextTypes";
+import { EditorContext, type EditorContextValue } from "./EditorContextTypes";
 
 interface EditorProviderProps {
   children: ReactNode;
@@ -9,8 +9,7 @@ interface EditorProviderProps {
 }
 
 export const EditorProvider = ({ children, pathb64 }: EditorProviderProps) => {
-  const { project, branchName, isReadOnly, gitEnabled } =
-    useCurrentProjectBranch();
+  const { project, branchName, isReadOnly, gitEnabled } = useCurrentProjectBranch();
   const filePath = decodeFilePath(pathb64);
   const fileType = detectFileType(filePath);
 
@@ -21,10 +20,8 @@ export const EditorProvider = ({ children, pathb64 }: EditorProviderProps) => {
     project,
     branchName,
     isReadOnly: !!isReadOnly,
-    gitEnabled: !!gitEnabled,
+    gitEnabled: !!gitEnabled
   };
 
-  return (
-    <EditorContext.Provider value={value}>{children}</EditorContext.Provider>
-  );
+  return <EditorContext.Provider value={value}>{children}</EditorContext.Provider>;
 };

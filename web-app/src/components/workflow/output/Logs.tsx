@@ -1,10 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { LoaderIcon } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import OutputItem from "./Item";
-import { cn } from "@/libs/shadcn/utils";
-import { LogItem } from "@/services/types";
+import { LoaderIcon } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Markdown from "@/components/Markdown";
+import { cn } from "@/libs/shadcn/utils";
+import type { LogItem } from "@/services/types";
+import OutputItem from "./Item";
 
 interface FlattenedLogItem {
   id: string;
@@ -32,7 +32,7 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
   onlyShowResult,
   onArtifactClick,
   expandAll,
-  collapseAll,
+  collapseAll
 }) => {
   const parentRef = React.useRef<HTMLDivElement | null>(null);
   const bottomRef = React.useRef<HTMLDivElement | null>(null);
@@ -41,11 +41,7 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
   const flattenedLogs = useMemo(() => {
     const flattened: FlattenedLogItem[] = [];
 
-    const flattenRecursive = (
-      items: LogItem[],
-      depth: number = 0,
-      parentId?: string,
-    ) => {
+    const flattenRecursive = (items: LogItem[], depth: number = 0, parentId?: string) => {
       items.forEach((log, index) => {
         const id = parentId ? `${parentId}-${index}` : `root-${index}`;
         const isExpandable = !!(log.children && log.children.length > 0);
@@ -57,12 +53,11 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
           depth,
           isExpandable,
           parentId,
-          isLastRootItem,
+          isLastRootItem
         });
 
         const itemState = itemStates.get(id);
-        const shouldExpand =
-          itemState === true || (itemState === undefined && isLastRootItem);
+        const shouldExpand = itemState === true || (itemState === undefined && isLastRootItem);
 
         if (isExpandable && shouldExpand) {
           flattenRecursive(log.children!, depth + 1, id);
@@ -127,21 +122,21 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
       }
       return 33;
     },
-    [flattenedLogs],
+    [flattenedLogs]
   );
-  const getScrollElement = useCallback(() => parentRef.current, [parentRef]);
+  const getScrollElement = useCallback(() => parentRef.current, []);
 
   // eslint-disable-next-line react-hooks/incompatible-library
   const logsVirtualizer = useVirtualizer({
     count: flattenedLogs.length,
     getScrollElement,
     estimateSize,
-    enabled: true,
+    enabled: true
   });
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [logs]);
+  }, []);
 
   const items = logsVirtualizer.getVirtualItems();
 
@@ -165,8 +160,8 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
   return (
     <div
       ref={parentRef}
-      className="h-full relative overflow-y-auto customScrollbar break-all contain-strict scrollbar-gutter-auto bg-card p-4 pt-0"
-      data-testid="workflow-output-logs"
+      className='customScrollbar scrollbar-gutter-auto relative h-full overflow-y-auto break-all bg-card p-4 pt-0 contain-strict'
+      data-testid='workflow-output-logs'
     >
       {!onlyShowResult && (
         <div
@@ -174,10 +169,10 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
           style={{ height: logsVirtualizer.getTotalSize() }}
         >
           <div
-            className="absolute top-0 left-0 w-full"
+            className='absolute top-0 left-0 w-full'
             style={{
               transform: `translateY(${items[0]?.start ?? 0}px)`,
-              paddingBottom: 100,
+              paddingBottom: 100
             }}
           >
             {items.map((virtualItem) => {
@@ -186,8 +181,7 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
 
               const itemState = itemStates.get(flatItem.id);
               const isExpanded =
-                itemState === true ||
-                (itemState === undefined && flatItem.isLastRootItem);
+                itemState === true || (itemState === undefined && flatItem.isLastRootItem);
 
               return (
                 <div
@@ -202,9 +196,7 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
                     depth={flatItem.depth}
                     isExpandable={flatItem.isExpandable}
                     isExpanded={isExpanded}
-                    onToggleExpanded={() =>
-                      toggleExpanded(flatItem.id, flatItem.isLastRootItem)
-                    }
+                    onToggleExpanded={() => toggleExpanded(flatItem.id, flatItem.isLastRootItem)}
                   />
                 </div>
               );
@@ -214,14 +206,12 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
       )}
 
       {onlyShowResult && (
-        <Markdown onArtifactClick={onArtifactClick}>
-          {lastedContent || ""}
-        </Markdown>
+        <Markdown onArtifactClick={onArtifactClick}>{lastedContent || ""}</Markdown>
       )}
 
       {isPending && (
-        <div className="p-6 flex justify-center">
-          <LoaderIcon className="animate-spin" />
+        <div className='flex justify-center p-6'>
+          <LoaderIcon className='animate-spin' />
         </div>
       )}
       <div ref={bottomRef} />

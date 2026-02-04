@@ -1,7 +1,7 @@
-import React from "react";
+import { Check, Copy, Maximize2, Minimize2, X } from "lucide-react";
+import type React from "react";
 import { Button } from "@/components/ui/shadcn/button";
-import { X, Copy, Check, Maximize2, Minimize2 } from "lucide-react";
-import { LogItem } from "@/services/types";
+import type { LogItem } from "@/services/types";
 import { useCopyTimeout } from "./useCopyTimeout";
 
 interface HeaderProps {
@@ -17,7 +17,7 @@ const getAllContent = (items: LogItem[]): string => {
     // Only include content from leaf nodes (items without children)
     // This excludes step headers like "workflow started" or "Task started"
     if (!item.children || item.children.length === 0) {
-      content += item.content + "\n\n";
+      content += `${item.content}\n\n`;
     } else {
       // Recursively process children
       content += getAllContent(item.children);
@@ -26,12 +26,7 @@ const getAllContent = (items: LogItem[]): string => {
   return content.trim();
 };
 
-const Header: React.FC<HeaderProps> = ({
-  toggleOutput,
-  logs = [],
-  onExpandAll,
-  onCollapseAll,
-}) => {
+const Header: React.FC<HeaderProps> = ({ toggleOutput, logs = [], onExpandAll, onCollapseAll }) => {
   const { copied, handleCopy } = useCopyTimeout();
 
   const handleCopyAll = async () => {
@@ -40,49 +35,45 @@ const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <div className="px-2 py-1 border border-border flex justify-between items-center bg-card">
-      <span className="text-background-foreground text-sm">Output</span>
-      <div className="flex items-center gap-1">
+    <div className='flex items-center justify-between border border-border bg-card px-2 py-1'>
+      <span className='text-background-foreground text-sm'>Output</span>
+      <div className='flex items-center gap-1'>
         {logs.length > 0 && (
           <>
             <Button
-              variant="ghost"
-              content="icon"
+              variant='ghost'
+              content='icon'
               onClick={onExpandAll}
-              title="Expand all"
-              aria-label="Expand all"
+              title='Expand all'
+              aria-label='Expand all'
             >
               <Maximize2 size={14} />
             </Button>
             <Button
-              variant="ghost"
-              content="icon"
+              variant='ghost'
+              content='icon'
               onClick={onCollapseAll}
-              title="Collapse all"
-              aria-label="Collapse all"
+              title='Collapse all'
+              aria-label='Collapse all'
             >
               <Minimize2 size={14} />
             </Button>
             <Button
-              variant="ghost"
-              content="icon"
+              variant='ghost'
+              content='icon'
               onClick={handleCopyAll}
-              title="Copy all outputs"
-              aria-label="Copy all outputs"
+              title='Copy all outputs'
+              aria-label='Copy all outputs'
             >
-              {copied ? (
-                <Check size={14} className="text-green-500" />
-              ) : (
-                <Copy size={14} />
-              )}
+              {copied ? <Check size={14} className='text-green-500' /> : <Copy size={14} />}
             </Button>
           </>
         )}
         <Button
-          variant="ghost"
-          content="icon"
+          variant='ghost'
+          content='icon'
           onClick={toggleOutput}
-          aria-label="Close output panel"
+          aria-label='Close output panel'
         >
           <X size={14} />
         </Button>

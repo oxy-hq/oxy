@@ -1,18 +1,14 @@
 import React from "react";
 import { Input } from "@/components/ui/shadcn/input";
 import useFileTree from "@/hooks/api/files/useFileTree";
-import { FileTreeModel } from "@/types/file";
+import type { FileTreeModel } from "@/types/file";
 
-interface FilePathAutocompleteInputProps
-  extends Omit<React.ComponentProps<typeof Input>, "list"> {
+interface FilePathAutocompleteInputProps extends Omit<React.ComponentProps<typeof Input>, "list"> {
   fileExtension?: string | string[];
   datalistId: string;
 }
 
-const flattenFileTree = (
-  tree: FileTreeModel[],
-  extensions?: string | string[],
-): string[] => {
+const flattenFileTree = (tree: FileTreeModel[], extensions?: string | string[]): string[] => {
   const paths: string[] = [];
 
   let extensionList: string[] | null = null;
@@ -22,10 +18,7 @@ const flattenFileTree = (
 
   const traverse = (node: FileTreeModel) => {
     if (!node.is_dir) {
-      if (
-        !extensionList ||
-        extensionList.some((ext) => node.path.endsWith(ext))
-      ) {
+      if (!extensionList || extensionList.some((ext) => node.path.endsWith(ext))) {
         paths.push(node.path);
       }
     }

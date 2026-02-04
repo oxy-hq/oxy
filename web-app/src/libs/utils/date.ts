@@ -15,9 +15,7 @@ export function timeAgo(dateString: string): string {
  * @returns boolean - True if the string is a valid date, false otherwise.
  */
 export function isDate(date: string) {
-  return (
-    new Date(date).toString() !== "Invalid Date" && !isNaN(Date.parse(date))
-  );
+  return new Date(date).toString() !== "Invalid Date" && !Number.isNaN(Date.parse(date));
 }
 
 export function formatDate(date: string) {
@@ -26,7 +24,7 @@ export function formatDate(date: string) {
     month: "short",
     day: "numeric",
     hour: "2-digit",
-    minute: "2-digit",
+    minute: "2-digit"
   });
 }
 

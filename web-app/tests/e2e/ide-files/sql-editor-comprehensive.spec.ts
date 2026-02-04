@@ -1,9 +1,5 @@
-import { test, expect, Page } from "@playwright/test";
-import {
-  saveFileSnapshot,
-  restoreFileSnapshot,
-  cleanupAfterTest,
-} from "./test-cleanup";
+import { expect, type Page, test } from "@playwright/test";
+import { cleanupAfterTest, restoreFileSnapshot, saveFileSnapshot } from "./test-cleanup";
 
 /**
  * Comprehensive SQL Editor Tests
@@ -24,16 +20,13 @@ async function openSQLFile(page: Page): Promise<boolean> {
 
   const exampleSqlFolder = page.getByRole("button", {
     name: "example_sql",
-    exact: true,
+    exact: true
   });
   if (await exampleSqlFolder.isVisible()) {
     await exampleSqlFolder.click();
     await page.waitForTimeout(500);
 
-    const sqlFile = page
-      .locator('a[href*="/ide/"]:visible')
-      .filter({ hasText: ".sql" })
-      .first();
+    const sqlFile = page.locator('a[href*="/ide/"]:visible').filter({ hasText: ".sql" }).first();
 
     if (await sqlFile.isVisible()) {
       await sqlFile.click();
@@ -44,10 +37,7 @@ async function openSQLFile(page: Page): Promise<boolean> {
   }
 
   // Try root directory
-  const rootSqlFile = page
-    .locator('a[href*="/ide/"]:visible')
-    .filter({ hasText: ".sql" })
-    .first();
+  const rootSqlFile = page.locator('a[href*="/ide/"]:visible').filter({ hasText: ".sql" }).first();
 
   if (await rootSqlFile.isVisible()) {
     await rootSqlFile.click();
@@ -68,7 +58,7 @@ test.describe("SQL Editor - Query Execution", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
 
     // 📸 Save file state before test starts
@@ -111,9 +101,7 @@ test.describe("SQL Editor - Query Execution", () => {
       await executeButton.click();
       await page.waitForTimeout(3000);
 
-      const results = page.locator(
-        '[data-testid*="results"], .results-table, table',
-      );
+      const results = page.locator('[data-testid*="results"], .results-table, table');
       const hasResults = await results.isVisible().catch(() => false);
       expect(hasResults || true).toBeTruthy();
     }
@@ -225,7 +213,7 @@ test.describe("SQL Editor - Error Handling", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -251,9 +239,7 @@ test.describe("SQL Editor - Error Handling", () => {
       await executeButton.click();
       await page.waitForTimeout(2000);
 
-      const errorMessage = page.locator(
-        '[data-testid*="error"], [class*="error"], [role="alert"]',
-      );
+      const errorMessage = page.locator('[data-testid*="error"], [class*="error"], [role="alert"]');
       const hasError = await errorMessage.isVisible().catch(() => false);
       expect(hasError || true).toBeTruthy();
     }
@@ -277,9 +263,7 @@ test.describe("SQL Editor - Error Handling", () => {
       await executeButton.click();
       await page.waitForTimeout(2000);
 
-      const errorMessage = page.locator(
-        '[data-testid*="error"], [class*="error"]',
-      );
+      const errorMessage = page.locator('[data-testid*="error"], [class*="error"]');
       const hasError = await errorMessage.isVisible().catch(() => false);
       expect(hasError || true).toBeTruthy();
     }
@@ -326,7 +310,7 @@ test.describe("SQL Editor - Database Selection", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -342,7 +326,7 @@ test.describe("SQL Editor - Database Selection", () => {
     }
 
     const dbDropdown = page.locator(
-      'select[data-testid*="database"], [data-testid*="database-select"]',
+      'select[data-testid*="database"], [data-testid*="database-select"]'
     );
     const hasDropdown = await dbDropdown.isVisible().catch(() => false);
     expect(hasDropdown || true).toBeTruthy();
@@ -356,9 +340,7 @@ test.describe("SQL Editor - Database Selection", () => {
     }
 
     const dbDropdown = page
-      .locator(
-        'select[data-testid*="database"], [data-testid*="database-select"]',
-      )
+      .locator('select[data-testid*="database"], [data-testid*="database-select"]')
       .first();
     if (await dbDropdown.isVisible()) {
       await dbDropdown.click();
@@ -401,7 +383,7 @@ test.describe("SQL Editor - Results Display", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -444,9 +426,7 @@ test.describe("SQL Editor - Results Display", () => {
     await editor.click();
     await page.keyboard.press("Control+A");
     // Query that returns many rows
-    await page.keyboard.type(
-      "SELECT 1 as num FROM (SELECT 1 UNION SELECT 2) a",
-    );
+    await page.keyboard.type("SELECT 1 as num FROM (SELECT 1 UNION SELECT 2) a");
     await page.waitForTimeout(500);
 
     const executeButton = page.getByRole("button", { name: /run|execute/i });
@@ -477,9 +457,7 @@ test.describe("SQL Editor - Results Display", () => {
       await executeButton.click();
       await page.waitForTimeout(3000);
 
-      const pagination = page.locator(
-        '[data-testid*="pagination"], button[aria-label*="next"]',
-      );
+      const pagination = page.locator('[data-testid*="pagination"], button[aria-label*="next"]');
       const hasPagination = await pagination.isVisible().catch(() => false);
       // Pagination is optional
       expect(hasPagination || true).toBeTruthy();
@@ -505,7 +483,7 @@ test.describe("SQL Editor - Results Display", () => {
       await page.waitForTimeout(3000);
 
       const exportButton = page.getByRole("button", {
-        name: /export|download/i,
+        name: /export|download/i
       });
       const hasExport = await exportButton.isVisible().catch(() => false);
       expect(hasExport || true).toBeTruthy();
@@ -522,7 +500,7 @@ test.describe("SQL Editor - Character Encoding", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -625,7 +603,7 @@ test.describe("SQL Editor - Save & Reload", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
 
     // 📸 Save file state before test starts
@@ -699,9 +677,7 @@ test.describe("SQL Editor - Save & Reload", () => {
     }
   });
 
-  test("should persist saved query after navigating away and back", async ({
-    page,
-  }) => {
+  test("should persist saved query after navigating away and back", async ({ page }) => {
     const opened = await openSQLFile(page);
     if (!opened) {
       test.skip();
@@ -712,7 +688,7 @@ test.describe("SQL Editor - Save & Reload", () => {
     const editor = page.locator(".monaco-editor .view-lines").first();
     await editor.click();
     await page.keyboard.press("Control+A");
-    await page.keyboard.type(uniqueComment + "\nSELECT * FROM test_table");
+    await page.keyboard.type(`${uniqueComment}\nSELECT * FROM test_table`);
     await page.waitForTimeout(500);
 
     // Save the query
@@ -753,7 +729,7 @@ test.describe("SQL Editor - Keyboard Shortcuts", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -841,7 +817,7 @@ test.describe("SQL Editor - Edge Cases", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 

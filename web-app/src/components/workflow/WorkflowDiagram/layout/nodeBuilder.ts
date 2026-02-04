@@ -1,12 +1,12 @@
+import type { Edge } from "@xyflow/react";
 import {
-  TaskConfigWithId,
-  TaskType,
-  ConditionalTaskConfigWithId,
+  type ConditionalTaskConfigWithId,
+  type NodeType,
   NoneTaskNodeType,
-  NodeType,
-  TaskNode,
+  type TaskConfigWithId,
+  type TaskNode,
+  TaskType
 } from "@/stores/useWorkflow";
-import { Edge } from "@xyflow/react";
 
 interface NodeBuilderResult {
   nodes: TaskNode[];
@@ -19,7 +19,7 @@ const createNode = ({
   index,
   metadata,
   parentId,
-  type,
+  type
 }: {
   nodeId: string;
   task: TaskConfigWithId;
@@ -36,12 +36,12 @@ const createNode = ({
       id: nodeId,
       index,
       metadata,
-      expanded: task.type === "loop_sequential",
+      expanded: task.type === "loop_sequential"
     },
     type: type ?? task.type,
     parentId,
     width: 0,
-    height: 0,
+    height: 0
   } as TaskNode;
 };
 
@@ -49,7 +49,7 @@ const createConditionalIfNode = (
   task: ConditionalTaskConfigWithId & { id: string; workflowId: string },
   condition: { if: string },
   index: number,
-  conditionIndex: number,
+  conditionIndex: number
 ): TaskNode => {
   const nodeId = `${task.id}-condition-${conditionIndex}`;
   return createNode({
@@ -57,17 +57,17 @@ const createConditionalIfNode = (
     task,
     index,
     metadata: {
-      condition: condition.if,
+      condition: condition.if
     },
     type: NoneTaskNodeType.CONDITIONAL_IF,
     parentId: task.id,
-    name: condition.if,
+    name: condition.if
   });
 };
 
 const createConditionalElseNode = (
   task: ConditionalTaskConfigWithId & { id: string; workflowId: string },
-  index: number,
+  index: number
 ): TaskNode => {
   const nodeId = `${task.id}-else`;
   return createNode({
@@ -76,14 +76,14 @@ const createConditionalElseNode = (
     index,
     parentId: task.id,
     type: NoneTaskNodeType.CONDITIONAL_ELSE,
-    name: "Else",
+    name: "Else"
   });
 };
 
 const buildConditionalNodes = (
   task: ConditionalTaskConfigWithId & { id: string; workflowId: string },
   index: number,
-  level: number,
+  level: number
 ): { nodes: TaskNode[]; edges: Edge[] } => {
   const result: NodeBuilderResult = { nodes: [], edges: [] };
 
@@ -91,11 +91,7 @@ const buildConditionalNodes = (
     const ifNode = createConditionalIfNode(task, condition, index, condIndex);
     result.nodes.push(ifNode);
 
-    const { nodes, edges } = buildWorkflowNodes(
-      condition.tasks,
-      ifNode.id,
-      level + 1,
-    );
+    const { nodes, edges } = buildWorkflowNodes(condition.tasks, ifNode.id, level + 1);
     result.nodes.push(...nodes);
     result.edges.push(...edges);
 
@@ -103,7 +99,7 @@ const buildConditionalNodes = (
       result.edges.push({
         id: `${task.id}-condition-${index - 1}-${task.id}-condition-${condIndex}`,
         source: `${task.id}-condition-${index - 1}`,
-        target: ifNode.id,
+        target: ifNode.id
       });
     }
   });
@@ -112,11 +108,7 @@ const buildConditionalNodes = (
     const elseNode = createConditionalElseNode(task, index);
     result.nodes.push(elseNode);
 
-    const { nodes, edges } = buildWorkflowNodes(
-      task.else,
-      elseNode.id,
-      level + 1,
-    );
+    const { nodes, edges } = buildWorkflowNodes(task.else, elseNode.id, level + 1);
     result.nodes.push(...nodes);
     result.edges.push(...edges);
 
@@ -124,21 +116,21 @@ const buildConditionalNodes = (
       result.edges.push({
         id: `${task.id}-condition-${task.conditions.length - 1}-${task.id}-else`,
         source: `${task.id}-condition-${task.conditions.length - 1}`,
-        target: elseNode.id,
+        target: elseNode.id
       });
     }
   }
 
   return {
     nodes: result.nodes,
-    edges: result.edges,
+    edges: result.edges
   };
 };
 
 export const buildWorkflowNodes = (
   tasks: TaskConfigWithId[],
   parentId?: string,
-  level = 0,
+  level = 0
 ): NodeBuilderResult => {
   const result: NodeBuilderResult = { nodes: [], edges: [] };
 
@@ -147,25 +139,17 @@ export const buildWorkflowNodes = (
       nodeId: task.id,
       index,
       task,
-      parentId,
+      parentId
     });
 
     result.nodes.push(node);
 
     if (task.type === TaskType.LOOP_SEQUENTIAL) {
-      const { nodes, edges } = buildWorkflowNodes(
-        task.tasks,
-        node.id,
-        level + 1,
-      );
+      const { nodes, edges } = buildWorkflowNodes(task.tasks, node.id, level + 1);
       result.nodes.push(...nodes);
       result.edges.push(...edges);
     } else if (task.type === TaskType.WORKFLOW) {
-      const { nodes, edges } = buildWorkflowNodes(
-        task.tasks ?? [],
-        node.id,
-        level + 1,
-      );
+      const { nodes, edges } = buildWorkflowNodes(task.tasks ?? [], node.id, level + 1);
       result.nodes.push(...nodes.map((n) => ({ ...n })));
       result.edges.push(...edges);
     } else if (task.type === TaskType.CONDITIONAL) {
@@ -179,16 +163,15 @@ export const buildWorkflowNodes = (
       result.edges.push({
         id: `${prevId}-${task.id}`,
         source: prevId,
-        target: task.id,
+        target: task.id
       });
     }
   });
 
   return {
     nodes: result.nodes,
-    edges: sortEdges(result.edges),
+    edges: sortEdges(result.edges)
   };
 };
 
-const sortEdges = (edges: Edge[]): Edge[] =>
-  edges.sort((a, b) => a.id.length - b.id.length);
+const sortEdges = (edges: Edge[]): Edge[] => edges.sort((a, b) => a.id.length - b.id.length);

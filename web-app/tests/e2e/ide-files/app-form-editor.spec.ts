@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { IDEPage } from "../pages/IDEPage";
 
 test.describe("IDE Files - App Form Editor - Mode Switching", () => {
@@ -6,7 +6,7 @@ test.describe("IDE Files - App Form Editor - Mode Switching", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -91,9 +91,7 @@ test.describe("IDE Files - App Form Editor - Mode Switching", () => {
   });
 
   // 8.3 Switch to Visualization
-  test("8.3 - should show app preview in Visualization mode", async ({
-    page,
-  }) => {
+  test("8.3 - should show app preview in Visualization mode", async ({ page }) => {
     const idePage = new IDEPage(page);
     await page.getByRole("tab", { name: "Files" }).click();
     await idePage.verifyFilesMode();
@@ -116,9 +114,7 @@ test.describe("IDE Files - App Form Editor - Mode Switching", () => {
   });
 
   // 8.4 Invalid YAML → Visualization
-  test("8.4 - should show error in preview for invalid YAML", async ({
-    page,
-  }) => {
+  test("8.4 - should show error in preview for invalid YAML", async ({ page }) => {
     const idePage = new IDEPage(page);
     await page.getByRole("tab", { name: "Files" }).click();
     await idePage.verifyFilesMode();
@@ -213,7 +209,7 @@ test.describe("IDE Files - App Form Editor - Display", () => {
         await page.waitForTimeout(500);
 
         const addDisplayButton = page.getByRole("button", {
-          name: /add.*display/i,
+          name: /add.*display/i
         });
         if (await addDisplayButton.isVisible()) {
           await addDisplayButton.click();
@@ -240,7 +236,7 @@ test.describe("IDE Files - App Form Editor - Display", () => {
         await page.waitForTimeout(500);
 
         const addDisplayButton = page.getByRole("button", {
-          name: /add.*display/i,
+          name: /add.*display/i
         });
         if (await addDisplayButton.isVisible()) {
           await addDisplayButton.click();
@@ -260,9 +256,7 @@ test.describe("IDE Files - App Form Editor - Display", () => {
   });
 
   // 8.13 Switch display type
-  test("8.13 - should update fields when switching display type", async ({
-    page,
-  }) => {
+  test("8.13 - should update fields when switching display type", async ({ page }) => {
     const appFile = page
       .locator('a[href*="/ide/"]:visible')
       .filter({ hasText: ".app.yml" })
@@ -306,7 +300,7 @@ test.describe("IDE Files - App Form Editor - Display", () => {
         await page.waitForTimeout(500);
 
         const addDisplayButton = page.getByRole("button", {
-          name: /add.*display/i,
+          name: /add.*display/i
         });
         if (await addDisplayButton.isVisible()) {
           for (let i = 0; i < 5; i++) {
@@ -330,9 +324,7 @@ test.describe("IDE Files - App Form Editor - Merge Strategy", () => {
   });
 
   // 8.19-8.20 Merge strategy
-  test("8.19 - should preserve extra YAML fields not in form", async ({
-    page,
-  }) => {
+  test("8.19 - should preserve extra YAML fields not in form", async ({ page }) => {
     const idePage = new IDEPage(page);
 
     const appFile = page
@@ -362,10 +354,7 @@ test.describe("IDE Files - App Form Editor - Merge Strategy", () => {
       const formTab = page.getByRole("tab", { name: /form/i });
       const editorTabForSwitch = page.getByRole("tab", { name: /editor/i });
 
-      if (
-        (await formTab.isVisible()) &&
-        (await editorTabForSwitch.isVisible())
-      ) {
+      if ((await formTab.isVisible()) && (await editorTabForSwitch.isVisible())) {
         await formTab.click();
         await page.waitForTimeout(500);
         await editorTabForSwitch.click();

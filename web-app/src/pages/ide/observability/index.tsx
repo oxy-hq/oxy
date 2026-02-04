@@ -1,28 +1,23 @@
-import React, { useState } from "react";
-import { Link, useLocation, Outlet } from "react-router-dom";
+import { BarChart3, ChevronsRight, LucideActivity, Server, Zap } from "lucide-react";
+import type React from "react";
+import { useState } from "react";
+import { Link, Outlet, useLocation } from "react-router-dom";
+import { Button } from "@/components/ui/shadcn/button";
 import {
   ResizableHandle,
   ResizablePanel,
-  ResizablePanelGroup,
+  ResizablePanelGroup
 } from "@/components/ui/shadcn/resizable";
-import {
-  ChevronsRight,
-  Zap,
-  Server,
-  BarChart3,
-  LucideActivity,
-} from "lucide-react";
 import {
   SidebarContent,
   SidebarGroup,
   SidebarMenu,
   SidebarMenuItem,
-  SidebarMenuSubButton,
+  SidebarMenuSubButton
 } from "@/components/ui/shadcn/sidebar";
-import { Button } from "@/components/ui/shadcn/button";
-import { SidebarHeader } from "@/pages/ide/components/SidebarHeader";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import ROUTES from "@/libs/utils/routes";
+import { SidebarHeader } from "@/pages/ide/components/SidebarHeader";
 
 const ObservabilitySidebar: React.FC<{
   setSidebarOpen: (open: boolean) => void;
@@ -32,24 +27,18 @@ const ObservabilitySidebar: React.FC<{
   const projectId = project.id;
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-sidebar-background">
-      <SidebarHeader
-        title="Observability"
-        onCollapse={() => setSidebarOpen(false)}
-      />
-      <SidebarContent className="customScrollbar h-full flex-1 overflow-y-auto">
-        <SidebarGroup className="pt-2">
+    <div className='flex h-full flex-col overflow-hidden bg-sidebar-background'>
+      <SidebarHeader title='Observability' onCollapse={() => setSidebarOpen(false)} />
+      <SidebarContent className='customScrollbar h-full flex-1 overflow-y-auto'>
+        <SidebarGroup className='pt-2'>
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuSubButton
                 asChild
-                isActive={
-                  location.pathname ===
-                  ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.TRACES
-                }
+                isActive={location.pathname === ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.TRACES}
               >
                 <Link to={ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.TRACES}>
-                  <Zap className="h-4 w-4" />
+                  <Zap className='h-4 w-4' />
                   <span>Traces</span>
                 </Link>
               </SidebarMenuSubButton>
@@ -58,12 +47,11 @@ const ObservabilitySidebar: React.FC<{
               <SidebarMenuSubButton
                 asChild
                 isActive={
-                  location.pathname ===
-                  ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.CLUSTERS
+                  location.pathname === ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.CLUSTERS
                 }
               >
                 <Link to={ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.CLUSTERS}>
-                  <Server className="h-4 w-4" />
+                  <Server className='h-4 w-4' />
                   <span>Clusters</span>
                 </Link>
               </SidebarMenuSubButton>
@@ -71,13 +59,10 @@ const ObservabilitySidebar: React.FC<{
             <SidebarMenuItem>
               <SidebarMenuSubButton
                 asChild
-                isActive={
-                  location.pathname ===
-                  ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.METRICS
-                }
+                isActive={location.pathname === ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.METRICS}
               >
                 <Link to={ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.METRICS}>
-                  <BarChart3 className="h-4 w-4" />
+                  <BarChart3 className='h-4 w-4' />
                   <span>Metrics</span>
                 </Link>
               </SidebarMenuSubButton>
@@ -87,17 +72,11 @@ const ObservabilitySidebar: React.FC<{
                 asChild
                 isActive={
                   location.pathname ===
-                  ROUTES.PROJECT(projectId).IDE.OBSERVABILITY
-                    .EXECUTION_ANALYTICS
+                  ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.EXECUTION_ANALYTICS
                 }
               >
-                <Link
-                  to={
-                    ROUTES.PROJECT(projectId).IDE.OBSERVABILITY
-                      .EXECUTION_ANALYTICS
-                  }
-                >
-                  <LucideActivity className="h-4 w-4" />
+                <Link to={ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.EXECUTION_ANALYTICS}>
+                  <LucideActivity className='h-4 w-4' />
                   <span>Execution Analytics</span>
                 </Link>
               </SidebarMenuSubButton>
@@ -113,28 +92,24 @@ const ObservabilityLayout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   return (
-    <ResizablePanelGroup direction="horizontal" className="flex-1">
+    <ResizablePanelGroup direction='horizontal' className='flex-1'>
       {sidebarOpen ? (
         <>
-          <ResizablePanel
-            defaultSize={20}
-            minSize={10}
-            className="min-w-[200px]"
-          >
+          <ResizablePanel defaultSize={20} minSize={10} className='min-w-[200px]'>
             <ObservabilitySidebar setSidebarOpen={setSidebarOpen} />
           </ResizablePanel>
           <ResizableHandle />
         </>
       ) : (
-        <div className="border-r bg-sidebar-background flex items-start py-2 px-1">
+        <div className='flex items-start border-r bg-sidebar-background px-1 py-2'>
           <Button
-            variant="ghost"
-            size="icon"
+            variant='ghost'
+            size='icon'
             onClick={() => setSidebarOpen(true)}
             tooltip={{ content: "Expand Sidebar", side: "right" }}
-            className="h-8 w-8"
+            className='h-8 w-8'
           >
-            <ChevronsRight className="h-4 w-4" />
+            <ChevronsRight className='h-4 w-4' />
           </Button>
         </div>
       )}

@@ -1,18 +1,18 @@
-import React, { useMemo, useState } from "react";
-import { useFormContext } from "react-hook-form";
-import { Label } from "@/components/ui/shadcn/label";
-import { Button } from "@/components/ui/shadcn/button";
 import { Editor } from "@monaco-editor/react";
-import { Loader2 } from "lucide-react";
+import { Info, Loader2 } from "lucide-react";
+import type React from "react";
+import { useMemo, useState } from "react";
+import { useFormContext } from "react-hook-form";
+import { Button } from "@/components/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
+  DialogTrigger
 } from "@/components/ui/shadcn/dialog";
-import { Info } from "lucide-react";
-import { WorkflowFormData } from "./index";
+import { Label } from "@/components/ui/shadcn/label";
+import type { WorkflowFormData } from "./index";
 
 export const VariablesForm: React.FC = () => {
   const { setValue, watch } = useFormContext<WorkflowFormData>();
@@ -71,25 +71,25 @@ export const VariablesForm: React.FC = () => {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        <Label className="flex justify-between" htmlFor="variables-schema">
+    <div className='space-y-4'>
+      <div className='space-y-2'>
+        <Label className='flex justify-between' htmlFor='variables-schema'>
           <p>Variables Schema (JSON)</p>
           <Dialog>
             <DialogTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                <Info className="h-4 w-4" />
+              <Button variant='ghost' size='sm' className='h-6 w-6 p-0'>
+                <Info className='h-4 w-4' />
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl">
+            <DialogContent className='max-w-2xl'>
               <DialogHeader>
                 <DialogTitle>JSON Schema Documentation</DialogTitle>
               </DialogHeader>
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                  <div className="space-y-2">
-                    <h5 className="font-medium">Supported Types:</h5>
-                    <ul className="text-muted-foreground space-y-1">
+              <div className='space-y-4'>
+                <div className='grid grid-cols-1 gap-4 text-sm md:grid-cols-2'>
+                  <div className='space-y-2'>
+                    <h5 className='font-medium'>Supported Types:</h5>
+                    <ul className='space-y-1 text-muted-foreground'>
                       <li>
                         • <code>string</code> - Text values
                       </li>
@@ -110,9 +110,9 @@ export const VariablesForm: React.FC = () => {
                       </li>
                     </ul>
                   </div>
-                  <div className="space-y-2">
-                    <h5 className="font-medium">Common Properties:</h5>
-                    <ul className="text-muted-foreground space-y-1">
+                  <div className='space-y-2'>
+                    <h5 className='font-medium'>Common Properties:</h5>
+                    <ul className='space-y-1 text-muted-foreground'>
                       <li>
                         • <code>description</code> - Help text
                       </li>
@@ -135,21 +135,16 @@ export const VariablesForm: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="p-4 bg-blue-50 rounded-lg">
-                  <h5 className="font-medium text-blue-800 mb-2">
-                    Example Schema:
-                  </h5>
-                  <pre className="text-xs text-blue-700 overflow-x-auto">
-                    {defaultSchema}
-                  </pre>
+                <div className='rounded-lg bg-blue-50 p-4'>
+                  <h5 className='mb-2 font-medium text-blue-800'>Example Schema:</h5>
+                  <pre className='overflow-x-auto text-blue-700 text-xs'>{defaultSchema}</pre>
                 </div>
 
-                <div className="p-4 bg-amber-50 rounded-lg">
-                  <p className="text-sm text-amber-800">
-                    <strong>Note:</strong> Variables define the schema for
-                    inputs that can be provided when running the automation. The
-                    JSON should be a valid JSON Schema object where each key is
-                    a variable name and the value is its schema definition.
+                <div className='rounded-lg bg-amber-50 p-4'>
+                  <p className='text-amber-800 text-sm'>
+                    <strong>Note:</strong> Variables define the schema for inputs that can be
+                    provided when running the automation. The JSON should be a valid JSON Schema
+                    object where each key is a variable name and the value is its schema definition.
                   </p>
                 </div>
               </div>
@@ -157,16 +152,16 @@ export const VariablesForm: React.FC = () => {
           </Dialog>
         </Label>
         <div
-          className={`border rounded-md overflow-hidden ${!isJsonValid ? "border-red-500" : "border-input"}`}
+          className={`overflow-hidden rounded-md border ${!isJsonValid ? "border-red-500" : "border-input"}`}
         >
           <Editor
-            height="300px"
-            width="100%"
-            theme="vs-dark"
-            language="json"
+            height='300px'
+            width='100%'
+            theme='vs-dark'
+            language='json'
             value={variableStr || ""}
             loading={
-              <Loader2 className="w-4 h-4 animate-[spin_0.2s_linear_infinite] text-[white]" />
+              <Loader2 className='h-4 w-4 animate-[spin_0.2s_linear_infinite] text-[white]' />
             }
             options={{
               minimap: { enabled: false },
@@ -179,14 +174,12 @@ export const VariablesForm: React.FC = () => {
               glyphMargin: false,
               folding: true,
               lineDecorationsWidth: 0,
-              lineNumbersMinChars: 3,
+              lineNumbersMinChars: 3
             }}
             onChange={(value) => validateAndSetVariables(value || "")}
           />
         </div>
-        {!isJsonValid && (
-          <p className="text-sm text-red-500">Invalid JSON: {jsonError}</p>
-        )}
+        {!isJsonValid && <p className='text-red-500 text-sm'>Invalid JSON: {jsonError}</p>}
       </div>
     </div>
   );

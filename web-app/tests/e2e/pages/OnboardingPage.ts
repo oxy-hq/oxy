@@ -1,5 +1,5 @@
 /* eslint-disable sonarjs/no-hardcoded-passwords */
-import { Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
 
 export class OnboardingPage {
   constructor(private page: Page) {}
@@ -10,9 +10,7 @@ export class OnboardingPage {
   }
 
   async clickGetStarted() {
-    await this.page
-      .getByRole("button", { name: /get started with github/i })
-      .click();
+    await this.page.getByRole("button", { name: /get started with github/i }).click();
   }
 
   // GitHub Token Page
@@ -40,13 +38,11 @@ export class OnboardingPage {
     // Wait for either repository syncing or completion
     try {
       await this.page.waitForSelector('[data-testid="repository-syncing"]', {
-        timeout: 5000,
+        timeout: 5000
       });
     } catch {
       // If syncing state doesn't appear, setup might have completed quickly
-      console.log(
-        "Repository setup completed quickly or syncing state not found",
-      );
+      console.log("Repository setup completed quickly or syncing state not found");
     }
   }
 
@@ -71,7 +67,7 @@ export class OnboardingPage {
       MYSQL_PASSWORD: "test_value_mysql_ghi",
       ANTHROPIC_API_KEY: "test_value_anthropic_api_key_jkl",
       SNOWFLAKE_PASSWORD: "test_value_snowflake_mno",
-      OPENAI_API_KEY: "test_value_openai_api_key_pqr",
+      OPENAI_API_KEY: "test_value_openai_api_key_pqr"
     };
 
     for (const [secretName, value] of Object.entries(testSecrets)) {
@@ -87,11 +83,7 @@ export class OnboardingPage {
     try {
       // Check if we're on the complete step or redirected to home
       const url = this.page.url();
-      if (
-        url.includes("/onboarding/complete") ||
-        url === "/" ||
-        url.endsWith("/")
-      ) {
+      if (url.includes("/onboarding/complete") || url === "/" || url.endsWith("/")) {
         return true;
       }
 
@@ -117,9 +109,7 @@ export class OnboardingPage {
 
   // Setup Complete Page
   async clickGoHome() {
-    await this.page
-      .getByRole("button", { name: /continue to app|start using oxy/i })
-      .click();
+    await this.page.getByRole("button", { name: /continue to app|start using oxy/i }).click();
   }
 
   // Utility methods

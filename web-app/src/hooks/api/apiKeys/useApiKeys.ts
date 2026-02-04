@@ -1,13 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
-import { ApiKeyService } from "@/services/api/apiKey";
-import { ApiKeyListResponse } from "@/types/apiKey";
-import queryKeys from "../queryKey";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { ApiKeyService } from "@/services/api/apiKey";
+import type { ApiKeyListResponse } from "@/types/apiKey";
+import queryKeys from "../queryKey";
 
 const useApiKeys = (
   enabled = true,
   refetchOnWindowFocus = true,
-  refetchOnMount: boolean | "always" = false,
+  refetchOnMount: boolean | "always" = false
 ) => {
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
@@ -16,7 +16,7 @@ const useApiKeys = (
     queryFn: () => ApiKeyService.listApiKeys(projectId),
     enabled,
     refetchOnWindowFocus,
-    refetchOnMount,
+    refetchOnMount
   });
 };
 

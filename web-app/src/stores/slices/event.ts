@@ -1,6 +1,6 @@
-import { StateCreator } from "zustand";
-import { BlockEvent, TaskContent } from "@/services/types";
-import { GroupSlice } from "./group";
+import type { StateCreator } from "zustand";
+import type { BlockEvent, TaskContent } from "@/services/types";
+import type { GroupSlice } from "./group";
 
 export interface EventSlice {
   handleEvent: (event: BlockEvent) => void;
@@ -21,7 +21,7 @@ export const createEventSlice: StateCreator<
           type: "workflow",
           workflow_id: event.workflow_id,
           run_id: event.run_id,
-          workflow_config: event.workflow_config,
+          workflow_config: event.workflow_config
         });
         break;
       }
@@ -32,15 +32,14 @@ export const createEventSlice: StateCreator<
         break;
       }
       case "artifact_started": {
-        const { artifact_id, artifact_name, artifact_metadata, is_verified } =
-          event;
+        const { artifact_id, artifact_name, artifact_metadata, is_verified } = event;
         get().addGroup(artifact_id, {
           id: artifact_id,
           type: "artifact",
           artifact_id,
           artifact_name,
           artifact_metadata,
-          is_verified,
+          is_verified
         });
         break;
       }
@@ -57,7 +56,7 @@ export const createEventSlice: StateCreator<
           id: blockId,
           type: "agentic",
           agent_id,
-          run_id,
+          run_id
         });
         break;
       }
@@ -74,7 +73,7 @@ export const createEventSlice: StateCreator<
         get().upsertBlockToStack(task_id, {
           type: "task",
           task_name,
-          task_metadata,
+          task_metadata
         });
         break;
       }
@@ -82,7 +81,7 @@ export const createEventSlice: StateCreator<
         const { task_id, metadata } = event;
         get().upsertBlockToStack(task_id, {
           type: "task",
-          task_metadata: metadata,
+          task_metadata: metadata
         } as TaskContent);
         break;
       }
@@ -98,7 +97,7 @@ export const createEventSlice: StateCreator<
           type: "step",
           id,
           step_type,
-          objective,
+          objective
         });
         break;
       }
@@ -120,5 +119,5 @@ export const createEventSlice: StateCreator<
         break;
       }
     }
-  },
+  }
 });

@@ -10,7 +10,7 @@ export function maskSecret(
   secret: string,
   visibleStart: number = 3,
   visibleEnd: number = 3,
-  maskChar: string = "*",
+  maskChar: string = "*"
 ): string {
   if (!secret || typeof secret !== "string") {
     return "";
@@ -22,18 +22,12 @@ export function maskSecret(
   }
 
   // If secret is shorter than visible chars, reduce the visible chars
-  const actualVisibleStart = Math.min(
-    visibleStart,
-    Math.floor(secret.length / 3),
-  );
+  const actualVisibleStart = Math.min(visibleStart, Math.floor(secret.length / 3));
   const actualVisibleEnd = Math.min(visibleEnd, Math.floor(secret.length / 3));
 
   const start = secret.substring(0, actualVisibleStart);
   const end = secret.substring(secret.length - actualVisibleEnd);
-  const middleLength = Math.max(
-    secret.length - actualVisibleStart - actualVisibleEnd,
-    6,
-  );
+  const middleLength = Math.max(secret.length - actualVisibleStart - actualVisibleEnd, 6);
 
   return start + maskChar.repeat(middleLength) + end;
 }
@@ -54,10 +48,7 @@ export function maskSecretForTable(secret: string): string {
  * @param length Fixed length of the mask (default: 8)
  * @returns Completely masked string
  */
-export function maskSecretCompletely(
-  secret: string,
-  length: number = 8,
-): string {
+export function maskSecretCompletely(secret: string, length: number = 8): string {
   if (!secret || typeof secret !== "string") {
     return "";
   }
@@ -82,7 +73,7 @@ export function isLikelySecret(value: string): boolean {
     /^ghs_[a-zA-Z0-9]{36}$/, // GitHub app tokens
     /^[A-Za-z0-9+/]{40,}={0,2}$/, // Base64 encoded (likely token)
     /^[a-f0-9]{32,}$/i, // Hex strings (MD5, SHA, etc.)
-    /password|secret|key|token/i, // Contains sensitive keywords
+    /password|secret|key|token/i // Contains sensitive keywords
   ];
 
   return (
@@ -113,15 +104,14 @@ export function validateSecretName(name: string): {
   if (trimmedName.length > 100) {
     return {
       isValid: false,
-      error: "Secret name cannot exceed 100 characters",
+      error: "Secret name cannot exceed 100 characters"
     };
   }
 
   if (!/^[a-zA-Z0-9_-]+$/.test(trimmedName)) {
     return {
       isValid: false,
-      error:
-        "Secret name can only contain letters, numbers, hyphens, and underscores",
+      error: "Secret name can only contain letters, numbers, hyphens, and underscores"
     };
   }
 
@@ -133,7 +123,7 @@ export function validateSecretName(name: string): {
   ) {
     return {
       isValid: false,
-      error: "Secret name cannot start or end with hyphens or underscores",
+      error: "Secret name cannot start or end with hyphens or underscores"
     };
   }
 

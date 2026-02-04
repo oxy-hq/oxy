@@ -22,6 +22,7 @@ Oxy requires a **Docker API-compatible endpoint** to manage PostgreSQL, ClickHou
 **TL;DR:** Oxy needs a **Docker API-compatible socket endpoint**, not a specific application.
 
 You can use:
+
 - Docker Engine installed directly (no GUI)
 - Docker Desktop, Rancher Desktop (with dockerd/moby), Colima, OrbStack, etc. (with GUI)
 - Podman with Docker socket emulation
@@ -509,6 +510,7 @@ oxy start --clean
 ```
 
 This removes across all container runtimes:
+
 - All Oxy-managed containers
 - Associated volumes
 - Container networks (enterprise mode)

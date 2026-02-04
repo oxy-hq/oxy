@@ -1,7 +1,7 @@
-import { ThreadService } from "@/services/api";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import queryKeys from "../queryKey";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { ThreadService } from "@/services/api";
+import queryKeys from "../queryKey";
 
 const useDeleteAllThread = () => {
   const { project } = useCurrentProjectBranch();
@@ -13,9 +13,9 @@ const useDeleteAllThread = () => {
       // Invalidate all thread queries (all pages and individual threads)
       queryClient.invalidateQueries({
         queryKey: queryKeys.thread.all,
-        type: "all",
+        type: "all"
       });
-    },
+    }
   });
 };
 

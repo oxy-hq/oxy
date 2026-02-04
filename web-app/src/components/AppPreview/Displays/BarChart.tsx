@@ -1,32 +1,21 @@
-import { useCallback } from "react";
 import type { BarSeriesOption } from "echarts";
-import { BarChartDisplay, DataContainer } from "@/types/app";
+import { useCallback } from "react";
 import { Echarts } from "@/components/Echarts";
+import type { BarChartDisplay, DataContainer } from "@/types/app";
 import {
-  useChartBase,
-  getXAxisData,
+  type ChartBuilderParams,
+  createBaseChartOptions,
+  createXYAxisOptions,
   getSeriesData,
   getSeriesValues,
   getSimpleAggregatedData,
-  createBaseChartOptions,
-  createXYAxisOptions,
-  type ChartBuilderParams,
+  getXAxisData,
+  useChartBase
 } from "./hooks";
 
-export const BarChart = ({
-  display,
-  data,
-}: {
-  display: BarChartDisplay;
-  data?: DataContainer;
-}) => {
+export const BarChart = ({ display, data }: { display: BarChartDisplay; data?: DataContainer }) => {
   const buildChartOptions = useCallback(
-    async ({
-      display,
-      connection,
-      fileName,
-      isDarkMode,
-    }: ChartBuilderParams<BarChartDisplay>) => {
+    async ({ display, connection, fileName, isDarkMode }: ChartBuilderParams<BarChartDisplay>) => {
       const baseOptions = createBaseChartOptions(isDarkMode);
       const xData = await getXAxisData(connection, fileName, display.x);
       const xyAxisOptions = createXYAxisOptions(xData, isDarkMode);
@@ -34,11 +23,7 @@ export const BarChart = ({
       let series: BarSeriesOption[];
 
       if (display.series) {
-        const seriesNames = await getSeriesData(
-          connection,
-          fileName,
-          display.series,
-        );
+        const seriesNames = await getSeriesData(connection, fileName, display.series);
         series = await Promise.all(
           seriesNames.map(async (seriesName): Promise<BarSeriesOption> => {
             const values = await getSeriesValues(
@@ -47,7 +32,7 @@ export const BarChart = ({
               display.x,
               display.y,
               display.series!,
-              seriesName,
+              seriesName
             );
             // Create a map of x -> y for this series
             const valueMap = new Map(values.map((v) => [v.x, v.y]));
@@ -57,39 +42,34 @@ export const BarChart = ({
               name: String(seriesName),
               type: "bar",
               stack: "total",
-              data: alignedData,
+              data: alignedData
             };
-          }),
+          })
         );
       } else {
-        const values = await getSimpleAggregatedData(
-          connection,
-          fileName,
-          display.x,
-          display.y,
-        );
+        const values = await getSimpleAggregatedData(connection, fileName, display.x, display.y);
         series = [
           {
             name: display.y,
             type: "bar",
-            data: values,
-          },
+            data: values
+          }
         ];
       }
 
       return {
         ...baseOptions,
         ...xyAxisOptions,
-        series,
+        series
       };
     },
-    [],
+    []
   );
 
   const { isLoading, chartOptions } = useChartBase({
     display,
     data,
-    buildChartOptions,
+    buildChartOptions
   });
 
   return (
@@ -97,7 +77,7 @@ export const BarChart = ({
       isLoading={isLoading}
       options={chartOptions}
       title={display.title}
-      testId="app-bar-chart"
+      testId='app-bar-chart'
     />
   );
 };

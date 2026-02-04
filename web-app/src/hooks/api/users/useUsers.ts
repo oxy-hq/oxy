@@ -1,13 +1,13 @@
-import { UserService } from "@/services/api";
 import { useQuery } from "@tanstack/react-query";
+import { UserService } from "@/services/api";
+import type { UserListResponse } from "@/types/auth";
 import queryKeys from "../queryKey";
-import { UserListResponse } from "@/types/auth";
 
 const useUsers = (
   workspaceId: string,
   enabled = true,
   refetchOnWindowFocus = true,
-  refetchOnMount: boolean | "always" = false,
+  refetchOnMount: boolean | "always" = false
 ) =>
   useQuery<UserListResponse, Error>({
     queryKey: queryKeys.user.list(workspaceId),
@@ -25,7 +25,7 @@ const useUsers = (
         return false;
       }
       return failureCount < 3;
-    },
+    }
   });
 
 export default useUsers;

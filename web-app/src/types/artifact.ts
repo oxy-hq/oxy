@@ -1,4 +1,4 @@
-import { LogItem } from "@/services/types";
+import type { LogItem } from "@/services/types";
 
 export type SqlArtifact = {
   id: string;

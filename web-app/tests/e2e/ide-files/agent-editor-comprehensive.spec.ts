@@ -1,9 +1,5 @@
-import { test, expect, Page } from "@playwright/test";
-import {
-  saveFileSnapshot,
-  restoreFileSnapshot,
-  cleanupAfterTest,
-} from "./test-cleanup";
+import { expect, type Page, test } from "@playwright/test";
+import { cleanupAfterTest, restoreFileSnapshot, saveFileSnapshot } from "./test-cleanup";
 
 /**
  * Comprehensive Agent Editor Tests
@@ -25,10 +21,7 @@ import {
 // HELPER FUNCTIONS
 // ============================================================================
 
-async function openAgentFile(
-  page: Page,
-  mode: "files" | "objects" = "files",
-): Promise<boolean> {
+async function openAgentFile(page: Page, mode: "files" | "objects" = "files"): Promise<boolean> {
   if (mode === "objects") {
     await page.getByRole("tab", { name: "Objects" }).click();
     await page.waitForTimeout(500);
@@ -57,7 +50,7 @@ async function openAgentFile(
 
     const agentsFolder = page.getByRole("button", {
       name: "agents",
-      exact: true,
+      exact: true
     });
     if (await agentsFolder.isVisible()) {
       await agentsFolder.click();
@@ -79,10 +72,7 @@ async function openAgentFile(
   }
 }
 
-async function switchMode(
-  page: Page,
-  mode: "editor" | "form" | "preview",
-): Promise<boolean> {
+async function switchMode(page: Page, mode: "editor" | "form" | "preview"): Promise<boolean> {
   const tab = page.getByRole("tab", { name: new RegExp(mode, "i") });
   if (await tab.isVisible()) {
     await tab.click();
@@ -101,7 +91,7 @@ test.describe("Agent Editor - Form & Editor Synchronization", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
 
     // 📸 Save file state before test starts
@@ -151,9 +141,7 @@ test.describe("Agent Editor - Form & Editor Synchronization", () => {
 
     await switchMode(page, "form");
 
-    const promptInput = page
-      .locator('textarea[name*="prompt"], textarea[name*="system"]')
-      .first();
+    const promptInput = page.locator('textarea[name*="prompt"], textarea[name*="system"]').first();
     if (await promptInput.isVisible()) {
       await promptInput.fill("You are a helpful AI assistant for testing.");
       await page.waitForTimeout(600);
@@ -233,9 +221,7 @@ model: gpt-4`);
     }
   });
 
-  test("should persist saved changes after navigating away and back", async ({
-    page,
-  }) => {
+  test("should persist saved changes after navigating away and back", async ({ page }) => {
     const opened = await openAgentFile(page);
     if (!opened) {
       test.skip();
@@ -274,10 +260,7 @@ model: gpt-4`);
 
             // Verify saved changes persisted
             await switchMode(page, "editor");
-            const content = await page
-              .locator(".view-lines")
-              .first()
-              .textContent();
+            const content = await page.locator(".view-lines").first().textContent();
             expect(content).toContain(uniqueName);
           }
         }
@@ -323,7 +306,7 @@ test.describe("Agent Editor - Preview & Testing", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -347,7 +330,7 @@ test.describe("Agent Editor - Preview & Testing", () => {
     await page.waitForTimeout(1000);
 
     const previewPanel = page.locator(
-      '[data-testid*="preview"], .preview-panel, [data-testid*="chat"]',
+      '[data-testid*="preview"], .preview-panel, [data-testid*="chat"]'
     );
     const hasPreview = await previewPanel.isVisible().catch(() => false);
     expect(hasPreview || true).toBeTruthy();
@@ -365,7 +348,7 @@ test.describe("Agent Editor - Preview & Testing", () => {
 
     const messageInput = page
       .locator(
-        'textarea[placeholder*="message"], textarea[placeholder*="Message"], input[type="text"]',
+        'textarea[placeholder*="message"], textarea[placeholder*="Message"], input[type="text"]'
       )
       .first();
     if (await messageInput.isVisible()) {
@@ -396,7 +379,7 @@ test.describe("Agent Editor - Preview & Testing", () => {
     await page.waitForTimeout(1000);
 
     const messagesContainer = page.locator(
-      '[data-testid*="messages"], .messages-container, [role="log"]',
+      '[data-testid*="messages"], .messages-container, [role="log"]'
     );
     const hasContainer = await messagesContainer.isVisible().catch(() => false);
     expect(hasContainer || true).toBeTruthy();
@@ -435,7 +418,7 @@ test.describe("Agent Editor - Form Fields", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
 
     // 📸 Save file state before test starts
@@ -460,9 +443,7 @@ test.describe("Agent Editor - Form Fields", () => {
 
     await switchMode(page, "form");
 
-    const modelSelect = page
-      .locator('select[name*="model"], [data-testid*="model"]')
-      .first();
+    const modelSelect = page.locator('select[name*="model"], [data-testid*="model"]').first();
     if (await modelSelect.isVisible()) {
       await modelSelect.click();
       await page.waitForTimeout(300);
@@ -485,9 +466,7 @@ test.describe("Agent Editor - Form Fields", () => {
     await switchMode(page, "form");
 
     const tempSlider = page
-      .locator(
-        'input[type="range"][name*="temperature"], input[name*="temperature"]',
-      )
+      .locator('input[type="range"][name*="temperature"], input[name*="temperature"]')
       .first();
     if (await tempSlider.isVisible()) {
       await tempSlider.fill("0.7");
@@ -504,16 +483,12 @@ test.describe("Agent Editor - Form Fields", () => {
 
     await switchMode(page, "form");
 
-    const addToolButton = page
-      .getByRole("button", { name: /add.*tool/i })
-      .first();
+    const addToolButton = page.getByRole("button", { name: /add.*tool/i }).first();
     if (await addToolButton.isVisible()) {
       await addToolButton.click();
       await page.waitForTimeout(500);
 
-      const removeButton = page
-        .getByRole("button", { name: /remove|delete/i })
-        .first();
+      const removeButton = page.getByRole("button", { name: /remove|delete/i }).first();
       if (await removeButton.isVisible()) {
         await removeButton.click();
         await page.waitForTimeout(500);
@@ -530,9 +505,7 @@ test.describe("Agent Editor - Form Fields", () => {
 
     await switchMode(page, "form");
 
-    const promptInput = page
-      .locator('textarea[name*="prompt"], textarea[name*="system"]')
-      .first();
+    const promptInput = page.locator('textarea[name*="prompt"], textarea[name*="system"]').first();
     if (await promptInput.isVisible()) {
       const longPrompt = "A".repeat(5000);
       await promptInput.fill(longPrompt);
@@ -552,9 +525,7 @@ test.describe("Agent Editor - Form Fields", () => {
 
     await switchMode(page, "form");
 
-    const promptInput = page
-      .locator('textarea[name*="prompt"], textarea[name*="system"]')
-      .first();
+    const promptInput = page.locator('textarea[name*="prompt"], textarea[name*="system"]').first();
     if (await promptInput.isVisible()) {
       const unicodePrompt = "You are 日本語 assistant 🎉 with émojis café";
       await promptInput.fill(unicodePrompt);
@@ -575,7 +546,7 @@ test.describe("Agent Editor - Character Input & Edge Cases", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
 
     // 📸 Save file state before test starts
@@ -602,12 +573,7 @@ test.describe("Agent Editor - Character Input & Edge Cases", () => {
 
     const nameInput = page.locator('input[name*="name"]').first();
     if (await nameInput.isVisible()) {
-      const specialNames = [
-        "agent_with_underscore",
-        "agent-with-dash",
-        "agent123",
-        "agent.test",
-      ];
+      const specialNames = ["agent_with_underscore", "agent-with-dash", "agent123", "agent.test"];
 
       for (const name of specialNames) {
         await nameInput.fill(name);
@@ -680,9 +646,7 @@ model: gpt-4`;
     await page.keyboard.type("invalid:: yaml::: syntax here");
     await page.waitForTimeout(1000);
 
-    const errorIndicator = page.locator(
-      '[class*="error"], [aria-label*="error"]',
-    );
+    const errorIndicator = page.locator('[class*="error"], [aria-label*="error"]');
     const hasError = await errorIndicator.isVisible().catch(() => false);
     expect(hasError || true).toBeTruthy();
   });
@@ -697,7 +661,7 @@ test.describe("Agent Editor - Keyboard Shortcuts", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
 
     // 📸 Save file state before test starts
@@ -788,7 +752,7 @@ test.describe("Agent Editor - Keyboard Shortcuts", () => {
         () =>
           // eslint-disable-next-line @typescript-eslint/ban-ts-comment
           // @ts-expect-error
-          document.activeElement?.tagName,
+          document.activeElement?.tagName
       );
       expect(activeElement).toBeTruthy();
     }
@@ -804,7 +768,7 @@ test.describe("Agent Editor - Responsive Layout", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 

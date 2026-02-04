@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { IDEPage } from "../pages/IDEPage";
 import { cleanupTestFiles } from "../utils";
 import { captureFileTree, cleanupAfterTest } from "./test-cleanup";
@@ -8,7 +8,7 @@ test.describe("IDE Files - File/Folder Creation", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
     await page.getByRole("tab", { name: "Files" }).click();
     await page.waitForTimeout(500);
@@ -29,9 +29,7 @@ test.describe("IDE Files - File/Folder Creation", () => {
   });
 
   // 2.1 Create file in root
-  test("2.1 - should create file in root and navigate to editor", async ({
-    page,
-  }) => {
+  test("2.1 - should create file in root and navigate to editor", async ({ page }) => {
     const newFileButton = page.getByRole("button", { name: "New File" });
 
     if (await newFileButton.isVisible()) {
@@ -74,9 +72,7 @@ test.describe("IDE Files - File/Folder Creation", () => {
   });
 
   // 2.3 Create folder then file inside immediately
-  test("2.3 - should create folder then file inside immediately", async ({
-    page,
-  }) => {
+  test("2.3 - should create folder then file inside immediately", async ({ page }) => {
     const newFolderButton = page.getByRole("button", { name: "New Folder" });
 
     if (await newFolderButton.isVisible()) {
@@ -94,9 +90,7 @@ test.describe("IDE Files - File/Folder Creation", () => {
   });
 
   // 2.4 Press Enter without name
-  test("2.4 - should not create file when pressing Enter without name", async ({
-    page,
-  }) => {
+  test("2.4 - should not create file when pressing Enter without name", async ({ page }) => {
     const newFileButton = page.getByRole("button", { name: "New File" });
 
     if (await newFileButton.isVisible()) {
@@ -114,9 +108,7 @@ test.describe("IDE Files - File/Folder Creation", () => {
   });
 
   // 2.5 Press Escape during creation
-  test("2.5 - should cancel creation when pressing Escape", async ({
-    page,
-  }) => {
+  test("2.5 - should cancel creation when pressing Escape", async ({ page }) => {
     const newFileButton = page.getByRole("button", { name: "New File" });
 
     if (await newFileButton.isVisible()) {
@@ -165,9 +157,7 @@ test.describe("IDE Files - File/Folder Creation", () => {
   });
 
   // 2.7 Invalid chars: < > : " / \ | ? *
-  test("2.7 - should handle invalid characters in file name", async ({
-    page,
-  }) => {
+  test("2.7 - should handle invalid characters in file name", async ({ page }) => {
     const newFileButton = page.getByRole("button", { name: "New File" });
 
     if (await newFileButton.isVisible()) {
@@ -231,7 +221,7 @@ test.describe("IDE Files - File/Folder Creation", () => {
       const input = page.locator("input[autofocus]");
       await expect(input).toBeVisible();
 
-      const longName = "a".repeat(1000) + ".txt";
+      const longName = `${"a".repeat(1000)}.txt`;
       await input.fill(longName);
       await page.keyboard.press("Enter");
 
@@ -241,9 +231,7 @@ test.describe("IDE Files - File/Folder Creation", () => {
   });
 
   // 2.11-2.15 Create specific object types
-  test("2.11 - should create Agent with .agent.yml extension", async ({
-    page,
-  }) => {
+  test("2.11 - should create Agent with .agent.yml extension", async ({ page }) => {
     await page.getByRole("tab", { name: "Objects" }).click();
     await page.waitForTimeout(500);
 
@@ -262,14 +250,12 @@ test.describe("IDE Files - File/Folder Creation", () => {
   });
 
   // 2.16 API returns 500 during create
-  test("2.16 - should show toast error on API failure during create", async ({
-    page,
-  }) => {
+  test("2.16 - should show toast error on API failure during create", async ({ page }) => {
     await page.route("**/api/v1/**/files**", (route, request) => {
       if (request.method() === "POST") {
         route.fulfill({
           status: 500,
-          body: JSON.stringify({ error: "Internal Server Error" }),
+          body: JSON.stringify({ error: "Internal Server Error" })
         });
       } else {
         route.continue();
@@ -299,9 +285,7 @@ test.describe("IDE Files - File/Folder Creation", () => {
   });
 
   // 2.17 Network disconnects during creation
-  test("2.17 - should handle network disconnect during creation", async ({
-    page,
-  }) => {
+  test("2.17 - should handle network disconnect during creation", async ({ page }) => {
     const newFileButton = page.getByRole("button", { name: "New File" });
 
     if (await newFileButton.isVisible()) {

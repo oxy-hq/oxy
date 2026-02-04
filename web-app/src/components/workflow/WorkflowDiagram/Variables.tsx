@@ -1,46 +1,38 @@
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-} from "@/components/ui/shadcn/dialog";
-import { create } from "zustand";
+import { DialogTitle } from "@radix-ui/react-dialog";
 import {
   buildCompleteYupSchema,
   createHeadlessForm,
-  JSONSchemaObjectType,
+  type JSONSchemaObjectType
 } from "@remoteoss/json-schema-form";
+import { useCallback, useMemo } from "react";
+import { useForm } from "react-hook-form";
+import { create } from "zustand";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/shadcn/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader } from "@/components/ui/shadcn/dialog";
 import {
   Field,
   FieldContent,
   FieldDescription,
   FieldError,
   FieldLabel,
-  FieldTitle,
+  FieldTitle
 } from "@/components/ui/shadcn/field";
 import { Input } from "@/components/ui/shadcn/input";
-import { useForm } from "react-hook-form";
-import { useCallback, useMemo } from "react";
-import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/shadcn/radio-group";
-import { DialogTitle } from "@radix-ui/react-dialog";
 
 type TData = Record<string, unknown>;
 
 interface VariablesState {
   isOpen: boolean;
   onSubmit?: (data: TData) => Promise<unknown>;
-  setIsOpen: (
-    isOpen: boolean,
-    onSubmit?: (data: TData) => Promise<unknown>,
-  ) => void;
+  setIsOpen: (isOpen: boolean, onSubmit?: (data: TData) => Promise<unknown>) => void;
 }
 
 export const useVariables = create<VariablesState>()((set) => ({
   isOpen: false,
   onSubmit: undefined,
-  setIsOpen: (isOpen: boolean, onSubmit) => set({ isOpen, onSubmit }),
+  setIsOpen: (isOpen: boolean, onSubmit) => set({ isOpen, onSubmit })
 }));
 
 type Props = {
@@ -64,33 +56,30 @@ const useYupValidationResolver = (validationSchema: YupValidationSchema) =>
     async (data: TData) => {
       try {
         const values = await validationSchema.validate(data, {
-          abortEarly: false,
+          abortEarly: false
         });
 
         return {
           values,
-          errors: {},
+          errors: {}
         };
       } catch (errors) {
         return {
           values: {},
           errors: (errors as YupErrors).inner.reduce(
-            (
-              allErrors: Record<string, { type: string; message: string }>,
-              currentError,
-            ) => ({
+            (allErrors: Record<string, { type: string; message: string }>, currentError) => ({
               ...allErrors,
               [currentError.path]: {
                 type: currentError.type ?? "validation",
-                message: currentError.message,
-              },
+                message: currentError.message
+              }
             }),
-            {},
-          ),
+            {}
+          )
         };
       }
     },
-    [validationSchema],
+    [validationSchema]
   );
 
 export function Variables({ schema }: Props) {
@@ -98,16 +87,16 @@ export function Variables({ schema }: Props) {
   const { fields } = useMemo(
     () =>
       createHeadlessForm(schema, {
-        strictInputType: false,
+        strictInputType: false
       }),
-    [schema],
+    [schema]
   );
   const yupSchema = useMemo(
     () =>
       buildCompleteYupSchema(fields, {
-        strictInputType: false,
+        strictInputType: false
       }),
-    [fields],
+    [fields]
   );
   const yupResolver = useYupValidationResolver(yupSchema);
   const {
@@ -115,7 +104,7 @@ export function Variables({ schema }: Props) {
     register,
     formState: { errors },
     reset,
-    setError,
+    setError
   } = useForm({ resolver: yupResolver });
   const onClose = useCallback(() => {
     reset();
@@ -127,19 +116,19 @@ export function Variables({ schema }: Props) {
         onClose();
       }
     },
-    [onClose],
+    [onClose]
   );
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className='sm:max-w-[425px]'>
         <DialogHeader>
           <DialogTitle>Run Automation With Variables</DialogTitle>
         </DialogHeader>
-        <div className="flex h-full overflow-hidden">
-          <div className="flex-1 overflow-auto customScrollbar scrollbar-gutter-auto">
+        <div className='flex h-full overflow-hidden'>
+          <div className='customScrollbar scrollbar-gutter-auto flex-1 overflow-auto'>
             <form
-              id="workflow-variables-form"
+              id='workflow-variables-form'
               onSubmit={handleSubmit(async (data) => {
                 try {
                   await onSubmit?.(data);
@@ -147,7 +136,7 @@ export function Variables({ schema }: Props) {
                 } catch (error) {
                   setError("serverError", {
                     type: "server",
-                    message: `${error}`,
+                    message: `${error}`
                   });
                 }
               })}
@@ -160,7 +149,7 @@ export function Variables({ schema }: Props) {
                   case "number":
                     fieldInput = (
                       <Input
-                        type="number"
+                        type='number'
                         id={fieldName}
                         defaultValue={field.default as number}
                         step={"any"}
@@ -187,11 +176,8 @@ export function Variables({ schema }: Props) {
                       <RadioGroup id={fieldName} {...register(fieldName)}>
                         {options.map(({ label, value }) => {
                           return (
-                            <FieldLabel
-                              key={`${value}`}
-                              htmlFor={`radiogroup-${value}`}
-                            >
-                              <Field orientation="horizontal">
+                            <FieldLabel key={`${value}`} htmlFor={`radiogroup-${value}`}>
+                              <Field orientation='horizontal'>
                                 <FieldContent>
                                   <FieldTitle>{label}</FieldTitle>
                                 </FieldContent>
@@ -223,9 +209,7 @@ export function Variables({ schema }: Props) {
                     <FieldLabel htmlFor={fieldName}>{fieldName}</FieldLabel>
                     {fieldInput}
                     {field.description ? (
-                      <FieldDescription>
-                        {`${field.description}`}
-                      </FieldDescription>
+                      <FieldDescription>{`${field.description}`}</FieldDescription>
                     ) : null}
                     <FieldError errors={[errors?.[fieldName]]} />
                   </Field>
@@ -236,15 +220,10 @@ export function Variables({ schema }: Props) {
         </div>
         <DialogFooter>
           <FieldError errors={[errors?.serverError]} />
-          <Button
-            type="reset"
-            variant="outline"
-            onClick={onClose}
-            className="mr-2"
-          >
+          <Button type='reset' variant='outline' onClick={onClose} className='mr-2'>
             Cancel
           </Button>
-          <Button type="submit" form="workflow-variables-form">
+          <Button type='submit' form='workflow-variables-form'>
             Submit
           </Button>
         </DialogFooter>

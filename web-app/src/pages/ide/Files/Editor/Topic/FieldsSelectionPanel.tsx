@@ -1,6 +1,6 @@
-import { useState, useMemo } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { TopicData, ViewWithData } from "../types";
+import { useMemo, useState } from "react";
+import type { TopicData, ViewWithData } from "../types";
 
 interface FieldsSelectionPanelProps {
   topicData: TopicData | null;
@@ -19,20 +19,17 @@ const FieldsSelectionPanel = ({
   selectedDimensions,
   selectedMeasures,
   toggleDimension,
-  toggleMeasure,
+  toggleMeasure
 }: FieldsSelectionPanelProps) => {
   // null means "not yet initialized" - will auto-expand all views
   const [expandedViews, setExpandedViews] = useState<Set<string> | null>(null);
 
-  const viewNames = useMemo(
-    () => viewsWithData.map((v) => v.viewName),
-    [viewsWithData],
-  );
+  const viewNames = useMemo(() => viewsWithData.map((v) => v.viewName), [viewsWithData]);
 
   // Compute effective expanded views - if null (not initialized), expand all
   const effectiveExpandedViews = useMemo(
     () => expandedViews ?? new Set(viewNames),
-    [expandedViews, viewNames],
+    [expandedViews, viewNames]
   );
 
   const toggleViewExpanded = (viewName: string) => {
@@ -50,28 +47,25 @@ const FieldsSelectionPanel = ({
   };
 
   return (
-    <div className="w-72 flex flex-col border-r bg-background">
-      <div className="flex-1 overflow-auto customScrollbar">
+    <div className='flex w-72 flex-col border-r bg-background'>
+      <div className='customScrollbar flex-1 overflow-auto'>
         {topicData && (
-          <div className="py-2">
+          <div className='py-2'>
             {/* Topic Header */}
-            <div className="px-3 py-2 border-b">
-              <div className="font-semibold text-sm">{topicData.name}</div>
+            <div className='border-b px-3 py-2'>
+              <div className='font-semibold text-sm'>{topicData.name}</div>
             </div>
 
             {/* Loading state */}
             {isLoading && (
-              <div className="px-3 py-2 text-xs text-muted-foreground">
-                Loading views...
-              </div>
+              <div className='px-3 py-2 text-muted-foreground text-xs'>Loading views...</div>
             )}
 
             {/* Views with their dimensions and measures */}
-            <div className="mt-2">
+            <div className='mt-2'>
               {viewsWithData.length === 0 && !isLoading && (
-                <div className="px-3 py-2 text-xs text-muted-foreground">
-                  No views found. Check that view files exist in the expected
-                  locations.
+                <div className='px-3 py-2 text-muted-foreground text-xs'>
+                  No views found. Check that view files exist in the expected locations.
                 </div>
               )}
               {viewsWithData.map((view) => {
@@ -79,31 +73,29 @@ const FieldsSelectionPanel = ({
                 const isBaseView = view.viewName === topicData.base_view;
 
                 return (
-                  <div key={view.viewName} className="mb-1">
+                  <div key={view.viewName} className='mb-1'>
                     {/* View Header */}
                     <button
                       onClick={() => toggleViewExpanded(view.viewName)}
-                      className="w-full flex items-center gap-1 px-3 py-1.5 hover:bg-muted/50 text-sm font-medium"
+                      className='flex w-full items-center gap-1 px-3 py-1.5 font-medium text-sm hover:bg-muted/50'
                     >
                       {isExpanded ? (
-                        <ChevronDown className="w-4 h-4" />
+                        <ChevronDown className='h-4 w-4' />
                       ) : (
-                        <ChevronRight className="w-4 h-4" />
+                        <ChevronRight className='h-4 w-4' />
                       )}
                       <span>{view.viewName}</span>
                       {isBaseView && (
-                        <span className="text-xs text-muted-foreground ml-1">
-                          (base)
-                        </span>
+                        <span className='ml-1 text-muted-foreground text-xs'>(base)</span>
                       )}
                     </button>
 
                     {isExpanded && (
-                      <div className="ml-4">
+                      <div className='ml-4'>
                         {/* Dimensions */}
                         {view.dimensions.length > 0 && (
-                          <div className="mt-1">
-                            <div className="px-4 py-1 text-xs font-medium text-muted-foreground">
+                          <div className='mt-1'>
+                            <div className='px-4 py-1 font-medium text-muted-foreground text-xs'>
                               DIMENSIONS ({view.dimensions.length})
                             </div>
                             {view.dimensions.map((dimension) => {
@@ -112,16 +104,14 @@ const FieldsSelectionPanel = ({
                                 <div
                                   key={fullName}
                                   onClick={() => toggleDimension(fullName)}
-                                  className={`flex items-start gap-2 px-8 py-1.5 cursor-pointer ${
+                                  className={`flex cursor-pointer items-start gap-2 px-8 py-1.5 ${
                                     selectedDimensions.includes(fullName)
-                                      ? "bg-primary/10 border-l-2 border-l-primary"
+                                      ? "border-l-2 border-l-primary bg-primary/10"
                                       : "hover:bg-muted/50"
                                   }`}
                                 >
-                                  <div className="flex-1 min-w-0">
-                                    <div className="text-sm truncate">
-                                      {dimension.name}
-                                    </div>
+                                  <div className='min-w-0 flex-1'>
+                                    <div className='truncate text-sm'>{dimension.name}</div>
                                   </div>
                                 </div>
                               );
@@ -131,8 +121,8 @@ const FieldsSelectionPanel = ({
 
                         {/* Measures */}
                         {view.measures.length > 0 && (
-                          <div className="mt-1">
-                            <div className="px-4 py-1 text-xs font-medium text-muted-foreground">
+                          <div className='mt-1'>
+                            <div className='px-4 py-1 font-medium text-muted-foreground text-xs'>
                               MEASURES ({view.measures.length})
                             </div>
                             {view.measures.map((measure) => {
@@ -141,16 +131,14 @@ const FieldsSelectionPanel = ({
                                 <div
                                   key={fullName}
                                   onClick={() => toggleMeasure(fullName)}
-                                  className={`flex items-start gap-2 px-8 py-1.5 cursor-pointer ${
+                                  className={`flex cursor-pointer items-start gap-2 px-8 py-1.5 ${
                                     selectedMeasures.includes(fullName)
-                                      ? "bg-primary/10 border-l-2 border-l-primary"
+                                      ? "border-l-2 border-l-primary bg-primary/10"
                                       : "hover:bg-muted/50"
                                   }`}
                                 >
-                                  <div className="flex-1 min-w-0">
-                                    <div className="text-sm truncate">
-                                      {measure.name}
-                                    </div>
+                                  <div className='min-w-0 flex-1'>
+                                    <div className='truncate text-sm'>{measure.name}</div>
                                   </div>
                                 </div>
                               );

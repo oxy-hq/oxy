@@ -1,9 +1,5 @@
-import { test, expect, Page } from "@playwright/test";
-import {
-  saveFileSnapshot,
-  restoreFileSnapshot,
-  cleanupAfterTest,
-} from "./test-cleanup";
+import { expect, type Page, test } from "@playwright/test";
+import { cleanupAfterTest, restoreFileSnapshot, saveFileSnapshot } from "./test-cleanup";
 
 /**
  * Workflow Editor Integration Tests
@@ -24,7 +20,7 @@ async function openWorkflow(page: Page): Promise<boolean> {
 
   const workflowsFolder = page.getByRole("button", {
     name: "workflows",
-    exact: true,
+    exact: true
   });
   if (await workflowsFolder.isVisible()) {
     await workflowsFolder.click();
@@ -64,7 +60,7 @@ test.describe("Workflow Editor - EditorPageWrapper Integration", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
 
     // 📸 Save file state before test starts
@@ -97,7 +93,7 @@ test.describe("Workflow Editor - EditorPageWrapper Integration", () => {
 
     // Should show modified indicator (dot or "unsaved" text)
     const statusIndicator = page.locator(
-      '[data-testid*="status"], [class*="modified"], [class*="unsaved"]',
+      '[data-testid*="status"], [class*="modified"], [class*="unsaved"]'
     );
     const hasStatus = await statusIndicator.isVisible().catch(() => false);
 
@@ -142,9 +138,7 @@ test.describe("Workflow Editor - EditorPageWrapper Integration", () => {
     }
 
     // Look for file path display
-    const pathDisplay = page.locator(
-      '[data-testid*="path"], .file-path, header',
-    );
+    const pathDisplay = page.locator('[data-testid*="path"], .file-path, header');
     const pathText = await pathDisplay.textContent().catch(() => "");
 
     expect(pathText || true).toBeTruthy(); // Path should be shown somewhere
@@ -179,7 +173,7 @@ test.describe("Workflow Editor - Preview Panel", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -199,7 +193,7 @@ test.describe("Workflow Editor - Preview Panel", () => {
     await page.waitForTimeout(1000);
 
     const previewPanel = page.locator(
-      '[data-testid*="preview"], [data-testid*="output"], .preview-panel',
+      '[data-testid*="preview"], [data-testid*="output"], .preview-panel'
     );
     const hasPreview = await previewPanel.isVisible().catch(() => false);
 
@@ -238,7 +232,7 @@ test.describe("Workflow Editor - Preview Panel", () => {
 
     // Look for resizable handle
     const resizeHandle = page.locator(
-      '[data-testid*="resize"], [class*="resize-handle"], [role="separator"]',
+      '[data-testid*="resize"], [class*="resize-handle"], [role="separator"]'
     );
     if (await resizeHandle.isVisible()) {
       const box = await resizeHandle.boundingBox();
@@ -289,7 +283,7 @@ test.describe("Workflow Editor - Validation Display", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -314,9 +308,7 @@ test.describe("Workflow Editor - Validation Display", () => {
     await page.waitForTimeout(1000);
 
     // Look for validation error indicator
-    const errorIcon = page.locator(
-      '[class*="error"], [aria-label*="error"], .validation-error',
-    );
+    const errorIcon = page.locator('[class*="error"], [aria-label*="error"], .validation-error');
     const hasError = await errorIcon.isVisible().catch(() => false);
 
     // Error icon or marker should appear
@@ -340,9 +332,7 @@ test.describe("Workflow Editor - Validation Display", () => {
       await page.waitForTimeout(300);
 
       // Look for validation error message
-      const errorMsg = page.locator(
-        '[class*="error"], [role="alert"], .field-error',
-      );
+      const errorMsg = page.locator('[class*="error"], [role="alert"], .field-error');
       const hasError = await errorMsg.isVisible().catch(() => false);
 
       expect(hasError || true).toBeTruthy();
@@ -386,7 +376,7 @@ test.describe("Workflow Editor - Workflow Features", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -423,9 +413,7 @@ test.describe("Workflow Editor - Workflow Features", () => {
     await page.waitForTimeout(1000);
 
     // Look for run history list
-    const runList = page.locator(
-      '[data-testid*="run"], .run-item, .run-history',
-    );
+    const runList = page.locator('[data-testid*="run"], .run-item, .run-history');
     const hasList = await runList.isVisible().catch(() => false);
 
     expect(hasList || true).toBeTruthy();
@@ -441,17 +429,13 @@ test.describe("Workflow Editor - Workflow Features", () => {
     await switchMode(page, "output");
     await page.waitForTimeout(1000);
 
-    const runItem = page
-      .locator('[data-testid*="run-item"], .run-item')
-      .first();
+    const runItem = page.locator('[data-testid*="run-item"], .run-item').first();
     if (await runItem.isVisible()) {
       await runItem.click();
       await page.waitForTimeout(500);
 
       // Should show run details
-      const runDetails = page.locator(
-        '[data-testid*="run-detail"], [data-testid*="output"]',
-      );
+      const runDetails = page.locator('[data-testid*="run-detail"], [data-testid*="output"]');
       const hasDetails = await runDetails.isVisible().catch(() => false);
 
       expect(hasDetails || true).toBeTruthy();
@@ -469,9 +453,7 @@ test.describe("Workflow Editor - Workflow Features", () => {
 
     // Look for collapsible task sections
     const taskHeader = page
-      .locator(
-        '[data-testid*="task-header"], .task-header, button[aria-expanded]',
-      )
+      .locator('[data-testid*="task-header"], .task-header, button[aria-expanded]')
       .first();
     if (await taskHeader.isVisible()) {
       const initialState = await taskHeader.getAttribute("aria-expanded");
@@ -500,9 +482,7 @@ test.describe("Workflow Editor - Workflow Features", () => {
       await page.waitForTimeout(500);
 
       // Variables editor (Monaco or textarea) should appear
-      const variablesEditor = page.locator(
-        '.monaco-editor, textarea[name*="variable"]',
-      );
+      const variablesEditor = page.locator('.monaco-editor, textarea[name*="variable"]');
       const hasEditor = await variablesEditor.isVisible().catch(() => false);
 
       expect(hasEditor || true).toBeTruthy();
@@ -525,9 +505,7 @@ test.describe("Workflow Editor - Workflow Features", () => {
       await page.waitForTimeout(500);
 
       // Add test button
-      const addTestButton = page
-        .getByRole("button", { name: /add.*test/i })
-        .first();
+      const addTestButton = page.getByRole("button", { name: /add.*test/i }).first();
       if (await addTestButton.isVisible()) {
         await addTestButton.click();
         await page.waitForTimeout(500);
@@ -551,7 +529,7 @@ test.describe("Workflow Editor - Responsive Layout", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -645,7 +623,7 @@ test.describe("Workflow Editor - Concurrent Operations", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -667,7 +645,7 @@ test.describe("Workflow Editor - Concurrent Operations", () => {
     // Continuous typing
     const typePromise = (async () => {
       for (let i = 0; i < 10; i++) {
-        await page.keyboard.type("line " + i + " ");
+        await page.keyboard.type(`line ${i} `);
         await page.waitForTimeout(100);
       }
     })();
@@ -721,7 +699,7 @@ test.describe("Workflow Editor - Accessibility", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -770,7 +748,7 @@ test.describe("Workflow Editor - Accessibility", () => {
       // Should navigate without errors
       const activeElement = await page.evaluate(
         // @ts-expect-error document is available in browser context
-        () => document.activeElement?.tagName,
+        () => document.activeElement?.tagName
       );
       expect(activeElement).toBeTruthy();
     }

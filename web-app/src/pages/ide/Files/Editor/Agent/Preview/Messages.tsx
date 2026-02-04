@@ -1,10 +1,10 @@
 import AgentMessage from "@/components/Messages/AgentMessage";
+import type { Message } from "@/types/chat";
 import UserMessage from "./UserMessage";
-import { Message } from "@/types/chat";
 
 const Messages = ({
   messages,
-  onArtifactClick,
+  onArtifactClick
 }: {
   messages: Message[];
   onArtifactClick: (id: string) => void;
@@ -16,11 +16,7 @@ const Messages = ({
           {message.is_human ? (
             <UserMessage message={message} />
           ) : (
-            <AgentMessage
-              showAvatar
-              message={message}
-              onArtifactClick={onArtifactClick}
-            />
+            <AgentMessage showAvatar message={message} onArtifactClick={onArtifactClick} />
           )}
         </div>
       ))}

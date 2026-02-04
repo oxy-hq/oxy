@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
-import { FileState } from "@/components/FileEditor";
+import { useCallback, useEffect, useState } from "react";
+import type { FileState } from "@/components/FileEditor";
 
 interface UseFileContentManagerProps {
   initialContent?: string;
@@ -12,7 +12,7 @@ export const useFileContentManager = ({
   initialContent = "",
   onValueChange,
   onFileStateChange,
-  readOnly = false,
+  readOnly = false
 }: UseFileContentManagerProps) => {
   const [content, setContent] = useState(initialContent);
   const [isDirty, setIsDirty] = useState(false);
@@ -36,7 +36,7 @@ export const useFileContentManager = ({
       setIsDirty(isContentDirty);
       onFileStateChange(isContentDirty ? "modified" : "saved");
     },
-    [readOnly, initialContent, onFileStateChange],
+    [readOnly, initialContent, onFileStateChange]
   );
 
   const resetContent = useCallback(() => {
@@ -49,6 +49,6 @@ export const useFileContentManager = ({
     content,
     isDirty,
     handleContentChange,
-    resetContent,
+    resetContent
   };
 };

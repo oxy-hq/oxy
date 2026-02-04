@@ -1,5 +1,5 @@
+import type { UserInfo, UserListResponse } from "@/types/auth";
 import { apiClient } from "./axios";
-import { UserListResponse, UserInfo } from "@/types/auth";
 
 export class UserService {
   static async getUsers(workspaceId: string): Promise<UserListResponse> {
@@ -14,7 +14,7 @@ export class UserService {
 
   static async batchGetUsers(userIds: string[]): Promise<UserListResponse> {
     const response = await apiClient.post("/users/batch", {
-      user_ids: userIds,
+      user_ids: userIds
     });
     return response.data;
   }
@@ -24,45 +24,32 @@ export class UserService {
     return response.data;
   }
 
-  static async updateUserRole(
-    workspaceId: string,
-    userId: string,
-    role: string,
-  ): Promise<void> {
-    const response = await apiClient.put(
-      `/workspaces/${workspaceId}/users/${userId}`,
-      {
-        role,
-        user_id: userId,
-      },
-    );
+  static async updateUserRole(workspaceId: string, userId: string, role: string): Promise<void> {
+    const response = await apiClient.put(`/workspaces/${workspaceId}/users/${userId}`, {
+      role,
+      user_id: userId
+    });
     return response.data;
   }
 
-  static async addUserToWorkspace(
-    workspaceId: string,
-    email: string,
-    role: string,
-  ): Promise<void> {
+  static async addUserToWorkspace(workspaceId: string, email: string, role: string): Promise<void> {
     const response = await apiClient.post(`/workspaces/${workspaceId}/users`, {
       role,
-      email,
+      email
     });
     return response.data;
   }
 
   static async updateUser(
     userId: string,
-    updates: { status?: string; role?: string },
+    updates: { status?: string; role?: string }
   ): Promise<void> {
     const response = await apiClient.put(`/users/${userId}`, updates);
     return response.data;
   }
 
   static async removeUser(workspaceId: string, userId: string): Promise<void> {
-    const response = await apiClient.delete(
-      `/workspaces/${workspaceId}/users/${userId}`,
-    );
+    const response = await apiClient.delete(`/workspaces/${workspaceId}/users/${userId}`);
     return response.data;
   }
 }

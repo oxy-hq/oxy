@@ -11,7 +11,7 @@ const fetchSSE = async <T>(
     onError?: (error: Error) => void;
     eventTypes?: string[];
     signal?: AbortSignal | null;
-  },
+  }
 ) => {
   const {
     method = "POST",
@@ -21,14 +21,14 @@ const fetchSSE = async <T>(
     onClose,
     onError,
     signal,
-    eventTypes = ["message"],
+    eventTypes = ["message"]
   } = options;
   const token = localStorage.getItem("auth_token");
   await fetchEventSource(url, {
     method,
     headers: {
       "Content-Type": "application/json",
-      Authorization: token ?? "",
+      Authorization: token ?? ""
     },
     openWhenHidden: true,
     body: body ? JSON.stringify(body) : undefined,
@@ -56,7 +56,7 @@ const fetchSSE = async <T>(
     },
     onclose() {
       onClose?.();
-    },
+    }
   });
 };
 

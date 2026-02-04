@@ -67,7 +67,7 @@ interface SemanticModelContext {
 
 enum OutputFormat {
   Default = "default",
-  File = "file",
+  File = "file"
 }
 
 interface AnonymizerConfig {
@@ -108,5 +108,5 @@ export const STEP_MAP = {
   visualize: "Generating visualization",
   retrieve: "Retrieving data",
   agent: "Generating answer",
-  workflow: "Running workflow",
+  workflow: "Running workflow"
 };

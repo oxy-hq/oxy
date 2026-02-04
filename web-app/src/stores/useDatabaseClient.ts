@@ -112,7 +112,7 @@ const useDatabaseClientStore = create<DatabaseClientState>()(
         if (tab?.name && get().tabExists(tab.name)) {
           return {
             success: false,
-            error: `Tab "${tab.name}" already exists`,
+            error: `Tab "${tab.name}" already exists`
           };
         }
 
@@ -126,12 +126,12 @@ const useDatabaseClientStore = create<DatabaseClientState>()(
           savedPath: tab?.savedPath,
           results: tab?.results,
           isExecuting: false,
-          error: undefined,
+          error: undefined
         };
 
         set((state) => ({
           tabs: [...state.tabs, newTab],
-          activeTabId: newTab.id,
+          activeTabId: newTab.id
         }));
 
         return { success: true, tabId: newTab.id };
@@ -154,10 +154,10 @@ const useDatabaseClientStore = create<DatabaseClientState>()(
               ? {
                   ...t,
                   ...updates,
-                  isDirty: computeIsDirty(t),
+                  isDirty: computeIsDirty(t)
                 }
-              : t,
-          ),
+              : t
+          )
         }));
       },
 
@@ -179,7 +179,7 @@ const useDatabaseClientStore = create<DatabaseClientState>()(
 
         set({
           tabs: newTabs,
-          activeTabId: newActiveTabId,
+          activeTabId: newActiveTabId
         });
       },
 
@@ -208,25 +208,19 @@ const useDatabaseClientStore = create<DatabaseClientState>()(
       // Query execution
       setTabExecuting: (id, isExecuting) => {
         set((state) => ({
-          tabs: state.tabs.map((t) =>
-            t.id === id ? { ...t, isExecuting, error: undefined } : t,
-          ),
+          tabs: state.tabs.map((t) => (t.id === id ? { ...t, isExecuting, error: undefined } : t))
         }));
       },
 
       setTabResults: (id, results) => {
         set((state) => ({
-          tabs: state.tabs.map((t) =>
-            t.id === id ? { ...t, results, isExecuting: false } : t,
-          ),
+          tabs: state.tabs.map((t) => (t.id === id ? { ...t, results, isExecuting: false } : t))
         }));
       },
 
       setTabError: (id, error) => {
         set((state) => ({
-          tabs: state.tabs.map((t) =>
-            t.id === id ? { ...t, error, isExecuting: false } : t,
-          ),
+          tabs: state.tabs.map((t) => (t.id === id ? { ...t, error, isExecuting: false } : t))
         }));
       },
 
@@ -239,10 +233,10 @@ const useDatabaseClientStore = create<DatabaseClientState>()(
       updateTabByPath: (path, content) => {
         set((state) => ({
           tabs: state.tabs.map((t) =>
-            t.savedPath === path ? { ...t, content, isDirty: false } : t,
-          ),
+            t.savedPath === path ? { ...t, content, isDirty: false } : t
+          )
         }));
-      },
+      }
     }),
     {
       name: "database-client-storage",
@@ -250,19 +244,19 @@ const useDatabaseClientStore = create<DatabaseClientState>()(
         connections: state.connections.map((c) => ({
           ...c,
           isConnected: false,
-          schemas: undefined,
+          schemas: undefined
         })),
         tabs: state.tabs.map((t) => ({
           ...t,
           results: undefined,
           isExecuting: false,
-          error: undefined,
+          error: undefined
         })),
         activeConnectionId: state.activeConnectionId,
-        activeTabId: state.activeTabId,
-      }),
-    },
-  ),
+        activeTabId: state.activeTabId
+      })
+    }
+  )
 );
 
 export default function useDatabaseClient() {

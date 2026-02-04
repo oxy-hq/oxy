@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { IDEPage } from "../pages/IDEPage";
 import { resetTestFile } from "../utils";
 import { captureFileTree, cleanupAfterTest } from "./test-cleanup";
@@ -9,7 +9,7 @@ test.describe("IDE Files - File/Folder Delete", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
     await page.getByRole("tab", { name: "Files" }).click();
     await page.waitForTimeout(500);
@@ -39,7 +39,7 @@ test.describe("IDE Files - File/Folder Delete", () => {
 
         // Handle confirmation dialog
         const confirmButton = page.getByRole("button", {
-          name: /confirm|delete|yes/i,
+          name: /confirm|delete|yes/i
         });
         if (await confirmButton.isVisible({ timeout: 2000 })) {
           await confirmButton.click();
@@ -52,9 +52,7 @@ test.describe("IDE Files - File/Folder Delete", () => {
   });
 
   // 4.2 Delete currently open file
-  test("4.2 - should navigate to IDE root when deleting open file", async ({
-    page,
-  }) => {
+  test("4.2 - should navigate to IDE root when deleting open file", async ({ page }) => {
     const idePage = new IDEPage(page);
 
     // Open the test file first
@@ -71,7 +69,7 @@ test.describe("IDE Files - File/Folder Delete", () => {
         await deleteOption.click();
 
         const confirmButton = page.getByRole("button", {
-          name: /confirm|delete|yes/i,
+          name: /confirm|delete|yes/i
         });
         if (await confirmButton.isVisible({ timeout: 2000 })) {
           await confirmButton.click();
@@ -98,7 +96,7 @@ test.describe("IDE Files - File/Folder Delete", () => {
         await deleteOption.click();
 
         const confirmButton = page.getByRole("button", {
-          name: /confirm|delete|yes/i,
+          name: /confirm|delete|yes/i
         });
         if (await confirmButton.isVisible({ timeout: 2000 })) {
           await confirmButton.click();
@@ -111,9 +109,7 @@ test.describe("IDE Files - File/Folder Delete", () => {
   });
 
   // 4.4 Cancel delete confirmation
-  test("4.4 - should not delete when canceling confirmation", async ({
-    page,
-  }) => {
+  test("4.4 - should not delete when canceling confirmation", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
 
@@ -139,7 +135,7 @@ test.describe("IDE Files - File/Folder Delete", () => {
 
   // 4.5 Delete file with unsaved changes
   test("4.5 - should prompt to save before deleting file with unsaved changes", async ({
-    page,
+    page
   }) => {
     const idePage = new IDEPage(page);
 
@@ -165,9 +161,7 @@ test.describe("IDE Files - File/Folder Delete", () => {
   });
 
   // 4.6 Delete parent folder of open file
-  test("4.6 - should navigate away when deleting parent folder of open file", async ({
-    page,
-  }) => {
+  test("4.6 - should navigate away when deleting parent folder of open file", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
 
@@ -194,7 +188,7 @@ test.describe("IDE Files - File/Folder Delete", () => {
           await deleteOption.click();
 
           const confirmButton = page.getByRole("button", {
-            name: /confirm|delete|yes/i,
+            name: /confirm|delete|yes/i
           });
           if (await confirmButton.isVisible({ timeout: 2000 })) {
             await confirmButton.click();
@@ -224,7 +218,7 @@ test.describe("IDE Files - File/Folder Delete", () => {
         await deleteOption.click();
 
         const confirmButton = page.getByRole("button", {
-          name: /confirm|delete|yes/i,
+          name: /confirm|delete|yes/i
         });
         if (await confirmButton.isVisible({ timeout: 2000 })) {
           await confirmButton.click();
@@ -236,9 +230,7 @@ test.describe("IDE Files - File/Folder Delete", () => {
   });
 
   // 4.8 API returns 500 on delete
-  test("4.8 - should show toast error when API fails on delete", async ({
-    page,
-  }) => {
+  test("4.8 - should show toast error when API fails on delete", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
 
@@ -247,7 +239,7 @@ test.describe("IDE Files - File/Folder Delete", () => {
       if (request.method() === "DELETE") {
         route.fulfill({
           status: 500,
-          body: JSON.stringify({ error: "Internal Server Error" }),
+          body: JSON.stringify({ error: "Internal Server Error" })
         });
       } else {
         route.continue();
@@ -264,7 +256,7 @@ test.describe("IDE Files - File/Folder Delete", () => {
         await deleteOption.click();
 
         const confirmButton = page.getByRole("button", {
-          name: /confirm|delete|yes/i,
+          name: /confirm|delete|yes/i
         });
         if (await confirmButton.isVisible({ timeout: 2000 })) {
           await confirmButton.click();
@@ -277,9 +269,7 @@ test.describe("IDE Files - File/Folder Delete", () => {
   });
 
   // 4.9 API returns 404 (already deleted)
-  test("4.9 - should refresh tree when file already deleted (404)", async ({
-    page,
-  }) => {
+  test("4.9 - should refresh tree when file already deleted (404)", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
 
@@ -288,7 +278,7 @@ test.describe("IDE Files - File/Folder Delete", () => {
       if (request.method() === "DELETE") {
         route.fulfill({
           status: 404,
-          body: JSON.stringify({ error: "File not found" }),
+          body: JSON.stringify({ error: "File not found" })
         });
       } else {
         route.continue();
@@ -305,7 +295,7 @@ test.describe("IDE Files - File/Folder Delete", () => {
         await deleteOption.click();
 
         const confirmButton = page.getByRole("button", {
-          name: /confirm|delete|yes/i,
+          name: /confirm|delete|yes/i
         });
         if (await confirmButton.isVisible({ timeout: 2000 })) {
           await confirmButton.click();

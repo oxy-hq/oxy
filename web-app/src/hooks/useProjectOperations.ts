@@ -1,18 +1,15 @@
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useDeleteProject } from "@/hooks/api/projects/useProjects";
-import { ProjectService } from "@/services/api";
-import { Project } from "@/types/project";
 import ROUTES from "@/libs/utils/routes";
+import { ProjectService } from "@/services/api";
+import type { Project } from "@/types/project";
 
 export const useProjectOperations = (workspaceId: string) => {
   const navigate = useNavigate();
   const deleteProjectMutation = useDeleteProject(workspaceId);
 
-  const handleDeleteProject = async (
-    projectId: string,
-    projectName: string,
-  ) => {
+  const handleDeleteProject = async (projectId: string, projectName: string) => {
     try {
       await deleteProjectMutation.mutateAsync(projectId);
       toast.success(`Project "${projectName}" deleted successfully!`);
@@ -26,14 +23,14 @@ export const useProjectOperations = (workspaceId: string) => {
     try {
       const projectStatus = await ProjectService.getProjectStatus(
         project.id,
-        project.active_branch?.name ?? "",
+        project.active_branch?.name ?? ""
       );
 
       const requiredSecrets = projectStatus?.required_secrets || [];
 
       if (requiredSecrets.length > 0) {
         navigate(ROUTES.PROJECT(project.id).REQUIRED_SECRETS, {
-          replace: true,
+          replace: true
         });
         return;
       }
@@ -49,6 +46,6 @@ export const useProjectOperations = (workspaceId: string) => {
   return {
     handleDeleteProject,
     handleProjectClick,
-    isDeleting: deleteProjectMutation.isPending,
+    isDeleting: deleteProjectMutation.isPending
   };
 };

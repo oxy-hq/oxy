@@ -1,4 +1,4 @@
-import { Block, BlockContent, TextContent } from "@/services/types";
+import type { Block, BlockContent, TextContent } from "@/services/types";
 
 export interface BlockSlice {
   error?: string;
@@ -13,12 +13,12 @@ export interface BlockSlice {
 }
 
 export type BlockSliceSetter = (
-  partial: (state: BlockSlice) => BlockSlice | Partial<BlockSlice>,
+  partial: (state: BlockSlice) => BlockSlice | Partial<BlockSlice>
 ) => void;
 
 export const createBlockSlice = (
   set: BlockSliceSetter,
-  init?: Partial<BlockSlice>,
+  init?: Partial<BlockSlice>
 ): BlockSlice => ({
   error: undefined,
   blocks: {},
@@ -36,27 +36,25 @@ export const createBlockSlice = (
           [blockId]: {
             ...block,
             error,
-            is_streaming: false,
-          },
-        },
+            is_streaming: false
+          }
+        }
       };
     }),
   upsertBlockToStack: (blockId: string, blockData: BlockContent) =>
     set((state) => {
       const parentBlockId = state.blockStack[state.blockStack.length - 1];
-      const parentBlock = parentBlockId
-        ? state.blocks[parentBlockId]
-        : undefined;
+      const parentBlock = parentBlockId ? state.blocks[parentBlockId] : undefined;
       const blockStack = state.blockStack.includes(blockId)
         ? state.blockStack
         : [...state.blockStack, blockId];
       const existingBlock = state.blocks[blockId];
       let payload = blockData;
-      if (existingBlock && existingBlock.type == "text") {
+      if (existingBlock && existingBlock.type === "text") {
         payload = {
           ...existingBlock,
           ...payload,
-          content: `${existingBlock.content}${(blockData as TextContent).content}`,
+          content: `${existingBlock.content}${(blockData as TextContent).content}`
         } as TextContent;
       }
       const isNewRootChild = !parentBlockId && !existingBlock;
@@ -73,8 +71,8 @@ export const createBlockSlice = (
                   ...parentBlock,
                   children: (parentBlock.children || []).includes(blockId)
                     ? parentBlock.children
-                    : [...(parentBlock.children || []), blockId],
-                },
+                    : [...(parentBlock.children || []), blockId]
+                }
               }
             : {}),
           [blockId]: {
@@ -82,16 +80,16 @@ export const createBlockSlice = (
             ...payload,
             id: blockId,
             children: existingBlock ? existingBlock.children : [],
-            is_streaming: true,
-          },
-        },
+            is_streaming: true
+          }
+        }
       };
     }),
   handleError: (error: string) =>
     set((state) => {
       return {
         ...state,
-        error,
+        error
       };
     }),
   cleanupBlockStacks: (error: string) =>
@@ -103,22 +101,20 @@ export const createBlockSlice = (
           blocks[blockId] = {
             ...blocks[blockId],
             is_streaming: false,
-            error,
+            error
           };
         }
       }
       return {
         ...state,
         blockStack: [],
-        blocks,
+        blocks
       };
     }),
   addGroupBlock: (groupId: string) =>
     set((state) => {
       const currentBlockId = state.blockStack[state.blockStack.length - 1];
-      const currentBlock = currentBlockId
-        ? state.blocks[currentBlockId]
-        : undefined;
+      const currentBlock = currentBlockId ? state.blocks[currentBlockId] : undefined;
 
       if (!currentBlock) {
         return state;
@@ -132,15 +128,15 @@ export const createBlockSlice = (
             ...currentBlock,
             children: currentBlock.children.includes(groupId)
               ? currentBlock.children
-              : [...currentBlock.children, groupId],
+              : [...currentBlock.children, groupId]
           },
           [groupId]: {
             id: groupId,
             type: "group",
             group_id: groupId,
-            children: [],
-          },
-        },
+            children: []
+          }
+        }
       };
-    }),
+    })
 });

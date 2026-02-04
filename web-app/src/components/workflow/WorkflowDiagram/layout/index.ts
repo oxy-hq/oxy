@@ -1,7 +1,7 @@
-import { TaskNode } from "@/stores/useWorkflow";
-import { computeNodeDimensions } from "./nodeSize";
+import type { Edge } from "@xyflow/react";
+import type { TaskNode } from "@/stores/useWorkflow";
 import { createElkLayout } from "./elkLayout";
-import { Edge } from "@xyflow/react";
+import { computeNodeDimensions } from "./nodeSize";
 
 export const calculateNodesSize = (nodes: TaskNode[]): TaskNode[] => {
   const nodesWithSize = nodes.map((node) => ({ ...node }));
@@ -22,7 +22,7 @@ export const calculateNodesSize = (nodes: TaskNode[]): TaskNode[] => {
 
 export const getLayoutedElements = async (
   nodes: TaskNode[],
-  edges: Edge[],
+  edges: Edge[]
 ): Promise<TaskNode[]> => {
   return createElkLayout(nodes, edges);
 };

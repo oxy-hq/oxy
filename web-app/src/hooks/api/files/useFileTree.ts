@@ -1,13 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import queryKeys from "../queryKey";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
-
 import { FileService } from "@/services/api";
+import queryKeys from "../queryKey";
 
 export default function useFileTree(
   enabled = true,
   refetchOnWindowFocus = true,
-  refetchOnMount: boolean | "always" = false,
+  refetchOnMount: boolean | "always" = false
 ) {
   const { project, branchName } = useCurrentProjectBranch();
 
@@ -16,6 +15,6 @@ export default function useFileTree(
     queryFn: () => FileService.getFileTree(project.id, branchName),
     enabled,
     refetchOnWindowFocus: refetchOnWindowFocus,
-    refetchOnMount,
+    refetchOnMount
   });
 }

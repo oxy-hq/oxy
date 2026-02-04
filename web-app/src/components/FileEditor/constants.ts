@@ -19,7 +19,7 @@ export const LANGUAGE_MAP: Record<string, string> = {
   yaml: "yaml",
   yml: "yaml",
   sql: "sql",
-  txt: "plaintext",
+  txt: "plaintext"
 };
 
 export const getLanguageFromFileName = (fileName: string): string => {

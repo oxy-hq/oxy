@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useRef } from "react";
 import type { EChartsOption } from "echarts";
-import { init, getInstanceByDom } from "echarts";
-import theme from "./theme.json";
+import { getInstanceByDom, init } from "echarts";
+import { useCallback, useEffect, useRef } from "react";
 import { useResizeDetector } from "react-resize-detector";
+import theme from "./theme.json";
 
 export const Echarts = ({
   options,
   isLoading,
   title,
-  testId,
+  testId
 }: {
   options: EChartsOption;
   isLoading: boolean;
@@ -21,11 +21,11 @@ export const Echarts = ({
       const chart = getInstanceByDom(chartRef.current);
       chart?.resize();
     }
-  }, [chartRef]);
+  }, []);
 
   useResizeDetector({
     targetRef: chartRef,
-    onResize: onResize,
+    onResize: onResize
   });
 
   useEffect(() => {
@@ -47,13 +47,13 @@ export const Echarts = ({
           toolbox: options.toolbox || {
             feature: {
               dataZoom: {
-                yAxisIndex: "none",
+                yAxisIndex: "none"
               },
-              saveAsImage: {},
-            },
-          },
+              saveAsImage: {}
+            }
+          }
         },
-        true,
+        true
       );
       chart?.resize();
     }
@@ -72,7 +72,7 @@ export const Echarts = ({
 
   return (
     <div data-testid={testId}>
-      {title && <h2 className="text-xl font-bold text-foreground">{title}</h2>}
+      {title && <h2 className='font-bold text-foreground text-xl'>{title}</h2>}
       <div ref={chartRef} style={{ width: "100%", height: "400px" }} />
     </div>
   );

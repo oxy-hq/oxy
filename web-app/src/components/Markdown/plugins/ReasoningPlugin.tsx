@@ -1,6 +1,5 @@
+import type { Parent, PhrasingContent } from "mdast";
 import { visit } from "unist-util-visit";
-
-import type { PhrasingContent, Parent } from "mdast";
 
 export interface ContainerDirective extends Parent {
   type: "containerDirective";
@@ -11,12 +10,12 @@ export interface ContainerDirective extends Parent {
 
 function ReasoningPlugin() {
   return (tree: ContainerDirective) => {
-    visit(tree, "containerDirective", function (node) {
+    visit(tree, "containerDirective", (node) => {
       if (node.name !== "reasoning" && node.name !== "reason") return;
       node.data = {
         ...node.data,
         hName: "reasoning",
-        hProperties: {},
+        hProperties: {}
       };
     });
   };

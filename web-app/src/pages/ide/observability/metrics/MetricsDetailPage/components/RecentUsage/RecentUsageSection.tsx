@@ -1,15 +1,15 @@
+import { Calendar } from "lucide-react";
 import { useMemo } from "react";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle,
+  CardTitle
 } from "@/components/ui/shadcn/card";
-import { Calendar } from "lucide-react";
+import type { MetricDetailResponse } from "@/services/api/metrics";
 import SourceTypeBadge from "./SourceTypeBadge";
 import UsageContextCard from "./UsageContextCard";
-import type { MetricDetailResponse } from "@/services/api/metrics";
 
 interface RecentUsageSectionProps {
   detailData: MetricDetailResponse;
@@ -20,7 +20,7 @@ interface RecentUsageSectionProps {
 export default function RecentUsageSection({
   detailData,
   metricName,
-  onTraceClick,
+  onTraceClick
 }: RecentUsageSectionProps) {
   const recentUsage = detailData.recent_usage;
 
@@ -38,29 +38,25 @@ export default function RecentUsageSection({
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Calendar className="h-5 w-5 text-primary" />
+        <div className='flex items-center justify-between'>
+          <div className='flex items-center gap-2'>
+            <Calendar className='h-5 w-5 text-primary' />
             <CardTitle>Recent Usage</CardTitle>
           </div>
-          <div className="flex items-center gap-2">
+          <div className='flex items-center gap-2'>
             {Object.entries(sourceBreakdown).map(([type, count]) => (
-              <div key={type} className="flex items-center gap-1">
+              <div key={type} className='flex items-center gap-1'>
                 <SourceTypeBadge sourceType={type} />
-                <span className="text-xs text-muted-foreground ml-1">
-                  {count}
-                </span>
+                <span className='ml-1 text-muted-foreground text-xs'>{count}</span>
               </div>
             ))}
           </div>
         </div>
-        <CardDescription>
-          Last {recentUsage.length} queries referencing this metric
-        </CardDescription>
+        <CardDescription>Last {recentUsage.length} queries referencing this metric</CardDescription>
       </CardHeader>
       <CardContent>
         {recentUsage.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className='grid grid-cols-1 gap-4 md:grid-cols-2'>
             {recentUsage.map((usage, index) => (
               <UsageContextCard
                 key={index}
@@ -71,9 +67,7 @@ export default function RecentUsageSection({
             ))}
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">
-            No recent usage data available
-          </p>
+          <p className='text-muted-foreground text-sm'>No recent usage data available</p>
         )}
       </CardContent>
     </Card>

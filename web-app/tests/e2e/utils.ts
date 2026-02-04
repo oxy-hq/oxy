@@ -1,7 +1,7 @@
-import { spawn, execSync } from "child_process";
-import { Page } from "@playwright/test";
-import { writeFile, mkdir } from "fs/promises";
-import { existsSync } from "fs";
+import { execSync, spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
+import type { Page } from "@playwright/test";
 
 const database_path = "~/.local/share/oxy";
 // (Global setup handles API seeding; no base URL or project ID needed here)
@@ -21,7 +21,7 @@ export function startServer() {
   // eslint-disable-next-line sonarjs/no-os-command-from-path
   const serverProcess = spawn("cargo", ["run", "serve"], {
     stdio: "inherit",
-    shell: true,
+    shell: true
   });
 
   serverProcess.on("error", (err) => {
@@ -81,9 +81,9 @@ tools:
 
 // Delete test files created during tests
 export async function cleanupTestFiles() {
-  const { unlink, readdir } = await import("fs/promises");
-  const { existsSync } = await import("fs");
-  const path = await import("path");
+  const { unlink, readdir } = await import("node:fs/promises");
+  const { existsSync } = await import("node:fs");
+  const path = await import("node:path");
 
   const examplesDir = "../examples";
 
@@ -103,13 +103,13 @@ export async function cleanupTestFiles() {
       /^test-error-file\.txt$/,
       /^test-network-file\.txt$/,
       /^test-renamed-\d+\.txt$/,
-      /^renamed-.*\.txt$/,
+      /^renamed-.*\.txt$/
     ];
 
     // Delete files in root examples directory
     const files = await readdir(examplesDir);
     for (const file of files) {
-      if (testPatterns.some(pattern => pattern.test(file))) {
+      if (testPatterns.some((pattern) => pattern.test(file))) {
         const filePath = path.join(examplesDir, file);
         await unlink(filePath).catch(() => {});
         console.log(`Cleaned up: ${file}`);
@@ -121,7 +121,7 @@ export async function cleanupTestFiles() {
     if (existsSync(workflowsDir)) {
       const workflowFiles = await readdir(workflowsDir);
       for (const file of workflowFiles) {
-        if (testPatterns.some(pattern => pattern.test(file))) {
+        if (testPatterns.some((pattern) => pattern.test(file))) {
           const filePath = path.join(workflowsDir, file);
           await unlink(filePath).catch(() => {});
           console.log(`Cleaned up: workflows/${file}`);

@@ -1,23 +1,21 @@
-import React from "react";
-import { useFormContext, Controller } from "react-hook-form";
+import type React from "react";
+import { Controller, useFormContext } from "react-hook-form";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
-import { AppFormData } from "../index";
-import { TaskRefSelect, TaskColumnSelect } from "./components";
+import type { AppFormData } from "../index";
+import { TaskColumnSelect, TaskRefSelect } from "./components";
 
 interface LineChartDisplayFieldsProps {
   index: number;
 }
 
-export const LineChartDisplayFields: React.FC<LineChartDisplayFieldsProps> = ({
-  index,
-}) => {
+export const LineChartDisplayFields: React.FC<LineChartDisplayFieldsProps> = ({ index }) => {
   const { register, watch, control } = useFormContext<AppFormData>();
   const dataSource = watch(`display.${index}.data`) as string | undefined;
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-2">
+    <div className='space-y-4'>
+      <div className='space-y-2'>
         <Label htmlFor={`display.${index}.data`}>Data Source *</Label>
         <Controller
           control={control}
@@ -27,24 +25,22 @@ export const LineChartDisplayFields: React.FC<LineChartDisplayFieldsProps> = ({
             <TaskRefSelect
               value={field.value as string | undefined}
               onChange={field.onChange}
-              placeholder="Select task..."
+              placeholder='Select task...'
             />
           )}
         />
-        <p className="text-sm text-muted-foreground">
-          Reference output from a task by task name
-        </p>
+        <p className='text-muted-foreground text-sm'>Reference output from a task by task name</p>
       </div>
-      <div className="space-y-2">
+      <div className='space-y-2'>
         <Label htmlFor={`display.${index}.title`}>Title</Label>
         <Input
           id={`display.${index}.title`}
-          placeholder="Chart title"
+          placeholder='Chart title'
           {...register(`display.${index}.title`)}
         />
       </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
+      <div className='grid grid-cols-2 gap-4'>
+        <div className='space-y-2'>
           <Label htmlFor={`display.${index}.x`}>X Axis *</Label>
           <Controller
             control={control}
@@ -55,12 +51,12 @@ export const LineChartDisplayFields: React.FC<LineChartDisplayFieldsProps> = ({
                 taskName={dataSource}
                 value={field.value as string | undefined}
                 onChange={field.onChange}
-                placeholder="Column name"
+                placeholder='Column name'
               />
             )}
           />
         </div>
-        <div className="space-y-2">
+        <div className='space-y-2'>
           <Label htmlFor={`display.${index}.y`}>Y Axis *</Label>
           <Controller
             control={control}
@@ -71,31 +67,31 @@ export const LineChartDisplayFields: React.FC<LineChartDisplayFieldsProps> = ({
                 taskName={dataSource}
                 value={field.value as string | undefined}
                 onChange={field.onChange}
-                placeholder="Column name"
+                placeholder='Column name'
               />
             )}
           />
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
+      <div className='grid grid-cols-2 gap-4'>
+        <div className='space-y-2'>
           <Label htmlFor={`display.${index}.x_axis_label`}>X Axis Label</Label>
           <Input
             id={`display.${index}.x_axis_label`}
-            placeholder="Optional label"
+            placeholder='Optional label'
             {...register(`display.${index}.x_axis_label`)}
           />
         </div>
-        <div className="space-y-2">
+        <div className='space-y-2'>
           <Label htmlFor={`display.${index}.y_axis_label`}>Y Axis Label</Label>
           <Input
             id={`display.${index}.y_axis_label`}
-            placeholder="Optional label"
+            placeholder='Optional label'
             {...register(`display.${index}.y_axis_label`)}
           />
         </div>
       </div>
-      <div className="space-y-2">
+      <div className='space-y-2'>
         <Label htmlFor={`display.${index}.series`}>Series</Label>
         <Controller
           control={control}
@@ -105,7 +101,7 @@ export const LineChartDisplayFields: React.FC<LineChartDisplayFieldsProps> = ({
               taskName={dataSource}
               value={field.value as string | undefined}
               onChange={field.onChange}
-              placeholder="Optional series column"
+              placeholder='Optional series column'
             />
           )}
         />

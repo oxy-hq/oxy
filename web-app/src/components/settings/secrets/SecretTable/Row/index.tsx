@@ -1,15 +1,16 @@
-import React, { useState } from "react";
-import { TableCell, TableRow } from "@/components/ui/shadcn/table";
+import { formatDistanceToNow } from "date-fns";
+import { Edit, Trash2 } from "lucide-react";
+import type React from "react";
+import { useState } from "react";
+import { toast } from "sonner";
+import { useMediaQuery } from "usehooks-ts";
 import { Badge } from "@/components/ui/shadcn/badge";
 import { Button } from "@/components/ui/shadcn/button";
-import { Edit, Trash2 } from "lucide-react";
-import { Secret } from "@/types/secret";
-import { formatDistanceToNow } from "date-fns";
-import { EditSecretDialog } from "./EditSecretDialog";
-import { DeleteSecretDialog } from "./DeleteSecretDialog";
+import { TableCell, TableRow } from "@/components/ui/shadcn/table";
 import { useDeleteSecret } from "@/hooks/api/secrets/useSecretMutations";
-import { useMediaQuery } from "usehooks-ts";
-import { toast } from "sonner";
+import type { Secret } from "@/types/secret";
+import { DeleteSecretDialog } from "./DeleteSecretDialog";
+import { EditSecretDialog } from "./EditSecretDialog";
 
 interface Props {
   secret: Secret;
@@ -33,20 +34,18 @@ export const SecretRow: React.FC<Props> = ({ secret }) => {
 
   return (
     <TableRow key={secret.id}>
-      <TableCell className="font-medium">
-        <div className="flex flex-col gap-1">
+      <TableCell className='font-medium'>
+        <div className='flex flex-col gap-1'>
           <span>{secret.name}</span>
           {isMobile && secret.description && (
-            <span className="text-xs text-muted-foreground mt-1">
-              {secret.description}
-            </span>
+            <span className='mt-1 text-muted-foreground text-xs'>{secret.description}</span>
           )}
         </div>
       </TableCell>
       {!isMobile && (
         <TableCell>
           {secret.description || (
-            <span className="text-muted-foreground italic">No description</span>
+            <span className='text-muted-foreground italic'>No description</span>
           )}
         </TableCell>
       )}
@@ -58,34 +57,34 @@ export const SecretRow: React.FC<Props> = ({ secret }) => {
       {!isMobile && (
         <TableCell>
           {formatDistanceToNow(new Date(secret.created_at), {
-            addSuffix: true,
+            addSuffix: true
           })}
         </TableCell>
       )}
       {!isMobile && (
         <TableCell>
           {formatDistanceToNow(new Date(secret.updated_at), {
-            addSuffix: true,
+            addSuffix: true
           })}
         </TableCell>
       )}
       <TableCell>
-        <div className="flex items-center justify-center gap-2">
+        <div className='flex items-center justify-center gap-2'>
           <Button
-            variant="ghost"
-            size="sm"
+            variant='ghost'
+            size='sm'
             onClick={() => setIsEditDialogOpen(true)}
-            title="Edit secret"
+            title='Edit secret'
           >
             <Edit />
           </Button>
           <Button
-            variant="ghost"
-            size="sm"
+            variant='ghost'
+            size='sm'
             onClick={() => setIsDeleteDialogOpen(true)}
-            title="Delete secret"
+            title='Delete secret'
           >
-            <Trash2 className="!text-destructive" />
+            <Trash2 className='!text-destructive' />
           </Button>
         </div>
       </TableCell>

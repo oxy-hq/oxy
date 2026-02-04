@@ -6,7 +6,7 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialogTitle
 } from "@/components/ui/shadcn/alert-dialog";
 import { Button } from "@/components/ui/shadcn/button";
 
@@ -17,12 +17,7 @@ interface Props {
   onDiscard: () => void;
 }
 
-const UnsavedChangesDialog = ({
-  open,
-  onOpenChange,
-  onSave,
-  onDiscard,
-}: Props) => {
+const UnsavedChangesDialog = ({ open, onOpenChange, onSave, onDiscard }: Props) => {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
@@ -34,10 +29,10 @@ const UnsavedChangesDialog = ({
             Your changes will be lost if you don't save them.
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <AlertDialogFooter className="gap-8">
-          <div className="flex gap-2">
+        <AlertDialogFooter className='gap-8'>
+          <div className='flex gap-2'>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <Button variant="secondary" onClick={onDiscard}>
+            <Button variant='secondary' onClick={onDiscard}>
               Discard
             </Button>
             <AlertDialogAction onClick={onSave}>Save</AlertDialogAction>

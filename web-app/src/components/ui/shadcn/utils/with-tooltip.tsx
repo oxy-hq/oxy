@@ -1,10 +1,5 @@
-import * as React from "react";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-  TooltipProvider,
-} from "../tooltip";
+import type * as React from "react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../tooltip";
 
 export type TooltipProps = React.ComponentProps<typeof TooltipContent> & {
   content: React.ReactNode;
@@ -24,8 +19,7 @@ export const TooltipWrapper = ({
   if (!tooltip) return <>{children}</>;
 
   // Convert string tooltip to object format
-  const tooltipProps: TooltipProps =
-    typeof tooltip === "string" ? { content: tooltip } : tooltip;
+  const tooltipProps: TooltipProps = typeof tooltip === "string" ? { content: tooltip } : tooltip;
 
   const { content, delayDuration: duration = delayDuration } = tooltipProps;
 

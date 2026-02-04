@@ -1,18 +1,11 @@
-import { test, expect, Page } from "@playwright/test";
-import {
-  saveFileSnapshot,
-  restoreFileSnapshot,
-  cleanupAfterTest,
-} from "./test-cleanup";
+import { expect, type Page, test } from "@playwright/test";
+import { cleanupAfterTest, restoreFileSnapshot, saveFileSnapshot } from "./test-cleanup";
 
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
 
-async function openWorkflowFile(
-  page: Page,
-  mode: "files" | "objects" = "files",
-): Promise<boolean> {
+async function openWorkflowFile(page: Page, mode: "files" | "objects" = "files"): Promise<boolean> {
   if (mode === "objects") {
     await page.getByRole("tab", { name: "Objects" }).click();
     await page.waitForTimeout(500);
@@ -41,7 +34,7 @@ async function openWorkflowFile(
 
     const workflowsFolder = page.getByRole("button", {
       name: "workflows",
-      exact: true,
+      exact: true
     });
 
     if (await workflowsFolder.isVisible()) {
@@ -64,10 +57,7 @@ async function openWorkflowFile(
   }
 }
 
-async function switchToMode(
-  page: Page,
-  mode: "editor" | "form" | "output",
-): Promise<boolean> {
+async function switchToMode(page: Page, mode: "editor" | "form" | "output"): Promise<boolean> {
   const modeTab = page.getByRole("tab", { name: new RegExp(mode, "i") });
   if (await modeTab.isVisible()) {
     await modeTab.click();
@@ -97,7 +87,7 @@ test.describe("Workflow Editor - Form & Editor Sync", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
 
     // 📸 Save file state before test starts
@@ -229,7 +219,7 @@ tasks:
   });
 
   test("should persist saved changes after navigating to another file and back", async ({
-    page,
+    page
   }) => {
     const opened = await openWorkflowFile(page);
     if (!opened) {
@@ -311,7 +301,7 @@ test.describe("Workflow Editor - Navigation with Unsaved Changes", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -319,9 +309,7 @@ test.describe("Workflow Editor - Navigation with Unsaved Changes", () => {
     await cleanupAfterTest(page);
   });
 
-  test("should warn when navigating away with unsaved changes in form", async ({
-    page,
-  }) => {
+  test("should warn when navigating away with unsaved changes in form", async ({ page }) => {
     const opened = await openWorkflowFile(page);
     if (!opened) {
       test.skip();
@@ -353,9 +341,7 @@ test.describe("Workflow Editor - Navigation with Unsaved Changes", () => {
     }
   });
 
-  test("should warn when reloading page with unsaved changes", async ({
-    page,
-  }) => {
+  test("should warn when reloading page with unsaved changes", async ({ page }) => {
     const opened = await openWorkflowFile(page);
     if (!opened) {
       test.skip();
@@ -375,9 +361,7 @@ test.describe("Workflow Editor - Navigation with Unsaved Changes", () => {
     await expect(saveButton).toBeVisible();
   });
 
-  test("should navigate to another file after saving changes", async ({
-    page,
-  }) => {
+  test("should navigate to another file after saving changes", async ({ page }) => {
     const opened = await openWorkflowFile(page);
     if (!opened) {
       test.skip();
@@ -430,7 +414,7 @@ test.describe("Workflow Editor - Navigation with Unsaved Changes", () => {
     // Look for another workflow file
     const workflowsFolder = page.getByRole("button", {
       name: "workflows",
-      exact: true,
+      exact: true
     });
     if (await workflowsFolder.isVisible()) {
       await workflowsFolder.click();
@@ -458,7 +442,7 @@ test.describe("Workflow Editor - Character Input Validation", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -466,9 +450,7 @@ test.describe("Workflow Editor - Character Input Validation", () => {
     await cleanupAfterTest(page);
   });
 
-  test("should handle special characters in workflow name", async ({
-    page,
-  }) => {
+  test("should handle special characters in workflow name", async ({ page }) => {
     const opened = await openWorkflowFile(page);
     if (!opened) {
       test.skip();
@@ -483,7 +465,7 @@ test.describe("Workflow Editor - Character Input Validation", () => {
         "workflow_with_underscore",
         "workflow-with-dash",
         "workflow123",
-        "workflow.test",
+        "workflow.test"
       ];
 
       for (const name of specialNames) {
@@ -603,7 +585,7 @@ test.describe("Workflow Editor - Keyboard Shortcuts", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -720,7 +702,7 @@ test.describe("Workflow Editor - Keyboard Shortcuts", () => {
         () =>
           // eslint-disable-next-line @typescript-eslint/ban-ts-comment
           // @ts-expect-error
-          document.activeElement?.tagName,
+          document.activeElement?.tagName
       );
       expect(activeElement).toBeTruthy();
     }
@@ -811,7 +793,7 @@ test.describe("Workflow Editor - Edge Cases", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -863,7 +845,7 @@ test.describe("Workflow Editor - Edge Cases", () => {
 
     // Should show validation error or warning
     const errorIndicator = page.locator(
-      '[class*="error"], [class*="warning"], [aria-label*="error"]',
+      '[class*="error"], [class*="warning"], [aria-label*="error"]'
     );
     await errorIndicator.isVisible().catch(() => false);
 
@@ -964,9 +946,7 @@ test.describe("Workflow Editor - Edge Cases", () => {
     await page.waitForLoadState("networkidle");
   });
 
-  test("should handle concurrent edits in form and editor", async ({
-    page,
-  }) => {
+  test("should handle concurrent edits in form and editor", async ({ page }) => {
     const opened = await openWorkflowFile(page);
     if (!opened) {
       test.skip();
@@ -1007,7 +987,7 @@ test.describe("Workflow Editor - Form Field Validation", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -1024,9 +1004,7 @@ test.describe("Workflow Editor - Form Field Validation", () => {
 
     await switchToMode(page, "form");
 
-    const taskNameInput = page
-      .locator('input[name*="task"][name*="name"]')
-      .first();
+    const taskNameInput = page.locator('input[name*="task"][name*="name"]').first();
     if (await taskNameInput.isVisible()) {
       // Test invalid names
       const invalidNames = ["1task", "task-name!", "task name", ""];
@@ -1058,27 +1036,19 @@ test.describe("Workflow Editor - Form Field Validation", () => {
 
     await switchToMode(page, "form");
 
-    const addTaskButton = page
-      .getByRole("button", { name: /add.*task/i })
-      .first();
+    const addTaskButton = page.getByRole("button", { name: /add.*task/i }).first();
     if (await addTaskButton.isVisible()) {
-      const initialTaskCount = await page
-        .locator('[data-testid*="task"], [class*="task"]')
-        .count();
+      const initialTaskCount = await page.locator('[data-testid*="task"], [class*="task"]').count();
 
       // Add task
       await addTaskButton.click();
       await page.waitForTimeout(500);
 
-      const newTaskCount = await page
-        .locator('[data-testid*="task"], [class*="task"]')
-        .count();
+      const newTaskCount = await page.locator('[data-testid*="task"], [class*="task"]').count();
       expect(newTaskCount).toBeGreaterThanOrEqual(initialTaskCount);
 
       // Try to remove task
-      const removeButton = page
-        .getByRole("button", { name: /remove|delete/i })
-        .first();
+      const removeButton = page.getByRole("button", { name: /remove|delete/i }).first();
       if (await removeButton.isVisible()) {
         await removeButton.click();
         await page.waitForTimeout(500);
@@ -1095,9 +1065,7 @@ test.describe("Workflow Editor - Form Field Validation", () => {
 
     await switchToMode(page, "form");
 
-    const addTaskButton = page
-      .getByRole("button", { name: /add.*task/i })
-      .first();
+    const addTaskButton = page.getByRole("button", { name: /add.*task/i }).first();
     if (await addTaskButton.isVisible()) {
       // Add 20 tasks
       for (let i = 0; i < 20; i++) {
@@ -1122,9 +1090,7 @@ test.describe("Workflow Editor - Form Field Validation", () => {
 
     await switchToMode(page, "form");
 
-    const taskTypeSelect = page
-      .locator('select[name*="type"], [data-testid*="task-type"]')
-      .first();
+    const taskTypeSelect = page.locator('select[name*="type"], [data-testid*="task-type"]').first();
     if (await taskTypeSelect.isVisible()) {
       // Change task type
       await taskTypeSelect.click();
@@ -1163,9 +1129,7 @@ test.describe("Workflow Editor - Form Field Validation", () => {
       await page.waitForTimeout(500);
 
       // Variables might have Monaco editor embedded
-      const variablesEditor = page.locator(
-        '.monaco-editor, textarea[name*="variable"]',
-      );
+      const variablesEditor = page.locator('.monaco-editor, textarea[name*="variable"]');
       if (await variablesEditor.isVisible()) {
         // Try to edit variables
         await variablesEditor.click();
@@ -1190,7 +1154,7 @@ test.describe("Workflow Editor - Output Mode", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -1215,9 +1179,7 @@ test.describe("Workflow Editor - Output Mode", () => {
     await page.waitForTimeout(1000);
 
     // Look for run history or output content
-    const outputContent = page.locator(
-      '[data-testid*="output"], [data-testid*="run"], .run-item',
-    );
+    const outputContent = page.locator('[data-testid*="output"], [data-testid*="run"], .run-item');
     const hasOutput = await outputContent.isVisible().catch(() => false);
     expect(hasOutput || true).toBeTruthy();
   });
@@ -1231,7 +1193,7 @@ test.describe("Workflow Editor - Output Mode", () => {
 
     // Navigate with run parameter
     const currentUrl = page.url();
-    await page.goto(currentUrl + "?run=1");
+    await page.goto(`${currentUrl}?run=1`);
     await page.waitForLoadState("networkidle");
     await page.waitForTimeout(1000);
 
@@ -1251,7 +1213,7 @@ test.describe("Workflow Editor - Output Mode", () => {
 
     // Look for pagination
     const pagination = page.locator(
-      '[data-testid*="pagination"], button[aria-label*="next"], button[aria-label*="previous"]',
+      '[data-testid*="pagination"], button[aria-label*="next"], button[aria-label*="previous"]'
     );
     const hasPagination = await pagination.isVisible().catch(() => false);
 
@@ -1264,9 +1226,7 @@ test.describe("Workflow Editor - Output Mode", () => {
     }
   });
 
-  test("should switch from output to editor without losing content", async ({
-    page,
-  }) => {
+  test("should switch from output to editor without losing content", async ({ page }) => {
     const opened = await openWorkflowFile(page);
     if (!opened) {
       test.skip();

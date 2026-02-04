@@ -1,8 +1,8 @@
 import AnswerContent from "@/components/AnswerContent";
-import ThreadSteps from "@/components/ThreadSteps";
 import ThreadReferences from "@/components/ThreadReferences";
-import { Message } from "@/types/chat";
+import ThreadSteps from "@/components/ThreadSteps";
 import useTheme from "@/stores/useTheme";
+import type { Message } from "@/types/chat";
 import MessageHeader from "./MessageHeader";
 
 interface AgentMessageProps {
@@ -12,64 +12,46 @@ interface AgentMessageProps {
   onArtifactClick?: (id: string) => void;
 }
 
-const AgentMessage = ({
-  message,
-  showAvatar,
-  prompt,
-  onArtifactClick,
-}: AgentMessageProps) => {
+const AgentMessage = ({ message, showAvatar, prompt, onArtifactClick }: AgentMessageProps) => {
   const { content, references, steps, isStreaming } = message;
   const showAnswer = content || steps?.length > 0 || !isStreaming;
   const showAgentThinking = isStreaming && !showAnswer;
   const { theme } = useTheme();
 
   return (
-    <div className="flex flex-col gap-2 w-full mb-4">
+    <div className='mb-4 flex w-full flex-col gap-2'>
       <MessageHeader
         isHuman={false}
         createdAt={message.created_at}
         tokensUsage={{
           inputTokens: message.usage.inputTokens,
-          outputTokens: message.usage.outputTokens,
+          outputTokens: message.usage.outputTokens
         }}
       />
       {showAgentThinking && (
-        <div
-          className="flex gap-2 items-start"
-          data-testid="agent-loading-state"
-        >
+        <div className='flex items-start gap-2' data-testid='agent-loading-state'>
           <img
-            className="w-8 h-8"
-            src={
-              theme === "dark" ? "/oxy-loading-dark.gif" : "/oxy-loading.gif"
-            }
+            className='h-8 w-8'
+            src={theme === "dark" ? "/oxy-loading-dark.gif" : "/oxy-loading.gif"}
           />
-          <div className="bg-muted px-4 py-2 rounded-xl">
-            <p className="text-muted-foreground">Agent is thinking...</p>
+          <div className='rounded-xl bg-muted px-4 py-2'>
+            <p className='text-muted-foreground'>Agent is thinking...</p>
           </div>
         </div>
       )}
       {showAnswer && (
-        <div
-          className="flex gap-2 items-start w-full"
-          data-testid="agent-message-container"
-        >
-          {showAvatar && (
-            <img className="w-8 h-8 rounded-full" src="/logo.svg" alt="Oxy" />
-          )}
-          <div className="flex-1 w-full">
+        <div className='flex w-full items-start gap-2' data-testid='agent-message-container'>
+          {showAvatar && <img className='h-8 w-8 rounded-full' src='/logo.svg' alt='Oxy' />}
+          <div className='w-full flex-1'>
             <div
-              className="p-4 w-full rounded-xl bg-base-card border border-base-border shadow-sm flex flex-col gap-2 overflow-x-auto"
-              data-testid="agent-message-content"
+              className='flex w-full flex-col gap-2 overflow-x-auto rounded-xl border border-base-border bg-base-card p-4 shadow-sm'
+              data-testid='agent-message-content'
             >
               <ThreadSteps steps={steps} isLoading={isStreaming} />
-              <AnswerContent
-                content={content}
-                onArtifactClick={onArtifactClick}
-              />
+              <AnswerContent content={content} onArtifactClick={onArtifactClick} />
             </div>
             {references?.length > 0 && (
-              <div className="mt-2">
+              <div className='mt-2'>
                 <ThreadReferences references={references} prompt={prompt} />
               </div>
             )}

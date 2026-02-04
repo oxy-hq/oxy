@@ -1,13 +1,13 @@
 import { useMemo, useState } from "react";
-import { useEditorContext } from "../contexts/useEditorContext";
-import { usePreviewRefresh } from "../usePreviewRefresh";
-import { useEditorQueryInvalidation } from "../useEditorQueryInvalidation";
 import YAML from "yaml";
-import { AppViewMode } from "./types";
-import { ModeSwitcher } from "./components/ModeSwitcher";
-import { EditorFormMode } from "./components/EditorFormMode";
 import { useFilesContext } from "../../FilesContext";
 import { FilesSubViewMode } from "../../FilesSidebar/constants";
+import { useEditorContext } from "../contexts/useEditorContext";
+import { useEditorQueryInvalidation } from "../useEditorQueryInvalidation";
+import { usePreviewRefresh } from "../usePreviewRefresh";
+import { EditorFormMode } from "./components/EditorFormMode";
+import { ModeSwitcher } from "./components/ModeSwitcher";
+import { AppViewMode } from "./types";
 
 const AppEditor = () => {
   const { pathb64, isReadOnly, gitEnabled } = useEditorContext();
@@ -17,9 +17,7 @@ const AppEditor = () => {
 
   // Default to Form for object mode (GUI editor), Visualization for file mode
   const defaultViewMode =
-    filesSubViewMode === FilesSubViewMode.OBJECTS
-      ? AppViewMode.Form
-      : AppViewMode.Visualization;
+    filesSubViewMode === FilesSubViewMode.OBJECTS ? AppViewMode.Form : AppViewMode.Visualization;
 
   const [viewMode, setViewMode] = useState<AppViewMode>(defaultViewMode);
 
@@ -32,8 +30,7 @@ const AppEditor = () => {
       YAML.parse(value);
       setValidationError(null);
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Invalid YAML format";
+      const errorMessage = error instanceof Error ? error.message : "Invalid YAML format";
       setValidationError(errorMessage);
     }
   };
@@ -43,9 +40,7 @@ const AppEditor = () => {
     invalidateAppQueries();
   };
 
-  const modeSwitcher = (
-    <ModeSwitcher viewMode={viewMode} setViewMode={setViewMode} />
-  );
+  const modeSwitcher = <ModeSwitcher viewMode={viewMode} setViewMode={setViewMode} />;
 
   // Render editor or form mode with EditorPageWrapper
   return (

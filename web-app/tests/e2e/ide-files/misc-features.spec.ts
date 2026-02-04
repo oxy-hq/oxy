@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { IDEPage } from "../pages/IDEPage";
 import { resetTestFile } from "../utils";
 
@@ -10,16 +10,14 @@ test.describe("IDE Files - Read-Only Mode", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
     await page.getByRole("tab", { name: "Files" }).click();
     await page.waitForTimeout(500);
   });
 
   // 12.1 Enter read-only branch
-  test("12.1 - should hide mutation buttons in read-only mode", async ({
-    page,
-  }) => {
+  test("12.1 - should hide mutation buttons in read-only mode", async ({ page }) => {
     // Simulate read-only mode via URL or branch switch
     // This test verifies the UI responds to read-only state
 
@@ -40,9 +38,7 @@ test.describe("IDE Files - Read-Only Mode", () => {
   });
 
   // 12.2 Right-click in read-only
-  test("12.2 - should show read-only indicator in context menu", async ({
-    page,
-  }) => {
+  test("12.2 - should show read-only indicator in context menu", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
 
@@ -77,13 +73,11 @@ test.describe("IDE Files - Read-Only Mode", () => {
   });
 
   // 12.4 Form in read-only
-  test("12.4 - should disable form fields in read-only mode", async ({
-    page,
-  }) => {
+  test("12.4 - should disable form fields in read-only mode", async ({ page }) => {
     // Navigate to a form editor
     const agentsFolder = page.getByRole("button", {
       name: "agents",
-      exact: true,
+      exact: true
     });
     if (await agentsFolder.isVisible()) {
       await agentsFolder.click();
@@ -111,9 +105,7 @@ test.describe("IDE Files - Read-Only Mode", () => {
   });
 
   // 12.5 Ctrl+S in read-only
-  test("12.5 - should do nothing when pressing Ctrl+S in read-only mode", async ({
-    page,
-  }) => {
+  test("12.5 - should do nothing when pressing Ctrl+S in read-only mode", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.openFile("config.yml");
     await idePage.waitForEditorToLoad();
@@ -126,9 +118,7 @@ test.describe("IDE Files - Read-Only Mode", () => {
   });
 
   // 12.6 New Object button
-  test("12.6 - should disable New Object button with tooltip in read-only", async ({
-    page,
-  }) => {
+  test("12.6 - should disable New Object button with tooltip in read-only", async ({ page }) => {
     await page.getByRole("tab", { name: "Objects" }).click();
     await page.waitForTimeout(500);
 
@@ -149,7 +139,7 @@ test.describe("IDE Files - Page Reload Scenarios", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
     await page.getByRole("tab", { name: "Files" }).click();
     await page.waitForTimeout(500);
@@ -185,9 +175,7 @@ test.describe("IDE Files - Page Reload Scenarios", () => {
   });
 
   // 13.3 Reload with unsaved changes
-  test("13.3 - should show browser prompt for unsaved changes", async ({
-    page,
-  }) => {
+  test("13.3 - should show browser prompt for unsaved changes", async ({ page }) => {
     const idePage = new IDEPage(page);
 
     await idePage.openFile("test-file-for-e2e.txt");
@@ -202,9 +190,7 @@ test.describe("IDE Files - Page Reload Scenarios", () => {
   });
 
   // 13.5 Fast reload 10x
-  test("13.5 - should maintain stable state after rapid reloads", async ({
-    page,
-  }) => {
+  test("13.5 - should maintain stable state after rapid reloads", async ({ page }) => {
     const idePage = new IDEPage(page);
 
     await idePage.openFile("config.yml");
@@ -225,9 +211,7 @@ test.describe("IDE Files - Page Reload Scenarios", () => {
   });
 
   // 13.6 Reload with invalid pathb64
-  test("13.6 - should show file not found for invalid path", async ({
-    page,
-  }) => {
+  test("13.6 - should show file not found for invalid path", async ({ page }) => {
     // Navigate to invalid path
     await page.goto("/ide/aW52YWxpZC1wYXRoLnR4dA=="); // "invalid-path.txt" in base64
 
@@ -238,9 +222,7 @@ test.describe("IDE Files - Page Reload Scenarios", () => {
   });
 
   // 13.7 Reload on slow network
-  test("13.7 - should show loading states on slow network", async ({
-    page,
-  }) => {
+  test("13.7 - should show loading states on slow network", async ({ page }) => {
     const idePage = new IDEPage(page);
 
     await idePage.openFile("config.yml");
@@ -264,7 +246,7 @@ test.describe("IDE Files - Resizable Panels", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
     await page.getByRole("tab", { name: "Files" }).click();
     await page.waitForTimeout(500);
@@ -277,7 +259,7 @@ test.describe("IDE Files - Resizable Panels", () => {
 
     // Find collapse button
     const collapseButton = page.getByRole("button", {
-      name: /collapse|chevron/i,
+      name: /collapse|chevron/i
     });
     if (await collapseButton.isVisible()) {
       await collapseButton.click();
@@ -316,7 +298,7 @@ test.describe("IDE Files - Resizable Panels", () => {
 
     // Look for specific collapse button
     const sidebarToggle = page.getByRole("button", {
-      name: /collapse|expand/i,
+      name: /collapse|expand/i
     });
     if (await sidebarToggle.isVisible()) {
       // Toggle collapse
@@ -342,7 +324,7 @@ test.describe("IDE Files - YAML Parsing & Serialization", () => {
   test("15.1 - should parse valid YAML correctly", async ({ page }) => {
     const agentsFolder = page.getByRole("button", {
       name: "agents",
-      exact: true,
+      exact: true
     });
     if (await agentsFolder.isVisible()) {
       await agentsFolder.click();
@@ -371,14 +353,12 @@ test.describe("IDE Files - YAML Parsing & Serialization", () => {
   });
 
   // 15.2 Invalid YAML syntax
-  test("15.2 - should log error and return null for invalid YAML", async ({
-    page,
-  }) => {
+  test("15.2 - should log error and return null for invalid YAML", async ({ page }) => {
     const idePage = new IDEPage(page);
 
     const agentsFolder = page.getByRole("button", {
       name: "agents",
-      exact: true,
+      exact: true
     });
     if (await agentsFolder.isVisible()) {
       await agentsFolder.click();
@@ -410,12 +390,10 @@ test.describe("IDE Files - YAML Parsing & Serialization", () => {
   });
 
   // 15.3 Form → YAML
-  test("15.3 - should use indent: 2, lineWidth: 0 for YAML output", async ({
-    page,
-  }) => {
+  test("15.3 - should use indent: 2, lineWidth: 0 for YAML output", async ({ page }) => {
     const agentsFolder = page.getByRole("button", {
       name: "agents",
-      exact: true,
+      exact: true
     });
     if (await agentsFolder.isVisible()) {
       await agentsFolder.click();

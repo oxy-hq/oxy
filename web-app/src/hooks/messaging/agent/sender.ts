@@ -1,20 +1,13 @@
-import { ThreadService, AgentService } from "@/services/api";
-import { Answer } from "@/types/chat";
-import {
-  MessageSender,
-  SendMessageOptions,
-  MessageHandlers,
-} from "../core/types";
+import { AgentService, ThreadService } from "@/services/api";
+import type { Answer } from "@/types/chat";
 import { MessageFactory } from "../core/messageFactory";
 import { MessageProcessor } from "../core/processors/processor";
+import type { MessageHandlers, MessageSender, SendMessageOptions } from "../core/types";
 
 export class AgentMessageSender implements MessageSender {
   private processor = new MessageProcessor();
 
-  async sendMessage(
-    options: SendMessageOptions,
-    handlers: MessageHandlers,
-  ): Promise<void> {
+  async sendMessage(options: SendMessageOptions, handlers: MessageHandlers): Promise<void> {
     const { content, threadId, projectId, branchName, metadata } = options;
 
     if (metadata?.isPreview) {
@@ -24,7 +17,7 @@ export class AgentMessageSender implements MessageSender {
         metadata?.agentPathb64,
         projectId,
         branchName,
-        handlers,
+        handlers
       );
     } else {
       await this.sendRegularMessage(content, threadId, projectId, handlers);
@@ -37,7 +30,7 @@ export class AgentMessageSender implements MessageSender {
     agentPathb64: string | undefined,
     projectId: string,
     branchName: string,
-    handlers: MessageHandlers,
+    handlers: MessageHandlers
   ): Promise<void> {
     const { onMessageUpdate, onUserMessage } = handlers;
 
@@ -56,12 +49,9 @@ export class AgentMessageSender implements MessageSender {
       agentPathb64 ?? "",
       content ?? "",
       (answer: Answer) => {
-        streamingMessage = this.processor.processContent(
-          streamingMessage,
-          answer,
-        );
+        streamingMessage = this.processor.processContent(streamingMessage, answer);
         onMessageUpdate(streamingMessage);
-      },
+      }
     );
   }
 
@@ -69,7 +59,7 @@ export class AgentMessageSender implements MessageSender {
     content: string | null,
     threadId: string,
     projectId: string,
-    handlers: MessageHandlers,
+    handlers: MessageHandlers
   ): Promise<void> {
     const { onMessageUpdate, onUserMessage } = handlers;
 
@@ -86,13 +76,10 @@ export class AgentMessageSender implements MessageSender {
       threadId,
       content,
       (answer: Answer) => {
-        streamingMessage = this.processor.processContent(
-          streamingMessage,
-          answer,
-        );
+        streamingMessage = this.processor.processContent(streamingMessage, answer);
         onMessageUpdate(streamingMessage);
       },
-      () => {},
+      () => {}
     );
   }
 }

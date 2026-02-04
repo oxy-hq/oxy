@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { IDEPage } from "../pages/IDEPage";
 import { resetTestFile } from "../utils";
 
@@ -9,16 +9,14 @@ test.describe("IDE Files - Performance Stress Tests", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
     await page.getByRole("tab", { name: "Files" }).click();
     await page.waitForTimeout(500);
   });
 
   // 16.1 Project with 10,000 files
-  test("16.1 - should render large file tree within 3 seconds", async ({
-    page,
-  }) => {
+  test("16.1 - should render large file tree within 3 seconds", async ({ page }) => {
     const idePage = new IDEPage(page);
 
     const startTime = Date.now();
@@ -38,9 +36,7 @@ test.describe("IDE Files - Performance Stress Tests", () => {
   });
 
   // 16.2 Open 50MB text file
-  test("16.2 - should handle large file or show limit warning", async ({
-    page,
-  }) => {
+  test("16.2 - should handle large file or show limit warning", async ({ page }) => {
     const idePage = new IDEPage(page);
 
     await idePage.openFile("config.yml");
@@ -57,7 +53,7 @@ test.describe("IDE Files - Performance Stress Tests", () => {
   test("16.3 - should render form with many tasks", async ({ page }) => {
     const workflowsFolder = page.getByRole("button", {
       name: "workflows",
-      exact: true,
+      exact: true
     });
     if (await workflowsFolder.isVisible()) {
       await workflowsFolder.click();
@@ -79,9 +75,7 @@ test.describe("IDE Files - Performance Stress Tests", () => {
 
           // Form should render
           const formContent = page.locator("form, [data-testid*='form']");
-          const isFormVisible = await formContent
-            .isVisible()
-            .catch(() => false);
+          const isFormVisible = await formContent.isVisible().catch(() => false);
           expect(isFormVisible || true).toBeTruthy();
         }
       }
@@ -89,9 +83,7 @@ test.describe("IDE Files - Performance Stress Tests", () => {
   });
 
   // 16.5 100 rapid file switches
-  test("16.5 - should handle rapid file switching without memory leak", async ({
-    page,
-  }) => {
+  test("16.5 - should handle rapid file switching without memory leak", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
 
@@ -107,8 +99,6 @@ test.describe("IDE Files - Performance Stress Tests", () => {
         await file.click({ timeout: 5000 }).catch(() => {});
         await page.waitForTimeout(100);
       } else {
-        // File not visible, skip
-        continue;
       }
     }
 
@@ -117,16 +107,12 @@ test.describe("IDE Files - Performance Stress Tests", () => {
   });
 
   // 16.7 50 folders deep
-  test("16.7 - should navigate very deep folder hierarchies", async ({
-    page,
-  }) => {
+  test("16.7 - should navigate very deep folder hierarchies", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
 
     // Navigate through available folders
-    const folders = page
-      .locator('[role="button"]')
-      .filter({ hasText: /^[a-z_]+$/ });
+    const folders = page.locator('[role="button"]').filter({ hasText: /^[a-z_]+$/ });
     const folderCount = await folders.count();
 
     for (let i = 0; i < Math.min(5, folderCount); i++) {
@@ -143,9 +129,7 @@ test.describe("IDE Files - Performance Stress Tests", () => {
   });
 
   // 16.8 500 files in single folder
-  test("16.8 - should load folder with many files correctly", async ({
-    page,
-  }) => {
+  test("16.8 - should load folder with many files correctly", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
 
@@ -180,9 +164,7 @@ test.describe("IDE Files - URL Manipulation", () => {
   });
 
   // 17.2 Valid base64, non-existent file
-  test("17.2 - should show file not found for non-existent file", async ({
-    page,
-  }) => {
+  test("17.2 - should show file not found for non-existent file", async ({ page }) => {
     // "does-not-exist.txt" in base64
     const pathb64 = btoa("does-not-exist.txt");
     await page.goto(`/ide/${pathb64}`);
@@ -204,10 +186,8 @@ test.describe("IDE Files - URL Manipulation", () => {
   });
 
   // 17.4 Very long pathb64
-  test("17.4 - should handle very long path or return 414", async ({
-    page,
-  }) => {
-    const longPath = "a".repeat(1000) + ".txt";
+  test("17.4 - should handle very long path or return 414", async ({ page }) => {
+    const longPath = `${"a".repeat(1000)}.txt`;
     const pathb64 = btoa(longPath);
     await page.goto(`/ide/${pathb64}`);
     await page.waitForLoadState("networkidle");
@@ -219,9 +199,11 @@ test.describe("IDE Files - URL Manipulation", () => {
   // 17.5 Unicode in path
   test("17.5 - should encode unicode correctly in URL", async ({ page }) => {
     // "日本語ファイル.txt" in base64 - encode properly for unicode
-    const pathb64 = btoa(encodeURIComponent("unicode-file-日本語.txt").replace(/%([0-9A-F]{2})/g, (_, p1) => {
-      return String.fromCharCode(parseInt(p1, 16));
-    }));
+    const pathb64 = btoa(
+      encodeURIComponent("unicode-file-日本語.txt").replace(/%([0-9A-F]{2})/g, (_, p1) => {
+        return String.fromCharCode(parseInt(p1, 16));
+      })
+    );
     await page.goto(`/ide/${pathb64}`);
     await page.waitForLoadState("networkidle");
 
@@ -236,7 +218,7 @@ test.describe("IDE Files - Context Menu", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
     await page.getByRole("tab", { name: "Files" }).click();
     await page.waitForTimeout(500);
@@ -266,9 +248,7 @@ test.describe("IDE Files - Context Menu", () => {
   });
 
   // 18.2 Right-click folder → menu
-  test("18.2 - should show more options on right-click folder", async ({
-    page,
-  }) => {
+  test("18.2 - should show more options on right-click folder", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
 
@@ -312,9 +292,7 @@ test.describe("IDE Files - Context Menu", () => {
   });
 
   // 18.4 Menu at screen edge
-  test("18.4 - should position menu within viewport at screen edge", async ({
-    page,
-  }) => {
+  test("18.4 - should position menu within viewport at screen edge", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
 
@@ -348,7 +326,7 @@ test.describe("IDE Files - API Error Responses", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
     await page.getByRole("tab", { name: "Files" }).click();
     await page.waitForTimeout(500);
@@ -360,7 +338,7 @@ test.describe("IDE Files - API Error Responses", () => {
       if (request.method() === "GET") {
         route.fulfill({
           status: 404,
-          body: JSON.stringify({ error: "File not found" }),
+          body: JSON.stringify({ error: "File not found" })
         });
       } else {
         route.continue();
@@ -381,7 +359,7 @@ test.describe("IDE Files - API Error Responses", () => {
       if (request.method() === "GET") {
         route.fulfill({
           status: 500,
-          body: JSON.stringify({ error: "Internal Server Error" }),
+          body: JSON.stringify({ error: "Internal Server Error" })
         });
       } else {
         route.continue();
@@ -407,7 +385,7 @@ test.describe("IDE Files - API Error Responses", () => {
       if (request.method() === "PUT" || request.method() === "POST") {
         route.fulfill({
           status: 409,
-          body: JSON.stringify({ error: "Conflict: File modified externally" }),
+          body: JSON.stringify({ error: "Conflict: File modified externally" })
         });
       } else {
         route.continue();
@@ -427,7 +405,7 @@ test.describe("IDE Files - API Error Responses", () => {
         route.fulfill({
           status: 200,
           contentType: "application/json",
-          body: '{"content": "truncated',
+          body: '{"content": "truncated'
         });
       } else {
         route.continue();

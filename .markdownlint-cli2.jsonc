@@ -1,0 +1,38 @@
+{
+  // Markdown/MDX lint configuration
+  // Rules: https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md
+  "config": {
+    "default": true,
+    // Allow long lines (common in documentation)
+    "MD013": false,
+    // Allow duplicate headings (common in docs with multiple sections)
+    "MD024": false,
+    // Allow multiple top-level headings (MDX has frontmatter title + content h1)
+    "MD025": false,
+    // Allow ordered list prefix style flexibility
+    "MD029": false,
+    // Allow inline HTML (required for MDX components)
+    "MD033": false,
+    // Allow bare URLs
+    "MD034": false,
+    // Allow emphasis used as heading (common in docs)
+    "MD036": false,
+    // Allow code blocks without language
+    "MD040": false,
+    // Allow files without first-line heading (MDX exports)
+    "MD041": false,
+    // Allow missing alt text (will be handled by a11y tools)
+    "MD045": false,
+    // Allow any code block style (indented or fenced)
+    "MD046": false
+  },
+  // Fix issues automatically when possible
+  "fix": true,
+  // Ignore patterns
+  "ignores": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/CHANGELOG.md",
+    "**/target/**"
+  ]
+}

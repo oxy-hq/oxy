@@ -1,5 +1,5 @@
-import { Artifact } from "@/types/artifact";
-import { GetBlocksResponse, LogItem } from "@/services/types";
+import type { GetBlocksResponse, LogItem } from "@/services/types";
+import type { Artifact } from "@/types/artifact";
 
 export interface TextContent {
   type: "text";
@@ -177,7 +177,7 @@ export type Reference = (SqlQueryReference | DataAppReference) & {
 
 export enum ReferenceType {
   SQLQuery = "sqlQuery",
-  DataApp = "dataApp",
+  DataApp = "dataApp"
 }
 
 export type SqlQueryReference = {

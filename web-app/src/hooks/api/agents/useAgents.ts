@@ -1,13 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-
-import queryKeys from "../queryKey";
-import { AgentService } from "@/services/api";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { AgentService } from "@/services/api";
+import queryKeys from "../queryKey";
 
 export default function useAgents(
   enabled = true,
   refetchOnWindowFocus = true,
-  refetchOnMount: boolean | "always" = true,
+  refetchOnMount: boolean | "always" = true
 ) {
   const { project, branchName } = useCurrentProjectBranch();
 
@@ -16,6 +15,6 @@ export default function useAgents(
     queryFn: () => AgentService.listAgents(project.id, branchName),
     enabled,
     refetchOnWindowFocus: refetchOnWindowFocus,
-    refetchOnMount,
+    refetchOnMount
   });
 }

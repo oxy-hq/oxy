@@ -1,21 +1,21 @@
-import React from "react";
 import { ChevronDown, ChevronRight, Folder, Table } from "lucide-react";
-import {
-  SidebarMenuSub,
-  SidebarMenuSubItem,
-  SidebarMenuSubButton,
-} from "@/components/ui/shadcn/sidebar";
+import React from "react";
+import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import {
   Collapsible,
-  CollapsibleTrigger,
   CollapsibleContent,
+  CollapsibleTrigger
 } from "@/components/ui/shadcn/collapsible";
-import type { DatabaseSchema } from "../types";
+import {
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem
+} from "@/components/ui/shadcn/sidebar";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
-import { useNavigate } from "react-router-dom";
-import useDatabaseClient from "@/stores/useDatabaseClient";
 import ROUTES from "@/libs/utils/routes";
-import { toast } from "sonner";
+import useDatabaseClient from "@/stores/useDatabaseClient";
+import type { DatabaseSchema } from "../types";
 
 interface SchemaTreeItemProps {
   schema: DatabaseSchema;
@@ -24,11 +24,7 @@ interface SchemaTreeItemProps {
   databaseName?: string;
 }
 
-const generateSelectQuery = (
-  schemaName: string,
-  tableName: string,
-  dialect?: string,
-): string => {
+const generateSelectQuery = (schemaName: string, tableName: string, dialect?: string): string => {
   const normalizedDialect = dialect?.toLowerCase() || "";
 
   switch (normalizedDialect) {
@@ -56,7 +52,7 @@ const generateSelectQuery = (
 export const SchemaTreeItem: React.FC<SchemaTreeItemProps> = ({
   schema,
   dialect,
-  databaseName,
+  databaseName
 }) => {
   const [isOpen, setIsOpen] = React.useState(false);
   const { addTab } = useDatabaseClient();
@@ -69,7 +65,7 @@ export const SchemaTreeItem: React.FC<SchemaTreeItemProps> = ({
       name: `${tableName}.sql`,
       content: generateSelectQuery(schema.name, tableName, dialect),
       isDirty: true,
-      selectedDatabase: databaseName,
+      selectedDatabase: databaseName
     });
     if (!result.success) {
       toast.error(result.error);
@@ -81,14 +77,10 @@ export const SchemaTreeItem: React.FC<SchemaTreeItemProps> = ({
     <Collapsible open={isOpen} onOpenChange={() => setIsOpen(!isOpen)}>
       <SidebarMenuSubItem>
         <CollapsibleTrigger asChild>
-          <SidebarMenuSubButton className="text-muted-foreground hover:text-sidebar-foreground">
-            {isOpen ? (
-              <ChevronDown className="h-3 w-3" />
-            ) : (
-              <ChevronRight className="h-3 w-3" />
-            )}
-            <Folder className="h-3 w-3" />
-            <span className="text-xs">{schema.name}</span>
+          <SidebarMenuSubButton className='text-muted-foreground hover:text-sidebar-foreground'>
+            {isOpen ? <ChevronDown className='h-3 w-3' /> : <ChevronRight className='h-3 w-3' />}
+            <Folder className='h-3 w-3' />
+            <span className='text-xs'>{schema.name}</span>
           </SidebarMenuSubButton>
         </CollapsibleTrigger>
         <CollapsibleContent>
@@ -97,10 +89,10 @@ export const SchemaTreeItem: React.FC<SchemaTreeItemProps> = ({
               <SidebarMenuSubItem key={table.name}>
                 <SidebarMenuSubButton
                   onClick={() => handleTableClick(table.name)}
-                  className="text-muted-foreground hover:text-sidebar-foreground"
+                  className='text-muted-foreground hover:text-sidebar-foreground'
                 >
-                  <Table className="h-3 w-3" />
-                  <span className="text-xs">{table.name}</span>
+                  <Table className='h-3 w-3' />
+                  <span className='text-xs'>{table.name}</span>
                 </SidebarMenuSubButton>
               </SidebarMenuSubItem>
             ))}

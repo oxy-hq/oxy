@@ -1,7 +1,7 @@
+import { LoaderCircle } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useOktaAuth, validateOktaState } from "@/hooks/auth/useOktaAuth";
-import { LoaderCircle } from "lucide-react";
 import ROUTES from "@/libs/utils/routes";
 
 const OktaCallback = () => {
@@ -42,8 +42,8 @@ const OktaCallback = () => {
   }, [searchParams, navigate, oktaAuthMutation]);
 
   return (
-    <div className="flex flex-col gap-5 items-center justify-center h-full w-full">
-      <LoaderCircle className="animate-spin" />
+    <div className='flex h-full w-full flex-col items-center justify-center gap-5'>
+      <LoaderCircle className='animate-spin' />
       <p>Completing Okta authentication...</p>
     </div>
   );

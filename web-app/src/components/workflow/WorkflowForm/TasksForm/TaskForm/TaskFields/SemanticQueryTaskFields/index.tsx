@@ -1,16 +1,17 @@
-import React from "react";
-import { SemanticQueryTaskFieldsProps } from "./types";
-import { useSemanticQueryFields } from "./useSemanticQueryFields";
-import { TopicField } from "./TopicField";
+import type React from "react";
 import { DimensionsField } from "./DimensionsField";
-import { MeasuresField } from "./MeasuresField";
 import { FiltersField } from "./FiltersField";
-import { OrdersField } from "./OrdersField";
 import { LimitOffsetFields } from "./LimitOffsetFields";
+import { MeasuresField } from "./MeasuresField";
+import { OrdersField } from "./OrdersField";
+import { TopicField } from "./TopicField";
+import type { SemanticQueryTaskFieldsProps } from "./types";
+import { useSemanticQueryFields } from "./useSemanticQueryFields";
 
-export const SemanticQueryTaskFields: React.FC<
-  SemanticQueryTaskFieldsProps
-> = ({ index, basePath = "tasks" }) => {
+export const SemanticQueryTaskFields: React.FC<SemanticQueryTaskFieldsProps> = ({
+  index,
+  basePath = "tasks"
+}) => {
   const {
     register,
     control,
@@ -23,11 +24,11 @@ export const SemanticQueryTaskFields: React.FC<
     topicItems,
     dimensionItems,
     measureItems,
-    allFieldItems,
+    allFieldItems
   } = useSemanticQueryFields(index, basePath);
 
   return (
-    <div className="space-y-4">
+    <div className='space-y-4'>
       <TopicField
         taskPath={taskPath}
         control={control}

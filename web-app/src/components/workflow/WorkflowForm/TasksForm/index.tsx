@@ -39,13 +39,5 @@ export interface RetrievalConfigData {
 }
 
 export const TasksForm = () => {
-  return (
-    <>
-      <NestedTasksForm
-        label={<CardTitle>Tasks</CardTitle>}
-        name="tasks"
-        showAddButton={true}
-      />
-    </>
-  );
+  return <NestedTasksForm label={<CardTitle>Tasks</CardTitle>} name='tasks' showAddButton={true} />;
 };

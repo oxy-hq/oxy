@@ -3,14 +3,13 @@ import { useMessaging } from "../core/useMessaging";
 import { TaskMessageSender } from "./sender";
 
 const useAskTask = () => {
-  const { getTaskThread, setFilePath, setIsLoading, setMessages } =
-    useTaskThreadStore();
+  const { getTaskThread, setFilePath, setIsLoading, setMessages } = useTaskThreadStore();
 
   const threadStoreAdapter = {
     getThread: (threadId: string) => getTaskThread(threadId),
     setIsLoading,
     setMessages,
-    setFilePath,
+    setFilePath
   };
 
   const messageSender = new TaskMessageSender();

@@ -1,8 +1,8 @@
-import { WorkflowService } from "@/services/api";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import queryKeys from "../queryKey";
-import { Workflow } from "@/types/workflow";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { WorkflowService } from "@/services/api";
+import type { Workflow } from "@/types/workflow";
+import queryKeys from "../queryKey";
 
 export interface CreateWorkflowFromQueryRequest {
   query: string;
@@ -14,9 +14,7 @@ export interface WorkflowResponse {
   workflow: Workflow;
 }
 
-const useCreateWorkflowFromQueryMutation = (
-  onSuccess?: (data: WorkflowResponse) => void,
-) => {
+const useCreateWorkflowFromQueryMutation = (onSuccess?: (data: WorkflowResponse) => void) => {
   const queryClient = useQueryClient();
   const { project, branchName } = useCurrentProjectBranch();
 
@@ -26,12 +24,12 @@ const useCreateWorkflowFromQueryMutation = (
     onSuccess: (data: WorkflowResponse) => {
       // Invalidate workflow list queries to refresh the UI
       queryClient.invalidateQueries({
-        queryKey: queryKeys.workflow.list(project.id, branchName),
+        queryKey: queryKeys.workflow.list(project.id, branchName)
       });
       if (onSuccess) {
         onSuccess(data);
       }
-    },
+    }
   });
 };
 

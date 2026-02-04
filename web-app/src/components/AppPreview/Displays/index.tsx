@@ -1,20 +1,13 @@
-import { DataContainer, Display } from "@/types/app";
-
-import { MarkdownDisplayBlock } from "./MarkdownDisplayBlock";
-import { LineChart } from "./LineChart";
-import { BarChart } from "./BarChart";
-import { PieChart } from "./PieChart";
-import { DataTableBlock } from "./DataTableBlock";
 import { ErrorBoundary } from "react-error-boundary";
+import type { DataContainer, Display } from "@/types/app";
+import { BarChart } from "./BarChart";
+import { DataTableBlock } from "./DataTableBlock";
 import ErrorDisplayBlock from "./ErrorDisplayBlock";
+import { LineChart } from "./LineChart";
+import { MarkdownDisplayBlock } from "./MarkdownDisplayBlock";
+import { PieChart } from "./PieChart";
 
-export const DisplayBlock = ({
-  display,
-  data,
-}: {
-  display: Display;
-  data?: DataContainer;
-}) => {
+export const DisplayBlock = ({ display, data }: { display: Display; data?: DataContainer }) => {
   switch (display.type) {
     case "error":
       return <ErrorDisplayBlock display={display} />;
@@ -36,14 +29,8 @@ export const DisplayBlock = ({
   }
 };
 
-export const Displays = ({
-  displays,
-  data,
-}: {
-  displays: Display[];
-  data?: DataContainer;
-}) => (
-  <div className="flex flex-col gap-4">
+export const Displays = ({ displays, data }: { displays: Display[]; data?: DataContainer }) => (
+  <div className='flex flex-col gap-4'>
     {displays.map((display, idx) => (
       <ErrorBoundary
         key={idx}
@@ -53,7 +40,7 @@ export const Displays = ({
             display={{
               type: "error",
               title: "Display Error",
-              error: `Failed to render display of type ${display.type}`,
+              error: `Failed to render display of type ${display.type}`
             }}
           />
         }

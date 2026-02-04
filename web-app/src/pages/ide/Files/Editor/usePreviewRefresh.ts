@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useCallback, useState } from "react";
 import { randomKey } from "@/libs/utils/string";
 
 export const usePreviewRefresh = () => {
@@ -10,6 +10,6 @@ export const usePreviewRefresh = () => {
 
   return {
     previewKey,
-    refreshPreview,
+    refreshPreview
   };
 };

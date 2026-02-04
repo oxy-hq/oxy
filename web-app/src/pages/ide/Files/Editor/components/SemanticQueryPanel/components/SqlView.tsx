@@ -8,11 +8,11 @@ interface SqlViewProps {
 
 const SqlView = ({ generatedSql, sqlError }: SqlViewProps) => {
   return (
-    <div className="h-full overflow-auto customScrollbar p-4">
+    <div className='customScrollbar h-full overflow-auto p-4'>
       {(() => {
         if (sqlError) {
           return (
-            <div className="text-xs font-mono bg-destructive/10 text-destructive p-4 rounded whitespace-pre-wrap">
+            <div className='whitespace-pre-wrap rounded bg-destructive/10 p-4 font-mono text-destructive text-xs'>
               {sqlError}
             </div>
           );
@@ -20,17 +20,17 @@ const SqlView = ({ generatedSql, sqlError }: SqlViewProps) => {
         if (generatedSql) {
           return (
             <SyntaxHighlighter
-              language="sql"
+              language='sql'
               style={oneDark}
               customStyle={{ margin: 0, borderRadius: "0.5rem" }}
-              className="text-xs font-mono"
+              className='font-mono text-xs'
             >
               {generatedSql}
             </SyntaxHighlighter>
           );
         }
         return (
-          <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+          <div className='flex h-full items-center justify-center text-muted-foreground text-sm'>
             Run a query to see the generated SQL
           </div>
         );

@@ -1,5 +1,5 @@
-import { writeFile, mkdir } from "fs/promises";
-import { existsSync } from "fs";
+import { existsSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
 import { resetProject } from "./utils";
 
 async function globalSetup() {
@@ -52,9 +52,7 @@ tools:
     // Give the backend file watcher a moment to detect the new files
     await new Promise((resolve) => setTimeout(resolve, 1500));
 
-    console.log(
-      "Global E2E setup complete (mocked threads handled via route interception).",
-    );
+    console.log("Global E2E setup complete (mocked threads handled via route interception).");
   } catch (error) {
     console.error("Failed to setup test files:", error);
     throw error;

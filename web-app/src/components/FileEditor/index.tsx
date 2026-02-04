@@ -1,8 +1,8 @@
 import { useMemo } from "react";
+import { BaseMonacoEditor } from "@/components/MonacoEditor";
 import { getLanguageFromFileName } from "./constants";
 import useMonacoEditor from "./hooks/useMonacoEditor";
 import { useFileEditorContext } from "./useFileEditorContext";
-import { BaseMonacoEditor } from "@/components/MonacoEditor";
 
 export type FileState = "saved" | "modified" | "saving";
 
@@ -20,11 +20,11 @@ interface Props {
 const FileEditor = ({ readOnly = false, className }: Props) => {
   const {
     state: { fileName, content, originalContent, showDiff, isLoading },
-    actions,
+    actions
   } = useFileEditorContext();
 
   useMonacoEditor({
-    saveFile: actions.save,
+    saveFile: actions.save
   });
 
   const language = useMemo(() => getLanguageFromFileName(fileName), [fileName]);
@@ -35,7 +35,7 @@ const FileEditor = ({ readOnly = false, className }: Props) => {
 
   return (
     <BaseMonacoEditor
-      path={"file://" + fileName}
+      path={`file://${fileName}`}
       value={content}
       onChange={actions.setContent}
       language={language}
@@ -47,7 +47,7 @@ const FileEditor = ({ readOnly = false, className }: Props) => {
       options={{
         minimap: { enabled: true },
         scrollBeyondLastLine: true,
-        readOnly: showDiff ? true : readOnly,
+        readOnly: showDiff ? true : readOnly
       }}
     />
   );

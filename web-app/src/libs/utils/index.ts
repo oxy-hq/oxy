@@ -1,22 +1,22 @@
 // Browser utilities
-export {
-  clearAllCookies,
-  redirectToHome,
-  clearBrowserStorage,
-} from "./browser";
 
 // Authentication utilities
 export {
   handleLogout,
-  performLogoutCleanup,
   type LogoutResponse,
+  performLogoutCleanup
 } from "./auth";
+export {
+  clearAllCookies,
+  clearBrowserStorage,
+  redirectToHome
+} from "./browser";
 
 // Secret masking utilities
 export {
-  maskSecret,
-  maskSecretForTable,
-  maskSecretCompletely,
   isLikelySecret,
-  validateSecretName,
+  maskSecret,
+  maskSecretCompletely,
+  maskSecretForTable,
+  validateSecretName
 } from "./secretMaskingUtils";

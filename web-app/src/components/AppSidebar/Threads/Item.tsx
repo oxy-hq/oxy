@@ -1,22 +1,22 @@
 import { MoreHorizontal, Trash2 } from "lucide-react";
+import { useCallback } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { ThreadItem } from "@/types/chat";
-import {
-  SidebarMenuAction,
-  SidebarMenuSubButton,
-  SidebarMenuSubItem,
-} from "@/components/ui/shadcn/sidebar";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuTrigger,
+  DropdownMenuTrigger
 } from "@/components/ui/shadcn/dropdown-menu";
-import { useCallback } from "react";
+import {
+  SidebarMenuAction,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem
+} from "@/components/ui/shadcn/sidebar";
 import useDeleteThread from "@/hooks/api/threads/useDeleteThread";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
-import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import type { ThreadItem } from "@/types/chat";
 
 interface ItemProps {
   thread: ThreadItem;
@@ -40,7 +40,7 @@ const Item = ({ thread }: ItemProps) => {
         if (isActive) {
           navigate(ROUTES.PROJECT(projectId).THREADS);
         }
-      },
+      }
     });
   }, [deleteThread, isActive, navigate, thread.id, projectId]);
 
@@ -48,7 +48,7 @@ const Item = ({ thread }: ItemProps) => {
     <SidebarMenuSubItem key={thread.id}>
       <SidebarMenuSubButton asChild isActive={isActive}>
         <Link to={threadUri} data-testid={`sidebar-thread-link-${thread.id}`}>
-          <span className="truncate">{thread.title}</span>
+          <span className='truncate'>{thread.title}</span>
         </Link>
       </SidebarMenuSubButton>
       <DropdownMenu>
@@ -57,20 +57,20 @@ const Item = ({ thread }: ItemProps) => {
             className={cn(
               "peer-data-[active=true]/menu-button:text-sidebar-accent-foreground",
               "group-focus-within/menu-sub-item:opacity-100 group-hover/menu-sub-item:opacity-100",
-              "data-[state=open]:opacity-100 md:opacity-0",
+              "data-[state=open]:opacity-100 md:opacity-0"
             )}
           >
             <MoreHorizontal />
           </SidebarMenuAction>
         </DropdownMenuTrigger>
-        <DropdownMenuContent side="bottom" align="start">
+        <DropdownMenuContent side='bottom' align='start'>
           <DropdownMenuItem
-            className="cursor-pointer"
+            className='cursor-pointer'
             onSelect={handleDeleteThread}
             data-testid={`sidebar-thread-delete-${thread.id}`}
           >
-            <Trash2 className="text-destructive" />
-            <span className="text-destructive">Delete</span>
+            <Trash2 className='text-destructive' />
+            <span className='text-destructive'>Delete</span>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

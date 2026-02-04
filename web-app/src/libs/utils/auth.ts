@@ -1,8 +1,4 @@
-import {
-  clearAllCookies,
-  clearBrowserStorage,
-  redirectToHome,
-} from "./browser";
+import { clearAllCookies, clearBrowserStorage, redirectToHome } from "./browser";
 
 export interface LogoutResponse {
   logout_url?: string;
@@ -22,7 +18,7 @@ export const handleLogout = async (): Promise<void> => {
   try {
     const response = await fetch("/api/logout", {
       credentials: "include",
-      method: "GET",
+      method: "GET"
     });
 
     if (response.ok) {

@@ -29,7 +29,7 @@ const useMonacoEditor = ({ saveFile }: UseMonacoEditorProps) => {
       });
       const keybindingRule = monaco.editor.addKeybindingRule({
         keybinding: monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS,
-        command: commandId,
+        command: commandId
       });
 
       commandDisposer = () => {
@@ -47,7 +47,7 @@ const useMonacoEditor = ({ saveFile }: UseMonacoEditorProps) => {
   }, [monaco, saveFile]);
 
   return {
-    monaco,
+    monaco
   };
 };
 

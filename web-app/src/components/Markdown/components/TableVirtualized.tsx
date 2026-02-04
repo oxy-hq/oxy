@@ -1,5 +1,5 @@
-import { useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { useRef } from "react";
 
 type Props = {
   table_id: string;
@@ -19,7 +19,7 @@ const TableVirtualized = ({ table_id, tables }: Props) => {
     count: rows.length,
     estimateSize: () => 37,
     getScrollElement: () => parentRef.current,
-    overscan: 20,
+    overscan: 20
   });
 
   if (data.length === 0) {
@@ -29,18 +29,18 @@ const TableVirtualized = ({ table_id, tables }: Props) => {
   return (
     <div
       ref={parentRef}
-      className="overflow-auto customScrollbar scrollbar-gutter-auto rounded-lg border border-[#27272A]"
+      className='customScrollbar scrollbar-gutter-auto overflow-auto rounded-lg border border-[#27272A]'
       style={{
         position: "relative",
-        height: `${Math.min(rowVirtualizer.getTotalSize() + 40, 400)}px`,
+        height: `${Math.min(rowVirtualizer.getTotalSize() + 40, 400)}px`
       }}
     >
-      <table className="w-full text-sm">
-        <thead className="text-muted-foreground">
+      <table className='w-full text-sm'>
+        <thead className='text-muted-foreground'>
           {header.map((cell, i) => (
             <th
               key={i}
-              className="min-w-[140px]  px-4 py-2 text-left border-b border-r border-[#27272A] font-medium last:border-r-0"
+              className='min-w-[140px] border-[#27272A] border-r border-b px-4 py-2 text-left font-medium last:border-r-0'
               title={cell}
             >
               {cell}
@@ -51,7 +51,7 @@ const TableVirtualized = ({ table_id, tables }: Props) => {
         <tbody
           style={{
             height: `${rowVirtualizer.getTotalSize()}px`,
-            position: "relative",
+            position: "relative"
           }}
         >
           {rowVirtualizer.getVirtualItems().map((virtualRow) => {
@@ -64,13 +64,13 @@ const TableVirtualized = ({ table_id, tables }: Props) => {
                   transform: `translateY(${virtualRow.start}px)`,
                   position: "absolute",
                   width: "100%",
-                  display: "flex",
+                  display: "flex"
                 }}
               >
                 {row.map((cell, i) => (
                   <td
                     key={i}
-                    className="min-w-[140px] w-full px-4 py-2 text-left border-r border-[#27272A] last:border-r-0 [tr:not(:last-child)>&]:border-b"
+                    className='w-full min-w-[140px] border-[#27272A] border-r px-4 py-2 text-left last:border-r-0 [tr:not(:last-child)>&]:border-b'
                     title={cell}
                   >
                     {cell}

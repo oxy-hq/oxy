@@ -1,11 +1,12 @@
-import React, { useEffect } from "react";
-import { useForm, FormProvider, useFieldArray } from "react-hook-form";
+import { Plus } from "lucide-react";
+import type React from "react";
+import { useEffect } from "react";
+import { FormProvider, useFieldArray, useForm } from "react-hook-form";
 import { Button } from "@/components/ui/shadcn/button";
 import { CardTitle } from "@/components/ui/shadcn/card";
-import { Plus } from "lucide-react";
-import { DisplayForm } from "./DisplayForm";
 import { NestedTasksForm } from "@/components/workflow/WorkflowForm/TasksForm/NestedTasksForm";
 import { cleanObject } from "@/utils/formDataCleaner";
+import { DisplayForm } from "./DisplayForm";
 
 export interface AppFormData {
   tasks?: TaskFormData[];
@@ -64,7 +65,7 @@ const getDefaultData = (data?: Partial<AppFormData>) => {
   if (!data) {
     return {
       tasks: [{ name: "task_1", type: "execute_sql" }],
-      display: [{ type: "table" }],
+      display: [{ type: "table" }]
     };
   }
 
@@ -84,7 +85,7 @@ const getDefaultData = (data?: Partial<AppFormData>) => {
 export const AppForm: React.FC<AppFormProps> = ({ data, onChange }) => {
   const methods = useForm<AppFormData>({
     defaultValues: getDefaultData(data),
-    mode: "onBlur",
+    mode: "onBlur"
   });
 
   useEffect(() => {
@@ -102,46 +103,43 @@ export const AppForm: React.FC<AppFormProps> = ({ data, onChange }) => {
   const {
     fields: displayFields,
     append: appendDisplay,
-    remove: removeDisplay,
+    remove: removeDisplay
   } = useFieldArray({
     control,
-    name: "display",
+    name: "display"
   });
 
   return (
     <FormProvider {...methods}>
-      <div className="flex-1 min-h-0 flex flex-col bg-card">
-        <div className="flex-1 overflow-auto customScrollbar p-6">
-          <form id="app-form" className="space-y-8">
+      <div className='flex min-h-0 flex-1 flex-col bg-card'>
+        <div className='customScrollbar flex-1 overflow-auto p-6'>
+          <form id='app-form' className='space-y-8'>
             <NestedTasksForm
               label={<CardTitle>Tasks</CardTitle>}
-              name="tasks"
+              name='tasks'
               showAddButton={true}
             />
 
-            <div className="flex items-center justify-between">
+            <div className='flex items-center justify-between'>
               <CardTitle>Display</CardTitle>
               <Button
-                type="button"
+                type='button'
                 onClick={() =>
                   appendDisplay({
-                    type: "table",
+                    type: "table"
                   })
                 }
-                variant="outline"
-                size="sm"
+                variant='outline'
+                size='sm'
               >
-                <Plus className="w-4 h-4 mr-2" />
+                <Plus className='mr-2 h-4 w-4' />
                 Add Display
               </Button>
             </div>
-            <div className="space-y-4">
+            <div className='space-y-4'>
               {displayFields.map((field, index) => (
                 <div key={field.id}>
-                  <DisplayForm
-                    index={index}
-                    onRemove={() => removeDisplay(index)}
-                  />
+                  <DisplayForm index={index} onRemove={() => removeDisplay(index)} />
                 </div>
               ))}
             </div>

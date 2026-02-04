@@ -8,11 +8,11 @@ const publicAPIPaths = [
   "/auth/verify-email",
   "/auth/google",
   "/auth/okta",
-  "/auth/config",
+  "/auth/config"
 ];
 
 export const apiClient = axios.create({
-  baseURL: apiBaseURL,
+  baseURL: apiBaseURL
 });
 
 apiClient.interceptors.request.use(
@@ -25,24 +25,21 @@ apiClient.interceptors.request.use(
   },
   (error) => {
     return Promise.reject(error);
-  },
+  }
 );
 
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (
-      error.response?.status === 401 &&
-      !publicAPIPaths.includes(error.config.url)
-    ) {
+    if (error.response?.status === 401 && !publicAPIPaths.includes(error.config.url)) {
       localStorage.removeItem("auth_token");
       localStorage.removeItem("user");
       window.location.href = "/login";
     }
     return Promise.reject(error);
-  },
+  }
 );
 
 export const vibeCodingClient = axios.create({
-  baseURL: "http://localhost:8000",
+  baseURL: "http://localhost:8000"
 });

@@ -1,9 +1,9 @@
 import { useMutation } from "@tanstack/react-query";
-import { AuthService } from "@/services/api";
-import { GoogleAuthRequest, AuthResponse } from "@/types/auth";
-import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 import ROUTES from "@/libs/utils/routes";
+import { AuthService } from "@/services/api";
+import type { AuthResponse, GoogleAuthRequest } from "@/types/auth";
 
 const GOOGLE_REDIRECT_URI = `${window.location.origin}/auth/google/callback`;
 const GOOGLE_STATE_KEY = "google_oauth_state";
@@ -25,7 +25,7 @@ export const useGoogleAuth = () => {
       // Clear state on error
       sessionStorage.removeItem(GOOGLE_STATE_KEY);
       navigate(ROUTES.AUTH.LOGIN);
-    },
+    }
   });
 };
 
@@ -38,9 +38,7 @@ export const initiateGoogleAuth = (client_id: string) => {
   url.searchParams.set("access_type", "offline");
 
   // Generate cryptographically secure random state for CSRF protection
-  const state = crypto.randomUUID
-    ? crypto.randomUUID()
-    : generateSecureRandomState();
+  const state = crypto.randomUUID ? crypto.randomUUID() : generateSecureRandomState();
 
   // Store state in sessionStorage for validation on callback
   sessionStorage.setItem(GOOGLE_STATE_KEY, state);
@@ -56,9 +54,7 @@ export const initiateGoogleAuth = (client_id: string) => {
 const generateSecureRandomState = (): string => {
   const array = new Uint8Array(32);
   crypto.getRandomValues(array);
-  return Array.from(array, (byte) => byte.toString(16).padStart(2, "0")).join(
-    "",
-  );
+  return Array.from(array, (byte) => byte.toString(16).padStart(2, "0")).join("");
 };
 
 /**

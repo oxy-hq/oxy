@@ -1,9 +1,10 @@
-import React, { useState } from "react";
-import { Button } from "@/components/ui/shadcn/button";
+import type React from "react";
+import { useState } from "react";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/shadcn/button";
 import PageWrapper from "../components/PageWrapper";
-import { SecretTable } from "./SecretTable";
 import { CreateSecretDialog } from "./CreateSecretDialog";
+import { SecretTable } from "./SecretTable";
 
 const SecretManagement: React.FC = () => {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -15,12 +16,12 @@ const SecretManagement: React.FC = () => {
 
   return (
     <PageWrapper
-      title="Secrets"
+      title='Secrets'
       actions={
         <Button
-          size="sm"
+          size='sm'
           onClick={() => setIsCreateDialogOpen(true)}
-          className="flex items-center gap-2"
+          className='flex items-center gap-2'
         >
           Create
         </Button>

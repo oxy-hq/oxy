@@ -1,17 +1,17 @@
-import { useCallback, useEffect, useRef, useMemo } from "react";
 import type { EChartsOption } from "echarts";
-import { init, getInstanceByDom } from "echarts";
-import theme from "@/components/Echarts/theme.json";
+import { getInstanceByDom, init } from "echarts";
+import { Loader2, PieChart as PieChartIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useResizeDetector } from "react-resize-detector";
-import type { ClusterSummary } from "@/services/api/traces";
+import theme from "@/components/Echarts/theme.json";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle,
+  CardTitle
 } from "@/components/ui/shadcn/card";
-import { PieChart as PieChartIcon, Loader2 } from "lucide-react";
+import type { ClusterSummary } from "@/services/api/traces";
 
 interface ClusterDistributionChartProps {
   clusters: ClusterSummary[];
@@ -20,7 +20,7 @@ interface ClusterDistributionChartProps {
 
 export default function ClusterDistributionChart({
   clusters,
-  isLoading,
+  isLoading
 }: ClusterDistributionChartProps) {
   const chartRef = useRef<HTMLDivElement>(null);
 
@@ -33,7 +33,7 @@ export default function ClusterDistributionChart({
 
   useResizeDetector({
     targetRef: chartRef,
-    onResize,
+    onResize
   });
 
   useEffect(() => {
@@ -58,7 +58,7 @@ export default function ClusterDistributionChart({
     const data = topClusters.map((c) => ({
       value: c.count,
       name: c.intentName,
-      itemStyle: { color: c.color },
+      itemStyle: { color: c.color }
     }));
 
     // Add outliers if they exist
@@ -67,7 +67,7 @@ export default function ClusterDistributionChart({
       data.push({
         value: outlierCluster.count,
         name: "Outliers",
-        itemStyle: { color: "#6b7280" },
+        itemStyle: { color: "#6b7280" }
       });
     }
 
@@ -75,7 +75,7 @@ export default function ClusterDistributionChart({
       data.push({
         value: otherCount,
         name: "Other",
-        itemStyle: { color: "#9ca3af" },
+        itemStyle: { color: "#9ca3af" }
       });
     }
 
@@ -89,16 +89,16 @@ export default function ClusterDistributionChart({
       const options: EChartsOption = {
         tooltip: {
           trigger: "item",
-          formatter: "{b}: {c} ({d}%)",
+          formatter: "{b}: {c} ({d}%)"
         },
         legend: {
           orient: "vertical",
           right: 10,
           top: "center",
           textStyle: {
-            fontSize: 11,
+            fontSize: 11
           },
-          type: "scroll",
+          type: "scroll"
         },
         series: [
           {
@@ -109,24 +109,24 @@ export default function ClusterDistributionChart({
             itemStyle: {
               borderRadius: 4,
               borderColor: "#fff",
-              borderWidth: 2,
+              borderWidth: 2
             },
             label: {
-              show: false,
+              show: false
             },
             emphasis: {
               label: {
                 show: true,
                 fontSize: 12,
-                fontWeight: "bold",
-              },
+                fontWeight: "bold"
+              }
             },
             labelLine: {
-              show: false,
+              show: false
             },
-            data: chartData,
-          },
-        ],
+            data: chartData
+          }
+        ]
       };
       chart?.setOption(options, true);
       chart?.resize();
@@ -145,20 +145,18 @@ export default function ClusterDistributionChart({
   }, [isLoading]);
 
   return (
-    <Card className="h-full">
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <PieChartIcon className="h-5 w-5 text-primary" />
+    <Card className='h-full'>
+      <CardHeader className='pb-2'>
+        <div className='flex items-center justify-between'>
+          <div className='flex items-center gap-2'>
+            <PieChartIcon className='h-5 w-5 text-primary' />
             <CardTitle>Semantic distribution</CardTitle>
-            {isLoading && (
-              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-            )}
+            {isLoading && <Loader2 className='h-4 w-4 animate-spin text-muted-foreground' />}
           </div>
         </div>
         <CardDescription>Distribution of questions by cluster</CardDescription>
       </CardHeader>
-      <CardContent className="pt-0">
+      <CardContent className='pt-0'>
         <div ref={chartRef} style={{ height: 260, width: "100%" }} />
       </CardContent>
     </Card>

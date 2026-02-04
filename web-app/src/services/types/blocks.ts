@@ -1,4 +1,4 @@
-import { WorkflowConfig } from "@/stores/useWorkflow";
+import type { WorkflowConfig } from "@/stores/useWorkflow";
 
 export type WorkflowContent = {
   type: "workflow";
@@ -23,10 +23,7 @@ export type TaskLoopItemMetadata = {
   index: number;
 };
 
-export type TaskMetadata =
-  | TaskSubWorkflowMetadata
-  | TaskLoopMetadata
-  | TaskLoopItemMetadata;
+export type TaskMetadata = TaskSubWorkflowMetadata | TaskLoopMetadata | TaskLoopItemMetadata;
 
 export type TaskContent = {
   type: "task";
@@ -177,10 +174,7 @@ export type TaskMetadataEvent = {
   metadata: TaskMetadata;
 };
 
-export type TaskEvent =
-  | TaskStartedEvent
-  | TaskFinishedEvent
-  | TaskMetadataEvent;
+export type TaskEvent = TaskStartedEvent | TaskFinishedEvent | TaskMetadataEvent;
 
 export type AgenticEvent = AgenticStartedEvent | AgenticFinishedEvent;
 

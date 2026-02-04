@@ -43,13 +43,13 @@ export default defineConfig({
 
     /* Performance optimizations */
     navigationTimeout: 30000, // Increased from 15s to 30s to allow for backend initialization after database reset
-    actionTimeout: 10000, // Faster action timeouts
+    actionTimeout: 10000 // Faster action timeouts
   },
   testIgnore: "**/ide-files/**",
 
   timeout: 60000, // Reduced from 120s to 60s
   expect: {
-    timeout: 5000,
+    timeout: 5000
   },
   /* Configure projects for major browsers */
   projects: [
@@ -69,11 +69,11 @@ export default defineConfig({
             "--disable-dev-shm-usage", // Reduce shared memory usage
             "--disable-extensions", // Disable extensions
             "--disable-gpu", // Disable GPU hardware acceleration
-            "--no-sandbox", // Disable sandboxing for faster startup
-          ],
-        },
-      },
-    },
+            "--no-sandbox" // Disable sandboxing for faster startup
+          ]
+        }
+      }
+    }
   ],
 
   /* Run your local dev server before starting the tests */
@@ -82,7 +82,7 @@ export default defineConfig({
       command: "pnpm run dev",
       url: "http://localhost:5173",
       reuseExistingServer: true,
-      timeout: 120000, // 2 minutes max for server startup
-    },
-  ],
+      timeout: 120000 // 2 minutes max for server startup
+    }
+  ]
 });

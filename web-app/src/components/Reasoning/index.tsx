@@ -1,4 +1,3 @@
-import { Block, BlockBase, StepContent } from "@/services/types";
 import {
   Blocks,
   Bot,
@@ -6,9 +5,10 @@ import {
   ChevronRight,
   CodeXml,
   GitBranch,
-  Lightbulb,
+  Lightbulb
 } from "lucide-react";
-import { ReactNode, useState } from "react";
+import { type ReactNode, useState } from "react";
+import type { Block, BlockBase, StepContent } from "@/services/types";
 import AnswerContent from "../AnswerContent";
 import { BlockContent } from "../Messages/BlockMessage";
 
@@ -24,7 +24,7 @@ type ReasoningProps = {
 
 const ReasoningItem = ({
   step,
-  onFullscreen,
+  onFullscreen
 }: {
   step: Step;
   onFullscreen?: (blockId: string) => void;
@@ -45,43 +45,37 @@ const ReasoningItem = ({
 
   return (
     <>
-      <div className="w-full min-w-[500px]">
+      <div className='w-full min-w-[500px]'>
         <div
-          className="w-full flex items-center justify-center py-2 gap-2 cursor-pointer"
+          className='flex w-full cursor-pointer items-center justify-center gap-2 py-2'
           onClick={() => setIsExpanded(!isExpanded)}
         >
           {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-          <div className="flex-1 text-sm flex justify-between items-center">
-            <span className="flex items-center gap-1">
+          <div className='flex flex-1 items-center justify-between text-sm'>
+            <span className='flex items-center gap-1'>
               {icon}
               {step.step_type}
             </span>
-            <span className="text-xs flex justify-end">
+            <span className='flex justify-end text-xs'>
               {(() => {
                 if (step.is_streaming) {
-                  return <span className="text-blue-800">Processing</span>;
+                  return <span className='text-blue-800'>Processing</span>;
                 }
                 if (step.error) {
-                  return <span className="text-red-800">Error</span>;
+                  return <span className='text-red-800'>Error</span>;
                 }
-                return <span className="text-green-800">Success</span>;
+                return <span className='text-green-800'>Success</span>;
               })()}
             </span>
           </div>
         </div>
       </div>
       {isExpanded && (
-        <div className="w-full min-w-[500px]" style={{ paddingLeft: 24 }}>
+        <div className='w-full min-w-[500px]' style={{ paddingLeft: 24 }}>
           {!!step.objective && <AnswerContent content={step.objective} />}
-          {!!step.error && <span className="text-red-800">{step.error}</span>}
+          {!!step.error && <span className='text-red-800'>{step.error}</span>}
           {step.childrenBlocks.map((child) => {
-            return (
-              <BlockContent
-                key={child.id}
-                block={child}
-                onFullscreen={onFullscreen}
-              />
-            );
+            return <BlockContent key={child.id} block={child} onFullscreen={onFullscreen} />;
           })}
         </div>
       )}
@@ -91,21 +85,17 @@ const ReasoningItem = ({
 
 const Reasoning = ({ steps, onFullscreen }: ReasoningProps) => {
   return (
-    <div className="h-full w-full overflow-hidden relative">
-      <div className="absolute customScrollbar flex flex-col h-full inset-0 overflow-auto p-4 w-full">
-        <div className="flex justify-between items-center mb-2">
+    <div className='relative h-full w-full overflow-hidden'>
+      <div className='customScrollbar absolute inset-0 flex h-full w-full flex-col overflow-auto p-4'>
+        <div className='mb-2 flex items-center justify-between'>
           {steps.length ? (
-            <h2 className="text-sm">Reasoning steps</h2>
+            <h2 className='text-sm'>Reasoning steps</h2>
           ) : (
-            <h2 className="text-sm">Thinking...</h2>
+            <h2 className='text-sm'>Thinking...</h2>
           )}
         </div>
         {steps.map((step) => (
-          <ReasoningItem
-            key={step.id}
-            step={step}
-            onFullscreen={onFullscreen}
-          />
+          <ReasoningItem key={step.id} step={step} onFullscreen={onFullscreen} />
         ))}
       </div>
     </div>

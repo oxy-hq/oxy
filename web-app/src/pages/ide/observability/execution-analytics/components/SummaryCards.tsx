@@ -1,13 +1,6 @@
-import { ExecutionSummary, EXECUTION_TYPES, ExecutionType } from "../types";
-import {
-  ShieldCheck,
-  Sparkles,
-  TrendingUp,
-  CheckCircle,
-  Activity,
-  Loader2,
-} from "lucide-react";
+import { Activity, CheckCircle, Loader2, ShieldCheck, Sparkles, TrendingUp } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/shadcn/card";
+import { EXECUTION_TYPES, type ExecutionSummary, type ExecutionType } from "../types";
 
 interface SummaryCardsProps {
   summary: ExecutionSummary;
@@ -34,79 +27,62 @@ interface StatsCardProps {
   isLoading?: boolean;
 }
 
-function StatsCard({
-  title,
-  value,
-  subtitle,
-  icon,
-  isLoading,
-}: StatsCardProps) {
+function StatsCard({ title, value, subtitle, icon, isLoading }: StatsCardProps) {
   return (
-    <Card className="overflow-hidden">
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between">
-          <div className="space-y-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <p className="text-xs font-medium text-muted-foreground">
-                {title}
-              </p>
-              {isLoading && (
-                <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-              )}
+    <Card className='overflow-hidden'>
+      <CardContent className='p-4'>
+        <div className='flex items-start justify-between'>
+          <div className='min-w-0 space-y-1'>
+            <div className='flex items-center gap-2'>
+              <p className='font-medium text-muted-foreground text-xs'>{title}</p>
+              {isLoading && <Loader2 className='h-3 w-3 animate-spin text-muted-foreground' />}
             </div>
-            <p className="text-2xl font-bold tracking-tight truncate">
-              {value}
-            </p>
-            <p className="text-xs text-muted-foreground">{subtitle}</p>
+            <p className='truncate font-bold text-2xl tracking-tight'>{value}</p>
+            <p className='text-muted-foreground text-xs'>{subtitle}</p>
           </div>
-          <div className="p-2 rounded-lg bg-primary/10 text-primary">
-            {icon}
-          </div>
+          <div className='rounded-lg bg-primary/10 p-2 text-primary'>{icon}</div>
         </div>
       </CardContent>
     </Card>
   );
 }
 
-export default function SummaryCards({
-  summary,
-  isLoading,
-}: SummaryCardsProps) {
+export default function SummaryCards({ summary, isLoading }: SummaryCardsProps) {
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+    <div className='grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5'>
       <StatsCard
-        title="Total Executions"
+        title='Total Executions'
         value={formatNumber(summary.totalExecutions)}
-        subtitle="queries & workflows"
-        icon={<Activity className="h-5 w-5" />}
+        subtitle='queries & workflows'
+        icon={<Activity className='h-5 w-5' />}
         isLoading={isLoading}
       />
       <StatsCard
-        title="Verified"
+        title='Verified'
         value={`${summary.verifiedPercent.toFixed(1)}%`}
         subtitle={`${formatNumber(summary.verifiedCount)} executions`}
-        icon={<ShieldCheck className="h-5 w-5" />}
+        icon={<ShieldCheck className='h-5 w-5' />}
         isLoading={isLoading}
       />
       <StatsCard
-        title="Generated"
+        title='Generated'
         value={`${summary.generatedPercent.toFixed(1)}%`}
         subtitle={`${formatNumber(summary.generatedCount)} executions`}
-        icon={<Sparkles className="h-5 w-5" />}
+        icon={<Sparkles className='h-5 w-5' />}
         isLoading={isLoading}
       />
       <StatsCard
-        title="Most Executed"
+        title='Most Executed'
         value={getExecutionTypeLabel(summary.mostExecutedType)}
-        subtitle="most common type"
-        icon={<TrendingUp className="h-5 w-5" />}
+        subtitle='most common type'
+        icon={<TrendingUp className='h-5 w-5' />}
         isLoading={isLoading}
       />
       <StatsCard
-        title="Success Rate"
+        title='Success Rate'
         value={`${summary.successRateVerified.toFixed(1)}%`}
         subtitle={`verified (${summary.successRateGenerated.toFixed(1)}% generated)`}
-        icon={<CheckCircle className="h-5 w-5" />}
+        icon={<CheckCircle className='h-5 w-5' />}
         isLoading={isLoading}
       />
     </div>

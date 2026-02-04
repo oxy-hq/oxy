@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Message } from "@/types/chat";
+import type { Message } from "@/types/chat";
 
 const SCROLL_THRESHOLD = 100;
 
@@ -15,7 +15,7 @@ interface UseSmartScrollReturn {
 }
 export function useSmartScroll({
   messages,
-  enabled = true,
+  enabled = true
 }: UseSmartScrollOptions): UseSmartScrollReturn {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -27,8 +27,7 @@ export function useSmartScroll({
 
   const checkAtBottom = () => {
     if (!scrollContainerRef.current) return true;
-    const { scrollTop, scrollHeight, clientHeight } =
-      scrollContainerRef.current;
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
     return scrollHeight - scrollTop - clientHeight < SCROLL_THRESHOLD;
   };
 
@@ -49,7 +48,7 @@ export function useSmartScroll({
     return () => {
       scrollContainer.removeEventListener("scroll", handleScroll);
     };
-  }, [enabled]);
+  }, [enabled, checkAtBottom]);
 
   const scrollToBottom = () => {
     hasUserScrolledUpRef.current = false;
@@ -62,12 +61,12 @@ export function useSmartScroll({
     if (streamingMessage && !hasUserScrolledUpRef.current) {
       bottomRef.current?.scrollIntoView({ behavior: "instant" });
     }
-  }, [messages, streamingMessage, enabled]);
+  }, [streamingMessage, enabled]);
 
   return {
     scrollContainerRef,
     bottomRef,
     isAtBottom,
-    scrollToBottom,
+    scrollToBottom
   };
 }

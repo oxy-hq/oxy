@@ -17,7 +17,7 @@ export const StepContainer = ({ children, selected, width, height }: Props) => {
         padding: `${nodePadding}px`,
         width: width,
         height: height,
-        zIndex: 1,
+        zIndex: 1
       }}
     >
       {children}

@@ -1,9 +1,5 @@
-import { test, expect, Page } from "@playwright/test";
-import {
-  saveFileSnapshot,
-  restoreFileSnapshot,
-  cleanupAfterTest,
-} from "./test-cleanup";
+import { expect, type Page, test } from "@playwright/test";
+import { cleanupAfterTest, restoreFileSnapshot, saveFileSnapshot } from "./test-cleanup";
 
 /**
  * Comprehensive View/Topic Editor Tests (Semantic Editors)
@@ -23,7 +19,7 @@ async function openViewFile(page: Page): Promise<boolean> {
 
   const semanticsFolder = page.getByRole("button", {
     name: "semantics",
-    exact: true,
+    exact: true
   });
   if (await semanticsFolder.isVisible()) {
     await semanticsFolder.click();
@@ -51,7 +47,7 @@ async function openTopicFile(page: Page): Promise<boolean> {
 
   const semanticsFolder = page.getByRole("button", {
     name: "semantics",
-    exact: true,
+    exact: true
   });
   if (await semanticsFolder.isVisible()) {
     await semanticsFolder.click();
@@ -73,10 +69,7 @@ async function openTopicFile(page: Page): Promise<boolean> {
   return false;
 }
 
-async function switchMode(
-  page: Page,
-  mode: "editor" | "explorer" | "query",
-): Promise<boolean> {
+async function switchMode(page: Page, mode: "editor" | "explorer" | "query"): Promise<boolean> {
   const tab = page.getByRole("tab", { name: new RegExp(mode, "i") });
   if (await tab.isVisible()) {
     await tab.click();
@@ -95,7 +88,7 @@ test.describe("View Editor - Field Selection", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
 
     // 📸 Save file state before test starts
@@ -169,9 +162,7 @@ test.describe("View Editor - Field Selection", () => {
     await switchMode(page, "explorer");
     await page.waitForTimeout(1000);
 
-    const searchInput = page
-      .locator('input[placeholder*="search"], input[type="search"]')
-      .first();
+    const searchInput = page.locator('input[placeholder*="search"], input[type="search"]').first();
     if (await searchInput.isVisible()) {
       await searchInput.fill("test");
       await page.waitForTimeout(500);
@@ -189,7 +180,7 @@ test.describe("View Editor - Field Selection", () => {
     await page.waitForTimeout(1000);
 
     const selectAllButton = page.getByRole("button", {
-      name: /select.*all|add.*all/i,
+      name: /select.*all|add.*all/i
     });
     if (await selectAllButton.isVisible()) {
       await selectAllButton.click();
@@ -208,7 +199,7 @@ test.describe("View Editor - Field Selection", () => {
     await page.waitForTimeout(1000);
 
     const clearAllButton = page.getByRole("button", {
-      name: /clear.*all|remove.*all/i,
+      name: /clear.*all|remove.*all/i
     });
     if (await clearAllButton.isVisible()) {
       await clearAllButton.click();
@@ -226,7 +217,7 @@ test.describe("View Editor - Query Builder", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -244,9 +235,7 @@ test.describe("View Editor - Query Builder", () => {
     await switchMode(page, "explorer");
     await page.waitForTimeout(1000);
 
-    const addFilterButton = page
-      .getByRole("button", { name: /add.*filter/i })
-      .first();
+    const addFilterButton = page.getByRole("button", { name: /add.*filter/i }).first();
     if (await addFilterButton.isVisible()) {
       await addFilterButton.click();
       await page.waitForTimeout(500);
@@ -267,9 +256,7 @@ test.describe("View Editor - Query Builder", () => {
     await switchMode(page, "explorer");
     await page.waitForTimeout(1000);
 
-    const removeFilterButton = page
-      .getByRole("button", { name: /remove|delete/i })
-      .first();
+    const removeFilterButton = page.getByRole("button", { name: /remove|delete/i }).first();
     if (await removeFilterButton.isVisible()) {
       await removeFilterButton.click();
       await page.waitForTimeout(500);
@@ -286,9 +273,7 @@ test.describe("View Editor - Query Builder", () => {
     await switchMode(page, "explorer");
     await page.waitForTimeout(1000);
 
-    const addSortButton = page
-      .getByRole("button", { name: /add.*sort/i })
-      .first();
+    const addSortButton = page.getByRole("button", { name: /add.*sort/i }).first();
     if (await addSortButton.isVisible()) {
       await addSortButton.click();
       await page.waitForTimeout(500);
@@ -328,9 +313,7 @@ test.describe("View Editor - Query Builder", () => {
     await switchMode(page, "explorer");
     await page.waitForTimeout(1000);
 
-    const addVariableButton = page
-      .getByRole("button", { name: /add.*variable/i })
-      .first();
+    const addVariableButton = page.getByRole("button", { name: /add.*variable/i }).first();
     if (await addVariableButton.isVisible()) {
       await addVariableButton.click();
       await page.waitForTimeout(500);
@@ -347,7 +330,7 @@ test.describe("View Editor - SQL Preview", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -370,9 +353,7 @@ test.describe("View Editor - SQL Preview", () => {
       await sqlTab.click();
       await page.waitForTimeout(500);
 
-      const sqlPreview = page.locator(
-        '[data-testid*="sql"], .sql-preview, pre, code',
-      );
+      const sqlPreview = page.locator('[data-testid*="sql"], .sql-preview, pre, code');
       const hasSQL = await sqlPreview.isVisible().catch(() => false);
       expect(hasSQL || true).toBeTruthy();
     }
@@ -436,7 +417,7 @@ test.describe("View Editor - Form & Editor Sync", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
 
     // 📸 Save file state before test starts
@@ -523,9 +504,7 @@ fields:
     }
   });
 
-  test("should persist saved changes after navigating away and back", async ({
-    page,
-  }) => {
+  test("should persist saved changes after navigating away and back", async ({ page }) => {
     const opened = await openViewFile(page);
     if (!opened) {
       test.skip();
@@ -538,9 +517,7 @@ fields:
     const editor = page.locator(".monaco-editor .view-lines").first();
     await editor.click();
     await page.keyboard.press("Control+A");
-    await page.keyboard.type(
-      uniqueComment + "\nname: test-view\ntopic: test_topic",
-    );
+    await page.keyboard.type(`${uniqueComment}\nname: test-view\ntopic: test_topic`);
     await page.waitForTimeout(600);
 
     // Save changes
@@ -582,7 +559,7 @@ test.describe("Topic Editor - Field Configuration", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -603,9 +580,7 @@ test.describe("Topic Editor - Field Configuration", () => {
       return;
     }
 
-    const fieldsPanel = page.locator(
-      '[data-testid*="field"], .fields-panel, form',
-    );
+    const fieldsPanel = page.locator('[data-testid*="field"], .fields-panel, form');
     const hasPanel = await fieldsPanel.isVisible().catch(() => false);
     expect(hasPanel || true).toBeTruthy();
   });
@@ -620,9 +595,7 @@ test.describe("Topic Editor - Field Configuration", () => {
     await switchMode(page, "explorer");
     await page.waitForTimeout(1000);
 
-    const addFieldButton = page
-      .getByRole("button", { name: /add.*field/i })
-      .first();
+    const addFieldButton = page.getByRole("button", { name: /add.*field/i }).first();
     if (await addFieldButton.isVisible()) {
       await addFieldButton.click();
       await page.waitForTimeout(500);
@@ -639,9 +612,7 @@ test.describe("Topic Editor - Field Configuration", () => {
     await switchMode(page, "explorer");
     await page.waitForTimeout(1000);
 
-    const fieldNameInput = page
-      .locator('input[name*="field"], input[name*="name"]')
-      .first();
+    const fieldNameInput = page.locator('input[name*="field"], input[name*="name"]').first();
     if (await fieldNameInput.isVisible()) {
       await fieldNameInput.fill("test_field");
       await page.waitForTimeout(600);
@@ -681,9 +652,7 @@ test.describe("Topic Editor - Field Configuration", () => {
     await switchMode(page, "explorer");
     await page.waitForTimeout(1000);
 
-    const fieldInput = page
-      .locator('input[name*="field"], input[name*="name"]')
-      .first();
+    const fieldInput = page.locator('input[name*="field"], input[name*="name"]').first();
     if (await fieldInput.isVisible()) {
       await fieldInput.fill("sync_test_field");
       await page.waitForTimeout(600);
@@ -705,7 +674,7 @@ test.describe("Semantic Editor - Character Input & Edge Cases", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -771,9 +740,7 @@ fields:
     await page.keyboard.type("invalid::: yaml::: syntax");
     await page.waitForTimeout(1000);
 
-    const errorIndicator = page.locator(
-      '[class*="error"], [aria-label*="error"]',
-    );
+    const errorIndicator = page.locator('[class*="error"], [aria-label*="error"]');
     const hasError = await errorIndicator.isVisible().catch(() => false);
     expect(hasError || true).toBeTruthy();
   });
@@ -788,7 +755,7 @@ test.describe("Semantic Editor - Keyboard Shortcuts", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -831,7 +798,7 @@ test.describe("Semantic Editor - Keyboard Shortcuts", () => {
 
       const activeElement = await page.evaluate(
         // @ts-expect-error document is available in browser context
-        () => document.activeElement?.tagName,
+        () => document.activeElement?.tagName
       );
       expect(activeElement).toBeTruthy();
     }
@@ -847,7 +814,7 @@ test.describe("Semantic Editor - Responsive Layout", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 

@@ -1,4 +1,4 @@
-import { FieldItem } from "./types";
+import type { FieldItem } from "./types";
 
 /**
  * Returns the items list with the current value added if it doesn't exist.
@@ -7,7 +7,7 @@ import { FieldItem } from "./types";
  */
 export const getItemsWithUnknownValue = (
   items: FieldItem[],
-  value: string | undefined,
+  value: string | undefined
 ): FieldItem[] => {
   if (!value) {
     return items;
@@ -22,8 +22,8 @@ export const getItemsWithUnknownValue = (
     {
       value,
       label: value,
-      searchText: value.toLowerCase(),
+      searchText: value.toLowerCase()
     },
-    ...items,
+    ...items
   ];
 };

@@ -10,7 +10,7 @@ type Props = {
 export function ConditionalElseNode({ width, height }: Props) {
   return (
     <StepContainer width={width} height={height}>
-      <NodeHeader name="" type={NoneTaskNodeType.CONDITIONAL_ELSE} />
+      <NodeHeader name='' type={NoneTaskNodeType.CONDITIONAL_ELSE} />
     </StepContainer>
   );
 }

@@ -1,5 +1,5 @@
-import { Message } from "@/types/chat";
 import { create } from "zustand";
+import type { Message } from "@/types/chat";
 
 export interface TaskThread {
   messages: Message[];
@@ -22,7 +22,7 @@ const useTaskThreadStore = create<TaskThreadState>()((set, get) => {
     taskThread: new Map(),
     setTaskThread: (threadId: string, taskThread: TaskThread) => {
       set((state) => ({
-        taskThread: new Map(state.taskThread).set(threadId, taskThread),
+        taskThread: new Map(state.taskThread).set(threadId, taskThread)
       }));
     },
     getTaskThread: (threadId: string) => {
@@ -30,7 +30,7 @@ const useTaskThreadStore = create<TaskThreadState>()((set, get) => {
         get().taskThread.get(threadId) || {
           messages: [],
           isLoading: false,
-          filePath: undefined,
+          filePath: undefined
         }
       );
     },
@@ -48,19 +48,17 @@ const useTaskThreadStore = create<TaskThreadState>()((set, get) => {
         const currentTaskThread = taskThread.get(threadId) || {
           messages: [],
           isLoading: false,
-          filePath: undefined,
+          filePath: undefined
         };
         const mergedMessages = [
           ...currentTaskThread.messages,
-          ...messages.filter(
-            (m) => !currentTaskThread.messages.find((cm) => cm.id === m.id),
-          ),
+          ...messages.filter((m) => !currentTaskThread.messages.find((cm) => cm.id === m.id))
         ];
         return {
           taskThread: new Map(taskThread).set(threadId, {
             ...currentTaskThread,
-            messages: mergedMessages,
-          }),
+            messages: mergedMessages
+          })
         };
       });
     },
@@ -71,7 +69,7 @@ const useTaskThreadStore = create<TaskThreadState>()((set, get) => {
     setFilePath: (threadId: string, filePath: string | undefined) => {
       const currentTaskThread = get().getTaskThread(threadId);
       get().setTaskThread(threadId, { ...currentTaskThread, filePath });
-    },
+    }
   };
 });
 

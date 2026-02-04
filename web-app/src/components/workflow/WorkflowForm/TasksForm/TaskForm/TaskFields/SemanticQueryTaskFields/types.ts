@@ -1,5 +1,5 @@
-import { Control, FieldErrors, UseFormRegister } from "react-hook-form";
-import { WorkflowFormData } from "../../..";
+import type { Control, FieldErrors, UseFormRegister } from "react-hook-form";
+import type { WorkflowFormData } from "../../..";
 
 export interface SemanticQueryTaskFieldsProps {
   index: number;

@@ -1,15 +1,12 @@
 import * as duckdb from "@duckdb/duckdb-wasm";
-import duckdb_wasm from "@duckdb/duckdb-wasm/dist/duckdb-mvp.wasm?url";
+import eh_worker from "@duckdb/duckdb-wasm/dist/duckdb-browser-eh.worker.js?url";
 import mvp_worker from "@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.js?url";
 import duckdb_wasm_eh from "@duckdb/duckdb-wasm/dist/duckdb-eh.wasm?url";
-import eh_worker from "@duckdb/duckdb-wasm/dist/duckdb-browser-eh.worker.js?url";
+import duckdb_wasm from "@duckdb/duckdb-wasm/dist/duckdb-mvp.wasm?url";
 
 const isLocalhost = () => {
   if (typeof window === "undefined") return false;
-  return (
-    window.location.hostname === "localhost" ||
-    window.location.hostname === "127.0.0.1"
-  );
+  return window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 };
 
 let duckDB: duckdb.AsyncDuckDB = null!;
@@ -27,12 +24,12 @@ const init = async () => {
         bundle = await duckdb.selectBundle({
           mvp: {
             mainModule: duckdb_wasm,
-            mainWorker: mvp_worker,
+            mainWorker: mvp_worker
           },
           eh: {
             mainModule: duckdb_wasm_eh,
-            mainWorker: eh_worker,
-          },
+            mainWorker: eh_worker
+          }
         });
         worker = new Worker(bundle.mainWorker!);
       } else {
@@ -41,8 +38,8 @@ const init = async () => {
         bundle = await duckdb.selectBundle(JSDELIVR_BUNDLES);
         const worker_url = URL.createObjectURL(
           new Blob([`importScripts("${bundle.mainWorker!}");`], {
-            type: "text/javascript",
-          }),
+            type: "text/javascript"
+          })
         );
         worker = new Worker(worker_url);
         // Clean up after instantiation
@@ -51,7 +48,7 @@ const init = async () => {
           // eslint-disable-next-line sonarjs/no-nested-assignment
           (duckDB = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(), worker)),
           bundle.mainModule,
-          bundle.pthreadWorker,
+          bundle.pthreadWorker
         );
         URL.revokeObjectURL(worker_url);
         return;
@@ -81,7 +78,7 @@ export const getDuckDB = async () => {
 export const registerAuthenticatedParquetFile = async (
   filePath: string,
   projectId: string,
-  branchName: string,
+  branchName: string
 ): Promise<string> => {
   const db = await getDuckDB();
 
@@ -91,13 +88,10 @@ export const registerAuthenticatedParquetFile = async (
   // Fetch the Parquet file from the API
   const { apiClient } = await import("@/services/api/axios");
 
-  const response = await apiClient.get(
-    `/${projectId}/results/files/${filePath}`,
-    {
-      responseType: "arraybuffer",
-      params: { branch: branchName },
-    },
-  );
+  const response = await apiClient.get(`/${projectId}/results/files/${filePath}`, {
+    responseType: "arraybuffer",
+    params: { branch: branchName }
+  });
 
   const fileData = new Uint8Array(response.data);
 
@@ -118,17 +112,13 @@ export const registerAuthenticatedParquetFile = async (
 
     // Create a table from the Parquet file
     await conn.query(
-      `CREATE TABLE "${tableName}" AS SELECT * FROM parquet_scan('${tableName}.parquet')`,
+      `CREATE TABLE "${tableName}" AS SELECT * FROM parquet_scan('${tableName}.parquet')`
     );
 
     // Verify the table was created
-    const verifyResult = await conn.query(
-      `SELECT COUNT(*) as cnt FROM "${tableName}"`,
-    );
+    const verifyResult = await conn.query(`SELECT COUNT(*) as cnt FROM "${tableName}"`);
     const count = verifyResult.toArray()[0].cnt;
-    console.log(
-      `Successfully loaded Parquet data into table "${tableName}" with ${count} rows`,
-    );
+    console.log(`Successfully loaded Parquet data into table "${tableName}" with ${count} rows`);
   } catch (e) {
     console.error("Error loading Parquet data:", e);
     await conn.close();

@@ -1,6 +1,5 @@
+import type { Parent, PhrasingContent } from "mdast";
 import { visit } from "unist-util-visit";
-
-import type { PhrasingContent, Parent } from "mdast";
 
 export interface ContainerDirective extends Parent {
   type: "containerDirective";
@@ -11,7 +10,7 @@ export interface ContainerDirective extends Parent {
 
 function ArtifactPlugin() {
   return (tree: ContainerDirective) => {
-    visit(tree, "containerDirective", function (node) {
+    visit(tree, "containerDirective", (node) => {
       if (node.name !== "artifact") return;
 
       const attributes = node.attributes || {};
@@ -30,8 +29,8 @@ function ArtifactPlugin() {
           artifactId: id,
           kind,
           title,
-          is_verified,
-        },
+          is_verified
+        }
       };
     });
   };

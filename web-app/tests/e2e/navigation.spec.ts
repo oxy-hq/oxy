@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 test.describe("Navigation", () => {
   test.beforeEach(async ({ page }) => {
@@ -14,9 +14,7 @@ test.describe("Navigation", () => {
 
     // Verify we're on the home page
     await expect(page).toHaveURL(/\/(home)?$/);
-    await expect(
-      page.getByRole("textbox", { name: "Ask anything" }),
-    ).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Ask anything" })).toBeVisible();
   });
 
   test("should navigate to threads page", async ({ page }) => {
@@ -25,9 +23,7 @@ test.describe("Navigation", () => {
 
     // Verify navigation
     await expect(page).toHaveURL(/\/threads/);
-    await expect(
-      page.getByRole("heading", { name: "Threads", level: 1 }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Threads", level: 1 })).toBeVisible();
   });
 
   test("should navigate to ontology page", async ({ page }) => {
@@ -41,12 +37,12 @@ test.describe("Navigation", () => {
 
     // Wait for ontology graph to load - use data-testid instead of text that may appear later
     await expect(page.getByTestId("ontology-graph-container")).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
 
     // Verify the graph has actually loaded by checking for the overview text
     await expect(page.getByText("Ontology Overview")).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -62,36 +58,29 @@ test.describe("Navigation", () => {
 
   test("should navigate to thread detail from sidebar", async ({ page }) => {
     // Wait for threads to load in sidebar and click on first thread
-    const firstThread = page
-      .locator('[data-testid^="sidebar-thread-link-"]')
-      .first();
+    const firstThread = page.locator('[data-testid^="sidebar-thread-link-"]').first();
     await expect(firstThread).toBeVisible({ timeout: 10000 });
     await firstThread.click();
 
     // Verify we're on a thread detail page
     await expect(page).toHaveURL(/\/threads\/.+/);
-    await expect(
-      page.getByRole("textbox", { name: "Ask a follow-up question..." }),
-    ).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Ask a follow-up question..." })).toBeVisible();
   });
 
   test("should navigate to workflow page from sidebar", async ({ page }) => {
     // Ensure sidebar workflows are loaded/expanded
     const showAllButton = page.getByRole("button", {
-      name: /Show all.*automations/i,
+      name: /Show all.*automations/i
     });
     if (await showAllButton.isVisible().catch(() => false)) {
       await showAllButton.click();
     }
 
     // Prefer specific workflow link, otherwise fallback to first available
-    const specificWorkflow = page.getByTestId(
-      "workflow-link-fruit_sales_report",
-    );
+    const specificWorkflow = page.getByTestId("workflow-link-fruit_sales_report");
     const anyWorkflow = page.locator('[data-testid^="workflow-link-"]').first();
 
-    const target =
-      (await specificWorkflow.count()) > 0 ? specificWorkflow : anyWorkflow;
+    const target = (await specificWorkflow.count()) > 0 ? specificWorkflow : anyWorkflow;
 
     // Wait for the workflow link to be visible and clickable
     await expect(target).toBeVisible({ timeout: 15000 });

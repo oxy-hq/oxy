@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { IDEPage } from "../pages/IDEPage";
 import { resetTestFile } from "../utils";
 import { captureFileTree, cleanupAfterTest } from "./test-cleanup";
@@ -9,7 +9,7 @@ test.describe("IDE Files - File/Folder Rename", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
     await page.getByRole("tab", { name: "Files" }).click();
     await page.waitForTimeout(500);
@@ -45,9 +45,7 @@ test.describe("IDE Files - File/Folder Rename", () => {
   });
 
   // 3.2 Rename currently open file
-  test("3.2 - should update URL when renaming currently open file", async ({
-    page,
-  }) => {
+  test("3.2 - should update URL when renaming currently open file", async ({ page }) => {
     const idePage = new IDEPage(page);
 
     // Open a file first
@@ -61,9 +59,7 @@ test.describe("IDE Files - File/Folder Rename", () => {
   });
 
   // 3.3 Rename folder containing open file
-  test("3.3 - should update URL when renaming folder containing open file", async ({
-    page,
-  }) => {
+  test("3.3 - should update URL when renaming folder containing open file", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
 
@@ -87,9 +83,7 @@ test.describe("IDE Files - File/Folder Rename", () => {
   });
 
   // 3.4 Press Escape during rename
-  test("3.4 - should preserve original name when pressing Escape", async ({
-    page,
-  }) => {
+  test("3.4 - should preserve original name when pressing Escape", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
 
@@ -108,18 +102,16 @@ test.describe("IDE Files - File/Folder Rename", () => {
           await page.keyboard.press("Escape");
 
           // Original name should be preserved
-          await expect(
-            page.getByRole("link", { name: "config.yml" }),
-          ).toBeVisible({ timeout: 5000 });
+          await expect(page.getByRole("link", { name: "config.yml" })).toBeVisible({
+            timeout: 5000
+          });
         }
       }
     }
   });
 
   // 3.5 Rename to existing sibling name
-  test("3.5 - should show error when renaming to existing sibling name", async ({
-    page,
-  }) => {
+  test("3.5 - should show error when renaming to existing sibling name", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
 
@@ -145,16 +137,14 @@ test.describe("IDE Files - File/Folder Rename", () => {
   });
 
   // 3.6 Rename Agent removing .agent.yml
-  test("3.6 - should warn or prevent removing .agent.yml extension", async ({
-    page,
-  }) => {
+  test("3.6 - should warn or prevent removing .agent.yml extension", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
 
     // Find an agent file
     const agentFolder = page.getByRole("button", {
       name: "agents",
-      exact: true,
+      exact: true
     });
     if (await agentFolder.isVisible()) {
       await agentFolder.click();
@@ -186,9 +176,7 @@ test.describe("IDE Files - File/Folder Rename", () => {
   });
 
   // 3.7 Rename .workflow.yml to .agent.yml
-  test("3.7 - should change file type when renaming extension", async ({
-    page,
-  }) => {
+  test("3.7 - should change file type when renaming extension", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
 
@@ -201,9 +189,7 @@ test.describe("IDE Files - File/Folder Rename", () => {
   });
 
   // 3.8 Rename to empty string
-  test("3.8 - should show error when renaming to empty string", async ({
-    page,
-  }) => {
+  test("3.8 - should show error when renaming to empty string", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
 
@@ -229,9 +215,7 @@ test.describe("IDE Files - File/Folder Rename", () => {
   });
 
   // 3.9 Double-click rename same file
-  test("3.9 - should show only one input when double-clicking rename", async ({
-    page,
-  }) => {
+  test("3.9 - should show only one input when double-clicking rename", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
 
@@ -254,9 +238,7 @@ test.describe("IDE Files - File/Folder Rename", () => {
   });
 
   // 3.10 Start rename, click different file's rename
-  test("3.10 - should cancel first rename when starting another", async ({
-    page,
-  }) => {
+  test("3.10 - should cancel first rename when starting another", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
 

@@ -1,8 +1,8 @@
-import { useMemo } from "react";
 import { debounce } from "lodash";
-import { useFileEditorContext } from "@/components/FileEditor/useFileEditorContext";
+import { useMemo } from "react";
 import YAML from "yaml";
-import { AppForm, AppFormData } from "@/components/app/AppForm";
+import { AppForm, type AppFormData } from "@/components/app/AppForm";
+import { useFileEditorContext } from "@/components/FileEditor/useFileEditorContext";
 
 export const AppFormWrapper = () => {
   const { state, actions } = useFileEditorContext();
@@ -50,14 +50,14 @@ export const AppFormWrapper = () => {
           }
           const yamlContent = YAML.stringify(mergedData, {
             indent: 2,
-            lineWidth: 0,
+            lineWidth: 0
           });
           actions.setContent(yamlContent);
         } catch (error) {
           console.error("Failed to serialize form data to YAML:", error);
         }
       }, 500),
-    [actions, originalContent],
+    [actions, originalContent]
   );
 
   if (!data) return null;

@@ -1,9 +1,9 @@
 import { useMutation } from "@tanstack/react-query";
-import { AuthService } from "@/services/api";
-import { OktaAuthRequest, AuthResponse } from "@/types/auth";
-import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 import ROUTES from "@/libs/utils/routes";
+import { AuthService } from "@/services/api";
+import type { AuthResponse, OktaAuthRequest } from "@/types/auth";
 
 const OKTA_REDIRECT_URI = `${window.location.origin}/auth/okta/callback`;
 const OKTA_STATE_KEY = "okta_oauth_state";
@@ -25,7 +25,7 @@ export const useOktaAuth = () => {
       // Clear state on error
       sessionStorage.removeItem(OKTA_STATE_KEY);
       navigate(ROUTES.AUTH.LOGIN);
-    },
+    }
   });
 };
 
@@ -37,9 +37,7 @@ export const initiateOktaAuth = (client_id: string, domain: string) => {
   url.searchParams.set("scope", "openid email profile");
 
   // Generate cryptographically secure random state for CSRF protection
-  const state = crypto.randomUUID
-    ? crypto.randomUUID()
-    : generateSecureRandomState();
+  const state = crypto.randomUUID ? crypto.randomUUID() : generateSecureRandomState();
 
   // Store state in sessionStorage for validation on callback
   sessionStorage.setItem(OKTA_STATE_KEY, state);
@@ -55,9 +53,7 @@ export const initiateOktaAuth = (client_id: string, domain: string) => {
 const generateSecureRandomState = (): string => {
   const array = new Uint8Array(32);
   crypto.getRandomValues(array);
-  return Array.from(array, (byte) => byte.toString(16).padStart(2, "0")).join(
-    "",
-  );
+  return Array.from(array, (byte) => byte.toString(16).padStart(2, "0")).join("");
 };
 
 /**

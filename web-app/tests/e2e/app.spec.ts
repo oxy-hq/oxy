@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 test.describe("App Flow", () => {
   test.beforeEach(async ({ page }) => {
@@ -18,27 +18,27 @@ test.describe("App Flow", () => {
 
     // Wait for the AppPreview to appear
     await expect(page.getByTestId("app-preview")).toBeVisible({
-      timeout: 15000,
+      timeout: 15000
     });
 
     // Verify MarkdownDisplayBlock is present
-    await expect(
-      page.getByTestId("app-markdown-display-block").first(),
-    ).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId("app-markdown-display-block").first()).toBeVisible({
+      timeout: 10000
+    });
 
     // Verify DataTableBlock is present
     await expect(page.getByTestId("app-data-table-block").first()).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
 
     // Verify LineChart is present (there may be multiple)
     await expect(page.getByTestId("app-line-chart").first()).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
 
     // Verify BarChart is present (there may be multiple)
     await expect(page.getByTestId("app-bar-chart").first()).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 });

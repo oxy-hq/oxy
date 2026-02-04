@@ -24,9 +24,7 @@ export default function useCurrentProjectBranch() {
   }
 
   const isReadOnly =
-    authConfig.cloud &&
-    project.project_repo_id &&
-    project.active_branch?.name === selectedBranch;
+    authConfig.cloud && project.project_repo_id && project.active_branch?.name === selectedBranch;
 
   const gitEnabled = !!project.project_repo_id && authConfig.cloud;
 
@@ -34,6 +32,6 @@ export default function useCurrentProjectBranch() {
     project,
     branchName: selectedBranch,
     isReadOnly: isReadOnly,
-    gitEnabled: gitEnabled,
+    gitEnabled: gitEnabled
   };
 }

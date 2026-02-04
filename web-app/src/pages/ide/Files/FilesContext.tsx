@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, type ReactNode, useContext, useState } from "react";
 import { FilesSubViewMode } from "./FilesSidebar/constants";
 
 interface FilesContextType {
@@ -8,7 +8,7 @@ interface FilesContextType {
 
 const FilesContext = createContext<FilesContextType>({
   filesSubViewMode: FilesSubViewMode.OBJECTS,
-  setFilesSubViewMode: () => {},
+  setFilesSubViewMode: () => {}
 });
 
 export function useFilesContext(): FilesContextType {
@@ -21,7 +21,7 @@ export function useFilesContext(): FilesContextType {
 
 export const FilesProvider = ({ children }: { children: ReactNode }) => {
   const [filesSubViewMode, setFilesSubViewMode] = useState<FilesSubViewMode>(
-    FilesSubViewMode.OBJECTS,
+    FilesSubViewMode.OBJECTS
   );
 
   return (

@@ -44,11 +44,7 @@ export interface CurrentProject {
   sync_status: ProjectSyncStatus;
 }
 
-export type ProjectSyncStatus =
-  | "synced"
-  | "pending"
-  | { error: string }
-  | "not_configured";
+export type ProjectSyncStatus = "synced" | "pending" | { error: string } | "not_configured";
 
 export interface StoreTokenRequest {
   token: string;

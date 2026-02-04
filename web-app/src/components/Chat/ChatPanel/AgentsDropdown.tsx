@@ -1,13 +1,13 @@
-import { Button } from "@/components/ui/shadcn/button";
-import {
-  DropdownMenuContent,
-  DropdownMenuCheckboxItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/shadcn/dropdown-menu";
-import { DropdownMenu } from "@/components/ui/shadcn/dropdown-menu";
-import useAgents from "@/hooks/api/agents/useAgents";
 import { ChevronDown, Loader2 } from "lucide-react";
 import { useEffect, useMemo } from "react";
+import { Button } from "@/components/ui/shadcn/button";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger
+} from "@/components/ui/shadcn/dropdown-menu";
+import useAgents from "@/hooks/api/agents/useAgents";
 import { getAgentNameFromPath } from "@/libs/utils/string";
 
 export type Agent = {
@@ -22,11 +22,7 @@ type Props = {
   disabled?: boolean;
 };
 
-const AgentsDropdown = ({
-  onSelect,
-  agentSelected,
-  disabled = false,
-}: Props) => {
+const AgentsDropdown = ({ onSelect, agentSelected, disabled = false }: Props) => {
   const { data: agents, isPending, isSuccess } = useAgents();
 
   const agentOptions = useMemo(
@@ -35,12 +31,11 @@ const AgentsDropdown = ({
         ?.filter((agent) => agent.public)
         ?.map((agent) => ({
           id: agent.path,
-          isAgentic:
-            agent.path.endsWith(".aw.yaml") || agent.path.endsWith(".aw.yml"),
-          name: agent.name ?? getAgentNameFromPath(agent.path),
+          isAgentic: agent.path.endsWith(".aw.yaml") || agent.path.endsWith(".aw.yml"),
+          name: agent.name ?? getAgentNameFromPath(agent.path)
         }))
         .sort((a, b) => a.name.localeCompare(b.name)) ?? [],
-    [agents],
+    [agents]
   );
 
   useEffect(() => {
@@ -54,15 +49,15 @@ const AgentsDropdown = ({
       <DropdownMenuTrigger disabled={isPending || disabled} asChild>
         <Button
           disabled={isPending || disabled}
-          variant="outline"
-          className="bg-sidebar-background border-sidebar-background"
-          data-testid="agent-selector-button"
+          variant='outline'
+          className='border-sidebar-background bg-sidebar-background'
+          data-testid='agent-selector-button'
         >
           <span>{agentSelected?.name}</span>
-          {isPending ? <Loader2 className="animate-spin" /> : <ChevronDown />}
+          {isPending ? <Loader2 className='animate-spin' /> : <ChevronDown />}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="customScrollbar">
+      <DropdownMenuContent className='customScrollbar'>
         {agentOptions.map((item) => (
           <DropdownMenuCheckboxItem
             key={item.id}

@@ -3,7 +3,7 @@ export enum TaskType {
   FORMATTER = "formatter",
   AGENT = "agent",
   LOOP_SEQUENTIAL = "loop_sequential",
-  WORKFLOW = "workflow",
+  WORKFLOW = "workflow"
 }
 
 export type ExportFormat = "csv" | "json" | "sql" | "docx";

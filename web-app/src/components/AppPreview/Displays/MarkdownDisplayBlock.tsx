@@ -1,21 +1,18 @@
 import nunjucks from "nunjucks";
-import { DataContainer, MarkdownDisplay } from "@/types/app";
 import Markdown from "@/components/Markdown";
+import type { DataContainer, MarkdownDisplay } from "@/types/app";
 
 export const MarkdownDisplayBlock = ({
   display,
-  data,
+  data
 }: {
   display: MarkdownDisplay;
   data?: DataContainer;
 }) => {
   const dataContainer = data || {};
-  const rendered_content = nunjucks.renderString(
-    display.content,
-    dataContainer as object,
-  );
+  const rendered_content = nunjucks.renderString(display.content, dataContainer as object);
   return (
-    <div className="markdown-display" data-testid="app-markdown-display-block">
+    <div className='markdown-display' data-testid='app-markdown-display-block'>
       <Markdown>{rendered_content}</Markdown>
     </div>
   );

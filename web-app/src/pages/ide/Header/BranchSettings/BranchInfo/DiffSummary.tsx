@@ -1,27 +1,15 @@
+import { File, FileDiff, FileMinus, FilePlus, Loader2, Minus, Plus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import {
-  Loader2,
-  File,
-  Plus,
-  Minus,
-  FilePlus,
-  FileDiff,
-  FileMinus,
-} from "lucide-react";
+import { Label } from "@/components/ui/shadcn/label";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/tooltip";
 import useDiffSummary from "@/hooks/api/files/useDiffSummary";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
-import { FileStatus } from "@/types/file";
-import { Label } from "@/components/ui/shadcn/label";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/shadcn/tooltip";
+import type { FileStatus } from "@/types/file";
 
 const DiffSummaryWrapper = ({ children }: { children: React.ReactNode }) => {
   return (
-    <div className="max-w-full space-y-3">
-      <Label className="text-sm font-medium">File Changes</Label>
+    <div className='max-w-full space-y-3'>
+      <Label className='font-medium text-sm'>File Changes</Label>
       {children}
     </div>
   );
@@ -42,24 +30,22 @@ const DiffSummary = ({ onFileClick }: { onFileClick: () => void }) => {
   const getStatusIcon = (status: FileStatus["status"]) => {
     switch (status) {
       case "M":
-        return <FileDiff className="h-4 w-4 flex-shrink-0 text-warning" />;
+        return <FileDiff className='h-4 w-4 flex-shrink-0 text-warning' />;
       case "A":
-        return <FilePlus className="h-4 w-4 flex-shrink-0 text-green-600" />;
+        return <FilePlus className='h-4 w-4 flex-shrink-0 text-green-600' />;
       case "D":
-        return <FileMinus className="h-4 w-4 flex-shrink-0 text-destructive" />;
+        return <FileMinus className='h-4 w-4 flex-shrink-0 text-destructive' />;
       default:
-        return <File className="h-4 w-4 flex-shrink-0" />;
+        return <File className='h-4 w-4 flex-shrink-0' />;
     }
   };
 
   if (isLoading) {
     return (
       <DiffSummaryWrapper>
-        <div className="flex items-center gap-2">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          <span className="text-sm text-muted-foreground">
-            Loading changes...
-          </span>
+        <div className='flex items-center gap-2'>
+          <Loader2 className='h-4 w-4 animate-spin' />
+          <span className='text-muted-foreground text-sm'>Loading changes...</span>
         </div>
       </DiffSummaryWrapper>
     );
@@ -68,7 +54,7 @@ const DiffSummary = ({ onFileClick }: { onFileClick: () => void }) => {
   if (!diffSummary || diffSummary.length === 0) {
     return (
       <DiffSummaryWrapper>
-        <p className="text-sm text-muted-foreground">No changes detected</p>
+        <p className='text-muted-foreground text-sm'>No changes detected</p>
       </DiffSummaryWrapper>
     );
   }
@@ -80,31 +66,31 @@ const DiffSummary = ({ onFileClick }: { onFileClick: () => void }) => {
           <TooltipTrigger asChild>
             <div
               key={file.path}
-              className={`flex items-center justify-between p-2 rounded-md border transition-colors ${
+              className={`flex items-center justify-between rounded-md border p-2 transition-colors ${
                 file.status === "D"
                   ? "cursor-not-allowed opacity-50"
                   : "cursor-pointer hover:bg-muted/50"
               }`}
               onClick={() => file.status !== "D" && handleFileClick(file.path)}
             >
-              <div className="flex items-center gap-2 flex-1 min-w-0">
+              <div className='flex min-w-0 flex-1 items-center gap-2'>
                 {getStatusIcon(file.status)}
-                <span className="text-sm font-mono truncate" title={file.path}>
+                <span className='truncate font-mono text-sm' title={file.path}>
                   {file.path}
                 </span>
               </div>
 
               {(file.insert > 0 || file.delete > 0) && (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <div className='flex items-center gap-2 text-muted-foreground text-xs'>
                   {file.insert > 0 && (
-                    <div className="flex items-center text-green-600">
-                      <Plus className="h-3 w-3" />
+                    <div className='flex items-center text-green-600'>
+                      <Plus className='h-3 w-3' />
                       <span>{file.insert}</span>
                     </div>
                   )}
                   {file.delete > 0 && (
-                    <div className="flex items-center text-red-600">
-                      <Minus className="h-3 w-3" />
+                    <div className='flex items-center text-red-600'>
+                      <Minus className='h-3 w-3' />
                       <span>{file.delete}</span>
                     </div>
                   )}

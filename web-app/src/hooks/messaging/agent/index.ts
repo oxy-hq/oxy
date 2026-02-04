@@ -8,7 +8,7 @@ const useAskAgent = () => {
   const threadStoreAdapter = {
     getThread: (threadId: string) => getAgentThread(threadId),
     setIsLoading,
-    setMessages,
+    setMessages
   };
 
   const messageSender = new AgentMessageSender();

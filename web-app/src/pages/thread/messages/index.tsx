@@ -1,5 +1,5 @@
-import { Message } from "@/types/chat";
 import { LoaderCircle } from "lucide-react";
+import type { Message } from "@/types/chat";
 import MessageItem from "./Item";
 
 interface Props {
@@ -9,18 +9,14 @@ interface Props {
 
 const Messages = ({ messages, onArtifactClick }: Props) => {
   return (
-    <div className="mb-6 max-w-page-content mx-auto w-full">
+    <div className='mx-auto mb-6 w-full max-w-page-content'>
       {messages.length === 0 ? (
-        <div className="flex items-center justify-center h-full">
-          <LoaderCircle className="w-6 h-6 animate-spin text-muted-foreground" />
+        <div className='flex h-full items-center justify-center'>
+          <LoaderCircle className='h-6 w-6 animate-spin text-muted-foreground' />
         </div>
       ) : (
         messages.map((msg) => (
-          <MessageItem
-            key={msg.id}
-            msg={msg}
-            onArtifactClick={onArtifactClick}
-          />
+          <MessageItem key={msg.id} msg={msg} onArtifactClick={onArtifactClick} />
         ))
       )}
     </div>

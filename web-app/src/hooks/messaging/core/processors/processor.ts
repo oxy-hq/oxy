@@ -1,13 +1,15 @@
-import { Message, Answer, DataAppContent } from "@/types/chat";
-import {
+import { STEP_MAP } from "@/types/agent";
+import type { Artifact } from "@/types/artifact";
+import type {
+  Answer,
   ArtifactDoneContent,
   ArtifactStartedContent,
   ArtifactValueContent,
+  DataAppContent,
+  Message,
   TextContent,
-  UsageContent,
+  UsageContent
 } from "@/types/chat";
-import { STEP_MAP } from "@/types/agent";
-import { Artifact } from "@/types/artifact";
 import { extractUpdatedValue } from "./artifact";
 
 export class MessageProcessor {
@@ -16,7 +18,7 @@ export class MessageProcessor {
       case "error":
         return {
           ...streamingMessage,
-          content: answer.content.message,
+          content: answer.content.message
         };
       case "text":
         return this.handleTextContent(streamingMessage, answer);
@@ -35,39 +37,29 @@ export class MessageProcessor {
     }
   }
 
-  private handleDataApp(
-    streamingMessage: Message,
-    content: DataAppContent,
-  ): Message {
+  private handleDataApp(streamingMessage: Message, content: DataAppContent): Message {
     return {
       ...streamingMessage,
-      file_path: content.content,
+      file_path: content.content
     };
   }
 
-  private handleTextContent(
-    streamingMessage: Message,
-    answer: Answer,
-  ): Message {
+  private handleTextContent(streamingMessage: Message, answer: Answer): Message {
     const { content: prevContent, references, steps } = streamingMessage;
     const shouldAddStep =
-      answer.step &&
-      Object.keys(STEP_MAP).includes(answer.step) &&
-      steps.at(-1) !== answer.step;
+      answer.step && Object.keys(STEP_MAP).includes(answer.step) && steps.at(-1) !== answer.step;
 
     return {
       ...streamingMessage,
       content: prevContent + (answer.content as TextContent).content,
-      references: answer.references
-        ? [...references, ...answer.references]
-        : references,
-      steps: shouldAddStep && answer.step ? [...steps, answer.step] : steps,
+      references: answer.references ? [...references, ...answer.references] : references,
+      steps: shouldAddStep && answer.step ? [...steps, answer.step] : steps
     };
   }
 
   private handleArtifactStarted(
     streamingMessage: Message,
-    content: ArtifactStartedContent,
+    content: ArtifactStartedContent
   ): Message {
     const currentArtifacts = {
       ...streamingMessage.artifacts,
@@ -78,39 +70,33 @@ export class MessageProcessor {
         is_streaming: true,
         content: {
           type: content.kind.type,
-          value: content.kind.value,
-        },
-      } as Artifact,
+          value: content.kind.value
+        }
+      } as Artifact
     };
 
     return {
       ...streamingMessage,
-      artifacts: currentArtifacts,
+      artifacts: currentArtifacts
     };
   }
 
-  private handleArtifactDone(
-    streamingMessage: Message,
-    content: ArtifactDoneContent,
-  ): Message {
+  private handleArtifactDone(streamingMessage: Message, content: ArtifactDoneContent): Message {
     const currentArtifacts = {
       ...streamingMessage.artifacts,
       [content.id]: {
         ...streamingMessage.artifacts[content.id],
-        is_streaming: false,
-      } as Artifact,
+        is_streaming: false
+      } as Artifact
     };
 
     return {
       ...streamingMessage,
-      artifacts: currentArtifacts,
+      artifacts: currentArtifacts
     };
   }
 
-  private handleArtifactValue(
-    streamingMessage: Message,
-    content: ArtifactValueContent,
-  ): Message {
+  private handleArtifactValue(streamingMessage: Message, content: ArtifactValueContent): Message {
     const currentArtifacts = streamingMessage.artifacts;
     const updatedArtifact = currentArtifacts[content.id];
 
@@ -126,24 +112,21 @@ export class MessageProcessor {
         ...updatedArtifact.content,
         value: {
           ...updatedArtifact.content.value,
-          ...updatedValue,
-        },
-      },
+          ...updatedValue
+        }
+      }
     } as Artifact;
 
     return {
       ...streamingMessage,
-      artifacts: currentArtifacts,
+      artifacts: currentArtifacts
     };
   }
 
-  private handleUsageContent(
-    streamingMessage: Message,
-    content: UsageContent,
-  ): Message {
+  private handleUsageContent(streamingMessage: Message, content: UsageContent): Message {
     return {
       ...streamingMessage,
-      usage: content.usage,
+      usage: content.usage
     };
   }
 }

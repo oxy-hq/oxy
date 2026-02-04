@@ -1,19 +1,19 @@
-import { apiClient } from "./axios";
-import {
-  ThreadCreateRequest,
-  ThreadItem,
-  ThreadsResponse,
+import type {
   Answer,
   Message,
+  ThreadCreateRequest,
+  ThreadItem,
+  ThreadsResponse
 } from "@/types/chat";
-import fetchSSE from "./fetchSSE";
 import { apiBaseURL } from "../env";
+import { apiClient } from "./axios";
+import fetchSSE from "./fetchSSE";
 
 export class ThreadService {
   static async listThreads(
     projectId: string,
     page?: number,
-    limit?: number,
+    limit?: number
   ): Promise<ThreadsResponse> {
     const params = new URLSearchParams();
     if (page !== undefined) params.append("page", page.toString());
@@ -22,44 +22,30 @@ export class ThreadService {
     let url = `/${projectId}/threads`;
     const paramsStr = params.toString();
     if (paramsStr) {
-      url += "?" + paramsStr;
+      url += `?${paramsStr}`;
     }
     const response = await apiClient.get(url);
     return response.data;
   }
 
-  static async createThread(
-    projectId: string,
-    request: ThreadCreateRequest,
-  ): Promise<ThreadItem> {
+  static async createThread(projectId: string, request: ThreadCreateRequest): Promise<ThreadItem> {
     const response = await apiClient.post(`/${projectId}/threads`, request);
     return response.data;
   }
 
-  static async getThread(
-    projectId: string,
-    threadId: string,
-  ): Promise<ThreadItem> {
+  static async getThread(projectId: string, threadId: string): Promise<ThreadItem> {
     const response = await apiClient.get(`/${projectId}/threads/${threadId}`);
     return response.data;
   }
 
-  static async deleteThread(
-    projectId: string,
-    threadId: string,
-  ): Promise<void> {
-    const response = await apiClient.delete(
-      `/${projectId}/threads/${threadId}`,
-    );
+  static async deleteThread(projectId: string, threadId: string): Promise<void> {
+    const response = await apiClient.delete(`/${projectId}/threads/${threadId}`);
     return response.data;
   }
 
-  static async bulkDeleteThreads(
-    projectId: string,
-    threadIds: string[],
-  ): Promise<void> {
+  static async bulkDeleteThreads(projectId: string, threadIds: string[]): Promise<void> {
     const response = await apiClient.post(`/${projectId}/threads/bulk-delete`, {
-      thread_ids: threadIds,
+      thread_ids: threadIds
     });
     return response.data;
   }
@@ -69,13 +55,8 @@ export class ThreadService {
     return response.data;
   }
 
-  static async getThreadMessages(
-    projectId: string,
-    threadId: string,
-  ): Promise<Message[]> {
-    const response = await apiClient.get(
-      `/${projectId}/threads/${threadId}/messages`,
-    );
+  static async getThreadMessages(projectId: string, threadId: string): Promise<Message[]> {
+    const response = await apiClient.get(`/${projectId}/threads/${threadId}/messages`);
     return response.data;
   }
 
@@ -84,14 +65,14 @@ export class ThreadService {
     taskId: string,
     question: string | null,
     onReadStream: (answer: Answer) => void,
-    onMessageSent?: () => void,
+    onMessageSent?: () => void
   ): Promise<void> {
     const url = `${apiBaseURL}/${projectId}/threads/${taskId}/task`;
     await fetchSSE(url, {
       body: { question },
       onMessage: onReadStream,
       onOpen: onMessageSent,
-      eventTypes: ["message", "error"],
+      eventTypes: ["message", "error"]
     });
   }
 
@@ -100,14 +81,14 @@ export class ThreadService {
     threadId: string,
     question: string | null,
     onReadStream: (answer: Answer) => void,
-    onMessageSent?: () => void,
+    onMessageSent?: () => void
   ): Promise<void> {
     const url = `${apiBaseURL}/${projectId}/threads/${threadId}/agent`;
     await fetchSSE(url, {
       body: { question },
       onMessage: onReadStream,
       onOpen: onMessageSent,
-      eventTypes: ["message", "error"],
+      eventTypes: ["message", "error"]
     });
   }
 

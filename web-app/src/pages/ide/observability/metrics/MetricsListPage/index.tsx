@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useMetricsAnalytics } from "@/hooks/api/metrics";
-import MetricsHeader from "./components/MetricsHeader";
-import StatsRow from "./components/StatsRow/StatsRow";
 import MetricsGrid from "./components/MetricsGrid/MetricsGrid";
+import MetricsHeader from "./components/MetricsHeader";
 import Sidebar from "./components/Sidebar/Sidebar";
-import { type DaysValue, type ViewMode } from "./constants";
+import StatsRow from "./components/StatsRow/StatsRow";
+import type { DaysValue, ViewMode } from "./constants";
 
 export default function MetricsListPage() {
   const [daysFilter, setDaysFilter] = useState<DaysValue>(7);
@@ -14,20 +14,20 @@ export default function MetricsListPage() {
   const {
     data: analyticsData,
     isLoading: isAnalyticsLoading,
-    error,
+    error
   } = useMetricsAnalytics(daysFilter);
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-full text-destructive">
+      <div className='flex h-full items-center justify-center text-destructive'>
         Failed to load metrics data: {error.message}
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex-1 flex flex-col min-h-0">
+    <div className='flex h-full flex-col'>
+      <div className='flex min-h-0 flex-1 flex-col'>
         <MetricsHeader
           viewMode={viewMode}
           daysFilter={daysFilter}
@@ -36,8 +36,8 @@ export default function MetricsListPage() {
         />
 
         {/* Content */}
-        <div className="p-6 flex-1 overflow-auto min-h-0 customScrollbar">
-          <div className="max-w-7xl mx-auto space-y-6">
+        <div className='customScrollbar min-h-0 flex-1 overflow-auto p-6'>
+          <div className='mx-auto max-w-7xl space-y-6'>
             <StatsRow
               analyticsData={analyticsData}
               daysFilter={daysFilter}
@@ -45,20 +45,13 @@ export default function MetricsListPage() {
             />
 
             {/* Main Content Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2">
-                <MetricsGrid
-                  key={daysFilter}
-                  viewMode={viewMode}
-                  daysFilter={daysFilter}
-                />
+            <div className='grid grid-cols-1 gap-6 lg:grid-cols-3'>
+              <div className='lg:col-span-2'>
+                <MetricsGrid key={daysFilter} viewMode={viewMode} daysFilter={daysFilter} />
               </div>
 
               {/* Sidebar - Takes 1 column */}
-              <Sidebar
-                analyticsData={analyticsData}
-                isLoading={isAnalyticsLoading}
-              />
+              <Sidebar analyticsData={analyticsData} isLoading={isAnalyticsLoading} />
             </div>
           </div>
         </div>

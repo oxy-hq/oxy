@@ -1,5 +1,5 @@
-import { LogItem } from "@/services/types";
 import { create } from "zustand";
+import type { LogItem } from "@/services/types";
 
 export interface WorkflowThread {
   logs: LogItem[];
@@ -19,34 +19,26 @@ const useWorkflowThreadStore = create<WorkflowThreadState>()((set, get) => {
     workflowThread: new Map(),
     setWorkflowThread: (threadId: string, workflowThread: WorkflowThread) => {
       set((state) => ({
-        workflowThread: new Map(state.workflowThread).set(
-          threadId,
-          workflowThread,
-        ),
+        workflowThread: new Map(state.workflowThread).set(threadId, workflowThread)
       }));
     },
     getWorkflowThread: (threadId: string) => {
-      return (
-        get().workflowThread.get(threadId) || { logs: [], isLoading: false }
-      );
+      return get().workflowThread.get(threadId) || { logs: [], isLoading: false };
     },
-    setLogs: (
-      threadId: string,
-      getNewLogs: (prevLogs: LogItem[]) => LogItem[],
-    ) => {
+    setLogs: (threadId: string, getNewLogs: (prevLogs: LogItem[]) => LogItem[]) => {
       const currentWorkflowThread = get().getWorkflowThread(threadId);
       get().setWorkflowThread(threadId, {
         ...currentWorkflowThread,
-        logs: getNewLogs(currentWorkflowThread.logs),
+        logs: getNewLogs(currentWorkflowThread.logs)
       });
     },
     setIsLoading: (threadId: string, isLoading: boolean) => {
       const currentWorkflowThread = get().getWorkflowThread(threadId);
       get().setWorkflowThread(threadId, {
         ...currentWorkflowThread,
-        isLoading,
+        isLoading
       });
-    },
+    }
   };
 });
 

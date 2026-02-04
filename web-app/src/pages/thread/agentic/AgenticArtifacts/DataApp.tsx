@@ -1,10 +1,10 @@
-import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import queryKeys from "@/hooks/api/queryKey";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
 import { TabsContent } from "@radix-ui/react-tabs";
-import { Skeleton } from "@/components/ui/shadcn/skeleton";
+import { useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import AppPreview from "@/components/AppPreview";
+import { Skeleton } from "@/components/ui/shadcn/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
+import queryKeys from "@/hooks/api/queryKey";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import EditorPageWrapper from "@/pages/ide/Files/Editor/components/EditorPageWrapper";
 
@@ -22,55 +22,49 @@ const DataApp = ({ pathb64 }: { pathb64?: string }) => {
     if (!pathb64) return;
     setPreviewKey(randomKey());
     await queryClient.invalidateQueries({
-      queryKey: queryKeys.app.getAppData(projectId, branchName, pathb64),
+      queryKey: queryKeys.app.getAppData(projectId, branchName, pathb64)
     });
     await queryClient.refetchQueries({
-      queryKey: queryKeys.app.getAppData(projectId, branchName, pathb64),
+      queryKey: queryKeys.app.getAppData(projectId, branchName, pathb64)
     });
   };
 
   return (
-    <div className="flex-1 h-full">
-      <Tabs defaultValue="preview" className="flex flex-1 flex-col h-full">
-        <TabsList className="flex gap-2 shrink-0 mt-2 ml-4">
-          <TabsTrigger value="preview" disabled={!filePath}>
+    <div className='h-full flex-1'>
+      <Tabs defaultValue='preview' className='flex h-full flex-1 flex-col'>
+        <TabsList className='mt-2 ml-4 flex shrink-0 gap-2'>
+          <TabsTrigger value='preview' disabled={!filePath}>
             Preview
           </TabsTrigger>
-          <TabsTrigger value="editor" disabled={!filePath}>
+          <TabsTrigger value='editor' disabled={!filePath}>
             Code
           </TabsTrigger>
         </TabsList>
-        <div className="flex-1 flex-col flex overflow-hidden">
-          <TabsContent
-            className="w-full flex flex-col items-center h-full gap-4"
-            value="preview"
-          >
+        <div className='flex flex-1 flex-col overflow-hidden'>
+          <TabsContent className='flex h-full w-full flex-col items-center gap-4' value='preview'>
             {!filePath ? (
-              <div className="flex flex-col w-full h-full items-center justify-center">
-                <div className="flex flex-col gap-4">
-                  <div className="space-y-2">
-                    <Skeleton className="h-4 w-[250px]" />
-                    <Skeleton className="h-4 w-[250px]" />
-                    <Skeleton className="h-4 w-[200px]" />
+              <div className='flex h-full w-full flex-col items-center justify-center'>
+                <div className='flex flex-col gap-4'>
+                  <div className='space-y-2'>
+                    <Skeleton className='h-4 w-[250px]' />
+                    <Skeleton className='h-4 w-[250px]' />
+                    <Skeleton className='h-4 w-[200px]' />
                   </div>
-                  <Skeleton className="h-[200px] w-[250px]" />
-                  <Skeleton className="h-[200px] w-[250px]" />
+                  <Skeleton className='h-[200px] w-[250px]' />
+                  <Skeleton className='h-[200px] w-[250px]' />
                 </div>
               </div>
             ) : (
-              <div className="flex-1 min-h-0 overflow-hidden w-full">
+              <div className='min-h-0 w-full flex-1 overflow-hidden'>
                 <AppPreview key={previewKey} appPath64={pathb64 ?? ""} />
               </div>
             )}
           </TabsContent>
-          <TabsContent
-            value="editor"
-            className="flex-1 flex flex-col bg-editor-background"
-          >
+          <TabsContent value='editor' className='flex flex-1 flex-col bg-editor-background'>
             <EditorPageWrapper
               pathb64={pathb64 ?? ""}
-              pageContentClassName="md:flex-row flex-col"
-              editorClassName="w-full h-full"
+              pageContentClassName='md:flex-row flex-col'
+              editorClassName='w-full h-full'
               readOnly={true}
               onSaved={() => {
                 onSaveApp();

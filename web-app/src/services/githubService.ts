@@ -1,14 +1,14 @@
-import { apiClient } from "./api/axios";
-import {
-  GitHubRepository,
+import type {
   CurrentProject,
-  StoreTokenRequest,
-  TokenResponse,
+  GitHubRepository,
+  ListRepositoriesResponse,
   SelectRepositoryRequest,
   SelectRepositoryResponse,
-  ListRepositoriesResponse,
+  StoreTokenRequest,
+  TokenResponse
 } from "@/types/github";
-import { RevisionInfo, GitHubSettings } from "@/types/settings";
+import type { GitHubSettings, RevisionInfo } from "@/types/settings";
+import { apiClient } from "./api/axios";
 
 export class GitHubService {
   /**
@@ -16,7 +16,7 @@ export class GitHubService {
    */
   static async storeToken(token: string): Promise<TokenResponse> {
     const response = await apiClient.post<TokenResponse>("/github/token", {
-      token,
+      token
     } as StoreTokenRequest);
     return response.data;
   }
@@ -25,24 +25,17 @@ export class GitHubService {
    * List accessible GitHub repositories
    */
   static async listRepositories(): Promise<GitHubRepository[]> {
-    const response = await apiClient.get<ListRepositoriesResponse>(
-      "/github/repositories",
-    );
+    const response = await apiClient.get<ListRepositoriesResponse>("/github/repositories");
     return response.data.repositories;
   }
 
   /**
    * Select a repository
    */
-  static async selectRepository(
-    repositoryId: number,
-  ): Promise<SelectRepositoryResponse> {
-    const response = await apiClient.post<SelectRepositoryResponse>(
-      "/github/repositories/select",
-      {
-        repository_id: repositoryId,
-      } as SelectRepositoryRequest,
-    );
+  static async selectRepository(repositoryId: number): Promise<SelectRepositoryResponse> {
+    const response = await apiClient.post<SelectRepositoryResponse>("/github/repositories/select", {
+      repository_id: repositoryId
+    } as SelectRepositoryRequest);
     return response.data;
   }
 
@@ -92,11 +85,11 @@ export class GitHubService {
   static async updateProjectGithubApp(
     projectId: string,
     installationId: string,
-    appId?: string,
+    appId?: string
   ): Promise<{ success: boolean; message: string }> {
     const response = await apiClient.put(`/github/app/project/${projectId}`, {
       installation_id: installationId,
-      app_id: appId,
+      app_id: appId
     });
     return response.data;
   }
@@ -108,16 +101,13 @@ export class GitHubService {
     workspaceId: string,
     installationId: string,
     repoId: number,
-    branchName: string,
+    branchName: string
   ): Promise<{ success: boolean; message: string }> {
-    const response = await apiClient.post(
-      `/github/app/project/${workspaceId}`,
-      {
-        installation_id: installationId,
-        repo_id: repoId,
-        branch_name: branchName,
-      },
-    );
+    const response = await apiClient.post(`/github/app/project/${workspaceId}`, {
+      installation_id: installationId,
+      repo_id: repoId,
+      branch_name: branchName
+    });
     return response.data;
   }
 
@@ -135,9 +125,7 @@ export class GitHubService {
   /**
    * Set onboarded status
    */
-  static async setOnboarded(
-    onboarded: boolean,
-  ): Promise<{ success: boolean; message: string }> {
+  static async setOnboarded(onboarded: boolean): Promise<{ success: boolean; message: string }> {
     const response = await apiClient.put("/github/onboarded", { onboarded });
     return response.data;
   }

@@ -13,15 +13,11 @@ interface MessageHeaderProps {
   tokensUsage?: TokensUsage;
 }
 
-const MessageHeader = ({
-  isHuman,
-  createdAt,
-  tokensUsage,
-}: MessageHeaderProps) => {
+const MessageHeader = ({ isHuman, createdAt, tokensUsage }: MessageHeaderProps) => {
   return (
-    <div className="flex items-center gap-2 mb-2">
-      {isHuman ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
-      <span className="text-sm font-medium">{isHuman ? "You" : "Agent"}</span>
+    <div className='mb-2 flex items-center gap-2'>
+      {isHuman ? <User className='h-4 w-4' /> : <Bot className='h-4 w-4' />}
+      <span className='font-medium text-sm'>{isHuman ? "You" : "Agent"}</span>
       <MessageInfo createdAt={createdAt} tokensUsage={tokensUsage} />
     </div>
   );

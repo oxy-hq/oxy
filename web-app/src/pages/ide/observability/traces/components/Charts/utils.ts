@@ -1,5 +1,5 @@
-import { Trace, getDurationMs, getTokensTotal } from "@/services/api/traces";
-import { TimeBucket, DurationBucket, TraceStats } from "./types";
+import { getDurationMs, getTokensTotal, type Trace } from "@/services/api/traces";
+import type { DurationBucket, TimeBucket, TraceStats } from "./types";
 
 /**
  * Format duration in milliseconds to human readable string
@@ -17,7 +17,7 @@ export function aggregateByTime(traces: Trace[]): TimeBucket[] {
   if (!traces || traces.length === 0) return [];
 
   const sorted = [...traces].sort(
-    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
   );
 
   const firstTime = new Date(sorted[0].timestamp).getTime();
@@ -31,13 +31,11 @@ export function aggregateByTime(traces: Trace[]): TimeBucket[] {
   if (timeRange < 3600000) {
     // Less than 1 hour -> 5 minute buckets
     bucketMs = 300000;
-    formatFn = (d) =>
-      d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    formatFn = (d) => d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   } else if (timeRange < 86400000) {
     // Less than 1 day -> 1 hour buckets
     bucketMs = 3600000;
-    formatFn = (d) =>
-      d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    formatFn = (d) => d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   } else if (timeRange < 604800000) {
     // Less than 1 week -> 6 hour buckets
     bucketMs = 21600000;
@@ -48,8 +46,7 @@ export function aggregateByTime(traces: Trace[]): TimeBucket[] {
   } else {
     // 1 day buckets
     bucketMs = 86400000;
-    formatFn = (d) =>
-      d.toLocaleDateString([], { month: "short", day: "numeric" });
+    formatFn = (d) => d.toLocaleDateString([], { month: "short", day: "numeric" });
   }
 
   const buckets = new Map<number, TimeBucket>();
@@ -63,7 +60,7 @@ export function aggregateByTime(traces: Trace[]): TimeBucket[] {
         time: formatFn(new Date(bucketKey)),
         agentCount: 0,
         workflowCount: 0,
-        tokens: 0,
+        tokens: 0
       });
     }
 
@@ -96,7 +93,7 @@ export function aggregateByDuration(traces: Trace[]): DurationBucket[] {
       [0, 100, "0-100ms"],
       [100, 200, "100-200ms"],
       [200, 500, "200-500ms"],
-      [500, 1000, "500ms-1s"],
+      [500, 1000, "500ms-1s"]
     );
   } else if (maxDuration <= 10000) {
     bucketRanges.push(
@@ -104,7 +101,7 @@ export function aggregateByDuration(traces: Trace[]): DurationBucket[] {
       [500, 1000, "500ms-1s"],
       [1000, 2000, "1-2s"],
       [2000, 5000, "2-5s"],
-      [5000, 10000, "5-10s"],
+      [5000, 10000, "5-10s"]
     );
   } else {
     bucketRanges.push(
@@ -112,13 +109,13 @@ export function aggregateByDuration(traces: Trace[]): DurationBucket[] {
       [1000, 5000, "1-5s"],
       [5000, 10000, "5-10s"],
       [10000, 30000, "10-30s"],
-      [30000, Infinity, ">30s"],
+      [30000, Infinity, ">30s"]
     );
   }
 
   const buckets: DurationBucket[] = bucketRanges.map(([, , range]) => ({
     range,
-    count: 0,
+    count: 0
   }));
 
   for (const duration of durations) {
@@ -143,27 +140,20 @@ export function calculateStats(traces: Trace[] | undefined): TraceStats {
       agentRuns: 0,
       workflowRuns: 0,
       avgDuration: "0ms",
-      totalTokens: 0,
+      totalTokens: 0
     };
   }
 
-  const agentRuns = traces.filter(
-    (t) => t.spanName === "agent.run_agent",
-  ).length;
-  const workflowRuns = traces.filter(
-    (t) => t.spanName === "workflow.run_workflow",
-  ).length;
+  const agentRuns = traces.filter((t) => t.spanName === "agent.run_agent").length;
+  const workflowRuns = traces.filter((t) => t.spanName === "workflow.run_workflow").length;
   const durations = traces.map((t) => getDurationMs(t));
   const avgDuration = durations.reduce((a, b) => a + b, 0) / durations.length;
-  const totalTokens = traces.reduce(
-    (sum, t) => sum + (getTokensTotal(t) ?? 0),
-    0,
-  );
+  const totalTokens = traces.reduce((sum, t) => sum + (getTokensTotal(t) ?? 0), 0);
 
   return {
     agentRuns,
     workflowRuns,
     avgDuration: formatDuration(avgDuration),
-    totalTokens,
+    totalTokens
   };
 }

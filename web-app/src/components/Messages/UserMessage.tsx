@@ -1,4 +1,4 @@
-import React from "react";
+import type React from "react";
 import MessageHeader from "./MessageHeader";
 
 interface UserMessageProps {
@@ -8,11 +8,11 @@ interface UserMessageProps {
 
 const UserMessage: React.FC<UserMessageProps> = ({ content, createdAt }) => {
   return (
-    <div data-testid="user-message-container">
+    <div data-testid='user-message-container'>
       <MessageHeader isHuman={true} createdAt={createdAt} />
       <div
-        className="p-4 rounded-xl bg-base-card border border-base-border shadow-sm flex flex-col gap-2"
-        data-testid="user-message-text"
+        className='flex flex-col gap-2 rounded-xl border border-base-border bg-base-card p-4 shadow-sm'
+        data-testid='user-message-text'
       >
         {content}
       </div>

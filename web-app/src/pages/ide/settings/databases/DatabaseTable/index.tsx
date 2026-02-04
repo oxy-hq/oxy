@@ -1,15 +1,9 @@
-import React from "react";
-import {
-  Table,
-  TableBody,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/shadcn/table";
-import DatabaseRow from "./DatabaseRow";
+import type React from "react";
+import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/shadcn/table";
 import useDatabases from "@/hooks/api/databases/useDatabases";
-import TableWrapper from "../../components/TableWrapper";
 import TableContentWrapper from "../../components/TableContentWrapper";
+import TableWrapper from "../../components/TableWrapper";
+import DatabaseRow from "./DatabaseRow";
 
 export const DatabaseTable: React.FC = () => {
   const { data: databases = [], isLoading, error, refetch } = useDatabases();
@@ -29,8 +23,8 @@ export const DatabaseTable: React.FC = () => {
             isEmpty={databases.length === 0}
             loading={isLoading}
             colSpan={3}
-            noFoundTitle="No databases found"
-            noFoundDescription="Add a database to get started"
+            noFoundTitle='No databases found'
+            noFoundDescription='Add a database to get started'
             error={error?.message}
             onRetry={() => refetch()}
           >

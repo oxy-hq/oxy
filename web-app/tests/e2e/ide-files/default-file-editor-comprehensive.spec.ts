@@ -1,9 +1,5 @@
-import { test, expect, Page } from "@playwright/test";
-import {
-  saveFileSnapshot,
-  restoreFileSnapshot,
-  cleanupAfterTest,
-} from "./test-cleanup";
+import { expect, type Page, test } from "@playwright/test";
+import { cleanupAfterTest, restoreFileSnapshot, saveFileSnapshot } from "./test-cleanup";
 
 /**
  * Comprehensive Default File Editor Tests
@@ -41,10 +37,7 @@ async function openJsonFile(page: Page): Promise<boolean> {
   await page.getByRole("tab", { name: "Files" }).click();
   await page.waitForTimeout(500);
 
-  const jsonFile = page
-    .locator('a[href*="/ide/"]:visible')
-    .filter({ hasText: ".json" })
-    .first();
+  const jsonFile = page.locator('a[href*="/ide/"]:visible').filter({ hasText: ".json" }).first();
 
   if (await jsonFile.isVisible()) {
     await jsonFile.click();
@@ -65,7 +58,7 @@ test.describe("Default Editor - Basic Text Editing", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
 
     // 📸 Save file state before test starts
@@ -206,7 +199,7 @@ test.describe("Default Editor - Monaco Features", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -354,7 +347,7 @@ test.describe("Default Editor - File Operations", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
 
     // 📸 Save file state before test starts
@@ -388,9 +381,7 @@ test.describe("Default Editor - File Operations", () => {
     await page.waitForTimeout(1500);
 
     // Check for save confirmation (file indicator should not show unsaved)
-    const unsavedIndicator = page.locator(
-      '[data-testid*="unsaved"], .unsaved-indicator',
-    );
+    const unsavedIndicator = page.locator('[data-testid*="unsaved"], .unsaved-indicator');
     const stillUnsaved = await unsavedIndicator.isVisible().catch(() => false);
     expect(stillUnsaved).toBe(false);
   });
@@ -408,14 +399,14 @@ test.describe("Default Editor - File Operations", () => {
     await page.waitForTimeout(1000);
 
     const unsavedIndicator = page.locator(
-      '[data-testid*="unsaved"], .unsaved-indicator, [class*="unsaved"]',
+      '[data-testid*="unsaved"], .unsaved-indicator, [class*="unsaved"]'
     );
     const visible = await unsavedIndicator.isVisible().catch(() => false);
     expect(visible || true).toBeTruthy();
   });
 
   test("should persist saved changes after navigating to another file and back", async ({
-    page,
+    page
   }) => {
     const opened = await openTextFile(page);
     if (!opened) {
@@ -508,7 +499,7 @@ test.describe("Default Editor - Character Input & Encoding", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -629,7 +620,7 @@ test.describe("Default Editor - Syntax Highlighting", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -668,9 +659,7 @@ test.describe("Default Editor - Syntax Highlighting", () => {
     }
 
     // Language indicator should show JSON
-    const languageIndicator = page.locator(
-      '[data-testid*="language"], .language-id',
-    );
+    const languageIndicator = page.locator('[data-testid*="language"], .language-id');
     const visible = await languageIndicator.isVisible().catch(() => false);
     expect(visible || true).toBeTruthy();
   });
@@ -685,7 +674,7 @@ test.describe("Default Editor - Edge Cases & Navigation", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -693,9 +682,7 @@ test.describe("Default Editor - Edge Cases & Navigation", () => {
     await cleanupAfterTest(page);
   });
 
-  test("should navigate to another file with unsaved changes", async ({
-    page,
-  }) => {
+  test("should navigate to another file with unsaved changes", async ({ page }) => {
     const opened = await openTextFile(page);
     if (!opened) {
       test.skip();
@@ -717,7 +704,7 @@ test.describe("Default Editor - Edge Cases & Navigation", () => {
 
     if (hasDialog) {
       const discardButton = page.getByRole("button", {
-        name: /discard|don't save/i,
+        name: /discard|don't save/i
       });
       if (await discardButton.isVisible()) {
         await discardButton.click();
@@ -740,9 +727,7 @@ test.describe("Default Editor - Edge Cases & Navigation", () => {
 
     // Reload will trigger browser's unsaved changes warning
     // We can't interact with it in Playwright, so just test the setup
-    const unsavedIndicator = page.locator(
-      '[data-testid*="unsaved"], .unsaved-indicator',
-    );
+    const unsavedIndicator = page.locator('[data-testid*="unsaved"], .unsaved-indicator');
     const visible = await unsavedIndicator.isVisible().catch(() => false);
     expect(visible || true).toBeTruthy();
   });
@@ -833,7 +818,7 @@ test.describe("Default Editor - Responsive Layout", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 

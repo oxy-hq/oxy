@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { GitHubApiService } from "@/services/api";
-import { CreateGitNamespaceRequest, GitHubNamespace } from "@/types/github";
 import { useNavigate } from "react-router-dom";
+import { GitHubApiService } from "@/services/api";
+import type { CreateGitNamespaceRequest, GitHubNamespace } from "@/types/github";
 
 /**
  * Hook to create a new Git Namespace
@@ -17,9 +17,9 @@ export const useCreateGitNamespace = () => {
       navigate("/workspaces", {
         state: {
           gitHubInstallSuccess: true,
-          message: "GitHub App installation successful!",
-        },
+          message: "GitHub App installation successful!"
+        }
       });
-    },
+    }
   });
 };

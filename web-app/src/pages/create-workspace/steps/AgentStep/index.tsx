@@ -1,10 +1,10 @@
-import { Button } from "@/components/ui/shadcn/button";
-import { FormProvider, useForm } from "react-hook-form";
-import Header from "../Header";
-import AgentForm from "./AgentForm";
-import { ModelsFormData } from "../ModelStep";
-import { WarehousesFormData } from "../WarehouseStep";
 import { Loader2 } from "lucide-react";
+import { FormProvider, useForm } from "react-hook-form";
+import { Button } from "@/components/ui/shadcn/button";
+import Header from "../Header";
+import type { ModelsFormData } from "../ModelStep";
+import type { WarehousesFormData } from "../WarehouseStep";
+import AgentForm from "./AgentForm";
 
 export interface BaseToolConfig {
   id: string;
@@ -47,7 +47,7 @@ export default function AgentStep({
   models,
   databases,
   onNext,
-  onBack,
+  onBack
 }: AgentStepProps) {
   const methods = useForm<AgentConfig>({
     defaultValues: initialData || {
@@ -55,31 +55,29 @@ export default function AgentStep({
       model: models?.models?.[0].name,
       system_instructions:
         "You are an Data Analyst expert.\nYour task is to help the user generate report given the input.\nONLY use the provided data from user's input.\nFollow best practices to generate the report.",
-      description:
-        "An agent for anonymizing sensitive data and generating reports.",
+      description: "An agent for anonymizing sensitive data and generating reports.",
       tools: [
         {
           id: "visualize-tool",
           name: "generate_chart",
           description:
             "Render a chart based on the data provided, make sure to use the correct chart type and fields.",
-          type: "visualize",
+          type: "visualize"
         },
         {
           id: "execute-sql-tool",
           name: "execute_sql",
-          description:
-            "Execute the SQL query. If the query is invalid, fix it and run again.",
+          description: "Execute the SQL query. If the query is invalid, fix it and run again.",
           type: "execute_sql",
-          database: databases?.warehouses?.[0].name,
-        },
-      ],
-    },
+          database: databases?.warehouses?.[0].name
+        }
+      ]
+    }
   });
 
   const {
     handleSubmit,
-    formState: { isValid },
+    formState: { isValid }
   } = methods;
 
   const onSubmit = (data: AgentConfig) => {
@@ -88,22 +86,19 @@ export default function AgentStep({
 
   return (
     <FormProvider {...methods}>
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-        <div className="space-y-4">
-          <Header
-            title="Configure agent"
-            description="Set up an agent for your workspace."
-          />
+      <form onSubmit={handleSubmit(onSubmit)} className='space-y-6'>
+        <div className='space-y-4'>
+          <Header title='Configure agent' description='Set up an agent for your workspace.' />
 
           <AgentForm models={models} databases={databases} />
         </div>
 
-        <div className="flex justify-between">
-          <Button type="button" variant="outline" onClick={onBack}>
+        <div className='flex justify-between'>
+          <Button type='button' variant='outline' onClick={onBack}>
             Back
           </Button>
-          <Button type="submit" disabled={!isValid || isCreating}>
-            {isCreating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          <Button type='submit' disabled={!isValid || isCreating}>
+            {isCreating && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
             Create Workspace
           </Button>
         </div>

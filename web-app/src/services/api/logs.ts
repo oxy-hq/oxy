@@ -1,5 +1,5 @@
+import type { LogsResponse } from "../../types/logs";
 import { apiClient } from "./axios";
-import { LogsResponse } from "../../types/logs";
 
 export class LogsService {
   static async getLogs(projectId: string): Promise<LogsResponse> {

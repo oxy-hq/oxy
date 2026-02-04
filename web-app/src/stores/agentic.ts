@@ -1,14 +1,14 @@
-import { useBlockStore } from "./block";
-import { RunService, ThreadService } from "@/services/api";
-import useTaskThreadStore from "./useTaskThread";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo } from "react";
 import { useStreamEvents } from "@/components/workflow/useWorkflowRun";
-import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { MessageFactory } from "@/hooks/messaging/core/messageFactory";
-import { Block, RunInfo } from "@/services/types";
-import { Message } from "@/types/chat";
 import queryKeys from "@/hooks/api/queryKey";
+import { MessageFactory } from "@/hooks/messaging/core/messageFactory";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { RunService, ThreadService } from "@/services/api";
+import type { Block, RunInfo } from "@/services/types";
+import type { Message } from "@/types/chat";
+import { useBlockStore } from "./block";
+import useTaskThreadStore from "./useTaskThread";
 
 export const useAgenticStore = (projectId: string, threadId: string) => {
   const result = useThreadMessages(projectId, threadId);
@@ -27,12 +27,12 @@ export const useAgenticStore = (projectId: string, threadId: string) => {
             message.run_info.blocks,
             message.run_info.children,
             message.run_info.error,
-            message.run_info.metadata,
+            message.run_info.metadata
           );
         }
       });
     }
-  }, [result.data, threadId]);
+  }, [result.data, threadId, setGroupBlocks, setMessages]);
 
   return result;
 };
@@ -40,14 +40,11 @@ export const useAgenticStore = (projectId: string, threadId: string) => {
 export const useThreadMessages = (projectId: string, threadId: string) => {
   return useQuery({
     queryKey: queryKeys.thread.messages(projectId, threadId),
-    queryFn: () => ThreadService.getThreadMessages(projectId, threadId),
+    queryFn: () => ThreadService.getThreadMessages(projectId, threadId)
   });
 };
 
-export const useObserveAgenticMessages = (
-  threadId: string,
-  refetch?: () => Promise<unknown>,
-) => {
+export const useObserveAgenticMessages = (threadId: string, refetch?: () => Promise<unknown>) => {
   const onGoingMessages = useMessages(threadId, usePendingPred());
   const setGroupBlocks = useBlockStore((state) => state.setGroupBlocks);
   const { stream } = useStreamEvents();
@@ -58,25 +55,15 @@ export const useObserveAgenticMessages = (
       const message = onGoingMessages[onGoingMessages.length - 1];
       if (!message || !message.run_info) return;
 
-      setGroupBlocks(
-        message.run_info,
-        {},
-        [],
-        undefined,
-        message.run_info.metadata,
-        true,
-      );
+      setGroupBlocks(message.run_info, {}, [], undefined, message.run_info.metadata, true);
       await stream
         .mutateAsync({
           sourceId: message.run_info.source_id,
           runIndex: message.run_info.run_index,
-          abortRef: abortRef.signal,
+          abortRef: abortRef.signal
         })
         .catch((error) => {
-          console.error(
-            "Failed to observe agentic message stream:",
-            Object.keys(error),
-          );
+          console.error("Failed to observe agentic message stream:", Object.keys(error));
         })
         .finally(() => {
           refetch?.();
@@ -87,7 +74,7 @@ export const useObserveAgenticMessages = (
     return () => {
       abortRef.abort();
     };
-  }, [threadId, onGoingMessages]);
+  }, [onGoingMessages, refetch, setGroupBlocks, stream]);
 };
 
 export const useAskAgentic = () => {
@@ -98,7 +85,7 @@ export const useAskAgentic = () => {
     mutationFn: async ({
       prompt,
       threadId,
-      agentRef,
+      agentRef
     }: {
       prompt: string;
       threadId: string;
@@ -107,20 +94,18 @@ export const useAskAgentic = () => {
       return await RunService.createAgenticRun(project.id, branchName, {
         threadId,
         prompt,
-        agentRef,
+        agentRef
       });
     },
     onMutate({ threadId, prompt }) {
-      mergeMessages(threadId, [
-        MessageFactory.createUserMessage(prompt, threadId),
-      ]);
+      mergeMessages(threadId, [MessageFactory.createUserMessage(prompt, threadId)]);
     },
     onSuccess({ message_id, run_info }, { threadId }) {
       mergeMessages(threadId, [
-        MessageFactory.createAgenticMessage(message_id, threadId, run_info),
+        MessageFactory.createAgenticMessage(message_id, threadId, run_info)
       ]);
       setGroupBlocks(run_info, {}, [], undefined, run_info.metadata);
-    },
+    }
   });
 };
 
@@ -140,7 +125,7 @@ export const useSelectedMessageReasoning = () => {
       });
       return {
         ...stepBlock,
-        childrenBlocks: childBlocks,
+        childrenBlocks: childBlocks
       };
     });
 
@@ -154,7 +139,7 @@ export const useSelectedMessageReasoning = () => {
       const id = getGroupId(runInfo);
       setSelectedGroupId(id);
     },
-    [setSelectedGroupId],
+    [setSelectedGroupId]
   );
 
   const selectBlock = useCallback(
@@ -164,7 +149,7 @@ export const useSelectedMessageReasoning = () => {
       setSelectedGroupId(groupId);
       setSelectedBlockId(blockId);
     },
-    [setSelectedGroupId, setSelectedBlockId],
+    [setSelectedGroupId, setSelectedBlockId]
   );
 
   return {
@@ -174,7 +159,7 @@ export const useSelectedMessageReasoning = () => {
     selectReasoning,
     selectBlock,
     setSelectedGroupId,
-    setSelectedBlockId,
+    setSelectedBlockId
   };
 };
 
@@ -188,7 +173,7 @@ export const useThreadDataApp = (threadId: string) => {
         message.run_info,
         groupBlocks,
         (block) => block.type === "data_app",
-        (block) => block.type === "data_app" && block.file_path,
+        (block) => block.type === "data_app" && block.file_path
       );
     }
     return [];
@@ -218,15 +203,12 @@ export const useMessageContent = (runInfo?: RunInfo) => {
   }
 
   const { blocks, root: children } = groupBlocks[getGroupId(runInfo)] || {};
-  if ((children && children.length == 0) || !blocks) {
+  if ((children && children.length === 0) || !blocks) {
     return null;
   }
   return children
     .map((childrenId) => blocks[childrenId])
-    .filter(
-      (block) =>
-        block.type === "step" && ["end", "build_app"].includes(block.step_type),
-    )
+    .filter((block) => block.type === "step" && ["end", "build_app"].includes(block.step_type))
     .flatMap((block) => blockTraverse(block, blocks, isRenderableBlock));
 };
 
@@ -263,17 +245,22 @@ export const useStopAgenticRun = (threadId: string) => {
     mutationFn: async () => {
       return Promise.all(
         messages
-          .filter((message) => !!message.run_info)
+          .filter(
+            (
+              message
+            ): message is typeof message & { run_info: NonNullable<typeof message.run_info> } =>
+              !!message.run_info
+          )
           .map((message) =>
             RunService.cancelRun(
               project.id,
               branchName,
-              message.run_info!.source_id,
-              message.run_info!.run_index,
-            ),
-          ),
+              message.run_info.source_id,
+              message.run_info.run_index
+            )
+          )
       );
-    },
+    }
   });
 
   return stopMutation;
@@ -293,11 +280,9 @@ const useOnGoingPred = () => {
   const processingGroups = useBlockStore((state) => state.processingGroups);
   return useCallback(
     (message: Message) => {
-      return (
-        !!message.run_info && !!processingGroups[getGroupId(message.run_info)]
-      );
+      return !!message.run_info && !!processingGroups[getGroupId(message.run_info)];
     },
-    [processingGroups],
+    [processingGroups]
   );
 };
 
@@ -309,10 +294,7 @@ const useAllPred = () => {
 
 const usePendingPred = () => {
   return useCallback((message: Message) => {
-    return (
-      !!message.run_info &&
-      ["pending", "running"].includes(message.run_info.status)
-    );
+    return !!message.run_info && ["pending", "running"].includes(message.run_info.status);
   }, []);
 };
 
@@ -331,12 +313,9 @@ const getGroupId = (runInfo?: RunInfo) => {
 
 function filterMapBlock<T = Block>(
   runInfo: RunInfo,
-  groupBlocks: Record<
-    string,
-    { blocks: Record<string, Block>; root: string[] }
-  >,
+  groupBlocks: Record<string, { blocks: Record<string, Block>; root: string[] }>,
   predicate: (block: Block) => boolean,
-  map: (block: Block) => T = (b) => b as unknown as T,
+  map: (block: Block) => T = (b) => b as unknown as T
 ): T[] {
   const groupId = getGroupId(runInfo);
   const group = groupBlocks[groupId];
@@ -348,10 +327,7 @@ function filterMapBlock<T = Block>(
   for (const childId of group.root) {
     const childBlock = group.blocks[childId];
     if (childBlock) {
-      result = [
-        ...result,
-        ...blockTraverse(childBlock, group.blocks, predicate, map),
-      ];
+      result = [...result, ...blockTraverse(childBlock, group.blocks, predicate, map)];
     }
   }
 
@@ -362,7 +338,7 @@ function blockTraverse<T = Block>(
   block: Block,
   blocks: Record<string, Block>,
   predicate: (block: Block) => boolean,
-  map: (block: Block) => T = (b) => b as unknown as T,
+  map: (block: Block) => T = (b) => b as unknown as T
 ): T[] {
   let result: T[] = [];
   const circularBlocks = detectCircularBlock(blocks);
@@ -377,10 +353,7 @@ function blockTraverse<T = Block>(
     for (const childId of block.children) {
       const childBlock = blocks[childId];
       if (childBlock) {
-        result = [
-          ...result,
-          ...blockTraverse(childBlock, blocks, predicate, map),
-        ];
+        result = [...result, ...blockTraverse(childBlock, blocks, predicate, map)];
       }
     }
   }
@@ -399,12 +372,9 @@ function detectCircularBlock(blocks: Record<string, Block>): Block[] | null {
       recStack.add(blockId);
 
       const block = blocks[blockId];
-      if (block && block.children) {
+      if (block?.children) {
         for (const childId of block.children) {
-          if (
-            (!visited.has(childId) && dfs(childId)) ||
-            recStack.has(childId)
-          ) {
+          if ((!visited.has(childId) && dfs(childId)) || recStack.has(childId)) {
             circularBlocks.push(block);
             return true;
           }

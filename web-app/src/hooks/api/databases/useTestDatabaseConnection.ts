@@ -1,10 +1,10 @@
-import { useState, useCallback } from "react";
-import { DatabaseService } from "@/services/api";
+import { useCallback, useState } from "react";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
-import {
-  TestDatabaseConnectionRequest,
-  TestDatabaseConnectionResponse,
+import { DatabaseService } from "@/services/api";
+import type {
   ConnectionTestEvent,
+  TestDatabaseConnectionRequest,
+  TestDatabaseConnectionResponse
 } from "@/types/database";
 
 export interface TestConnectionState {
@@ -28,7 +28,7 @@ export function useTestDatabaseConnection() {
     ssoMessage: null,
     ssoTimeout: null,
     result: null,
-    error: null,
+    error: null
   });
 
   const testConnection = useCallback(
@@ -41,7 +41,7 @@ export function useTestDatabaseConnection() {
         ssoMessage: null,
         ssoTimeout: null,
         result: null,
-        error: null,
+        error: null
       });
 
       try {
@@ -55,7 +55,7 @@ export function useTestDatabaseConnection() {
               case "progress":
                 setState((prev) => ({
                   ...prev,
-                  progress: [...prev.progress, event.message],
+                  progress: [...prev.progress, event.message]
                 }));
                 break;
 
@@ -65,7 +65,7 @@ export function useTestDatabaseConnection() {
                   ssoUrl: event.sso_url,
                   ssoMessage: event.message,
                   ssoTimeout: event.timeout_secs || null,
-                  progress: [...prev.progress, event.message],
+                  progress: [...prev.progress, event.message]
                 }));
                 break;
 
@@ -76,24 +76,21 @@ export function useTestDatabaseConnection() {
                   result: event.result,
                   error: event.result.success
                     ? null
-                    : event.result.error_details || event.result.message,
+                    : event.result.error_details || event.result.message
                 }));
                 break;
             }
-          },
+          }
         );
       } catch (error) {
         setState((prev) => ({
           ...prev,
           isLoading: false,
-          error:
-            error instanceof Error
-              ? error.message
-              : "Failed to test connection",
+          error: error instanceof Error ? error.message : "Failed to test connection"
         }));
       }
     },
-    [projectId, branchName],
+    [projectId, branchName]
   );
 
   const reset = useCallback(() => {
@@ -104,13 +101,13 @@ export function useTestDatabaseConnection() {
       ssoMessage: null,
       ssoTimeout: null,
       result: null,
-      error: null,
+      error: null
     });
   }, []);
 
   return {
     ...state,
     testConnection,
-    reset,
+    reset
   };
 }

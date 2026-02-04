@@ -1,20 +1,11 @@
-import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/shadcn/tooltip";
+import { useState } from "react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/tooltip";
 import { useViewExplorerContext } from "./contexts/ViewExplorerContext";
 
 const FieldsSelectionPanel = () => {
-  const {
-    viewData,
-    selectedDimensions,
-    selectedMeasures,
-    toggleDimension,
-    toggleMeasure,
-  } = useViewExplorerContext();
+  const { viewData, selectedDimensions, selectedMeasures, toggleDimension, toggleMeasure } =
+    useViewExplorerContext();
 
   const [dimensionsExpanded, setDimensionsExpanded] = useState(true);
   const [measuresExpanded, setMeasuresExpanded] = useState(true);
@@ -24,41 +15,37 @@ const FieldsSelectionPanel = () => {
   const dimensions = viewData.dimensions.map((dimension) => {
     return {
       name: dimension.name,
-      fullName: `${viewData.name}.${dimension.name}`,
+      fullName: `${viewData.name}.${dimension.name}`
     };
   });
 
   const measures = viewData.measures.map((measure) => {
     return {
       name: measure.name,
-      fullName: `${viewData.name}.${measure.name}`,
+      fullName: `${viewData.name}.${measure.name}`
     };
   });
 
   return (
-    <div className="w-72 flex flex-col border-r bg-background">
-      <div className="flex-1 overflow-auto customScrollbar">
-        <div className="py-2">
+    <div className='flex w-72 flex-col border-r bg-background'>
+      <div className='customScrollbar flex-1 overflow-auto'>
+        <div className='py-2'>
           {/* View Header */}
-          <div className="px-3 py-2 border-b">
-            <div className="font-semibold text-sm">{viewData.name}</div>
+          <div className='border-b px-3 py-2'>
+            <div className='font-semibold text-sm'>{viewData.name}</div>
           </div>
 
           {/* Metadata */}
-          <div className="px-3 py-2 space-y-1 text-xs border-b">
-            <div className="flex justify-between gap-2">
-              <span className="text-muted-foreground shrink-0">
-                Data Source:
-              </span>
-              <span className="font-mono truncate">{viewData.datasource}</span>
+          <div className='space-y-1 border-b px-3 py-2 text-xs'>
+            <div className='flex justify-between gap-2'>
+              <span className='shrink-0 text-muted-foreground'>Data Source:</span>
+              <span className='truncate font-mono'>{viewData.datasource}</span>
             </div>
-            <div className="flex justify-between gap-2">
-              <span className="text-muted-foreground shrink-0">Table:</span>
+            <div className='flex justify-between gap-2'>
+              <span className='shrink-0 text-muted-foreground'>Table:</span>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <span className="font-mono truncate cursor-help">
-                    {viewData.table}
-                  </span>
+                  <span className='cursor-help truncate font-mono'>{viewData.table}</span>
                 </TooltipTrigger>
                 <TooltipContent>{viewData.table}</TooltipContent>
               </Tooltip>
@@ -66,35 +53,35 @@ const FieldsSelectionPanel = () => {
           </div>
 
           {/* Dimensions Section */}
-          <div className="mt-2">
+          <div className='mt-2'>
             <button
               onClick={() => setDimensionsExpanded(!dimensionsExpanded)}
-              className="w-full flex items-center gap-1 px-3 py-1.5 hover:bg-muted/50 text-sm font-medium"
+              className='flex w-full items-center gap-1 px-3 py-1.5 font-medium text-sm hover:bg-muted/50'
             >
               {dimensionsExpanded ? (
-                <ChevronDown className="w-4 h-4" />
+                <ChevronDown className='h-4 w-4' />
               ) : (
-                <ChevronRight className="w-4 h-4" />
+                <ChevronRight className='h-4 w-4' />
               )}
               <span>Dimensions</span>
-              <span className="text-xs text-muted-foreground ml-auto">
+              <span className='ml-auto text-muted-foreground text-xs'>
                 {viewData.dimensions.length}
               </span>
             </button>
             {dimensionsExpanded && (
-              <div className="py-1">
+              <div className='py-1'>
                 {dimensions.map((dimension) => (
                   <div
                     key={dimension.name}
                     onClick={() => toggleDimension(dimension.fullName)}
-                    className={`flex items-start gap-2 px-8 py-1.5 cursor-pointer ${
+                    className={`flex cursor-pointer items-start gap-2 px-8 py-1.5 ${
                       selectedDimensions.includes(dimension.fullName)
-                        ? "bg-primary/10 border-l-2 border-l-primary"
+                        ? "border-l-2 border-l-primary bg-primary/10"
                         : "hover:bg-muted/50"
                     }`}
                   >
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm truncate">{dimension.name}</div>
+                    <div className='min-w-0 flex-1'>
+                      <div className='truncate text-sm'>{dimension.name}</div>
                     </div>
                   </div>
                 ))}
@@ -103,35 +90,35 @@ const FieldsSelectionPanel = () => {
           </div>
 
           {/* Measures Section */}
-          <div className="mt-1">
+          <div className='mt-1'>
             <button
               onClick={() => setMeasuresExpanded(!measuresExpanded)}
-              className="w-full flex items-center gap-1 px-3 py-1.5 hover:bg-muted/50 text-sm font-medium"
+              className='flex w-full items-center gap-1 px-3 py-1.5 font-medium text-sm hover:bg-muted/50'
             >
               {measuresExpanded ? (
-                <ChevronDown className="w-4 h-4" />
+                <ChevronDown className='h-4 w-4' />
               ) : (
-                <ChevronRight className="w-4 h-4" />
+                <ChevronRight className='h-4 w-4' />
               )}
               <span>Measures</span>
-              <span className="text-xs text-muted-foreground ml-auto">
+              <span className='ml-auto text-muted-foreground text-xs'>
                 {viewData.measures.length}
               </span>
             </button>
             {measuresExpanded && (
-              <div className="py-1">
+              <div className='py-1'>
                 {measures.map((measure) => (
                   <div
                     key={measure.name}
                     onClick={() => toggleMeasure(measure.fullName)}
-                    className={`flex items-start gap-2 px-8 py-1.5 cursor-pointer ${
+                    className={`flex cursor-pointer items-start gap-2 px-8 py-1.5 ${
                       selectedMeasures.includes(measure.fullName)
-                        ? "bg-primary/10 border-l-2 border-l-primary"
+                        ? "border-l-2 border-l-primary bg-primary/10"
                         : "hover:bg-muted/50"
                     }`}
                   >
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm truncate">{measure.name}</div>
+                    <div className='min-w-0 flex-1'>
+                      <div className='truncate text-sm'>{measure.name}</div>
                     </div>
                   </div>
                 ))}

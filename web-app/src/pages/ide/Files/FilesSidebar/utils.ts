@@ -1,16 +1,16 @@
 import {
-  Workflow,
-  Bot,
-  Network,
   AppWindow,
-  Eye,
   BookOpen,
-  FileCode,
+  Bot,
   Braces,
+  Eye,
+  FileCode,
+  Network,
   Table,
+  Workflow
 } from "lucide-react";
+import type { FileTreeModel } from "@/types/file";
 import { detectFileType, FileType } from "@/utils/fileTypes";
-import { FileTreeModel } from "@/types/file";
 import { NAME_COLLATOR, OBJECT_FILE_TYPES } from "./constants";
 
 // Helper to check if a file is an object type
@@ -70,7 +70,7 @@ export const groupObjectsByType = (files: FileTreeModel[]): GroupedObjects => {
     automations: [],
     agents: [],
     apps: [],
-    semanticObjects: [],
+    semanticObjects: []
   };
 
   files.forEach((file) => {
@@ -106,9 +106,7 @@ export const groupObjectsByType = (files: FileTreeModel[]): GroupedObjects => {
 };
 
 // Helper to get all object files from the full file list
-export const getAllObjectFiles = (
-  allFiles: FileTreeModel[],
-): FileTreeModel[] => {
+export const getAllObjectFiles = (allFiles: FileTreeModel[]): FileTreeModel[] => {
   const objectFiles: FileTreeModel[] = [];
 
   const traverse = (files: FileTreeModel[]) => {

@@ -1,5 +1,4 @@
-export const capitalize = (string: string) =>
-  string.charAt(0).toUpperCase() + string.slice(1);
+export const capitalize = (string: string) => string.charAt(0).toUpperCase() + string.slice(1);
 
 export const getAgentNameFromPath = (path: string) => {
   const parts = path.split("/");
@@ -16,7 +15,7 @@ export const getShortTitle = (message: string) => {
   let shortTitle = words.length > 8 ? baseTitle : message;
 
   if (shortTitle.length > 50) {
-    shortTitle = shortTitle.slice(0, 50) + "...";
+    shortTitle = `${shortTitle.slice(0, 50)}...`;
   } else if (shortTitle !== message) {
     shortTitle += "...";
   }
@@ -24,10 +23,7 @@ export const getShortTitle = (message: string) => {
   return shortTitle;
 };
 
-export const handleDownloadFile = (
-  blob: Blob | MediaSource,
-  fileName: string,
-) => {
+export const handleDownloadFile = (blob: Blob | MediaSource, fileName: string) => {
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;

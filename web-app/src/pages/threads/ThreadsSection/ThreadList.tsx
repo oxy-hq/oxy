@@ -1,12 +1,12 @@
-import React from "react";
+import type React from "react";
 import { useNavigate } from "react-router-dom";
-import { Badge } from "@/components/ui/shadcn/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ThreadItem } from "@/types/chat";
+import { Badge } from "@/components/ui/shadcn/badge";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { cn } from "@/libs/shadcn/utils";
 import { timeAgo } from "@/libs/utils/date";
 import ROUTES from "@/libs/utils/routes";
-import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import type { ThreadItem } from "@/types/chat";
 
 interface ThreadListProps {
   threads: ThreadItem[];
@@ -28,7 +28,7 @@ const ThreadListItem = ({
   thread,
   isSelected = false,
   onSelect,
-  isSelectionMode = false,
+  isSelectionMode = false
 }: ThreadListItemProps) => {
   const navigate = useNavigate();
   const { project } = useCurrentProjectBranch();
@@ -48,35 +48,32 @@ const ThreadListItem = ({
 
   return (
     <div
-      data-testid="thread-item"
+      data-testid='thread-item'
       className={cn(
-        "flex gap-4 rounded-lg border p-4 relative",
-        "group hover:border-accent-main-000 cursor-pointer",
+        "relative flex gap-4 rounded-lg border p-4",
+        "group cursor-pointer hover:border-accent-main-000"
       )}
       onClick={handleItemClick}
     >
       <Checkbox
         className={cn(
-          "bg-muted opacity-0 group-hover:opacity-100 transition-opacity",
-          "absolute top-1/2 left-0 -translate-y-1/2 -translate-x-1/2",
-          isSelectionMode && "opacity-100",
+          "bg-muted opacity-0 transition-opacity group-hover:opacity-100",
+          "absolute top-1/2 left-0 -translate-x-1/2 -translate-y-1/2",
+          isSelectionMode && "opacity-100"
         )}
         checked={isSelected}
         onCheckedChange={handleCheckboxChange}
         onClick={(e) => e.stopPropagation()}
       />
-      <div className="flex flex-col gap-4">
-        <Badge variant="secondary" data-testid="thread-agent-type">
+      <div className='flex flex-col gap-4'>
+        <Badge variant='secondary' data-testid='thread-agent-type'>
           {thread.source}
         </Badge>
-        <div className="flex flex-col gap-2">
-          <h2 className="text-xl font-medium" data-testid="thread-title">
+        <div className='flex flex-col gap-2'>
+          <h2 className='font-medium text-xl' data-testid='thread-title'>
             {thread.title}
           </h2>
-          <p
-            className="text-xs text-muted-foreground"
-            data-testid="thread-timestamp"
-          >
+          <p className='text-muted-foreground text-xs' data-testid='thread-timestamp'>
             {timeAgo(thread.created_at)}
           </p>
         </div>
@@ -89,10 +86,10 @@ const ThreadList: React.FC<ThreadListProps> = ({
   threads,
   selectedThreads = new Set(),
   isSelectionMode,
-  onThreadSelect,
+  onThreadSelect
 }) => {
   return (
-    <div className="flex flex-col gap-6">
+    <div className='flex flex-col gap-6'>
       {threads.map((thread) => (
         <ThreadListItem
           key={thread.id}

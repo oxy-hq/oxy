@@ -1,18 +1,18 @@
 import { Workflow } from "lucide-react";
+import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { Button } from "@/components/ui/shadcn/button";
 import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
   SidebarMenuSubButton,
-  SidebarMenuSubItem,
+  SidebarMenuSubItem
 } from "@/components/ui/shadcn/sidebar";
 import useWorkflows from "@/hooks/api/workflows/useWorkflows";
-import { useState } from "react";
-import { Button } from "@/components/ui/shadcn/button";
-import ItemsSkeleton from "./ItemsSkeleton";
-import ROUTES from "@/libs/utils/routes";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import ROUTES from "@/libs/utils/routes";
+import ItemsSkeleton from "./ItemsSkeleton";
 
 export function Workflows() {
   const [showAll, setShowAll] = useState(false);
@@ -31,24 +31,17 @@ export function Workflows() {
           <span>Automations</span>
         </div>
       </SidebarMenuButton>
-      <SidebarMenuSub className="ml-4">
+      <SidebarMenuSub className='ml-4'>
         {isPending && <ItemsSkeleton />}
 
         {!isPending &&
           visibleWorkflows?.map((workflow) => {
             const pathb64 = btoa(workflow.path || "");
-            const workflowUri =
-              ROUTES.PROJECT(projectId).WORKFLOW(pathb64).ROOT;
+            const workflowUri = ROUTES.PROJECT(projectId).WORKFLOW(pathb64).ROOT;
             return (
               <SidebarMenuSubItem key={pathb64}>
-                <SidebarMenuSubButton
-                  asChild
-                  isActive={location.pathname === workflowUri}
-                >
-                  <Link
-                    to={workflowUri}
-                    data-testid={`workflow-link-${workflow.name}`}
-                  >
+                <SidebarMenuSubButton asChild isActive={location.pathname === workflowUri}>
+                  <Link to={workflowUri} data-testid={`workflow-link-${workflow.name}`}>
                     <span>{workflow.name}</span>
                   </Link>
                 </SidebarMenuSubButton>
@@ -57,14 +50,12 @@ export function Workflows() {
           })}
         {workflows && workflows.length > 5 && (
           <Button
-            size="sm"
-            variant="ghost"
+            size='sm'
+            variant='ghost'
             onClick={() => setShowAll(!showAll)}
-            className="w-full text-sm text-muted-foreground hover:text-foreground py-1 text-left"
+            className='w-full py-1 text-left text-muted-foreground text-sm hover:text-foreground'
           >
-            {showAll
-              ? "Show less"
-              : `Show all (${workflows.length} automations)`}
+            {showAll ? "Show less" : `Show all (${workflows.length} automations)`}
           </Button>
         )}
       </SidebarMenuSub>

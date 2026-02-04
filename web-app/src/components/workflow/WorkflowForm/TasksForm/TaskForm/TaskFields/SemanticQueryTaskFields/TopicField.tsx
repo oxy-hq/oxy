@@ -1,10 +1,10 @@
-import React from "react";
+import { Loader2 } from "lucide-react";
+import type React from "react";
 import { Controller } from "react-hook-form";
+import { Combobox } from "@/components/ui/shadcn/combobox";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
-import { Combobox } from "@/components/ui/shadcn/combobox";
-import { Loader2 } from "lucide-react";
-import { TopicFieldProps } from "./types";
+import type { TopicFieldProps } from "./types";
 import { getItemsWithUnknownValue } from "./utils";
 
 export const TopicField: React.FC<TopicFieldProps> = ({
@@ -14,16 +14,14 @@ export const TopicField: React.FC<TopicFieldProps> = ({
   topicItems,
   topicsLoading,
   topicsError,
-  taskErrors,
+  taskErrors
 }) => {
   const renderTopicInput = () => {
     if (topicsLoading) {
       return (
-        <div className="flex items-center gap-2 h-10 px-3 border rounded-md bg-muted">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          <span className="text-sm text-muted-foreground">
-            Loading topics...
-          </span>
+        <div className='flex h-10 items-center gap-2 rounded-md border bg-muted px-3'>
+          <Loader2 className='h-4 w-4 animate-spin' />
+          <span className='text-muted-foreground text-sm'>Loading topics...</span>
         </div>
       );
     }
@@ -32,10 +30,10 @@ export const TopicField: React.FC<TopicFieldProps> = ({
       return (
         <Input
           id={`${taskPath}.topic`}
-          placeholder="Enter topic path"
+          placeholder='Enter topic path'
           // @ts-expect-error - dynamic field path
           {...register(`${taskPath}.topic`, {
-            required: "Topic is required",
+            required: "Topic is required"
           })}
         />
       );
@@ -55,8 +53,8 @@ export const TopicField: React.FC<TopicFieldProps> = ({
               items={items}
               value={value}
               onValueChange={field.onChange}
-              placeholder="Select topic..."
-              searchPlaceholder="Search topics..."
+              placeholder='Select topic...'
+              searchPlaceholder='Search topics...'
             />
           );
         }}
@@ -65,13 +63,11 @@ export const TopicField: React.FC<TopicFieldProps> = ({
   };
 
   return (
-    <div className="space-y-2">
+    <div className='space-y-2'>
       <Label htmlFor={`${taskPath}.topic`}>Topic</Label>
       {renderTopicInput()}
       {taskErrors?.topic && (
-        <p className="text-sm text-red-500">
-          {taskErrors.topic.message as string}
-        </p>
+        <p className='text-red-500 text-sm'>{taskErrors.topic.message as string}</p>
       )}
     </div>
   );

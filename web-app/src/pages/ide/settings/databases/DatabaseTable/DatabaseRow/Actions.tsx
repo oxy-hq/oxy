@@ -1,18 +1,13 @@
-import React from "react";
+import { Loader2, MoreHorizontal, RefreshCw, Table as TableIcon } from "lucide-react";
+import type React from "react";
 import { Button } from "@/components/ui/shadcn/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuTrigger,
+  DropdownMenuTrigger
 } from "@/components/ui/shadcn/dropdown-menu";
-import {
-  RefreshCw,
-  MoreHorizontal,
-  Table as TableIcon,
-  Loader2,
-} from "lucide-react";
-import { DatabaseInfo } from "@/types/database";
+import type { DatabaseInfo } from "@/types/database";
 
 interface Props {
   database: DatabaseInfo;
@@ -26,26 +21,18 @@ const Actions: React.FC<Props> = ({ database, isLoading, onSync }) => {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" disabled={isLoading}>
-          {isLoading ? (
-            <Loader2 className="animate-spin" />
-          ) : (
-            <MoreHorizontal />
-          )}
+        <Button variant='ghost' size='sm' disabled={isLoading}>
+          {isLoading ? <Loader2 className='animate-spin' /> : <MoreHorizontal />}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem
-          className="cursor-pointer"
-          onClick={() => onSync()}
-          disabled={isLoading}
-        >
+      <DropdownMenuContent align='end'>
+        <DropdownMenuItem className='cursor-pointer' onClick={() => onSync()} disabled={isLoading}>
           <RefreshCw />
           Sync all datasets
         </DropdownMenuItem>
         {datasetKeys.map((dataset) => (
           <DropdownMenuItem
-            className="cursor-pointer"
+            className='cursor-pointer'
             key={dataset}
             onClick={() => onSync([dataset])}
             disabled={isLoading}

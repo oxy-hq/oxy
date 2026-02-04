@@ -6,11 +6,11 @@ interface ErrorDisplayProps {
 
 export default function ErrorDisplay({ error }: ErrorDisplayProps) {
   return (
-    <div className="flex items-start gap-2 p-3 rounded-lg border bg-red-500/10 border-red-500/20">
-      <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
+    <div className='flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/10 p-3'>
+      <AlertCircle className='mt-0.5 h-4 w-4 flex-shrink-0 text-red-400' />
       <div>
-        <p className="text-sm font-medium text-red-400">Execution Error</p>
-        <code className="text-xs text-red-300 mt-1 block">{error}</code>
+        <p className='font-medium text-red-400 text-sm'>Execution Error</p>
+        <code className='mt-1 block text-red-300 text-xs'>{error}</code>
       </div>
     </div>
   );

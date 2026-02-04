@@ -1,17 +1,13 @@
-import { useMemo, useState, useEffect } from "react";
-
+import { useEffect, useMemo, useState } from "react";
+import { useFilesContext } from "../../FilesContext";
+import { FilesSubViewMode } from "../../FilesSidebar/constants";
 import EditorPageWrapper from "../components/EditorPageWrapper";
+import SemanticQueryPanel from "../components/SemanticQueryPanel";
 import { useEditorContext } from "../contexts/useEditorContext";
 import ModeSwitcher from "../View/components/ModeSwitcher";
 import { ViewMode } from "../View/components/types";
-import SemanticQueryPanel from "../components/SemanticQueryPanel";
+import { TopicExplorerProvider, useTopicExplorerContext } from "./contexts/TopicExplorerContext";
 import FieldsSelectionPanel from "./FieldsSelectionPanel";
-import {
-  TopicExplorerProvider,
-  useTopicExplorerContext,
-} from "./contexts/TopicExplorerContext";
-import { FilesSubViewMode } from "../../FilesSidebar/constants";
-import { useFilesContext } from "../../FilesContext";
 
 const TopicExplorer = () => {
   const {
@@ -22,15 +18,15 @@ const TopicExplorer = () => {
     selectedMeasures,
     topicLoading,
     toggleDimension,
-    toggleMeasure,
+    toggleMeasure
   } = useTopicExplorerContext();
 
   if (loadingTopicError) {
     return (
-      <div className="flex flex-1 flex-col h-full items-center justify-center p-4">
-        <div className="text-destructive text-center max-w-2xl">
-          <div className="font-semibold mb-2">Error loading topic</div>
-          <div className="text-sm">{loadingTopicError}</div>
+      <div className='flex h-full flex-1 flex-col items-center justify-center p-4'>
+        <div className='max-w-2xl text-center text-destructive'>
+          <div className='mb-2 font-semibold'>Error loading topic</div>
+          <div className='text-sm'>{loadingTopicError}</div>
         </div>
       </div>
     );
@@ -38,15 +34,15 @@ const TopicExplorer = () => {
 
   if (topicLoading || !topicData) {
     return (
-      <div className="flex flex-1 flex-col h-full items-center justify-center">
-        <div className="text-muted-foreground">Loading topic data...</div>
+      <div className='flex h-full flex-1 flex-col items-center justify-center'>
+        <div className='text-muted-foreground'>Loading topic data...</div>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 flex flex-col min-h-0">
-      <div className="flex-1 flex min-h-0">
+    <div className='flex min-h-0 flex-1 flex-col'>
+      <div className='flex min-h-0 flex-1'>
         {/* Left Sidebar - Tree Structure */}
         <FieldsSelectionPanel
           topicData={topicData}
@@ -78,9 +74,7 @@ const TopicPreview = (props: TopicPreviewProps) => {
 
   // Default to Explorer for object mode, Editor for file mode
   const defaultViewMode =
-    filesSubViewMode === FilesSubViewMode.OBJECTS
-      ? ViewMode.Explorer
-      : ViewMode.Editor;
+    filesSubViewMode === FilesSubViewMode.OBJECTS ? ViewMode.Explorer : ViewMode.Editor;
 
   const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode);
 
@@ -90,15 +84,15 @@ const TopicPreview = (props: TopicPreviewProps) => {
   }, [defaultViewMode]);
 
   return (
-    <div className="flex flex-1 flex-col h-full">
-      <div className="flex items-center justify-start p-1 border-b border-b-border gap-1">
+    <div className='flex h-full flex-1 flex-col'>
+      <div className='flex items-center justify-start gap-1 border-b border-b-border p-1'>
         <ModeSwitcher viewMode={viewMode} onViewModeChange={setViewMode} />
-        <div className="text-sm font-medium text-muted-foreground">{path}</div>
+        <div className='font-medium text-muted-foreground text-sm'>{path}</div>
       </div>
       <EditorPageWrapper
         pathb64={pathb64}
         readOnly={isReadOnly}
-        defaultDirection="horizontal"
+        defaultDirection='horizontal'
         preview={<TopicExplorer />}
         previewOnly={viewMode === ViewMode.Explorer}
       />
@@ -111,11 +105,7 @@ const TopicEditor = () => {
 
   return (
     <TopicExplorerProvider>
-      <TopicPreview
-        pathb64={pathb64}
-        isReadOnly={isReadOnly}
-        gitEnabled={gitEnabled}
-      />
+      <TopicPreview pathb64={pathb64} isReadOnly={isReadOnly} gitEnabled={gitEnabled} />
     </TopicExplorerProvider>
   );
 };

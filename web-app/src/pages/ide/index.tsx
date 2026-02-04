@@ -1,14 +1,14 @@
-import { Outlet } from "react-router-dom";
-import Sidebar from "./Sidebar";
 import { createContext, useContext, useEffect, useRef } from "react";
-import Header from "./Header";
+import { Outlet } from "react-router-dom";
 import ProjectStatus from "@/components/ProjectStatus";
 import useSidebar from "@/components/ui/shadcn/sidebar-context";
+import Header from "./Header";
+import Sidebar from "./Sidebar";
 
 const IDEContext = createContext<{
   insideIDE: boolean;
 }>({
-  insideIDE: false,
+  insideIDE: false
 });
 export const useIDE = () => {
   return useContext(IDEContext);
@@ -28,10 +28,10 @@ const Ide = () => {
 
   return (
     <IDEContext.Provider value={{ insideIDE: true }}>
-      <div className="flex h-full flex-1 overflow-hidden flex-col">
+      <div className='flex h-full flex-1 flex-col overflow-hidden'>
         <ProjectStatus />
         <Header />
-        <div className="flex flex-1 overflow-hidden">
+        <div className='flex flex-1 overflow-hidden'>
           <Sidebar />
           <Outlet />
         </div>

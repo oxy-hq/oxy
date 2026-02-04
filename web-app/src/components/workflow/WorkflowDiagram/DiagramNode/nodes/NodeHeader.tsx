@@ -1,14 +1,4 @@
 import {
-  NodeType,
-  TaskConfigWithId,
-  TaskType,
-  WorkflowTaskConfig,
-} from "@/stores/useWorkflow";
-import { Button } from "@/components/ui/shadcn/button";
-import TruncatedText from "@/components/TruncatedText";
-import { createSearchParams, useLocation, useNavigate } from "react-router-dom";
-import { headerHeight } from "../../layout/constants";
-import {
   Bot,
   CircleAlert,
   CircleHelp,
@@ -20,13 +10,23 @@ import {
   Maximize,
   Minimize,
   RefreshCcw,
-  Split,
+  Split
 } from "lucide-react";
-import { ReactElement } from "react";
-import { TaskRun } from "@/services/types";
-import { OmniIcon } from "./OmniIcon";
-import ROUTES from "@/libs/utils/routes";
+import type { ReactElement } from "react";
+import { createSearchParams, useLocation, useNavigate } from "react-router-dom";
+import TruncatedText from "@/components/TruncatedText";
+import { Button } from "@/components/ui/shadcn/button";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import ROUTES from "@/libs/utils/routes";
+import type { TaskRun } from "@/services/types";
+import {
+  type NodeType,
+  type TaskConfigWithId,
+  TaskType,
+  type WorkflowTaskConfig
+} from "@/stores/useWorkflow";
+import { headerHeight } from "../../layout/constants";
+import { OmniIcon } from "./OmniIcon";
 
 const nodeNameMap: Record<NodeType, string> = {
   execute_sql: "SQL",
@@ -38,7 +38,7 @@ const nodeNameMap: Record<NodeType, string> = {
   workflow: "Subworkflow",
   conditional: "Conditional",
   "conditional-else": "Else",
-  "conditional-if": "If",
+  "conditional-if": "If"
 };
 
 const nodeIconMap: Record<NodeType, ReactElement> = {
@@ -51,7 +51,7 @@ const nodeIconMap: Record<NodeType, ReactElement> = {
   "conditional-else": <CircleAlert size={14} />,
   "conditional-if": <CircleHelp size={14} />,
   semantic_query: <Globe size={14} />,
-  omni_query: <OmniIcon className="w-[14px] h-[14px]" />,
+  omni_query: <OmniIcon className='h-[14px] w-[14px]' />
 };
 
 type Props = {
@@ -71,46 +71,37 @@ export const NodeHeader = ({
   taskRun,
   expandable,
   expanded,
-  onExpandClick,
+  onExpandClick
 }: Props) => {
   const taskName = nodeNameMap[type];
   const taskIcon = nodeIconMap[type];
   return (
     <div
-      className="gap-2 items-center flex w-full min-w-0"
+      className='flex w-full min-w-0 items-center gap-2'
       style={{
-        height: headerHeight,
+        height: headerHeight
       }}
     >
-      <div className="flex items-center min-w-0">
-        <div className="flex items-center justify-center p-2 bg-special rounded-md">
-          {taskIcon}
-        </div>
+      <div className='flex min-w-0 items-center'>
+        <div className='flex items-center justify-center rounded-md bg-special p-2'>{taskIcon}</div>
       </div>
-      <div className="flex items-center flex-1 min-w-0">
-        <div className="flex flex-col gap-1 flex-1 min-w-0">
-          <div className="flex items-center">
-            <span className="text-sm text-gray-500 truncate">{taskName}</span>
+      <div className='flex min-w-0 flex-1 items-center'>
+        <div className='flex min-w-0 flex-1 flex-col gap-1'>
+          <div className='flex items-center'>
+            <span className='truncate text-gray-500 text-sm'>{taskName}</span>
           </div>
-          <div className="flex items-center min-w-0">
-            <TruncatedText className="text-sm min-w-0">{name}</TruncatedText>
+          <div className='flex min-w-0 items-center'>
+            <TruncatedText className='min-w-0 text-sm'>{name}</TruncatedText>
           </div>
         </div>
-        <div className="flex items-center h-full justify-start">
+        <div className='flex h-full items-center justify-start'>
           {expandable && (
-            <Button
-              className="p-1 ps-1 pe-1"
-              variant="ghost"
-              onClick={onExpandClick}
-            >
+            <Button className='p-1 ps-1 pe-1' variant='ghost' onClick={onExpandClick}>
               {expanded ? <Minimize size={14} /> : <Maximize size={14} />}
             </Button>
           )}
           {type === TaskType.WORKFLOW && (
-            <SubWorkflowNavigateButton
-              task={task as WorkflowTaskConfig}
-              taskRun={taskRun}
-            />
+            <SubWorkflowNavigateButton task={task as WorkflowTaskConfig} taskRun={taskRun} />
           )}
         </div>
       </div>
@@ -123,10 +114,7 @@ type SubWorkflowNavigateButtonProps = {
   taskRun?: TaskRun;
 };
 
-const SubWorkflowNavigateButton = ({
-  task,
-  taskRun,
-}: SubWorkflowNavigateButtonProps) => {
+const SubWorkflowNavigateButton = ({ task, taskRun }: SubWorkflowNavigateButtonProps) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { project } = useCurrentProjectBranch();
@@ -146,16 +134,16 @@ const SubWorkflowNavigateButton = ({
     navigate({
       pathname: workflowPath,
       search: createSearchParams({
-        run: taskRun?.subWorkflowRunId?.toString() || "",
-      }).toString(),
+        run: taskRun?.subWorkflowRunId?.toString() || ""
+      }).toString()
     });
   };
 
   return (
     <Button
-      className="p-1 ps-1 pe-1"
-      variant="ghost"
-      title="Navigate to definition"
+      className='p-1 ps-1 pe-1'
+      variant='ghost'
+      title='Navigate to definition'
       onClick={handleClick}
     >
       <LocateFixed size={14} />

@@ -1,5 +1,5 @@
-import { Button } from "@/components/ui/shadcn/button";
 import { useState } from "react";
+import { Button } from "@/components/ui/shadcn/button";
 import { PullDialog } from "./PullDialog";
 import { PushDialog } from "./PushDialog";
 
@@ -9,19 +9,11 @@ const Actions = () => {
 
   return (
     <>
-      <div className="flex gap-2">
-        <Button
-          variant="outline"
-          className="flex-1"
-          onClick={() => setPullDialogOpen(true)}
-        >
+      <div className='flex gap-2'>
+        <Button variant='outline' className='flex-1' onClick={() => setPullDialogOpen(true)}>
           Pull changes
         </Button>
-        <Button
-          variant="outline"
-          className="flex-1"
-          onClick={() => setPushDialogOpen(true)}
-        >
+        <Button variant='outline' className='flex-1' onClick={() => setPushDialogOpen(true)}>
           Push changes
         </Button>
       </div>

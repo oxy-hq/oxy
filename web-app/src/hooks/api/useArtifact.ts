@@ -9,6 +9,6 @@ export const useArtifact = (id: string) => {
 
   return useQuery({
     queryKey: queryKeys.artifact.get(projectId, branchName, id),
-    queryFn: () => ArtifactService.getArtifact(projectId, branchName, id),
+    queryFn: () => ArtifactService.getArtifact(projectId, branchName, id)
   });
 };

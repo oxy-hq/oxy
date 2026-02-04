@@ -1,16 +1,16 @@
-import { LogOut, Settings, ChevronsUpDown } from "lucide-react";
+import { ChevronsUpDown, LogOut, Settings } from "lucide-react";
 import { useEffect, useState } from "react";
 import { SidebarMenu, SidebarMenuItem } from "@/components/ui/shadcn/sidebar";
 import { useAuth } from "@/contexts/AuthContext";
+import useSettingsPage from "@/stores/useSettingsPage";
+import { Avatar, AvatarFallback, AvatarImage } from "../ui/shadcn/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
+  DropdownMenuTrigger
 } from "../ui/shadcn/dropdown-menu";
-import { Avatar, AvatarFallback, AvatarImage } from "../ui/shadcn/avatar";
-import useSettingsPage from "@/stores/useSettingsPage";
 
 interface IAPUserInfo {
   email: string;
@@ -33,7 +33,7 @@ export function Footer() {
         const data = await res.json();
         setUserIAPInfo({
           email: data?.email || "unknown",
-          picture: data?.picture,
+          picture: data?.picture
         });
       } catch {
         setUserIAPInfo({ email: "unknown" });
@@ -49,37 +49,35 @@ export function Footer() {
     user = {
       email: "guest@oxy.local",
       picture: undefined,
-      isGuest: true,
+      isGuest: true
     };
   }
 
   return (
-    <div className="mt-auto px-2 pb-4">
+    <div className='mt-auto px-2 pb-4'>
       <SidebarMenu>
         <SidebarMenuItem>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <div
-                className="flex items-center gap-3 w-full px-2 py-3 text-sm pt-4 cursor-pointer hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-md transition-colors"
+                className='flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-3 pt-4 text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
                 title={user.email || "User Options"}
               >
-                <Avatar className="h-8 w-8 rounded-lg">
+                <Avatar className='h-8 w-8 rounded-lg'>
                   <AvatarImage src={user.picture} alt={user.email} />
-                  <AvatarFallback className="rounded-lg">
-                    {user.email.charAt(0)}
-                  </AvatarFallback>
+                  <AvatarFallback className='rounded-lg'>{user.email.charAt(0)}</AvatarFallback>
                 </Avatar>
-                <span className="truncate">{user.email}</span>
-                <ChevronsUpDown className="ml-auto size-4" />
+                <span className='truncate'>{user.email}</span>
+                <ChevronsUpDown className='ml-auto size-4' />
               </div>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuContent align='end' className='w-56'>
               {authConfig.cloud && (
                 <DropdownMenuItem
-                  className="cursor-pointer"
+                  className='cursor-pointer'
                   onClick={() => setIsSettingsOpen(true)}
                 >
-                  <Settings className="w-4 h-4 mr-2" />
+                  <Settings className='mr-2 h-4 w-4' />
                   <span>Settings</span>
                 </DropdownMenuItem>
               )}
@@ -88,10 +86,10 @@ export function Footer() {
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
-                    className="cursor-pointer text-red-600 focus:text-red-600"
+                    className='cursor-pointer text-red-600 focus:text-red-600'
                     onClick={logout}
                   >
-                    <LogOut className="w-4 h-4 mr-2" />
+                    <LogOut className='mr-2 h-4 w-4' />
                     <span>Logout</span>
                   </DropdownMenuItem>
                 </>

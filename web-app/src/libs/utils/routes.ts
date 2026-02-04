@@ -6,19 +6,19 @@ const ROUTES = {
     REGISTER: "/register",
     VERIFY_EMAIL: "/verify-email",
     GOOGLE_CALLBACK: "/auth/google/callback",
-    OKTA_CALLBACK: "/auth/okta/callback",
+    OKTA_CALLBACK: "/auth/okta/callback"
   },
   GITHUB: {
-    CALLBACK: "/github/callback",
+    CALLBACK: "/github/callback"
   },
   SETTINGS: {
     GITHUB: "/github-settings",
-    SECRETS_SETUP: "/secrets/setup",
+    SECRETS_SETUP: "/secrets/setup"
   },
 
   WORKSPACE: {
     ROOT: "/workspaces",
-    CREATE_WORKSPACE: "/create-workspace",
+    CREATE_WORKSPACE: "/create-workspace"
   },
 
   PROJECT: (projectId: string) => {
@@ -39,7 +39,7 @@ const ROUTES = {
       WORKFLOW: (pathb64: string) => {
         const wfBase = `${base}/workflows/${pathb64}`;
         return {
-          ROOT: wfBase,
+          ROOT: wfBase
         };
       },
 
@@ -49,33 +49,32 @@ const ROUTES = {
         ROOT: `${base}/ide`,
         FILES: {
           ROOT: `${base}/ide/files`,
-          FILE: (pathb64: string) => `${base}/ide/files/${pathb64}`,
+          FILE: (pathb64: string) => `${base}/ide/files/${pathb64}`
         },
         DATABASE: {
-          ROOT: `${base}/ide/database`,
+          ROOT: `${base}/ide/database`
         },
         SETTINGS: {
           ROOT: `${base}/ide/settings`,
           DATABASES: `${base}/ide/settings/databases`,
-          ACTIVITY_LOGS: `${base}/ide/settings/activity-logs`,
+          ACTIVITY_LOGS: `${base}/ide/settings/activity-logs`
         },
         OBSERVABILITY: {
           ROOT: `${base}/ide/observability`,
           TRACES: `${base}/ide/observability/traces`,
-          TRACE: (traceId: string) =>
-            `${base}/ide/observability/traces/${traceId}`,
+          TRACE: (traceId: string) => `${base}/ide/observability/traces/${traceId}`,
           CLUSTERS: `${base}/ide/observability/clusters`,
           CLUSTERS_V2: `${base}/ide/observability/clusters-v2`,
           METRICS: `${base}/ide/observability/metrics`,
           METRIC: (metricName: string) =>
             `${base}/ide/observability/metrics/${encodeURIComponent(metricName)}`,
-          EXECUTION_ANALYTICS: `${base}/ide/observability/execution-analytics`,
-        },
+          EXECUTION_ANALYTICS: `${base}/ide/observability/execution-analytics`
+        }
       },
 
-      ONTOLOGY: `${base}/ontology`,
+      ONTOLOGY: `${base}/ontology`
     };
-  },
+  }
 } as const;
 
 export default ROUTES;

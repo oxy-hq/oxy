@@ -1,7 +1,4 @@
-import {
-  SidebarMenuItem,
-  SidebarMenuSkeleton,
-} from "@/components/ui/shadcn/sidebar";
+import { SidebarMenuItem, SidebarMenuSkeleton } from "@/components/ui/shadcn/sidebar";
 
 const ItemsSkeleton = () => {
   return Array.from({ length: 5 }).map((_, index) => (

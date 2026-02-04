@@ -1,16 +1,11 @@
-import { useQueryClient } from "@tanstack/react-query";
+import type { useQueryClient } from "@tanstack/react-query";
+import type { Message, ThreadsResponse } from "@/types/chat";
 import queryKeys from "../../api/queryKey";
-import { Message, ThreadsResponse } from "@/types/chat";
-import {
-  ThreadStore,
-  SendMessageOptions,
-  MessageHandlers,
-  MessageSender,
-} from "./types";
 import { MessageFactory } from "./messageFactory";
+import type { MessageHandlers, MessageSender, SendMessageOptions, ThreadStore } from "./types";
 
 export const ERROR_MESSAGES = {
-  PROCESSING_ERROR: "Error occurred while processing your request.",
+  PROCESSING_ERROR: "Error occurred while processing your request."
 } as const;
 
 export class MessagingService {
@@ -21,7 +16,7 @@ export class MessagingService {
   constructor(
     messageSender: MessageSender,
     threadStore: ThreadStore,
-    queryClient: ReturnType<typeof useQueryClient>,
+    queryClient: ReturnType<typeof useQueryClient>
   ) {
     this.messageSender = messageSender;
     this.threadStore = threadStore;
@@ -41,12 +36,12 @@ export class MessagingService {
           return {
             ...old,
             threads: old.threads.map((item) =>
-              item.id === threadId ? { ...item, is_processing: true } : item,
-            ),
+              item.id === threadId ? { ...item, is_processing: true } : item
+            )
           };
         }
         return old;
-      },
+      }
     );
 
     this.threadStore.setIsLoading(threadId, true);
@@ -64,26 +59,17 @@ export class MessagingService {
         this.threadStore.setMessages(threadId, newMessages);
       },
       onFilePathUpdate: this.threadStore.setFilePath
-        ? (filePath: string) =>
-            this.threadStore.setFilePath!(threadId, filePath)
-        : undefined,
+        ? (filePath: string) => this.threadStore.setFilePath?.(threadId, filePath)
+        : undefined
     };
 
     try {
       await this.messageSender.sendMessage(options, handlers);
     } catch (error) {
       console.error("Error sending message:", error);
-      this.handleError(
-        currentStreamingMessage,
-        threadId,
-        handlers.onMessageUpdate,
-      );
+      this.handleError(currentStreamingMessage, threadId, handlers.onMessageUpdate);
     } finally {
-      this.finalizeSending(
-        currentStreamingMessage,
-        threadId,
-        handlers.onMessageUpdate,
-      );
+      this.finalizeSending(currentStreamingMessage, threadId, handlers.onMessageUpdate);
     }
   }
 
@@ -99,12 +85,12 @@ export class MessagingService {
   private handleError(
     currentStreamingMessage: Message | null,
     threadId: string,
-    onMessageUpdate: (message: Message) => void,
+    onMessageUpdate: (message: Message) => void
   ): void {
     const errorMessage = MessageFactory.createErrorMessage(
       threadId,
       ERROR_MESSAGES.PROCESSING_ERROR,
-      currentStreamingMessage?.id,
+      currentStreamingMessage?.id
     );
     onMessageUpdate(errorMessage);
   }
@@ -112,17 +98,15 @@ export class MessagingService {
   private finalizeSending(
     currentStreamingMessage: Message | null,
     threadId: string,
-    onMessageUpdate: (message: Message) => void,
+    onMessageUpdate: (message: Message) => void
   ): void {
     if (currentStreamingMessage?.isStreaming) {
-      const completedMessage = MessageFactory.completeStreamingMessage(
-        currentStreamingMessage,
-      );
+      const completedMessage = MessageFactory.completeStreamingMessage(currentStreamingMessage);
       onMessageUpdate(completedMessage);
     }
 
     this.queryClient.invalidateQueries({
-      queryKey: queryKeys.thread.all,
+      queryKey: queryKeys.thread.all
     });
 
     this.threadStore.setIsLoading(threadId, false);

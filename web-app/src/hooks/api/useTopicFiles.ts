@@ -1,6 +1,6 @@
 import { useMemo } from "react";
+import type { FileTreeModel } from "@/types/file";
 import useFileTree from "./files/useFileTree";
-import { FileTreeModel } from "@/types/file";
 
 export interface TopicFileOption {
   value: string; // Topic name: "foo" (what gets stored in the form)
@@ -11,21 +11,18 @@ export interface TopicFileOption {
 
 function flattenTopicFiles(
   nodes: FileTreeModel[],
-  result: TopicFileOption[] = [],
+  result: TopicFileOption[] = []
 ): TopicFileOption[] {
   for (const node of nodes) {
     if (node.is_dir) {
       flattenTopicFiles(node.children, result);
-    } else if (
-      node.name.endsWith(".topic.yml") ||
-      node.name.endsWith(".topic.yaml")
-    ) {
+    } else if (node.name.endsWith(".topic.yml") || node.name.endsWith(".topic.yaml")) {
       const topicName = node.name.replace(/\.topic\.ya?ml$/, "");
       result.push({
         value: topicName,
         label: topicName,
         path: node.path,
-        searchText: `${topicName} ${node.path}`.toLowerCase(),
+        searchText: `${topicName} ${node.path}`.toLowerCase()
       });
     }
   }
@@ -49,6 +46,6 @@ export default function useTopicFiles() {
     topicFiles,
     getPathByTopicName,
     isLoading,
-    error,
+    error
   };
 }

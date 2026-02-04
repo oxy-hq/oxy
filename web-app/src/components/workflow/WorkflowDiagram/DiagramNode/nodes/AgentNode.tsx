@@ -1,4 +1,4 @@
-import { TaskConfigWithId } from "@/stores/useWorkflow";
+import type { TaskConfigWithId } from "@/stores/useWorkflow";
 import { NodeHeader } from "./NodeHeader";
 
 type Props = {

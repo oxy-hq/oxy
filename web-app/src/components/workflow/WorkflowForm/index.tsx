@@ -1,16 +1,17 @@
-import React, { useEffect } from "react";
-import { useForm, FormProvider, useFieldArray } from "react-hook-form";
+import { Plus } from "lucide-react";
+import type React from "react";
+import { useEffect } from "react";
+import { FormProvider, useFieldArray, useForm } from "react-hook-form";
+import { TestsForm } from "@/components/shared/TestsForm";
 import { Button } from "@/components/ui/shadcn/button";
+import { CardTitle } from "@/components/ui/shadcn/card";
+import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import { Textarea } from "@/components/ui/shadcn/textarea";
-import { CardTitle } from "@/components/ui/shadcn/card";
-import { Plus } from "lucide-react";
-import { VariablesForm } from "./VariablesForm";
-import { TestsForm } from "@/components/shared/TestsForm";
-import { RetrievalForm } from "./RetrievalForm";
-import { Input } from "@/components/ui/shadcn/input";
-import { TasksForm } from "./TasksForm";
 import { cleanObject } from "@/utils/formDataCleaner";
+import { RetrievalForm } from "./RetrievalForm";
+import { TasksForm } from "./TasksForm";
+import { VariablesForm } from "./VariablesForm";
 
 export interface WorkflowFormData {
   name?: string;
@@ -54,14 +55,8 @@ interface WorkflowFormProps {
   onChange?: (data: Partial<WorkflowFormData>) => void;
 }
 
-const cleanFormData = (
-  data: Partial<WorkflowFormData>,
-): Partial<WorkflowFormData> => {
-  return (
-    (cleanObject(
-      data as Record<string, unknown>,
-    ) as Partial<WorkflowFormData>) || {}
-  );
+const cleanFormData = (data: Partial<WorkflowFormData>): Partial<WorkflowFormData> => {
+  return (cleanObject(data as Record<string, unknown>) as Partial<WorkflowFormData>) || {};
 };
 
 const getDefaultData = (data?: Partial<WorkflowFormData>) => {
@@ -72,7 +67,7 @@ const getDefaultData = (data?: Partial<WorkflowFormData>) => {
       tasks: [{ name: "task_1", type: "agent" }],
       variables: "{}",
       tests: [],
-      retrieval: null,
+      retrieval: null
     };
   }
 
@@ -118,13 +113,10 @@ const getDefaultData = (data?: Partial<WorkflowFormData>) => {
   return result;
 };
 
-export const WorkflowForm: React.FC<WorkflowFormProps> = ({
-  data,
-  onChange,
-}) => {
+export const WorkflowForm: React.FC<WorkflowFormProps> = ({ data, onChange }) => {
   const methods = useForm<WorkflowFormData>({
     defaultValues: getDefaultData(data),
-    mode: "onBlur",
+    mode: "onBlur"
   });
 
   const { watch } = methods;
@@ -137,52 +129,48 @@ export const WorkflowForm: React.FC<WorkflowFormProps> = ({
       }
     });
     return () => subscription.unsubscribe();
-  }, [watch, onChange]);
+  }, [watch, onChange, methods.formState.isDirty]);
 
   const {
     control,
     register,
-    formState: { errors },
+    formState: { errors }
   } = methods;
 
   const {
     fields: testFields,
     append: appendTest,
-    remove: removeTest,
+    remove: removeTest
   } = useFieldArray({
     control,
-    name: "tests",
+    name: "tests"
   });
 
   return (
     <FormProvider {...methods}>
-      <div className="flex-1 min-h-0 flex flex-col bg-card">
-        <div className="flex-1 overflow-auto customScrollbar p-6">
-          <form id="workflow-form" className="space-y-8">
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Name</Label>
+      <div className='flex min-h-0 flex-1 flex-col bg-card'>
+        <div className='customScrollbar flex-1 overflow-auto p-6'>
+          <form id='workflow-form' className='space-y-8'>
+            <div className='space-y-4'>
+              <div className='space-y-2'>
+                <Label htmlFor='name'>Name</Label>
                 <Input
-                  id="name"
-                  placeholder="Describe what this automation does..."
+                  id='name'
+                  placeholder='Describe what this automation does...'
                   {...register("name")}
                 />
-                {errors.name && (
-                  <p className="text-sm text-red-500">{errors.name.message}</p>
-                )}
+                {errors.name && <p className='text-red-500 text-sm'>{errors.name.message}</p>}
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
+              <div className='space-y-2'>
+                <Label htmlFor='description'>Description</Label>
                 <Textarea
-                  id="description"
-                  placeholder="Describe what this automation does..."
+                  id='description'
+                  placeholder='Describe what this automation does...'
                   {...register("description")}
                   rows={4}
                 />
                 {errors.description && (
-                  <p className="text-sm text-red-500">
-                    {errors.description.message}
-                  </p>
+                  <p className='text-red-500 text-sm'>{errors.description.message}</p>
                 )}
               </div>
             </div>
@@ -191,24 +179,24 @@ export const WorkflowForm: React.FC<WorkflowFormProps> = ({
 
             <VariablesForm />
 
-            <div className="flex items-center justify-between">
+            <div className='flex items-center justify-between'>
               <CardTitle>Tests</CardTitle>
               <Button
-                type="button"
+                type='button'
                 onClick={() =>
                   appendTest({
                     type: "consistency",
-                    concurrency: 10,
+                    concurrency: 10
                   })
                 }
-                variant="outline"
-                size="sm"
+                variant='outline'
+                size='sm'
               >
-                <Plus className="w-4 h-4 mr-2" />
+                <Plus className='mr-2 h-4 w-4' />
                 Add Test
               </Button>
             </div>
-            <div className="space-y-4">
+            <div className='space-y-4'>
               {testFields.map((field, index) => (
                 <TestsForm<WorkflowFormData>
                   key={field.id}

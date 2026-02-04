@@ -1,19 +1,19 @@
+import { Loader2 } from "lucide-react";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
   DialogFooter,
+  DialogHeader,
+  DialogTitle
 } from "@/components/ui/shadcn/dialog";
-import { Button } from "@/components/ui/shadcn/button";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
-import { Loader2 } from "lucide-react";
-import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { usePushChanges } from "@/hooks/api/projects/useProjects";
-import { useState } from "react";
-import { toast } from "sonner";
-import { useNavigate } from "react-router-dom";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import ROUTES from "@/libs/utils/routes";
 
 interface PushDialogProps {
@@ -24,9 +24,7 @@ interface PushDialogProps {
 export const PushDialog = ({ open, onOpenChange }: PushDialogProps) => {
   const { project, branchName } = useCurrentProjectBranch();
   const pushChangesMutation = usePushChanges();
-  const [commitMessage, setCommitMessage] = useState(
-    "Auto-commit: Oxy changes",
-  );
+  const [commitMessage, setCommitMessage] = useState("Auto-commit: Oxy changes");
   const navigate = useNavigate();
 
   const onConfirm = async (e: { preventDefault: () => void }) => {
@@ -40,7 +38,7 @@ export const PushDialog = ({ open, onOpenChange }: PushDialogProps) => {
       const result = await pushChangesMutation.mutateAsync({
         projectId: project.id,
         branchName,
-        commitMessage: commitMessage.trim() || "Auto-commit: Oxy changes",
+        commitMessage: commitMessage.trim() || "Auto-commit: Oxy changes"
       });
 
       if (result.success) {
@@ -64,8 +62,7 @@ export const PushDialog = ({ open, onOpenChange }: PushDialogProps) => {
     setCommitMessage("Auto-commit: Oxy changes");
   };
 
-  const isDisabled =
-    pushChangesMutation.isPending || !project?.id || !branchName;
+  const isDisabled = pushChangesMutation.isPending || !project?.id || !branchName;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -73,34 +70,28 @@ export const PushDialog = ({ open, onOpenChange }: PushDialogProps) => {
         <DialogHeader>
           <DialogTitle>Push Changes</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4 py-4">
-          <p className="text-sm text-muted-foreground">
-            This will push all local changes to the remote repository and force
-            update the remote branch.
+        <div className='space-y-4 py-4'>
+          <p className='text-muted-foreground text-sm'>
+            This will push all local changes to the remote repository and force update the remote
+            branch.
           </p>
-          <div className="space-y-2">
-            <Label htmlFor="commit-message">Commit Message (Optional)</Label>
+          <div className='space-y-2'>
+            <Label htmlFor='commit-message'>Commit Message (Optional)</Label>
             <Input
-              id="commit-message"
+              id='commit-message'
               value={commitMessage}
               onChange={(e) => setCommitMessage(e.target.value)}
-              placeholder="Enter commit message..."
+              placeholder='Enter commit message...'
               disabled={isDisabled}
             />
           </div>
         </div>
         <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={handleCancel}
-            disabled={isDisabled}
-          >
+          <Button variant='outline' onClick={handleCancel} disabled={isDisabled}>
             Cancel
           </Button>
           <Button onClick={onConfirm} disabled={isDisabled}>
-            {pushChangesMutation.isPending && (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            )}
+            {pushChangesMutation.isPending && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
             Push Changes
           </Button>
         </DialogFooter>

@@ -45,6 +45,6 @@ function parseMarkdownTable(md: string): string[][] {
       .trim()
       .slice(1, -1)
       .split("|")
-      .map((cell) => cell.trim()),
+      .map((cell) => cell.trim())
   );
 }

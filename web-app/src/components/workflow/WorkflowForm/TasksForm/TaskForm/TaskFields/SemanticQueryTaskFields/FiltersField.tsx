@@ -1,19 +1,19 @@
-import React from "react";
-import { useFieldArray, Controller } from "react-hook-form";
+import { Plus, X } from "lucide-react";
+import type React from "react";
+import { Controller, useFieldArray } from "react-hook-form";
+import { Button } from "@/components/ui/shadcn/button";
+import { Combobox } from "@/components/ui/shadcn/combobox";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
-import { Button } from "@/components/ui/shadcn/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from "@/components/ui/shadcn/select";
-import { Combobox } from "@/components/ui/shadcn/combobox";
-import { Plus, X } from "lucide-react";
-import { FiltersFieldProps } from "./types";
 import { FILTER_OPERATORS } from "./constants";
+import type { FiltersFieldProps } from "./types";
 import { getItemsWithUnknownValue } from "./utils";
 
 export const FiltersField: React.FC<FiltersFieldProps> = ({
@@ -22,57 +22,52 @@ export const FiltersField: React.FC<FiltersFieldProps> = ({
   register,
   topicValue,
   fieldsLoading,
-  allFieldItems,
+  allFieldItems
 }) => {
   const {
     fields: filterFields,
     append: appendFilter,
-    remove: removeFilter,
+    remove: removeFilter
   } = useFieldArray({
     control,
     // @ts-expect-error - dynamic field path
-    name: `${taskPath}.filters`,
+    name: `${taskPath}.filters`
   });
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
+    <div className='space-y-2'>
+      <div className='flex items-center justify-between'>
         <Label>Filters</Label>
         <Button
-          type="button"
-          onClick={() =>
-            appendFilter({ field: "", op: "eq", value: "" } as never)
-          }
-          variant="outline"
-          size="sm"
+          type='button'
+          onClick={() => appendFilter({ field: "", op: "eq", value: "" } as never)}
+          variant='outline'
+          size='sm'
           disabled={!topicValue}
         >
-          <Plus className="w-4 h-4 mr-1" />
+          <Plus className='mr-1 h-4 w-4' />
           Add Filter
         </Button>
       </div>
       {filterFields.length > 0 && (
-        <div className="space-y-2">
+        <div className='space-y-2'>
           {filterFields.map((field, filterIndex) => (
-            <div key={field.id} className="flex gap-2 items-center">
-              <div className="flex-1">
+            <div key={field.id} className='flex items-center gap-2'>
+              <div className='flex-1'>
                 <Controller
                   control={control}
                   // @ts-expect-error - dynamic field path
                   name={`${taskPath}.filters.${filterIndex}.field`}
                   render={({ field: controllerField }) => {
                     const value = controllerField.value as string;
-                    const items = getItemsWithUnknownValue(
-                      allFieldItems,
-                      value,
-                    );
+                    const items = getItemsWithUnknownValue(allFieldItems, value);
                     return (
                       <Combobox
                         items={items}
                         value={value}
                         onValueChange={controllerField.onChange}
-                        placeholder="Select field..."
-                        searchPlaceholder="Search fields..."
+                        placeholder='Select field...'
+                        searchPlaceholder='Search fields...'
                         disabled={!topicValue || fieldsLoading}
                       />
                     );
@@ -84,10 +79,7 @@ export const FiltersField: React.FC<FiltersFieldProps> = ({
                 // @ts-expect-error - dynamic field path
                 name={`${taskPath}.filters.${filterIndex}.op`}
                 render={({ field }) => (
-                  <Select
-                    value={field.value as string}
-                    onValueChange={field.onChange}
-                  >
+                  <Select value={field.value as string} onValueChange={field.onChange}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -102,30 +94,30 @@ export const FiltersField: React.FC<FiltersFieldProps> = ({
                 )}
               />
 
-              <div className="flex-1">
+              <div className='flex-1'>
                 <Input
-                  placeholder="Value (JSON format)"
+                  placeholder='Value (JSON format)'
                   {...register(
                     // @ts-expect-error - dynamic field path
-                    `${taskPath}.filters.${filterIndex}.value`,
+                    `${taskPath}.filters.${filterIndex}.value`
                   )}
                 />
               </div>
               <Button
-                type="button"
+                type='button'
                 onClick={() => removeFilter(filterIndex)}
-                variant="ghost"
-                size="sm"
+                variant='ghost'
+                size='sm'
               >
-                <X className="w-4 h-4" />
+                <X className='h-4 w-4' />
               </Button>
             </div>
           ))}
         </div>
       )}
-      <p className="text-sm text-muted-foreground">
-        Add filters to narrow down query results. Value should be JSON format
-        (e.g., "value" or ["val1", "val2"])
+      <p className='text-muted-foreground text-sm'>
+        Add filters to narrow down query results. Value should be JSON format (e.g., "value" or
+        ["val1", "val2"])
       </p>
     </div>
   );

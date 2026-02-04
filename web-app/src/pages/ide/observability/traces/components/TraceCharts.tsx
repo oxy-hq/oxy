@@ -1,9 +1,10 @@
 // This file has been refactored into the Charts folder
 // Please use ./Charts instead
-export { default } from "./Charts";
+
 export type {
-  TraceChartsProps,
-  TimeBucket,
   DurationBucket,
-  TraceStats,
+  TimeBucket,
+  TraceChartsProps,
+  TraceStats
 } from "./Charts";
+export { default } from "./Charts";

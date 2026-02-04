@@ -8,6 +8,6 @@ export const useGitHubInstallAppUrl = () => {
   return useQuery<string>({
     queryKey: ["github", "install-app-url"],
     queryFn: () => GitHubApiService.getInstallAppUrl(),
-    staleTime: 30 * 60 * 1000, // 30 minutes
+    staleTime: 30 * 60 * 1000 // 30 minutes
   });
 };

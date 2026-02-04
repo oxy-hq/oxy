@@ -1,11 +1,11 @@
 import React from "react";
+import { Checkbox } from "@/components/ui/checkbox";
+import EmptyState from "@/components/ui/EmptyState";
+import { Label } from "@/components/ui/shadcn/label";
+import type { LogItem } from "@/services/types";
 import Header from "./Header";
 import OutputLogs from "./Logs";
-import EmptyState from "@/components/ui/EmptyState";
-import { LogItem } from "@/services/types";
 import RunSelection from "./RunSelection";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/shadcn/label";
 
 interface WorkflowOutputProps {
   toggleOutput: () => void;
@@ -22,7 +22,7 @@ const WorkflowOutput: React.FC<WorkflowOutputProps> = ({
   logs,
   workflowId,
   runId,
-  onArtifactClick,
+  onArtifactClick
 }) => {
   const [showLogs, setShowLogs] = React.useState(true);
   const [expandAll, setExpandAll] = React.useState(0);
@@ -37,7 +37,7 @@ const WorkflowOutput: React.FC<WorkflowOutputProps> = ({
   };
 
   return (
-    <div className="h-full flex flex-col bg-card">
+    <div className='flex h-full flex-col bg-card'>
       <Header
         toggleOutput={toggleOutput}
         logs={logs}
@@ -45,27 +45,27 @@ const WorkflowOutput: React.FC<WorkflowOutputProps> = ({
         onCollapseAll={handleCollapseAll}
       />
 
-      <div className="flex justify-between items-center p-4 bg-card">
+      <div className='flex items-center justify-between bg-card p-4'>
         <RunSelection workflowId={workflowId} runId={runId} />
-        <div className="flex items-center gap-2">
+        <div className='flex items-center gap-2'>
           <Checkbox
-            name="show_logs"
+            name='show_logs'
             checked={showLogs}
             onCheckedChange={() => setShowLogs(!showLogs)}
           />
-          <Label htmlFor="show_logs">Show logs</Label>
+          <Label htmlFor='show_logs'>Show logs</Label>
         </div>
       </div>
       {logs.length === 0 && (
         <EmptyState
-          className="mt-[150px] [&>img]:opacity-100"
-          title="No logs yet"
-          description="Run the automation to see the logs"
+          className='mt-[150px] [&>img]:opacity-100'
+          title='No logs yet'
+          description='Run the automation to see the logs'
         />
       )}
 
       {logs.length > 0 && (
-        <div className="flex-1 min-h-0">
+        <div className='min-h-0 flex-1'>
           <OutputLogs
             onArtifactClick={onArtifactClick}
             isPending={isPending}

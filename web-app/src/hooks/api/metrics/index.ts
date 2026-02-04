@@ -1,6 +1,6 @@
+export { default as useMetricDetail } from "./useMetricDetail";
 export {
   default as useMetricsAnalytics,
-  useMetricsList,
   metricsQueryKeys,
+  useMetricsList
 } from "./useMetricsAnalytics";
-export { default as useMetricDetail } from "./useMetricDetail";

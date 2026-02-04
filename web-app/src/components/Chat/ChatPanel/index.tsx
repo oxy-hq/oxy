@@ -1,33 +1,22 @@
-import { Button } from "@/components/ui/shadcn/button";
-import { Textarea } from "@/components/ui/shadcn/textarea";
-import useThreadMutation from "@/hooks/api/threads/useThreadMutation";
-import { useEnterSubmit } from "@/hooks/useEnterSubmit";
 import { cx } from "class-variance-authority";
-import {
-  ArrowRight,
-  Hammer,
-  Loader2,
-  MessageCircleQuestion,
-  Play,
-  Workflow,
-} from "lucide-react";
+import { ArrowRight, Hammer, Loader2, MessageCircleQuestion, Play, Workflow } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import AgentsDropdown, { Agent } from "./AgentsDropdown";
+import { Button } from "@/components/ui/shadcn/button";
+import { Textarea } from "@/components/ui/shadcn/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/shadcn/toggle-group";
+import useThreadMutation from "@/hooks/api/threads/useThreadMutation";
 import useBuilderAvailable from "@/hooks/api/useBuilderAvailable";
-import {
-  ToggleGroup,
-  ToggleGroupItem,
-} from "@/components/ui/shadcn/toggle-group";
-import WorkflowsDropdown from "./WorkflowsDropdown";
-import { WorkflowOption } from "./WorkflowsDropdown";
-import { getShortTitle } from "@/libs/utils/string";
 import useAskAgent from "@/hooks/messaging/agent";
 import useAskTask from "@/hooks/messaging/task";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { useEnterSubmit } from "@/hooks/useEnterSubmit";
 import useRunWorkflowThread from "@/hooks/workflow/useRunWorkflowThread";
 import ROUTES from "@/libs/utils/routes";
-import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { getShortTitle } from "@/libs/utils/string";
 import { useAskAgentic } from "@/stores/agentic";
+import AgentsDropdown, { type Agent } from "./AgentsDropdown";
+import WorkflowsDropdown, { type WorkflowOption } from "./WorkflowsDropdown";
 
 const ToggleGroupItemClasses =
   "data-[state=on]:border data-[state=on]:border-blue-500 data-[state=on]:bg-blue-500 data-[state=on]:text-white hover:bg-blue-500/20 hover:text-blue-300 hover:border-blue-400/50 transition-colors border-gray-600 rounded-md text-gray-400";
@@ -59,7 +48,7 @@ const ChatPanel = () => {
         sendAgenticMessage({
           prompt: data.input,
           threadId: data.id,
-          agentRef: data.source,
+          agentRef: data.source
         });
         break;
       case "workflow":
@@ -73,7 +62,7 @@ const ChatPanel = () => {
   const {
     isAvailable: isBuilderAvailable,
     isLoading: isCheckingBuilder,
-    isAgentic,
+    isAgentic
   } = useBuilderAvailable();
 
   const [message, setMessage] = useState("");
@@ -91,7 +80,7 @@ const ChatPanel = () => {
           title: title,
           source: agent.id,
           source_type: agent.isAgentic ? "agentic" : "agent",
-          input: message,
+          input: message
         });
         break;
       case "build":
@@ -100,7 +89,7 @@ const ChatPanel = () => {
             title: title,
             source: "",
             source_type: isAgentic ? "agentic" : "task",
-            input: message,
+            input: message
           });
         }
         break;
@@ -110,7 +99,7 @@ const ChatPanel = () => {
           title: title ? title : workflow.name,
           source: workflow.id,
           source_type: "workflow",
-          input: message,
+          input: message
         });
         break;
     }
@@ -144,11 +133,11 @@ const ChatPanel = () => {
     <form
       ref={formRef}
       onSubmit={handleFormSubmit}
-      className="w-full max-w-[672px] flex p-2 flex-col gap-1 shadow-sm rounded-md border-2 mx-auto bg-secondary"
+      className='mx-auto flex w-full max-w-[672px] flex-col gap-1 rounded-md border-2 bg-secondary p-2 shadow-sm'
     >
       <Textarea
         disabled={isPending}
-        name="question"
+        name='question'
         autoFocus
         onKeyDown={onKeyDown}
         value={message}
@@ -157,35 +146,31 @@ const ChatPanel = () => {
           "border-none shadow-none",
           "hover:border-none focus-visible:border-none focus-visible:shadow-none",
           "focus-visible:ring-0 focus-visible:ring-offset-0",
-          "outline-none resize-none max-h-[200px] customScrollbar px-0",
+          "customScrollbar max-h-[200px] resize-none px-0 outline-none"
         )}
         placeholder={placeholder}
       />
 
-      <div className="flex justify-between">
-        <div className="flex items-center justify-center">
+      <div className='flex justify-between'>
+        <div className='flex items-center justify-center'>
           <ToggleGroup
-            size="sm"
-            type="single"
+            size='sm'
+            type='single'
             value={mode}
-            className="gap-1 p-1 bg-sidebar-background text-accent-main-000 rounded-md"
+            className='gap-1 rounded-md bg-sidebar-background p-1 text-accent-main-000'
             onValueChange={(value) => {
               if (value) {
                 setMode(value);
               }
             }}
           >
-            <ToggleGroupItem
-              size="sm"
-              value="ask"
-              className={ToggleGroupItemClasses}
-            >
+            <ToggleGroupItem size='sm' value='ask' className={ToggleGroupItemClasses}>
               <MessageCircleQuestion />
               <span>Ask</span>
             </ToggleGroupItem>
             <ToggleGroupItem
-              size="sm"
-              value="build"
+              size='sm'
+              value='build'
               className={ToggleGroupItemClasses}
               disabled={!isBuilderAvailable || isCheckingBuilder}
               title={!isBuilderAvailable ? "Builder agent not available" : ""}
@@ -193,29 +178,17 @@ const ChatPanel = () => {
               <Hammer />
               <span>Build</span>
             </ToggleGroupItem>
-            <ToggleGroupItem
-              size="sm"
-              value="workflow"
-              className={ToggleGroupItemClasses}
-            >
+            <ToggleGroupItem size='sm' value='workflow' className={ToggleGroupItemClasses}>
               <Workflow />
               <span>Workflow</span>
             </ToggleGroupItem>
           </ToggleGroup>
         </div>
-        <div className="flex gap-2 items-center">
-          {mode === "ask" && (
-            <AgentsDropdown onSelect={setAgent} agentSelected={agent} />
-          )}
-          {mode === "workflow" && (
-            <WorkflowsDropdown onSelect={setWorkflow} workflow={workflow} />
-          )}
-          <Button
-            disabled={disabled()}
-            type="submit"
-            data-testid="chat-panel-submit-button"
-          >
-            {isPending ? <Loader2 className="animate-spin" /> : submitIcon}
+        <div className='flex items-center gap-2'>
+          {mode === "ask" && <AgentsDropdown onSelect={setAgent} agentSelected={agent} />}
+          {mode === "workflow" && <WorkflowsDropdown onSelect={setWorkflow} workflow={workflow} />}
+          <Button disabled={disabled()} type='submit' data-testid='chat-panel-submit-button'>
+            {isPending ? <Loader2 className='animate-spin' /> : submitIcon}
           </Button>
         </div>
       </div>

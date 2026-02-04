@@ -82,7 +82,7 @@ flowchart TD
 <Steps>
   <Step title="Prepare Your Workspace">
     Before deploying, ensure you have an Oxy workspace ready with your configuration files. Your workspace directory should typically include:
-    
+
     - `config.yml` - Main configuration file
     - Your agent definitions (`.agent.yml` files)
     - Your workflow definitions (`.workflow.yml` files)
@@ -155,9 +155,11 @@ When running Oxy in Docker, you'll typically need to mount two types of director
    This allows Oxy to access your configuration, agents, and workflows.
 
 2. **Data Mount**: Provides persistent storage for Oxy's state
+
    ```
    -v /path/to/persistent/data:/var/lib/oxy/data
    ```
+
    This ensures your data is preserved even if the container is restarted.
 
 ## Data Persistence

@@ -1,13 +1,13 @@
-import React from "react";
+import type React from "react";
+import { Button } from "@/components/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
-  DialogTitle,
+  DialogTitle
 } from "@/components/ui/shadcn/dialog";
-import { Button } from "@/components/ui/shadcn/button";
 import { Label } from "@/components/ui/shadcn/label";
 
 interface SwitchBranchConfirmProps {
@@ -25,41 +25,37 @@ const SwitchBranchConfirm: React.FC<SwitchBranchConfirmProps> = ({
   currentBranch,
   newBranch,
   onConfirm,
-  isLoading = false,
+  isLoading = false
 }) => {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className='sm:max-w-[425px]'>
         <DialogHeader>
           <DialogTitle>Switch Active Branch</DialogTitle>
           <DialogDescription>
-            The most recent changes from the new branch will be synced to this
-            chat. This operation is not destructive.
+            The most recent changes from the new branch will be synced to this chat. This operation
+            is not destructive.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
-          <div className="space-y-2">
-            <Label htmlFor="current-branch">Current branch</Label>
-            <div className="px-3 py-2 border rounded-md bg-muted">
-              <span className="text-sm font-mono">{currentBranch}</span>
+        <div className='space-y-4 py-4'>
+          <div className='space-y-2'>
+            <Label htmlFor='current-branch'>Current branch</Label>
+            <div className='rounded-md border bg-muted px-3 py-2'>
+              <span className='font-mono text-sm'>{currentBranch}</span>
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="new-branch">New branch</Label>
-            <div className="px-3 py-2 border rounded-md">
-              <span className="text-sm font-mono">{newBranch}</span>
+          <div className='space-y-2'>
+            <Label htmlFor='new-branch'>New branch</Label>
+            <div className='rounded-md border px-3 py-2'>
+              <span className='font-mono text-sm'>{newBranch}</span>
             </div>
           </div>
         </div>
 
         <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={isLoading}
-          >
+          <Button variant='outline' onClick={() => onOpenChange(false)} disabled={isLoading}>
             Cancel
           </Button>
           <Button onClick={onConfirm} disabled={isLoading}>

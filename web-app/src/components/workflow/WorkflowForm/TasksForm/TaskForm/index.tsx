@@ -1,5 +1,14 @@
-import React, { useState } from "react";
-import { useFormContext, Controller } from "react-hook-form";
+import { ChevronDown, ChevronRight, Trash2 } from "lucide-react";
+import type React from "react";
+import { useState } from "react";
+import { Controller, useFormContext } from "react-hook-form";
+import { FilePathAutocompleteInput } from "@/components/ui/FilePathAutocompleteInput";
+import { Button } from "@/components/ui/shadcn/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger
+} from "@/components/ui/shadcn/collapsible";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import {
@@ -7,27 +16,19 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from "@/components/ui/shadcn/select";
 import { Switch } from "@/components/ui/shadcn/switch";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/shadcn/collapsible";
-import { ChevronDown, ChevronRight, Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/shadcn/button";
-import { FilePathAutocompleteInput } from "@/components/ui/FilePathAutocompleteInput";
-import { WorkflowFormData } from "..";
+import type { WorkflowFormData } from "..";
 import {
   AgentTaskFields,
-  ExecuteSqlTaskFields,
-  SemanticQueryTaskFields,
-  OmniQueryTaskFields,
-  FormatterTaskFields,
-  WorkflowTaskFields,
-  LoopSequentialTaskFields,
   ConditionalTaskFields,
+  ExecuteSqlTaskFields,
+  FormatterTaskFields,
+  LoopSequentialTaskFields,
+  OmniQueryTaskFields,
+  SemanticQueryTaskFields,
+  WorkflowTaskFields
 } from "./TaskFields";
 
 interface TaskFormProps {
@@ -47,7 +48,7 @@ const TASK_TYPES = [
   { value: "loop_sequential", label: "Loop Sequential" },
   { value: "formatter", label: "Formatter" },
   { value: "workflow", label: "Workflow" },
-  { value: "conditional", label: "Conditional" },
+  { value: "conditional", label: "Conditional" }
 ];
 
 const EXPORT_FORMATS = [
@@ -55,21 +56,17 @@ const EXPORT_FORMATS = [
   { value: "csv", label: "CSV" },
   { value: "json", label: "JSON" },
   { value: "txt", label: "Text" },
-  { value: "docx", label: "Word Document" },
+  { value: "docx", label: "Word Document" }
 ];
 
-export const TaskForm: React.FC<TaskFormProps> = ({
-  index,
-  onRemove,
-  basePath = "tasks",
-}) => {
+export const TaskForm: React.FC<TaskFormProps> = ({ index, onRemove, basePath = "tasks" }) => {
   const {
     register,
     control,
     watch,
     formState: { errors },
     setValue,
-    getValues,
+    getValues
   } = useFormContext<WorkflowFormData>();
 
   const [isOpen, setIsOpen] = useState(false);
@@ -98,7 +95,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
         name: task?.name,
         type: task?.type,
         export: task?.export,
-        cache: task?.cache,
+        cache: task?.cache
       });
     }
   };
@@ -135,69 +132,65 @@ export const TaskForm: React.FC<TaskFormProps> = ({
   };
 
   return (
-    <div className="rounded-lg border bg-card p-3">
+    <div className='rounded-lg border bg-card p-3'>
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-        <CollapsibleTrigger className="rounded-lg w-full">
-          <div className="min-w-0 flex items-center justify-between">
+        <CollapsibleTrigger className='w-full rounded-lg'>
+          <div className='flex min-w-0 items-center justify-between'>
             {isOpen ? (
-              <ChevronDown className="h-5 w-5 text-muted-foreground" />
+              <ChevronDown className='h-5 w-5 text-muted-foreground' />
             ) : (
-              <ChevronRight className="h-5 w-5 text-muted-foreground" />
+              <ChevronRight className='h-5 w-5 text-muted-foreground' />
             )}
-            <div className="min-w-0 flex items-center gap-3 flex-1">
-              <span className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-semibold text-sm">
+            <div className='flex min-w-0 flex-1 items-center gap-3'>
+              <span className='flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 font-semibold text-primary text-sm'>
                 {index + 1}
               </span>
-              <div className="min-w-0 flex items-center gap-2 flex-1">
-                <span className="truncate font-medium text-sm">
-                  {taskName || "Untitled Task"}
-                </span>
+              <div className='flex min-w-0 flex-1 items-center gap-2'>
+                <span className='truncate font-medium text-sm'>{taskName || "Untitled Task"}</span>
                 {taskType && (
-                  <span className="text-xs px-2 py-1 rounded-md bg-muted text-muted-foreground">
+                  <span className='rounded-md bg-muted px-2 py-1 text-muted-foreground text-xs'>
                     {getTaskTypeLabel(taskType)}
                   </span>
                 )}
               </div>
             </div>
             <Button
-              type="button"
+              type='button'
               onClick={(e) => {
                 e.stopPropagation();
                 onRemove();
               }}
-              variant="ghost"
-              size="sm"
+              variant='ghost'
+              size='sm'
             >
-              <Trash2 className="w-4 h-4" />
+              <Trash2 className='h-4 w-4' />
             </Button>
           </div>
         </CollapsibleTrigger>
 
-        <CollapsibleContent className="space-y-4 mt-4">
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
+        <CollapsibleContent className='mt-4 space-y-4'>
+          <div className='space-y-4'>
+            <div className='grid grid-cols-2 gap-4'>
+              <div className='space-y-2'>
                 <Label htmlFor={`${taskPath}.name`}>Task Name</Label>
                 <Input
                   id={`${taskPath}.name`}
-                  placeholder="Enter task name"
+                  placeholder='Enter task name'
                   // @ts-expect-error - Dynamic path for nested tasks
                   {...register(`${taskPath}.name`, {
                     required: "Task name is required",
                     pattern: {
                       value: /^[a-zA-Z]\w*$/,
                       message:
-                        "Name must start with a letter and contain only alphanumeric characters and underscores",
-                    },
+                        "Name must start with a letter and contain only alphanumeric characters and underscores"
+                    }
                   })}
                 />
                 {taskErrors?.name && (
-                  <p className="text-sm text-red-500">
-                    {taskErrors.name.message}
-                  </p>
+                  <p className='text-red-500 text-sm'>{taskErrors.name.message}</p>
                 )}
               </div>
-              <div className="space-y-2">
+              <div className='space-y-2'>
                 <Label htmlFor={`${taskPath}.type`}>Task Type</Label>
                 <Controller
                   // @ts-expect-error - Dynamic path for nested tasks
@@ -213,7 +206,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
                       defaultValue={field.value as string}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Select task type" />
+                        <SelectValue placeholder='Select task type' />
                       </SelectTrigger>
                       <SelectContent>
                         {TASK_TYPES.map((type) => (
@@ -226,18 +219,16 @@ export const TaskForm: React.FC<TaskFormProps> = ({
                   )}
                 />
                 {taskErrors?.type && (
-                  <p className="text-sm text-red-500">
-                    {taskErrors.type.message}
-                  </p>
+                  <p className='text-red-500 text-sm'>{taskErrors.type.message}</p>
                 )}
               </div>
             </div>
 
             {renderTaskSpecificFields()}
 
-            <div className="space-y-4 border-t pt-4">
-              <h4 className="font-medium">Cache Configuration</h4>
-              <div className="flex items-center space-x-2">
+            <div className='space-y-4 border-t pt-4'>
+              <h4 className='font-medium'>Cache Configuration</h4>
+              <div className='flex items-center space-x-2'>
                 <Controller
                   // @ts-expect-error - Dynamic path for nested tasks
                   name={`${taskPath}.cache.enabled`}
@@ -250,18 +241,16 @@ export const TaskForm: React.FC<TaskFormProps> = ({
                     />
                   )}
                 />
-                <Label htmlFor={`${taskPath}.cache.enabled`}>
-                  Enable caching
-                </Label>
+                <Label htmlFor={`${taskPath}.cache.enabled`}>Enable caching</Label>
               </div>
               {/* @ts-expect-error - Dynamic path for nested tasks */}
               {watch(`${taskPath}.cache.enabled`) && (
-                <div className="space-y-2">
+                <div className='space-y-2'>
                   <Label htmlFor={`${taskPath}.cache.path`}>Cache Path</Label>
                   <FilePathAutocompleteInput
                     id={`${taskPath}.cache.path`}
                     datalistId={`cache-path-${basePath}-${index}`}
-                    placeholder="Enter cache file path"
+                    placeholder='Enter cache file path'
                     // @ts-expect-error - Dynamic path for nested tasks
                     {...register(`${taskPath}.cache.path`)}
                   />
@@ -269,9 +258,9 @@ export const TaskForm: React.FC<TaskFormProps> = ({
               )}
             </div>
 
-            <div className="space-y-4 border-t pt-4">
-              <h4 className="font-medium">Export Configuration</h4>
-              <div className="flex items-center space-x-2">
+            <div className='space-y-4 border-t pt-4'>
+              <h4 className='font-medium'>Export Configuration</h4>
+              <div className='flex items-center space-x-2'>
                 <Controller
                   // @ts-expect-error - Dynamic path for nested tasks
                   name={`${taskPath}.export.enabled`}
@@ -284,17 +273,13 @@ export const TaskForm: React.FC<TaskFormProps> = ({
                     />
                   )}
                 />
-                <Label htmlFor={`${taskPath}.export.enabled`}>
-                  Enable export
-                </Label>
+                <Label htmlFor={`${taskPath}.export.enabled`}>Enable export</Label>
               </div>
               {/* @ts-expect-error - Dynamic path for nested tasks */}
               {watch(`${taskPath}.export.enabled`) && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor={`${taskPath}.export.format`}>
-                      Export Format
-                    </Label>
+                <div className='grid grid-cols-2 gap-4'>
+                  <div className='space-y-2'>
+                    <Label htmlFor={`${taskPath}.export.format`}>Export Format</Label>
                     <Controller
                       // @ts-expect-error - Dynamic path for nested tasks
                       name={`${taskPath}.export.format`}
@@ -305,14 +290,11 @@ export const TaskForm: React.FC<TaskFormProps> = ({
                           value={(field.value as string) || ""}
                         >
                           <SelectTrigger>
-                            <SelectValue placeholder="Select format" />
+                            <SelectValue placeholder='Select format' />
                           </SelectTrigger>
                           <SelectContent>
                             {EXPORT_FORMATS.map((format) => (
-                              <SelectItem
-                                key={format.value}
-                                value={format.value}
-                              >
+                              <SelectItem key={format.value} value={format.value}>
                                 {format.label}
                               </SelectItem>
                             ))}
@@ -321,14 +303,12 @@ export const TaskForm: React.FC<TaskFormProps> = ({
                       )}
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor={`${taskPath}.export.path`}>
-                      Export Path
-                    </Label>
+                  <div className='space-y-2'>
+                    <Label htmlFor={`${taskPath}.export.path`}>Export Path</Label>
                     <FilePathAutocompleteInput
                       id={`${taskPath}.export.path`}
                       datalistId={`export-path-${basePath}-${index}`}
-                      placeholder="Enter export file path"
+                      placeholder='Enter export file path'
                       // @ts-expect-error - Dynamic path for nested tasks
                       {...register(`${taskPath}.export.path`)}
                     />

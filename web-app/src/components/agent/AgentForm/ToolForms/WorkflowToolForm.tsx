@@ -1,26 +1,20 @@
 import React from "react";
 import { useFormContext } from "react-hook-form";
+import { FilePathAutocompleteInput } from "@/components/ui/FilePathAutocompleteInput";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import { Textarea } from "@/components/ui/shadcn/textarea";
-import { FilePathAutocompleteInput } from "@/components/ui/FilePathAutocompleteInput";
-import { AgentFormData } from "../index";
+import type { AgentFormData } from "../index";
 
 interface WorkflowToolFormProps {
   index: number;
 }
 
-export const WorkflowToolForm: React.FC<WorkflowToolFormProps> = ({
-  index,
-}) => {
+export const WorkflowToolForm: React.FC<WorkflowToolFormProps> = ({ index }) => {
   const { register, setValue, watch } = useFormContext<AgentFormData>();
 
-  const variablesValue = watch(`tools.${index}.variables`) as
-    | unknown
-    | undefined;
-  const [variablesError, setVariablesError] = React.useState<string | null>(
-    null,
-  );
+  const variablesValue = watch(`tools.${index}.variables`) as unknown | undefined;
+  const [variablesError, setVariablesError] = React.useState<string | null>(null);
 
   const handleVariablesChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
@@ -41,49 +35,39 @@ export const WorkflowToolForm: React.FC<WorkflowToolFormProps> = ({
   };
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor={`tools.${index}.workflow_ref`}>
-          Workflow Reference *
-        </Label>
+    <div className='space-y-4'>
+      <div className='space-y-2'>
+        <Label htmlFor={`tools.${index}.workflow_ref`}>Workflow Reference *</Label>
         <FilePathAutocompleteInput
           id={`tools.${index}.workflow_ref`}
-          fileExtension=".workflow.yml"
+          fileExtension='.workflow.yml'
           datalistId={`tool-workflow-ref-${index}`}
-          placeholder="Path to workflow file"
+          placeholder='Path to workflow file'
           {...register(`tools.${index}.workflow_ref`, {
-            required: "Workflow reference is required",
+            required: "Workflow reference is required"
           })}
         />
       </div>
-      <div className="space-y-2">
-        <Label htmlFor={`tools.${index}.output_task_ref`}>
-          Output Task Reference
-        </Label>
+      <div className='space-y-2'>
+        <Label htmlFor={`tools.${index}.output_task_ref`}>Output Task Reference</Label>
         <Input
           id={`tools.${index}.output_task_ref`}
-          placeholder="Optional task reference for output"
+          placeholder='Optional task reference for output'
           {...register(`tools.${index}.output_task_ref`)}
         />
       </div>
-      <div className="space-y-2">
-        <Label htmlFor={`tools.${index}.variables`}>
-          Variables (JSON Schema)
-        </Label>
+      <div className='space-y-2'>
+        <Label htmlFor={`tools.${index}.variables`}>Variables (JSON Schema)</Label>
         <Textarea
           id={`tools.${index}.variables`}
           placeholder='{"param_name": {"type": "string", "description": "Parameter description"}}'
           rows={6}
           className={variablesError ? "border-red-500" : ""}
-          defaultValue={
-            variablesValue ? JSON.stringify(variablesValue, null, 2) : ""
-          }
+          defaultValue={variablesValue ? JSON.stringify(variablesValue, null, 2) : ""}
           onChange={handleVariablesChange}
         />
-        {variablesError && (
-          <p className="text-sm text-red-500">{variablesError}</p>
-        )}
-        <p className="text-sm text-muted-foreground">
+        {variablesError && <p className='text-red-500 text-sm'>{variablesError}</p>}
+        <p className='text-muted-foreground text-sm'>
           Define workflow input parameters with JSON Schema (optional)
         </p>
       </div>

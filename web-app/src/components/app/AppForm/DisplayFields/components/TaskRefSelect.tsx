@@ -1,7 +1,8 @@
-import React, { useMemo } from "react";
+import type React from "react";
+import { useMemo } from "react";
 import { useFormContext } from "react-hook-form";
 import { Combobox } from "@/components/ui/shadcn/combobox";
-import { AppFormData } from "../../index";
+import type { AppFormData } from "../../index";
 
 interface TaskRefSelectProps {
   value: string | undefined;
@@ -12,7 +13,7 @@ interface TaskRefSelectProps {
 export const TaskRefSelect: React.FC<TaskRefSelectProps> = ({
   value,
   onChange,
-  placeholder = "Select task...",
+  placeholder = "Select task..."
 }) => {
   const { watch } = useFormContext<AppFormData>();
   const tasks = watch("tasks");
@@ -23,14 +24,14 @@ export const TaskRefSelect: React.FC<TaskRefSelectProps> = ({
       .map((task) => ({
         value: task.name!,
         label: task.name!,
-        searchText: `${task.name} ${task.type || ""}`.toLowerCase(),
+        searchText: `${task.name} ${task.type || ""}`.toLowerCase()
       }));
 
     if (value && !items.some((item) => item.value === value)) {
       items.unshift({
         value,
         label: value,
-        searchText: value.toLowerCase(),
+        searchText: value.toLowerCase()
       });
     }
 
@@ -39,8 +40,8 @@ export const TaskRefSelect: React.FC<TaskRefSelectProps> = ({
 
   if (taskItems.length === 0) {
     return (
-      <div className="flex items-center h-10 px-3 border rounded-md bg-muted">
-        <span className="text-sm text-muted-foreground">No tasks defined</span>
+      <div className='flex h-10 items-center rounded-md border bg-muted px-3'>
+        <span className='text-muted-foreground text-sm'>No tasks defined</span>
       </div>
     );
   }
@@ -51,7 +52,7 @@ export const TaskRefSelect: React.FC<TaskRefSelectProps> = ({
       value={value}
       onValueChange={onChange}
       placeholder={placeholder}
-      searchPlaceholder="Search tasks..."
+      searchPlaceholder='Search tasks...'
     />
   );
 };

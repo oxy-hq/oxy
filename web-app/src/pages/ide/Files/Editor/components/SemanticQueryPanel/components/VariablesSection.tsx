@@ -1,4 +1,4 @@
-import { Variable } from "..";
+import type { Variable } from "..";
 import VariableRow from "./VariableRow";
 
 interface VariablesSectionProps {
@@ -10,12 +10,12 @@ interface VariablesSectionProps {
 const VariablesSection = ({
   variables,
   onUpdateVariable,
-  onRemoveVariable,
+  onRemoveVariable
 }: VariablesSectionProps) => {
   if (variables.length === 0) return null;
 
   return (
-    <div className="border-b p-3 space-y-2">
+    <div className='space-y-2 border-b p-3'>
       <div>Variables</div>
       {variables.map((variable, index) => (
         <VariableRow

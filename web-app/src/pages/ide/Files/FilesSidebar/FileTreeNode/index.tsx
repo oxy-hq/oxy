@@ -1,34 +1,32 @@
+import { ChevronDown, ChevronRight, FilePlus, FolderPlus, Pencil, Trash2 } from "lucide-react";
+import React from "react";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger
+} from "@/components/ui/shadcn/context-menu";
 import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
   SidebarMenuSubButton,
-  SidebarMenuSubItem,
+  SidebarMenuSubItem
 } from "@/components/ui/shadcn/sidebar";
-import { FileTreeModel } from "@/types/file";
-import { ChevronRight, ChevronDown, FilePlus, FolderPlus } from "lucide-react";
-import FileNode from "./FileNode";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-} from "@/components/ui/shadcn/context-menu";
-import { Pencil, Trash2 } from "lucide-react";
-import React from "react";
-import { SIDEBAR_REVEAL_FILE } from "@/pages/ide/Files/FilesSidebar";
-import NewNode, { CreationType } from "../NewNode";
-import AlertDeleteDialog from "./AlertDeleteDialog";
-import RenameNode from "./RenameNode";
-import { cn } from "@/libs/shadcn/utils";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { cn } from "@/libs/shadcn/utils";
+import { SIDEBAR_REVEAL_FILE } from "@/pages/ide/Files/FilesSidebar";
+import type { FileTreeModel } from "@/types/file";
+import NewNode, { type CreationType } from "../NewNode";
+import AlertDeleteDialog from "./AlertDeleteDialog";
+import FileNode from "./FileNode";
+import RenameNode from "./RenameNode";
 
-const isDescendant = (p: string, base: string) =>
-  p === base || p.startsWith(base + "/");
+const isDescendant = (p: string, base: string) => p === base || p.startsWith(`${base}/`);
 
 const FileTreeNode = ({
   fileTree,
-  activePath,
+  activePath
 }: {
   fileTree: FileTreeModel;
   activePath?: string;
@@ -42,13 +40,7 @@ const FileTreeNode = ({
 
 export default FileTreeNode;
 
-const DirNode = ({
-  fileTree,
-  activePath,
-}: {
-  fileTree: FileTreeModel;
-  activePath?: string;
-}) => {
+const DirNode = ({ fileTree, activePath }: { fileTree: FileTreeModel; activePath?: string }) => {
   const { isReadOnly } = useCurrentProjectBranch();
   const [isContextMenuOpen, setIsContextMenuOpen] = React.useState(false);
   const [isEditing, setIsEditing] = React.useState(false);
@@ -72,8 +64,7 @@ const DirNode = ({
     };
 
     window.addEventListener(SIDEBAR_REVEAL_FILE, handler as EventListener);
-    return () =>
-      window.removeEventListener(SIDEBAR_REVEAL_FILE, handler as EventListener);
+    return () => window.removeEventListener(SIDEBAR_REVEAL_FILE, handler as EventListener);
   }, [fileTree.path, isOpen]);
 
   // On initial mount, if activePath indicates a descendant, open this directory.
@@ -83,7 +74,7 @@ const DirNode = ({
     }
     // run only on initial mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [activePath, fileTree.path]);
 
   const handleRename = () => {
     if (isReadOnly) return;
@@ -136,8 +127,8 @@ const DirNode = ({
                 setIsOpen(!isOpen);
               }}
               className={cn(
-                "overflow-visible text-muted-foreground hover:text-sidebar-foreground transition-colors duration-150 ease-in h-6 py-0.5",
-                isContextMenuOpen ? "border border-border" : "",
+                "h-6 overflow-visible py-0.5 text-muted-foreground transition-colors duration-150 ease-in hover:text-sidebar-foreground",
+                isContextMenuOpen ? "border border-border" : ""
               )}
             >
               {isEditing ? (
@@ -150,9 +141,9 @@ const DirNode = ({
               ) : (
                 <>
                   {isOpen ? (
-                    <ChevronDown className="h-4 w-4" />
+                    <ChevronDown className='h-4 w-4' />
                   ) : (
-                    <ChevronRight className="h-4 w-4" />
+                    <ChevronRight className='h-4 w-4' />
                   )}
                   <span>{fileTree.name}</span>
                 </>
@@ -160,7 +151,7 @@ const DirNode = ({
             </SidebarMenuButton>
 
             {isOpen && (
-              <SidebarMenuSub className="translate-none">
+              <SidebarMenuSub className='translate-none'>
                 {isCreating && !isReadOnly && (
                   <NewNode
                     ref={newItemInputRef}
@@ -172,10 +163,7 @@ const DirNode = ({
                 )}
                 {fileTree.children?.map((f) => (
                   <SidebarMenuSubItem key={f.path}>
-                    <SidebarMenuSubButton
-                      asChild
-                      className="translate-none h-6 py-0.5"
-                    >
+                    <SidebarMenuSubButton asChild className='translate-none h-6 py-0.5'>
                       <FileTreeNode fileTree={f} activePath={activePath} />
                     </SidebarMenuSubButton>
                   </SidebarMenuSubItem>
@@ -200,39 +188,27 @@ const DirNode = ({
         >
           {!isReadOnly && (
             <>
-              <ContextMenuItem
-                className="cursor-pointer"
-                onClick={handleCreateFile}
-              >
-                <FilePlus className="mr-2 h-4 w-4" />
+              <ContextMenuItem className='cursor-pointer' onClick={handleCreateFile}>
+                <FilePlus className='mr-2 h-4 w-4' />
                 <span>New File</span>
               </ContextMenuItem>
-              <ContextMenuItem
-                className="cursor-pointer"
-                onClick={handleCreateFolder}
-              >
-                <FolderPlus className="mr-2 h-4 w-4" />
+              <ContextMenuItem className='cursor-pointer' onClick={handleCreateFolder}>
+                <FolderPlus className='mr-2 h-4 w-4' />
                 <span>New Folder</span>
               </ContextMenuItem>
-              <ContextMenuItem
-                className="cursor-pointer"
-                onClick={handleRename}
-              >
-                <Pencil className="mr-2 h-4 w-4" />
+              <ContextMenuItem className='cursor-pointer' onClick={handleRename}>
+                <Pencil className='mr-2 h-4 w-4' />
                 <span>Rename</span>
               </ContextMenuItem>
-              <ContextMenuItem
-                className="text-red-600 cursor-pointer"
-                onClick={handleDelete}
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
+              <ContextMenuItem className='cursor-pointer text-red-600' onClick={handleDelete}>
+                <Trash2 className='mr-2 h-4 w-4' />
                 <span>Delete</span>
               </ContextMenuItem>
             </>
           )}
           {isReadOnly && (
             <ContextMenuItem disabled>
-              <span className="text-muted-foreground">Read-only mode</span>
+              <span className='text-muted-foreground'>Read-only mode</span>
             </ContextMenuItem>
           )}
         </ContextMenuContent>

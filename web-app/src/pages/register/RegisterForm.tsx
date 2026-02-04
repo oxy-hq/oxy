@@ -1,12 +1,12 @@
-import { cn } from "@/libs/shadcn/utils";
+import { AxiosError } from "axios";
+import { useForm } from "react-hook-form";
+import { Link, useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/shadcn/button";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
-import { useForm } from "react-hook-form";
 import { useRegister } from "@/hooks/auth/useRegister";
-import { Link, useNavigate } from "react-router-dom";
-import { toast } from "sonner";
-import { AxiosError } from "axios";
+import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
 
 interface RegisterFormData {
@@ -25,7 +25,7 @@ export const RegisterForm = () => {
     handleSubmit,
     setError,
     formState: { errors },
-    watch,
+    watch
   } = useForm<RegisterFormData>();
 
   const password = watch("password");
@@ -35,11 +35,9 @@ export const RegisterForm = () => {
       await register({
         email: data.email,
         password: data.password,
-        name: data.name,
+        name: data.name
       });
-      toast.success(
-        "Registration successful! Please check your email for verification.",
-      );
+      toast.success("Registration successful! Please check your email for verification.");
       navigate(ROUTES.AUTH.LOGIN);
     } catch (error) {
       console.error("Registration failed:", error);
@@ -48,7 +46,7 @@ export const RegisterForm = () => {
         if (status === 409) {
           setError("email", {
             type: "manual",
-            message: "Email is already in use",
+            message: "Email is already in use"
           });
           return;
         }
@@ -58,104 +56,92 @@ export const RegisterForm = () => {
   };
 
   return (
-    <form
-      className={cn("flex flex-col gap-6")}
-      onSubmit={handleSubmit(onSubmit)}
-    >
-      <div className="flex flex-col items-center gap-2 text-center">
-        <h1 className="text-2xl font-bold">Create an account</h1>
-        <p className="text-muted-foreground text-sm text-balance">
+    <form className={cn("flex flex-col gap-6")} onSubmit={handleSubmit(onSubmit)}>
+      <div className='flex flex-col items-center gap-2 text-center'>
+        <h1 className='font-bold text-2xl'>Create an account</h1>
+        <p className='text-balance text-muted-foreground text-sm'>
           Enter your information to create your account
         </p>
       </div>
-      <div className="grid gap-6">
-        <div className="grid gap-3">
-          <Label htmlFor="name">Full Name</Label>
+      <div className='grid gap-6'>
+        <div className='grid gap-3'>
+          <Label htmlFor='name'>Full Name</Label>
           <Input
-            id="name"
-            type="text"
-            placeholder="John Doe"
+            id='name'
+            type='text'
+            placeholder='John Doe'
             disabled={isPending}
             {...registerForm("name", {
               required: "Full name is required",
               minLength: {
                 value: 2,
-                message: "Name must be at least 2 characters",
-              },
+                message: "Name must be at least 2 characters"
+              }
             })}
           />
-          {errors.name && (
-            <p className="text-sm text-red-500">{errors.name.message}</p>
-          )}
+          {errors.name && <p className='text-red-500 text-sm'>{errors.name.message}</p>}
         </div>
-        <div className="grid gap-3">
-          <Label htmlFor="email">Email</Label>
+        <div className='grid gap-3'>
+          <Label htmlFor='email'>Email</Label>
           <Input
-            id="email"
-            type="email"
-            placeholder="m@example.com"
+            id='email'
+            type='email'
+            placeholder='m@example.com'
             disabled={isPending}
             {...registerForm("email", {
               required: "Email is required",
               pattern: {
                 value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-                message: "Invalid email address",
-              },
+                message: "Invalid email address"
+              }
             })}
           />
-          {errors.email && (
-            <p className="text-sm text-red-500">{errors.email.message}</p>
-          )}
+          {errors.email && <p className='text-red-500 text-sm'>{errors.email.message}</p>}
         </div>
-        <div className="grid gap-3">
-          <Label htmlFor="password">Password</Label>
+        <div className='grid gap-3'>
+          <Label htmlFor='password'>Password</Label>
           <Input
-            id="password"
-            type="password"
+            id='password'
+            type='password'
             disabled={isPending}
-            placeholder="Create a strong password"
+            placeholder='Create a strong password'
             {...registerForm("password", {
               required: "Password is required",
               minLength: {
                 value: 8,
-                message: "Password must be at least 8 characters",
+                message: "Password must be at least 8 characters"
               },
               maxLength: {
                 value: 64,
-                message: "Password must be at most 64 characters",
-              },
+                message: "Password must be at most 64 characters"
+              }
             })}
           />
-          {errors.password && (
-            <p className="text-sm text-red-500">{errors.password.message}</p>
-          )}
+          {errors.password && <p className='text-red-500 text-sm'>{errors.password.message}</p>}
         </div>
-        <div className="grid gap-3">
-          <Label htmlFor="confirmPassword">Confirm Password</Label>
+        <div className='grid gap-3'>
+          <Label htmlFor='confirmPassword'>Confirm Password</Label>
           <Input
-            id="confirmPassword"
-            type="password"
+            id='confirmPassword'
+            type='password'
             disabled={isPending}
-            placeholder="Re-enter your password"
+            placeholder='Re-enter your password'
             {...registerForm("confirmPassword", {
               required: "Please confirm your password",
-              validate: (value) =>
-                value === password || "Passwords do not match",
+              validate: (value) => value === password || "Passwords do not match"
             })}
           />
           {errors.confirmPassword && (
-            <p className="text-sm text-red-500">
-              {errors.confirmPassword.message}
-            </p>
+            <p className='text-red-500 text-sm'>{errors.confirmPassword.message}</p>
           )}
         </div>
-        <Button type="submit" className="w-full" disabled={isPending}>
+        <Button type='submit' className='w-full' disabled={isPending}>
           {isPending ? "Creating account..." : "Create account"}
         </Button>
       </div>
-      <div className="text-center text-sm">
+      <div className='text-center text-sm'>
         Already have an account?{" "}
-        <Link to={ROUTES.AUTH.LOGIN} className="underline underline-offset-4">
+        <Link to={ROUTES.AUTH.LOGIN} className='underline underline-offset-4'>
           Sign in
         </Link>
       </div>

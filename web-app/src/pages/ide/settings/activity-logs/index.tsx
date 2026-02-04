@@ -1,17 +1,11 @@
-import React from "react";
-import { useLogs } from "@/hooks/api/activityLogs/useLogs";
-import {
-  Table,
-  TableBody,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/shadcn/table";
 import { FileText } from "lucide-react";
-import LogRow from "./LogRow";
+import React from "react";
+import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/shadcn/table";
+import { useLogs } from "@/hooks/api/activityLogs/useLogs";
 import PageHeader from "@/pages/ide/components/PageHeader";
-import TableWrapper from "../components/TableWrapper";
 import TableContentWrapper from "../components/TableContentWrapper";
+import TableWrapper from "../components/TableWrapper";
+import LogRow from "./LogRow";
 
 export default function ActivityLogsPage() {
   const { data: logsResponse, isLoading: loading, error, refetch } = useLogs();
@@ -21,21 +15,18 @@ export default function ActivityLogsPage() {
   }, [logsResponse?.logs]);
 
   const sortedLogs = React.useMemo(() => {
-    return logs.sort(
-      (a, b) =>
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-    );
+    return logs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   }, [logs]);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className='flex h-full flex-col'>
       <PageHeader
         icon={FileText}
-        title="Activity Logs"
-        description="View system audit logs and query history"
+        title='Activity Logs'
+        description='View system audit logs and query history'
       />
 
-      <div className="p-4 flex-1 overflow-auto min-h-0 customScrollbar scrollbar-gutter-auto">
+      <div className='customScrollbar scrollbar-gutter-auto min-h-0 flex-1 overflow-auto p-4'>
         <TableWrapper>
           <Table>
             <TableHeader>
@@ -51,8 +42,8 @@ export default function ActivityLogsPage() {
                 isEmpty={logs.length === 0}
                 loading={loading}
                 colSpan={4}
-                noFoundTitle="No logs found"
-                noFoundDescription="There are currently no activity logs available."
+                noFoundTitle='No logs found'
+                noFoundDescription='There are currently no activity logs available.'
                 error={error?.message}
                 onRetry={() => refetch()}
               >

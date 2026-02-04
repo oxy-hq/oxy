@@ -1,6 +1,7 @@
-import React, { createContext, useContext } from "react";
-import { AuthConfigResponse, UserInfo } from "@/types/auth";
+import type React from "react";
+import { createContext, useContext } from "react";
 import { handleLogout, redirectToHome } from "@/libs/utils";
+import type { AuthConfigResponse, UserInfo } from "@/types/auth";
 
 interface AuthContextType {
   getUser: () => string | null;
@@ -26,10 +27,7 @@ interface AuthProviderProps {
   authConfig: AuthConfigResponse;
 }
 
-export const AuthProvider: React.FC<AuthProviderProps> = ({
-  children,
-  authConfig,
-}) => {
+export const AuthProvider: React.FC<AuthProviderProps> = ({ children, authConfig }) => {
   const login = (newToken: string, newUser: UserInfo) => {
     localStorage.setItem("auth_token", newToken);
     localStorage.setItem("user", JSON.stringify(newUser));
@@ -54,7 +52,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({
     isAuthenticated: () => !!storedToken() && !!storedUser(),
     login,
     logout,
-    authConfig,
+    authConfig
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { IDEPage } from "../pages/IDEPage";
 import { resetTestFile } from "../utils";
 
@@ -8,7 +8,7 @@ test.describe("IDE Files - Monaco Editor - Loading & Display", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
     await page.getByRole("tab", { name: "Files" }).click();
     await page.waitForTimeout(500);
@@ -28,9 +28,7 @@ test.describe("IDE Files - Monaco Editor - Loading & Display", () => {
   });
 
   // 5.2 Open file with 10,000+ char lines
-  test("5.2 - should handle horizontal scroll for long lines", async ({
-    page,
-  }) => {
+  test("5.2 - should handle horizontal scroll for long lines", async ({ page }) => {
     const idePage = new IDEPage(page);
 
     await idePage.openFile("config.yml");
@@ -87,9 +85,7 @@ test.describe("IDE Files - Monaco Editor - Loading & Display", () => {
   });
 
   // 5.6 Open file → refresh page
-  test("5.6 - should reload content from API on page refresh", async ({
-    page,
-  }) => {
+  test("5.6 - should reload content from API on page refresh", async ({ page }) => {
     const idePage = new IDEPage(page);
 
     await idePage.openFile("config.yml");
@@ -124,9 +120,7 @@ test.describe("IDE Files - Monaco Editor - Loading & Display", () => {
   });
 
   // 5.8-5.12 Language detection
-  test("5.8 - should apply YAML syntax highlighting for .yml files", async ({
-    page,
-  }) => {
+  test("5.8 - should apply YAML syntax highlighting for .yml files", async ({ page }) => {
     const idePage = new IDEPage(page);
 
     await idePage.openFile("config.yml");
@@ -141,25 +135,20 @@ test.describe("IDE Files - Monaco Editor - Loading & Display", () => {
     await expect(viewLines).toBeVisible();
   });
 
-  test("5.10 - should apply SQL syntax highlighting for .sql files", async ({
-    page,
-  }) => {
+  test("5.10 - should apply SQL syntax highlighting for .sql files", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
 
     // Look for SQL file
     const folder = page.getByRole("button", {
       name: "example_sql",
-      exact: true,
+      exact: true
     });
     if (await folder.isVisible()) {
       await folder.click();
       await page.waitForTimeout(500);
 
-      const sqlFile = page
-        .locator('a[href*="/ide/"]:visible')
-        .filter({ hasText: ".sql" })
-        .first();
+      const sqlFile = page.locator('a[href*="/ide/"]:visible').filter({ hasText: ".sql" }).first();
 
       if (await sqlFile.isVisible()) {
         await sqlFile.click();
@@ -176,16 +165,14 @@ test.describe("IDE Files - Monaco Editor - Content Editing", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
     await page.getByRole("tab", { name: "Files" }).click();
     await page.waitForTimeout(500);
   });
 
   // 5.13 Type single character
-  test("5.13 - should mark file as dirty when typing single character", async ({
-    page,
-  }) => {
+  test("5.13 - should mark file as dirty when typing single character", async ({ page }) => {
     const idePage = new IDEPage(page);
 
     await idePage.openFile("test-file-for-e2e.txt");
@@ -198,9 +185,7 @@ test.describe("IDE Files - Monaco Editor - Content Editing", () => {
   });
 
   // 5.14 Undo all changes (Ctrl+Z)
-  test("5.14 - should return to clean state after undoing all changes", async ({
-    page,
-  }) => {
+  test("5.14 - should return to clean state after undoing all changes", async ({ page }) => {
     const idePage = new IDEPage(page);
 
     await idePage.openFile("test-file-for-e2e.txt");
@@ -234,9 +219,7 @@ test.describe("IDE Files - Monaco Editor - Content Editing", () => {
   });
 
   // 5.18 Delete entire content
-  test("5.18 - should mark as dirty when deleting all content", async ({
-    page,
-  }) => {
+  test("5.18 - should mark as dirty when deleting all content", async ({ page }) => {
     const idePage = new IDEPage(page);
 
     await idePage.openFile("test-file-for-e2e.txt");
@@ -316,7 +299,7 @@ test.describe("IDE Files - Monaco Editor - Diff View", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
     await page.getByRole("tab", { name: "Files" }).click();
     await page.waitForTimeout(500);
@@ -344,9 +327,7 @@ test.describe("IDE Files - Monaco Editor - Diff View", () => {
   });
 
   // 5.26 Toggle diff view off
-  test("5.26 - should return to normal editor when diff toggled off", async ({
-    page,
-  }) => {
+  test("5.26 - should return to normal editor when diff toggled off", async ({ page }) => {
     const idePage = new IDEPage(page);
 
     await idePage.openFile("test-file-for-e2e.txt");
@@ -364,7 +345,7 @@ test.describe("IDE Files - Monaco Editor - Saving", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
     await page.getByRole("tab", { name: "Files" }).click();
     await page.waitForTimeout(500);
@@ -388,9 +369,7 @@ test.describe("IDE Files - Monaco Editor - Saving", () => {
   });
 
   // 5.34 Click Save button
-  test("5.34 - should save file when clicking Save button", async ({
-    page,
-  }) => {
+  test("5.34 - should save file when clicking Save button", async ({ page }) => {
     const idePage = new IDEPage(page);
 
     await idePage.openFile("test-file-for-e2e.txt");
@@ -404,9 +383,7 @@ test.describe("IDE Files - Monaco Editor - Saving", () => {
   });
 
   // 5.35 Save with no changes
-  test("5.35 - should not make API call when saving with no changes", async ({
-    page,
-  }) => {
+  test("5.35 - should not make API call when saving with no changes", async ({ page }) => {
     const idePage = new IDEPage(page);
 
     await idePage.openFile("config.yml");
@@ -451,7 +428,7 @@ test.describe("IDE Files - Monaco Editor - Saving", () => {
       if (request.method() === "PUT" || request.method() === "POST") {
         route.fulfill({
           status: 500,
-          body: JSON.stringify({ error: "Internal Server Error" }),
+          body: JSON.stringify({ error: "Internal Server Error" })
         });
       } else {
         route.continue();
@@ -465,9 +442,7 @@ test.describe("IDE Files - Monaco Editor - Saving", () => {
   });
 
   // 5.42 Save returns 409 Conflict
-  test("5.42 - should show conflict message on 409 response", async ({
-    page,
-  }) => {
+  test("5.42 - should show conflict message on 409 response", async ({ page }) => {
     const idePage = new IDEPage(page);
 
     await idePage.openFile("test-file-for-e2e.txt");
@@ -481,7 +456,7 @@ test.describe("IDE Files - Monaco Editor - Saving", () => {
       if (request.method() === "PUT" || request.method() === "POST") {
         route.fulfill({
           status: 409,
-          body: JSON.stringify({ error: "File modified externally" }),
+          body: JSON.stringify({ error: "File modified externally" })
         });
       } else {
         route.continue();
@@ -501,16 +476,14 @@ test.describe("IDE Files - Monaco Editor - Navigation Blocking", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
     await page.getByRole("tab", { name: "Files" }).click();
     await page.waitForTimeout(500);
   });
 
   // 5.44 Edit → navigate away
-  test("5.44 - should show unsaved changes dialog when navigating away", async ({
-    page,
-  }) => {
+  test("5.44 - should show unsaved changes dialog when navigating away", async ({ page }) => {
     const idePage = new IDEPage(page);
 
     await idePage.openFile("test-file-for-e2e.txt");
@@ -526,9 +499,7 @@ test.describe("IDE Files - Monaco Editor - Navigation Blocking", () => {
 
       // Should show dialog or block navigation
       const dialog = page.locator('[role="dialog"], [role="alertdialog"]');
-      const isDialogVisible = await dialog
-        .isVisible({ timeout: 2000 })
-        .catch(() => false);
+      const isDialogVisible = await dialog.isVisible({ timeout: 2000 }).catch(() => false);
 
       // Either dialog shown or navigation blocked
       expect(isDialogVisible || page.url().includes("test-file")).toBeTruthy();
@@ -536,9 +507,7 @@ test.describe("IDE Files - Monaco Editor - Navigation Blocking", () => {
   });
 
   // 5.45 Dialog → click "Save"
-  test("5.45 - should save and navigate when clicking Save in dialog", async ({
-    page,
-  }) => {
+  test("5.45 - should save and navigate when clicking Save in dialog", async ({ page }) => {
     const idePage = new IDEPage(page);
 
     await idePage.openFile("test-file-for-e2e.txt");
@@ -560,9 +529,7 @@ test.describe("IDE Files - Monaco Editor - Navigation Blocking", () => {
   });
 
   // 5.46 Dialog → click "Discard"
-  test("5.46 - should discard and navigate when clicking Discard", async ({
-    page,
-  }) => {
+  test("5.46 - should discard and navigate when clicking Discard", async ({ page }) => {
     const idePage = new IDEPage(page);
 
     await idePage.openFile("test-file-for-e2e.txt");
@@ -576,7 +543,7 @@ test.describe("IDE Files - Monaco Editor - Navigation Blocking", () => {
       await otherFile.click();
 
       const discardButton = page.getByRole("button", {
-        name: /discard|don't save/i,
+        name: /discard|don't save/i
       });
       if (await discardButton.isVisible({ timeout: 2000 })) {
         await discardButton.click();
@@ -586,9 +553,7 @@ test.describe("IDE Files - Monaco Editor - Navigation Blocking", () => {
   });
 
   // 5.47 Dialog → click "Cancel"
-  test("5.47 - should stay on current file when clicking Cancel", async ({
-    page,
-  }) => {
+  test("5.47 - should stay on current file when clicking Cancel", async ({ page }) => {
     const idePage = new IDEPage(page);
 
     await idePage.openFile("test-file-for-e2e.txt");
@@ -613,9 +578,7 @@ test.describe("IDE Files - Monaco Editor - Navigation Blocking", () => {
   });
 
   // 5.51 Navigate away after save
-  test("5.51 - should navigate without dialog after saving", async ({
-    page,
-  }) => {
+  test("5.51 - should navigate without dialog after saving", async ({ page }) => {
     const idePage = new IDEPage(page);
 
     await idePage.openFile("test-file-for-e2e.txt");
@@ -640,16 +603,14 @@ test.describe("IDE Files - Monaco Editor - Keyboard Handling", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
     await page.getByRole("tab", { name: "Files" }).click();
     await page.waitForTimeout(500);
   });
 
   // 5.52 Space key in editor
-  test("5.52 - should type space in editor (not capture by ResizablePanel)", async ({
-    page,
-  }) => {
+  test("5.52 - should type space in editor (not capture by ResizablePanel)", async ({ page }) => {
     const idePage = new IDEPage(page);
 
     await idePage.openFile("test-file-for-e2e.txt");

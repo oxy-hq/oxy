@@ -1,5 +1,5 @@
-import { forwardRef, type HTMLAttributes } from "react";
 import { cva, type VariantProps } from "class-variance-authority";
+import { forwardRef, type HTMLAttributes } from "react";
 
 import { cn } from "@/libs/shadcn/utils";
 
@@ -8,16 +8,16 @@ const appendixVariants = cva(
   {
     variants: {
       position: {
-        top: "-translate-y-[100%] -my-1",
+        top: "-my-1 -translate-y-[100%]",
         bottom: "top-[100%] my-1",
         left: "-left-[100%] -mx-1",
-        right: "left-[100%] mx-1",
-      },
+        right: "left-[100%] mx-1"
+      }
     },
     defaultVariants: {
-      position: "top",
-    },
-  },
+      position: "top"
+    }
+  }
 );
 
 export interface NodeAppendixProps
@@ -30,15 +30,11 @@ export interface NodeAppendixProps
 export const NodeAppendix = forwardRef<HTMLDivElement, NodeAppendixProps>(
   ({ children, className, position, ...props }, ref) => {
     return (
-      <div
-        ref={ref}
-        className={cn(appendixVariants({ position }), className)}
-        {...props}
-      >
+      <div ref={ref} className={cn(appendixVariants({ position }), className)} {...props}>
         {children}
       </div>
     );
-  },
+  }
 );
 
 NodeAppendix.displayName = "NodeAppendix";

@@ -11,18 +11,12 @@ interface StepHeaderProps {
   className?: string;
 }
 
-export default function StepHeader({
-  steps,
-  currentStep,
-  className,
-}: StepHeaderProps) {
+export default function StepHeader({ steps, currentStep, className }: StepHeaderProps) {
   const currentIndex = steps.findIndex((step) => step.id === currentStep);
 
   return (
-    <div
-      className={cn("flex items-center justify-center w-full mb-8", className)}
-    >
-      <div className="flex w-full max-w-[100px] mx-auto space-x-1">
+    <div className={cn("mb-8 flex w-full items-center justify-center", className)}>
+      <div className='mx-auto flex w-full max-w-[100px] space-x-1'>
         {steps.map((step, index) => {
           const isActive = index === currentIndex;
           const isCompleted = index < currentIndex;
@@ -34,7 +28,7 @@ export default function StepHeader({
                 "h-1 flex-1 rounded-sm",
                 isActive && "bg-primary",
                 isCompleted && "bg-primary",
-                !isActive && !isCompleted && "bg-muted",
+                !isActive && !isCompleted && "bg-muted"
               )}
             />
           );

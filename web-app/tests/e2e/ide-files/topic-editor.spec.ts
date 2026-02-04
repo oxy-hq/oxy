@@ -1,11 +1,11 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 test.describe("IDE Files - Topic Editor - Explorer Mode Multi-View", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
   });
 
@@ -30,9 +30,7 @@ test.describe("IDE Files - Topic Editor - Explorer Mode Multi-View", () => {
         await page.waitForTimeout(1000);
 
         // Should list multiple views
-        const viewsList = page.locator(
-          '[data-testid*="views-list"], .views-list',
-        );
+        const viewsList = page.locator('[data-testid*="views-list"], .views-list');
         const hasViews = await viewsList.isVisible().catch(() => false);
         // May or may not have views depending on topic
         expect(hasViews || true).toBeTruthy();
@@ -90,9 +88,7 @@ test.describe("IDE Files - Topic Editor - Explorer Mode Multi-View", () => {
         await page.waitForTimeout(1000);
 
         // Find expandable view
-        const viewExpander = page
-          .locator('[data-testid*="view-expand"], .view-header')
-          .first();
+        const viewExpander = page.locator('[data-testid*="view-expand"], .view-header').first();
         if (await viewExpander.isVisible()) {
           await viewExpander.click();
           await page.waitForTimeout(300);
@@ -153,9 +149,7 @@ test.describe("IDE Files - Topic Editor - Field Selection", () => {
         await page.waitForTimeout(1000);
 
         // Select a field
-        const field = page
-          .locator('[data-testid*="field"], .field-item')
-          .first();
+        const field = page.locator('[data-testid*="field"], .field-item').first();
         if (await field.isVisible()) {
           await field.click();
           await page.waitForTimeout(300);
@@ -165,9 +159,7 @@ test.describe("IDE Files - Topic Editor - Field Selection", () => {
   });
 
   // 10.11 Select from multiple views
-  test("10.11 - should combine fields from multiple views in query", async ({
-    page,
-  }) => {
+  test("10.11 - should combine fields from multiple views in query", async ({ page }) => {
     const semanticSection = page.getByText("Semantic Layer");
     if (await semanticSection.isVisible()) {
       await semanticSection.click();
@@ -231,14 +223,12 @@ test.describe("IDE Files - Topic Editor - Loading", () => {
   });
 
   // 10.14-10.16 Loading and error states
-  test("10.14 - should show error for non-existent view reference", async ({
-    page,
-  }) => {
+  test("10.14 - should show error for non-existent view reference", async ({ page }) => {
     // Intercept topic API to return error
     await page.route("**/api/v1/**/topics/**", (route) => {
       route.fulfill({
         status: 500,
-        body: JSON.stringify({ error: "View not found" }),
+        body: JSON.stringify({ error: "View not found" })
       });
     });
 
@@ -283,9 +273,7 @@ test.describe("IDE Files - Topic Editor - Loading", () => {
   });
 
   // 10.16 No views found
-  test("10.16 - should show empty state when no views found", async ({
-    page,
-  }) => {
+  test("10.16 - should show empty state when no views found", async ({ page }) => {
     const semanticSection = page.getByText("Semantic Layer");
     if (await semanticSection.isVisible()) {
       await semanticSection.click();

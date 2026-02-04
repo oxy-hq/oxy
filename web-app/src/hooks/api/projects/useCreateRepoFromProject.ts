@@ -10,23 +10,19 @@ interface CreateRepoFromProjectRequest {
 export const useCreateRepoFromProject = () => {
   const queryClient = useQueryClient();
 
-  return useMutation<
-    { success: boolean; message: string },
-    Error,
-    CreateRepoFromProjectRequest
-  >({
+  return useMutation<{ success: boolean; message: string }, Error, CreateRepoFromProjectRequest>({
     mutationFn: ({ projectId, gitNamespaceId, repoName }) =>
       ProjectService.createRepoFromProject(projectId, gitNamespaceId, repoName),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: ["project", variables.projectId],
+        queryKey: ["project", variables.projectId]
       });
       queryClient.invalidateQueries({
-        queryKey: ["project", variables.projectId, "details"],
+        queryKey: ["project", variables.projectId, "details"]
       });
       queryClient.invalidateQueries({
-        queryKey: ["project", variables.projectId, "status"],
+        queryKey: ["project", variables.projectId, "status"]
       });
-    },
+    }
   });
 };

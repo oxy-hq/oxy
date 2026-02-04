@@ -1,9 +1,6 @@
 import { Building2 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
-import {
-  SidebarMenuButton,
-  SidebarMenuItem,
-} from "@/components/ui/shadcn/sidebar";
+import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/shadcn/sidebar";
 import ROUTES from "@/libs/utils/routes";
 
 export default function Workspaces() {

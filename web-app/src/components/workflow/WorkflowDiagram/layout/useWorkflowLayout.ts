@@ -1,10 +1,10 @@
-import useWorkflow, {
-  TaskConfig,
-  TaskConfigWithId,
-  TaskType,
-} from "@/stores/useWorkflow";
-import { useEffect, useMemo } from "react";
 import type { FitViewOptions } from "@xyflow/react";
+import { useEffect, useMemo } from "react";
+import useWorkflow, {
+  type TaskConfig,
+  type TaskConfigWithId,
+  TaskType
+} from "@/stores/useWorkflow";
 import { calculateNodesSize, getLayoutedElements } from ".";
 
 const addTaskId = (
@@ -12,7 +12,7 @@ const addTaskId = (
   tasks: TaskConfig[],
   runId?: string,
   parentId?: string,
-  subWorkflowTaskId?: string,
+  subWorkflowTaskId?: string
 ): TaskConfigWithId[] => {
   return tasks.map((task) => {
     const taskId = parentId ? `${parentId}.${task.name}` : task.name;
@@ -20,17 +20,11 @@ const addTaskId = (
       return {
         ...task,
         type: TaskType.LOOP_SEQUENTIAL,
-        tasks: addTaskId(
-          workflowId,
-          task.tasks,
-          runId,
-          taskId,
-          subWorkflowTaskId,
-        ),
+        tasks: addTaskId(workflowId, task.tasks, runId, taskId, subWorkflowTaskId),
         id: taskId,
         workflowId,
         subWorkflowTaskId,
-        runId,
+        runId
       };
     }
     if (task.type === TaskType.WORKFLOW) {
@@ -41,7 +35,7 @@ const addTaskId = (
         id: taskId,
         workflowId,
         runId,
-        subWorkflowTaskId,
+        subWorkflowTaskId
       };
     }
     if (task.type === TaskType.CONDITIONAL) {
@@ -49,22 +43,14 @@ const addTaskId = (
         ...task,
         conditions: task.conditions.map((c) => ({
           ...c,
-          tasks: addTaskId(
-            workflowId,
-            c.tasks,
-            runId,
-            taskId,
-            subWorkflowTaskId,
-          ),
+          tasks: addTaskId(workflowId, c.tasks, runId, taskId, subWorkflowTaskId)
         })),
         type: TaskType.CONDITIONAL,
-        else: task.else
-          ? addTaskId(workflowId, task.else, runId, taskId)
-          : undefined,
+        else: task.else ? addTaskId(workflowId, task.else, runId, taskId) : undefined,
         id: taskId,
         workflowId,
         runId,
-        subWorkflowTaskId,
+        subWorkflowTaskId
       };
     }
     return {
@@ -72,16 +58,12 @@ const addTaskId = (
       id: taskId,
       workflowId,
       runId,
-      subWorkflowTaskId,
+      subWorkflowTaskId
     } as TaskConfigWithId;
   });
 };
 
-export const useWorkflowLayout = (
-  workflowId: string,
-  tasks: TaskConfig[],
-  runId?: string,
-) => {
+export const useWorkflowLayout = (workflowId: string, tasks: TaskConfig[], runId?: string) => {
   const baseNodes = useWorkflow((state) => state.baseNodes);
   const edges = useWorkflow((state) => state.edges);
   const nodes = useWorkflow((state) => state.nodes);
@@ -95,7 +77,7 @@ export const useWorkflowLayout = (
       maxZoom: 1,
       minZoom: 0.1,
       nodes,
-      duration: 0,
+      duration: 0
     };
   }, [nodes]);
 
@@ -115,6 +97,6 @@ export const useWorkflowLayout = (
   return {
     fitViewOptions,
     nodes,
-    edges,
+    edges
   };
 };

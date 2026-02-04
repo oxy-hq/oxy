@@ -1,10 +1,10 @@
-import { apiClient } from "./axios";
-import {
-  GitHubRepository,
+import type {
+  CreateGitNamespaceRequest,
   GitHubBranch,
   GitHubNamespace,
-  CreateGitNamespaceRequest,
+  GitHubRepository
 } from "@/types/github";
+import { apiClient } from "./axios";
 
 export class GitHubApiService {
   // Git Namespaces
@@ -18,29 +18,22 @@ export class GitHubApiService {
     return response.data;
   }
 
-  static async createGitNamespace(
-    data: CreateGitNamespaceRequest,
-  ): Promise<GitHubNamespace> {
+  static async createGitNamespace(data: CreateGitNamespaceRequest): Promise<GitHubNamespace> {
     const response = await apiClient.post("/github/namespaces", data);
     return response.data;
   }
 
   // Repositories and Branches
-  static async listRepositories(
-    gitNamespaceId: string,
-  ): Promise<GitHubRepository[]> {
+  static async listRepositories(gitNamespaceId: string): Promise<GitHubRepository[]> {
     const response = await apiClient.get("/github/repositories", {
-      params: { git_namespace_id: gitNamespaceId },
+      params: { git_namespace_id: gitNamespaceId }
     });
     return response.data;
   }
 
-  static async listBranches(
-    gitNamespaceId: string,
-    repoName: string,
-  ): Promise<GitHubBranch[]> {
+  static async listBranches(gitNamespaceId: string, repoName: string): Promise<GitHubBranch[]> {
     const response = await apiClient.get("/github/branches", {
-      params: { git_namespace_id: gitNamespaceId, repo_name: repoName },
+      params: { git_namespace_id: gitNamespaceId, repo_name: repoName }
     });
     return response.data;
   }

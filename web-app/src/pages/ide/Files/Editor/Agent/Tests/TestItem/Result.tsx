@@ -1,13 +1,13 @@
-import ReactMarkdown from "react-markdown";
-import { useState } from "react";
 import { ChevronRight } from "lucide-react";
-import { TestResult } from "@/stores/useTests";
+import { useState } from "react";
+import ReactMarkdown from "react-markdown";
+import type { TestResult } from "@/stores/useTests";
 import {
-  Record,
-  SimilarityMetric,
-  RecallMetric,
-  RecallRecord,
   MetricKind,
+  type RecallMetric,
+  type RecallRecord,
+  type Record,
+  type SimilarityMetric
 } from "@/types/eval";
 
 const Similarity = ({ score, records }: SimilarityMetric) => {
@@ -18,7 +18,7 @@ const Similarity = ({ score, records }: SimilarityMetric) => {
   return (
     <>
       <div
-        className="flex gap-2 py-1 px-2 items-center cursor-pointer"
+        className='flex cursor-pointer items-center gap-2 px-2 py-1'
         onClick={() => {
           if (haveInconsistencies) {
             setShowResult(!showResult);
@@ -26,26 +26,23 @@ const Similarity = ({ score, records }: SimilarityMetric) => {
         }}
       >
         <ChevronRight
-          className={`w-4 h-4 transition-transform duration-300 ease-in-out ${
+          className={`h-4 w-4 transition-transform duration-300 ease-in-out ${
             showResult ? "rotate-90" : "rotate-0"
           }`}
         />
-        <p className="text-sidebar-foreground">Accuracy score:</p>
-        <p className="text-green-500">{score}</p>
+        <p className='text-sidebar-foreground'>Accuracy score:</p>
+        <p className='text-green-500'>{score}</p>
       </div>
 
       {haveInconsistencies && (
         <div
-          className={`pl-8 transition-all duration-300 ease-in-out overflow-hidden ${
+          className={`overflow-hidden pl-8 transition-all duration-300 ease-in-out ${
             showResult ? "max-h-[5000px] opacity-100" : "max-h-0 opacity-0"
           }`}
         >
           {inconsistencies.map((record) => (
-            <div
-              key={record.cot}
-              className="py-2 text-muted-foreground font-mono text-sm"
-            >
-              <p className="py-2">Inconsistencies were found</p>
+            <div key={record.cot} className='py-2 font-mono text-muted-foreground text-sm'>
+              <p className='py-2'>Inconsistencies were found</p>
 
               <ReactMarkdown
                 components={{
@@ -54,21 +51,18 @@ const Similarity = ({ score, records }: SimilarityMetric) => {
                     const coloredText = text.replace(
                       /(\+\+\+|---)/g,
                       (match) =>
-                        `<span class="${match === "+++" ? "text-green-500" : "text-red-500"}">${match}</span>`,
+                        `<span class="${match === "+++" ? "text-green-500" : "text-red-500"}">${match}</span>`
                     );
                     return (
                       <code
-                        className="whitespace-pre-wrap break-words"
+                        className='whitespace-pre-wrap break-words'
                         dangerouslySetInnerHTML={{ __html: coloredText }}
                       />
                     );
                   },
                   pre: ({ ...props }) => (
-                    <pre
-                      {...props}
-                      className="whitespace-pre-wrap break-words overflow-x-auto"
-                    />
-                  ),
+                    <pre {...props} className='overflow-x-auto whitespace-pre-wrap break-words' />
+                  )
                 }}
               >
                 {`\`\`\`\n${record.cot}\n\`\`\``}
@@ -88,7 +82,7 @@ const Recall = ({ score, records }: RecallMetric) => {
   return (
     <>
       <div
-        className="flex gap-2 py-1 px-2 items-center cursor-pointer"
+        className='flex cursor-pointer items-center gap-2 px-2 py-1'
         onClick={() => {
           if (haveInconsistencies) {
             setShowResult(!showResult);
@@ -96,41 +90,41 @@ const Recall = ({ score, records }: RecallMetric) => {
         }}
       >
         <ChevronRight
-          className={`w-4 h-4 transition-transform duration-300 ease-in-out ${
+          className={`h-4 w-4 transition-transform duration-300 ease-in-out ${
             showResult ? "rotate-90" : "rotate-0"
           }`}
         />
-        <p className="text-sidebar-foreground">Recall score:</p>
-        <p className="text-green-500">{score}</p>
+        <p className='text-sidebar-foreground'>Recall score:</p>
+        <p className='text-green-500'>{score}</p>
       </div>
 
       {haveInconsistencies && (
         <div
-          className={`pl-8 transition-all duration-300 ease-in-out overflow-hidden ${
+          className={`overflow-hidden pl-8 transition-all duration-300 ease-in-out ${
             showResult ? "max-h-[5000px] opacity-100" : "max-h-0 opacity-0"
           }`}
         >
           {inconsistencies.map((record) => (
             <div
               key={record.retrieved_contexts.join(",")}
-              className="py-2 text-muted-foreground font-mono text-sm"
+              className='py-2 font-mono text-muted-foreground text-sm'
             >
-              <p className="py-2">Recall Score: {record.score}</p>
-              <p className="text-green-500">
+              <p className='py-2'>Recall Score: {record.score}</p>
+              <p className='text-green-500'>
                 Retrieved documents:
-                <ul className="list-disc list-inside">
+                <ul className='list-inside list-disc'>
                   {record.retrieved_contexts.map((doc) => (
-                    <li key={doc} className="list-disc list-inside">
+                    <li key={doc} className='list-inside list-disc'>
                       {doc}
                     </li>
                   ))}
                 </ul>
               </p>
-              <p className="text-red-500">
+              <p className='text-red-500'>
                 Reference documents:
-                <ul className="list-disc list-inside">
+                <ul className='list-inside list-disc'>
                   {record.reference_contexts.map((doc) => (
-                    <li key={doc} className="list-disc list-inside">
+                    <li key={doc} className='list-inside list-disc'>
                       {doc}
                     </li>
                   ))}
@@ -148,7 +142,7 @@ const Result = ({ result }: { result: TestResult }) => {
   const { metrics } = result;
 
   return (
-    <div className="px-1 rounded-b-lg">
+    <div className='rounded-b-lg px-1'>
       {metrics.map((metric) => {
         switch (metric.type) {
           case MetricKind.Similarity:

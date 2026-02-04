@@ -1,4 +1,4 @@
-import { Trace } from "@/services/api/traces";
+import type { Trace } from "@/services/api/traces";
 
 export interface TraceChartsProps {
   traces: Trace[] | undefined;

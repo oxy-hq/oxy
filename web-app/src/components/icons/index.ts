@@ -1,15 +1,15 @@
-import OpenAiIcon from "./OpenAiIcon";
-import GoogleIcon from "./GoogleIcon";
+import AgentIcon from "./AgentIcon";
 import AnthropicIcon from "./AnthropicIcon";
-import OllamaIcon from "./OllamaIcon";
 import BigQueryIcon from "./BigQueryIcon";
-import SnowflakeIcon from "./SnowflakeIcon";
+import ClickHouseIcon from "./ClickHouseIcon";
+import DuckDBIcon from "./DuckDBIcon";
+import GoogleIcon from "./GoogleIcon";
+import MysqlIcon from "./MysqlIcon";
+import OllamaIcon from "./OllamaIcon";
+import OpenAiIcon from "./OpenAiIcon";
 import PostgresIcon from "./PostgresIcon";
 import RedshiftIcon from "./RedshiftIcon";
-import MysqlIcon from "./MysqlIcon";
-import DuckDBIcon from "./DuckDBIcon";
-import ClickHouseIcon from "./ClickHouseIcon";
-import AgentIcon from "./AgentIcon";
+import SnowflakeIcon from "./SnowflakeIcon";
 
 export {
   OpenAiIcon,
@@ -23,5 +23,5 @@ export {
   MysqlIcon,
   DuckDBIcon,
   ClickHouseIcon,
-  AgentIcon,
+  AgentIcon
 };

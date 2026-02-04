@@ -1,12 +1,9 @@
-import { cn } from "@/libs/shadcn/utils";
+import { useMediaQuery } from "usehooks-ts";
 import { SidebarTrigger } from "@/components/ui/shadcn/sidebar";
 import useSidebar from "@/components/ui/shadcn/sidebar-context";
-import { useMediaQuery } from "usehooks-ts";
-const PageHeader = ({
-  className,
-  children,
-  ...props
-}: React.ComponentProps<"div">) => {
+import { cn } from "@/libs/shadcn/utils";
+
+const PageHeader = ({ className, children, ...props }: React.ComponentProps<"div">) => {
   const { open } = useSidebar();
   const isMobile = useMediaQuery("(max-width: 767px)");
   return (

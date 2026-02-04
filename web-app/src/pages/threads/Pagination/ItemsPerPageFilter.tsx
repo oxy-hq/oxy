@@ -1,10 +1,10 @@
-import React from "react";
+import type React from "react";
 import {
   Select,
-  SelectTrigger,
-  SelectValue,
   SelectContent,
   SelectItem,
+  SelectTrigger,
+  SelectValue
 } from "@/components/ui/shadcn/select";
 
 interface ItemsPerPageFilterProps {
@@ -18,7 +18,7 @@ const ITEMS_PER_PAGE_OPTIONS = [10, 25, 50, 100];
 const ItemsPerPageFilter: React.FC<ItemsPerPageFilterProps> = ({
   currentLimit,
   onLimitChange,
-  isLoading = false,
+  isLoading = false
 }) => {
   return (
     <Select
@@ -27,12 +27,12 @@ const ItemsPerPageFilter: React.FC<ItemsPerPageFilterProps> = ({
       disabled={isLoading}
     >
       <SelectTrigger
-        className="min-w-[70px] justify-between border-border"
-        data-testid="threads-per-page-selector"
+        className='min-w-[70px] justify-between border-border'
+        data-testid='threads-per-page-selector'
       >
         <SelectValue />
       </SelectTrigger>
-      <SelectContent align="end" className="min-w-[70px]">
+      <SelectContent align='end' className='min-w-[70px]'>
         {ITEMS_PER_PAGE_OPTIONS.map((option) => (
           <SelectItem key={option} value={option.toString()}>
             {option} / page

@@ -10,9 +10,9 @@ export const useUpdateUserRole = (workspaceId: string) => {
       UserService.updateUserRole(workspaceId, userId, role),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: queryKeys.user.list(workspaceId),
+        queryKey: queryKeys.user.list(workspaceId)
       });
-    },
+    }
   });
 };
 
@@ -23,9 +23,9 @@ export const useRemoveUser = (workspaceId: string) => {
     mutationFn: (userId: string) => UserService.removeUser(workspaceId, userId),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: queryKeys.user.list(workspaceId),
+        queryKey: queryKeys.user.list(workspaceId)
       });
-    },
+    }
   });
 };
 
@@ -36,7 +36,7 @@ export const useAddUserToWorkspace = () => {
     mutationFn: ({
       workspaceId,
       email,
-      role,
+      role
     }: {
       workspaceId: string;
       email: string;
@@ -44,8 +44,8 @@ export const useAddUserToWorkspace = () => {
     }) => UserService.addUserToWorkspace(workspaceId, email, role),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({
-        queryKey: queryKeys.user.list(variables.workspaceId),
+        queryKey: queryKeys.user.list(variables.workspaceId)
       });
-    },
+    }
   });
 };

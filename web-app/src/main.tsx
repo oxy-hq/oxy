@@ -1,11 +1,10 @@
-import { StrictMode, useEffect } from "react";
-
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
-import useTheme from "./stores/useTheme.ts";
 import App from "./App.tsx";
-
 import { initSentry } from "./sentry";
+import useTheme from "./stores/useTheme.ts";
+
 initSentry();
 
 const queryClient = new QueryClient();
@@ -19,10 +18,10 @@ export const AppWrapper = () => {
 
   return (
     <div
-      id="app-root"
+      id='app-root'
       className={`root ${theme}`}
-      lang="en"
-      data-theme-variant="new"
+      lang='en'
+      data-theme-variant='new'
       data-theme={theme}
     >
       <StrictMode>

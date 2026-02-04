@@ -1,11 +1,11 @@
+import { Loader2 } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/shadcn/button";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
-import { Loader2 } from "lucide-react";
 import { useCreateRepoFromProject } from "@/hooks/api/projects";
 import useCurrentProject from "@/stores/useCurrentProject";
-import { toast } from "sonner";
 import { GitNamespaceSelection } from "./GitNamespaceSelection";
 
 interface CreateRepositoryProps {
@@ -29,7 +29,7 @@ export const CreateRepository = ({ onSuccess }: CreateRepositoryProps) => {
       {
         projectId: project.id,
         gitNamespaceId: selectedGitNamespace,
-        repoName: repoName.trim(),
+        repoName: repoName.trim()
       },
       {
         onSuccess: (response) => {
@@ -43,8 +43,8 @@ export const CreateRepository = ({ onSuccess }: CreateRepositoryProps) => {
         },
         onError: (error) => {
           toast.error(`Failed to create repository: ${error.message}`);
-        },
-      },
+        }
+      }
     );
   };
 
@@ -60,22 +60,18 @@ export const CreateRepository = ({ onSuccess }: CreateRepositoryProps) => {
   };
 
   return (
-    <div className="flex flex-col gap-6">
-      <p className="text-sm text-muted-foreground">
-        Create a new{" "}
-        <span className="text-blue-600 font-medium">private repository</span> to
-        sync changes to. Oxy will push changes to a branch on this repository
-        each time you send a message.
+    <div className='flex flex-col gap-6'>
+      <p className='text-muted-foreground text-sm'>
+        Create a new <span className='font-medium text-blue-600'>private repository</span> to sync
+        changes to. Oxy will push changes to a branch on this repository each time you send a
+        message.
       </p>
-      <GitNamespaceSelection
-        value={selectedGitNamespace}
-        onChange={setSelectedGitNamespace}
-      />
+      <GitNamespaceSelection value={selectedGitNamespace} onChange={setSelectedGitNamespace} />
 
-      <div className="space-y-2">
-        <Label htmlFor="repo-name">Repository Name</Label>
+      <div className='space-y-2'>
+        <Label htmlFor='repo-name'>Repository Name</Label>
         <Input
-          id="repo-name"
+          id='repo-name'
           value={repoName}
           onChange={(e) => setRepoName(e.target.value)}
           onFocus={generateDefaultRepoName}
@@ -84,22 +80,18 @@ export const CreateRepository = ({ onSuccess }: CreateRepositoryProps) => {
               ? `${project.name.toLowerCase().replace(/[^a-z0-9]/g, "-")}`
               : "repository-name"
           }
-          className="font-mono"
+          className='font-mono'
         />
       </div>
 
       <Button
         onClick={handleCreateRepo}
-        disabled={
-          !selectedGitNamespace ||
-          !repoName.trim() ||
-          createRepoMutation.isPending
-        }
-        className="w-full"
+        disabled={!selectedGitNamespace || !repoName.trim() || createRepoMutation.isPending}
+        className='w-full'
       >
         {createRepoMutation.isPending ? (
           <>
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            <Loader2 className='mr-2 h-4 w-4 animate-spin' />
             Creating Repository...
           </>
         ) : (

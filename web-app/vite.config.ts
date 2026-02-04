@@ -1,11 +1,10 @@
+import { resolve } from "node:path";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
-import { resolve } from "path";
-
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react-swc";
+import { visualizer } from "rollup-plugin-visualizer";
 import { defineConfig } from "vite";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
-import { visualizer } from "rollup-plugin-visualizer";
 
 // Shared dependency configuration for both dev optimization and production chunking
 const dependencies = {
@@ -15,7 +14,7 @@ const dependencies = {
     "react-dom",
     "react-dom/client", // Added - important for React 18+
     "react-router-dom",
-    "react-error-boundary",
+    "react-error-boundary"
   ],
 
   // React UI components - commonly used together
@@ -26,7 +25,7 @@ const dependencies = {
     "react-resize-detector",
     "react-resizable-panels",
     "react-hotkeys-hook",
-    "react-hook-form",
+    "react-hook-form"
   ],
 
   // Radix UI components - heavy UI library, separate chunk
@@ -50,7 +49,7 @@ const dependencies = {
     "@radix-ui/react-toggle",
     "@radix-ui/react-toggle-group",
     "@radix-ui/react-tooltip",
-    "@radix-ui/react-visually-hidden",
+    "@radix-ui/react-visually-hidden"
   ],
 
   // Code editors - large, feature-specific chunk
@@ -63,7 +62,7 @@ const dependencies = {
     "@codemirror/lang-python",
     "@codemirror/lang-sql",
     "@codemirror/language",
-    "@lezer/highlight",
+    "@lezer/highlight"
   ],
 
   // Data visualization - large but specific use case
@@ -79,7 +78,7 @@ const dependencies = {
     "unist-util-visit",
     "react-syntax-highlighter",
     "highlight.js",
-    "prism-react-renderer",
+    "prism-react-renderer"
   ],
 
   // Data management - state, queries, tables
@@ -88,7 +87,7 @@ const dependencies = {
     "@tanstack/react-table",
     "@tanstack/react-virtual",
     "zustand",
-    "@duckdb/duckdb-wasm",
+    "@duckdb/duckdb-wasm"
   ],
 
   // UI utilities and theming
@@ -99,14 +98,14 @@ const dependencies = {
     "sonner",
     "next-themes",
     "tailwindcss-animate",
-    "lucide-react",
+    "lucide-react"
   ],
 
   // Animations and interactions
   animations: [
     "@lottiefiles/react-lottie-player",
     "@formkit/auto-animate",
-    "react-day-picker", // Date picker has its own animations
+    "react-day-picker" // Date picker has its own animations
   ],
 
   // Date and time utilities
@@ -122,19 +121,19 @@ const dependencies = {
     "invariant",
     "uuid",
     "sort-by",
-    "js-cookie", // Browser storage utility
+    "js-cookie" // Browser storage utility
   ],
 
   // State persistence
   persistence: [
-    "persist-and-sync", // Added - missing from original config
+    "persist-and-sync" // Added - missing from original config
   ],
 
   // Network and external services
   network: ["axios", "@microsoft/fetch-event-source"],
 
   // Development and polyfills - less critical, can be lazy loaded
-  dev: ["dotenv", "memfs"],
+  dev: ["dotenv", "memfs"]
 };
 
 // Flatten all dependencies for optimizeDeps.include
@@ -149,15 +148,15 @@ export default defineConfig({
     exclude: [
       // These are optional Node.js-only peer dependencies of memfs that don't exist in browser
       "@jsonjoy.com/fs-node",
-      "@jsonjoy.com/fs-node-utils",
-    ],
+      "@jsonjoy.com/fs-node-utils"
+    ]
   },
   resolve: {
     alias: {
       "@": resolve(__dirname, "./src"),
       "styled-system": resolve(__dirname, "./styled-system"),
-      elkjs: "elkjs/lib/elk.bundled.js",
-    },
+      elkjs: "elkjs/lib/elk.bundled.js"
+    }
   },
   plugins: [
     react(),
@@ -165,20 +164,20 @@ export default defineConfig({
     nodePolyfills({
       overrides: {
         // Since `fs` is not supported in browsers, we can use the `memfs` package to polyfill it.
-        fs: "memfs",
-      },
+        fs: "memfs"
+      }
     }),
     visualizer({
       open: true,
       filename: "bundle-report.html",
       gzipSize: true,
-      brotliSize: true,
+      brotliSize: true
     }),
     sentryVitePlugin({
       org: process.env.SENTRY_ORG || "oxy-z9",
       project: process.env.VITE_SENTRY_PROJECT || "oxy-frontend",
-      authToken: process.env.SENTRY_AUTH_TOKEN,
-    }),
+      authToken: process.env.SENTRY_AUTH_TOKEN
+    })
   ],
   publicDir: "public",
   clearScreen: false,
@@ -191,7 +190,7 @@ export default defineConfig({
     // Enable faster dependency pre-bundling during development
     fs: {
       // Allow serving files from one level up to the project root
-      allow: [".."],
+      allow: [".."]
     },
     // Warm up frequently used files
     warmup: {
@@ -199,9 +198,9 @@ export default defineConfig({
         "./src/main.tsx",
         "./src/App.tsx",
         "./src/components/**/*.tsx",
-        "./src/pages/**/*.tsx",
-      ],
-    },
+        "./src/pages/**/*.tsx"
+      ]
+    }
   },
   build: {
     target: "baseline-widely-available",
@@ -223,9 +222,9 @@ export default defineConfig({
           "utils-vendor": dependencies.utils,
           persistence: dependencies.persistence,
           "network-vendor": dependencies.network,
-          "dev-vendor": dependencies.dev,
-        },
-      },
-    },
-  },
+          "dev-vendor": dependencies.dev
+        }
+      }
+    }
+  }
 });

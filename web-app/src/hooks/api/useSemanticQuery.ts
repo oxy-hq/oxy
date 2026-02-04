@@ -1,5 +1,5 @@
-import { SemanticService, SemanticQueryRequest } from "@/services/api/semantic";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { type SemanticQueryRequest, SemanticService } from "@/services/api/semantic";
 import useCurrentProjectBranch from "../useCurrentProjectBranch";
 
 export function useExecuteSemanticQuery() {
@@ -8,7 +8,7 @@ export function useExecuteSemanticQuery() {
 
   return useMutation({
     mutationFn: (request: SemanticQueryRequest) =>
-      SemanticService.executeSemanticQuery(projectId, request),
+      SemanticService.executeSemanticQuery(projectId, request)
   });
 }
 
@@ -18,7 +18,7 @@ export function useCompileSemanticQuery() {
 
   return useMutation({
     mutationFn: (request: SemanticQueryRequest) =>
-      SemanticService.compileSemanticQuery(projectId, request),
+      SemanticService.compileSemanticQuery(projectId, request)
   });
 }
 
@@ -33,7 +33,7 @@ export function useTopicDetails(filePathB64: string | undefined) {
       return SemanticService.getTopicDetails(projectId, filePathB64);
     },
     enabled: !!filePathB64,
-    retry: false,
+    retry: false
   });
 }
 
@@ -48,6 +48,6 @@ export function useViewDetails(filePathB64: string | undefined) {
       return SemanticService.getViewDetails(projectId, filePathB64);
     },
     enabled: !!filePathB64,
-    retry: false,
+    retry: false
   });
 }

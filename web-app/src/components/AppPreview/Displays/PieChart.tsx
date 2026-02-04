@@ -1,36 +1,20 @@
-import { useCallback } from "react";
 import type { PieSeriesOption } from "echarts";
-import { DataContainer, PieChartDisplay } from "@/types/app";
+import { useCallback } from "react";
 import { Echarts } from "@/components/Echarts";
+import type { DataContainer, PieChartDisplay } from "@/types/app";
 import {
-  useChartBase,
-  getPieChartData,
-  createPieChartOptions,
   type ChartBuilderParams,
+  createPieChartOptions,
+  getPieChartData,
+  useChartBase
 } from "./hooks";
 
-export const PieChart = ({
-  display,
-  data,
-}: {
-  display: PieChartDisplay;
-  data?: DataContainer;
-}) => {
+export const PieChart = ({ display, data }: { display: PieChartDisplay; data?: DataContainer }) => {
   const buildChartOptions = useCallback(
-    async ({
-      display,
-      connection,
-      fileName,
-      isDarkMode,
-    }: ChartBuilderParams<PieChartDisplay>) => {
+    async ({ display, connection, fileName, isDarkMode }: ChartBuilderParams<PieChartDisplay>) => {
       const baseOptions = createPieChartOptions(isDarkMode);
 
-      const pieData = await getPieChartData(
-        connection,
-        fileName,
-        display.name,
-        display.value,
-      );
+      const pieData = await getPieChartData(connection, fileName, display.name, display.value);
 
       const pieSeries: PieSeriesOption = {
         type: "pie",
@@ -39,30 +23,24 @@ export const PieChart = ({
           itemStyle: {
             shadowBlur: 10,
             shadowOffsetX: 0,
-            shadowColor: "rgba(0, 0, 0, 0.5)",
-          },
-        },
+            shadowColor: "rgba(0, 0, 0, 0.5)"
+          }
+        }
       };
 
       return {
         ...baseOptions,
-        series: [pieSeries],
+        series: [pieSeries]
       };
     },
-    [],
+    []
   );
 
   const { isLoading, chartOptions } = useChartBase({
     display,
     data,
-    buildChartOptions,
+    buildChartOptions
   });
 
-  return (
-    <Echarts
-      isLoading={isLoading}
-      options={chartOptions}
-      title={display.title}
-    />
-  );
+  return <Echarts isLoading={isLoading} options={chartOptions} title={display.title} />;
 };

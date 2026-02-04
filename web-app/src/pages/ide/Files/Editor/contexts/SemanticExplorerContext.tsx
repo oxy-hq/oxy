@@ -1,19 +1,9 @@
-import {
-  createContext,
-  useContext,
-  ReactNode,
-  useMemo,
-  useCallback,
-  useEffect,
-} from "react";
-import {
-  useExecuteSemanticQuery,
-  useCompileSemanticQuery,
-} from "@/hooks/api/useSemanticQuery";
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo } from "react";
+import { useCompileSemanticQuery, useExecuteSemanticQuery } from "@/hooks/api/useSemanticQuery";
+import type { Variable } from "../components/SemanticQueryPanel";
 import { useSemanticQueryState } from "../hooks/useSemanticQueryState";
-import { Variable } from "../components/SemanticQueryPanel";
+import type { Field, Filter, Order } from "../types";
 import { buildSemanticQuery } from "../utils/queryBuilder";
-import { Field, Filter, Order } from "../types";
 
 type SemanticExplorerContextType = {
   // Data
@@ -65,8 +55,7 @@ type SemanticExplorerContextType = {
   resultFile?: string;
 };
 
-const SemanticExplorerContext =
-  createContext<SemanticExplorerContextType | null>(null);
+const SemanticExplorerContext = createContext<SemanticExplorerContextType | null>(null);
 
 type SemanticExplorerProviderProps = {
   children: ReactNode;
@@ -89,7 +78,7 @@ export const SemanticExplorerProvider = ({
   availableDimensions,
   availableMeasures,
   canExecuteQuery,
-  onAddOrderDefault,
+  onAddOrderDefault
 }: SemanticExplorerProviderProps) => {
   const {
     result,
@@ -119,22 +108,17 @@ export const SemanticExplorerProvider = ({
     updateVariable,
     removeVariable,
     toggleDimension,
-    toggleMeasure,
+    toggleMeasure
   } = useSemanticQueryState();
 
-  const { mutate: executeSemanticQuery, isPending: isExecuting } =
-    useExecuteSemanticQuery();
-  const { mutate: compileSemanticQuery, isPending: isCompiling } =
-    useCompileSemanticQuery();
+  const { mutate: executeSemanticQuery, isPending: isExecuting } = useExecuteSemanticQuery();
+  const { mutate: compileSemanticQuery, isPending: isCompiling } = useCompileSemanticQuery();
 
   const loading = isExecuting || isCompiling || dataLoading;
 
   // Auto-compile query when selection changes
   useEffect(() => {
-    if (
-      !canExecuteQuery ||
-      (selectedDimensions.length === 0 && selectedMeasures.length === 0)
-    )
+    if (!canExecuteQuery || (selectedDimensions.length === 0 && selectedMeasures.length === 0))
       return;
 
     const request = buildSemanticQuery({
@@ -143,7 +127,7 @@ export const SemanticExplorerProvider = ({
       measures: selectedMeasures,
       filters,
       orders,
-      variables,
+      variables
     });
 
     compileSemanticQuery(request, {
@@ -154,7 +138,7 @@ export const SemanticExplorerProvider = ({
       onError: (error) => {
         setGeneratedSql("");
         setSqlError(error.message);
-      },
+      }
     });
   }, [
     canExecuteQuery,
@@ -166,7 +150,7 @@ export const SemanticExplorerProvider = ({
     compileSemanticQuery,
     setGeneratedSql,
     setSqlError,
-    topic,
+    topic
   ]);
 
   const handleExecuteQuery = useCallback(() => {
@@ -178,7 +162,7 @@ export const SemanticExplorerProvider = ({
       measures: selectedMeasures,
       filters,
       orders,
-      variables,
+      variables
     });
 
     executeSemanticQuery(request, {
@@ -191,7 +175,7 @@ export const SemanticExplorerProvider = ({
         setResult([]);
         setResultFile(undefined);
         setExecutionError(error.message);
-      },
+      }
     });
   }, [
     canExecuteQuery,
@@ -204,7 +188,7 @@ export const SemanticExplorerProvider = ({
     executeSemanticQuery,
     setResult,
     setResultFile,
-    setExecutionError,
+    setExecutionError
   ]);
 
   const addFilter = useCallback(() => {
@@ -259,7 +243,7 @@ export const SemanticExplorerProvider = ({
       availableMeasures,
       setResult,
       resultFile,
-      setResultFile,
+      setResultFile
     }),
     [
       dataLoading,
@@ -296,23 +280,19 @@ export const SemanticExplorerProvider = ({
       availableMeasures,
       setResult,
       resultFile,
-      setResultFile,
-    ],
+      setResultFile
+    ]
   );
 
   return (
-    <SemanticExplorerContext.Provider value={value}>
-      {children}
-    </SemanticExplorerContext.Provider>
+    <SemanticExplorerContext.Provider value={value}>{children}</SemanticExplorerContext.Provider>
   );
 };
 
 export const useSemanticExplorerContext = () => {
   const context = useContext(SemanticExplorerContext);
   if (!context) {
-    throw new Error(
-      "useSemanticExplorerContext must be used within SemanticExplorerProvider",
-    );
+    throw new Error("useSemanticExplorerContext must be used within SemanticExplorerProvider");
   }
   return context;
 };

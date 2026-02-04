@@ -1,4 +1,4 @@
-import { SemanticQueryFilter } from "@/services/api/semantic";
+import type { SemanticQueryFilter } from "@/services/api/semantic";
 
 export interface Dimension {
   name: string;

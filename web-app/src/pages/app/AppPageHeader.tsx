@@ -1,7 +1,7 @@
-import React from "react";
-import { Button } from "@/components/ui/shadcn/button";
 import { LayoutDashboard, LoaderCircle } from "lucide-react";
+import type React from "react";
 import PageHeader from "@/components/PageHeader";
+import { Button } from "@/components/ui/shadcn/button";
 
 type AppPageHeaderProps = {
   path: string;
@@ -9,28 +9,18 @@ type AppPageHeaderProps = {
   isRunning: boolean;
 };
 
-const AppPageHeader: React.FC<AppPageHeaderProps> = ({
-  path,
-  onRun,
-  isRunning,
-}) => {
+const AppPageHeader: React.FC<AppPageHeaderProps> = ({ path, onRun, isRunning }) => {
   const relativePath = path;
   return (
-    <PageHeader className="border-b-1 border-border">
-      <div className="flex justify-between items-center w-full">
+    <PageHeader className='border-border border-b-1'>
+      <div className='flex w-full items-center justify-between'>
         <div />
-        <div className="flex items-center justify-center gap-0.5">
+        <div className='flex items-center justify-center gap-0.5'>
           <LayoutDashboard width={16} height={16} />
-          <span className="text-sm truncate">{relativePath}</span>
+          <span className='truncate text-sm'>{relativePath}</span>
         </div>
-        <Button
-          size="sm"
-          onClick={onRun}
-          disabled={isRunning}
-          variant="default"
-          content="icon"
-        >
-          {isRunning ? <LoaderCircle className="animate-spin" /> : "Refresh"}
+        <Button size='sm' onClick={onRun} disabled={isRunning} variant='default' content='icon'>
+          {isRunning ? <LoaderCircle className='animate-spin' /> : "Refresh"}
         </Button>
       </div>
     </PageHeader>

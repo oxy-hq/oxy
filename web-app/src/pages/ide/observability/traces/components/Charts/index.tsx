@@ -1,21 +1,18 @@
 import { useMemo } from "react";
-import { TraceChartsProps } from "./types";
-import { aggregateByTime, aggregateByDuration, calculateStats } from "./utils";
+import ChartCard from "./ChartCard";
+import type { TraceChartsProps } from "./types";
 import {
   useAgentRunsChartOptions,
-  useWorkflowRunsChartOptions,
   useDurationChartOptions,
   useTokensChartOptions,
+  useWorkflowRunsChartOptions
 } from "./useChartOptions";
-import ChartCard from "./ChartCard";
+import { aggregateByDuration, aggregateByTime, calculateStats } from "./utils";
 
 export default function TraceCharts({ traces, isLoading }: TraceChartsProps) {
   const timeBuckets = useMemo(() => aggregateByTime(traces ?? []), [traces]);
 
-  const durationBuckets = useMemo(
-    () => aggregateByDuration(traces ?? []),
-    [traces],
-  );
+  const durationBuckets = useMemo(() => aggregateByDuration(traces ?? []), [traces]);
 
   const stats = useMemo(() => calculateStats(traces), [traces]);
 
@@ -25,35 +22,35 @@ export default function TraceCharts({ traces, isLoading }: TraceChartsProps) {
   const tokensChartOptions = useTokensChartOptions(timeBuckets);
 
   return (
-    <div className="grid grid-cols-4 gap-4 mb-4">
+    <div className='mb-4 grid grid-cols-4 gap-4'>
       <ChartCard
-        title="Agent Runs"
+        title='Agent Runs'
         value={`${stats.agentRuns} Agent Runs`}
-        subtitle=""
+        subtitle=''
         options={agentRunsChartOptions}
         isLoading={isLoading}
       />
 
       <ChartCard
-        title="Workflow Runs"
+        title='Workflow Runs'
         value={`${stats.workflowRuns} Workflow Runs`}
-        subtitle=""
+        subtitle=''
         options={workflowRunsChartOptions}
         isLoading={isLoading}
       />
 
       <ChartCard
-        title="Duration"
+        title='Duration'
         value={`${stats.avgDuration} Average Execution Time`}
-        subtitle=""
+        subtitle=''
         options={durationChartOptions}
         isLoading={isLoading}
       />
 
       <ChartCard
-        title="Tokens"
+        title='Tokens'
         value={`${stats.totalTokens.toLocaleString()} Total Tokens Used`}
-        subtitle=""
+        subtitle=''
         options={tokensChartOptions}
         isLoading={isLoading}
       />
@@ -63,8 +60,8 @@ export default function TraceCharts({ traces, isLoading }: TraceChartsProps) {
 
 // Re-export types for external use
 export type {
-  TraceChartsProps,
-  TimeBucket,
   DurationBucket,
-  TraceStats,
+  TimeBucket,
+  TraceChartsProps,
+  TraceStats
 } from "./types";

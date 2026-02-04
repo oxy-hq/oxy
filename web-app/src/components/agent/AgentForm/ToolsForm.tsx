@@ -1,34 +1,35 @@
-import React, { useState } from "react";
-import { useFormContext, useFieldArray, Controller } from "react-hook-form";
+import { ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
+import type React from "react";
+import { useState } from "react";
+import { Controller, useFieldArray, useFormContext } from "react-hook-form";
+import { Button } from "@/components/ui/shadcn/button";
+import { CardTitle } from "@/components/ui/shadcn/card";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger
+} from "@/components/ui/shadcn/collapsible";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
-import { Textarea } from "@/components/ui/shadcn/textarea";
-import { Button } from "@/components/ui/shadcn/button";
-import { Plus, Trash2, ChevronDown, ChevronRight } from "lucide-react";
-import { CardTitle } from "@/components/ui/shadcn/card";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  SelectValue
 } from "@/components/ui/shadcn/select";
+import { Textarea } from "@/components/ui/shadcn/textarea";
+import type { AgentFormData } from "./index";
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/shadcn/collapsible";
-import { AgentFormData } from "./index";
-import {
-  ExecuteSqlToolForm,
-  ValidateSqlToolForm,
-  WorkflowToolForm,
   AgentToolForm,
-  OmniQueryToolForm,
-  SemanticQueryToolForm,
-  RetrievalToolForm,
-  VisualizeToolForm,
   CreateDataAppToolForm,
+  ExecuteSqlToolForm,
+  OmniQueryToolForm,
+  RetrievalToolForm,
+  SemanticQueryToolForm,
+  ValidateSqlToolForm,
+  VisualizeToolForm,
+  WorkflowToolForm
 } from "./ToolForms";
 
 const TOOL_TYPES = [
@@ -40,7 +41,7 @@ const TOOL_TYPES = [
   { value: "agent", label: "Agent" },
   { value: "create_data_app", label: "Create Data App" },
   { value: "omni_query", label: "Omni Query" },
-  { value: "semantic_query", label: "Semantic Query" },
+  { value: "semantic_query", label: "Semantic Query" }
 ];
 
 interface ToolItemFormProps {
@@ -54,7 +55,7 @@ const ToolItemForm: React.FC<ToolItemFormProps> = ({ index, onRemove }) => {
     register,
     control,
     watch,
-    formState: { errors },
+    formState: { errors }
   } = useFormContext<AgentFormData>();
 
   const toolType = watch(`tools.${index}.type`);
@@ -87,64 +88,59 @@ const ToolItemForm: React.FC<ToolItemFormProps> = ({ index, onRemove }) => {
   };
 
   return (
-    <div className="rounded-lg border bg-card p-3">
+    <div className='rounded-lg border bg-card p-3'>
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-        <CollapsibleTrigger className="rounded-lg transition-colors w-full">
-          <div className="flex items-center justify-between transition-colors">
+        <CollapsibleTrigger className='w-full rounded-lg transition-colors'>
+          <div className='flex items-center justify-between transition-colors'>
             {isOpen ? (
-              <ChevronDown className="h-5 w-5 text-muted-foreground" />
+              <ChevronDown className='h-5 w-5 text-muted-foreground' />
             ) : (
-              <ChevronRight className="h-5 w-5 text-muted-foreground" />
+              <ChevronRight className='h-5 w-5 text-muted-foreground' />
             )}
-            <div className="flex items-center gap-3 flex-1">
-              <span className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 text-primary font-semibold text-sm">
+            <div className='flex flex-1 items-center gap-3'>
+              <span className='flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 font-semibold text-primary text-sm'>
                 {index + 1}
               </span>
-              <div className="flex items-center gap-2 flex-1">
-                <span className="font-medium text-sm">
-                  {toolName || `Tool ${index + 1}`}
-                </span>
+              <div className='flex flex-1 items-center gap-2'>
+                <span className='font-medium text-sm'>{toolName || `Tool ${index + 1}`}</span>
                 {toolType && (
-                  <span className="text-xs px-2 py-1 rounded-md bg-muted text-muted-foreground">
-                    {TOOL_TYPES.find((t) => t.value === toolType)?.label ||
-                      toolType}
+                  <span className='rounded-md bg-muted px-2 py-1 text-muted-foreground text-xs'>
+                    {TOOL_TYPES.find((t) => t.value === toolType)?.label || toolType}
                   </span>
                 )}
               </div>
             </div>
             <Button
-              type="button"
+              type='button'
               onClick={(e) => {
                 e.stopPropagation();
                 onRemove();
               }}
-              variant="ghost"
-              size="sm"
+              variant='ghost'
+              size='sm'
             >
-              <Trash2 className="w-4 h-4" />
+              <Trash2 className='h-4 w-4' />
             </Button>
           </div>
         </CollapsibleTrigger>
 
-        <CollapsibleContent className="space-y-4 mt-4">
-          <div className="space-y-4">
-            <div className="space-y-2">
+        <CollapsibleContent className='mt-4 space-y-4'>
+          <div className='space-y-4'>
+            <div className='space-y-2'>
               <Label htmlFor={`tools.${index}.name`}>Name *</Label>
               <Input
                 id={`tools.${index}.name`}
-                placeholder="Tool name"
+                placeholder='Tool name'
                 {...register(`tools.${index}.name`, {
-                  required: "Tool name is required",
+                  required: "Tool name is required"
                 })}
               />
               {toolErrors?.name && (
-                <p className="text-sm text-red-500">
-                  {String(toolErrors.name.message || "")}
-                </p>
+                <p className='text-red-500 text-sm'>{String(toolErrors.name.message || "")}</p>
               )}
             </div>
 
-            <div className="space-y-2">
+            <div className='space-y-2'>
               <Label htmlFor={`tools.${index}.type`}>Type *</Label>
               <Controller
                 name={`tools.${index}.type`}
@@ -153,7 +149,7 @@ const ToolItemForm: React.FC<ToolItemFormProps> = ({ index, onRemove }) => {
                 render={({ field }) => (
                   <Select onValueChange={field.onChange} value={field.value}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Select tool type" />
+                      <SelectValue placeholder='Select tool type' />
                     </SelectTrigger>
                     <SelectContent>
                       {TOOL_TYPES.map((type) => (
@@ -166,17 +162,15 @@ const ToolItemForm: React.FC<ToolItemFormProps> = ({ index, onRemove }) => {
                 )}
               />
               {toolErrors?.type && (
-                <p className="text-sm text-red-500">
-                  {String(toolErrors.type.message || "")}
-                </p>
+                <p className='text-red-500 text-sm'>{String(toolErrors.type.message || "")}</p>
               )}
             </div>
 
-            <div className="space-y-2">
+            <div className='space-y-2'>
               <Label htmlFor={`tools.${index}.description`}>Description</Label>
               <Textarea
                 id={`tools.${index}.description`}
-                placeholder="Describe what this tool does..."
+                placeholder='Describe what this tool does...'
                 rows={3}
                 {...register(`tools.${index}.description`)}
               />
@@ -196,46 +190,42 @@ export const ToolsForm: React.FC = () => {
   const {
     fields: toolFields,
     append: appendTool,
-    remove: removeTool,
+    remove: removeTool
   } = useFieldArray({
     control,
-    name: "tools",
+    name: "tools"
   });
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className='space-y-4'>
+      <div className='flex items-center justify-between'>
         <CardTitle>Tools</CardTitle>
         <Button
-          type="button"
+          type='button'
           onClick={() =>
             appendTool({
               name: "",
               type: "execute_sql",
-              description: "",
+              description: ""
             })
           }
-          variant="outline"
-          size="sm"
+          variant='outline'
+          size='sm'
         >
-          <Plus className="w-4 h-4 mr-2" />
+          <Plus className='mr-2 h-4 w-4' />
           Add Tool
         </Button>
       </div>
 
       {toolFields.length === 0 && (
-        <p className="text-center text-muted-foreground py-4">
+        <p className='py-4 text-center text-muted-foreground'>
           No tools defined. Add tools for the agent to use.
         </p>
       )}
 
-      <div className="space-y-3">
+      <div className='space-y-3'>
         {toolFields.map((field, index) => (
-          <ToolItemForm
-            key={field.id}
-            index={index}
-            onRemove={() => removeTool(index)}
-          />
+          <ToolItemForm key={field.id} index={index} onRemove={() => removeTool(index)} />
         ))}
       </div>
     </div>

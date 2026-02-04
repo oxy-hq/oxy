@@ -1,17 +1,17 @@
-import { useMemo, useState } from "react";
 import { debounce } from "lodash";
+import { useMemo, useState } from "react";
+import YAML from "yaml";
+import { AgentForm, type AgentFormData } from "@/components/agent/AgentForm";
+import { useFileEditorContext } from "@/components/FileEditor/useFileEditorContext";
+import { useFilesContext } from "../../FilesContext";
+import { FilesSubViewMode } from "../../FilesSidebar/constants";
 import EditorPageWrapper from "../components/EditorPageWrapper";
 import { useEditorContext } from "../contexts/useEditorContext";
 import { useEditorQueryInvalidation } from "../useEditorQueryInvalidation";
 import { usePreviewRefresh } from "../usePreviewRefresh";
-import { AgentForm, AgentFormData } from "@/components/agent/AgentForm";
-import { useFileEditorContext } from "@/components/FileEditor/useFileEditorContext";
-import YAML from "yaml";
-import PreviewSection from "./PreviewSection";
 import ViewModeToggle from "./components/ViewModeToggle";
+import PreviewSection from "./PreviewSection";
 import { AgentViewMode } from "./types";
-import { useFilesContext } from "../../FilesContext";
-import { FilesSubViewMode } from "../../FilesSidebar/constants";
 
 const AgentEditor = () => {
   const { pathb64, isReadOnly, gitEnabled } = useEditorContext();
@@ -20,9 +20,7 @@ const AgentEditor = () => {
 
   // Default to Form for object mode (GUI editor), Editor for file mode
   const defaultViewMode =
-    filesSubViewMode === FilesSubViewMode.OBJECTS
-      ? AgentViewMode.Form
-      : AgentViewMode.Editor;
+    filesSubViewMode === FilesSubViewMode.OBJECTS ? AgentViewMode.Form : AgentViewMode.Editor;
 
   const [viewMode, setViewMode] = useState<AgentViewMode>(defaultViewMode);
 
@@ -34,8 +32,7 @@ const AgentEditor = () => {
       YAML.parse(value);
       setValidationError(null);
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Invalid YAML format";
+      const errorMessage = error instanceof Error ? error.message : "Invalid YAML format";
       setValidationError(errorMessage);
     }
   };
@@ -58,9 +55,7 @@ const AgentEditor = () => {
       onSaved={handleSaved}
       readOnly={isReadOnly}
       git={gitEnabled}
-      customEditor={
-        viewMode === AgentViewMode.Form ? <AgentFormWrapper /> : undefined
-      }
+      customEditor={viewMode === AgentViewMode.Form ? <AgentFormWrapper /> : undefined}
       onChanged={(value) => {
         if (viewMode === AgentViewMode.Editor) {
           validateContent(value);
@@ -94,14 +89,14 @@ const AgentFormWrapper = () => {
         try {
           const yamlContent = YAML.stringify(formData, {
             indent: 2,
-            lineWidth: 0,
+            lineWidth: 0
           });
           actions.setContent(yamlContent);
         } catch (error) {
           console.error("Failed to serialize form data to YAML:", error);
         }
       }, 500),
-    [actions],
+    [actions]
   );
 
   if (!data) return null;

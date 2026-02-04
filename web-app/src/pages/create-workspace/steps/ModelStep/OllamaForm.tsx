@@ -1,7 +1,7 @@
+import { useFormContext } from "react-hook-form";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
-import { useFormContext } from "react-hook-form";
-import { ModelsFormData } from "./index";
+import type { ModelsFormData } from "./index";
 
 interface OllamaFormProps {
   index: number;
@@ -10,66 +10,58 @@ interface OllamaFormProps {
 export default function OllamaForm({ index }: OllamaFormProps) {
   const {
     register,
-    formState: { errors },
+    formState: { errors }
   } = useFormContext<ModelsFormData>();
   const fieldErrors = errors?.models?.[index]?.config;
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor={`models.${index}.config.model_ref`}>
-          Model Reference
-        </Label>
+    <div className='space-y-4'>
+      <div className='space-y-2'>
+        <Label htmlFor={`models.${index}.config.model_ref`}>Model Reference</Label>
         <Input
           id={`models.${index}.config.model_ref`}
-          placeholder="llama3"
+          placeholder='llama3'
           {...register(`models.${index}.config.model_ref`, {
-            required: "Model reference is required",
+            required: "Model reference is required"
           })}
         />
         {fieldErrors?.model_ref && (
-          <p className="text-xs text-destructive mt-1">
+          <p className='mt-1 text-destructive text-xs'>
             {fieldErrors.model_ref.message?.toString()}
           </p>
         )}
-        <p className="text-xs text-muted-foreground">
+        <p className='text-muted-foreground text-xs'>
           The model identifier (e.g., llama3, mistral, etc.)
         </p>
       </div>
 
-      <div className="space-y-2">
+      <div className='space-y-2'>
         <Label htmlFor={`models.${index}.config.api_key`}>API Key</Label>
         <Input
           id={`models.${index}.config.api_key`}
-          placeholder="OLLAMA_AI_API_KEY"
+          placeholder='OLLAMA_AI_API_KEY'
           {...register(`models.${index}.config.api_key`, {
-            required: "API key is required",
+            required: "API key is required"
           })}
         />
         {fieldErrors?.api_key && (
-          <p className="text-xs text-destructive mt-1">
-            {fieldErrors.api_key.message?.toString()}
-          </p>
+          <p className='mt-1 text-destructive text-xs'>{fieldErrors.api_key.message?.toString()}</p>
         )}
       </div>
 
-      <div className="space-y-2">
+      <div className='space-y-2'>
         <Label htmlFor={`models.${index}.config.api_url`}>API URL</Label>
         <Input
           id={`models.${index}.config.api_url`}
-          placeholder="http://localhost:11434"
+          placeholder='http://localhost:11434'
           {...register(`models.${index}.config.api_url`, {
-            required: "API URL is required",
+            required: "API URL is required"
           })}
         />
         {fieldErrors?.api_url && (
-          <p className="text-xs text-destructive mt-1">
-            {fieldErrors.api_url.message?.toString()}
-          </p>
+          <p className='mt-1 text-destructive text-xs'>{fieldErrors.api_url.message?.toString()}</p>
         )}
-        <p className="text-xs text-muted-foreground">
-          The URL of your Ollama instance
-        </p>
+        <p className='text-muted-foreground text-xs'>The URL of your Ollama instance</p>
       </div>
     </div>
   );

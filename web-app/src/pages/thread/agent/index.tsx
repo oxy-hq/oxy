@@ -1,19 +1,18 @@
+import { ArrowDown } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-
-import MessageInput from "@/components/MessageInput";
-import useAskAgent from "@/hooks/messaging/agent";
-import useAgentThreadStore from "@/stores/useAgentThread";
-import { Message, ThreadItem } from "@/types/chat";
-import Messages from "@/pages/thread/messages";
-import ThreadHeader from "./components/ThreadHeader";
-import ProcessingWarning from "../ProcessingWarning";
-import ArtifactPanelContainer from "./components/ArtifactPanelContainer";
-import { ThreadService } from "@/services/api";
 import { toast } from "sonner";
+import MessageInput from "@/components/MessageInput";
+import { Button } from "@/components/ui/shadcn/button";
+import useAskAgent from "@/hooks/messaging/agent";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { useSmartScroll } from "@/hooks/useSmartScroll";
-import { Button } from "@/components/ui/shadcn/button";
-import { ArrowDown } from "lucide-react";
+import Messages from "@/pages/thread/messages";
+import { ThreadService } from "@/services/api";
+import useAgentThreadStore from "@/stores/useAgentThread";
+import type { Message, ThreadItem } from "@/types/chat";
+import ProcessingWarning from "../ProcessingWarning";
+import ArtifactPanelContainer from "./components/ArtifactPanelContainer";
+import ThreadHeader from "./components/ThreadHeader";
 
 const MESSAGES_WARNING_THRESHOLD = 10;
 
@@ -35,8 +34,9 @@ const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
   const [selectedArtifactIds, setSelectedArtifactIds] = useState<string[]>([]);
   const [followUpQuestion, setFollowUpQuestion] = useState("");
 
-  const { scrollContainerRef, bottomRef, isAtBottom, scrollToBottom } =
-    useSmartScroll({ messages });
+  const { scrollContainerRef, bottomRef, isAtBottom, scrollToBottom } = useSmartScroll({
+    messages
+  });
 
   const isThreadBusy = isLoading || thread.is_processing;
   const shouldShowWarning = messages.length >= MESSAGES_WARNING_THRESHOLD;
@@ -53,10 +53,7 @@ const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
 
   const fetchMessages = useCallback(async () => {
     try {
-      const history = await ThreadService.getThreadMessages(
-        projectId,
-        thread.id,
-      );
+      const history = await ThreadService.getThreadMessages(projectId, thread.id);
       setMessages(thread.id, history as unknown as Message[]);
     } catch (error) {
       console.error("Failed to fetch message history:", error);
@@ -88,39 +85,33 @@ const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
   }, [fetchMessages, refetchThread, thread.id, projectId]);
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className='flex h-full flex-col overflow-hidden'>
       <ThreadHeader thread={thread} />
 
-      <div className="overflow-hidden flex-1 flex items-center w-full justify-center">
-        <div className="flex-1 w-full h-full overflow-hidden flex flex-col">
-          <div className="flex-1 w-full relative overflow-hidden">
-            <div
-              ref={scrollContainerRef}
-              className="h-full w-full customScrollbar overflow-auto"
-            >
-              <div className="max-w-[742px] w-full p-4 mx-auto">
-                <Messages
-                  messages={messages}
-                  onArtifactClick={handleArtifactClick}
-                />
+      <div className='flex w-full flex-1 items-center justify-center overflow-hidden'>
+        <div className='flex h-full w-full flex-1 flex-col overflow-hidden'>
+          <div className='relative w-full flex-1 overflow-hidden'>
+            <div ref={scrollContainerRef} className='customScrollbar h-full w-full overflow-auto'>
+              <div className='mx-auto w-full max-w-[742px] p-4'>
+                <Messages messages={messages} onArtifactClick={handleArtifactClick} />
                 <div ref={bottomRef} />
               </div>
             </div>
 
             {!isAtBottom && (
               <Button
-                variant="outline"
-                size="icon"
+                variant='outline'
+                size='icon'
                 onClick={scrollToBottom}
-                className="rounded-full absolute bottom-2 left-1/2 -translate-x-1/2 transition-all z-10"
-                aria-label="Scroll to latest"
+                className='absolute bottom-2 left-1/2 z-10 -translate-x-1/2 rounded-full transition-all'
+                aria-label='Scroll to latest'
               >
                 <ArrowDown />
               </Button>
             )}
           </div>
 
-          <div className="flex-shrink-0 flex flex-col p-4 gap-1 pt-0 max-w-[742px] mx-auto w-full">
+          <div className='mx-auto flex w-full max-w-[742px] flex-shrink-0 flex-col gap-1 p-4 pt-0'>
             <ProcessingWarning
               threadId={thread.id}
               isLoading={isLoading}

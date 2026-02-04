@@ -1,22 +1,17 @@
-import useThreads from "@/hooks/api/threads/useThreads";
-import { useSearchParams } from "react-router-dom";
-import BulkActionToolbar from "@/pages/threads/BulkActionToolbar";
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import useThreads from "@/hooks/api/threads/useThreads";
+import BulkActionToolbar from "@/pages/threads/BulkActionToolbar";
 import Header from "./Header";
 import ThreadsPagination from "./Pagination";
 import ThreadsSection from "./ThreadsSection";
 
 const Threads = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const page = parseInt(searchParams.get("page") || "1");
-  const limit = Math.max(
-    10,
-    Math.min(100, parseInt(searchParams.get("limit") || "10")),
-  );
+  const page = parseInt(searchParams.get("page") || "1", 10);
+  const limit = Math.max(10, Math.min(100, parseInt(searchParams.get("limit") || "10", 10)));
 
-  const [selectedThreads, setSelectedThreads] = useState<Set<string>>(
-    new Set(),
-  );
+  const [selectedThreads, setSelectedThreads] = useState<Set<string>>(new Set());
 
   const [isSelectionMode, setIsSelectionMode] = useState(false);
 
@@ -96,7 +91,7 @@ const Threads = () => {
   const shouldShowPagination = !isLoading && !isError && pagination;
 
   return (
-    <div className="flex flex-col h-full gap-4 pb-4">
+    <div className='flex h-full flex-col gap-4 pb-4'>
       <Header
         onSelect={handleSelectMode}
         isSelectionMode={isSelectionMode}

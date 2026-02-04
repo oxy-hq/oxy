@@ -1,19 +1,11 @@
-import { Handle, NodeProps, NodeToolbar, Position } from "@xyflow/react";
-
-import { NodeContent } from "./NodeContent";
-import { NodeData, NodeType } from "@/stores/useWorkflow";
-import {
-  NodeStatus,
-  NodeStatusIndicator,
-} from "@/components/ui/shadcn/node-status-indicator";
-import { StepContainer } from "./nodes/StepContainer";
-import {
-  useIsProcessing,
-  useTaskRun,
-  useWorkflowRun,
-} from "../../useWorkflowRun";
+import { Handle, type NodeProps, NodeToolbar, Position } from "@xyflow/react";
 import { RefreshCcw } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
+import { type NodeStatus, NodeStatusIndicator } from "@/components/ui/shadcn/node-status-indicator";
+import type { NodeData, NodeType } from "@/stores/useWorkflow";
+import { useIsProcessing, useTaskRun, useWorkflowRun } from "../../useWorkflowRun";
+import { NodeContent } from "./NodeContent";
+import { StepContainer } from "./nodes/StepContainer";
 
 type Node = {
   id: string;
@@ -41,7 +33,7 @@ export function DiagramNode({
   width,
   height,
   selected,
-  parentId,
+  parentId
 }: Props) {
   const task = data.task;
 
@@ -61,18 +53,16 @@ export function DiagramNode({
   }
 
   return (
-    <NodeStatusIndicator status={nodeStatus} variant="border" key={id}>
+    <NodeStatusIndicator status={nodeStatus} variant='border' key={id}>
       <NodeToolbar
-        className="flex items-center justify-between"
+        className='flex items-center justify-between'
         isVisible={
-          (nodeStatus === "error" || nodeStatus === "success") &&
-          !!selected &&
-          !isProcessing
+          (nodeStatus === "error" || nodeStatus === "success") && !!selected && !isProcessing
         }
       >
         <Button
           tooltip={"Replay this step"}
-          size="icon"
+          size='icon'
           onClick={() => {
             if (!runId) {
               return;
@@ -82,8 +72,8 @@ export function DiagramNode({
               retryType: {
                 type: "retry",
                 run_index: +runId,
-                replay_id: taskRunId,
-              },
+                replay_id: taskRunId
+              }
             });
           }}
         >
@@ -91,10 +81,10 @@ export function DiagramNode({
         </Button>
       </NodeToolbar>
       <Handle
-        type="target"
+        type='target'
         position={Position.Top}
         isConnectable={isConnectable}
-        className="invisible !top-0.5"
+        className='!top-0.5 invisible'
       />
       <StepContainer selected={!!selected}>
         <NodeContent
@@ -110,10 +100,10 @@ export function DiagramNode({
         />
       </StepContainer>
       <Handle
-        type="source"
+        type='source'
         position={Position.Bottom}
         isConnectable={isConnectable}
-        className="invisible !bottom-0.5"
+        className='!bottom-0.5 invisible'
       />
     </NodeStatusIndicator>
   );

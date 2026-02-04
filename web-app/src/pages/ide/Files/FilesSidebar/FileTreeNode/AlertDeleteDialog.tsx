@@ -1,19 +1,19 @@
-import { FileTreeModel } from "@/types/file";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogCancel,
-  AlertDialogAction,
+  AlertDialogTitle
 } from "@/components/ui/shadcn/alert-dialog";
-import useDeleteFolder from "@/hooks/api/files/useDeleteFolder";
-import { useLocation, useNavigate } from "react-router-dom";
 import useDeleteFile from "@/hooks/api/files/useDeleteFile";
-import ROUTES from "@/libs/utils/routes";
+import useDeleteFolder from "@/hooks/api/files/useDeleteFolder";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import ROUTES from "@/libs/utils/routes";
+import type { FileTreeModel } from "@/types/file";
 
 interface AlertDeleteDialogProps {
   fileTree: FileTreeModel;
@@ -21,11 +21,7 @@ interface AlertDeleteDialogProps {
   setVisible: (visible: boolean) => void;
 }
 
-const AlertDeleteDialog = ({
-  fileTree,
-  visible,
-  setVisible,
-}: AlertDeleteDialogProps) => {
+const AlertDeleteDialog = ({ fileTree, visible, setVisible }: AlertDeleteDialogProps) => {
   const { pathname } = useLocation();
   const deleteFolder = useDeleteFolder();
   const deleteFile = useDeleteFile();
@@ -60,16 +56,13 @@ const AlertDeleteDialog = ({
           <AlertDialogTitle>Are you sure?</AlertDialogTitle>
           <AlertDialogDescription>
             This action cannot be undone. This will permanently delete the{" "}
-            {isDir ? "folder" : "file"}{" "}
-            <span className="font-semibold">{fileTree.name}</span> and all its
-            contents.
+            {isDir ? "folder" : "file"} <span className='font-semibold'>{fileTree.name}</span> and
+            all its contents.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction onClick={handleConfirmDelete}>
-            Delete
-          </AlertDialogAction>
+          <AlertDialogAction onClick={handleConfirmDelete}>Delete</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

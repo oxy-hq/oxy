@@ -1,4 +1,4 @@
-import type { ReactFlowInstance, FitViewOptions } from "@xyflow/react";
+import type { FitViewOptions, ReactFlowInstance } from "@xyflow/react";
 import type { Viewport } from "../hooks/usePersistedViewport";
 
 type InstanceWithViewport = {
@@ -10,7 +10,7 @@ type InstanceWithViewport = {
 export const restoreOrFit = (
   instance: ReactFlowInstance | null,
   saved: Viewport | null,
-  fitViewOptions?: FitViewOptions,
+  fitViewOptions?: FitViewOptions
 ) => {
   if (!instance) return;
 

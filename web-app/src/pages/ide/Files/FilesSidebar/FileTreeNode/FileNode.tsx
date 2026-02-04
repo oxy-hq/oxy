@@ -1,37 +1,34 @@
 import {
+  AppWindow,
+  BookOpen,
+  Bot,
+  Braces,
+  Eye,
+  File,
+  FileCode,
+  Network,
+  Pencil,
+  Table,
+  Trash2,
+  Workflow
+} from "lucide-react";
+import React from "react";
+import { Link, useLocation } from "react-router-dom";
+import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuTrigger
 } from "@/components/ui/shadcn/context-menu";
-import { ContextMenuTrigger } from "@/components/ui/shadcn/context-menu";
-import {
-  SidebarMenuItem,
-  SidebarMenuButton,
-} from "@/components/ui/shadcn/sidebar";
-import { FileTreeModel } from "@/types/file";
-import {
-  Pencil,
-  Trash2,
-  File,
-  Workflow,
-  AppWindow,
-  Eye,
-  BookOpen,
-  Bot,
-  Network,
-  FileCode,
-  Braces,
-  Table,
-} from "lucide-react";
-import React from "react";
-import { detectFileType, FileType } from "@/utils/fileTypes";
-import { useLocation, Link } from "react-router-dom";
-import AlertDeleteDialog from "./AlertDeleteDialog";
-import RenameNode from "./RenameNode";
+import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/shadcn/sidebar";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
-import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import type { FileTreeModel } from "@/types/file";
+import { detectFileType, FileType } from "@/utils/fileTypes";
 import { SIDEBAR_REVEAL_FILE } from "..";
+import AlertDeleteDialog from "./AlertDeleteDialog";
+import RenameNode from "./RenameNode";
 
 // Helper to get icon for file type
 const getFileIcon = (path: string) => {
@@ -64,13 +61,7 @@ const getFileIcon = (path: string) => {
   }
 };
 
-const FileNode = ({
-  fileTree,
-  activePath,
-}: {
-  fileTree: FileTreeModel;
-  activePath?: string;
-}) => {
+const FileNode = ({ fileTree, activePath }: { fileTree: FileTreeModel; activePath?: string }) => {
   const { project, isReadOnly } = useCurrentProjectBranch();
   const projectId = project.id;
 
@@ -78,8 +69,7 @@ const FileNode = ({
   const FileIcon = getFileIcon(fileTree.path);
   const isActive = activePath
     ? activePath === fileTree.path
-    : pathname ===
-      ROUTES.PROJECT(projectId || "").IDE.FILES.FILE(btoa(fileTree.path));
+    : pathname === ROUTES.PROJECT(projectId || "").IDE.FILES.FILE(btoa(fileTree.path));
 
   const [isContextMenuOpen, setIsContextMenuOpen] = React.useState(false);
   const [isEditing, setIsEditing] = React.useState(false);
@@ -106,7 +96,7 @@ const FileNode = ({
       try {
         itemRef.current.scrollIntoView({
           block: "nearest",
-          behavior: "smooth",
+          behavior: "smooth"
         });
       } catch {
         itemRef.current.scrollIntoView({ block: "nearest" });
@@ -123,7 +113,7 @@ const FileNode = ({
         try {
           itemRef.current.scrollIntoView({
             block: "nearest",
-            behavior: "smooth",
+            behavior: "smooth"
           });
         } catch {
           itemRef.current.scrollIntoView({ block: "nearest" });
@@ -132,8 +122,7 @@ const FileNode = ({
     };
 
     window.addEventListener(SIDEBAR_REVEAL_FILE, handler as EventListener);
-    return () =>
-      window.removeEventListener(SIDEBAR_REVEAL_FILE, handler as EventListener);
+    return () => window.removeEventListener(SIDEBAR_REVEAL_FILE, handler as EventListener);
   }, [fileTree.path]);
 
   return (
@@ -159,8 +148,8 @@ const FileNode = ({
               asChild
               isActive={isActive}
               className={cn(
-                "overflow-visible text-muted-foreground hover:text-sidebar-foreground transition-colors duration-150 ease-in h-6 py-0.5",
-                isContextMenuOpen ? "border border-border" : "",
+                "h-6 overflow-visible py-0.5 text-muted-foreground transition-colors duration-150 ease-in hover:text-sidebar-foreground",
+                isContextMenuOpen ? "border border-border" : ""
               )}
             >
               {isEditing ? (
@@ -190,25 +179,19 @@ const FileNode = ({
         >
           {!isReadOnly && (
             <>
-              <ContextMenuItem
-                className="cursor-pointer"
-                onClick={handleRename}
-              >
-                <Pencil className="mr-2 h-4 w-4" />
+              <ContextMenuItem className='cursor-pointer' onClick={handleRename}>
+                <Pencil className='mr-2 h-4 w-4' />
                 <span>Rename</span>
               </ContextMenuItem>
-              <ContextMenuItem
-                className="text-red-600 cursor-pointer"
-                onClick={handleDelete}
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
+              <ContextMenuItem className='cursor-pointer text-red-600' onClick={handleDelete}>
+                <Trash2 className='mr-2 h-4 w-4' />
                 <span>Delete</span>
               </ContextMenuItem>
             </>
           )}
           {isReadOnly && (
             <ContextMenuItem disabled>
-              <span className="text-muted-foreground">Read-only mode</span>
+              <span className='text-muted-foreground'>Read-only mode</span>
             </ContextMenuItem>
           )}
         </ContextMenuContent>

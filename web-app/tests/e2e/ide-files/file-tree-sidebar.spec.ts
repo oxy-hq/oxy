@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { IDEPage } from "../pages/IDEPage";
 
 test.describe("IDE Files - File Tree Sidebar", () => {
@@ -6,16 +6,14 @@ test.describe("IDE Files - File Tree Sidebar", () => {
     await page.goto("/ide");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("tab", { name: "Files" })).toBeVisible({
-      timeout: 10000,
+      timeout: 10000
     });
     await page.getByRole("tab", { name: "Files" }).click();
     await page.waitForTimeout(500);
   });
 
   // 1.1 Load file tree with 1000+ files
-  test("1.1 - should render large file tree without crash", async ({
-    page,
-  }) => {
+  test("1.1 - should render large file tree without crash", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
 
@@ -30,9 +28,7 @@ test.describe("IDE Files - File Tree Sidebar", () => {
   });
 
   // 1.2 Toggle Objects/Files tabs rapidly 50x
-  test("1.2 - should handle rapid tab switching without UI flicker", async ({
-    page,
-  }) => {
+  test("1.2 - should handle rapid tab switching without UI flicker", async ({ page }) => {
     const objectsTab = page.getByRole("tab", { name: "Objects" });
     const filesTab = page.getByRole("tab", { name: "Files" });
 
@@ -47,16 +43,12 @@ test.describe("IDE Files - File Tree Sidebar", () => {
   });
 
   // 1.3 Expand folder with many children
-  test("1.3 - should expand folder with many children within 2s", async ({
-    page,
-  }) => {
+  test("1.3 - should expand folder with many children within 2s", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
 
     // Find a folder and measure expansion time
-    const folder = page
-      .getByRole("button", { name: "workflows", exact: true })
-      .first();
+    const folder = page.getByRole("button", { name: "workflows", exact: true }).first();
 
     if (await folder.isVisible()) {
       const startTime = Date.now();
@@ -83,7 +75,7 @@ test.describe("IDE Files - File Tree Sidebar", () => {
     for (const folderName of folders) {
       const folder = page.getByRole("button", {
         name: folderName,
-        exact: true,
+        exact: true
       });
       if (await folder.isVisible().catch(() => false)) {
         await folder.click();
@@ -97,9 +89,7 @@ test.describe("IDE Files - File Tree Sidebar", () => {
   });
 
   // 1.5 File names with 500+ characters
-  test("1.5 - should truncate very long file names properly", async ({
-    page,
-  }) => {
+  test("1.5 - should truncate very long file names properly", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
 
@@ -119,9 +109,7 @@ test.describe("IDE Files - File Tree Sidebar", () => {
   });
 
   // 1.6 Special characters: 日本語, émojis🎉, spaces
-  test("1.6 - should display special characters correctly", async ({
-    page,
-  }) => {
+  test("1.6 - should display special characters correctly", async ({ page }) => {
     // Verify the tree handles files with special characters
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
@@ -138,14 +126,12 @@ test.describe("IDE Files - File Tree Sidebar", () => {
   });
 
   // 1.7 API returns 500 error
-  test("1.7 - should show error message and retry option on API error", async ({
-    page,
-  }) => {
+  test("1.7 - should show error message and retry option on API error", async ({ page }) => {
     // Intercept file tree API and return 500
     await page.route("**/api/v1/**/files/tree**", (route) => {
       route.fulfill({
         status: 500,
-        body: JSON.stringify({ error: "Internal Server Error" }),
+        body: JSON.stringify({ error: "Internal Server Error" })
       });
     });
 
@@ -165,7 +151,7 @@ test.describe("IDE Files - File Tree Sidebar", () => {
       route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify([]),
+        body: JSON.stringify([])
       });
     });
 
@@ -184,7 +170,7 @@ test.describe("IDE Files - File Tree Sidebar", () => {
       route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: "{ invalid json",
+        body: "{ invalid json"
       });
     });
 
@@ -196,9 +182,7 @@ test.describe("IDE Files - File Tree Sidebar", () => {
   });
 
   // 1.10 Refresh tree while previous refresh pending
-  test("1.10 - should display single tree when refreshing rapidly", async ({
-    page,
-  }) => {
+  test("1.10 - should display single tree when refreshing rapidly", async ({ page }) => {
     const idePage = new IDEPage(page);
     await idePage.verifyFilesMode();
 

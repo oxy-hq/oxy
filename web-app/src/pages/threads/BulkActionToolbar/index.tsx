@@ -1,11 +1,11 @@
-import React from "react";
-import { Button } from "@/components/ui/shadcn/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { X } from "lucide-react";
+import type React from "react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@/components/ui/shadcn/button";
+import useBulkDeleteThreads from "@/hooks/api/threads/useBulkDeleteThreads";
+import useDeleteAllThread from "@/hooks/api/threads/useDeleteAllThread";
 import { cn } from "@/libs/shadcn/utils";
 import DeleteAction from "./DeleteAction";
-import useDeleteAllThread from "@/hooks/api/threads/useDeleteAllThread";
-import useBulkDeleteThreads from "@/hooks/api/threads/useBulkDeleteThreads";
 
 interface BulkActionToolbarProps {
   totalOnPage: number;
@@ -25,16 +25,14 @@ const BulkActionToolbar: React.FC<BulkActionToolbarProps> = (props) => {
     selectedThreads,
     onSelectAll,
     onSelectAllPages,
-    onClearSelection,
+    onClearSelection
   } = props;
 
   const selectedCount = selectedThreads.size;
   const isAllSelectedOnPage = selectedCount === totalOnPage && totalOnPage > 0;
 
-  const { mutate: deleteAllThreads, isPending: isDeletingAll } =
-    useDeleteAllThread();
-  const { mutate: deleteThreads, isPending: isDeletingThreads } =
-    useBulkDeleteThreads();
+  const { mutate: deleteAllThreads, isPending: isDeletingAll } = useDeleteAllThread();
+  const { mutate: deleteThreads, isPending: isDeletingThreads } = useBulkDeleteThreads();
   const isDeleting = isDeletingAll || isDeletingThreads;
 
   const getSelectionLabel = () => {
@@ -48,54 +46,46 @@ const BulkActionToolbar: React.FC<BulkActionToolbarProps> = (props) => {
   const handleBulkDelete = () => {
     if (isSelectAllPages) {
       deleteAllThreads(undefined, {
-        onSuccess: onClearSelection,
+        onSuccess: onClearSelection
       });
     } else {
       const threadIds = Array.from(selectedThreads);
       deleteThreads(threadIds, {
-        onSuccess: onClearSelection,
+        onSuccess: onClearSelection
       });
     }
   };
 
   const shouldShowSelectAllAction =
-    isAllSelectedOnPage &&
-    !isSelectAllPages &&
-    totalAcrossAll &&
-    totalAcrossAll > totalOnPage;
+    isAllSelectedOnPage && !isSelectAllPages && totalAcrossAll && totalAcrossAll > totalOnPage;
 
   return (
-    <div className="max-w-page-content mx-auto w-full px-2">
-      <div className={cn("flex items-center gap-4 p-4 rounded-lg border")}>
-        <div className="flex items-center gap-3">
+    <div className='mx-auto w-full max-w-page-content px-2'>
+      <div className={cn("flex items-center gap-4 rounded-lg border p-4")}>
+        <div className='flex items-center gap-3'>
           <Checkbox
             checked={isAllSelectedOnPage}
             onCheckedChange={onSelectAll}
             disabled={isDeleting}
           />
-          <span className="text-sm font-medium">{getSelectionLabel()}</span>
+          <span className='font-medium text-sm'>{getSelectionLabel()}</span>
         </div>
 
         {shouldShowSelectAllAction && (
           <Button
-            variant="link"
-            size="sm"
+            variant='link'
+            size='sm'
             onClick={() => onSelectAllPages(true)}
             disabled={isDeleting}
-            className="h-auto p-0 text-sm underline"
+            className='h-auto p-0 text-sm underline'
           >
             Select all {totalAcrossAll} threads
           </Button>
         )}
 
-        <div className="flex items-center gap-2 ml-auto">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onClearSelection}
-            disabled={isDeleting}
-          >
-            <X className="h-4 w-4" />
+        <div className='ml-auto flex items-center gap-2'>
+          <Button variant='outline' size='sm' onClick={onClearSelection} disabled={isDeleting}>
+            <X className='h-4 w-4' />
             Clear
           </Button>
           <DeleteAction

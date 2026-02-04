@@ -132,6 +132,7 @@ When you ask the agent to create a data application:
 
 1. **Data Preparation**: The agent uses `execute_sql` tool with the `persist` flag to prepare data tables
 2. **Schema Definition**: The agent formats table schemas for v0:
+
    ```
    - table_name: sales_trends
      file_path: tables/0.parquet
@@ -140,6 +141,7 @@ When you ask the agent to create a data application:
        Weekly_Sales: float
        Store: string
    ```
+
 3. **v0 Prompt**: The agent sends a detailed prompt to v0 with:
    - Your visualization requirements
    - Available data tables and their schemas

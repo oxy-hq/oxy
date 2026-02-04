@@ -1,8 +1,8 @@
 import {
-  TaskNode as Node,
-  NodeType,
+  type TaskNode as Node,
+  type NodeType,
   NoneTaskNodeType,
-  TaskType,
+  TaskType
 } from "@/stores/useWorkflow";
 import {
   contentPadding,
@@ -16,7 +16,7 @@ import {
   nodePadding,
   normalNodeHeight,
   paddingHeight,
-  smallestNodeWidth,
+  smallestNodeWidth
 } from "./constants";
 
 export const computeNodeDimensions = (node: Node, allNodes: Node[]): void => {
@@ -33,7 +33,7 @@ const isSpecialNode = (type: NodeType): boolean => {
     NoneTaskNodeType.CONDITIONAL_IF,
     TaskType.LOOP_SEQUENTIAL,
     TaskType.CONDITIONAL,
-    TaskType.WORKFLOW,
+    TaskType.WORKFLOW
   ].includes(type);
 };
 
@@ -64,7 +64,7 @@ const computeSpecialNodeSize = (node: Node, allNodes: Node[]): void => {
 
 const computeVerticalContainerSize = (
   node: Node,
-  allNodes: Node[],
+  allNodes: Node[]
 ): { width: number; height: number } => {
   const children = getVisibleChildren(node, allNodes);
 
@@ -86,7 +86,7 @@ const computeVerticalContainerSize = (
 
 const computeHorizontalContainerSize = (
   node: Node,
-  allNodes: Node[],
+  allNodes: Node[]
 ): { width: number; height: number } => {
   const children = getVisibleChildren(node, allNodes);
 
@@ -103,15 +103,13 @@ const computeHorizontalContainerSize = (
 };
 
 const getVisibleChildren = (node: Node, allNodes: Node[]): Node[] => {
-  return node.data.expanded
-    ? allNodes.filter((n) => n.parentId === node.id)
-    : [];
+  return node.data.expanded ? allNodes.filter((n) => n.parentId === node.id) : [];
 };
 
 const calculateContainerDimensions = (
   baseWidth: number,
   baseHeight: number,
-  childCount: number,
+  childCount: number
 ): { width: number; height: number } => {
   let width = baseWidth;
   let height = baseHeight;

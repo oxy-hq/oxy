@@ -1,14 +1,14 @@
-import { useState } from "react";
-import { Card } from "@/components/ui/shadcn/card";
-import { Button } from "@/components/ui/shadcn/button";
 import { Github, Home } from "lucide-react";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Button } from "@/components/ui/shadcn/button";
+import { Card } from "@/components/ui/shadcn/card";
+import useSidebar from "@/components/ui/shadcn/sidebar-context";
+import { useAuth } from "@/contexts/AuthContext";
+import ROUTES from "@/libs/utils/routes";
+import useCurrentProject from "@/stores/useCurrentProject";
 import { BranchInfo } from "./BranchInfo";
 import { BranchSettings } from "./BranchSettings";
-import useCurrentProject from "@/stores/useCurrentProject";
-import { useAuth } from "@/contexts/AuthContext";
-import { useNavigate } from "react-router-dom";
-import ROUTES from "@/libs/utils/routes";
-import useSidebar from "@/components/ui/shadcn/sidebar-context";
 
 export const Header = () => {
   const { authConfig } = useAuth();
@@ -19,24 +19,22 @@ export const Header = () => {
 
   const renderContent = () => {
     if (!authConfig.cloud) {
-      return <div className="text-sm text-muted-foreground">Local mode</div>;
+      return <div className='text-muted-foreground text-sm'>Local mode</div>;
     }
     return (
       <>
         {project?.project_repo_id ? (
           <BranchInfo />
         ) : (
-          <div className="text-sm text-muted-foreground">
-            No repository connected
-          </div>
+          <div className='text-muted-foreground text-sm'>No repository connected</div>
         )}
         <Button
-          variant="outline"
-          size="sm"
+          variant='outline'
+          size='sm'
           onClick={() => setIsBranchSettingOpen(true)}
-          className="flex items-center gap-2 hover:bg-accent/50 transition-colors"
+          className='flex items-center gap-2 transition-colors hover:bg-accent/50'
         >
-          <Github className="w-4 h-4" />
+          <Github className='h-4 w-4' />
         </Button>
       </>
     );
@@ -50,23 +48,18 @@ export const Header = () => {
   };
 
   return (
-    <Card className="flex gap-2 p-1 border-b bg-sidebar-background shadow-none rounded-none ">
+    <Card className='flex gap-2 rounded-none border-b bg-sidebar-background p-1 shadow-none'>
       <Button
-        variant="ghost"
-        size="sm"
+        variant='ghost'
+        size='sm'
         onClick={handleHomeClick}
         tooltip={{ content: "Back to Home", side: "right" }}
       >
-        <Home className="w-4 h-4" />
+        <Home className='h-4 w-4' />
       </Button>
-      <div className="flex items-center justify-between flex-1">
-        {renderContent()}
-      </div>
+      <div className='flex flex-1 items-center justify-between'>{renderContent()}</div>
 
-      <BranchSettings
-        isOpen={isBranchSettingOpen}
-        onClose={() => setIsBranchSettingOpen(false)}
-      />
+      <BranchSettings isOpen={isBranchSettingOpen} onClose={() => setIsBranchSettingOpen(false)} />
     </Card>
   );
 };

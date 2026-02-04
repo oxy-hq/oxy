@@ -1,4 +1,4 @@
 export enum AgentViewMode {
   Editor = "editor",
-  Form = "form",
+  Form = "form"
 }

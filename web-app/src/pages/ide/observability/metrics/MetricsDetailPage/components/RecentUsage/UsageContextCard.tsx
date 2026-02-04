@@ -1,15 +1,15 @@
+import { ChevronDown, ChevronRight, Clock, ExternalLink } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Clock, ExternalLink, ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/libs/shadcn/utils";
-import useCurrentProject from "@/stores/useCurrentProject";
 import ROUTES from "@/libs/utils/routes";
-import { parseContextItems, getTimeAgo } from "../../utils";
+import type { RecentUsage } from "@/services/api/metrics";
+import useCurrentProject from "@/stores/useCurrentProject";
 import { CONTEXT_TYPE_CONFIG } from "../../constants";
-import SourceTypeBadge from "./SourceTypeBadge";
+import { getTimeAgo, parseContextItems } from "../../utils";
 import ContextItemDisplay from "./ContextItemDisplay";
 import HighlightedText from "./HighlightedText";
-import type { RecentUsage } from "@/services/api/metrics";
+import SourceTypeBadge from "./SourceTypeBadge";
 
 interface UsageContextCardProps {
   usage: RecentUsage;
@@ -20,7 +20,7 @@ interface UsageContextCardProps {
 export default function UsageContextCard({
   usage,
   metricName,
-  onTraceClick,
+  onTraceClick
 }: UsageContextCardProps) {
   const navigate = useNavigate();
   const { project } = useCurrentProject();
@@ -30,12 +30,10 @@ export default function UsageContextCard({
 
   // Get a preview from the first non-semantic context item
   const previewItem = contextItems.find(
-    (item) => item.type !== "semantic" && typeof item.content === "string",
+    (item) => item.type !== "semantic" && typeof item.content === "string"
   );
   const previewContent =
-    previewItem && typeof previewItem.content === "string"
-      ? previewItem.content
-      : null;
+    previewItem && typeof previewItem.content === "string" ? previewItem.content : null;
   const previewIsSQL = previewItem?.type === "sql";
 
   return (
@@ -44,50 +42,49 @@ export default function UsageContextCard({
         "group relative rounded-xl border transition-all duration-200",
         "bg-gradient-to-br from-card to-card/50",
         "hover:border-primary/30 hover:shadow-md hover:shadow-primary/5",
-        isExpanded && "border-primary/30",
+        isExpanded && "border-primary/30"
       )}
     >
       {/* Main content */}
-      <div className="p-4 space-y-3">
+      <div className='space-y-3 p-4'>
         {/* Header */}
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-2 flex-wrap">
+        <div className='flex items-start justify-between gap-3'>
+          <div className='flex flex-wrap items-center gap-2'>
             <SourceTypeBadge sourceType={usage.source_type || "agent"} />
             {/* Context type badges */}
-            {usage.context_types &&
-              usage.context_types.map((ct, idx) => {
-                const config = CONTEXT_TYPE_CONFIG[ct];
-                if (!config) return null;
-                return (
-                  <span
-                    key={idx}
-                    className={cn(
-                      "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border",
-                      config.bgColor,
-                      config.color,
-                    )}
-                  >
-                    {config.icon}
-                    {config.label}
-                  </span>
-                );
-              })}
+            {usage.context_types?.map((ct, idx) => {
+              const config = CONTEXT_TYPE_CONFIG[ct];
+              if (!config) return null;
+              return (
+                <span
+                  key={idx}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-medium text-xs",
+                    config.bgColor,
+                    config.color
+                  )}
+                >
+                  {config.icon}
+                  {config.label}
+                </span>
+              );
+            })}
           </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Clock className="h-3 w-3" />
+          <div className='flex items-center gap-2 text-muted-foreground text-xs'>
+            <Clock className='h-3 w-3' />
             <span>{getTimeAgo(usage.created_at)}</span>
           </div>
         </div>
 
         {/* Source ref */}
         {usage.source_ref && (
-          <div className="text-sm">
+          <div className='text-sm'>
             <button
               onClick={() => {
                 const pathb64 = btoa(usage.source_ref);
                 navigate(ROUTES.PROJECT(project?.id || "").IDE.FILES.FILE(pathb64));
               }}
-              className="text-muted-foreground hover:text-primary font-mono text-xs transition-colors underline-offset-4 hover:underline text-left"
+              className='text-left font-mono text-muted-foreground text-xs underline-offset-4 transition-colors hover:text-primary hover:underline'
             >
               {usage.source_ref}
             </button>
@@ -98,26 +95,18 @@ export default function UsageContextCard({
         {previewContent && !isExpanded && (
           <div
             className={cn(
-              "p-2 rounded-lg border",
-              previewIsSQL
-                ? "bg-muted/50 border-muted"
-                : "bg-muted/30 border-muted/50",
+              "rounded-lg border p-2",
+              previewIsSQL ? "border-muted bg-muted/50" : "border-muted/50 bg-muted/30"
             )}
           >
             {previewIsSQL ? (
-              <code className="text-xs text-cyan-400 font-mono line-clamp-2">
-                <HighlightedText
-                  text={previewContent.slice(0, 100)}
-                  highlight={metricName}
-                />
+              <code className='line-clamp-2 font-mono text-cyan-400 text-xs'>
+                <HighlightedText text={previewContent.slice(0, 100)} highlight={metricName} />
                 {previewContent.length > 100 && "..."}
               </code>
             ) : (
-              <p className="text-xs text-muted-foreground line-clamp-2">
-                <HighlightedText
-                  text={previewContent.slice(0, 150)}
-                  highlight={metricName}
-                />
+              <p className='line-clamp-2 text-muted-foreground text-xs'>
+                <HighlightedText text={previewContent.slice(0, 150)} highlight={metricName} />
                 {previewContent.length > 150 && "..."}
               </p>
             )}
@@ -125,28 +114,26 @@ export default function UsageContextCard({
         )}
 
         {/* Links row */}
-        <div className="flex items-center gap-3 text-xs">
+        <div className='flex items-center gap-3 text-xs'>
           <button
             onClick={() => onTraceClick(usage.trace_id)}
-            className="flex items-center gap-1 text-muted-foreground hover:text-primary transition-colors"
+            className='flex items-center gap-1 text-muted-foreground transition-colors hover:text-primary'
           >
-            <ExternalLink className="h-3 w-3" />
-            <span className="font-mono">{usage.trace_id.slice(0, 8)}...</span>
+            <ExternalLink className='h-3 w-3' />
+            <span className='font-mono'>{usage.trace_id.slice(0, 8)}...</span>
           </button>
 
           {hasContext && (
             <button
               onClick={() => setIsExpanded(!isExpanded)}
-              className="ml-auto flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
+              className='ml-auto flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground'
             >
               {isExpanded ? (
-                <ChevronDown className="h-3 w-3" />
+                <ChevronDown className='h-3 w-3' />
               ) : (
-                <ChevronRight className="h-3 w-3" />
+                <ChevronRight className='h-3 w-3' />
               )}
-              <span>
-                {isExpanded ? "Less" : `More (${contextItems.length})`}
-              </span>
+              <span>{isExpanded ? "Less" : `More (${contextItems.length})`}</span>
             </button>
           )}
         </div>
@@ -154,7 +141,7 @@ export default function UsageContextCard({
 
       {/* Expanded context */}
       {isExpanded && hasContext && (
-        <div className="border-t px-4 py-3 space-y-4 bg-muted/20">
+        <div className='space-y-4 border-t bg-muted/20 px-4 py-3'>
           {contextItems.map((item, idx) => (
             <ContextItemDisplay key={idx} item={item} metricName={metricName} />
           ))}

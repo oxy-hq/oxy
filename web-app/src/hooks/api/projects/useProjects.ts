@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ProjectService } from "@/services/api";
+import type { Project, ProjectBranchesResponse } from "@/types/project";
 import queryKeys from "../queryKey";
-import { Project, ProjectBranchesResponse } from "@/types/project";
 
 const getLocalProject = (): Project => ({
   id: "00000000-0000-0000-0000-000000000000",
@@ -15,19 +15,18 @@ const getLocalProject = (): Project => ({
     id: "00000000-0000-0000-0000-000000000000",
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-    branch_type: "local",
+    branch_type: "local"
   },
   created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
+  updated_at: new Date().toISOString()
 });
 
 // Hook to fetch a single project
 export const useProject = (projectId: string, cloud: boolean) => {
   return useQuery<Project>({
     queryKey: queryKeys.projects.item(projectId),
-    queryFn: () =>
-      cloud ? ProjectService.getProject(projectId) : getLocalProject(),
-    enabled: !cloud || !!projectId,
+    queryFn: () => (cloud ? ProjectService.getProject(projectId) : getLocalProject()),
+    enabled: !cloud || !!projectId
   });
 };
 
@@ -36,7 +35,7 @@ export const useProjectBranches = (projectId: string) => {
   return useQuery<ProjectBranchesResponse>({
     queryKey: queryKeys.projects.branches(projectId),
     queryFn: () => ProjectService.getProjectBranches(projectId),
-    enabled: !!projectId,
+    enabled: !!projectId
   });
 };
 
@@ -50,9 +49,9 @@ export const useDeleteProject = (workspaceId: string) => {
     onSuccess: () => {
       // Invalidate projects list to refetch
       queryClient.invalidateQueries({
-        queryKey: queryKeys.projects.list(workspaceId),
+        queryKey: queryKeys.projects.list(workspaceId)
       });
-    },
+    }
   });
 };
 
@@ -61,22 +60,17 @@ export const useSwitchProjectBranch = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({
-      projectId,
-      branchName,
-    }: {
-      projectId: string;
-      branchName: string;
-    }) => ProjectService.switchProjectBranch(projectId, branchName),
+    mutationFn: ({ projectId, branchName }: { projectId: string; branchName: string }) =>
+      ProjectService.switchProjectBranch(projectId, branchName),
     onSuccess: (_, variables) => {
       // Invalidate project details and branches to refetch
       queryClient.invalidateQueries({
-        queryKey: queryKeys.projects.item(variables.projectId),
+        queryKey: queryKeys.projects.item(variables.projectId)
       });
       queryClient.invalidateQueries({
-        queryKey: queryKeys.projects.branches(variables.projectId),
+        queryKey: queryKeys.projects.branches(variables.projectId)
       });
-    },
+    }
   });
 };
 
@@ -85,25 +79,17 @@ export const usePullChanges = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({
-      projectId,
-      branchName,
-    }: {
-      projectId: string;
-      branchName: string;
-    }) => ProjectService.pullChanges(projectId, branchName),
+    mutationFn: ({ projectId, branchName }: { projectId: string; branchName: string }) =>
+      ProjectService.pullChanges(projectId, branchName),
     onSuccess: (_, variables) => {
       // Invalidate revision info to refetch after pull
       queryClient.invalidateQueries({
-        queryKey: queryKeys.projects.revisionInfo(
-          variables.projectId,
-          variables.branchName,
-        ),
+        queryKey: queryKeys.projects.revisionInfo(variables.projectId, variables.branchName)
       });
       queryClient.invalidateQueries({
-        queryKey: queryKeys.file.all(variables.projectId, variables.branchName),
+        queryKey: queryKeys.file.all(variables.projectId, variables.branchName)
       });
-    },
+    }
   });
 };
 
@@ -115,7 +101,7 @@ export const usePushChanges = () => {
     mutationFn: ({
       projectId,
       branchName,
-      commitMessage,
+      commitMessage
     }: {
       projectId: string;
       branchName: string;
@@ -124,14 +110,11 @@ export const usePushChanges = () => {
     onSuccess: (_, variables) => {
       // Invalidate revision info to refetch after push
       queryClient.invalidateQueries({
-        queryKey: queryKeys.projects.revisionInfo(
-          variables.projectId,
-          variables.branchName,
-        ),
+        queryKey: queryKeys.projects.revisionInfo(variables.projectId, variables.branchName)
       });
       queryClient.invalidateQueries({
-        queryKey: queryKeys.file.all(variables.projectId, variables.branchName),
+        queryKey: queryKeys.file.all(variables.projectId, variables.branchName)
       });
-    },
+    }
   });
 };

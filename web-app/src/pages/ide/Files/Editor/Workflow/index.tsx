@@ -1,21 +1,18 @@
-import { useMemo, useState, useEffect, useRef } from "react";
 import { debounce } from "lodash";
-import {
-  WorkflowForm,
-  WorkflowFormData,
-} from "@/components/workflow/WorkflowForm";
-import { usePreviewRefresh } from "../usePreviewRefresh";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import YAML from "yaml";
 import { useFileEditorContext } from "@/components/FileEditor/useFileEditorContext";
-import { useEditorContext } from "../contexts/useEditorContext";
-import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import { useListWorkflowRuns } from "@/components/workflow/useWorkflowRun";
-import WorkflowOutputView from "./components/WorkflowOutputView";
-import WorkflowEditorView from "./components/WorkflowEditorView";
-import { WorkflowViewMode } from "./components/types";
+import { WorkflowForm, type WorkflowFormData } from "@/components/workflow/WorkflowForm";
 import { WorkflowPreview } from "@/components/workflow/WorkflowPreview";
 import { useFilesContext } from "../../FilesContext";
 import { FilesSubViewMode } from "../../FilesSidebar/constants";
+import { useEditorContext } from "../contexts/useEditorContext";
+import { usePreviewRefresh } from "../usePreviewRefresh";
+import { WorkflowViewMode } from "./components/types";
+import WorkflowEditorView from "./components/WorkflowEditorView";
+import WorkflowOutputView from "./components/WorkflowOutputView";
 
 const WorkflowEditor = () => {
   const { pathb64, isReadOnly, gitEnabled } = useEditorContext();
@@ -28,9 +25,7 @@ const WorkflowEditor = () => {
 
   // Default to Form for object mode (GUI editor), Output for file mode
   const defaultViewMode =
-    filesSubViewMode === FilesSubViewMode.OBJECTS
-      ? WorkflowViewMode.Form
-      : WorkflowViewMode.Output;
+    filesSubViewMode === FilesSubViewMode.OBJECTS ? WorkflowViewMode.Form : WorkflowViewMode.Output;
 
   const [viewMode, setViewMode] = useState<WorkflowViewMode>(defaultViewMode);
 
@@ -43,16 +38,13 @@ const WorkflowEditor = () => {
   // Reset navigation flag when workflow path changes
   useEffect(() => {
     hasNavigatedRef.current = false;
-  }, [workflowPath]);
+  }, []);
 
   // Fetch the most recent workflow run
-  const { data: runsData, isPending: isRunsLoading } = useListWorkflowRuns(
-    workflowPath,
-    {
-      pageIndex: 0,
-      pageSize: 1,
-    },
-  );
+  const { data: runsData, isPending: isRunsLoading } = useListWorkflowRuns(workflowPath, {
+    pageIndex: 0,
+    pageSize: 1
+  });
 
   // Determine the run ID to use
   const runId = useMemo(() => {
@@ -79,9 +71,9 @@ const WorkflowEditor = () => {
       navigate(
         {
           pathname: location.pathname,
-          search: newSearchParams.toString(),
+          search: newSearchParams.toString()
         },
-        { replace: true },
+        { replace: true }
       );
     }
   }, [
@@ -91,7 +83,7 @@ const WorkflowEditor = () => {
     isRunsLoading,
     navigate,
     location.pathname,
-    location.search,
+    location.search
   ]);
 
   const validateContent = (value: string) => {
@@ -99,8 +91,7 @@ const WorkflowEditor = () => {
       YAML.parse(value);
       setValidationError(null);
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Invalid YAML format";
+      const errorMessage = error instanceof Error ? error.message : "Invalid YAML format";
       setValidationError(errorMessage);
     }
   };
@@ -128,18 +119,14 @@ const WorkflowEditor = () => {
       pathb64={pathb64}
       isReadOnly={isReadOnly}
       onSaved={refreshPreview}
-      customEditor={
-        viewMode === WorkflowViewMode.Form ? <WorkflowFormWrapper /> : undefined
-      }
+      customEditor={viewMode === WorkflowViewMode.Form ? <WorkflowFormWrapper /> : undefined}
       gitEnabled={gitEnabled}
       onChanged={(value) => {
         if (viewMode === WorkflowViewMode.Editor) {
           validateContent(value);
         }
       }}
-      preview={
-        <WorkflowPreview pathb64={pathb64} runId={runId} direction="vertical" />
-      }
+      preview={<WorkflowPreview pathb64={pathb64} runId={runId} direction='vertical' />}
     />
   );
 };
@@ -160,7 +147,7 @@ const WorkflowFormWrapper = () => {
         variables:
           parsed.variables && typeof parsed.variables === "object"
             ? JSON.stringify(parsed.variables, null, 2)
-            : parsed.variables?.toString() || "",
+            : parsed.variables?.toString() || ""
       };
     } catch (error) {
       console.error("Failed to parse YAML content to form data:", error);
@@ -174,14 +161,14 @@ const WorkflowFormWrapper = () => {
         try {
           const yamlContent = YAML.stringify(formData, {
             indent: 2,
-            lineWidth: 0,
+            lineWidth: 0
           });
           actions.setContent(yamlContent);
         } catch (error) {
           console.error("Failed to serialize form data to YAML:", error);
         }
       }, 500),
-    [actions],
+    [actions]
   );
 
   if (!data) return null;

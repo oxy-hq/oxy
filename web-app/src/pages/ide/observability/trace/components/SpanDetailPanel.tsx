@@ -1,12 +1,7 @@
 import { X } from "lucide-react";
-import { Button } from "@/components/ui/shadcn/button";
 import { Badge } from "@/components/ui/shadcn/badge";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/shadcn/tabs";
+import { Button } from "@/components/ui/shadcn/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
 import type { TimelineSpan } from "@/services/api/traces";
 import { formatDuration, formatSpanLabel, SpanIcon } from "../../utils/index";
 import { AttributeCard } from "./AttributeCard";
@@ -18,9 +13,7 @@ interface SpanDetailPanelProps {
 
 export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
   // Filter events that have is_visible = true attribute
-  const visibleEvents = span.events.filter(
-    (event) => event.attributes["is_visible"] === "true",
-  );
+  const visibleEvents = span.events.filter((event) => event.attributes.is_visible === "true");
 
   // Attributes to hide from display (internal/metadata)
   const hiddenAttributes = new Set([
@@ -31,90 +24,78 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
     "level",
     "name",
     "target",
-    "status",
+    "status"
   ]);
 
   // Get filtered attributes for an event
   const getEventAttributes = (event: (typeof visibleEvents)[0]) => {
-    return Object.entries(event.attributes).filter(
-      ([key]) => !hiddenAttributes.has(key),
-    );
+    return Object.entries(event.attributes).filter(([key]) => !hiddenAttributes.has(key));
   };
 
   const hasVisibleEvents = visibleEvents.length > 0;
 
   return (
-    <div className="flex flex-col h-full border-l">
+    <div className='flex h-full flex-col border-l'>
       {/* Header */}
-      <div className="px-4 py-3 border-b flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-2">
+      <div className='flex items-start justify-between gap-3 border-b px-4 py-3'>
+        <div className='min-w-0 flex-1'>
+          <div className='mb-2 flex items-center gap-2'>
             <SpanIcon
               spanName={span.spanName}
-              className="h-5 w-5 flex-shrink-0 text-muted-foreground"
+              className='h-5 w-5 flex-shrink-0 text-muted-foreground'
             />
-            <h2
-              className="font-semibold text-base truncate"
-              title={span.spanName}
-            >
+            <h2 className='truncate font-semibold text-base' title={span.spanName}>
               {formatSpanLabel(span.spanName)}
             </h2>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className='flex flex-wrap items-center gap-2'>
             <Badge
-              variant={
-                span.statusCode === "Error" ? "destructive" : "secondary"
-              }
-              className="text-xs"
+              variant={span.statusCode === "Error" ? "destructive" : "secondary"}
+              className='text-xs'
             >
               {span.statusCode || "Unset"}
             </Badge>
-            <Badge variant="outline" className="text-xs">
+            <Badge variant='outline' className='text-xs'>
               {formatDuration(span.durationMs)}
             </Badge>
             {span.spanKind && (
-              <Badge variant="outline" className="text-xs">
+              <Badge variant='outline' className='text-xs'>
                 {span.spanKind}
               </Badge>
             )}
           </div>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 flex-shrink-0"
-          onClick={onClose}
-        >
-          <X className="h-4 w-4" />
+        <Button variant='ghost' size='icon' className='h-8 w-8 flex-shrink-0' onClick={onClose}>
+          <X className='h-4 w-4' />
         </Button>
       </div>
 
       {/* Content */}
       {hasVisibleEvents ? (
         <Tabs
-          defaultValue={visibleEvents[0]?.attributes["name"] || "0"}
-          className="flex-1 flex flex-col overflow-hidden"
+          defaultValue={visibleEvents[0]?.attributes.name || "0"}
+          className='flex flex-1 flex-col overflow-hidden'
         >
-          <div className="border-b">
-            <TabsList className="px-4 py-2 rounded-none justify-start items-start h-auto gap-2 bg-transparent flex flex-wrap">
+          <div className='border-b'>
+            <TabsList className='flex h-auto flex-wrap items-start justify-start gap-2 rounded-none bg-transparent px-4 py-2'>
               {visibleEvents.map((event, index) => (
                 <TabsTrigger
                   key={index}
-                  value={event.attributes["name"] || String(index)}
-                  className="text-xs px-3 py-1.5 rounded-md data-[state=active]:bg-accent data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground hover:text-foreground transition-colors"
+                  value={event.attributes.name || String(index)}
+                  className='rounded-md px-3 py-1.5 text-xs transition-colors hover:text-foreground data-[state=active]:bg-accent data-[state=active]:text-foreground data-[state=inactive]:text-muted-foreground'
                 >
-                  {event.attributes["name"] || `Event ${index + 1}`}
+                  {event.attributes.name || `Event ${index + 1}`}
                 </TabsTrigger>
               ))}
             </TabsList>
           </div>
 
-          <div className="flex-1 overflow-auto customScrollbar scrollbar-gutter-auto">
+          <div className='customScrollbar scrollbar-gutter-auto flex-1 overflow-auto'>
             {visibleEvents.map((event, index) => (
               <TabsContent
                 key={index}
-                value={event.attributes["name"] || String(index)}
-                className="p-4 mt-0 space-y-4"
+                value={event.attributes.name || String(index)}
+                className='mt-0 space-y-4 p-4'
               >
                 {getEventAttributes(event).map(([key, value]) => (
                   <AttributeCard key={key} name={key} value={value} />
@@ -124,7 +105,7 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
           </div>
         </Tabs>
       ) : (
-        <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
+        <div className='flex flex-1 items-center justify-center text-muted-foreground text-sm'>
           No data collected
         </div>
       )}

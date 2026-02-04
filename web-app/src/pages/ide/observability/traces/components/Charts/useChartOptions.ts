@@ -1,18 +1,13 @@
-import { useMemo } from "react";
 import type { EChartsOption } from "echarts";
-import { TimeBucket, DurationBucket } from "./types";
-import {
-  CHART_COLORS,
-  AXIS_STYLE,
-  CHART_GRID,
-  AXIS_LABEL_STYLE,
-} from "./constants";
+import { useMemo } from "react";
+import { AXIS_LABEL_STYLE, AXIS_STYLE, CHART_COLORS, CHART_GRID } from "./constants";
+import type { DurationBucket, TimeBucket } from "./types";
 
 type TooltipFormatter = (params: unknown) => string;
 
 function createTooltipFormatter(
   label: string,
-  formatValue?: (v: number) => string,
+  formatValue?: (v: number) => string
 ): TooltipFormatter {
   return (params: unknown) => {
     const data = (params as Array<{ name: string; value: number }>)[0];
@@ -21,134 +16,126 @@ function createTooltipFormatter(
   };
 }
 
-export function useAgentRunsChartOptions(
-  timeBuckets: TimeBucket[],
-): EChartsOption {
+export function useAgentRunsChartOptions(timeBuckets: TimeBucket[]): EChartsOption {
   return useMemo(
     () => ({
       tooltip: {
         trigger: "axis",
-        formatter: createTooltipFormatter("Agent Runs"),
+        formatter: createTooltipFormatter("Agent Runs")
       },
       grid: CHART_GRID,
       xAxis: {
         type: "category",
         data: timeBuckets.map((b) => b.time),
         ...AXIS_STYLE,
-        axisLabel: AXIS_LABEL_STYLE,
+        axisLabel: AXIS_LABEL_STYLE
       },
       yAxis: {
         type: "value",
-        ...AXIS_STYLE,
+        ...AXIS_STYLE
       },
       series: [
         {
           type: "bar",
           data: timeBuckets.map((b) => b.agentCount),
           itemStyle: { color: CHART_COLORS.success },
-          barMaxWidth: 20,
-        },
-      ],
+          barMaxWidth: 20
+        }
+      ]
     }),
-    [timeBuckets],
+    [timeBuckets]
   );
 }
 
-export function useWorkflowRunsChartOptions(
-  timeBuckets: TimeBucket[],
-): EChartsOption {
+export function useWorkflowRunsChartOptions(timeBuckets: TimeBucket[]): EChartsOption {
   return useMemo(
     () => ({
       tooltip: {
         trigger: "axis",
-        formatter: createTooltipFormatter("Workflow Runs"),
+        formatter: createTooltipFormatter("Workflow Runs")
       },
       grid: CHART_GRID,
       xAxis: {
         type: "category",
         data: timeBuckets.map((b) => b.time),
         ...AXIS_STYLE,
-        axisLabel: AXIS_LABEL_STYLE,
+        axisLabel: AXIS_LABEL_STYLE
       },
       yAxis: {
         type: "value",
-        ...AXIS_STYLE,
+        ...AXIS_STYLE
       },
       series: [
         {
           type: "bar",
           data: timeBuckets.map((b) => b.workflowCount),
           itemStyle: { color: CHART_COLORS.info },
-          barMaxWidth: 20,
-        },
-      ],
+          barMaxWidth: 20
+        }
+      ]
     }),
-    [timeBuckets],
+    [timeBuckets]
   );
 }
 
-export function useDurationChartOptions(
-  durationBuckets: DurationBucket[],
-): EChartsOption {
+export function useDurationChartOptions(durationBuckets: DurationBucket[]): EChartsOption {
   return useMemo(
     () => ({
       tooltip: {
         trigger: "axis",
-        formatter: createTooltipFormatter("Count"),
+        formatter: createTooltipFormatter("Count")
       },
       grid: CHART_GRID,
       xAxis: {
         type: "category",
         data: durationBuckets.map((b) => b.range),
         ...AXIS_STYLE,
-        axisLabel: { ...AXIS_LABEL_STYLE, rotate: 0 },
+        axisLabel: { ...AXIS_LABEL_STYLE, rotate: 0 }
       },
       yAxis: {
         type: "value",
-        ...AXIS_STYLE,
+        ...AXIS_STYLE
       },
       series: [
         {
           type: "bar",
           data: durationBuckets.map((b) => b.count),
           itemStyle: { color: CHART_COLORS.info },
-          barMaxWidth: 30,
-        },
-      ],
+          barMaxWidth: 30
+        }
+      ]
     }),
-    [durationBuckets],
+    [durationBuckets]
   );
 }
 
-export function useTokensChartOptions(
-  timeBuckets: TimeBucket[],
-): EChartsOption {
+export function useTokensChartOptions(timeBuckets: TimeBucket[]): EChartsOption {
   return useMemo(
     () => ({
       tooltip: {
         trigger: "axis",
-        formatter: createTooltipFormatter("Tokens", (v) => v.toLocaleString()),
+        formatter: createTooltipFormatter("Tokens", (v) => v.toLocaleString())
       },
       grid: CHART_GRID,
       xAxis: {
         type: "category",
         data: timeBuckets.map((b) => b.time),
         ...AXIS_STYLE,
-        axisLabel: AXIS_LABEL_STYLE,
+        axisLabel: AXIS_LABEL_STYLE
       },
       yAxis: {
         type: "value",
-        ...AXIS_STYLE,
+        ...AXIS_STYLE
       },
       series: [
         {
           type: "bar",
           data: timeBuckets.map((b) => b.tokens),
           itemStyle: { color: CHART_COLORS.warning },
-          barMaxWidth: 20,
-        },
-      ],
+          barMaxWidth: 20
+        }
+      ]
     }),
-    [timeBuckets],
+    [timeBuckets]
   );
 }

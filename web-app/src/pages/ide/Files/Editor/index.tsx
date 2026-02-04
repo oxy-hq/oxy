@@ -1,6 +1,6 @@
 import { useParams } from "react-router-dom";
-import { EditorRouter } from "./EditorRouter";
 import { EditorProvider } from "./contexts/EditorContext";
+import { EditorRouter } from "./EditorRouter";
 
 const EditorPage = () => {
   const { pathb64 } = useParams();

@@ -1,9 +1,9 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ApiKeyService } from "@/services/api/apiKey";
-import { CreateApiKeyRequest, CreateApiKeyResponse } from "@/types/apiKey";
-import queryKeys from "../queryKey";
 import { toast } from "sonner";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { ApiKeyService } from "@/services/api/apiKey";
+import type { CreateApiKeyRequest, CreateApiKeyResponse } from "@/types/apiKey";
+import queryKeys from "../queryKey";
 
 export const useCreateApiKey = () => {
   const { project } = useCurrentProjectBranch();
@@ -14,14 +14,14 @@ export const useCreateApiKey = () => {
     mutationFn: (data) => ApiKeyService.createApiKey(projectId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: queryKeys.apiKey.list(projectId),
+        queryKey: queryKeys.apiKey.list(projectId)
       });
       toast.success("API key created successfully");
     },
     onError: (error) => {
       console.error("Failed to create API key:", error);
       toast.error("Failed to create API key");
-    },
+    }
   });
 };
 
@@ -35,13 +35,13 @@ export const useRevokeApiKey = () => {
     onSuccess: () => {
       // Invalidate and refetch API keys list
       queryClient.invalidateQueries({
-        queryKey: queryKeys.apiKey.list(projectId),
+        queryKey: queryKeys.apiKey.list(projectId)
       });
       toast.success("API key revoked successfully");
     },
     onError: (error) => {
       console.error("Failed to revoke API key:", error);
       toast.error("Failed to revoke API key");
-    },
+    }
   });
 };
