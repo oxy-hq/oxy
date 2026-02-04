@@ -185,6 +185,7 @@ export const SemanticExplorerProvider = ({
       onSuccess: (data) => {
         setResultFile((data as { file_name: string }).file_name);
         setResult([]);
+        setExecutionError(null);
       },
       onError: (error) => {
         setResult([]);
