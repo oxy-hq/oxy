@@ -31,4 +31,6 @@ jobs:
             - *Branch/Tag:* ${{ github.event.workflow_run.head_branch }}
             - *Completed At:* ${{ github.event.workflow_run.updated_at }}
 
+            ${{ github.event.workflow_run.name == 'Public Release' && 'To install: `bash <(curl --proto ''=https'' --tlsv1.2 -LsSf https://get.oxy.tech)`' || 'Docker images published. See the workflow run for pull commands.' }}
+
             View the workflow run: ${{ github.event.workflow_run.html_url }}

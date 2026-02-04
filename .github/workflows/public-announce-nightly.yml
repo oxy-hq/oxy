@@ -98,4 +98,4 @@ jobs:
             • <https://github.com/oxy-hq/oxy-nightly/releases/latest|Latest Release>
             • <${{ github.event.workflow_run.html_url }}|Workflow Run>
 
-            To install: `bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)`
+            To install: `${{ github.event.workflow_run.event == 'schedule' && 'OXY_CHANNEL=nightly ' || '' }}bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)`

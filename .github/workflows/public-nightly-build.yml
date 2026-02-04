@@ -231,13 +231,15 @@ jobs:
             Commit: [${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
             Primary Tag: ${{ steps.channel.outputs.primary_tag }}
             Transitional Tag: ${{ steps.channel.outputs.compat_tag || 'n/a' }}
-            To install:
-            `bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)`
+            To install latest:
+            `${{ steps.channel.outputs.channel == 'nightly' && 'OXY_CHANNEL=nightly ' || '' }}bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)`
+            To install this exact build:
+            `OXY_VERSION=${{ steps.channel.outputs.primary_tag }} bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)`
 
   build-and-publish-docker:
     name: Build ${{ matrix.target.name }} ${{ github.event_name == 'schedule' && 'nightly' || 'edge' }} Docker image for ${{ matrix.arch }}
     needs: [changesets, build-channel]
-    if: github.repository == 'oxy-hq/oxy' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changesets.outputs.oxy == 'true')
+    if: github.repository == 'oxy-hq/oxy' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changesets.outputs.oxy == 'true' || needs.changesets.outputs.web-app == 'true')
     concurrency:
       group: docker-publish-nightly-${{ matrix.target.name }}-${{ matrix.arch }}
       cancel-in-progress: true
