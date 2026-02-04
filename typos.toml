@@ -1,5 +1,8 @@
 # configuration for https://github.com/crate-ci/typos
 
+[default.extend-words]
+consts = "consts"
+
 [type.md]
 extend-ignore-re = [
   "\\[[[:xdigit:]]{7}\\]\\(https://github.com/oxy-hq/oxy(-internal)?/commit/[[:xdigit:]]{40}\\)",
@@ -9,5 +12,5 @@ extend-ignore-re = [
 extend-exclude = [
   "CHANGELOG.md",
   "*/docker-entrypoints/*",
-  "crates/app/demo_project/**"
+  "crates/app/demo_project/**",
 ]
