@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.6](https://github.com/oxy-hq/oxy-internal/compare/0.5.5...0.5.6) (2026-02-05)
+
+
+### <!-- 0 -->🚀 Features
+
+* add strict validation for yaml objects ([#1603](https://github.com/oxy-hq/oxy-internal/issues/1603)) ([5c7c82b](https://github.com/oxy-hq/oxy-internal/commit/5c7c82b17b05559a1435e55b3903b3c8f9a609a2))
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* release 0.5.6 ([e27787c](https://github.com/oxy-hq/oxy-internal/commit/e27787c191757c0cd8ed74f10d8ec04e650e7ed5))
+
 ## [0.5.5](https://github.com/oxy-hq/oxy-internal/compare/0.5.4...0.5.5) (2026-02-03)
 
 ## [0.5.4](https://github.com/oxy-hq/oxy-internal/compare/0.5.3...0.5.4) (2026-01-30)

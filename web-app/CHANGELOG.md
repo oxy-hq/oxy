@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.5.6](https://github.com/oxy-hq/oxy-internal/compare/0.5.3...0.5.6) (2026-02-05)
+
+
+### <!-- 0 -->🚀 Features
+
+* add execute sql query shortcut ([#1591](https://github.com/oxy-hq/oxy-internal/issues/1591)) ([a9ba17a](https://github.com/oxy-hq/oxy-internal/commit/a9ba17ad68a914dac30da77bb2ee8f6846fa3c8d))
+* sql ide ([#1556](https://github.com/oxy-hq/oxy-internal/issues/1556)) ([d367afb](https://github.com/oxy-hq/oxy-internal/commit/d367afb6df0102b113d0301b84873e529b7dc01a))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* add paging and sort for sql result table ([#1594](https://github.com/oxy-hq/oxy-internal/issues/1594)) ([d1d0011](https://github.com/oxy-hq/oxy-internal/commit/d1d0011035318784df756e52d9959d90ccf073ce))
+* result query table state reset ([#1590](https://github.com/oxy-hq/oxy-internal/issues/1590)) ([e3eb358](https://github.com/oxy-hq/oxy-internal/commit/e3eb358884619c4d63eca1e126fe6be7531139a5))
+* semantic query execution error persist ([#1599](https://github.com/oxy-hq/oxy-internal/issues/1599)) ([0a14bc7](https://github.com/oxy-hq/oxy-internal/commit/0a14bc711b0d4533e65d4f65c182fd2522561299))
+* timezone in query result ([#1610](https://github.com/oxy-hq/oxy-internal/issues/1610)) ([0220faa](https://github.com/oxy-hq/oxy-internal/commit/0220faa49e2fc7840823db9402b4b4120f7cc941))
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* release 0.5.6 ([e27787c](https://github.com/oxy-hq/oxy-internal/commit/e27787c191757c0cd8ed74f10d8ec04e650e7ed5))
+
 ## [0.5.3](https://github.com/oxy-hq/oxy-internal/compare/0.5.2...0.5.3) (2026-02-03)
 
 

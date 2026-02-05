@@ -1,6 +1,6 @@
 [package]
 name = "oxy-gemini"
-version = "0.5.5"
+version = "0.5.6"
 authors.workspace = true
 description.workspace = true
 documentation.workspace = true

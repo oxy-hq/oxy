@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.5.6](https://github.com/oxy-hq/oxy-internal/compare/0.5.5...0.5.6) (2026-02-05)
+
+
+### <!-- 0 -->🚀 Features
+
+* add strict validation for yaml objects ([#1603](https://github.com/oxy-hq/oxy-internal/issues/1603)) ([5c7c82b](https://github.com/oxy-hq/oxy-internal/commit/5c7c82b17b05559a1435e55b3903b3c8f9a609a2))
+* **logging:** enhance logging configuration for cloud and local environments ([#1604](https://github.com/oxy-hq/oxy-internal/issues/1604)) ([abff38e](https://github.com/oxy-hq/oxy-internal/commit/abff38e28c180f8718ef12a95464efac5999e256))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* enhance semantic container management with volume mount validation ([#1602](https://github.com/oxy-hq/oxy-internal/issues/1602)) ([c61d168](https://github.com/oxy-hq/oxy-internal/commit/c61d16821671f6512115fbfe8dbc97bc8d0943de))
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* release 0.5.6 ([e27787c](https://github.com/oxy-hq/oxy-internal/commit/e27787c191757c0cd8ed74f10d8ec04e650e7ed5))
+
 ## [0.5.5](https://github.com/oxy-hq/oxy-internal/compare/0.5.4...0.5.5) (2026-02-03)
 
 
