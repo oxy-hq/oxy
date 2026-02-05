@@ -13,6 +13,7 @@ pub struct SemanticDimension {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct Semantics {
     pub dimensions: Vec<SemanticDimension>,
 }

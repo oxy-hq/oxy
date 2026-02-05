@@ -255,7 +255,7 @@ enum SubCommand {
     ///
     /// Check your config.yml, workflow files, and agent configurations
     /// for errors and compliance with the expected schema.
-    Validate,
+    Validate(ValidateArgs),
     /// Start MCP (Model Context Protocol) server
     ///
     /// Launch an MCP server with either stdio or SSE transport for
@@ -520,6 +520,16 @@ struct GenConfigSchemaArgs {
 }
 
 #[derive(Parser, Debug)]
+struct ValidateArgs {
+    /// Validate a specific file instead of all configuration files
+    ///
+    /// Provide a path to a workflow (.workflow.yml), agent (.agent.yml),
+    /// or app (.app.yml) file to validate just that file.
+    #[clap(long, short)]
+    file: Option<std::path::PathBuf>,
+}
+
+#[derive(Parser, Debug)]
 pub struct SeedArgs {
     /// Database seeding action to perform
     #[clap(subcommand)]
@@ -624,6 +634,36 @@ pub struct PrepareSemanticEngineArgs {
     /// Clean and regenerate all Cube.js configuration files.
     #[clap(long, default_value_t = false)]
     force: bool,
+}
+
+/// Validates a single file based on its extension.
+fn validate_single_file(file_path: &PathBuf, config: &Config) -> Result<(), String> {
+    let file_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+    match () {
+        _ if file_name.ends_with(".workflow.yml") => {
+            let workflow = config.load_workflow(file_path).map_err(|e| e.to_string())?;
+            config
+                .validate_workflow(&workflow)
+                .map_err(|e| e.to_string())
+        }
+        _ if file_name.ends_with(".agent.yml") => {
+            let (agent, path) = config
+                .load_agent_config(Some(file_path))
+                .map_err(|e| e.to_string())?;
+            config
+                .validate_agent(&agent, path)
+                .map_err(|e| e.to_string())
+        }
+        _ if file_name.ends_with(".app.yml") => {
+            let app = config.load_app(file_path).map_err(|e| e.to_string())?;
+            config.validate_app(&app).map_err(|e| e.to_string())
+        }
+        _ => Err(format!(
+            "Unknown file type: {}. Expected .workflow.yml, .agent.yml, or .app.yml",
+            file_path.display()
+        )),
+    }
 }
 
 async fn handle_workflow_file(
@@ -749,7 +789,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             SubCommand::Build(_) => "build",
             SubCommand::VecSearch(_) => "vec-search",
             SubCommand::Sync(_) => "sync",
-            SubCommand::Validate => "validate",
+            SubCommand::Validate(_) => "validate",
             SubCommand::Migrate => "migrate",
             SubCommand::Start(_) => "start",
             SubCommand::Serve(_) => "serve",
@@ -964,21 +1004,69 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                     .join("\n---\n")
             )
         }
-        Some(SubCommand::Validate) => {
+        Some(SubCommand::Validate(args)) => {
             let config = ConfigBuilder::new()
                 .with_project_path(&resolve_local_project_path()?)?
                 .build()
                 .await?;
-            match config.get_config().validate_workflows() {
-                Ok(_) => match config.get_config().validate_agents() {
-                    Ok(_) => println!("{}", "Config file is valid".success()),
+
+            if let Some(file_path) = args.file {
+                let validation_result = validate_single_file(&file_path, config.get_config());
+                match validation_result {
+                    Ok(_) => println!("{}", format!("{} is valid", file_path.display()).success()),
                     Err(e) => {
-                        println!("{}", e.to_string().error());
+                        println!("{}", e.error());
                         exit(1)
                     }
-                },
-                Err(e) => {
-                    println!("{}", e.to_string().error());
+                }
+            } else {
+                // Validate all files, collecting all errors
+                let cfg = config.get_config();
+                let mut errors: Vec<String> = Vec::new();
+                let mut valid_count = 0;
+
+                // Validate workflows
+                for workflow_file in cfg.list_workflows(&cfg.project_path) {
+                    match validate_single_file(&workflow_file, cfg) {
+                        Ok(_) => valid_count += 1,
+                        Err(e) => errors.push(format!("{}: {}", workflow_file.display(), e)),
+                    }
+                }
+
+                // Validate agents
+                for agent_file in cfg.list_agents(&cfg.project_path) {
+                    match validate_single_file(&agent_file, cfg) {
+                        Ok(_) => valid_count += 1,
+                        Err(e) => errors.push(format!("{}: {}", agent_file.display(), e)),
+                    }
+                }
+
+                // Validate apps
+                for app_file in cfg.list_apps(&cfg.project_path) {
+                    match validate_single_file(&app_file, cfg) {
+                        Ok(_) => valid_count += 1,
+                        Err(e) => errors.push(format!("{}: {}", app_file.display(), e)),
+                    }
+                }
+
+                if errors.is_empty() {
+                    println!(
+                        "{}",
+                        format!("All {} config files are valid", valid_count).success()
+                    );
+                } else {
+                    for err in &errors {
+                        println!("{}", err.error());
+                    }
+                    println!(
+                        "{}",
+                        format!(
+                            "\n{} file(s) failed validation, {} file(s) valid",
+                            errors.len(),
+                            valid_count
+                        )
+                        .error()
+                    );
                     exit(1)
                 }
             }

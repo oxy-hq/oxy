@@ -14,11 +14,13 @@ pub mod oxy;
 mod storage;
 
 use anyhow;
-use model::{AgentConfig, Config, Database, Model, SemanticModels, Workflow};
+use model::{AgentConfig, AppConfig, Config, Database, Model, SemanticModels, Workflow};
 
 use parser::{parse_agent_config, parse_semantic_model_config, parse_workflow_config};
 use std::{fs, io};
-use validate::{AgentValidationContext, ValidationContext};
+use validate::{
+    AgentValidationContext, DataAppValidationContext, ValidationContext, ValidationContextMetadata,
+};
 
 use oxy_shared::errors::OxyError;
 
@@ -72,6 +74,24 @@ impl Config {
         }
     }
 
+    pub fn validate_app(&self, app: &AppConfig) -> anyhow::Result<()> {
+        let context = ValidationContext {
+            config: self.clone(),
+            metadata: Some(ValidationContextMetadata::DataApp(
+                DataAppValidationContext {
+                    app_config: app.clone(),
+                },
+            )),
+        };
+        match app.validate_with(&context) {
+            Ok(_) => Ok(()),
+            Err(e) => anyhow::bail!(OxyError::ConfigurationError(format!(
+                "Invalid app: {} \n{}",
+                app.name, e
+            ))),
+        }
+    }
+
     pub fn validate_workflows(&self) -> anyhow::Result<()> {
         for workflow_file in self.list_workflows(&self.project_path) {
             let workflow = self.load_workflow(&workflow_file)?;
@@ -84,6 +104,14 @@ impl Config {
         for agent in self.list_agents(&self.project_path) {
             let agent = self.load_agent_config(Some(&agent))?;
             self.validate_agent(&agent.0, agent.1)?;
+        }
+        Ok(())
+    }
+
+    pub fn validate_apps(&self) -> anyhow::Result<()> {
+        for app_file in self.list_apps(&self.project_path) {
+            let app = self.load_app(&app_file)?;
+            self.validate_app(&app)?;
         }
         Ok(())
     }
@@ -105,6 +133,35 @@ impl Config {
         let agent_name = agent_name.strip_suffix(".agent").unwrap_or(agent_name);
 
         Ok((agent_config, agent_name.to_owned()))
+    }
+
+    pub fn load_app(&self, app_file: &PathBuf) -> Result<AppConfig, OxyError> {
+        if !app_file.exists() {
+            return Err(OxyError::ConfigurationError(format!(
+                "App configuration file not found: {app_file:?}"
+            )));
+        }
+
+        let app_content = fs::read_to_string(app_file).map_err(|e| {
+            OxyError::ArgumentError(format!(
+                "Couldn't read app file {}: {e}",
+                app_file.display()
+            ))
+        })?;
+
+        let mut app: AppConfig = serde_yaml::from_str(&app_content).map_err(|e| {
+            OxyError::ConfigurationError(format!(
+                "Couldn't parse app file {}: {e}",
+                app_file.display()
+            ))
+        })?;
+
+        // Derive name from filename if not set
+        let app_name = app_file.file_stem().unwrap().to_str().unwrap();
+        let app_name = app_name.strip_suffix(".app").unwrap_or(app_name);
+        app.name = app_name.to_string();
+
+        Ok(app)
     }
 
     fn list_by_sub_extension(&self, dir: &PathBuf, sub_extension: &str) -> Vec<PathBuf> {

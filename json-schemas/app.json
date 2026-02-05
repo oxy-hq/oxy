@@ -7,6 +7,11 @@
     "tasks"
   ],
   "properties": {
+    "description": {
+      "description": "Optional description of the app.",
+      "default": "",
+      "type": "string"
+    },
     "display": {
       "description": "display blocks to render the app",
       "type": "array",
@@ -22,6 +27,7 @@
       }
     }
   },
+  "additionalProperties": false,
   "definitions": {
     "Condition": {
       "type": "object",

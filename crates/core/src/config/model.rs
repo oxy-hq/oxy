@@ -38,6 +38,7 @@ mod variables;
 mod workflow;
 
 #[derive(Serialize, Deserialize, Validate, Debug, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
 #[garde(context(ValidationContext))]
 pub struct Config {
     #[garde(dive)]
@@ -1999,20 +2000,6 @@ pub enum TaskType {
     Unknown,
 }
 
-#[derive(Deserialize, JsonSchema)]
-pub struct TempWorkflow {
-    pub tasks: Vec<Task>,
-    #[serde(flatten)]
-    pub variables: Option<Variables>,
-    #[serde(default = "default_tests")]
-    pub tests: Vec<EvalConfig>,
-    #[serde(default)]
-    pub description: String,
-    #[serde(default)]
-    pub retrieval: Option<RouteRetrievalConfig>,
-    pub consistency_prompt: Option<String>,
-}
-
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
 pub struct Task {
@@ -2141,12 +2128,16 @@ pub struct SimilaritySolver {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+#[serde(deny_unknown_fields)]
 #[garde(context(ValidationContext))]
 pub struct Workflow {
-    #[serde(skip)]
+    /// Workflow name. Accepted in YAML for documentation but always overwritten
+    /// by the filename (e.g., `foo.workflow.yml` -> name = "foo").
+    #[serde(default)]
     #[schemars(skip)]
     #[garde(skip)]
     pub name: String,
+    #[garde(length(min = 1))]
     #[garde(dive)]
     pub tasks: Vec<Task>,
     #[serde(default = "default_tests")]
@@ -2412,8 +2403,19 @@ pub enum Display {
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate, Default)]
+#[serde(deny_unknown_fields)]
 #[garde(context(ValidationContext))]
 pub struct AppConfig {
+    /// App name. Accepted in YAML for documentation but the authoritative name
+    /// is derived from the filename (e.g., `foo.app.yml` -> name = "foo").
+    #[serde(default)]
+    #[schemars(skip)]
+    #[garde(skip)]
+    pub name: String,
+    /// Optional description of the app.
+    #[serde(default)]
+    #[garde(skip)]
+    pub description: String,
     #[schemars(description = "tasks to prepare the data for the app")]
     #[garde(dive)]
     #[garde(length(min = 1))]

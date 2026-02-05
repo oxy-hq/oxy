@@ -76,6 +76,7 @@
       ]
     }
   },
+  "additionalProperties": false,
   "definitions": {
     "A2aAgentConfig": {
       "description": "Configuration for a single A2A-exposed agent",

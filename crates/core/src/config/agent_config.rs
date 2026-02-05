@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 /// Configuration for an agentic workflow (FSM-based agent)
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AgenticConfig {
-    #[serde(skip)]
+    /// Workflow name. Accepted in YAML for documentation but always overwritten
+    /// by the filename.
+    #[serde(default)]
     pub name: String,
     #[serde(default = "default_public")]
     pub public: bool,

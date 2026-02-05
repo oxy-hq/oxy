@@ -223,9 +223,17 @@ pub fn validate_task_data_reference(data_ref: &String, ctx: &ValidationContext) 
             .map(|t| t.name.clone())
             .collect();
 
-        if !task_names.contains(data_ref) {
+        // For dot notation references like "workflow.task", validate the first part (workflow name)
+        // The nested task part can't be validated statically since it requires loading sub-workflows
+        let task_to_check = if let Some(dot_pos) = data_ref.find('.') {
+            &data_ref[..dot_pos]
+        } else {
+            data_ref.as_str()
+        };
+
+        if !task_names.contains(task_to_check) {
             return Err(garde::Error::new(format!(
-                "Display block references task '{data_ref}' which does not exist in the app config"
+                "Display block references task '{task_to_check}' which does not exist in the app config"
             )));
         }
     }

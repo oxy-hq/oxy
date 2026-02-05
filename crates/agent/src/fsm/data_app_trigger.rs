@@ -203,6 +203,7 @@ impl Trigger for BuildDataApp<MachineContext> {
         let app_config = AppConfig {
             display: [markdown_display, viz_displays, table_displays].concat(),
             tasks,
+            ..Default::default()
         };
         let file_name = format!("data_app_{}", ShortUuid::generate());
         let mut executable = CreateDataAppExecutable;

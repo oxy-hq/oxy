@@ -6,7 +6,9 @@ use super::{EvalConfig, RouteRetrievalConfig, Task};
 
 #[derive(Deserialize, Debug)]
 pub struct WorkflowWithRawVariables {
-    #[serde(skip)]
+    /// Workflow name. Accepted in YAML for documentation but always overwritten
+    /// by the filename.
+    #[serde(default)]
     pub name: String,
     pub tasks: Vec<Task>,
     #[serde(default)]

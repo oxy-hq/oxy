@@ -2,23 +2,18 @@ use std::fs;
 
 use oxy_shared::errors::OxyError;
 
-use super::model::{AgentConfig, SemanticModels, TempWorkflow, Workflow};
+use super::model::{AgentConfig, SemanticModels, Workflow};
 
 pub fn parse_workflow_config(workflow_name: &str, file_path: &str) -> Result<Workflow, OxyError> {
-    let workflow_content = fs::read_to_string(file_path)
-        .map_err(|e| OxyError::ArgumentError(format!("Couldn't read workflow file: {e}")))?;
-    let temp_workflow: TempWorkflow = serde_yaml::from_str(&workflow_content)
-        .map_err(|e| OxyError::ConfigurationError(format!("Couldn't parse workflow file: {e}")))?;
+    let workflow_content = fs::read_to_string(file_path).map_err(|e| {
+        OxyError::ArgumentError(format!("Couldn't read workflow file {file_path}: {e}"))
+    })?;
+    let mut workflow: Workflow = serde_yaml::from_str(&workflow_content).map_err(|e| {
+        OxyError::ConfigurationError(format!("Couldn't parse workflow file {file_path}: {e}"))
+    })?;
 
-    let workflow = Workflow {
-        name: workflow_name.to_string(),
-        tasks: temp_workflow.tasks,
-        tests: temp_workflow.tests,
-        variables: temp_workflow.variables,
-        description: temp_workflow.description,
-        retrieval: temp_workflow.retrieval,
-        consistency_prompt: temp_workflow.consistency_prompt,
-    };
+    // Name is always derived from the filename, not the YAML content
+    workflow.name = workflow_name.to_string();
 
     Ok(workflow)
 }
