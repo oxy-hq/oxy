@@ -122,7 +122,7 @@
     "@types/node": "^25.2.0",
     "@types/nunjucks": "3.2.6",
     "@types/papaparse": "^5.5.2",
-    "@types/react": "^19.2.10",
+    "@types/react": "^19.2.11",
     "@types/react-dom": "^19.2.3",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@types/react-window": "^2.0.0",
