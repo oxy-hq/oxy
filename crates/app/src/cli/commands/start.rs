@@ -196,8 +196,8 @@ async fn start_all_containers() -> Result<String, OxyError> {
     }
     println!("{}", "   ✓ OTel Collector container started\n".success());
 
-    // Start Cube.js semantic engine (depends on PostgreSQL being ready)
-    if let Err(e) = start_cubejs_semantic_engine(&db_url).await {
+    // Start Cube.js semantic engine (does not depend on PostgreSQL - only generates SQL)
+    if let Err(e) = start_cubejs_semantic_engine().await {
         // Cube.js is optional - log the error but continue
         eprintln!(
             "{}",
@@ -213,7 +213,8 @@ async fn start_all_containers() -> Result<String, OxyError> {
 }
 
 /// Start Cube.js semantic engine container
-async fn start_cubejs_semantic_engine(db_url: &str) -> Result<(), OxyError> {
+/// Note: The semantic engine does not need PostgreSQL - it only generates SQL for target databases.
+async fn start_cubejs_semantic_engine() -> Result<(), OxyError> {
     // Check if semantic layer exists
     let semantic_dir = resolve_semantics_dir()?;
     if !semantic_dir.exists() {
@@ -246,7 +247,6 @@ async fn start_cubejs_semantic_engine(db_url: &str) -> Result<(), OxyError> {
     docker::start_cubejs_container(
         cube_config_dir.display().to_string(),
         project_path.display().to_string(),
-        db_url.to_string(),
         true, // dev_mode
         "info".to_string(),
     )

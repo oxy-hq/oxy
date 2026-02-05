@@ -1656,10 +1656,19 @@ async fn handle_clean_command(clean_args: CleanArgs) -> Result<(), OxyError> {
 async fn handle_semantic_engine_command(semantic_args: SemanticEngineArgs) -> Result<(), OxyError> {
     sentry_config::add_operation_context("semantic-engine", None);
 
+    // Note: The semantic engine does NOT require PostgreSQL - it only generates SQL
+    // for target databases (BigQuery, Snowflake, DuckDB, etc.). Database connections
+    // are handled by Oxy, not by CubeJS.
+
+    // Check if Docker is available
+    println!("{}", "🔍 Checking container runtime availability...".text());
+    docker::check_docker_available().await?;
+    println!("{}", "   ✓ Container runtime is available\n".success());
+
     // Ensure we're in a valid project
     let project_path = resolve_local_project_path()?;
 
-    // Get config first to get database details
+    // Get config to access globals registry
     let config = ConfigBuilder::new()
         .with_project_path(&project_path)?
         .build()
@@ -1670,52 +1679,6 @@ async fn handle_semantic_engine_command(semantic_args: SemanticEngineArgs) -> Re
 
     // Always regenerate configuration for isolation
     generate_cube_config(cube_config_dir.clone(), true, config.get_globals_registry()).await?;
-
-    // Check if Docker is available
-    println!("{}", "🔍 Checking container runtime availability...".text());
-    docker::check_docker_available().await?;
-    println!("{}", "   ✓ Container runtime is available\n".success());
-
-    // Get database URL
-    let db_url = if let Some(default_db) = config.default_database_ref()
-        && let Ok(db_config) = config.resolve_database(default_db)
-    {
-        match &db_config.database_type {
-            ::oxy::config::model::DatabaseType::Postgres(pg_config) => {
-                format!(
-                    "postgresql://{}:{}@{}:{}/{}",
-                    pg_config.user.as_deref().unwrap_or("postgres"),
-                    pg_config.password.as_deref().unwrap_or(""),
-                    pg_config.host.as_deref().unwrap_or("localhost"),
-                    pg_config.port.as_deref().unwrap_or("5432"),
-                    pg_config.database.as_deref().unwrap_or("postgres")
-                )
-            }
-            ::oxy::config::model::DatabaseType::Mysql(mysql_config) => {
-                format!(
-                    "mysql://{}:{}@{}:{}/{}",
-                    mysql_config.user.as_deref().unwrap_or("root"),
-                    mysql_config.password.as_deref().unwrap_or(""),
-                    mysql_config.host.as_deref().unwrap_or("localhost"),
-                    mysql_config.port.as_deref().unwrap_or("3306"),
-                    mysql_config.database.as_deref().unwrap_or("mysql")
-                )
-            }
-            _ => {
-                tracing::warn!("Database type not supported for Cube.js connection");
-                String::new()
-            }
-        }
-    } else {
-        String::new()
-    };
-
-    if db_url.is_empty() {
-        return Err(OxyError::ConfigurationError(
-            "No default database configured. Please configure a database in your oxy.toml file."
-                .to_string(),
-        ));
-    }
 
     let display_host = if semantic_args.host == "0.0.0.0" {
         "localhost"
@@ -1752,7 +1715,6 @@ async fn handle_semantic_engine_command(semantic_args: SemanticEngineArgs) -> Re
     docker::start_cubejs_container(
         cube_config_dir.display().to_string(),
         project_path.display().to_string(),
-        db_url,
         semantic_args.dev_mode,
         semantic_args.log_level.clone(),
     )

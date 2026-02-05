@@ -911,7 +911,6 @@ pub async fn stop_otel_collector_container() -> Result<(), OxyError> {
 pub async fn start_cubejs_container(
     cube_config_dir: String,
     project_path: String,
-    db_url: String,
     dev_mode: bool,
     log_level: String,
 ) -> Result<(), OxyError> {
@@ -920,22 +919,61 @@ pub async fn start_cubejs_container(
 
     ensure_enterprise_network().await?;
 
+    // Check if container exists and validate volume mounts
     if is_container_exists(CUBEJS_CONTAINER_NAME).await? {
-        if is_container_running(CUBEJS_CONTAINER_NAME).await? {
-            info!("Cube.js container is already running");
-            return Ok(());
-        }
-        info!("Starting existing Cube.js container...");
-        docker
-            .start_container(CUBEJS_CONTAINER_NAME, None::<StartContainerOptions>)
+        // Inspect the container to get its current configuration
+        let inspect = docker
+            .inspect_container(CUBEJS_CONTAINER_NAME, None::<InspectContainerOptions>)
             .await
             .map_err(|e| {
-                OxyError::InitializationError(format!(
-                    "Failed to start existing Cube.js container: {}",
-                    e
-                ))
+                OxyError::InitializationError(format!("Failed to inspect Cube.js container: {}", e))
             })?;
-        return Ok(());
+
+        // Check if the current volume mounts match what we need
+        let expected_binds = vec![
+            format!("{}:/cube/conf", cube_config_dir),
+            format!("{}/.db:/cube/.db", project_path),
+        ];
+
+        let current_binds = inspect
+            .host_config
+            .as_ref()
+            .and_then(|hc| hc.binds.as_ref())
+            .map(|b| b.clone())
+            .unwrap_or_default();
+
+        // Compare binds: if they match, just start the container if needed
+        let binds_match = expected_binds.len() == current_binds.len()
+            && expected_binds
+                .iter()
+                .all(|bind| current_binds.contains(bind));
+
+        if binds_match {
+            if is_container_running(CUBEJS_CONTAINER_NAME).await? {
+                info!("Cube.js container is already running with correct volume mounts");
+                return Ok(());
+            }
+            info!("Starting existing Cube.js container with correct volume mounts...");
+            docker
+                .start_container(CUBEJS_CONTAINER_NAME, None::<StartContainerOptions>)
+                .await
+                .map_err(|e| {
+                    OxyError::InitializationError(format!(
+                        "Failed to start existing Cube.js container: {}",
+                        e
+                    ))
+                })?;
+            return Ok(());
+        } else {
+            // Volume mounts don't match - need to recreate the container
+            info!("Cube.js container has different volume mounts, recreating...");
+            info!(
+                "Expected binds: {:?}, Current binds: {:?}",
+                expected_binds, current_binds
+            );
+            remove_container(&docker, CUBEJS_CONTAINER_NAME).await?;
+            // Continue to create new container below
+        }
     }
 
     // Pull the image
@@ -985,10 +1023,11 @@ pub async fn start_cubejs_container(
     };
 
     // Configure environment variables
+    // Note: CUBEJS_DB_URL is NOT needed - the semantic engine only generates SQL,
+    // it doesn't execute queries. Database connections are handled by Oxy.
     let env: Vec<String> = vec![
         format!("CUBEJS_DEV_MODE={}", dev_mode),
         format!("CUBEJS_LOG_LEVEL={}", log_level),
-        format!("CUBEJS_DB_URL={}", db_url),
     ];
 
     let config = ContainerCreateBody {
