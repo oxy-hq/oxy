@@ -1,17 +1,53 @@
 name: Public Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: "Tag or branch to release"
-        required: true
-        default: ""
+  # Nightly builds (scheduled)
+  schedule:
+    - cron: "0 8 * * *" # Runs every day at midnight Bay Area time (UTC-8)
+
+  # Stable releases (tag push) and Edge builds (main push)
   push:
     tags:
       - "[0-9]+.[0-9]+.[0-9]+"
+    branches:
+      - main
     paths-ignore:
       - "docs/**"
+
+  # Manual dispatch with options
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: "Release type"
+        required: true
+        default: "edge"
+        type: choice
+        options:
+          - stable
+          - edge
+          - nightly
+      tag:
+        description: "Tag/version for stable release (required for stable)"
+        required: false
+        default: ""
+      build_targets:
+        description: "Docker targets to build"
+        required: false
+        default: "both"
+        type: choice
+        options:
+          - both
+          - runtime
+          - semantic-engine
+          - none
+
+# Concurrency: nightly runs independently, stable per-tag, edge cancels in-progress
+concurrency:
+  group: >-
+    ${{ github.event_name == 'schedule' && format('nightly-{0}', github.run_id) ||
+        startsWith(github.ref, 'refs/tags/') && format('stable-{0}', github.ref_name) ||
+        'edge-main' }}
+  cancel-in-progress: ${{ github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/') }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -23,18 +59,144 @@ defaults:
 
 permissions:
   contents: write
+  actions: read
   packages: write
+  pull-requests: read
   attestations: write
   id-token: write
 
 jobs:
-  build-cli:
+  # ============================================================================
+  # Job 1: Determine build type and set all conditional flags
+  # ============================================================================
+  determine-build-type:
     if: github.repository == 'oxy-hq/oxy'
-    name: Build CLI version ${{ inputs.tag || github.ref_name }} for ${{ matrix.job.target }}
+    name: Determine Build Type
+    runs-on: ubuntu-latest
+    outputs:
+      channel: ${{ steps.config.outputs.channel }}
+      version: ${{ steps.config.outputs.version }}
+      display_name: ${{ steps.config.outputs.display_name }}
+      should_build: ${{ steps.config.outputs.should_build }}
+      should_build_docker: ${{ steps.config.outputs.should_build_docker }}
+      release_repo: ${{ steps.config.outputs.release_repo }}
+      docker_tag_prefix: ${{ steps.config.outputs.docker_tag_prefix }}
+      needs_changesets: ${{ steps.config.outputs.needs_changesets }}
+      is_stable: ${{ steps.config.outputs.is_stable }}
+      short_sha: ${{ steps.config.outputs.short_sha }}
+      current_date: ${{ steps.config.outputs.current_date }}
+      compat_tag: ${{ steps.config.outputs.compat_tag }}
+    steps:
+      - name: Determine configuration
+        id: config
+        run: |
+          SHORT_SHA=${GITHUB_SHA::7}
+          CURRENT_DATE=$(date -u +'%Y%m%d')
+          BUILD_TARGETS="${{ inputs.build_targets || 'both' }}"
+
+          echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "current_date=${CURRENT_DATE}" >> $GITHUB_OUTPUT
+
+          # Determine channel based on trigger
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == refs/tags/* ]]; then
+            # Tag push = stable release
+            CHANNEL="stable"
+            VERSION="${{ github.ref_name }}"
+            DISPLAY_NAME="Release ${VERSION}"
+            SHOULD_BUILD="true"
+            RELEASE_REPO="oxy-hq/oxy"
+            DOCKER_TAG_PREFIX=""
+            NEEDS_CHANGESETS="false"
+            IS_STABLE="true"
+            COMPAT_TAG=""
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.release_type }}" == "stable" ]]; then
+            # Manual stable release
+            CHANNEL="stable"
+            VERSION="${{ inputs.tag }}"
+            if [ -z "$VERSION" ]; then
+              echo "::error::Tag is required for stable release"
+              exit 1
+            fi
+            DISPLAY_NAME="Release ${VERSION}"
+            SHOULD_BUILD="true"
+            RELEASE_REPO="oxy-hq/oxy"
+            DOCKER_TAG_PREFIX=""
+            NEEDS_CHANGESETS="false"
+            IS_STABLE="true"
+            COMPAT_TAG=""
+          elif [[ "${{ github.event_name }}" == "schedule" ]] || [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.release_type }}" == "nightly" ]]; then
+            # Scheduled or manual nightly
+            CHANNEL="nightly"
+            VERSION="nightly-${CURRENT_DATE}-${SHORT_SHA}"
+            DISPLAY_NAME="Nightly Build ${CURRENT_DATE}"
+            SHOULD_BUILD="true"
+            RELEASE_REPO="oxy-hq/oxy-nightly"
+            DOCKER_TAG_PREFIX="nightly-"
+            NEEDS_CHANGESETS="false"
+            IS_STABLE="false"
+            COMPAT_TAG=""
+          else
+            # Push to main or manual edge
+            CHANNEL="edge"
+            VERSION="edge-${SHORT_SHA}"
+            DISPLAY_NAME="Edge Build ${SHORT_SHA}"
+            SHOULD_BUILD="defer"  # Will be determined by changesets
+            RELEASE_REPO="oxy-hq/oxy-nightly"
+            DOCKER_TAG_PREFIX="edge-"
+            NEEDS_CHANGESETS="true"
+            IS_STABLE="false"
+            COMPAT_TAG="edge-main-${SHORT_SHA}"
+          fi
+
+          # Determine if Docker should be built
+          if [ "$BUILD_TARGETS" == "none" ]; then
+            SHOULD_BUILD_DOCKER="false"
+          else
+            SHOULD_BUILD_DOCKER="true"
+          fi
+
+          echo "channel=${CHANNEL}" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "display_name=${DISPLAY_NAME}" >> $GITHUB_OUTPUT
+          echo "should_build=${SHOULD_BUILD}" >> $GITHUB_OUTPUT
+          echo "should_build_docker=${SHOULD_BUILD_DOCKER}" >> $GITHUB_OUTPUT
+          echo "release_repo=${RELEASE_REPO}" >> $GITHUB_OUTPUT
+          echo "docker_tag_prefix=${DOCKER_TAG_PREFIX}" >> $GITHUB_OUTPUT
+          echo "needs_changesets=${NEEDS_CHANGESETS}" >> $GITHUB_OUTPUT
+          echo "is_stable=${IS_STABLE}" >> $GITHUB_OUTPUT
+          echo "compat_tag=${COMPAT_TAG}" >> $GITHUB_OUTPUT
+
+          echo "### Build Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "| Setting | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Channel | ${CHANNEL} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | ${VERSION} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Release Repo | ${RELEASE_REPO} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Docker Targets | ${BUILD_TARGETS} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Needs Changesets | ${NEEDS_CHANGESETS} |" >> $GITHUB_STEP_SUMMARY
+
+  # ============================================================================
+  # Job 2: Changesets (for edge builds only)
+  # ============================================================================
+  changesets:
+    name: Changesets
+    needs: [determine-build-type]
+    if: needs.determine-build-type.outputs.needs_changesets == 'true'
+    uses: ./.github/workflows/changesets.yaml
+
+  # ============================================================================
+  # Job 3: Build CLI (4 targets)
+  # ============================================================================
+  build-cli:
+    name: Build ${{ needs.determine-build-type.outputs.channel }} CLI for ${{ matrix.job.target }}
+    needs: [determine-build-type, changesets]
+    if: |
+      always() &&
+      needs.determine-build-type.result == 'success' &&
+      (needs.determine-build-type.outputs.should_build == 'true' ||
+       (needs.changesets.result == 'success' &&
+        (needs.changesets.outputs.oxy == 'true' || needs.changesets.outputs.web-app == 'true')))
     runs-on: ${{ matrix.job.os }}
-    concurrency:
-      group: public-oxy-build-cli-${{ inputs.tag || github.ref_name }}-${{ matrix.job.os }}-${{ matrix.job.target }}
-      cancel-in-progress: true
     strategy:
       fail-fast: false
       matrix:
@@ -48,11 +210,24 @@ jobs:
           - os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
     steps:
+      - uses: actions/create-github-app-token@v2
+        name: Create GitHub App Token
+        id: app-token
+        with:
+          app-id: ${{ vars.ARGO_APP_ID }}
+          private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            oxy
+            oxy-internal
+            oxy-nightly
+
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          ref: ${{ inputs.tag || github.ref_name }}
+          ref: ${{ needs.determine-build-type.outputs.is_stable == 'true' && needs.determine-build-type.outputs.version || github.sha }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Create artifacts folder
         run: mkdir -p artifacts
@@ -77,17 +252,19 @@ jobs:
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
         with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          repo-token: ${{ steps.app-token.outputs.token }}
 
       - uses: pnpm/action-setup@v4
         with:
           run_install: false
+
       - name: Install Node.js
         uses: actions/setup-node@v6
         id: setup-node
         with:
           node-version: 24.x
-          cache: 'pnpm'
+          cache: "pnpm"
+
       - name: Install dependencies & Build web-app
         env:
           NODE_OPTIONS: "--max_old_space_size=4096"
@@ -96,13 +273,12 @@ jobs:
           pnpm -C web-app build
 
       - name: Build oxy CLI
-        shell: bash
         run: |
           cargo build --release --target ${{ matrix.job.target }}
           mv target/${{ matrix.job.target }}/release/oxy artifacts/oxy-${{ matrix.job.target }}
 
       - name: Generate config schema (once)
-        if: ${{ matrix.job.target == 'aarch64-apple-darwin' }}
+        if: matrix.job.target == 'aarch64-apple-darwin'
         run: |
           cargo run --release --target ${{ matrix.job.target }} -- gen-config-schema
           cp -a json-schemas/. artifacts/
@@ -112,22 +288,24 @@ jobs:
         run: shasum --algorithm 256 --binary oxy-${{ matrix.job.target }} | tee SHA256SUM-oxy-${{ matrix.job.target }}.txt
         working-directory: artifacts
 
-      - name: Copy backend changelog (once)
-        if: ${{ matrix.job.target == 'aarch64-apple-darwin' }}
+      # Stable-only: Copy changelogs for release
+      - name: Copy backend changelog (stable only)
+        if: needs.determine-build-type.outputs.is_stable == 'true' && matrix.job.target == 'aarch64-apple-darwin'
         run: cp crates/core/CHANGELOG.md artifacts/backend-CHANGELOG.md
 
-      - name: Copy frontend changelog (once)
-        if: ${{ matrix.job.target == 'aarch64-apple-darwin' }}
+      - name: Copy frontend changelog (stable only)
+        if: needs.determine-build-type.outputs.is_stable == 'true' && matrix.job.target == 'aarch64-apple-darwin'
         run: cp web-app/CHANGELOG.md artifacts/frontend-CHANGELOG.md
 
-      - name: Unify release-please changelog (once)
-        if: ${{ matrix.job.target == 'aarch64-apple-darwin' }}
+      - name: Unify release-please changelog (stable only)
+        if: needs.determine-build-type.outputs.is_stable == 'true' && matrix.job.target == 'aarch64-apple-darwin'
         run: |
+          VERSION="${{ needs.determine-build-type.outputs.version }}"
           echo "## Backend" > artifacts/CHANGELOG.md
-          awk '/^## \[/{flag=0} /^## \[${{ inputs.tag || github.ref_name }}\]/{flag=1} flag' artifacts/backend-CHANGELOG.md >> artifacts/CHANGELOG.md
+          awk '/^## \[/{flag=0} /^## \['"${VERSION}"'\]/{flag=1} flag' artifacts/backend-CHANGELOG.md >> artifacts/CHANGELOG.md
           echo "" >> artifacts/CHANGELOG.md
           echo "## Frontend" >> artifacts/CHANGELOG.md
-          awk '/^## \[/{flag=0} /^## \[${{ inputs.tag || github.ref_name }}\]/{flag=1} flag' artifacts/frontend-CHANGELOG.md >> artifacts/CHANGELOG.md
+          awk '/^## \[/{flag=0} /^## \['"${VERSION}"'\]/{flag=1} flag' artifacts/frontend-CHANGELOG.md >> artifacts/CHANGELOG.md
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v6
@@ -137,11 +315,32 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  release:
-    name: Create GitHub Release
+  # ============================================================================
+  # Job 4: Release CLI
+  # ============================================================================
+  release-cli:
+    name: Release ${{ needs.determine-build-type.outputs.channel }} CLI
     runs-on: ubuntu-latest
-    needs: [build-cli]
+    needs: [determine-build-type, build-cli]
     steps:
+      - uses: actions/create-github-app-token@v2
+        name: Create GitHub App Token
+        id: app-token
+        with:
+          app-id: ${{ vars.ARGO_APP_ID }}
+          private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            oxy
+            oxy-internal
+            oxy-nightly
+
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
       - name: Download release assets from artifacts
         uses: actions/download-artifact@v7
         with:
@@ -157,12 +356,21 @@ jobs:
       - name: Ensure binaries are executable
         run: chmod +x artifacts/oxy-*
 
-      - name: Create release
+      # Edge only: Create transitional compatibility tag
+      - name: Create transitional compatibility tag (edge only)
+        if: needs.determine-build-type.outputs.compat_tag != ''
+        run: |
+          git tag ${{ needs.determine-build-type.outputs.compat_tag }} || true
+          git push origin ${{ needs.determine-build-type.outputs.compat_tag }} || true
+
+      # Stable release
+      - name: Create stable release
+        if: needs.determine-build-type.outputs.is_stable == 'true'
         uses: softprops/action-gh-release@v2
         with:
           draft: false
           prerelease: true
-          tag_name: ${{ inputs.tag || github.ref_name }}
+          tag_name: ${{ needs.determine-build-type.outputs.version }}
           body_path: artifacts/CHANGELOG.md
           files: |
             artifacts/oxy-*
@@ -172,3 +380,327 @@ jobs:
             artifacts/*.md
             artifacts/*.whl
           fail_on_unmatched_files: false
+
+      # Nightly/Edge release
+      - name: Create nightly/edge release
+        if: needs.determine-build-type.outputs.is_stable == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          draft: false
+          repository: ${{ needs.determine-build-type.outputs.release_repo }}
+          prerelease: false
+          make_latest: true
+          tag_name: ${{ needs.determine-build-type.outputs.version }}
+          name: ${{ needs.determine-build-type.outputs.display_name }} (${{ needs.determine-build-type.outputs.version }})
+          files: |
+            artifacts/oxy-*
+            artifacts/*.json
+          fail_on_unmatched_files: false
+          body: |
+            Channel: ${{ needs.determine-build-type.outputs.channel }}
+            Date: ${{ needs.determine-build-type.outputs.current_date }}
+            Commit: [${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
+            Primary Tag: ${{ needs.determine-build-type.outputs.version }}
+            Transitional Tag: ${{ needs.determine-build-type.outputs.compat_tag || 'n/a' }}
+            To install latest:
+            `${{ needs.determine-build-type.outputs.channel == 'nightly' && 'OXY_CHANNEL=nightly ' || '' }}bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)`
+            To install this exact build:
+            `OXY_VERSION=${{ needs.determine-build-type.outputs.version }} bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)`
+
+  # ============================================================================
+  # Job 5: Build and Publish Docker Images
+  # ============================================================================
+  build-docker-images:
+    name: Build ${{ matrix.target.name }} ${{ needs.determine-build-type.outputs.channel }} Docker for ${{ matrix.arch }}
+    needs: [determine-build-type, changesets, build-cli]
+    if: |
+      always() &&
+      needs.build-cli.result == 'success' &&
+      needs.determine-build-type.outputs.should_build_docker == 'true'
+    concurrency:
+      group: docker-${{ needs.determine-build-type.outputs.channel }}-${{ matrix.target.name }}-${{ matrix.arch }}
+      cancel-in-progress: true
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: true
+      matrix:
+        arch: [linux/amd64, linux/arm64]
+        target:
+          - name: runtime
+            image: oxy
+            target: runtime
+          - name: semantic-engine
+            image: oxy-semantic-engine
+            target: semantic-engine
+        include:
+          - arch: linux/amd64
+            runner: ubuntu-latest
+            rust_target: x86_64-unknown-linux-gnu
+            arch_tag: amd64
+          - arch: linux/arm64
+            runner: ubuntu-24.04-arm
+            rust_target: aarch64-unknown-linux-gnu
+            arch_tag: arm64
+    steps:
+      - name: Check if should build ${{ matrix.target.name }}
+        id: should_build
+        run: |
+          BUILD_TARGETS="${{ inputs.build_targets || 'both' }}"
+          TARGET="${{ matrix.target.name }}"
+
+          if [ "$BUILD_TARGETS" = "both" ] || [ "$BUILD_TARGETS" = "$TARGET" ]; then
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_build=false" >> $GITHUB_OUTPUT
+            echo "⏭️  Skipping $TARGET"
+          fi
+
+      - name: Checkout code
+        if: steps.should_build.outputs.should_build == 'true'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.determine-build-type.outputs.is_stable == 'true' && needs.determine-build-type.outputs.version || github.sha }}
+
+      - name: Download pre-built binary
+        if: steps.should_build.outputs.should_build == 'true'
+        uses: actions/download-artifact@v7
+        with:
+          name: cli-${{ matrix.rust_target }}
+          path: artifacts
+
+      - name: Prepare binary for Docker build
+        if: steps.should_build.outputs.should_build == 'true'
+        run: |
+          cp artifacts/oxy-${{ matrix.rust_target }} oxy
+          chmod +x oxy
+
+      - name: Set up Docker Buildx
+        if: steps.should_build.outputs.should_build == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        if: steps.should_build.outputs.should_build == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine tags
+        if: steps.should_build.outputs.should_build == 'true'
+        id: meta
+        run: |
+          VERSION="${{ needs.determine-build-type.outputs.version }}"
+          CHANNEL="${{ needs.determine-build-type.outputs.channel }}"
+          DATE="${{ needs.determine-build-type.outputs.current_date }}"
+          SHORT_SHA="${{ needs.determine-build-type.outputs.short_sha }}"
+          IMAGE="ghcr.io/${{ github.repository_owner }}/${{ matrix.target.image }}"
+          ARCH="${{ matrix.arch_tag }}"
+
+          if [ "$CHANNEL" = "stable" ]; then
+            TAGS="${IMAGE}:${VERSION}-${ARCH}"
+            TAGS="${TAGS},${IMAGE}:latest-${ARCH}"
+          elif [ "$CHANNEL" = "nightly" ]; then
+            TAGS="${IMAGE}:nightly-${DATE}-${ARCH}"
+            TAGS="${TAGS},${IMAGE}:nightly-${SHORT_SHA}-${ARCH}"
+            TAGS="${TAGS},${IMAGE}:nightly-latest-${ARCH}"
+          else
+            # Edge
+            TAGS="${IMAGE}:edge-${DATE}-${ARCH}"
+            TAGS="${TAGS},${IMAGE}:edge-${SHORT_SHA}-${ARCH}"
+            TAGS="${TAGS},${IMAGE}:edge-latest-${ARCH}"
+            # Transitional compatibility tag
+            TAGS="${TAGS},${IMAGE}:edge-main-${SHORT_SHA}-${ARCH}"
+          fi
+
+          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+
+      - name: Build and push ${{ matrix.target.name }} image
+        if: steps.should_build.outputs.should_build == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.prebuilt
+          target: ${{ matrix.target.target }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          build-args: BINARY_PATH=oxy
+          provenance: false
+          cache-from: type=gha,scope=${{ needs.determine-build-type.outputs.channel }}-${{ matrix.target.name }}-${{ matrix.arch_tag }}
+          cache-to: type=gha,mode=min,scope=${{ needs.determine-build-type.outputs.channel }}-${{ matrix.target.name }}-${{ matrix.arch_tag }}
+
+  # ============================================================================
+  # Job 6: Create and Push Multi-Arch Manifests
+  # ============================================================================
+  create-manifests:
+    name: Create ${{ matrix.target.name }} ${{ needs.determine-build-type.outputs.channel }} manifest
+    needs: [determine-build-type, build-docker-images]
+    if: needs.build-docker-images.result == 'success'
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      matrix:
+        target:
+          - name: runtime
+            image: oxy
+          - name: semantic-engine
+            image: oxy-semantic-engine
+    steps:
+      - name: Check if should publish ${{ matrix.target.name }}
+        id: should_publish
+        run: |
+          BUILD_TARGETS="${{ inputs.build_targets || 'both' }}"
+          TARGET="${{ matrix.target.name }}"
+
+          if [ "$BUILD_TARGETS" = "both" ] || [ "$BUILD_TARGETS" = "$TARGET" ]; then
+            echo "should_publish=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_publish=false" >> $GITHUB_OUTPUT
+            echo "⏭️  Skipping manifest for $TARGET"
+          fi
+
+      - name: Log in to GitHub Container Registry
+        if: steps.should_publish.outputs.should_publish == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push multi-arch manifests
+        if: steps.should_publish.outputs.should_publish == 'true'
+        run: |
+          VERSION="${{ needs.determine-build-type.outputs.version }}"
+          CHANNEL="${{ needs.determine-build-type.outputs.channel }}"
+          DATE="${{ needs.determine-build-type.outputs.current_date }}"
+          SHORT_SHA="${{ needs.determine-build-type.outputs.short_sha }}"
+          COMPAT_TAG="${{ needs.determine-build-type.outputs.compat_tag }}"
+          IMAGE="ghcr.io/${{ github.repository_owner }}/${{ matrix.target.image }}"
+
+          echo "Creating $CHANNEL manifests for ${{ matrix.target.image }}..."
+
+          if [ "$CHANNEL" = "stable" ]; then
+            # Version manifest
+            docker manifest create ${IMAGE}:${VERSION} \
+              ${IMAGE}:${VERSION}-amd64 \
+              ${IMAGE}:${VERSION}-arm64
+            docker manifest push ${IMAGE}:${VERSION}
+
+            # Latest manifest
+            docker manifest create ${IMAGE}:latest \
+              ${IMAGE}:latest-amd64 \
+              ${IMAGE}:latest-arm64
+            docker manifest push ${IMAGE}:latest
+
+            echo "✅ Published ${IMAGE}:${VERSION} and ${IMAGE}:latest"
+          elif [ "$CHANNEL" = "nightly" ]; then
+            # Date manifest
+            docker manifest create ${IMAGE}:nightly-${DATE} \
+              ${IMAGE}:nightly-${DATE}-amd64 \
+              ${IMAGE}:nightly-${DATE}-arm64
+            docker manifest push ${IMAGE}:nightly-${DATE}
+
+            # Latest nightly manifest
+            docker manifest create ${IMAGE}:nightly-latest \
+              ${IMAGE}:nightly-latest-amd64 \
+              ${IMAGE}:nightly-latest-arm64
+            docker manifest push ${IMAGE}:nightly-latest
+
+            echo "✅ Published nightly manifests for ${{ matrix.target.image }}"
+          else
+            # Edge: Date manifest
+            docker manifest create ${IMAGE}:edge-${DATE} \
+              ${IMAGE}:edge-${DATE}-amd64 \
+              ${IMAGE}:edge-${DATE}-arm64
+            docker manifest push ${IMAGE}:edge-${DATE}
+
+            # Edge: Latest manifest
+            docker manifest create ${IMAGE}:edge-latest \
+              ${IMAGE}:edge-latest-amd64 \
+              ${IMAGE}:edge-latest-arm64
+            docker manifest push ${IMAGE}:edge-latest
+
+            # Edge: Transitional compatibility manifest
+            if [ -n "$COMPAT_TAG" ]; then
+              docker manifest create ${IMAGE}:${COMPAT_TAG} \
+                ${IMAGE}:${COMPAT_TAG}-amd64 \
+                ${IMAGE}:${COMPAT_TAG}-arm64
+              docker manifest push ${IMAGE}:${COMPAT_TAG}
+              echo "✅ Published compatibility manifest: ${COMPAT_TAG}"
+            fi
+
+            echo "✅ Published edge manifests for ${{ matrix.target.image }}"
+          fi
+
+  # ============================================================================
+  # Job 7: Create Deployment Summary
+  # ============================================================================
+  deployment-summary:
+    name: Create Deployment Summary
+    needs: [determine-build-type, create-manifests]
+    if: needs.create-manifests.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create deployment summary
+        run: |
+          VERSION="${{ needs.determine-build-type.outputs.version }}"
+          CHANNEL="${{ needs.determine-build-type.outputs.channel }}"
+          BUILD_TARGETS="${{ inputs.build_targets || 'both' }}"
+
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          # 🚀 Docker Images Published
+
+          ## Published Images
+
+          EOF
+
+          if [ "$BUILD_TARGETS" = "both" ] || [ "$BUILD_TARGETS" = "runtime" ]; then
+            if [ "$CHANNEL" = "stable" ]; then
+              TAG="${VERSION}"
+            elif [ "$CHANNEL" = "nightly" ]; then
+              TAG="nightly-latest"
+            else
+              TAG="edge-latest"
+            fi
+
+            cat >> $GITHUB_STEP_SUMMARY << EOF
+          ### Oxy Runtime
+          - **Image:** \`ghcr.io/${{ github.repository_owner }}/oxy:${TAG}\`
+          - **Architectures:** linux/amd64, linux/arm64
+          - **Pull:**
+            \`\`\`bash
+            docker pull ghcr.io/${{ github.repository_owner }}/oxy:${TAG}
+            \`\`\`
+
+          EOF
+          fi
+
+          if [ "$BUILD_TARGETS" = "both" ] || [ "$BUILD_TARGETS" = "semantic-engine" ]; then
+            if [ "$CHANNEL" = "stable" ]; then
+              TAG="${VERSION}"
+            elif [ "$CHANNEL" = "nightly" ]; then
+              TAG="nightly-latest"
+            else
+              TAG="edge-latest"
+            fi
+
+            cat >> $GITHUB_STEP_SUMMARY << EOF
+          ### Oxy Semantic Engine
+          - **Image:** \`ghcr.io/${{ github.repository_owner }}/oxy-semantic-engine:${TAG}\`
+          - **Architectures:** linux/amd64, linux/arm64
+          - **Pull:**
+            \`\`\`bash
+            docker pull ghcr.io/${{ github.repository_owner }}/oxy-semantic-engine:${TAG}
+            \`\`\`
+
+          EOF
+          fi
+
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+
+          ---
+          **Channel:** \`${CHANNEL}\`
+          **Version:** \`${VERSION}\`
+          **Built from:** \`${{ github.sha }}\`
+          **Workflow:** [${{ github.run_id }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          EOF

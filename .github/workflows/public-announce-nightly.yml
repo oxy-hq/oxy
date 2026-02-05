@@ -2,13 +2,18 @@ name: Public Announce Nightly Build to Slack
 
 on:
   workflow_run:
-    workflows: ["Public Nightly & Edge Build"]
+    workflows: ["Public Unified Release"]
     types:
       - completed
 
 jobs:
   announce-nightly-to-slack:
-    if: github.repository == 'oxy-hq/oxy' && github.event.workflow_run.conclusion == 'success'
+    # Only announce nightly/edge builds (schedule or push to main), not stable releases
+    if: |
+      github.repository == 'oxy-hq/oxy' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      (github.event.workflow_run.event == 'schedule' ||
+       (github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main'))
     runs-on: ubuntu-latest
 
     steps:

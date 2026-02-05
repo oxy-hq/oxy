@@ -2,15 +2,19 @@ name: Public Announce Release to Slack
 
 on:
   workflow_run:
-    workflows: ["Public Release", "Publish Docker Images"]
+    workflows: ["Public Release"]
     types:
       - completed
 
 jobs:
   announce-to-slack:
-    if: github.repository == 'oxy-hq/oxy' && github.event.workflow_run.conclusion == 'success'
+    # Only announce stable releases (tag pushes), not nightly/edge builds
+    if: |
+      github.repository == 'oxy-hq/oxy' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch != 'main'
     runs-on: ubuntu-latest
-
     steps:
       - name: Send Slack Notification
         uses: rtCamp/action-slack-notify@v2
@@ -24,13 +28,15 @@ jobs:
           SLACK_CHANNEL: general
           SLACK_FOOTER: ""
           SLACK_TITLE: |
-            :tada: ${{ github.event.workflow_run.name }} Completed :tada:
+            :tada: Stable Release ${{ github.event.workflow_run.head_branch }} :tada:
           SLACK_MESSAGE: |
             *Details:*
-            - *Workflow:* ${{ github.event.workflow_run.name }}
-            - *Branch/Tag:* ${{ github.event.workflow_run.head_branch }}
+            - *Version:* ${{ github.event.workflow_run.head_branch }}
             - *Completed At:* ${{ github.event.workflow_run.updated_at }}
 
-            ${{ github.event.workflow_run.name == 'Public Release' && 'To install: `bash <(curl --proto ''=https'' --tlsv1.2 -LsSf https://get.oxy.tech)`' || 'Docker images published. See the workflow run for pull commands.' }}
+            To install: `bash <(curl --proto '=https' --tlsv1.2 -LsSf https://get.oxy.tech)`
+            To install this version: `OXY_VERSION=${{ github.event.workflow_run.head_branch }} bash <(curl --proto '=https' --tlsv1.2 -LsSf https://get.oxy.tech)`
+
+            Docker images: `ghcr.io/oxy-hq/oxy:${{ github.event.workflow_run.head_branch }}`
 
             View the workflow run: ${{ github.event.workflow_run.html_url }}
