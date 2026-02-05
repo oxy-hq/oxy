@@ -1,5 +1,11 @@
-import { DataType, type Schema, type Table, type Type } from "apache-arrow";
+import { DataType, type Schema, type Table, type Timestamp, type Type } from "apache-arrow";
 import dayjs from "dayjs";
+import timezone from "dayjs/plugin/timezone";
+import utc from "dayjs/plugin/utc";
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
 import { getDuckDB } from "@/libs/duckdb";
 import { apiClient } from "@/services/api/axios";
 import type { DataContainer } from "@/types/app";
@@ -35,7 +41,7 @@ export const getArrowValueWithType = (value: unknown, type: Type): number | stri
     return formatDate(value as number);
   }
   if (DataType.isTimestamp(type)) {
-    return formatDateTime(value as number);
+    return formatDateTime(value as number, (type as Timestamp)?.timezone);
   }
   if (DataType.isTime(type)) {
     return formatTime(value as number);
@@ -49,15 +55,16 @@ export const getArrowValueWithType = (value: unknown, type: Type): number | stri
 };
 
 function formatDate(value: number | string): string {
-  return dayjs(value).format("YYYY-MM-DD");
+  return dayjs.utc(value).format("YYYY-MM-DD");
 }
 
-function formatDateTime(value: number | string): string {
-  return dayjs(value).format("YYYY-MM-DD HH:mm");
+function formatDateTime(value: number | string, tz?: string | null): string {
+  if (tz) return dayjs(value).tz(tz).format("YYYY-MM-DD HH:mm");
+  return dayjs.utc(value).format("YYYY-MM-DD HH:mm");
 }
 
 function formatTime(value: number | string): string {
-  return dayjs(value).format("HH:mm:ss");
+  return dayjs.utc(value).format("HH:mm:ss");
 }
 
 function formatNumber(num: number) {
