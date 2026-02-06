@@ -1,10 +1,12 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { DatabaseService } from "@/services/api";
 import useDatabaseOperation from "@/stores/useDatabaseOperation";
+import queryKeys from "../queryKey";
 
 export function useDatabaseSync() {
   const { project, branchName } = useCurrentProjectBranch();
+  const queryClient = useQueryClient();
   const projectId = project.id;
   const { setSyncState, handleSyncSuccess, handleSyncError } = useDatabaseOperation();
   return useMutation({
@@ -21,6 +23,7 @@ export function useDatabaseSync() {
       const dbName = database || "unknown";
       if (result.success) {
         handleSyncSuccess(dbName, result.message);
+        queryClient.invalidateQueries({ queryKey: queryKeys.database.list(projectId, branchName) });
       } else {
         handleSyncError(dbName, undefined, result.message);
       }

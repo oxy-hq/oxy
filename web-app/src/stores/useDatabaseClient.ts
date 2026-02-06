@@ -110,6 +110,12 @@ const useDatabaseClientStore = create<DatabaseClientState>()(
 
         // Check for existing tab with same name if a specific name was provided
         if (tab?.name && get().tabExists(tab.name)) {
+          const existingTab = get().tabs.find(
+            (t) => t.name.toLowerCase() === tab.name?.toLowerCase()
+          );
+          if (existingTab) {
+            set({ activeTabId: existingTab.id });
+          }
           return {
             success: false,
             error: `Tab "${tab.name}" already exists`

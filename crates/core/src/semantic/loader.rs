@@ -286,6 +286,7 @@ impl GetSchemaQuery for Database {
             DatabaseType::DuckDB(_) => {
                 // DuckDB uses the information_schema structure
                 let query = "SELECT schema_name as table_schema,
+                            database_name,
                             table_name,
                             column_name,
                             data_type,
@@ -435,6 +436,8 @@ pub struct SchemaLoader {
 
 #[derive(Debug, Deserialize)]
 pub(super) struct SchemaRecord {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    database_name: Option<String>,
     #[serde(alias = "table_schema", alias = "database", alias = "TABLE_SCHEMA")]
     dataset: String,
     #[serde(alias = "table", alias = "TABLE_NAME")]
@@ -539,6 +542,7 @@ impl SchemaLoader {
                                 .collect(),
                             entities: vec![],
                             measures: vec![],
+                            database_name: "".to_owned(),
                         },
                     )]),
                 )]))
@@ -598,6 +602,7 @@ impl SchemaLoader {
                             dimensions: vec![],
                             entities: vec![],
                             measures: vec![],
+                            database_name: record.database_name.clone().unwrap_or_default(),
                         });
                     entry.dimensions.push(Dimension {
                         name: record.column_name.to_string(),

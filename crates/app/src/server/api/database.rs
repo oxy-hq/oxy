@@ -14,7 +14,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response, sse::Sse},
 };
-use oxy::config::model::{DatabaseType, SnowflakeAuthType};
+use oxy::config::model::{DatabaseType, SemanticModels, SnowflakeAuthType};
 use oxy::connector::Connector;
 use oxy::semantic::SemanticManager;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
@@ -25,11 +25,12 @@ use serde_json::json;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 use utoipa::ToSchema;
+
 #[derive(Serialize, ToSchema)]
 pub struct DatabaseInfo {
     pub name: String,
     pub dialect: String,
-    pub datasets: HashMap<String, Vec<String>>,
+    pub datasets: HashMap<String, HashMap<String, SemanticModels>>,
     pub synced: bool,
 }
 
@@ -170,13 +171,37 @@ pub async fn list_databases(
             .await
         {
             Ok(Some(db_info)) => {
-                // Extract table names from semantic_info keys for each dataset
-                let datasets = db_info
+                // Parse YAML semantic info into SemanticModels for each dataset
+                let datasets: HashMap<String, HashMap<String, SemanticModels>> = db_info
                     .datasets
                     .into_iter()
                     .map(|(dataset_name, dataset_info)| {
-                        let tables: Vec<String> =
-                            dataset_info.semantic_info.keys().cloned().collect();
+                        let tables: HashMap<String, SemanticModels> = dataset_info
+                            .semantic_info
+                            .iter()
+                            .map(|(table_name, yaml_str)| {
+                                let info = serde_yaml::from_str::<SemanticModels>(yaml_str)
+                                    .unwrap_or_else(|e| {
+                                        tracing::warn!(
+                                            "Failed to parse semantic info for table '{}' in dataset '{}': {}, using default",
+                                            table_name,
+                                            dataset_name,
+                                            e
+                                        );
+                                        // Fallback to default SemanticModels with basic info
+                                        SemanticModels {
+                                            table: table_name.clone(),
+                                            database: db_info.name.clone(),
+                                            description: String::new(),
+                                            entities: Vec::new(),
+                                            dimensions: Vec::new(),
+                                            measures: Vec::new(),
+                                            database_name: db_info.name.clone(),
+                                        }
+                                    });
+                                (table_name.clone(), info)
+                            })
+                            .collect();
                         (dataset_name, tables)
                     })
                     .collect();

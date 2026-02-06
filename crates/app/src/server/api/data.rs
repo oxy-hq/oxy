@@ -1,6 +1,6 @@
 use crate::server::api::middlewares::project::{ProjectManagerExtractor, ProjectPath};
 use crate::server::api::result_files::store_result_file;
-use crate::server::api::semantic::{ResultFormat, SemanticQueryResponse};
+use crate::server::api::semantic::{ErrorResponse, ResultFormat, SemanticQueryResponse};
 use crate::server::service::retrieval::{ReindexInput, reindex};
 use axum::extract::{self, Path};
 use axum::http::StatusCode;
@@ -41,7 +41,7 @@ pub async fn execute_sql(
         project_id: _project_id,
     }): Path<ProjectPath>,
     extract::Json(payload): extract::Json<SQLParams>,
-) -> Result<extract::Json<SemanticQueryResponse>, StatusCode> {
+) -> Result<extract::Json<SemanticQueryResponse>, (StatusCode, extract::Json<ErrorResponse>)> {
     let config_manager = project_manager.config_manager.clone();
     let secrets_manager = project_manager.secrets_manager.clone();
     let connector = Connector::from_database(
@@ -52,8 +52,28 @@ pub async fn execute_sql(
         payload.filters,
         payload.connections,
     )
-    .await?;
-    let file_path = connector.run_query(&payload.sql).await?;
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to create database connector: {}", e);
+        (
+            StatusCode::BAD_REQUEST,
+            extract::Json(ErrorResponse {
+                message: format!(
+                    "Failed to connect to database '{}': {}",
+                    payload.database, e
+                ),
+            }),
+        )
+    })?;
+    let file_path = connector.run_query(&payload.sql).await.map_err(|e| {
+        tracing::error!("SQL query execution failed: {}", e);
+        (
+            StatusCode::BAD_REQUEST,
+            extract::Json(ErrorResponse {
+                message: format!("SQL query execution failed: {}", e),
+            }),
+        )
+    })?;
 
     let result_format = payload
         .result_format
@@ -65,18 +85,37 @@ pub async fn execute_sql(
             let file_name = store_result_file(&project_manager, &file_path)
                 .await
                 .map_err(|e| {
-                    tracing::error!("{}", e);
-                    StatusCode::INTERNAL_SERVER_ERROR
+                    tracing::error!("Failed to store result file: {}", e);
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        extract::Json(ErrorResponse {
+                            message: format!("Failed to store result file: {}", e),
+                        }),
+                    )
                 })?;
 
             Ok(extract::Json(SemanticQueryResponse::Parquet { file_name }))
         }
         ResultFormat::Json => {
-            let (batches, schema) =
-                load_result(&file_path).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            let (batches, schema) = load_result(&file_path).map_err(|e| {
+                tracing::error!("Failed to load query result: {}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    extract::Json(ErrorResponse {
+                        message: format!("Failed to load query result: {}", e),
+                    }),
+                )
+            })?;
 
-            let data = record_batches_to_2d_array(&batches, &schema)
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            let data = record_batches_to_2d_array(&batches, &schema).map_err(|e| {
+                tracing::error!("Failed to convert result to JSON: {}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    extract::Json(ErrorResponse {
+                        message: format!("Failed to convert result to JSON: {}", e),
+                    }),
+                )
+            })?;
             Ok(extract::Json(SemanticQueryResponse::Json(data)))
         }
     }
@@ -88,7 +127,7 @@ pub async fn execute_sql_query(
         project_id: _project_id,
     }): Path<ProjectPath>,
     extract::Json(payload): extract::Json<SQLParams>,
-) -> Result<extract::Json<SemanticQueryResponse>, StatusCode> {
+) -> Result<extract::Json<SemanticQueryResponse>, (StatusCode, extract::Json<ErrorResponse>)> {
     let config_manager = project_manager.config_manager.clone();
     let secrets_manager = project_manager.secrets_manager.clone();
     let connector = Connector::from_database(
@@ -99,8 +138,28 @@ pub async fn execute_sql_query(
         payload.filters,
         payload.connections,
     )
-    .await?;
-    let file_path = connector.run_query(&payload.sql).await?;
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to create database connector: {}", e);
+        (
+            StatusCode::BAD_REQUEST,
+            extract::Json(ErrorResponse {
+                message: format!(
+                    "Failed to connect to database '{}': {}",
+                    payload.database, e
+                ),
+            }),
+        )
+    })?;
+    let file_path = connector.run_query(&payload.sql).await.map_err(|e| {
+        tracing::error!("SQL query execution failed: {}", e);
+        (
+            StatusCode::BAD_REQUEST,
+            extract::Json(ErrorResponse {
+                message: format!("SQL query execution failed: {}", e),
+            }),
+        )
+    })?;
 
     let result_format = payload
         .result_format
@@ -112,18 +171,37 @@ pub async fn execute_sql_query(
             let file_name = store_result_file(&project_manager, &file_path)
                 .await
                 .map_err(|e| {
-                    tracing::error!("{}", e);
-                    StatusCode::INTERNAL_SERVER_ERROR
+                    tracing::error!("Failed to store result file: {}", e);
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        extract::Json(ErrorResponse {
+                            message: format!("Failed to store result file: {}", e),
+                        }),
+                    )
                 })?;
 
             Ok(extract::Json(SemanticQueryResponse::Parquet { file_name }))
         }
         ResultFormat::Json => {
-            let (batches, schema) =
-                load_result(&file_path).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            let (batches, schema) = load_result(&file_path).map_err(|e| {
+                tracing::error!("Failed to load query result: {}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    extract::Json(ErrorResponse {
+                        message: format!("Failed to load query result: {}", e),
+                    }),
+                )
+            })?;
 
-            let data = record_batches_to_2d_array(&batches, &schema)
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            let data = record_batches_to_2d_array(&batches, &schema).map_err(|e| {
+                tracing::error!("Failed to convert result to JSON: {}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    extract::Json(ErrorResponse {
+                        message: format!("Failed to convert result to JSON: {}", e),
+                    }),
+                )
+            })?;
             Ok(extract::Json(SemanticQueryResponse::Json(data)))
         }
     }

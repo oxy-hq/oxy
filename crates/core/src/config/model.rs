@@ -206,7 +206,7 @@ pub struct McpConfig {
     pub tools: Vec<String>,
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, JsonSchema)]
+#[derive(Clone, Serialize, Deserialize, Debug, JsonSchema, ToSchema)]
 pub struct SemanticModels {
     pub table: String,
     pub database: String,
@@ -218,16 +218,18 @@ pub struct SemanticModels {
     pub dimensions: Vec<Dimension>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub measures: Vec<Measure>,
+    #[serde(skip_serializing_if = "String::is_empty", default)]
+    pub database_name: String,
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, JsonSchema)]
+#[derive(Clone, Serialize, Deserialize, Debug, JsonSchema, ToSchema)]
 pub struct Entity {
     pub name: String,
     pub description: String,
     pub sample: Vec<String>,
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, JsonSchema)]
+#[derive(Clone, Serialize, Deserialize, Debug, JsonSchema, ToSchema)]
 pub struct Dimension {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -242,7 +244,7 @@ pub struct Dimension {
     pub is_partition_key: Option<bool>,
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, JsonSchema)]
+#[derive(Clone, Serialize, Deserialize, Debug, JsonSchema, ToSchema)]
 pub struct Measure {
     pub name: String,
     pub sql: String,

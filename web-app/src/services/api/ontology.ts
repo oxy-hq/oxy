@@ -26,7 +26,7 @@ export class OntologyService {
     // Add table nodes
     databases.forEach((db) => {
       Object.entries(db.datasets).forEach(([dataset, tables]) => {
-        tables.forEach((table) => {
+        Object.keys(tables).forEach((table) => {
           const tableId = `table:${db.name}.${dataset}.${table}`;
           nodes.push({
             id: tableId,

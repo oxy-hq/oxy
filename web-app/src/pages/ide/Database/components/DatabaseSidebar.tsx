@@ -61,14 +61,16 @@ export const DatabaseSidebar: React.FC<DatabaseSidebarProps> = ({
 
           {!isLoading && databases.length > 0 && (
             <SidebarMenu className='pb-20'>
-              {databases.map((database) => (
-                <ConnectionItem
-                  key={database.name}
-                  database={database}
-                  isActive={activeConnectionId === database.name.toLowerCase()}
-                  onSelect={() => setActiveConnection(database.name.toLowerCase())}
-                />
-              ))}
+              {databases
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((database) => (
+                  <ConnectionItem
+                    key={database.name}
+                    database={database}
+                    isActive={activeConnectionId === database.name.toLowerCase()}
+                    onSelect={() => setActiveConnection(database.name.toLowerCase())}
+                  />
+                ))}
             </SidebarMenu>
           )}
         </SidebarGroup>

@@ -151,7 +151,7 @@ const DirNode = ({ fileTree, activePath }: { fileTree: FileTreeModel; activePath
             </SidebarMenuButton>
 
             {isOpen && (
-              <SidebarMenuSub className='translate-none'>
+              <SidebarMenuSub className='ml-4'>
                 {isCreating && !isReadOnly && (
                   <NewNode
                     ref={newItemInputRef}

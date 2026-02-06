@@ -1,11 +1,23 @@
+import { get } from "lodash";
 import { Code, Loader2, Play, Plus, Save, X } from "lucide-react";
 import type { editor } from "monaco-editor";
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
 import { format as formatSQL } from "sql-formatter";
 import { BaseMonacoEditor, useMonacoSetup } from "@/components/MonacoEditor";
 import DatabaseSelector from "@/components/sql/DatabaseSelector";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from "@/components/ui/shadcn/alert-dialog";
 import { Button } from "@/components/ui/shadcn/button";
+import { buttonVariants } from "@/components/ui/shadcn/utils/button-variants";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { cn } from "@/libs/shadcn/utils";
 import { DatabaseService } from "@/services/api";
@@ -30,6 +42,7 @@ export default function QueryEditor({ onSave }: QueryEditorProps) {
   } = useDatabaseClient();
 
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  const [tabToClose, setTabToClose] = useState<{ id: string; name: string } | null>(null);
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
 
@@ -76,7 +89,15 @@ export default function QueryEditor({ onSave }: QueryEditorProps) {
 
       toast.success(`Query executed in ${executionTime.toFixed(0)}ms`);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Query execution failed";
+      const rawError =
+        get(error, "response.data.error") ||
+        get(error, "response.data.message") ||
+        get(error, "message") ||
+        "Query execution failed";
+
+      const messageMatch = rawError.match?.(/"message":\s*"([^"]+)"/);
+      const errorMessage = messageMatch ? messageMatch[1] : rawError;
+
       setTabError(activeTab.id, errorMessage);
       toast.error(errorMessage);
     }
@@ -93,7 +114,19 @@ export default function QueryEditor({ onSave }: QueryEditorProps) {
 
   const handleCloseTab = (e: React.MouseEvent, tabId: string) => {
     e.stopPropagation();
+    const tab = tabs.find((t) => t.id === tabId);
+    if (tab?.isDirty) {
+      setTabToClose({ id: tabId, name: tab.name });
+      return;
+    }
     removeTab(tabId);
+  };
+
+  const handleConfirmClose = () => {
+    if (tabToClose) {
+      removeTab(tabToClose.id);
+      setTabToClose(null);
+    }
   };
 
   const handleContentChange = (value: string) => {
@@ -220,7 +253,7 @@ export default function QueryEditor({ onSave }: QueryEditorProps) {
             language='sql'
             options={{
               minimap: { enabled: false },
-              scrollBeyondLastLine: false
+              scrollBeyondLastLine: true
             }}
           />
         ) : (
@@ -233,6 +266,26 @@ export default function QueryEditor({ onSave }: QueryEditorProps) {
           </div>
         )}
       </div>
+
+      <AlertDialog open={!!tabToClose} onOpenChange={(open) => !open && setTabToClose(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
+            <AlertDialogDescription>
+              "{tabToClose?.name}" has unsaved changes. Are you sure you want to close it?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className={buttonVariants({ variant: "destructive" })}
+              onClick={handleConfirmClose}
+            >
+              Close
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -154,6 +154,7 @@ fn create_semantic_models(
             .unwrap_or_default(),
         entities: vec![],
         measures: vec![],
+        database_name: String::new(),
     })
 }
 

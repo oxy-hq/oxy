@@ -1,4 +1,6 @@
+import { get } from "lodash";
 import { useState } from "react";
+import { toast } from "sonner";
 import SqlResultsTable from "@/components/sql/SqlResultsTable";
 import useExecuteSql from "@/hooks/api/useExecuteSql";
 import useDatabaseClient from "@/stores/useDatabaseClient";
@@ -34,6 +36,17 @@ const SqlEditor = () => {
             setResultFile((data as { file_name: string }).file_name);
             setResult([]);
           }
+        },
+        onError: (error) => {
+          const rawError =
+            get(error, "response.data.error") ||
+            get(error, "response.data.message") ||
+            get(error, "message") ||
+            "Query execution failed";
+
+          const messageMatch = rawError.match?.(/"message":\s*"([^"]+)"/);
+          const errorMessage = messageMatch ? messageMatch[1] : rawError;
+          toast.error(errorMessage);
         }
       }
     );

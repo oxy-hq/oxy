@@ -64,17 +64,6 @@ export const ConnectionItem: React.FC<ConnectionItemProps> = ({ database, isActi
     syncMutation.mutate({ database: database.name });
   };
 
-  const connection = {
-    id: database.name.toLowerCase(),
-    name: database.name,
-    type: database.dialect,
-    synced: database.synced,
-    schemas: Object.entries(database.datasets).map(([schemaName, tables]) => ({
-      name: schemaName,
-      tables: tables.map((tableName) => ({ name: tableName }))
-    }))
-  };
-
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
       <SidebarMenuItem>
@@ -107,7 +96,7 @@ export const ConnectionItem: React.FC<ConnectionItemProps> = ({ database, isActi
         </CollapsibleTrigger>
         <CollapsibleContent>
           <ConnectionSchemaContent
-            connection={connection}
+            database={database}
             isSyncing={syncMutation.isPending}
             syncError={syncMutation.isError ? syncMutation.error?.message : undefined}
             handleSyncDatabase={handleSyncClick}

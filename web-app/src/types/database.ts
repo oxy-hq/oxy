@@ -1,7 +1,37 @@
+export interface SemanticEntity {
+  name: string;
+  description: string;
+  sample: string[];
+}
+
+export interface SemanticDimension {
+  name: string;
+  description?: string;
+  synonyms?: string[];
+  sample?: string[];
+  type?: string;
+  is_partition_key?: boolean;
+}
+
+export interface SemanticMeasure {
+  name: string;
+  sql: string;
+}
+
+export interface SemanticModels {
+  table: string;
+  database: string;
+  description?: string;
+  entities?: SemanticEntity[];
+  dimensions?: SemanticDimension[];
+  measures?: SemanticMeasure[];
+  database_name?: string;
+}
+
 export interface DatabaseInfo {
   name: string;
   dialect: string;
-  datasets: Record<string, string[]>;
+  datasets: Record<string, Record<string, SemanticModels>>;
   synced: boolean;
 }
 

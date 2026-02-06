@@ -15,44 +15,60 @@ import {
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import ROUTES from "@/libs/utils/routes";
 import useDatabaseClient from "@/stores/useDatabaseClient";
-import type { DatabaseSchema } from "../types";
+import type { SemanticModels } from "@/types/database";
 
 interface SchemaTreeItemProps {
-  schema: DatabaseSchema;
+  schemaName: string;
   dialect?: string;
-  connectionId?: string;
   databaseName?: string;
+  tables: Record<string, SemanticModels>;
 }
 
-const generateSelectQuery = (schemaName: string, tableName: string, dialect?: string): string => {
+const getTableNameFromSemanticInfo = (
+  semanticInfo: SemanticModels | undefined,
+  fallbackName: string
+): string => {
+  if (!semanticInfo) return fallbackName;
+  return semanticInfo.table ?? fallbackName;
+};
+
+const generateSelectQuery = (
+  tableName: string,
+  dialect?: string,
+  semanticInfo?: SemanticModels
+): string => {
   const normalizedDialect = dialect?.toLowerCase() || "";
+
+  const tableNameFromSemantic = getTableNameFromSemanticInfo(semanticInfo, tableName);
 
   switch (normalizedDialect) {
     case "bigquery":
-      return `SELECT * FROM \`${schemaName}.${tableName}\`\nLIMIT 100;`;
+      return `SELECT * FROM ${tableNameFromSemantic}\nLIMIT 100;`;
     case "mysql":
-      return `SELECT * FROM \`${schemaName}\`.\`${tableName}\`\nLIMIT 100;`;
+      return `SELECT * FROM \`${tableNameFromSemantic}\`\nLIMIT 100;`;
     case "postgres":
     case "postgresql":
     case "redshift":
-      return `SELECT * FROM "${schemaName}"."${tableName}"\nLIMIT 100;`;
+      return `SELECT * FROM "${tableNameFromSemantic}"\nLIMIT 100;`;
     case "snowflake":
-      return `SELECT * FROM "${schemaName}"."${tableName}"\nLIMIT 100;`;
+      return `SELECT * FROM "${tableNameFromSemantic}"\nLIMIT 100;`;
     case "clickhouse":
-      return `SELECT * FROM ${schemaName}.${tableName}\nLIMIT 100;`;
-    case "duckdb":
-      return `SELECT * FROM "${tableName}"\nLIMIT 100;`;
+      return `SELECT * FROM ${tableNameFromSemantic}\nLIMIT 100;`;
+    case "duckdb": {
+      return `SELECT * FROM ${tableNameFromSemantic}\nLIMIT 100;`;
+    }
     case "domo":
-      return `SELECT * FROM ${tableName}\nLIMIT 100`;
+      return `SELECT * FROM ${tableNameFromSemantic}\nLIMIT 100`;
     default:
-      return `SELECT * FROM ${schemaName}.${tableName}\nLIMIT 100;`;
+      return `SELECT * FROM ${tableNameFromSemantic}\nLIMIT 100;`;
   }
 };
 
 export const SchemaTreeItem: React.FC<SchemaTreeItemProps> = ({
-  schema,
+  schemaName,
   dialect,
-  databaseName
+  databaseName,
+  tables
 }) => {
   const [isOpen, setIsOpen] = React.useState(false);
   const { addTab } = useDatabaseClient();
@@ -60,10 +76,10 @@ export const SchemaTreeItem: React.FC<SchemaTreeItemProps> = ({
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
 
-  const handleTableClick = (tableName: string) => {
+  const handleTableClick = (tableName: string, semanticInfo: SemanticModels) => {
     const result = addTab({
       name: `${tableName}.sql`,
-      content: generateSelectQuery(schema.name, tableName, dialect),
+      content: generateSelectQuery(tableName, dialect, semanticInfo),
       isDirty: true,
       selectedDatabase: databaseName
     });
@@ -80,19 +96,19 @@ export const SchemaTreeItem: React.FC<SchemaTreeItemProps> = ({
           <SidebarMenuSubButton className='text-muted-foreground hover:text-sidebar-foreground'>
             {isOpen ? <ChevronDown className='h-3 w-3' /> : <ChevronRight className='h-3 w-3' />}
             <Folder className='h-3 w-3' />
-            <span className='text-xs'>{schema.name}</span>
+            <span className='text-xs'>{schemaName}</span>
           </SidebarMenuSubButton>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <SidebarMenuSub>
-            {schema.tables.map((table) => (
-              <SidebarMenuSubItem key={table.name}>
+          <SidebarMenuSub className='ml-4'>
+            {Object.entries(tables).map(([tableName, semanticInfo]) => (
+              <SidebarMenuSubItem key={tableName}>
                 <SidebarMenuSubButton
-                  onClick={() => handleTableClick(table.name)}
+                  onClick={() => handleTableClick(tableName, semanticInfo)}
                   className='text-muted-foreground hover:text-sidebar-foreground'
                 >
                   <Table className='h-3 w-3' />
-                  <span className='text-xs'>{table.name}</span>
+                  <span className='text-xs'>{tableName}</span>
                 </SidebarMenuSubButton>
               </SidebarMenuSubItem>
             ))}
