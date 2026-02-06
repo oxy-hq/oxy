@@ -342,8 +342,10 @@ impl RoutingAgentExecutable {
         let mut resolved_routes = vec![];
 
         // Construct RetrievalConfig from RoutingAgent settings
+        // Note: name is just "routing" because VectorStore::from_retrieval
+        // prepends agent_name, resulting in "{agent_name}-routing"
         let retrieval_config = oxy::config::model::RetrievalConfig {
-            name: format!("{agent_name}-routing"),
+            name: "routing".to_string(),
             description: "Routing agent retrieval".to_string(),
             src: vec![],
             api_url: "https://api.openai.com/v1".to_string(), // Default API URL
