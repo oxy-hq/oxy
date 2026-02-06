@@ -10,7 +10,7 @@ use entity::{prelude::Users, users, users::UserStatus};
 use jsonwebtoken::{EncodingKey, Header, encode};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{Message, SmtpTransport, Transport};
-use sea_orm::{ActiveModelTrait, EntityTrait, Set};
+use sea_orm::{ActiveModelTrait, DatabaseConnection, DbErr, EntityTrait, Set};
 use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
@@ -400,10 +400,7 @@ pub async fn google_auth(
                 last_login_at: sea_orm::ActiveValue::NotSet,
             };
 
-            new_user.insert(&connection).await.map_err(|e| {
-                tracing::error!("Failed to create user: {}", e);
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?
+            insert_user_or_fetch_existing(new_user, &user_info.email, &connection).await?
         }
     };
 
@@ -486,10 +483,7 @@ pub async fn okta_auth(
                 last_login_at: sea_orm::ActiveValue::NotSet,
             };
 
-            new_user.insert(&connection).await.map_err(|e| {
-                tracing::error!("Failed to create user: {}", e);
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?
+            insert_user_or_fetch_existing(new_user, &user_info.email, &connection).await?
         }
     };
 
@@ -562,6 +556,47 @@ fn hash_password(password: &str) -> String {
 
 fn verify_password(password: &str, hash: &str) -> bool {
     verify(password, hash).unwrap_or(false)
+}
+
+/// Check if a database error is a unique constraint violation.
+fn is_unique_violation(err: &DbErr) -> bool {
+    let err_str = err.to_string().to_lowercase();
+    err_str.contains("duplicate key") || err_str.contains("unique constraint")
+}
+
+/// Insert a new user, handling the race condition where another request may have
+/// created the same user concurrently.
+async fn insert_user_or_fetch_existing(
+    new_user: users::ActiveModel,
+    email: &str,
+    connection: &DatabaseConnection,
+) -> Result<users::Model, StatusCode> {
+    match new_user.insert(connection).await {
+        Ok(user) => Ok(user),
+        Err(e) if is_unique_violation(&e) => {
+            // Race condition: another request created the user concurrently.
+            // Fetch the existing user.
+            Users::find()
+                .filter_by_email(email)
+                .one(connection)
+                .await
+                .map_err(|e| {
+                    tracing::error!("Failed to query user after unique violation: {}", e);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?
+                .ok_or_else(|| {
+                    tracing::error!(
+                        "User '{}' not found after unique constraint violation",
+                        email
+                    );
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })
+        }
+        Err(e) => {
+            tracing::error!("Failed to create user: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 
 fn extract_base_url_from_headers(headers: &HeaderMap) -> String {

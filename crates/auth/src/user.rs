@@ -2,7 +2,7 @@ use entity::prelude::Users;
 use entity::users;
 use oxy::database::{client::establish_connection, filters::UserQueryFilterExt};
 use oxy_shared::errors::OxyError;
-use sea_orm::{ActiveValue, EntityTrait, Set, prelude::*};
+use sea_orm::{ActiveValue, DbErr, EntityTrait, Set, prelude::*};
 use uuid::Uuid;
 
 use crate::types::{AuthenticatedUser, Identity};
@@ -14,36 +14,36 @@ impl UserService {
     pub async fn get_or_create_user(identity: &Identity) -> Result<AuthenticatedUser, OxyError> {
         let connection = establish_connection().await?;
 
-        match Users::find()
+        // First, try to find existing user
+        if let Some(existing_user) = Users::find()
             .filter_by_email(&identity.email)
             .one(&connection)
             .await
             .map_err(|e| OxyError::DBError(format!("Failed to query user: {e}")))?
         {
-            Some(existing_user) => Ok(existing_user.into()),
-            None => {
-                let new_user = users::ActiveModel {
-                    id: Set(Uuid::new_v4()),
-                    email: Set(identity.email.clone()),
-                    name: Set(identity
-                        .name
-                        .clone()
-                        .unwrap_or_else(|| identity.email.clone())),
-                    picture: Set(identity.picture.clone()),
-                    password_hash: ActiveValue::not_set(),
-                    email_verified: Set(true),
-                    email_verification_token: ActiveValue::not_set(),
-                    role: Set(users::UserRole::Member),
-                    status: Set(UserStatus::Active),
-                    created_at: ActiveValue::not_set(), // Will use database default
-                    last_login_at: ActiveValue::not_set(), // Will use database default
-                };
+            return Ok(existing_user.into());
+        }
 
-                let user = new_user
-                    .insert(&connection)
-                    .await
-                    .map_err(|e| OxyError::DBError(format!("Failed to create user: {e}")))?;
+        // User not found, try to create
+        let new_user = users::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            email: Set(identity.email.clone()),
+            name: Set(identity
+                .name
+                .clone()
+                .unwrap_or_else(|| identity.email.clone())),
+            picture: Set(identity.picture.clone()),
+            password_hash: ActiveValue::not_set(),
+            email_verified: Set(true),
+            email_verification_token: ActiveValue::not_set(),
+            role: Set(users::UserRole::Member),
+            status: Set(UserStatus::Active),
+            created_at: ActiveValue::not_set(), // Will use database default
+            last_login_at: ActiveValue::not_set(), // Will use database default
+        };
 
+        match new_user.insert(&connection).await {
+            Ok(user) => {
                 tracing::info!(
                     "Created new user: {} ({}) with role: {}",
                     user.email,
@@ -52,6 +52,23 @@ impl UserService {
                 );
                 Ok(user.into())
             }
+            Err(e) if is_unique_violation(&e) => {
+                // Race condition: another request created the user concurrently.
+                // Fetch the existing user.
+                Users::find()
+                    .filter_by_email(&identity.email)
+                    .one(&connection)
+                    .await
+                    .map_err(|e| OxyError::DBError(format!("Failed to query user: {e}")))?
+                    .map(|u| u.into())
+                    .ok_or_else(|| {
+                        OxyError::DBError(format!(
+                            "User '{}' not found after unique constraint violation",
+                            identity.email
+                        ))
+                    })
+            }
+            Err(e) => Err(OxyError::DBError(format!("Failed to create user: {e}"))),
         }
     }
 
@@ -156,4 +173,10 @@ impl UserService {
 
         Ok(())
     }
+}
+
+/// Check if a database error is a unique constraint violation.
+fn is_unique_violation(err: &DbErr) -> bool {
+    let err_str = err.to_string().to_lowercase();
+    err_str.contains("duplicate key") || err_str.contains("unique constraint")
 }
