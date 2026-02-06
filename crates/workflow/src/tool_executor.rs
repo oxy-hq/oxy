@@ -50,7 +50,7 @@ impl ToolExecutor for WorkflowToolExecutor {
                 span.record("oxy.tool_input", &input.param);
 
                 let workflow_input = WorkflowInput {
-                    workflow_ref: workflow_config.name.clone(),
+                    workflow_ref: workflow_config.workflow_ref.clone(),
                     retry: oxy::checkpoint::types::RetryStrategy::NoRetry { variables: None },
                 };
 
