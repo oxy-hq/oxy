@@ -10,7 +10,7 @@ import {
   RotateCcw,
   StopCircle
 } from "lucide-react";
-import React, { Suspense, useEffect, useMemo } from "react";
+import React, { Suspense, useCallback, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/shadcn/button";
 import {
   ResizableHandle,
@@ -79,9 +79,9 @@ export const WorkflowPreview = ({
   const { setIsOpen } = useVariables();
 
   const groups = useGetBlocks(path, runId ? +runId : undefined, !!runId && !isProcessing).data;
-  useEffect(() => {
-    const abortRef = new AbortController();
-    const streamCall = async (relativePath: string, runId: string) => {
+
+  const streamCall = useCallback(
+    async (relativePath: string, runId: string, abortRef: AbortController) => {
       return stream
         .mutateAsync({
           sourceId: relativePath,
@@ -91,15 +91,20 @@ export const WorkflowPreview = ({
         .catch((error) => {
           console.error("Error streaming events:", error);
         });
-    };
+    },
+    [stream]
+  );
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
+  useEffect(() => {
+    const abortRef = new AbortController();
     if (relativePath && runId) {
-      streamCall(relativePath, runId);
+      streamCall(relativePath, runId, abortRef);
       return () => {
         abortRef.abort();
       };
     }
-  }, [runId, relativePath, stream]);
+  }, [runId, relativePath]);
 
   useEffect(() => {
     const firstGroup = groups?.[0];
