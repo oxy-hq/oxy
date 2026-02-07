@@ -221,15 +221,19 @@ pub async fn add_user_to_workspace(
     axum::extract::Path(workspace_id): axum::extract::Path<Uuid>,
     JsonExtractor(req): JsonExtractor<AddUserToWorkspaceRequest>,
 ) -> Result<StatusCode, StatusCode> {
-    let db = establish_connection()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let db = establish_connection().await.map_err(|e| {
+        tracing::error!("Failed to establish database connection: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     let requester_role = WorkspaceUsers::find()
         .filter(workspace_users::Column::WorkspaceId.eq(workspace_id))
         .filter(workspace_users::Column::UserId.eq(requester.id))
         .one(&db)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map_err(|e| {
+            tracing::error!("Failed to query requester role: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
         .map(|wu| wu.role);
     if requester_role.as_deref() != Some("owner") && requester_role.as_deref() != Some("admin") {
         return Err(StatusCode::FORBIDDEN);
@@ -238,7 +242,10 @@ pub async fn add_user_to_workspace(
         .filter(entity::users::Column::Email.eq(req.email.clone()))
         .one(&db)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            tracing::error!("Failed to query user by email: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     let user = match user {
         Some(u) => u,
         None => return Err(StatusCode::NOT_FOUND),
@@ -249,7 +256,10 @@ pub async fn add_user_to_workspace(
         .filter(workspace_users::Column::UserId.eq(user.id))
         .one(&db)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map_err(|e| {
+            tracing::error!("Failed to check workspace membership: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
         .is_some();
     if already_in_ws {
         return Err(StatusCode::CONFLICT);
@@ -263,10 +273,10 @@ pub async fn add_user_to_workspace(
         created_at: Set(now),
         updated_at: Set(now),
     };
-    ws_user
-        .insert(&db)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    ws_user.insert(&db).await.map_err(|e| {
+        tracing::error!("Failed to insert workspace user: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     Ok(StatusCode::CREATED)
 }
 
@@ -275,16 +285,20 @@ pub async fn update_user_role_in_workspace(
     axum::extract::Path(workspace_id): axum::extract::Path<Uuid>,
     JsonExtractor(req): JsonExtractor<UpdateUserRoleRequest>,
 ) -> Result<StatusCode, StatusCode> {
-    let db = establish_connection()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let db = establish_connection().await.map_err(|e| {
+        tracing::error!("Failed to establish database connection: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let requester_role = WorkspaceUsers::find()
         .filter(workspace_users::Column::WorkspaceId.eq(workspace_id))
         .filter(workspace_users::Column::UserId.eq(requester.id))
         .one(&db)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map_err(|e| {
+            tracing::error!("Failed to query requester role: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
         .map(|wu| wu.role);
     if requester_role.as_deref() != Some("owner") && requester_role.as_deref() != Some("admin") {
         return Err(StatusCode::FORBIDDEN);
@@ -294,15 +308,18 @@ pub async fn update_user_role_in_workspace(
         .filter(workspace_users::Column::UserId.eq(req.user_id))
         .one(&db)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            tracing::error!("Failed to query workspace user: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     if let Some(mut ws_user) = ws_user {
         ws_user.role = req.role;
         let mut active_model: workspace_users::ActiveModel = ws_user.into();
         active_model.updated_at = Set(chrono::Utc::now().into());
-        active_model
-            .update(&db)
-            .await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        active_model.update(&db).await.map_err(|e| {
+            tracing::error!("Failed to update workspace user role: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
         Ok(StatusCode::OK)
     } else {
         Err(StatusCode::NOT_FOUND)
@@ -313,16 +330,20 @@ pub async fn remove_user_from_workspace(
     AuthenticatedUserExtractor(requester): AuthenticatedUserExtractor,
     axum::extract::Path((workspace_id, user_id)): axum::extract::Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, StatusCode> {
-    let db = establish_connection()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let db = establish_connection().await.map_err(|e| {
+        tracing::error!("Failed to establish database connection: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let requester_role = WorkspaceUsers::find()
         .filter(workspace_users::Column::WorkspaceId.eq(workspace_id))
         .filter(workspace_users::Column::UserId.eq(requester.id))
         .one(&db)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map_err(|e| {
+            tracing::error!("Failed to query requester role: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
         .map(|wu| wu.role);
     if requester_role.as_deref() != Some("owner") && requester_role.as_deref() != Some("admin") {
         return Err(StatusCode::FORBIDDEN);
@@ -332,7 +353,10 @@ pub async fn remove_user_from_workspace(
         .filter(workspace_users::Column::UserId.eq(user_id))
         .exec(&db)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            tracing::error!("Failed to delete workspace user: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     if res.rows_affected > 0 {
         Ok(StatusCode::NO_CONTENT)
     } else {

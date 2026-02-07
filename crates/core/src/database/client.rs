@@ -1,5 +1,6 @@
 use oxy_shared::errors::OxyError;
-use sea_orm::{Database, DatabaseConnection};
+use sea_orm::{ConnectOptions, Database, DatabaseConnection};
+use std::time::Duration;
 
 pub async fn establish_connection() -> Result<DatabaseConnection, OxyError> {
     // OXY_DATABASE_URL is required - PostgreSQL only
@@ -25,7 +26,21 @@ pub async fn establish_connection() -> Result<DatabaseConnection, OxyError> {
         ));
     }
 
-    Database::connect(url).await.map_err(|e| {
+    // Configure connection pool for resilience against intermittent connection issues
+    let mut opt = ConnectOptions::new(url);
+    opt.max_connections(10)
+        .min_connections(1)
+        .connect_timeout(Duration::from_secs(10))
+        .acquire_timeout(Duration::from_secs(10))
+        // Close idle connections after 5 minutes to avoid stale connections
+        .idle_timeout(Duration::from_secs(300))
+        // Max lifetime of 30 minutes to force connection refresh
+        .max_lifetime(Duration::from_secs(1800))
+        // Test connections before use to detect "Connection reset by peer" errors
+        .test_before_acquire(true)
+        .sqlx_logging(false);
+
+    Database::connect(opt).await.map_err(|e| {
         tracing::error!("Failed to connect to PostgreSQL database: {}", e);
         OxyError::Database(e.to_string())
     })

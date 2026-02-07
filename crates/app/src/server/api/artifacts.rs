@@ -30,7 +30,10 @@ pub async fn get_artifact(
     let artifact = Artifacts::find_by_id(artifact_id)
         .one(&connection)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map_err(|e| {
+            tracing::error!("Failed to fetch artifact {}: {}", artifact_id, e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
         .ok_or(StatusCode::NOT_FOUND)?;
 
     Ok(extract::Json(ArtifactItem {

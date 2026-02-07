@@ -104,14 +104,14 @@ pub async fn get_agents(
     let config_manager = &project_manager.config_manager;
     let project_path = config_manager.project_path();
 
-    let agent_paths = config_manager
-        .list_agents()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let agentic_paths = config_manager
-        .list_agentic_workflows()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let agent_paths = config_manager.list_agents().await.map_err(|e| {
+        tracing::error!("Failed to list agents: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    let agentic_paths = config_manager.list_agentic_workflows().await.map_err(|e| {
+        tracing::error!("Failed to list agentic workflows: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let agent_relative_paths: Vec<String> = agent_paths
         .iter()
@@ -190,7 +190,10 @@ pub async fn get_agent(
         .config_manager
         .resolve_agent(&path)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            tracing::error!("Failed to resolve agent '{}': {}", path, e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     Ok(extract::Json(agent))
 }
 

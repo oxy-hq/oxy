@@ -160,7 +160,10 @@ pub async fn list_databases(
     let semantic_manager =
         SemanticManager::from_config(config_manager.clone(), secrets_manager.clone(), false)
             .await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            .map_err(|e| {
+                tracing::error!("Failed to create semantic manager: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
 
     let mut databases = Vec::new();
 

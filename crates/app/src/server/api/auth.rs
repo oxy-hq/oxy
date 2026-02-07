@@ -155,14 +155,6 @@ pub async fn get_config(
         enterprise: app_state.enterprise,
     };
 
-    tracing::info!(
-        "Returning auth config: google={}, okta={}, basic={}, cloud={}",
-        has_google,
-        has_okta,
-        has_basic,
-        app_state.cloud
-    );
-
     Ok(Json(config))
 }
 
@@ -314,13 +306,6 @@ pub async fn register(
         }
     });
 
-    tracing::info!(
-        "Created new user: {} ({}) with role: {}",
-        user.email,
-        user.id,
-        user.role.as_str()
-    );
-
     Ok(Json(MessageResponse {
         message: "User registered successfully. Please check your email for verification."
             .to_string(),
@@ -332,7 +317,6 @@ pub async fn google_auth(
     extract::Json(google_request): extract::Json<GoogleAuthRequest>,
 ) -> Result<Json<AuthResponse>, StatusCode> {
     let base_url = extract_base_url_from_headers(&headers);
-    tracing::info!("Base URL for Google auth: {}", base_url);
     let user_info = exchange_google_code_for_user_info(&google_request.code, &base_url)
         .await
         .map_err(|e| {
@@ -427,7 +411,6 @@ pub async fn okta_auth(
     extract::Json(okta_request): extract::Json<OktaAuthRequest>,
 ) -> Result<Json<AuthResponse>, StatusCode> {
     let base_url = extract_base_url_from_headers(&headers);
-    tracing::info!("Base URL for Okta auth: {}", base_url);
     let user_info = exchange_okta_code_for_user_info(&okta_request.code, &base_url)
         .await
         .map_err(|e| {
@@ -601,7 +584,6 @@ async fn insert_user_or_fetch_existing(
 
 fn extract_base_url_from_headers(headers: &HeaderMap) -> String {
     if let Some(origin) = headers.get("origin").and_then(|h| h.to_str().ok()) {
-        tracing::debug!("Using origin header for base URL: {}", origin);
         return origin.to_string();
     }
 
@@ -610,9 +592,7 @@ fn extract_base_url_from_headers(headers: &HeaderMap) -> String {
         && let Some(host) = url.host_str()
     {
         let port = url.port().map(|p| format!(":{p}")).unwrap_or_default();
-        let origin = format!("{}://{}{}", url.scheme(), host, port);
-        tracing::debug!("Using referer header for base URL: {}", origin);
-        return origin;
+        return format!("{}://{}{}", url.scheme(), host, port);
     }
     "http://localhost:3000".to_string()
 }
@@ -664,13 +644,7 @@ async fn send_verification_email(email: &str, token: &str, base_url: &str) -> Re
             mailer
                 .send(&email_message)
                 .map_err(|e| OxyError::ConfigurationError(format!("Failed to send email: {e}")))?;
-
-            tracing::info!("Verification email sent to {}", email);
-        } else {
-            tracing::warn!("No SMTP configuration found");
         }
-    } else {
-        tracing::warn!("No authentication configuration found");
     }
 
     Ok(())
@@ -698,8 +672,6 @@ async fn exchange_google_code_for_user_info(
     let client = reqwest::Client::new();
 
     let redirect_uri = format!("{base_url}/auth/google/callback");
-
-    println!("Redirect URI: {redirect_uri}");
 
     let client_secret = google_config.client_secret;
 
@@ -778,11 +750,6 @@ async fn exchange_google_code_for_user_info(
         OxyError::ConfigurationError(format!("Failed to parse user info: {e}"))
     })?;
 
-    tracing::info!(
-        "Successfully exchanged Google authorization code for user: {}",
-        user_info.email
-    );
-
     Ok(user_info)
 }
 
@@ -797,31 +764,17 @@ async fn exchange_okta_code_for_user_info(
     code: &str,
     base_url: &str,
 ) -> Result<OktaUserInfo, OxyError> {
-    tracing::info!(
-        "Starting Okta code exchange - base_url: {}, code_prefix: {}...",
-        base_url,
-        &code.chars().take(10).collect::<String>()
-    );
-
     let auth_config = oxy::config::oxy::get_oxy_config()
         .ok()
         .and_then(|config| config.authentication);
 
     let okta_config = auth_config.and_then(|auth| auth.okta).ok_or_else(|| {
-        tracing::error!("Okta OAuth configuration not found in config");
         OxyError::ConfigurationError("Okta OAuth configuration not found".to_string())
     })?;
 
     let client = reqwest::Client::new();
 
     let redirect_uri = format!("{base_url}/auth/okta/callback");
-
-    tracing::info!(
-        "Okta token exchange parameters - domain: {}, redirect_uri: {}, client_id: {}",
-        okta_config.domain,
-        redirect_uri,
-        okta_config.client_id
-    );
 
     let client_secret = okta_config.client_secret;
     let okta_domain = okta_config.domain;
@@ -905,11 +858,6 @@ async fn exchange_okta_code_for_user_info(
         tracing::error!("Failed to parse Okta userinfo response: {}", e);
         OxyError::ConfigurationError(format!("Failed to parse user info: {e}"))
     })?;
-
-    tracing::info!(
-        "Successfully exchanged Okta authorization code for user: {}",
-        user_info.email
-    );
 
     Ok(user_info)
 }

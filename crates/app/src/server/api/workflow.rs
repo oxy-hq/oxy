@@ -96,7 +96,10 @@ pub async fn list(
             let response = serde_json::to_string(&workflows).unwrap();
             Ok((StatusCode::OK, response))
         }
-        Err(_e) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+        Err(e) => {
+            tracing::error!("Failed to list workflows: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
     }
 }
 
@@ -192,14 +195,12 @@ pub async fn get_logs(
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
 ) -> Result<extract::Json<GetLogsResponse>, StatusCode> {
     let path = PathBuf::from(
-        String::from_utf8(BASE64_STANDARD.decode(pathb64).map_err(|e| {
-            tracing::info!("{:?}", e);
-            StatusCode::BAD_REQUEST
-        })?)
-        .map_err(|e| {
-            tracing::info!("{:?}", e);
-            StatusCode::BAD_REQUEST
-        })?,
+        String::from_utf8(
+            BASE64_STANDARD
+                .decode(pathb64)
+                .map_err(|_| StatusCode::BAD_REQUEST)?,
+        )
+        .map_err(|_| StatusCode::BAD_REQUEST)?,
     );
     let logs = service::get_workflow_logs(&path, project_manager.config_manager).await?;
     Ok(extract::Json(GetLogsResponse { logs }))
@@ -216,11 +217,7 @@ pub async fn build_workflow_api_logger(
     let file = OpenOptions::new()
         .append(true)
         .open(log_file_path)
-        .map_err(|e| {
-            tracing::error!("{:?}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })
-        .unwrap();
+        .expect("Failed to open log file");
     let api_logger: WorkflowAPILogger =
         WorkflowAPILogger::new(sender, Some(Arc::new(Mutex::new(file))));
 
@@ -287,22 +284,15 @@ pub async fn run_workflow(
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     extract::Json(request): extract::Json<RunWorkflowRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    let decoded_path = BASE64_STANDARD.decode(pathb64).map_err(|e| {
-        tracing::info!("{:?}", e);
-        StatusCode::BAD_REQUEST
-    })?;
-    let path = PathBuf::from(String::from_utf8(decoded_path).map_err(|e| {
-        tracing::info!("{:?}", e);
-        StatusCode::BAD_REQUEST
-    })?);
+    let decoded_path = BASE64_STANDARD
+        .decode(pathb64)
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let path = PathBuf::from(String::from_utf8(decoded_path).map_err(|_| StatusCode::BAD_REQUEST)?);
 
     let full_workflow_path = project_manager
         .config_manager
         .resolve_file(path.clone())
-        .map_err(|e| {
-            tracing::info!("{:?}", e);
-            StatusCode::BAD_REQUEST
-        })
+        .map_err(|_| StatusCode::BAD_REQUEST)
         .await?;
 
     let full_workflow_path = PathBuf::from(&full_workflow_path);
@@ -315,7 +305,6 @@ pub async fn run_workflow(
 
     let user_id = user.id.to_string();
     let _ = tokio::spawn(async move {
-        tracing::info!("Workflow run started");
         let rs = run_workflow_service(
             path,
             logger.clone(),
@@ -331,12 +320,9 @@ pub async fn run_workflow(
             None, // No authenticated user for this endpoint
         )
         .await;
-        match rs {
-            Ok(_) => tracing::info!("Workflow run completed successfully"),
-            Err(e) => {
-                tracing::error!("Workflow run failed: {:?}", e);
-                logger.log_error(&format!("Workflow run failed: {e:?}"));
-            }
+        if let Err(e) = rs {
+            tracing::error!("Workflow run failed: {:?}", e);
+            logger.log_error(&format!("Workflow run failed: {e:?}"));
         }
     });
 
@@ -352,17 +338,8 @@ async fn unlock_workflow_thread(
     let mut thread_model: entity::threads::ActiveModel = thread.clone().into();
     thread_model.is_processing = ActiveValue::Set(false);
 
-    match thread_model.update(connection).await {
-        Ok(_) => {
-            tracing::info!("Successfully unlocked workflow thread {}", thread.id);
-        }
-        Err(e) => {
-            tracing::error!(
-                "Failed to unlock workflow thread {}: {}. This may cause the thread to remain locked.",
-                thread.id,
-                e
-            );
-        }
+    if let Err(e) = thread_model.update(connection).await {
+        tracing::error!("Failed to unlock workflow thread {}: {}", thread.id, e);
     }
 }
 
@@ -445,10 +422,7 @@ pub async fn run_workflow_thread(
     let workflow_ref = PathBuf::from(thread.source.to_string());
     let full_workflow_path = config_manager
         .resolve_file(workflow_ref.clone())
-        .map_err(|e| {
-            tracing::info!("{:?}", e);
-            StatusCode::BAD_REQUEST
-        })
+        .map_err(|_| StatusCode::BAD_REQUEST)
         .await?;
 
     let full_workflow_path = PathBuf::from(&full_workflow_path);
@@ -514,11 +488,8 @@ pub async fn run_workflow_thread(
                             e
                         );
                         unlock_workflow_thread(&thread_clone, &connection_clone).await;
-                    } else {
-                        tracing::info!("Thread {} updated with workflow logs", thread_clone.id);
                     }
                 } else {
-                    tracing::error!("Failed to get workflow logs for thread {}", thread_clone.id);
                     unlock_workflow_thread(&thread_clone, &connection_clone).await;
                 }
             }
@@ -635,8 +606,7 @@ pub async fn run_workflow_thread_sync(
     let workflow_ref = PathBuf::from(thread.source.to_string());
     let full_workflow_path = config_manager
         .resolve_file(workflow_ref.clone())
-        .map_err(|e| {
-            tracing::info!("Failed to resolve workflow path: {:?}", e);
+        .map_err(|_| {
             let connection = connection.clone();
             let thread_clone = thread.clone();
             tokio::spawn(async move {
@@ -717,11 +687,9 @@ pub async fn run_workflow_thread_sync(
                         unlock_workflow_thread(&thread_clone, &connection_clone).await;
                         Err(format!("Failed to update thread: {}", e))
                     } else {
-                        tracing::info!("Thread {} updated with workflow logs", thread_clone.id);
                         Ok(logs_json)
                     }
                 } else {
-                    tracing::error!("Failed to get workflow logs for thread {}", thread_clone.id);
                     unlock_workflow_thread(&thread_clone, &connection_clone).await;
                     Err("Failed to get workflow logs".to_string())
                 }
@@ -745,11 +713,6 @@ pub async fn run_workflow_thread_sync(
 
     let workflow_result = loop {
         if start_time.elapsed() >= timeout_duration {
-            tracing::info!(
-                "Workflow thread {} timed out after {:?}, returning partial results",
-                thread.id,
-                timeout_duration
-            );
             let connection = connection.clone();
             let thread_clone = thread.clone();
             tokio::spawn(async move {
@@ -802,32 +765,19 @@ pub async fn run_workflow_thread_sync(
     }
 
     match workflow_result {
-        Ok(thread_output) => {
-            tracing::info!(
-                "Workflow thread completed successfully with {} logs",
-                all_logs.len()
-            );
-
-            Ok(extract::Json(RunWorkflowThreadSyncResponse {
-                logs: all_logs,
-                success: true,
-                completed: true,
-                error_message: None,
-                thread_output: Some(thread_output),
-                run_id: Some(0), // Threads don't use run tracking
-                events: vec![],
-                content: None,
-            }))
-        }
+        Ok(thread_output) => Ok(extract::Json(RunWorkflowThreadSyncResponse {
+            logs: all_logs,
+            success: true,
+            completed: true,
+            error_message: None,
+            thread_output: Some(thread_output),
+            run_id: Some(0), // Threads don't use run tracking
+            events: vec![],
+            content: None,
+        })),
         Err(error_msg) => {
             let is_timeout = error_msg.contains("Timeout reached");
             if is_timeout {
-                tracing::info!(
-                    "Workflow thread {} timed out with {} logs collected so far",
-                    thread.id,
-                    all_logs.len()
-                );
-
                 Ok(extract::Json(RunWorkflowThreadSyncResponse {
                     logs: all_logs,
                     success: false,
@@ -839,12 +789,6 @@ pub async fn run_workflow_thread_sync(
                     content: None,
                 }))
             } else {
-                tracing::error!(
-                    "Workflow thread failed with {} logs: {}",
-                    all_logs.len(),
-                    error_msg
-                );
-
                 Ok(extract::Json(RunWorkflowThreadSyncResponse {
                     logs: all_logs,
                     success: false,
@@ -904,25 +848,18 @@ pub async fn run_workflow_sync(
     timeout_config: TimeoutConfig,
     extract::Json(request): extract::Json<RunWorkflowRequest>,
 ) -> Result<extract::Json<RunWorkflowSyncResponse>, StatusCode> {
-    let decoded_path = BASE64_STANDARD.decode(&pathb64).map_err(|e| {
-        tracing::info!("Failed to decode base64 path: {:?}", e);
-        StatusCode::BAD_REQUEST
-    })?;
+    let decoded_path = BASE64_STANDARD
+        .decode(&pathb64)
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    let source_id = String::from_utf8(decoded_path).map_err(|e| {
-        tracing::info!("Failed to convert decoded path to string: {:?}", e);
-        StatusCode::BAD_REQUEST
-    })?;
+    let source_id = String::from_utf8(decoded_path).map_err(|_| StatusCode::BAD_REQUEST)?;
 
     let path = PathBuf::from(&source_id);
 
     let full_workflow_path = project_manager
         .config_manager
         .resolve_file(path.clone())
-        .map_err(|e| {
-            tracing::info!("Failed to resolve workflow path: {:?}", e);
-            StatusCode::BAD_REQUEST
-        })
+        .map_err(|_| StatusCode::BAD_REQUEST)
         .await?;
 
     let full_workflow_path = PathBuf::from(&full_workflow_path);
@@ -954,13 +891,10 @@ pub async fn run_workflow_sync(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    let run_id = run_info.run_index.ok_or_else(|| {
-        tracing::error!("Run index not available");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    let run_id = run_info
+        .run_index
+        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
     let task_id = format!("{}::{}", source_id, run_id);
-
-    tracing::info!("Starting workflow run with task_id: {}", task_id);
 
     // Create broadcast topic for this run
     let topic_ref = BROADCASTER.create_topic(&task_id).await.map_err(|e| {
@@ -1007,20 +941,10 @@ pub async fn run_workflow_sync(
             )
             .await;
 
-            match result {
-                Ok(_) => {
-                    tracing::info!("Workflow task_id={} completed successfully", task_id_clone);
-                    Ok(())
-                }
-                Err(e) => {
-                    tracing::error!(
-                        "Workflow task_id={} execution failed: {:?}",
-                        task_id_clone,
-                        e
-                    );
-                    Err(e)
-                }
-            }
+            result.map_err(|e| {
+                tracing::error!("Workflow task_id={} failed: {:?}", task_id_clone, e);
+                e
+            })
         }
     });
 
@@ -1029,11 +953,6 @@ pub async fn run_workflow_sync(
 
     let workflow_result = loop {
         if start_time.elapsed() >= timeout_duration {
-            tracing::info!(
-                "Workflow task_id={} timed out after {:?}, returning partial results",
-                task_id,
-                timeout_duration
-            );
             break Err("Timeout reached, workflow still running".to_string());
         }
 
@@ -1060,42 +979,27 @@ pub async fn run_workflow_sync(
                         if is_finished {
                             // Wait for workflow task to complete
                             break match workflow_task.await {
-                                Ok(result) => result.map_err(|e| {
-                                    tracing::error!("Workflow execution error: {:?}", e);
-                                    format!("Workflow execution error: {:?}", e)
-                                }),
-                                Err(e) => {
-                                    tracing::error!("Failed to join workflow task: {:?}", e);
-                                    Err(format!("Failed to join workflow task: {:?}", e))
-                                }
+                                Ok(result) => result
+                                    .map_err(|e| format!("Workflow execution error: {:?}", e)),
+                                Err(e) => Err(format!("Failed to join workflow task: {:?}", e)),
                             };
                         }
                     }
                     Err(_) => {
                         // Channel closed, workflow must have finished
                         break match workflow_task.await {
-                            Ok(result) => result.map_err(|e| {
-                                tracing::error!("Workflow execution error: {:?}", e);
-                                format!("Workflow execution error: {:?}", e)
-                            }),
-                            Err(e) => {
-                                tracing::error!("Failed to join workflow task: {:?}", e);
-                                Err(format!("Failed to join workflow task: {:?}", e))
-                            }
+                            Ok(result) => result
+                                .map_err(|e| format!("Workflow execution error: {:?}", e)),
+                            Err(e) => Err(format!("Failed to join workflow task: {:?}", e)),
                         };
                     }
                 }
             }
             task_result = &mut workflow_task => {
                 break match task_result {
-                    Ok(result) => result.map_err(|e| {
-                        tracing::error!("Workflow execution error: {:?}", e);
-                        format!("Workflow execution error: {:?}", e)
-                    }),
-                    Err(e) => {
-                        tracing::error!("Failed to join workflow task: {:?}", e);
-                        Err(format!("Failed to join workflow task: {:?}", e))
-                    }
+                    Ok(result) => result
+                        .map_err(|e| format!("Workflow execution error: {:?}", e)),
+                    Err(e) => Err(format!("Failed to join workflow task: {:?}", e)),
                 };
             }
         }
@@ -1127,34 +1031,18 @@ pub async fn run_workflow_sync(
         .collect();
 
     match workflow_result {
-        Ok(_) => {
-            tracing::info!(
-                "Workflow task_id={} completed successfully with {} logs, {} events",
-                task_id,
-                all_logs.len(),
-                all_events.len()
-            );
-
-            Ok(extract::Json(RunWorkflowSyncResponse {
-                logs: all_logs,
-                success: true,
-                completed: true,
-                error_message: None,
-                run_id: Some(run_id),
-                events: api_events,
-                content,
-            }))
-        }
+        Ok(_) => Ok(extract::Json(RunWorkflowSyncResponse {
+            logs: all_logs,
+            success: true,
+            completed: true,
+            error_message: None,
+            run_id: Some(run_id),
+            events: api_events,
+            content,
+        })),
         Err(error_msg) => {
             let is_timeout = error_msg.contains("Timeout reached");
             if is_timeout {
-                tracing::info!(
-                    "Workflow task_id={} timed out with {} logs, {} events collected so far",
-                    task_id,
-                    all_logs.len(),
-                    all_events.len()
-                );
-
                 Ok(extract::Json(RunWorkflowSyncResponse {
                     logs: all_logs,
                     success: false,
@@ -1165,14 +1053,6 @@ pub async fn run_workflow_sync(
                     content,
                 }))
             } else {
-                tracing::error!(
-                    "Workflow task_id={} failed with {} logs, {} events: {}",
-                    task_id,
-                    all_logs.len(),
-                    all_events.len(),
-                    error_msg
-                );
-
                 Ok(extract::Json(RunWorkflowSyncResponse {
                     logs: all_logs,
                     success: false,
@@ -1234,10 +1114,7 @@ pub async fn create_from_query(
         &config_manager,
     )
     .await
-    .map_err(|e| {
-        tracing::info!("{:?}", e);
-        StatusCode::BAD_REQUEST
-    })?;
+    .map_err(|_| StatusCode::BAD_REQUEST)?;
     Ok(extract::Json(CreateFromQueryResponse { workflow }))
 }
 
@@ -1401,21 +1278,10 @@ pub async fn get_workflow_run(
         .and_then(|v| v.parse::<bool>().ok())
         .unwrap_or(false);
 
-    tracing::info!(
-        "Getting status for run: {} in workflow: {} (wait: {})",
-        run_id,
-        pathb64,
-        wait_for_completion
-    );
-
-    let decoded_path = BASE64_STANDARD.decode(&pathb64).map_err(|e| {
-        tracing::error!("Failed to decode base64 path: {:?}", e);
-        StatusCode::BAD_REQUEST
-    })?;
-    let source_id = String::from_utf8(decoded_path).map_err(|e| {
-        tracing::error!("Failed to convert decoded path to string: {:?}", e);
-        StatusCode::BAD_REQUEST
-    })?;
+    let decoded_path = BASE64_STANDARD
+        .decode(&pathb64)
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let source_id = String::from_utf8(decoded_path).map_err(|_| StatusCode::BAD_REQUEST)?;
 
     let task_id = format!("{}::{}", source_id, run_id);
 
@@ -1453,24 +1319,16 @@ pub async fn get_workflow_run(
         }
         Err(_) => {
             // Not found in broadcast, try database for historical runs
-            tracing::info!("Run {} not found in broadcast, querying database", task_id);
-
-            let runs_manager = project_manager.runs_manager.as_ref().ok_or_else(|| {
-                tracing::error!("RunsManager not available");
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?;
+            let runs_manager = project_manager
+                .runs_manager
+                .as_ref()
+                .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
             let run_details = runs_manager
                 .find_run_details(&source_id, Some(run_id))
                 .await
-                .map_err(|e| {
-                    tracing::error!("Failed to query run from database: {:?}", e);
-                    StatusCode::INTERNAL_SERVER_ERROR
-                })?
-                .ok_or_else(|| {
-                    tracing::warn!("Run not found: {}", task_id);
-                    StatusCode::NOT_FOUND
-                })?;
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+                .ok_or(StatusCode::NOT_FOUND)?;
 
             // Convert RunDetails to events for consistent response format
             let events = reconstruct_events_from_run_details(&run_details);
@@ -1501,22 +1359,15 @@ pub async fn get_workflow_run(
         })
         .collect();
 
-    let runs_manager = project_manager.runs_manager.ok_or_else(|| {
-        tracing::error!("RunsManager not available");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    let runs_manager = project_manager
+        .runs_manager
+        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let run_details = runs_manager
         .find_run_details(&source_id, Some(run_id))
         .await
-        .map_err(|e| {
-            tracing::error!("Failed to query run from database: {:?}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?
-        .ok_or_else(|| {
-            tracing::warn!("Run not found: {}", task_id);
-            StatusCode::NOT_FOUND
-        })?;
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
     let topics = BROADCASTER.list_topics::<HashSet<String>>().await;
     let mut run_info = run_details.run_info;
     let task_id = match &run_info.root_ref {

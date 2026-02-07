@@ -335,16 +335,20 @@ pub async fn delete_project(
 ) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
     info!("Deleting project: {}", project_id);
 
-    let db = establish_connection()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let db = establish_connection().await.map_err(|e| {
+        error!("Failed to establish database connection: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let requester_role = WorkspaceUsers::find()
         .filter(workspace_users::Column::WorkspaceId.eq(workspace_id))
         .filter(workspace_users::Column::UserId.eq(requester.id))
         .one(&db)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map_err(|e| {
+            error!("Failed to query requester role: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
         .map(|ou| ou.role);
     if requester_role.as_deref() != Some("owner") && requester_role.as_deref() != Some("admin") {
         return Err(StatusCode::FORBIDDEN);

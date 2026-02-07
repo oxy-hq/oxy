@@ -118,9 +118,10 @@ pub async fn create_git_namespace(
     } else {
         "".to_string()
     };
-    let db = establish_connection()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let db = establish_connection().await.map_err(|e| {
+        error!("Failed to establish database connection: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     let git_namespace = entity::git_namespaces::ActiveModel {
         user_id: Set(user.id),
         name: Set(installation.name),
@@ -146,9 +147,10 @@ pub async fn create_git_namespace(
 pub async fn list_git_namespaces(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
 ) -> Result<ResponseJson<GitHubNamespacesResponse>, axum::http::StatusCode> {
-    let db = establish_connection()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let db = establish_connection().await.map_err(|e| {
+        error!("Failed to establish database connection: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     let git_namespaces = entity::git_namespaces::Entity::find()
         .filter(entity::git_namespaces::Column::UserId.eq(user.id))
         .all(&db)
@@ -177,9 +179,10 @@ pub async fn list_repositories(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Query(query): Query<GitHubRepositoriesQuery>,
 ) -> Result<Json<Vec<GitHubRepository>>, StatusCode> {
-    let db = establish_connection()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let db = establish_connection().await.map_err(|e| {
+        error!("Failed to establish database connection: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     let git_namespace = entity::git_namespaces::Entity::find()
         .filter(entity::git_namespaces::Column::UserId.eq(user.id))
         .filter(entity::git_namespaces::Column::Id.eq(query.git_namespace_id))
@@ -222,9 +225,10 @@ pub async fn list_branches(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Query(query): Query<GitHubBranchesQuery>,
 ) -> Result<Json<Vec<GitHubBranch>>, StatusCode> {
-    let db = establish_connection()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let db = establish_connection().await.map_err(|e| {
+        error!("Failed to establish database connection: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     let git_namespace = entity::git_namespaces::Entity::find()
         .filter(entity::git_namespaces::Column::UserId.eq(user.id))
         .filter(entity::git_namespaces::Column::Id.eq(query.git_namespace_id))

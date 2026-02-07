@@ -11,7 +11,10 @@ pub async fn get_chart(
         .config_manager
         .get_charts_dir()
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            tracing::error!("Failed to get charts directory: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     let file_path = charts_dir.join(file_path);
 
     let file = std::fs::read_to_string(file_path).map_err(|_| StatusCode::NOT_FOUND)?;

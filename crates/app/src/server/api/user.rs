@@ -92,7 +92,10 @@ pub async fn batch_get_users(
 
     let connection = oxy::database::client::establish_connection()
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            tracing::error!("Failed to establish database connection: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     // Parse UUIDs from strings
     let user_uuids: Result<Vec<Uuid>, _> = payload

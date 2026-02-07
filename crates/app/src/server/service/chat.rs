@@ -586,11 +586,6 @@ impl ChatService {
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-        tracing::info!(
-            "Successfully locked thread {} for user {}",
-            thread_id,
-            user_id
-        );
         Ok(thread)
     }
 
@@ -676,11 +671,6 @@ impl ChatService {
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-        tracing::debug!(
-            "Successfully inserted user message for thread {}",
-            thread_id
-        );
-
         Ok(question.to_string())
     }
 
@@ -702,11 +692,6 @@ impl ChatService {
             );
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-
-        tracing::debug!(
-            "Successfully inserted agentic message for thread {}",
-            thread_id
-        );
 
         Ok(message.id)
     }
@@ -733,21 +718,14 @@ impl ChatService {
         // Sort messages chronologically
         messages.sort_by(|a, b| a.created_at.cmp(&b.created_at));
 
-        let memory: Vec<Message> = messages
+        Ok(messages
             .into_iter()
             .map(|message| Message {
                 content: message.content,
                 is_human: message.is_human,
                 created_at: message.created_at,
             })
-            .collect();
-
-        tracing::debug!(
-            "Built conversation memory with {} messages for thread {}",
-            memory.len(),
-            thread_id
-        );
-        Ok(memory)
+            .collect())
     }
 
     fn spawn_execution_task<E: ChatHandler + Send + 'static>(
@@ -768,8 +746,6 @@ impl ChatService {
                     execution_result
                 }
                 _ = context.cancellation_tokens.task_token.cancelled() => {
-                    tracing::info!("Execution cancelled for thread: {}", context.thread.id);
-
                     let cancellation_message = AnswerStream {
                         content: AnswerContent::Text {
                             content: "🔴 Operation cancelled".to_string(),
@@ -867,11 +843,6 @@ impl ChatService {
         message_id: Uuid,
         connection: &sea_orm::DatabaseConnection,
     ) -> Result<(), OxyError> {
-        // Validate output before saving
-        if output.trim().is_empty() {
-            tracing::warn!("Empty output generated for thread {}", thread.id);
-        }
-
         let answer_message = entity::messages::ActiveModel {
             id: ActiveValue::Set(message_id),
             content: ActiveValue::Set(output),
@@ -898,12 +869,6 @@ impl ChatService {
             ))
         })?;
 
-        tracing::info!(
-            "Successfully saved response for thread {} (input_tokens: {}, output_tokens: {})",
-            thread.id,
-            usage.input_tokens,
-            usage.output_tokens
-        );
         Ok(())
     }
 
@@ -989,19 +954,8 @@ impl ChatService {
         let mut thread_model: entity::threads::ActiveModel = thread.clone().into();
         thread_model.is_processing = ActiveValue::Set(false);
 
-        match thread_model.update(connection).await {
-            Ok(_) => {
-                tracing::info!("Successfully unlocked thread {}", thread.id);
-            }
-            Err(e) => {
-                tracing::error!(
-                    "Failed to unlock thread {}: {}. This may cause the thread to remain locked.",
-                    thread.id,
-                    e
-                );
-                // TODO: we might want to implement a background task
-                // to periodically clean up stuck threads.
-            }
+        if let Err(e) = thread_model.update(connection).await {
+            tracing::error!("Failed to unlock thread {}: {}", thread.id, e);
         }
     }
 

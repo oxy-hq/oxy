@@ -103,7 +103,10 @@ pub async fn get_threads(
         .filter(threads::Column::ProjectId.eq(project.id))
         .count(&connection)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            tracing::error!("Failed to count threads: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     if total == 0 {
         return Ok(extract::Json(ThreadsResponse {
@@ -132,7 +135,10 @@ pub async fn get_threads(
         .limit(limit)
         .all(&connection)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            tracing::error!("Failed to fetch threads: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     let thread_items = threads
         .into_iter()
@@ -203,7 +209,10 @@ pub async fn get_thread(
         .filter(threads::Column::UserId.eq(Some(user.id)))
         .one(&connection)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map_err(|e| {
+            tracing::error!("Failed to fetch thread {}: {}", thread_id, e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
         .ok_or(StatusCode::NOT_FOUND)?;
 
     let thread_item = ThreadItem {
@@ -267,10 +276,10 @@ pub async fn create_thread(
         project_id: ActiveValue::Set(project.id),
         sandbox_info: ActiveValue::Set(None),
     };
-    let thread = new_thread
-        .insert(&connection)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let thread = new_thread.insert(&connection).await.map_err(|e| {
+        tracing::error!("Failed to create thread: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let thread_item = ThreadItem {
         id: thread.id.to_string(),
@@ -419,7 +428,10 @@ pub async fn delete_all_threads(
         .filter(threads::Column::ProjectId.eq(project.id))
         .exec(&connection)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            tracing::error!("Failed to delete threads for user {}: {}", user.id, e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     // Note: Only removing charts for this user would require more complex logic
     // For now, we'll keep the current behavior but you may want to change this
@@ -466,7 +478,10 @@ pub async fn stop_thread(
         .filter(threads::Column::UserId.eq(Some(user.id)))
         .one(&connection)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            tracing::error!("Failed to fetch thread {} for stop: {}", thread_id, e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     if thread.is_none() {
         return Err(StatusCode::NOT_FOUND);
@@ -559,7 +574,10 @@ pub async fn bulk_delete_threads(
         )
         .exec(&connection)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            tracing::error!("Failed to bulk delete threads: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     Ok(StatusCode::OK)
 }
@@ -623,7 +641,10 @@ pub async fn get_logs(
         .order_by_desc(logs::Column::CreatedAt)
         .all(&connection)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            tracing::error!("Failed to fetch logs for user {}: {}", user.id, e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     let log_items = logs_with_threads
         .into_iter()

@@ -77,10 +77,10 @@ pub async fn list_apps(
     let config_manager = &project_manager.config_manager;
     let project_path = config_manager.project_path();
 
-    let apps = config_manager
-        .list_apps()
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let apps = config_manager.list_apps().await.map_err(|e| {
+        tracing::error!("Failed to list apps: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let app_items: Vec<AppItem> = apps
         .iter()
