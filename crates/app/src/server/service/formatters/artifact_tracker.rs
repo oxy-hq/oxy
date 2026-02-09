@@ -144,7 +144,31 @@ impl ArtifactTracker {
     }
 
     fn create_sql_artifact(children: &[Block]) -> Result<Option<ArtifactContent>, OxyError> {
-        if let Some(Block { id: _, value }) = children.last() {
+        // Helper to find Table or SQL content recursively
+        fn find_sql_content(blocks: &[Block]) -> Option<&Block> {
+            for block in blocks.iter().rev() {
+                match &*block.value {
+                    BlockValue::Content {
+                        content: Content::Table(_),
+                    }
+                    | BlockValue::Content {
+                        content: Content::SQL(_),
+                    } => {
+                        return Some(block);
+                    }
+                    BlockValue::Children { children, .. } => {
+                        // Recursively search in nested containers
+                        if let Some(found) = find_sql_content(children) {
+                            return Some(found);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+
+        if let Some(Block { id, value }) = find_sql_content(children) {
             return match &**value {
                 BlockValue::Content {
                     content: Content::Table(table),
@@ -174,7 +198,27 @@ impl ArtifactTracker {
     fn create_semantic_query_artifact(
         children: &[Block],
     ) -> Result<Option<ArtifactContent>, OxyError> {
-        if let Some(Block { id: _, value }) = children.last() {
+        // Helper to find SemanticQuery content recursively
+        fn find_semantic_query_content(blocks: &[Block]) -> Option<&Block> {
+            for block in blocks.iter().rev() {
+                match &*block.value {
+                    BlockValue::Content {
+                        content: Content::SemanticQuery(_),
+                    } => {
+                        return Some(block);
+                    }
+                    BlockValue::Children { children, .. } => {
+                        if let Some(found) = find_semantic_query_content(children) {
+                            return Some(found);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+
+        if let Some(Block { id, value }) = find_semantic_query_content(children) {
             return match &**value {
                 BlockValue::Content {
                     content: Content::SemanticQuery(semantic_query),
@@ -204,21 +248,35 @@ impl ArtifactTracker {
             sql: "".to_string(),
         };
 
-        let params_block = children
-            .iter()
-            .find(|c| {
-                if let BlockValue::Content {
-                    content: Content::OmniQuery(_),
-                } = &*c.value
-                {
-                    true
-                } else {
-                    false
+        fn find_content<'a, F>(blocks: &'a [Block], predicate: F) -> Option<&'a Block>
+        where
+            F: Fn(&Block) -> bool + Copy,
+        {
+            for block in blocks.iter() {
+                if predicate(block) {
+                    return Some(block);
                 }
-            })
-            .ok_or_else(|| {
-                OxyError::RuntimeError("OmniQuery block not found in children".to_string())
-            })?;
+                if let BlockValue::Children { children, .. } = &*block.value {
+                    if let Some(found) = find_content(children, predicate) {
+                        return Some(found);
+                    }
+                }
+            }
+            None
+        }
+
+        // Find OmniQuery params block
+        let params_block = find_content(children, |b| {
+            matches!(
+                &*b.value,
+                BlockValue::Content {
+                    content: Content::OmniQuery(_)
+                }
+            )
+        })
+        .ok_or_else(|| {
+            OxyError::RuntimeError("OmniQuery block not found in children".to_string())
+        })?;
 
         let params_content = if let BlockValue::Content {
             content: Content::OmniQuery(params),
@@ -249,20 +307,24 @@ impl ArtifactTracker {
                 .collect()
         });
 
-        if let Some(Block { id: _, value }) = children.last() {
-            return match &**value {
+        // Find Table content recursively
+        if let Some(table_block) = find_content(children, |b| {
+            matches!(
+                &*b.value,
                 BlockValue::Content {
-                    content: Content::Table(table),
-                } => {
-                    let (table_2d_array, _is_truncated) = table.to_2d_array()?;
-
-                    artifact_content.sql = table.get_sql_query().unwrap_or_default();
-                    artifact_content.result = table_2d_array;
-
-                    Ok(Some(ArtifactContent::OmniQuery(artifact_content)))
+                    content: Content::Table(_)
                 }
-                _ => Ok(None),
-            };
+            )
+        }) {
+            if let BlockValue::Content {
+                content: Content::Table(table),
+            } = &*table_block.value
+            {
+                let (table_2d_array, _is_truncated) = table.to_2d_array()?;
+                artifact_content.sql = table.get_sql_query().unwrap_or_default();
+                artifact_content.result = table_2d_array;
+                return Ok(Some(ArtifactContent::OmniQuery(artifact_content)));
+            }
         }
         Ok(None)
     }
@@ -270,11 +332,30 @@ impl ArtifactTracker {
     fn create_sandbox_app_artifact(
         children: &[Block],
     ) -> Result<Option<ArtifactContent>, OxyError> {
-        // Look for SandboxApp content in children blocks
-        for child in children.iter().rev() {
+        // Helper to find SandboxInfo content recursively
+        fn find_sandbox_info(blocks: &[Block]) -> Option<&Block> {
+            for block in blocks.iter().rev() {
+                match &*block.value {
+                    BlockValue::Content {
+                        content: Content::SandboxInfo(_),
+                    } => {
+                        return Some(block);
+                    }
+                    BlockValue::Children { children, .. } => {
+                        if let Some(found) = find_sandbox_info(children) {
+                            return Some(found);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+
+        if let Some(block) = find_sandbox_info(children) {
             if let BlockValue::Content {
                 content: Content::SandboxInfo(SandboxInfo { preview_url, kind }),
-            } = &*child.value
+            } = &*block.value
             {
                 return Ok(Some(ArtifactContent::SandboxInfo(SandboxInfo {
                     kind: kind.clone(),
