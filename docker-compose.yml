@@ -27,12 +27,12 @@ services:
   #       condition: service_healthy
 
   clickhouse:
-    image: clickhouse/clickhouse-server:latest
+    image: clickhouse/clickhouse-server:25.12.5.44
     container_name: oxy-clickhouse
     hostname: clickhouse
     ports:
-      - "8123:8123"  # HTTP interface
-      - "9000:9000"  # Native client
+      - "8123:8123" # HTTP interface
+      - "9000:9000" # Native client
     environment:
       CLICKHOUSE_DB: otel
       CLICKHOUSE_USER: default
@@ -53,9 +53,9 @@ services:
     volumes:
       - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
     ports:
-      - "4317:4317"   # OTLP gRPC receiver
-      - "4318:4318"   # OTLP HTTP receiver
-      - "8888:8888"   # Prometheus metrics
+      - "4317:4317" # OTLP gRPC receiver
+      - "4318:4318" # OTLP HTTP receiver
+      - "8888:8888" # Prometheus metrics
     depends_on:
       clickhouse:
         condition: service_healthy

@@ -7,6 +7,32 @@ use opentelemetry_sdk::{
 use std::time::Duration;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
+const DEFAULT_LOG_LEVEL: &str = "warn";
+
+/// Build an EnvFilter, falling back to DEFAULT_LOG_LEVEL if OXY_LOG_LEVEL is invalid
+fn build_env_filter() -> EnvFilter {
+    // First try RUST_LOG (standard env var)
+    if let Ok(filter) = EnvFilter::try_from_default_env() {
+        return filter.add_directive("deser_incomplete=off".parse().unwrap());
+    }
+
+    // Then try OXY_LOG_LEVEL with validation
+    let level = std::env::var("OXY_LOG_LEVEL").unwrap_or_else(|_| DEFAULT_LOG_LEVEL.to_string());
+
+    match EnvFilter::try_new(&level) {
+        Ok(filter) => filter.add_directive("deser_incomplete=off".parse().unwrap()),
+        Err(_) => {
+            eprintln!(
+                "Warning: Invalid OXY_LOG_LEVEL='{}', falling back to '{}'",
+                level, DEFAULT_LOG_LEVEL
+            );
+            EnvFilter::try_new(DEFAULT_LOG_LEVEL)
+                .unwrap()
+                .add_directive("deser_incomplete=off".parse().unwrap())
+        }
+    }
+}
+
 /// Initialize OTLP exporter (for Jaeger, ClickHouse, etc.)
 ///
 /// # Example
@@ -62,18 +88,13 @@ pub fn init_otlp(endpoint: &str) -> Result<(), opentelemetry::trace::TraceError>
         // Propagate exception details to span attributes
         .with_error_fields_to_exceptions(true);
 
-    let env_filter = EnvFilter::try_from_default_env()
-        .or_else(|_| EnvFilter::try_new("info"))
-        .unwrap()
-        .add_directive("deser_incomplete=off".parse().unwrap()); // Completely mute deser_incomplete logging
-
     tracing_subscriber::registry()
-        .with(env_filter)
+        .with(build_env_filter())
         .with(tracing_subscriber::fmt::layer())
         .with(telemetry_layer)
         .init();
 
-    tracing::info!("OTLP tracing initialized: {}", endpoint);
+    tracing::debug!("OTLP tracing initialized: {}", endpoint);
     Ok(())
 }
 
@@ -88,13 +109,8 @@ pub fn init_telemetry() -> Result<(), opentelemetry::trace::TraceError> {
 
 /// Initialize stdout logging only (no OTLP export)
 pub fn init_stdout() {
-    let env_filter = EnvFilter::try_from_default_env()
-        .or_else(|_| EnvFilter::try_new("info"))
-        .unwrap()
-        .add_directive("deser_incomplete=off".parse().unwrap()); // Completely mute deser_incomplete logging
-
     tracing_subscriber::registry()
-        .with(env_filter)
+        .with(build_env_filter())
         .with(tracing_subscriber::fmt::layer())
         .init();
 }

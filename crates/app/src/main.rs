@@ -38,9 +38,9 @@ fn init_tracing_logging(log_to_stdout: bool) {
     let log_format = LogFormat::detect();
     let is_cloud = LogFormat::is_cloud();
 
-    // In cloud, default to WARN level unless explicitly overridden
-    // In local, default to INFO for better debugging
-    let default_level = if is_cloud { "warn" } else { "info" };
+    // Default to WARN level for minimal output in both cloud and local
+    // Use OXY_LOG_LEVEL=info or OXY_LOG_LEVEL=debug for verbose output
+    let default_level = "warn";
     let log_level = env::var("OXY_LOG_LEVEL")
         .as_deref()
         .unwrap_or(default_level)

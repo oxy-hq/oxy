@@ -28,7 +28,7 @@ pub const POSTGRES_READY_TIMEOUT_SECS: u64 = 30;
 
 /// Docker ClickHouse configuration constants
 const CLICKHOUSE_CONTAINER_NAME: &str = "oxy-clickhouse";
-const CLICKHOUSE_IMAGE: &str = "clickhouse/clickhouse-server:latest";
+const CLICKHOUSE_IMAGE: &str = "clickhouse/clickhouse-server:25.12.5.44";
 const CLICKHOUSE_HTTP_PORT: u16 = 8123;
 const CLICKHOUSE_NATIVE_PORT: u16 = 9000;
 const CLICKHOUSE_USER: &str = "default";
@@ -152,6 +152,31 @@ pub async fn check_docker_available() -> Result<(), OxyError> {
     Ok(())
 }
 
+/// Pull a Docker image if not already present
+async fn pull_image(docker: &Docker, image: &str) -> Result<(), OxyError> {
+    let create_image_options = CreateImageOptions {
+        from_image: Some(image.to_string()),
+        ..Default::default()
+    };
+
+    let mut pull_stream = docker.create_image(Some(create_image_options), None, None);
+    while let Some(result) = pull_stream.next().await {
+        match result {
+            Ok(info) => {
+                if let Some(status) = info.status
+                    && (status.contains("Downloaded") || status.contains("Pulling"))
+                {
+                    tracing::debug!("{}", status);
+                }
+            }
+            Err(e) => {
+                warn!("Image pull warning: {}", e);
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Check if the PostgreSQL container is running
 pub async fn is_postgres_container_running() -> Result<bool, OxyError> {
     let docker = get_docker_client().await?;
@@ -180,137 +205,66 @@ pub async fn is_postgres_container_running() -> Result<bool, OxyError> {
     }))
 }
 
-/// Check if the PostgreSQL container exists (running or stopped)
-async fn is_postgres_container_exists() -> Result<bool, OxyError> {
+/// Start the PostgreSQL container and return the connection string.
+/// Containers are cleaned before startup, so this always creates fresh.
+pub async fn start_postgres_container() -> Result<String, OxyError> {
+    info!("Creating PostgreSQL container...");
     let docker = get_docker_client().await?;
 
-    let mut filters = HashMap::new();
-    filters.insert(
-        "name".to_string(),
-        vec![POSTGRES_CONTAINER_NAME.to_string()],
+    // Pull the image (if not already present)
+    pull_image(&docker, POSTGRES_IMAGE).await?;
+
+    // Configure port bindings
+    let mut port_bindings = HashMap::new();
+    port_bindings.insert(
+        "5432/tcp".to_string(),
+        Some(vec![PortBinding {
+            host_ip: Some("0.0.0.0".to_string()),
+            host_port: Some(POSTGRES_PORT.to_string()),
+        }]),
     );
 
-    let options = ListContainersOptions {
-        all: true, // Include stopped containers
-        filters: Some(filters),
+    // Configure volume bindings
+    let binds = vec![format!("{}:/var/lib/postgresql/data", POSTGRES_VOLUME)];
+
+    let host_config = HostConfig {
+        port_bindings: Some(port_bindings),
+        binds: Some(binds),
         ..Default::default()
     };
 
-    let containers = docker
-        .list_containers(Some(options))
+    // Configure environment variables
+    let env: Vec<String> = vec![
+        format!("POSTGRES_USER={}", POSTGRES_USERNAME),
+        format!("POSTGRES_PASSWORD={}", POSTGRES_PASSWORD),
+        format!("POSTGRES_DB={}", POSTGRES_DATABASE),
+    ];
+
+    // Create container configuration
+    let config = ContainerCreateBody {
+        image: Some(POSTGRES_IMAGE.to_string()),
+        env: Some(env),
+        host_config: Some(host_config),
+        ..Default::default()
+    };
+
+    let options = CreateContainerOptions {
+        name: Some(POSTGRES_CONTAINER_NAME.to_string()),
+        ..Default::default()
+    };
+
+    // Create and start the container
+    docker
+        .create_container(Some(options), config)
         .await
-        .map_err(|e| OxyError::InitializationError(format!("Failed to list containers: {}", e)))?;
+        .map_err(|e| OxyError::InitializationError(format!("Failed to create container: {}", e)))?;
 
-    Ok(!containers.is_empty())
-}
+    docker
+        .start_container(POSTGRES_CONTAINER_NAME, None::<StartContainerOptions>)
+        .await
+        .map_err(|e| OxyError::InitializationError(format!("Failed to start container: {}", e)))?;
 
-/// Start the PostgreSQL container and return the connection string
-pub async fn start_postgres_container() -> Result<String, OxyError> {
-    info!("Starting Docker PostgreSQL container...");
-    let docker = get_docker_client().await?;
-
-    // Check if container exists
-    if is_postgres_container_exists().await? {
-        info!("PostgreSQL container already exists");
-
-        // Check if it's running
-        if is_postgres_container_running().await? {
-            info!("PostgreSQL container is already running");
-        } else {
-            info!("Starting existing PostgreSQL container...");
-            docker
-                .start_container(POSTGRES_CONTAINER_NAME, None::<StartContainerOptions>)
-                .await
-                .map_err(|e| {
-                    OxyError::InitializationError(format!(
-                        "Failed to start existing container: {}",
-                        e
-                    ))
-                })?;
-            info!("Existing PostgreSQL container started");
-        }
-    } else {
-        info!("Creating new PostgreSQL container...");
-
-        // Pull the image first (if not already present)
-        info!("Pulling PostgreSQL image (if not already present)...");
-        let create_image_options = CreateImageOptions {
-            from_image: Some(POSTGRES_IMAGE.to_string()),
-            ..Default::default()
-        };
-
-        let mut pull_stream = docker.create_image(Some(create_image_options), None, None);
-        while let Some(result) = pull_stream.next().await {
-            match result {
-                Ok(info) => {
-                    if let Some(status) = info.status
-                        && (status.contains("Downloaded") || status.contains("Pulling"))
-                    {
-                        tracing::debug!("{}", status);
-                    }
-                }
-                Err(e) => {
-                    warn!("Image pull warning: {}", e);
-                }
-            }
-        }
-
-        // Configure port bindings
-        let mut port_bindings = HashMap::new();
-        port_bindings.insert(
-            "5432/tcp".to_string(),
-            Some(vec![PortBinding {
-                host_ip: Some("0.0.0.0".to_string()),
-                host_port: Some(POSTGRES_PORT.to_string()),
-            }]),
-        );
-
-        // Configure volume bindings
-        let binds = vec![format!("{}:/var/lib/postgresql/data", POSTGRES_VOLUME)];
-
-        let host_config = HostConfig {
-            port_bindings: Some(port_bindings),
-            binds: Some(binds),
-            ..Default::default()
-        };
-
-        // Configure environment variables
-        let env: Vec<String> = vec![
-            format!("POSTGRES_USER={}", POSTGRES_USERNAME),
-            format!("POSTGRES_PASSWORD={}", POSTGRES_PASSWORD),
-            format!("POSTGRES_DB={}", POSTGRES_DATABASE),
-        ];
-
-        // Create container configuration
-        let config = ContainerCreateBody {
-            image: Some(POSTGRES_IMAGE.to_string()),
-            env: Some(env),
-            host_config: Some(host_config),
-            ..Default::default()
-        };
-
-        let options = CreateContainerOptions {
-            name: Some(POSTGRES_CONTAINER_NAME.to_string()),
-            ..Default::default()
-        };
-
-        // Create and start the container
-        docker
-            .create_container(Some(options), config)
-            .await
-            .map_err(|e| {
-                OxyError::InitializationError(format!("Failed to create container: {}", e))
-            })?;
-
-        docker
-            .start_container(POSTGRES_CONTAINER_NAME, None::<StartContainerOptions>)
-            .await
-            .map_err(|e| {
-                OxyError::InitializationError(format!("Failed to start container: {}", e))
-            })?;
-
-        info!("PostgreSQL container created and started successfully");
-    }
+    info!("PostgreSQL container started successfully");
 
     // Generate connection string
     let connection_string = format!(
@@ -415,47 +369,42 @@ pub async fn wait_for_postgres_ready(timeout_secs: u64) -> Result<(), OxyError> 
     }
 }
 
-/// Stop the PostgreSQL container
+/// Stop the PostgreSQL container (handles non-existent/stopped containers gracefully)
 pub async fn stop_postgres_container() -> Result<(), OxyError> {
-    if !is_postgres_container_running().await? {
-        info!("PostgreSQL container is not running, nothing to stop");
-        return Ok(());
-    }
-
-    info!("Stopping PostgreSQL container...");
     let docker = get_docker_client().await?;
-
-    // Stop the container with a grace period of 10 seconds
     let options = StopContainerOptions {
-        t: Some(10),
+        t: Some(5),
         signal: None,
     };
 
-    docker
+    match docker
         .stop_container(POSTGRES_CONTAINER_NAME, Some(options))
         .await
-        .map_err(|e| OxyError::InitializationError(format!("Failed to stop container: {}", e)))?;
-
-    info!("PostgreSQL container stopped successfully");
-    Ok(())
+    {
+        Ok(_) => {
+            info!("PostgreSQL container stopped");
+            Ok(())
+        }
+        Err(bollard::errors::Error::DockerResponseServerError {
+            status_code: 404, ..
+        })
+        | Err(bollard::errors::Error::DockerResponseServerError {
+            status_code: 304, ..
+        }) => {
+            // 404 = not found, 304 = already stopped
+            Ok(())
+        }
+        Err(e) => {
+            warn!("Failed to stop PostgreSQL container: {}", e);
+            Ok(()) // Don't fail on stop errors
+        }
+    }
 }
 
 /// Remove the PostgreSQL container (useful for cleanup or troubleshooting)
 #[allow(dead_code)]
 pub async fn remove_postgres_container() -> Result<(), OxyError> {
-    if !is_postgres_container_exists().await? {
-        info!("PostgreSQL container does not exist, nothing to remove");
-        return Ok(());
-    }
-
-    // Stop first if running
-    if is_postgres_container_running().await? {
-        stop_postgres_container().await?;
-    }
-
-    info!("Removing PostgreSQL container...");
     let docker = get_docker_client().await?;
-
     let options = RemoveContainerOptions {
         force: true,
         ..Default::default()
@@ -501,98 +450,14 @@ async fn ensure_enterprise_network() -> Result<(), OxyError> {
     Ok(())
 }
 
-/// Check if a container exists (running or stopped)
-async fn is_container_exists(container_name: &str) -> Result<bool, OxyError> {
-    let docker = get_docker_client().await?;
-
-    let mut filters = HashMap::new();
-    filters.insert("name".to_string(), vec![container_name.to_string()]);
-
-    let options = ListContainersOptions {
-        all: true,
-        filters: Some(filters),
-        ..Default::default()
-    };
-
-    let containers = docker
-        .list_containers(Some(options))
-        .await
-        .map_err(|e| OxyError::InitializationError(format!("Failed to list containers: {}", e)))?;
-
-    Ok(!containers.is_empty())
-}
-
-/// Check if a container is running
-async fn is_container_running(container_name: &str) -> Result<bool, OxyError> {
-    let docker = get_docker_client().await?;
-
-    let mut filters = HashMap::new();
-    filters.insert("name".to_string(), vec![container_name.to_string()]);
-
-    let options = ListContainersOptions {
-        filters: Some(filters),
-        ..Default::default()
-    };
-
-    let containers = docker
-        .list_containers(Some(options))
-        .await
-        .map_err(|e| OxyError::InitializationError(format!("Failed to list containers: {}", e)))?;
-
-    Ok(containers.iter().any(|c| {
-        c.state
-            .as_ref()
-            .is_some_and(|s| *s == ContainerSummaryStateEnum::RUNNING)
-    }))
-}
-
-/// Start the ClickHouse container
+/// Start the ClickHouse container.
+/// Containers are cleaned before startup, so this always creates fresh.
 pub async fn start_clickhouse_container() -> Result<(), OxyError> {
-    info!("Starting Docker ClickHouse container...");
+    info!("Creating ClickHouse container...");
     let docker = get_docker_client().await?;
 
     ensure_enterprise_network().await?;
-
-    if is_container_exists(CLICKHOUSE_CONTAINER_NAME).await? {
-        if is_container_running(CLICKHOUSE_CONTAINER_NAME).await? {
-            info!("ClickHouse container is already running");
-            return Ok(());
-        }
-        info!("Starting existing ClickHouse container...");
-        docker
-            .start_container(CLICKHOUSE_CONTAINER_NAME, None::<StartContainerOptions>)
-            .await
-            .map_err(|e| {
-                OxyError::InitializationError(format!(
-                    "Failed to start existing ClickHouse container: {}",
-                    e
-                ))
-            })?;
-        return Ok(());
-    }
-
-    // Pull the image
-    info!("Pulling ClickHouse image...");
-    let create_image_options = CreateImageOptions {
-        from_image: Some(CLICKHOUSE_IMAGE.to_string()),
-        ..Default::default()
-    };
-
-    let mut pull_stream = docker.create_image(Some(create_image_options), None, None);
-    while let Some(result) = pull_stream.next().await {
-        match result {
-            Ok(info) => {
-                if let Some(status) = info.status
-                    && (status.contains("Downloaded") || status.contains("Pulling"))
-                {
-                    tracing::debug!("{}", status);
-                }
-            }
-            Err(e) => {
-                warn!("Image pull warning: {}", e);
-            }
-        }
-    }
+    pull_image(&docker, CLICKHOUSE_IMAGE).await?;
 
     // Configure port bindings
     let mut port_bindings = HashMap::new();
@@ -715,53 +580,14 @@ pub async fn wait_for_clickhouse_ready(timeout_secs: u64) -> Result<(), OxyError
     }
 }
 
-/// Start the OpenTelemetry Collector container
+/// Start the OpenTelemetry Collector container.
+/// Containers are cleaned before startup, so this always creates fresh.
 pub async fn start_otel_collector_container() -> Result<(), OxyError> {
-    info!("Starting Docker OTel Collector container...");
+    info!("Creating OTel Collector container...");
     let docker = get_docker_client().await?;
 
     ensure_enterprise_network().await?;
-
-    if is_container_exists(OTEL_CONTAINER_NAME).await? {
-        if is_container_running(OTEL_CONTAINER_NAME).await? {
-            info!("OTel Collector container is already running");
-            return Ok(());
-        }
-        info!("Starting existing OTel Collector container...");
-        docker
-            .start_container(OTEL_CONTAINER_NAME, None::<StartContainerOptions>)
-            .await
-            .map_err(|e| {
-                OxyError::InitializationError(format!(
-                    "Failed to start existing OTel Collector container: {}",
-                    e
-                ))
-            })?;
-        return Ok(());
-    }
-
-    // Pull the image
-    info!("Pulling OTel Collector image...");
-    let create_image_options = CreateImageOptions {
-        from_image: Some(OTEL_IMAGE.to_string()),
-        ..Default::default()
-    };
-
-    let mut pull_stream = docker.create_image(Some(create_image_options), None, None);
-    while let Some(result) = pull_stream.next().await {
-        match result {
-            Ok(info) => {
-                if let Some(status) = info.status
-                    && (status.contains("Downloaded") || status.contains("Pulling"))
-                {
-                    tracing::debug!("{}", status);
-                }
-            }
-            Err(e) => {
-                warn!("Image pull warning: {}", e);
-            }
-        }
-    }
+    pull_image(&docker, OTEL_IMAGE).await?;
 
     // Use otel-collector-config.yaml from the working directory if available,
     // otherwise fall back to the embedded default written to a temp file.
@@ -855,149 +681,77 @@ pub async fn start_otel_collector_container() -> Result<(), OxyError> {
     Ok(())
 }
 
-/// Stop the ClickHouse container
+/// Stop the ClickHouse container (handles non-existent/stopped containers gracefully)
 pub async fn stop_clickhouse_container() -> Result<(), OxyError> {
-    if !is_container_running(CLICKHOUSE_CONTAINER_NAME).await? {
-        info!("ClickHouse container is not running, nothing to stop");
-        return Ok(());
-    }
-
-    info!("Stopping ClickHouse container...");
     let docker = get_docker_client().await?;
-
-    let options = StopContainerOptions {
-        t: Some(10),
-        signal: None,
-    };
-
-    docker
-        .stop_container(CLICKHOUSE_CONTAINER_NAME, Some(options))
-        .await
-        .map_err(|e| {
-            OxyError::InitializationError(format!("Failed to stop ClickHouse container: {}", e))
-        })?;
-
-    info!("ClickHouse container stopped successfully");
-    Ok(())
-}
-
-/// Stop the OTel Collector container
-pub async fn stop_otel_collector_container() -> Result<(), OxyError> {
-    if !is_container_running(OTEL_CONTAINER_NAME).await? {
-        info!("OTel Collector container is not running, nothing to stop");
-        return Ok(());
-    }
-
-    info!("Stopping OTel Collector container...");
-    let docker = get_docker_client().await?;
-
     let options = StopContainerOptions {
         t: Some(5),
         signal: None,
     };
 
-    docker
-        .stop_container(OTEL_CONTAINER_NAME, Some(options))
+    match docker
+        .stop_container(CLICKHOUSE_CONTAINER_NAME, Some(options))
         .await
-        .map_err(|e| {
-            OxyError::InitializationError(format!("Failed to stop OTel Collector container: {}", e))
-        })?;
-
-    info!("OTel Collector container stopped successfully");
-    Ok(())
+    {
+        Ok(_) => {
+            info!("ClickHouse container stopped");
+            Ok(())
+        }
+        Err(bollard::errors::Error::DockerResponseServerError {
+            status_code: 404, ..
+        })
+        | Err(bollard::errors::Error::DockerResponseServerError {
+            status_code: 304, ..
+        }) => Ok(()),
+        Err(e) => {
+            warn!("Failed to stop ClickHouse container: {}", e);
+            Ok(())
+        }
+    }
 }
 
-/// Start the Cube.js semantic engine container
+/// Stop the OTel Collector container (handles non-existent/stopped containers gracefully)
+pub async fn stop_otel_collector_container() -> Result<(), OxyError> {
+    let docker = get_docker_client().await?;
+    let options = StopContainerOptions {
+        t: Some(5),
+        signal: None,
+    };
+
+    match docker
+        .stop_container(OTEL_CONTAINER_NAME, Some(options))
+        .await
+    {
+        Ok(_) => {
+            info!("OTel Collector container stopped");
+            Ok(())
+        }
+        Err(bollard::errors::Error::DockerResponseServerError {
+            status_code: 404, ..
+        })
+        | Err(bollard::errors::Error::DockerResponseServerError {
+            status_code: 304, ..
+        }) => Ok(()),
+        Err(e) => {
+            warn!("Failed to stop OTel Collector container: {}", e);
+            Ok(())
+        }
+    }
+}
+
+/// Start the Cube.js semantic engine container.
+/// Containers are cleaned before startup, so this always creates fresh.
 pub async fn start_cubejs_container(
     cube_config_dir: String,
     project_path: String,
     dev_mode: bool,
     log_level: String,
 ) -> Result<(), OxyError> {
-    info!("Starting Docker Cube.js container...");
+    info!("Creating Cube.js container...");
     let docker = get_docker_client().await?;
 
     ensure_enterprise_network().await?;
-
-    // Check if container exists and validate volume mounts
-    if is_container_exists(CUBEJS_CONTAINER_NAME).await? {
-        // Inspect the container to get its current configuration
-        let inspect = docker
-            .inspect_container(CUBEJS_CONTAINER_NAME, None::<InspectContainerOptions>)
-            .await
-            .map_err(|e| {
-                OxyError::InitializationError(format!("Failed to inspect Cube.js container: {}", e))
-            })?;
-
-        // Check if the current volume mounts match what we need
-        let expected_binds = vec![
-            format!("{}:/cube/conf", cube_config_dir),
-            format!("{}/.db:/cube/.db", project_path),
-        ];
-
-        let current_binds = inspect
-            .host_config
-            .as_ref()
-            .and_then(|hc| hc.binds.as_ref())
-            .map(|b| b.clone())
-            .unwrap_or_default();
-
-        // Compare binds: if they match, just start the container if needed
-        let binds_match = expected_binds.len() == current_binds.len()
-            && expected_binds
-                .iter()
-                .all(|bind| current_binds.contains(bind));
-
-        if binds_match {
-            if is_container_running(CUBEJS_CONTAINER_NAME).await? {
-                info!("Cube.js container is already running with correct volume mounts");
-                return Ok(());
-            }
-            info!("Starting existing Cube.js container with correct volume mounts...");
-            docker
-                .start_container(CUBEJS_CONTAINER_NAME, None::<StartContainerOptions>)
-                .await
-                .map_err(|e| {
-                    OxyError::InitializationError(format!(
-                        "Failed to start existing Cube.js container: {}",
-                        e
-                    ))
-                })?;
-            return Ok(());
-        } else {
-            // Volume mounts don't match - need to recreate the container
-            info!("Cube.js container has different volume mounts, recreating...");
-            info!(
-                "Expected binds: {:?}, Current binds: {:?}",
-                expected_binds, current_binds
-            );
-            remove_container(&docker, CUBEJS_CONTAINER_NAME).await?;
-            // Continue to create new container below
-        }
-    }
-
-    // Pull the image
-    info!("Pulling Cube.js image...");
-    let create_image_options = CreateImageOptions {
-        from_image: Some(CUBEJS_IMAGE.to_string()),
-        ..Default::default()
-    };
-
-    let mut pull_stream = docker.create_image(Some(create_image_options), None, None);
-    while let Some(result) = pull_stream.next().await {
-        match result {
-            Ok(info) => {
-                if let Some(status) = info.status
-                    && (status.contains("Downloaded") || status.contains("Pulling"))
-                {
-                    tracing::debug!("{}", status);
-                }
-            }
-            Err(e) => {
-                warn!("Image pull warning: {}", e);
-            }
-        }
-    }
+    pull_image(&docker, CUBEJS_IMAGE).await?;
 
     // Configure port bindings
     let mut port_bindings = HashMap::new();
@@ -1127,30 +881,33 @@ pub async fn wait_for_cubejs_ready(timeout_secs: u64) -> Result<(), OxyError> {
     }
 }
 
-/// Stop the Cube.js container
+/// Stop the Cube.js container (handles non-existent/stopped containers gracefully)
 pub async fn stop_cubejs_container() -> Result<(), OxyError> {
-    if !is_container_running(CUBEJS_CONTAINER_NAME).await? {
-        info!("Cube.js container is not running, nothing to stop");
-        return Ok(());
-    }
-
-    info!("Stopping Cube.js container...");
     let docker = get_docker_client().await?;
-
     let options = StopContainerOptions {
         t: Some(5),
         signal: None,
     };
 
-    docker
+    match docker
         .stop_container(CUBEJS_CONTAINER_NAME, Some(options))
         .await
-        .map_err(|e| {
-            OxyError::InitializationError(format!("Failed to stop Cube.js container: {}", e))
-        })?;
-
-    info!("Cube.js container stopped successfully");
-    Ok(())
+    {
+        Ok(_) => {
+            info!("Cube.js container stopped");
+            Ok(())
+        }
+        Err(bollard::errors::Error::DockerResponseServerError {
+            status_code: 404, ..
+        })
+        | Err(bollard::errors::Error::DockerResponseServerError {
+            status_code: 304, ..
+        }) => Ok(()),
+        Err(e) => {
+            warn!("Failed to stop Cube.js container: {}", e);
+            Ok(())
+        }
+    }
 }
 
 /// Stop all enterprise containers (ClickHouse + OTel Collector + Cube.js)
@@ -1168,37 +925,40 @@ pub async fn stop_enterprise_containers() -> Result<(), OxyError> {
     Ok(())
 }
 
-/// Remove a container by name (stop first if running, then remove)
-async fn remove_container(docker: &Docker, name: &str) -> Result<(), OxyError> {
-    if !is_container_exists(name).await? {
-        return Ok(());
-    }
-
-    // Stop if running
-    if is_container_running(name).await? {
-        let stop_opts = StopContainerOptions {
-            t: Some(5),
-            signal: None,
-        };
-        if let Err(e) = docker.stop_container(name, Some(stop_opts)).await {
-            warn!("Failed to stop container '{}': {}", name, e);
+/// Cleanup all oxy-managed containers (stop and remove).
+/// Called on startup and shutdown to ensure clean state.
+/// Does NOT remove volumes or networks - use clean_all() for that.
+/// Errors are logged but not propagated (cleanup should not block shutdown).
+pub async fn cleanup_containers() {
+    let docker = match get_docker_client().await {
+        Ok(d) => d,
+        Err(e) => {
+            warn!("Could not connect to Docker during cleanup: {}", e);
+            return;
         }
-    }
+    };
 
-    // Remove
+    // Remove all containers (order: otel → cubejs → clickhouse → postgres)
+    remove_container(&docker, OTEL_CONTAINER_NAME).await;
+    remove_container(&docker, CUBEJS_CONTAINER_NAME).await;
+    remove_container(&docker, CLICKHOUSE_CONTAINER_NAME).await;
+    remove_container(&docker, POSTGRES_CONTAINER_NAME).await;
+}
+
+/// Remove a container by name (force remove, handles non-existent containers gracefully)
+async fn remove_container(docker: &Docker, name: &str) {
     let remove_opts = RemoveContainerOptions {
         force: true,
         ..Default::default()
     };
-    docker
-        .remove_container(name, Some(remove_opts))
-        .await
-        .map_err(|e| {
-            OxyError::InitializationError(format!("Failed to remove container '{}': {}", name, e))
-        })?;
 
-    info!("Removed container '{}'", name);
-    Ok(())
+    match docker.remove_container(name, Some(remove_opts)).await {
+        Ok(_) => info!("Removed container '{}'", name),
+        Err(bollard::errors::Error::DockerResponseServerError {
+            status_code: 404, ..
+        }) => {} // Container doesn't exist, that's fine
+        Err(e) => warn!("Failed to remove container '{}': {}", name, e),
+    }
 }
 
 /// Remove a Docker volume by name
@@ -1222,7 +982,7 @@ async fn remove_volume(docker: &Docker, name: &str) -> Result<(), OxyError> {
     }
 }
 
-/// Remove the enterprise Docker network
+/// Remove the enterprise Docker network.
 async fn remove_enterprise_network(docker: &Docker) -> Result<(), OxyError> {
     match docker.remove_network(ENTERPRISE_NETWORK).await {
         Ok(_) => {
@@ -1246,13 +1006,13 @@ pub async fn clean_all(enterprise: bool) -> Result<(), OxyError> {
 
     if enterprise {
         // Remove enterprise containers (order: otel → cubejs → clickhouse)
-        remove_container(&docker, OTEL_CONTAINER_NAME).await?;
-        remove_container(&docker, CUBEJS_CONTAINER_NAME).await?;
-        remove_container(&docker, CLICKHOUSE_CONTAINER_NAME).await?;
+        remove_container(&docker, OTEL_CONTAINER_NAME).await;
+        remove_container(&docker, CUBEJS_CONTAINER_NAME).await;
+        remove_container(&docker, CLICKHOUSE_CONTAINER_NAME).await;
     }
 
     // Remove postgres container
-    remove_container(&docker, POSTGRES_CONTAINER_NAME).await?;
+    remove_container(&docker, POSTGRES_CONTAINER_NAME).await;
 
     if enterprise {
         // Remove enterprise volumes

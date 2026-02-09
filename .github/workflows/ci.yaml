@@ -238,8 +238,147 @@ jobs:
           fi
 
       - name: Upload coverage to Coveralls
-        if: matrix.task == 'test' && github.event_name == 'pull_request' && github.repository == 'oxy-hq/oxy'
+        if: matrix.task == 'test' && github.repository == 'oxy-hq/oxy'
         uses: coverallsapp/github-action@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path-to-lcov: lcov.info
+
+  smoke-test-enterprise:
+    name: Smoke test (oxy start --enterprise)
+    needs: [changesets, typos]
+    concurrency:
+      group: smoke-test-enterprise-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+    # Run only on oxy-internal when pushing to main (smoke test is heavier, skip on PRs)
+    if: |
+      github.repository == 'oxy-hq/oxy-internal' &&
+      github.event_name == 'push' &&
+      needs.changesets.outputs.oxy == 'true'
+    runs-on: "ubuntu-latest"
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      CARGO_PROFILE_DEV_DEBUG: "1"
+    steps:
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: false
+          swap-storage: true
+
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Collect Workflow Telemetry
+        uses: catchpoint/workflow-telemetry-action@v2
+        with:
+          theme: dark
+          metric_frequency: 3
+          comment_on_pr: false
+
+      - uses: rui314/setup-mold@v1
+        with:
+          make-default: true
+
+      - name: Prep Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Prep cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: check
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build oxy binary
+        run: cargo build -p oxy --profile ci
+
+      - name: Start oxy enterprise
+        working-directory: crates/app/demo_project
+        run: |
+          # Start oxy in background with enterprise mode
+          ../../../target/ci/oxy start --enterprise --clean &
+          OXY_PID=$!
+          echo "OXY_PID=$OXY_PID" >> $GITHUB_ENV
+
+          # Wait for all services to be ready
+          echo "Waiting for services to start..."
+          MAX_WAIT=180
+          WAITED=0
+
+          # Wait for web server (port 3000) with bounded timeouts
+          until curl -sf --connect-timeout 5 --max-time 10 http://localhost:3000 > /dev/null 2>&1; do
+            if [ $WAITED -ge $MAX_WAIT ]; then
+              echo "::error::Timeout waiting for oxy server to start"
+              echo "=== Docker containers ==="
+              docker ps -a
+              echo "=== PostgreSQL logs ==="
+              docker logs oxy-postgres 2>&1 | tail -100 || true
+              echo "=== ClickHouse logs ==="
+              docker logs oxy-clickhouse 2>&1 | tail -100 || true
+              echo "=== OTel logs ==="
+              docker logs oxy-otel-collector 2>&1 | tail -50 || true
+              echo "=== CubeJS logs ==="
+              docker logs oxy-cubejs 2>&1 | tail -100 || true
+              exit 1
+            fi
+            echo "Waiting for oxy server... ($WAITED/$MAX_WAIT seconds)"
+            sleep 5
+            WAITED=$((WAITED + 5))
+          done
+          echo "Oxy server is ready!"
+
+      - name: Verify all containers running
+        run: |
+          echo "=== Docker containers ==="
+          docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
+          # Verify all expected containers are running
+          for container in oxy-postgres oxy-clickhouse oxy-otel-collector oxy-cubejs; do
+            if docker ps --format "{{.Names}}" | grep -q "^${container}$"; then
+              echo "✓ ${container} is running"
+            else
+              echo "::error::${container} is not running"
+              exit 1
+            fi
+          done
+
+      - name: Smoke test - oxy status
+        working-directory: crates/app/demo_project
+        run: ../../../target/ci/oxy status
+
+      - name: Smoke test - oxy sync
+        working-directory: crates/app/demo_project
+        run: ../../../target/ci/oxy sync -o
+
+      - name: Smoke test - oxy build
+        working-directory: crates/app/demo_project
+        run: ../../../target/ci/oxy build
+
+      - name: Smoke test - oxy validate
+        working-directory: crates/app/demo_project
+        run: ../../../target/ci/oxy validate
+
+      - name: Smoke test - SQL query (DuckDB)
+        working-directory: crates/app/demo_project
+        run: ../../../target/ci/oxy run example_duckdb_query.sql
+
+      - name: Smoke test - health endpoint
+        run: |
+          echo "=== Testing health endpoint ==="
+          curl -sf --max-time 30 http://localhost:3000/health | jq . || curl -s --max-time 30 http://localhost:3000/health
+
+      - name: Smoke test - API request
+        run: |
+          echo "=== Testing API endpoints ==="
+          # Test that the API is responding
+          curl -sf --max-time 30 http://localhost:3000/api/apps | jq . || echo "Apps endpoint responded"

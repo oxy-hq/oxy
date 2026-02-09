@@ -24,14 +24,20 @@ pub async fn start_database_and_server(args: StartArgs) -> Result<(), OxyError> 
     docker::check_docker_available().await?;
     println!("{}", "   ✓ Container runtime is available\n".success());
 
-    // 2. Clean existing containers and volumes if requested
+    // 2. Clean up before starting
     if args.clean {
+        // --clean: remove containers, volumes, and network (full reset)
         println!(
             "{}",
-            "🧹 Cleaning existing Docker containers and volumes...".text()
+            "🧹 Full cleanup (containers + volumes + network)...".text()
         );
         docker::clean_all(enterprise).await?;
-        println!("{}", "   ✓ Clean complete\n".success());
+        println!("{}", "   ✓ Full clean complete\n".success());
+    } else {
+        // Always cleanup existing containers for a fresh start
+        println!("{}", "🧹 Cleaning up existing containers...".text());
+        docker::cleanup_containers().await;
+        println!("{}", "   ✓ Containers cleaned\n".success());
     }
 
     // 3. Start containers (PostgreSQL + ClickHouse in parallel if enterprise)
@@ -101,7 +107,7 @@ async fn start_all_containers() -> Result<String, OxyError> {
     );
     println!(
         "{}",
-        "   ClickHouse:  oxy-clickhouse (clickhouse/clickhouse-server:latest)".tertiary()
+        "   ClickHouse:  oxy-clickhouse (clickhouse/clickhouse-server:25.12.5.44)".tertiary()
     );
 
     // Start PostgreSQL and ClickHouse in parallel
