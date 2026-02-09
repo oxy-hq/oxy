@@ -56,7 +56,7 @@ jobs:
         github.event_name == 'pull_request_review' && github.event.review.state == 'approved' &&
         (needs.changesets.outputs.web-app == 'true' || needs.changesets.outputs.oxy == 'true')
       )
-    runs-on: ${{ github.repository == 'oxy-hq/oxy-internal' && (github.ref == 'refs/heads/main' && 'warp-ubuntu-latest-arm64-2x-spot' || 'warp-ubuntu-latest-arm64-2x') || 'ubuntu-latest' }}
+    runs-on: "ubuntu-latest"
     env:
       OXY_STATE_DIR: ${{ github.workspace }}/examples
       OXY_DATABASE_URL: postgresql://admin:password@localhost:5432/default

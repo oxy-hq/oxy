@@ -1,0 +1,29 @@
+table: dbt_prod_core.dim_typeform_leads
+database: primary_database
+dimensions:
+- name: email
+  type: STRING
+- name: full_name
+  type: STRING
+- name: company_name
+  type: STRING
+- name: primary_role
+  type: STRING
+- name: company_size
+  type: STRING
+- name: sql_or_python
+  type: STRING
+- name: id_forms_completed
+  type: ARRAY<STRING>
+- name: all_answers
+  type: ARRAY<STRUCT<field_text STRING, answer STRING>>
+- name: all_answers
+  type: ARRAY<STRUCT<field_text STRING, answer STRING>>
+- name: all_answers
+  type: ARRAY<STRUCT<field_text STRING, answer STRING>>
+- name: has_lifetime_purchase
+  type: BOOL
+- name: ts_first_signup
+  type: TIMESTAMP
+- name: ts_latest_signup
+  type: TIMESTAMP

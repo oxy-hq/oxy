@@ -1,0 +1,23 @@
+table: dbt_prod_core.dim_typeform_private_beta_invites
+database: primary_database
+dimensions:
+- name: email
+  type: STRING
+- name: id_forms_completed
+  type: ARRAY<STRING>
+- name: all_answers
+  type: ARRAY<STRUCT<field_text STRING, answer STRING>>
+- name: all_answers
+  type: ARRAY<STRUCT<field_text STRING, answer STRING>>
+- name: all_answers
+  type: ARRAY<STRUCT<field_text STRING, answer STRING>>
+- name: has_lifetime_purchase
+  type: BOOL
+- name: n_invites_sent
+  type: INT64
+- name: ts_latest_invite_sent
+  type: TIMESTAMP
+- name: ts_first_signup
+  type: TIMESTAMP
+- name: ts_latest_signup
+  type: TIMESTAMP

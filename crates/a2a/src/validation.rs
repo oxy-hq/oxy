@@ -425,4 +425,225 @@ mod tests {
         assert!(validate_mime_type("").is_err());
         assert!(validate_mime_type("text/").is_err());
     }
+
+    #[test]
+    fn test_validate_part_text() {
+        use crate::types::TextKind;
+
+        let valid_text = Part::Text(TextPart::new("Hello world"));
+        assert!(validate_part(&valid_text).is_ok());
+
+        let empty_text = Part::Text(TextPart {
+            kind: TextKind::Text,
+            text: "".to_string(),
+            metadata: None,
+        });
+        assert!(validate_part(&empty_text).is_err());
+    }
+
+    #[test]
+    fn test_validate_part_file_with_uri() {
+        use crate::types::{FileBase, FileContent, FileKind, FilePart, FileWithUri};
+
+        let valid_file = Part::File(FilePart {
+            kind: FileKind::File,
+            file: FileContent::Uri(FileWithUri {
+                base: FileBase {
+                    name: None,
+                    mime_type: Some("text/plain".to_string()),
+                },
+                uri: "https://example.com/file.txt".to_string(),
+            }),
+            metadata: None,
+        });
+        assert!(validate_part(&valid_file).is_ok());
+
+        let empty_uri = Part::File(FilePart {
+            kind: FileKind::File,
+            file: FileContent::Uri(FileWithUri {
+                base: FileBase {
+                    name: None,
+                    mime_type: None,
+                },
+                uri: "".to_string(),
+            }),
+            metadata: None,
+        });
+        assert!(validate_part(&empty_uri).is_err());
+
+        let invalid_uri = Part::File(FilePart {
+            kind: FileKind::File,
+            file: FileContent::Uri(FileWithUri {
+                base: FileBase {
+                    name: None,
+                    mime_type: None,
+                },
+                uri: "not-a-valid-uri".to_string(),
+            }),
+            metadata: None,
+        });
+        assert!(validate_part(&invalid_uri).is_err());
+    }
+
+    #[test]
+    fn test_validate_part_file_with_bytes() {
+        use crate::types::{FileBase, FileContent, FileKind, FilePart, FileWithBytes};
+
+        let valid_bytes = Part::File(FilePart {
+            kind: FileKind::File,
+            file: FileContent::Bytes(FileWithBytes {
+                base: FileBase {
+                    name: None,
+                    mime_type: Some("application/octet-stream".to_string()),
+                },
+                bytes: "AQIDBA==".to_string(), // Base64 for [1, 2, 3, 4]
+            }),
+            metadata: None,
+        });
+        assert!(validate_part(&valid_bytes).is_ok());
+
+        let empty_bytes = Part::File(FilePart {
+            kind: FileKind::File,
+            file: FileContent::Bytes(FileWithBytes {
+                base: FileBase {
+                    name: None,
+                    mime_type: None,
+                },
+                bytes: "".to_string(),
+            }),
+            metadata: None,
+        });
+        assert!(validate_part(&empty_bytes).is_err());
+    }
+
+    #[test]
+    fn test_validate_task() {
+        use crate::types::{TaskKind, TaskStatus};
+
+        let valid_task = Task {
+            id: "task-123".to_string(),
+            context_id: "context-456".to_string(),
+            status: TaskStatus::new(TaskState::Submitted),
+            history: None,
+            artifacts: None,
+            metadata: None,
+            kind: TaskKind::Task,
+        };
+        assert!(validate_task(&valid_task).is_ok());
+
+        let empty_id = Task {
+            id: "".to_string(),
+            ..valid_task.clone()
+        };
+        assert!(validate_task(&empty_id).is_err());
+
+        let empty_context = Task {
+            context_id: "".to_string(),
+            ..valid_task.clone()
+        };
+        assert!(validate_task(&empty_context).is_err());
+    }
+
+    #[test]
+    fn test_validate_task_with_history() {
+        use crate::types::{TaskKind, TaskStatus};
+
+        let message = Message {
+            kind: MessageKind::Message,
+            role: MessageRole::User,
+            parts: vec![Part::Text(TextPart::new("test"))],
+            metadata: None,
+            extensions: None,
+            reference_task_ids: None,
+            message_id: "msg-1".to_string(),
+            task_id: None,
+            context_id: None,
+        };
+
+        let task_with_history = Task {
+            id: "task-123".to_string(),
+            context_id: "context-456".to_string(),
+            status: TaskStatus::new(TaskState::Working),
+            history: Some(vec![message]),
+            artifacts: None,
+            metadata: None,
+            kind: TaskKind::Task,
+        };
+        assert!(validate_task(&task_with_history).is_ok());
+
+        let invalid_message = Message {
+            parts: vec![],              // Empty parts - invalid
+            message_id: "".to_string(), // Empty ID - invalid
+            ..task_with_history.history.as_ref().unwrap()[0].clone()
+        };
+
+        let task_with_invalid_history = Task {
+            history: Some(vec![invalid_message]),
+            ..task_with_history.clone()
+        };
+        assert!(validate_task(&task_with_invalid_history).is_err());
+    }
+
+    #[test]
+    fn test_validate_task_with_artifacts() {
+        use crate::types::{Artifact, TaskKind, TaskStatus};
+
+        let artifact = Artifact {
+            artifact_id: "artifact-1".to_string(),
+            name: Some("Result".to_string()),
+            description: None,
+            parts: vec![Part::Text(TextPart::new("Result"))],
+            metadata: None,
+            extensions: None,
+        };
+
+        let task_with_artifacts = Task {
+            id: "task-123".to_string(),
+            context_id: "context-456".to_string(),
+            status: TaskStatus::new(TaskState::Completed),
+            history: None,
+            artifacts: Some(vec![artifact]),
+            metadata: None,
+            kind: TaskKind::Task,
+        };
+        assert!(validate_task(&task_with_artifacts).is_ok());
+
+        let empty_artifact_id = Artifact {
+            artifact_id: "".to_string(),
+            ..task_with_artifacts.artifacts.as_ref().unwrap()[0].clone()
+        };
+
+        let task_with_invalid_artifact = Task {
+            artifacts: Some(vec![empty_artifact_id]),
+            ..task_with_artifacts.clone()
+        };
+        assert!(validate_task(&task_with_invalid_artifact).is_err());
+    }
+
+    #[test]
+    fn test_validate_message_with_empty_id() {
+        let message_with_empty_id = Message {
+            kind: MessageKind::Message,
+            role: MessageRole::User,
+            parts: vec![Part::Text(TextPart::new("test"))],
+            metadata: None,
+            extensions: None,
+            reference_task_ids: None,
+            message_id: "".to_string(), // Empty ID
+            task_id: None,
+            context_id: None,
+        };
+        assert!(validate_message(&message_with_empty_id).is_err());
+    }
+
+    #[test]
+    fn test_validate_jsonrpc_empty_method() {
+        let empty_method = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "".to_string(),
+            params: None,
+            id: Some(serde_json::json!(1)),
+        };
+        assert!(validate_jsonrpc_request(&empty_method).is_err());
+    }
 }

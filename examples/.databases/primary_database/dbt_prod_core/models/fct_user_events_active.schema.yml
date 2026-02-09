@@ -1,0 +1,15 @@
+table: dbt_prod_core.fct_user_events_active
+database: primary_database
+dimensions:
+- name: id_user
+  type: STRING
+- name: id_event
+  type: STRING
+- name: event_type
+  type: STRING
+- name: organization_subdomain
+  type: STRING
+- name: ts
+  type: TIMESTAMP
+- name: ds
+  type: DATE

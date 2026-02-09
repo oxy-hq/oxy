@@ -1,0 +1,28 @@
+# Nextest configuration
+# See https://nexte.st/docs/configuration/
+
+[profile.default]
+# Reduce progress bar noise
+status-level = "fail"
+final-status-level = "fail"
+
+# Show output only for failing tests
+success-output = "never"
+failure-output = "immediate"
+
+# Test execution settings
+retries = 0
+threads-required = "num-cpus"
+
+[profile.ci]
+# CI profile for detailed output
+status-level = "pass"
+final-status-level = "all"
+success-output = "never"
+failure-output = "immediate-final"
+fail-fast = false
+
+# Exclude migration and entity from test execution in CI;
+# these are auto-generated crates with no meaningful test coverage.
+# Coverage report exclusion is handled separately via `cargo llvm-cov report --exclude`.
+default-filter = "not package(=migration) and not package(=entity)"

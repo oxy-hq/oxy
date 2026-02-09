@@ -259,3 +259,372 @@ pub fn validate_consistency_prompt(
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    /// Creates a minimal ValidationContext for testing.
+    fn create_test_context(project_path: PathBuf) -> ValidationContext {
+        ValidationContext {
+            config: Config {
+                defaults: None,
+                models: vec![],
+                databases: vec![],
+                builder_agent: None,
+                project_path,
+                integrations: vec![],
+                slack: None,
+                mcp: None,
+                a2a: None,
+            },
+            metadata: None,
+        }
+    }
+
+    mod validate_file_path_tests {
+        use super::*;
+
+        #[test]
+        fn test_existing_file_in_same_dir_succeeds() {
+            let temp_dir = TempDir::new().unwrap();
+            let file_path = temp_dir.path().join("test.txt");
+            std::fs::write(&file_path, "test content").unwrap();
+
+            let context = create_test_context(temp_dir.path().to_path_buf());
+            let path = PathBuf::from("test.txt");
+
+            let result = validate_file_path(&path, &context);
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn test_non_existing_file_fails() {
+            let temp_dir = TempDir::new().unwrap();
+            let context = create_test_context(temp_dir.path().to_path_buf());
+            let path = PathBuf::from("nonexistent.txt");
+
+            let result = validate_file_path(&path, &context);
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            assert!(err.to_string().contains("File does not exist"));
+        }
+
+        #[test]
+        fn test_absolute_path_fails() {
+            let temp_dir = TempDir::new().unwrap();
+            let context = create_test_context(temp_dir.path().to_path_buf());
+            let path = PathBuf::from("/absolute/path/file.txt");
+
+            let result = validate_file_path(&path, &context);
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            assert!(err.to_string().contains("same directory"));
+        }
+
+        #[test]
+        fn test_nested_path_fails() {
+            let temp_dir = TempDir::new().unwrap();
+            // Create a nested file
+            let nested_dir = temp_dir.path().join("subdir");
+            std::fs::create_dir(&nested_dir).unwrap();
+            std::fs::write(nested_dir.join("file.txt"), "content").unwrap();
+
+            let context = create_test_context(temp_dir.path().to_path_buf());
+            let path = PathBuf::from("subdir/file.txt");
+
+            let result = validate_file_path(&path, &context);
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            assert!(err.to_string().contains("same directory"));
+        }
+    }
+
+    mod validate_optional_file_path_tests {
+        use super::*;
+
+        #[test]
+        fn test_none_succeeds() {
+            let temp_dir = TempDir::new().unwrap();
+            let context = create_test_context(temp_dir.path().to_path_buf());
+
+            let result = validate_optional_file_path(&None, &context);
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn test_some_existing_file_succeeds() {
+            let temp_dir = TempDir::new().unwrap();
+            let file_path = temp_dir.path().join("test.txt");
+            std::fs::write(&file_path, "test").unwrap();
+
+            let context = create_test_context(temp_dir.path().to_path_buf());
+            let path = Some(PathBuf::from("test.txt"));
+
+            let result = validate_optional_file_path(&path, &context);
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn test_some_non_existing_file_fails() {
+            let temp_dir = TempDir::new().unwrap();
+            let context = create_test_context(temp_dir.path().to_path_buf());
+            let path = Some(PathBuf::from("missing.txt"));
+
+            let result = validate_optional_file_path(&path, &context);
+            assert!(result.is_err());
+        }
+    }
+
+    mod validate_env_var_tests {
+        use super::*;
+
+        #[test]
+        fn test_existing_env_var_succeeds() {
+            // PATH is almost always set
+            let temp_dir = TempDir::new().unwrap();
+            let context = create_test_context(temp_dir.path().to_path_buf());
+
+            let result = validate_env_var("PATH", &context);
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn test_non_existing_env_var_fails() {
+            let temp_dir = TempDir::new().unwrap();
+            let context = create_test_context(temp_dir.path().to_path_buf());
+
+            let result = validate_env_var("DEFINITELY_NOT_SET_VAR_12345", &context);
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            assert!(err.to_string().contains("Env var not set"));
+        }
+    }
+
+    mod validation_directory_path_tests {
+        use super::*;
+
+        #[test]
+        fn test_existing_directory_succeeds() {
+            let temp_dir = TempDir::new().unwrap();
+            let context = create_test_context(temp_dir.path().to_path_buf());
+            let path = temp_dir.path().to_path_buf();
+
+            let result = validation_directory_path(&path, &context);
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn test_non_existing_directory_fails() {
+            let temp_dir = TempDir::new().unwrap();
+            let context = create_test_context(temp_dir.path().to_path_buf());
+            let path = temp_dir.path().join("nonexistent_dir");
+
+            let result = validation_directory_path(&path, &context);
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            assert!(err.to_string().contains("Directory does not exist"));
+        }
+
+        #[test]
+        fn test_file_path_as_directory_fails() {
+            let temp_dir = TempDir::new().unwrap();
+            let file_path = temp_dir.path().join("file.txt");
+            std::fs::write(&file_path, "content").unwrap();
+
+            let context = create_test_context(temp_dir.path().to_path_buf());
+
+            let result = validation_directory_path(&file_path, &context);
+            assert!(result.is_err());
+        }
+    }
+
+    mod validate_consistency_prompt_tests {
+        use super::*;
+
+        #[test]
+        fn test_none_succeeds() {
+            let temp_dir = TempDir::new().unwrap();
+            let context = create_test_context(temp_dir.path().to_path_buf());
+
+            let result = validate_consistency_prompt(&None, &context);
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn test_valid_template_succeeds() {
+            let temp_dir = TempDir::new().unwrap();
+            let context = create_test_context(temp_dir.path().to_path_buf());
+            let prompt = Some("Hello {{ name }}, welcome!".to_string());
+
+            let result = validate_consistency_prompt(&prompt, &context);
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn test_plain_text_succeeds() {
+            let temp_dir = TempDir::new().unwrap();
+            let context = create_test_context(temp_dir.path().to_path_buf());
+            let prompt = Some("Just plain text without variables".to_string());
+
+            let result = validate_consistency_prompt(&prompt, &context);
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn test_invalid_template_syntax_fails() {
+            let temp_dir = TempDir::new().unwrap();
+            let context = create_test_context(temp_dir.path().to_path_buf());
+            // Unclosed braces
+            let prompt = Some("Hello {{ name".to_string());
+
+            let result = validate_consistency_prompt(&prompt, &context);
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            assert!(err.to_string().contains("Invalid consistency prompt"));
+        }
+
+        #[test]
+        fn test_complex_valid_template_succeeds() {
+            let temp_dir = TempDir::new().unwrap();
+            let context = create_test_context(temp_dir.path().to_path_buf());
+            let prompt = Some("{% for item in items %}{{ item.name }}{% endfor %}".to_string());
+
+            let result = validate_consistency_prompt(&prompt, &context);
+            assert!(result.is_ok());
+        }
+    }
+
+    mod validate_sql_file_tests {
+        use super::*;
+
+        #[test]
+        fn test_existing_sql_file_succeeds() {
+            let temp_dir = TempDir::new().unwrap();
+            let sql_path = temp_dir.path().join("query.sql");
+            std::fs::write(&sql_path, "SELECT * FROM users").unwrap();
+
+            let context = create_test_context(temp_dir.path().to_path_buf());
+
+            let result = validate_sql_file("query.sql", &context);
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn test_non_existing_sql_file_fails() {
+            let temp_dir = TempDir::new().unwrap();
+            let context = create_test_context(temp_dir.path().to_path_buf());
+
+            let result = validate_sql_file("missing.sql", &context);
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            assert!(err.to_string().contains("Sql file not found"));
+        }
+    }
+
+    mod validate_export_tests {
+        use super::*;
+
+        #[test]
+        fn test_none_export_succeeds() {
+            let result = validate_export(None, &[ExportFormat::JSON], "test");
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn test_valid_format_succeeds() {
+            let export = TaskExport {
+                format: ExportFormat::JSON,
+                path: "output.json".to_string(),
+            };
+            let result = validate_export(
+                Some(&export),
+                &[ExportFormat::JSON, ExportFormat::CSV],
+                "test",
+            );
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn test_invalid_format_fails() {
+            let export = TaskExport {
+                format: ExportFormat::TXT,
+                path: "output.txt".to_string(),
+            };
+            let result = validate_export(
+                Some(&export),
+                &[ExportFormat::JSON, ExportFormat::CSV],
+                "TestTask",
+            );
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            assert!(err.to_string().contains("Invalid export format"));
+            assert!(err.to_string().contains("TestTask"));
+        }
+    }
+
+    mod validate_optional_private_key_path_tests {
+        use super::*;
+
+        #[test]
+        fn test_none_succeeds() {
+            let temp_dir = TempDir::new().unwrap();
+            let context = create_test_context(temp_dir.path().to_path_buf());
+
+            let result = validate_optional_private_key_path(&None, &context);
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn test_existing_absolute_path_succeeds() {
+            let temp_dir = TempDir::new().unwrap();
+            let key_path = temp_dir.path().join("private.key");
+            std::fs::write(&key_path, "PRIVATE KEY").unwrap();
+
+            let context = create_test_context(temp_dir.path().to_path_buf());
+
+            let result = validate_optional_private_key_path(&Some(key_path), &context);
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn test_non_existing_path_fails() {
+            let temp_dir = TempDir::new().unwrap();
+            let context = create_test_context(temp_dir.path().to_path_buf());
+            let key_path = temp_dir.path().join("nonexistent.key");
+
+            let result = validate_optional_private_key_path(&Some(key_path), &context);
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            assert!(err.to_string().contains("File does not exist"));
+        }
+    }
+
+    mod validate_agent_exists_tests {
+        use super::*;
+
+        #[test]
+        fn test_existing_agent_succeeds() {
+            let temp_dir = TempDir::new().unwrap();
+            let agent_path = temp_dir.path().join("agent.yaml");
+            std::fs::write(&agent_path, "name: test_agent").unwrap();
+
+            let context = create_test_context(temp_dir.path().to_path_buf());
+
+            let result = validate_agent_exists("agent.yaml", &context);
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn test_non_existing_agent_fails() {
+            let temp_dir = TempDir::new().unwrap();
+            let context = create_test_context(temp_dir.path().to_path_buf());
+
+            let result = validate_agent_exists("missing_agent.yaml", &context);
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            assert!(err.to_string().contains("Agent not found"));
+        }
+    }
+}

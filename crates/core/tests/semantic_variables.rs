@@ -1,9 +1,26 @@
 pub mod semantic_variables {
-    use assert_cmd::Command;
+    use assert_cmd::assert::OutputAssertExt;
+    use std::path::PathBuf;
+    use std::process::Command;
 
     fn setup_command() -> Command {
-        let mut cmd: Command = Command::cargo_bin("oxy").unwrap();
-        cmd.current_dir("examples").arg("run");
+        // Get the path to the oxy binary
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let workspace_dir = PathBuf::from(manifest_dir)
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+
+        // Try llvm-cov target first, fall back to regular debug target
+        let mut bin_path = workspace_dir.join("target/llvm-cov-target/debug/oxy");
+        if !bin_path.exists() {
+            bin_path = workspace_dir.join("target/debug/oxy");
+        }
+
+        let mut cmd = Command::new(&bin_path);
+        cmd.current_dir(workspace_dir.join("examples")).arg("run");
         cmd
     }
 

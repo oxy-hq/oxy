@@ -1,0 +1,23 @@
+table: airbyte.typeform_forms__links
+database: primary_database
+dimensions:
+- name: _airbyte_typeform_forms_hashid
+  type: STRING
+- name: display
+  type: STRING
+- name: _airbyte_emitted_at
+  type: STRING
+- name: _airbyte__links_hashid
+  type: STRING
+- name: _airbyte_typeform_forms_hashid_description
+  description: Hash of the Typeform Forms table
+  type: STRING
+- name: display_description
+  description: Display name of the link
+  type: STRING
+- name: _airbyte_emitted_at_description
+  description: Timestamp of when the data was emitted
+  type: STRING
+- name: _airbyte__links_hashid_description
+  description: Hash of the _links table
+  type: STRING

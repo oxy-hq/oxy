@@ -13,6 +13,7 @@ members = [
     "crates/project",
     "crates/semantic",
     "crates/shared",
+    "crates/test-utils",
     "crates/thread",
     "crates/workflow",
     "crates/infrastructure/llm/anthropic",

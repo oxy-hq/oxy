@@ -1,0 +1,17 @@
+table: dbt_prod_core.dim_user_document_stats
+database: primary_database
+dimensions:
+- name: id_user
+  type: STRING
+- name: reads
+  type: INT64
+- name: reads_non_creator
+  type: INT64
+- name: readers
+  type: INT64
+- name: readers_non_creator
+  type: INT64
+- name: executions
+  type: INT64
+- name: executions_non_creator
+  type: INT64

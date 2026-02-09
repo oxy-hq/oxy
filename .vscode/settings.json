@@ -3,7 +3,11 @@
   "npm.packageManager": "pnpm",
   "cSpell.words": ["utoipa"],
   "search.exclude": {
-    "examples/.db/large.csv": true
+    "examples/.db/large.csv": true,
+    "examples/.databases/**": true
+  },
+  "files.exclude": {
+    "examples/.databases": true
   },
   "editor.defaultFormatter": "biomejs.biome",
   "editor.formatOnSave": true,
@@ -40,5 +44,8 @@
   },
   "[yaml]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
-  }
+  },
+  "rust-analyzer.runnables.command": "cargo",
+  "rust-analyzer.runnables.extraArgs": ["nextest", "run"],
+  "rust-analyzer.cargoRunner": "nextest run"
 }

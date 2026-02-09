@@ -1352,3 +1352,615 @@ impl SortSpec {
         }
     }
 }
+#[cfg(test)]
+mod model_record_tests {
+    use super::*;
+
+    #[test]
+    fn test_model_record_serde() {
+        let record = ModelRecord {
+            id: "model_123".to_string(),
+            name: "test_model".to_string(),
+            label: Some("Test Model".to_string()),
+            description: Some("A test model".to_string()),
+            created_at: Some("2024-01-01T00:00:00Z".to_string()),
+            updated_at: Some("2024-01-02T00:00:00Z".to_string()),
+        };
+
+        let json = serde_json::to_string(&record).unwrap();
+        let deserialized: ModelRecord = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.id, record.id);
+        assert_eq!(deserialized.name, record.name);
+    }
+
+    #[test]
+    fn test_model_record_without_optional_fields() {
+        let record = ModelRecord {
+            id: "123".to_string(),
+            name: "model".to_string(),
+            label: None,
+            description: None,
+            created_at: None,
+            updated_at: None,
+        };
+
+        let json = serde_json::to_string(&record).unwrap();
+        let deserialized: ModelRecord = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.id, record.id);
+        assert!(deserialized.label.is_none());
+    }
+}
+
+#[cfg(test)]
+mod page_info_tests {
+    use super::*;
+
+    #[test]
+    fn test_page_info_serialization() {
+        let page_info = PageInfo {
+            has_next_page: true,
+            has_previous_page: false,
+            start_cursor: Some("cursor_start".to_string()),
+            end_cursor: Some("cursor_end".to_string()),
+            total_count: Some(100),
+        };
+
+        let json = serde_json::to_string(&page_info).unwrap();
+        let deserialized: PageInfo = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.has_next_page, true);
+        assert_eq!(deserialized.total_count, Some(100));
+    }
+}
+
+#[cfg(test)]
+mod topic_metadata_validation_tests {
+    use super::*;
+
+    #[test]
+    fn test_valid_topic_metadata() {
+        let topic = TopicMetadata {
+            name: "sales".to_string(),
+            label: Some("Sales Data".to_string()),
+            views: vec![],
+            custom_description: Some("Sales analytics".to_string()),
+            agent_hints: Some(vec!["revenue".to_string()]),
+            examples: None,
+        };
+
+        assert!(topic.validate().is_ok());
+    }
+
+    #[test]
+    fn test_topic_metadata_name_too_long() {
+        let long_name = "a".repeat(256);
+        let topic = TopicMetadata {
+            name: long_name,
+            label: None,
+            views: vec![],
+            custom_description: None,
+            agent_hints: None,
+            examples: None,
+        };
+
+        assert!(topic.validate().is_err());
+    }
+
+    #[test]
+    fn test_topic_metadata_empty_name_invalid() {
+        let topic = TopicMetadata {
+            name: "".to_string(),
+            label: None,
+            views: vec![],
+            custom_description: None,
+            agent_hints: None,
+            examples: None,
+        };
+
+        assert!(topic.validate().is_err());
+    }
+
+    #[test]
+    fn test_topic_metadata_description_too_long() {
+        let topic = TopicMetadata {
+            name: "test".to_string(),
+            label: None,
+            views: vec![],
+            custom_description: Some("a".repeat(2001)),
+            agent_hints: None,
+            examples: None,
+        };
+
+        assert!(topic.validate().is_err());
+    }
+
+    #[test]
+    fn test_topic_metadata_with_valid_agent_hints() {
+        let topic = TopicMetadata {
+            name: "test".to_string(),
+            label: None,
+            views: vec![],
+            custom_description: None,
+            agent_hints: Some(vec!["revenue".to_string(), "sales".to_string()]),
+            examples: None,
+        };
+
+        assert!(topic.validate().is_ok());
+    }
+}
+
+#[cfg(test)]
+mod view_metadata_validation_tests {
+    use super::*;
+
+    #[test]
+    fn test_valid_view_metadata() {
+        let view = ViewMetadata {
+            name: "orders".to_string(),
+            dimensions: vec![],
+            measures: vec![],
+            filter_only_fields: vec!["status".to_string()],
+        };
+
+        assert!(view.validate().is_ok());
+    }
+
+    #[test]
+    fn test_view_metadata_empty_name() {
+        let view = ViewMetadata {
+            name: "".to_string(),
+            dimensions: vec![],
+            measures: vec![],
+            filter_only_fields: vec![],
+        };
+
+        assert!(view.validate().is_err());
+    }
+
+    #[test]
+    fn test_view_metadata_name_too_long() {
+        let view = ViewMetadata {
+            name: "a".repeat(256),
+            dimensions: vec![],
+            measures: vec![],
+            filter_only_fields: vec![],
+        };
+
+        assert!(view.validate().is_err());
+    }
+
+    #[test]
+    fn test_view_metadata_filter_field_too_long() {
+        let view = ViewMetadata {
+            name: "test".to_string(),
+            dimensions: vec![],
+            measures: vec![],
+            filter_only_fields: vec!["a".repeat(256)],
+        };
+
+        assert!(view.validate().is_err());
+    }
+}
+
+#[cfg(test)]
+mod dimension_metadata_validation_tests {
+    use super::*;
+
+    fn create_valid_dimension() -> DimensionMetadata {
+        DimensionMetadata {
+            field_name: "customer_id".to_string(),
+            view_name: "customers".to_string(),
+            data_type: "number".to_string(),
+            fully_qualified_name: "customers.customer_id".to_string(),
+            description: Some("Customer identifier".to_string()),
+            ai_context: Some("Use for customer analysis".to_string()),
+            label: Some("Customer ID".to_string()),
+        }
+    }
+
+    #[test]
+    fn test_valid_dimension_metadata() {
+        let dim = create_valid_dimension();
+        assert!(dim.validate().is_ok());
+    }
+
+    #[test]
+    fn test_dimension_empty_field_name() {
+        let mut dim = create_valid_dimension();
+        dim.field_name = "".to_string();
+        assert!(dim.validate().is_err());
+    }
+
+    #[test]
+    fn test_dimension_field_name_too_long() {
+        let mut dim = create_valid_dimension();
+        dim.field_name = "a".repeat(256);
+        assert!(dim.validate().is_err());
+    }
+
+    #[test]
+    fn test_dimension_empty_view_name() {
+        let mut dim = create_valid_dimension();
+        dim.view_name = "".to_string();
+        assert!(dim.validate().is_err());
+    }
+
+    #[test]
+    fn test_dimension_data_type_too_long() {
+        let mut dim = create_valid_dimension();
+        dim.data_type = "a".repeat(101);
+        assert!(dim.validate().is_err());
+    }
+
+    #[test]
+    fn test_dimension_fqn_too_long() {
+        let mut dim = create_valid_dimension();
+        dim.fully_qualified_name = "a".repeat(501);
+        assert!(dim.validate().is_err());
+    }
+
+    #[test]
+    fn test_dimension_description_too_long() {
+        let mut dim = create_valid_dimension();
+        dim.description = Some("a".repeat(1001));
+        assert!(dim.validate().is_err());
+    }
+
+    #[test]
+    fn test_dimension_ai_context_too_long() {
+        let mut dim = create_valid_dimension();
+        dim.ai_context = Some("a".repeat(2001));
+        assert!(dim.validate().is_err());
+    }
+}
+
+#[cfg(test)]
+mod measure_metadata_validation_tests {
+    use super::*;
+
+    fn create_valid_measure() -> MeasureMetadata {
+        MeasureMetadata {
+            field_name: "total_sales".to_string(),
+            view_name: "sales".to_string(),
+            data_type: "number".to_string(),
+            fully_qualified_name: "sales.total_sales".to_string(),
+            description: Some("Total sales amount".to_string()),
+            ai_context: Some("Sum of all sales".to_string()),
+            label: Some("Total Sales".to_string()),
+        }
+    }
+
+    #[test]
+    fn test_valid_measure_metadata() {
+        let measure = create_valid_measure();
+        assert!(measure.validate().is_ok());
+    }
+
+    #[test]
+    fn test_measure_empty_field_name() {
+        let mut measure = create_valid_measure();
+        measure.field_name = "".to_string();
+        assert!(measure.validate().is_err());
+    }
+
+    #[test]
+    fn test_measure_validation_rules() {
+        let mut measure = create_valid_measure();
+
+        // Test each field boundary
+        measure.field_name = "a".repeat(256);
+        assert!(measure.validate().is_err());
+
+        measure = create_valid_measure();
+        measure.data_type = "a".repeat(101);
+        assert!(measure.validate().is_err());
+
+        measure = create_valid_measure();
+        measure.fully_qualified_name = "a".repeat(501);
+        assert!(measure.validate().is_err());
+    }
+}
+
+#[cfg(test)]
+mod relationship_validation_tests {
+    use super::*;
+
+    #[test]
+    fn test_valid_relationship() {
+        let rel = Relationship {
+            from_view: "orders".to_string(),
+            to_view: "customers".to_string(),
+            join_type: "left".to_string(),
+            condition: "orders.customer_id = customers.id".to_string(),
+        };
+
+        assert!(rel.validate().is_ok());
+    }
+
+    #[test]
+    fn test_relationship_empty_fields() {
+        let rel = Relationship {
+            from_view: "".to_string(),
+            to_view: "customers".to_string(),
+            join_type: "left".to_string(),
+            condition: "orders.customer_id = customers.id".to_string(),
+        };
+
+        assert!(rel.validate().is_err());
+    }
+
+    #[test]
+    fn test_relationship_join_type_too_long() {
+        let rel = Relationship {
+            from_view: "orders".to_string(),
+            to_view: "customers".to_string(),
+            join_type: "a".repeat(51),
+            condition: "orders.customer_id = customers.id".to_string(),
+        };
+
+        assert!(rel.validate().is_err());
+    }
+
+    #[test]
+    fn test_relationship_condition_too_long() {
+        let rel = Relationship {
+            from_view: "orders".to_string(),
+            to_view: "customers".to_string(),
+            join_type: "left".to_string(),
+            condition: "a".repeat(1001),
+        };
+
+        assert!(rel.validate().is_err());
+    }
+}
+
+#[cfg(test)]
+mod query_example_tests {
+    use super::*;
+
+    #[test]
+    fn test_valid_query_example() {
+        let example = QueryExample {
+            description: "Get total sales".to_string(),
+            query: "SELECT SUM(amount) FROM sales".to_string(),
+            expected_result: Some("1000000".to_string()),
+        };
+
+        assert!(example.validate().is_ok());
+    }
+
+    #[test]
+    fn test_query_example_equality() {
+        let ex1 = QueryExample {
+            description: "test".to_string(),
+            query: "SELECT *".to_string(),
+            expected_result: None,
+        };
+
+        let ex2 = QueryExample {
+            description: "test".to_string(),
+            query: "SELECT *".to_string(),
+            expected_result: None,
+        };
+
+        assert_eq!(ex1, ex2);
+    }
+
+    #[test]
+    fn test_query_example_description_too_long() {
+        let example = QueryExample {
+            description: "a".repeat(501),
+            query: "SELECT *".to_string(),
+            expected_result: None,
+        };
+
+        assert!(example.validate().is_err());
+    }
+
+    #[test]
+    fn test_query_example_query_too_long() {
+        let example = QueryExample {
+            description: "test".to_string(),
+            query: "a".repeat(2001),
+            expected_result: None,
+        };
+
+        assert!(example.validate().is_err());
+    }
+}
+
+#[cfg(test)]
+mod overlay_metadata_tests {
+    use super::*;
+
+    #[test]
+    fn test_valid_overlay_topic() {
+        let overlay = OverlayTopicMetadata {
+            name: "sales".to_string(),
+            label: Some("Custom Sales".to_string()),
+            views: None,
+            custom_description: Some("Custom description".to_string()),
+            agent_hints: Some(vec!["hint1".to_string()]),
+            examples: None,
+        };
+
+        assert!(overlay.validate().is_ok());
+    }
+
+    #[test]
+    fn test_overlay_dimension() {
+        let overlay_dim = OverlayDimensionMetadata {
+            field_name: "customer_name".to_string(),
+            view_name: "customers".to_string(),
+            data_type: Some("string".to_string()),
+            fully_qualified_name: None,
+            description: Some("Customer's name".to_string()),
+            ai_context: None,
+            label: Some("Customer Name".to_string()),
+        };
+
+        assert!(overlay_dim.validate().is_ok());
+    }
+
+    #[test]
+    fn test_overlay_measure() {
+        let overlay_measure = OverlayMeasureMetadata {
+            field_name: "total".to_string(),
+            view_name: "sales".to_string(),
+            data_type: Some("number".to_string()),
+            fully_qualified_name: None,
+            description: Some("Total amount".to_string()),
+            ai_context: Some("Sum of sales".to_string()),
+            label: None,
+        };
+
+        assert!(overlay_measure.validate().is_ok());
+    }
+
+    #[test]
+    fn test_overlay_view() {
+        let overlay_view = OverlayViewMetadata {
+            name: "orders".to_string(),
+            dimensions: None,
+            measures: None,
+            filter_only_fields: Some(vec!["status".to_string()]),
+        };
+
+        assert!(overlay_view.validate().is_ok());
+    }
+}
+
+#[cfg(test)]
+mod constructor_tests {
+    use super::*;
+
+    #[test]
+    fn test_model_job_new() {
+        let job = ModelJob::new(
+            "model_123".to_string(),
+            "orders".to_string(),
+            vec!["id".to_string(), "amount".to_string()],
+        );
+
+        assert_eq!(job.model_id, "model_123");
+        assert_eq!(job.table, "orders");
+        assert_eq!(job.fields.len(), 2);
+        assert!(job.calculations.is_none());
+        assert!(job.filters.is_none());
+    }
+
+    #[test]
+    fn test_sort_spec_new() {
+        let sort = SortSpec::new("amount".to_string(), true);
+
+        assert_eq!(sort.column_name, "amount");
+        assert_eq!(sort.sort_descending, true);
+        assert!(sort.is_column_sort.is_none());
+        assert!(sort.null_sort.is_none());
+    }
+
+    #[test]
+    fn test_query_details_default() {
+        let details = QueryDetails::default();
+        assert!(details.model_job.is_none());
+
+        let details2 = QueryDetails::new();
+        assert!(details2.model_job.is_none());
+    }
+}
+
+#[cfg(test)]
+mod serialization_roundtrip_tests {
+    use super::*;
+
+    #[test]
+    fn test_topic_response_roundtrip() {
+        let topic_data = TopicData {
+            name: "sales".to_string(),
+            label: Some("Sales".to_string()),
+            base_view_name: "sales_base".to_string(),
+            views: vec![],
+        };
+
+        let response = TopicResponse {
+            success: true,
+            topic: topic_data,
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        let deserialized: TopicResponse = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.success, true);
+        assert_eq!(deserialized.topic.name, "sales");
+    }
+
+    #[test]
+    fn test_view_data_with_fields() {
+        let dim = DimensionData {
+            field_name: "id".to_string(),
+            view_name: "orders".to_string(),
+            data_type: "number".to_string(),
+            fully_qualified_name: "orders.id".to_string(),
+            description: Some("Order ID".to_string()),
+            ai_context: None,
+            label: Some("ID".to_string()),
+        };
+
+        let measure = MeasureData {
+            field_name: "total".to_string(),
+            view_name: "orders".to_string(),
+            data_type: "number".to_string(),
+            fully_qualified_name: "orders.total".to_string(),
+            description: Some("Total amount".to_string()),
+            ai_context: Some("Sum of line items".to_string()),
+            label: Some("Total".to_string()),
+        };
+
+        let view = ViewData {
+            name: "orders".to_string(),
+            dimensions: vec![dim],
+            measures: vec![measure],
+            filter_only_fields: vec!["status".to_string()],
+        };
+
+        let json = serde_json::to_string(&view).unwrap();
+        let deserialized: ViewData = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.name, "orders");
+        assert_eq!(deserialized.dimensions.len(), 1);
+        assert_eq!(deserialized.measures.len(), 1);
+        assert_eq!(deserialized.filter_only_fields.len(), 1);
+    }
+
+    #[test]
+    fn test_models_response_with_pagination() {
+        let page_info = PageInfo {
+            has_next_page: true,
+            has_previous_page: false,
+            start_cursor: Some("start".to_string()),
+            end_cursor: Some("end".to_string()),
+            total_count: Some(50),
+        };
+
+        let record = ModelRecord {
+            id: "1".to_string(),
+            name: "model1".to_string(),
+            label: None,
+            description: None,
+            created_at: None,
+            updated_at: None,
+        };
+
+        let response = ModelsResponse {
+            page_info,
+            records: vec![record],
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        let deserialized: ModelsResponse = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.page_info.has_next_page, true);
+        assert_eq!(deserialized.records.len(), 1);
+    }
+}

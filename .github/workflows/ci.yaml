@@ -133,12 +133,14 @@ jobs:
     needs: [changesets, typos]
     if: needs.changesets.outputs.oxy == 'true'
     name: Format cargo, check & test (${{ matrix.task }})
-    runs-on: ${{ github.repository == 'oxy-hq/oxy-internal' && (github.ref == 'refs/heads/main' && 'warp-ubuntu-latest-arm64-2x-spot' || 'warp-ubuntu-latest-arm64-2x') || 'ubuntu-latest' }}
+    runs-on: "ubuntu-latest"
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       BIGQUERY_SAMPLE_KEY: ${{ secrets.BIGQUERY_SAMPLE_KEY }}
       GEMINI_API_KEY: "empty"
       ANTHROPIC_API_KEY: "empty"
+      # line-tables-only debug: sufficient for llvm-cov, ~60% smaller than default debug = 2
+      CARGO_PROFILE_DEV_DEBUG: "1"
     strategy:
       fail-fast: true
       matrix:
@@ -158,6 +160,17 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
+      - name: Free disk space
+        if: matrix.task == 'test'
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -175,7 +188,11 @@ jobs:
       - name: Prep Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy, rustfmt
+          components: clippy, rustfmt, llvm-tools-preview
+      - name: Install cargo tools
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest${{ matrix.task == 'test' && ',cargo-llvm-cov' || '' }}
       - name: Prep cargo cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -208,10 +225,21 @@ jobs:
             touch examples/bigquery-sample.key
             echo $BIGQUERY_SAMPLE_KEY > examples/bigquery-sample.key
 
-            echo "Using PostgreSQL database: $OXY_DATABASE_URL"
-            # Run migrations
-            cargo run --profile ci -- migrate
+            # Run migrations using instrumented binary — same profile as nextest (test) to avoid double compilation
+            cargo llvm-cov run --profile test -- migrate
 
-            cargo test --profile ci --verbose --no-fail-fast -- --nocapture
-            cargo run --profile ci -- gen-config-schema --check
+            # Run tests reusing the instrumented build from above (--no-clean preserves migrate profraw)
+            cargo llvm-cov nextest --workspace --no-clean --lcov --output-path lcov.info
+
+            # Print coverage summary (informational only)
+            cargo llvm-cov report --summary-only
+
+            ./target/llvm-cov-target/debug/oxy gen-config-schema --check
           fi
+
+      - name: Upload coverage to Coveralls
+        if: matrix.task == 'test' && github.event_name == 'pull_request' && github.repository == 'oxy-hq/oxy'
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path-to-lcov: lcov.info

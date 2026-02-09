@@ -202,4 +202,13 @@ mod tests {
             vec!["entities", "customer", "nested"]
         );
     }
+
+    #[test]
+    fn test_object_name_with_single_component() {
+        let reference = GlobalReference::new(
+            "semantics".to_string(),
+            "entities".to_string(), // Only one component in path
+        );
+        assert_eq!(reference.object_name(), None);
+    }
 }

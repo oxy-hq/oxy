@@ -1,10 +1,36 @@
-use assert_cmd::Command;
+use assert_cmd::assert::OutputAssertExt;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
+
+fn get_oxy_binary() -> PathBuf {
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let workspace_dir = PathBuf::from(manifest_dir)
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
+
+    // Try llvm-cov target first, fall back to regular debug target
+    let mut bin_path = workspace_dir.join("target/llvm-cov-target/debug/oxy");
+    if !bin_path.exists() {
+        bin_path = workspace_dir.join("target/debug/oxy");
+    }
+    bin_path
+}
 
 fn setup_command() -> Command {
-    let mut cmd: Command = Command::cargo_bin("oxy").unwrap();
-    cmd.current_dir("examples").arg("sync");
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let workspace_dir = PathBuf::from(manifest_dir)
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
+
+    let mut cmd = Command::new(get_oxy_binary());
+    cmd.current_dir(workspace_dir.join("examples")).arg("sync");
     cmd
 }
 
@@ -24,7 +50,14 @@ fn test_sync_database_creates_expected_files() {
         .assert()
         .success();
 
-    let examples_dir = PathBuf::from("examples");
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let workspace_dir = PathBuf::from(manifest_dir)
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let examples_dir = workspace_dir.join("examples");
     let sql_file = examples_dir.join(".databases/primary_database/dbt_prod_metrics.sql");
     let models_dir = examples_dir.join(".databases/primary_database/dbt_prod_metrics/models");
 
@@ -100,7 +133,14 @@ fn test_sync_database_with_overwrite_flag() {
         .assert()
         .success();
 
-    let examples_dir = PathBuf::from("examples");
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let workspace_dir = PathBuf::from(manifest_dir)
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let examples_dir = workspace_dir.join("examples");
     let sql_file = examples_dir.join(".databases/primary_database/dbt_prod_metrics.sql");
     let models_dir = examples_dir.join(".databases/primary_database/dbt_prod_metrics/models");
 
@@ -150,7 +190,14 @@ fn test_sync_entire_database_with_overwrite_flag() {
     let mut cmd = setup_command();
     cmd.arg("local").assert().success();
 
-    let examples_dir = PathBuf::from("examples");
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let workspace_dir = PathBuf::from(manifest_dir)
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let examples_dir = workspace_dir.join("examples");
     let database_dir = examples_dir.join(".databases/local");
 
     assert!(database_dir.exists(), "Database directory was not created");

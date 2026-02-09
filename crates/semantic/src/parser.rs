@@ -747,3 +747,416 @@ pub fn parse_semantic_layer_from_dir<P: AsRef<Path>>(
     let parser = SemanticLayerParser::new(parser_config, global_registry);
     parser.parse()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    /// Creates a test fixture with a minimal semantic layer structure.
+    fn create_test_fixture() -> TempDir {
+        let temp_dir = TempDir::new().unwrap();
+        let views_dir = temp_dir.path().join("views");
+        std::fs::create_dir(&views_dir).unwrap();
+        temp_dir
+    }
+
+    /// Creates a minimal view YAML content.
+    fn minimal_view_yaml(name: &str) -> String {
+        format!(
+            r#"name: {name}
+description: Test view for {name}
+table: test_table
+entities: []
+dimensions:
+  - name: id
+    expr: id
+    type: number
+"#,
+            name = name
+        )
+    }
+
+    mod parser_config_tests {
+        use super::*;
+
+        #[test]
+        fn test_new_creates_config_with_defaults() {
+            let config = ParserConfig::new("/some/path");
+            assert_eq!(config.base_path, PathBuf::from("/some/path"));
+            assert!(config.validate);
+            assert!(!config.follow_symlinks);
+        }
+
+        #[test]
+        fn test_with_validation_sets_validation() {
+            let config = ParserConfig::new("/path").with_validation(false);
+            assert!(!config.validate);
+        }
+
+        #[test]
+        fn test_with_symlinks_sets_follow_symlinks() {
+            let config = ParserConfig::new("/path").with_symlinks(true);
+            assert!(config.follow_symlinks);
+        }
+
+        #[test]
+        fn test_builder_chaining() {
+            let config = ParserConfig::new("/path")
+                .with_validation(false)
+                .with_symlinks(true);
+            assert!(!config.validate);
+            assert!(config.follow_symlinks);
+        }
+    }
+
+    /// Creates a GlobalRegistry for testing under the given temp directory.
+    fn create_test_registry(temp_path: &Path) -> GlobalRegistry {
+        let globals_dir = temp_path.join("globals");
+        std::fs::create_dir_all(&globals_dir).unwrap();
+        GlobalRegistry::new(globals_dir)
+    }
+
+    mod is_view_file_tests {
+        use super::*;
+
+        fn check_is_view_file(filename: &str) -> bool {
+            let temp_dir = create_test_fixture();
+            let config = ParserConfig::new(temp_dir.path());
+            let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
+            parser.is_view_file(&PathBuf::from(filename))
+        }
+
+        #[test]
+        fn test_valid_view_yaml_extension() {
+            assert!(check_is_view_file("orders.view.yaml"));
+        }
+
+        #[test]
+        fn test_valid_view_yml_extension() {
+            assert!(check_is_view_file("orders.view.yml"));
+        }
+
+        #[test]
+        fn test_invalid_no_view_suffix() {
+            assert!(!check_is_view_file("orders.yaml"));
+        }
+
+        #[test]
+        fn test_invalid_wrong_extension() {
+            assert!(!check_is_view_file("orders.view.json"));
+        }
+
+        #[test]
+        fn test_invalid_topic_file() {
+            assert!(!check_is_view_file("orders.topic.yaml"));
+        }
+    }
+
+    mod is_topic_file_tests {
+        use super::*;
+
+        fn check_is_topic_file(filename: &str) -> bool {
+            let temp_dir = create_test_fixture();
+            let config = ParserConfig::new(temp_dir.path());
+            let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
+            parser.is_topic_file(&PathBuf::from(filename))
+        }
+
+        #[test]
+        fn test_valid_topic_yaml_extension() {
+            assert!(check_is_topic_file("sales.topic.yaml"));
+        }
+
+        #[test]
+        fn test_valid_topic_yml_extension() {
+            assert!(check_is_topic_file("sales.topic.yml"));
+        }
+
+        #[test]
+        fn test_invalid_no_topic_suffix() {
+            assert!(!check_is_topic_file("sales.yaml"));
+        }
+
+        #[test]
+        fn test_invalid_view_file() {
+            assert!(!check_is_topic_file("sales.view.yaml"));
+        }
+    }
+
+    mod parse_tests {
+        use super::*;
+
+        #[test]
+        fn test_parse_missing_views_dir_fails() {
+            let temp_dir = TempDir::new().unwrap();
+            // Don't create views directory
+            let config = ParserConfig::new(temp_dir.path());
+            let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
+
+            let result = parser.parse();
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            assert!(matches!(err, SemanticLayerError::IOError(_)));
+        }
+
+        #[test]
+        fn test_parse_empty_views_dir_succeeds() {
+            let temp_dir = create_test_fixture();
+            let config = ParserConfig::new(temp_dir.path()).with_validation(false);
+            let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
+
+            let result = parser.parse();
+            assert!(result.is_ok());
+            let parse_result = result.unwrap();
+            assert!(parse_result.semantic_layer.views.is_empty());
+        }
+
+        #[test]
+        fn test_parse_single_view_file() {
+            let temp_dir = create_test_fixture();
+            let views_dir = temp_dir.path().join("views");
+            let view_path = views_dir.join("orders.view.yaml");
+            std::fs::write(&view_path, minimal_view_yaml("orders")).unwrap();
+
+            let config = ParserConfig::new(temp_dir.path()).with_validation(false);
+            let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
+
+            let result = parser.parse();
+            assert!(result.is_ok());
+            let parse_result = result.unwrap();
+            assert_eq!(parse_result.semantic_layer.views.len(), 1);
+            assert_eq!(parse_result.semantic_layer.views[0].name, "orders");
+            assert_eq!(parse_result.parsed_files.len(), 1);
+        }
+
+        #[test]
+        fn test_parse_multiple_view_files() {
+            let temp_dir = create_test_fixture();
+            let views_dir = temp_dir.path().join("views");
+
+            std::fs::write(
+                views_dir.join("orders.view.yaml"),
+                minimal_view_yaml("orders"),
+            )
+            .unwrap();
+            std::fs::write(
+                views_dir.join("users.view.yaml"),
+                minimal_view_yaml("users"),
+            )
+            .unwrap();
+
+            let config = ParserConfig::new(temp_dir.path()).with_validation(false);
+            let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
+
+            let result = parser.parse();
+            assert!(result.is_ok());
+            let parse_result = result.unwrap();
+            assert_eq!(parse_result.semantic_layer.views.len(), 2);
+            assert_eq!(parse_result.parsed_files.len(), 2);
+        }
+
+        #[test]
+        fn test_parse_ignores_non_view_files() {
+            let temp_dir = create_test_fixture();
+            let views_dir = temp_dir.path().join("views");
+
+            std::fs::write(
+                views_dir.join("orders.view.yaml"),
+                minimal_view_yaml("orders"),
+            )
+            .unwrap();
+            std::fs::write(views_dir.join("readme.txt"), "This is not a view").unwrap();
+            std::fs::write(views_dir.join("data.json"), "{}").unwrap();
+
+            let config = ParserConfig::new(temp_dir.path()).with_validation(false);
+            let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
+
+            let result = parser.parse();
+            assert!(result.is_ok());
+            let parse_result = result.unwrap();
+            // Should only parse the .view.yaml file
+            assert_eq!(parse_result.semantic_layer.views.len(), 1);
+        }
+    }
+
+    mod parse_view_file_tests {
+        use super::*;
+
+        #[test]
+        fn test_parse_valid_view_file() {
+            let temp_dir = create_test_fixture();
+            let view_path = temp_dir.path().join("test.view.yaml");
+            std::fs::write(&view_path, minimal_view_yaml("test")).unwrap();
+
+            let config = ParserConfig::new(temp_dir.path());
+            let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
+
+            let result = parser.parse_view_file(&view_path);
+            assert!(result.is_ok());
+            let view = result.unwrap();
+            assert_eq!(view.name, "test");
+        }
+
+        #[test]
+        fn test_parse_view_file_not_found_fails() {
+            let temp_dir = create_test_fixture();
+            let config = ParserConfig::new(temp_dir.path());
+            let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
+
+            let result = parser.parse_view_file(&PathBuf::from("/nonexistent/path.yaml"));
+            assert!(result.is_err());
+            assert!(matches!(
+                result.unwrap_err(),
+                SemanticLayerError::IOError(_)
+            ));
+        }
+
+        #[test]
+        fn test_parse_malformed_yaml_fails() {
+            let temp_dir = create_test_fixture();
+            let view_path = temp_dir.path().join("bad.view.yaml");
+            std::fs::write(&view_path, "this: is: not: valid: yaml: [").unwrap();
+
+            let config = ParserConfig::new(temp_dir.path());
+            let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
+
+            let result = parser.parse_view_file(&view_path);
+            assert!(result.is_err());
+            assert!(matches!(
+                result.unwrap_err(),
+                SemanticLayerError::ParsingError(_)
+            ));
+        }
+    }
+
+    mod export_tests {
+        use super::*;
+
+        fn create_test_semantic_layer() -> SemanticLayer {
+            SemanticLayer {
+                views: vec![View {
+                    name: "test_view".to_string(),
+                    description: "Test description".to_string(),
+                    label: None,
+                    datasource: None,
+                    table: Some("test_table".to_string()),
+                    sql: None,
+                    entities: vec![],
+                    dimensions: vec![Dimension {
+                        name: "id".to_string(),
+                        description: None,
+                        expr: "id".to_string(),
+                        original_expr: None,
+                        dimension_type: DimensionType::Number,
+                        samples: None,
+                        synonyms: None,
+                    }],
+                    measures: None,
+                }],
+                topics: None,
+                metadata: None,
+            }
+        }
+
+        #[test]
+        fn test_export_to_yaml_succeeds() {
+            let semantic_layer = create_test_semantic_layer();
+            let result = SemanticLayerParser::export_to_yaml(&semantic_layer);
+            assert!(result.is_ok());
+            let yaml = result.unwrap();
+            assert!(yaml.contains("name: test_view"));
+            assert!(yaml.contains("table: test_table"));
+        }
+
+        #[test]
+        fn test_export_to_json_succeeds() {
+            let semantic_layer = create_test_semantic_layer();
+            let result = SemanticLayerParser::export_to_json(&semantic_layer);
+            assert!(result.is_ok());
+            let json = result.unwrap();
+            assert!(json.contains("\"name\": \"test_view\""));
+            assert!(json.contains("\"table\": \"test_table\""));
+        }
+    }
+
+    mod parse_file_tests {
+        use super::*;
+
+        #[test]
+        fn test_parse_file_valid_yaml() {
+            let temp_dir = TempDir::new().unwrap();
+            let file_path = temp_dir.path().join("semantic.yaml");
+
+            let content = r#"
+views:
+  - name: orders
+    description: Orders view
+    table: orders_table
+    entities: []
+    dimensions:
+      - name: order_id
+        expr: order_id
+        type: number
+"#;
+            std::fs::write(&file_path, content).unwrap();
+
+            let result = SemanticLayerParser::parse_file(&file_path);
+            assert!(result.is_ok());
+            let semantic_layer = result.unwrap();
+            assert_eq!(semantic_layer.views.len(), 1);
+            assert_eq!(semantic_layer.views[0].name, "orders");
+        }
+
+        #[test]
+        fn test_parse_file_not_found() {
+            let result = SemanticLayerParser::parse_file("/nonexistent/file.yaml");
+            assert!(result.is_err());
+            assert!(matches!(
+                result.unwrap_err(),
+                SemanticLayerError::IOError(_)
+            ));
+        }
+    }
+
+    mod variable_extraction_tests {
+        use super::*;
+
+        #[test]
+        fn test_parse_view_with_variables_succeeds() {
+            let temp_dir = create_test_fixture();
+            let views_dir = temp_dir.path().join("views");
+
+            // View with variable references in table and dimension expressions
+            let view_with_vars = r#"
+name: orders
+description: Test view with variables
+table: "{{variables.schema}}.orders"
+entities: []
+dimensions:
+  - name: filtered_amount
+    expr: "CASE WHEN region = '{{variables.region}}' THEN amount ELSE 0 END"
+    type: number
+"#;
+            std::fs::write(views_dir.join("orders.view.yaml"), view_with_vars).unwrap();
+
+            let config = ParserConfig::new(temp_dir.path()).with_validation(false);
+            let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
+
+            let result = parser.parse();
+            assert!(result.is_ok());
+            let parse_result = result.unwrap();
+
+            // View should be parsed successfully
+            assert_eq!(parse_result.semantic_layer.views.len(), 1);
+            assert_eq!(parse_result.semantic_layer.views[0].name, "orders");
+
+            // The parser should preserve variable references in the parsed view
+            // Variables are stored as placeholders and extracted during parsing
+            assert!(
+                !parse_result.variables_found.is_empty(),
+                "Should extract variables from view"
+            );
+        }
+    }
+}

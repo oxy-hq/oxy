@@ -1,20 +1,48 @@
 pub mod prepare_semantic_engine {
-    use assert_cmd::Command;
+    use assert_cmd::assert::OutputAssertExt;
+    use serial_test::serial;
     use std::fs;
     use std::path::PathBuf;
+    use std::process::Command;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     static TEST_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
     fn setup_command() -> Command {
-        let mut cmd = Command::cargo_bin("oxy").unwrap();
-        cmd.current_dir("examples");
+        // Get the path to the oxy binary
+        // When running with cargo test, the binary is in target/debug/oxy
+        // When running with cargo llvm-cov, it's in target/llvm-cov-target/debug/oxy
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let workspace_dir = PathBuf::from(manifest_dir)
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+
+        // Try llvm-cov target first, fall back to regular debug target
+        let mut bin_path = workspace_dir.join("target/llvm-cov-target/debug/oxy");
+        if !bin_path.exists() {
+            bin_path = workspace_dir.join("target/debug/oxy");
+        }
+
+        let mut cmd = Command::new(&bin_path);
+        cmd.current_dir(workspace_dir.join("examples"));
         cmd
     }
 
     fn get_unique_semantics_dir() -> PathBuf {
         let counter = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
-        PathBuf::from(format!("examples/.semantics-test-{}", counter))
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let workspace_dir = PathBuf::from(manifest_dir)
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        workspace_dir
+            .join("examples")
+            .join(format!(".semantics-test-{}", counter))
     }
 
     #[test]
@@ -119,7 +147,16 @@ pub mod prepare_semantic_engine {
         let mut cmd = setup_command();
 
         // Use a custom output directory
-        let custom_output = PathBuf::from("examples/.test-semantics-output");
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let workspace_dir = PathBuf::from(manifest_dir)
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let custom_output = workspace_dir
+            .join("examples")
+            .join(".test-semantics-output");
 
         // Clean up if exists
         if custom_output.exists() {
@@ -401,6 +438,7 @@ pub mod prepare_semantic_engine {
     }
 
     #[test]
+    #[serial]
     fn test_no_globals_template_syntax_in_output() {
         let mut cmd = setup_command();
 
@@ -583,6 +621,7 @@ pub mod prepare_semantic_engine {
     }
 
     #[test]
+    #[serial]
     fn test_no_variable_template_syntax_in_output() {
         let mut cmd = setup_command();
 
