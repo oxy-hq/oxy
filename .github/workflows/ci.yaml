@@ -284,7 +284,7 @@ jobs:
       - name: Build and start oxy
         working-directory: crates/app/demo_project
         run: |
-          cargo build -p oxy --profile ci
+          cargo build --profile ci
           ../../../target/ci/oxy start --enterprise --clean &
           echo "OXY_PID=$!" >> $GITHUB_ENV
           # Wait for server (max 3 min)
