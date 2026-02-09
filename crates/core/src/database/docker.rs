@@ -925,7 +925,7 @@ pub async fn stop_enterprise_containers() -> Result<(), OxyError> {
     Ok(())
 }
 
-/// Cleanup all oxy-managed containers (stop and remove).
+/// Cleanup all oxy-managed containers (stop and remove) in parallel.
 /// Called on startup and shutdown to ensure clean state.
 /// Does NOT remove volumes or networks - use clean_all() for that.
 /// Errors are logged but not propagated (cleanup should not block shutdown).
@@ -938,11 +938,13 @@ pub async fn cleanup_containers() {
         }
     };
 
-    // Remove all containers (order: otel → cubejs → clickhouse → postgres)
-    remove_container(&docker, OTEL_CONTAINER_NAME).await;
-    remove_container(&docker, CUBEJS_CONTAINER_NAME).await;
-    remove_container(&docker, CLICKHOUSE_CONTAINER_NAME).await;
-    remove_container(&docker, POSTGRES_CONTAINER_NAME).await;
+    // Remove all containers in parallel for faster cleanup
+    tokio::join!(
+        remove_container(&docker, OTEL_CONTAINER_NAME),
+        remove_container(&docker, CUBEJS_CONTAINER_NAME),
+        remove_container(&docker, CLICKHOUSE_CONTAINER_NAME),
+        remove_container(&docker, POSTGRES_CONTAINER_NAME),
+    );
 }
 
 /// Remove a container by name (force remove, handles non-existent containers gracefully)
