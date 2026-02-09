@@ -322,6 +322,10 @@ jobs:
     name: Release ${{ needs.determine-build-type.outputs.channel }} CLI
     runs-on: ubuntu-latest
     needs: [determine-build-type, build-cli]
+    if: |
+      always() &&
+      needs.determine-build-type.result == 'success' &&
+      needs.build-cli.result == 'success'
     steps:
       - uses: actions/create-github-app-token@v2
         name: Create GitHub App Token
@@ -413,7 +417,7 @@ jobs:
   # ============================================================================
   build-docker-images:
     name: Build ${{ matrix.target.name }} ${{ needs.determine-build-type.outputs.channel }} Docker for ${{ matrix.arch }}
-    needs: [determine-build-type, changesets, build-cli]
+    needs: [determine-build-type, build-cli]
     if: |
       always() &&
       needs.build-cli.result == 'success' &&
@@ -536,7 +540,9 @@ jobs:
   create-manifests:
     name: Create ${{ matrix.target.name }} ${{ needs.determine-build-type.outputs.channel }} manifest
     needs: [determine-build-type, build-docker-images]
-    if: needs.build-docker-images.result == 'success'
+    if: |
+      always() &&
+      needs.build-docker-images.result == 'success'
     runs-on: ubuntu-24.04-arm
     strategy:
       matrix:
@@ -638,7 +644,9 @@ jobs:
   deployment-summary:
     name: Create Deployment Summary
     needs: [determine-build-type, create-manifests]
-    if: needs.create-manifests.result == 'success'
+    if: |
+      always() &&
+      needs.create-manifests.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Create deployment summary
