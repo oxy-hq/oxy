@@ -250,7 +250,7 @@ jobs:
     concurrency:
       group: smoke-test-enterprise-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
-    if: github.repository == 'oxy-hq/oxy-internal' && github.event_name == 'push' && needs.changesets.outputs.oxy == 'true'
+    if: github.repository == 'oxy-hq/oxy-internal' && needs.changesets.outputs.oxy == 'true'
     runs-on: ubuntu-latest
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -275,17 +275,12 @@ jobs:
         with: { shared-key: check }
       - uses: arduino/setup-protoc@v3
         with: { repo-token: "${{ secrets.GITHUB_TOKEN }}" }
-
-      - name: Install Hurl
-        run: |
-          curl -LO https://github.com/Orange-OpenSource/hurl/releases/download/6.1.1/hurl_6.1.1_amd64.deb
-          sudo dpkg -i hurl_6.1.1_amd64.deb
+      - uses: gacts/install-hurl@v1
 
       - name: Build and start oxy
         working-directory: crates/app/demo_project
         run: |
-          cargo build --profile ci
-          ../../../target/ci/oxy start --enterprise --clean &
+          cargo run --profile ci -p oxy-app -- start --enterprise --clean &
           echo "OXY_PID=$!" >> $GITHUB_ENV
           # Wait for server (max 3 min)
           for i in {1..36}; do
@@ -301,25 +296,25 @@ jobs:
           done
 
       - name: Smoke test - CLI
-        working-directory: crates/app/demo_project
+        working-directory: demo_project
         run: |
-          ../../../target/ci/oxy status
-          ../../../target/ci/oxy sync -o
-          ../../../target/ci/oxy build
-          ../../../target/ci/oxy validate
-          ../../../target/ci/oxy run example_duckdb_query.sql
+          cargo run --profile ci  -- status
+          cargo run --profile ci  -- sync -o
+          cargo run --profile ci  -- build
+          cargo run --profile ci  -- validate
+          cargo run --profile ci  -- run example_duckdb_query.sql
 
       - name: Smoke test - HTTP (Hurl)
         run: hurl --test --retry 3 tests/smoke/smoke.hurl
 
       - name: Test restart (data persistence)
-        working-directory: crates/app/demo_project
+        working-directory: demo_project
         run: |
           kill -TERM $OXY_PID 2>/dev/null || true
           for i in {1..30}; do kill -0 $OXY_PID 2>/dev/null || break; sleep 1; done
           sleep 2
           docker volume ls | grep -q oxy || { echo "::error::Volumes not persisted"; exit 1; }
-          ../../../target/ci/oxy start --enterprise &
+          cargo run --profile ci -- start --enterprise &
           echo "OXY_PID=$!" >> $GITHUB_ENV
           for i in {1..24}; do
             curl -sf --max-time 10 http://localhost:3000/health > /dev/null && break

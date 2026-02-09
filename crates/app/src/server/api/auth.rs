@@ -292,7 +292,7 @@ pub async fn register(
         last_login_at: sea_orm::ActiveValue::NotSet,
     };
 
-    let user = new_user.insert(&connection).await.map_err(|e| {
+    let _user = new_user.insert(&connection).await.map_err(|e| {
         tracing::error!("Failed to create user: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
@@ -602,15 +602,17 @@ async fn send_verification_email(email: &str, token: &str, base_url: &str) -> Re
         .ok()
         .and_then(|config| config.authentication);
 
-    if let Some(auth) = auth_config {
-        if let Some(basic_auth) = &auth.basic {
-            let verification_url = format!("{base_url}/verify-email?token={token}");
+    if let Some(auth) = auth_config
+        && let Some(basic_auth) = &auth.basic
+    {
+        let verification_url = format!("{base_url}/verify-email?token={token}");
 
-            let email_body = format!(
-                "Welcome to Onyx!\n\nPlease verify your email address by clicking the link below:\n\n{verification_url}\n\nIf you didn't create an account, please ignore this email."
-            );
+        let email_body = format!(
+            "Welcome to Onyx!\n\nPlease verify your email address by clicking the link below:\n\n{verification_url}\n\nIf you didn't create an account, please ignore this email."
+        );
 
-            let email_message = Message::builder()
+        let email_message =
+            Message::builder()
                 .from(basic_auth.smtp_user.parse().map_err(|e| {
                     OxyError::ConfigurationError(format!("Invalid from email: {e}"))
                 })?)
@@ -621,30 +623,29 @@ async fn send_verification_email(email: &str, token: &str, base_url: &str) -> Re
                 .body(email_body)
                 .map_err(|e| OxyError::ConfigurationError(format!("Failed to build email: {e}")))?;
 
-            // Try to resolve SMTP password using secret manager with fallback to environment variable
+        // Try to resolve SMTP password using secret manager with fallback to environment variable
 
-            let smtp_password = &basic_auth.smtp_password;
+        let smtp_password = &basic_auth.smtp_password;
 
-            let credentials = Credentials::new(basic_auth.smtp_user.clone(), smtp_password.clone());
+        let credentials = Credentials::new(basic_auth.smtp_user.clone(), smtp_password.clone());
 
-            let smtp_server = basic_auth
-                .smtp_server
-                .as_deref()
-                .unwrap_or("smtp.gmail.com");
-            let smtp_port = basic_auth.smtp_port.unwrap_or(587);
+        let smtp_server = basic_auth
+            .smtp_server
+            .as_deref()
+            .unwrap_or("smtp.gmail.com");
+        let smtp_port = basic_auth.smtp_port.unwrap_or(587);
 
-            let mailer = SmtpTransport::starttls_relay(smtp_server)
-                .map_err(|e| {
-                    OxyError::ConfigurationError(format!("Failed to connect to SMTP server: {e}"))
-                })?
-                .credentials(credentials)
-                .port(smtp_port)
-                .build();
+        let mailer = SmtpTransport::starttls_relay(smtp_server)
+            .map_err(|e| {
+                OxyError::ConfigurationError(format!("Failed to connect to SMTP server: {e}"))
+            })?
+            .credentials(credentials)
+            .port(smtp_port)
+            .build();
 
-            mailer
-                .send(&email_message)
-                .map_err(|e| OxyError::ConfigurationError(format!("Failed to send email: {e}")))?;
-        }
+        mailer
+            .send(&email_message)
+            .map_err(|e| OxyError::ConfigurationError(format!("Failed to send email: {e}")))?;
     }
 
     Ok(())

@@ -168,7 +168,7 @@ impl ArtifactTracker {
             None
         }
 
-        if let Some(Block { id, value }) = find_sql_content(children) {
+        if let Some(Block { id: _, value }) = find_sql_content(children) {
             return match &**value {
                 BlockValue::Content {
                     content: Content::Table(table),
@@ -218,7 +218,7 @@ impl ArtifactTracker {
             None
         }
 
-        if let Some(Block { id, value }) = find_semantic_query_content(children) {
+        if let Some(Block { id: _, value }) = find_semantic_query_content(children) {
             return match &**value {
                 BlockValue::Content {
                     content: Content::SemanticQuery(semantic_query),
@@ -248,7 +248,7 @@ impl ArtifactTracker {
             sql: "".to_string(),
         };
 
-        fn find_content<'a, F>(blocks: &'a [Block], predicate: F) -> Option<&'a Block>
+        fn find_content<F>(blocks: &[Block], predicate: F) -> Option<&Block>
         where
             F: Fn(&Block) -> bool + Copy,
         {
@@ -256,10 +256,10 @@ impl ArtifactTracker {
                 if predicate(block) {
                     return Some(block);
                 }
-                if let BlockValue::Children { children, .. } = &*block.value {
-                    if let Some(found) = find_content(children, predicate) {
-                        return Some(found);
-                    }
+                if let BlockValue::Children { children, .. } = &*block.value
+                    && let Some(found) = find_content(children, predicate)
+                {
+                    return Some(found);
                 }
             }
             None
@@ -315,16 +315,14 @@ impl ArtifactTracker {
                     content: Content::Table(_)
                 }
             )
-        }) {
-            if let BlockValue::Content {
-                content: Content::Table(table),
-            } = &*table_block.value
-            {
-                let (table_2d_array, _is_truncated) = table.to_2d_array()?;
-                artifact_content.sql = table.get_sql_query().unwrap_or_default();
-                artifact_content.result = table_2d_array;
-                return Ok(Some(ArtifactContent::OmniQuery(artifact_content)));
-            }
+        }) && let BlockValue::Content {
+            content: Content::Table(table),
+        } = &*table_block.value
+        {
+            let (table_2d_array, _is_truncated) = table.to_2d_array()?;
+            artifact_content.sql = table.get_sql_query().unwrap_or_default();
+            artifact_content.result = table_2d_array;
+            return Ok(Some(ArtifactContent::OmniQuery(artifact_content)));
         }
         Ok(None)
     }
@@ -352,16 +350,15 @@ impl ArtifactTracker {
             None
         }
 
-        if let Some(block) = find_sandbox_info(children) {
-            if let BlockValue::Content {
+        if let Some(block) = find_sandbox_info(children)
+            && let BlockValue::Content {
                 content: Content::SandboxInfo(SandboxInfo { preview_url, kind }),
             } = &*block.value
-            {
-                return Ok(Some(ArtifactContent::SandboxInfo(SandboxInfo {
-                    kind: kind.clone(),
-                    preview_url: preview_url.clone(),
-                })));
-            }
+        {
+            return Ok(Some(ArtifactContent::SandboxInfo(SandboxInfo {
+                kind: kind.clone(),
+                preview_url: preview_url.clone(),
+            })));
         }
         Ok(None)
     }
