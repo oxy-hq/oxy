@@ -119,18 +119,23 @@ export const WorkflowForm: React.FC<WorkflowFormProps> = ({ data, onChange }) =>
     mode: "onBlur"
   });
 
-  const { watch } = methods;
+  const { subscribe } = methods;
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
-    const subscription = watch((value) => {
-      if (methods.formState.isDirty) {
-        const cleaned = cleanFormData(value as Partial<WorkflowFormData>);
-        onChange?.(cleaned);
+    const callback = subscribe({
+      formState: {
+        values: true,
+        isDirty: true
+      },
+      callback: ({ values, isDirty }) => {
+        if (isDirty) {
+          const cleaned = cleanFormData(values as Partial<WorkflowFormData>);
+          onChange?.(cleaned);
+        }
       }
     });
-    return () => subscription.unsubscribe();
-  }, [watch, onChange]);
+    return () => callback();
+  }, [subscribe, onChange]);
 
   const {
     control,

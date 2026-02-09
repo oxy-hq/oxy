@@ -47,8 +47,8 @@ export const ReasoningForm: React.FC = () => {
               type='button'
               variant='ghost'
               size='sm'
-              onClick={() => {
-                setValue("reasoning.effort", undefined);
+              onClick={async () => {
+                setValue("reasoning", undefined, { shouldDirty: true });
                 setShowReasoningEffort(false);
               }}
             >

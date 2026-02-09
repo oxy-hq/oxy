@@ -54,17 +54,17 @@ export const VariablesForm: React.FC = () => {
     if (jsonString.trim() === "") {
       setIsJsonValid(true);
       setJsonError("");
-      setValue("variables", undefined);
+      setValue("variables", undefined, { shouldDirty: true });
       return;
     }
 
     try {
       const value = JSON.parse(jsonString);
-      setValue("variables", value);
+      setValue("variables", value, { shouldDirty: true });
       setIsJsonValid(true);
       setJsonError("");
     } catch (error) {
-      setValue("variables", jsonString);
+      setValue("variables", jsonString, { shouldDirty: true });
       setIsJsonValid(false);
       setJsonError(error instanceof Error ? error.message : "Invalid JSON");
     }
