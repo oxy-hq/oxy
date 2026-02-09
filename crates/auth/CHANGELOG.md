@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.7](https://github.com/oxy-hq/oxy-internal/compare/0.5.6...0.5.7) (2026-02-09)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* handle unique constraint violation when creating user ([#1621](https://github.com/oxy-hq/oxy-internal/issues/1621)) ([8b7f349](https://github.com/oxy-hq/oxy-internal/commit/8b7f349d83c0b64dfb452df5220572008fe1d236))
+
 ## [0.5.6](https://github.com/oxy-hq/oxy-internal/compare/0.5.5...0.5.6) (2026-02-05)
 
 

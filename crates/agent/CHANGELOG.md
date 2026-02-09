@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.7](https://github.com/oxy-hq/oxy-internal/compare/0.5.6...0.5.7) (2026-02-09)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* remove double routing agent name prefix ([#1617](https://github.com/oxy-hq/oxy-internal/issues/1617)) ([7fbac9b](https://github.com/oxy-hq/oxy-internal/commit/7fbac9bc9a5a40e3b890bf536428c3d08b2afc76))
+
 ## [0.5.6](https://github.com/oxy-hq/oxy-internal/compare/0.5.5...0.5.6) (2026-02-05)
 
 

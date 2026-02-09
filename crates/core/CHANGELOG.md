@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.5.7](https://github.com/oxy-hq/oxy-internal/compare/0.5.6...0.5.7) (2026-02-09)
+
+
+### <!-- 0 -->🚀 Features
+
+* improve sql ide ([#1609](https://github.com/oxy-hq/oxy-internal/issues/1609)) ([9dafe7d](https://github.com/oxy-hq/oxy-internal/commit/9dafe7d35a5361aee1bc678430f071e01b30df22))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* enhance enterprise network removal with retry logic ([#1626](https://github.com/oxy-hq/oxy-internal/issues/1626)) ([fd6dfac](https://github.com/oxy-hq/oxy-internal/commit/fd6dfac04973c6bea996a074304e8240ff98616e))
+* remove tracing logs and improve database management options ([#1622](https://github.com/oxy-hq/oxy-internal/issues/1622)) ([2366ad7](https://github.com/oxy-hq/oxy-internal/commit/2366ad769301c649908c954d863a4f40d725faf0))
+* show semantic queries in automation run logs ([#1613](https://github.com/oxy-hq/oxy-internal/issues/1613)) ([fa1ba59](https://github.com/oxy-hq/oxy-internal/commit/fa1ba591f4a362bac004458cff5afad0d32a3de6))
+* update PostgreSQL image from 18-alpine to 18.1 across configurations ([694d45e](https://github.com/oxy-hq/oxy-internal/commit/694d45e2a512e82f2457f1800a10bf1a826f575d))
+
 ## [0.5.6](https://github.com/oxy-hq/oxy-internal/compare/0.5.5...0.5.6) (2026-02-05)
 
 

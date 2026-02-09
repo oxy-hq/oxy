@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.5.7](https://github.com/oxy-hq/oxy-internal/compare/0.5.6...0.5.7) (2026-02-09)
+
+
+### <!-- 0 -->🚀 Features
+
+* add manual refresh database sidebar ([#1619](https://github.com/oxy-hq/oxy-internal/issues/1619)) ([5dc756d](https://github.com/oxy-hq/oxy-internal/commit/5dc756d0c7c821b68c7ff2237f60a15ad103774c))
+* improve sql ide ([#1609](https://github.com/oxy-hq/oxy-internal/issues/1609)) ([9dafe7d](https://github.com/oxy-hq/oxy-internal/commit/9dafe7d35a5361aee1bc678430f071e01b30df22))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* app crash when run workflow ([#1620](https://github.com/oxy-hq/oxy-internal/issues/1620)) ([e95a485](https://github.com/oxy-hq/oxy-internal/commit/e95a485110741b07ac908ad44a00a474da8e40e4))
+* show semantic queries in automation run logs ([#1613](https://github.com/oxy-hq/oxy-internal/issues/1613)) ([fa1ba59](https://github.com/oxy-hq/oxy-internal/commit/fa1ba591f4a362bac004458cff5afad0d32a3de6))
+* sometimes save change does not appear ([#1625](https://github.com/oxy-hq/oxy-internal/issues/1625)) ([b06ece8](https://github.com/oxy-hq/oxy-internal/commit/b06ece82ab892bd467dbd4268445797cfbe38781))
+* sometimes save change does not appear ([#1628](https://github.com/oxy-hq/oxy-internal/issues/1628)) ([1fa0738](https://github.com/oxy-hq/oxy-internal/commit/1fa0738c0ed7007f85782fa9977efef16756b07a))
+
 ## [0.5.6](https://github.com/oxy-hq/oxy-internal/compare/0.5.3...0.5.6) (2026-02-05)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.7](https://github.com/oxy-hq/oxy-internal/compare/0.5.6...0.5.7) (2026-02-09)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* use workflow_ref for workflow execution ([#1616](https://github.com/oxy-hq/oxy-internal/issues/1616)) ([a048627](https://github.com/oxy-hq/oxy-internal/commit/a04862735ba8cd94d06ca066271db6c459203691))
+
 ## [0.5.6](https://github.com/oxy-hq/oxy-internal/compare/0.5.5...0.5.6) (2026-02-05)
 
 
