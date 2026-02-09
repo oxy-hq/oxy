@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use axum::extract::{self, Path, Query};
 use axum::http::StatusCode;
+use axum::response::sse::KeepAlive;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use serde::Deserialize;
@@ -422,10 +423,11 @@ pub async fn workflow_events(
         tracing::error!("Failed to subscribe to topic {run_id}: {err}");
         Into::<StatusCode>::into(err)
     })?;
-    Ok(axum::response::sse::Sse::new(create_sse_broadcast(
-        subscribed.items,
-        subscribed.receiver,
-    )))
+    tracing::info!("Subscribed to events for run ID: {}", run_id);
+    Ok(
+        axum::response::sse::Sse::new(create_sse_broadcast(subscribed.items, subscribed.receiver))
+            .keep_alive(KeepAlive::default()),
+    )
 }
 
 #[derive(serde::Serialize, ToSchema, Debug)]

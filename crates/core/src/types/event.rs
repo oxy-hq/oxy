@@ -235,6 +235,14 @@ impl TryFrom<Event> for EventKind {
                         };
                         Ok(event)
                     }
+                    Output::SemanticQuery(semantic_query) => Ok(EventKind::ContentAdded {
+                        content_id: event.source.id.to_string(),
+                        item: ContentType::SemanticQuery {
+                            semantic_query: semantic_query.get_semantic_query_json(),
+                            sql_query: semantic_query.sql_query,
+                            results: semantic_query.result,
+                        },
+                    }),
                     _ => Err(OxyError::ArgumentError(
                         "Unsupported event kind".to_string(),
                     )),
@@ -306,6 +314,14 @@ impl TryFrom<Event> for EventKind {
                         };
                         Ok(event)
                     }
+                    Output::SemanticQuery(semantic_query) => Ok(EventKind::ContentDone {
+                        content_id: event.source.id.to_string(),
+                        item: ContentType::SemanticQuery {
+                            semantic_query: semantic_query.get_semantic_query_json(),
+                            sql_query: semantic_query.sql_query,
+                            results: semantic_query.result,
+                        },
+                    }),
                     _ => Err(OxyError::ArgumentError(
                         "Unsupported event kind".to_string(),
                     )),

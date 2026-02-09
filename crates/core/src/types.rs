@@ -164,6 +164,23 @@ pub struct SemanticQuery {
     pub offset: Option<u64>,
 }
 
+impl SemanticQuery {
+    pub fn get_semantic_query_json(&self) -> String {
+        let semantic_query_params = SemanticQueryParams {
+            topic: self.topic.clone(),
+            measures: self.measures.clone(),
+            dimensions: self.dimensions.clone(),
+            filters: self.filters.clone(),
+            orders: self.orders.clone(),
+            limit: self.limit,
+            offset: self.offset,
+            variables: None,
+        };
+        serde_json::to_string_pretty(&semantic_query_params)
+            .unwrap_or_else(|_| "Failed to serialize SemanticQueryParams".to_string())
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, ToSchema, Debug)]
 pub struct OmniQuery {
     pub result: Vec<Vec<String>>,

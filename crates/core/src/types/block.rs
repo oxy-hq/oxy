@@ -43,6 +43,11 @@ pub enum BlockKind {
     Group {
         group_id: String,
     },
+    SemanticQuery {
+        semantic_query: String,
+        sql_query: String,
+        results: Vec<Vec<String>>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

@@ -43,6 +43,13 @@ export type TextContent = {
   content: string;
 };
 
+export type SemanticQueryContent = {
+  type: "semantic_query";
+  semantic_query: string;
+  sql_query?: string;
+  results?: string[][];
+};
+
 export type SqlContent = {
   type: "sql";
   database: string;
@@ -100,6 +107,7 @@ export type BlockContent =
   | StepContent
   | TextContent
   | SqlContent
+  | SemanticQueryContent
   | VizContent
   | DataAppContent
   | GroupContent;
@@ -219,7 +227,7 @@ export type StepFinishedEvent = {
 export type ContentEvent = {
   type: "content_added" | "content_done";
   content_id: string;
-  item: TextContent | SqlContent;
+  item: TextContent | SqlContent | SemanticQueryContent;
 };
 
 export type ArtifactStartedEvent = {

@@ -26,4 +26,9 @@ pub enum ContentType {
         preview_url: String,
     },
     Viz(VizParams),
+    SemanticQuery {
+        semantic_query: String,
+        sql_query: String,
+        results: Vec<Vec<String>>,
+    },
 }

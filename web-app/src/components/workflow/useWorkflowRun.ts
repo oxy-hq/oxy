@@ -137,6 +137,45 @@ const logSelector = (
         }
       ];
     }
+    case "semantic_query": {
+      console.log("Generating logs for semantic_query block:", block);
+      return [
+        {
+          content: `Semantic Query\n${"```sql\n"}${block.semantic_query}${"\n```"}`,
+          log_type: "info",
+          timestamp: new Date().toISOString(),
+          append: false,
+          is_streaming: block.is_streaming
+        },
+        ...(block.sql_query
+          ? [
+              {
+                content: `Generated SQL Query\n${"```sql\n"}${block.sql_query}${"\n```"}`,
+                log_type: "info" as const,
+                timestamp: new Date().toISOString(),
+                append: false,
+                is_streaming: block.is_streaming
+              }
+            ]
+          : []),
+        ...(block.results && block.results.length > 0
+          ? [
+              {
+                content: `Results\n\n${block.results
+                  .map((row, index) => {
+                    const separator = index === 0 ? `\n${"|---".repeat(row.length)}|` : "";
+                    return `|${row.join("|")}|${separator}`;
+                  })
+                  .join("\n")}\n`,
+                log_type: "info" as const,
+                timestamp: new Date().toISOString(),
+                append: false,
+                is_streaming: block.is_streaming
+              }
+            ]
+          : [])
+      ];
+    }
     default: {
       return [];
     }

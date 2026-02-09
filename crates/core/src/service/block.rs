@@ -69,11 +69,27 @@ impl BlockHandler {
         match self.blocks.get_mut(&block_id) {
             Some(block) => {
                 if let (
+                    BlockKind::SemanticQuery {
+                        semantic_query,
+                        sql_query,
+                        results,
+                    },
+                    BlockKind::SemanticQuery {
+                        semantic_query: update_semantic_query,
+                        sql_query: update_sql_query,
+                        results: update_results,
+                    },
+                ) = (&mut block.block_kind, &block_kind)
+                {
+                    semantic_query.clone_from(update_semantic_query);
+                    sql_query.clone_from(update_sql_query);
+                    results.clone_from(update_results);
+                } else if let (
                     BlockKind::Text { content },
                     BlockKind::Text {
                         content: update_content,
                     },
-                ) = (&mut block.block_kind, block_kind)
+                ) = (&mut block.block_kind, &block_kind)
                 {
                     content.push_str(update_content.as_str());
                 }
@@ -196,6 +212,15 @@ impl Handler for BlockHandler {
                             BlockKind::SandboxApp { kind, preview_url }
                         }
                         ContentType::Viz(viz) => BlockKind::Viz(viz),
+                        ContentType::SemanticQuery {
+                            semantic_query,
+                            sql_query,
+                            results,
+                        } => BlockKind::SemanticQuery {
+                            semantic_query,
+                            sql_query,
+                            results,
+                        },
                     },
                 );
             }
@@ -220,6 +245,15 @@ impl Handler for BlockHandler {
                             BlockKind::SandboxApp { kind, preview_url }
                         }
                         ContentType::Viz(viz) => BlockKind::Viz(viz),
+                        ContentType::SemanticQuery {
+                            semantic_query,
+                            sql_query,
+                            results,
+                        } => BlockKind::SemanticQuery {
+                            semantic_query,
+                            sql_query,
+                            results,
+                        },
                     },
                 );
                 self.finish_block(content_id, None);
