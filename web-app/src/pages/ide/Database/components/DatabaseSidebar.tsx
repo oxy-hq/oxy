@@ -1,4 +1,5 @@
-import { Database as DatabaseIcon, Loader2, Plus } from "lucide-react";
+import { Database as DatabaseIcon, Loader2, Plus, RotateCw } from "lucide-react";
+
 import type React from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/shadcn/button";
@@ -22,7 +23,7 @@ export const DatabaseSidebar: React.FC<DatabaseSidebarProps> = ({
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
 
-  const { data: databases = [], isLoading } = useDatabases();
+  const { data: databases = [], isLoading, refetch, isFetching } = useDatabases();
   const { activeConnectionId, setActiveConnection } = useDatabaseClient();
 
   return (
@@ -31,11 +32,23 @@ export const DatabaseSidebar: React.FC<DatabaseSidebarProps> = ({
         title='Connections'
         onCollapse={() => setSidebarOpen(!sidebarOpen)}
         actions={
-          <Link to={ROUTES.PROJECT(projectId).IDE.SETTINGS.DATABASES}>
-            <Button tooltip='Add new connection' variant='ghost' size='icon' className='h-6 w-6'>
-              <Plus className='h-4 w-4' />
+          <>
+            <Link to={ROUTES.PROJECT(projectId).IDE.SETTINGS.DATABASES}>
+              <Button tooltip='Add new connection' variant='ghost' size='icon' className='h-6 w-6'>
+                <Plus className='h-4 w-4' />
+              </Button>
+            </Link>
+            <Button
+              tooltip='Refresh'
+              variant='ghost'
+              size='icon'
+              className='h-6 w-6'
+              onClick={() => refetch()}
+              disabled={isFetching}
+            >
+              <RotateCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
             </Button>
-          </Link>
+          </>
         }
       />
       <SidebarContent className='customScrollbar h-full flex-1 overflow-y-auto'>
