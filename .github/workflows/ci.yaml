@@ -250,218 +250,92 @@ jobs:
     concurrency:
       group: smoke-test-enterprise-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
-    # Run only on oxy-internal when pushing to main (smoke test is heavier, skip on PRs)
-    if: |
-      github.repository == 'oxy-hq/oxy-internal' &&
-      github.event_name == 'push' &&
-      needs.changesets.outputs.oxy == 'true'
-    runs-on: "ubuntu-latest"
+    if: github.repository == 'oxy-hq/oxy-internal' && github.event_name == 'push' && needs.changesets.outputs.oxy == 'true'
+    runs-on: ubuntu-latest
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       CARGO_PROFILE_DEV_DEBUG: "1"
     steps:
-      - name: Free disk space
-        uses: jlumbroso/free-disk-space@main
+      - uses: jlumbroso/free-disk-space@main
         with:
-          tool-cache: false
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: false
-          docker-images: false
-          swap-storage: true
-
+          {
+            tool-cache: false,
+            android: true,
+            dotnet: true,
+            haskell: true,
+            large-packages: false,
+            docker-images: false,
+            swap-storage: true,
+          }
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Collect Workflow Telemetry
-        uses: catchpoint/workflow-telemetry-action@v2
-        with:
-          theme: dark
-          metric_frequency: 3
-          comment_on_pr: false
-
       - uses: rui314/setup-mold@v1
-        with:
-          make-default: true
+        with: { make-default: true }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { shared-key: check }
+      - uses: arduino/setup-protoc@v3
+        with: { repo-token: "${{ secrets.GITHUB_TOKEN }}" }
 
-      - name: Prep Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Hurl
+        run: |
+          curl -LO https://github.com/Orange-OpenSource/hurl/releases/download/6.1.1/hurl_6.1.1_amd64.deb
+          sudo dpkg -i hurl_6.1.1_amd64.deb
 
-      - name: Prep cargo cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: check
-
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build oxy binary
-        run: cargo build -p oxy --profile ci
-
-      - name: Start oxy enterprise
+      - name: Build and start oxy
         working-directory: crates/app/demo_project
         run: |
-          # Start oxy in background with enterprise mode
+          cargo build -p oxy --profile ci
           ../../../target/ci/oxy start --enterprise --clean &
-          OXY_PID=$!
-          echo "OXY_PID=$OXY_PID" >> $GITHUB_ENV
-
-          # Wait for all services to be ready
-          echo "Waiting for services to start..."
-          MAX_WAIT=180
-          WAITED=0
-
-          # Wait for web server (port 3000) with bounded timeouts
-          until curl -sf --connect-timeout 5 --max-time 10 http://localhost:3000 > /dev/null 2>&1; do
-            if [ $WAITED -ge $MAX_WAIT ]; then
-              echo "::error::Timeout waiting for oxy server to start"
-              echo "=== Docker containers ==="
-              docker ps -a
-              echo "=== PostgreSQL logs ==="
-              docker logs oxy-postgres 2>&1 | tail -100 || true
-              echo "=== ClickHouse logs ==="
-              docker logs oxy-clickhouse 2>&1 | tail -100 || true
-              echo "=== OTel logs ==="
-              docker logs oxy-otel-collector 2>&1 | tail -50 || true
-              echo "=== CubeJS logs ==="
-              docker logs oxy-cubejs 2>&1 | tail -100 || true
-              exit 1
-            fi
-            echo "Waiting for oxy server... ($WAITED/$MAX_WAIT seconds)"
+          echo "OXY_PID=$!" >> $GITHUB_ENV
+          # Wait for server (max 3 min)
+          for i in {1..36}; do
+            curl -sf --max-time 10 http://localhost:3000/health > /dev/null && break
+            [ $i -eq 36 ] && { docker ps -a; docker logs oxy-postgres 2>&1 | tail -50; exit 1; }
             sleep 5
-            WAITED=$((WAITED + 5))
-          done
-          echo "Oxy server is ready!"
-
-      - name: Verify all containers running
-        run: |
-          echo "=== Docker containers ==="
-          docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-
-          # Verify all expected containers are running
-          for container in oxy-postgres oxy-clickhouse oxy-otel-collector oxy-cubejs; do
-            if docker ps --format "{{.Names}}" | grep -q "^${container}$"; then
-              echo "✓ ${container} is running"
-            else
-              echo "::error::${container} is not running"
-              exit 1
-            fi
           done
 
-      - name: Smoke test - oxy status
-        working-directory: crates/app/demo_project
-        run: ../../../target/ci/oxy status
-
-      - name: Smoke test - oxy sync
-        working-directory: crates/app/demo_project
-        run: ../../../target/ci/oxy sync -o
-
-      - name: Smoke test - oxy build
-        working-directory: crates/app/demo_project
-        run: ../../../target/ci/oxy build
-
-      - name: Smoke test - oxy validate
-        working-directory: crates/app/demo_project
-        run: ../../../target/ci/oxy validate
-
-      - name: Smoke test - SQL query (DuckDB)
-        working-directory: crates/app/demo_project
-        run: ../../../target/ci/oxy run example_duckdb_query.sql
-
-      - name: Smoke test - health endpoint
+      - name: Verify containers
         run: |
-          echo "=== Testing health endpoint ==="
-          curl -sf --max-time 30 http://localhost:3000/health | jq . || curl -s --max-time 30 http://localhost:3000/health
+          for c in oxy-postgres oxy-clickhouse oxy-otel-collector oxy-cubejs; do
+            docker ps --format "{{.Names}}" | grep -q "^${c}$" || { echo "::error::$c not running"; exit 1; }
+          done
 
-      - name: Smoke test - API request
-        run: |
-          echo "=== Testing API endpoints ==="
-          # Test that the API is responding
-          curl -sf --max-time 30 http://localhost:3000/api/apps | jq . || echo "Apps endpoint responded"
-
-      - name: Smoke test - restart without --clean (data persistence)
+      - name: Smoke test - CLI
         working-directory: crates/app/demo_project
         run: |
-          echo "=== Testing restart without --clean ==="
+          ../../../target/ci/oxy status
+          ../../../target/ci/oxy sync -o
+          ../../../target/ci/oxy build
+          ../../../target/ci/oxy validate
+          ../../../target/ci/oxy run example_duckdb_query.sql
 
-          # Stop the running oxy server gracefully
-          echo "Stopping oxy server (PID: $OXY_PID)..."
+      - name: Smoke test - HTTP (Hurl)
+        run: hurl --test --retry 3 tests/smoke/smoke.hurl
+
+      - name: Test restart (data persistence)
+        working-directory: crates/app/demo_project
+        run: |
           kill -TERM $OXY_PID 2>/dev/null || true
-
-          # Wait for process to exit and containers to be cleaned up
-          echo "Waiting for graceful shutdown..."
-          for i in {1..30}; do
-            if ! kill -0 $OXY_PID 2>/dev/null; then
-              echo "Process exited after ${i} seconds"
-              break
-            fi
-            sleep 1
-          done
-
-          # Give Docker a moment to finish container cleanup
+          for i in {1..30}; do kill -0 $OXY_PID 2>/dev/null || break; sleep 1; done
           sleep 2
-
-          # Verify containers were removed (graceful shutdown should clean them)
-          echo "=== Checking containers after shutdown ==="
-          docker ps -a --format "table {{.Names}}\t{{.Status}}"
-
-          # Verify volumes still exist (data should persist)
-          echo "=== Checking volumes (should persist) ==="
-          docker volume ls | grep oxy || echo "No oxy volumes found (this is unexpected)"
-
-          # Start oxy again WITHOUT --clean (should reuse existing volumes)
-          echo "=== Starting oxy again (without --clean) ==="
+          docker volume ls | grep -q oxy || { echo "::error::Volumes not persisted"; exit 1; }
           ../../../target/ci/oxy start --enterprise &
-          OXY_PID=$!
-          echo "OXY_PID=$OXY_PID" >> $GITHUB_ENV
-
-          # Wait for services to come back up
-          MAX_WAIT=120
-          WAITED=0
-          until curl -sf --connect-timeout 5 --max-time 10 http://localhost:3000 > /dev/null 2>&1; do
-            if [ $WAITED -ge $MAX_WAIT ]; then
-              echo "::error::Timeout waiting for oxy server to restart"
-              docker ps -a
-              docker logs oxy-postgres 2>&1 | tail -50 || true
-              exit 1
-            fi
-            echo "Waiting for oxy server to restart... ($WAITED/$MAX_WAIT seconds)"
+          echo "OXY_PID=$!" >> $GITHUB_ENV
+          for i in {1..24}; do
+            curl -sf --max-time 10 http://localhost:3000/health > /dev/null && break
+            [ $i -eq 24 ] && { docker ps -a; exit 1; }
             sleep 5
-            WAITED=$((WAITED + 5))
-          done
-          echo "Oxy server restarted successfully!"
-
-      - name: Verify restart - all containers running
-        run: |
-          echo "=== Docker containers after restart ==="
-          docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-
-          # Verify all expected containers are running
-          for container in oxy-postgres oxy-clickhouse oxy-otel-collector oxy-cubejs; do
-            if docker ps --format "{{.Names}}" | grep -q "^${container}$"; then
-              echo "✓ ${container} is running"
-            else
-              echo "::error::${container} is not running after restart"
-              exit 1
-            fi
           done
 
-      - name: Verify restart - health endpoint
+      - name: Verify restart
         run: |
-          echo "=== Testing health endpoint after restart ==="
-          curl -sf --max-time 30 http://localhost:3000/health | jq . || curl -s --max-time 30 http://localhost:3000/health
+          for c in oxy-postgres oxy-clickhouse oxy-otel-collector oxy-cubejs; do
+            docker ps --format "{{.Names}}" | grep -q "^${c}$" || { echo "::error::$c not running after restart"; exit 1; }
+          done
+          hurl --test tests/smoke/smoke.hurl
 
       - name: Cleanup
         if: always()
         run: |
-          # Stop oxy server if still running
-          if [ -n "$OXY_PID" ]; then
-            kill -TERM $OXY_PID 2>/dev/null || true
-            sleep 5
-          fi
-          # Force cleanup any remaining containers
+          kill -TERM $OXY_PID 2>/dev/null || true; sleep 3
           docker rm -f oxy-postgres oxy-clickhouse oxy-otel-collector oxy-cubejs 2>/dev/null || true

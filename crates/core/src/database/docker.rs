@@ -225,7 +225,10 @@ pub async fn start_postgres_container() -> Result<String, OxyError> {
     );
 
     // Configure volume bindings
-    let binds = vec![format!("{}:/var/lib/postgresql/data", POSTGRES_VOLUME)];
+    // PostgreSQL 18+ uses /var/lib/postgresql as the volume mount point
+    // with PGDATA at /var/lib/postgresql/18/docker (version-specific subdirectory)
+    // See: https://hub.docker.com/_/postgres ("PGDATA" section for 18+)
+    let binds = vec![format!("{}:/var/lib/postgresql", POSTGRES_VOLUME)];
 
     let host_config = HostConfig {
         port_bindings: Some(port_bindings),
@@ -234,10 +237,14 @@ pub async fn start_postgres_container() -> Result<String, OxyError> {
     };
 
     // Configure environment variables
+    // PostgreSQL 18+ uses /var/lib/postgresql/18/docker as the default PGDATA
+    // This is version-specific and enables faster pg_upgrade with --link
+    // See: https://hub.docker.com/_/postgres ("PGDATA" section for 18+)
     let env: Vec<String> = vec![
         format!("POSTGRES_USER={}", POSTGRES_USERNAME),
         format!("POSTGRES_PASSWORD={}", POSTGRES_PASSWORD),
         format!("POSTGRES_DB={}", POSTGRES_DATABASE),
+        "PGDATA=/var/lib/postgresql/18/docker".to_string(),
     ];
 
     // Create container configuration

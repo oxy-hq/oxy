@@ -41,17 +41,20 @@ services:
 
   # Example database (replace with your actual database)
   postgres:
-    image: postgres
+    image: postgres:18-alpine
     container_name: postgres
     hostname: postgres
     environment:
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: password
       POSTGRES_DB: default
+      # PostgreSQL 18+ requires PGDATA in a version-specific subdirectory
+      PGDATA: /var/lib/postgresql/18/docker
     ports:
       - "5432:5432"
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      # PostgreSQL 18+ mount point changed from /var/lib/postgresql/data to /var/lib/postgresql
+      - postgres-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "admin", "-d", "default"]
       interval: 30s

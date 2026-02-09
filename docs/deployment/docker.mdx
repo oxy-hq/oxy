@@ -193,11 +193,14 @@ services:
     ports:
       - "15432:5432"
     volumes:
-      - oxy-postgres-data:/var/lib/postgresql/data
+      # PostgreSQL 18+ uses /var/lib/postgresql (not /var/lib/postgresql/data)
+      - oxy-postgres-data:/var/lib/postgresql
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=oxy
+      # PostgreSQL 18+ requires PGDATA in a version-specific subdirectory
+      - PGDATA=/var/lib/postgresql/18/docker
     restart: unless-stopped
 
   oxy:

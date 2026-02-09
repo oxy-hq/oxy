@@ -69,6 +69,8 @@ services:
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: password
       POSTGRES_DB: default
+      # PostgreSQL 18+ requires PGDATA in a version-specific subdirectory
+      PGDATA: /var/lib/postgresql/18/docker
     ports:
       - "5432:5432"
     volumes:
