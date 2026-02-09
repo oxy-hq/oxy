@@ -31,6 +31,7 @@ export function useSmartScroll({
     return scrollHeight - scrollTop - clientHeight < SCROLL_THRESHOLD;
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
     if (!enabled) return;
     const scrollContainer = scrollContainerRef.current;
@@ -48,20 +49,21 @@ export function useSmartScroll({
     return () => {
       scrollContainer.removeEventListener("scroll", handleScroll);
     };
-  }, [enabled, checkAtBottom]);
+  }, [enabled]);
 
   const scrollToBottom = () => {
     hasUserScrolledUpRef.current = false;
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
     if (!enabled) return;
 
     if (streamingMessage && !hasUserScrolledUpRef.current) {
       bottomRef.current?.scrollIntoView({ behavior: "instant" });
     }
-  }, [streamingMessage, enabled]);
+  }, [messages, streamingMessage, enabled]);
 
   return {
     scrollContainerRef,

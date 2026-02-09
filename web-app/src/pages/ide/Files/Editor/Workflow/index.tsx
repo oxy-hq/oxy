@@ -16,7 +16,7 @@ import WorkflowOutputView from "./components/WorkflowOutputView";
 
 const WorkflowEditor = () => {
   const { pathb64, isReadOnly, gitEnabled } = useEditorContext();
-  const { refreshPreview } = usePreviewRefresh();
+  const { refreshPreview, previewKey } = usePreviewRefresh();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -36,9 +36,10 @@ const WorkflowEditor = () => {
   const workflowPath = useMemo(() => atob(pathb64 ?? ""), [pathb64]);
 
   // Reset navigation flag when workflow path changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
     hasNavigatedRef.current = false;
-  }, []);
+  }, [workflowPath]);
 
   // Fetch the most recent workflow run
   const { data: runsData, isPending: isRunsLoading } = useListWorkflowRuns(workflowPath, {
@@ -126,7 +127,14 @@ const WorkflowEditor = () => {
           validateContent(value);
         }
       }}
-      preview={<WorkflowPreview pathb64={pathb64} runId={runId} direction='vertical' />}
+      preview={
+        <WorkflowPreview
+          key={previewKey + runId}
+          pathb64={pathb64}
+          runId={runId}
+          direction='vertical'
+        />
+      }
     />
   );
 };

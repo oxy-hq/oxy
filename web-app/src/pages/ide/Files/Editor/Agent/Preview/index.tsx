@@ -8,7 +8,7 @@ import useAgent from "@/hooks/api/agents/useAgent";
 import useAskAgent from "@/hooks/messaging/agent";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { useEnterSubmit } from "@/hooks/useEnterSubmit";
-import useAgentThreadStore from "@/stores/useAgentThread";
+import useAgentThreadStore, { getThreadIdFromPath } from "@/stores/useAgentThread";
 import ArtifactPanelContainer from "./ArtifactPanelContainer";
 import Messages from "./Messages";
 
@@ -20,7 +20,7 @@ const getAgentNameFromPath = (path: string) => {
 const AgentPreview = ({ agentPathb64 }: { agentPathb64: string }) => {
   const path = atob(agentPathb64);
   const { project, branchName } = useCurrentProjectBranch();
-  const threadId = `${project.id}_${branchName}_${agentPathb64}`;
+  const threadId = getThreadIdFromPath(project.id, branchName, agentPathb64);
   const { data: agent } = useAgent(agentPathb64);
   const [question, setQuestion] = useState("");
   const { formRef, onKeyDown } = useEnterSubmit();

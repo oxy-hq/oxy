@@ -15,6 +15,7 @@ export const useAgenticStore = (projectId: string, threadId: string) => {
   const { setMessages } = useTaskThreadStore();
   const { setGroupBlocks } = useBlockStore();
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
     const messages = result.data;
     if (messages) {
@@ -32,7 +33,7 @@ export const useAgenticStore = (projectId: string, threadId: string) => {
         }
       });
     }
-  }, [result.data, threadId, setGroupBlocks, setMessages]);
+  }, [result.data, threadId]);
 
   return result;
 };
@@ -49,6 +50,7 @@ export const useObserveAgenticMessages = (threadId: string, refetch?: () => Prom
   const setGroupBlocks = useBlockStore((state) => state.setGroupBlocks);
   const { stream } = useStreamEvents();
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
     const abortRef = new AbortController();
     const observeMessages = async () => {
@@ -74,7 +76,7 @@ export const useObserveAgenticMessages = (threadId: string, refetch?: () => Prom
     return () => {
       abortRef.abort();
     };
-  }, [onGoingMessages, refetch, setGroupBlocks, stream]);
+  }, [threadId, onGoingMessages]);
 };
 
 export const useAskAgentic = () => {

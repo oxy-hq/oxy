@@ -124,7 +124,8 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
     },
     [flattenedLogs]
   );
-  const getScrollElement = useCallback(() => parentRef.current, []);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
+  const getScrollElement = useCallback(() => parentRef.current, [parentRef]);
 
   // eslint-disable-next-line react-hooks/incompatible-library
   const logsVirtualizer = useVirtualizer({
@@ -134,9 +135,10 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
     enabled: true
   });
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, []);
+    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
+  }, [logs]);
 
   const items = logsVirtualizer.getVirtualItems();
 

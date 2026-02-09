@@ -1,6 +1,10 @@
 import { create } from "zustand";
 import type { Message } from "@/types/chat";
 
+export const getThreadIdFromPath = (projectId: string, branchName: string, pathb64: string) => {
+  return `${projectId}_${branchName}_${pathb64}`;
+};
+
 export interface AgentThread {
   messages: Message[];
   isLoading: boolean;

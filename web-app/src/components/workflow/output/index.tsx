@@ -65,7 +65,7 @@ const WorkflowOutput: React.FC<WorkflowOutputProps> = ({
       )}
 
       {logs.length > 0 && (
-        <div className='min-h-0 flex-1'>
+        <div className='min-h-0 flex-1 overflow-hidden'>
           <OutputLogs
             onArtifactClick={onArtifactClick}
             isPending={isPending}

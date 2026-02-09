@@ -34,8 +34,8 @@ export function FileEditorProvider({
   }, [content, onChanged]);
 
   useEffect(() => {
+    console.log("File content loaded:", { fileContent, isSuccess });
     if (isSuccess && fileContent) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setContent(fileContent || "");
     }
   }, [fileContent, isSuccess]);

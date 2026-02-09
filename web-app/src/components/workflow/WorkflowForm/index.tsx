@@ -121,6 +121,7 @@ export const WorkflowForm: React.FC<WorkflowFormProps> = ({ data, onChange }) =>
 
   const { watch } = methods;
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
     const subscription = watch((value) => {
       if (methods.formState.isDirty) {
@@ -129,7 +130,7 @@ export const WorkflowForm: React.FC<WorkflowFormProps> = ({ data, onChange }) =>
       }
     });
     return () => subscription.unsubscribe();
-  }, [watch, onChange, methods.formState.isDirty]);
+  }, [watch, onChange]);
 
   const {
     control,

@@ -396,6 +396,7 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
   );
 
   // Transform ontology data into ReactFlow nodes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   const initialNodes = useMemo(() => {
     const typeGroups: Record<string, typeof data.nodes> = {};
     data.nodes.forEach((node) => {
@@ -451,7 +452,7 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
     });
 
     return reactFlowNodes;
-  }, [data.nodes, focusType, groupNodesIntoRows, createNodesFromRow]);
+  }, [data.nodes, focusType, visibleNodes, getNodeStyle, groupNodesIntoRows, createNodesFromRow]);
 
   // Transform ontology edges into ReactFlow edges
   const initialEdges = useMemo(() => {

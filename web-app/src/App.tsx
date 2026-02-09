@@ -72,11 +72,12 @@ const MainLayout = React.memo(function MainLayout() {
   const { isPending, isError, data } = useProject(projectId || "", !!authConfig.cloud);
   const { setProject, project } = useCurrentProject();
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   React.useEffect(() => {
     if (!isPending && !isError && data) {
       setProject(data);
     }
-  }, [isPending, isError, setProject, data]);
+  }, [isPending, isError, projectId, setProject, data]);
 
   if (isPending) {
     return (

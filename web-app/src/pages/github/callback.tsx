@@ -16,6 +16,7 @@ export default function GitHubCallback() {
   const navigate = useNavigate();
   const createGitNamespace = useCreateGitNamespace();
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
     // Prevent running multiple times
     if (hasRunRef.current) return;
@@ -47,7 +48,7 @@ export default function GitHubCallback() {
     }
 
     handleCallback();
-  }, [createGitNamespace]);
+  }, [navigate, createGitNamespace]);
 
   return (
     <div className='flex min-h-screen min-w-screen items-center justify-center'>

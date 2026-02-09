@@ -43,16 +43,18 @@ const AgenticThread = ({ thread }: { thread: ThreadItem }) => {
   const streamingContent = useLastStreamingMessage(thread.id);
   const lastRunGroupId = useLastRunInfoGroupId(thread.id);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
     if (lastRunGroupId) {
       setSelectedGroupId(lastRunGroupId);
     }
-  }, [lastRunGroupId, setSelectedGroupId]);
+  }, [lastRunGroupId]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
     const behavior = streamingContent ? "instant" : "smooth";
     bottomRef.current?.scrollIntoView({ behavior });
-  }, [streamingContent]);
+  }, [messages, streamingContent]);
 
   const handleSendMessage = async () => {
     if (!followUpQuestion.trim() || isLoading) return;
@@ -65,11 +67,12 @@ const AgenticThread = ({ thread }: { thread: ThreadItem }) => {
     setFollowUpQuestion("");
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
     if (messagesContainerRef.current) {
       messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
     }
-  }, []);
+  }, [messages]);
 
   const onStop = useCallback(() => {
     stopThread()

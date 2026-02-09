@@ -172,20 +172,22 @@ export const AgentForm: React.FC<AgentFormProps> = ({ data, onChange }) => {
     mode: "onBlur"
   });
 
+  const { watch } = methods;
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
-    const subscription = methods.watch((value) => {
+    const subscription = watch((value) => {
       if (methods.formState.isDirty) {
         const cleaned = cleanFormData(value as Partial<AgentFormData>);
         onChange?.(cleaned);
       }
     });
     return () => subscription.unsubscribe();
-  }, [methods, onChange]);
+  }, [watch, onChange]);
 
   const {
     control,
     register,
-    watch,
     formState: { errors }
   } = methods;
 

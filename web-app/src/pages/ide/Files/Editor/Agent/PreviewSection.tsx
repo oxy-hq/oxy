@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/shadcn/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/shadcn/toggle-group";
 import useAgent from "@/hooks/api/agents/useAgent";
-import useAgentThreadStore from "@/stores/useAgentThread";
+import useAgentThreadStore, { getThreadIdFromPath } from "@/stores/useAgentThread";
 import useTests from "@/stores/useTests";
 import { useEditorContext } from "../contexts/useEditorContext";
 import AgentPreview from "./Preview";
@@ -20,6 +20,8 @@ const PreviewSection = ({ pathb64, previewKey }: PreviewSectionProps) => {
   const { project, branchName } = useEditorContext();
   const { data: agent, isLoading } = useAgent(pathb64);
   const { runTest } = useTests();
+
+  const threadId = getThreadIdFromPath(project.id, branchName, pathb64);
 
   const handleRunAllTests = () => {
     if (isLoading) return;
@@ -51,7 +53,7 @@ const PreviewSection = ({ pathb64, previewKey }: PreviewSectionProps) => {
             size='sm'
             variant={"ghost"}
             onClick={() => {
-              setMessages(pathb64, []);
+              setMessages(threadId, []);
             }}
           >
             <BrushCleaning className='h-4 w-4' />

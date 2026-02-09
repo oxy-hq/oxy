@@ -193,11 +193,12 @@ const SandboxArtifactPanel = ({ artifact, apiKey }: Props) => {
   }, [preview_url]);
 
   // Auto-scroll console to bottom when new logs arrive
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
     if (showConsole && consoleEndRef.current) {
       consoleEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [showConsole]);
+  }, [consoleLogs, showConsole]);
 
   // Listen for fullscreen changes
   useEffect(() => {

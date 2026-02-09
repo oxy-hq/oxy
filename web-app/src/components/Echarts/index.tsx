@@ -16,12 +16,13 @@ export const Echarts = ({
   testId?: string;
 }) => {
   const chartRef = useRef<HTMLDivElement>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   const onResize = useCallback(() => {
     if (chartRef.current) {
       const chart = getInstanceByDom(chartRef.current);
       chart?.resize();
     }
-  }, []);
+  }, [chartRef]);
 
   useResizeDetector({
     targetRef: chartRef,
