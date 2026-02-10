@@ -160,6 +160,7 @@ jobs:
           } >> $GITHUB_OUTPUT
 
       - name: Send Slack Notification
+        if: steps.build_info.outputs.channel != ''
         uses: rtCamp/action-slack-notify@v2
         env:
           SLACK_USERNAME: "${{ steps.build_info.outputs.type }} Build Notifier"
