@@ -202,8 +202,13 @@ impl Table {
         let relative_file_path = relative_data_path.join(file_name);
         let full_file_path = base_path.join(&relative_file_path);
         self.save_data(&full_file_path)?;
+        let json = self
+            .get_inner()
+            .ok()
+            .and_then(|table| record_batches_to_json(&table.batches).ok());
         Ok(TableData {
             file_path: relative_file_path,
+            json,
         })
     }
 

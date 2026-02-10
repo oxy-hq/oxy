@@ -64,6 +64,8 @@ impl OutputContainer {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TableData {
     pub file_path: PathBuf,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub json: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

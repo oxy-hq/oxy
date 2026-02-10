@@ -53,6 +53,7 @@ export type Display =
 
 export type TableData = {
   file_path: string;
+  json?: string;
 };
 
 export type Data = string | number | boolean | null | TableData;
