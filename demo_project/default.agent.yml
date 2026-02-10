@@ -1,6 +1,5 @@
-model: "openai-4o-mini"
 name: default
-
+model: openai-4o-mini
 description: |
   Agent Name: Oxymart sales analytic Agent
   Input: User's query about Oxymart sales data.
@@ -35,13 +34,8 @@ description: |
 
   The agent uses this schema to generate queries and insights about sales patterns,
   trends, and the impact of various factors on Oxymart's retail performance.
-
-context:
-  - name: queries
-    type: file
-    src:
-      - example_sql/*.sql
-
+public: true
+agent_type: default
 system_instructions: |
   ## PERSISTENCE
   You are an agent - please keep going until the user's query is completely
@@ -80,7 +74,7 @@ system_instructions: |
 
   **Semantic Model Overview:**
 
-  {% with dataset = databases.local.datasets.duckdb %}
+  {% with dataset = databases.local.datasets.main %}
   **Dialect**: duckdb
   **Database: local**
   **DDL:**
@@ -96,29 +90,29 @@ system_instructions: |
   Then, print out the SQL query in markdown format.
   Then, use the tool to execute the query.
   Finally, reflect on the results and provide a comprehensive answer to the user.
-
+max_tool_calls: 10
+max_tool_concurrency: 10
+context:
+  - name: queries
+    type: file
+    src:
+      - example_sql/*.sql
 tools:
   - type: execute_sql
-    name: execute_sql
     database: local
-
   - name: generate_chart
     type: visualize
-
   - name: retrieval
     type: retrieval
     src:
       - example_sql/*.sql
-
 tests:
   - type: consistency
     n: 10
-    task_description: "What is the total weekly sales for all stores"
-
+    task_description: What is the total weekly sales for all stores
   - type: consistency
     n: 10
-    task_description: "How many stores do I have"
-
+    task_description: How many stores do I have
   - type: consistency
     n: 10
-    task_description: "What's the effect of temperature on store sales? Answer shortly and do not draw a chart"
+    task_description: What's the effect of temperature on store sales? Answer shortly and do not draw a chart

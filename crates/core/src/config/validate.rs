@@ -214,6 +214,25 @@ pub fn validate_model(
     Ok(())
 }
 
+use super::model::ToolType;
+
+pub fn validate_no_duplicate_tool_names(
+    tools: &Vec<ToolType>,
+    _ctx: &AgentValidationContext,
+) -> garde::Result {
+    let mut seen_names = std::collections::HashSet::new();
+    for tool in tools {
+        let name = tool.name();
+        if !seen_names.insert(name) {
+            return Err(garde::Error::new(format!(
+                "Duplicate tool name: '{}'. Each tool must have a unique name.",
+                name
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub fn validate_task_data_reference(data_ref: &String, ctx: &ValidationContext) -> garde::Result {
     if let Some(ValidationContextMetadata::DataApp(data_app_ctx)) = &ctx.metadata {
         let task_names: std::collections::HashSet<String> = data_app_ctx

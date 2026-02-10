@@ -127,13 +127,11 @@ const ToolItemForm: React.FC<ToolItemFormProps> = ({ index, onRemove }) => {
         <CollapsibleContent className='mt-4 space-y-4'>
           <div className='space-y-4'>
             <div className='space-y-2'>
-              <Label htmlFor={`tools.${index}.name`}>Name *</Label>
+              <Label htmlFor={`tools.${index}.name`}>Name</Label>
               <Input
                 id={`tools.${index}.name`}
                 placeholder='Tool name'
-                {...register(`tools.${index}.name`, {
-                  required: "Tool name is required"
-                })}
+                {...register(`tools.${index}.name`)}
               />
               {toolErrors?.name && (
                 <p className='text-red-500 text-sm'>{String(toolErrors.name.message || "")}</p>

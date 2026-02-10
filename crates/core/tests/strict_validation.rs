@@ -376,7 +376,24 @@ tasks: []
 
 mod agent_config_tests {
     use super::*;
-    use oxy::config::model::AgentConfig;
+    use oxy::config::model::{AgentConfig, AgentType, Config, ToolType};
+
+    /// Create a minimal valid Config for validation context
+    fn create_test_config() -> Config {
+        let yaml = r#"
+models:
+  - name: test_model
+    vendor: openai
+    model_ref: gpt-4
+    key_var: OPENAI_API_KEY
+databases:
+  - name: test_db
+    type: bigquery
+    project: test_project
+    credentials_path: /tmp/creds.json
+"#;
+        parse_yaml(yaml).expect("Test config should parse")
+    }
 
     #[test]
     fn test_valid_default_agent() {
@@ -426,6 +443,119 @@ tools:
             result.is_ok(),
             "Agent with tools should parse: {:?}",
             result.err()
+        );
+    }
+
+    #[test]
+    fn test_agent_tool_without_name_gets_default_name() {
+        // Test that when a tool doesn't have a 'name' field, it gets a default name based on tool type
+        let yaml = r#"
+model: gpt-4
+system_instructions: "You are a helpful assistant"
+tools:
+  - type: execute_sql
+    database: test_db
+"#;
+        let result: Result<AgentConfig, _> = parse_yaml(yaml);
+        assert!(
+            result.is_ok(),
+            "Tool without name should parse successfully: {:?}",
+            result.err()
+        );
+
+        let agent = result.unwrap();
+        let tools = match &agent.r#type {
+            AgentType::Default(default_agent) => &default_agent.tools_config.tools,
+            AgentType::Routing(_) => panic!("Expected Default agent, not Routing"),
+        };
+        assert_eq!(tools.len(), 1, "Should have one tool");
+
+        // Check that the tool got a default name based on its type
+        match &tools[0] {
+            ToolType::ExecuteSQL(tool) => {
+                assert_eq!(
+                    tool.name, "execute_sql",
+                    "Tool should get default name 'execute_sql'"
+                );
+            }
+            _ => panic!("Expected ExecuteSQL tool"),
+        }
+    }
+
+    #[test]
+    fn test_agent_tools_duplicate_names_rejected() {
+        use garde::Validate;
+        use oxy::config::validate::AgentValidationContext;
+
+        // Test that duplicate tool names are rejected during validation
+        let yaml = r#"
+model: gpt-4
+system_instructions: "You are a helpful assistant"
+tools:
+  - type: execute_sql
+    name: my_tool
+    database: test_db
+  - type: validate_sql
+    name: my_tool
+    database: test_db
+"#;
+        let agent: AgentConfig = parse_yaml(yaml).expect("Should parse at serde level");
+
+        // Validation should fail due to duplicate tool names
+        let config = create_test_config();
+        let context = AgentValidationContext {
+            agent_config: agent.clone(),
+            config,
+        };
+        let result = agent.validate_with(&context);
+        assert!(
+            result.is_err(),
+            "Should fail validation with duplicate tool names"
+        );
+
+        let err_str = result.unwrap_err().to_string();
+        assert!(
+            err_str.contains("duplicate") || err_str.contains("my_tool"),
+            "Error should mention duplicate tool name, got: {err_str}"
+        );
+    }
+
+    #[test]
+    fn test_agent_tools_default_names_can_duplicate_if_different_types() {
+        // When tools don't have explicit names, they get default names based on type.
+        // Two tools of the same type without names should get the same default name,
+        // which should be rejected as duplicate.
+        let yaml = r#"
+model: gpt-4
+system_instructions: "You are a helpful assistant"
+tools:
+  - type: execute_sql
+    database: db1
+  - type: execute_sql
+    database: db2
+"#;
+        let result: Result<AgentConfig, _> = parse_yaml(yaml);
+        assert!(
+            result.is_ok(),
+            "Multiple tools of same type should parse: {:?}",
+            result.err()
+        );
+
+        use garde::Validate;
+        use oxy::config::validate::AgentValidationContext;
+
+        let agent = result.unwrap();
+        let config = create_test_config();
+        let context = AgentValidationContext {
+            agent_config: agent.clone(),
+            config,
+        };
+        let result = agent.validate_with(&context);
+
+        // Should fail because both tools have the same default name "execute_sql"
+        assert!(
+            result.is_err(),
+            "Should fail validation when multiple tools have same default name"
         );
     }
 

@@ -167,7 +167,6 @@ export default function AgentForm({ models, databases }: AgentFormProps) {
                       id={`tools.${index}.name`}
                       placeholder={tool.type === "execute_sql" ? "SQL Executor" : "Data Visualizer"}
                       {...register(`tools.${index}.name`, {
-                        required: "Tool name is required",
                         pattern: {
                           value: /^\w+$/,
                           message:

@@ -14,7 +14,9 @@ use utoipa::ToSchema;
 
 pub use variables::Variables;
 
-use super::validate::{AgentValidationContext, validate_model, validate_task};
+use super::validate::{
+    AgentValidationContext, validate_model, validate_no_duplicate_tool_names, validate_task,
+};
 use crate::adapters::secrets::SecretsManager;
 use crate::config::validate::validate_file_path;
 use crate::config::validate::{
@@ -719,12 +721,42 @@ pub struct AgentConfig {
     pub variables: Option<Variables>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
+#[derive(Serialize, Debug, Clone, JsonSchema, Validate)]
 #[garde(context(AgentValidationContext))]
-#[serde(untagged)]
 pub enum AgentType {
     Routing(#[garde(dive)] RoutingAgent),
     Default(#[garde(dive)] DefaultAgent),
+}
+
+impl<'de> Deserialize<'de> for AgentType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::Error;
+
+        // First deserialize into a generic Value to inspect the type field
+        let value = serde_json::Value::deserialize(deserializer)?;
+
+        // Check if this is explicitly a routing agent (has type: routing)
+        let is_routing = value
+            .get("type")
+            .and_then(|t| t.as_str())
+            .is_some_and(|t| t == "routing");
+
+        if is_routing {
+            // Try to deserialize as RoutingAgent and report specific errors
+            serde_json::from_value::<RoutingAgent>(value)
+                .map(AgentType::Routing)
+                .map_err(|e| D::Error::custom(format!("Invalid routing agent configuration: {e}")))
+        } else {
+            // No type field or type != routing, treat as DefaultAgent
+            // Report specific errors for DefaultAgent deserialization
+            serde_json::from_value::<DefaultAgent>(value)
+                .map(AgentType::Default)
+                .map_err(|e| D::Error::custom(format!("Invalid agent configuration: {e}")))
+        }
+    }
 }
 
 impl std::fmt::Display for AgentType {
@@ -742,7 +774,7 @@ pub struct DefaultAgent {
     #[garde(length(min = 1))]
     pub system_instructions: String,
     #[serde(default, flatten)]
-    #[garde(skip)]
+    #[garde(dive)]
     pub tools_config: AgentToolsConfig,
 }
 
@@ -768,13 +800,17 @@ pub struct RoutingAgent {
     pub route_fallback: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate)]
+#[garde(context(AgentValidationContext))]
 pub struct AgentToolsConfig {
     #[serde(default = "default_tools")]
+    #[garde(custom(validate_no_duplicate_tool_names))]
     pub tools: Vec<ToolType>,
     #[serde(default = "default_max_tool_calls")]
+    #[garde(skip)]
     pub max_tool_calls: usize,
     #[serde(default = "default_max_tool_concurrency")]
+    #[garde(skip)]
     pub max_tool_concurrency: usize,
 }
 
@@ -2156,6 +2192,7 @@ fn default_is_verified() -> bool {
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct VisualizeTool {
+    #[serde(default = "default_visualize_name")]
     pub name: String,
     #[serde(default = "default_visualize_tool_description")]
     pub description: String,
@@ -2163,6 +2200,7 @@ pub struct VisualizeTool {
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct WorkflowTool {
+    #[serde(default = "default_workflow_name")]
     pub name: String,
     pub description: String,
     pub workflow_ref: String,
@@ -2175,6 +2213,7 @@ pub struct WorkflowTool {
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct AgentTool {
+    #[serde(default = "default_agent_tool_name")]
     pub name: String,
     pub description: String,
     pub agent_ref: String,
@@ -2216,6 +2255,7 @@ impl Default for VectorDBConfig {
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct RetrievalConfig {
+    #[serde(default = "default_retrieval_name")]
     pub name: String,
     #[serde(default = "default_retrieval_tool_description")]
     pub description: String,
@@ -2247,6 +2287,7 @@ impl RetrievalConfig {
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct ExecuteSQLTool {
+    #[serde(default = "default_execute_sql_name")]
     pub name: String,
     #[serde(default = "default_sql_tool_description")]
     pub description: String,
@@ -2262,6 +2303,7 @@ pub struct ExecuteSQLTool {
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct SemanticQueryTool {
+    #[serde(default = "default_semantic_query_name")]
     pub name: String,
     #[serde(default = "default_semantic_query_tool_description")]
     pub description: String,
@@ -2273,6 +2315,7 @@ pub struct SemanticQueryTool {
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct ValidateSQLTool {
+    #[serde(default = "default_validate_sql_name")]
     pub name: String,
     #[serde(default = "default_validate_sql_tool_description")]
     pub description: String,
@@ -2281,6 +2324,7 @@ pub struct ValidateSQLTool {
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct CreateDataAppTool {
+    #[serde(default = "default_create_data_app_name")]
     pub name: String,
     #[serde(default = "default_create_data_app_tool_description")]
     pub description: String,
@@ -2288,6 +2332,7 @@ pub struct CreateDataAppTool {
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct CreateV0AppTool {
+    #[serde(default = "default_create_v0_app_name")]
     pub name: String,
     #[serde(default = "default_create_v0_app_tool_description")]
     pub description: String,
@@ -2303,6 +2348,7 @@ pub struct CreateV0AppTool {
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct OmniQueryTool {
+    #[serde(default = "default_omni_query_name")]
     pub name: String,
     #[serde(default = "default_omni_query_tool_description")]
     pub description: String,
@@ -2472,6 +2518,22 @@ impl From<SemanticQueryTool> for ToolType {
 }
 
 impl ToolType {
+    /// Get the name of the tool
+    pub fn name(&self) -> &str {
+        match self {
+            ToolType::ExecuteSQL(tool) => &tool.name,
+            ToolType::ValidateSQL(tool) => &tool.name,
+            ToolType::Retrieval(tool) => &tool.name,
+            ToolType::Visualize(tool) => &tool.name,
+            ToolType::Workflow(tool) => &tool.name,
+            ToolType::Agent(tool) => &tool.name,
+            ToolType::CreateDataApp(tool) => &tool.name,
+            ToolType::CreateV0App(tool) => &tool.name,
+            ToolType::OmniQuery(tool) => &tool.name,
+            ToolType::SemanticQuery(tool) => &tool.name,
+        }
+    }
+
     /// Render tool configuration with variable substitution using the provided renderer
     pub async fn render(
         &self,
@@ -2965,6 +3027,47 @@ fn default_v0_api_key_var() -> String {
 
 fn default_omni_query_tool_description() -> String {
     "Query data through Omni's semantic layer API. Use this tool to execute queries against topics, dimensions, and measures defined in the Omni semantic model.".to_string()
+}
+
+// Default tool names based on tool type
+fn default_execute_sql_name() -> String {
+    "execute_sql".to_string()
+}
+
+fn default_validate_sql_name() -> String {
+    "validate_sql".to_string()
+}
+
+fn default_retrieval_name() -> String {
+    "retrieval".to_string()
+}
+
+fn default_visualize_name() -> String {
+    "visualize".to_string()
+}
+
+fn default_workflow_name() -> String {
+    "workflow".to_string()
+}
+
+fn default_agent_tool_name() -> String {
+    "agent".to_string()
+}
+
+fn default_create_data_app_name() -> String {
+    "create_data_app".to_string()
+}
+
+fn default_create_v0_app_name() -> String {
+    "create_v0_app".to_string()
+}
+
+fn default_omni_query_name() -> String {
+    "omni_query".to_string()
+}
+
+fn default_semantic_query_name() -> String {
+    "semantic_query".to_string()
 }
 
 fn default_tools() -> Vec<ToolType> {
