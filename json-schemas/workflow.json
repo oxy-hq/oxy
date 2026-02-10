@@ -871,7 +871,7 @@
               "type": "string"
             },
             "from": {
-              "description": "Start of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp), or null.",
+              "description": "Start of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp).",
               "type": [
                 "string",
                 "number",
@@ -886,7 +886,7 @@
               ]
             },
             "to": {
-              "description": "End of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp), or null.",
+              "description": "End of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp).",
               "type": [
                 "string",
                 "number",
@@ -910,7 +910,7 @@
               "type": "string"
             },
             "from": {
-              "description": "Start of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp), or null.",
+              "description": "Start of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp).",
               "type": [
                 "string",
                 "number",
@@ -925,7 +925,7 @@
               ]
             },
             "to": {
-              "description": "End of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp), or null.",
+              "description": "End of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp).",
               "type": [
                 "string",
                 "number",
@@ -1160,7 +1160,7 @@
           ],
           "properties": {
             "from": {
-              "description": "Start of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp), or null.",
+              "description": "Start of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp).",
               "type": [
                 "string",
                 "number",
@@ -1175,7 +1175,7 @@
               ]
             },
             "to": {
-              "description": "End of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp), or null.",
+              "description": "End of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp).",
               "type": [
                 "string",
                 "number",
@@ -1195,7 +1195,7 @@
           ],
           "properties": {
             "from": {
-              "description": "Start of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp), or null.",
+              "description": "Start of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp).",
               "type": [
                 "string",
                 "number",
@@ -1210,7 +1210,7 @@
               ]
             },
             "to": {
-              "description": "End of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp), or null.",
+              "description": "End of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp).",
               "type": [
                 "string",
                 "number",
@@ -1849,33 +1849,16 @@
     },
     "TimeGranularity": {
       "description": "Time granularity options for time dimension queries",
-      "oneOf": [
-        {
-          "type": "string",
-          "enum": [
-            "year",
-            "quarter",
-            "month",
-            "week",
-            "day",
-            "hour",
-            "minute",
-            "second"
-          ]
-        },
-        {
-          "description": "Custom granularity defined in the semantic layer",
-          "type": "object",
-          "required": [
-            "custom"
-          ],
-          "properties": {
-            "custom": {
-              "type": "string"
-            }
-          },
-          "additionalProperties": false
-        }
+      "type": "string",
+      "enum": [
+        "year",
+        "quarter",
+        "month",
+        "week",
+        "day",
+        "hour",
+        "minute",
+        "second"
       ]
     }
   }

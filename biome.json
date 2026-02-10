@@ -115,7 +115,8 @@
       "!**/docs",
       "!**/examples",
       "!**/target",
-      "!**/.claude"
+      "!**/.claude",
+      "!**/json-schemas"
     ]
   }
 }
