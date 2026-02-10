@@ -350,38 +350,6 @@ impl EntityGraph {
 
         joins
     }
-
-    /// Get dependency graph for incremental builds
-    ///
-    /// Returns a BTreeMap where:
-    /// - Key: view name
-    /// - Value: vector of view names that this view depends on
-    ///
-    /// A view depends on another view if it has a foreign entity that references
-    /// the other view's primary entity.
-    ///
-    /// Note: Uses BTreeMap for stable iteration order (sorted keys).
-    ///
-    /// # Example
-    /// If `orders` view has a foreign entity `customer` that references
-    /// `customers` view's primary entity, then:
-    /// - `orders` depends on `customers`
-    /// - The map will contain: `{"orders": ["customers"]}`
-    pub fn get_dependency_graph(&self) -> std::collections::BTreeMap<String, Vec<String>> {
-        let mut graph: std::collections::BTreeMap<String, Vec<String>> =
-            std::collections::BTreeMap::new();
-
-        // For each join, the from_view depends on the to_view
-        // (foreign view depends on primary view)
-        for join in &self.joins {
-            graph
-                .entry(join.from_view.clone())
-                .or_insert_with(Vec::new)
-                .push(join.to_view.clone());
-        }
-
-        graph
-    }
 }
 
 #[cfg(test)]

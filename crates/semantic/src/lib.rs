@@ -1,7 +1,5 @@
 // Essential semantic layer functionality
-pub mod build_manifest;
 pub mod builder;
-pub mod change_detector;
 pub mod cube;
 pub mod errors;
 pub mod models;
@@ -11,13 +9,9 @@ pub mod validation;
 pub mod variables;
 
 // Re-export the most commonly used types
-pub use build_manifest::{BuildManifest, hash_file, hash_string};
 pub use builder::{
     DimensionBuilder, EntityBuilder, MeasureBuilder, SemanticLayerBuilder, TopicBuilder,
     ViewBuilder,
-};
-pub use change_detector::{
-    ChangeDetectionResult, ChangeDetector, hash_database_config, hash_globals_registry,
 };
 pub use errors::SemanticLayerError;
 pub use models::{
