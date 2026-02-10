@@ -438,6 +438,14 @@ impl WorkflowLauncher {
                 // Execute all tasks
                 let mut results = IndexMap::new();
                 for task_input in task_inputs {
+                    // Override result data so it can be referenced by subsequent tasks
+                    let current_context = minijinja::Value::from_iter(
+                        results
+                            .iter()
+                            .map(|(k, v)| (k, Into::<minijinja::Value>::into(v)))
+                            .collect::<Vec<_>>(),
+                    );
+                    let execution_context = execution_context.wrap_render_context(&current_context);
                     let task_name = task_input.task.name.clone();
                     match task_executable
                         .execute(&execution_context, task_input)
