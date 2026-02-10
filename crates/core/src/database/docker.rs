@@ -548,8 +548,18 @@ pub async fn wait_for_clickhouse_ready(timeout_secs: u64) -> Result<(), OxyError
             )));
         }
 
+        // Connect via Docker network hostname to verify port 9000 is ready for network connections
+        // (not just local connections), which is required for OTel Collector
         let exec_config = CreateExecOptions {
-            cmd: Some(vec!["clickhouse-client", "--query", "SELECT 1"]),
+            cmd: Some(vec![
+                "clickhouse-client",
+                "--host",
+                "clickhouse",
+                "--port",
+                "9000",
+                "--query",
+                "SELECT 1",
+            ]),
             attach_stdout: Some(true),
             attach_stderr: Some(true),
             ..Default::default()
@@ -645,10 +655,18 @@ pub async fn start_otel_collector_container() -> Result<(), OxyError> {
         config_path.display()
     )];
 
+    // Add restart policy to handle race condition where ClickHouse port 9000
+    // may not be ready for network connections immediately after healthcheck passes
+    let restart_policy = bollard::models::RestartPolicy {
+        name: Some(bollard::models::RestartPolicyNameEnum::ON_FAILURE),
+        maximum_retry_count: Some(5),
+    };
+
     let host_config = HostConfig {
         port_bindings: Some(port_bindings),
         binds: Some(binds),
         network_mode: Some(ENTERPRISE_NETWORK.to_string()),
+        restart_policy: Some(restart_policy),
         ..Default::default()
     };
 
