@@ -192,11 +192,11 @@ jobs:
       - name: Prep Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy, rustfmt, llvm-tools-preview
+          components: clippy, rustfmt
       - name: Install cargo tools
         uses: taiki-e/install-action@v2
         with:
-          tool: nextest${{ matrix.task == 'test' && ',cargo-llvm-cov' || '' }}
+          tool: nextest
       - name: Prep cargo cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -229,16 +229,14 @@ jobs:
             touch examples/bigquery-sample.key
             echo $BIGQUERY_SAMPLE_KEY > examples/bigquery-sample.key
 
-            # Run migrations using instrumented binary — same profile as nextest (ci) to avoid double compilation
-            cargo llvm-cov run --profile ci -- migrate
+            # Build and run migrations
+            cargo build --profile ci -p oxy
+            ./target/ci/oxy migrate
 
-            # Run tests reusing the instrumented build from above (--no-clean preserves migrate profraw)
-            cargo llvm-cov nextest --cargo-profile ci --workspace --no-clean --lcov --output-path lcov.info --no-fail-fast
+            # Run tests (no coverage instrumentation)
+            cargo nextest run --cargo-profile ci --workspace --no-fail-fast
 
-            # Print coverage summary (informational only)
-            cargo llvm-cov report --summary-only
-
-            ./target/llvm-cov-target/ci/oxy gen-config-schema --check
+            ./target/ci/oxy gen-config-schema --check
           fi
 
       - name: Upload oxy binary artifact
@@ -246,15 +244,8 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: oxy-binary-ci
-          path: target/llvm-cov-target/ci/oxy
+          path: target/ci/oxy
           retention-days: 1
-
-      - name: Upload coverage to Coveralls
-        if: matrix.task == 'test' && github.repository == 'oxy-hq/oxy'
-        uses: coverallsapp/github-action@v2
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          path-to-lcov: lcov.info
 
   smoke-test-enterprise:
     name: Smoke test (oxy start --enterprise)
