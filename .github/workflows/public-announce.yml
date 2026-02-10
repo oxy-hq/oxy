@@ -1,0 +1,174 @@
+name: Public Announce Releases to Slack
+
+on:
+  workflow_run:
+    workflows: ["Public Unified Release", "Public Release"]
+    types:
+      - completed
+
+jobs:
+  announce-to-slack:
+    if: github.repository == 'oxy-hq/oxy' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine build type and channel
+        id: build_info
+        run: |
+          WORKFLOW="${{ github.event.workflow_run.name }}"
+          EVENT="${{ github.event.workflow_run.event }}"
+          BRANCH="${{ github.event.workflow_run.head_branch }}"
+
+          echo "Workflow: $WORKFLOW"
+          echo "Event: $EVENT"
+          echo "Branch: $BRANCH"
+
+          # Detect build type
+          if [[ "$WORKFLOW" == "Public Release" && "$EVENT" == "push" && "$BRANCH" != "main" ]]; then
+            # Stable release (tagged)
+            echo "type=Stable" >> $GITHUB_OUTPUT
+            echo "emoji=:rocket:" >> $GITHUB_OUTPUT
+            echo "channel=general" >> $GITHUB_OUTPUT
+            echo "generate_changelog=false" >> $GITHUB_OUTPUT
+            echo "version=$BRANCH" >> $GITHUB_OUTPUT
+          elif [[ "$WORKFLOW" == "Public Unified Release" && "$EVENT" == "schedule" ]]; then
+            # Nightly build (scheduled)
+            echo "type=Nightly" >> $GITHUB_OUTPUT
+            echo "emoji=:crescent_moon:" >> $GITHUB_OUTPUT
+            echo "channel=product-releases-dev" >> $GITHUB_OUTPUT
+            echo "generate_changelog=true" >> $GITHUB_OUTPUT
+            echo "version=nightly" >> $GITHUB_OUTPUT
+          elif [[ "$WORKFLOW" == "Public Unified Release" && "$EVENT" == "push" && "$BRANCH" == "main" ]]; then
+            # Edge build (push to main)
+            echo "type=Edge" >> $GITHUB_OUTPUT
+            echo "emoji=:zap:" >> $GITHUB_OUTPUT
+            echo "channel=product-releases-dev" >> $GITHUB_OUTPUT
+            echo "generate_changelog=true" >> $GITHUB_OUTPUT
+            echo "version=edge" >> $GITHUB_OUTPUT
+          else
+            echo "Unknown build type, skipping announcement"
+            exit 0
+          fi
+
+      - name: Get changelog since last successful build
+        id: changelog
+        if: steps.build_info.outputs.generate_changelog == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          CURRENT_SHA="${{ github.event.workflow_run.head_sha }}"
+          WORKFLOW_NAME="${{ github.event.workflow_run.name }}"
+          CURRENT_RUN_ID="${{ github.event.workflow_run.id }}"
+
+          # Find the previous successful run (excluding current)
+          PREV_SHA=$(gh api "/repos/${{ github.repository }}/actions/workflows/public-release.yaml/runs?status=success&per_page=10" \
+            --jq "[.workflow_runs[] | select(.id != ${CURRENT_RUN_ID} and .head_sha != \"${CURRENT_SHA}\")] | .[0].head_sha // empty")
+
+          if [ -z "$PREV_SHA" ]; then
+            echo "No previous successful run found"
+            echo "changelog=_First successful build or no previous builds found_" >> $GITHUB_OUTPUT
+            echo "commit_count=0" >> $GITHUB_OUTPUT
+          else
+            echo "Previous successful build SHA: $PREV_SHA"
+            echo "Current build SHA: $CURRENT_SHA"
+
+            # Get commit count
+            COMMIT_COUNT=$(git rev-list --count ${PREV_SHA}..${CURRENT_SHA} 2>/dev/null || echo "0")
+            echo "commit_count=${COMMIT_COUNT}" >> $GITHUB_OUTPUT
+
+            # Generate changelog (limit to 20 commits for Slack message size)
+            CHANGELOG=$(git log --pretty=format:"• %s (%h)" ${PREV_SHA}..${CURRENT_SHA} --no-merges 2>/dev/null | head -20)
+
+            if [ -z "$CHANGELOG" ]; then
+              CHANGELOG="_No new commits_"
+            elif [ "$COMMIT_COUNT" -gt 20 ]; then
+              CHANGELOG="${CHANGELOG}
+          _...and $((COMMIT_COUNT - 20)) more commits_"
+            fi
+
+            # Escape for GitHub Actions output
+            {
+              echo "changelog<<EOF"
+              echo "$CHANGELOG"
+              echo "EOF"
+            } >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build Slack message
+        id: message
+        run: |
+          BUILD_TYPE="${{ steps.build_info.outputs.type }}"
+          EMOJI="${{ steps.build_info.outputs.emoji }}"
+          VERSION="${{ steps.build_info.outputs.version }}"
+          BRANCH="${{ github.event.workflow_run.head_branch }}"
+          SHA="${{ github.event.workflow_run.head_sha }}"
+          UPDATED_AT="${{ github.event.workflow_run.updated_at }}"
+          WORKFLOW_URL="${{ github.event.workflow_run.html_url }}"
+
+          if [[ "$BUILD_TYPE" == "Stable" ]]; then
+            # Stable release message
+            TITLE="$EMOJI Stable Release $VERSION $EMOJI"
+            MESSAGE="*Details:*
+          - *Version:* $VERSION
+          - *Completed At:* $UPDATED_AT
+
+          To install: \`bash <(curl --proto '=https' --tlsv1.2 -LsSf https://get.oxy.tech)\`
+          To install this version: \`OXY_VERSION=$VERSION bash <(curl --proto '=https' --tlsv1.2 -LsSf https://get.oxy.tech)\`
+
+          Docker images: \`ghcr.io/oxy-hq/oxy:$VERSION\`
+
+          View the workflow run: $WORKFLOW_URL"
+          else
+            # Nightly/Edge build message
+            CHANGELOG="${{ steps.changelog.outputs.changelog }}"
+            COMMIT_COUNT="${{ steps.changelog.outputs.commit_count }}"
+            INSTALL_CMD="${{ steps.build_info.outputs.type == 'Nightly' && 'OXY_CHANNEL=nightly ' || '' }}bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)"
+
+            TITLE="$EMOJI $BUILD_TYPE Build Completed $EMOJI"
+            MESSAGE="*Details:*
+          - *Build Type:* $BUILD_TYPE
+          - *Branch:* $BRANCH
+          - *Commit:* \`$SHA\`
+          - *Completed At:* $UPDATED_AT
+
+          *Changes ($COMMIT_COUNT commits):*
+          $CHANGELOG
+
+          *Links:*
+          • <https://github.com/oxy-hq/oxy-nightly/releases/latest|Latest Release>
+          • <$WORKFLOW_URL|Workflow Run>
+
+          To install: \`$INSTALL_CMD\`"
+          fi
+
+          # Export for next step
+          {
+            echo "title<<EOF"
+            echo "$TITLE"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+          {
+            echo "message<<EOF"
+            echo "$MESSAGE"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Send Slack Notification
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_USERNAME: "${{ steps.build_info.outputs.type }} Build Notifier"
+          MSG_MINIMAL: ref,commit
+          SLACK_ICON_EMOJI: "${{ steps.build_info.outputs.emoji }}"
+          SLACK_LINK_NAMES: true
+          SLACKIFY_MARKDOWN: true
+          SLACK_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL: ${{ steps.build_info.outputs.channel }}
+          SLACK_FOOTER: ""
+          SLACK_TITLE: ${{ steps.message.outputs.title }}
+          SLACK_MESSAGE: ${{ steps.message.outputs.message }}
