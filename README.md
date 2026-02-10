@@ -22,7 +22,7 @@ To learn more, read our [docs](https://oxy.tech/docs).
 To install Oxy from binary, run the following command (Mac, Linux, WSL):
 
 ```bash
-bash <(curl --proto '=https' --tlsv1.2 -LsSf https://get.oxy.tech)
+bash <(curl -sSfL https://get.oxy.tech)
 ```
 
 <details>
@@ -37,7 +37,7 @@ brew install oxy-hq/oxy/oxy
 #### Installing a Specific Version
 
 ```bash
-OXY_VERSION="0.1.0" bash <(curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/install_oxy.sh)
+OXY_VERSION="0.1.0" bash <(curl -sSfL https://get.oxy.tech)
 ```
 
 #### Installing Nightly/Edge Builds
@@ -45,23 +45,23 @@ OXY_VERSION="0.1.0" bash <(curl --proto '=https' --tlsv1.2 -sSf https://raw.gith
 To install the latest edge build (built from main branch):
 
 ```bash
-bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)
+bash <(curl -sSfL https://nightly.oxy.tech)
 ```
 
 To install the latest nightly build (scheduled daily):
 
 ```bash
-OXY_CHANNEL=nightly bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)
+OXY_CHANNEL=nightly bash <(curl -sSfL https://nightly.oxy.tech)
 ```
 
 To install a specific edge or nightly version:
 
 ```bash
 # Install specific edge build
-OXY_VERSION=edge-7cbf0a5 bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)
+OXY_VERSION=edge-7cbf0a5 bash <(curl -sSfL https://nightly.oxy.tech)
 
 # Install specific nightly build
-OXY_VERSION=nightly-20251204-abc1234 bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)
+OXY_VERSION=nightly-20251204-abc1234 bash <(curl -sSfL https://nightly.oxy.tech)
 ```
 
 #### Browsing Available Releases
@@ -69,17 +69,14 @@ OXY_VERSION=nightly-20251204-abc1234 bash <(curl --proto '=https' --tlsv1.2 -LsS
 To list all available releases across stable, edge, and nightly channels:
 
 ```bash
-bash <(curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/list_oxy_releases.sh)
+bash <(curl -sSf https://release.oxy.tech)
 ```
 
 Filter by channel or adjust the number of results:
 
 ```bash
-# Show only stable releases
-bash <(curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/list_oxy_releases.sh) --channel stable
-
-# Show 20 nightly releases
-bash <(curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/list_oxy_releases.sh) -c nightly -n 20
+bash <(curl -sSf https://release.oxy.tech) --channel stable
+bash <(curl -sSf https://release.oxy.tech) -c nightly -n 20
 ```
 
 You can also browse releases directly on GitHub: [stable](https://github.com/oxy-hq/oxy/releases) | [edge/nightly](https://github.com/oxy-hq/oxy-nightly/releases).
