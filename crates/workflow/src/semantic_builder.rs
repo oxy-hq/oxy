@@ -224,6 +224,24 @@ fn normalize_date_value(date: &str) -> Result<String, OxyError> {
     Ok(result.format("%Y-%m-%d").to_string())
 }
 
+/// Collect fully-qualified field names of date/datetime dimensions from views.
+/// Returns a set like `{"ViewName.field_name", ...}` used to decide whether
+/// filter values need relative-date normalisation.
+fn collect_date_fields(views: &[oxy_semantic::View]) -> HashSet<String> {
+    let mut date_fields = HashSet::new();
+    for view in views {
+        for dim in &view.dimensions {
+            if matches!(
+                dim.dimension_type,
+                oxy_semantic::DimensionType::Date | oxy_semantic::DimensionType::Datetime
+            ) {
+                date_fields.insert(format!("{}.{}", view.name, dim.name));
+            }
+        }
+    }
+    date_fields
+}
+
 /// ParamMapper for semantic query tasks that handles templating and validation
 #[derive(Clone)]
 struct SemanticQueryTaskMapper;
@@ -287,6 +305,7 @@ impl SemanticQueryExecutable {
         tool_events::semantic_query_compile_input(&input.topic.name, &input.task.query);
 
         let requested_views = self.extract_views_from_query(&input.task, &input.topic.name);
+        let date_fields = collect_date_fields(&input.views);
 
         let cubejs_query = self.convert_to_cubejs_query(
             &input.task,
@@ -294,6 +313,7 @@ impl SemanticQueryExecutable {
             input.topic.base_view.as_ref(),
             &requested_views,
             input.topic.default_filters.as_ref(),
+            &date_fields,
         )?;
 
         let mut sql_query = self.get_sql_from_cubejs(&cubejs_query).await?;
@@ -453,6 +473,7 @@ impl SemanticQueryExecutable {
 
         // Step 1: Extract unique views from requested fields to determine join hints
         let requested_views = self.extract_views_from_query(&input.task, &input.topic.name);
+        let date_fields = collect_date_fields(&input.views);
 
         // Step 2: Convert to CubeJS query and get SQL with base_view enforcement and default filters
         // Default filters from the topic will be automatically merged with user-provided filters
@@ -462,6 +483,7 @@ impl SemanticQueryExecutable {
             input.topic.base_view.as_ref(),
             &requested_views,
             input.topic.default_filters.as_ref(),
+            &date_fields,
         ) {
             Ok(query) => query,
             Err(e) => {
@@ -697,6 +719,7 @@ impl SemanticQueryExecutable {
         base_view: Option<&String>,
         requested_views: &[String],
         default_filters: Option<&Vec<oxy_semantic::TopicFilter>>,
+        date_fields: &HashSet<String>,
     ) -> Result<JsonValue, OxyError> {
         let mut query = serde_json::json!({
             "measures": task.query.measures,
@@ -784,7 +807,8 @@ impl SemanticQueryExecutable {
                     filter_type,
                 };
 
-                let cubejs_filter = self.convert_filter_to_cubejs(&semantic_filter, topic_name)?;
+                let cubejs_filter =
+                    self.convert_filter_to_cubejs(&semantic_filter, topic_name, date_fields)?;
                 all_filters.push(cubejs_filter);
             }
 
@@ -803,7 +827,7 @@ impl SemanticQueryExecutable {
                 .query
                 .filters
                 .iter()
-                .map(|f| self.convert_filter_to_cubejs(f, topic_name))
+                .map(|f| self.convert_filter_to_cubejs(f, topic_name, date_fields))
                 .collect::<Result<Vec<_>, _>>()?;
             all_filters.extend(user_filters);
         }
@@ -943,6 +967,7 @@ impl SemanticQueryExecutable {
         &self,
         filter: &SemanticFilter,
         topic_name: &str,
+        date_fields: &HashSet<String>,
     ) -> Result<JsonValue, OxyError> {
         let field_name = if filter.field.contains('.') {
             filter.field.clone()
@@ -951,20 +976,19 @@ impl SemanticQueryExecutable {
         };
 
         let operator = filter.filter_type.operator_name();
+        let is_date_field = date_fields.contains(&field_name);
 
-        // Resolve relative dates for date range filters
+        // Resolve relative dates for date range filters and date-typed scalar/array filters
         let values = match &filter.filter_type {
             oxy::config::model::SemanticFilterType::InDateRange(date_filter)
             | oxy::config::model::SemanticFilterType::NotInDateRange(date_filter) => {
                 let mut vals = Vec::new();
-                // Resolve relative date if needed
                 let resolved_from = if let Some(from_str) = date_filter.from.as_str() {
                     serde_json::Value::String(normalize_date_value(from_str)?)
                 } else {
                     date_filter.from.clone()
                 };
                 vals.push(resolved_from);
-                // Resolve relative date if needed
                 let resolved_to = if let Some(to_str) = date_filter.to.as_str() {
                     serde_json::Value::String(normalize_date_value(to_str)?)
                 } else {
@@ -972,6 +996,21 @@ impl SemanticQueryExecutable {
                 };
                 vals.push(resolved_to);
                 vals
+            }
+            _ if is_date_field => {
+                // Resolve relative date expressions for scalar/array filters on date fields
+                filter
+                    .filter_type
+                    .values()
+                    .into_iter()
+                    .map(|v| {
+                        if let Some(s) = v.as_str() {
+                            Ok(serde_json::Value::String(normalize_date_value(s)?))
+                        } else {
+                            Ok(v)
+                        }
+                    })
+                    .collect::<Result<Vec<_>, OxyError>>()?
             }
             _ => filter.filter_type.values(),
         };

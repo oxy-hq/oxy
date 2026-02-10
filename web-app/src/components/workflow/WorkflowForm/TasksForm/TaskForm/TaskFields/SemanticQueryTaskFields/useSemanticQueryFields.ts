@@ -75,7 +75,14 @@ export const useSemanticQueryFields = (index: number, basePath: string) => {
       replaceTimeDimensions([]);
     }
     prevTopicRef.current = topicValue;
-  }, [topicValue, replaceDimensions, replaceMeasures, replaceFilters, replaceOrders, replaceTimeDimensions]);
+  }, [
+    topicValue,
+    replaceDimensions,
+    replaceMeasures,
+    replaceFilters,
+    replaceOrders,
+    replaceTimeDimensions
+  ]);
 
   const topicItems = topicFiles.map((t) => ({
     value: t.value,
@@ -98,7 +105,8 @@ export const useSemanticQueryFields = (index: number, basePath: string) => {
   const allFieldItems = allFieldOptions.map((f) => ({
     value: f.value,
     label: f.label,
-    searchText: f.searchText
+    searchText: f.searchText,
+    dataType: f.dataType
   }));
 
   const dimensionItemsWithTypes = dimensionOptions.map((d) => ({

@@ -57,7 +57,6 @@ export const SemanticQueryTaskFields: React.FC<SemanticQueryTaskFieldsProps> = (
         dimensionItems={dimensionItemsWithTypes}
       />
 
-
       <MeasuresField
         taskPath={taskPath}
         control={control}
@@ -69,7 +68,6 @@ export const SemanticQueryTaskFields: React.FC<SemanticQueryTaskFieldsProps> = (
       <FiltersField
         taskPath={taskPath}
         control={control}
-        register={register}
         topicValue={topicValue}
         fieldsLoading={fieldsLoading}
         allFieldItems={allFieldItems}

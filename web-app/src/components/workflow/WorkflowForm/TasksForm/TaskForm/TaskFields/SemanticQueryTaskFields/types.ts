@@ -10,6 +10,7 @@ export interface FieldItem {
   value: string;
   label: string;
   searchText?: string;
+  dataType?: string;
 }
 
 export interface BaseFieldProps {
@@ -38,7 +39,6 @@ export interface MeasuresFieldProps extends BaseFieldProps {
 }
 
 export interface FiltersFieldProps extends BaseFieldProps {
-  register: UseFormRegister<WorkflowFormData>;
   allFieldItems: FieldItem[];
 }
 

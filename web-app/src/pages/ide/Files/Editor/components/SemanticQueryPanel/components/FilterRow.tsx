@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/shadcn/button";
 import type { SemanticQueryFilter } from "@/services/api/semantic";
 import type { Filter } from "../../../types";
 import DateRangeSelector from "./DateRangeSelector";
+import DateValueInput from "./DateValueInput";
 
 const FILTER_OPERATORS = [
   { label: "=", value: "eq" },
@@ -153,35 +154,50 @@ const FilterRow = ({ filter, availableDimensions, onUpdate, onRemove }: FilterRo
           </option>
         ))}
       </select>
-      {["eq", "neq", "gt", "gte", "lt", "lte"].includes(filter.op) && (
-        <input
-          type={getInputType(dimensionType)}
-          value={"value" in filter ? String(filter.value ?? "") : ""}
-          onChange={(e) => {
-            const newValue = e.target.value;
+      {["eq", "neq", "gt", "gte", "lt", "lte"].includes(filter.op) &&
+        (isTimeDimension ? (
+          <div className='flex-1'>
+            <DateValueInput
+              className='h-6.5 rounded-xs'
+              value={"value" in filter && filter.value != null ? String(filter.value) : undefined}
+              onChange={(val) =>
+                onUpdate({
+                  ...filter,
+                  value: val ?? ""
+                } as SemanticQueryFilter)
+              }
+              placeholder='Select date...'
+            />
+          </div>
+        ) : (
+          <input
+            type={getInputType(dimensionType)}
+            value={"value" in filter ? String(filter.value ?? "") : ""}
+            onChange={(e) => {
+              const newValue = e.target.value;
 
-            onUpdate({
-              ...filter,
-              value: dimensionType === "number" && newValue ? Number(newValue) : newValue
-            } as SemanticQueryFilter);
-          }}
-          placeholder='Value'
-          className={`flex-1 rounded border bg-background px-2 py-1 text-xs ${
-            "value" in filter && filter.value && !validateValue(String(filter.value), dimensionType)
-              ? "border-red-500"
-              : ""
-          }`}
-          title={
-            dimensionType === "number"
-              ? "Enter a numeric value"
-              : dimensionType === "date" || dimensionType === "datetime"
-                ? "Enter a date value"
+              onUpdate({
+                ...filter,
+                value: dimensionType === "number" && newValue ? Number(newValue) : newValue
+              } as SemanticQueryFilter);
+            }}
+            placeholder='Value'
+            className={`flex-1 rounded border bg-background px-2 py-1 text-xs ${
+              "value" in filter &&
+              filter.value &&
+              !validateValue(String(filter.value), dimensionType)
+                ? "border-red-500"
+                : ""
+            }`}
+            title={
+              dimensionType === "number"
+                ? "Enter a numeric value"
                 : dimensionType === "boolean"
                   ? "Enter true or false"
                   : "Enter a value"
-          }
-        />
-      )}
+            }
+          />
+        ))}
       {["in", "not_in"].includes(filter.op) && (
         <input
           type='text'
@@ -216,6 +232,7 @@ const FilterRow = ({ filter, availableDimensions, onUpdate, onRemove }: FilterRo
       )}
       {["in_date_range", "not_in_date_range"].includes(filter.op) && (
         <DateRangeSelector
+          className='h-6.5 rounded-xs'
           from={"from" in filter ? filter.from : undefined}
           to={"to" in filter ? filter.to : undefined}
           onChange={(updates) =>

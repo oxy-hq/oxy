@@ -6,7 +6,9 @@ export const FILTER_OPERATORS = [
   { value: "lt", label: "Less Than (<)" },
   { value: "lte", label: "Less Than or Equal (≤)" },
   { value: "in", label: "In (array)" },
-  { value: "not_in", label: "Not In (array)" }
+  { value: "not_in", label: "Not In (array)" },
+  { value: "in_date_range", label: "In Date Range" },
+  { value: "not_in_date_range", label: "Not In Date Range" }
 ];
 
 export const ORDER_DIRECTIONS = [

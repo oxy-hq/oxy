@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/shadcn
 import type { DateRangeValue } from "@/services/api/semantic";
 
 interface DateRangeSelectorProps {
+  className?: string;
   from?: DateRangeValue;
   to?: DateRangeValue;
   onChange: (updates: { relative?: string; from?: DateRangeValue; to?: DateRangeValue }) => void;
@@ -21,7 +22,7 @@ const RELATIVE_PRESETS = [
   { label: "Custom", value: "custom" }
 ];
 
-const DateRangeSelector = ({ from, to, onChange }: DateRangeSelectorProps) => {
+const DateRangeSelector = ({ from, to, onChange, className }: DateRangeSelectorProps) => {
   const [fromOpen, setFromOpen] = useState(false);
   const [toOpen, setToOpen] = useState(false);
   const [fromTab, setFromTab] = useState<string>("calendar");
@@ -139,14 +140,14 @@ const DateRangeSelector = ({ from, to, onChange }: DateRangeSelectorProps) => {
   };
 
   return (
-    <div className='flex flex-1 items-center gap-2'>
+    <div className='flex h-full flex-1 items-center gap-2'>
       <Popover open={fromOpen} onOpenChange={setFromOpen}>
-        <PopoverTrigger asChild>
+        <PopoverTrigger asChild className={className}>
           <button
             type='button'
             className='flex flex-1 items-center gap-1 rounded border bg-background px-2 py-1 text-left text-xs hover:bg-muted'
           >
-            <Calendar className='h-3 w-3' />
+            <Calendar className='w-3' />
             <span className='flex-1 truncate'>{formatDisplayValue(from)}</span>
           </button>
         </PopoverTrigger>
@@ -221,12 +222,12 @@ const DateRangeSelector = ({ from, to, onChange }: DateRangeSelectorProps) => {
       <span className='text-muted-foreground text-xs'>→</span>
 
       <Popover open={toOpen} onOpenChange={setToOpen}>
-        <PopoverTrigger asChild>
+        <PopoverTrigger asChild className={className}>
           <button
             type='button'
             className='flex flex-1 items-center gap-1 rounded border bg-background px-2 py-1 text-left text-xs hover:bg-muted'
           >
-            <Calendar className='h-3 w-3' />
+            <Calendar className='w-3' />
             <span className='flex-1 truncate'>{formatDisplayValue(to)}</span>
           </button>
         </PopoverTrigger>
