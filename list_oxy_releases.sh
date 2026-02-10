@@ -89,7 +89,7 @@ parse_releases_json() {
 			| select(.draft == false)
 			| [
 				.tag_name,
-				(.published_at // "" | split("T") | .[0]),
+				(.published_at // ""),
 				(.name // ""),
 				((.body // "") | split("\n") | map(select(startswith("Message: "))) | .[0] // "" | ltrimstr("Message: "))
 			  ]
@@ -100,22 +100,24 @@ import json, sys
 for r in json.load(sys.stdin):
     if r.get('draft'): continue
     tag = r['tag_name']
-    date = (r.get('published_at') or '')[:10]
+    timestamp = r.get('published_at') or ''
     name = (r.get('name') or '').replace('\t', ' ')
     msg = ''
     for line in (r.get('body') or '').split('\n'):
         if line.startswith('Message: '):
             msg = line[9:].strip().replace('\t', ' ')
             break
-    print('%s\t%s\t%s\t%s' % (tag, date, name, msg))
+    print('%s\t%s\t%s\t%s' % (tag, timestamp, name, msg))
 "
 	fi
 }
 
-# Extract short SHA from edge tag: edge-<sha>
+# Extract short SHA from edge tag: edge-<sha> or edge-main-<sha>
 sha_from_tag() {
 	local tag="$1"
 	if [[ "$tag" =~ ^edge-([0-9a-f]+)$ ]]; then
+		echo "${BASH_REMATCH[1]:0:7}"
+	elif [[ "$tag" =~ ^edge-main-([0-9a-f]+)$ ]]; then
 		echo "${BASH_REMATCH[1]:0:7}"
 	fi
 }
@@ -129,7 +131,7 @@ fetch_releases_page() {
 		"${API_BASE}/${repo}/releases?per_page=${per_page}&page=${page}" 2>/dev/null || echo "[]"
 }
 
-# Fetch edge releases with pagination (edge tags are mixed with old nightly tags)
+# Fetch edge releases with pagination (filters for edge-* tags)
 fetch_edge_releases() {
 	local needed="$1"
 	local collected=""
@@ -147,11 +149,11 @@ fetch_edge_releases() {
 		fi
 
 		# Extract only edge releases from this page
-		local tag date _name msg
-		while IFS=$'\t' read -r tag date _name msg; do
+		local tag timestamp _name msg
+		while IFS=$'\t' read -r tag timestamp _name msg; do
 			[ -z "$tag" ] && continue
 			[[ "$tag" != edge-* ]] && continue
-			collected+="${tag}"$'\t'"${date}"$'\t'"${msg}"$'\n'
+			collected+="${tag}"$'\t'"${timestamp}"$'\t'"${msg}"$'\n'
 			found=$((found + 1))
 			[ "$found" -ge "$needed" ] && break
 		done < <(parse_releases_json "$json")
@@ -187,8 +189,9 @@ render_stable() {
 	printf "  %-14s %s\n" "VERSION" "DATE"
 	printf "  %-14s %s\n" "──────────" "──────────"
 
-	while IFS=$'\t' read -r tag date _name _msg; do
+	while IFS=$'\t' read -r tag timestamp _name _msg; do
 		[ -z "$tag" ] && continue
+		local date="${timestamp:0:10}"
 		printf "  %-14s %s\n" "$tag" "$date"
 		count=$((count + 1))
 		[ "$count" -ge "$LIMIT" ] && break
@@ -216,10 +219,11 @@ render_edge() {
 		printf "  %-20s %-12s %-10s %s\n" "TAG" "DATE" "COMMIT" "MESSAGE"
 		printf "  %-20s %-12s %-10s %s\n" "────────────────" "──────────" "───────" "───────────────────────────────"
 
-		local tag date msg commit display_msg count=0
-		echo "$edge_data" | sort -t$'\t' -k2 -r | while IFS=$'\t' read -r tag date msg; do
+		local tag timestamp msg commit display_msg date count=0
+		echo "$edge_data" | sort -t$'\t' -k2 -r | while IFS=$'\t' read -r tag timestamp msg; do
 			[ -z "$tag" ] && continue
 			commit=$(sha_from_tag "$tag")
+			date="${timestamp:0:10}"
 			if [ "${#msg}" -gt 50 ]; then
 				display_msg="${msg:0:47}..."
 			else
