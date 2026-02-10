@@ -64,7 +64,25 @@ OXY_VERSION=edge-7cbf0a5 bash <(curl --proto '=https' --tlsv1.2 -LsSf https://ni
 OXY_VERSION=nightly-20251204-abc1234 bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)
 ```
 
-Browse all available nightly and edge releases at [oxy-hq/oxy-nightly](https://github.com/oxy-hq/oxy-nightly/releases).
+#### Browsing Available Releases
+
+To list all available releases across stable, edge, and nightly channels:
+
+```bash
+bash <(curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/list_oxy_releases.sh)
+```
+
+Filter by channel or adjust the number of results:
+
+```bash
+# Show only stable releases
+bash <(curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/list_oxy_releases.sh) --channel stable
+
+# Show 20 nightly releases
+bash <(curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/list_oxy_releases.sh) -c nightly -n 20
+```
+
+You can also browse releases directly on GitHub: [stable](https://github.com/oxy-hq/oxy/releases) | [edge/nightly](https://github.com/oxy-hq/oxy-nightly/releases).
 
 </details>
 

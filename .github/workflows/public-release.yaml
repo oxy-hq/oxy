@@ -367,6 +367,12 @@ jobs:
           git tag ${{ needs.determine-build-type.outputs.compat_tag }} || true
           git push origin ${{ needs.determine-build-type.outputs.compat_tag }} || true
 
+      - name: Get commit message
+        id: commit-msg
+        run: |
+          MSG=$(git log -1 --pretty=format:'%s' ${{ github.sha }})
+          echo "message=${MSG}" >> $GITHUB_OUTPUT
+
       # Stable release
       - name: Create stable release
         if: needs.determine-build-type.outputs.is_stable == 'true'
@@ -405,6 +411,7 @@ jobs:
             Channel: ${{ needs.determine-build-type.outputs.channel }}
             Date: ${{ needs.determine-build-type.outputs.current_date }}
             Commit: [${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
+            Message: ${{ steps.commit-msg.outputs.message }}
             Primary Tag: ${{ needs.determine-build-type.outputs.version }}
             Transitional Tag: ${{ needs.determine-build-type.outputs.compat_tag || 'n/a' }}
             To install latest:
