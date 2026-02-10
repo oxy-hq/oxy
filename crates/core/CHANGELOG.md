@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.8](https://github.com/oxy-hq/oxy-internal/compare/0.5.7...0.5.8) (2026-02-10)
+
+
+### <!-- 0 -->🚀 Features
+
+* time dimension ([#1627](https://github.com/oxy-hq/oxy-internal/issues/1627)) ([6ccbbde](https://github.com/oxy-hq/oxy-internal/commit/6ccbbde0b32f49c6abefaa9423c3142f505a7431))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* add markdown specifier for table data ([#1640](https://github.com/oxy-hq/oxy-internal/issues/1640)) ([9e2a994](https://github.com/oxy-hq/oxy-internal/commit/9e2a99456f19a1accf70395d4109f365f501c169))
+
 ## [0.5.7](https://github.com/oxy-hq/oxy-internal/compare/0.5.6...0.5.7) (2026-02-09)
 
 

@@ -1,6 +1,6 @@
 [package]
 name = "oxy-test-utils"
-version = "0.5.5"
+version = "0.5.6"
 edition.workspace = true
 rust-version.workspace = true
 publish = false
