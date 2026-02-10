@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.5.9](https://github.com/oxy-hq/oxy-internal/compare/0.5.8...0.5.9) (2026-02-10)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* allow proper injection of task output to agent prompt ([#1644](https://github.com/oxy-hq/oxy-internal/issues/1644)) ([624a119](https://github.com/oxy-hq/oxy-internal/commit/624a119f9382d456ecf959c95b96532ccc5904d1))
+* cannot connection otel ([#1645](https://github.com/oxy-hq/oxy-internal/issues/1645)) ([0f18364](https://github.com/oxy-hq/oxy-internal/commit/0f183648be41f13f7fc8380914c5c4f81a34c8a9))
+* missing default tool name ([#1642](https://github.com/oxy-hq/oxy-internal/issues/1642)) ([e624093](https://github.com/oxy-hq/oxy-internal/commit/e62409395326807559c86a008fad04b542fdc7ec))
+
 ## [0.5.8](https://github.com/oxy-hq/oxy-internal/compare/0.5.7...0.5.8) (2026-02-10)
 
 

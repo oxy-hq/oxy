@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.9](https://github.com/oxy-hq/oxy-internal/compare/0.5.8...0.5.9) (2026-02-10)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* missing default tool name ([#1642](https://github.com/oxy-hq/oxy-internal/issues/1642)) ([e624093](https://github.com/oxy-hq/oxy-internal/commit/e62409395326807559c86a008fad04b542fdc7ec))
+
 ## [0.5.8](https://github.com/oxy-hq/oxy-internal/compare/0.5.7...0.5.8) (2026-02-10)
 
 
