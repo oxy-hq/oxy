@@ -672,17 +672,6 @@ impl Object for Table {
     where
         Self: Sized + 'static,
     {
-        match self.repr() {
-            ObjectRepr::Seq | ObjectRepr::Iterable if self.enumerator_len().is_some() => {
-                for value in self.try_iter().into_iter().flatten() {
-                    let _ = &std::fmt::Debug::fmt(&value, f);
-                    f.write_str("\n")?;
-                }
-                f.write_str("")
-            }
-            _ => {
-                write!(f, "{self:?}")
-            }
-        }
+        write!(f, "{}", self.to_markdown())
     }
 }
