@@ -59,14 +59,14 @@ OXY_VERSION=edge-7cbf0a5 bash <(curl -sSfL https://nightly.oxy.tech)
 To list all available releases across stable and edge channels:
 
 ```bash
-bash <(curl -sSf https://release.oxy.tech)
+bash <(curl -sSfL https://release.oxy.tech)
 ```
 
 Filter by channel or adjust the number of results:
 
 ```bash
-bash <(curl -sSf https://release.oxy.tech) --channel stable
-bash <(curl -sSf https://release.oxy.tech) -c edge -n 20
+bash <(curl -sSfL https://release.oxy.tech) --channel stable
+bash <(curl -sSfL https://release.oxy.tech) -c edge -n 20
 ```
 
 You can also browse releases directly on GitHub: [stable](https://github.com/oxy-hq/oxy/releases) | [edge](https://github.com/oxy-hq/oxy-nightly/releases).

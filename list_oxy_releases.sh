@@ -14,7 +14,7 @@ usage() {
 	echo "List available Oxy releases."
 	echo ""
 	echo "Usage:"
-	echo "  bash <(curl -sSf https://release.oxy.tech) [OPTIONS]"
+	echo "  bash <(curl -sSfL https://release.oxy.tech) [OPTIONS]"
 	echo ""
 	echo "Options:"
 	echo "  -c, --channel CHANNEL   Filter by channel: stable, edge, or all (default: all)"
@@ -22,9 +22,9 @@ usage() {
 	echo "  -h, --help              Show this help message"
 	echo ""
 	echo "Examples:"
-	echo "  bash <(curl -sSf https://release.oxy.tech)"
-	echo "  bash <(curl -sSf https://release.oxy.tech) --channel stable"
-	echo "  bash <(curl -sSf https://release.oxy.tech) -c edge -n 20"
+	echo "  bash <(curl -sSfL https://release.oxy.tech)"
+	echo "  bash <(curl -sSfL https://release.oxy.tech) --channel stable"
+	echo "  bash <(curl -sSfL https://release.oxy.tech) -c edge -n 20"
 	exit 0
 }
 
@@ -125,7 +125,7 @@ fetch_releases_page() {
 	local repo="$1"
 	local per_page="$2"
 	local page="${3:-1}"
-	curl -sSf -H "Accept: application/vnd.github+json" \
+	curl -sSfL -H "Accept: application/vnd.github+json" \
 		"${API_BASE}/${repo}/releases?per_page=${per_page}&page=${page}" 2>/dev/null || echo "[]"
 }
 
