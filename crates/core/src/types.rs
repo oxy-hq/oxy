@@ -92,6 +92,105 @@ pub struct SemanticQueryExport {
     pub format: String,
 }
 
+/// Time granularity options for time dimension queries
+#[derive(Serialize, Deserialize, ToSchema, JsonSchema, Clone, Debug, PartialEq, Eq, Hash)]
+#[serde(rename_all = "lowercase")]
+pub enum TimeGranularity {
+    Year,
+    Quarter,
+    Month,
+    Week,
+    Day,
+    Hour,
+    Minute,
+    Second,
+}
+
+/// Date range for time dimension filtering
+#[derive(Serialize, Deserialize, ToSchema, JsonSchema, Clone, Debug, PartialEq, Eq, Hash)]
+#[serde(untagged)]
+pub enum DateRange {
+    /// Relative expression: "last week", "this month", "from 7 days ago to now"
+    Relative(String),
+    /// Array of 1-2 dates: ["2023-01-01"] or ["2023-01-01", "2023-12-31"]
+    Dates(Vec<String>),
+}
+
+impl DateRange {
+    /// Validates that the date range has valid structure (1-2 dates for Dates variant)
+    pub fn validate(&self) -> Result<(), String> {
+        match self {
+            DateRange::Relative(_) => Ok(()),
+            DateRange::Dates(dates) => {
+                if dates.is_empty() {
+                    Err("Date range must have at least 1 date".to_string())
+                } else if dates.len() > 2 {
+                    Err(format!(
+                        "Date range must have at most 2 dates, got {}",
+                        dates.len()
+                    ))
+                } else {
+                    Ok(())
+                }
+            }
+        }
+    }
+
+    /// Creates a single-date range (same start and end)
+    pub fn single(date: String) -> Self {
+        DateRange::Dates(vec![date])
+    }
+
+    /// Creates a date range from start to end
+    pub fn range(from: String, to: String) -> Self {
+        DateRange::Dates(vec![from, to])
+    }
+
+    /// Creates a relative date range expression
+    pub fn relative(expr: impl Into<String>) -> Self {
+        DateRange::Relative(expr.into())
+    }
+}
+
+/// Time dimension for temporal queries with granularity and date range
+#[derive(Serialize, Deserialize, ToSchema, JsonSchema, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct TimeDimension {
+    /// Dimension name in format: <view_name>.<dimension_name>
+    pub dimension: String,
+    /// Time granularity for grouping (year, month, day, etc.)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub granularity: Option<TimeGranularity>,
+    /// Date range to filter the time dimension
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub date_range: Option<DateRange>,
+    /// Compare date range for period-over-period analysis
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compare_date_range: Option<DateRange>,
+}
+
+impl TimeDimension {
+    /// Validates the time dimension structure
+    pub fn validate(&self) -> Result<(), String> {
+        if self.dimension.is_empty() {
+            return Err("Time dimension name cannot be empty".to_string());
+        }
+
+        if let Some(ref date_range) = self.date_range {
+            date_range
+                .validate()
+                .map_err(|e| format!("Invalid date_range: {}", e))?;
+        }
+
+        if let Some(ref compare_date_range) = self.compare_date_range {
+            compare_date_range
+                .validate()
+                .map_err(|e| format!("Invalid compare_date_range: {}", e))?;
+        }
+
+        Ok(())
+    }
+}
+
 // Reusable set of semantic query parameters (mirrors task definition inputs)
 #[derive(Serialize, Deserialize, ToSchema, JsonSchema, Clone, Debug)]
 pub struct SemanticQueryParams {
@@ -107,6 +206,11 @@ pub struct SemanticQueryParams {
     )]
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub dimensions: Vec<String>,
+    #[schemars(
+        description = "List of time dimensions with granularity and date range. Format: <view_name>.<dimension_name>"
+    )]
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub time_dimensions: Vec<TimeDimension>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub filters: Vec<SemanticFilter>,
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
@@ -128,6 +232,9 @@ impl std::hash::Hash for SemanticQueryParams {
         self.topic.hash(state);
         self.measures.hash(state);
         self.dimensions.hash(state);
+        for td in &self.time_dimensions {
+            td.hash(state);
+        }
         for filter in &self.filters {
             filter.hash(state);
         }
@@ -158,6 +265,7 @@ pub struct SemanticQuery {
     pub topic: Option<String>,
     pub dimensions: Vec<String>,
     pub measures: Vec<String>,
+    pub time_dimensions: Vec<TimeDimension>,
     pub filters: Vec<SemanticFilter>,
     pub orders: Vec<SemanticQueryOrder>,
     pub limit: Option<u64>,
@@ -175,6 +283,7 @@ impl SemanticQuery {
             limit: self.limit,
             offset: self.offset,
             variables: None,
+            time_dimensions: self.time_dimensions.clone(),
         };
         serde_json::to_string_pretty(&semantic_query_params)
             .unwrap_or_else(|_| "Failed to serialize SemanticQueryParams".to_string())

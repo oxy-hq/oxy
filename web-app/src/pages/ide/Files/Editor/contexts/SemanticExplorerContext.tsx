@@ -1,5 +1,6 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo } from "react";
 import { useCompileSemanticQuery, useExecuteSemanticQuery } from "@/hooks/api/useSemanticQuery";
+import type { TimeDimension } from "@/types/artifact";
 import type { Variable } from "../components/SemanticQueryPanel";
 import { useSemanticQueryState } from "../hooks/useSemanticQueryState";
 import type { Field, Filter, Order } from "../types";
@@ -44,6 +45,12 @@ type SemanticExplorerContextType = {
   onAddVariable: () => void;
   onUpdateVariable: (index: number, updates: Partial<Variable>) => void;
   onRemoveVariable: (index: number) => void;
+
+  // Time Dimensions
+  timeDimensions: TimeDimension[];
+  onAddTimeDimension: (initialValues?: Partial<TimeDimension>) => void;
+  onUpdateTimeDimension: (index: number, updates: Partial<TimeDimension>) => void;
+  onRemoveTimeDimension: (index: number) => void;
 
   // Actions
   onExecuteQuery: () => void;
@@ -90,6 +97,7 @@ export const SemanticExplorerProvider = ({
     filters,
     orders,
     variables,
+    timeDimensions,
     showSql,
     setShowSql,
     generatedSql,
@@ -107,6 +115,9 @@ export const SemanticExplorerProvider = ({
     addVariable,
     updateVariable,
     removeVariable,
+    addTimeDimension,
+    updateTimeDimension,
+    removeTimeDimension,
     toggleDimension,
     toggleMeasure
   } = useSemanticQueryState();
@@ -118,7 +129,12 @@ export const SemanticExplorerProvider = ({
 
   // Auto-compile query when selection changes
   useEffect(() => {
-    if (!canExecuteQuery || (selectedDimensions.length === 0 && selectedMeasures.length === 0))
+    if (
+      !canExecuteQuery ||
+      (selectedDimensions.length === 0 &&
+        selectedMeasures.length === 0 &&
+        timeDimensions.length === 0)
+    )
       return;
 
     const request = buildSemanticQuery({
@@ -127,7 +143,8 @@ export const SemanticExplorerProvider = ({
       measures: selectedMeasures,
       filters,
       orders,
-      variables
+      variables,
+      timeDimensions
     });
 
     compileSemanticQuery(request, {
@@ -147,6 +164,7 @@ export const SemanticExplorerProvider = ({
     filters,
     orders,
     variables,
+    timeDimensions,
     compileSemanticQuery,
     setGeneratedSql,
     setSqlError,
@@ -162,7 +180,8 @@ export const SemanticExplorerProvider = ({
       measures: selectedMeasures,
       filters,
       orders,
-      variables
+      variables,
+      timeDimensions
     });
 
     executeSemanticQuery(request, {
@@ -185,6 +204,7 @@ export const SemanticExplorerProvider = ({
     filters,
     orders,
     variables,
+    timeDimensions,
     executeSemanticQuery,
     setResult,
     setResultFile,
@@ -226,6 +246,7 @@ export const SemanticExplorerProvider = ({
       filters,
       orders,
       variables,
+      timeDimensions,
       onAddFilter: addFilter,
       onUpdateFilter: updateFilter,
       onRemoveFilter: removeFilter,
@@ -235,6 +256,9 @@ export const SemanticExplorerProvider = ({
       onAddVariable: addVariable,
       onUpdateVariable: updateVariable,
       onRemoveVariable: removeVariable,
+      onAddTimeDimension: addTimeDimension,
+      onUpdateTimeDimension: updateTimeDimension,
+      onRemoveTimeDimension: removeTimeDimension,
       onExecuteQuery: handleExecuteQuery,
       availableDimensions,
       setSqlError,
@@ -263,6 +287,7 @@ export const SemanticExplorerProvider = ({
       filters,
       orders,
       variables,
+      timeDimensions,
       addFilter,
       updateFilter,
       removeFilter,
@@ -272,6 +297,9 @@ export const SemanticExplorerProvider = ({
       addVariable,
       updateVariable,
       removeVariable,
+      addTimeDimension,
+      updateTimeDimension,
+      removeTimeDimension,
       handleExecuteQuery,
       availableDimensions,
       setSqlError,

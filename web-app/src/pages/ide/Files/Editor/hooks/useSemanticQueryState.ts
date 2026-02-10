@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { TimeDimension } from "@/types/artifact";
 import type { Variable } from "../components/SemanticQueryPanel";
 import type { Filter, Order } from "../types";
 
@@ -10,6 +11,7 @@ export const useSemanticQueryState = () => {
   const [filters, setFilters] = useState<Filter[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [variables, setVariables] = useState<Variable[]>([]);
+  const [timeDimensions, setTimeDimensions] = useState<TimeDimension[]>([]);
   const [showSql, setShowSql] = useState(false);
   const [generatedSql, setGeneratedSql] = useState("");
   const [sqlError, setSqlError] = useState<string | null>(null);
@@ -70,6 +72,27 @@ export const useSemanticQueryState = () => {
     setVariables(variables.filter((_, i) => i !== index));
   };
 
+  const addTimeDimension = (initialValues?: Partial<TimeDimension>) => {
+    setTimeDimensions([
+      ...timeDimensions,
+      {
+        dimension: "",
+        granularity: "value",
+        ...initialValues
+      }
+    ]);
+  };
+
+  const updateTimeDimension = (index: number, updates: Partial<TimeDimension>) => {
+    const newTimeDimensions = [...timeDimensions];
+    newTimeDimensions[index] = { ...newTimeDimensions[index], ...updates };
+    setTimeDimensions(newTimeDimensions);
+  };
+
+  const removeTimeDimension = (index: number) => {
+    setTimeDimensions(timeDimensions.filter((_, i) => i !== index));
+  };
+
   const removeOrdersForField = (fieldName: string) => {
     setOrders((prevOrders) => prevOrders.filter((order) => order.field !== fieldName));
   };
@@ -109,6 +132,8 @@ export const useSemanticQueryState = () => {
     setOrders,
     variables,
     setVariables,
+    timeDimensions,
+    setTimeDimensions,
     showSql,
     setShowSql,
     generatedSql,
@@ -126,6 +151,9 @@ export const useSemanticQueryState = () => {
     addVariable,
     updateVariable,
     removeVariable,
+    addTimeDimension,
+    updateTimeDimension,
+    removeTimeDimension,
     toggleDimension,
     toggleMeasure
   };

@@ -46,7 +46,8 @@ const ViewExplorerProviderInner = ({ children }: ViewExplorerProviderProps) => {
     if (!viewData) return [];
     return viewData.dimensions.map((d) => ({
       name: d.name,
-      fullName: `${viewData.name}.${d.name}`
+      fullName: `${viewData.name}.${d.name}`,
+      type: d.type as "string" | "number" | "date" | "datetime" | "boolean"
     }));
   }, [viewData]);
 

@@ -48,7 +48,8 @@ const TopicExplorerProviderInner = ({ children }: TopicExplorerProviderProps) =>
     return viewsWithData.flatMap((view) =>
       view.dimensions.map((dim) => ({
         name: `${view.viewName}.${dim.name}`,
-        fullName: `${view.viewName}.${dim.name}`
+        fullName: `${view.viewName}.${dim.name}`,
+        type: dim.type as "string" | "number" | "date" | "datetime" | "boolean"
       }))
     );
   }, [viewsWithData]);

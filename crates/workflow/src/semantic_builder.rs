@@ -1,4 +1,6 @@
 use arrow::{array::RecordBatch, datatypes::Schema};
+use chrono::{Local, NaiveDate};
+use oxy::types::TimeGranularity;
 use oxy_semantic::variables::RuntimeVariableResolver;
 use serde_json::Value as JsonValue;
 use std::{
@@ -20,7 +22,7 @@ use oxy::{
     },
     observability::events::{tool as tool_events, workflow as workflow_events},
     service::types::SemanticQueryParams,
-    types::SemanticQuery,
+    types::{DateRange, SemanticQuery, TimeDimension},
     utils::truncate_datasets,
 };
 use oxy_shared::errors::OxyError;
@@ -104,6 +106,9 @@ pub fn render_semantic_query(
         })
         .collect::<Result<Vec<_>, OxyError>>()?;
 
+    // Render time dimensions with template variables and relative date conversion
+    let time_dimensions = render_time_dimensions(renderer, &task.query.time_dimensions)?;
+
     let result = SemanticQueryTask {
         query: SemanticQueryParams {
             topic,
@@ -114,6 +119,7 @@ pub fn render_semantic_query(
             limit: task.query.limit,
             offset: task.query.offset,
             variables: variables.clone(),
+            time_dimensions,
         },
         export: task.export.clone(),
         variables,
@@ -130,6 +136,92 @@ fn render_string(renderer: &Renderer, value: &str, ctx: &str) -> Result<String, 
             "Failed to render semantic query {ctx} template '{value}': {e}"
         ))
     })
+}
+
+/// Render time dimensions with template variables and convert relative dates to ISO 8601
+fn render_time_dimensions(
+    renderer: &Renderer,
+    time_dimensions: &[TimeDimension],
+) -> Result<Vec<TimeDimension>, OxyError> {
+    time_dimensions
+        .iter()
+        .map(|td| {
+            // Render dimension field with templates
+            let rendered_dimension =
+                render_string(renderer, &td.dimension, "time_dimension.dimension")?;
+
+            // Convert date_range (process relative dates)
+            let rendered_date_range = td
+                .date_range
+                .as_ref()
+                .map(|dr| convert_date_range(dr))
+                .transpose()?;
+
+            // Convert compare_date_range (process relative dates)
+            let rendered_compare_date_range = td
+                .compare_date_range
+                .as_ref()
+                .map(|dr| convert_date_range(dr))
+                .transpose()?;
+
+            Ok(TimeDimension {
+                dimension: rendered_dimension,
+                granularity: td.granularity.clone(),
+                date_range: rendered_date_range,
+                compare_date_range: rendered_compare_date_range,
+            })
+        })
+        .collect::<Result<Vec<_>, OxyError>>()
+}
+
+/// Convert DateRange to absolute ISO 8601 dates
+/// Handles relative expressions like "last 7 days", "this month", "from 30 days ago to now"
+fn convert_date_range(range: &DateRange) -> Result<DateRange, OxyError> {
+    match range {
+        DateRange::Relative(expr) => {
+            // Parse relative expression using chrono-english
+            let result =
+                chrono_english::parse_date_string(expr, Local::now(), chrono_english::Dialect::Us)
+                    .map_err(|e| {
+                        OxyError::RuntimeError(format!(
+                            "Failed to parse relative date expression '{}': {}",
+                            expr, e
+                        ))
+                    })?;
+
+            // Convert to ISO 8601 date format (YYYY-MM-DD)
+            let date_str = result.format("%Y-%m-%d").to_string();
+            Ok(DateRange::Dates(vec![date_str]))
+        }
+        DateRange::Dates(dates) => {
+            // Process each date in the array
+            let normalized_dates = dates
+                .iter()
+                .map(|date| normalize_date_value(date))
+                .collect::<Result<Vec<_>, OxyError>>()?;
+            Ok(DateRange::Dates(normalized_dates))
+        }
+    }
+}
+
+/// Normalize a single date value - convert relative expressions to ISO 8601 format
+fn normalize_date_value(date: &str) -> Result<String, OxyError> {
+    // Try parsing as ISO date first (YYYY-MM-DD format)
+    if NaiveDate::parse_from_str(date, "%Y-%m-%d").is_ok() {
+        return Ok(date.to_string());
+    }
+
+    // Try parsing as relative expression
+    let result = chrono_english::parse_date_string(date, Local::now(), chrono_english::Dialect::Us)
+        .map_err(|e| {
+            OxyError::RuntimeError(format!(
+                "Failed to parse date value '{}': {}. Expected ISO 8601 format (YYYY-MM-DD) or relative expression (e.g., '7 days ago', 'now', 'next monday')",
+                date, e
+            ))
+        })?;
+
+    // Convert to ISO 8601 date format
+    Ok(result.format("%Y-%m-%d").to_string())
 }
 
 /// ParamMapper for semantic query tasks that handles templating and validation
@@ -248,6 +340,7 @@ impl Executable<SemanticQueryValidation> for SemanticQueryExecutable {
                     topic: task.query.topic.clone(),
                     dimensions: task.query.dimensions.clone(),
                     measures: task.query.measures.clone(),
+                    time_dimensions: task.query.time_dimensions.clone(),
                     filters: task.query.filters.clone(),
                     orders: task.query.orders.clone(),
                     limit: task.query.limit,
@@ -343,6 +436,7 @@ impl SemanticQueryExecutable {
             topic: Some(input.topic.name.clone()),
             dimensions: input.task.query.dimensions.clone(),
             measures: input.task.query.measures.clone(),
+            time_dimensions: input.task.query.time_dimensions.clone(),
             filters: input.task.query.filters.clone(),
             orders: input.task.query.orders.clone(),
             limit: input.task.query.limit,
@@ -749,7 +843,99 @@ impl SemanticQueryExecutable {
             query["offset"] = JsonValue::Number(serde_json::Number::from(offset));
         }
 
+        // Add time dimensions if present
+        if !task.query.time_dimensions.is_empty() {
+            let time_dims: Vec<JsonValue> = task
+                .query
+                .time_dimensions
+                .iter()
+                .map(|td| self.convert_time_dimension_to_cubejs(td, topic_name))
+                .collect::<Result<Vec<_>, _>>()?;
+            query["timeDimensions"] = JsonValue::Array(time_dims);
+            tracing::info!(
+                "Added {} time dimension(s) to CubeJS query",
+                task.query.time_dimensions.len()
+            );
+        }
+
         Ok(query)
+    }
+
+    /// Convert a TimeDimension to CubeJS timeDimensions format
+    /// Cube.dev format: { "dimension": "View.field", "granularity": "month", "dateRange": ["2023-01-01", "2023-12-31"] }
+    fn convert_time_dimension_to_cubejs(
+        &self,
+        td: &TimeDimension,
+        topic_name: &str,
+    ) -> Result<JsonValue, OxyError> {
+        // Qualify dimension name with topic if not already qualified
+        let dimension_name = if td.dimension.contains('.') {
+            td.dimension.clone()
+        } else {
+            format!("{}.{}", topic_name, td.dimension)
+        };
+
+        let mut obj = serde_json::json!({
+            "dimension": dimension_name
+        });
+
+        // Add granularity if present
+        if let Some(ref granularity) = td.granularity {
+            obj["granularity"] = self.convert_granularity_to_cubejs(granularity);
+        }
+
+        // Add dateRange if present (already normalized to ISO format by render_time_dimensions)
+        if let Some(ref date_range) = td.date_range {
+            obj["dateRange"] = self.convert_date_range_to_cubejs(date_range)?;
+        }
+
+        // Add compareDateRange if present (for period-over-period analysis)
+        if let Some(ref compare_range) = td.compare_date_range {
+            obj["compareDateRange"] = self.convert_date_range_to_cubejs(compare_range)?;
+        }
+
+        Ok(obj)
+    }
+
+    /// Convert TimeGranularity to Cube.dev granularity string
+    fn convert_granularity_to_cubejs(&self, granularity: &TimeGranularity) -> JsonValue {
+        match granularity {
+            TimeGranularity::Year => serde_json::json!("year"),
+            TimeGranularity::Quarter => serde_json::json!("quarter"),
+            TimeGranularity::Month => serde_json::json!("month"),
+            TimeGranularity::Week => serde_json::json!("week"),
+            TimeGranularity::Day => serde_json::json!("day"),
+            TimeGranularity::Hour => serde_json::json!("hour"),
+            TimeGranularity::Minute => serde_json::json!("minute"),
+            TimeGranularity::Second => serde_json::json!("second"),
+        }
+    }
+
+    /// Convert DateRange to Cube.dev dateRange format (array of 1-2 date strings)
+    /// By the time this is called, relative dates have already been converted to ISO format
+    fn convert_date_range_to_cubejs(&self, range: &DateRange) -> Result<JsonValue, OxyError> {
+        match range {
+            DateRange::Relative(expr) => {
+                // This shouldn't happen as render_time_dimensions converts relative to absolute
+                // But handle it gracefully by passing through as single-element array
+                Ok(serde_json::json!([expr]))
+            }
+            DateRange::Dates(dates) => {
+                if dates.is_empty() {
+                    return Err(OxyError::ValidationError(
+                        "Date range must have at least 1 date".to_string(),
+                    ));
+                }
+                if dates.len() > 2 {
+                    return Err(OxyError::ValidationError(format!(
+                        "Date range must have at most 2 dates, got {}",
+                        dates.len()
+                    )));
+                }
+                // Return as JSON array
+                Ok(serde_json::json!(dates))
+            }
+        }
     }
 
     /// Convert semantic filter to CubeJS filter format
@@ -770,8 +956,22 @@ impl SemanticQueryExecutable {
         let values = match &filter.filter_type {
             oxy::config::model::SemanticFilterType::InDateRange(date_filter)
             | oxy::config::model::SemanticFilterType::NotInDateRange(date_filter) => {
-                let resolved = date_filter.resolve_relative_dates()?;
-                vec![resolved.from, resolved.to]
+                let mut vals = Vec::new();
+                // Resolve relative date if needed
+                let resolved_from = if let Some(from_str) = date_filter.from.as_str() {
+                    serde_json::Value::String(normalize_date_value(from_str)?)
+                } else {
+                    date_filter.from.clone()
+                };
+                vals.push(resolved_from);
+                // Resolve relative date if needed
+                let resolved_to = if let Some(to_str) = date_filter.to.as_str() {
+                    serde_json::Value::String(normalize_date_value(to_str)?)
+                } else {
+                    date_filter.to.clone()
+                };
+                vals.push(resolved_to);
+                vals
             }
             _ => filter.filter_type.values(),
         };

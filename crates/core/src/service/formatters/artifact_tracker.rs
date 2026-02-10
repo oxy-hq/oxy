@@ -180,6 +180,7 @@ impl ArtifactTracker {
                     topic: semantic_query.topic.clone(),
                     dimensions: semantic_query.dimensions.clone(),
                     measures: semantic_query.measures.clone(),
+                    time_dimensions: semantic_query.time_dimensions.clone(),
                     filters: semantic_query.filters.clone(),
                     orders: semantic_query.orders.clone(),
                     limit: semantic_query.limit,

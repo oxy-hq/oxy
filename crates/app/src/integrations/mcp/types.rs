@@ -114,4 +114,5 @@ pub struct SemanticTopicToolInput {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(description = "Optional variables maybe required to render some semantic queries.")]
     pub variables: Option<HashMap<String, Value>>,
+    pub time_dimensions: Option<Vec<crate::service::types::TimeDimension>>,
 }

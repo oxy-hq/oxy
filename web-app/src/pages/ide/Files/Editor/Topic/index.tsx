@@ -18,7 +18,11 @@ const TopicExplorer = () => {
     selectedMeasures,
     topicLoading,
     toggleDimension,
-    toggleMeasure
+    toggleMeasure,
+    timeDimensions,
+    onAddTimeDimension,
+    onUpdateTimeDimension,
+    onRemoveTimeDimension
   } = useTopicExplorerContext();
 
   if (loadingTopicError) {
@@ -52,6 +56,10 @@ const TopicExplorer = () => {
           selectedMeasures={selectedMeasures}
           toggleDimension={toggleDimension}
           toggleMeasure={toggleMeasure}
+          timeDimensions={timeDimensions}
+          onAddTimeDimension={onAddTimeDimension}
+          onUpdateTimeDimension={onUpdateTimeDimension}
+          onRemoveTimeDimension={onRemoveTimeDimension}
         />
 
         {/* Right Side - Results and SQL */}

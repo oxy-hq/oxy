@@ -1,8 +1,10 @@
+use chrono::{Local, NaiveDate};
 use oxy::config::{ConfigManager, model::SemanticQueryTask};
-use oxy_semantic::{SemanticLayer, Topic, View, parse_semantic_layer_from_dir};
+use oxy::types::{DateRange, TimeGranularity};
+use oxy_semantic::{DimensionType, SemanticLayer, Topic, View, parse_semantic_layer_from_dir};
 use oxy_shared::errors::OxyError;
 use serde_json::Value;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// Error types specific to semantic query validation
 #[derive(Debug, Clone)]
@@ -39,6 +41,26 @@ pub enum SemanticQueryError {
     },
     ExecutionFailed {
         details: String,
+    },
+    /// Time dimension not found in topic
+    UnknownTimeDimension {
+        field: String,
+        topic: String,
+        suggestions: Vec<String>,
+    },
+    /// Dimension is not a time type (date or datetime)
+    NonTimeDimensionType {
+        field: String,
+        actual_type: String,
+    },
+    /// Invalid date range format
+    InvalidDateRange {
+        field: String,
+        details: String,
+    },
+    /// Dimension appears in both dimensions and time_dimensions
+    DimensionConflict {
+        field: String,
     },
 }
 
@@ -86,7 +108,7 @@ impl std::fmt::Display for SemanticQueryError {
                 )
             }
             SemanticQueryError::EmptySelection => {
-                write!(f, "At least one dimension or measure must be selected")
+                write!(f, "At least one dimension, measure must be selected")
             }
             SemanticQueryError::InvalidValueType {
                 field,
@@ -111,6 +133,43 @@ impl std::fmt::Display for SemanticQueryError {
             SemanticQueryError::ExecutionFailed { details } => {
                 write!(f, "Semantic query execution failed: {}", details)
             }
+            SemanticQueryError::UnknownTimeDimension {
+                field,
+                topic,
+                suggestions,
+            } => {
+                let suggestion_text = if suggestions.is_empty() {
+                    String::new()
+                } else {
+                    format!(" Did you mean: {}?", suggestions.join(", "))
+                };
+                write!(
+                    f,
+                    "Time dimension '{}' not found in topic '{}'.{}",
+                    field, topic, suggestion_text
+                )
+            }
+            SemanticQueryError::NonTimeDimensionType { field, actual_type } => {
+                write!(
+                    f,
+                    "Field '{}' has type '{}' but time dimensions must have type 'date' or 'datetime'",
+                    field, actual_type
+                )
+            }
+            SemanticQueryError::InvalidDateRange { field, details } => {
+                write!(
+                    f,
+                    "Invalid date range for time dimension '{}': {}",
+                    field, details
+                )
+            }
+            SemanticQueryError::DimensionConflict { field } => {
+                write!(
+                    f,
+                    "Field '{}' cannot appear in both 'dimensions' and 'time_dimensions'",
+                    field
+                )
+            }
         }
     }
 }
@@ -125,7 +184,11 @@ impl From<SemanticQueryError> for OxyError {
             | SQE::UnknownDimension { .. }
             | SQE::EmptySelection
             | SQE::InvalidValueType { .. }
-            | SQE::UnsupportedFilters { .. } => OxyError::ValidationError(err.to_string()),
+            | SQE::UnsupportedFilters { .. }
+            | SQE::UnknownTimeDimension { .. }
+            | SQE::NonTimeDimensionType { .. }
+            | SQE::InvalidDateRange { .. }
+            | SQE::DimensionConflict { .. } => OxyError::ValidationError(err.to_string()),
             // Configuration / environment issues
             SQE::MetadataMissing { .. } => OxyError::ConfigurationError(err.to_string()),
             // Execution / runtime failures
@@ -141,6 +204,10 @@ pub async fn validate_semantic_query_task(
     config: &ConfigManager,
     task: &SemanticQueryTask,
 ) -> Result<ValidatedSemanticQuery, OxyError> {
+    tracing::debug!(
+        "Validating semantic query task: {:?}",
+        serde_json::to_string_pretty(&task).unwrap_or_default()
+    );
     // Load semantic layer metadata from the project's semantics directory
     let semantic_dir = config.semantics_path();
 
@@ -212,6 +279,12 @@ fn validate_task_against_metadata(
             }
         }
 
+        for dim in &task.query.time_dimensions {
+            if let Some((view, _)) = dim.dimension.split_once('.') {
+                view_names.insert(view.to_string());
+            }
+        }
+
         for measure in &task.query.measures {
             if let Some((view, _)) = measure.split_once('.') {
                 view_names.insert(view.to_string());
@@ -274,7 +347,10 @@ fn validate_task_against_metadata(
     );
 
     // Validate minimum selection requirement
-    if task.query.dimensions.is_empty() && task.query.measures.is_empty() {
+    if task.query.dimensions.is_empty()
+        && task.query.measures.is_empty()
+        && task.query.time_dimensions.is_empty()
+    {
         return Err(SemanticQueryError::EmptySelection.into());
     }
 
@@ -289,6 +365,9 @@ fn validate_task_against_metadata(
 
     // Validate orders
     validate_orders(task, &valid_dimensions, &valid_measures, &topic.name)?;
+
+    // Validate time dimensions
+    validate_time_dimensions(task, &valid_dimensions, &topic_views, &topic.name)?;
 
     Ok(ValidatedSemanticQuery {
         task: task.clone(),
@@ -426,6 +505,131 @@ fn validate_orders(
                     suggestions: dimension_suggestions,
                 }
                 .into());
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Validates time dimension field references, types, granularity, and date ranges
+fn validate_time_dimensions(
+    task: &SemanticQueryTask,
+    valid_dimensions: &HashSet<String>,
+    views: &[View],
+    topic: &str,
+) -> Result<(), OxyError> {
+    // Build a map of dimension name -> dimension type for type checking
+    let dimension_types: HashMap<String, DimensionType> = views
+        .iter()
+        .flat_map(|view| {
+            view.dimensions.iter().map(move |dim| {
+                (
+                    format!("{}.{}", view.name, dim.name),
+                    dim.dimension_type.clone(),
+                )
+            })
+        })
+        .collect();
+
+    // Check for conflicts: dimension appearing in both dimensions and time_dimensions
+    let dimensions_set: HashSet<&String> = task.query.dimensions.iter().collect();
+    for time_dim in &task.query.time_dimensions {
+        if dimensions_set.contains(&time_dim.dimension) {
+            return Err(SemanticQueryError::DimensionConflict {
+                field: time_dim.dimension.clone(),
+            }
+            .into());
+        }
+    }
+
+    for time_dim in &task.query.time_dimensions {
+        // 4.1/4.2: Validate time dimension exists in topic
+        if !valid_dimensions.contains(&time_dim.dimension) {
+            let suggestions = find_suggestions(&time_dim.dimension, valid_dimensions, 5);
+            return Err(SemanticQueryError::UnknownTimeDimension {
+                field: time_dim.dimension.clone(),
+                topic: topic.to_string(),
+                suggestions,
+            }
+            .into());
+        }
+
+        // 4.2: Validate dimension has type date or datetime
+        if let Some(dim_type) = dimension_types.get(&time_dim.dimension) {
+            if !matches!(dim_type, DimensionType::Date | DimensionType::Datetime) {
+                return Err(SemanticQueryError::NonTimeDimensionType {
+                    field: time_dim.dimension.clone(),
+                    actual_type: dim_type.to_string(),
+                }
+                .into());
+            }
+        }
+
+        // 4.4: Validate date range formats can be parsed
+        if let Some(date_range) = &time_dim.date_range {
+            validate_date_range(&time_dim.dimension, date_range)?;
+        }
+
+        if let Some(compare_date_range) = &time_dim.compare_date_range {
+            validate_date_range(&time_dim.dimension, compare_date_range)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Validates that a date range has valid structure and parseable dates
+fn validate_date_range(field: &str, date_range: &DateRange) -> Result<(), OxyError> {
+    // First, validate the structure
+    if let Err(e) = date_range.validate() {
+        return Err(SemanticQueryError::InvalidDateRange {
+            field: field.to_string(),
+            details: e,
+        }
+        .into());
+    }
+
+    // Then validate that dates can be parsed
+    match date_range {
+        DateRange::Relative(expr) => {
+            // Try parsing relative expression
+            if chrono_english::parse_date_string(expr, Local::now(), chrono_english::Dialect::Us)
+                .is_err()
+            {
+                return Err(SemanticQueryError::InvalidDateRange {
+                    field: field.to_string(),
+                    details: format!(
+                        "Cannot parse relative date expression '{}'. Expected format like '7 days ago', 'now', 'next monday'",
+                        expr
+                    ),
+                }
+                .into());
+            }
+        }
+        DateRange::Dates(dates) => {
+            for date in dates {
+                // Try parsing as ISO date first
+                if NaiveDate::parse_from_str(date, "%Y-%m-%d").is_ok() {
+                    continue;
+                }
+                // Try parsing as relative expression
+                if chrono_english::parse_date_string(
+                    date,
+                    Local::now(),
+                    chrono_english::Dialect::Us,
+                )
+                .is_err()
+                {
+                    return Err(SemanticQueryError::InvalidDateRange {
+                        field: field.to_string(),
+                        details: format!(
+                            "Cannot parse date value '{}'. Expected ISO 8601 format (YYYY-MM-DD) or relative expression (e.g., '7 days ago', 'now', 'next monday')",
+                            date
+                        ),
+                    }
+                    .into());
+                }
             }
         }
     }
@@ -576,7 +780,7 @@ fn levenshtein_distance(s1: &str, s2: &str) -> usize {
 mod tests {
     use super::*;
     use oxy::config::model::SemanticQueryTask;
-    use oxy::types::SemanticQueryParams;
+    use oxy::types::{SemanticQueryParams, TimeDimension};
     use oxy_semantic::Topic;
 
     fn create_test_topic(name: &str, base_view: Option<String>) -> Topic {
@@ -605,6 +809,7 @@ mod tests {
                 limit: None,
                 offset: None,
                 variables: None,
+                time_dimensions: vec![],
             },
             export: None,
             variables: None,
@@ -625,5 +830,292 @@ mod tests {
             extract_view_from_field("simple_field"),
             Some("simple_field".to_string())
         );
+    }
+
+    // Helper to create test views with dimensions
+    fn create_test_views() -> Vec<View> {
+        use oxy_semantic::{Dimension, Entity, EntityType};
+
+        vec![View {
+            name: "orders".to_string(),
+            description: "Orders view".to_string(),
+            label: None,
+            datasource: Some("test_db".to_string()),
+            table: Some("orders".to_string()),
+            sql: None,
+            entities: vec![Entity {
+                name: "order".to_string(),
+                entity_type: EntityType::Primary,
+                description: "Order entity".to_string(),
+                key: Some("id".to_string()),
+                keys: None,
+            }],
+            dimensions: vec![
+                Dimension {
+                    name: "created_at".to_string(),
+                    dimension_type: DimensionType::Datetime,
+                    description: Some("Order creation time".to_string()),
+                    expr: "created_at".to_string(),
+                    original_expr: None,
+                    samples: None,
+                    synonyms: None,
+                },
+                Dimension {
+                    name: "order_date".to_string(),
+                    dimension_type: DimensionType::Date,
+                    description: Some("Order date".to_string()),
+                    expr: "order_date".to_string(),
+                    original_expr: None,
+                    samples: None,
+                    synonyms: None,
+                },
+                Dimension {
+                    name: "status".to_string(),
+                    dimension_type: DimensionType::String,
+                    description: Some("Order status".to_string()),
+                    expr: "status".to_string(),
+                    original_expr: None,
+                    samples: None,
+                    synonyms: None,
+                },
+            ],
+            measures: None,
+        }]
+    }
+
+    #[test]
+    fn test_validate_time_dimensions_valid_datetime() {
+        let views = create_test_views();
+        let valid_dimensions: HashSet<String> = vec![
+            "orders.created_at".to_string(),
+            "orders.order_date".to_string(),
+            "orders.status".to_string(),
+        ]
+        .into_iter()
+        .collect();
+
+        let task = SemanticQueryTask {
+            query: SemanticQueryParams {
+                topic: Some("test_topic".to_string()),
+                dimensions: vec![],
+                measures: vec![],
+                filters: vec![],
+                orders: vec![],
+                limit: None,
+                offset: None,
+                variables: None,
+                time_dimensions: vec![TimeDimension {
+                    dimension: "orders.created_at".to_string(),
+                    granularity: Some(TimeGranularity::Month),
+                    date_range: Some(DateRange::range(
+                        "2023-01-01".to_string(),
+                        "2023-12-31".to_string(),
+                    )),
+                    compare_date_range: None,
+                }],
+            },
+            export: None,
+            variables: None,
+        };
+
+        let result = validate_time_dimensions(&task, &valid_dimensions, &views, "test_topic");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_time_dimensions_unknown_dimension() {
+        let views = create_test_views();
+        let valid_dimensions: HashSet<String> = vec![
+            "orders.created_at".to_string(),
+            "orders.order_date".to_string(),
+        ]
+        .into_iter()
+        .collect();
+
+        let task = SemanticQueryTask {
+            query: SemanticQueryParams {
+                topic: Some("test_topic".to_string()),
+                dimensions: vec![],
+                measures: vec![],
+                filters: vec![],
+                orders: vec![],
+                limit: None,
+                offset: None,
+                variables: None,
+                time_dimensions: vec![TimeDimension {
+                    dimension: "orders.unknown_field".to_string(),
+                    granularity: Some(TimeGranularity::Day),
+                    date_range: None,
+                    compare_date_range: None,
+                }],
+            },
+            export: None,
+            variables: None,
+        };
+
+        let result = validate_time_dimensions(&task, &valid_dimensions, &views, "test_topic");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Time dimension 'orders.unknown_field' not found"));
+    }
+
+    #[test]
+    fn test_validate_time_dimensions_non_time_type() {
+        let views = create_test_views();
+        let valid_dimensions: HashSet<String> =
+            vec!["orders.created_at".to_string(), "orders.status".to_string()]
+                .into_iter()
+                .collect();
+
+        let task = SemanticQueryTask {
+            query: SemanticQueryParams {
+                topic: Some("test_topic".to_string()),
+                dimensions: vec![],
+                measures: vec![],
+                filters: vec![],
+                orders: vec![],
+                limit: None,
+                offset: None,
+                variables: None,
+                time_dimensions: vec![TimeDimension {
+                    dimension: "orders.status".to_string(), // String type, not date/datetime
+                    granularity: Some(TimeGranularity::Day),
+                    date_range: None,
+                    compare_date_range: None,
+                }],
+            },
+            export: None,
+            variables: None,
+        };
+
+        let result = validate_time_dimensions(&task, &valid_dimensions, &views, "test_topic");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("has type 'String'"));
+        assert!(err.contains("must have type 'date' or 'datetime'"));
+    }
+
+    #[test]
+    fn test_validate_time_dimensions_conflict() {
+        let views = create_test_views();
+        let valid_dimensions: HashSet<String> =
+            vec!["orders.created_at".to_string()].into_iter().collect();
+
+        let task = SemanticQueryTask {
+            query: SemanticQueryParams {
+                topic: Some("test_topic".to_string()),
+                dimensions: vec!["orders.created_at".to_string()], // Also in dimensions
+                measures: vec![],
+                filters: vec![],
+                orders: vec![],
+                limit: None,
+                offset: None,
+                variables: None,
+                time_dimensions: vec![TimeDimension {
+                    dimension: "orders.created_at".to_string(), // Conflict!
+                    granularity: Some(TimeGranularity::Month),
+                    date_range: None,
+                    compare_date_range: None,
+                }],
+            },
+            export: None,
+            variables: None,
+        };
+
+        let result = validate_time_dimensions(&task, &valid_dimensions, &views, "test_topic");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("cannot appear in both 'dimensions' and 'time_dimensions'"));
+    }
+
+    #[test]
+    fn test_validate_time_dimensions_invalid_date_range() {
+        let views = create_test_views();
+        let valid_dimensions: HashSet<String> =
+            vec!["orders.created_at".to_string()].into_iter().collect();
+
+        let task = SemanticQueryTask {
+            query: SemanticQueryParams {
+                topic: Some("test_topic".to_string()),
+                dimensions: vec![],
+                measures: vec![],
+                filters: vec![],
+                orders: vec![],
+                limit: None,
+                offset: None,
+                variables: None,
+                time_dimensions: vec![TimeDimension {
+                    dimension: "orders.created_at".to_string(),
+                    granularity: Some(TimeGranularity::Day),
+                    date_range: Some(DateRange::Dates(vec!["not-a-valid-date".to_string()])),
+                    compare_date_range: None,
+                }],
+            },
+            export: None,
+            variables: None,
+        };
+
+        let result = validate_time_dimensions(&task, &valid_dimensions, &views, "test_topic");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Cannot parse date value"));
+    }
+
+    #[test]
+    fn test_validate_time_dimensions_valid_relative_date() {
+        let views = create_test_views();
+        let valid_dimensions: HashSet<String> =
+            vec!["orders.created_at".to_string()].into_iter().collect();
+
+        let task = SemanticQueryTask {
+            query: SemanticQueryParams {
+                topic: Some("test_topic".to_string()),
+                dimensions: vec![],
+                measures: vec![],
+                filters: vec![],
+                orders: vec![],
+                limit: None,
+                offset: None,
+                variables: None,
+                time_dimensions: vec![TimeDimension {
+                    dimension: "orders.created_at".to_string(),
+                    granularity: None, // No granularity is valid (raw values)
+                    date_range: Some(DateRange::relative("7 days ago")),
+                    compare_date_range: None,
+                }],
+            },
+            export: None,
+            variables: None,
+        };
+
+        let result = validate_time_dimensions(&task, &valid_dimensions, &views, "test_topic");
+        assert!(
+            result.is_ok(),
+            "Expected valid relative date, got error: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn test_validate_date_range_empty_dates() {
+        let result = validate_date_range("test_field", &DateRange::Dates(vec![]));
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("at least 1 date"));
+    }
+
+    #[test]
+    fn test_validate_date_range_too_many_dates() {
+        let result = validate_date_range(
+            "test_field",
+            &DateRange::Dates(vec![
+                "2023-01-01".to_string(),
+                "2023-06-01".to_string(),
+                "2023-12-31".to_string(),
+            ]),
+        );
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("at most 2 dates"));
     }
 }

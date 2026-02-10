@@ -24,6 +24,7 @@ const SemanticQueryPanel = () => {
     filters,
     orders,
     variables,
+    timeDimensions,
     onAddFilter,
     onUpdateFilter,
     onRemoveFilter,
@@ -54,10 +55,15 @@ const SemanticQueryPanel = () => {
       .map((mes) => availableFields.find((f) => f.fullName === mes))
       .filter((field): field is (typeof availableFields)[number] => field !== undefined);
 
-    return [...selectedDimensionFields, ...selectedMeasureFields];
-  }, [selectedDimensions, selectedMeasures, availableFields]);
+    const selectedTimeDimensionFields = timeDimensions
+      .map((td) => availableFields.find((f) => f.fullName === td.dimension))
+      .filter((field): field is (typeof availableFields)[number] => field !== undefined);
 
-  const canExecuteQuery = selectedDimensions.length > 0 || selectedMeasures.length > 0;
+    return [...selectedDimensionFields, ...selectedMeasureFields, ...selectedTimeDimensionFields];
+  }, [selectedDimensions, selectedMeasures, timeDimensions, availableFields]);
+
+  const canExecuteQuery =
+    selectedDimensions.length > 0 || selectedMeasures.length > 0 || timeDimensions.length > 0;
 
   useEffect(() => {
     if (generatedSql || sqlError) {

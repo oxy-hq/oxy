@@ -133,6 +133,7 @@ pub async fn run_semantic_topic_tool(
         } else {
             Some(merged_variables.clone())
         },
+        time_dimensions: input.time_dimensions.unwrap_or_default(),
     };
 
     let task = SemanticQueryTask {

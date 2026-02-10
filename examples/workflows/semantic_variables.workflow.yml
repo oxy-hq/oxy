@@ -10,14 +10,16 @@ variables:
     default: orders
 
 tasks:
-  # Get basic sales metrics
   - name: sales_data
     type: semantic_query
     topic: fruit_business
     dimensions:
       - orders.order_id
-    measures: []
-    orders: []
     limit: 5
     variables:
       orders_table: "{{orders_table}}"
+    time_dimensions:
+      - dimension: order_shipments.shipped_date
+        granularity: month
+        dateRange:
+          - last 30 days

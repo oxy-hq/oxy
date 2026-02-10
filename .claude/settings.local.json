@@ -31,7 +31,8 @@
       "WebFetch(domain:biomejs.dev)",
       "Bash(pnpm biome format:*)",
       "Bash(npm search:*)",
-      "Bash(pnpm markdownlint-cli2:*)"
+      "Bash(pnpm markdownlint-cli2:*)",
+      "WebFetch(domain:cube.dev)"
     ],
     "deny": [],
     "ask": []

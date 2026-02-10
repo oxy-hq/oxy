@@ -557,6 +557,14 @@ fn create_semantic_query_artifact(param_obj: &Value) -> SemanticQuery {
             .and_then(|v| v.as_str().map(|s| s.to_string())),
         dimensions: extract_string_array("dimensions"),
         measures: extract_string_array("measures"),
+        time_dimensions: param_obj
+            .get("time_dimensions")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|val| serde_json::from_value(val).ok())
+            .collect(),
         filters: param_obj
             .get("filters")
             .and_then(|v| v.as_array())

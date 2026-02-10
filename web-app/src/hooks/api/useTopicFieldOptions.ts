@@ -8,6 +8,7 @@ export interface FieldOption {
   searchText: string; // For filtering
   description?: string;
   type: "dimension" | "measure";
+  dataType?: string; // Dimension data type (e.g., "date", "datetime", "string", "number", "boolean")
   viewName: string;
   fieldName: string;
 }
@@ -54,6 +55,7 @@ export default function useTopicFieldOptions(topicName: string | undefined): Top
           searchText: `${value} ${dim.description || ""} ${dim.type}`.toLowerCase(),
           description: dim.description,
           type: "dimension",
+          dataType: dim.type,
           viewName: view.view_name,
           fieldName: dim.name
         });

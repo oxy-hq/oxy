@@ -4,6 +4,7 @@ import { FiltersField } from "./FiltersField";
 import { LimitOffsetFields } from "./LimitOffsetFields";
 import { MeasuresField } from "./MeasuresField";
 import { OrdersField } from "./OrdersField";
+import { TimeDimensionsField } from "./TimeDimensionsField";
 import { TopicField } from "./TopicField";
 import type { SemanticQueryTaskFieldsProps } from "./types";
 import { useSemanticQueryFields } from "./useSemanticQueryFields";
@@ -24,7 +25,8 @@ export const SemanticQueryTaskFields: React.FC<SemanticQueryTaskFieldsProps> = (
     topicItems,
     dimensionItems,
     measureItems,
-    allFieldItems
+    allFieldItems,
+    dimensionItemsWithTypes
   } = useSemanticQueryFields(index, basePath);
 
   return (
@@ -46,6 +48,15 @@ export const SemanticQueryTaskFields: React.FC<SemanticQueryTaskFieldsProps> = (
         fieldsLoading={fieldsLoading}
         dimensionItems={dimensionItems}
       />
+
+      <TimeDimensionsField
+        taskPath={taskPath}
+        control={control}
+        topicValue={topicValue}
+        fieldsLoading={fieldsLoading}
+        dimensionItems={dimensionItemsWithTypes}
+      />
+
 
       <MeasuresField
         taskPath={taskPath}

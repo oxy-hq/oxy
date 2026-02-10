@@ -1556,28 +1556,18 @@ pub struct DateRangeFilter {
     #[garde(skip)]
     #[schemars(
         schema_with = "json_value_schema",
-        description = "Start of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp), or null."
+        description = "Start of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp)."
     )]
     pub from: Value,
     #[garde(skip)]
     #[schemars(
         schema_with = "json_value_schema",
-        description = "End of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp), or null."
+        description = "End of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp)."
     )]
     pub to: Value,
 }
 
 impl DateRangeFilter {
-    /// Convert relative date expressions to ISO datetime strings
-    /// Supports natural language expressions like "now", "today", "7 days ago", "last week", etc.
-    /// Uses chrono-english for robust natural language parsing.
-    pub fn resolve_relative_dates(&self) -> Result<Self, oxy_shared::errors::OxyError> {
-        Ok(Self {
-            from: Self::resolve_date_value(&self.from)?,
-            to: Self::resolve_date_value(&self.to)?,
-        })
-    }
-
     fn resolve_date_value(value: &Value) -> Result<Value, oxy_shared::errors::OxyError> {
         match value {
             Value::String(s) => {

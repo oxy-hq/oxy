@@ -1,5 +1,21 @@
 import type { LogItem } from "@/services/types";
 
+export type TimeDimension = {
+  dimension: string;
+  granularity?:
+    | "year"
+    | "quarter"
+    | "month"
+    | "week"
+    | "day"
+    | "hour"
+    | "minute"
+    | "second"
+    | string;
+  dateRange?: [string] | [string, string];
+  compareDateRange?: [string] | [string, string];
+};
+
 export type SqlArtifact = {
   id: string;
   name: string;
@@ -36,6 +52,7 @@ export type SemanticQueryArtifact = {
       topic: string;
       dimensions: string[];
       measures: string[];
+      timeDimensions?: TimeDimension[];
       filters: Array<{
         field: string;
         op: string;

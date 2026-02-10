@@ -59,6 +59,12 @@ export const useSemanticQueryFields = (index: number, basePath: string) => {
     name: `${taskPath}.orders`
   });
 
+  const { replace: replaceTimeDimensions } = useFieldArray({
+    control,
+    // @ts-expect-error - dynamic field path
+    name: `${taskPath}.time_dimensions`
+  });
+
   // Clear fields when topic changes
   useEffect(() => {
     if (prevTopicRef.current !== undefined && topicValue !== prevTopicRef.current) {
@@ -66,9 +72,10 @@ export const useSemanticQueryFields = (index: number, basePath: string) => {
       replaceMeasures([]);
       replaceFilters([]);
       replaceOrders([]);
+      replaceTimeDimensions([]);
     }
     prevTopicRef.current = topicValue;
-  }, [topicValue, replaceDimensions, replaceMeasures, replaceFilters, replaceOrders]);
+  }, [topicValue, replaceDimensions, replaceMeasures, replaceFilters, replaceOrders, replaceTimeDimensions]);
 
   const topicItems = topicFiles.map((t) => ({
     value: t.value,
@@ -94,6 +101,12 @@ export const useSemanticQueryFields = (index: number, basePath: string) => {
     searchText: f.searchText
   }));
 
+  const dimensionItemsWithTypes = dimensionOptions.map((d) => ({
+    value: d.value,
+    label: d.label,
+    type: d.dataType as "string" | "number" | "date" | "datetime" | "boolean" | undefined
+  }));
+
   return {
     register,
     control,
@@ -106,6 +119,7 @@ export const useSemanticQueryFields = (index: number, basePath: string) => {
     topicItems,
     dimensionItems,
     measureItems,
-    allFieldItems
+    allFieldItems,
+    dimensionItemsWithTypes
   };
 };

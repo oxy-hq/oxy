@@ -82,11 +82,19 @@ export const VirtualizedTable = ({
     startWidth: number;
   } | null>(null);
 
-  // Compute column widths: use custom width if available, otherwise default
+  // Compute column widths: use custom width if available, otherwise calculate based on column name
   const columnWidths = useMemo(() => {
     if (columns.length === 0) return [];
     const numCols = columns.length;
-    return Array.from({ length: numCols }, (_, i) => customColumnWidths.get(i) ?? 150);
+    return Array.from({ length: numCols }, (_, i) => {
+      if (customColumnWidths.has(i)) {
+        return customColumnWidths.get(i)!;
+      }
+      // Calculate width based on column name length (roughly 8px per character + padding)
+      const columnName = columns[i];
+      const calculatedWidth = Math.max(100, columnName.length * 8 + 60);
+      return calculatedWidth;
+    });
   }, [columns, customColumnWidths]);
 
   const loadData = useCallback(

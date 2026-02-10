@@ -7,6 +7,17 @@ interface BaseFilter {
   field: string;
 }
 
+export type DateRangePreset =
+  | "today"
+  | "yesterday"
+  | "last 1 week"
+  | "last 1 month"
+  | "last 3 months"
+  | "last 1 year"
+  | "last 12 months";
+
+export type DateRangeValue = string | Date;
+
 export type SemanticQueryFilter =
   | (BaseFilter & {
       op: "eq" | "neq" | "gt" | "gte" | "lt" | "lte";
@@ -18,8 +29,9 @@ export type SemanticQueryFilter =
     })
   | (BaseFilter & {
       op: "in_date_range" | "not_in_date_range";
-      from: Date;
-      to: Date;
+      relative?: string;
+      from?: DateRangeValue;
+      to?: DateRangeValue;
     });
 
 export interface SemanticQueryOrder {
@@ -27,10 +39,27 @@ export interface SemanticQueryOrder {
   direction: "asc" | "desc";
 }
 
+export type TimeDimension = {
+  dimension: string;
+  granularity?:
+    | "year"
+    | "quarter"
+    | "month"
+    | "week"
+    | "day"
+    | "hour"
+    | "minute"
+    | "second"
+    | string;
+  dateRange?: [string] | [string, string];
+  compareDateRange?: [string] | [string, string];
+};
+
 export interface SemanticQueryParams {
   topic?: string;
   measures?: string[];
   dimensions?: string[];
+  timeDimensions?: TimeDimension[];
   filters?: SemanticQueryFilter[];
   orders?: SemanticQueryOrder[];
   limit?: number;

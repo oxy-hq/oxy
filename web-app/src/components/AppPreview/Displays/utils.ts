@@ -1,4 +1,4 @@
-import { DataType, type Schema, type Table, type Timestamp, type Type } from "apache-arrow";
+import { DataType, type Schema, Struct, type Table, type Timestamp, type Type } from "apache-arrow";
 import dayjs from "dayjs";
 import timezone from "dayjs/plugin/timezone";
 import utc from "dayjs/plugin/utc";
@@ -46,6 +46,12 @@ export const getArrowValueWithType = (value: unknown, type: Type): number | stri
   if (DataType.isTime(type)) {
     return formatTime(value as number);
   }
+  // in the BE we are using snowflake-rs library which doesn't return field metadata
+  // so there is no way to know if a field is snowflake timestamp or not
+  // except checking the structure of the value itself
+  if (isSnowflakeTimestamp(value, type)) {
+    return formatSnowflakeTimestamp(value as { epoch: number; fraction: number });
+  }
   if (DataType.isDecimal(type)) {
     const scale = (type as { scale: number }).scale;
     const numValue = Number(value) / 10 ** scale;
@@ -53,6 +59,26 @@ export const getArrowValueWithType = (value: unknown, type: Type): number | stri
   }
   return getArrowValue(value);
 };
+
+function isSnowflakeTimestamp(value: any, type: Type): boolean {
+  return (
+    Struct.isStruct(type) &&
+    value &&
+    typeof value === "object" &&
+    "epoch" in value &&
+    "fraction" in value
+  );
+}
+
+function formatSnowflakeTimestamp(value: {
+  epoch: number | bigint;
+  fraction: number | bigint;
+}): string {
+  const epoch = typeof value.epoch === "bigint" ? Number(value.epoch) : value.epoch;
+  const fraction = typeof value.fraction === "bigint" ? Number(value.fraction) : value.fraction;
+  const milliseconds = epoch * 1000 + Math.floor(fraction / 1_000_000);
+  return dayjs.utc(milliseconds).format("YYYY-MM-DD HH:mm");
+}
 
 function formatDate(value: number | string): string {
   return dayjs.utc(value).format("YYYY-MM-DD");
@@ -194,5 +220,6 @@ export const registerAuthenticatedFile = async (
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const getArrowFieldType = (fieldName: string, schema: Schema<any>) => {
+  console.log("Getting field type for:", fieldName, schema);
   return schema.fields.find((f: { name: string }) => f.name === fieldName)?.type;
 };

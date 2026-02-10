@@ -1,61 +1,62 @@
 [package]
-name = "oxy-workflow"
-version = "0.5.7"
 authors.workspace = true
 description = "Workflow orchestration for Oxy"
 documentation.workspace = true
-publish.workspace = true
 edition.workspace = true
+name = "oxy-workflow"
+publish.workspace = true
 rust-version.workspace = true
+version = "0.5.7"
 
 [dependencies]
 # Async runtime
-tokio = { workspace = true }
 async-trait = "0.1.89"
+tokio = {workspace = true}
 
 # Serialization
-serde = { workspace = true }
-serde_json = { workspace = true }
-serde_yaml = { workspace = true }
+serde = {workspace = true}
+serde_json = {workspace = true}
+serde_yaml = {workspace = true}
 
 # Error handling
-thiserror = { workspace = true }
 anyhow = "1.0"
+thiserror = {workspace = true}
 
 # Logging
-tracing = { workspace = true }
-log = { workspace = true }
+log = {workspace = true}
+tracing = {workspace = true}
 
 # Utilities
-arrow = { version = "=56.2.0", default-features = false, features = ["json"] }
-chrono = { workspace = true }
+arrow = {version = "=56.2.0", default-features = false, features = ["json"]}
+chrono = {workspace = true}
+chrono-english = "0.1.8"
 csv = "1.4.0"
 fxhash = "0.2.1"
-indexmap = { workspace = true }
-jsonschema = "0.33.0"
+indexmap = {workspace = true}
 itertools = "0.14.0"
-minijinja = { workspace = true, features = ["loader"] }
-regex = { workspace = true }
-reqwest = { version = "0.12.28" }
-schemars = { version = "0.8.22", features = ["derive", "impl_json_schema"] }
+jsonschema = "0.33.0"
+minijinja = {workspace = true, features = ["loader"]}
+regex = {workspace = true}
+reqwest = {version = "0.12.28"}
+schemars = {version = "0.8.22", features = ["derive", "impl_json_schema"]}
 slugify = "0.1.0"
-sqlformat = { git = "https://github.com/shssoichiro/sqlformat-rs.git", rev = "80255c7" }
+sqlformat = {git = "https://github.com/shssoichiro/sqlformat-rs.git", rev = "80255c7"}
 strip-ansi-escapes = "=0.2.1"
-utoipa = {git="https://github.com/haitrr/utoipa.git", rev="776f86e", features = ["uuid", "chrono", "axum_extras"] }
-uuid = { version = "1.20.0", features = ["v4", "serde"] }
+utoipa = {git = "https://github.com/haitrr/utoipa.git", rev = "776f86e", features = ["uuid", "chrono", "axum_extras"]}
+uuid = {version = "1.20.0", features = ["v4", "serde"]}
 
 # Database
-sea-orm = { workspace = true }
-entity = { path = "../entity" }
+entity = {path = "../entity"}
+sea-orm = {workspace = true}
 
 # Semantic engine
-oxy-semantic = { path = "../semantic" }
+oxy-semantic = {path = "../semantic"}
 
 # Shared infrastructure
-oxy-shared = { path = "../shared" }
-oxy-agent = { path = "../agent" }
+oxy-agent = {path = "../agent"}
+oxy-shared = {path = "../shared"}
 # oxy-config = { path = "../config" }  # Access via oxy::config instead
-oxy = { path = "../core" }
+oxy = {path = "../core"}
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["test-util"] }
+tokio = {workspace = true, features = ["test-util"]}

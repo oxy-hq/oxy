@@ -3,7 +3,7 @@ import FilterRow from "./FilterRow";
 
 interface FiltersSectionProps {
   filters: Filter[];
-  availableDimensions: { name: string; fullName: string }[];
+  availableDimensions: { name: string; fullName: string; type?: string }[];
   onUpdateFilter: (index: number, updates: Filter) => void;
   onRemoveFilter: (index: number) => void;
 }

@@ -37,6 +37,7 @@ export interface ViewWithData extends ViewData {
 export type Field = {
   name: string;
   fullName: string;
+  type?: "string" | "number" | "date" | "datetime" | "boolean";
 };
 
 export type Order = {
