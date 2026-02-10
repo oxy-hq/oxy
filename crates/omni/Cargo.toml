@@ -1,6 +1,6 @@
 [package]
 name = "omni"
-version = "0.5.9"
+version = "0.5.10"
 authors.workspace = true
 description = "Omni integration for Oxy"
 documentation.workspace = true
