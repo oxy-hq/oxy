@@ -229,24 +229,24 @@ jobs:
             touch examples/bigquery-sample.key
             echo $BIGQUERY_SAMPLE_KEY > examples/bigquery-sample.key
 
-            # Run migrations using instrumented binary — same profile as nextest (test) to avoid double compilation
-            cargo llvm-cov run --profile test -- migrate
+            # Run migrations using instrumented binary — same profile as nextest (ci) to avoid double compilation
+            cargo llvm-cov run --profile ci -- migrate
 
             # Run tests reusing the instrumented build from above (--no-clean preserves migrate profraw)
-            cargo llvm-cov nextest --workspace --no-clean --lcov --output-path lcov.info
+            cargo llvm-cov nextest --cargo-profile ci --workspace --no-clean --lcov --output-path lcov.info
 
             # Print coverage summary (informational only)
             cargo llvm-cov report --summary-only
 
-            ./target/llvm-cov-target/debug/oxy gen-config-schema --check
+            ./target/llvm-cov-target/ci/oxy gen-config-schema --check
           fi
 
       - name: Upload oxy binary artifact
-        if: matrix.task == 'check'
-        uses: actions/upload-artifact@v4
+        if: matrix.task == 'test'
+        uses: actions/upload-artifact@v6
         with:
           name: oxy-binary-ci
-          path: target/ci/oxy
+          path: target/llvm-cov-target/ci/oxy
           retention-days: 1
 
       - name: Upload coverage to Coveralls
@@ -458,7 +458,7 @@ jobs:
           echo "Consistency tests completed successfully!"
 
       - name: Upload consistency test results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           name: consistency-test-results
@@ -524,7 +524,7 @@ jobs:
 
       # Upload test results and traces
       - name: Upload Playwright report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           name: playwright-report
@@ -532,7 +532,7 @@ jobs:
           retention-days: 1
 
       - name: Upload test results with traces
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: failure()
         with:
           name: playwright-results
