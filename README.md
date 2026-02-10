@@ -40,7 +40,7 @@ brew install oxy-hq/oxy/oxy
 OXY_VERSION="0.1.0" bash <(curl -sSfL https://get.oxy.tech)
 ```
 
-#### Installing Nightly/Edge Builds
+#### Installing Edge Builds
 
 To install the latest edge build (built from main branch):
 
@@ -48,25 +48,15 @@ To install the latest edge build (built from main branch):
 bash <(curl -sSfL https://nightly.oxy.tech)
 ```
 
-To install the latest nightly build (scheduled daily):
+To install a specific edge version:
 
 ```bash
-OXY_CHANNEL=nightly bash <(curl -sSfL https://nightly.oxy.tech)
-```
-
-To install a specific edge or nightly version:
-
-```bash
-# Install specific edge build
 OXY_VERSION=edge-7cbf0a5 bash <(curl -sSfL https://nightly.oxy.tech)
-
-# Install specific nightly build
-OXY_VERSION=nightly-20251204-abc1234 bash <(curl -sSfL https://nightly.oxy.tech)
 ```
 
 #### Browsing Available Releases
 
-To list all available releases across stable, edge, and nightly channels:
+To list all available releases across stable and edge channels:
 
 ```bash
 bash <(curl -sSf https://release.oxy.tech)
@@ -76,10 +66,10 @@ Filter by channel or adjust the number of results:
 
 ```bash
 bash <(curl -sSf https://release.oxy.tech) --channel stable
-bash <(curl -sSf https://release.oxy.tech) -c nightly -n 20
+bash <(curl -sSf https://release.oxy.tech) -c edge -n 20
 ```
 
-You can also browse releases directly on GitHub: [stable](https://github.com/oxy-hq/oxy/releases) | [edge/nightly](https://github.com/oxy-hq/oxy-nightly/releases).
+You can also browse releases directly on GitHub: [stable](https://github.com/oxy-hq/oxy/releases) | [edge](https://github.com/oxy-hq/oxy-nightly/releases).
 
 </details>
 

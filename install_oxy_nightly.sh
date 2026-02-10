@@ -11,10 +11,8 @@ fi
 # Ensure the install directory exists
 mkdir -p "$INSTALL_DIR"
 
-# Get the channel (edge or nightly) and version from environment variables
-# Channel: 'edge' for latest main builds, 'nightly' for scheduled daily builds
-# Version: specific tag (e.g., 'edge-7cbf0a5', 'nightly-20251204-7cbf0a5') or 'latest'
-CHANNEL=${OXY_CHANNEL:-edge}
+# Get the version from environment variable
+# Version: specific tag (e.g., 'edge-7cbf0a5') or 'latest'
 VERSION=${OXY_VERSION:-latest}
 
 # Determine the OS and architecture
@@ -64,9 +62,9 @@ esac
 
 # Determine the tag to download
 if [ "$VERSION" == "latest" ]; then
-	# For 'latest', use the GitHub latest release (which is always the most recent edge or nightly)
+	# For 'latest', use the GitHub latest release (which is always the most recent edge build)
 	TAG="latest"
-	echo "Installing latest $CHANNEL build of Oxy..."
+	echo "Installing latest edge build of Oxy..."
 else
 	# Use the specific version tag provided
 	TAG="$VERSION"
@@ -121,7 +119,7 @@ echo "✅ Oxy has been installed successfully!"
 echo "   Location: $INSTALL_DIR/oxy"
 echo "   Target: $TARGET"
 if [ "$TAG" == "latest" ]; then
-	echo "   Channel: $CHANNEL (latest)"
+	echo "   Version: edge (latest)"
 else
 	echo "   Version: $TAG"
 fi

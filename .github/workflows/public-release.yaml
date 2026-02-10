@@ -1,7 +1,7 @@
 name: Public Release
 
 on:
-  # Nightly builds (scheduled)
+  # Daily edge builds (scheduled)
   schedule:
     - cron: "0 8 * * *" # Runs every day at midnight Bay Area time (UTC-8)
 
@@ -25,7 +25,6 @@ on:
         options:
           - stable
           - edge
-          - nightly
       tag:
         description: "Tag/version for stable release (required for stable)"
         required: false
@@ -41,10 +40,10 @@ on:
           - semantic-engine
           - none
 
-# Concurrency: nightly runs independently, stable per-tag, edge cancels in-progress
+# Concurrency: scheduled edge runs independently, stable per-tag, edge cancels in-progress
 concurrency:
   group: >-
-    ${{ github.event_name == 'schedule' && format('nightly-{0}', github.run_id) ||
+    ${{ github.event_name == 'schedule' && format('edge-scheduled-{0}', github.run_id) ||
         startsWith(github.ref, 'refs/tags/') && format('stable-{0}', github.ref_name) ||
         'edge-main' }}
   cancel-in-progress: ${{ github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/') }}
@@ -124,26 +123,21 @@ jobs:
             NEEDS_CHANGESETS="false"
             IS_STABLE="true"
             COMPAT_TAG=""
-          elif [[ "${{ github.event_name }}" == "schedule" ]] || [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.release_type }}" == "nightly" ]]; then
-            # Scheduled or manual nightly
-            CHANNEL="nightly"
-            VERSION="nightly-${CURRENT_DATE}-${SHORT_SHA}"
-            DISPLAY_NAME="Nightly Build ${CURRENT_DATE}"
-            SHOULD_BUILD="true"
-            RELEASE_REPO="oxy-hq/oxy-nightly"
-            DOCKER_TAG_PREFIX="nightly-"
-            NEEDS_CHANGESETS="false"
-            IS_STABLE="false"
-            COMPAT_TAG=""
           else
-            # Push to main or manual edge
+            # Push to main, scheduled, or manual edge
             CHANNEL="edge"
             VERSION="edge-${SHORT_SHA}"
             DISPLAY_NAME="Edge Build ${SHORT_SHA}"
-            SHOULD_BUILD="defer"  # Will be determined by changesets
+            # Scheduled builds always run, main pushes check changesets
+            if [[ "${{ github.event_name }}" == "schedule" ]]; then
+              SHOULD_BUILD="true"
+              NEEDS_CHANGESETS="false"
+            else
+              SHOULD_BUILD="defer"  # Will be determined by changesets
+              NEEDS_CHANGESETS="true"
+            fi
             RELEASE_REPO="oxy-hq/oxy-nightly"
             DOCKER_TAG_PREFIX="edge-"
-            NEEDS_CHANGESETS="true"
             IS_STABLE="false"
             COMPAT_TAG="edge-main-${SHORT_SHA}"
           fi
@@ -391,8 +385,8 @@ jobs:
             artifacts/*.whl
           fail_on_unmatched_files: false
 
-      # Nightly/Edge release
-      - name: Create nightly/edge release
+      # Edge release
+      - name: Create edge release
         if: needs.determine-build-type.outputs.is_stable == 'false'
         uses: softprops/action-gh-release@v2
         with:
@@ -415,7 +409,7 @@ jobs:
             Primary Tag: ${{ needs.determine-build-type.outputs.version }}
             Transitional Tag: ${{ needs.determine-build-type.outputs.compat_tag || 'n/a' }}
             To install latest:
-            `${{ needs.determine-build-type.outputs.channel == 'nightly' && 'OXY_CHANNEL=nightly ' || '' }}bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)`
+            `bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)`
             To install this exact build:
             `OXY_VERSION=${{ needs.determine-build-type.outputs.version }} bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)`
 
@@ -512,10 +506,6 @@ jobs:
           if [ "$CHANNEL" = "stable" ]; then
             TAGS="${IMAGE}:${VERSION}-${ARCH}"
             TAGS="${TAGS},${IMAGE}:latest-${ARCH}"
-          elif [ "$CHANNEL" = "nightly" ]; then
-            TAGS="${IMAGE}:nightly-${DATE}-${ARCH}"
-            TAGS="${TAGS},${IMAGE}:nightly-${SHORT_SHA}-${ARCH}"
-            TAGS="${TAGS},${IMAGE}:nightly-latest-${ARCH}"
           else
             # Edge
             TAGS="${IMAGE}:edge-${DATE}-${ARCH}"
@@ -606,20 +596,6 @@ jobs:
             docker manifest push ${IMAGE}:latest
 
             echo "✅ Published ${IMAGE}:${VERSION} and ${IMAGE}:latest"
-          elif [ "$CHANNEL" = "nightly" ]; then
-            # Date manifest
-            docker manifest create ${IMAGE}:nightly-${DATE} \
-              ${IMAGE}:nightly-${DATE}-amd64 \
-              ${IMAGE}:nightly-${DATE}-arm64
-            docker manifest push ${IMAGE}:nightly-${DATE}
-
-            # Latest nightly manifest
-            docker manifest create ${IMAGE}:nightly-latest \
-              ${IMAGE}:nightly-latest-amd64 \
-              ${IMAGE}:nightly-latest-arm64
-            docker manifest push ${IMAGE}:nightly-latest
-
-            echo "✅ Published nightly manifests for ${{ matrix.target.image }}"
           else
             # Edge: Date manifest
             docker manifest create ${IMAGE}:edge-${DATE} \
@@ -672,8 +648,6 @@ jobs:
           if [ "$BUILD_TARGETS" = "both" ] || [ "$BUILD_TARGETS" = "runtime" ]; then
             if [ "$CHANNEL" = "stable" ]; then
               TAG="${VERSION}"
-            elif [ "$CHANNEL" = "nightly" ]; then
-              TAG="nightly-latest"
             else
               TAG="edge-latest"
             fi
@@ -693,8 +667,6 @@ jobs:
           if [ "$BUILD_TARGETS" = "both" ] || [ "$BUILD_TARGETS" = "semantic-engine" ]; then
             if [ "$CHANNEL" = "stable" ]; then
               TAG="${VERSION}"
-            elif [ "$CHANNEL" = "nightly" ]; then
-              TAG="nightly-latest"
             else
               TAG="edge-latest"
             fi
