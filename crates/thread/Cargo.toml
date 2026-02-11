@@ -1,6 +1,6 @@
 [package]
 name = "oxy-thread"
-version = "0.5.12"
+version = "0.5.13"
 authors.workspace = true
 description = "Thread and conversation management for Oxy"
 documentation.workspace = true

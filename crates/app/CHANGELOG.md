@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.13](https://github.com/oxy-hq/oxy-internal/compare/0.5.12...0.5.13) (2026-02-11)
+
+
+### <!-- 0 -->🚀 Features
+
+* add version banner ([#1656](https://github.com/oxy-hq/oxy-internal/issues/1656)) ([e376a71](https://github.com/oxy-hq/oxy-internal/commit/e376a71f94f0de8019edd7fdfd705bf09552d031))
+
 ## [0.5.12](https://github.com/oxy-hq/oxy-internal/compare/0.5.11...0.5.12) (2026-02-11)
 
 ## [0.5.11](https://github.com/oxy-hq/oxy-internal/compare/0.5.10...0.5.11) (2026-02-10)

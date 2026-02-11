@@ -1,6 +1,6 @@
 [package]
 name = "oxy-llm"
-version = "0.5.12"
+version = "0.5.13"
 authors.workspace = true
 description.workspace = true
 documentation.workspace = true
