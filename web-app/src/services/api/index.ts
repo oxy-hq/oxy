@@ -14,5 +14,6 @@ export { SemanticService } from "./semantic";
 export { ThreadService } from "./threads";
 export { TracesService } from "./traces";
 export { UserService } from "./users";
+export { getVersion } from "./version";
 export { WorkflowService } from "./workflows";
 export { WorkspaceService } from "./workspaces";

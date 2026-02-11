@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/shadcn/button";
 import { Card } from "@/components/ui/shadcn/card";
 import useSidebar from "@/components/ui/shadcn/sidebar-context";
+import { VersionBadge } from "@/components/VersionBadge";
 import { useAuth } from "@/contexts/AuthContext";
 import ROUTES from "@/libs/utils/routes";
 import useCurrentProject from "@/stores/useCurrentProject";
@@ -58,6 +59,7 @@ export const Header = () => {
         <Home className='h-4 w-4' />
       </Button>
       <div className='flex flex-1 items-center justify-between'>{renderContent()}</div>
+      <VersionBadge />
 
       <BranchSettings isOpen={isBranchSettingOpen} onClose={() => setIsBranchSettingOpen(false)} />
     </Card>

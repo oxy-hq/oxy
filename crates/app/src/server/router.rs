@@ -66,6 +66,7 @@ fn build_public_routes() -> Router<AppState> {
         .route("/health", get(healthcheck::health_check))
         .route("/ready", get(healthcheck::readiness_check))
         .route("/live", get(healthcheck::liveness_check))
+        .route("/version", get(healthcheck::version_info))
         .route("/auth/config", get(auth::get_config))
         .route("/auth/login", post(auth::login))
         .route("/auth/register", post(auth::register))
@@ -360,6 +361,7 @@ pub async fn openapi_router() -> OpenApiRouter {
         .routes(routes!(healthcheck::health_check))
         .routes(routes!(healthcheck::readiness_check))
         .routes(routes!(healthcheck::liveness_check))
+        .routes(routes!(healthcheck::version_info))
         // Agent routes
         .routes(routes!(agent::get_agents))
         .routes(routes!(agent::ask_agent_preview))

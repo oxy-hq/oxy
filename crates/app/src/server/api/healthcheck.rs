@@ -10,12 +10,32 @@ pub struct HealthCheckResponse {
     pub service: String,
     pub version: String,
     pub database: DatabaseStatus,
+    pub build_info: BuildInfo,
+}
+
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct BuildInfo {
+    pub git_commit: String,
+    pub git_commit_short: String,
+    pub build_timestamp: String,
+    pub build_profile: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commit_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workflow_url: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
 pub struct DatabaseStatus {
     pub connected: bool,
     pub message: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct VersionResponse {
+    pub version: String,
+    pub service: String,
+    pub build_info: BuildInfo,
 }
 
 /// Health check endpoint
@@ -43,6 +63,50 @@ pub async fn health_check()
 
     let version = env!("CARGO_PKG_VERSION").to_string();
 
+    // Build information from compile-time environment variables
+    let git_commit = env!("GIT_HASH_LONG").to_string();
+    let git_commit_short = env!("GIT_HASH").to_string();
+    let github_server = env!("GITHUB_SERVER_URL");
+    let github_repo = env!("GITHUB_REPOSITORY");
+    let github_run_id = env!("GITHUB_RUN_ID");
+
+    // Build GitHub URLs if we have the necessary info
+    // Note: build.rs sets "dev" for local builds, CI sets "unknown" when unavailable
+    let commit_url = if !github_server.is_empty()
+        && !github_repo.is_empty()
+        && git_commit != "unknown"
+        && git_commit != "dev"
+    {
+        Some(format!(
+            "{}/{}/commit/{}",
+            github_server, github_repo, git_commit
+        ))
+    } else {
+        None
+    };
+
+    let workflow_url = if !github_server.is_empty()
+        && !github_repo.is_empty()
+        && !github_run_id.is_empty()
+        && github_run_id != "unknown"
+    {
+        Some(format!(
+            "{}/{}/actions/runs/{}",
+            github_server, github_repo, github_run_id
+        ))
+    } else {
+        None
+    };
+
+    let build_info = BuildInfo {
+        git_commit,
+        git_commit_short,
+        build_timestamp: env!("BUILD_TIMESTAMP").to_string(),
+        build_profile: env!("BUILD_PROFILE").to_string(),
+        commit_url,
+        workflow_url,
+    };
+
     // Check database connectivity
     let db_status = check_database_connection().await;
 
@@ -58,6 +122,7 @@ pub async fn health_check()
         service: "oxy".to_string(),
         version,
         database: db_status,
+        build_info,
     };
 
     if status == "healthy" {
@@ -130,4 +195,71 @@ pub async fn readiness_check() -> StatusCode {
 )]
 pub async fn liveness_check() -> StatusCode {
     StatusCode::OK
+}
+
+/// Version information endpoint
+///
+/// Returns version and build information without any health checks.
+/// This endpoint always returns 200 as long as the service is running,
+/// making it reliable for displaying diagnostics even when the service is unhealthy.
+#[utoipa::path(
+    get,
+    path = "/version",
+    tag = "Health",
+    responses(
+        (status = 200, description = "Version information", body = VersionResponse)
+    )
+)]
+pub async fn version_info() -> Json<VersionResponse> {
+    let version = env!("CARGO_PKG_VERSION").to_string();
+
+    // Build information from compile-time environment variables
+    let git_commit = env!("GIT_HASH_LONG").to_string();
+    let git_commit_short = env!("GIT_HASH").to_string();
+    let github_server = env!("GITHUB_SERVER_URL");
+    let github_repo = env!("GITHUB_REPOSITORY");
+    let github_run_id = env!("GITHUB_RUN_ID");
+
+    // Build GitHub URLs if we have the necessary info
+    // Note: build.rs sets "dev" for local builds, CI sets "unknown" when unavailable
+    let commit_url = if !github_server.is_empty()
+        && !github_repo.is_empty()
+        && git_commit != "unknown"
+        && git_commit != "dev"
+    {
+        Some(format!(
+            "{}/{}/commit/{}",
+            github_server, github_repo, git_commit
+        ))
+    } else {
+        None
+    };
+
+    let workflow_url = if !github_server.is_empty()
+        && !github_repo.is_empty()
+        && !github_run_id.is_empty()
+        && github_run_id != "unknown"
+    {
+        Some(format!(
+            "{}/{}/actions/runs/{}",
+            github_server, github_repo, github_run_id
+        ))
+    } else {
+        None
+    };
+
+    let build_info = BuildInfo {
+        git_commit,
+        git_commit_short,
+        build_timestamp: env!("BUILD_TIMESTAMP").to_string(),
+        build_profile: env!("BUILD_PROFILE").to_string(),
+        commit_url,
+        workflow_url,
+    };
+
+    Json(VersionResponse {
+        version,
+        service: "oxy".to_string(),
+        build_info,
+    })
 }

@@ -8,7 +8,10 @@ const publicAPIPaths = [
   "/auth/verify-email",
   "/auth/google",
   "/auth/okta",
-  "/auth/config"
+  "/auth/config",
+  "/health",
+  "/ready",
+  "/live"
 ];
 
 export const apiClient = axios.create({
