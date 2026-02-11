@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.14](https://github.com/oxy-hq/oxy-internal/compare/0.5.13...0.5.14) (2026-02-11)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* resolve .semantics permission issues on WSL ([#1661](https://github.com/oxy-hq/oxy-internal/issues/1661)) ([f254a57](https://github.com/oxy-hq/oxy-internal/commit/f254a577825f3d6c326d400d83abb0963c234833))
+
 ## [0.5.13](https://github.com/oxy-hq/oxy-internal/compare/0.5.12...0.5.13) (2026-02-11)
 
 

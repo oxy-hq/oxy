@@ -1,6 +1,6 @@
 [package]
 name = "oxy-semantic"
-version = "0.5.13"
+version = "0.5.14"
 authors.workspace = true
 description = "Oxy Semantic Layer"
 documentation.workspace = true

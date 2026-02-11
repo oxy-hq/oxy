@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.13](https://github.com/oxy-hq/oxy-internal/compare/0.5.12...0.5.13) (2026-02-11)
+
+
+### <!-- 0 -->🚀 Features
+
+* add version banner ([#1656](https://github.com/oxy-hq/oxy-internal/issues/1656)) ([e376a71](https://github.com/oxy-hq/oxy-internal/commit/e376a71f94f0de8019edd7fdfd705bf09552d031))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* special characters are causing the frontend to crash ([#1654](https://github.com/oxy-hq/oxy-internal/issues/1654)) ([d2b97fc](https://github.com/oxy-hq/oxy-internal/commit/d2b97fcb878c977f56847f6e0f6421b75fc01010))
+
 ## [0.5.12](https://github.com/oxy-hq/oxy-internal/compare/0.5.11...0.5.12) (2026-02-11)
 
 
