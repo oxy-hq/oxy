@@ -5,11 +5,12 @@ use opentelemetry_sdk::{
     trace::{RandomIdGenerator, Sampler, SpanLimits, TracerProvider},
 };
 use std::time::Duration;
-use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 const DEFAULT_LOG_LEVEL: &str = "warn";
+const DEFAULT_OTLP_LOG_LEVEL: &str = "debug";
 
-/// Build an EnvFilter, falling back to DEFAULT_LOG_LEVEL if OXY_LOG_LEVEL is invalid
+/// Build an EnvFilter for console output, falling back to DEFAULT_LOG_LEVEL if OXY_LOG_LEVEL is invalid
 fn build_env_filter() -> EnvFilter {
     // First try RUST_LOG (standard env var)
     if let Ok(filter) = EnvFilter::try_from_default_env() {
@@ -27,6 +28,26 @@ fn build_env_filter() -> EnvFilter {
                 level, DEFAULT_LOG_LEVEL
             );
             EnvFilter::try_new(DEFAULT_LOG_LEVEL)
+                .unwrap()
+                .add_directive("deser_incomplete=off".parse().unwrap())
+        }
+    }
+}
+
+/// Build an EnvFilter for OTLP export (traces to ClickHouse, Jaeger, etc.)
+/// Uses OXY_OTLP_LOG_LEVEL env var, defaults to "debug" to capture all traces
+fn build_otlp_filter() -> EnvFilter {
+    let level =
+        std::env::var("OXY_OTLP_LOG_LEVEL").unwrap_or_else(|_| DEFAULT_OTLP_LOG_LEVEL.to_string());
+
+    match EnvFilter::try_new(&level) {
+        Ok(filter) => filter.add_directive("deser_incomplete=off".parse().unwrap()),
+        Err(_) => {
+            eprintln!(
+                "Warning: Invalid OXY_OTLP_LOG_LEVEL='{}', falling back to '{}'",
+                level, DEFAULT_OTLP_LOG_LEVEL
+            );
+            EnvFilter::try_new(DEFAULT_OTLP_LOG_LEVEL)
                 .unwrap()
                 .add_directive("deser_incomplete=off".parse().unwrap())
         }
@@ -88,10 +109,12 @@ pub fn init_otlp(endpoint: &str) -> Result<(), opentelemetry::trace::TraceError>
         // Propagate exception details to span attributes
         .with_error_fields_to_exceptions(true);
 
+    // Apply separate filters per layer:
+    // - Console output respects OXY_LOG_LEVEL (default: warn)
+    // - OTLP export respects OXY_OTLP_LOG_LEVEL (default: debug) to capture all traces
     tracing_subscriber::registry()
-        .with(build_env_filter())
-        .with(tracing_subscriber::fmt::layer())
-        .with(telemetry_layer)
+        .with(tracing_subscriber::fmt::layer().with_filter(build_env_filter()))
+        .with(telemetry_layer.with_filter(build_otlp_filter()))
         .init();
 
     tracing::debug!("OTLP tracing initialized: {}", endpoint);
