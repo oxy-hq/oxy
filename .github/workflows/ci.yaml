@@ -229,8 +229,7 @@ jobs:
             touch examples/bigquery-sample.key
             echo $BIGQUERY_SAMPLE_KEY > examples/bigquery-sample.key
 
-            # Build and run migrations
-            cargo build --profile ci -p oxy
+            cargo build --profile ci
             ./target/ci/oxy migrate
 
             # Run tests (no coverage instrumentation)
