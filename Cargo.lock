@@ -8011,6 +8011,7 @@ dependencies = [
  "lancedb",
  "lazy_static",
  "lettre",
+ "libc",
  "libduckdb-sys",
  "log",
  "migration",

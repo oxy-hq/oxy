@@ -81,18 +81,26 @@ fn clear_directory_contents(dir_path: &PathBuf) -> Result<(), OxyError> {
             OxyError::RuntimeError(format!("Failed to read directory entry: {}", e))
         })?;
         let path = entry.path();
-        if path.is_dir() {
-            std::fs::remove_dir_all(&path).map_err(|e| {
-                OxyError::RuntimeError(format!(
-                    "Failed to remove directory {}: {}",
-                    path.display(),
-                    e
-                ))
-            })?;
+        let result = if path.is_dir() {
+            std::fs::remove_dir_all(&path)
         } else {
-            std::fs::remove_file(&path).map_err(|e| {
-                OxyError::RuntimeError(format!("Failed to remove file {}: {}", path.display(), e))
-            })?;
+            std::fs::remove_file(&path)
+        };
+        if let Err(e) = result {
+            if e.kind() == std::io::ErrorKind::PermissionDenied {
+                return Err(OxyError::RuntimeError(format!(
+                    "Permission denied removing '{}'. This commonly happens on WSL/Linux when \
+                     container-created files are owned by root. Fix with:\n  \
+                     sudo chown -R $(id -u):$(id -g) {}",
+                    path.display(),
+                    dir_path.display()
+                )));
+            }
+            return Err(OxyError::RuntimeError(format!(
+                "Failed to remove {}: {}",
+                path.display(),
+                e
+            )));
         }
     }
     Ok(())

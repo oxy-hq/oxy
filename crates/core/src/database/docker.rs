@@ -809,11 +809,24 @@ pub async fn start_cubejs_container(
         format!("CUBEJS_LOG_LEVEL={}", log_level),
     ];
 
+    // Run as the host user's UID:GID so bind-mounted files are owned by the host user.
+    // This prevents permission issues (especially on WSL) where container-created files
+    // end up owned by root and can't be cleaned up by the host user.
+    #[cfg(unix)]
+    let user = {
+        let uid = unsafe { libc::getuid() };
+        let gid = unsafe { libc::getgid() };
+        Some(format!("{}:{}", uid, gid))
+    };
+    #[cfg(not(unix))]
+    let user: Option<String> = None;
+
     let config = ContainerCreateBody {
         image: Some(CUBEJS_IMAGE.to_string()),
         env: Some(env),
         hostname: Some("cubejs".to_string()),
         host_config: Some(host_config),
+        user,
         ..Default::default()
     };
 

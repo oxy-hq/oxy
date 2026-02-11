@@ -83,6 +83,7 @@ itertools = "0.14.0"
 jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
 lancedb = "0.23.1"
 lazy_static = "1.5.0"
+libc = "0.2"
 lettre = "0.11.19"
 libduckdb-sys = "=1.4.4" # lock version to avoid breaking changes, such as https://github.com/duckdb/duckdb-rs/issues number 436
 log = { workspace = true }
