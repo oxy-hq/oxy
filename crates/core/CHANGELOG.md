@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.12](https://github.com/oxy-hq/oxy-internal/compare/0.5.11...0.5.12) (2026-02-11)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* otel not save traces ([#1653](https://github.com/oxy-hq/oxy-internal/issues/1653)) ([ab3d41d](https://github.com/oxy-hq/oxy-internal/commit/ab3d41de49c2d793a954d08d1017ced6872600d5))
+
 ## [0.5.11](https://github.com/oxy-hq/oxy-internal/compare/0.5.10...0.5.11) (2026-02-10)
 
 
