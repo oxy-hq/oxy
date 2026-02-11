@@ -33,7 +33,7 @@ jobs:
             # Stable release (tagged)
             echo "type=Stable" >> $GITHUB_OUTPUT
             echo "emoji=:rocket:" >> $GITHUB_OUTPUT
-            echo "channel=general" >> $GITHUB_OUTPUT
+            echo "channel=product-releases-prod" >> $GITHUB_OUTPUT
             echo "generate_changelog=false" >> $GITHUB_OUTPUT
             echo "version=$BRANCH" >> $GITHUB_OUTPUT
           elif [[ "$WORKFLOW" == "Public Unified Release" && "$EVENT" == "schedule" ]]; then
