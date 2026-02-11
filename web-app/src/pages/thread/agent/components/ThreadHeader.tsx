@@ -3,6 +3,7 @@ import PageHeader from "@/components/PageHeader";
 import { Separator } from "@/components/ui/shadcn/separator";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import useAgent from "@/hooks/api/agents/useAgent";
+import { encodeBase64 } from "@/libs/encoding";
 import type { ThreadItem } from "@/types/chat";
 
 interface ThreadHeaderProps {
@@ -10,7 +11,7 @@ interface ThreadHeaderProps {
 }
 
 const ThreadHeader = ({ thread }: ThreadHeaderProps) => {
-  const agentPath64 = btoa(thread.source);
+  const agentPath64 = encodeBase64(thread.source);
   const { data: agent, isPending } = useAgent(agentPath64);
 
   const agentName = agent?.name || thread.source;

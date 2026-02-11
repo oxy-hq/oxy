@@ -2,10 +2,11 @@ import type React from "react";
 import { useMemo } from "react";
 import { useLocation, useParams, useSearchParams } from "react-router-dom";
 import { WorkflowPreview } from "@/components/workflow/WorkflowPreview";
+import { decodeBase64 } from "@/libs/encoding";
 import WorkflowPageHeader from "./Header";
 
 export const Workflow: React.FC<{ pathb64: string; runId?: string }> = ({ pathb64, runId }) => {
-  const path = useMemo(() => atob(pathb64), [pathb64]);
+  const path = useMemo(() => decodeBase64(pathb64), [pathb64]);
   const location = useLocation();
   const hashValue = location.hash;
 

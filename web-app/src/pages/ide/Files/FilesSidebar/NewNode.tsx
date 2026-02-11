@@ -7,6 +7,7 @@ import useCreateFile from "@/hooks/api/files/useCreateFile";
 import useCreateFolder from "@/hooks/api/files/useCreateFolder";
 import useFileTree from "@/hooks/api/files/useFileTree";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
 import type { FileTreeModel } from "@/types/file";
 
@@ -58,11 +59,11 @@ const NewNode = React.forwardRef<HTMLInputElement, NewNodeProps>(
         }
 
         if (creationType === "file") {
-          await createFile.mutateAsync(btoa(newPath));
-          const ideUri = ROUTES.PROJECT(projectId).IDE.FILES.FILE(btoa(newPath));
+          await createFile.mutateAsync(encodeBase64(newPath));
+          const ideUri = ROUTES.PROJECT(projectId).IDE.FILES.FILE(encodeBase64(newPath));
           navigate(ideUri);
         } else {
-          await createFolder.mutateAsync(btoa(newPath));
+          await createFolder.mutateAsync(encodeBase64(newPath));
         }
 
         onCreated();

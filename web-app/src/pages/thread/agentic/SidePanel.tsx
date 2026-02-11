@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/shadcn/breadcrumb";
 import { Button } from "@/components/ui/shadcn/button";
 import { Separator } from "@/components/ui/shadcn/separator";
+import { encodeBase64 } from "@/libs/encoding";
 import type { Block } from "@/services/types";
 import { useSelectedMessageReasoning } from "@/stores/agentic";
 import DataApp from "./AgenticArtifacts/DataApp";
@@ -24,7 +25,7 @@ const SidePanel = () => {
 
     switch (selectedBlock.type) {
       case "data_app":
-        return <DataApp pathb64={btoa(selectedBlock.file_path)} />;
+        return <DataApp pathb64={encodeBase64(selectedBlock.file_path)} />;
       case "sql":
         return <ExecuteSQL block={selectedBlock} />;
       case "viz":

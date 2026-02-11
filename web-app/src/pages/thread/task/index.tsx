@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/shadcn/button";
 import useAskTask from "@/hooks/messaging/task";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { useSmartScroll } from "@/hooks/useSmartScroll";
+import { encodeBase64 } from "@/libs/encoding";
 import Messages from "@/pages/thread/messages";
 import EditorTab from "@/pages/thread/task/EditorTab";
 import { ThreadService } from "@/services/api";
@@ -87,7 +88,7 @@ const TaskThread = ({
     refetchThread();
   };
 
-  const filePathB64 = filePath ? btoa(filePath) : undefined;
+  const filePathB64 = filePath ? encodeBase64(filePath) : undefined;
 
   const onStop = async () => {
     try {

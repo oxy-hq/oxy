@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import YAML from "yaml";
+import { decodeBase64 } from "@/libs/encoding";
 import { useFilesContext } from "../../FilesContext";
 import { FilesSubViewMode } from "../../FilesSidebar/constants";
 import { useEditorContext } from "../contexts/useEditorContext";
@@ -23,7 +24,7 @@ const AppEditor = () => {
 
   const [validationError, setValidationError] = useState<string | null>(null);
 
-  const appPath = useMemo(() => atob(pathb64 ?? ""), [pathb64]);
+  const appPath = useMemo(() => decodeBase64(pathb64 ?? ""), [pathb64]);
 
   const validateContent = (value: string) => {
     try {

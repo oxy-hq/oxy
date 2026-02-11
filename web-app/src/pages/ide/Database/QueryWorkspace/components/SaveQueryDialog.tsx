@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import queryKeys from "@/hooks/api/queryKey";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { encodeBase64 } from "@/libs/encoding";
 import { FileService } from "@/services/api";
 import useDatabaseClient, { type QueryTab } from "@/stores/useDatabaseClient";
 
@@ -55,7 +56,7 @@ export default function SaveQueryDialog({ open, onOpenChange, tab }: SaveQueryDi
 
     const finalFileName = fileName.endsWith(".sql") ? fileName : `${fileName}.sql`;
     const filePath = finalFileName; // Save in root directory
-    const pathb64 = btoa(filePath);
+    const pathb64 = encodeBase64(filePath);
 
     setIsSaving(true);
     setError(null);

@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/shadcn/sidebar";
 import useApps from "@/hooks/api/apps/useApps";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
 import ItemsSkeleton from "./ItemsSkeleton";
 
@@ -31,7 +32,7 @@ export function Apps() {
 
         {!isPending &&
           apps?.map((app) => {
-            const pathb64 = btoa(app.path);
+            const pathb64 = encodeBase64(app.path);
             const appUri = ROUTES.PROJECT(projectId).APP(pathb64);
             return (
               <SidebarMenuSubItem key={pathb64}>

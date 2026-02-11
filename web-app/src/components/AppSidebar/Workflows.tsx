@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/shadcn/sidebar";
 import useWorkflows from "@/hooks/api/workflows/useWorkflows";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
 import ItemsSkeleton from "./ItemsSkeleton";
 
@@ -36,7 +37,7 @@ export function Workflows() {
 
         {!isPending &&
           visibleWorkflows?.map((workflow) => {
-            const pathb64 = btoa(workflow.path || "");
+            const pathb64 = encodeBase64(workflow.path || "");
             const workflowUri = ROUTES.PROJECT(projectId).WORKFLOW(pathb64).ROOT;
             return (
               <SidebarMenuSubItem key={pathb64}>

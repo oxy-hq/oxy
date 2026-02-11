@@ -1,3 +1,5 @@
+import { decodeBase64 } from "@/libs/encoding";
+
 export enum FileType {
   WORKFLOW = "workflow",
   AUTOMATION = "automation",
@@ -78,7 +80,7 @@ export const detectFileType = (filePath: string): FileType => {
 
 export const decodeFilePath = (pathb64: string): string => {
   try {
-    return atob(pathb64);
+    return decodeBase64(pathb64);
   } catch {
     return "";
   }

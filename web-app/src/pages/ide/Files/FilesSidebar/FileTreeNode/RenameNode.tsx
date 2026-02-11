@@ -6,6 +6,7 @@ import useFileTree from "@/hooks/api/files/useFileTree";
 import useRenameFile from "@/hooks/api/files/useRenameFile";
 import useRenameFolder from "@/hooks/api/files/useRenameFolder";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { decodeBase64, encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
 import type { FileTreeModel } from "@/types/file";
 
@@ -57,19 +58,19 @@ const RenameNode = React.forwardRef<HTMLInputElement, RenameNodeProps>(
 
           if (isDir) {
             await renameFolder.mutateAsync({
-              pathb64: btoa(fileTree.path),
+              pathb64: encodeBase64(fileTree.path),
               newName: newPath
             });
           } else {
             await renameFile.mutateAsync({
-              pathb64: btoa(fileTree.path),
+              pathb64: encodeBase64(fileTree.path),
               newName: newPath
             });
           }
-          const currentPath = atob(pathname.split("/").pop() ?? "");
+          const currentPath = decodeBase64(pathname.split("/").pop() ?? "");
           if (currentPath.startsWith(fileTree.path)) {
             const newUrl = currentPath.replace(fileTree.path, newPath);
-            const ideUri = ROUTES.PROJECT(projectId).IDE.FILES.FILE(btoa(newUrl));
+            const ideUri = ROUTES.PROJECT(projectId).IDE.FILES.FILE(encodeBase64(newUrl));
             navigate(ideUri);
           }
           setError(false);

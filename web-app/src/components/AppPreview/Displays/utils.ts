@@ -7,6 +7,7 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 
 import { getDuckDB } from "@/libs/duckdb";
+import { encodeBase64 } from "@/libs/encoding";
 import { apiClient } from "@/services/api/axios";
 import type { DataContainer } from "@/types/app";
 
@@ -204,9 +205,9 @@ export const registerAuthenticatedFile = async (
   branchName: string
 ): Promise<string> => {
   const db = await getDuckDB();
-  const file_name = `${btoa(filePath)}.parquet`;
+  const file_name = `${encodeBase64(filePath)}.parquet`;
 
-  const pathb64 = btoa(filePath);
+  const pathb64 = encodeBase64(filePath);
   const response = await apiClient.get(`/${projectId}/app/file/${pathb64}`, {
     responseType: "arraybuffer",
     params: { branch: branchName }

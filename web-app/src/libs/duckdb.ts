@@ -3,6 +3,7 @@ import eh_worker from "@duckdb/duckdb-wasm/dist/duckdb-browser-eh.worker.js?url"
 import mvp_worker from "@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.js?url";
 import duckdb_wasm_eh from "@duckdb/duckdb-wasm/dist/duckdb-eh.wasm?url";
 import duckdb_wasm from "@duckdb/duckdb-wasm/dist/duckdb-mvp.wasm?url";
+import { encodeBase64 } from "@/libs/encoding";
 
 const isLocalhost = () => {
   if (typeof window === "undefined") return false;
@@ -83,7 +84,7 @@ export const registerAuthenticatedParquetFile = async (
   const db = await getDuckDB();
 
   // Base64 encode the file path to create a valid table name
-  const tableName = btoa(filePath).replace(/[^a-zA-Z0-9]/g, "_");
+  const tableName = encodeBase64(filePath).replace(/[^a-zA-Z0-9]/g, "_");
 
   // Fetch the Parquet file from the API
   const { apiClient } = await import("@/services/api/axios");

@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { encodeBase64 } from "@/libs/encoding";
 import { useTopicDetails } from "./useSemanticQuery";
 import useTopicFiles from "./useTopicFiles";
 
@@ -32,7 +33,7 @@ export default function useTopicFieldOptions(topicName: string | undefined): Top
 
   const filePathB64 = useMemo(() => {
     if (!topicFilePath) return undefined;
-    return btoa(topicFilePath);
+    return encodeBase64(topicFilePath);
   }, [topicFilePath]);
 
   const { data, isLoading: detailsLoading, error } = useTopicDetails(filePathB64);

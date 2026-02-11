@@ -17,6 +17,7 @@ import {
   TableRow
 } from "@/components/ui/shadcn/table";
 import { useExecutionAgentStats } from "@/hooks/api/useExecutionAnalytics";
+import { encodeBase64 } from "@/libs/encoding";
 import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
 import useCurrentProject from "@/stores/useCurrentProject";
@@ -139,7 +140,7 @@ export default function AgentBreakdownTable({
                 <TableCell className='font-medium'>
                   <button
                     onClick={() => {
-                      const pathb64 = btoa(agent.agentRef);
+                      const pathb64 = encodeBase64(agent.agentRef);
                       navigate(ROUTES.PROJECT(project?.id || "").IDE.FILES.FILE(pathb64));
                     }}
                     className='text-left underline-offset-4 transition-colors hover:text-primary hover:underline'

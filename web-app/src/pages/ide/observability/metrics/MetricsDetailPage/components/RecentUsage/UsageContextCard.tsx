@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight, Clock, ExternalLink } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { encodeBase64 } from "@/libs/encoding";
 import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
 import type { RecentUsage } from "@/services/api/metrics";
@@ -81,7 +82,7 @@ export default function UsageContextCard({
           <div className='text-sm'>
             <button
               onClick={() => {
-                const pathb64 = btoa(usage.source_ref);
+                const pathb64 = encodeBase64(usage.source_ref);
                 navigate(ROUTES.PROJECT(project?.id || "").IDE.FILES.FILE(pathb64));
               }}
               className='text-left font-mono text-muted-foreground text-xs underline-offset-4 transition-colors hover:text-primary hover:underline'

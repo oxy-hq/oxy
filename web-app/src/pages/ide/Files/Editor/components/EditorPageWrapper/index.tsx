@@ -9,6 +9,7 @@ import {
   ResizablePanel,
   ResizablePanelGroup
 } from "@/components/ui/shadcn/resizable";
+import { decodeBase64 } from "@/libs/encoding";
 import { cn } from "@/libs/shadcn/utils";
 import EditorHeader from "../EditorHeader";
 
@@ -68,7 +69,7 @@ const EditorPageWrapper = ({
   customEditor,
   previewOnly = false
 }: EditorPageWrapperProps) => {
-  const filePath = atob(pathb64 ?? "");
+  const filePath = decodeBase64(pathb64 ?? "");
 
   const isNarrowViewport = useViewportDetection();
   const hasPreview = !!preview;

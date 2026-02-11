@@ -12,6 +12,7 @@ import {
 import useDeleteFile from "@/hooks/api/files/useDeleteFile";
 import useDeleteFolder from "@/hooks/api/files/useDeleteFolder";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { decodeBase64, encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
 import type { FileTreeModel } from "@/types/file";
 
@@ -34,11 +35,11 @@ const AlertDeleteDialog = ({ fileTree, visible, setVisible }: AlertDeleteDialogP
   const handleConfirmDelete = async () => {
     try {
       if (isDir) {
-        await deleteFolder.mutateAsync(btoa(fileTree.path));
+        await deleteFolder.mutateAsync(encodeBase64(fileTree.path));
       } else {
-        await deleteFile.mutateAsync(btoa(fileTree.path));
+        await deleteFile.mutateAsync(encodeBase64(fileTree.path));
       }
-      const currentPath = atob(pathname.split("/").pop() ?? "");
+      const currentPath = decodeBase64(pathname.split("/").pop() ?? "");
       if (currentPath.startsWith(fileTree.path)) {
         const ideUri = ROUTES.PROJECT(projectId).IDE.ROOT;
         navigate(ideUri);

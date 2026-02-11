@@ -1,4 +1,5 @@
 import { Fullscreen, LinkIcon, LoaderCircle } from "lucide-react";
+import { encodeBase64 } from "@/libs/encoding";
 import type { Block, RunInfo } from "@/services/types";
 import {
   useMessageContent,
@@ -146,7 +147,7 @@ const BlockComponent = ({ block }: { block: Block }) => {
     case "data_app":
       return (
         <div className='relative h-96'>
-          <AppPreview appPath64={btoa(block.file_path)} />
+          <AppPreview appPath64={encodeBase64(block.file_path)} />
         </div>
       );
     default:

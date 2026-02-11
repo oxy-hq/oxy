@@ -6,6 +6,7 @@ import { useFileEditorContext } from "@/components/FileEditor/useFileEditorConte
 import { useListWorkflowRuns } from "@/components/workflow/useWorkflowRun";
 import { WorkflowForm, type WorkflowFormData } from "@/components/workflow/WorkflowForm";
 import { WorkflowPreview } from "@/components/workflow/WorkflowPreview";
+import { decodeBase64 } from "@/libs/encoding";
 import { useFilesContext } from "../../FilesContext";
 import { FilesSubViewMode } from "../../FilesSidebar/constants";
 import { useEditorContext } from "../contexts/useEditorContext";
@@ -33,7 +34,7 @@ const WorkflowEditor = () => {
   const hasNavigatedRef = useRef(false);
 
   // Get the workflow path for fetching runs
-  const workflowPath = useMemo(() => atob(pathb64 ?? ""), [pathb64]);
+  const workflowPath = useMemo(() => decodeBase64(pathb64 ?? ""), [pathb64]);
 
   // Reset navigation flag when workflow path changes
   // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>

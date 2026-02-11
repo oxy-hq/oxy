@@ -1,12 +1,6 @@
-import { OxyConfig, createConfigAsync } from "./config";
-import {
-  AppItem,
-  AppDataResponse,
-  GetDisplaysResponse,
-  ApiError,
-  TableData,
-} from "./types";
+import { createConfigAsync, type OxyConfig } from "./config";
 import { readParquet } from "./parquet";
+import type { ApiError, AppDataResponse, AppItem, GetDisplaysResponse, TableData } from "./types";
 
 /**
  * Oxy API Client for interacting with Oxy data
@@ -48,48 +42,47 @@ export class OxyClient {
   }
 
   /**
-   * Encodes a file path to base64 for use in API URLs
+   * Encodes a file path to base64 for use in API URLs.
+   * Handles Unicode characters (e.g., emojis) properly in both Node.js and browser.
    */
   private encodePathBase64(path: string): string {
     if (typeof Buffer !== "undefined") {
       // Node.js environment
       return Buffer.from(path).toString("base64");
     } else {
-      // Browser environment
-      return btoa(path);
+      // Browser environment - handle Unicode properly
+      return btoa(
+        encodeURIComponent(path).replace(/%([0-9A-F]{2})/g, (_, p1) =>
+          String.fromCharCode(parseInt(p1, 16))
+        )
+      );
     }
   }
 
   /**
    * Makes an authenticated HTTP request to the Oxy API
    */
-  private async request<T>(
-    endpoint: string,
-    options: RequestInit = {},
-  ): Promise<T> {
+  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${this.config.baseUrl}${endpoint}`;
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      ...((options.headers as Record<string, string>) || {}),
+      ...((options.headers as Record<string, string>) || {})
     };
 
     // Only add Authorization header if API key is provided (optional for local dev)
     if (this.config.apiKey) {
-      headers["Authorization"] = `Bearer ${this.config.apiKey}`;
+      headers.Authorization = `Bearer ${this.config.apiKey}`;
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(
-      () => controller.abort(),
-      this.config.timeout || 30000,
-    );
+    const timeoutId = setTimeout(() => controller.abort(), this.config.timeout || 30000);
 
     try {
       const response = await fetch(url, {
         ...options,
         headers,
-        signal: controller.signal,
+        signal: controller.signal
       });
 
       clearTimeout(timeoutId);
@@ -99,7 +92,7 @@ export class OxyClient {
         const error: ApiError = {
           message: `API request failed: ${response.statusText}`,
           status: response.status,
-          details: errorText,
+          details: errorText
         };
         throw error;
       }
@@ -107,7 +100,7 @@ export class OxyClient {
       // Handle binary responses
       const acceptHeader =
         typeof options.headers === "object" && options.headers !== null
-          ? (options.headers as Record<string, string>)["Accept"]
+          ? (options.headers as Record<string, string>).Accept
           : undefined;
       if (acceptHeader === "application/octet-stream") {
         return response.blob() as Promise<T>;
@@ -118,9 +111,7 @@ export class OxyClient {
       clearTimeout(timeoutId);
 
       if (error instanceof Error && error.name === "AbortError") {
-        throw new Error(
-          `Request timeout after ${this.config.timeout || 30000}ms`,
-        );
+        throw new Error(`Request timeout after ${this.config.timeout || 30000}ms`);
       }
 
       throw error;
@@ -130,9 +121,7 @@ export class OxyClient {
   /**
    * Builds query parameters including optional branch
    */
-  private buildQueryParams(
-    additionalParams: Record<string, string> = {},
-  ): string {
+  private buildQueryParams(additionalParams: Record<string, string> = {}): string {
     const params: Record<string, string> = { ...additionalParams };
 
     if (this.config.branch) {
@@ -179,9 +168,7 @@ export class OxyClient {
   async getAppData(appPath: string): Promise<AppDataResponse> {
     const pathb64 = this.encodePathBase64(appPath);
     const query = this.buildQueryParams();
-    return this.request<AppDataResponse>(
-      `/${this.config.projectId}/app/${pathb64}${query}`,
-    );
+    return this.request<AppDataResponse>(`/${this.config.projectId}/app/${pathb64}${query}`);
   }
 
   /**
@@ -199,10 +186,9 @@ export class OxyClient {
   async runApp(appPath: string): Promise<AppDataResponse> {
     const pathb64 = this.encodePathBase64(appPath);
     const query = this.buildQueryParams();
-    return this.request<AppDataResponse>(
-      `/${this.config.projectId}/app/${pathb64}/run${query}`,
-      { method: "POST" },
-    );
+    return this.request<AppDataResponse>(`/${this.config.projectId}/app/${pathb64}/run${query}`, {
+      method: "POST"
+    });
   }
 
   /**
@@ -227,7 +213,7 @@ export class OxyClient {
     const pathb64 = this.encodePathBase64(appPath);
     const query = this.buildQueryParams();
     return this.request<GetDisplaysResponse>(
-      `/${this.config.projectId}/app/${pathb64}/displays${query}`,
+      `/${this.config.projectId}/app/${pathb64}/displays${query}`
     );
   }
 
@@ -263,14 +249,11 @@ export class OxyClient {
   async getFile(filePath: string): Promise<Blob> {
     const pathb64 = this.encodePathBase64(filePath);
     const query = this.buildQueryParams();
-    return this.request<Blob>(
-      `/${this.config.projectId}/app/file/${pathb64}${query}`,
-      {
-        headers: {
-          Accept: "application/octet-stream",
-        },
-      },
-    );
+    return this.request<Blob>(`/${this.config.projectId}/app/file/${pathb64}${query}`, {
+      headers: {
+        Accept: "application/octet-stream"
+      }
+    });
   }
 
   /**
@@ -311,17 +294,14 @@ export class OxyClient {
    * console.log(`Total rows: ${tableData.total_rows}`);
    * ```
    */
-  async getTableData(
-    filePath: string,
-    limit: number = 100,
-  ): Promise<TableData> {
+  async getTableData(filePath: string, limit: number = 100): Promise<TableData> {
     const blob = await this.getFile(filePath);
     const result = await readParquet(blob, "data", limit);
 
     return {
       columns: result.columns,
       rows: result.rows,
-      total_rows: result.rowCount,
+      total_rows: result.rowCount
     };
   }
 }

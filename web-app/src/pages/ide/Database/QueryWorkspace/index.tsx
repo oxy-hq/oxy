@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/shadcn/resizable";
 import queryKeys from "@/hooks/api/queryKey";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { encodeBase64 } from "@/libs/encoding";
 import { FileService } from "@/services/api";
 import useDatabaseClient from "@/stores/useDatabaseClient";
 import QueryEditor from "./components/QueryEditor";
@@ -28,7 +29,7 @@ export default function QueryWorkspacePage() {
     // If the tab already has a saved path, save directly without showing dialog
     if (activeTab.savedPath) {
       try {
-        const pathb64 = btoa(activeTab.savedPath);
+        const pathb64 = encodeBase64(activeTab.savedPath);
         await FileService.saveFile(project.id, pathb64, activeTab.content, branchName);
 
         updateTab(activeTab.id, { isDirty: false });

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { decodeBase64 } from "@/libs/encoding";
 import { useFilesContext } from "../../FilesContext";
 import { FilesSubViewMode } from "../../FilesSidebar/constants";
 import EditorPageWrapper from "../components/EditorPageWrapper";
@@ -77,7 +78,7 @@ type TopicPreviewProps = {
 
 const TopicPreview = (props: TopicPreviewProps) => {
   const { pathb64, isReadOnly } = props;
-  const path = useMemo(() => atob(pathb64 || ""), [pathb64]);
+  const path = useMemo(() => decodeBase64(pathb64 || ""), [pathb64]);
   const { filesSubViewMode } = useFilesContext();
 
   // Default to Explorer for object mode, Editor for file mode

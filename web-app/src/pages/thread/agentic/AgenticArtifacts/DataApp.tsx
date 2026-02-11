@@ -6,13 +6,14 @@ import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
 import queryKeys from "@/hooks/api/queryKey";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { decodeBase64 } from "@/libs/encoding";
 import EditorPageWrapper from "@/pages/ide/Files/Editor/components/EditorPageWrapper";
 
 // eslint-disable-next-line sonarjs/pseudo-random
 const randomKey = () => Math.random().toString(36).substring(2, 15);
 
 const DataApp = ({ pathb64 }: { pathb64?: string }) => {
-  const filePath = atob(pathb64 ?? "");
+  const filePath = decodeBase64(pathb64 ?? "");
   const [previewKey, setPreviewKey] = useState<string>(randomKey());
   const queryClient = useQueryClient();
   const { project, branchName } = useCurrentProjectBranch();

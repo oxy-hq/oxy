@@ -6,6 +6,7 @@ import { SidebarContent, SidebarGroup, SidebarMenu } from "@/components/ui/shadc
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
 import useFileTree from "@/hooks/api/files/useFileTree";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { decodeBase64 } from "@/libs/encoding";
 import { SidebarHeader } from "@/pages/ide/components/SidebarHeader";
 import { useFilesContext } from "../FilesContext";
 import { FilesSubViewMode, IGNORE_FILES_REGEX, NAME_COLLATOR } from "./constants";
@@ -29,7 +30,7 @@ const FilesSidebar: React.FC<{
   const activePath = useMemo(() => {
     if (!pathb64) return undefined;
     try {
-      return atob(pathb64);
+      return decodeBase64(pathb64);
     } catch {
       return undefined;
     }

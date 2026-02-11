@@ -1,4 +1,5 @@
 import { parse } from "yaml";
+import { encodeBase64 } from "@/libs/encoding";
 import type { FileTreeModel } from "@/types/file";
 import type { OntologyEdge, OntologyGraph, OntologyNode, Topic, View } from "@/types/ontology";
 import { DatabaseService } from "./database";
@@ -513,7 +514,7 @@ export class OntologyService {
     await Promise.all(
       projectFiles.map(async (file) => {
         try {
-          const content = await FileService.getFile(projectId, btoa(file.path), branchName);
+          const content = await FileService.getFile(projectId, encodeBase64(file.path), branchName);
 
           if (
             file.type === "view" ||

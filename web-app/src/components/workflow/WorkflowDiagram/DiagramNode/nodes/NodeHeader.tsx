@@ -17,6 +17,7 @@ import { createSearchParams, useLocation, useNavigate } from "react-router-dom";
 import TruncatedText from "@/components/TruncatedText";
 import { Button } from "@/components/ui/shadcn/button";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
 import type { TaskRun } from "@/services/types";
 import {
@@ -123,7 +124,7 @@ const SubWorkflowNavigateButton = ({ task, taskRun }: SubWorkflowNavigateButtonP
   const handleClick = () => {
     if (!projectId) return;
 
-    const pathb64 = btoa(task.src);
+    const pathb64 = encodeBase64(task.src);
 
     let workflowPath = ROUTES.PROJECT(projectId).WORKFLOW(pathb64).ROOT;
 

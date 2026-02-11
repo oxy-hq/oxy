@@ -4,6 +4,7 @@ import { Label } from "@/components/ui/shadcn/label";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/tooltip";
 import useDiffSummary from "@/hooks/api/files/useDiffSummary";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { encodeBase64 } from "@/libs/encoding";
 import type { FileStatus } from "@/types/file";
 
 const DiffSummaryWrapper = ({ children }: { children: React.ReactNode }) => {
@@ -22,7 +23,7 @@ const DiffSummary = ({ onFileClick }: { onFileClick: () => void }) => {
 
   const handleFileClick = (filePath: string) => {
     if (!project) return;
-    const pathb64 = btoa(filePath);
+    const pathb64 = encodeBase64(filePath);
     navigate(`/projects/${project.id}/ide/${pathb64}`);
     onFileClick();
   };

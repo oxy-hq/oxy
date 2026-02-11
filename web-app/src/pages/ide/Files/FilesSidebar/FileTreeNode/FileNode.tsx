@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/shadcn/context-menu";
 import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/shadcn/sidebar";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { encodeBase64 } from "@/libs/encoding";
 import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
 import type { FileTreeModel } from "@/types/file";
@@ -69,7 +70,7 @@ const FileNode = ({ fileTree, activePath }: { fileTree: FileTreeModel; activePat
   const FileIcon = getFileIcon(fileTree.path);
   const isActive = activePath
     ? activePath === fileTree.path
-    : pathname === ROUTES.PROJECT(projectId || "").IDE.FILES.FILE(btoa(fileTree.path));
+    : pathname === ROUTES.PROJECT(projectId || "").IDE.FILES.FILE(encodeBase64(fileTree.path));
 
   const [isContextMenuOpen, setIsContextMenuOpen] = React.useState(false);
   const [isEditing, setIsEditing] = React.useState(false);
@@ -89,7 +90,7 @@ const FileNode = ({ fileTree, activePath }: { fileTree: FileTreeModel; activePat
     setIsContextMenuOpen(false);
   };
 
-  const fileUri = ROUTES.PROJECT(projectId).IDE.FILES.FILE(btoa(fileTree.path));
+  const fileUri = ROUTES.PROJECT(projectId).IDE.FILES.FILE(encodeBase64(fileTree.path));
   // Scroll into view when this file becomes active
   React.useEffect(() => {
     if (isActive && itemRef.current) {

@@ -14,6 +14,7 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem
 } from "@/components/ui/shadcn/sidebar";
+import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
 import type { FileTreeModel } from "@/types/file";
 import { detectFileType } from "@/utils/fileTypes";
@@ -44,7 +45,7 @@ const GroupedObjectsView: React.FC<GroupedObjectsViewProps> = ({
   };
 
   const handleFileClick = (file: FileTreeModel) => {
-    const pathb64 = btoa(file.path);
+    const pathb64 = encodeBase64(file.path);
     navigate(ROUTES.PROJECT(projectId).IDE.FILES.FILE(pathb64));
   };
 

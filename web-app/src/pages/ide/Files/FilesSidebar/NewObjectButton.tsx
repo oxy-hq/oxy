@@ -26,6 +26,7 @@ import useCreateFile from "@/hooks/api/files/useCreateFile";
 import useFileTree from "@/hooks/api/files/useFileTree";
 import useSaveFile from "@/hooks/api/files/useSaveFile";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
 import type { FileTreeModel } from "@/types/file";
 
@@ -185,7 +186,7 @@ const NewObjectButton: React.FC<NewObjectButtonProps> = ({ disabled }) => {
     setIsCreating(true);
     try {
       const fullPath = `${fileName}${selectedType.extension}`;
-      const pathb64 = btoa(fullPath);
+      const pathb64 = encodeBase64(fullPath);
 
       // Create the empty file first
       await createFile.mutateAsync(pathb64);

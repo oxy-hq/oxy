@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/shadcn/button";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
 
 type WorkflowPageHeaderProps = {
@@ -13,7 +14,7 @@ type WorkflowPageHeaderProps = {
 
 const WorkflowPageHeader: React.FC<WorkflowPageHeaderProps> = ({ path, runId }) => {
   const relativePath = path;
-  const pathb64 = btoa(path);
+  const pathb64 = encodeBase64(path);
   const navigate = useNavigate();
   const { project } = useCurrentProjectBranch();
 

@@ -1,4 +1,5 @@
 import type { PaginationState } from "@tanstack/react-table";
+import { encodeBase64 } from "@/libs/encoding";
 import { apiBaseURL } from "../env";
 import type {
   BlockEvent,
@@ -52,7 +53,7 @@ export class RunService {
       searchParams.append("size", `${pagination.pageSize}`);
     }
     const response = await apiClient.get(
-      `/${projectId}/workflows/${btoa(workflowId)}/runs?${searchParams.toString()}`
+      `/${projectId}/workflows/${encodeBase64(workflowId)}/runs?${searchParams.toString()}`
     );
     return response.data;
   }
@@ -97,7 +98,7 @@ export class RunService {
     branchName: string,
     payload: CreateRunPayload
   ): Promise<CreateRunResponse> {
-    const workflowId = btoa(payload.workflowId);
+    const workflowId = encodeBase64(payload.workflowId);
     const response = await apiClient.post(
       `/${projectId}/workflows/${workflowId}/runs`,
       payload.retryType,
@@ -112,9 +113,12 @@ export class RunService {
     sourceId: string,
     runIndex: number
   ): Promise<void> {
-    const response = await apiClient.delete(`/${projectId}/runs/${btoa(sourceId)}/${runIndex}`, {
-      params: { branch: branchName }
-    });
+    const response = await apiClient.delete(
+      `/${projectId}/runs/${encodeBase64(sourceId)}/${runIndex}`,
+      {
+        params: { branch: branchName }
+      }
+    );
     return response.data;
   }
 
@@ -124,7 +128,7 @@ export class RunService {
     workflowId: string,
     runIndex: number
   ): Promise<void> {
-    await apiClient.delete(`/${projectId}/workflows/${btoa(workflowId)}/runs/${runIndex}`, {
+    await apiClient.delete(`/${projectId}/workflows/${encodeBase64(workflowId)}/runs/${runIndex}`, {
       params: { branch: branchName }
     });
   }

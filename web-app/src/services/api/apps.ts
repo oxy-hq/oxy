@@ -1,3 +1,4 @@
+import { encodeBase64 } from "@/libs/encoding";
 import type { AppData, AppDisplay, AppItem } from "@/types/app";
 import { apiClient } from "./axios";
 
@@ -43,7 +44,7 @@ export class AppService {
   }
 
   static async getData(projectId: string, branchName: string, filePath: string): Promise<Blob> {
-    const pathb64 = btoa(filePath);
+    const pathb64 = encodeBase64(filePath);
     const response = await apiClient.get(`/${projectId}/app/file/${pathb64}`, {
       params: { branch: branchName },
       responseType: "arraybuffer"

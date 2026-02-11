@@ -4,12 +4,13 @@ import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 import AppPreview from "@/components/AppPreview";
 import useRunAppMutation from "@/hooks/api/apps/useRunAppMutation";
+import { decodeBase64 } from "@/libs/encoding";
 import AppPageHeader from "./AppPageHeader";
 
 // Main page
 const AppPage: React.FC = () => {
   const pathb64 = useParams<{ pathb64: string }>().pathb64!;
-  const path = useMemo(() => atob(pathb64), [pathb64]);
+  const path = useMemo(() => decodeBase64(pathb64), [pathb64]);
   const { mutate: runApp, isPending: isRunning, isError } = useRunAppMutation(() => {});
 
   useEffect(() => {

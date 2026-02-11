@@ -1,11 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { encodeBase64 } from "@/libs/encoding";
 import { WorkflowService } from "@/services/api";
 import type { TaskConfig } from "@/stores/useWorkflow.ts";
 import queryKeys from "../queryKey";
 
 const fetchWorkflow = async (projectId: string, branchName: string, relative_path: string) => {
-  const pathb64 = btoa(relative_path);
+  const pathb64 = encodeBase64(relative_path);
   const workflowConfig = await WorkflowService.getWorkflow(projectId, branchName, pathb64);
 
   const deepFlatten = (task: TaskConfig): TaskConfig[] => {

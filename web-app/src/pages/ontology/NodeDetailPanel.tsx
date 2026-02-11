@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/shadcn/button";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
 import { FileService } from "@/services/api/files";
 import type { OntologyNode } from "@/types/ontology";
@@ -44,7 +45,11 @@ export function NodeDetailPanel({ node, onClose }: NodeDetailPanelProps) {
 
       setIsLoading(true);
       try {
-        const fileContent = await FileService.getFile(project.id, btoa(filePath), branchName);
+        const fileContent = await FileService.getFile(
+          project.id,
+          encodeBase64(filePath),
+          branchName
+        );
         setContent(fileContent);
       } catch (error) {
         console.error("Failed to load file content:", error);
@@ -62,7 +67,7 @@ export function NodeDetailPanel({ node, onClose }: NodeDetailPanelProps) {
   const handleOpenInIDE = () => {
     const filePath = node.data.path;
     if (filePath) {
-      const ideUri = ROUTES.PROJECT(project.id).IDE.FILES.FILE(btoa(filePath));
+      const ideUri = ROUTES.PROJECT(project.id).IDE.FILES.FILE(encodeBase64(filePath));
       navigate(ideUri);
     }
   };

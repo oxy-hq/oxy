@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/shadcn/resizable";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import useWorkflowConfig from "@/hooks/api/workflows/useWorkflowConfig";
+import { decodeBase64 } from "@/libs/encoding";
 import { cn } from "@/libs/shadcn/utils";
 import { useBlockStore } from "@/stores/block";
 import { Alert, AlertDescription, AlertTitle } from "../ui/shadcn/alert";
@@ -51,7 +52,7 @@ export const WorkflowPreview = ({
   runId?: string;
   direction?: "horizontal" | "vertical";
 }) => {
-  const path = useMemo(() => atob(pathb64), [pathb64]);
+  const path = useMemo(() => decodeBase64(pathb64), [pathb64]);
   const relativePath = path;
   const [showOutput, setShowOutput] = React.useState(!!runId);
 

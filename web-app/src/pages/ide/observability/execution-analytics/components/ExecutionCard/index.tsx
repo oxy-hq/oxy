@@ -2,6 +2,7 @@ import { formatDistanceToNow } from "date-fns";
 import { ChevronDown, ChevronRight, Clock, ExternalLink } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { encodeBase64 } from "@/libs/encoding";
 import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
 import useCurrentProject from "@/stores/useCurrentProject";
@@ -69,7 +70,7 @@ export default function ExecutionCard({ execution }: ExecutionCardProps) {
           <div className='text-sm'>
             <button
               onClick={() => {
-                const pathb64 = btoa(execution.sourceRef);
+                const pathb64 = encodeBase64(execution.sourceRef);
                 navigate(ROUTES.PROJECT(project?.id || "").IDE.FILES.FILE(pathb64));
               }}
               className='text-left font-mono text-muted-foreground text-xs underline-offset-4 transition-colors hover:text-primary hover:underline'
@@ -98,7 +99,7 @@ export default function ExecutionCard({ execution }: ExecutionCardProps) {
               <span className='font-medium text-foreground'>
                 <button
                   onClick={() => {
-                    const pathb64 = btoa(execution.workflowRef || "");
+                    const pathb64 = encodeBase64(execution.workflowRef || "");
                     navigate(ROUTES.PROJECT(project?.id || "").IDE.FILES.FILE(pathb64));
                   }}
                   className='text-left font-mono text-xs underline-offset-4 transition-colors hover:text-primary hover:underline'
@@ -114,7 +115,7 @@ export default function ExecutionCard({ execution }: ExecutionCardProps) {
               <span className='font-medium text-foreground'>
                 <button
                   onClick={() => {
-                    const pathb64 = btoa(execution.agentRef || "");
+                    const pathb64 = encodeBase64(execution.agentRef || "");
                     navigate(ROUTES.PROJECT(project?.id || "").IDE.FILES.FILE(pathb64));
                   }}
                   className='text-left font-mono text-xs underline-offset-4 transition-colors hover:text-primary hover:underline'
