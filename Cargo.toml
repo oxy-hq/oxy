@@ -46,14 +46,14 @@ serde_json = { version = "1.0.149" }
 serde_yaml = { version = "0.9.34" }
 indexmap = { version = "2.13.0", features = ["serde"] }
 thiserror = { version = "2.0.18" }
-regex = { version = "1.12.2" }
+regex = { version = "1.12.3" }
 minijinja = { version = "2.15.1" }
 tracing = { version = "0.1.44" }
-tempfile = { version = "3.24.0" }
+tempfile = { version = "3.25.0" }
 axum = { version = "0.8.8", features = ["macros", "http2"] }
 async-openai = { version = "0.31.1" }
 axum-server = { version = "0.8.0", features = ["tls-rustls"] }
-sentry = { version = "0.46.1", features = ["tower-axum-matched-path", "rustls", "tracing"] }
+sentry = { version = "0.46.2", features = ["tower-axum-matched-path", "rustls", "tracing"] }
 
 [workspace.package]
 # TODO: turn this on when https://github.com/googleapis/release-please/issues number 2111 is fixed
