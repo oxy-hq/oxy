@@ -56,6 +56,26 @@ impl CubeJSTranslator {
     }
 }
 
+/// Helper function to resolve the table name for a view
+/// For Domo databases, uses the dataset_id instead of the table name
+fn resolve_table_name(
+    default_table: &str,
+    datasource: &Option<String>,
+    databases: &HashMap<String, DatabaseDetails>,
+) -> String {
+    if let Some(datasource_name) = datasource {
+        if let Some(db_details) = databases.get(datasource_name) {
+            // For Domo databases, use the dataset_id as the table name
+            if db_details.db_type == "domo" {
+                if let Some(dataset_id) = &db_details.dataset_id {
+                    return format!("\"{}\"", dataset_id); // Quote the dataset_id
+                }
+            }
+        }
+    }
+    default_table.to_string()
+}
+
 /// Core translation function from Oxy to Cube format with data sources
 async fn translate_oxy_to_cube(
     oxy: SemanticLayer,
@@ -79,7 +99,7 @@ async fn translate_oxy_to_cube(
     );
 
     // Generate data sources
-    let data_sources = generate_data_sources(&oxy, databases).await?;
+    let data_sources = generate_data_sources(&oxy, databases.clone()).await?;
 
     // Convert Oxy views to Cube cubes or views
     for view in oxy.views {
@@ -101,13 +121,16 @@ async fn translate_oxy_to_cube(
                 table.clone()
             };
 
+            // For Domo databases, override with dataset_id
+            let final_table = resolve_table_name(&encoded_table, &view.datasource, &databases);
+
             // Generate joins for this cube
             let cube_joins = entity_graph.generate_cube_joins(&view.name);
 
             // This is a table-based cube
             cubes.push(CubeCube {
                 name: view.name.clone(),
-                sql_table: Some(encoded_table),
+                sql_table: Some(final_table),
                 sql: None,
                 data_source: view.datasource.clone(),
                 title: view.label.clone().or_else(|| Some(view.name.clone())),
@@ -139,10 +162,13 @@ async fn translate_oxy_to_cube(
             // Generate joins for this cube
             let cube_joins = entity_graph.generate_cube_joins(&view.name);
 
+            // For Domo databases, use dataset_id instead of view name
+            let table_name = resolve_table_name(&view.name, &view.datasource, &databases);
+
             // Default to table-based if neither is specified
             cubes.push(CubeCube {
                 name: view.name.clone(),
-                sql_table: Some(view.name.clone()), // Use view name as table name
+                sql_table: Some(table_name),
                 sql: None,
                 data_source: view.datasource.clone(),
                 title: view.label.clone().or_else(|| Some(view.name.clone())),
@@ -685,5 +711,39 @@ mod tests {
                 input
             );
         }
+    }
+
+    #[test]
+    fn test_resolve_table_name_domo() {
+        let mut databases = HashMap::new();
+        databases.insert(
+            "my_domo".to_string(),
+            DatabaseDetails {
+                name: "my_domo".to_string(),
+                db_type: "domo".to_string(),
+                dataset_id: Some("b24c28ba-11fc-4c3f-885a-762c06baa7f1".to_string()),
+            },
+        );
+
+        // Domo with dataset_id returns quoted dataset_id
+        let result = resolve_table_name("default_table", &Some("my_domo".to_string()), &databases);
+        assert_eq!(result, "\"b24c28ba-11fc-4c3f-885a-762c06baa7f1\"");
+    }
+
+    #[test]
+    fn test_resolve_table_name_non_domo() {
+        let mut databases = HashMap::new();
+        databases.insert(
+            "postgres_db".to_string(),
+            DatabaseDetails {
+                name: "postgres_db".to_string(),
+                db_type: "postgres".to_string(),
+                dataset_id: None,
+            },
+        );
+
+        // Non-Domo databases return default table name unchanged
+        let result = resolve_table_name("my_table", &Some("postgres_db".to_string()), &databases);
+        assert_eq!(result, "my_table");
     }
 }

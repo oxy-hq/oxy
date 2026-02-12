@@ -87,14 +87,21 @@ module.exports = {
     let mut driver_factory_mapping = String::new();
 
     for data_source in data_sources {
+        // Map database types to Cube-compatible types
+        // Domo uses Redshift compatibility in Cube
+        let cube_db_type = match data_source.data_source_type.as_str() {
+            "domo" => "redshift", // Map Domo to Redshift for Cube compatibility
+            db_type => db_type,   // All other types pass through as-is
+        };
+
         db_type_mapping.push_str(&format!(
             "    if (dataSource === \"{}\") return \"{}\";\n",
-            data_source.name, data_source.data_source_type
+            data_source.name, cube_db_type
         ));
 
         // Generate driver factory mapping based on database type
         let driver_type = match data_source.data_source_type.as_str() {
-            "postgres" | "redshift" => "postgres",
+            "postgres" | "redshift" | "domo" => "postgres", // Domo uses Redshift driver in Cube
             "mysql" => "mysql",
             "bigquery" => "bigquery",
             "snowflake" => "snowflake",
@@ -114,4 +121,35 @@ module.exports = {
         .replace("{{driver_factory_mapping}}", &driver_factory_mapping);
 
     Ok(config_content)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_domo_database_mapping() {
+        let data_sources = vec![CubeDataSource {
+            name: "my_domo".to_string(),
+            data_source_type: "domo".to_string(),
+            config: CubeDataSourceConfig {
+                host: None,
+                port: None,
+                database: Some("my_domo".to_string()),
+                user: None,
+                password: None,
+                ssl: None,
+                project_id: None,
+                key_file: None,
+                location: None,
+                additional_config: HashMap::new(),
+            },
+        }];
+
+        let result = generate_cube_config(&data_sources).unwrap();
+
+        // Domo should map to "redshift" for dbType and "postgres" for driver
+        assert!(result.contains("if (dataSource === \"my_domo\") return \"redshift\";"));
+        assert!(result.contains("if (dataSource === \"my_domo\") return { type: 'postgres' };"));
+    }
 }

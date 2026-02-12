@@ -36,8 +36,35 @@ databases:
     instance: oxygen-ai # replace with your Domo instance name
 ```
 
+# Semantic layer support
+
+Domo databases support the semantic layer through Postgres compatibility. When defining views in your semantic layer, reference your Domo datasource and the `dataset_id` will automatically be used as the table identifier:
+
+```yaml
+views:
+  - name: nutrition_data
+    datasource: domo
+    dimensions:
+      - name: calories
+        expr: "`Calories (kcal)`"  # Double quotes outside, backticks inside
+        type: string
+      - name: created_date
+        expr: "`Created Date`"
+        type: string  # Use string, not date/datetime
+    measures:
+      - name: total_items
+        expr: "COUNT(*)"
+```
+
+**Important notes for Domo semantic layer:**
+
+- For column identifiers with spaces or special characters, wrap in double quotes and backticks: `"`Calories (kcal)`"`
+- **Date/time types are not supported** - use `type: string` or `type: number` for date/time columns instead of `type: date` or `type: datetime`
+- **Postgres syntax is assumed** - certain Domo-specific SQL functions may not work as Cube generates Postgres-compatible SQL
+
 # Usage notes
 
 - Oxy retrieves data from the Domo dataset defined by `dataset_id`.
 - Your developer token must have API access to this dataset.
-- Queries are executed via the Domo API and streamed into Oxy’s runtime for downstream processing or caching.
+- Queries are executed via the Domo API and streamed into Oxy's runtime for downstream processing or caching.
+- For semantic layer queries, Oxy automatically maps Domo to Postgres compatibility and uses the `dataset_id` as the table identifier.

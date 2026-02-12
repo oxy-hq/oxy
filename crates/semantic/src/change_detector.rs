@@ -606,6 +606,7 @@ mod tests {
             DatabaseDetails {
                 name: "db1".to_string(),
                 db_type: "postgres".to_string(),
+                dataset_id: None,
             },
         );
 
@@ -621,6 +622,7 @@ mod tests {
             DatabaseDetails {
                 name: "db2".to_string(),
                 db_type: "mysql".to_string(),
+                dataset_id: None,
             },
         );
         let hash3 = hash_database_config(&databases);

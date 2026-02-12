@@ -24,7 +24,7 @@ use ::oxy::adapters::project::builder::ProjectBuilder;
 use ::oxy::adapters::runs::RunsManager;
 use ::oxy::adapters::secrets::SecretsManager;
 use ::oxy::checkpoint::types::RetryStrategy;
-use ::oxy::config::model::AppConfig;
+use ::oxy::config::model::{AppConfig, DatabaseType};
 use ::oxy::config::*;
 use ::oxy::connector::Connector;
 use ::oxy::database::docker;
@@ -982,11 +982,18 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                     .list_databases()
                     .iter()
                     .map(|db| {
+                        // Extract dataset_id for Domo databases
+                        let dataset_id = match &db.database_type {
+                            DatabaseType::DOMO(domo) => Some(domo.dataset_id.clone()),
+                            _ => None,
+                        };
+
                         (
                             db.name.clone(),
                             DatabaseDetails {
                                 name: db.name.clone(),
                                 db_type: db.dialect(),
+                                dataset_id,
                             },
                         )
                     })
@@ -1035,11 +1042,18 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                     .list_databases()
                     .iter()
                     .map(|db| {
+                        // Extract dataset_id for Domo databases
+                        let dataset_id = match &db.database_type {
+                            DatabaseType::DOMO(domo) => Some(domo.dataset_id.clone()),
+                            _ => None,
+                        };
+
                         (
                             db.name.clone(),
                             DatabaseDetails {
                                 name: db.name.clone(),
                                 db_type: db.dialect(),
+                                dataset_id,
                             },
                         )
                     })
@@ -2031,11 +2045,18 @@ pub async fn generate_cube_config(
         .list_databases()
         .iter()
         .map(|db| {
+            // Extract dataset_id for Domo databases
+            let dataset_id = match &db.database_type {
+                DatabaseType::DOMO(domo) => Some(domo.dataset_id.clone()),
+                _ => None,
+            };
+
             (
                 db.name.clone(),
                 DatabaseDetails {
                     name: db.name.clone(),
                     db_type: db.dialect(),
+                    dataset_id,
                 },
             )
         })

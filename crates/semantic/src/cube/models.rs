@@ -146,4 +146,6 @@ pub struct DatabaseConfig {
 pub struct DatabaseDetails {
     pub name: String,
     pub db_type: String,
+    /// For Domo databases, this contains the dataset_id to use as the table name
+    pub dataset_id: Option<String>,
 }
