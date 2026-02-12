@@ -93,7 +93,7 @@ jobs:
 
   #     - name: Install dependencies & Build web-app
   #       env:
-  #         NODE_OPTIONS: "--max_old_space_size=4096"
+  #         NODE_OPTIONS: "--max-old-space-size=4096"
   #         SENTRY_AUTH_TOKEN: ${{ vars.SENTRY_AUTH_TOKEN }}
   #         VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
   #       run: |
