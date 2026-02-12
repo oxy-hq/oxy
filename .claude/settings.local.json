@@ -32,7 +32,8 @@
       "Bash(pnpm biome format:*)",
       "Bash(npm search:*)",
       "Bash(pnpm markdownlint-cli2:*)",
-      "WebFetch(domain:cube.dev)"
+      "WebFetch(domain:cube.dev)",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []

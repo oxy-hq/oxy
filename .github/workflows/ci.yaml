@@ -254,6 +254,7 @@ jobs:
       cancel-in-progress: true
     if: github.repository == 'oxy-hq/oxy-internal' && needs.changesets.outputs.oxy == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       CARGO_PROFILE_DEV_DEBUG: "1"
@@ -290,7 +291,7 @@ jobs:
           echo "OXY_PID=$!" >> $GITHUB_ENV
           # Wait for server (max 10 min)
           for i in {1..120}; do
-            curl -sf --max-time 10 http://localhost:3000/health > /dev/null && break
+            curl -sf --max-time 10 http://localhost:3000/api/health > /dev/null && break
             [ $i -eq 120 ] && { docker ps -a; docker logs oxy-postgres 2>&1 | tail -50; exit 1; }
             sleep 5
           done
@@ -323,7 +324,7 @@ jobs:
           oxy start --enterprise &
           echo "OXY_PID=$!" >> $GITHUB_ENV
           for i in {1..60}; do
-            curl -sf --max-time 10 http://localhost:3000/health > /dev/null && break
+            curl -sf --max-time 10 http://localhost:3000/api/health > /dev/null && break
             [ $i -eq 60 ] && { docker ps -a; exit 1; }
             sleep 5
           done
@@ -486,7 +487,7 @@ jobs:
         id: wait-backend
         run: |
           echo "Waiting for backend server to be ready..."
-          timeout 10 bash -c 'until curl -k -s http://localhost:3000/health > /dev/null 2>&1; do echo "Waiting for health endpoint..."; sleep 2; done'
+          timeout 10 bash -c 'until curl -k -s http://localhost:3000/api/health > /dev/null 2>&1; do echo "Waiting for health endpoint..."; sleep 2; done'
           echo "Backend health endpoint is responding!"
 
           # Give the backend additional time to scan and load apps from the examples directory
