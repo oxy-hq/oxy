@@ -1,12 +1,14 @@
 fn main() {
     // Tell Cargo when to re-run this build script.
-    // Without these, Cargo re-runs on every file change, producing a new
-    // BUILD_TIMESTAMP each time and forcing unnecessary recompilation.
-    // PROFILE is set by Cargo itself and already triggers rebuilds on profile changes.
+    // This prevents unnecessary rebuilds when just changing directories
     println!("cargo:rerun-if-env-changed=GITHUB_SHA");
     println!("cargo:rerun-if-env-changed=GITHUB_SERVER_URL");
     println!("cargo:rerun-if-env-changed=GITHUB_REPOSITORY");
     println!("cargo:rerun-if-env-changed=GITHUB_RUN_ID");
+    println!("cargo:rerun-if-env-changed=FORCE_REBUILD");
+
+    // Only rerun if build.rs itself changes
+    println!("cargo:rerun-if-changed=build.rs");
 
     // Capture git commit hash from environment variable (set by CI)
     // Default to "dev" for local development builds
@@ -19,8 +21,15 @@ fn main() {
         git_hash_long.clone()
     };
 
-    // Capture build timestamp (UTC)
-    let build_timestamp = chrono::Utc::now().to_rfc3339();
+    // Use a static timestamp for dev builds to avoid constant recompilation
+    // In CI, use actual timestamp
+    let build_timestamp = if std::env::var("CI").is_ok() || std::env::var("GITHUB_ACTIONS").is_ok()
+    {
+        chrono::Utc::now().to_rfc3339()
+    } else {
+        // Static timestamp for local dev to prevent rebuilds
+        "dev-build".to_string()
+    };
 
     // Capture build profile
     let profile = std::env::var("PROFILE").unwrap_or_else(|_| "unknown".to_string());

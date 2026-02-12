@@ -114,6 +114,7 @@ jobs:
       - name: Run coverage
         env:
           OXY_DATABASE_URL: "postgresql://admin:password@localhost:5432/default"
+          OXY_BIN: "${{ github.workspace }}/target/llvm-cov-target/ci/oxy"
         run: |
           touch examples/bigquery-sample.key
           echo $BIGQUERY_SAMPLE_KEY > examples/bigquery-sample.key

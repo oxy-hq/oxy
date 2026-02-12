@@ -67,6 +67,22 @@ documentation = "https://oxy.tech/docs"
 exclude = ["examples/"]
 
 
+[profile.dev.package]
+# Disable optimization for native build dependencies to speed up dev builds
+# These crates have build scripts that compile native code and always trigger rebuilds
+aws-lc-sys = { opt-level = 0 }
+libduckdb-sys = { opt-level = 0 }
+openssl-sys = { opt-level = 0 }
+lzma-sys = { opt-level = 0 }
+onig_sys = { opt-level = 0 }
+lz4-sys = { opt-level = 0 }
+ring = { opt-level = 0 }
+# Large/complex crates that benefit from reduced optimization in dev
+aws-sdk-sts = { opt-level = 0 }
+parquet = { opt-level = 0 }
+sqlx-postgres = { opt-level = 0 }
+datafusion-common = { opt-level = 0 }
+
 [profile.ci]
 inherits = "dev"
 debug = false # reduces compilation time and resource usage by omitting debug symbols.

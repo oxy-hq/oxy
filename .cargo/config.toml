@@ -1,5 +1,11 @@
 [env]
 MACOSX_DEPLOYMENT_TARGET = "12.0"
+SCCACHE_CACHE_SIZE = "10G"
+
+[build]
+# Enable sccache for faster builds (install with: brew install sccache)
+rustc-wrapper = "sccache"
+incremental = true
 
 [net]
 git-fetch-with-cli = true

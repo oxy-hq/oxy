@@ -20,9 +20,10 @@ pub use wiremock::{Mock, MockServer, ResponseTemplate};
 ///
 /// Resolution order:
 /// 1. `OXY_BIN` env var (set by CI or user)
-/// 2. `target/llvm-cov-target/debug/oxy` (coverage builds)
-/// 3. `target/ci/oxy` (CI profile)
-/// 4. `target/debug/oxy` (regular debug)
+/// 2. `target/llvm-cov-target/ci/oxy` (coverage builds with CI profile)
+/// 3. `target/llvm-cov-target/debug/oxy` (coverage builds with dev profile)
+/// 4. `target/ci/oxy` (CI profile)
+/// 5. `target/debug/oxy` (regular debug)
 pub fn get_oxy_binary() -> PathBuf {
     if let Ok(bin) = std::env::var("OXY_BIN") {
         return PathBuf::from(bin);
@@ -36,6 +37,7 @@ pub fn get_oxy_binary() -> PathBuf {
         .to_path_buf();
 
     for subdir in [
+        "target/llvm-cov-target/ci/oxy",
         "target/llvm-cov-target/debug/oxy",
         "target/ci/oxy",
         "target/debug/oxy",
