@@ -78,8 +78,22 @@ jobs:
         with:
           node-version: 24.x
           cache: "pnpm"
+
+      # Cache pnpm store for faster dependency installation
+      - name: Get pnpm store directory
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm store cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+
       - name: Run pnpm install
-        run: pnpm install --prefer-frozen-lockfile
+        run: pnpm install --frozen-lockfile --prefer-offline
       - name: Run lint-staged
         shell: bash
         run: |
@@ -110,25 +124,63 @@ jobs:
         with:
           node-version: 24.x
           cache: "pnpm"
-      - name: Restore Vite pre-bundle cache
+
+      # Cache pnpm store for faster dependency installation
+      - name: Get pnpm store directory
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm store cache
         uses: actions/cache@v5
         with:
-          path: web-app/node_modules/.vite
-          key: vite-prebundle-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('web-app/vite.config.*', 'web-app/src/**') }}
+          path: ${{ env.STORE_PATH }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
-            vite-prebundle-
+            pnpm-store-${{ runner.os }}-
+
+      # Cache TypeScript build info for incremental compilation
+      - name: Cache TypeScript build info
+        uses: actions/cache@v5
+        with:
+          path: |
+            web-app/tsconfig.app.tsbuildinfo
+            web-app/tsconfig.node.tsbuildinfo
+          key: typescript-${{ runner.os }}-${{ hashFiles('web-app/tsconfig*.json', 'web-app/src/**/*.ts', 'web-app/src/**/*.tsx') }}
+          restore-keys: |
+            typescript-${{ runner.os }}-
+
+      # Cache Vite optimized deps and build cache
+      - name: Cache Vite
+        uses: actions/cache@v5
+        with:
+          path: |
+            web-app/node_modules/.vite
+            web-app/.vite
+          key: vite-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('web-app/vite.config.*', 'web-app/src/**') }}
+          restore-keys: |
+            vite-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}-
+            vite-${{ runner.os }}-
+
+      # Cache Turbo for monorepo builds
+      - name: Cache Turbo
+        uses: actions/cache@v5
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+
       - name: Install dependencies & Build web-app
         env:
-          NODE_OPTIONS: "--max-old-space-size=4096"
+          NODE_OPTIONS: "--max-old-space-size=8192"
+          # Enable Turbo remote caching (optional - configure if using Turbo remote cache)
+          # TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+          # TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
         run: |
-          pnpm install --prefer-frozen-lockfile
-          pnpm -C web-app build
-      - name: Save Vite pre-bundle cache
-        if: always()
-        uses: actions/cache@v5
-        with:
-          path: web-app/node_modules/.vite
-          key: vite-prebundle-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('web-app/vite.config.*', 'web-app/src/**') }}
+          # Install with frozen lockfile for reproducibility
+          pnpm install --frozen-lockfile --prefer-offline
+          # Build using Turbo for better caching
+          pnpm build
 
   cargo-check-and-test:
     concurrency:
@@ -424,12 +476,52 @@ jobs:
           node-version: 24.x
           cache: "pnpm"
 
+      # Cache pnpm store for faster dependency installation
+      - name: Get pnpm store directory
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm store cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+
+      # Cache Playwright browsers - significant time saver!
+      - name: Cache Playwright browsers
+        uses: actions/cache@v5
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('web-app/pnpm-lock.yaml') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
+      # Cache Turbo for monorepo builds
+      - name: Cache Turbo
+        uses: actions/cache@v5
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+
       - name: Install dependencies
-        run: pnpm install --prefer-frozen-lockfile
+        env:
+          NODE_OPTIONS: "--max-old-space-size=8192"
+        run: pnpm install --frozen-lockfile --prefer-offline
 
       - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         working-directory: web-app
         run: pnpm exec playwright install --with-deps chromium
+
+      - name: Install Playwright system dependencies only
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        working-directory: web-app
+        run: pnpm exec playwright install-deps chromium
 
       # Setup BigQuery credentials if needed
       - name: Setup BigQuery credentials

@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react-swc";
+import esbuild from "rollup-plugin-esbuild";
 import { visualizer } from "rollup-plugin-visualizer";
 import { defineConfig } from "vite";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
@@ -149,7 +150,14 @@ export default defineConfig({
       // These are optional Node.js-only peer dependencies of memfs that don't exist in browser
       "@jsonjoy.com/fs-node",
       "@jsonjoy.com/fs-node-utils"
-    ]
+    ],
+    // Use esbuild for faster dependency pre-bundling
+    esbuildOptions: {
+      target: "es2020",
+      supported: {
+        "top-level-await": true
+      }
+    }
   },
   resolve: {
     alias: {
@@ -203,9 +211,23 @@ export default defineConfig({
     }
   },
   build: {
-    target: "baseline-widely-available",
-    sourcemap: true,
+    target: "es2020",
+    sourcemap: false, // Disable source maps to reduce memory usage
+    // Enable minification and tree-shaking
+    minify: "esbuild",
+    // Increase chunk size warning limit (500kb)
+    chunkSizeWarningLimit: 500,
     rollupOptions: {
+      // Optimize rollup for memory efficiency
+      maxParallelFileOps: 2, // Reduce parallel operations to save memory
+      plugins: [
+        esbuild({
+          target: "es2020",
+          minify: true,
+          legalComments: "none",
+          treeShaking: true
+        })
+      ],
       output: {
         manualChunks: {
           "react-vendor": dependencies.reactCore,

@@ -33,6 +33,7 @@ dist/*
 !dist/.gitkeep
 
 tsconfig.app.tsbuildinfo
+tsconfig.node.tsbuildinfo
 
 bundle-report.html
 

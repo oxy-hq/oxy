@@ -4,8 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
-    "compile": "tsc -b",
+    "build": "NODE_OPTIONS='--max-old-space-size=8192' tsc -b && vite build",
+    "compile": "NODE_OPTIONS='--max-old-space-size=8192' tsc -b",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "lint:ts": "tsc --noEmit",
@@ -128,6 +128,7 @@
     "@types/react-window": "^2.0.0",
     "@vitejs/plugin-react-swc": "^4.2.3",
     "i": "^0.3.7",
+    "rollup-plugin-esbuild": "^6.1.1",
     "rollup-plugin-visualizer": "^6.0.5",
     "typescript": "^5.9.3",
     "vite": "^7.3.1",

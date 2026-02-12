@@ -251,12 +251,57 @@ jobs:
           node-version: 24.x
           cache: "pnpm"
 
+      # Cache pnpm store for faster dependency installation
+      - name: Get pnpm store directory
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm store cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+
+      # Cache TypeScript build info for incremental compilation
+      - name: Cache TypeScript build info
+        uses: actions/cache@v5
+        with:
+          path: |
+            web-app/tsconfig.app.tsbuildinfo
+            web-app/tsconfig.node.tsbuildinfo
+          key: typescript-${{ runner.os }}-${{ hashFiles('web-app/tsconfig*.json', 'web-app/src/**/*.ts', 'web-app/src/**/*.tsx') }}
+          restore-keys: |
+            typescript-${{ runner.os }}-
+
+      # Cache Vite optimized deps and build cache
+      - name: Cache Vite
+        uses: actions/cache@v5
+        with:
+          path: |
+            web-app/node_modules/.vite
+            web-app/.vite
+          key: vite-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('web-app/vite.config.*', 'web-app/src/**') }}
+          restore-keys: |
+            vite-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}-
+            vite-${{ runner.os }}-
+
+      # Cache Turbo for monorepo builds
+      - name: Cache Turbo
+        uses: actions/cache@v5
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-
+
       - name: Install dependencies & Build web-app
         env:
-          NODE_OPTIONS: "--max-old-space-size=4096"
+          NODE_OPTIONS: "--max-old-space-size=8192"
         run: |
-          pnpm install --prefer-frozen-lockfile
-          pnpm -C web-app build
+          pnpm install --frozen-lockfile --prefer-offline
+          pnpm build
 
       - name: Build oxy CLI
         run: |
