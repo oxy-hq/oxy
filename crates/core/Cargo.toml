@@ -172,6 +172,7 @@ df-interchange = { version = "0.3.1", features = ["arrow_54", "arrow_56"] }
 [dev-dependencies]
 tempfile = { workspace = true }
 serial_test = "3.3.1"
+oxy-test-utils = { path = "../test-utils" }
 
 [lib]
 name = "oxy"

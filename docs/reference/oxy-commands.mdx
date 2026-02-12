@@ -125,22 +125,18 @@ oxy test agent.yml --quiet --format json
 
 For comprehensive testing documentation, see [Testing](/learn-about-oxy/testing).
 
-### Embedding management
+### Building the semantic layer
 
-To embed files from into a local vector store you can use `oxy build`. We're downloading our models from huggingface hub so you may need to login using:
-
-```bash
-huggingface-cli login
-```
-
-or simply copy your plaintext token into `$HOME/.cache/huggingface/token` file, then run `oxy build` to index the data.
+Build your semantic layer with intelligent incremental builds for 10-100x speedup:
 
 ```bash
+# Incremental build (default)
 oxy build
+
+# Force full rebuild
+oxy build --force
 ```
 
-The generated embeddings can be verified using
+The build system automatically detects changes and only rebuilds modified views/topics and their dependencies.
 
-```bash
-oxy vec-search "Hello Embedding"
-```
+For comprehensive documentation on build modes, dependency tracking, performance, and troubleshooting, see the [oxy build reference](/reference/oxy-build).

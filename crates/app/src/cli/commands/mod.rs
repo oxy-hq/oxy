@@ -106,6 +106,48 @@ fn clear_directory_contents(dir_path: &PathBuf) -> Result<(), OxyError> {
     Ok(())
 }
 
+/// Clear directory contents but preserve specified files/directories
+///
+/// This is used for selective clearing during incremental builds.
+///
+/// # Arguments
+/// * `dir_path` - Directory to clear
+/// * `preserve` - List of file/directory names to preserve
+fn clear_directory_contents_selective(
+    dir_path: &PathBuf,
+    preserve: &[&str],
+) -> Result<(), OxyError> {
+    for entry in std::fs::read_dir(dir_path)
+        .map_err(|e| OxyError::RuntimeError(format!("Failed to read directory: {}", e)))?
+    {
+        let entry = entry.map_err(|e| {
+            OxyError::RuntimeError(format!("Failed to read directory entry: {}", e))
+        })?;
+        let path = entry.path();
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+        // Skip preserved files/directories
+        if preserve.contains(&name) {
+            continue;
+        }
+
+        if path.is_dir() {
+            std::fs::remove_dir_all(&path).map_err(|e| {
+                OxyError::RuntimeError(format!(
+                    "Failed to remove directory {}: {}",
+                    path.display(),
+                    e
+                ))
+            })?;
+        } else {
+            std::fs::remove_file(&path).map_err(|e| {
+                OxyError::RuntimeError(format!("Failed to remove file {}: {}", path.display(), e))
+            })?;
+        }
+    }
+    Ok(())
+}
+
 type Variable = (String, String);
 fn parse_variable(env: &str) -> Result<Variable, OxyError> {
     if let Some((var, value)) = env.split_once('=') {
@@ -438,6 +480,13 @@ pub struct BuildArgs {
     /// and rebuild the entire search index from scratch.
     #[clap(long, short = 'd', default_value_t = false)]
     drop_all_tables: bool,
+
+    /// Force full rebuild of semantic layer (ignore incremental manifest)
+    ///
+    /// This will clear the .semantics directory completely (including .cubestore cache)
+    /// and regenerate all CubeJS files from scratch.
+    #[clap(long, short = 'f', default_value_t = false)]
+    force: bool,
 }
 
 #[derive(Clone)]
@@ -906,37 +955,27 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             // Synchronize Omni integration if configured
             handle_omni_sync().await?;
 
-            // Build vector embeddings for routing agents
+            // Setup
             let project_path = resolve_local_project_path()?.to_string_lossy().to_string();
             let config_manager = ConfigBuilder::new()
                 .with_project_path(project_path)?
                 .build()
                 .await?;
             let secrets_manager = SecretsManager::from_environment()?;
-            reindex(ReindexInput {
-                config: config_manager.clone(),
-                secrets_manager,
-                drop_all_tables: build_args.drop_all_tables,
-            })
-            .await?;
 
-            // Process semantic layer to generate CubeJS schema
+            // Run change detection for both semantic layer and embeddings
             let semantic_dir = resolve_semantics_dir()?;
-            if semantic_dir.exists() {
-                // target_dir: .semantics/ (inside project directory)
-                let target_dir = get_cube_config_dir()?;
+            let target_dir = get_cube_config_dir()?;
 
-                // Clean up existing cube directory for fresh generation
-                if target_dir.exists() {
-                    // Instead of removing the directory itself (which fails when mounted as a volume),
-                    // remove all contents within it
-                    clear_directory_contents(&target_dir)?;
-                } else {
-                    // Ensure the target directory exists if it doesn't
-                    std::fs::create_dir_all(&target_dir).map_err(|e| {
-                        OxyError::RuntimeError(format!("Failed to create cube directory: {}", e))
-                    })?;
-                }
+            // Ensure the target directory exists
+            if !target_dir.exists() {
+                std::fs::create_dir_all(&target_dir).map_err(|e| {
+                    OxyError::RuntimeError(format!("Failed to create cube directory: {}", e))
+                })?;
+            }
+
+            let changes = if semantic_dir.exists() {
+                use oxy_semantic::{ChangeDetector, hash_database_config};
 
                 let config_manager_clone = config_manager.clone();
                 let databases: HashMap<String, DatabaseDetails> = config_manager_clone
@@ -953,15 +992,102 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                     })
                     .collect();
 
-                process_semantic_layer_to_cube(
-                    semantic_dir,
-                    target_dir,
-                    databases,
-                    config_manager.get_globals_registry(),
-                )
-                .await?;
+                // Compute hashes for change detection
+                let config_hash = hash_database_config(&databases);
+                let globals_dir = resolve_local_project_path()?.join(".oxy/globals");
+                let globals_hash =
+                    oxy_semantic::hash_globals_registry(&globals_dir).unwrap_or_default();
+
+                // Run change detection
+                let change_detector = ChangeDetector::new(&semantic_dir, &target_dir);
+                change_detector
+                    .detect_changes(config_hash, globals_hash, build_args.force)
+                    .map_err(|e| {
+                        OxyError::RuntimeError(format!("Change detection failed: {}", e))
+                    })?
             } else {
-                println!("No semantic directory found at {}", semantic_dir.display());
+                // No semantic dir, create a result that requires embedding rebuild only
+                use oxy_semantic::ChangeDetectionResult;
+                ChangeDetectionResult {
+                    views_to_rebuild: Vec::new(),
+                    topics_to_rebuild: Vec::new(),
+                    files_to_delete: Vec::new(),
+                    requires_full_rebuild: false,
+                    full_rebuild_reason: None,
+                    requires_embedding_rebuild: true,
+                }
+            };
+
+            // Build vector embeddings if needed
+            if changes.requires_embedding_rebuild || changes.requires_full_rebuild {
+                reindex(ReindexInput {
+                    config: config_manager.clone(),
+                    secrets_manager,
+                    drop_all_tables: build_args.drop_all_tables,
+                })
+                .await?;
+            }
+
+            // Process semantic layer to generate CubeJS schema
+            if semantic_dir.exists() {
+                let config_manager_clone = config_manager.clone();
+                let databases: HashMap<String, DatabaseDetails> = config_manager_clone
+                    .list_databases()
+                    .iter()
+                    .map(|db| {
+                        (
+                            db.name.clone(),
+                            DatabaseDetails {
+                                name: db.name.clone(),
+                                db_type: db.dialect(),
+                            },
+                        )
+                    })
+                    .collect();
+
+                if changes.requires_full_rebuild {
+                    // Full rebuild required
+                    let reason = changes
+                        .full_rebuild_reason
+                        .unwrap_or_else(|| "Unknown reason".to_string());
+                    println!("🔨 Full rebuild required: {}", reason);
+
+                    // Delete the manifest FIRST to ensure a fresh build
+                    // If the rebuild fails, the missing manifest forces a retry next time
+                    let manifest_path = target_dir.join(".build_manifest.json");
+                    if manifest_path.exists() {
+                        std::fs::remove_file(&manifest_path).map_err(|e| {
+                            OxyError::RuntimeError(format!("Failed to remove manifest: {}", e))
+                        })?;
+                    }
+
+                    // Clear directory - don't preserve the manifest
+                    if build_args.force {
+                        // Force rebuild: clear everything including .cubestore
+                        clear_directory_contents_selective(&target_dir, &[])?;
+                    } else {
+                        // Natural full rebuild (globals/config changed): preserve .cubestore
+                        clear_directory_contents_selective(&target_dir, &[".cubestore"])?;
+                    }
+
+                    // Now attempt the build - manifest will be written by semantic layer processor
+                    process_semantic_layer_to_cube(
+                        semantic_dir,
+                        target_dir,
+                        databases,
+                        config_manager.get_globals_registry(),
+                    )
+                    .await
+                    .map_err(|e| {
+                        OxyError::RuntimeError(format!("Semantic layer build failed: {}", e))
+                    })?;
+                } else if !changes.requires_embedding_rebuild {
+                    // Nothing changed at all (no semantic changes, no embedding changes)
+                    println!("✅ No changes detected, build is up to date");
+                } else {
+                    // Only embeddings changed, semantic layer is up to date
+                    println!("✅ Semantic layer is up to date (embeddings rebuilt)");
+                }
             }
         }
         Some(SubCommand::VecSearch(search_args)) => {

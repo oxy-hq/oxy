@@ -142,6 +142,7 @@ pub struct DatabaseConfig {
     pub databases: HashMap<String, DatabaseDetails>,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DatabaseDetails {
     pub name: String,
     pub db_type: String,

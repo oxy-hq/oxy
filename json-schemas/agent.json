@@ -2,12 +2,30 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "AgentConfig",
   "type": "object",
-  "anyOf": [
+  "oneOf": [
     {
-      "$ref": "#/definitions/routing"
+      "type": "object",
+      "required": [
+        "Routing"
+      ],
+      "properties": {
+        "Routing": {
+          "$ref": "#/definitions/routing"
+        }
+      },
+      "additionalProperties": false
     },
     {
-      "$ref": "#/definitions/DefaultAgent"
+      "type": "object",
+      "required": [
+        "Default"
+      ],
+      "properties": {
+        "Default": {
+          "$ref": "#/definitions/DefaultAgent"
+        }
+      },
+      "additionalProperties": false
     }
   ],
   "required": [
@@ -781,7 +799,6 @@
           "type": "object",
           "required": [
             "database",
-            "name",
             "type"
           ],
           "properties": {
@@ -801,6 +818,7 @@
               "minimum": 0.0
             },
             "name": {
+              "default": "execute_sql",
               "type": "string"
             },
             "type": {
@@ -822,7 +840,6 @@
           "type": "object",
           "required": [
             "database",
-            "name",
             "type"
           ],
           "properties": {
@@ -834,6 +851,7 @@
               "type": "string"
             },
             "name": {
+              "default": "validate_sql",
               "type": "string"
             },
             "type": {
@@ -858,7 +876,6 @@
             }
           ],
           "required": [
-            "name",
             "src",
             "type"
           ],
@@ -898,6 +915,7 @@
               "minimum": 0.0
             },
             "name": {
+              "default": "retrieval",
               "type": "string"
             },
             "src": {
@@ -923,7 +941,6 @@
         {
           "type": "object",
           "required": [
-            "name",
             "type"
           ],
           "properties": {
@@ -932,6 +949,7 @@
               "type": "string"
             },
             "name": {
+              "default": "visualize",
               "type": "string"
             },
             "type": {
@@ -946,7 +964,6 @@
           "type": "object",
           "required": [
             "description",
-            "name",
             "type",
             "workflow_ref"
           ],
@@ -955,6 +972,7 @@
               "type": "string"
             },
             "name": {
+              "default": "workflow",
               "type": "string"
             },
             "output_task_ref": {
@@ -989,7 +1007,6 @@
           "required": [
             "agent_ref",
             "description",
-            "name",
             "type"
           ],
           "properties": {
@@ -1000,6 +1017,7 @@
               "type": "string"
             },
             "name": {
+              "default": "agent",
               "type": "string"
             },
             "type": {
@@ -1023,7 +1041,6 @@
         {
           "type": "object",
           "required": [
-            "name",
             "type"
           ],
           "properties": {
@@ -1032,6 +1049,7 @@
               "type": "string"
             },
             "name": {
+              "default": "create_data_app",
               "type": "string"
             },
             "type": {
@@ -1045,7 +1063,6 @@
         {
           "type": "object",
           "required": [
-            "name",
             "type"
           ],
           "properties": {
@@ -1061,6 +1078,7 @@
               ]
             },
             "name": {
+              "default": "create_v0_app",
               "type": "string"
             },
             "oxy_api_key_var": {
@@ -1087,7 +1105,6 @@
           "type": "object",
           "required": [
             "integration",
-            "name",
             "topic",
             "type"
           ],
@@ -1100,6 +1117,7 @@
               "type": "string"
             },
             "name": {
+              "default": "omni_query",
               "type": "string"
             },
             "topic": {
@@ -1116,7 +1134,6 @@
         {
           "type": "object",
           "required": [
-            "name",
             "type"
           ],
           "properties": {
@@ -1133,6 +1150,7 @@
               "minimum": 0.0
             },
             "name": {
+              "default": "semantic_query",
               "type": "string"
             },
             "topic": {

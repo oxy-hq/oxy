@@ -9,9 +9,6 @@ pub mod prepare_semantic_engine {
     static TEST_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
     fn setup_command() -> Command {
-        // Get the path to the oxy binary
-        // When running with cargo test, the binary is in target/debug/oxy
-        // When running with cargo llvm-cov, it's in target/llvm-cov-target/debug/oxy
         let manifest_dir = env!("CARGO_MANIFEST_DIR");
         let workspace_dir = PathBuf::from(manifest_dir)
             .parent()
@@ -20,13 +17,7 @@ pub mod prepare_semantic_engine {
             .unwrap()
             .to_path_buf();
 
-        // Try llvm-cov target first, fall back to regular debug target
-        let mut bin_path = workspace_dir.join("target/llvm-cov-target/debug/oxy");
-        if !bin_path.exists() {
-            bin_path = workspace_dir.join("target/debug/oxy");
-        }
-
-        let mut cmd = Command::new(&bin_path);
+        let mut cmd = Command::new(oxy_test_utils::get_oxy_binary());
         cmd.current_dir(workspace_dir.join("examples"));
         cmd
     }

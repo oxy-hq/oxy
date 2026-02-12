@@ -20,6 +20,7 @@ serde_yaml = { workspace = true }
 minijinja = { workspace = true }
 oxy_globals = { path = "../globals" }
 tracing = { workspace = true }
+sha2 = "0.10"
 
 [dev-dependencies]
 tempfile = { workspace = true }

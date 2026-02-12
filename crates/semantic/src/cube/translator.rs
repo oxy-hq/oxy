@@ -319,6 +319,29 @@ pub async fn process_semantic_layer_to_cube(
     databases: HashMap<String, DatabaseDetails>,
     globals_registry: GlobalRegistry,
 ) -> Result<(), SemanticLayerError> {
+    _process_semantic_layer_to_cube_internal(
+        semantic_dir,
+        target_dir,
+        databases,
+        globals_registry,
+        true,
+    )
+    .await
+}
+
+/// Internal function to process semantic layer with optional manifest saving
+async fn _process_semantic_layer_to_cube_internal(
+    semantic_dir: PathBuf,
+    target_dir: PathBuf,
+    databases: HashMap<String, DatabaseDetails>,
+    globals_registry: GlobalRegistry,
+    save_manifest: bool,
+) -> Result<(), SemanticLayerError> {
+    // Clone paths and databases upfront for manifest saving later
+    let semantic_dir_ref = semantic_dir.clone();
+    let target_dir_ref = target_dir.clone();
+    let databases_ref = databases.clone();
+
     println!("🔄 Processing semantic layer...");
 
     if !semantic_dir.exists() {
@@ -364,6 +387,109 @@ pub async fn process_semantic_layer_to_cube(
     println!("💾 Saving to cube directory...");
 
     translator.save_to_files(&cube_semantic_layer).await?;
+
+    // Save manifest if requested (for incremental builds)
+    if save_manifest {
+        use crate::build_manifest::BuildManifest;
+        use crate::change_detector::hash_database_config;
+        use crate::cube::entity_graph::EntityGraph;
+
+        let mut manifest = BuildManifest::new();
+        manifest.update_timestamp();
+
+        // Scan all current files and compute hashes
+        let views_dir = semantic_dir_ref.join("views");
+        let topics_dir = semantic_dir_ref.join("topics");
+
+        if views_dir.exists() {
+            for entry in std::fs::read_dir(&views_dir).map_err(|e| {
+                SemanticLayerError::IOError(format!("Failed to read views directory: {}", e))
+            })? {
+                let entry = entry.map_err(|e| {
+                    SemanticLayerError::IOError(format!("Failed to read directory entry: {}", e))
+                })?;
+                let path = entry.path();
+
+                if path.is_file() && path.extension().map(|e| e == "yml").unwrap_or(false) {
+                    let hash = crate::hash_file(&path)?;
+                    let relative = path
+                        .strip_prefix(&semantic_dir_ref)
+                        .unwrap_or(&path)
+                        .to_string_lossy()
+                        .to_string();
+                    manifest.add_file_hash(&relative, hash);
+
+                    // Output mapping
+                    if let Some(stem) = path.file_stem() {
+                        let view_name = stem.to_string_lossy().replace(".view", "");
+                        let output_path = target_dir_ref
+                            .join("model")
+                            .join(format!("{}.yml", view_name))
+                            .to_string_lossy()
+                            .to_string();
+                        manifest.add_output_mapping(&relative, vec![output_path]);
+                    }
+                }
+            }
+        }
+
+        if topics_dir.exists() {
+            for entry in std::fs::read_dir(&topics_dir).map_err(|e| {
+                SemanticLayerError::IOError(format!("Failed to read topics directory: {}", e))
+            })? {
+                let entry = entry.map_err(|e| {
+                    SemanticLayerError::IOError(format!("Failed to read directory entry: {}", e))
+                })?;
+                let path = entry.path();
+
+                if path.is_file() && path.extension().map(|e| e == "yml").unwrap_or(false) {
+                    let hash = crate::hash_file(&path)?;
+                    let relative = path
+                        .strip_prefix(&semantic_dir_ref)
+                        .unwrap_or(&path)
+                        .to_string_lossy()
+                        .to_string();
+                    manifest.add_file_hash(&relative, hash);
+
+                    // Output mapping
+                    if let Some(stem) = path.file_stem() {
+                        let topic_name = stem.to_string_lossy().replace(".topic", "");
+                        let output_path = target_dir_ref
+                            .join("model")
+                            .join(format!("{}.yml", topic_name))
+                            .to_string_lossy()
+                            .to_string();
+                        manifest.add_output_mapping(&relative, vec![output_path]);
+                    }
+                }
+            }
+        }
+
+        // Build entity graph for dependency tracking
+        let entity_graph = EntityGraph::from_semantic_layer(&semantic_layer)?;
+        manifest.set_dependency_graph(entity_graph.get_dependency_graph());
+
+        // Set config and globals hashes
+        let config_hash = hash_database_config(&databases_ref);
+        manifest.set_config_hash(config_hash);
+
+        let globals_hash = crate::change_detector::hash_globals_registry(
+            &semantic_dir_ref
+                .parent()
+                .unwrap_or(&semantic_dir_ref)
+                .join(".oxy/globals"),
+        )
+        .unwrap_or_default();
+        manifest.set_globals_hash(globals_hash);
+
+        // Compute and set embedding file hashes
+        let change_detector = crate::ChangeDetector::new(&semantic_dir_ref, &target_dir_ref);
+        let embedding_hashes = change_detector.scan_embedding_files().unwrap_or_default();
+        manifest.set_embedding_file_hashes(embedding_hashes);
+
+        // Save manifest
+        manifest.save(&target_dir_ref.join(".build_manifest.json"))?;
+    }
 
     println!("🎉 Semantic layer processing completed successfully!");
 

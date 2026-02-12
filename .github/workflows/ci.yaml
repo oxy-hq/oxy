@@ -222,6 +222,7 @@ jobs:
       - name: Run task
         env:
           OXY_DATABASE_URL: "postgresql://admin:password@localhost:5432/default"
+          OXY_BIN: "${{ github.workspace }}/target/ci/oxy"
         run: |
           if [[ "${{ matrix.task }}" == "check" ]]; then
             cargo clippy --profile ci --verbose --workspace --fix
