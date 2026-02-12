@@ -150,58 +150,12 @@ fn render_time_dimensions(
             let rendered_dimension =
                 render_string(renderer, &td.dimension, "time_dimension.dimension")?;
 
-            // Convert date_range (process relative dates)
-            let rendered_date_range = td
-                .date_range
-                .as_ref()
-                .map(|dr| convert_date_range(dr))
-                .transpose()?;
-
-            // Convert compare_date_range (process relative dates)
-            let rendered_compare_date_range = td
-                .compare_date_range
-                .as_ref()
-                .map(|dr| convert_date_range(dr))
-                .transpose()?;
-
             Ok(TimeDimension {
                 dimension: rendered_dimension,
                 granularity: td.granularity.clone(),
-                date_range: rendered_date_range,
-                compare_date_range: rendered_compare_date_range,
             })
         })
         .collect::<Result<Vec<_>, OxyError>>()
-}
-
-/// Convert DateRange to absolute ISO 8601 dates
-/// Handles relative expressions like "last 7 days", "this month", "from 30 days ago to now"
-fn convert_date_range(range: &DateRange) -> Result<DateRange, OxyError> {
-    match range {
-        DateRange::Relative(expr) => {
-            // Parse relative expression using chrono-english
-            let result =
-                chrono_english::parse_date_string(expr, Local::now(), chrono_english::Dialect::Us)
-                    .map_err(|e| {
-                        OxyError::RuntimeError(format!(
-                            "Failed to parse relative date expression '{}': {}",
-                            expr, e
-                        ))
-                    })?;
-
-            // Convert to ISO 8601 date format (YYYY-MM-DD)
-            let date_str = result.format("%Y-%m-%d").to_string();
-            Ok(DateRange::Dates(vec![date_str]))
-        }
-        DateRange::Dates(dates) => {
-            // Process each date in the array
-            let normalized_dates = dates
-                .iter()
-                .map(|date| normalize_date_value(date))
-                .collect::<Result<Vec<_>, OxyError>>()?;
-            Ok(DateRange::Dates(normalized_dates))
-        }
-    }
 }
 
 /// Normalize a single date value - convert relative expressions to ISO 8601 format
@@ -908,16 +862,6 @@ impl SemanticQueryExecutable {
             obj["granularity"] = self.convert_granularity_to_cubejs(granularity);
         }
 
-        // Add dateRange if present (already normalized to ISO format by render_time_dimensions)
-        if let Some(ref date_range) = td.date_range {
-            obj["dateRange"] = self.convert_date_range_to_cubejs(date_range)?;
-        }
-
-        // Add compareDateRange if present (for period-over-period analysis)
-        if let Some(ref compare_range) = td.compare_date_range {
-            obj["compareDateRange"] = self.convert_date_range_to_cubejs(compare_range)?;
-        }
-
         Ok(obj)
     }
 
@@ -932,33 +876,6 @@ impl SemanticQueryExecutable {
             TimeGranularity::Hour => serde_json::json!("hour"),
             TimeGranularity::Minute => serde_json::json!("minute"),
             TimeGranularity::Second => serde_json::json!("second"),
-        }
-    }
-
-    /// Convert DateRange to Cube.dev dateRange format (array of 1-2 date strings)
-    /// By the time this is called, relative dates have already been converted to ISO format
-    fn convert_date_range_to_cubejs(&self, range: &DateRange) -> Result<JsonValue, OxyError> {
-        match range {
-            DateRange::Relative(expr) => {
-                // This shouldn't happen as render_time_dimensions converts relative to absolute
-                // But handle it gracefully by passing through as single-element array
-                Ok(serde_json::json!([expr]))
-            }
-            DateRange::Dates(dates) => {
-                if dates.is_empty() {
-                    return Err(OxyError::ValidationError(
-                        "Date range must have at least 1 date".to_string(),
-                    ));
-                }
-                if dates.len() > 2 {
-                    return Err(OxyError::ValidationError(format!(
-                        "Date range must have at most 2 dates, got {}",
-                        dates.len()
-                    )));
-                }
-                // Return as JSON array
-                Ok(serde_json::json!(dates))
-            }
         }
     }
 

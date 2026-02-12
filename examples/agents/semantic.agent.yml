@@ -12,6 +12,8 @@ tools:
   - name: semantic_query
     type: semantic_query
     topic: fruit_business
+    variables:
+      orders_table: orders
 
   - name: generate_chart
     type: visualize

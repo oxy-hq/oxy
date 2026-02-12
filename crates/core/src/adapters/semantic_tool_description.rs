@@ -143,11 +143,11 @@ fn build_measures_metadata(description: &mut String, view: &View) {
 
     description.push_str("### Measures:\n");
     for measure in measures {
-        let display_info = if let Some(ref description) = measure.description {
-            if description.is_empty() {
+        let display_info = if let Some(ref desc) = measure.description {
+            if desc.is_empty() {
                 measure.measure_type.to_string()
             } else {
-                description.clone()
+                format!("{}: {}", measure.measure_type, desc)
             }
         } else {
             measure.measure_type.to_string()
@@ -186,11 +186,11 @@ fn build_dimensions_metadata(description: &mut String, view: &View) {
 
     description.push_str("### Dimensions:\n");
     for dimension in &view.dimensions {
-        let display_info = if let Some(ref description) = dimension.description {
-            if description.is_empty() {
+        let display_info = if let Some(ref desc) = dimension.description {
+            if desc.is_empty() {
                 dimension.dimension_type.to_string()
             } else {
-                description.clone()
+                format!("{}: {}", dimension.dimension_type, desc)
             }
         } else {
             dimension.dimension_type.to_string()

@@ -160,12 +160,6 @@ pub struct TimeDimension {
     /// Time granularity for grouping (year, month, day, etc.)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub granularity: Option<TimeGranularity>,
-    /// Date range to filter the time dimension
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub date_range: Option<DateRange>,
-    /// Compare date range for period-over-period analysis
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub compare_date_range: Option<DateRange>,
 }
 
 impl TimeDimension {
@@ -173,18 +167,6 @@ impl TimeDimension {
     pub fn validate(&self) -> Result<(), String> {
         if self.dimension.is_empty() {
             return Err("Time dimension name cannot be empty".to_string());
-        }
-
-        if let Some(ref date_range) = self.date_range {
-            date_range
-                .validate()
-                .map_err(|e| format!("Invalid date_range: {}", e))?;
-        }
-
-        if let Some(ref compare_date_range) = self.compare_date_range {
-            compare_date_range
-                .validate()
-                .map_err(|e| format!("Invalid compare_date_range: {}", e))?;
         }
 
         Ok(())
@@ -207,7 +189,7 @@ pub struct SemanticQueryParams {
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub dimensions: Vec<String>,
     #[schemars(
-        description = "List of time dimensions with granularity and date range. Format: <view_name>.<dimension_name>"
+        description = "List of time dimensions with granularity and date range. Can only use with dimensions of type time or datetime. Format: <view_name>.<dimension_name>"
     )]
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub time_dimensions: Vec<TimeDimension>,

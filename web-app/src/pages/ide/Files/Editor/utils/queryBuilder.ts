@@ -86,9 +86,7 @@ export function buildSemanticQuery({
     })
     .map((td) => ({
       dimension: td.dimension,
-      ...(td.granularity && { granularity: td.granularity }),
-      ...(td.dateRange && { dateRange: td.dateRange }),
-      ...(td.compareDateRange && { compareDateRange: td.compareDateRange })
+      ...(td.granularity && { granularity: td.granularity })
     }));
 
   return {

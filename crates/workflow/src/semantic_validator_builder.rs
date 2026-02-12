@@ -565,78 +565,12 @@ fn validate_time_dimensions(
                 .into());
             }
         }
-
-        // 4.4: Validate date range formats can be parsed
-        if let Some(date_range) = &time_dim.date_range {
-            validate_date_range(&time_dim.dimension, date_range)?;
-        }
-
-        if let Some(compare_date_range) = &time_dim.compare_date_range {
-            validate_date_range(&time_dim.dimension, compare_date_range)?;
-        }
     }
 
     Ok(())
 }
 
 /// Validates that a date range has valid structure and parseable dates
-fn validate_date_range(field: &str, date_range: &DateRange) -> Result<(), OxyError> {
-    // First, validate the structure
-    if let Err(e) = date_range.validate() {
-        return Err(SemanticQueryError::InvalidDateRange {
-            field: field.to_string(),
-            details: e,
-        }
-        .into());
-    }
-
-    // Then validate that dates can be parsed
-    match date_range {
-        DateRange::Relative(expr) => {
-            // Try parsing relative expression
-            if chrono_english::parse_date_string(expr, Local::now(), chrono_english::Dialect::Us)
-                .is_err()
-            {
-                return Err(SemanticQueryError::InvalidDateRange {
-                    field: field.to_string(),
-                    details: format!(
-                        "Cannot parse relative date expression '{}'. Expected format like '7 days ago', 'now', 'next monday'",
-                        expr
-                    ),
-                }
-                .into());
-            }
-        }
-        DateRange::Dates(dates) => {
-            for date in dates {
-                // Try parsing as ISO date first
-                if NaiveDate::parse_from_str(date, "%Y-%m-%d").is_ok() {
-                    continue;
-                }
-                // Try parsing as relative expression
-                if chrono_english::parse_date_string(
-                    date,
-                    Local::now(),
-                    chrono_english::Dialect::Us,
-                )
-                .is_err()
-                {
-                    return Err(SemanticQueryError::InvalidDateRange {
-                        field: field.to_string(),
-                        details: format!(
-                            "Cannot parse date value '{}'. Expected ISO 8601 format (YYYY-MM-DD) or relative expression (e.g., '7 days ago', 'now', 'next monday')",
-                            date
-                        ),
-                    }
-                    .into());
-                }
-            }
-        }
-    }
-
-    Ok(())
-}
-
 /// Extracts the view name from a fully-qualified field (e.g., "orders.total" -> "orders")
 #[allow(dead_code)]
 fn extract_view_from_field(field: &str) -> Option<String> {
@@ -907,11 +841,6 @@ mod tests {
                 time_dimensions: vec![TimeDimension {
                     dimension: "orders.created_at".to_string(),
                     granularity: Some(TimeGranularity::Month),
-                    date_range: Some(DateRange::range(
-                        "2023-01-01".to_string(),
-                        "2023-12-31".to_string(),
-                    )),
-                    compare_date_range: None,
                 }],
             },
             export: None,
@@ -945,8 +874,6 @@ mod tests {
                 time_dimensions: vec![TimeDimension {
                     dimension: "orders.unknown_field".to_string(),
                     granularity: Some(TimeGranularity::Day),
-                    date_range: None,
-                    compare_date_range: None,
                 }],
             },
             export: None,
@@ -980,8 +907,6 @@ mod tests {
                 time_dimensions: vec![TimeDimension {
                     dimension: "orders.status".to_string(), // String type, not date/datetime
                     granularity: Some(TimeGranularity::Day),
-                    date_range: None,
-                    compare_date_range: None,
                 }],
             },
             export: None,
@@ -1014,8 +939,6 @@ mod tests {
                 time_dimensions: vec![TimeDimension {
                     dimension: "orders.created_at".to_string(), // Conflict!
                     granularity: Some(TimeGranularity::Month),
-                    date_range: None,
-                    compare_date_range: None,
                 }],
             },
             export: None,
@@ -1026,96 +949,5 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("cannot appear in both 'dimensions' and 'time_dimensions'"));
-    }
-
-    #[test]
-    fn test_validate_time_dimensions_invalid_date_range() {
-        let views = create_test_views();
-        let valid_dimensions: HashSet<String> =
-            vec!["orders.created_at".to_string()].into_iter().collect();
-
-        let task = SemanticQueryTask {
-            query: SemanticQueryParams {
-                topic: Some("test_topic".to_string()),
-                dimensions: vec![],
-                measures: vec![],
-                filters: vec![],
-                orders: vec![],
-                limit: None,
-                offset: None,
-                variables: None,
-                time_dimensions: vec![TimeDimension {
-                    dimension: "orders.created_at".to_string(),
-                    granularity: Some(TimeGranularity::Day),
-                    date_range: Some(DateRange::Dates(vec!["not-a-valid-date".to_string()])),
-                    compare_date_range: None,
-                }],
-            },
-            export: None,
-            variables: None,
-        };
-
-        let result = validate_time_dimensions(&task, &valid_dimensions, &views, "test_topic");
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(err.contains("Cannot parse date value"));
-    }
-
-    #[test]
-    fn test_validate_time_dimensions_valid_relative_date() {
-        let views = create_test_views();
-        let valid_dimensions: HashSet<String> =
-            vec!["orders.created_at".to_string()].into_iter().collect();
-
-        let task = SemanticQueryTask {
-            query: SemanticQueryParams {
-                topic: Some("test_topic".to_string()),
-                dimensions: vec![],
-                measures: vec![],
-                filters: vec![],
-                orders: vec![],
-                limit: None,
-                offset: None,
-                variables: None,
-                time_dimensions: vec![TimeDimension {
-                    dimension: "orders.created_at".to_string(),
-                    granularity: None, // No granularity is valid (raw values)
-                    date_range: Some(DateRange::relative("7 days ago")),
-                    compare_date_range: None,
-                }],
-            },
-            export: None,
-            variables: None,
-        };
-
-        let result = validate_time_dimensions(&task, &valid_dimensions, &views, "test_topic");
-        assert!(
-            result.is_ok(),
-            "Expected valid relative date, got error: {:?}",
-            result.err()
-        );
-    }
-
-    #[test]
-    fn test_validate_date_range_empty_dates() {
-        let result = validate_date_range("test_field", &DateRange::Dates(vec![]));
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(err.contains("at least 1 date"));
-    }
-
-    #[test]
-    fn test_validate_date_range_too_many_dates() {
-        let result = validate_date_range(
-            "test_field",
-            &DateRange::Dates(vec![
-                "2023-01-01".to_string(),
-                "2023-06-01".to_string(),
-                "2023-12-31".to_string(),
-            ]),
-        );
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(err.contains("at most 2 dates"));
     }
 }

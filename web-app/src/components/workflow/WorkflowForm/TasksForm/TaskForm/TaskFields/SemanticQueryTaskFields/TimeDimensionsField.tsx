@@ -2,7 +2,6 @@ import { Calendar, Loader2, Plus, X } from "lucide-react";
 import type React from "react";
 import type { Control } from "react-hook-form";
 import { Controller, useFieldArray } from "react-hook-form";
-import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { Button } from "@/components/ui/shadcn/button";
 import { Combobox } from "@/components/ui/shadcn/combobox";
 import { Label } from "@/components/ui/shadcn/label";
@@ -141,20 +140,6 @@ export const TimeDimensionsField: React.FC<TimeDimensionsFieldProps> = ({
                           ))}
                         </SelectContent>
                       </Select>
-                    )}
-                  />
-
-                  {/* Date range picker */}
-                  <Controller
-                    control={control}
-                    name={`${taskPath}.time_dimensions.${tdIndex}.dateRange`}
-                    render={({ field: controllerField }) => (
-                      <DateRangePicker
-                        value={controllerField.value}
-                        onChange={controllerField.onChange}
-                        placeholder='Select date range (optional)'
-                        supportsRelative={true}
-                      />
                     )}
                   />
                 </div>

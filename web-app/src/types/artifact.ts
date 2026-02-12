@@ -12,8 +12,6 @@ export type TimeDimension = {
     | "minute"
     | "second"
     | string;
-  dateRange?: [string] | [string, string];
-  compareDateRange?: [string] | [string, string];
 };
 
 export type SqlArtifact = {

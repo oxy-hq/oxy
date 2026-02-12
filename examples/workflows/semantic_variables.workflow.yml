@@ -21,5 +21,3 @@ tasks:
     time_dimensions:
       - dimension: order_shipments.shipped_date
         granularity: month
-        dateRange:
-          - last 30 days

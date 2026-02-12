@@ -67,22 +67,6 @@
         }
       }
     },
-    "DateRange": {
-      "description": "Date range for time dimension filtering",
-      "anyOf": [
-        {
-          "description": "Relative expression: \"last week\", \"this month\", \"from 7 days ago to now\"",
-          "type": "string"
-        },
-        {
-          "description": "Array of 1-2 dates: [\"2023-01-01\"] or [\"2023-01-01\", \"2023-12-31\"]",
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      ]
-    },
     "DistanceMethod": {
       "oneOf": [
         {
@@ -1523,7 +1507,7 @@
               }
             },
             "time_dimensions": {
-              "description": "List of time dimensions with granularity and date range. Format: <view_name>.<dimension_name>",
+              "description": "List of time dimensions with granularity and date range. Can only use with dimensions of type time or datetime. Format: <view_name>.<dimension_name>",
               "type": "array",
               "items": {
                 "$ref": "#/definitions/TimeDimension"
@@ -1808,28 +1792,6 @@
         "dimension"
       ],
       "properties": {
-        "compare_date_range": {
-          "description": "Compare date range for period-over-period analysis",
-          "anyOf": [
-            {
-              "$ref": "#/definitions/DateRange"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "date_range": {
-          "description": "Date range to filter the time dimension",
-          "anyOf": [
-            {
-              "$ref": "#/definitions/DateRange"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
         "dimension": {
           "description": "Dimension name in format: <view_name>.<dimension_name>",
           "type": "string"

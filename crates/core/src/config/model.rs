@@ -2856,7 +2856,7 @@ impl ToolType {
                 };
 
                 // Render inline template expression
-                let rendered = renderer.render_async(&value_str).await.map_err(|e| {
+                let rendered = renderer.render_str(&value_str).map_err(|e| {
                     OxyError::RuntimeError(format!("Failed to render variable {}: {}", key, e))
                 })?;
 
@@ -2903,7 +2903,7 @@ impl ToolType {
                     };
 
                     // Render inline template expression
-                    let rendered = renderer.render_async(&value_str).await.map_err(|e| {
+                    let rendered = renderer.render_str(&value_str).map_err(|e| {
                         OxyError::RuntimeError(format!("Failed to render variable {}: {}", key, e))
                     })?;
 
