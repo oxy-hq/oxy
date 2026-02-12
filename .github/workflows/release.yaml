@@ -29,7 +29,6 @@ permissions:
   actions: read
 
 jobs:
-
   # NOTE: Disabled building CLI here, as we now build in public-release.yaml in the public repo and in oxy-hq/oxy-internal-build
 
   # build-cli:
@@ -139,7 +138,7 @@ jobs:
     # needs: [build-cli]
     steps:
       # - name: Download release assets from artifact
-      #   uses: actions/download-artifact@v6
+      #   uses: actions/download-artifact@v7
       #   with:
       #     path: artifacts
       #     merge-multiple: true
@@ -159,4 +158,4 @@ jobs:
           prerelease: ${{ inputs.tag != '' }}
           tag_name: ${{ inputs.tag || github.ref_name }}${{ inputs.unique && steps.time.outputs.current_time || '' }}
           # files: |
-            # artifacts/**/*
+          # artifacts/**/*

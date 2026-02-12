@@ -273,18 +273,20 @@ jobs:
       - uses: gacts/install-hurl@v1
 
       - name: Download oxy binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: oxy-binary-ci
           path: ./bin
 
       - name: Make binary executable
-        run: chmod +x ./bin/oxy
+        run: |
+          chmod +x ./bin/oxy
+          echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
 
       - name: Start oxy
-        working-directory: crates/app/demo_project
+        working-directory: demo_project
         run: |
-          ../../../bin/oxy start --enterprise --clean &
+          oxy start --enterprise --clean &
           echo "OXY_PID=$!" >> $GITHUB_ENV
           # Wait for server (max 10 min)
           for i in {1..120}; do
@@ -302,11 +304,11 @@ jobs:
       - name: Smoke test - CLI
         working-directory: demo_project
         run: |
-          ../bin/oxy status
-          ../bin/oxy sync -o
-          ../bin/oxy build
-          ../bin/oxy validate
-          ../bin/oxy run example_duckdb_query.sql
+          oxy status
+          oxy sync -o
+          oxy build
+          oxy validate
+          oxy run example_duckdb_query.sql
 
       - name: Smoke test - HTTP (Hurl)
         run: hurl --test --retry 3 tests/smoke/smoke.hurl
@@ -318,7 +320,7 @@ jobs:
           for i in {1..30}; do kill -0 $OXY_PID 2>/dev/null || break; sleep 1; done
           sleep 2
           docker volume ls | grep -q oxy || { echo "::error::Volumes not persisted"; exit 1; }
-          ../bin/oxy start --enterprise &
+          oxy start --enterprise &
           echo "OXY_PID=$!" >> $GITHUB_ENV
           for i in {1..60}; do
             curl -sf --max-time 10 http://localhost:3000/health > /dev/null && break
@@ -398,13 +400,15 @@ jobs:
 
       # Download pre-built binary (shared artifact!)
       - name: Download oxy binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: oxy-binary-ci
           path: ./bin
 
       - name: Make binary executable
-        run: chmod +x ./bin/oxy
+        run: |
+          chmod +x ./bin/oxy
+          echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
 
       # Setup Node.js and pnpm for web-app tests
       - name: Setup pnpm
@@ -434,12 +438,12 @@ jobs:
 
       # Run consistency tests using pre-built binary
       - name: Run consistency tests
-        working-directory: crates/app/demo_project
+        working-directory: demo_project
         run: |
           echo "Running consistency tests for default.agent.yml..."
-          ../../../bin/oxy sync -o
-          ../../../bin/oxy build
-          ../../../bin/oxy test default.agent.yml \
+          oxy sync -o
+          oxy build
+          oxy test default.agent.yml \
             --format json \
             --min-accuracy 0.8 \
             --threshold-mode average \
@@ -452,16 +456,16 @@ jobs:
         if: always()
         with:
           name: consistency-test-results
-          path: crates/app/demo_project/consistency-test-results.json
+          path: demo_project/consistency-test-results.json
           retention-days: 1
 
       - name: Show consistency test summary
         if: always()
         run: |
-          if [ -f crates/app/demo_project/consistency-test-results.json ]; then
+          if [ -f demo_project/consistency-test-results.json ]; then
             echo "=== Consistency Test Results ==="
             echo ""
-            cat crates/app/demo_project/consistency-test-results.json
+            cat demo_project/consistency-test-results.json
             echo ""
             echo "Full results available in artifacts: consistency-test-results"
           else
@@ -473,7 +477,7 @@ jobs:
         working-directory: examples
         run: |
           # Using pre-built binary - no compilation needed!
-          nohup ../bin/oxy serve > ../oxy-server.log 2>&1 &
+          nohup oxy serve > ../oxy-server.log 2>&1 &
           echo $! > /tmp/oxy-server.pid
           echo "Backend server started with PID: $(cat /tmp/oxy-server.pid)"
 
