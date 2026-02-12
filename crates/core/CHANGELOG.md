@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.15](https://github.com/oxy-hq/oxy-internal/compare/0.5.14...0.5.15) (2026-02-12)
+
+
+### <!-- 0 -->🚀 Features
+
+* implement incremental build system for semantic layer ([#1652](https://github.com/oxy-hq/oxy-internal/issues/1652)) ([f5a1b02](https://github.com/oxy-hq/oxy-internal/commit/f5a1b02121e843e4ae6b63f0dafdad7a8f410c21))
+
 ## [0.5.14](https://github.com/oxy-hq/oxy-internal/compare/0.5.13...0.5.14) (2026-02-11)
 
 
