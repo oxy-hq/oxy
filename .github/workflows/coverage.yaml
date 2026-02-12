@@ -126,7 +126,7 @@ jobs:
           cargo llvm-cov nextest --cargo-profile ci --workspace --no-clean --lcov --output-path lcov.info --no-fail-fast
 
           # Print coverage summary
-          cargo llvm-cov report --summary-only
+          cargo llvm-cov report --profile ci --summary-only
 
           ./target/llvm-cov-target/ci/oxy gen-config-schema --check
 
