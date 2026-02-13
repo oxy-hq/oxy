@@ -26,7 +26,12 @@ defaults:
 jobs:
   changesets:
     uses: ./.github/workflows/changesets.yaml
+    if: github.repository == 'oxy-hq/oxy'
     name: Changesets
+    permissions:
+      contents: write
+      actions: read
+      pull-requests: read
 
   coverage:
     name: Code Coverage
