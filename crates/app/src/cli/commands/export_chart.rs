@@ -148,6 +148,7 @@ fn launch_browser_and_navigate(url: &str) -> Result<(Browser, Arc<Tab>), OxyErro
         headless_chrome::LaunchOptions::default_builder()
             .fetcher_options(FetcherOptions::default())
             .headless(true)
+            .sandbox(false)
             .build()
             .map_err(|e| OxyError::RuntimeError(format!("Failed to configure browser: {}", e)))?,
     )
