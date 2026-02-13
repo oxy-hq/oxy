@@ -15,10 +15,12 @@ import {
 
 export const LineChart = ({
   display,
-  data
+  data,
+  index
 }: {
   display: LineChartDisplay;
   data?: DataContainer;
+  index?: number;
 }) => {
   const buildChartOptions = useCallback(
     async ({ display, connection, fileName, isDarkMode }: ChartBuilderParams<LineChartDisplay>) => {
@@ -94,6 +96,7 @@ export const LineChart = ({
       isLoading={isLoading}
       title={display.title}
       testId='app-line-chart'
+      chartIndex={index}
     />
   );
 };

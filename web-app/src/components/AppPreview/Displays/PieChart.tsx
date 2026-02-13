@@ -9,7 +9,15 @@ import {
   useChartBase
 } from "./hooks";
 
-export const PieChart = ({ display, data }: { display: PieChartDisplay; data?: DataContainer }) => {
+export const PieChart = ({
+  display,
+  data,
+  index
+}: {
+  display: PieChartDisplay;
+  data?: DataContainer;
+  index?: number;
+}) => {
   const buildChartOptions = useCallback(
     async ({ display, connection, fileName, isDarkMode }: ChartBuilderParams<PieChartDisplay>) => {
       const baseOptions = createPieChartOptions(isDarkMode);
@@ -42,5 +50,12 @@ export const PieChart = ({ display, data }: { display: PieChartDisplay; data?: D
     buildChartOptions
   });
 
-  return <Echarts isLoading={isLoading} options={chartOptions} title={display.title} />;
+  return (
+    <Echarts
+      isLoading={isLoading}
+      chartIndex={index}
+      options={chartOptions}
+      title={display.title}
+    />
+  );
 };

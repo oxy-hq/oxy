@@ -1,5 +1,6 @@
 mod a2a;
 pub mod clean;
+mod export_chart;
 mod init;
 mod intent;
 mod make;
@@ -385,6 +386,11 @@ enum SubCommand {
     /// Discover and classify user intents from agent questions using
     /// unsupervised clustering techniques (HDBSCAN) and LLM labeling.
     Intent(intent::IntentArgs),
+    /// Export ECharts configuration to PNG image
+    ///
+    /// Render ECharts charts to PNG images using server-side rendering.
+    /// Requires Node.js to be installed on the system.
+    ExportChart(export_chart::ExportChartArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -863,6 +869,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             SubCommand::PrepareSemanticEngine(_) => "prepare-semantic-engine",
             SubCommand::A2a(_) => "a2a",
             SubCommand::Intent(_) => "intent",
+            SubCommand::ExportChart(_) => "export-chart",
         };
 
         sentry_config::add_breadcrumb(
@@ -1341,6 +1348,10 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
 
         Some(SubCommand::Intent(intent_args)) => {
             intent::handle_intent_command(intent_args).await?;
+        }
+
+        Some(SubCommand::ExportChart(export_chart_args)) => {
+            export_chart::handle_export_chart_command(export_chart_args).await?;
         }
 
         None => {

@@ -204,6 +204,10 @@ impl ConfigManager {
         self.storage.get_charts_dir().await
     }
 
+    pub async fn get_exported_chart_dir(&self) -> Result<PathBuf, OxyError> {
+        self.storage.get_exported_chart_dir().await
+    }
+
     pub async fn get_results_dir(&self) -> Result<PathBuf, OxyError> {
         self.storage.get_results_dir().await
     }

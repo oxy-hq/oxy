@@ -7,6 +7,7 @@ pub mod chart;
 pub mod data;
 pub mod database;
 pub mod execution_analytics;
+pub mod exported_chart;
 pub mod file;
 pub mod github;
 pub mod healthcheck;

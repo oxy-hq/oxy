@@ -6,6 +6,7 @@ use crate::api::chart;
 use crate::api::data;
 use crate::api::database;
 use crate::api::execution_analytics;
+use crate::api::exported_chart;
 use crate::api::file;
 use crate::api::github;
 use crate::api::healthcheck;
@@ -150,6 +151,10 @@ fn build_project_routes() -> Router<AppState> {
         )
         .route("/artifacts/{id}", get(artifacts::get_artifact))
         .route("/charts/{file_path}", get(chart::get_chart))
+        .route(
+            "/exported-charts/{file_name}",
+            get(exported_chart::get_exported_chart),
+        )
         .route("/logs", get(thread::get_logs))
         .route("/events", get(run::workflow_events))
         .route("/events/lookup", get(task::agentic_events))

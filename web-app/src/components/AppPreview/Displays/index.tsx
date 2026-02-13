@@ -7,7 +7,15 @@ import { LineChart } from "./LineChart";
 import { MarkdownDisplayBlock } from "./MarkdownDisplayBlock";
 import { PieChart } from "./PieChart";
 
-export const DisplayBlock = ({ display, data }: { display: Display; data?: DataContainer }) => {
+export const DisplayBlock = ({
+  display,
+  data,
+  idx
+}: {
+  display: Display;
+  data?: DataContainer;
+  idx?: number;
+}) => {
   switch (display.type) {
     case "error":
       return <ErrorDisplayBlock display={display} />;
@@ -15,15 +23,15 @@ export const DisplayBlock = ({ display, data }: { display: Display; data?: DataC
       return <MarkdownDisplayBlock display={display} data={data} />;
     case "line_chart":
     case "line":
-      return <LineChart display={display} data={data} />;
+      return <LineChart display={display} data={data} index={idx} />;
     case "bar_chart":
     case "bar":
-      return <BarChart display={display} data={data} />;
+      return <BarChart display={display} data={data} index={idx} />;
     case "table":
       return <DataTableBlock display={display} data={data} />;
     case "pie_chart":
     case "pie":
-      return <PieChart display={display} data={data} />;
+      return <PieChart display={display} data={data} index={idx} />;
     default:
       return <pre>{JSON.stringify(display)}</pre>;
   }
@@ -45,7 +53,7 @@ export const Displays = ({ displays, data }: { displays: Display[]; data?: DataC
           />
         }
       >
-        <DisplayBlock display={display} data={data} />
+        <DisplayBlock display={display} data={data} idx={idx} />
       </ErrorBoundary>
     ))}
   </div>

@@ -19,9 +19,11 @@ const AppPageHeader: React.FC<AppPageHeaderProps> = ({ path, onRun, isRunning })
           <LayoutDashboard width={16} height={16} />
           <span className='truncate text-sm'>{relativePath}</span>
         </div>
-        <Button size='sm' onClick={onRun} disabled={isRunning} variant='default' content='icon'>
-          {isRunning ? <LoaderCircle className='animate-spin' /> : "Refresh"}
-        </Button>
+        <div className='flex items-center gap-2'>
+          <Button size='sm' onClick={onRun} disabled={isRunning} variant='default' content='icon'>
+            {isRunning ? <LoaderCircle className='animate-spin' /> : "Refresh"}
+          </Button>
+        </div>
       </div>
     </PageHeader>
   );

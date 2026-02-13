@@ -13,7 +13,15 @@ import {
   useChartBase
 } from "./hooks";
 
-export const BarChart = ({ display, data }: { display: BarChartDisplay; data?: DataContainer }) => {
+export const BarChart = ({
+  display,
+  data,
+  index
+}: {
+  display: BarChartDisplay;
+  data?: DataContainer;
+  index?: number;
+}) => {
   const buildChartOptions = useCallback(
     async ({ display, connection, fileName, isDarkMode }: ChartBuilderParams<BarChartDisplay>) => {
       const baseOptions = createBaseChartOptions(isDarkMode);
@@ -78,6 +86,7 @@ export const BarChart = ({ display, data }: { display: BarChartDisplay; data?: D
       options={chartOptions}
       title={display.title}
       testId='app-bar-chart'
+      chartIndex={index}
     />
   );
 };
