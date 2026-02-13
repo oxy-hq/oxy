@@ -390,7 +390,7 @@ pub async fn get_app_result(
     let chart_file_map: HashMap<i64, String> = if has_charts {
         let charts_dir = project_manager
             .config_manager
-            .get_exported_chart_dir()
+            .get_charts_dir()
             .await
             .unwrap_or_default();
         let app_path_str = path.to_string_lossy().to_string();
