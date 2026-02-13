@@ -52,6 +52,7 @@ use crate::api::{app, message, task};
 pub struct AppState {
     pub cloud: bool,
     pub enterprise: bool,
+    pub internal: bool,
 }
 
 fn build_cors_layer() -> CorsLayer {
@@ -341,7 +342,11 @@ fn apply_middleware(
     Ok(protected_regular_routes)
 }
 pub async fn api_router(cloud: bool, enterprise: bool) -> Result<Router, OxyError> {
-    let app_state = AppState { cloud, enterprise };
+    let app_state = AppState {
+        cloud,
+        enterprise,
+        internal: false,
+    };
     let public_routes = build_public_routes();
     let protected_routes = build_protected_routes(app_state.clone());
     let protected_routes = apply_middleware(protected_routes, cloud)?;
@@ -361,7 +366,11 @@ pub async fn api_router(cloud: bool, enterprise: bool) -> Result<Router, OxyErro
 }
 
 pub async fn internal_api_router(cloud: bool, enterprise: bool) -> Result<Router, OxyError> {
-    let app_state = AppState { cloud, enterprise };
+    let app_state = AppState {
+        cloud,
+        enterprise,
+        internal: true,
+    };
     let public_routes = build_public_routes();
     let protected_routes = build_protected_routes(app_state.clone());
 

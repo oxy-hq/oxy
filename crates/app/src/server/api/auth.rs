@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
 
+use crate::api::app;
 use crate::server::router::AppState;
 use oxy::{
     config::constants::AUTHENTICATION_SECRET_KEY,
@@ -121,7 +122,7 @@ pub async fn get_config(
 
     let auth_enabled = has_google || has_okta || has_basic;
 
-    if !auth_enabled {
+    if !auth_enabled || app_state.internal {
         return Ok(Json(AuthConfigResponse {
             is_built_in_mode: true,
             auth_enabled: false,
