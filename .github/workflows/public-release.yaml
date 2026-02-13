@@ -275,13 +275,11 @@ jobs:
           restore-keys: |
             typescript-${{ runner.os }}-
 
-      # Cache Vite optimized deps and build cache
+      # Cache Vite optimized deps
       - name: Cache Vite
         uses: actions/cache@v5
         with:
-          path: |
-            web-app/node_modules/.vite
-            web-app/.vite
+          path: web-app/node_modules/.vite
           key: vite-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('web-app/vite.config.*', 'web-app/src/**') }}
           restore-keys: |
             vite-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}-
