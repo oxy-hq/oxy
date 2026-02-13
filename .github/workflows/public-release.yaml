@@ -642,8 +642,6 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           build-args: BINARY_PATH=oxy
           provenance: false
-          cache-from: type=gha,scope=${{ needs.determine-build-type.outputs.channel }}-${{ matrix.target.name }}-${{ matrix.arch_tag }}
-          cache-to: type=gha,mode=min,scope=${{ needs.determine-build-type.outputs.channel }}-${{ matrix.target.name }}-${{ matrix.arch_tag }}
 
   # ============================================================================
   # Job 6: Create and Push Multi-Arch Manifests
