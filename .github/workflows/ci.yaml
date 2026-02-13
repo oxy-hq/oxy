@@ -310,7 +310,9 @@ jobs:
     timeout-minutes: 20
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      CARGO_PROFILE_DEV_DEBUG: "1"
+      BIGQUERY_SAMPLE_KEY: ${{ secrets.BIGQUERY_SAMPLE_KEY }}
+      GEMINI_API_KEY: "empty"
+      ANTHROPIC_API_KEY: "empty"
     steps:
       - uses: jlumbroso/free-disk-space@main
         with:
@@ -338,7 +340,7 @@ jobs:
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
 
       - name: Start oxy
-        working-directory: demo_project
+        working-directory: examples
         run: |
           oxy start --enterprise --clean &
           echo "OXY_PID=$!" >> $GITHUB_ENV
@@ -356,7 +358,7 @@ jobs:
           done
 
       - name: Smoke test - CLI
-        working-directory: demo_project
+        working-directory: examples
         run: |
           oxy status
           oxy sync -o
@@ -368,7 +370,7 @@ jobs:
         run: hurl --test --retry 3 tests/smoke/smoke.hurl
 
       - name: Test restart (data persistence)
-        working-directory: demo_project
+        working-directory: examples
         run: |
           kill -TERM $OXY_PID 2>/dev/null || true
           for i in {1..30}; do kill -0 $OXY_PID 2>/dev/null || break; sleep 1; done
