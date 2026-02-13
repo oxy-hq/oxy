@@ -1,3 +1,4 @@
+import get from "lodash/get";
 import type React from "react";
 import { useMemo } from "react";
 import { useFormContext } from "react-hook-form";
@@ -48,10 +49,12 @@ export const TaskColumnSelect: React.FC<TaskColumnSelectProps> = ({
   const taskType = task?.type;
   const rawDimensions = (task as Record<string, unknown> | undefined)?.dimensions;
   const rawMeasures = (task as Record<string, unknown> | undefined)?.measures;
+  const rawTimeDimensions = (task as Record<string, unknown> | undefined)?.time_dimensions;
 
   // Memoize JSON serialization to avoid stringify on every render
   const dimensionsJson = safeStringify(rawDimensions);
   const measuresJson = safeStringify(rawMeasures);
+  const timeDimensionsJson = safeStringify(rawTimeDimensions);
 
   const columns = useMemo(() => {
     if (taskType !== "semantic_query") return [];
@@ -59,6 +62,7 @@ export const TaskColumnSelect: React.FC<TaskColumnSelectProps> = ({
     const cols: string[] = [];
     const dimensions = safeParse(dimensionsJson);
     const measures = safeParse(measuresJson);
+    const timeDimensions = safeParse(timeDimensionsJson);
 
     if (Array.isArray(dimensions)) {
       cols.push(
@@ -70,14 +74,29 @@ export const TaskColumnSelect: React.FC<TaskColumnSelectProps> = ({
         ...measures.filter((m: unknown): m is string => typeof m === "string" && m.length > 0)
       );
     }
+
+    if (Array.isArray(timeDimensions)) {
+      cols.push(
+        ...timeDimensions.map((t: unknown) => {
+          const name = get(t, "dimension", "");
+          const granularity = get(t, "granularity");
+          if (granularity !== "value") {
+            return `${name}_${granularity}`;
+          }
+          return name;
+        })
+      );
+    }
     return [...new Set(cols)];
-  }, [taskType, dimensionsJson, measuresJson]);
+  }, [taskType, dimensionsJson, measuresJson, timeDimensionsJson]);
 
   const columnItems = useMemo(() => {
-    const items = columns.map((col) => ({
-      value: col.replaceAll(".", "__"),
-      label: col.replaceAll(".", "__")
-    }));
+    const items = columns
+      .filter((col) => col && typeof col === "string" && col.length > 0)
+      .map((col) => ({
+        value: col.replaceAll(".", "__"),
+        label: col.replaceAll(".", "__")
+      }));
 
     // If current value exists but not in columns, add it to items
     if (value && !items.some((item) => item.value === value)) {
