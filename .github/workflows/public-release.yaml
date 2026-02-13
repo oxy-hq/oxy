@@ -171,7 +171,75 @@ jobs:
     uses: ./.github/workflows/changesets.yaml
 
   # ============================================================================
-  # Job 3: Build CLI (4 targets)
+  # Job 3a: Download Latest Edge Binary (for Dockerfile-only changes)
+  #
+  # Optimization: When only Dockerfile changes (no code/web-app changes), skip
+  # the expensive build-cli job and instead download the latest edge release.
+  # This job only runs for:
+  # - Edge builds (not stable)
+  # - When docker changeset is true
+  # - But oxy and web-app changesets are false
+  # - Only downloads Linux binaries (needed for Docker images)
+  # ============================================================================
+  download-edge-binary:
+    name: Download latest edge binary for ${{ matrix.job.target }}
+    needs: [determine-build-type, changesets]
+    if: |
+      always() &&
+      needs.determine-build-type.result == 'success' &&
+      needs.determine-build-type.outputs.channel == 'edge' &&
+      needs.changesets.result == 'success' &&
+      needs.changesets.outputs.docker == 'true' &&
+      needs.changesets.outputs.oxy == 'false' &&
+      needs.changesets.outputs.web-app == 'false'
+    runs-on: ${{ matrix.job.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        job:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Create artifacts folder
+        run: mkdir -p artifacts
+
+      - name: Download latest edge binary
+        env:
+          OXY_VERSION: latest
+        run: |
+          # Download using the install script
+          bash install_oxy_nightly.sh
+
+          # Find where it was installed
+          if [ "$(id -u)" -eq 0 ]; then
+            INSTALL_DIR="/usr/local/bin"
+          else
+            INSTALL_DIR="$HOME/.local/bin"
+          fi
+
+          # Copy to artifacts
+          cp "$INSTALL_DIR/oxy" artifacts/oxy-${{ matrix.job.target }}
+          chmod +x artifacts/oxy-${{ matrix.job.target }}
+
+      - name: Create binary checksum
+        run: shasum --algorithm 256 --binary oxy-${{ matrix.job.target }} | tee SHA256SUM-oxy-${{ matrix.job.target }}.txt
+        working-directory: artifacts
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: cli-${{ matrix.job.target }}
+          path: artifacts/**/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # ============================================================================
+  # Job 3b: Build CLI (4 targets)
   # ============================================================================
   build-cli:
     name: Build ${{ needs.determine-build-type.outputs.channel }} CLI for ${{ matrix.job.target }}
@@ -181,7 +249,7 @@ jobs:
       needs.determine-build-type.result == 'success' &&
       (needs.determine-build-type.outputs.should_build == 'true' ||
        (needs.changesets.result == 'success' &&
-        (needs.changesets.outputs.oxy == 'true' || needs.changesets.outputs.web-app == 'true' || needs.changesets.outputs.docker == 'true')))
+        (needs.changesets.outputs.oxy == 'true' || needs.changesets.outputs.web-app == 'true')))
     runs-on: ${{ matrix.job.os }}
     strategy:
       fail-fast: false
@@ -464,10 +532,10 @@ jobs:
   # ============================================================================
   build-docker-images:
     name: Build ${{ matrix.target.name }} ${{ needs.determine-build-type.outputs.channel }} Docker for ${{ matrix.arch }}
-    needs: [determine-build-type, build-cli]
+    needs: [determine-build-type, build-cli, download-edge-binary]
     if: |
       always() &&
-      needs.build-cli.result == 'success' &&
+      (needs.build-cli.result == 'success' || needs.download-edge-binary.result == 'success') &&
       needs.determine-build-type.outputs.should_build_docker == 'true'
     concurrency:
       group: docker-${{ needs.determine-build-type.outputs.channel }}-${{ matrix.target.name }}-${{ matrix.arch }}
