@@ -73,7 +73,7 @@ rapidfuzz = "0.5.0"
 clap = { version = "4.5.57", features = ["derive"] }
 colored = "3.1.1"
 tqdm = "0.7.0"
-headless_chrome = { version = "1.0", features = ["fetch"] }
+headless_chrome = { version = "1.0" }
 
 # Database
 sea-orm = { workspace = true }
