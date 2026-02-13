@@ -44,8 +44,16 @@ FROM debian:bookworm-slim AS runtime
 WORKDIR /app
 
 RUN apt-get update && \
-    apt-get install -y ca-certificates tini git && \
+    apt-get install -y --no-install-recommends \
+    ca-certificates tini git \
+    chromium \
+    fonts-liberation \
+    fonts-noto-color-emoji \
+    fonts-noto-cjk && \
     rm -rf /var/lib/apt/lists/*
+
+# Headless browser for server-side ECharts rendering (rust-headless-chrome)
+ENV CHROME=/usr/bin/chromium
 
 COPY --from=rust-builder /app/target/release/oxy /usr/local/bin
 
