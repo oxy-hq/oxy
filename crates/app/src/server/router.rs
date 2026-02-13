@@ -34,7 +34,7 @@ use axum::routing::delete;
 use axum::routing::put;
 use axum::routing::{get, post};
 use entity::projects;
-use oxy_auth::middleware::{AuthState, auth_middleware};
+use oxy_auth::middleware::{AuthState, auth_middleware, internal_auth_middleware};
 use oxy_shared::errors::OxyError;
 use sentry::integrations::tower::NewSentryLayer;
 use std::future::Future;
@@ -348,6 +348,28 @@ pub async fn api_router(cloud: bool, enterprise: bool) -> Result<Router, OxyErro
 
     Ok(app_routes
         .with_state(app_state.clone())
+        .layer(cors)
+        .layer(global_timeout)
+        .layer(ServiceBuilder::new().layer(NewSentryLayer::<Request<Body>>::new_from_top())))
+}
+
+pub async fn internal_api_router(cloud: bool, enterprise: bool) -> Result<Router, OxyError> {
+    let app_state = AppState { cloud, enterprise };
+    let public_routes = build_public_routes();
+    let protected_routes = build_protected_routes(app_state.clone());
+
+    let protected_routes = protected_routes
+        .layer(middleware::from_fn(timeout_middleware))
+        .layer(middleware::from_fn(internal_auth_middleware));
+
+    let app_routes = public_routes.merge(protected_routes);
+    let cors = build_cors_layer();
+
+    let global_timeout =
+        TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, Duration::from_secs(60));
+
+    Ok(app_routes
+        .with_state(app_state)
         .layer(cors)
         .layer(global_timeout)
         .layer(ServiceBuilder::new().layer(NewSentryLayer::<Request<Body>>::new_from_top())))

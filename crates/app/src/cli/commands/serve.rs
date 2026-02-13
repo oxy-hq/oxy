@@ -69,7 +69,13 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     let _available_port = find_available_port(args.host.clone(), args.port).await?;
     let app = create_web_application(args.cloud, args.enterprise).await?;
 
-    serve_application(app, args).await
+    let internal_app = if args.internal_port > 0 {
+        Some(create_internal_application(args.cloud, args.enterprise).await?)
+    } else {
+        None
+    };
+
+    serve_application(app, internal_app, args).await
 }
 
 async fn run_database_migrations(enterprise: bool) -> Result<(), OxyError> {
@@ -193,6 +199,21 @@ async fn create_web_application(cloud: bool, enterprise: bool) -> Result<Router,
         .layer(create_trace_layer(cloud)))
 }
 
+async fn create_internal_application(cloud: bool, enterprise: bool) -> Result<Router, OxyError> {
+    let internal_router = crate::server::router::internal_api_router(cloud, enterprise)
+        .await
+        .map_err(|e| {
+            OxyError::RuntimeError(format!("Failed to create internal API router: {}", e))
+        })?;
+
+    let static_service = service_fn(handle_static_files);
+
+    Ok(Router::new()
+        .nest("/api", internal_router)
+        .fallback_service(static_service)
+        .layer(create_trace_layer(cloud)))
+}
+
 fn create_trace_layer(
     is_cloud: bool,
 ) -> TraceLayer<tower_http::classify::SharedClassifier<tower_http::classify::ServerErrorsAsFailures>>
@@ -253,7 +274,11 @@ async fn handle_static_files(
     Ok(response)
 }
 
-async fn serve_application(app: Router, args: ServeArgs) -> Result<(), OxyError> {
+async fn serve_application(
+    app: Router,
+    internal_app: Option<Router>,
+    args: ServeArgs,
+) -> Result<(), OxyError> {
     let socket_addr = format!("{}:{}", args.host, args.port)
         .parse()
         .or_else(|_| Ok(SocketAddr::from(([0, 0, 0, 0], args.port))))
@@ -279,6 +304,42 @@ async fn serve_application(app: Router, args: ServeArgs) -> Result<(), OxyError>
         format!("{}://{}:{}", protocol, display_host, args.port).secondary(),
         protocol_info
     );
+
+    // Start internal server if enabled
+    if let Some(internal_app) = internal_app {
+        let internal_addr: SocketAddr = format!("{}:{}", args.internal_host, args.internal_port)
+            .parse()
+            .map_err(|e: std::net::AddrParseError| {
+                OxyError::RuntimeError(format!("Invalid internal address: {}", e))
+            })?;
+
+        let internal_display_host = if args.internal_host == "0.0.0.0" {
+            "localhost"
+        } else {
+            &args.internal_host
+        };
+        println!(
+            "{} {}",
+            "Internal API running at".text(),
+            format!("http://{}:{}", internal_display_host, args.internal_port).secondary(),
+        );
+
+        let internal_listener =
+            tokio::net::TcpListener::bind(internal_addr)
+                .await
+                .map_err(|e| {
+                    OxyError::RuntimeError(format!(
+                        "Failed to bind internal server to {}: {}",
+                        internal_addr, e
+                    ))
+                })?;
+
+        tokio::spawn(async move {
+            if let Err(e) = axum::serve(internal_listener, internal_app).await {
+                tracing::error!("Internal server error: {}", e);
+            }
+        });
+    }
 
     let _shutdown = create_shutdown_signal();
 
