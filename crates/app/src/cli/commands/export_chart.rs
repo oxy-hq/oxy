@@ -1,7 +1,7 @@
 use ::oxy::theme::StyledText;
 use base64::Engine;
 use clap::Parser;
-use headless_chrome::{Browser, browser::tab::Tab};
+use headless_chrome::{Browser, FetcherOptions, browser::tab::Tab};
 use oxy_shared::errors::OxyError;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -141,13 +141,13 @@ fn launch_browser_and_navigate(url: &str) -> Result<(Browser, Arc<Tab>), OxyErro
     println!("{}", "   Launching headless browser...".text());
     println!(
         "{}",
-        "   (Using system Chromium from CHROME environment variable)".text()
+        "   (Chromium will be downloaded automatically if not found)".text()
     );
 
     let browser = Browser::new(
         headless_chrome::LaunchOptions::default_builder()
+            .fetcher_options(FetcherOptions::default())
             .headless(true)
-            .sandbox(false) // Required when running as root in Docker
             .build()
             .map_err(|e| OxyError::RuntimeError(format!("Failed to configure browser: {}", e)))?,
     )

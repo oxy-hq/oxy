@@ -33,9 +33,7 @@
       "Bash(npm search:*)",
       "Bash(pnpm markdownlint-cli2:*)",
       "WebFetch(domain:cube.dev)",
-      "Bash(curl:*)",
-      "Bash(tee:*)",
-      "WebFetch(domain:github.com)"
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []

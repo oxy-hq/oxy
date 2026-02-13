@@ -45,18 +45,28 @@ WORKDIR /app
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    ca-certificates \
-    tini \
-    git \
+    ca-certificates tini git \
     chromium \
     fonts-liberation \
     fonts-noto-color-emoji \
-    fonts-noto-cjk && \
+    fonts-noto-cjk \
+    libnss3 \
+    libxss1 \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libcups2 \
+    libdrm2 \
+    libgbm1 \
+    libgtk-3-0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 && \
     rm -rf /var/lib/apt/lists/*
 
 # Headless browser for server-side ECharts rendering (rust-headless-chrome)
-# Point to the actual Chromium binary, not the wrapper script
-ENV CHROME=/usr/lib/chromium/chromium
+# Set CHROME env var for rust-headless-chrome detection
+ENV CHROME=/usr/bin/chromium
 
 COPY --from=rust-builder /app/target/release/oxy /usr/local/bin
 
