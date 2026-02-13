@@ -24,10 +24,15 @@ defaults:
     shell: bash
 
 jobs:
+  changesets:
+    uses: ./.github/workflows/changesets.yaml
+    name: Changesets
+
   coverage:
     name: Code Coverage
-    # Only run on oxy-hq/oxy main branch
-    if: github.repository == 'oxy-hq/oxy' && github.ref == 'refs/heads/main'
+    needs: [changesets]
+    # Only run on oxy-hq/oxy main branch and when oxy code has changed
+    if: github.repository == 'oxy-hq/oxy' && github.ref == 'refs/heads/main' && needs.changesets.outputs.oxy == 'true'
     runs-on: "ubuntu-latest"
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

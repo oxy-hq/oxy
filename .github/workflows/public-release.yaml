@@ -181,7 +181,7 @@ jobs:
       needs.determine-build-type.result == 'success' &&
       (needs.determine-build-type.outputs.should_build == 'true' ||
        (needs.changesets.result == 'success' &&
-        (needs.changesets.outputs.oxy == 'true' || needs.changesets.outputs.web-app == 'true')))
+        (needs.changesets.outputs.oxy == 'true' || needs.changesets.outputs.web-app == 'true' || needs.changesets.outputs.docker == 'true')))
     runs-on: ${{ matrix.job.os }}
     strategy:
       fail-fast: false
