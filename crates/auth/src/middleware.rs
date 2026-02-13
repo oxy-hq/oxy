@@ -79,35 +79,6 @@ pub async fn auth_middleware<T: Authenticator>(
     Ok(next.run(request).await)
 }
 
-/// Middleware for the internal port that auto-authenticates as an internal user.
-/// Uses UserService::get_or_create_user to ensure the user exists in the database,
-/// so that foreign key constraints in downstream handlers work correctly.
-pub async fn internal_auth_middleware(
-    mut request: Request<axum::body::Body>,
-    next: Next,
-) -> Result<Response, StatusCode> {
-    if request.method() == Method::OPTIONS {
-        return Ok(next.run(request).await);
-    }
-
-    let internal_identity = crate::types::Identity {
-        idp_id: Some("internal-user".to_string()),
-        email: "internal@localhost".to_string(),
-        name: Some("Internal".to_string()),
-        picture: None,
-    };
-
-    let user = UserService::get_or_create_user(&internal_identity)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to get or create internal user: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-    request.extensions_mut().insert(user);
-    Ok(next.run(request).await)
-}
-
 pub async fn admin_middleware(
     request: Request<axum::body::Body>,
     next: Next,

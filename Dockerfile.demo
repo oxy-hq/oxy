@@ -26,4 +26,4 @@ RUN mkdir -p ${OXY_STATE_DIR} && \
 # Port 3000 is already exposed in base image
 
 # Start Oxy server from demo_project directory
-CMD ["sh", "-c", "cd ${OXY_WORK_DIR} && oxy serve --host 0.0.0.0 --port ${PORT:-3000} --internal-host 0.0.0.0"]
+CMD ["sh", "-c", "cd ${OXY_WORK_DIR} && oxy serve --host 0.0.0.0 --port ${PORT:-3000}"]

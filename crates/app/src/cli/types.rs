@@ -59,21 +59,6 @@ pub struct ServeArgs {
     #[clap(long, default_value = "localhost+2-key.pem")]
     pub tls_key: String,
 
-    /// Port for the internal API server (no authentication required)
-    ///
-    /// The internal port serves the same API routes without authentication.
-    /// Binds to 127.0.0.1 by default for security. Set to 0 to disable.
-    #[clap(long, default_value_t = 3001)]
-    pub internal_port: u16,
-
-    /// Host address to bind the internal API server
-    ///
-    /// Default is 127.0.0.1 (localhost only) for security since the internal
-    /// port has no authentication. Use 0.0.0.0 for Docker/container deployments
-    /// where the port needs to be accessible within the container network.
-    #[clap(long, default_value = "127.0.0.1")]
-    pub internal_host: String,
-
     #[clap(long, default_value_t = false)]
     pub cloud: bool,
 
