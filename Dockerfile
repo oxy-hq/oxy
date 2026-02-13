@@ -58,8 +58,8 @@ VOLUME ["${OXY_STATE_DIR}"]
 ENTRYPOINT ["/usr/bin/tini", "--"]
 
 # Default command
-EXPOSE 3000
-CMD ["oxy", "serve", "--port", "3000"]
+EXPOSE 3000 3001
+CMD ["oxy", "serve", "--port", "3000", "--internal-host", "0.0.0.0"]
 
 # Stage 5: Semantic Engine (Cube.js) - Optional deployment target
 FROM cubejs/cube:v1.3.81 AS semantic-engine
