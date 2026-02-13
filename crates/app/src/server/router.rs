@@ -308,7 +308,9 @@ fn build_app_routes() -> Router<AppState> {
         .route("/", get(app::list_apps))
         .route("/{pathb64}", get(app::get_app_data))
         .route("/{pathb64}/run", post(app::run_app))
+        .route("/{pathb64}/result", post(app::get_app_result))
         .route("/{pathb64}/displays", get(app::get_displays))
+        .route("/{pathb64}/charts/{chart_path}", get(app::get_chart_image))
         .route("/file/{pathb64}", get(app::get_data))
 }
 
@@ -400,6 +402,8 @@ pub async fn openapi_router() -> OpenApiRouter {
         .routes(routes!(api_keys::delete_api_key))
         // App routes
         .routes(routes!(app::list_apps))
+        .routes(routes!(app::get_app_result))
+        .routes(routes!(app::get_chart_image))
         // Workspace routes
         .routes(routes!(workspace::list_workspaces))
         .routes(routes!(workspace::create_workspace))

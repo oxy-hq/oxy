@@ -1,6 +1,6 @@
 mod a2a;
 pub mod clean;
-mod export_chart;
+pub mod export_chart;
 mod init;
 mod intent;
 mod make;

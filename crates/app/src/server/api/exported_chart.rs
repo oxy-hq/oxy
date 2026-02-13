@@ -11,6 +11,23 @@ use uuid::Uuid;
 ///
 /// This endpoint streams PNG files that were exported via the export_chart CLI command.
 /// Files are named with the format: {name}-{index}-{uuid}.png
+#[utoipa::path(
+    method(get),
+    path = "/{project_id}/exported-charts/{file_name}",
+    params(
+        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("file_name" = String, Path, description = "Exported chart PNG file name")
+    ),
+    responses(
+        (status = OK, description = "PNG image file", content_type = "image/png"),
+        (status = BAD_REQUEST, description = "Invalid file format or filename"),
+        (status = NOT_FOUND, description = "Chart file not found"),
+        (status = INTERNAL_SERVER_ERROR, description = "Server error")
+    ),
+    security(
+        ("ApiKey" = [])
+    )
+)]
 pub async fn get_exported_chart(
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     Path((_project_id, file_name)): Path<(Uuid, String)>,

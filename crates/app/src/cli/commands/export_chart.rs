@@ -24,6 +24,48 @@ pub struct ExportChartArgs {
     pub output: PathBuf,
 }
 
+/// Export charts to a directory without CLI output.
+/// Returns a map of chart_index -> file_name for successfully exported charts.
+/// This is the core logic reused by both the CLI command and the API endpoint.
+/// Uses spawn_blocking to avoid blocking the async runtime (the headless browser
+/// needs the server to remain responsive to serve the app page).
+pub async fn export_charts_to_dir(
+    app_path: &str,
+    output_dir: &std::path::Path,
+) -> Result<HashMap<i64, String>, OxyError> {
+    let url = build_app_url(app_path);
+    let output_dir = output_dir.to_path_buf();
+
+    tokio::task::spawn_blocking(move || {
+        fs::create_dir_all(&output_dir).map_err(|e| {
+            OxyError::RuntimeError(format!("Failed to create output directory: {}", e))
+        })?;
+
+        let (_browser, tab) = launch_browser_and_navigate(&url)?;
+        let chart_indexes = discover_charts(&tab)?;
+        let exported_charts = export_all_charts(&tab, &chart_indexes, &output_dir)?;
+
+        let result: HashMap<i64, String> = exported_charts
+            .into_iter()
+            .filter_map(|(index, path)| {
+                path.map(|p| {
+                    (
+                        index,
+                        p.file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .into_owned(),
+                    )
+                })
+            })
+            .collect();
+
+        Ok(result)
+    })
+    .await
+    .map_err(|e| OxyError::RuntimeError(format!("Chart export task panicked: {}", e)))?
+}
+
 pub async fn handle_export_chart_command(
     args: ExportChartArgs,
 ) -> Result<HashMap<i64, String>, OxyError> {
@@ -83,7 +125,8 @@ fn print_header(app_path: &str, url: &str, output: &PathBuf) {
 
 fn build_app_url(app_path: &str) -> String {
     let encoded = base64::engine::general_purpose::STANDARD.encode(app_path);
-    format!("http://localhost:3000/apps/{}", encoded)
+    // Use internal port
+    format!("http://localhost:3001/apps/{}", encoded)
 }
 
 fn build_export_url(url: &str) -> String {
