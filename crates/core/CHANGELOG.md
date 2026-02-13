@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.16](https://github.com/oxy-hq/oxy-internal/compare/0.5.15...0.5.16) (2026-02-13)
+
+
+### <!-- 0 -->🚀 Features
+
+* export viz by api - use serverside rendering ([#1668](https://github.com/oxy-hq/oxy-internal/issues/1668)) ([2574a5f](https://github.com/oxy-hq/oxy-internal/commit/2574a5f650e4ff508eed5c6c4ea556e210fdba9f))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* agent problem with time dimensions ([#1659](https://github.com/oxy-hq/oxy-internal/issues/1659)) ([136df64](https://github.com/oxy-hq/oxy-internal/commit/136df64ed89385828a9dc2167f4ea6216b727d80))
+
 ## [0.5.15](https://github.com/oxy-hq/oxy-internal/compare/0.5.14...0.5.15) (2026-02-12)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.16](https://github.com/oxy-hq/oxy-internal/compare/0.5.15...0.5.16) (2026-02-13)
+
+
+### <!-- 0 -->🚀 Features
+
+* add domo support ([#1665](https://github.com/oxy-hq/oxy-internal/issues/1665)) ([fdb323a](https://github.com/oxy-hq/oxy-internal/commit/fdb323ab6921bc262236867260cca37bf84d5158))
+
 ## [0.5.15](https://github.com/oxy-hq/oxy-internal/compare/0.5.14...0.5.15) (2026-02-12)
 
 

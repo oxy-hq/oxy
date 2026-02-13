@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.5.16](https://github.com/oxy-hq/oxy-internal/compare/0.5.15...0.5.16) (2026-02-13)
+
+
+### <!-- 0 -->🚀 Features
+
+* add domo support ([#1665](https://github.com/oxy-hq/oxy-internal/issues/1665)) ([fdb323a](https://github.com/oxy-hq/oxy-internal/commit/fdb323ab6921bc262236867260cca37bf84d5158))
+* add internal API server support with authentication bypass ([#1667](https://github.com/oxy-hq/oxy-internal/issues/1667)) ([be12666](https://github.com/oxy-hq/oxy-internal/commit/be12666a8214c1c7042e336318b3a6665330f12a))
+* add internal API server support with authentication middleware ([5aac0a6](https://github.com/oxy-hq/oxy-internal/commit/5aac0a6ccfa6909caaac2eddc273b6a84e491fbb))
+* app api ([#1671](https://github.com/oxy-hq/oxy-internal/issues/1671)) ([c06cc34](https://github.com/oxy-hq/oxy-internal/commit/c06cc34ccb5ede826e2265d3f3fbaa40f3423857))
+* export viz by api - use serverside rendering ([#1668](https://github.com/oxy-hq/oxy-internal/issues/1668)) ([2574a5f](https://github.com/oxy-hq/oxy-internal/commit/2574a5f650e4ff508eed5c6c4ea556e210fdba9f))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* add another simpler fix for headless chrome ([8b61826](https://github.com/oxy-hq/oxy-internal/commit/8b61826f8e54d9b24a7cf811b41ad077cf766138))
+* internal port ([#1672](https://github.com/oxy-hq/oxy-internal/issues/1672)) ([764e690](https://github.com/oxy-hq/oxy-internal/commit/764e690be43153ce4ccb925067013aeb41f6abd8))
+* update Chromium path in Dockerfiles and remove unused dependencies ([47fa52e](https://github.com/oxy-hq/oxy-internal/commit/47fa52ebb56501305e2d60c5eba92e02b4dee797))
+
 ## [0.5.15](https://github.com/oxy-hq/oxy-internal/compare/0.5.14...0.5.15) (2026-02-12)
 
 

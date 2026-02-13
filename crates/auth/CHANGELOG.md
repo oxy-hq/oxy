@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.16](https://github.com/oxy-hq/oxy-internal/compare/0.5.15...0.5.16) (2026-02-13)
+
+
+### <!-- 0 -->🚀 Features
+
+* add internal API server support with authentication bypass ([#1667](https://github.com/oxy-hq/oxy-internal/issues/1667)) ([be12666](https://github.com/oxy-hq/oxy-internal/commit/be12666a8214c1c7042e336318b3a6665330f12a))
+* add internal API server support with authentication middleware ([5aac0a6](https://github.com/oxy-hq/oxy-internal/commit/5aac0a6ccfa6909caaac2eddc273b6a84e491fbb))
+
 ## [0.5.15](https://github.com/oxy-hq/oxy-internal/compare/0.5.14...0.5.15) (2026-02-12)
 
 ## [0.5.14](https://github.com/oxy-hq/oxy-internal/compare/0.5.13...0.5.14) (2026-02-11)
