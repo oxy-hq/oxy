@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.17](https://github.com/oxy-hq/oxy-internal/compare/0.5.16...0.5.17) (2026-02-13)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* update method name for retrieving charts directory in get_app_result ([#1674](https://github.com/oxy-hq/oxy-internal/issues/1674)) ([8739dae](https://github.com/oxy-hq/oxy-internal/commit/8739dae5b5017ca632477794205fc338c13e82b1))
+
 ## [0.5.16](https://github.com/oxy-hq/oxy-internal/compare/0.5.15...0.5.16) (2026-02-13)
 
 

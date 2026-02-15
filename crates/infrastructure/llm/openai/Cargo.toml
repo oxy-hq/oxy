@@ -1,6 +1,6 @@
 [package]
 name = "oxy-openai"
-version = "0.5.16"
+version = "0.5.17"
 authors.workspace = true
 description.workspace = true
 documentation.workspace = true
