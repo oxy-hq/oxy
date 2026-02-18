@@ -146,7 +146,7 @@ export class OxyClient {
    */
   async listApps(): Promise<AppItem[]> {
     const query = this.buildQueryParams();
-    return this.request<AppItem[]>(`/${this.config.projectId}/app${query}`);
+    return this.request<AppItem[]>(`/${this.config.projectId}/apps${query}`);
   }
 
   /**
@@ -168,7 +168,7 @@ export class OxyClient {
   async getAppData(appPath: string): Promise<AppDataResponse> {
     const pathb64 = this.encodePathBase64(appPath);
     const query = this.buildQueryParams();
-    return this.request<AppDataResponse>(`/${this.config.projectId}/app/${pathb64}${query}`);
+    return this.request<AppDataResponse>(`/${this.config.projectId}/apps/${pathb64}${query}`);
   }
 
   /**
@@ -186,7 +186,7 @@ export class OxyClient {
   async runApp(appPath: string): Promise<AppDataResponse> {
     const pathb64 = this.encodePathBase64(appPath);
     const query = this.buildQueryParams();
-    return this.request<AppDataResponse>(`/${this.config.projectId}/app/${pathb64}/run${query}`, {
+    return this.request<AppDataResponse>(`/${this.config.projectId}/apps/${pathb64}/run${query}`, {
       method: "POST"
     });
   }
@@ -213,7 +213,7 @@ export class OxyClient {
     const pathb64 = this.encodePathBase64(appPath);
     const query = this.buildQueryParams();
     return this.request<GetDisplaysResponse>(
-      `/${this.config.projectId}/app/${pathb64}/displays${query}`
+      `/${this.config.projectId}/apps/${pathb64}/displays${query}`
     );
   }
 
@@ -249,7 +249,7 @@ export class OxyClient {
   async getFile(filePath: string): Promise<Blob> {
     const pathb64 = this.encodePathBase64(filePath);
     const query = this.buildQueryParams();
-    return this.request<Blob>(`/${this.config.projectId}/app/file/${pathb64}${query}`, {
+    return this.request<Blob>(`/${this.config.projectId}/apps/file/${pathb64}${query}`, {
       headers: {
         Accept: "application/octet-stream"
       }
@@ -276,7 +276,7 @@ export class OxyClient {
   getFileUrl(filePath: string): string {
     const pathb64 = this.encodePathBase64(filePath);
     const query = this.buildQueryParams();
-    return `${this.config.baseUrl}/${this.config.projectId}/app/file/${pathb64}${query}`;
+    return `${this.config.baseUrl}/${this.config.projectId}/apps/file/${pathb64}${query}`;
   }
 
   /**

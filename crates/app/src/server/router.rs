@@ -143,7 +143,7 @@ fn build_project_routes() -> Router<AppState> {
         .nest("/files", build_file_routes())
         .nest("/databases", build_database_routes())
         .nest("/secrets", build_secret_routes())
-        .nest("/app", build_app_routes())
+        .nest("/apps", build_app_routes())
         .nest("/traces", traces::traces_routes())
         .nest("/metrics", metrics::metrics_routes())
         .nest(

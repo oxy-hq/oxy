@@ -208,7 +208,7 @@ export const registerAuthenticatedFile = async (
   const file_name = `${encodeBase64(filePath)}.parquet`;
 
   const pathb64 = encodeBase64(filePath);
-  const response = await apiClient.get(`/${projectId}/app/file/${pathb64}`, {
+  const response = await apiClient.get(`/${projectId}/apps/file/${pathb64}`, {
     responseType: "arraybuffer",
     params: { branch: branchName }
   });

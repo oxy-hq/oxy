@@ -252,7 +252,7 @@ pub async fn run_app(
 /// to access both the raw data and its visual presentation.
 #[utoipa::path(
     method(post),
-    path = "/{project_id}/app/{pathb64}/result",
+    path = "/{project_id}/apps/{pathb64}/result",
     params(
         ("project_id" = Uuid, Path, description = "Project UUID"),
         ("pathb64" = String, Path, description = "Base64-encoded path to data app file")
@@ -490,7 +490,7 @@ pub async fn get_app_result(
 /// This endpoint serves the pre-rendered chart images for visualization.
 #[utoipa::path(
     method(get),
-    path = "/{project_id}/app/{pathb64}/charts/{chart_path}",
+    path = "/{project_id}/apps/{pathb64}/charts/{chart_path}",
     params(
         ("project_id" = Uuid, Path, description = "Project UUID"),
         ("pathb64" = String, Path, description = "Base64-encoded path to data app file"),
