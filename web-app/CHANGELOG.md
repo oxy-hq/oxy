@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.5.16](https://github.com/oxy-hq/oxy-internal/compare/0.5.15...0.5.16) (2026-02-18)
+
+
+### <!-- 0 -->🚀 Features
+
+* export viz by api - use serverside rendering ([#1668](https://github.com/oxy-hq/oxy-internal/issues/1668)) ([2574a5f](https://github.com/oxy-hq/oxy-internal/commit/2574a5f650e4ff508eed5c6c4ea556e210fdba9f))
+* rename Local Development Project to Oxygen and Dev Mode to Developer Portal ([#1682](https://github.com/oxy-hq/oxy-internal/issues/1682)) ([7e0c1ae](https://github.com/oxy-hq/oxy-internal/commit/7e0c1aef177dd13e9f0d20285c7a8456031591f9))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* agent problem with time dimensions ([#1659](https://github.com/oxy-hq/oxy-internal/issues/1659)) ([136df64](https://github.com/oxy-hq/oxy-internal/commit/136df64ed89385828a9dc2167f4ea6216b727d80))
+* show time dimension in x axis dropdown ([#1658](https://github.com/oxy-hq/oxy-internal/issues/1658)) ([094569e](https://github.com/oxy-hq/oxy-internal/commit/094569e0ba737256c7e2f19bc7cc6474c9e18a8b))
+* use plural path for apps ([#1683](https://github.com/oxy-hq/oxy-internal/issues/1683)) ([b7e92c0](https://github.com/oxy-hq/oxy-internal/commit/b7e92c0ff2f5fce5a9887ae6382a5b5e8735db26))
+
 ## [0.5.15](https://github.com/oxy-hq/oxy-internal/compare/0.5.14...0.5.15) (2026-02-13)
 
 

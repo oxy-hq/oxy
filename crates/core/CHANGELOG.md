@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.18](https://github.com/oxy-hq/oxy-internal/compare/0.5.17...0.5.18) (2026-02-18)
+
+
+### <!-- 0 -->🚀 Features
+
+* cache app result by default ([#1675](https://github.com/oxy-hq/oxy-internal/issues/1675)) ([de1c608](https://github.com/oxy-hq/oxy-internal/commit/de1c60898c346d1cf4f67cbc11bdfa5e10a2e955))
+
 ## [0.5.17](https://github.com/oxy-hq/oxy-internal/compare/0.5.16...0.5.17) (2026-02-13)
 
 ## [0.5.16](https://github.com/oxy-hq/oxy-internal/compare/0.5.15...0.5.16) (2026-02-13)
