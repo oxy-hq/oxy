@@ -47,8 +47,8 @@ test.describe("Navigation", () => {
   });
 
   test("should navigate to IDE page", async ({ page }) => {
-    // Click on Dev Portal link
-    await page.getByRole("link", { name: "Dev Portal" }).click();
+    // Click on Developer Portal link
+    await page.getByRole("link", { name: "Developer Portal" }).click();
 
     // Verify navigation
     await expect(page).toHaveURL(/\/ide/);
@@ -110,7 +110,7 @@ test.describe("Navigation", () => {
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("link", { name: "Home" })).toBeVisible();
 
-    await page.getByRole("link", { name: "Dev Portal" }).click();
+    await page.getByRole("link", { name: "Developer Portal" }).click();
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("link", { name: "Home" })).toBeVisible();
 

@@ -77,7 +77,7 @@ pub async fn project_middleware(
         let branch_id = Uuid::nil();
         let project = entity::projects::Model {
             id: Uuid::nil(),
-            name: "Local Development Project".to_string(),
+            name: "Oxygen".to_string(),
             workspace_id: Uuid::nil(),
             project_repo_id: None,
             active_branch_id: Uuid::nil(),

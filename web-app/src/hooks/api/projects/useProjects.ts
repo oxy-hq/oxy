@@ -5,7 +5,7 @@ import queryKeys from "../queryKey";
 
 const getLocalProject = (): Project => ({
   id: "00000000-0000-0000-0000-000000000000",
-  name: "Local Development Project",
+  name: "Oxygen",
   workspace_id: "00000000-0000-0000-0000-000000000000",
   project_repo_id: "00000000-0000-0000-0000-000000000000",
   active_branch: {
