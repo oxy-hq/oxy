@@ -45,6 +45,7 @@ pub(super) trait ConfigStorage {
     async fn get_charts_dir(&self) -> Result<PathBuf, OxyError>;
     async fn get_results_dir(&self) -> Result<PathBuf, OxyError>;
     async fn get_exported_chart_dir(&self) -> Result<PathBuf, OxyError>;
+    async fn get_app_results_dir(&self) -> Result<PathBuf, OxyError>;
 }
 
 #[derive(Debug)]
@@ -105,13 +106,16 @@ impl LocalSource {
         files
     }
 
-    fn ensure_dir_exists(&self, path: &Path) {
-        if !path.exists()
-            && let Err(e) = std::fs::create_dir_all(path)
-        {
-            eprintln!("Error: Could not create directory: {e}");
-            std::process::exit(1);
+    fn try_ensure_dir_exists(&self, path: &Path) -> Result<(), OxyError> {
+        if !path.exists() {
+            std::fs::create_dir_all(path).map_err(|e| {
+                OxyError::ConfigurationError(format!(
+                    "Could not create directory {}: {e}",
+                    path.display()
+                ))
+            })?;
         }
+        Ok(())
     }
 
     fn validate_path_within_project<P: AsRef<Path>>(
@@ -370,19 +374,25 @@ impl ConfigStorage for LocalSource {
 
     async fn get_charts_dir(&self) -> Result<PathBuf, OxyError> {
         let charts_dir = self.resolve_state_dir().await?.join("charts");
-        self.ensure_dir_exists(&charts_dir);
+        self.try_ensure_dir_exists(&charts_dir)?;
         Ok(charts_dir)
     }
 
     async fn get_exported_chart_dir(&self) -> Result<PathBuf, OxyError> {
         let charts_dir = self.resolve_state_dir().await?.join("exported-charts");
-        self.ensure_dir_exists(&charts_dir);
+        self.try_ensure_dir_exists(&charts_dir)?;
         Ok(charts_dir)
     }
 
     async fn get_results_dir(&self) -> Result<PathBuf, OxyError> {
         let results_dir = self.resolve_state_dir().await?.join("results");
-        self.ensure_dir_exists(&results_dir);
+        self.try_ensure_dir_exists(&results_dir)?;
         Ok(results_dir)
+    }
+
+    async fn get_app_results_dir(&self) -> Result<PathBuf, OxyError> {
+        let dir = self.resolve_state_dir().await?.join("apps").join("results");
+        self.try_ensure_dir_exists(&dir)?;
+        Ok(dir)
     }
 }

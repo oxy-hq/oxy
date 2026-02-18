@@ -204,11 +204,16 @@ pub async fn get_data(
                 format!("Failed to resolve state dir: {e}"),
             )
         })?;
-    let full_file_path = state_path.join(path_string);
+    let full_file_path = state_path
+        .join(&path_string)
+        .canonicalize()
+        .map_err(|e| (StatusCode::NOT_FOUND, format!("File not found: {e}")))?;
 
-    print!("Full file path: {:?}", full_file_path);
+    if !full_file_path.starts_with(&state_path) {
+        return Err((StatusCode::FORBIDDEN, "Access denied".to_string()));
+    }
 
-    let file = match tokio::fs::File::open(full_file_path).await {
+    let file = match tokio::fs::File::open(&full_file_path).await {
         Ok(file) => file,
         Err(err) => return Err((StatusCode::NOT_FOUND, format!("File not found: {err}"))),
     };
@@ -250,12 +255,28 @@ pub async fn run_app(
 /// Executes a data app and returns both task execution results and display configurations.
 /// This endpoint combines task outputs with their display representations, allowing consumers
 /// to access both the raw data and its visual presentation.
+#[derive(Deserialize, JsonSchema, ToSchema)]
+pub struct AppResultQuery {
+    /// When false (default), return cached result if available. When true, re-execute the app.
+    #[serde(default)]
+    pub refresh: bool,
+}
+
+fn get_result_cache_filename(app_path: &PathBuf) -> Option<String> {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    app_path.hash(&mut hasher);
+    let hash = hasher.finish();
+    Some(format!("{:x}.app.result.yml", hash))
+}
+
 #[utoipa::path(
     method(post),
     path = "/{project_id}/apps/{pathb64}/result",
     params(
         ("project_id" = Uuid, Path, description = "Project UUID"),
-        ("pathb64" = String, Path, description = "Base64-encoded path to data app file")
+        ("pathb64" = String, Path, description = "Base64-encoded path to data app file"),
+        ("refresh" = Option<bool>, Query, description = "Re-execute app instead of returning cached result (defaults to false)")
     ),
     responses(
         (status = OK, description = "Execution completed successfully", body = GetAppResultResponse, content_type = "application/json"),
@@ -270,6 +291,7 @@ pub async fn run_app(
 )]
 pub async fn get_app_result(
     Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    extract::Query(query): extract::Query<AppResultQuery>,
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
 ) -> (StatusCode, extract::Json<GetAppResultResponse>) {
     let path = match decode_path(&pathb64) {
@@ -285,6 +307,13 @@ pub async fn get_app_result(
             );
         }
     };
+
+    // Try to load cached result if not refreshing
+    if !query.refresh {
+        if let Some(cached) = load_cached_result(&project_manager, &path).await {
+            return (StatusCode::OK, extract::Json(cached));
+        }
+    }
 
     // Execute the app to get task results
     let mut app_service = AppService::new(project_manager.clone());
@@ -309,10 +338,10 @@ pub async fn get_app_result(
     let execution_result = app_service.run(&path).await;
 
     // Transform execution results into TaskResult objects
-    let tasks: Vec<TaskResult> = match execution_result {
+    let (tasks, execution_succeeded): (Vec<TaskResult>, bool) = match execution_result {
         Ok(DataContainer::Map(results)) => {
             // Convert the results map into TaskResult objects
-            task_configs
+            let tasks = task_configs
                 .iter()
                 .map(|task_config| {
                     let task_name = task_config.name.clone();
@@ -333,30 +362,33 @@ pub async fn get_app_result(
                         error: None,
                     }
                 })
-                .collect()
+                .collect();
+            (tasks, true)
         }
         Err(e) => {
             // If execution failed, return tasks with error
             let error_msg = e.to_string();
-            task_configs
+            let tasks = task_configs
                 .iter()
                 .map(|task_config| TaskResult {
                     task_name: task_config.name.clone(),
                     output: None,
                     error: Some(error_msg.clone()),
                 })
-                .collect()
+                .collect();
+            (tasks, false)
         }
         _ => {
             // Unexpected data container type
-            task_configs
+            let tasks = task_configs
                 .iter()
                 .map(|task_config| TaskResult {
                     task_name: task_config.name.clone(),
                     output: None,
                     error: Some("Unexpected output format".to_string()),
                 })
-                .collect()
+                .collect();
+            (tasks, false)
         }
     };
 
@@ -473,14 +505,84 @@ pub async fn get_app_result(
         })
         .collect();
 
-    (
-        StatusCode::OK,
-        extract::Json(GetAppResultResponse {
-            success: true,
-            error_message: None,
-            result: Some(AppResultData { tasks, displays }),
-        }),
-    )
+    let response = GetAppResultResponse {
+        success: execution_succeeded,
+        error_message: None,
+        result: Some(AppResultData { tasks, displays }),
+    };
+
+    // Only cache successful results to avoid permanently caching errors
+    if execution_succeeded {
+        save_cached_result(&project_manager, &path, &response).await;
+    }
+
+    (StatusCode::OK, extract::Json(response))
+}
+
+async fn load_cached_result(
+    project_manager: &oxy::adapters::project::manager::ProjectManager,
+    app_path: &PathBuf,
+) -> Option<GetAppResultResponse> {
+    let cache_name = get_result_cache_filename(app_path)?;
+    let results_dir = project_manager
+        .config_manager
+        .get_app_results_dir()
+        .await
+        .ok()?;
+    let cache_path = results_dir.join(cache_name);
+    tokio::task::spawn_blocking(move || {
+        if !cache_path.exists() {
+            return None;
+        }
+        let file = std::fs::File::open(&cache_path).ok()?;
+        let reader = std::io::BufReader::new(file);
+        match serde_yaml::from_reader(reader) {
+            Ok(data) => Some(data),
+            Err(e) => {
+                tracing::warn!("Failed to parse cached app result: {}", e);
+                None
+            }
+        }
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+async fn save_cached_result(
+    project_manager: &oxy::adapters::project::manager::ProjectManager,
+    app_path: &PathBuf,
+    response: &GetAppResultResponse,
+) {
+    let Some(cache_name) = get_result_cache_filename(app_path) else {
+        return;
+    };
+    let Ok(results_dir) = project_manager.config_manager.get_app_results_dir().await else {
+        return;
+    };
+    let cache_path = results_dir.join(cache_name);
+    let response = response.clone();
+    let _ = tokio::task::spawn_blocking(move || {
+        let tmp_path = cache_path.with_extension("tmp");
+        match std::fs::File::create(&tmp_path) {
+            Ok(file) => {
+                let writer = std::io::BufWriter::new(file);
+                if let Err(e) = serde_yaml::to_writer(writer, &response) {
+                    tracing::warn!("Failed to write cached app result: {}", e);
+                    let _ = std::fs::remove_file(&tmp_path);
+                    return;
+                }
+                if let Err(e) = std::fs::rename(&tmp_path, &cache_path) {
+                    tracing::warn!("Failed to rename cache temp file: {}", e);
+                    let _ = std::fs::remove_file(&tmp_path);
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to create cache temp file: {}", e);
+            }
+        }
+    })
+    .await;
 }
 
 /// Fetch chart image by file path
@@ -522,7 +624,14 @@ pub async fn get_chart_image(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    let full_chart_path = charts_dir.join(&chart_path);
+    let full_chart_path = charts_dir.join(&chart_path).canonicalize().map_err(|e| {
+        tracing::debug!("Chart file not found: {:?} - {}", chart_path, e);
+        StatusCode::NOT_FOUND
+    })?;
+
+    if !full_chart_path.starts_with(&charts_dir) {
+        return Err(StatusCode::FORBIDDEN);
+    }
 
     // Read the PNG file
     let file = tokio::fs::File::open(&full_chart_path).await.map_err(|e| {
