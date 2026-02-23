@@ -3,6 +3,10 @@ name: Claude Code Review
 on:
   pull_request:
     types: [opened, ready_for_review, labeled]
+    paths:
+      - "**.rs"
+      - "**.ts"
+      - "**.tsx"
 
 permissions:
   contents: read
@@ -22,12 +26,25 @@ jobs:
       )
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt: "/code-review --comment"
-          # Higher turn budget: the skill launches 4 parallel review agents
-          # (2x CLAUDE.md compliance, 1x bug detector, 1x git-blame history)
-          # each of which independently scores issues (threshold: 80/100)
-          # before posting a deduplicated comment to the PR.
-          claude_args: "--max-turns 30"
+          track_progress: true # ✨ Enables tracking comments
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Please review this pull request with a focus on:
+            - Code quality and best practices
+            - Potential bugs or issues
+            - Security implications
+            - Performance considerations
+
+            Provide detailed feedback using inline comments for specific issues.
+
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
