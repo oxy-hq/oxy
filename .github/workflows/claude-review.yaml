@@ -1,0 +1,32 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, ready_for_review, labeled]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  claude-review:
+    # Auto-run on open/ready; re-run on demand by applying the 'claude-review' label.
+    # Skips drafts to avoid noise on WIP PRs.
+    if: |
+      github.event.pull_request.draft == false &&
+      (
+        github.event.action == 'opened' ||
+        github.event.action == 'ready_for_review' ||
+        (github.event.action == 'labeled' && github.event.label.name == 'claude-review')
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: "/code-review --comment"
+          # Higher turn budget: the skill launches 4 parallel review agents
+          # (2x CLAUDE.md compliance, 1x bug detector, 1x git-blame history)
+          # each of which independently scores issues (threshold: 80/100)
+          # before posting a deduplicated comment to the PR.
+          claude_args: "--max-turns 30"

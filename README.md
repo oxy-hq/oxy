@@ -11,9 +11,9 @@
 > 📖 **Looking for up-to-date code documentation?**  
 > Check out our DeepWiki, which updates weekly with the latest code changes: [![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/oxy-hq/oxy)
 
-## The Open-source, Agent-Native Data Platform 
+## The framework for agentic analytics
 
-Oxygen is the Full-stack Data + AI Platform purpose-built from first principles for Agentic Data Analytics. We combine a data lakehouse, an ETL engine, a data modeling engine (ontology engine), an agent and automation engine, and an agentic application engine to become a one-stop shop for anything Data and AI.
+Oxy is an open-source framework for building comprehensive agentic analytics systems grounded in deterministic execution principles. Written in Rust and declarative by design, Oxy provides the foundational components needed to transform AI-driven data analysis into reliable, production-ready systems through structured primitives, semantic understanding, and predictable execution.
 
 To learn more, read our [docs](https://oxy.tech/docs).
 
