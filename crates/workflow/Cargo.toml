@@ -27,17 +27,17 @@ log = {workspace = true}
 tracing = {workspace = true}
 
 # Utilities
-arrow = {version = "=56.2.0", default-features = false, features = ["json"]}
+arrow = {version = "=57.3.0", default-features = false, features = ["json"]}
 chrono = {workspace = true}
 chrono-english = "0.1.8"
 csv = "1.4.0"
 fxhash = "0.2.1"
 indexmap = {workspace = true}
 itertools = "0.14.0"
-jsonschema = "0.33.0"
+jsonschema = "0.42.1"
 minijinja = {workspace = true, features = ["loader"]}
 regex = {workspace = true}
-reqwest = {version = "0.12.28"}
+reqwest = {version = "0.13.2"}
 schemars = {version = "0.8.22", features = ["derive", "impl_json_schema"]}
 slugify = "0.1.0"
 sqlformat = {git = "https://github.com/shssoichiro/sqlformat-rs.git", rev = "80255c7"}
