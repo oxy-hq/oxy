@@ -2,7 +2,7 @@ name: Claude Code Review
 
 on:
   pull_request:
-    types: [opened, ready_for_review, labeled]
+    types: [opened, synchronize, ready_for_review, reopened]
     paths:
       - "**.rs"
       - "**.ts"
@@ -18,12 +18,7 @@ jobs:
     # Auto-run on open/ready; re-run on demand by applying the 'claude-review' label.
     # Skips drafts to avoid noise on WIP PRs.
     if: |
-      github.event.pull_request.draft == false &&
-      (
-        github.event.action == 'opened' ||
-        github.event.action == 'ready_for_review' ||
-        (github.event.action == 'labeled' && github.event.label.name == 'claude-review')
-      )
+      github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
