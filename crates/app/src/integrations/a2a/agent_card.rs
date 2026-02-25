@@ -257,6 +257,8 @@ impl AgentCardService {
                     ToolType::CreateDataApp(t) => {
                         (t.name.clone(), t.description.clone(), "data-app")
                     }
+                    ToolType::EditDataApp(t) => (t.name.clone(), t.description.clone(), "data-app"),
+                    ToolType::ReadDataApp(t) => (t.name.clone(), t.description.clone(), "data-app"),
                     ToolType::CreateV0App(t) => (t.name.clone(), t.description.clone(), "v0-app"),
                     ToolType::OmniQuery(t) => (t.name.clone(), t.description.clone(), "omni"),
                     ToolType::SemanticQuery(t) => {

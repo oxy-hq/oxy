@@ -77,6 +77,8 @@ impl Executable<OpenAIExecutableResponse> for OpenAITool {
             "Tool execution completed"
         );
 
+        tracing::debug!("Running tool: {:?}", input.tool_calls);
+
         for tool_ret in response.iter() {
             if let Err(e) = tool_ret {
                 tracing::error!(tool.error = %e, "Tool execution failed");

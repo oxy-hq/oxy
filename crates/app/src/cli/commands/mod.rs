@@ -1326,6 +1326,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 None, // No variables from CLI (yet)
                 Some(crate::server::service::agent::ExecutionSource::Cli),
                 None, // No sandbox info from CLI
+                None, // No data_app_file_path from CLI
             )
             .await?;
         }
@@ -1541,6 +1542,7 @@ async fn handle_agent_file(file_path: &PathBuf, question: Option<String>) -> Res
         None, // No variables from CLI (yet)
         Some(crate::server::service::agent::ExecutionSource::Cli),
         None, // No sandbox info from CLI
+        None, // No data_app_file_path from CLI
     )
     .await?;
     Ok(())

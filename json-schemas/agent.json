@@ -1067,6 +1067,50 @@
           ],
           "properties": {
             "description": {
+              "default": "Edit an existing data app/dashboard configuration.",
+              "type": "string"
+            },
+            "name": {
+              "default": "edit_data_app",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "edit_data_app"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "description": {
+              "default": "Read an existing data app/dashboard configuration.",
+              "type": "string"
+            },
+            "name": {
+              "default": "read_data_app",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "read_data_app"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "description": {
               "default": "Use this when user wants to build interactive UIs, dashboards, or data visualizations. The app will be deployed and can query Oxy tables via SDK. Make sure to persist the execute sql in order to use it with Oxy SDK.",
               "type": "string"
             },

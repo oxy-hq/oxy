@@ -13,7 +13,7 @@ system_instructions: |
   For duckdb, tables should be reference with full name. Eg: 'oxymart.csv'.
   Do not add link to the app/dashboard in the response.
 
-  {% with dataset = databases.local.datasets.duckdb %}
+  {% with dataset = databases.local.datasets.main %}
   **Dialect**: duckdb
   **Database: local**
   **DDL:**
@@ -25,12 +25,18 @@ system_instructions: |
   {{ dataset.semantic_info }}
   {% endwith %}
 
-
-
 tools:
   - type: create_data_app
     name: create_data_app
     description: Create a data app/dashboard to visualize metrics.
+
+  - type: edit_data_app
+    name: edit_data_app
+    description: Edit a data app/dashboard to visualize metrics. DO NOT update the unrelated part when you edit a data app/dashboard.
+
+  - type: read_data_app
+    name: read_data_app
+    description: Read the content of a data app/dashboard.
 
   - type: execute_sql
     name: execute_sql

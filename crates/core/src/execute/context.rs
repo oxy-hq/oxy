@@ -58,6 +58,8 @@ pub struct ExecutionContext {
     /// Metric collection context for tracking usage data
     /// Flows through nested agent/workflow executions via tokio::spawn
     pub metric_context: Option<SharedMetricCtx>,
+    /// Data app file path (for tools that need to read/write data apps) - set by tools/create_data_app and tools/edit_data_app
+    pub data_app_file_path: Option<String>,
 }
 
 impl ExecutionContext {
@@ -80,6 +82,7 @@ impl ExecutionContext {
             sandbox_info: None,
             user_id,
             metric_context: None,
+            data_app_file_path: None,
         }
     }
 
@@ -99,6 +102,7 @@ impl ExecutionContext {
             sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
             metric_context: self.metric_context.clone(),
+            data_app_file_path: self.data_app_file_path.clone(),
         }
     }
 
@@ -114,6 +118,7 @@ impl ExecutionContext {
             sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
             metric_context: self.metric_context.clone(),
+            data_app_file_path: self.data_app_file_path.clone(),
         }
     }
 
@@ -130,6 +135,7 @@ impl ExecutionContext {
                 sandbox_info: self.sandbox_info.clone(),
                 user_id: self.user_id,
                 metric_context: self.metric_context.clone(),
+                data_app_file_path: self.data_app_file_path.clone(),
             }
         } else {
             ExecutionContext {
@@ -143,6 +149,7 @@ impl ExecutionContext {
                 sandbox_info: self.sandbox_info.clone(),
                 user_id: self.user_id,
                 metric_context: self.metric_context.clone(),
+                data_app_file_path: self.data_app_file_path.clone(),
             }
         }
     }
@@ -159,6 +166,7 @@ impl ExecutionContext {
             sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
             metric_context: self.metric_context.clone(),
+            data_app_file_path: self.data_app_file_path.clone(),
         }
     }
 
@@ -174,6 +182,7 @@ impl ExecutionContext {
             sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
             metric_context: self.metric_context.clone(),
+            data_app_file_path: self.data_app_file_path.clone(),
         }
     }
 
@@ -191,6 +200,7 @@ impl ExecutionContext {
             sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
             metric_context: self.metric_context.clone(),
+            data_app_file_path: self.data_app_file_path.clone(),
         }
     }
 
@@ -206,6 +216,7 @@ impl ExecutionContext {
             sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
             metric_context: self.metric_context.clone(),
+            data_app_file_path: self.data_app_file_path.clone(),
         }
     }
 
@@ -221,6 +232,7 @@ impl ExecutionContext {
             sandbox_info: self.sandbox_info.clone(),
             user_id,
             metric_context: self.metric_context.clone(),
+            data_app_file_path: self.data_app_file_path.clone(),
         }
     }
 
@@ -237,6 +249,7 @@ impl ExecutionContext {
             sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
             metric_context: Some(metric_context),
+            data_app_file_path: self.data_app_file_path.clone(),
         }
     }
 
@@ -266,6 +279,7 @@ impl ExecutionContext {
             sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
             metric_context: child_ctx,
+            data_app_file_path: self.data_app_file_path.clone(),
         }
     }
 
@@ -439,6 +453,7 @@ pub struct ExecutionContextBuilder {
     sandbox_info: Option<SandboxInfo>,
     user_id: Option<uuid::Uuid>,
     metric_context: Option<SharedMetricCtx>,
+    data_app_file_path: Option<String>,
 }
 
 impl Default for ExecutionContextBuilder {
@@ -460,6 +475,7 @@ impl ExecutionContextBuilder {
             sandbox_info: None,
             user_id: None,
             metric_context: None,
+            data_app_file_path: None,
         }
     }
 
@@ -522,6 +538,14 @@ impl ExecutionContextBuilder {
         self
     }
 
+    pub fn with_data_app_file_path(
+        mut self,
+        data_app_file_path: impl Into<Option<String>>,
+    ) -> Self {
+        self.data_app_file_path = data_app_file_path.into();
+        self
+    }
+
     pub fn build(self) -> Result<ExecutionContext, OxyError> {
         let source = self
             .source
@@ -547,6 +571,7 @@ impl ExecutionContextBuilder {
             sandbox_info: self.sandbox_info,
             user_id: self.user_id,
             metric_context: self.metric_context,
+            data_app_file_path: self.data_app_file_path,
         })
     }
 }

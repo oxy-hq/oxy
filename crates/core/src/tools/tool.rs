@@ -3,6 +3,8 @@ use serde_json::Value;
 
 use super::{
     create_data_app::{CreateDataAppExecutable, CreateDataAppInput, CreateDataAppParams},
+    edit_data_app::{EditDataAppExecutable, EditDataAppInput, EditDataAppParams},
+    read_data_app::{ReadDataAppExecutable, ReadDataAppInput, ReadDataAppParams},
     registry::global_registry,
     retrieval::RetrievalExecutable,
     sql::SQLExecutable,
@@ -197,6 +199,24 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                         .await
                         .map(|output| output.into())
                 }
+                ToolType::EditDataApp(_edit_data_app_tool) => build_edit_data_app_executable()
+                    .execute(
+                        execution_context,
+                        EditDataAppToolInput {
+                            param: input.param.clone(),
+                        },
+                    )
+                    .await
+                    .map(|output| output.into()),
+                ToolType::ReadDataApp(_read_data_app_tool) => build_read_data_app_executable()
+                    .execute(
+                        execution_context,
+                        ReadDataAppToolInput {
+                            param: input.param.clone(),
+                        },
+                    )
+                    .await
+                    .map(|output| output.into()),
                 ToolType::OmniQuery(omni_query_tool) => {
                     let params = serde_json::from_str(&input.param).unwrap_or_else(|_| {
                         crate::types::tool_params::OmniQueryParams {
@@ -348,6 +368,12 @@ struct SQLMapper;
 struct CreateDataAppMapper;
 
 #[derive(Clone)]
+struct EditDataAppMapper;
+
+#[derive(Clone)]
+struct ReadDataAppMapper;
+
+#[derive(Clone)]
 struct CreateV0AppMapper;
 
 #[derive(Clone)]
@@ -465,6 +491,14 @@ struct CreateDataAppToolInput {
     param: String,
 }
 
+struct EditDataAppToolInput {
+    param: String,
+}
+
+struct ReadDataAppToolInput {
+    param: String,
+}
+
 #[derive(Clone)]
 struct CreateV0AppToolInput {
     param: String,
@@ -481,6 +515,46 @@ fn build_create_data_app_executable() -> impl Executable<CreateDataAppToolInput,
     ExecutableBuilder::new()
         .map(CreateDataAppMapper)
         .executable(CreateDataAppExecutable {})
+}
+
+#[async_trait::async_trait]
+impl ParamMapper<EditDataAppToolInput, EditDataAppInput> for EditDataAppMapper {
+    async fn map(
+        &self,
+        _execution_context: &ExecutionContext,
+        input: EditDataAppToolInput,
+    ) -> Result<(EditDataAppInput, Option<ExecutionContext>), OxyError> {
+        let EditDataAppToolInput { param, .. } = input;
+        tracing::debug!("EditDataAppToolInput param: {}", &param);
+        let params = serde_json::from_str::<EditDataAppParams>(&param)?;
+        Ok((EditDataAppInput { param: params }, None))
+    }
+}
+
+fn build_edit_data_app_executable() -> impl Executable<EditDataAppToolInput, Response = Output> {
+    ExecutableBuilder::new()
+        .map(EditDataAppMapper)
+        .executable(EditDataAppExecutable {})
+}
+
+#[async_trait::async_trait]
+impl ParamMapper<ReadDataAppToolInput, ReadDataAppInput> for ReadDataAppMapper {
+    async fn map(
+        &self,
+        _execution_context: &ExecutionContext,
+        input: ReadDataAppToolInput,
+    ) -> Result<(ReadDataAppInput, Option<ExecutionContext>), OxyError> {
+        let ReadDataAppToolInput { param, .. } = input;
+        tracing::debug!("ReadDataAppToolInput param: {}", &param);
+        let params = serde_json::from_str::<ReadDataAppParams>(&param)?;
+        Ok((ReadDataAppInput { param: params }, None))
+    }
+}
+
+fn build_read_data_app_executable() -> impl Executable<ReadDataAppToolInput, Response = Output> {
+    ExecutableBuilder::new()
+        .map(ReadDataAppMapper)
+        .executable(ReadDataAppExecutable {})
 }
 
 fn build_create_v0_app_executable() -> impl Executable<CreateV0AppToolInput, Response = Output> {

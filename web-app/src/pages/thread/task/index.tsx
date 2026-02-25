@@ -1,8 +1,10 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { ArrowDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import MessageInput from "@/components/MessageInput";
 import { Button } from "@/components/ui/shadcn/button";
+import queryKeys from "@/hooks/api/queryKey";
 import useAskTask from "@/hooks/messaging/task";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { useSmartScroll } from "@/hooks/useSmartScroll";
@@ -24,7 +26,7 @@ const TaskThread = ({
   thread: ThreadItem;
   refetchThread: () => void;
 }) => {
-  const { project } = useCurrentProjectBranch();
+  const { project, branchName } = useCurrentProjectBranch();
   const projectId = project.id;
 
   const isInitialLoad = useRef(false);
@@ -39,9 +41,11 @@ const TaskThread = ({
   const { scrollContainerRef, bottomRef, isAtBottom, scrollToBottom } = useSmartScroll({
     messages
   });
+  const queryClient = useQueryClient();
 
   const isThreadBusy = isLoading || thread.is_processing;
   const shouldShowWarning = messages.length > MESSAGES_WARNING_THRESHOLD;
+  const filePathB64 = filePath ? encodeBase64(filePath) : undefined;
 
   useEffect(() => {
     if (thread.source && filePath !== thread.source) {
@@ -74,6 +78,14 @@ const TaskThread = ({
 
     scrollToBottom();
     await sendMessage(followUpQuestion, thread.id);
+    if (filePathB64) {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.app.getAppData(project.id, branchName, filePathB64)
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.app.getDisplays(project.id, branchName, filePathB64)
+      });
+    }
     setFollowUpQuestion("");
   };
 
@@ -87,8 +99,6 @@ const TaskThread = ({
     }
     refetchThread();
   };
-
-  const filePathB64 = filePath ? encodeBase64(filePath) : undefined;
 
   const onStop = async () => {
     try {

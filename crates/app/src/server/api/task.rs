@@ -179,6 +179,11 @@ impl ChatHandler for TaskExecutor {
         let thread = context.thread.clone();
 
         let project_manager = self.project_manager.clone();
+        let data_app_file_path = if thread.source.trim().is_empty() {
+            None
+        } else {
+            Some(thread.source.clone())
+        };
 
         let config_manager = project_manager.config_manager.clone();
 
@@ -220,6 +225,7 @@ impl ChatHandler for TaskExecutor {
                             .unwrap_or_else(|| "unknown".to_string()),
                     }),
                     context.sandbox_info()?,
+                    data_app_file_path,
                 )
                 .await
             }

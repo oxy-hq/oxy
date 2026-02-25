@@ -97,6 +97,8 @@ impl ToolLauncher {
                     ToolType::Agent(t) => &t.name,
                     ToolType::Visualize(t) => &t.name,
                     ToolType::CreateDataApp(t) => &t.name,
+                    ToolType::EditDataApp(t) => &t.name,
+                    ToolType::ReadDataApp(t) => &t.name,
                     ToolType::CreateV0App(t) => &t.name,
                     ToolType::OmniQuery(t) => &t.name,
                     ToolType::SemanticQuery(t) => &t.name,

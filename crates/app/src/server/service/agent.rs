@@ -96,6 +96,7 @@ pub async fn ask_adhoc(
         None,                            // No variables
         Some(ExecutionSource::Internal), // Internal/programmatic call
         None,                            // No sandbox_info
+        None,                            // No data_app_file_path
     )
     .await
     {
@@ -256,6 +257,7 @@ pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
     variables: Option<std::collections::HashMap<String, serde_json::Value>>,
     source: Option<ExecutionSource>,
     sandbox_info: Option<oxy::execute::types::event::SandboxInfo>,
+    data_app_file_path: Option<String>,
 ) -> Result<OutputContainer, OxyError> {
     let agent_ref_str = agent_ref.as_ref().to_string_lossy().to_string();
     let project_path_str = project.config_manager.project_path().display().to_string();
@@ -309,11 +311,22 @@ pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
         &source,
     );
 
+    // Inject data_app_file_path into conversation memory for tools to access, if provided in the execution context
+    let mut memory = memory;
+    if let Some(ref path) = data_app_file_path {
+        memory.push(Message {
+            content: format!("Data app file path: {}", path),
+            is_human: true,
+            created_at: chrono::Utc::now().fixed_offset(),
+        });
+    }
+
     let output = AgentLauncher::new()
         .with_filters(filters)
         .with_connections(connections)
         .with_globals(globals)
         .with_sandbox_info(sandbox_info.clone())
+        .with_data_app_file_path(data_app_file_path.clone())
         .with_project(project)
         .await?
         .launch(

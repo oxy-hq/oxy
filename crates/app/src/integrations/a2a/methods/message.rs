@@ -132,6 +132,7 @@ async fn execute_via_chat_service(
                 thread_id: context_id.clone(),
             }),
             None,
+            None, // No data_app_file_path from A2A
         )
         .await
     };

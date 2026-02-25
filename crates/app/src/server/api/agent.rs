@@ -363,6 +363,7 @@ pub async fn ask_agent_preview(
                 user_id,
             }),
             payload.sandbox_info,
+            None, // No data_app_file_path from preview
         )
         .await;
 
@@ -553,6 +554,7 @@ pub async fn ask_agent_sync(
                 user_id,
             }),
             None,
+            None, // No data_app_file_path from sync
         )
         .await;
 
@@ -747,6 +749,7 @@ impl ChatHandler for AgentExecutor {
                     .unwrap_or_else(|| "unknown".to_string()),
             }),
             context.sandbox_info()?,
+            None, // No data_app_file_path from agent chat
         )
         .await;
 

@@ -38,6 +38,8 @@ pub struct AgentLauncher {
     a2a_context_id: Option<String>,
     /// Sandbox information from thread (e.g., v0 chat_id and preview_url)
     sandbox_info: Option<SandboxInfo>,
+    /// Data app file path for tools that need to read/write data apps
+    data_app_file_path: Option<String>,
 }
 
 impl Default for AgentLauncher {
@@ -58,6 +60,7 @@ impl AgentLauncher {
             a2a_thread_id: None,
             a2a_context_id: None,
             sandbox_info: None,
+            data_app_file_path: None,
         }
     }
 
@@ -100,6 +103,15 @@ impl AgentLauncher {
     /// Set the sandbox information from thread (e.g., v0 chat_id and preview_url)
     pub fn with_sandbox_info(mut self, sandbox_info: impl Into<Option<SandboxInfo>>) -> Self {
         self.sandbox_info = sandbox_info.into();
+        self
+    }
+
+    /// Set the data app file path for tools that need to read/write data apps
+    pub fn with_data_app_file_path(
+        mut self,
+        data_app_file_path: impl Into<Option<String>>,
+    ) -> Self {
+        self.data_app_file_path = data_app_file_path.into();
         self
     }
 
@@ -182,6 +194,7 @@ impl AgentLauncher {
             .with_filters(self.filters.clone())
             .with_connections(self.connections.clone())
             .with_sandbox_info(self.sandbox_info.clone())
+            .with_data_app_file_path(self.data_app_file_path.clone())
             .build()?;
 
         let config_manager = execution_context.project.config_manager.clone();

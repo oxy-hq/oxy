@@ -2331,6 +2331,22 @@ pub struct CreateDataAppTool {
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+pub struct EditDataAppTool {
+    #[serde(default = "default_edit_data_app_name")]
+    pub name: String,
+    #[serde(default = "default_edit_data_app_tool_description")]
+    pub description: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+pub struct ReadDataAppTool {
+    #[serde(default = "default_read_data_app_name")]
+    pub name: String,
+    #[serde(default = "default_read_data_app_tool_description")]
+    pub description: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct CreateV0AppTool {
     #[serde(default = "default_create_v0_app_name")]
     pub name: String,
@@ -2481,6 +2497,10 @@ pub enum ToolType {
     Agent(AgentTool),
     #[serde(rename = "create_data_app")]
     CreateDataApp(CreateDataAppTool),
+    #[serde(rename = "edit_data_app")]
+    EditDataApp(EditDataAppTool),
+    #[serde(rename = "read_data_app")]
+    ReadDataApp(ReadDataAppTool),
     #[serde(rename = "create_v0_app")]
     CreateV0App(CreateV0AppTool),
     #[serde(rename = "omni_query")]
@@ -2528,6 +2548,8 @@ impl ToolType {
             ToolType::Workflow(tool) => &tool.name,
             ToolType::Agent(tool) => &tool.name,
             ToolType::CreateDataApp(tool) => &tool.name,
+            ToolType::EditDataApp(tool) => &tool.name,
+            ToolType::ReadDataApp(tool) => &tool.name,
             ToolType::CreateV0App(tool) => &tool.name,
             ToolType::OmniQuery(tool) => &tool.name,
             ToolType::SemanticQuery(tool) => &tool.name,
@@ -2807,6 +2829,42 @@ impl ToolType {
                     description: rendered_description,
                 })
             }
+            ToolType::EditDataApp(tool) => {
+                renderer.register_template(&tool.description)?;
+                let rendered_description =
+                    renderer
+                        .render_async(&tool.description)
+                        .await
+                        .map_err(|e| {
+                            OxyError::RuntimeError(format!(
+                                "Failed to render EditDataApp description: {}",
+                                e
+                            ))
+                        })?;
+
+                ToolType::EditDataApp(EditDataAppTool {
+                    name: tool.name.clone(),
+                    description: rendered_description,
+                })
+            }
+            ToolType::ReadDataApp(tool) => {
+                renderer.register_template(&tool.description)?;
+                let rendered_description =
+                    renderer
+                        .render_async(&tool.description)
+                        .await
+                        .map_err(|e| {
+                            OxyError::RuntimeError(format!(
+                                "Failed to render ReadDataApp description: {}",
+                                e
+                            ))
+                        })?;
+
+                ToolType::ReadDataApp(ReadDataAppTool {
+                    name: tool.name.clone(),
+                    description: rendered_description,
+                })
+            }
             ToolType::CreateV0App(tool) => {
                 // Register and render description
                 renderer.register_template(&tool.description)?;
@@ -3056,6 +3114,22 @@ fn default_agent_tool_name() -> String {
 
 fn default_create_data_app_name() -> String {
     "create_data_app".to_string()
+}
+
+fn default_edit_data_app_name() -> String {
+    "edit_data_app".to_string()
+}
+
+fn default_edit_data_app_tool_description() -> String {
+    "Edit an existing data app/dashboard configuration.".to_string()
+}
+
+fn default_read_data_app_name() -> String {
+    "read_data_app".to_string()
+}
+
+fn default_read_data_app_tool_description() -> String {
+    "Read an existing data app/dashboard configuration.".to_string()
 }
 
 fn default_create_v0_app_name() -> String {

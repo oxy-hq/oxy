@@ -416,6 +416,7 @@ async fn execute_agent(
             channel_id: None, // Could be extracted from delivery if needed
         }),
         None,
+        None, // No data_app_file_path from Slack
     )
     .await?;
 

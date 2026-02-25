@@ -1,6 +1,8 @@
 pub mod create_data_app;
+pub mod edit_data_app;
 pub mod launcher;
 pub mod omni;
+pub mod read_data_app;
 pub mod registry;
 pub mod retrieval;
 pub mod sql;
@@ -28,11 +30,14 @@ pub struct ToolsContext {
     #[serde(skip)]
     pub tools: Vec<crate::config::model::ToolType>,
     pub prompt: String,
+    /// The file path of the data app being edited in the current thread (if any).
+    /// Available in templates as `{{ tools.data_app_file_path }}`.
+    pub data_app_file_path: Option<String>,
 }
 
 impl ToolsContext {
     pub fn from_execution_context(
-        _execution_context: &crate::execute::ExecutionContext,
+        execution_context: &crate::execute::ExecutionContext,
         agent_name: String,
         tools: Vec<crate::config::model::ToolType>,
         prompt: String,
@@ -41,6 +46,7 @@ impl ToolsContext {
             agent_name,
             tools,
             prompt,
+            data_app_file_path: execution_context.data_app_file_path.clone(),
         }
     }
 }
@@ -53,6 +59,10 @@ impl minijinja::value::Object for ToolsContext {
         match key.as_str()? {
             "agent_name" => Some(minijinja::value::Value::from(self.agent_name.clone())),
             "prompt" => Some(minijinja::value::Value::from(self.prompt.clone())),
+            "data_app_file_path" => self
+                .data_app_file_path
+                .as_ref()
+                .map(|p| minijinja::value::Value::from(p.clone())),
             _ => None,
         }
     }

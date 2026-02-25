@@ -26,8 +26,9 @@ use tokio_stream::StreamExt;
 
 use crate::{
     adapters::{
-        create_app_schema, project::manager::ProjectManager, secrets::SecretsManager,
-        semantic_tool_description::get_semantic_query_description, viz_schema,
+        create_app_schema, edit_app_schema, project::manager::ProjectManager, read_app_schema,
+        secrets::SecretsManager, semantic_tool_description::get_semantic_query_description,
+        viz_schema,
     },
     config::{
         ConfigManager,
@@ -223,6 +224,8 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::Agent(agent_tool) => agent_tool.description.clone(),
             ToolType::Visualize(v) => v.description.clone(),
             ToolType::CreateDataApp(c) => c.description.clone(),
+            ToolType::EditDataApp(e) => e.description.clone(),
+            ToolType::ReadDataApp(r) => r.description.clone(),
             ToolType::CreateV0App(v) => v.description.clone(),
             ToolType::OmniQuery(o) => match get_omni_query_description(o, config).await {
                 Ok(desc) => desc,
@@ -252,6 +255,8 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::Agent(agent_tool) => agent_tool.name.clone(),
             ToolType::Visualize(v) => v.name.clone(),
             ToolType::CreateDataApp(create_data_app_tool) => create_data_app_tool.name.clone(),
+            ToolType::EditDataApp(edit_data_app_tool) => edit_data_app_tool.name.clone(),
+            ToolType::ReadDataApp(read_data_app_tool) => read_data_app_tool.name.clone(),
             ToolType::CreateV0App(create_v0_app_tool) => create_v0_app_tool.name.clone(),
             ToolType::OmniQuery(o) => o.name.clone(),
             ToolType::SemanticQuery(s) => s.name.clone(),
@@ -301,6 +306,8 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::Retrieval(_) => None,
             ToolType::Visualize(_) => None,
             ToolType::CreateDataApp(_) => None,
+            ToolType::EditDataApp(_) => None,
+            ToolType::ReadDataApp(_) => None,
         }
     }
 
@@ -313,6 +320,8 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::Agent(_) => "agent".to_string(),
             ToolType::Visualize(_) => "visualize".to_string(),
             ToolType::CreateDataApp(_) => "create_data_app".to_string(),
+            ToolType::EditDataApp(_) => "edit_data_app".to_string(),
+            ToolType::ReadDataApp(_) => "read_data_app".to_string(),
             ToolType::CreateV0App(_) => "create_v0_app".to_string(),
             ToolType::OmniQuery(_) => "omni_query".to_string(),
             ToolType::SemanticQuery(_) => "semantic_query".to_string(),
@@ -339,6 +348,12 @@ impl OpenAIToolConfig for &ToolType {
                 // because this schema is quite complex and the library we use
                 // schemars does not generate a compatiible schema with OpenAI.
                 Ok(serde_json::from_str(create_app_schema::CREATE_APP_SCHEMA).unwrap())
+            }
+            ToolType::EditDataApp(_) => {
+                Ok(serde_json::from_str(edit_app_schema::EDIT_APP_SCHEMA).unwrap())
+            }
+            ToolType::ReadDataApp(_) => {
+                Ok(serde_json::from_str(read_app_schema::READ_APP_SCHEMA).unwrap())
             }
             ToolType::CreateV0App(_) => {
                 Ok(serde_json::json!(&schemars::schema_for!(CreateV0AppParams)))

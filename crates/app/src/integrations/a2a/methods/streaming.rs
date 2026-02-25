@@ -218,6 +218,7 @@ pub async fn handle_send_streaming_message(
                     thread_id: context_id_clone.clone(), // In A2A, thread_id is the context_id
                 }),
                 None,
+                None, // No data_app_file_path from A2A streaming
             )
             .await
         };

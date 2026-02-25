@@ -163,6 +163,7 @@ pub async fn run_agent_tool(
                     session_id: None, // MCP doesn't have session tracking yet
                 }),
                 None,
+                None, // No data_app_file_path from MCP
             )
             .await
             .map_err(|e| {
