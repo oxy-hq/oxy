@@ -366,7 +366,7 @@ jobs:
           oxy sync -o
           oxy build
           oxy validate
-          oxy run example_duckdb_query.sql
+          oxy run data_fruit/example_food_calories.sql
 
       - name: Smoke test - HTTP (Hurl)
         run: hurl --test --retry 3 tests/smoke/smoke.hurl
