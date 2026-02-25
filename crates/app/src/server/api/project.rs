@@ -100,10 +100,14 @@ pub struct PushChangesRequest {
 }
 
 pub async fn push_changes(
+    State(app_state): State<AppState>,
     Query(query): Query<BranchQuery>,
     Path(project_id): Path<Uuid>,
     Json(request): Json<PushChangesRequest>,
 ) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
+    if app_state.readonly {
+        return Err(StatusCode::FORBIDDEN);
+    }
     let commit_message = request
         .commit_message
         .clone()
@@ -250,10 +254,14 @@ pub async fn get_project_branches(
 }
 
 pub async fn switch_project_branch(
+    State(app_state): State<AppState>,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Path(project_id): Path<Uuid>,
     Json(request): Json<SwitchBranchRequest>,
 ) -> Result<ResponseJson<ProjectBranch>, StatusCode> {
+    if app_state.readonly {
+        return Err(StatusCode::FORBIDDEN);
+    }
     info!("Getting switched branches for project: {}", project_id);
 
     match ProjectService::switch_project_branch(project_id, request.branch).await {
@@ -278,10 +286,14 @@ pub async fn switch_project_branch(
 }
 
 pub async fn switch_project_active_branch(
+    State(app_state): State<AppState>,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Path(project_id): Path<Uuid>,
     Json(request): Json<SwitchBranchRequest>,
 ) -> Result<ResponseJson<ProjectBranch>, StatusCode> {
+    if app_state.readonly {
+        return Err(StatusCode::FORBIDDEN);
+    }
     info!("Getting switched active branch for project: {}", project_id);
 
     match ProjectService::switch_project_active_branch(project_id, request.branch).await {

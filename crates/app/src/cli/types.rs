@@ -40,10 +40,11 @@ pub struct ServeArgs {
     /// Default is 0.0.0.0 to listen on all interfaces.
     #[clap(long, default_value = "0.0.0.0")]
     pub host: String,
-    /// Enable git-based project detection and onboarding
+    /// Prevent file modifications via the API (IDE mode)
     ///
-    /// When enabled, allows starting the server outside of an Oxy project
-    /// directory and provides git-based onboarding functionality.
+    /// When enabled, the server will reject requests that create, modify,
+    /// rename, or delete project files via the API. Use this when running
+    /// the server alongside an IDE that owns the files.
     #[clap(long, default_value_t = false)]
     pub readonly: bool,
     /// Force HTTP/2 only mode (disable HTTP/1.1)

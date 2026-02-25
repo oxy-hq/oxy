@@ -51,6 +51,7 @@ export interface AuthConfigResponse {
   basic?: boolean;
   cloud?: boolean;
   enterprise?: boolean;
+  readonly: boolean;
 }
 
 export interface UserListResponse {

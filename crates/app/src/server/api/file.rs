@@ -1,7 +1,8 @@
 use crate::server::api::middlewares::project::ProjectManagerExtractor;
+use crate::server::router::AppState;
 use crate::server::service::project::ProjectService;
 use axum::Json;
-use axum::extract::{self, Path};
+use axum::extract::{self, Path, State};
 use axum::http::StatusCode;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
@@ -20,9 +21,13 @@ pub struct SaveFileRequest {
 }
 
 pub async fn create_file(
+    State(app_state): State<AppState>,
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     Path((_project_id, pathb64)): Path<(Uuid, String)>,
 ) -> Result<extract::Json<String>, StatusCode> {
+    if app_state.readonly {
+        return Err(StatusCode::FORBIDDEN);
+    }
     let decoded_path: Vec<u8> = BASE64_STANDARD
         .decode(pathb64)
         .map_err(|_| StatusCode::BAD_REQUEST)?;
@@ -50,9 +55,13 @@ pub async fn create_file(
 }
 
 pub async fn create_folder(
+    State(app_state): State<AppState>,
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     Path((_project_id, pathb64)): Path<(Uuid, String)>,
 ) -> Result<extract::Json<String>, StatusCode> {
+    if app_state.readonly {
+        return Err(StatusCode::FORBIDDEN);
+    }
     let decoded_path: Vec<u8> = BASE64_STANDARD
         .decode(pathb64)
         .map_err(|_| StatusCode::BAD_REQUEST)?;
@@ -72,9 +81,13 @@ pub async fn create_folder(
 }
 
 pub async fn delete_file(
+    State(app_state): State<AppState>,
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     Path((_project_id, pathb64)): Path<(Uuid, String)>,
 ) -> Result<extract::Json<String>, StatusCode> {
+    if app_state.readonly {
+        return Err(StatusCode::FORBIDDEN);
+    }
     let decoded_path: Vec<u8> = BASE64_STANDARD
         .decode(pathb64)
         .map_err(|_| StatusCode::BAD_REQUEST)?;
@@ -94,9 +107,13 @@ pub async fn delete_file(
 }
 
 pub async fn delete_folder(
+    State(app_state): State<AppState>,
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     Path((_project_id, pathb64)): Path<(Uuid, String)>,
 ) -> Result<extract::Json<String>, StatusCode> {
+    if app_state.readonly {
+        return Err(StatusCode::FORBIDDEN);
+    }
     let decoded_path: Vec<u8> = BASE64_STANDARD
         .decode(pathb64)
         .map_err(|_| StatusCode::BAD_REQUEST)?;
@@ -121,10 +138,14 @@ pub struct RenameFileRequest {
 }
 
 pub async fn rename_file(
+    State(app_state): State<AppState>,
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     Path((_project_id, pathb64)): Path<(Uuid, String)>,
     extract::Json(payload): extract::Json<RenameFileRequest>,
 ) -> Result<extract::Json<String>, StatusCode> {
+    if app_state.readonly {
+        return Err(StatusCode::FORBIDDEN);
+    }
     let decoded_path: Vec<u8> = BASE64_STANDARD
         .decode(pathb64)
         .map_err(|_| StatusCode::BAD_REQUEST)?;
@@ -151,10 +172,14 @@ pub async fn rename_file(
 }
 
 pub async fn rename_folder(
+    State(app_state): State<AppState>,
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     Path((_project_id, pathb64)): Path<(Uuid, String)>,
     extract::Json(payload): extract::Json<RenameFileRequest>,
 ) -> Result<extract::Json<String>, StatusCode> {
+    if app_state.readonly {
+        return Err(StatusCode::FORBIDDEN);
+    }
     let decoded_path: Vec<u8> = BASE64_STANDARD
         .decode(pathb64)
         .map_err(|_| StatusCode::BAD_REQUEST)?;
@@ -182,10 +207,14 @@ pub async fn rename_folder(
 
 #[axum::debug_handler]
 pub async fn save_file(
+    State(app_state): State<AppState>,
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
     Path((_project_id, pathb64)): Path<(Uuid, String)>,
     extract::Json(payload): extract::Json<SaveFileRequest>,
 ) -> Result<extract::Json<String>, StatusCode> {
+    if app_state.readonly {
+        return Err(StatusCode::FORBIDDEN);
+    }
     let decoded_path: Vec<u8> = BASE64_STANDARD
         .decode(pathb64)
         .map_err(|_| StatusCode::BAD_REQUEST)?;

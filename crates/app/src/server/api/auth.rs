@@ -87,6 +87,7 @@ pub struct AuthConfigResponse {
     pub basic: Option<bool>,
     pub cloud: bool,
     pub enterprise: bool,
+    pub readonly: bool,
 }
 
 #[derive(Serialize)]
@@ -131,6 +132,7 @@ pub async fn get_config(
             basic: None,
             cloud: app_state.cloud,
             enterprise: app_state.enterprise,
+            readonly: app_state.readonly,
         }));
     }
 
@@ -154,6 +156,7 @@ pub async fn get_config(
         basic: Some(has_basic),
         cloud: app_state.cloud,
         enterprise: app_state.enterprise,
+        readonly: app_state.readonly,
     };
 
     Ok(Json(config))

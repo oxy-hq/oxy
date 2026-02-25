@@ -53,6 +53,7 @@ pub struct AppState {
     pub cloud: bool,
     pub enterprise: bool,
     pub internal: bool,
+    pub readonly: bool,
 }
 
 fn build_cors_layer() -> CorsLayer {
@@ -341,11 +342,12 @@ fn apply_middleware(
 
     Ok(protected_regular_routes)
 }
-pub async fn api_router(cloud: bool, enterprise: bool) -> Result<Router, OxyError> {
+pub async fn api_router(cloud: bool, enterprise: bool, readonly: bool) -> Result<Router, OxyError> {
     let app_state = AppState {
         cloud,
         enterprise,
         internal: false,
+        readonly,
     };
     let public_routes = build_public_routes();
     let protected_routes = build_protected_routes(app_state.clone());
@@ -365,11 +367,16 @@ pub async fn api_router(cloud: bool, enterprise: bool) -> Result<Router, OxyErro
         .layer(ServiceBuilder::new().layer(NewSentryLayer::<Request<Body>>::new_from_top())))
 }
 
-pub async fn internal_api_router(cloud: bool, enterprise: bool) -> Result<Router, OxyError> {
+pub async fn internal_api_router(
+    cloud: bool,
+    enterprise: bool,
+    readonly: bool,
+) -> Result<Router, OxyError> {
     let app_state = AppState {
         cloud,
         enterprise,
         internal: true,
+        readonly,
     };
     let public_routes = build_public_routes();
     let protected_routes = build_protected_routes(app_state.clone());

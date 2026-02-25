@@ -67,10 +67,10 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     run_database_migrations(args.enterprise).await?;
 
     let _available_port = find_available_port(args.host.clone(), args.port).await?;
-    let app = create_web_application(args.cloud, args.enterprise).await?;
+    let app = create_web_application(args.cloud, args.enterprise, args.readonly).await?;
 
     let internal_app = if args.internal_port > 0 {
-        Some(create_internal_application(args.cloud, args.enterprise).await?)
+        Some(create_internal_application(args.cloud, args.enterprise, args.readonly).await?)
     } else {
         None
     };
@@ -157,8 +157,12 @@ async fn find_available_port(host: String, port: u16) -> Result<u16, OxyError> {
     Ok(chosen_port)
 }
 
-async fn create_web_application(cloud: bool, enterprise: bool) -> Result<Router, OxyError> {
-    let api_router = crate::server::router::api_router(cloud, enterprise)
+async fn create_web_application(
+    cloud: bool,
+    enterprise: bool,
+    readonly: bool,
+) -> Result<Router, OxyError> {
+    let api_router = crate::server::router::api_router(cloud, enterprise, readonly)
         .await
         .map_err(|e| OxyError::RuntimeError(format!("Failed to create API router: {}", e)))?;
     let openapi_router = crate::server::router::openapi_router().await;
@@ -199,8 +203,12 @@ async fn create_web_application(cloud: bool, enterprise: bool) -> Result<Router,
         .layer(create_trace_layer(cloud)))
 }
 
-async fn create_internal_application(cloud: bool, enterprise: bool) -> Result<Router, OxyError> {
-    let internal_router = crate::server::router::internal_api_router(cloud, enterprise)
+async fn create_internal_application(
+    cloud: bool,
+    enterprise: bool,
+    readonly: bool,
+) -> Result<Router, OxyError> {
+    let internal_router = crate::server::router::internal_api_router(cloud, enterprise, readonly)
         .await
         .map_err(|e| {
             OxyError::RuntimeError(format!("Failed to create internal API router: {}", e))
