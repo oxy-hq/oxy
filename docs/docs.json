@@ -129,6 +129,7 @@
       "pages": [
         "reference/oxy-commands",
         "reference/oxy-start",
+        "reference/readonly-mode",
         "reference/database-sync",
         "reference/environment-variables",
         "reference/semantic-layer-reference"

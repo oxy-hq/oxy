@@ -1,0 +1,78 @@
+---
+title: "Read-Only Mode"
+description: "Run the Oxy server without allowing file modifications via the API"
+---
+
+The `--readonly` flag starts the Oxy server in read-only mode, preventing any API call from creating, modifying, renaming, or deleting project files. All query and agent execution operations continue to work normally.
+
+## When to Use
+
+Read-only mode is intended for deployments where another process owns the project files on disk — most commonly when running Oxy alongside an IDE extension.
+
+Without `--readonly`, the Oxy web UI allows users to create files, save edits, rename folders, and push git changes. In an IDE context this can conflict with open editor buffers or overwrite unsaved changes. Enabling read-only mode disables those write paths while keeping everything else functional.
+
+## Usage
+
+```bash
+oxy serve --readonly          # web server only (no Docker)
+oxy start --readonly          # Docker containers + web server
+```
+
+Both commands accept the flag because `oxy start` delegates to `oxy serve` after starting the database containers.
+
+## What Is Blocked
+
+The following API operations return `403 Forbidden` when read-only mode is active:
+
+| Operation | API route |
+| --- | --- |
+| Create file | `POST /files/{path}/new-file` |
+| Create folder | `POST /files/{path}/new-folder` |
+| Save file | `POST /files/{path}` |
+| Delete file | `DELETE /files/{path}/delete-file` |
+| Delete folder | `DELETE /files/{path}/delete-folder` |
+| Rename file | `PUT /files/{path}/rename-file` |
+| Rename folder | `PUT /files/{path}/rename-folder` |
+| Switch branch | `POST /projects/{id}/switch-branch` |
+| Switch active branch | `POST /projects/{id}/switch-active-branch` |
+| Push changes | `POST /projects/{id}/push-changes` |
+
+## What Is Allowed
+
+All read operations and agent execution are unaffected:
+
+- Running agents and workflows
+- Querying databases
+- Reading and browsing files
+- Viewing git diff summaries
+- All GET requests
+
+## Frontend Behavior
+
+When the server is started with `--readonly`, the web UI reflects this automatically:
+
+- The **Save changes** button is replaced with a **Read-only mode** label in the file editor
+- The Monaco editor becomes non-editable
+- The file tree context menu hides all write actions (New File, New Folder, Rename, Delete), showing **Read-only mode** instead
+
+This is the same visual behavior as cloud mode on the active branch.
+
+## Command-Line Options
+
+<ParamField path="--readonly" type="boolean" default="false">
+  Prevent all file modification operations via the API. The server starts normally but
+  returns `403 Forbidden` for any request that would write to project files or change
+  the active git branch.
+</ParamField>
+
+## See Also
+
+<CardGroup cols={2}>
+  <Card title="oxy serve" icon="server" href="/reference/oxy-commands#oxy-serve">
+    Web server command reference
+  </Card>
+
+  <Card title="oxy start" icon="play" href="/reference/oxy-start">
+    Start with Docker-managed PostgreSQL
+  </Card>
+</CardGroup>
