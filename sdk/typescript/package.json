@@ -62,7 +62,7 @@
   },
   "devDependencies": {
     "@duckdb/duckdb-wasm": "^1.32.0",
-    "@types/node": "^25.3.0",
+    "@types/node": "^25.3.1",
     "@types/react": "^19.2.14",
     "@typescript-eslint/eslint-plugin": "^8.56.1",
     "@typescript-eslint/parser": "^8.56.1",

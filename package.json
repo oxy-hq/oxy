@@ -15,7 +15,7 @@
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",
     "markdownlint-cli2": "^0.21.0",
-    "turbo": "^2.8.10",
+    "turbo": "^2.8.11",
     "typescript": "^5.9.3"
   },
   "name": "oxy",
