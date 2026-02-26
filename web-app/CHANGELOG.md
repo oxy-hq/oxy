@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.17](https://github.com/oxy-hq/oxy-internal/compare/0.5.16...0.5.17) (2026-02-26)
+
+
+### <!-- 0 -->🚀 Features
+
+* add readonly mode support to server and API endpoints ([#1700](https://github.com/oxy-hq/oxy-internal/issues/1700)) ([940f71d](https://github.com/oxy-hq/oxy-internal/commit/940f71dae2b307a7dfaa1d262c3eaa559d8be79b))
+* enhance anthropic support  ([#1701](https://github.com/oxy-hq/oxy-internal/issues/1701)) ([6e4fba2](https://github.com/oxy-hq/oxy-internal/commit/6e4fba22685fdede67a612552b6bc9124bca6d6e))
+* rename Local Development Project to Oxygen and Dev Mode to Developer Portal ([#1682](https://github.com/oxy-hq/oxy-internal/issues/1682)) ([7e0c1ae](https://github.com/oxy-hq/oxy-internal/commit/7e0c1aef177dd13e9f0d20285c7a8456031591f9))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* use plural path for apps ([#1683](https://github.com/oxy-hq/oxy-internal/issues/1683)) ([b7e92c0](https://github.com/oxy-hq/oxy-internal/commit/b7e92c0ff2f5fce5a9887ae6382a5b5e8735db26))
+
 ## [0.5.16](https://github.com/oxy-hq/oxy-internal/compare/0.5.15...0.5.16) (2026-02-18)
 
 

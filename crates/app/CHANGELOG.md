@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.19](https://github.com/oxy-hq/oxy-internal/compare/0.5.18...0.5.19) (2026-02-26)
+
+
+### <!-- 0 -->🚀 Features
+
+* add readonly mode support to server and API endpoints ([#1700](https://github.com/oxy-hq/oxy-internal/issues/1700)) ([940f71d](https://github.com/oxy-hq/oxy-internal/commit/940f71dae2b307a7dfaa1d262c3eaa559d8be79b))
+* enhance anthropic support  ([#1701](https://github.com/oxy-hq/oxy-internal/issues/1701)) ([6e4fba2](https://github.com/oxy-hq/oxy-internal/commit/6e4fba22685fdede67a612552b6bc9124bca6d6e))
+
 ## [0.5.18](https://github.com/oxy-hq/oxy-internal/compare/0.5.17...0.5.18) (2026-02-18)
 
 

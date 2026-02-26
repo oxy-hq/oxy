@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.19](https://github.com/oxy-hq/oxy-internal/compare/0.5.18...0.5.19) (2026-02-26)
+
+
+### <!-- 0 -->🚀 Features
+
+* enhance anthropic support  ([#1701](https://github.com/oxy-hq/oxy-internal/issues/1701)) ([6e4fba2](https://github.com/oxy-hq/oxy-internal/commit/6e4fba22685fdede67a612552b6bc9124bca6d6e))
+
 ## [0.5.18](https://github.com/oxy-hq/oxy-internal/compare/0.5.17...0.5.18) (2026-02-18)
 
 ## [0.5.17](https://github.com/oxy-hq/oxy-internal/compare/0.5.16...0.5.17) (2026-02-13)
