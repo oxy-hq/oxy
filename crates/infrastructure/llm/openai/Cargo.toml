@@ -9,7 +9,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-async-openai = { version = "0.31.1", features = ["byot", "chat-completion-types", "response-types", "_api"] }
+async-openai = { workspace = true, features = ["byot", "chat-completion-types", "response-types", "_api"] }
 axum = { version = "0.8.8" }
 secrecy = "0.10.3"
 serde = { workspace = true }
