@@ -42,12 +42,12 @@ axum = { workspace = true }
 utoipa = {git="https://github.com/haitrr/utoipa.git", rev="776f86e", features = ["uuid", "chrono", "axum_extras"] }
 
 # AI/LLM
-async-openai = { version = "0.31.1", features = ["byot", "_api"] }
+async-openai = { version = "0.33.0", features = ["byot", "_api"] }
 secrecy = "0.10"
 
 # Vector store
-lancedb = "0.23.1"
-serde_arrow = { version = "0.13.7", features = ["arrow-56"] }
+lancedb = "0.26.2"
+serde_arrow = { version = "0.14.0", features = ["arrow-56"] }
 
 # Semantic layer
 oxy-semantic = { path = "../semantic" }
