@@ -85,19 +85,19 @@ impl ModelHeadersExt for Model {
         &self,
         secrets_manager: &SecretsManager,
     ) -> Result<HashMap<String, String>, OxyError> {
-        match self {
-            Model::OpenAI { config } => {
-                let mut resolved_headers = HashMap::new();
-                if let Some(headers_map) = &config.headers {
-                    for (key, header_value) in headers_map {
-                        let resolved_value = header_value.resolve(secrets_manager).await?;
-                        resolved_headers.insert(key.clone(), resolved_value);
-                    }
-                }
-                Ok(resolved_headers)
+        let headers_map = match self {
+            Model::OpenAI { config } => config.headers.as_ref(),
+            Model::Anthropic { config } => config.headers.as_ref(),
+            _ => None,
+        };
+        let mut resolved_headers = HashMap::new();
+        if let Some(headers_map) = headers_map {
+            for (key, header_value) in headers_map {
+                let resolved_value = header_value.resolve(secrets_manager).await?;
+                resolved_headers.insert(key.clone(), resolved_value);
             }
-            _ => Ok(HashMap::new()), // Other models don't support custom headers yet
         }
+        Ok(resolved_headers)
     }
 }
 
@@ -167,10 +167,18 @@ impl IntoOpenAIConfig for Model {
                         OxyError::ConfigurationError("Anthropic API key not found".to_string())
                     })?;
 
+                // Resolve custom headers if present
+                let resolved_headers = if config.headers.is_some() {
+                    Some(self.resolve_headers(secrets_manager).await?)
+                } else {
+                    None
+                };
+
                 // Delegate to oxy-anthropic for config creation
                 Ok(oxy_anthropic::create_openai_config(
                     api_key,
                     config.api_url.clone(),
+                    resolved_headers,
                 ))
             }
         }

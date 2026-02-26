@@ -126,6 +126,7 @@ impl ModelConfigBuilder {
                 model_ref,
                 key_var,
                 api_url: anthropic_config.api_url.filter(|url| !url.is_empty()),
+                headers: None,
             },
         })
     }

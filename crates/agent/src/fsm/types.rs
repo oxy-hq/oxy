@@ -107,7 +107,9 @@ impl From<Message> for ChatCompletionRequestMessage {
             | Message::Thinking { content }
             | Message::Planning { content } => {
                 ChatCompletionRequestMessage::Assistant(ChatCompletionRequestAssistantMessage {
-                    content: Some(ChatCompletionRequestAssistantMessageContent::Text(content)),
+                    content: Some(ChatCompletionRequestAssistantMessageContent::Text(
+                        content.trim_end().to_string(),
+                    )),
                     ..Default::default()
                 })
             }

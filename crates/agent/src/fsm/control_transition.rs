@@ -2,9 +2,38 @@ use std::marker::PhantomData;
 
 use async_openai::types::chat::{
     ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
-    ChatCompletionRequestSystemMessageContent,
+    ChatCompletionRequestSystemMessageContent, ChatCompletionRequestUserMessage,
+    ChatCompletionRequestUserMessageContent,
 };
 use tokio_stream::StreamExt;
+
+/// Appends a sentinel user message if the message list does not already end with a user message.
+///
+/// Anthropic's API requires the conversation to end with a user message. This helper guards
+/// every call site that builds a message list from accumulated state (which may end with an
+/// assistant, planning, or system message) before forwarding to the LLM.
+///
+/// # When NOT to use this
+///
+/// Do **not** call this on tool-use retry loops where the list intentionally ends with a
+/// `role: "tool"` (tool result) message. Anthropic's OpenAI-compat layer translates `role:
+/// "tool"` → a `user` turn containing a `tool_result` block, so the conversation is already
+/// user-terminated in Anthropic's model. Injecting an additional free-form user message after a
+/// tool result would corrupt the tool-use conversation structure.
+pub fn ensure_ends_with_user_message(
+    messages: &mut Vec<ChatCompletionRequestMessage>,
+    sentinel: &str,
+) {
+    if !matches!(messages.last(), Some(ChatCompletionRequestMessage::User(_))) {
+        messages.push(
+            ChatCompletionRequestUserMessage {
+                content: ChatCompletionRequestUserMessageContent::Text(sentinel.to_string()),
+                ..Default::default()
+            }
+            .into(),
+        );
+    }
+}
 
 use crate::fsm::{
     config::{AgenticConfig, Transition},
@@ -189,7 +218,7 @@ impl<S> Plan<S> {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        let messages = [
+        let mut messages = [
             vec![
                 ChatCompletionRequestSystemMessage {
                     content: ChatCompletionRequestSystemMessageContent::Text(format!(
@@ -223,6 +252,9 @@ Think through dependencies and order carefully - this plan guides the multi-agen
             messages,
         ]
         .concat();
+        // Claude requires the last message to be a user message (no assistant prefill).
+        // Also handles the empty-history case where messages is [system_msg] only.
+        ensure_ends_with_user_message(&mut messages, "Please create a plan for the above.");
         Ok(messages)
     }
 }
@@ -326,6 +358,8 @@ impl Trigger for Synthesize<MachineContext> {
                 .iter()
                 .map(|m| m.clone().into()),
         );
+        // Claude requires the last message to be a user message (no assistant prefill).
+        ensure_ends_with_user_message(&mut messages, "Please synthesize the results above.");
         let mut stream = self.adapter.stream_text(messages).await?;
         let mut content = String::new();
         let streaming_context = execution_context

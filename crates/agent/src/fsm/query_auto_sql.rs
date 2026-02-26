@@ -3,7 +3,8 @@ use async_openai::types::chat::{
     ChatCompletionRequestAssistantMessage, ChatCompletionRequestAssistantMessageContent,
     ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
     ChatCompletionRequestSystemMessageContent, ChatCompletionRequestToolMessage,
-    ChatCompletionRequestToolMessageContent, ChatCompletionToolChoiceOption, ToolChoiceOptions,
+    ChatCompletionRequestToolMessageContent, ChatCompletionRequestUserMessage,
+    ChatCompletionRequestUserMessageContent, ChatCompletionToolChoiceOption, ToolChoiceOptions,
 };
 
 use crate::fsm::{
@@ -65,10 +66,8 @@ impl<S> AutoSQL<S> {
                 )),
             }
             .into(),
-            ChatCompletionRequestAssistantMessage {
-                content: Some(ChatCompletionRequestAssistantMessageContent::Text(
-                    self.objective.to_string(),
-                )),
+            ChatCompletionRequestUserMessage {
+                content: ChatCompletionRequestUserMessageContent::Text(self.objective.to_string()),
                 ..Default::default()
             }
             .into(),
@@ -132,6 +131,16 @@ impl<S> AutoSQL<S> {
         let max_retries = config.max_retries;
         let mut failed_messages = vec![];
 
+        // Message structure per iteration:
+        //   First attempt : [sys, sys, User(objective)]           — ends with User ✓
+        //   After failure  : [sys, sys, User(objective),
+        //                     Assistant(tool_call), Tool(error)]  — ends with Tool
+        //
+        // The Tool-terminated sequence is intentional and correct for Anthropic's API.
+        // Anthropic's OpenAI-compat layer translates `role:"tool"` → a `user` turn containing
+        // a `tool_result` block, so the conversation is always user-terminated in Anthropic's
+        // model. Do NOT apply `ensure_ends_with_user_message` here; adding a free-form user
+        // message after a tool result would corrupt the tool-use conversation structure.
         loop {
             let tool_call = self
                 .request_sql_tool_call(

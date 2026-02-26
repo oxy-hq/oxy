@@ -117,6 +117,10 @@ models:
     name: claude-3-7-sonnet
     model_ref: claude-3-7-sonnet-20250219
     key_var: ANTHROPIC_API_KEY
+  - vendor: anthropic
+    name: claude-sonnet-4-6
+    model_ref: claude-sonnet-4-6
+    key_var: ANTHROPIC_API_KEY
 
 defaults:
   database: local
@@ -125,9 +129,9 @@ builder_agent: agents/builder.agent.yml
 
 slack:
   default_agent: agents/default.agent.yml
-  oxy_app_url: https://oxy.yourcompany.com  # Optional: enables "View in Oxy" deep links in Slack responses
-  bot_token_var: SLACK_BOT_TOKEN  # Environment variable containing the Slack bot token
-  signing_secret_var: SLACK_SIGNING_SECRET  # Environment variable containing the Slack signing secret
+  oxy_app_url: https://oxy.yourcompany.com # Optional: enables "View in Oxy" deep links in Slack responses
+  bot_token_var: SLACK_BOT_TOKEN # Environment variable containing the Slack bot token
+  signing_secret_var: SLACK_SIGNING_SECRET # Environment variable containing the Slack signing secret
 
 mcp:
   tools:
@@ -135,7 +139,7 @@ mcp:
     - data/*.sql
     - agents/*.agent.yml
     - workflows/*.workflow.yml
-  
+
 a2a:
   base_url: "http://localhost:3030"
   agents:

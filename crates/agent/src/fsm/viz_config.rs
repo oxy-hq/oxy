@@ -77,7 +77,7 @@ impl Visualize {
                 name: self.name.clone(),
                 description: Some(self.description.clone()),
                 parameters: Some(schema),
-                strict: Some(true),
+                strict: None,
             },
         }
     }

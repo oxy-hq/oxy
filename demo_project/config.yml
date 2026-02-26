@@ -7,6 +7,11 @@ models:
     model_ref: gpt-4.1
     key_var: OPENAI_API_KEY
     api_url: https://api.openai.com/v1
+  - vendor: anthropic
+    name: claude-sonnet-4-6
+    model_ref: claude-sonnet-4-6
+    key_var: ANTHROPIC_API_KEY
+
 databases:
   - name: local
     dataset: .db/

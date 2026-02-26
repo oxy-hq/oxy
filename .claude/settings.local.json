@@ -35,7 +35,8 @@
       "WebFetch(domain:cube.dev)",
       "Bash(curl:*)",
       "Bash(tee:*)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:crates.io)"
     ],
     "deny": [],
     "ask": []

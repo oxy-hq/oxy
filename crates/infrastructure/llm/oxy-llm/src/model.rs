@@ -68,10 +68,11 @@ impl Model {
         }
     }
 
-    /// Get the custom headers for OpenAI models (if any)
+    /// Get the custom headers for models that support them (if any)
     pub fn headers(&self) -> Option<&HashMap<String, HeaderValue>> {
         match self {
             Model::OpenAI { config } => config.headers(),
+            Model::Anthropic { config } => config.headers(),
             _ => None,
         }
     }

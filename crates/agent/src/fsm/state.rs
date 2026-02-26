@@ -14,6 +14,7 @@ use crate::fsm::{
     control::{
         Idle, Plan, Synthesize, TriggerBuilder,
         config::{EndMode, OutputArtifact, StartMode},
+        ensure_ends_with_user_message,
     },
     data_app::{BuildDataApp, GenerateInsight, config::Insight},
     machine::Agent,
@@ -255,7 +256,12 @@ impl MachineContext {
     fn is_transition_available(&self, transition: &Transition) -> bool {
         match &transition.trigger {
             TriggerType::Visualize(_) => !self.list_tables().is_empty(),
-            TriggerType::Insight(_) => !self.list_tables().is_empty(),
+            // Insight can only run once per workflow to prevent infinite re-analysis loops.
+            // Once an insight exists, Claude must act on it (visualize, query, or end) rather
+            // than generating another identical insight.
+            TriggerType::Insight(_) => {
+                !self.list_tables().is_empty() && self.list_insights().is_empty()
+            }
             _ => true,
         }
     }
@@ -292,7 +298,7 @@ impl MachineContext {
             )
         };
 
-        let messages = [vec![ChatCompletionRequestSystemMessage {
+        let mut messages = [vec![ChatCompletionRequestSystemMessage {
                 content: ChatCompletionRequestSystemMessageContent::Text(format!(
                     "You are the workflow orchestrator. Select the next action based on current context and progress.
 
@@ -330,6 +336,8 @@ Select the action that makes the most progress toward the goal while respecting 
             }
             .into(),],
             messages].concat();
+        // Claude requires the last message to be a user message (no assistant prefill).
+        ensure_ends_with_user_message(&mut messages, "What is the next action to take?");
         let (_response, tool_calls) = machine
             .adapter
             .request_tool_call_with_usage(
@@ -364,7 +372,7 @@ Select the action that makes the most progress toward the goal while respecting 
         error: &OxyError,
         machine: &Agent<MachineContext>,
     ) -> Result<(), OxyError> {
-        let messages = vec![
+        let mut messages = vec![
             ChatCompletionRequestSystemMessage {
                 content: ChatCompletionRequestSystemMessageContent::Text(format!(
                     "Troubleshoot this workflow error: {}
@@ -383,6 +391,8 @@ Keep response under 200 words.",
             }
             .into(),
         ];
+        // Claude requires the conversation to end with a user message.
+        ensure_ends_with_user_message(&mut messages, "Please troubleshoot this error.");
         let mut stream = machine.adapter.stream_text(messages).await?;
         let mut content = String::new();
         let streaming_context = execution_context
@@ -414,25 +424,28 @@ Keep response under 200 words.",
         messages: Vec<ChatCompletionRequestMessage>,
         machine: &Agent<MachineContext>,
     ) -> Result<Box<dyn Trigger<State = Self>>, OxyError> {
-        let (_response, tool_calls) = machine
-            .adapter
-            .request_tool_call_with_usage(
-                execution_context,
-                [messages,
-                    vec![
-                    ChatCompletionRequestSystemMessage {
-                    content: ChatCompletionRequestSystemMessageContent::Text(
-                        format!("Based on the previous execution, decide if you need to revise your plan.
+        let mut messages = [
+            vec![ChatCompletionRequestSystemMessage {
+                content: ChatCompletionRequestSystemMessageContent::Text(
+                    format!("Based on the previous execution, decide if you need to revise your plan.
                         If you do, select the '{AGENT_REVISE_PLAN_TRANSITION}' action,
                         otherwise select '{AGENT_CONTINUE_PLAN_TRANSITION}' to proceed with your current plan.
                         If you only change the next step of your plan, you can continue with '{AGENT_CONTINUE_PLAN_TRANSITION}'.
                         If there is Error troubleshooting information available, select the {AGENT_FIX_ERROR_TRANSITION} action to continue executing the plan to addressing the error.")
-                    ),
-                    ..Default::default()
-                }
-                .into(),
-                ]]
-                .concat(),
+                ),
+                ..Default::default()
+            }
+            .into()],
+            messages,
+        ]
+        .concat();
+        // Claude requires the last message to be a user message (no assistant prefill).
+        ensure_ends_with_user_message(&mut messages, "Should the plan be revised?");
+        let (_response, tool_calls) = machine
+            .adapter
+            .request_tool_call_with_usage(
+                execution_context,
+                messages,
                 machine.config.start.start.get_tools(),
                 Some(ChatCompletionToolChoiceOption::Mode(
                     ToolChoiceOptions::Required,

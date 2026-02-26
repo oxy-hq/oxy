@@ -78,7 +78,6 @@ cliff.toml
 commitlint.config.js
 CONTRIBUTING.md
 CLAUDE.md
-agents.md
 release-please-config.json
 turbo.json
 biome.json

@@ -5,11 +5,44 @@
 //! use a unified configuration interface.
 
 use async_openai::config::{AzureConfig, Config, OpenAIConfig};
-use axum::http::{HeaderMap, HeaderName, HeaderValue};
+use axum::http::{HeaderMap, HeaderName, HeaderValue as HttpHeaderValue};
 use schemars::JsonSchema;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, str::FromStr};
+
+/// Header value that can be either a direct string or an environment variable reference.
+/// Used in model configurations to specify custom HTTP headers.
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+#[serde(untagged)]
+pub enum HeaderValue {
+    /// Direct header value
+    Direct(String),
+    /// Header value from environment variable
+    EnvVar {
+        /// Environment variable name containing the header value
+        #[serde(rename = "env_var")]
+        env_var: String,
+    },
+}
+
+impl HeaderValue {
+    /// Get the env var name if this is an EnvVar variant
+    pub fn env_var_name(&self) -> Option<&str> {
+        match self {
+            HeaderValue::EnvVar { env_var } => Some(env_var),
+            HeaderValue::Direct(_) => None,
+        }
+    }
+
+    /// Get the direct value if this is a Direct variant
+    pub fn direct_value(&self) -> Option<&str> {
+        match self {
+            HeaderValue::Direct(value) => Some(value),
+            HeaderValue::EnvVar { .. } => None,
+        }
+    }
+}
 
 /// Azure OpenAI deployment configuration
 #[derive(Deserialize, Debug, Clone, Serialize, JsonSchema)]
@@ -30,9 +63,10 @@ impl CustomOpenAIConfig {
         let mut header_map = HeaderMap::new();
 
         for (key, value) in custom_headers {
-            if let (Ok(header_name), Ok(header_value)) =
-                (HeaderName::from_str(&key), HeaderValue::from_str(&value))
-            {
+            if let (Ok(header_name), Ok(header_value)) = (
+                HeaderName::from_str(&key),
+                HttpHeaderValue::from_str(&value),
+            ) {
                 header_map.insert(header_name, header_value);
             } else {
                 tracing::warn!("Invalid header: {} = {}", key, value);

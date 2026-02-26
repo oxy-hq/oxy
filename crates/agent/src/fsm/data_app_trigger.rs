@@ -1,7 +1,7 @@
 use async_openai::types::chat::{
-    ChatCompletionRequestAssistantMessage, ChatCompletionRequestAssistantMessageContent,
     ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
-    ChatCompletionRequestSystemMessageContent,
+    ChatCompletionRequestSystemMessageContent, ChatCompletionRequestUserMessage,
+    ChatCompletionRequestUserMessageContent,
 };
 use futures::StreamExt;
 use itertools::Itertools;
@@ -82,10 +82,8 @@ impl<S> GenerateInsight<S> {
                 content: ChatCompletionRequestSystemMessageContent::Text(insight_context),
             }
             .into(),
-            ChatCompletionRequestAssistantMessage {
-                content: Some(ChatCompletionRequestAssistantMessageContent::Text(
-                    self.objective.to_string(),
-                )),
+            ChatCompletionRequestUserMessage {
+                content: ChatCompletionRequestUserMessageContent::Text(self.objective.to_string()),
                 ..Default::default()
             }
             .into(),

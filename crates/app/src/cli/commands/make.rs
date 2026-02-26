@@ -98,6 +98,7 @@ fn determine_model() -> (String, Model) {
                     model_ref: "claude-3-7-sonnet-20250219".to_string(),
                     key_var: ANTHROPIC_API_KEY_VAR.to_string(),
                     api_url: None,
+                    headers: None,
                 },
             },
         )

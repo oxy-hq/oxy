@@ -48,7 +48,7 @@ impl ChartSelectionSchema {
                 name: name.to_string(),
                 description: Some(description.to_string()),
                 parameters: Some(parameters),
-                strict: Some(true),
+                strict: None,
             },
         }
     }

@@ -1,5 +1,5 @@
 name: default
-model: openai-4o-mini
+model: claude-sonnet-4-6
 description: |
   Agent Name: Oxymart sales analytic Agent
   Input: User's query about Oxymart sales data.

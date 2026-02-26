@@ -1036,6 +1036,15 @@
                 "null"
               ]
             },
+            "headers": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": {
+                "$ref": "#/definitions/HeaderValue"
+              }
+            },
             "key_var": {
               "type": "string"
             },

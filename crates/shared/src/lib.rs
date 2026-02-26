@@ -17,4 +17,4 @@ pub mod utils;
 
 // Re-export commonly used items
 pub use errors::OxyError;
-pub use openai_config::{AzureModel, ConfigType, CustomOpenAIConfig};
+pub use openai_config::{AzureModel, ConfigType, CustomOpenAIConfig, HeaderValue};

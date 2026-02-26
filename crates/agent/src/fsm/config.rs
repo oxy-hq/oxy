@@ -272,7 +272,7 @@ impl Transition {
                 parameters: Some(serde_json::json!(&schemars::schema_for!(
                     TransitionObjective
                 ))),
-                strict: Some(true),
+                strict: None,
             },
         }
     }

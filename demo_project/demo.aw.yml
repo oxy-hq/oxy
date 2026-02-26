@@ -1,4 +1,4 @@
-model: openai-4o-mini
+model: claude-sonnet-4-6
 start:
   mode: plan
   instruction: |

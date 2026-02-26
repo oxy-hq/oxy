@@ -1,6 +1,8 @@
+use oxy_shared::HeaderValue;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
+use std::collections::HashMap;
 
 /// Anthropic model configuration
 #[skip_serializing_none]
@@ -11,6 +13,8 @@ pub struct AnthropicModelConfig {
     pub key_var: String,
     #[serde(default = "super::default_api_url")]
     pub api_url: Option<String>,
+    #[serde(default)]
+    pub headers: Option<HashMap<String, HeaderValue>>,
 }
 
 impl AnthropicModelConfig {
@@ -27,5 +31,10 @@ impl AnthropicModelConfig {
     /// Get the key variable name for API key resolution
     pub fn key_var(&self) -> Option<&str> {
         Some(&self.key_var)
+    }
+
+    /// Get the custom headers (if any)
+    pub fn headers(&self) -> Option<&HashMap<String, HeaderValue>> {
+        self.headers.as_ref()
     }
 }
