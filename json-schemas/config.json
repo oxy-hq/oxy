@@ -810,7 +810,7 @@
       }
     },
     "HeaderValue": {
-      "description": "Header value that can be either a direct string or an environment variable reference",
+      "description": "Header value that can be either a direct string or an environment variable reference. Used in model configurations to specify custom HTTP headers.",
       "anyOf": [
         {
           "description": "Direct header value",
