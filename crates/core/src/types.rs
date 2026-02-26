@@ -174,7 +174,7 @@ impl TimeDimension {
 }
 
 // Reusable set of semantic query parameters (mirrors task definition inputs)
-#[derive(Serialize, Deserialize, ToSchema, JsonSchema, Clone, Debug)]
+#[derive(Serialize, Deserialize, ToSchema, JsonSchema, Clone, Debug, Default)]
 pub struct SemanticQueryParams {
     #[serde(default)]
     pub topic: Option<String>,

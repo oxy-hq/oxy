@@ -12,7 +12,7 @@ import { Workflows } from "./Workflows";
 
 export function AppSidebar() {
   return (
-    <ShadcnSidebar className='bg-sidebar-background'>
+    <ShadcnSidebar className='border-border border-r bg-sidebar-background'>
       <Header />
 
       <div className='customScrollbar scrollbar-gutter-auto flex min-h-0 flex-1 flex-col overflow-auto'>

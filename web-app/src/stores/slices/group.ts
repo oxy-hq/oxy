@@ -73,7 +73,10 @@ export const createGroupSlice: StateCreator<
     force?: boolean
   ) =>
     set((state) => {
-      const groupId = `${runInfo.source_id}::${runInfo.run_index}`;
+      const groupId =
+        runInfo.run_index != null
+          ? `${runInfo.source_id}::${runInfo.run_index}`
+          : runInfo.source_id;
       const groupData: Group = metadata
         ? {
             id: groupId,

@@ -123,6 +123,7 @@ pub(crate) async fn create_runtime_input(
         | TaskType::OmniQuery(_)
         | TaskType::Formatter(_)
         | TaskType::Conditional(_)
+        | TaskType::Visualize(_)
         | TaskType::Unknown => Ok(None),
     }
 }
@@ -473,7 +474,12 @@ impl Executable<TaskInput> for TaskExecutable {
                     }
                 }
             }
-            TaskType::Conditional(_) => todo!(),
+            TaskType::Conditional(_) => Err(OxyError::RuntimeError(
+                "Conditional task type is not yet supported for workflow execution".to_string(),
+            )),
+            TaskType::Visualize(_) => Err(OxyError::RuntimeError(
+                "Visualize task type is not yet supported for workflow execution".to_string(),
+            )),
             TaskType::Unknown => Err(OxyError::RuntimeError("Unknown task type".to_string())),
         };
         tracing::warn!("Executing task finished: {}", task.name);

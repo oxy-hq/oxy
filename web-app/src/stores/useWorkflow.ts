@@ -25,7 +25,8 @@ export enum TaskType {
   AGENT = "agent",
   LOOP_SEQUENTIAL = "loop_sequential",
   WORKFLOW = "workflow",
-  CONDITIONAL = "conditional"
+  CONDITIONAL = "conditional",
+  VISUALIZE = "visualize"
 }
 
 export enum NoneTaskNodeType {
@@ -108,7 +109,7 @@ export type WorkflowTaskConfigWithId = BaseTaskConfig & {
 
 export type ExecuteSqlTaskConfig = BaseTaskConfig & {
   type: TaskType.EXECUTE_SQL;
-  sql?: string;
+  sql_query?: string;
   sql_file?: string;
   database: string;
 };
@@ -141,6 +142,11 @@ export type OmniQueryTaskConfig = BaseTaskConfig & {
   sorts?: Record<string, string>;
 };
 
+export type VisualizeTaskConfig = BaseTaskConfig & {
+  type: TaskType.VISUALIZE;
+  prompt?: string;
+};
+
 // Unified TaskConfig type with discriminated union
 export type TaskConfig =
   | ExecuteSqlTaskConfig
@@ -150,7 +156,8 @@ export type TaskConfig =
   | AgentTaskConfig
   | LoopSequentialTaskConfig
   | ConditionalTaskConfig
-  | WorkflowTaskConfig;
+  | WorkflowTaskConfig
+  | VisualizeTaskConfig;
 
 export type TaskConfigWithId = (
   | ExecuteSqlTaskConfig
@@ -161,6 +168,7 @@ export type TaskConfigWithId = (
   | LoopSequentialTaskConfigWithId
   | WorkflowTaskConfigWithId
   | ConditionalTaskConfigWithId
+  | VisualizeTaskConfig
 ) & {
   id: string;
   workflowId: string;

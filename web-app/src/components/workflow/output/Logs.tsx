@@ -135,9 +135,21 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
     enabled: true
   });
 
+  // Auto-scroll to bottom only while pending and user hasn't scrolled up
+  const isUserScrolledUp = React.useRef(false);
+
+  const handleScroll = useCallback(() => {
+    const el = parentRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    isUserScrolledUp.current = distanceFromBottom > 100;
+  }, []);
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
+    if (isPending && !isUserScrolledUp.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
+    }
   }, [logs]);
 
   const items = logsVirtualizer.getVirtualItems();
@@ -162,6 +174,7 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
   return (
     <div
       ref={parentRef}
+      onScroll={handleScroll}
       className='customScrollbar scrollbar-gutter-auto relative h-full overflow-y-auto break-all bg-card p-4 pt-0 contain-strict'
       data-testid='workflow-output-logs'
     >

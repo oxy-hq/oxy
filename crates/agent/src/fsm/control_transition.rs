@@ -82,6 +82,21 @@ pub trait TriggerBuilder {
         )))
     }
 
+    async fn build_semantic_query_trigger(
+        &self,
+        _execution_context: &ExecutionContext,
+        _agentic_config: &AgenticConfig,
+        _semantic_query_config: &crate::fsm::semantic_query_config::SemanticQuery,
+        _objective: String,
+    ) -> Result<Box<dyn Trigger<State = Self>>, OxyError>
+    where
+        Self: std::fmt::Debug,
+    {
+        Err(OxyError::RuntimeError(format!(
+            "SemanticQuery trigger is not implemented for {self:?}"
+        )))
+    }
+
     async fn build_insight_trigger(
         &self,
         _execution_context: &ExecutionContext,
@@ -123,6 +138,21 @@ pub trait TriggerBuilder {
     {
         Err(OxyError::RuntimeError(format!(
             "Subflow trigger is not implemented for {self:?}"
+        )))
+    }
+
+    async fn build_save_automation_trigger(
+        &self,
+        _execution_context: &ExecutionContext,
+        _agentic_config: &AgenticConfig,
+        _save_automation_config: &crate::fsm::save_automation_config::SaveAutomation,
+        _objective: String,
+    ) -> Result<Box<dyn Trigger<State = Self>>, OxyError>
+    where
+        Self: std::fmt::Debug,
+    {
+        Err(OxyError::RuntimeError(format!(
+            "SaveAutomation trigger is not implemented for {self:?}"
         )))
     }
 

@@ -4,8 +4,16 @@ import { useStreamEvents } from "@/components/workflow/useWorkflowRun";
 import queryKeys from "@/hooks/api/queryKey";
 import { MessageFactory } from "@/hooks/messaging/core/messageFactory";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import type { Step } from "@/pages/thread/agentic/ArtifactSidebar/ArtifactBlockRenderer/SubGroupReasoningPanel/Reasoning";
 import { RunService, ThreadService } from "@/services/api";
-import type { Block, RunInfo } from "@/services/types";
+import type {
+  Block,
+  BlockBase,
+  RunInfo,
+  StepContent,
+  StepType,
+  TaskContent
+} from "@/services/types";
 import type { Message } from "@/types/chat";
 import { useBlockStore } from "./block";
 import useTaskThreadStore from "./useTaskThread";
@@ -14,8 +22,9 @@ export const useAgenticStore = (projectId: string, threadId: string) => {
   const result = useThreadMessages(projectId, threadId);
   const { setMessages } = useTaskThreadStore();
   const { setGroupBlocks } = useBlockStore();
+  const { project, branchName } = useCurrentProjectBranch();
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
+  // biome-ignore lint/correctness/useExhaustiveDependencies: setMessages, setGroupBlocks, project, and branchName are stable references that don't need to trigger re-runs
   useEffect(() => {
     const messages = result.data;
     if (messages) {
@@ -30,6 +39,33 @@ export const useAgenticStore = (projectId: string, threadId: string) => {
             message.run_info.error,
             message.run_info.metadata
           );
+
+          // Eagerly fetch nested sub-group blocks (e.g., routed automations)
+          if (message.run_info.blocks) {
+            for (const block of Object.values(message.run_info.blocks)) {
+              if (block.type !== "group") continue;
+              const [sourceId, runIndexStr] = block.group_id.split("::");
+              const runIndex = runIndexStr != null ? parseInt(runIndexStr, 10) : undefined;
+              RunService.getBlocks(project.id, branchName, {
+                source_id: sourceId,
+                run_index: runIndex
+              })
+                .then((groups) => {
+                  for (const group of groups) {
+                    setGroupBlocks(
+                      group,
+                      group.blocks,
+                      group.children,
+                      group.error,
+                      group.metadata
+                    );
+                  }
+                })
+                .catch(() => {
+                  console.error(`Failed to fetch blocks for group ${block.group_id}`);
+                });
+            }
+          }
         }
       });
     }
@@ -50,33 +86,37 @@ export const useObserveAgenticMessages = (threadId: string, refetch?: () => Prom
   const setGroupBlocks = useBlockStore((state) => state.setGroupBlocks);
   const { stream } = useStreamEvents();
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
-  useEffect(() => {
-    const abortRef = new AbortController();
-    const observeMessages = async () => {
-      const message = onGoingMessages[onGoingMessages.length - 1];
-      if (!message || !message.run_info) return;
+  // Derive stable primitive values from the last pending message so the effect
+  // only re-fires when the actual stream identity changes, not when the
+  // onGoingMessages array reference changes due to unrelated store updates.
+  const lastMessage = onGoingMessages[onGoingMessages.length - 1];
+  const streamSourceId = lastMessage?.run_info?.source_id ?? "";
+  const streamRunIndex = lastMessage?.run_info?.run_index ?? -1;
+  const streamMetadata = lastMessage?.run_info?.metadata;
 
-      setGroupBlocks(message.run_info, {}, [], undefined, message.run_info.metadata, true);
-      await stream
-        .mutateAsync({
-          sourceId: message.run_info.source_id,
-          runIndex: message.run_info.run_index,
-          abortRef: abortRef.signal
-        })
-        .catch((error) => {
-          console.error("Failed to observe agentic message stream:", Object.keys(error));
-        })
-        .finally(() => {
-          refetch?.();
-        });
-    };
-    observeMessages();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deps are primitive sourceId/runIndex to prevent unnecessary stream restarts
+  useEffect(() => {
+    if (!streamSourceId || streamRunIndex < 0 || !lastMessage?.run_info) return;
+    const abortRef = new AbortController();
+
+    setGroupBlocks(lastMessage.run_info, {}, [], undefined, streamMetadata, true);
+    stream
+      .mutateAsync({
+        sourceId: streamSourceId,
+        runIndex: streamRunIndex,
+        abortRef: abortRef.signal
+      })
+      .catch((error) => {
+        console.error("Failed to observe agentic message stream:", Object.keys(error));
+      })
+      .finally(() => {
+        refetch?.();
+      });
 
     return () => {
       abortRef.abort();
     };
-  }, [threadId, onGoingMessages]);
+  }, [threadId, streamSourceId, streamRunIndex]);
 };
 
 export const useAskAgentic = () => {
@@ -111,6 +151,100 @@ export const useAskAgentic = () => {
   });
 };
 
+const getReasoningStepsFromGroupBlocks = (
+  groupBlocks: Record<string, { blocks: Record<string, Block>; root: string[] }>,
+  runInfo?: RunInfo
+) => {
+  if (!runInfo) return [];
+  const group = groupBlocks[getGroupId(runInfo)];
+  if (!group) return [];
+
+  return group.root
+    .map((childId) => group.blocks[childId])
+    .filter(
+      (block): block is BlockBase & StepContent =>
+        block.type === "step" && block.step_type !== "end"
+    )
+    .map((stepBlock) => {
+      const routeGroupChild =
+        stepBlock.step_type === "route"
+          ? (stepBlock.children
+              .map((childId) => group.blocks[childId])
+              .find((child) => child?.type === "group") ??
+            // Fallback: group block may be at root level instead of nested under the step
+            Object.values(group.blocks).find((b) => b.type === "group"))
+          : undefined;
+      const allChildren = stepBlock.children.flatMap((childId) => {
+        const child = group.blocks[childId];
+        return child ? blockTraverse(child, group.blocks, isRenderableBlock) : [];
+      });
+      // Extract route name before filtering the text block out of rendered children
+      let routeName: string | undefined;
+      if (stepBlock.step_type === "route") {
+        const routeText = allChildren.find(
+          (c) => c.type === "text" && c.content?.startsWith("Selected route:")
+        );
+        if (routeText?.type === "text") {
+          routeName = routeText.content.match(/Selected route:\s*\*{0,2}(.+?)\*{0,2}\s*$/)?.[1];
+        }
+      }
+      const childrenBlocks =
+        stepBlock.step_type === "route"
+          ? allChildren.filter(
+              (child) => !(child.type === "text" && child.content?.startsWith("Selected route:"))
+            )
+          : allChildren;
+      return {
+        ...stepBlock,
+        childrenBlocks,
+        ...(routeGroupChild?.type === "group" ? { routeGroupId: routeGroupChild.group_id } : {}),
+        ...(routeName ? { routeName } : {})
+      };
+    });
+};
+
+export const getMessageReasoningSteps = (runInfo?: RunInfo) => {
+  const { groupBlocks } = useBlockStore.getState();
+  return getReasoningStepsFromGroupBlocks(groupBlocks, runInfo);
+};
+
+export const useMessageReasoningSteps = (runInfo?: RunInfo) => {
+  const groupBlocks = useBlockStore((state) => state.groupBlocks);
+  return getReasoningStepsFromGroupBlocks(groupBlocks, runInfo);
+};
+
+export const useGroupReasoningSteps = (groupId: string | null) => {
+  const groupBlocks = useBlockStore((state) => state.groupBlocks);
+  if (!groupId) return [];
+  const group = groupBlocks[groupId];
+  if (!group) return [];
+
+  const rootBlocks = group.root.map((childId) => group.blocks[childId]).filter(Boolean);
+  const stepOrTaskBlocks = rootBlocks.filter(
+    (block) => block.type === "step" || block.type === "task"
+  );
+
+  // If no step/task blocks, follow nested group chain (e.g., artifact wrapping workflow)
+  if (stepOrTaskBlocks.length === 0) {
+    const nestedGroupBlock = rootBlocks.find((block) => block.type === "group");
+    if (nestedGroupBlock?.type === "group") {
+      const nestedGroup = groupBlocks[nestedGroupBlock.group_id];
+      if (nestedGroup) {
+        return mapReasoningSteps(nestedGroup);
+      }
+    }
+    return [];
+  }
+
+  return mapReasoningSteps(group);
+};
+
+export const useGroupStreaming = (groupId: string | null) => {
+  const processingGroups = useBlockStore((state) => state.processingGroups);
+  if (!groupId) return false;
+  return !!processingGroups[groupId];
+};
+
 export const useSelectedMessageReasoning = () => {
   const selectedGroupId = useBlockStore((state) => state.selectedGroupId);
   const setSelectedGroupId = useBlockStore((state) => state.setSelectedGroupId);
@@ -119,7 +253,7 @@ export const useSelectedMessageReasoning = () => {
   const group = groupBlocks[selectedGroupId || ""];
   const blocks = group?.root.map((childId) => group.blocks[childId]) || [];
   const reasoningSteps = blocks
-    .filter((block) => block.type === "step")
+    .filter((block): block is StepBlock => block.type === "step" && block.step_type !== "end")
     .map((stepBlock) => {
       const childBlocks = stepBlock.children.flatMap((childId) => {
         const childBlock = group.blocks[childId];
@@ -294,18 +428,74 @@ const useAllPred = () => {
   }, []);
 };
 
+const PENDING_STATUSES = ["pending", "running"];
 const usePendingPred = () => {
   return useCallback((message: Message) => {
-    return !!message.run_info && ["pending", "running"].includes(message.run_info.status);
+    return !!message.run_info && PENDING_STATUSES.includes(message.run_info.status);
   }, []);
 };
+
+type StepBlock = BlockBase & StepContent;
+type TaskBlock = BlockBase & TaskContent;
+
+const mapReasoningSteps = (group: { blocks: Record<string, Block>; root: string[] }): Step[] => {
+  return group.root
+    .map((childId) => group.blocks[childId])
+    .filter(
+      (block): block is StepBlock | TaskBlock =>
+        (block?.type === "step" && block.step_type !== "end") || block?.type === "task"
+    )
+    .map((block): Step => {
+      const childrenBlocks = block.children.flatMap((childId) => {
+        const child = group.blocks[childId];
+        return child ? blockTraverse(child, group.blocks, isRenderableBlock) : [];
+      });
+      if (block.type === "task") {
+        return {
+          id: block.id,
+          type: "step" as const,
+          step_type: inferStepType(block.children, group.blocks),
+          objective: block.task_name,
+          children: block.children,
+          error: block.error,
+          is_streaming: block.is_streaming,
+          childrenBlocks
+        };
+      }
+      return { ...block, childrenBlocks };
+    });
+};
+
+function inferStepType(children: string[], blocks: Record<string, Block>): StepType {
+  for (const childId of children) {
+    const child = blocks[childId];
+    if (!child) continue;
+    switch (child.type) {
+      case "semantic_query":
+        return "semantic_query";
+      case "sql":
+        return "query";
+      case "viz":
+        return "visualize";
+      case "data_app":
+        return "build_app";
+      case "text":
+        return "insight";
+    }
+    if ((child.type === "task" || child.type === "step") && child.children.length > 0) {
+      const nested = inferStepType(child.children, blocks);
+      if (nested !== "subflow") return nested;
+    }
+  }
+  return "subflow";
+}
 
 const isArtifactBlock = (block: Block) => {
   return ["data_app", "sql", "viz"].includes(block.type);
 };
 
 const isRenderableBlock = (block: Block) => {
-  return isArtifactBlock(block) || block.type === "text";
+  return isArtifactBlock(block) || block.type === "text" || block.type === "semantic_query";
 };
 
 const getGroupId = (runInfo?: RunInfo) => {

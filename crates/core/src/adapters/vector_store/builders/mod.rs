@@ -5,7 +5,8 @@ use crate::{
     },
     config::{
         ConfigManager,
-        model::{AgentConfig, AgentType, RouteRetrievalConfig, RoutingAgent, ToolType, Workflow},
+        agent_config::AgenticConfig,
+        model::{AgentConfig, AgentType, RouteRetrievalConfig, ToolType, Workflow},
     },
     theme::StyledText,
 };
@@ -49,6 +50,21 @@ impl From<&AgentConfig> for RetrievalMetadata {
             description: Some(a.description.clone()),
             retrieval: a.retrieval.clone(),
             source_type: "agent".to_string(),
+        }
+    }
+}
+
+impl From<&AgenticConfig> for RetrievalMetadata {
+    fn from(a: &AgenticConfig) -> Self {
+        let description = if a.instruction.trim().is_empty() {
+            a.start.start.description.clone()
+        } else {
+            a.instruction.clone()
+        };
+        RetrievalMetadata {
+            description: Some(description),
+            retrieval: None,
+            source_type: "agentic_workflow".to_string(),
         }
     }
 }
@@ -120,7 +136,7 @@ pub async fn build_all_retrieval_objects(
             }
             AgentType::Routing(routing_agent) => {
                 let objects =
-                    build_retrieval_objects_from_routing_agent(config, routing_agent).await?;
+                    build_retrieval_objects_from_routes(&routing_agent.routes, config).await?;
                 if !objects.iter().any(|o| !o.inclusions.is_empty()) {
                     println!(
                         "{}",
@@ -133,6 +149,33 @@ pub async fn build_all_retrieval_objects(
                 }
                 all_objects.extend(objects);
             }
+        }
+    }
+
+    // Process agentic workflows with routing config
+    for aw_dir in config.list_agentic_workflows().await? {
+        let aw = config.resolve_agentic_workflow(&aw_dir).await?;
+        if let Some(routing_config) = &aw.start.routing {
+            println!(
+                "{}",
+                format!(
+                    "Building retrieval objects for agentic workflow routing: {}",
+                    aw.name
+                )
+            );
+            let objects =
+                build_retrieval_objects_from_routes(&routing_config.routes, config).await?;
+            if !objects.iter().any(|o| !o.inclusions.is_empty()) {
+                println!(
+                    "{}",
+                    format!(
+                        "No inclusion records found for agentic workflow routing: {:?}",
+                        &aw.name
+                    )
+                );
+                continue;
+            }
+            all_objects.extend(objects);
         }
     }
 
@@ -222,7 +265,9 @@ pub async fn ingest_retrieval_objects(
                     db.cleanup().await?;
                 }
 
-                if !retrieval_objects.iter().any(|o| !o.inclusions.is_empty()) {
+                let route_objects =
+                    build_retrieval_objects_from_routes(&routing_agent.routes, config).await?;
+                if !route_objects.iter().any(|o| !o.inclusions.is_empty()) {
                     println!(
                         "{}",
                         format!(
@@ -232,10 +277,53 @@ pub async fn ingest_retrieval_objects(
                     );
                     continue;
                 }
-                db.ingest(&retrieval_objects.to_vec()).await?;
+                db.ingest(&route_objects).await?;
             }
         }
     }
+
+    // Process agentic workflows with routing config
+    for aw_dir in config.list_agentic_workflows().await? {
+        let aw = config.resolve_agentic_workflow(&aw_dir).await?;
+        if let Some(routing_config) = &aw.start.routing {
+            println!(
+                "{}",
+                format!(
+                    "Building embeddings for agentic workflow routing: {}",
+                    aw.name
+                )
+            );
+            let model = config.resolve_model(&aw.model)?;
+            let db = VectorStore::new(
+                config,
+                secrets_manager,
+                &routing_config.db_config,
+                &format!("{}-routing", aw.name),
+                model.clone(),
+                routing_config.embedding_config.clone(),
+            )
+            .await?;
+
+            if drop_all_tables {
+                db.cleanup().await?;
+            }
+
+            let route_objects =
+                build_retrieval_objects_from_routes(&routing_config.routes, config).await?;
+            if !route_objects.iter().any(|o| !o.inclusions.is_empty()) {
+                println!(
+                    "{}",
+                    format!(
+                        "No inclusion records found for agentic workflow routing: {:?}",
+                        &aw.name
+                    )
+                );
+                continue;
+            }
+            db.ingest(&route_objects).await?;
+        }
+    }
+
     Ok(())
 }
 
@@ -288,16 +376,16 @@ fn build_retrieval_object(
     })
 }
 
-async fn build_retrieval_objects_from_routing_agent(
+async fn build_retrieval_objects_from_routes(
+    routes: &Vec<String>,
     config: &ConfigManager,
-    routing_agent: &RoutingAgent,
 ) -> Result<Vec<RetrievalObject>, OxyError> {
-    let paths = config.resolve_glob(&routing_agent.routes).await?;
+    let paths = config.resolve_glob(routes).await?;
 
     if paths.is_empty() {
         println!(
-            "WARNING: No paths resolved from routing agent glob patterns: {:?}",
-            routing_agent.routes
+            "WARNING: No paths resolved from routing glob patterns: {:?}",
+            routes
         );
         return Ok(vec![]);
     }
@@ -305,7 +393,10 @@ async fn build_retrieval_objects_from_routing_agent(
     let paths_len = paths.len();
     let get_retrieval_object = async |path: String| -> Result<RetrievalObject, OxyError> {
         match &path {
-            workflow_path if workflow_path.ends_with(".workflow.yml") => {
+            workflow_path
+                if workflow_path.ends_with(".workflow.yml")
+                    || workflow_path.ends_with(".automation.yml") =>
+            {
                 workflow_to_retrieval_object(config, workflow_path).await
             }
             agent_path if agent_path.ends_with(".agent.yml") => {
@@ -314,6 +405,9 @@ async fn build_retrieval_objects_from_routing_agent(
             sql_path if path.ends_with(".sql") => sql_to_retrieval_object(config, sql_path).await,
             topic_path if topic_path.ends_with(".topic.yml") => {
                 topic_to_retrieval_object(topic_path).await
+            }
+            aw_path if aw_path.ends_with(".aw.yml") || aw_path.ends_with(".aw.yaml") => {
+                aw_to_retrieval_object(config, aw_path).await
             }
             _ => Err(OxyError::ConfigurationError(format!(
                 "Unsupported file format for path: {path}"
@@ -334,15 +428,13 @@ async fn build_retrieval_objects_from_routing_agent(
     let all_objects: Vec<RetrievalObject> = objects_list;
 
     println!(
-        "Routing agent object creation completed: {} objects created from {} paths",
+        "Routing object creation completed: {} objects created from {} paths",
         all_objects.len(),
         paths_len
     );
 
     if !all_objects.iter().any(|o| !o.inclusions.is_empty()) {
-        println!(
-            "WARNING: No inclusion records were created for routing agent. This may indicate:"
-        );
+        println!("WARNING: No inclusion records were created for routing. This may indicate:");
         println!("  - All workflow/agent files have empty descriptions");
         println!("  - Topic files have empty descriptions");
         println!("  - SQL files contain no valid embeddable content");
@@ -422,6 +514,16 @@ async fn agent_to_retrieval_object(
     let metadata = RetrievalMetadata::from(&agent);
 
     build_retrieval_object(metadata, agent_path)
+}
+
+async fn aw_to_retrieval_object(
+    config: &ConfigManager,
+    aw_path: &str,
+) -> Result<RetrievalObject, OxyError> {
+    let aw = config.resolve_agentic_workflow(aw_path).await?;
+    let metadata = RetrievalMetadata::from(&aw);
+
+    build_retrieval_object(metadata, aw_path)
 }
 
 async fn sql_to_retrieval_object(

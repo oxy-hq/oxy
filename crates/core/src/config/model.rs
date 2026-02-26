@@ -1906,6 +1906,22 @@ pub struct WorkflowTask {
     pub export: Option<TaskExport>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+#[garde(context(ValidationContext))]
+pub struct VisualizeTask {
+    #[garde(skip)]
+    #[serde(default)]
+    pub prompt: String,
+    #[garde(dive)]
+    pub export: Option<TaskExport>,
+}
+
+impl Hash for VisualizeTask {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.prompt.hash(state);
+    }
+}
+
 impl Hash for WorkflowTask {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.src.hash(state);
@@ -2024,6 +2040,8 @@ pub enum TaskType {
     Workflow(#[garde(dive)] WorkflowTask),
     #[serde(rename = "conditional")]
     Conditional(#[garde(dive)] ConditionalTask),
+    #[serde(rename = "visualize")]
+    Visualize(#[garde(dive)] VisualizeTask),
     #[serde(other)]
     Unknown,
 }
@@ -2055,6 +2073,7 @@ impl Task {
             TaskType::Formatter(_) => "formatter",
             TaskType::Workflow(_) => "sub_workflow",
             TaskType::Conditional(_) => "conditional",
+            TaskType::Visualize(_) => "visualize",
             TaskType::Unknown => "unknown",
         }
     }
@@ -2314,6 +2333,16 @@ pub struct SemanticQueryTool {
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+pub struct SaveAutomationTool {
+    #[serde(default = "default_save_automation_tool_name")]
+    pub name: String,
+    #[serde(default = "default_save_automation_tool_description")]
+    pub description: String,
+    #[serde(default)]
+    pub retrieval: Option<RouteRetrievalConfig>,
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct ValidateSQLTool {
     #[serde(default = "default_validate_sql_name")]
     pub name: String,
@@ -2507,6 +2536,8 @@ pub enum ToolType {
     OmniQuery(OmniQueryTool),
     #[serde(rename = "semantic_query")]
     SemanticQuery(SemanticQueryTool),
+    #[serde(rename = "save_automation")]
+    SaveAutomation(SaveAutomationTool),
 }
 
 impl From<ExecuteSQLTool> for ToolType {
@@ -2537,6 +2568,12 @@ impl From<SemanticQueryTool> for ToolType {
     }
 }
 
+impl From<SaveAutomationTool> for ToolType {
+    fn from(tool: SaveAutomationTool) -> Self {
+        ToolType::SaveAutomation(tool)
+    }
+}
+
 impl ToolType {
     /// Get the name of the tool
     pub fn name(&self) -> &str {
@@ -2553,6 +2590,7 @@ impl ToolType {
             ToolType::CreateV0App(tool) => &tool.name,
             ToolType::OmniQuery(tool) => &tool.name,
             ToolType::SemanticQuery(tool) => &tool.name,
+            ToolType::SaveAutomation(tool) => &tool.name,
         }
     }
 
@@ -2888,6 +2926,25 @@ impl ToolType {
                     v0_api_key_var: tool.v0_api_key_var.clone(),
                 })
             }
+            ToolType::SaveAutomation(tool) => {
+                renderer.register_template(&tool.description)?;
+                let rendered_description =
+                    renderer
+                        .render_async(&tool.description)
+                        .await
+                        .map_err(|e| {
+                            OxyError::RuntimeError(format!(
+                                "Failed to render SaveAutomation description: {}",
+                                e
+                            ))
+                        })?;
+
+                ToolType::SaveAutomation(SaveAutomationTool {
+                    name: tool.name.clone(),
+                    description: rendered_description,
+                    retrieval: tool.retrieval.clone(),
+                })
+            }
         })
     }
 
@@ -3142,6 +3199,14 @@ fn default_omni_query_name() -> String {
 
 fn default_semantic_query_name() -> String {
     "semantic_query".to_string()
+}
+
+fn default_save_automation_tool_name() -> String {
+    "save_automation".to_string()
+}
+
+fn default_save_automation_tool_description() -> String {
+    "Save the current analysis steps as a reusable automation.".to_string()
 }
 
 fn default_tools() -> Vec<ToolType> {

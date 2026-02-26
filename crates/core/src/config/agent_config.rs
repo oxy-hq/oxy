@@ -5,6 +5,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use super::model::{EmbeddingConfig, VectorDBConfig};
+
 /// Configuration for an agentic workflow (FSM-based agent)
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AgenticConfig {
@@ -43,6 +45,17 @@ pub struct StartConfig {
     #[serde(flatten)]
     pub start: Start,
     pub next: TransitionMode,
+    #[serde(default)]
+    pub routing: Option<RoutingConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RoutingConfig {
+    pub routes: Vec<String>,
+    #[serde(default, flatten)]
+    pub db_config: VectorDBConfig,
+    #[serde(flatten)]
+    pub embedding_config: EmbeddingConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
@@ -160,9 +173,11 @@ pub struct Transition {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TriggerType {
     Query(serde_json::Value),
+    SemanticQuery(serde_json::Value),
     Visualize(serde_json::Value),
     Insight(serde_json::Value),
     Subflow(serde_json::Value),
+    SaveAutomation(serde_json::Value),
     End(serde_json::Value),
 }
 

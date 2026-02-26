@@ -55,38 +55,44 @@
   --editor-background: #0d1117;
 
   --special: #dfecfa;
+
+  --node-query: oklch(0.65 0.15 160);
+  --node-agent: oklch(0.75 0.12 55);
+  --node-formatter: oklch(0.55 0.15 280);
+  --node-plan: oklch(0.6 0.1 220);
+  --node-insight: oklch(0.7 0.1 80);
 }
 
 .dark {
-  --background: #212121;
-  --foreground: #f8f8f8;
-  --card: oklch(0.145 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: #171717;
-  --popover-foreground: oklch(0.985 0 0);
+  --background: #181818;
+  --foreground: #e8e8e8;
+  --card: #1e1e1e;
+  --card-foreground: #e8e8e8;
+  --popover: #1a1a1a;
+  --popover-foreground: #e8e8e8;
   --primary: #3a71d6;
   --primary-foreground: #ffffff;
-  --secondary: oklch(0.269 0 0);
+  --secondary: #262626;
   --secondary-foreground: #a9a9b2;
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --muted: #262626;
+  --muted-foreground: #888888;
+  --accent: #262626;
+  --accent-foreground: #e8e8e8;
   --destructive: oklch(0.704 0.191 22.216);
   --destructive-foreground: oklch(0.637 0.237 25.331);
-  --border: #383838;
-  --input: oklch(1 0 0 / 15%);
+  --border: #2e2e2e;
+  --input: oklch(1 0 0 / 12%);
   --ring: oklch(0.439 0 0);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
+  --sidebar: #0f0f0f;
 
   --warning: #eab308;
 
-  --sidebar-background: #171717;
+  --sidebar-background: #0f0f0f;
   --sidebar-foreground: hsl(240 4.8% 95.9%);
   --sidebar-primary: hsl(224.3 76.3% 48%);
   --sidebar-primary-foreground: hsl(0 0% 100%);
@@ -104,6 +110,12 @@
   --special: #305cc5;
 
   --editor-background: #0d1117;
+
+  --node-query: oklch(0.65 0.15 160);
+  --node-agent: oklch(0.75 0.12 55);
+  --node-formatter: oklch(0.55 0.15 280);
+  --node-plan: oklch(0.6 0.1 220);
+  --node-insight: oklch(0.7 0.1 80);
 }
 
 @theme inline {
@@ -157,6 +169,12 @@
   --color-warning: var(--warning);
 
   --color-special: var(--special);
+
+  --color-node-query: var(--node-query);
+  --color-node-agent: var(--node-agent);
+  --color-node-formatter: var(--node-formatter);
+  --color-node-plan: var(--node-plan);
+  --color-node-insight: var(--node-insight);
 }
 
 /* Onboarding step expansion animation */

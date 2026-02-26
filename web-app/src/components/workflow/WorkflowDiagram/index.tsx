@@ -20,7 +20,8 @@ const nodeTypes: Record<NodeType, typeof DiagramNode> = {
   conditional: DiagramNode,
   "conditional-else": DiagramNode,
   "conditional-if": DiagramNode,
-  omni_query: DiagramNode
+  omni_query: DiagramNode,
+  visualize: DiagramNode
 } as const;
 
 interface WorkflowDiagramProps {
@@ -85,7 +86,10 @@ const WorkflowDiagram: React.FC<WorkflowDiagramProps> = ({ workflowId, runId, wo
         nodesDraggable={false}
       >
         <Controls showInteractive={false} />
-        <Background color='#ccc' variant={BackgroundVariant.Dots} />
+        <Background
+          color={theme === "dark" ? "#2a2a2a" : "#ddd"}
+          variant={BackgroundVariant.Dots}
+        />
       </ReactFlow>
     </div>
   );

@@ -102,6 +102,7 @@ impl ToolLauncher {
                     ToolType::CreateV0App(t) => &t.name,
                     ToolType::OmniQuery(t) => &t.name,
                     ToolType::SemanticQuery(t) => &t.name,
+                    ToolType::SaveAutomation(t) => &t.name,
                 };
                 name == tool_name
             })

@@ -12,9 +12,15 @@ use oxy::{
     config::{
         ConfigManager,
         constants::{CONCURRENCY_SOURCE, CONSISTENCY_SOURCE, TASK_SOURCE, WORKFLOW_SOURCE},
-        model::{ConnectionOverrides, ExecuteSQLTask, SQL, Task, TaskType, Workflow},
+        model::{
+            ConnectionOverrides, ExecuteSQLTask, RouteRetrievalConfig, SQL, Task, TaskType,
+            Workflow,
+        },
     },
-    constants::{WORKFLOW_FILE_EXTENSION, WORKFLOW_SAVED_FROM_QUERY_DIR},
+    constants::{
+        AUTOMATION_FILE_EXTENSION, AUTOMATION_SAVED_DIR, WORKFLOW_FILE_EXTENSION,
+        WORKFLOW_SAVED_FROM_QUERY_DIR,
+    },
     execute::{
         types::{Event, EventKind, Output, OutputContainer, ProgressType},
         writer::EventHandler,
@@ -348,15 +354,20 @@ pub async fn get_workflow_logs(
 ) -> Result<Vec<LogItem>, OxyError> {
     let full_workflow_path = config_manager.resolve_file(path).await?;
     let full_workflow_path_b64: String = BASE64_STANDARD.encode(full_workflow_path);
-    let log_file_path = format!("/var/tmp/oxy-{full_workflow_path_b64}.log.json");
+    let log_file_path = std::env::temp_dir()
+        .join(format!("oxy-{full_workflow_path_b64}.log.json"))
+        .to_string_lossy()
+        .into_owned();
     let content = std::fs::read_to_string(log_file_path);
     match content {
         Ok(content) => {
             let mut logs: Vec<LogItem> = vec![];
             let lines = content.lines();
             for line in lines {
-                let log_item: LogItem = serde_json::from_str(line).unwrap();
-                logs.push(log_item);
+                match serde_json::from_str::<LogItem>(line) {
+                    Ok(log_item) => logs.push(log_item),
+                    Err(e) => tracing::warn!("Skipping malformed log line: {}", e),
+                }
             }
             Ok(logs)
         }
@@ -398,12 +409,95 @@ pub async fn create_workflow_from_query(
         .resolve_file(WORKFLOW_SAVED_FROM_QUERY_DIR)
         .await?;
     let workflow_dir = PathBuf::from(workflow_dir);
-    if !workflow_dir.exists() {
-        std::fs::create_dir_all(&workflow_dir)?;
-    }
+    tokio::fs::create_dir_all(&workflow_dir).await?;
     let workflow_path = workflow_dir.join(format!("{}{}", &workflow_name, WORKFLOW_FILE_EXTENSION));
 
-    let _ = serde_yaml::to_writer(std::fs::File::create(&workflow_path)?, &workflow);
+    let yaml = serde_yaml::to_string(&workflow)
+        .map_err(|e| OxyError::RuntimeError(format!("Failed to serialize workflow: {}", e)))?;
+    tokio::fs::write(&workflow_path, yaml).await?;
 
     Ok(workflow)
+}
+
+pub async fn create_automation(
+    name: &str,
+    description: &str,
+    tasks: Vec<Task>,
+    retrieval: Option<RouteRetrievalConfig>,
+    config_manager: &ConfigManager,
+) -> Result<(Workflow, String), OxyError> {
+    let automation_name = {
+        let slug = slugify!(name, separator = "_");
+        if slug.is_empty() {
+            return Err(OxyError::ArgumentError(format!(
+                "Automation name {:?} produces an empty slug; please use alphanumeric characters.",
+                name
+            )));
+        }
+        slug
+    };
+
+    if tasks.is_empty() {
+        return Err(OxyError::ArgumentError(
+            "Cannot save an automation with no executable tasks.".to_string(),
+        ));
+    }
+
+    let workflow = Workflow {
+        name: automation_name.clone(),
+        description: description.to_string(),
+        tasks,
+        tests: vec![],
+        variables: None,
+        retrieval,
+        consistency_prompt: None,
+    };
+
+    let automation_dir = config_manager.resolve_file(AUTOMATION_SAVED_DIR).await?;
+    let automation_dir = PathBuf::from(automation_dir);
+    tokio::fs::create_dir_all(&automation_dir)
+        .await
+        .map_err(|e| {
+            OxyError::RuntimeError(format!("Failed to create automation directory: {}", e))
+        })?;
+
+    let yaml = serde_yaml::to_string(&workflow)
+        .map_err(|e| OxyError::RuntimeError(format!("Failed to serialize automation: {}", e)))?;
+
+    // Use create_new(true) to atomically find a unique path and write the file,
+    // avoiding both blocking exists() calls and the TOCTOU race.
+    let mut candidate_name = automation_name.clone();
+    let mut counter = 2u32;
+    let automation_path = loop {
+        let path = automation_dir.join(format!("{}{}", candidate_name, AUTOMATION_FILE_EXTENSION));
+        match tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .await
+        {
+            Ok(mut file) => {
+                use tokio::io::AsyncWriteExt;
+                file.write_all(yaml.as_bytes()).await.map_err(|e| {
+                    OxyError::RuntimeError(format!("Failed to write automation file: {}", e))
+                })?;
+                break path;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                candidate_name = format!("{}_{}", automation_name, counter);
+                counter += 1;
+            }
+            Err(e) => {
+                return Err(OxyError::RuntimeError(format!(
+                    "Failed to create automation file: {}",
+                    e
+                )));
+            }
+        }
+    };
+    let relative_path = Path::new(AUTOMATION_SAVED_DIR)
+        .join(format!("{}{}", candidate_name, AUTOMATION_FILE_EXTENSION));
+
+    tracing::info!("Saved automation to: {}", automation_path.display());
+    Ok((workflow, relative_path.to_string_lossy().to_string()))
 }

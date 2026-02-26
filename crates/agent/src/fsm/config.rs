@@ -2,10 +2,13 @@ use crate::fsm::{
     control::config::{End, EndMode, OutputArtifact, Start, StartMode},
     data_app::config::Insight,
     query::config::Query,
+    save_automation::config::SaveAutomation,
+    semantic_query::config::SemanticQuery,
     subflow::config::Subflow,
     viz::config::Visualize,
 };
 use oxy::config::constants::{AGENT_END_TRANSITION, AGENT_START_TRANSITION};
+use oxy::config::model::{EmbeddingConfig, VectorDBConfig};
 use oxy::execute::{renderer::TemplateRegister, types::event::StepKind};
 use oxy_shared::errors::OxyError;
 
@@ -136,14 +139,26 @@ impl TemplateRegister for TriggerType {
             TriggerType::Start(s) => s.register_template(renderer),
             TriggerType::End(e) => e.register_template(renderer),
             TriggerType::Query(q) => q.register_template(renderer),
+            TriggerType::SemanticQuery(sq) => sq.register_template(renderer),
             TriggerType::Visualize(v) => v.register_template(renderer),
             TriggerType::Insight(i) => i.register_template(renderer),
+            TriggerType::SaveAutomation(_) => Ok(()),
             _ => Ok(()),
         }
     }
 }
 
 impl TemplateRegister for Query {
+    fn register_template(
+        &self,
+        renderer: &oxy::execute::renderer::Renderer,
+    ) -> Result<(), OxyError> {
+        renderer.register_template(&self.instruction)?;
+        Ok(())
+    }
+}
+
+impl TemplateRegister for SemanticQuery {
     fn register_template(
         &self,
         renderer: &oxy::execute::renderer::Renderer,
@@ -178,6 +193,31 @@ pub struct StartConfig {
     #[serde(flatten)]
     pub start: Start,
     pub next: TransitionMode,
+    #[serde(default)]
+    pub routing: Option<RoutingConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RoutingConfig {
+    pub routes: Vec<String>,
+    #[serde(default, flatten)]
+    pub db_config: VectorDBConfig,
+    #[serde(flatten)]
+    pub embedding_config: EmbeddingConfig,
+    /// Base URL of the embedding API (defaults to OpenAI).
+    #[serde(default = "default_routing_api_url")]
+    pub api_url: String,
+    /// Environment variable name holding the embedding API key (defaults to OPENAI_API_KEY).
+    #[serde(default = "default_routing_key_var")]
+    pub key_var: String,
+}
+
+fn default_routing_api_url() -> String {
+    "https://api.openai.com/v1".to_string()
+}
+
+fn default_routing_key_var() -> String {
+    "OPENAI_API_KEY".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
@@ -319,9 +359,11 @@ pub enum TriggerType {
     Start(Start),
     End(End),
     Query(Query),
+    SemanticQuery(SemanticQuery),
     Visualize(Visualize),
     Insight(Insight),
     Subflow(Subflow),
+    SaveAutomation(SaveAutomation),
 }
 
 impl TriggerType {
@@ -338,9 +380,11 @@ impl TriggerType {
             TriggerType::Start(s) => &s.name,
             TriggerType::End(e) => &e.name,
             TriggerType::Query(q) => &q.name,
+            TriggerType::SemanticQuery(sq) => &sq.name,
             TriggerType::Visualize(v) => &v.name,
             TriggerType::Insight(i) => &i.name,
             TriggerType::Subflow(s) => &s.name,
+            TriggerType::SaveAutomation(sr) => &sr.name,
         }
     }
 
@@ -355,9 +399,11 @@ impl TriggerType {
                 _ => StepKind::End,
             },
             TriggerType::Query(_) => StepKind::Query,
+            TriggerType::SemanticQuery(_) => StepKind::SemanticQuery,
             TriggerType::Visualize(_) => StepKind::Visualize,
             TriggerType::Insight(_) => StepKind::Insight,
             TriggerType::Subflow(_) => StepKind::Subflow,
+            TriggerType::SaveAutomation(_) => StepKind::SaveAutomation,
         }
     }
 
@@ -366,9 +412,11 @@ impl TriggerType {
             TriggerType::Start(s) => &s.description,
             TriggerType::End(e) => &e.description,
             TriggerType::Query(q) => &q.description,
+            TriggerType::SemanticQuery(sq) => &sq.description,
             TriggerType::Visualize(v) => &v.description,
             TriggerType::Insight(i) => &i.description,
             TriggerType::Subflow(s) => &s.description,
+            TriggerType::SaveAutomation(sr) => &sr.description,
         }
     }
 }

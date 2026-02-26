@@ -180,7 +180,10 @@ pub fn validate_task(task_type: &TaskType, _context: &ValidationContext) -> gard
             &[ExportFormat::JSON, ExportFormat::CSV, ExportFormat::SQL],
             "OmniQuery",
         ),
-        TaskType::Workflow(_) | TaskType::LoopSequential(_) | TaskType::Unknown => Ok(()),
+        TaskType::Workflow(_)
+        | TaskType::LoopSequential(_)
+        | TaskType::Visualize(_)
+        | TaskType::Unknown => Ok(()),
         TaskType::Conditional(_) => Ok(()),
     }
 }

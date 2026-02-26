@@ -67,6 +67,22 @@ export class WorkflowService {
     });
   }
 
+  static async saveAutomation(
+    projectId: string,
+    branchName: string,
+    request: {
+      name: string;
+      description: string;
+      tasks: unknown[];
+      retrieval?: { include: string[]; exclude: string[] };
+    }
+  ): Promise<{ automation: Workflow; path: string }> {
+    const response = await apiClient.post(`/${projectId}/automations/save`, request, {
+      params: { branch: branchName }
+    });
+    return response.data;
+  }
+
   static async runWorkflowThread(
     projectId: string,
     branchName: string,

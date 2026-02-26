@@ -12,6 +12,7 @@ pub mod contexts;
 pub mod databases;
 pub mod fsm;
 pub mod references;
+pub mod routing;
 pub mod tool_executor;
 pub mod types;
 

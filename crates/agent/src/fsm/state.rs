@@ -19,8 +19,11 @@ use crate::fsm::{
     data_app::{BuildDataApp, GenerateInsight, config::Insight},
     machine::Agent,
     query::{AutoSQL, config::Query},
+    route_trigger::RouteTrigger,
+    save_automation::{AutoSaveAutomation, config::SaveAutomation},
+    semantic_query::{AutoSemanticQuery, config::SemanticQuery},
     trigger::StepTrigger,
-    types::{Artifact, Message, ToolReq, ToolRes},
+    types::{Artifact, Message, TableSource, ToolReq, ToolRes},
 };
 use oxy::adapters::{openai::OpenAIAdapter, project::manager::ProjectManager};
 use oxy::config::constants::{
@@ -49,6 +52,8 @@ pub struct MachineContext {
     user_query: String,
     plan: Option<String>,
     synthesized_output: Option<String>,
+    route_completed: bool,
+    route_fallback: bool,
 }
 
 impl MachineContext {
@@ -71,6 +76,8 @@ impl MachineContext {
             user_query,
             plan: None,
             synthesized_output: None,
+            route_completed: false,
+            route_fallback: false,
         })
     }
 
@@ -80,6 +87,14 @@ impl MachineContext {
 
     pub fn set_transition_name(&mut self, name: &str) {
         self.transition_name = name.to_string();
+    }
+
+    pub fn set_route_completed(&mut self) {
+        self.route_completed = true;
+    }
+
+    pub fn set_route_fallback(&mut self) {
+        self.route_fallback = true;
     }
 
     pub fn user_query(&self) -> &str {
@@ -150,11 +165,18 @@ impl MachineContext {
         Ok(viz_params.with_data_path(&file_path))
     }
 
-    pub fn add_table(&mut self, _objective: String, tool_req: ToolReq, table: Table) {
+    pub fn add_table(
+        &mut self,
+        _objective: String,
+        tool_req: ToolReq,
+        table: Table,
+        source: TableSource,
+    ) {
         let table_artifact = Artifact::Table {
             table_name: table.name.clone(),
             description: table.summary(),
             table,
+            source,
         };
         self.add_artifact(tool_req, table_artifact);
     }
@@ -519,6 +541,26 @@ impl TriggerBuilder for MachineContext {
         )))
     }
 
+    async fn build_semantic_query_trigger(
+        &self,
+        execution_context: &ExecutionContext,
+        agentic_config: &AgenticConfig,
+        semantic_query_config: &SemanticQuery,
+        objective: String,
+    ) -> Result<Box<dyn Trigger<State = Self>>, OxyError> {
+        let model_ref = semantic_query_config
+            .model
+            .as_deref()
+            .unwrap_or(&agentic_config.model);
+        let openai_adapter =
+            OpenAIAdapter::from_config(execution_context.project.clone(), model_ref).await?;
+        Ok(Box::new(AutoSemanticQuery::<MachineContext>::new(
+            openai_adapter,
+            semantic_query_config.clone(),
+            objective,
+        )))
+    }
+
     async fn build_viz_trigger(
         &self,
         execution_context: &ExecutionContext,
@@ -568,6 +610,22 @@ impl TriggerBuilder for MachineContext {
         Self: std::fmt::Debug,
     {
         Ok(Box::new(BuildDataApp::<MachineContext>::new(objective)))
+    }
+
+    async fn build_save_automation_trigger(
+        &self,
+        _execution_context: &ExecutionContext,
+        _agentic_config: &AgenticConfig,
+        save_automation_config: &SaveAutomation,
+        objective: String,
+    ) -> Result<Box<dyn Trigger<State = Self>>, OxyError>
+    where
+        Self: std::fmt::Debug,
+    {
+        Ok(Box::new(AutoSaveAutomation::<MachineContext>::new(
+            save_automation_config.clone(),
+            objective,
+        )))
     }
 
     async fn build(
@@ -642,6 +700,16 @@ impl TriggerBuilder for MachineContext {
                 self.build_query_trigger(execution_context, agentic_config, query_config, objective)
                     .await
             }
+            TriggerType::SemanticQuery(semantic_query_config) => {
+                tracing::info!("Building SemanticQuery Trigger {semantic_query_config:?}");
+                self.build_semantic_query_trigger(
+                    execution_context,
+                    agentic_config,
+                    semantic_query_config,
+                    objective,
+                )
+                .await
+            }
             TriggerType::Visualize(viz_config) => {
                 self.build_viz_trigger(execution_context, agentic_config, viz_config, objective)
                     .await
@@ -664,6 +732,15 @@ impl TriggerBuilder for MachineContext {
                 )
                 .await
             }
+            TriggerType::SaveAutomation(save_automation_config) => {
+                self.build_save_automation_trigger(
+                    execution_context,
+                    agentic_config,
+                    save_automation_config,
+                    objective,
+                )
+                .await
+            }
         }
     }
 }
@@ -677,6 +754,20 @@ impl State for MachineContext {
         execution_context: &ExecutionContext,
         machine: &mut Self::Machine,
     ) -> Result<Box<dyn Trigger<State = Self>>, OxyError> {
+        // Check if routing config is present — if so, use RouteTrigger as a fast-path
+        if let Some(routing_config) = &machine.config.start.routing {
+            let start_transition = machine.config.start_transition();
+            self.set_transition_name(start_transition.trigger.get_name());
+            return Ok(StepTrigger::boxed(
+                Step::new(uuid::Uuid::new_v4().to_string(), StepKind::Route, None),
+                Box::new(RouteTrigger::new(
+                    machine.adapter.clone(),
+                    routing_config.clone(),
+                    machine.config.clone(),
+                )),
+            ));
+        }
+
         let start_transition = machine.config.start_transition();
         self.set_transition_name(start_transition.trigger.get_name());
         Ok(StepTrigger::boxed(
@@ -705,6 +796,44 @@ impl State for MachineContext {
             return Err(OxyError::RuntimeError(format!(
                 "Max iterations of {} reached",
                 machine.config.max_iterations
+            )));
+        }
+
+        // If route completed, transition directly to End step
+        if self.route_completed {
+            self.route_completed = false;
+            let end_transition = machine.config.find_transition(AGENT_END_TRANSITION)?;
+            self.set_transition_name(AGENT_END_TRANSITION);
+            return Ok(Some(StepTrigger::boxed(
+                Step::new(uuid::Uuid::new_v4().to_string(), StepKind::End, None),
+                self.build(
+                    execution_context,
+                    &machine.config,
+                    end_transition,
+                    self.user_query().to_string(),
+                )
+                .await?,
+            )));
+        }
+
+        // If route fell through (no match), transition to the normal start step (Plan/Idle)
+        if self.route_fallback {
+            self.route_fallback = false;
+            let start_transition = machine.config.start_transition();
+            self.set_transition_name(start_transition.trigger.get_name());
+            return Ok(Some(StepTrigger::boxed(
+                Step::new(
+                    uuid::Uuid::new_v4().to_string(),
+                    start_transition.trigger.get_step_kind(),
+                    None,
+                ),
+                self.build(
+                    execution_context,
+                    &machine.config,
+                    start_transition,
+                    self.user_query().to_string(),
+                )
+                .await?,
             )));
         }
 

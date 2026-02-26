@@ -37,7 +37,7 @@ export const WorkflowToolForm: React.FC<WorkflowToolFormProps> = ({ index }) => 
   return (
     <div className='space-y-4'>
       <div className='space-y-2'>
-        <Label htmlFor={`tools.${index}.workflow_ref`}>Workflow Reference *</Label>
+        <Label htmlFor={`tools.${index}.workflow_ref`}>Automation Reference *</Label>
         <FilePathAutocompleteInput
           id={`tools.${index}.workflow_ref`}
           fileExtension='.workflow.yml'

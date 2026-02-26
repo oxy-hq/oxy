@@ -149,7 +149,7 @@ const ArrayBasedTable = ({ result }: { result: string[][] }) => {
   };
 
   return (
-    <div className='customScrollbar flex h-full min-h-0 flex-col overflow-auto font-mono text-xs'>
+    <div className='customScrollbar scrollbar-gutter-auto flex h-full min-h-0 flex-col overflow-auto font-mono text-xs'>
       <div className='flex min-w-fit flex-col'>
         {/* Fixed Header */}
         <div

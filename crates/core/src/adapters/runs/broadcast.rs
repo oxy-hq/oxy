@@ -115,6 +115,7 @@ pub struct TopicActor<T> {
     sys_inbound: tokio::sync::mpsc::Receiver<TopicActorMessage<T>>,
     outbound: tokio::sync::broadcast::Sender<T>,
     close_signal: tokio::sync::oneshot::Sender<Closed<T>>,
+    dropped_event_count: usize,
 }
 
 impl<T> TopicActor<T>
@@ -133,6 +134,7 @@ where
             sys_inbound,
             close_signal,
             outbound: tokio::sync::broadcast::channel(broadcast_buffer).0,
+            dropped_event_count: 0,
         }
     }
 
@@ -178,10 +180,8 @@ where
                             } else {
                                 self.mailbox.push(item.clone());
                             }
-                            let res = self.outbound.send(item);
-                            tracing::debug!("Broadcasted event result: {:?}", res);
-                            if res.is_err() {
-                                tracing::error!("Failed to send event to topic subscribers: {res:?}");
+                            if self.outbound.send(item).is_err() {
+                                self.dropped_event_count += 1;
                             }
                         }
                         None => {
@@ -193,7 +193,13 @@ where
                 }
             }
         }
-        tracing::info!("Topic actor finished running");
+        if self.dropped_event_count > 0 {
+            tracing::warn!(
+                dropped_event_count = self.dropped_event_count,
+                mailbox_size = self.mailbox.len(),
+                "Topic actor finished with events dropped (no active subscribers)"
+            );
+        }
         self.close_signal
             .send(Closed {
                 items: self.mailbox,

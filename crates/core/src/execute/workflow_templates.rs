@@ -39,6 +39,9 @@ impl TemplateRegister for &Task {
             TaskType::LoopSequential(loop_task) => {
                 loop_task.tasks.register_template(renderer)?;
             }
+            TaskType::Visualize(_visualize_task) => {
+                // VisualizeTask doesn't have file templates to register
+            }
             TaskType::Unknown => {
                 // Unknown task type, skip
             }

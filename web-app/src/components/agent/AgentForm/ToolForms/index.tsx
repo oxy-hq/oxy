@@ -3,6 +3,7 @@ export { CreateDataAppToolForm } from "./CreateDataAppToolForm";
 export { ExecuteSqlToolForm } from "./ExecuteSqlToolForm";
 export { OmniQueryToolForm } from "./OmniQueryToolForm";
 export { RetrievalToolForm } from "./RetrievalToolForm";
+export { SaveAutomationToolForm } from "./SaveAutomationToolForm";
 export { SemanticQueryToolForm } from "./SemanticQueryToolForm";
 export { ValidateSqlToolForm } from "./ValidateSqlToolForm";
 export { VisualizeToolForm } from "./VisualizeToolForm";

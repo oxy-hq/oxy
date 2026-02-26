@@ -264,6 +264,9 @@ impl AgentCardService {
                     ToolType::SemanticQuery(t) => {
                         (t.name.clone(), t.description.clone(), "semantic")
                     }
+                    ToolType::SaveAutomation(t) => {
+                        (t.name.clone(), t.description.clone(), "save-automation")
+                    }
                 };
 
                 // Convert tool name to kebab-case for ID

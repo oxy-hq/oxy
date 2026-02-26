@@ -16,7 +16,7 @@ const Messages = ({
           {message.is_human ? (
             <UserMessage message={message} />
           ) : (
-            <AgentMessage showAvatar message={message} onArtifactClick={onArtifactClick} />
+            <AgentMessage message={message} onArtifactClick={onArtifactClick} />
           )}
         </div>
       ))}

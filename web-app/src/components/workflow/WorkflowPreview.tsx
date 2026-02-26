@@ -107,6 +107,9 @@ export const WorkflowPreview = ({
     }
   }, [runId, relativePath]);
 
+  const groupBlocks = useBlockStore((state) => state.groupBlocks);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only run when groups/path/runId change
   useEffect(() => {
     const firstGroup = groups?.[0];
     if (
@@ -115,10 +118,22 @@ export const WorkflowPreview = ({
       firstGroup.run_index.toString() === runId
     ) {
       groups.forEach((group) => {
+        // Skip overwrite if streaming already built richer data for this group
+        // (API may return incomplete data if called right after the stream ends)
+        const groupId =
+          group.run_index != null ? `${group.source_id}::${group.run_index}` : group.source_id;
+        const existing = groupBlocks[groupId];
+        if (
+          existing &&
+          existing.root.length > 0 &&
+          (!group.children || group.children.length === 0)
+        ) {
+          return;
+        }
         setGroupBlocks(group, group.blocks, group.children, group.error, group.metadata);
       });
     }
-  }, [groups, relativePath, runId, setGroupBlocks]);
+  }, [groups, relativePath, runId]);
 
   const runHandler = async () => {
     // check config has variables

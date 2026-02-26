@@ -23,6 +23,7 @@ export const createEventSlice: StateCreator<
           run_id: event.run_id,
           workflow_config: event.workflow_config
         });
+        get().setGroupProcessing(blockId, true);
         break;
       }
       case "workflow_finished": {
@@ -41,6 +42,7 @@ export const createEventSlice: StateCreator<
           artifact_metadata,
           is_verified
         });
+        get().setGroupProcessing(artifact_id, true);
         break;
       }
       case "artifact_finished": {
@@ -58,6 +60,7 @@ export const createEventSlice: StateCreator<
           agent_id,
           run_id
         });
+        get().setGroupProcessing(blockId, true);
         break;
       }
       case "agentic_finished": {

@@ -41,7 +41,7 @@ const WorkflowArtifactPanel = ({ artifact, onArtifactClick }: Props) => {
             <EmptyState
               className='mt-[150px]'
               title='No logs yet'
-              description='Run the workflow to see the logs'
+              description='Run the automation to see the logs'
             />
           )}
           {(artifact.content.value.output ?? []).length > 0 && (

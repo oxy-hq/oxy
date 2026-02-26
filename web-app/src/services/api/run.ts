@@ -65,7 +65,8 @@ export class RunService {
   ): Promise<GetBlocksResponse[]> {
     const searchParams = new URLSearchParams({
       source_id: payload.source_id,
-      ...(payload.run_index ? { run_index: `${payload.run_index}` } : {})
+      branch: branchName,
+      ...(payload.run_index != null ? { run_index: `${payload.run_index}` } : {})
     });
     const response = await apiClient.get(`/${projectId}/blocks?${searchParams.toString()}`);
     const data = response.data as GetBlocksResponse;
@@ -77,7 +78,7 @@ export class RunService {
           const [source_id, run_index] = block.group_id.split("::");
           return RunService.getBlocks(projectId, branchName, {
             source_id,
-            run_index: run_index ? parseInt(run_index, 10) : undefined
+            run_index: run_index != null ? parseInt(run_index, 10) : undefined
           });
         })
     );

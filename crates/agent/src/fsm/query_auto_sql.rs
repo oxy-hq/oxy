@@ -10,6 +10,7 @@ use async_openai::types::chat::{
 use crate::fsm::{
     query::config::{Query, SQLParams},
     state::MachineContext,
+    types::TableSource,
 };
 use oxy::adapters::openai::OpenAIAdapter;
 use oxy::execute::{Executable, ExecutionContext, builders::fsm::Trigger, types::Table};
@@ -198,7 +199,16 @@ impl Trigger for AutoSQL<MachineContext> {
         tracing::info!("Running AutoSQL Trigger for objective: {}", self.objective);
         let (table, tool_call) = self.run_with_retry(&query_context).await?;
         tracing::info!("AutoSQL Tool Call: {:?}", tool_call);
-        state.add_table(self.objective.clone(), tool_call.into(), table);
+        let source = serde_json::from_str::<SQLParams>(&tool_call.function.arguments)
+            .map(|p| TableSource::SQL {
+                sql: p.sql.to_string(),
+                database: self.config.database.clone(),
+            })
+            .unwrap_or_else(|_| TableSource::SQL {
+                sql: String::new(),
+                database: self.config.database.clone(),
+            });
+        state.add_table(self.objective.clone(), tool_call.into(), table, source);
         Ok(())
     }
 }

@@ -43,7 +43,7 @@ export type LoopSequentialTaskConfig = BaseTaskConfig & {
 
 export type ExecuteSqlTaskConfig = BaseTaskConfig & {
   type: TaskType.EXECUTE_SQL;
-  sql?: string;
+  sql_query?: string;
   sql_file?: string;
   database: string;
 };

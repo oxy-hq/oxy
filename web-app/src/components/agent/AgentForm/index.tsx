@@ -25,7 +25,7 @@ export interface AgentFormData {
   model?: string;
   description?: string;
   public?: boolean;
-  agent_type?: "default" | "routing";
+  type?: "default" | "routing";
   system_instructions?: string;
   max_tool_calls?: number;
   max_tool_concurrency?: number;
@@ -95,7 +95,7 @@ const getDefaultData = (data?: Partial<AgentFormData>) => {
       model: "",
       description: "",
       public: true,
-      agent_type: "default" as const,
+      type: "default" as const,
       system_instructions: "",
       max_tool_calls: 10,
       max_tool_concurrency: 10,
@@ -115,7 +115,7 @@ const getDefaultData = (data?: Partial<AgentFormData>) => {
   if (data.public !== undefined) result.public = data.public;
   else result.public = true;
 
-  result.agent_type = agentType;
+  result.type = agentType;
 
   if (data.system_instructions !== undefined) result.system_instructions = data.system_instructions;
   if (data.max_tool_calls !== undefined) result.max_tool_calls = data.max_tool_calls;
@@ -206,7 +206,7 @@ export const AgentForm: React.FC<AgentFormProps> = ({ data, onChange }) => {
   });
 
   // Watch agent type
-  const agentType = watch("agent_type");
+  const agentType = watch("type");
   const isRoutingAgent = agentType === "routing";
 
   return (
@@ -227,9 +227,9 @@ export const AgentForm: React.FC<AgentFormProps> = ({ data, onChange }) => {
               </div>
 
               <div className='space-y-2'>
-                <Label htmlFor='agent_type'>Agent Type *</Label>
+                <Label htmlFor='type'>Agent Type *</Label>
                 <Controller
-                  name='agent_type'
+                  name='type'
                   control={control}
                   rules={{ required: "Agent type is required" }}
                   render={({ field }) => (
@@ -244,9 +244,7 @@ export const AgentForm: React.FC<AgentFormProps> = ({ data, onChange }) => {
                     </Select>
                   )}
                 />
-                {errors.agent_type && (
-                  <p className='text-red-500 text-sm'>{errors.agent_type.message}</p>
-                )}
+                {errors.type && <p className='text-red-500 text-sm'>{errors.type.message}</p>}
                 <p className='text-muted-foreground text-sm'>
                   {agentType === "routing"
                     ? "Routing agent routes queries to other agents based on semantic similarity"

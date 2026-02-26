@@ -250,6 +250,22 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                     )
                     .await
                     .map(|output| output.into()),
+                ToolType::SaveAutomation(_save_automation_tool) => {
+                    // Try to use registered executor from higher layers
+                    if let Some(result) = global_registry()
+                        .execute(execution_context, tool_type, &input)
+                        .await?
+                    {
+                        Ok(result)
+                    } else {
+                        // No executor registered - return helpful error
+                        Err(OxyError::RuntimeError(
+                            "SaveAutomation execution not available: No executor registered. \
+                            Register a SaveAutomationExecutor at the application level."
+                                .to_string(),
+                        ))
+                    }
+                }
                 ToolType::SemanticQuery(_semantic_query_tool) => {
                     let param_obj = serde_json::from_str::<Value>(&input.param).unwrap_or_default();
                     let mut artifact_value = create_semantic_query_artifact(&param_obj);

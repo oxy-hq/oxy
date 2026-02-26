@@ -138,6 +138,7 @@ fn build_project_routes() -> Router<AppState> {
         .route("/push-changes", post(project::push_changes))
         .route("/create-repo", post(project::create_repo_from_project))
         .nest("/workflows", build_workflow_routes())
+        .nest("/automations", build_automation_routes())
         .nest("/threads", build_thread_routes())
         .nest("/agents", build_agent_routes())
         .nest("/api-keys", build_api_key_routes())
@@ -231,6 +232,10 @@ fn build_workflow_routes() -> Router<AppState> {
             "/{pathb64}/runs/{run_id}",
             get(workflow::get_workflow_run).delete(run::delete_workflow_run),
         )
+}
+
+fn build_automation_routes() -> Router<AppState> {
+    Router::new().route("/save", post(workflow::save_automation))
 }
 
 fn build_thread_routes() -> Router<AppState> {
@@ -456,6 +461,8 @@ pub async fn openapi_router() -> OpenApiRouter {
         .routes(routes!(workflow::run_workflow_thread_sync))
         .routes(routes!(workflow::create_from_query))
         .routes(routes!(workflow::get_workflow_run))
+        // Automation routes
+        .routes(routes!(workflow::save_automation))
         // Database routes
         .routes(routes!(database::create_database_config))
         .routes(routes!(database::test_database_connection))

@@ -1,21 +1,17 @@
 import type React from "react";
-import MessageHeader from "./MessageHeader";
 
 interface UserMessageProps {
   content: string;
   createdAt?: string;
 }
 
-const UserMessage: React.FC<UserMessageProps> = ({ content, createdAt }) => {
+const UserMessage: React.FC<UserMessageProps> = ({ content }) => {
   return (
-    <div data-testid='user-message-container'>
-      <MessageHeader isHuman={true} createdAt={createdAt} />
-      <div
-        className='flex flex-col gap-2 rounded-xl border border-base-border bg-base-card p-4 shadow-sm'
-        data-testid='user-message-text'
-      >
-        {content}
-      </div>
+    <div
+      className='inline-block max-w-[80%] rounded-2xl bg-secondary px-4 py-2.5 text-foreground text-sm'
+      data-testid='user-message-text'
+    >
+      {content}
     </div>
   );
 };

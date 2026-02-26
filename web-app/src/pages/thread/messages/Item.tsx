@@ -9,13 +9,11 @@ interface Props {
 }
 
 const MessageItem = memo(({ msg, onArtifactClick }: Props) => (
-  <div
-    key={msg.id}
-    className={`mb-6 rounded-lg p-4 ${msg.is_human ? "bg-muted/50" : "bg-secondary/20"}`}
-    data-testid={`message-${msg.is_human ? "human" : "agent"}`}
-  >
+  <div>
     {msg.is_human ? (
-      <UserMessage content={msg.content} createdAt={msg.created_at} />
+      <div className='mb-6 flex justify-end'>
+        <UserMessage content={msg.content} createdAt={msg.created_at} />
+      </div>
     ) : (
       <AgentMessage message={msg} onArtifactClick={onArtifactClick} />
     )}

@@ -5,7 +5,7 @@ import { createSearchParams, useLocation, useNavigate } from "react-router-dom";
 import queryKeys from "@/hooks/api/queryKey";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { RunService } from "@/services/api";
-import type { Block, LogItem, RetryType, TaskRun } from "@/services/types";
+import type { Block, BlockEvent, LogItem, RetryType, TaskRun } from "@/services/types";
 import { useBlockStore } from "@/stores/block";
 import type { GroupSlice } from "@/stores/slices/group";
 import useWorkflow, { type TaskConfigWithId } from "@/stores/useWorkflow";
@@ -444,6 +444,26 @@ export const useStreamEvents = () => {
       runIndex: number;
       abortRef?: AbortSignal;
     }) => {
+      // Batch SSE events per animation frame to reduce re-renders
+      let eventQueue: BlockEvent[] = [];
+      let rafId: number | null = null;
+
+      const flushEvents = () => {
+        rafId = null;
+        const batch = eventQueue;
+        eventQueue = [];
+        for (const event of batch) {
+          handleEvent(event);
+        }
+      };
+
+      const batchedHandler = (event: BlockEvent) => {
+        eventQueue.push(event);
+        if (rafId === null) {
+          rafId = requestAnimationFrame(flushEvents);
+        }
+      };
+
       return await RunService.streamEvents(
         project.id,
         branchName,
@@ -451,13 +471,25 @@ export const useStreamEvents = () => {
           sourceId,
           runIndex
         },
-        handleEvent,
+        batchedHandler,
         () => {
+          // Flush any remaining events before cleanup
+          if (rafId !== null) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+          }
+          for (const event of eventQueue) {
+            handleEvent(event);
+          }
+          eventQueue = [];
           cleanupGroupStacks("Cancelled");
           const groupId = getGroupId(sourceId, runIndex.toString());
           setGroupProcessing(groupId, false);
         },
         (error) => {
+          if (rafId !== null) {
+            cancelAnimationFrame(rafId);
+          }
           console.error("Stream error:", error);
           const groupId = getGroupId(sourceId, runIndex.toString());
           setGroupProcessing(groupId, false);

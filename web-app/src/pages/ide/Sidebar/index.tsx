@@ -63,8 +63,9 @@ const Sidebar: React.FC = () => {
           tooltip={{ content: "Files", side: "right" }}
           className={cn(
             "h-8 w-8",
-            currentViewMode === SidebarViewMode.FILES &&
-              "bg-sidebar-accent text-sidebar-accent-foreground"
+            currentViewMode === SidebarViewMode.FILES
+              ? "bg-sidebar-accent text-sidebar-accent-foreground"
+              : "opacity-60 hover:opacity-100"
           )}
         >
           <Folder className='h-4 w-4' />
@@ -78,8 +79,9 @@ const Sidebar: React.FC = () => {
             tooltip={{ content: "Observability", side: "right" }}
             className={cn(
               "h-8 w-8",
-              currentViewMode === SidebarViewMode.OBSERVABILITY &&
-                "bg-sidebar-accent text-sidebar-accent-foreground"
+              currentViewMode === SidebarViewMode.OBSERVABILITY
+                ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                : "opacity-60 hover:opacity-100"
             )}
           >
             <Activity className='h-4 w-4' />
@@ -93,8 +95,9 @@ const Sidebar: React.FC = () => {
           tooltip={{ content: "Database Client", side: "right" }}
           className={cn(
             "h-8 w-8",
-            currentViewMode === SidebarViewMode.DATABASE &&
-              "bg-sidebar-accent text-sidebar-accent-foreground"
+            currentViewMode === SidebarViewMode.DATABASE
+              ? "bg-sidebar-accent text-sidebar-accent-foreground"
+              : "opacity-60 hover:opacity-100"
           )}
         >
           <Database className='h-4 w-4' />
@@ -107,8 +110,9 @@ const Sidebar: React.FC = () => {
           tooltip={{ content: "Settings", side: "right" }}
           className={cn(
             "h-8 w-8",
-            currentViewMode === SidebarViewMode.SETTINGS &&
-              "bg-sidebar-accent text-sidebar-accent-foreground"
+            currentViewMode === SidebarViewMode.SETTINGS
+              ? "bg-sidebar-accent text-sidebar-accent-foreground"
+              : "opacity-60 hover:opacity-100"
           )}
         >
           <Settings className='h-4 w-4' />

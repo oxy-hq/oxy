@@ -38,6 +38,7 @@ use crate::{
     types::SemanticQueryParams,
     types::tool_params::{
         AgentParams, EmptySQLParams, OmniQueryParams, RetrievalParams, SQLParams,
+        SaveAutomationParams,
     },
 };
 use oxy_shared::errors::OxyError;
@@ -251,6 +252,7 @@ impl OpenAIToolConfig for &ToolType {
                     }
                 }
             }
+            ToolType::SaveAutomation(sr) => sr.description.clone(),
         }
     }
 
@@ -268,6 +270,7 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::CreateV0App(create_v0_app_tool) => create_v0_app_tool.name.clone(),
             ToolType::OmniQuery(o) => o.name.clone(),
             ToolType::SemanticQuery(s) => s.name.clone(),
+            ToolType::SaveAutomation(sr) => sr.name.clone(),
         }
     }
 
@@ -314,6 +317,7 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::Retrieval(_) => None,
             ToolType::Visualize(_) => None,
             ToolType::CreateDataApp(_) => None,
+            ToolType::SaveAutomation(_) => None,
             ToolType::EditDataApp(_) => None,
             ToolType::ReadDataApp(_) => None,
         }
@@ -333,6 +337,7 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::CreateV0App(_) => "create_v0_app".to_string(),
             ToolType::OmniQuery(_) => "omni_query".to_string(),
             ToolType::SemanticQuery(_) => "semantic_query".to_string(),
+            ToolType::SaveAutomation(_) => "save_automation".to_string(),
         }
     }
 
@@ -371,6 +376,9 @@ impl OpenAIToolConfig for &ToolType {
             }
             ToolType::SemanticQuery(_) => Ok(serde_json::json!(&schemars::schema_for!(
                 SemanticQueryParams
+            ))),
+            ToolType::SaveAutomation(_) => Ok(serde_json::json!(&schemars::schema_for!(
+                SaveAutomationParams
             ))),
         }
     }

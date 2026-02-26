@@ -1,4 +1,5 @@
 import {
+  BarChart3,
   Bot,
   CircleAlert,
   CircleHelp,
@@ -39,7 +40,8 @@ const nodeNameMap: Record<NodeType, string> = {
   workflow: "Subworkflow",
   conditional: "Conditional",
   "conditional-else": "Else",
-  "conditional-if": "If"
+  "conditional-if": "If",
+  visualize: "Visualize"
 };
 
 const nodeIconMap: Record<NodeType, ReactElement> = {
@@ -52,7 +54,8 @@ const nodeIconMap: Record<NodeType, ReactElement> = {
   "conditional-else": <CircleAlert size={14} />,
   "conditional-if": <CircleHelp size={14} />,
   semantic_query: <Globe size={14} />,
-  omni_query: <OmniIcon className='h-[14px] w-[14px]' />
+  omni_query: <OmniIcon className='h-[14px] w-[14px]' />,
+  visualize: <BarChart3 size={14} />
 };
 
 type Props = {

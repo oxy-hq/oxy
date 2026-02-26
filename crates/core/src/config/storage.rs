@@ -10,6 +10,7 @@ use super::model::{AgentConfig, AppConfig, Config, Workflow, WorkflowWithRawVari
 
 const DEFAULT_CONFIG_PATH: &str = "config.yml";
 const WORKFLOW_EXTENSION: &str = ".workflow";
+const AUTOMATION_EXTENSION: &str = ".automation";
 const AGENT_EXTENSION: &str = ".agent";
 const AGENTIC_WORKFLOW_EXTENSION: &str = ".aw";
 
@@ -285,7 +286,17 @@ impl ConfigStorage for LocalSource {
         let mut workflow_config: Workflow = serde_yaml::from_str(&workflow_yml).map_err(|e| {
             OxyError::ConfigurationError(format!("Failed to deserialize workflow config: {e}"))
         })?;
-        workflow_config.name = self.get_stem_by_extension(&resolved_path, WORKFLOW_EXTENSION);
+        let extension = if resolved_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|n| n.ends_with(AUTOMATION_EXTENSION))
+            .unwrap_or(false)
+        {
+            AUTOMATION_EXTENSION
+        } else {
+            WORKFLOW_EXTENSION
+        };
+        workflow_config.name = self.get_stem_by_extension(&resolved_path, extension);
         Ok(workflow_config)
     }
 
@@ -301,7 +312,17 @@ impl ConfigStorage for LocalSource {
             .map_err(|e| {
                 OxyError::ConfigurationError(format!("Failed to deserialize workflow config: {e}"))
             })?;
-        temp_workflow.name = self.get_stem_by_extension(&resolved_path, WORKFLOW_EXTENSION);
+        let extension = if resolved_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|n| n.ends_with(AUTOMATION_EXTENSION))
+            .unwrap_or(false)
+        {
+            AUTOMATION_EXTENSION
+        } else {
+            WORKFLOW_EXTENSION
+        };
+        temp_workflow.name = self.get_stem_by_extension(&resolved_path, extension);
         Ok(temp_workflow)
     }
 

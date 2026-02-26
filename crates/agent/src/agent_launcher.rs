@@ -388,10 +388,31 @@ impl Executable<AgentInput> for AgentLauncherExecutable {
         execution_context: &ExecutionContext,
         input: AgentInput,
     ) -> Result<Self::Response, OxyError> {
-        AgentLauncher::new()
+        let is_agentic_workflow =
+            input.agent_ref.ends_with(".aw.yml") || input.agent_ref.ends_with(".aw.yaml");
+        let launcher = AgentLauncher::new()
             .with_external_context(execution_context)
-            .await?
-            .launch(input, execution_context.writer.clone())
-            .await
+            .await?;
+
+        if is_agentic_workflow {
+            let agent_ref = input.agent_ref.clone();
+            let agentic_input = AgenticInput {
+                context_id: uuid::Uuid::new_v4().to_string(),
+                prompt: input.prompt,
+                trace: vec![],
+            };
+            launcher
+                .launch_agentic_workflow(
+                    &agent_ref,
+                    agentic_input,
+                    execution_context.writer.clone(),
+                    None, // tool-triggered: no persistent run tracking
+                )
+                .await
+        } else {
+            launcher
+                .launch(input, execution_context.writer.clone())
+                .await
+        }
     }
 }

@@ -113,25 +113,22 @@ impl BlockHandler {
     }
 
     pub fn add_group_block(&mut self, group_id: String) {
-        let mut is_added = false;
         if let Some(block) = self.current_block_mut() {
             block.add_child(group_id.clone());
-            is_added = true;
         } else {
-            tracing::warn!("No current block to add group block to");
+            tracing::warn!("No current block to add group block to, adding to root");
+            self.root.push(group_id.clone());
         }
 
-        if is_added {
-            self.blocks.insert(
+        self.blocks.insert(
+            group_id.clone(),
+            Block::new(
                 group_id.clone(),
-                Block::new(
-                    group_id.clone(),
-                    BlockKind::Group {
-                        group_id: group_id.clone(),
-                    },
-                ),
-            );
-        }
+                BlockKind::Group {
+                    group_id: group_id.clone(),
+                },
+            ),
+        );
     }
 
     pub fn finish_block(&mut self, block_id: String, error: Option<String>) {

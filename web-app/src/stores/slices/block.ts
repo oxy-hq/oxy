@@ -117,7 +117,20 @@ export const createBlockSlice = (
       const currentBlock = currentBlockId ? state.blocks[currentBlockId] : undefined;
 
       if (!currentBlock) {
-        return state;
+        // No block on stack — add group block to root (mirrors backend fix)
+        return {
+          ...state,
+          root: state.root.includes(groupId) ? state.root : [...state.root, groupId],
+          blocks: {
+            ...state.blocks,
+            [groupId]: {
+              id: groupId,
+              type: "group",
+              group_id: groupId,
+              children: []
+            }
+          }
+        };
       }
 
       return {

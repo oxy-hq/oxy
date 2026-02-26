@@ -6,8 +6,18 @@ use async_openai::types::chat::{
     ChatCompletionRequestUserMessageContent, FunctionCall,
 };
 
-use oxy::config::model::AppConfig;
+use oxy::config::model::{AppConfig, SemanticQueryTask};
 use oxy::execute::types::{Table, VizParams};
+
+/// Records the origin of a Table artifact so it can be serialized back to an
+/// executable workflow task when saving an automation.
+#[derive(Clone, Debug)]
+pub enum TableSource {
+    /// Produced by an AutoSQL step — stores the literal SQL and database name.
+    SQL { sql: String, database: String },
+    /// Produced by an AutoSemanticQuery step — stores the full task config.
+    Semantic { task: SemanticQueryTask },
+}
 
 #[derive(Clone, Debug)]
 pub struct ToolReq {
@@ -152,6 +162,7 @@ pub enum Artifact {
         table_name: String,
         description: String,
         table: Table,
+        source: TableSource,
     },
     Insight {
         content: String,

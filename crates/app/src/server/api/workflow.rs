@@ -37,6 +37,7 @@ use oxy::{
     utils::create_sse_stream,
 };
 use oxy_auth::extractor::AuthenticatedUserExtractor;
+use oxy_shared::errors::OxyError;
 use oxy_workflow::loggers::{
     api::WorkflowAPILogger,
     types::{LogItem, WorkflowLogger},
@@ -212,7 +213,10 @@ pub async fn build_workflow_api_logger(
 ) -> (WorkflowAPILogger, mpsc::Receiver<LogItem>) {
     let full_workflow_path_b64 = encode_workflow_path(full_workflow_path);
     let (sender, receiver) = mpsc::channel(100);
-    let log_file_path = format!("/var/tmp/oxy-{full_workflow_path_b64}.log.json");
+    let log_file_path = std::env::temp_dir()
+        .join(format!("oxy-{full_workflow_path_b64}.log.json"))
+        .to_string_lossy()
+        .into_owned();
     File::create(log_file_path.clone()).unwrap();
     let file = OpenOptions::new()
         .append(true)
@@ -804,6 +808,75 @@ pub async fn run_workflow_thread_sync(
     }
 }
 
+#[derive(Deserialize, ToSchema)]
+pub struct SaveAutomationRequest {
+    pub name: String,
+    pub description: String,
+    #[schema(value_type = Vec<Object>)]
+    pub tasks: Vec<oxy::config::model::Task>,
+    #[schema(value_type = Option<Object>)]
+    pub retrieval: Option<oxy::config::model::RouteRetrievalConfig>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct SaveAutomationResponse {
+    #[schema(value_type = Object)]
+    pub automation: oxy::config::model::Workflow,
+    pub path: String,
+}
+
+/// Save an automation from provided tasks
+///
+/// Creates a new automation file from the provided name, description, tasks, and optional
+/// retrieval configuration. The automation is saved as a `.automation.yml` file in the
+/// `automations/saved` directory.
+#[utoipa::path(
+    method(post),
+    path = "/{project_id}/automations/save",
+    params(
+        ("project_id" = Uuid, Path, description = "Project UUID")
+    ),
+    request_body = SaveAutomationRequest,
+    responses(
+        (status = 200, description = "Automation saved successfully", body = SaveAutomationResponse),
+        (status = 400, description = "Bad request - invalid parameters"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(
+        ("ApiKey" = [])
+    ),
+    tag = "Automations"
+)]
+pub async fn save_automation(
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    extract::Json(request): extract::Json<SaveAutomationRequest>,
+) -> Result<extract::Json<SaveAutomationResponse>, StatusCode> {
+    let config_manager = project_manager.config_manager;
+    let (automation, automation_path) = service::create_automation(
+        &request.name,
+        &request.description,
+        request.tasks,
+        request.retrieval,
+        &config_manager,
+    )
+    .await
+    .map_err(|e| match &e {
+        OxyError::ArgumentError(_) => {
+            tracing::warn!("Bad request to save_automation: {}", e);
+            StatusCode::BAD_REQUEST
+        }
+        _ => {
+            tracing::error!("Failed to save automation: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+    })?;
+    Ok(extract::Json(SaveAutomationResponse {
+        automation,
+        path: automation_path,
+    }))
+}
+
 #[derive(Serialize, ToSchema)]
 pub struct RunWorkflowSyncResponse {
     pub logs: Vec<LogItem>,
@@ -1017,16 +1090,12 @@ pub async fn run_workflow_sync(
     // Parse events to consolidate content
     let (_status, _error, _success, _completed, content) = parse_workflow_events(&all_events);
 
-    // Convert events to API format, filtering out intermediate ContentAdded
+    // Convert events to API format, filtering out internal and intermediate ContentAdded events
     let api_events: Vec<WorkflowEvent> = all_events
         .iter()
         .filter_map(|event| {
-            let api_event = WorkflowEvent::from(event);
-            // Filter out intermediate ContentAdded events
-            match &api_event {
-                WorkflowEvent::ContentAdded { .. } => None,
-                _ => Some(api_event),
-            }
+            event_kind_to_workflow_event(event)
+                .filter(|e| !matches!(e, WorkflowEvent::ContentAdded { .. }))
         })
         .collect();
 
@@ -1160,74 +1229,63 @@ pub enum WorkflowEvent {
     },
 }
 
-impl From<&crate::service::types::event::EventKind> for WorkflowEvent {
-    fn from(event: &crate::service::types::event::EventKind) -> Self {
-        use crate::server::service::types::event::EventKind;
+fn event_kind_to_workflow_event(
+    event: &crate::service::types::event::EventKind,
+) -> Option<WorkflowEvent> {
+    use crate::server::service::types::event::EventKind;
 
-        match event {
-            EventKind::WorkflowStarted {
-                workflow_id,
-                run_id,
-                ..
-            } => WorkflowEvent::WorkflowStarted {
-                workflow_id: workflow_id.clone(),
-                run_id: run_id.clone(),
-            },
-            EventKind::WorkflowFinished {
-                workflow_id,
-                run_id,
-                error,
-            } => WorkflowEvent::WorkflowFinished {
-                workflow_id: workflow_id.clone(),
-                run_id: run_id.clone(),
-                error: error.clone(),
-            },
-            EventKind::TaskStarted {
-                task_id, task_name, ..
-            } => WorkflowEvent::TaskStarted {
-                task_id: task_id.clone(),
-                task_name: task_name.clone(),
-            },
-            EventKind::TaskFinished { task_id, error } => WorkflowEvent::TaskFinished {
-                task_id: task_id.clone(),
-                error: error.clone(),
-            },
-            EventKind::ArtifactStarted {
-                artifact_id,
-                artifact_name,
-                ..
-            } => WorkflowEvent::ArtifactStarted {
+    match event {
+        EventKind::WorkflowStarted {
+            workflow_id,
+            run_id,
+            ..
+        } => Some(WorkflowEvent::WorkflowStarted {
+            workflow_id: workflow_id.clone(),
+            run_id: run_id.clone(),
+        }),
+        EventKind::WorkflowFinished {
+            workflow_id,
+            run_id,
+            error,
+        } => Some(WorkflowEvent::WorkflowFinished {
+            workflow_id: workflow_id.clone(),
+            run_id: run_id.clone(),
+            error: error.clone(),
+        }),
+        EventKind::TaskStarted {
+            task_id, task_name, ..
+        } => Some(WorkflowEvent::TaskStarted {
+            task_id: task_id.clone(),
+            task_name: task_name.clone(),
+        }),
+        EventKind::TaskFinished { task_id, error } => Some(WorkflowEvent::TaskFinished {
+            task_id: task_id.clone(),
+            error: error.clone(),
+        }),
+        EventKind::ArtifactStarted {
+            artifact_id,
+            artifact_name,
+            ..
+        } => Some(WorkflowEvent::ArtifactStarted {
+            artifact_id: artifact_id.clone(),
+            artifact_name: artifact_name.clone(),
+        }),
+        EventKind::ArtifactFinished { artifact_id, error } => {
+            Some(WorkflowEvent::ArtifactFinished {
                 artifact_id: artifact_id.clone(),
-                artifact_name: artifact_name.clone(),
-            },
-            EventKind::ArtifactFinished { artifact_id, error } => WorkflowEvent::ArtifactFinished {
-                artifact_id: artifact_id.clone(),
                 error: error.clone(),
-            },
-            EventKind::ContentAdded { content_id, item } => WorkflowEvent::ContentAdded {
-                content_id: content_id.clone(),
-                content: serde_json::to_value(item).unwrap_or(serde_json::Value::Null),
-            },
-            EventKind::ContentDone { content_id, item } => WorkflowEvent::ContentDone {
-                content_id: content_id.clone(),
-                content: serde_json::to_value(item).unwrap_or(serde_json::Value::Null),
-            },
-            // Skip TaskMetadata events as they're internal
-            EventKind::TaskMetadata { .. } => {
-                // Return a placeholder - we'll filter these out later
-                WorkflowEvent::TaskStarted {
-                    task_id: String::new(),
-                    task_name: String::from("internal_metadata"),
-                }
-            }
-            _ => {
-                // For any other event types, return a generic placeholder
-                WorkflowEvent::TaskStarted {
-                    task_id: String::new(),
-                    task_name: String::from("internal_metadata"),
-                }
-            }
+            })
         }
+        EventKind::ContentAdded { content_id, item } => Some(WorkflowEvent::ContentAdded {
+            content_id: content_id.clone(),
+            content: serde_json::to_value(item).unwrap_or(serde_json::Value::Null),
+        }),
+        EventKind::ContentDone { content_id, item } => Some(WorkflowEvent::ContentDone {
+            content_id: content_id.clone(),
+            content: serde_json::to_value(item).unwrap_or(serde_json::Value::Null),
+        }),
+        // Internal/unrepresentable events (TaskMetadata, etc.) are skipped
+        _ => None,
     }
 }
 
@@ -1347,16 +1405,15 @@ pub async fn get_workflow_run(
         .filter(|e| {
             if wait_for_completion || !from_broadcast {
                 // Skip intermediate ContentAdded events - they're merged in content field
-                !matches!(e, crate::service::types::event::EventKind::ContentAdded { .. })
+                !matches!(
+                    e,
+                    crate::service::types::event::EventKind::ContentAdded { .. }
+                )
             } else {
                 true
             }
         })
-        .map(WorkflowEvent::from)
-        .filter(|e| {
-            // Filter out internal metadata events
-            !matches!(e, WorkflowEvent::TaskStarted { task_name, .. } if task_name == "internal_metadata")
-        })
+        .filter_map(|e| event_kind_to_workflow_event(e))
         .collect();
 
     let runs_manager = project_manager

@@ -105,8 +105,10 @@ interface ConsistencyEval {
 // Note: all steps in the agent workflow has to be in CONTINUOUS form of the verb
 export const STEP_MAP = {
   execute_sql: "Executing SQL",
+  semantic_query: "Running semantic query",
   visualize: "Generating visualization",
   retrieve: "Retrieving data",
   agent: "Generating answer",
-  workflow: "Running workflow"
+  workflow: "Running automation",
+  save_automation: "Saving automation"
 };

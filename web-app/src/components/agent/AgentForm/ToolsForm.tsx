@@ -26,6 +26,7 @@ import {
   ExecuteSqlToolForm,
   OmniQueryToolForm,
   RetrievalToolForm,
+  SaveAutomationToolForm,
   SemanticQueryToolForm,
   ValidateSqlToolForm,
   VisualizeToolForm,
@@ -37,11 +38,12 @@ const TOOL_TYPES = [
   { value: "validate_sql", label: "Validate SQL" },
   { value: "retrieval", label: "Retrieval" },
   { value: "visualize", label: "Visualize" },
-  { value: "workflow", label: "Workflow" },
+  { value: "workflow", label: "Automation" },
   { value: "agent", label: "Agent" },
   { value: "create_data_app", label: "Create Data App" },
   { value: "omni_query", label: "Omni Query" },
-  { value: "semantic_query", label: "Semantic Query" }
+  { value: "semantic_query", label: "Semantic Query" },
+  { value: "save_automation", label: "Save Automation" }
 ];
 
 interface ToolItemFormProps {
@@ -82,6 +84,8 @@ const ToolItemForm: React.FC<ToolItemFormProps> = ({ index, onRemove }) => {
         return <VisualizeToolForm index={index} />;
       case "create_data_app":
         return <CreateDataAppToolForm index={index} />;
+      case "save_automation":
+        return <SaveAutomationToolForm index={index} />;
       default:
         return null;
     }

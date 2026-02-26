@@ -91,11 +91,14 @@ impl std::fmt::Display for ArtifactKind {
 pub enum StepKind {
     Idle,
     Plan,
+    Route,
     Query,
     Visualize,
     Insight,
+    SemanticQuery,
     Subflow,
     BuildApp,
+    SaveAutomation,
     Troubleshoot,
     End,
 }
@@ -105,11 +108,14 @@ impl std::fmt::Display for StepKind {
         match self {
             StepKind::Idle => write!(f, "idle"),
             StepKind::Plan => write!(f, "plan"),
+            StepKind::Route => write!(f, "route"),
             StepKind::Query => write!(f, "query"),
+            StepKind::SemanticQuery => write!(f, "semantic_query"),
             StepKind::Visualize => write!(f, "visualize"),
             StepKind::Insight => write!(f, "insight"),
             StepKind::Subflow => write!(f, "subflow"),
             StepKind::BuildApp => write!(f, "build_app"),
+            StepKind::SaveAutomation => write!(f, "save_automation"),
             StepKind::Troubleshoot => write!(f, "troubleshoot"),
             StepKind::End => write!(f, "end"),
         }

@@ -99,8 +99,11 @@ pub async fn launch_agentic_workflow<P: AsRef<Path>>(
     // Convert core's AgenticConfig to agent crate's AgenticConfig via serde
     let json = serde_json::to_value(&core_agentic_config)
         .map_err(|e| OxyError::RuntimeError(format!("Failed to serialize config: {}", e)))?;
-    let agentic_config: AgenticConfig = serde_json::from_value(json)
+    let mut agentic_config: AgenticConfig = serde_json::from_value(json)
         .map_err(|e| OxyError::RuntimeError(format!("Failed to deserialize config: {}", e)))?;
+    // The agent's AgenticConfig uses #[serde(skip)] on name, so it's lost during
+    // the serde round-trip. Restore it from the core config.
+    agentic_config.name = core_agentic_config.name;
 
     let machine =
         Agent::<MachineContext>::new(execution_context.project.clone(), agentic_config).await?;

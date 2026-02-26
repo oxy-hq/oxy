@@ -204,12 +204,15 @@ export type StepEvent = StepStartedEvent | StepFinishedEvent;
 export type StepType =
   | "idle"
   | "plan"
+  | "route"
   | "end"
   | "query"
+  | "semantic_query"
   | "visualize"
   | "insight"
   | "subflow"
-  | "build_app";
+  | "build_app"
+  | "save_automation";
 
 export type StepStartedEvent = {
   type: "step_started";

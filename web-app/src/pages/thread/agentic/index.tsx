@@ -1,16 +1,20 @@
 import { uniqBy } from "lodash";
 import { LoaderCircle } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import MessageInput from "@/components/MessageInput";
-import BlockMessage from "@/components/Messages/BlockMessage";
 import UserMessage from "@/components/Messages/UserMessage";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup
+} from "@/components/ui/shadcn/resizable";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+
 import {
   useAgenticStore,
   useAskAgentic,
   useIsThreadLoading,
-  useLastRunInfoGroupId,
   useLastStreamingMessage,
   useObserveAgenticMessages,
   useSelectedMessageReasoning,
@@ -19,46 +23,82 @@ import {
 import useTaskThreadStore from "@/stores/useTaskThread";
 import type { ThreadItem } from "@/types/chat";
 import ProcessingWarning from "../ProcessingWarning";
+import ArtifactSidebar from "./ArtifactSidebar";
+import AutomationDagPanel from "./AutomationDagPanel";
+import BlockMessage, { type AutomationGenerated } from "./BlockMessage";
 import Header from "./Header";
-import SidePanel from "./SidePanel";
 
 const AgenticThread = ({ thread }: { thread: ThreadItem }) => {
   const { project } = useCurrentProjectBranch();
-  const projectId = project.id;
+
   const { getTaskThread } = useTaskThreadStore();
   const taskThread = getTaskThread(thread.id);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const messages = uniqBy(taskThread.messages, (m) => m.id);
-  const { mutateAsync: sendMessage } = useAskAgentic();
-
-  const [followUpQuestion, setFollowUpQuestion] = useState("");
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const isUserScrolledUp = useRef(false);
+
+  const messages = useMemo(() => uniqBy(taskThread.messages, (m) => m.id), [taskThread.messages]);
   const shouldShowWarning = messages.length > 10;
+
+  const { mutateAsync: sendMessage } = useAskAgentic();
+  const [followUpQuestion, setFollowUpQuestion] = useState("");
 
   const isLoading = useIsThreadLoading(thread.id);
   const { mutateAsync: stopThread } = useStopAgenticRun(thread.id);
-  const { refetch: refetchThreadMessages } = useAgenticStore(projectId, thread.id);
+  const { refetch: refetchThreadMessages } = useAgenticStore(project.id, thread.id);
   useObserveAgenticMessages(thread.id, refetchThreadMessages);
-  const { setSelectedGroupId, selectReasoning, selectedGroupId } = useSelectedMessageReasoning();
   const streamingContent = useLastStreamingMessage(thread.id);
-  const lastRunGroupId = useLastRunInfoGroupId(thread.id);
+
+  const [hoveredNodeId, setHoveredNode] = useState<string | null>(null);
+
+  const { selectedBlock, setSelectedBlockId, setSelectedGroupId } = useSelectedMessageReasoning();
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only reset on thread change
+  useEffect(() => {
+    setSelectedBlockId(null);
+    setSelectedGroupId(null);
+  }, [thread.id]);
+
+  const [automationGenerated, setAutomationGenerated] = useState<AutomationGenerated | undefined>(
+    undefined
+  );
+
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    const handleScroll = () => {
+      const distanceFromBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight;
+      isUserScrolledUp.current = distanceFromBottom > 100;
+    };
+    container.addEventListener("scroll", handleScroll);
+    return () => container.removeEventListener("scroll", handleScroll);
+  }, []);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
-    if (lastRunGroupId) {
-      setSelectedGroupId(lastRunGroupId);
-    }
-  }, [lastRunGroupId]);
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
-  useEffect(() => {
-    const behavior = streamingContent ? "instant" : "smooth";
-    bottomRef.current?.scrollIntoView({ behavior });
+    if (isUserScrolledUp.current) return;
+    bottomRef.current?.scrollIntoView({
+      behavior: streamingContent ? "instant" : "smooth"
+    });
   }, [messages, streamingContent]);
+
+  const handleArtifactRerun = useCallback(
+    async (prompt: string) => {
+      setSelectedBlockId(null);
+      isUserScrolledUp.current = false;
+      await sendMessage({
+        prompt,
+        threadId: thread.id,
+        agentRef: thread.source
+      });
+    },
+    [sendMessage, thread.id, thread.source, setSelectedBlockId]
+  );
 
   const handleSendMessage = async () => {
     if (!followUpQuestion.trim() || isLoading) return;
-
+    isUserScrolledUp.current = false;
     await sendMessage({
       prompt: followUpQuestion,
       threadId: thread.id,
@@ -66,13 +106,6 @@ const AgenticThread = ({ thread }: { thread: ThreadItem }) => {
     });
     setFollowUpQuestion("");
   };
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
-  useEffect(() => {
-    if (messagesContainerRef.current) {
-      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
-    }
-  }, [messages]);
 
   const onStop = useCallback(() => {
     stopThread()
@@ -89,8 +122,8 @@ const AgenticThread = ({ thread }: { thread: ThreadItem }) => {
   return (
     <div className='flex h-full flex-col'>
       <Header thread={thread} />
-      <div className='flex flex-1 overflow-hidden'>
-        <div className='flex h-full flex-1 flex-col'>
+      <ResizablePanelGroup direction='horizontal' className='flex-1'>
+        <ResizablePanel defaultSize={selectedBlock ? 60 : 100} minSize={30}>
           <div className='flex h-full w-full flex-1 flex-col py-4'>
             <div
               ref={messagesContainerRef}
@@ -102,22 +135,24 @@ const AgenticThread = ({ thread }: { thread: ThreadItem }) => {
                     <LoaderCircle className='h-6 w-6 animate-spin text-muted-foreground' />
                   </div>
                 ) : (
-                  messages.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className={`mb-6 rounded-lg p-4 ${msg.is_human ? "bg-muted/50" : "bg-secondary/20"}`}
-                    >
-                      {msg.is_human ? (
+                  messages.map((msg) =>
+                    msg.is_human ? (
+                      <div key={msg.id} className='mb-6 flex justify-end'>
                         <UserMessage content={msg.content} createdAt={msg.created_at} />
-                      ) : (
+                      </div>
+                    ) : (
+                      <div key={msg.id} className='mb-6'>
                         <BlockMessage
-                          key={msg.id}
                           message={msg}
-                          toggleReasoning={selectReasoning}
+                          threadId={thread.id}
+                          hoveredNodeId={hoveredNodeId}
+                          automationGenerated={automationGenerated}
+                          onStepHover={setHoveredNode}
+                          onAutomationGenerated={setAutomationGenerated}
                         />
-                      )}
-                    </div>
-                  ))
+                      </div>
+                    )
+                  )
                 )}
               </div>
               <div ref={bottomRef} />
@@ -127,9 +162,7 @@ const AgenticThread = ({ thread }: { thread: ThreadItem }) => {
               <ProcessingWarning
                 threadId={thread.id}
                 isLoading={isLoading}
-                onRefresh={() => {
-                  refetchThreadMessages();
-                }}
+                onRefresh={refetchThreadMessages}
               />
               <MessageInput
                 value={followUpQuestion}
@@ -142,10 +175,35 @@ const AgenticThread = ({ thread }: { thread: ThreadItem }) => {
               />
             </div>
           </div>
-        </div>
+        </ResizablePanel>
 
-        {!!selectedGroupId && <SidePanel />}
-      </div>
+        {selectedBlock && (
+          <>
+            <ResizableHandle />
+            <ResizablePanel defaultSize={40} minSize={20} maxSize={70}>
+              <ArtifactSidebar
+                block={selectedBlock}
+                onClose={() => setSelectedBlockId(null)}
+                onRerun={handleArtifactRerun}
+              />
+            </ResizablePanel>
+          </>
+        )}
+
+        {automationGenerated && (
+          <>
+            <ResizableHandle />
+            <ResizablePanel defaultSize={20} minSize={15} maxSize={40}>
+              <AutomationDagPanel
+                automationGenerated={automationGenerated}
+                highlightedNodeId={hoveredNodeId}
+                onNodeHover={setHoveredNode}
+                onClose={() => setAutomationGenerated(undefined)}
+              />
+            </ResizablePanel>
+          </>
+        )}
+      </ResizablePanelGroup>
     </div>
   );
 };

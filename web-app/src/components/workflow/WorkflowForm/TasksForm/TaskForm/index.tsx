@@ -47,7 +47,7 @@ const TASK_TYPES = [
   { value: "omni_query", label: "Omni Query" },
   { value: "loop_sequential", label: "Loop Sequential" },
   { value: "formatter", label: "Formatter" },
-  { value: "workflow", label: "Workflow" },
+  { value: "workflow", label: "Automation" },
   { value: "conditional", label: "Conditional" }
 ];
 

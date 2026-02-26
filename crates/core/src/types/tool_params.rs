@@ -62,3 +62,11 @@ pub struct AgentParams {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct EmptySQLParams {}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SaveAutomationParams {
+    #[schemars(description = "A descriptive name for the automation being saved")]
+    pub name: String,
+    #[schemars(description = "A description of what this automation does")]
+    pub description: String,
+}

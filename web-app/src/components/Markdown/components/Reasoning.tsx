@@ -10,7 +10,7 @@ const ReasoningContainer = React.memo(function ReasoningContainer({ children }: 
   const [isExpanded, setIsExpanded] = useState(true);
 
   return (
-    <div className='my-4'>
+    <div className='mb-4'>
       <button
         onClick={() => setIsExpanded(!isExpanded)}
         className='flex items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground'

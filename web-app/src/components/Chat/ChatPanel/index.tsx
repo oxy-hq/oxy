@@ -125,7 +125,7 @@ const ChatPanel = () => {
       case "build":
         return "Enter anything you want to build";
       case "workflow":
-        return "Enter a title for this workflow run";
+        return "Enter a title for this automation run";
     }
   })();
 
@@ -180,7 +180,7 @@ const ChatPanel = () => {
             </ToggleGroupItem>
             <ToggleGroupItem size='sm' value='workflow' className={ToggleGroupItemClasses}>
               <Workflow />
-              <span>Workflow</span>
+              <span>Automation</span>
             </ToggleGroupItem>
           </ToggleGroup>
         </div>

@@ -704,7 +704,7 @@ fn validate_single_file(file_path: &PathBuf, config: &Config) -> Result<(), Stri
     let file_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
     match () {
-        _ if file_name.ends_with(".workflow.yml") => {
+        _ if file_name.ends_with(".workflow.yml") || file_name.ends_with(".automation.yml") => {
             let workflow = config.load_workflow(file_path).map_err(|e| e.to_string())?;
             config
                 .validate_workflow(&workflow)
@@ -723,7 +723,7 @@ fn validate_single_file(file_path: &PathBuf, config: &Config) -> Result<(), Stri
             config.validate_app(&app).map_err(|e| e.to_string())
         }
         _ => Err(format!(
-            "Unknown file type: {}. Expected .workflow.yml, .agent.yml, or .app.yml",
+            "Unknown file type: {}. Expected .workflow.yml, .automation.yml, .agent.yml, or .app.yml",
             file_path.display()
         )),
     }
