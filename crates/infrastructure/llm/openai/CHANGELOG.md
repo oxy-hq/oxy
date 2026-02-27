@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.20](https://github.com/oxy-hq/oxy-internal/compare/0.5.19...0.5.20) (2026-02-27)
+
+
+### <!-- 0 -->🚀 Features
+
+* update async-openai dependency to version 0.33.0 and adjust features across crates ([ffc717c](https://github.com/oxy-hq/oxy-internal/commit/ffc717c1fc3511b595ddfca50bb028e5ac2fca87))
+
 ## [0.5.19](https://github.com/oxy-hq/oxy-internal/compare/0.5.18...0.5.19) (2026-02-26)
 
 

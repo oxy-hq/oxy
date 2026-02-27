@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.20](https://github.com/oxy-hq/oxy-internal/compare/0.5.19...0.5.20) (2026-02-27)
+
+
+### <!-- 0 -->🚀 Features
+
+* enhance semantic_query output for chaining ([#1694](https://github.com/oxy-hq/oxy-internal/issues/1694)) ([5b1b3ee](https://github.com/oxy-hq/oxy-internal/commit/5b1b3ee2d40bfc5a712b976efe164cb22f4f1899))
+* refactor automations into routines ([#1686](https://github.com/oxy-hq/oxy-internal/issues/1686)) ([455cfb2](https://github.com/oxy-hq/oxy-internal/commit/455cfb2cdd898640307c86e7fea88c158fab3ee8))
+
 ## [0.5.19](https://github.com/oxy-hq/oxy-internal/compare/0.5.18...0.5.19) (2026-02-26)
 
 ## [0.5.18](https://github.com/oxy-hq/oxy-internal/compare/0.5.17...0.5.18) (2026-02-18)

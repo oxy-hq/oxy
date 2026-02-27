@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.20](https://github.com/oxy-hq/oxy-internal/compare/0.5.19...0.5.20) (2026-02-27)
+
+
+### <!-- 0 -->🚀 Features
+
+* refactor automations into routines ([#1686](https://github.com/oxy-hq/oxy-internal/issues/1686)) ([455cfb2](https://github.com/oxy-hq/oxy-internal/commit/455cfb2cdd898640307c86e7fea88c158fab3ee8))
+* update async-openai dependency to version 0.33.0 and adjust features across crates ([ffc717c](https://github.com/oxy-hq/oxy-internal/commit/ffc717c1fc3511b595ddfca50bb028e5ac2fca87))
+
 ## [0.5.19](https://github.com/oxy-hq/oxy-internal/compare/0.5.18...0.5.19) (2026-02-26)
 
 
