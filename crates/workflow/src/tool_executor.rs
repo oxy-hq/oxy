@@ -4,6 +4,7 @@
 //! with the core tool registry to handle Workflow and SemanticQuery execution.
 
 use async_trait::async_trait;
+use serde::Serialize;
 use std::sync::Arc;
 
 use oxy::{
@@ -80,6 +81,18 @@ impl ToolExecutor for WorkflowToolExecutor {
     }
 }
 
+/// Lean result returned to the agent from semantic_query tool calls.
+/// Contains only what the agent needs: the generated SQL (for chaining with
+/// execute_sql or other tools), the target database, and the query results.
+#[derive(Serialize)]
+struct SemanticQueryToolResult {
+    database: String,
+    generated_sql: String,
+    /// First row is column headers, remaining rows are data.
+    result: Vec<Vec<String>>,
+    is_result_truncated: bool,
+}
+
 /// Executor for SemanticQuery tools
 ///
 /// Handles semantic query execution through the semantic query builder.
@@ -143,21 +156,47 @@ impl ToolExecutor for SemanticQueryToolExecutor {
                     .execute(execution_context, task)
                     .await;
 
-                match &result {
+                match result {
                     Ok(output) => {
-                        // Record generated SQL for tracing
-                        if let oxy::execute::types::Output::Table(table) = output
+                        events::tool::tool_call_output(&output);
+
+                        // Return a lean result so the agent sees generated_sql and
+                        // database alongside the data — enabling chaining with
+                        // execute_sql or other tools.
+                        if let oxy::execute::types::Output::Table(ref table) = output
                             && let Some(ref reference) = table.reference
                         {
-                            println!("generated sql: {}", reference.sql);
                             span.record("oxy.generated_sql", &reference.sql);
-                        }
-                        events::tool::tool_call_output(output);
-                    }
-                    Err(e) => events::tool::tool_call_error(&e.to_string()),
-                }
 
-                result.map(OutputContainer::Single)
+                            let (result_2d, is_truncated) = table.to_2d_array().map_err(|e| {
+                                OxyError::RuntimeError(format!(
+                                    "Failed to convert semantic query results: {e}"
+                                ))
+                            })?;
+
+                            let tool_result = SemanticQueryToolResult {
+                                database: reference.database_ref.clone(),
+                                generated_sql: reference.sql.clone(),
+                                result: result_2d,
+                                is_result_truncated: is_truncated,
+                            };
+
+                            let json = serde_json::to_string_pretty(&tool_result)
+                                .unwrap_or_else(|_| output.to_string());
+
+                            Ok(OutputContainer::Single(oxy::execute::types::Output::Text(
+                                json,
+                            )))
+                        } else {
+                            // Fallback: return as-is if no reference available
+                            Ok(OutputContainer::Single(output))
+                        }
+                    }
+                    Err(e) => {
+                        events::tool::tool_call_error(&e.to_string());
+                        Err(e)
+                    }
+                }
             }
             _ => Err(OxyError::RuntimeError(
                 "SemanticQueryToolExecutor can only handle SemanticQuery tools".to_string(),

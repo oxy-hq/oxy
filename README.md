@@ -11,17 +11,15 @@
 > 📖 **Looking for up-to-date code documentation?**  
 > Check out our DeepWiki, which updates weekly with the latest code changes: [![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/oxy-hq/oxy)
 
-## The Open-Source, Full-Stack Platform for Agentic Data Analytics 
+## The framework for agentic analytics
 
-Oxygen is an open-source, full-stack Data + AI platform for agentic data analytics. We combine a data modeling engine (ontology engine), an agent and automation engine, an agentic application engine, a data lakehouse, and an ETL engine, to become a one-stop shop for anything Data and AI.
-
-Oxygen is grounded in deterministic execution principles. Written in Rust and declarative by design, Oxygen provides the foundational components needed to transform AI-driven data analysis into reliable, production-ready systems through structured primitives, semantic understanding, and predictable execution.
+Oxy is an open-source framework for building comprehensive agentic analytics systems grounded in deterministic execution principles. Written in Rust and declarative by design, Oxy provides the foundational components needed to transform AI-driven data analysis into reliable, production-ready systems through structured primitives, semantic understanding, and predictable execution.
 
 To learn more, read our [docs](https://oxy.tech/docs).
 
 ### Quickstart
 
-To install Oxygen from binary, run the following command (Mac, Linux, WSL):
+To install Oxy from binary, run the following command (Mac, Linux, WSL):
 
 ```bash
 bash <(curl -sSfL https://get.oxy.tech)
@@ -83,12 +81,12 @@ oxy --version
 
 ## Quick Deploy
 
-Deploy the complete Oxygen demo application with one click:
+Deploy the complete Oxy demo application with one click:
 
 This deployment includes:
 
-- ✅ Complete Oxygen application (Rust backend + React frontend)
-- ✅ Demo retail analytics project with Oxygenmart dataset
+- ✅ Complete Oxy application (Rust backend + React frontend)
+- ✅ Demo retail analytics project with Oxymart dataset
 - ✅ Pre-configured workflows and data apps
 - ✅ Persistent storage for databases
 - ✅ Free tier available
@@ -130,11 +128,11 @@ This deployment includes:
    fly open
    ```
 
-Your Oxygen instance will be live at `https://your-app-name.fly.dev` with the complete demo project ready to explore!
+Your Oxy instance will be live at `https://your-app-name.fly.dev` with the complete demo project ready to explore!
 
 ## Database
 
-Oxygen uses PostgreSQL for all deployments. For local development, an embedded PostgreSQL instance starts automatically - no setup required!
+Oxy uses PostgreSQL for all deployments. For local development, an embedded PostgreSQL instance starts automatically - no setup required!
 
 For production deployments, configure an external PostgreSQL database:
 
