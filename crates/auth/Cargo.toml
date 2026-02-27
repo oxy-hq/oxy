@@ -22,7 +22,7 @@ entity = { path = "../entity" }
 
 # Cryptography
 argon2 = "0.5"
-bcrypt = "0.17.1"
+bcrypt = "0.18.0"
 jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
 base64 = "0.22"
 
