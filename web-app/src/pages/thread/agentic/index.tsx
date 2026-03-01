@@ -129,7 +129,7 @@ const AgenticThread = ({ thread }: { thread: ThreadItem }) => {
               ref={messagesContainerRef}
               className='customScrollbar flex w-full flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable_both-edges]'
             >
-              <div className='mx-auto mb-6 w-full max-w-page-content'>
+              <div className='mx-auto mb-6 w-full max-w-page-content px-2'>
                 {messages.length === 0 ? (
                   <div className='flex h-full items-center justify-center'>
                     <LoaderCircle className='h-6 w-6 animate-spin text-muted-foreground' />

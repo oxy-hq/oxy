@@ -9,7 +9,7 @@ interface Props {
 
 const Messages = ({ messages, onArtifactClick }: Props) => {
   return (
-    <div className='mx-auto mb-6 w-full max-w-page-content'>
+    <div className='mx-auto mb-6 w-full max-w-page-content px-2'>
       {messages.length === 0 ? (
         <div className='flex h-full items-center justify-center'>
           <LoaderCircle className='h-6 w-6 animate-spin text-muted-foreground' />
