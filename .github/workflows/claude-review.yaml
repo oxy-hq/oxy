@@ -18,8 +18,7 @@ jobs:
   claude-review:
     # Auto-run on open/ready; re-run on demand by applying the 'claude-review' label.
     # Skips drafts to avoid noise on WIP PRs.
-    if: |
-      github.event.pull_request.draft == false
+    if: ${{ github.event.pull_request.draft == false && github.repository == 'oxy-hq/oxy-internal' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
