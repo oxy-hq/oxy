@@ -7,24 +7,29 @@ use schemars::JsonSchema;
 #[derive(Serialize, Deserialize, Validate, Debug, Clone, JsonSchema)]
 pub struct Authentication {
     #[garde(dive)]
-    pub basic: Option<BasicAuth>,
-    #[garde(dive)]
     pub google: Option<GoogleAuth>,
     #[garde(dive)]
     pub okta: Option<OktaAuth>,
+    #[garde(dive)]
+    pub magic_link: Option<MagicLinkAuth>,
 }
 
 #[derive(Serialize, Deserialize, Validate, Debug, Clone, JsonSchema)]
-pub struct BasicAuth {
+pub struct MagicLinkAuth {
+    /// Verified SES sender email address
     #[garde(length(min = 1))]
-    pub smtp_user: String,
-    #[garde(length(min = 1))]
-    pub smtp_password: String,
-
-    #[garde(length(min = 1))]
-    pub smtp_server: Option<String>,
-    #[garde(range(min = 1, max = 65535))]
-    pub smtp_port: Option<u16>,
+    pub from_email: String,
+    /// AWS region for SES (defaults to AWS_REGION env var)
+    #[garde(skip)]
+    pub aws_region: Option<String>,
+    /// Allow all emails ending with these domains (e.g. ["company.com"])
+    #[garde(skip)]
+    #[serde(default)]
+    pub allowed_domains: Vec<String>,
+    /// Allow specific individual emails (for closed beta)
+    #[garde(skip)]
+    #[serde(default)]
+    pub allowed_emails: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Validate, Debug, Clone, JsonSchema)]
@@ -47,20 +52,6 @@ pub struct OktaAuth {
 
 impl Authentication {
     pub fn from_env() -> Result<Self, oxy_shared::errors::OxyError> {
-        let smtp_user = env::var("SMTP_USER").ok();
-        let smtp_password = env::var("SMTP_PASSWORD").ok();
-        let smtp_server = env::var("SMTP_SERVER").ok();
-        let smtp_port = env::var("SMTP_PORT").ok().and_then(|v| v.parse().ok());
-        let basic = match (smtp_user, smtp_password) {
-            (Some(user), Some(pass)) => Some(BasicAuth {
-                smtp_user: user,
-                smtp_password: pass,
-                smtp_server,
-                smtp_port,
-            }),
-            _ => None,
-        };
-
         let client_id = env::var("GOOGLE_CLIENT_ID").ok();
         let client_secret = env::var("GOOGLE_CLIENT_SECRET").ok();
         let google = match (client_id, client_secret) {
@@ -83,10 +74,36 @@ impl Authentication {
             _ => None,
         };
 
+        let magic_link_local_test = env::var("MAGIC_LINK_LOCAL_TEST").is_ok();
+        let magic_link_from_email = env::var("MAGIC_LINK_FROM_EMAIL").ok();
+        let magic_link = if magic_link_local_test || magic_link_from_email.is_some() {
+            Some(MagicLinkAuth {
+                from_email: magic_link_from_email
+                    .unwrap_or_else(|| "noreply@localhost".to_string()),
+                aws_region: env::var("MAGIC_LINK_AWS_REGION").ok(),
+                allowed_domains: env::var("MAGIC_LINK_ALLOWED_DOMAINS")
+                    .unwrap_or_default()
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(String::from)
+                    .collect(),
+                allowed_emails: env::var("MAGIC_LINK_ALLOWED_EMAILS")
+                    .unwrap_or_default()
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(String::from)
+                    .collect(),
+            })
+        } else {
+            None
+        };
+
         let auth = Authentication {
-            basic,
             google,
             okta,
+            magic_link,
         };
 
         Ok(auth)

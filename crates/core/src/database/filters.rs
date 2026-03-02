@@ -16,14 +16,10 @@ impl UserFilters {
             .add(users::Column::Email.eq(email))
     }
 
-    pub fn by_verification_token(token: &str) -> Condition {
-        Condition::all().add(users::Column::EmailVerificationToken.eq(token))
-    }
-
-    pub fn active_by_verification_token(token: &str) -> Condition {
+    pub fn active_by_magic_link_token(token: &str) -> Condition {
         Condition::all()
             .add(users::Column::Status.eq(UserStatus::Active))
-            .add(users::Column::EmailVerificationToken.eq(token))
+            .add(users::Column::MagicLinkToken.eq(token))
     }
 }
 
@@ -37,7 +33,7 @@ where
 
     fn filter_active_by_email(self, email: &str) -> Select<E>;
 
-    fn filter_active_by_verification_token(self, token: &str) -> Select<E>;
+    fn filter_active_by_magic_link_token(self, token: &str) -> Select<E>;
 }
 
 impl UserQueryFilterExt<entity::users::Entity> for Select<entity::users::Entity> {
@@ -53,8 +49,8 @@ impl UserQueryFilterExt<entity::users::Entity> for Select<entity::users::Entity>
         self.filter(UserFilters::active_by_email(email))
     }
 
-    fn filter_active_by_verification_token(self, token: &str) -> Select<entity::users::Entity> {
-        self.filter(UserFilters::active_by_verification_token(token))
+    fn filter_active_by_magic_link_token(self, token: &str) -> Select<entity::users::Entity> {
+        self.filter(UserFilters::active_by_magic_link_token(token))
     }
 }
 
@@ -93,26 +89,6 @@ mod tests {
     }
 
     #[test]
-    fn test_by_verification_token_filter() {
-        let token = "test-token-123";
-        let condition = UserFilters::by_verification_token(token);
-        let expected = Condition::all().add(users::Column::EmailVerificationToken.eq(token));
-
-        assert_eq!(format!("{condition:?}"), format!("{:?}", expected));
-    }
-
-    #[test]
-    fn test_active_by_verification_token_filter() {
-        let token = "test-token-123";
-        let condition = UserFilters::active_by_verification_token(token);
-        let expected = Condition::all()
-            .add(users::Column::Status.eq(UserStatus::Active))
-            .add(users::Column::EmailVerificationToken.eq(token));
-
-        assert_eq!(format!("{condition:?}"), format!("{:?}", expected));
-    }
-
-    #[test]
     fn test_email_filter_with_different_emails() {
         let email1 = "user1@example.com";
         let email2 = "user2@example.com";
@@ -134,5 +110,28 @@ mod tests {
             format!("{active_condition:?}"),
             format!("{:?}", email_only_condition)
         );
+    }
+
+    #[test]
+    fn test_active_by_magic_link_token_filter() {
+        let token = "deadbeefcafe";
+        let condition = UserFilters::active_by_magic_link_token(token);
+
+        // Must include both Status == Active (auth-bypass guard) AND MagicLinkToken == token.
+        let expected = Condition::all()
+            .add(users::Column::Status.eq(UserStatus::Active))
+            .add(users::Column::MagicLinkToken.eq(token));
+
+        assert_eq!(format!("{condition:?}"), format!("{:?}", expected));
+    }
+
+    #[test]
+    fn test_active_by_magic_link_token_requires_active_status() {
+        let token = "deadbeefcafe";
+        let with_active = UserFilters::active_by_magic_link_token(token);
+        let token_only = Condition::all().add(users::Column::MagicLinkToken.eq(token));
+
+        // Ensures the active-status guard is not accidentally dropped.
+        assert_ne!(format!("{with_active:?}"), format!("{:?}", token_only));
     }
 }

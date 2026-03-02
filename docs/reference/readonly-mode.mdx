@@ -24,18 +24,18 @@ Both commands accept the flag because `oxy start` delegates to `oxy serve` after
 
 The following API operations return `403 Forbidden` when read-only mode is active:
 
-| Operation | API route |
-| --- | --- |
-| Create file | `POST /files/{path}/new-file` |
-| Create folder | `POST /files/{path}/new-folder` |
-| Save file | `POST /files/{path}` |
-| Delete file | `DELETE /files/{path}/delete-file` |
-| Delete folder | `DELETE /files/{path}/delete-folder` |
-| Rename file | `PUT /files/{path}/rename-file` |
-| Rename folder | `PUT /files/{path}/rename-folder` |
-| Switch branch | `POST /projects/{id}/switch-branch` |
+| Operation            | API route                                  |
+| -------------------- | ------------------------------------------ |
+| Create file          | `POST /files/{path}/new-file`              |
+| Create folder        | `POST /files/{path}/new-folder`            |
+| Save file            | `POST /files/{path}`                       |
+| Delete file          | `DELETE /files/{path}/delete-file`         |
+| Delete folder        | `DELETE /files/{path}/delete-folder`       |
+| Rename file          | `PUT /files/{path}/rename-file`            |
+| Rename folder        | `PUT /files/{path}/rename-folder`          |
+| Switch branch        | `POST /projects/{id}/switch-branch`        |
 | Switch active branch | `POST /projects/{id}/switch-active-branch` |
-| Push changes | `POST /projects/{id}/push-changes` |
+| Push changes         | `POST /projects/{id}/push-changes`         |
 
 ## What Is Allowed
 
@@ -60,9 +60,9 @@ This is the same visual behavior as cloud mode on the active branch.
 ## Command-Line Options
 
 <ParamField path="--readonly" type="boolean" default="false">
-  Prevent all file modification operations via the API. The server starts normally but
-  returns `403 Forbidden` for any request that would write to project files or change
-  the active git branch.
+  Prevent all file modification operations via the API. The server starts
+  normally but returns `403 Forbidden` for any request that would write to
+  project files or change the active git branch.
 </ParamField>
 
 ## See Also

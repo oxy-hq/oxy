@@ -2,25 +2,14 @@ import type {
   AuthConfigResponse,
   AuthResponse,
   GoogleAuthRequest,
-  LoginRequest,
+  MagicLinkRequest,
+  MagicLinkVerifyRequest,
   MessageResponse,
-  OktaAuthRequest,
-  RegisterRequest,
-  ValidateEmailRequest
+  OktaAuthRequest
 } from "@/types/auth";
 import { apiClient } from "./axios";
 
 export class AuthService {
-  static async login(request: LoginRequest): Promise<AuthResponse> {
-    const response = await apiClient.post("/auth/login", request);
-    return response.data;
-  }
-
-  static async register(request: RegisterRequest): Promise<MessageResponse> {
-    const response = await apiClient.post("/auth/register", request);
-    return response.data;
-  }
-
   static async googleAuth(request: GoogleAuthRequest): Promise<AuthResponse> {
     const response = await apiClient.post("/auth/google", request);
     return response.data;
@@ -31,13 +20,18 @@ export class AuthService {
     return response.data;
   }
 
-  static async validateEmail(request: ValidateEmailRequest): Promise<AuthResponse> {
-    const response = await apiClient.post("/auth/validate_email", request);
+  static async getAuthConfig(): Promise<AuthConfigResponse> {
+    const response = await apiClient.get("/auth/config");
     return response.data;
   }
 
-  static async getAuthConfig(): Promise<AuthConfigResponse> {
-    const response = await apiClient.get("/auth/config");
+  static async requestMagicLink(request: MagicLinkRequest): Promise<MessageResponse> {
+    const response = await apiClient.post("/auth/magic-link/request", request);
+    return response.data;
+  }
+
+  static async verifyMagicLink(request: MagicLinkVerifyRequest): Promise<AuthResponse> {
+    const response = await apiClient.post("/auth/magic-link/verify", request);
     return response.data;
   }
 }

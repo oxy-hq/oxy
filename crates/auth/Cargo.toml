@@ -21,8 +21,6 @@ sea-orm = { workspace = true }
 entity = { path = "../entity" }
 
 # Cryptography
-argon2 = "0.5"
-bcrypt = "0.17.1"
 jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
 base64 = "0.22"
 

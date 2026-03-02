@@ -10,7 +10,7 @@ export const Echarts = ({
   isLoading,
   title,
   testId,
-  chartIndex,
+  chartIndex
 }: {
   options: EChartsOption;
   isLoading: boolean;
@@ -30,7 +30,7 @@ export const Echarts = ({
 
   useResizeDetector({
     targetRef: chartRef,
-    onResize: onResize,
+    onResize: onResize
   });
 
   useEffect(() => {
@@ -54,18 +54,18 @@ export const Echarts = ({
         : options.toolbox || {
             feature: {
               dataZoom: {
-                yAxisIndex: "none",
+                yAxisIndex: "none"
               },
-              saveAsImage: {},
-            },
+              saveAsImage: {}
+            }
           };
 
       chart?.setOption(
         {
           ...options,
-          toolbox: toolboxConfig,
+          toolbox: toolboxConfig
         },
-        true,
+        true
       );
       chart?.resize();
     }
@@ -106,7 +106,7 @@ export const Echarts = ({
         const imageData = chart.getDataURL({
           type: "png",
           pixelRatio: 2,
-          backgroundColor: "#212121",
+          backgroundColor: "#212121"
         });
 
         // Create individual DOM element for this chart with index
@@ -118,8 +118,8 @@ export const Echarts = ({
           JSON.stringify({
             name: chartName,
             index: chartIndex ?? 0,
-            imageData,
-          }),
+            imageData
+          })
         );
         resultEl.setAttribute("data-ready", "true");
         resultEl.setAttribute("data-index", String(chartIndex ?? 0));
@@ -156,12 +156,8 @@ export const Echarts = ({
   }, [title, chartIndex]);
 
   return (
-    <div
-      data-testid={testId}
-      className="chart-wrapper"
-      data-chart-index={chartIndex ?? 0}
-    >
-      {title && <h2 className="font-bold text-foreground text-xl">{title}</h2>}
+    <div data-testid={testId} className='chart-wrapper' data-chart-index={chartIndex ?? 0}>
+      {title && <h2 className='font-bold text-foreground text-xl'>{title}</h2>}
       <div ref={chartRef} style={{ width: "100%", height: "400px" }} />
       {isExportMode && !isLoading && (
         <button
@@ -169,7 +165,7 @@ export const Echarts = ({
           onClick={handleExportChart}
           data-chart-index={chartIndex ?? 0}
           style={{ display: "none" }}
-          type="button"
+          type='button'
         >
           Export Chart
         </button>

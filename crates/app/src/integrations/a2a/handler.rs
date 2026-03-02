@@ -154,7 +154,7 @@ impl OxyA2aHandler {
         let auth_enabled = oxy_config
             .authentication
             .as_ref()
-            .map(|auth| auth.google.is_some() || auth.okta.is_some() || auth.basic.is_some())
+            .map(|auth| auth.google.is_some() || auth.okta.is_some() || auth.magic_link.is_some())
             .unwrap_or(false);
 
         if !auth_enabled {

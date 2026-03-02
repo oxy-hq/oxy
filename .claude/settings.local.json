@@ -36,7 +36,10 @@
       "Bash(curl:*)",
       "Bash(tee:*)",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:crates.io)"
+      "WebFetch(domain:crates.io)",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_resize",
+      "mcp__playwright__browser_take_screenshot"
     ],
     "deny": [],
     "ask": []

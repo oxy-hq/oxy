@@ -14,6 +14,7 @@ Oxy requires a **Docker API-compatible endpoint** to manage PostgreSQL, ClickHou
 - **Any runtime** that provides a Docker-compatible API socket
 
 **Note:** containerd alone does not expose a Docker API. If using containerd-based runtimes (like Rancher Desktop), select the **dockerd (moby)** engine option to get Docker API compatibility.
+
 </Warning>
 
 ## Key Takeaway
@@ -28,6 +29,7 @@ You can use:
 - Podman with Docker socket emulation
 
 **Oxy doesn't care which one you choose** - they all work the same way once installed, as long as they expose a Docker-compatible API socket.
+
 </Note>
 
 ## What Oxy Actually Needs
@@ -37,6 +39,7 @@ You can use:
     **Docker Engine** (dockerd) or any Docker API-compatible runtime
 
     This is the actual runtime that manages containers
+
   </Card>
 
   <Card title="Docker-Compatible API Socket" icon="plug">
@@ -46,11 +49,15 @@ You can use:
     - Custom location via `DOCKER_HOST` env var
 
     This is how Oxy communicates with the runtime
+
   </Card>
 </CardGroup>
 
 <Info>
-The applications listed below (Docker Desktop, Rancher Desktop, etc.) are just **convenient ways to install and manage** the underlying container engine. You can also install Docker Engine directly without any desktop application - see the "Docker Engine (Standalone)" tab.
+  The applications listed below (Docker Desktop, Rancher Desktop, etc.) are just
+  **convenient ways to install and manage** the underlying container engine. You
+  can also install Docker Engine directly without any desktop application - see
+  the "Docker Engine (Standalone)" tab.
 </Info>
 
 ## Installation Options
@@ -131,6 +138,7 @@ You can install a Docker-compatible container engine in several ways:
     <Tip>
       This is the most lightweight option and recommended for servers and CI/CD environments.
     </Tip>
+
   </Tab>
 
   <Tab title="Docker Desktop">
@@ -159,6 +167,7 @@ You can install a Docker-compatible container engine in several ways:
         ```
       </Step>
     </Steps>
+
   </Tab>
 
   <Tab title="Rancher Desktop">
@@ -200,6 +209,7 @@ You can install a Docker-compatible container engine in several ways:
 
       Oxy communicates via the Docker API, which containerd alone does not provide. You must select dockerd (moby) for Oxy compatibility.
     </Accordion>
+
   </Tab>
 
   <Tab title="Colima (macOS)">
@@ -250,6 +260,7 @@ You can install a Docker-compatible container engine in several ways:
     <Tip>
       Colima is extremely lightweight compared to desktop applications, perfect for development on macOS.
     </Tip>
+
   </Tab>
 
   <Tab title="Podman">
@@ -302,6 +313,7 @@ You can install a Docker-compatible container engine in several ways:
         ```
       </Step>
     </Steps>
+
   </Tab>
 
   <Tab title="OrbStack (macOS)">
@@ -331,6 +343,7 @@ You can install a Docker-compatible container engine in several ways:
     <Tip>
       OrbStack is known for its speed and low resource usage on macOS while providing full Docker compatibility.
     </Tip>
+
   </Tab>
 </Tabs>
 
@@ -354,15 +367,15 @@ You can add this to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to make i
 
 ### Common Socket Locations
 
-| Runtime          | Default Socket Location                          |
-|------------------|--------------------------------------------------|
-| Docker Desktop   | `unix:///var/run/docker.sock` (macOS/Linux)      |
-|                  | `npipe:////./pipe/docker_engine` (Windows)       |
-| Rancher Desktop  | `unix://$HOME/.rd/docker.sock` (macOS)           |
-|                  | `unix:///var/run/docker.sock` (Linux)            |
-| Colima           | `unix://$HOME/.colima/default/docker.sock`       |
-| Podman           | `unix://$XDG_RUNTIME_DIR/podman/podman.sock`     |
-| OrbStack         | `unix://$HOME/.orbstack/run/docker.sock`         |
+| Runtime         | Default Socket Location                      |
+| --------------- | -------------------------------------------- |
+| Docker Desktop  | `unix:///var/run/docker.sock` (macOS/Linux)  |
+|                 | `npipe:////./pipe/docker_engine` (Windows)   |
+| Rancher Desktop | `unix://$HOME/.rd/docker.sock` (macOS)       |
+|                 | `unix:///var/run/docker.sock` (Linux)        |
+| Colima          | `unix://$HOME/.colima/default/docker.sock`   |
+| Podman          | `unix://$XDG_RUNTIME_DIR/podman/podman.sock` |
+| OrbStack        | `unix://$HOME/.orbstack/run/docker.sock`     |
 
 ## Troubleshooting
 
@@ -383,15 +396,14 @@ You can add this to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to make i
        ```bash
        echo $DOCKER_HOST
        ```
+
   </Accordion>
 
-  <Accordion title="Rancher Desktop: daemon not responding">
-    1. Open Rancher Desktop preferences
-    2. Switch Container Engine to **dockerd (moby)**
-    3. Restart Rancher Desktop
-    4. Wait for full initialization (30-60 seconds)
-    5. Retry: `oxy start`
-  </Accordion>
+<Accordion title="Rancher Desktop: daemon not responding">
+  1. Open Rancher Desktop preferences 2. Switch Container Engine to **dockerd
+  (moby)** 3. Restart Rancher Desktop 4. Wait for full initialization (30-60
+  seconds) 5. Retry: `oxy start`
+</Accordion>
 
   <Accordion title="Colima: connection refused">
     ```bash
@@ -408,6 +420,7 @@ You can add this to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to make i
     export DOCKER_HOST=unix://$HOME/.colima/default/docker.sock
     oxy start
     ```
+
   </Accordion>
 
   <Accordion title="Podman: no such file or directory">
@@ -420,6 +433,7 @@ You can add this to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to make i
     ```
 
     For Podman Desktop, enable Docker compatibility in settings.
+
   </Accordion>
 
   <Accordion title="Permission Denied (Linux)">
@@ -434,6 +448,7 @@ You can add this to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to make i
     ```bash
     docker ps
     ```
+
   </Accordion>
 </AccordionGroup>
 
@@ -446,24 +461,28 @@ When using the `--enterprise` flag, Oxy starts additional containers:
     Main database
 
     Port: `15432`
+
   </Card>
 
   <Card title="ClickHouse" icon="chart-line">
     Analytics database
 
     Ports: `8123` (HTTP), `9000` (Native)
+
   </Card>
 
   <Card title="OpenTelemetry Collector" icon="chart-mixed">
     Observability pipeline
 
     Ports: `4317` (gRPC), `4318` (HTTP)
+
   </Card>
 
   <Card title="Cube.js" icon="cube">
     Semantic layer
 
     Port: `4000`
+
   </Card>
 </CardGroup>
 
@@ -480,13 +499,13 @@ Different runtimes have varying performance characteristics on macOS:
     **Fastest** - Lowest resource usage, native performance
   </Card>
 
-  <Card title="Colima" icon="gauge-high">
-    **Fast** - Good performance, lightweight footprint
-  </Card>
+<Card title="Colima" icon="gauge-high">
+  **Fast** - Good performance, lightweight footprint
+</Card>
 
-  <Card title="Docker Desktop" icon="docker">
-    **Good** - Excellent compatibility, higher resource usage
-  </Card>
+<Card title="Docker Desktop" icon="docker">
+  **Good** - Excellent compatibility, higher resource usage
+</Card>
 
   <Card title="Rancher Desktop" icon="cow">
     **Good** - Rich features, moderate resource usage
@@ -494,11 +513,13 @@ Different runtimes have varying performance characteristics on macOS:
 </CardGroup>
 
 <Info>
-  On **Linux**, all runtimes perform similarly as they use native kernel features.
+  On **Linux**, all runtimes perform similarly as they use native kernel
+  features.
 </Info>
 
 <Info>
-  On **Windows**, Docker Desktop offers the best support and performance with WSL2 integration.
+  On **Windows**, Docker Desktop offers the best support and performance with
+  WSL2 integration.
 </Info>
 
 ## Clean Start
@@ -522,13 +543,21 @@ This removes across all container runtimes:
     Official documentation
   </Card>
 
-  <Card title="Rancher Desktop Docs" icon="book" href="https://docs.rancherdesktop.io/">
-    Setup and configuration
-  </Card>
+<Card
+  title="Rancher Desktop Docs"
+  icon="book"
+  href="https://docs.rancherdesktop.io/"
+>
+  Setup and configuration
+</Card>
 
-  <Card title="Colima GitHub" icon="github" href="https://github.com/abiosoft/colima">
-    Source and documentation
-  </Card>
+<Card
+  title="Colima GitHub"
+  icon="github"
+  href="https://github.com/abiosoft/colima"
+>
+  Source and documentation
+</Card>
 
   <Card title="Podman Desktop Docs" icon="book" href="https://podman-desktop.io/docs">
     Installation guides

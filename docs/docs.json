@@ -86,7 +86,7 @@
       "group": "Authentication",
       "pages": [
         "authentication/overview",
-        "authentication/email-password",
+        "authentication/magic-link",
         "authentication/google",
         "authentication/okta",
         "api-keys/API-Keys"

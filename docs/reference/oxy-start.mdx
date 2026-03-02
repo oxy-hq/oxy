@@ -17,6 +17,7 @@ You can use:
 - Any runtime that provides a Docker API
 
 See the [Container Runtime Setup Guide](/deployment/container-runtimes) for installation instructions.
+
 </Note>
 
 ## Overview
@@ -89,17 +90,21 @@ The `--clean` flag removes all existing Oxy-managed Docker resources before star
 <ParamField path="--clean" type="boolean" default="false">
   Remove all existing Oxy-managed containers and volumes before starting.
 
-  ⚠️ **Warning:** This permanently deletes all database data.
+⚠️ **Warning:** This permanently deletes all database data.
+
 </ParamField>
 
 <ParamField path="--enterprise" type="boolean" default="false">
-  Enable enterprise features including ClickHouse, OpenTelemetry Collector, and Cube.js semantic engine.
+  Enable enterprise features including ClickHouse, OpenTelemetry Collector, and
+  Cube.js semantic engine.
 </ParamField>
 
 ## Important Notes
 
 <Warning>
-**Container Runtime Required:** A Docker-compatible container engine must be installed and running. See [Container Runtime Setup](/deployment/container-runtimes) for options.
+  **Container Runtime Required:** A Docker-compatible container engine must be
+  installed and running. See [Container Runtime
+  Setup](/deployment/container-runtimes) for options.
 </Warning>
 
 - Data persists in named volumes (`oxy-postgres-data`, `oxy-clickhouse-data`)
@@ -122,6 +127,7 @@ The `--clean` flag removes all existing Oxy-managed Docker resources before star
     ```
 
     See the [Container Runtime Guide](/deployment/container-runtimes) for detailed setup instructions.
+
   </Accordion>
 
   <Accordion title="Port already in use">
@@ -130,6 +136,7 @@ The `--clean` flag removes all existing Oxy-managed Docker resources before star
     1. Check what's using the port: `lsof -i :15432`
     2. Stop the conflicting service
     3. Or configure Oxy to use an external database instead
+
   </Accordion>
 
   <Accordion title="Containers start but database connection fails">
@@ -141,6 +148,7 @@ The `--clean` flag removes all existing Oxy-managed Docker resources before star
 
     # Wait for "ready to accept connections" message
     ```
+
   </Accordion>
 </AccordionGroup>
 
@@ -151,13 +159,13 @@ The `--clean` flag removes all existing Oxy-managed Docker resources before star
     Install and configure Docker Engine, Colima, or other runtimes
   </Card>
 
-  <Card title="Production Deployment" icon="server" href="/deployment/overview">
-    Deploy Oxy in production environments
-  </Card>
+<Card title="Production Deployment" icon="server" href="/deployment/overview">
+  Deploy Oxy in production environments
+</Card>
 
-  <Card title="Database Sync" icon="database" href="/reference/database-sync">
-    Learn about database migrations and syncing
-  </Card>
+<Card title="Database Sync" icon="database" href="/reference/database-sync">
+  Learn about database migrations and syncing
+</Card>
 
   <Card title="Monitor Status" icon="chart-line" href="/reference/oxy-commands#oxy-status">
     Check Oxy service status

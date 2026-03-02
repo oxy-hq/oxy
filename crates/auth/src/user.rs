@@ -33,9 +33,9 @@ impl UserService {
                 .clone()
                 .unwrap_or_else(|| identity.email.clone())),
             picture: Set(identity.picture.clone()),
-            password_hash: ActiveValue::not_set(),
             email_verified: Set(true),
-            email_verification_token: ActiveValue::not_set(),
+            magic_link_token: ActiveValue::not_set(),
+            magic_link_token_expires_at: ActiveValue::not_set(),
             role: Set(users::UserRole::Member),
             status: Set(UserStatus::Active),
             created_at: ActiveValue::not_set(), // Will use database default

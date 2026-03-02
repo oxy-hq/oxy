@@ -47,6 +47,7 @@ Follow these steps to create a VM instance in Google Cloud Platform:
     From the navigation menu, select **Compute Engine** > **VM instances**.
 
     If this is your first time using Compute Engine, you might need to enable the API.
+
   </Step>
 
 <Step title="Create a VM Instance">
@@ -99,11 +100,11 @@ Connect to your VM instance and prepare it for Oxy deployment:
     ```bash
     # If using gcloud CLI
     gcloud compute ssh --project=YOUR_PROJECT_ID --zone=YOUR_ZONE oxy-server
-    
+
     # Or using standard SSH if you've set up SSH keys
     ssh username@EXTERNAL_IP
     ```
-    
+
     <Important>
       **Switch to the ubuntu user after connecting:**
       ```bash
@@ -111,6 +112,7 @@ Connect to your VM instance and prepare it for Oxy deployment:
       ```
       This is a critical step! The rest of this guide assumes you're using the `ubuntu` user, and the paths and configurations are set up accordingly.
     </Important>
+
   </Step>
 
   <Step title="Update System and Install Essential Packages">
@@ -139,8 +141,9 @@ Let's install Oxy directly on the VM:
     ```bash
     bash <(curl --proto '=https' --tlsv1.2 -sSf https://get.oxy.tech)
     ```
-    
+
     This script will download and install the latest stable version of Oxy.
+
   </Step>
 
   <Step title="Verify the Installation">
@@ -149,8 +152,9 @@ Let's install Oxy directly on the VM:
     ```bash
     oxy --version
     ```
-    
+
     You should see the version information displayed.
+
   </Step>
 </Steps>
 
@@ -205,21 +209,22 @@ Let's use the built-in `oxy init` command to initialize a new workspace with all
     cd ~/oxy-workspace
     nano .env
     ```
-    
+
     Add your environment variables:
-    
+
     ```bash
     OXY_STATE_DIR=/home/$(whoami)/oxy-data
     ```
-    
+
     Save and exit.
-    
+
     <Note>
-      If you don't set `OXY_STATE_DIR`, Oxy will use the default location `~/.local/share/oxy/`. 
+      If you don't set `OXY_STATE_DIR`, Oxy will use the default location `~/.local/share/oxy/`.
       We recommend setting it explicitly for production deployments to make backups and maintenance easier.
     </Note>
-    
+
     Note: You won't need to manually set the OpenAI API key in the environment as it's already configured during the `oxy init` process.
+
   </Step>
 </Steps>
 
@@ -246,8 +251,9 @@ To ensure your Oxy deployment is accessible, you need to create a firewall rule 
     Go back to **Compute Engine** > **VM instances**, select your VM instance, and click **EDIT**.
 
     In the **Network tags** field, add `oxy-server` (or whatever tag you used in the firewall rule).
-    
+
     Click **SAVE**.
+
   </Step>
 </Steps>
 
@@ -268,12 +274,12 @@ Let's configure Oxy to run automatically on system startup and restart if it fai
     ```
 
     Add the following content:
-    
+
     ```ini
     [Unit]
     Description=Oxy Server
     After=network.target
-    
+
     [Service]
     Type=simple
     User=ubuntu
@@ -282,18 +288,19 @@ Let's configure Oxy to run automatically on system startup and restart if it fai
     ExecStart=/usr/local/bin/oxy serve --port 3000
     Restart=always
     RestartSec=5
-    
+
     [Install]
     WantedBy=multi-user.target
     ```
-    
+
     <Note>
       We specify port 3000 explicitly to match the firewall rule configuration. The service will be accessible directly on this port from the internet.
     </Note>
-    
+
     This configuration uses the default `ubuntu` user which is standard on GCP instances. If you're using a different username, adjust accordingly.
-    
+
     Save and exit.
+
   </Step>
 
 <Step title="Enable and Start the Service">
@@ -323,7 +330,7 @@ Let's configure Oxy to run automatically on system startup and restart if it fai
     ```
     http://yourdomain.com:3000
     ```
-    
+
     Or directly using your VM's external IP:
     ```
     http://YOUR_VM_EXTERNAL_IP:3000
@@ -373,6 +380,7 @@ See our [Migration Guide](/migration/migration-guide) for detailed PostgreSQL se
     ```bash
     sudo systemctl stop oxy
     ```
+
   </Step>
 
   <Step title="Updating Oxy">
@@ -381,13 +389,14 @@ See our [Migration Guide](/migration/migration-guide) for detailed PostgreSQL se
     ```bash
     # Stop the service first
     sudo systemctl stop oxy
-    
+
     # Run the installation script again
     bash <(curl --proto '=https' --tlsv1.2 -sSf https://get.oxy.tech)
-    
+
     # Start the service again
     sudo systemctl start oxy
     ```
+
   </Step>
 
   <Step title="Backup Data">
@@ -398,8 +407,9 @@ See our [Migration Guide](/migration/migration-guide) for detailed PostgreSQL se
     # Optional: Upload to Google Cloud Storage
     gsutil cp oxy-backup-*.tar.gz gs://your-bucket-name/
     ```
-    
+
     You'll need the `gcloud` CLI installed and authenticated for the last command.
+
   </Step>
 </Steps>
 

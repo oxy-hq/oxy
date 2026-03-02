@@ -3,10 +3,9 @@ const ROUTES = {
 
   AUTH: {
     LOGIN: "/login",
-    REGISTER: "/register",
-    VERIFY_EMAIL: "/verify-email",
     GOOGLE_CALLBACK: "/auth/google/callback",
-    OKTA_CALLBACK: "/auth/okta/callback"
+    OKTA_CALLBACK: "/auth/okta/callback",
+    MAGIC_LINK_CALLBACK: "/auth/magic-link/callback"
   },
   GITHUB: {
     CALLBACK: "/github/callback"

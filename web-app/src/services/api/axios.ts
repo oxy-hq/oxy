@@ -3,12 +3,11 @@ import axios from "axios";
 import { apiBaseURL } from "../env";
 
 const publicAPIPaths = [
-  "/auth/login",
-  "/auth/register",
-  "/auth/verify-email",
   "/auth/google",
   "/auth/okta",
   "/auth/config",
+  "/auth/magic-link/request",
+  "/auth/magic-link/verify",
   "/health",
   "/ready",
   "/live"

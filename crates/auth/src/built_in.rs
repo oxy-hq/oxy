@@ -40,7 +40,9 @@ impl Authenticator for BuiltInAuthenticator {
             let has_auth_configured = oxy::config::oxy::get_oxy_config()
                 .ok()
                 .and_then(|config| config.authentication)
-                .map(|auth| auth.basic.is_some() || auth.google.is_some() || auth.okta.is_some())
+                .map(|auth| {
+                    auth.google.is_some() || auth.okta.is_some() || auth.magic_link.is_some()
+                })
                 .unwrap_or(false);
 
             if !has_auth_configured {

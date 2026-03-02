@@ -1,14 +1,3 @@
-export interface LoginRequest {
-  email: string;
-  password: string;
-}
-
-export interface RegisterRequest {
-  email: string;
-  password: string;
-  name: string;
-}
-
 export interface GoogleAuthRequest {
   code: string;
 }
@@ -17,7 +6,11 @@ export interface OktaAuthRequest {
   code: string;
 }
 
-export interface ValidateEmailRequest {
+export interface MagicLinkRequest {
+  email: string;
+}
+
+export interface MagicLinkVerifyRequest {
   token: string;
 }
 
@@ -48,7 +41,7 @@ export interface AuthConfigResponse {
     client_id: string;
     domain: string;
   };
-  basic?: boolean;
+  magic_link?: boolean;
   cloud?: boolean;
   enterprise?: boolean;
   readonly: boolean;

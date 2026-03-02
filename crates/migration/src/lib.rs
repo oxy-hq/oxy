@@ -50,6 +50,9 @@ mod m20251204_000004_create_a2a_artifacts_table;
 mod m20251219_000001_add_user_id_to_runs;
 mod m20260108_000001_drop_fk_runs_project_id;
 mod m20260109_000001_add_sandbox_fields_to_threads;
+mod m20260302_000001_add_magic_link_to_users;
+mod m20260302_000002_drop_email_verification_token;
+mod m20260302_000003_drop_password_hash;
 
 pub struct Migrator;
 
@@ -106,6 +109,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20251219_000001_add_user_id_to_runs::Migration),
             Box::new(m20260108_000001_drop_fk_runs_project_id::Migration),
             Box::new(m20260109_000001_add_sandbox_fields_to_threads::Migration),
+            Box::new(m20260302_000001_add_magic_link_to_users::Migration),
+            Box::new(m20260302_000002_drop_email_verification_token::Migration),
+            Box::new(m20260302_000003_drop_password_hash::Migration),
         ]
     }
 }

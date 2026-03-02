@@ -1,0 +1,176 @@
+---
+title: "Magic Link Authentication"
+description: "Passwordless email sign-in using one-time links delivered via Amazon SES"
+sidebarTitle: "Magic Link"
+---
+
+# Magic Link Authentication
+
+Magic link authentication lets users sign in by clicking a one-time link sent to their email address — no passwords required. Oxy delivers these links via **Amazon SES** and verifies them server-side.
+
+<Note>
+  **Only Amazon SES is supported as an email delivery provider at this time.**
+  Support for additional providers (SMTP, SendGrid, etc.) is planned for a
+  future release.
+</Note>
+
+## How It Works
+
+1. User enters their email on the login page
+2. Oxy generates a cryptographically random 256-bit token and stores it with a 15-minute expiry
+3. An email containing a sign-in link is sent to the user via Amazon SES
+4. User clicks the link → token is verified and immediately invalidated → user is logged in
+
+## Features
+
+- ✅ No passwords to manage or leak
+- ✅ Tokens expire in 15 minutes and are single-use
+- ✅ Works alongside Google OAuth and Okta OAuth
+- ✅ Optional domain/email allowlist for closed access
+- ✅ IAM role credentials — no long-lived AWS keys required
+- ✅ Local development mode (browser-based, no SES needed)
+
+## Prerequisites
+
+- An AWS account with Amazon SES access
+- A verified sender email address (or verified domain) in SES
+- If your SES account is in the **sandbox**, recipient emails must also be verified
+
+## Environment Variables
+
+| Variable                     | Required         | Description                                                         |
+| ---------------------------- | ---------------- | ------------------------------------------------------------------- |
+| `MAGIC_LINK_FROM_EMAIL`      | Yes (production) | SES-verified sender address, e.g. `noreply@yourcompany.com`         |
+| `MAGIC_LINK_AWS_REGION`      | No               | AWS region for SES (falls back to `AWS_REGION`)                     |
+| `MAGIC_LINK_ALLOWED_DOMAINS` | No               | Comma-separated domains; only these can sign in                     |
+| `MAGIC_LINK_ALLOWED_EMAILS`  | No               | Comma-separated individual emails (for closed beta)                 |
+| `MAGIC_LINK_LOCAL_TEST`      | No               | Set to any value to enable browser-based local testing              |
+| `AWS_REGION`                 | No               | Default AWS region (used by SES if `MAGIC_LINK_AWS_REGION` not set) |
+
+## Setup Guide
+
+### 1. Verify a Sender in Amazon SES
+
+1. Open the [AWS SES Console](https://console.aws.amazon.com/ses)
+2. Navigate to **Verified identities** → **Create identity**
+3. Choose **Email address** (or **Domain** for organization-wide use)
+4. Verify ownership via the confirmation email AWS sends
+
+<Note>
+  New SES accounts start in **sandbox mode**. In sandbox mode, you can only send
+  to verified email addresses. Request production access ("Move out of sandbox")
+  when you're ready to send to all users.
+</Note>
+
+### 2. Configure AWS Credentials
+
+Oxy uses the standard AWS credential chain. Preferred approaches (no long-lived keys):
+
+**EC2 / ECS / Kubernetes with IAM Role (recommended):**
+
+Attach an IAM role to your compute resource with this policy:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "ses:SendEmail",
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+No environment variables needed — the SDK picks up the role automatically.
+
+**Static credentials (development/CI):**
+
+```bash
+export AWS_ACCESS_KEY_ID=AKIA...
+export AWS_SECRET_ACCESS_KEY=your_secret
+export AWS_REGION=us-east-1
+```
+
+### 3. Set the Sender Email
+
+```bash
+export MAGIC_LINK_FROM_EMAIL=noreply@yourcompany.com
+```
+
+### 4. Start Oxy
+
+```bash
+oxy serve
+```
+
+The login page will display a **"Continue with email"** input. Users enter their email, receive a link, and click it to sign in.
+
+## Access Control (Allowlist)
+
+By default, **any email address** can request a magic link. To restrict access:
+
+**Domain allowlist** — only emails matching these domains can sign in:
+
+```bash
+export MAGIC_LINK_ALLOWED_DOMAINS=yourcompany.com,partner.com
+```
+
+**Individual email allowlist** — useful for closed beta programs:
+
+```bash
+export MAGIC_LINK_ALLOWED_EMAILS=alice@gmail.com,bob@outlook.com
+```
+
+**Combined** — emails matching either rule are allowed:
+
+```bash
+export MAGIC_LINK_ALLOWED_DOMAINS=yourcompany.com
+export MAGIC_LINK_ALLOWED_EMAILS=contractor@gmail.com
+```
+
+<Note>
+  When an email doesn't meet the allowlist rules, Oxy still returns a success
+  response — it never reveals whether a specific address is allowed. No email is
+  sent.
+</Note>
+
+## Local Development
+
+For local development you don't need an AWS account. Set `MAGIC_LINK_LOCAL_TEST` to any value and Oxy will write the sign-in email to a temporary HTML file and open it automatically in your browser:
+
+```bash
+export MAGIC_LINK_LOCAL_TEST=1
+oxy serve
+```
+
+When you enter an email on the login page, your browser opens the rendered sign-in email. Click the button inside it to complete the login flow — identical to the real experience, no AWS required.
+
+<Note>
+  `MAGIC_LINK_FROM_EMAIL` is optional in local test mode. If omitted, Oxy uses
+  `noreply@localhost` as a placeholder sender.
+</Note>
+
+## Combining with Other Auth Methods
+
+Magic link works alongside Google OAuth and Okta. All enabled methods appear on the login page simultaneously:
+
+```bash
+# Magic link + Google
+export MAGIC_LINK_FROM_EMAIL=noreply@yourcompany.com
+export GOOGLE_CLIENT_ID=123...apps.googleusercontent.com
+export GOOGLE_CLIENT_SECRET=GOCSPX-...
+
+oxy serve
+```
+
+## Security Details
+
+| Property             | Value                                             |
+| -------------------- | ------------------------------------------------- |
+| Token entropy        | 256 bits (32 random bytes, hex-encoded)           |
+| Token lifetime       | 15 minutes                                        |
+| Single-use           | Yes — token is deleted immediately on first use   |
+| Email verification   | Set automatically on successful sign-in           |
+| Allowlist disclosure | Never — always returns 200 to prevent enumeration |

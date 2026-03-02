@@ -6,6 +6,8 @@
     "dev": "turbo dev",
     "lint": "turbo lint",
     "format": "turbo format",
+    "format:docs": "prettier --write \"docs/**/*.{md,mdx}\"",
+    "format:docs:check": "prettier --check \"docs/**/*.{md,mdx}\"",
     "prepare": "husky"
   },
   "devDependencies": {
@@ -15,6 +17,7 @@
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",
     "markdownlint-cli2": "^0.21.0",
+    "prettier": "^3.5.3",
     "turbo": "^2.8.10",
     "typescript": "^5.9.3"
   },

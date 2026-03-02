@@ -1,143 +1,164 @@
-import { AxiosError } from "axios";
+import { Mail } from "lucide-react";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/shadcn/button";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import { useAuth } from "@/contexts/AuthContext";
-import { useLogin } from "@/hooks/auth/useLogin";
+import { useRequestMagicLink } from "@/hooks/auth/useMagicLink";
 import { cn } from "@/libs/shadcn/utils";
-import ROUTES from "@/libs/utils/routes";
 import LoginWithGoogleButton from "./LoginWithGoogleButton";
 import LoginWithOktaButton from "./LoginWithOktaButton";
 
-type LoginFormData = {
+type MagicLinkFormData = {
   email: string;
-  password: string;
 };
 
-const LoginForm = () => {
-  const navigate = useNavigate();
-  const { mutateAsync: login, isPending } = useLogin();
+const isRateLimited = (error: unknown) =>
+  (error as { response?: { status?: number } })?.response?.status === 429;
+
+const getRateLimitMessage = (error: unknown) =>
+  (error as { response?: { data?: { message?: string } } })?.response?.data?.message ??
+  "Too many sign-in attempts. Please try again later.";
+
+type View = "form" | "sent";
+
+const MagicLinkSection = () => {
+  const [view, setView] = useState<View>("form");
+  const [submittedEmail, setSubmittedEmail] = useState("");
+  const { mutateAsync: requestMagicLink, isPending } = useRequestMagicLink();
+
   const {
     register,
     handleSubmit,
-    setError,
     formState: { errors }
-  } = useForm<LoginFormData>();
+  } = useForm<MagicLinkFormData>();
 
-  const { authConfig } = useAuth();
-
-  const onSubmit = async (data: LoginFormData) => {
+  const onSubmit = async (data: MagicLinkFormData) => {
     try {
-      await login(data);
-      navigate(ROUTES.ROOT);
-    } catch (error: unknown) {
-      console.error("Login failed:", error);
-      if (error instanceof AxiosError && error.response) {
-        const status = error.response.status;
-        if (status === 401) {
-          setError("email", {
-            type: "manual",
-            message: "Invalid email or password"
-          });
-          setError("password", {
-            type: "manual",
-            message: "Invalid email or password"
-          });
-          return;
-        }
+      await requestMagicLink({ email: data.email });
+      setSubmittedEmail(data.email);
+      setView("sent");
+    } catch (error) {
+      if (isRateLimited(error)) {
+        toast.error(getRateLimitMessage(error));
+      } else {
+        toast.error("Something went wrong. Please try again.");
       }
-      toast.error("Login failed. Please try again.");
     }
   };
 
-  return (
-    <form className={cn("flex flex-col gap-6")} onSubmit={handleSubmit(onSubmit)}>
-      <div className='flex flex-col items-center gap-2 text-center'>
-        <h1 className='font-bold text-2xl'>Login to your account</h1>
-        {authConfig.basic && (
+  const handleResend = async () => {
+    try {
+      await requestMagicLink({ email: submittedEmail });
+      toast.success("Sign-in link resent.");
+    } catch (error) {
+      if (isRateLimited(error)) {
+        toast.error(getRateLimitMessage(error));
+      } else {
+        toast.error("Something went wrong. Please try again.");
+      }
+    }
+  };
+
+  if (view === "sent") {
+    return (
+      <div className='flex flex-col items-center gap-4 text-center'>
+        <div className='flex h-14 w-14 items-center justify-center rounded-full bg-primary/10'>
+          <Mail className='h-7 w-7 text-primary' />
+        </div>
+        <div className='flex flex-col gap-1'>
+          <h2 className='font-semibold text-lg'>Check your inbox</h2>
           <p className='text-muted-foreground text-sm'>
-            Enter your email below to login to your account
+            We sent a sign-in link to{" "}
+            <span className='font-medium text-foreground'>{submittedEmail}</span>. It expires in 15
+            minutes.
           </p>
-        )}
+        </div>
+        <div className='flex flex-col gap-2 text-sm'>
+          <button
+            type='button'
+            onClick={handleResend}
+            disabled={isPending}
+            className='text-primary underline-offset-4 hover:underline disabled:opacity-50'
+          >
+            {isPending ? "Resending…" : "Didn't receive it? Resend"}
+          </button>
+          <button
+            type='button'
+            onClick={() => setView("form")}
+            className='text-muted-foreground underline-offset-4 hover:underline'
+          >
+            Use a different email
+          </button>
+        </div>
       </div>
-      <div className='grid gap-6'>
-        {authConfig.basic && (
-          <>
-            <div className='grid gap-3'>
-              <Label htmlFor='email'>Email</Label>
-              <Input
-                id='email'
-                type='email'
-                placeholder='m@example.com'
-                {...register("email", {
-                  required: "Email is required",
-                  pattern: {
-                    value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-                    message: "Invalid email address"
-                  }
-                })}
-                disabled={isPending}
-              />
-              {errors.email && <p className='text-red-500 text-sm'>{errors.email.message}</p>}
-            </div>
-            <div className='grid gap-3'>
-              <div className='flex items-center'>
-                <Label htmlFor='password'>Password</Label>
-              </div>
-              <Input
-                id='password'
-                type='password'
-                {...register("password", {
-                  required: "Password is required",
-                  minLength: {
-                    value: 6,
-                    message: "Password must be at least 6 characters"
-                  },
-                  maxLength: {
-                    value: 64,
-                    message: "Password must be at most 64 characters"
-                  }
-                })}
-                disabled={isPending}
-              />
-              {errors.password && <p className='text-red-500 text-sm'>{errors.password.message}</p>}
-            </div>
-            <Button type='submit' className='w-full' disabled={isPending}>
-              {isPending ? "Logging in..." : "Login"}
-            </Button>
-            {(authConfig.google || authConfig.okta) && (
-              <div className='relative text-center text-sm after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-border after:border-t'>
-                <span className='relative z-10 bg-background px-2 text-muted-foreground'>
-                  Or continue with
-                </span>
-              </div>
-            )}
-          </>
-        )}
+    );
+  }
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)} className='flex flex-col gap-3'>
+      <div className='grid gap-2'>
+        <Label htmlFor='magic-email'>Email</Label>
+        <Input
+          id='magic-email'
+          type='email'
+          placeholder='you@example.com'
+          {...register("email", {
+            required: "Email is required",
+            pattern: {
+              value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+              message: "Invalid email address"
+            }
+          })}
+          disabled={isPending}
+        />
+        {errors.email && <p className='text-red-500 text-sm'>{errors.email.message}</p>}
+      </div>
+      <Button type='submit' className='w-full' disabled={isPending}>
+        {isPending ? "Sending link…" : "Continue with email"}
+      </Button>
+    </form>
+  );
+};
+
+const Divider = ({ label }: { label: string }) => (
+  <div className='relative text-center text-sm after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-border after:border-t'>
+    <span className='relative z-10 bg-background px-2 text-muted-foreground'>{label}</span>
+  </div>
+);
+
+const LoginForm = () => {
+  const { authConfig } = useAuth();
+
+  const hasOAuth = authConfig.google || authConfig.okta;
+  const hasMagicLink = authConfig.magic_link;
+
+  return (
+    <div className={cn("flex flex-col gap-6")}>
+      <div className='flex flex-col items-center gap-2 text-center'>
+        <h1 className='font-bold text-2xl'>Welcome back</h1>
+        <p className='text-muted-foreground text-sm'>Sign in to your account to continue</p>
+      </div>
+
+      <div className='flex flex-col gap-4'>
+        {hasMagicLink && <MagicLinkSection />}
+
+        {hasOAuth && hasMagicLink && <Divider label='or' />}
 
         {authConfig.google && (
-          <LoginWithGoogleButton disabled={isPending} clientId={authConfig.google.client_id} />
+          <LoginWithGoogleButton disabled={false} clientId={authConfig.google.client_id} />
         )}
         {authConfig.okta && (
           <LoginWithOktaButton
-            disabled={isPending}
+            disabled={false}
             clientId={authConfig.okta.client_id}
             domain={authConfig.okta.domain}
           />
         )}
       </div>
-      {authConfig.basic && (
-        <div className='text-center text-sm'>
-          Don&apos;t have an account?{" "}
-          <Link to={ROUTES.AUTH.REGISTER} className='underline underline-offset-4'>
-            Sign up
-          </Link>
-        </div>
-      )}
-    </form>
+    </div>
   );
 };
 

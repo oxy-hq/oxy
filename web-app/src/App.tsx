@@ -37,8 +37,8 @@ import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { useProject } from "./hooks/api/projects/useProjects";
 import useAuthConfig from "./hooks/auth/useAuthConfig";
 import AppPage from "./pages/app";
-import EmailVerificationPage from "./pages/auth/EmailVerification";
 import GoogleCallback from "./pages/auth/GoogleCallback";
+import MagicLinkCallback from "./pages/auth/MagicLinkCallback";
 import OktaCallback from "./pages/auth/OktaCallback";
 import GitHubCallback from "./pages/github/callback";
 import IdePage from "./pages/ide";
@@ -52,7 +52,6 @@ import SettingsLayout from "./pages/ide/settings";
 import ActivityLogsPage from "./pages/ide/settings/activity-logs";
 import DatabasesPage from "./pages/ide/settings/databases";
 import LoginPage from "./pages/login";
-import RegisterPage from "./pages/register";
 import useCurrentProject from "./stores/useCurrentProject";
 import type { AuthConfigResponse } from "./types/auth";
 
@@ -213,10 +212,9 @@ const getLocalRouter = (authConfig: AuthConfigResponse) =>
         {authConfig.is_built_in_mode && authConfig.auth_enabled && (
           <>
             <Route path={ROUTES.AUTH.LOGIN} element={<LoginPage />} />
-            <Route path={ROUTES.AUTH.REGISTER} element={<RegisterPage />} />
-            <Route path={ROUTES.AUTH.VERIFY_EMAIL} element={<EmailVerificationPage />} />
             <Route path={ROUTES.AUTH.GOOGLE_CALLBACK} element={<GoogleCallback />} />
             <Route path={ROUTES.AUTH.OKTA_CALLBACK} element={<OktaCallback />} />
+            <Route path={ROUTES.AUTH.MAGIC_LINK_CALLBACK} element={<MagicLinkCallback />} />
           </>
         )}
 
@@ -247,10 +245,9 @@ const getRouter = (authConfig: AuthConfigResponse) =>
         {authConfig.is_built_in_mode && (
           <>
             <Route path={ROUTES.AUTH.LOGIN} element={<LoginPage />} />
-            <Route path={ROUTES.AUTH.REGISTER} element={<RegisterPage />} />
-            <Route path={ROUTES.AUTH.VERIFY_EMAIL} element={<EmailVerificationPage />} />
             <Route path={ROUTES.AUTH.GOOGLE_CALLBACK} element={<GoogleCallback />} />
             <Route path={ROUTES.AUTH.OKTA_CALLBACK} element={<OktaCallback />} />
+            <Route path={ROUTES.AUTH.MAGIC_LINK_CALLBACK} element={<MagicLinkCallback />} />
           </>
         )}
 

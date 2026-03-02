@@ -13,7 +13,7 @@ name = "oxy"
 path = "src/main.rs"
 
 [dependencies]
-bcrypt = "0.17.1"
+handlebars = "6"
 
 # Core functionality
 oxy = { path = "../core" }
@@ -104,6 +104,10 @@ constant_time_eq = "0.4.2"
 hmac = "0.12.1"
 sha2 = "0.10.9"
 hex = "0.4.3"
+rand = "0.8"
+aws-config = { version = "1", features = ["behavior-version-latest"] }
+aws-sdk-sesv2 = "1"
+governor = "0.10"
 base64 = { version = "0.22", features = ["std"] }
 regex = { workspace = true }
 indexmap = { workspace = true }
@@ -117,7 +121,6 @@ indoc = "2.0.7"
 jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
 lazy_static = "1.5.0"
 email_address = "0.2.9"
-lettre = "0.11.19"
 serde_urlencoded = "0.7"
 self_update = "0.42.0"
 slugify = "0.1.0"

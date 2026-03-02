@@ -46,11 +46,11 @@ views:
     datasource: domo
     dimensions:
       - name: calories
-        expr: "`Calories (kcal)`"  # Double quotes outside, backticks inside
+        expr: "`Calories (kcal)`" # Double quotes outside, backticks inside
         type: string
       - name: created_date
         expr: "`Created Date`"
-        type: string  # Use string, not date/datetime
+        type: string # Use string, not date/datetime
     measures:
       - name: total_items
         expr: "COUNT(*)"

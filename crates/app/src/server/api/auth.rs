@@ -4,16 +4,44 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::Json,
 };
-use bcrypt::{DEFAULT_COST, hash, verify};
 use chrono::{Duration, Utc};
 use entity::{prelude::Users, users, users::UserStatus};
+use governor::{
+    DefaultKeyedRateLimiter, Quota, RateLimiter,
+    clock::{Clock, DefaultClock},
+};
+use handlebars::Handlebars;
 use jsonwebtoken::{EncodingKey, Header, encode};
-use lettre::transport::smtp::authentication::Credentials;
-use lettre::{Message, SmtpTransport, Transport};
+use once_cell::sync::Lazy;
+use oxy::config::auth::MagicLinkAuth;
 use sea_orm::{ActiveModelTrait, DatabaseConnection, DbErr, EntityTrait, Set};
 use serde::{Deserialize, Serialize};
+use std::num::NonZeroU32;
 use url::Url;
 use uuid::Uuid;
+
+// ─── Magic Link Rate Limiter ────────────────────────────────────────────────
+//
+// Token-bucket rate limiter (governor). State is in-process only and resets
+// on restart — intentional, no external dependency required.
+// Checked before the allowlist so timing cannot reveal allowlist membership.
+//
+// Limit: 5 requests per email per hour.
+
+static MAGIC_LINK_RATE_LIMITER: Lazy<DefaultKeyedRateLimiter<String>> =
+    Lazy::new(|| RateLimiter::keyed(Quota::per_hour(NonZeroU32::new(5).expect("5 > 0"))));
+
+/// Returns `None` if the request is allowed, or `Some(seconds)` with the wait
+/// time until the next request is permitted.
+fn check_magic_link_rate_limit(email: &str) -> Option<u64> {
+    match MAGIC_LINK_RATE_LIMITER.check_key(&email.to_lowercase()) {
+        Ok(()) => None,
+        Err(not_until) => {
+            let wait = not_until.wait_time_from(DefaultClock::default().now());
+            Some(wait.as_secs().max(1))
+        }
+    }
+}
 
 use crate::server::router::AppState;
 use oxy::{
@@ -21,19 +49,6 @@ use oxy::{
     database::{client::establish_connection, filters::UserQueryFilterExt},
 };
 use oxy_shared::errors::OxyError;
-
-#[derive(Deserialize)]
-pub struct LoginRequest {
-    pub email: String,
-    pub password: String,
-}
-
-#[derive(Deserialize)]
-pub struct RegisterRequest {
-    pub email: String,
-    pub password: String,
-    pub name: String,
-}
 
 #[derive(Deserialize)]
 pub struct GoogleAuthRequest {
@@ -46,7 +61,12 @@ pub struct OktaAuthRequest {
 }
 
 #[derive(Deserialize)]
-pub struct ValidateEmailRequest {
+pub struct MagicLinkRequest {
+    pub email: String,
+}
+
+#[derive(Deserialize)]
+pub struct MagicLinkVerifyRequest {
     pub token: String,
 }
 
@@ -62,6 +82,7 @@ pub struct UserInfo {
     pub email: String,
     pub name: String,
     pub picture: Option<String>,
+    pub role: String,
 }
 
 #[derive(Serialize)]
@@ -83,7 +104,7 @@ pub struct AuthConfigResponse {
     pub auth_enabled: bool,
     pub google: Option<GoogleConfig>,
     pub okta: Option<OktaConfig>,
-    pub basic: Option<bool>,
+    pub magic_link: Option<bool>,
     pub cloud: bool,
     pub enterprise: bool,
     pub readonly: bool,
@@ -115,12 +136,12 @@ pub async fn get_config(
         .as_ref()
         .and_then(|auth| auth.okta.as_ref())
         .is_some();
-    let has_basic = auth_config
+    let has_magic_link = auth_config
         .as_ref()
-        .and_then(|auth| auth.basic.as_ref())
+        .and_then(|auth| auth.magic_link.as_ref())
         .is_some();
 
-    let auth_enabled = has_google || has_okta || has_basic;
+    let auth_enabled = has_google || has_okta || has_magic_link;
 
     if !auth_enabled || app_state.internal {
         return Ok(Json(AuthConfigResponse {
@@ -128,7 +149,7 @@ pub async fn get_config(
             auth_enabled: false,
             google: None,
             okta: None,
-            basic: None,
+            magic_link: None,
             cloud: app_state.cloud,
             enterprise: app_state.enterprise,
             readonly: app_state.readonly,
@@ -148,62 +169,17 @@ pub async fn get_config(
         });
 
     let config = AuthConfigResponse {
-        is_built_in_mode: true,
+        is_built_in_mode: false,
         auth_enabled: true,
         google: google_client_id.map(|client_id| GoogleConfig { client_id }),
         okta: okta_config,
-        basic: Some(has_basic),
+        magic_link: if has_magic_link { Some(true) } else { None },
         cloud: app_state.cloud,
         enterprise: app_state.enterprise,
         readonly: app_state.readonly,
     };
 
     Ok(Json(config))
-}
-
-pub async fn login(
-    extract::Json(login_request): extract::Json<LoginRequest>,
-) -> Result<Json<AuthResponse>, StatusCode> {
-    let connection = establish_connection().await.map_err(|e| {
-        tracing::error!("Failed to establish database connection: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let user = Users::find()
-        .filter_active_by_email(&login_request.email)
-        .one(&connection)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to query user: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-
-    let empty_string = String::new();
-    let password_hash = user.password_hash.as_ref().unwrap_or(&empty_string);
-    if !verify_password(&login_request.password, password_hash) {
-        return Err(StatusCode::UNAUTHORIZED);
-    }
-
-    if !user.email_verified {
-        return Err(StatusCode::FORBIDDEN);
-    }
-
-    let token = create_auth_token(user.clone()).await.map_err(|e| {
-        tracing::error!("Failed to create auth token: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-    let auth_response = AuthResponse {
-        token,
-        user: UserInfo {
-            id: user.id.to_string(),
-            email: user.email,
-            name: user.name,
-            picture: user.picture,
-        },
-    };
-
-    Ok(Json(auth_response))
 }
 
 pub async fn create_auth_token(user: users::Model) -> Result<String, StatusCode> {
@@ -241,78 +217,6 @@ pub async fn create_auth_token(user: users::Model) -> Result<String, StatusCode>
     })?;
 
     Ok(token)
-}
-
-pub async fn register(
-    headers: HeaderMap,
-    extract::Json(register_request): extract::Json<RegisterRequest>,
-) -> Result<Json<MessageResponse>, StatusCode> {
-    let connection = establish_connection().await.map_err(|e| {
-        tracing::error!("Failed to establish database connection: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let existing_user = Users::find()
-        .filter_by_email(&register_request.email)
-        .one(&connection)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to query existing user: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-    match existing_user {
-        Some(user) if user.status == UserStatus::Active => {
-            return Err(StatusCode::CONFLICT);
-        }
-        Some(user) if user.status == UserStatus::Deleted => {
-            // User account has been deleted - unauthorized
-            tracing::warn!(
-                "Deleted user {} attempted to register again",
-                register_request.email
-            );
-            return Err(StatusCode::UNAUTHORIZED);
-        }
-        _ => {
-            // No existing user or other status, proceed with normal registration
-        }
-    }
-
-    let password_hash = hash_password(&register_request.password);
-    let verification_token = Uuid::new_v4().to_string();
-
-    let new_user = users::ActiveModel {
-        id: Set(Uuid::new_v4()),
-        email: Set(register_request.email.clone()),
-        name: Set(register_request.name),
-        picture: Set(None),
-        password_hash: Set(Some(password_hash)),
-        email_verified: Set(false),
-        email_verification_token: Set(Some(verification_token.clone())),
-        role: Set(users::UserRole::Member),
-        status: Set(UserStatus::Active),
-        created_at: sea_orm::ActiveValue::NotSet,
-        last_login_at: sea_orm::ActiveValue::NotSet,
-    };
-
-    let _user = new_user.insert(&connection).await.map_err(|e| {
-        tracing::error!("Failed to create user: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let email = register_request.email.clone();
-    let token = verification_token.clone();
-    tokio::spawn(async move {
-        let base_url = extract_base_url_from_headers(&headers);
-        if let Err(e) = send_verification_email(&email, &token, &base_url).await {
-            tracing::error!("Failed to send verification email: {}", e);
-        }
-    });
-
-    Ok(Json(MessageResponse {
-        message: "User registered successfully. Please check your email for verification."
-            .to_string(),
-    }))
 }
 
 pub async fn google_auth(
@@ -378,9 +282,9 @@ pub async fn google_auth(
                 email: Set(user_info.email.clone()),
                 name: Set(user_info.name.clone()),
                 picture: Set(user_info.picture.clone()),
-                password_hash: Set(None),
                 email_verified: Set(true),
-                email_verification_token: Set(None),
+                magic_link_token: sea_orm::ActiveValue::NotSet,
+                magic_link_token_expires_at: sea_orm::ActiveValue::NotSet,
                 role: Set(users::UserRole::Member),
                 status: Set(UserStatus::Active),
                 created_at: sea_orm::ActiveValue::NotSet,
@@ -403,6 +307,7 @@ pub async fn google_auth(
             email: user.email,
             name: user.name,
             picture: user.picture,
+            role: user.role.as_str().to_string(),
         },
     };
 
@@ -460,9 +365,9 @@ pub async fn okta_auth(
                 email: Set(user_info.email.clone()),
                 name: Set(user_info.name.clone()),
                 picture: Set(user_info.picture.clone()),
-                password_hash: Set(None),
                 email_verified: Set(true),
-                email_verification_token: Set(None),
+                magic_link_token: sea_orm::ActiveValue::NotSet,
+                magic_link_token_expires_at: sea_orm::ActiveValue::NotSet,
                 role: Set(users::UserRole::Member),
                 status: Set(UserStatus::Active),
                 created_at: sea_orm::ActiveValue::NotSet,
@@ -485,63 +390,11 @@ pub async fn okta_auth(
             email: user.email,
             name: user.name,
             picture: user.picture,
+            role: user.role.as_str().to_string(),
         },
     };
 
     Ok(Json(auth_response))
-}
-
-pub async fn validate_email(
-    extract::Json(validate_request): extract::Json<ValidateEmailRequest>,
-) -> Result<Json<AuthResponse>, StatusCode> {
-    let connection = establish_connection().await.map_err(|e| {
-        tracing::error!("Failed to establish database connection: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let user = Users::find()
-        .filter_active_by_verification_token(&validate_request.token)
-        .one(&connection)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to query user by verification token: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?
-        .ok_or(StatusCode::NOT_FOUND)?;
-
-    let user_clone = user.clone();
-
-    let mut user_update: users::ActiveModel = user.into();
-    user_update.email_verified = Set(true);
-    user_update.email_verification_token = Set(None);
-    user_update.update(&connection).await.map_err(|e| {
-        tracing::error!("Failed to update user email verification: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let token = create_auth_token(user_clone.clone()).await.map_err(|e| {
-        tracing::error!("Failed to create auth token: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let auth_response = AuthResponse {
-        token,
-        user: UserInfo {
-            id: user_clone.id.to_string(),
-            email: user_clone.email,
-            name: user_clone.name,
-            picture: user_clone.picture,
-        },
-    };
-    Ok(Json(auth_response))
-}
-
-fn hash_password(password: &str) -> String {
-    hash(password, DEFAULT_COST).expect("Failed to hash password")
-}
-
-fn verify_password(password: &str, hash: &str) -> bool {
-    verify(password, hash).unwrap_or(false)
 }
 
 /// Check if a database error is a unique constraint violation.
@@ -598,60 +451,6 @@ fn extract_base_url_from_headers(headers: &HeaderMap) -> String {
         return format!("{}://{}{}", url.scheme(), host, port);
     }
     "http://localhost:3000".to_string()
-}
-
-async fn send_verification_email(email: &str, token: &str, base_url: &str) -> Result<(), OxyError> {
-    let auth_config = oxy::config::oxy::get_oxy_config()
-        .ok()
-        .and_then(|config| config.authentication);
-
-    if let Some(auth) = auth_config
-        && let Some(basic_auth) = &auth.basic
-    {
-        let verification_url = format!("{base_url}/verify-email?token={token}");
-
-        let email_body = format!(
-            "Welcome to Onyx!\n\nPlease verify your email address by clicking the link below:\n\n{verification_url}\n\nIf you didn't create an account, please ignore this email."
-        );
-
-        let email_message =
-            Message::builder()
-                .from(basic_auth.smtp_user.parse().map_err(|e| {
-                    OxyError::ConfigurationError(format!("Invalid from email: {e}"))
-                })?)
-                .to(email
-                    .parse()
-                    .map_err(|e| OxyError::ConfigurationError(format!("Invalid to email: {e}")))?)
-                .subject("Verify your email address")
-                .body(email_body)
-                .map_err(|e| OxyError::ConfigurationError(format!("Failed to build email: {e}")))?;
-
-        // Try to resolve SMTP password using secret manager with fallback to environment variable
-
-        let smtp_password = &basic_auth.smtp_password;
-
-        let credentials = Credentials::new(basic_auth.smtp_user.clone(), smtp_password.clone());
-
-        let smtp_server = basic_auth
-            .smtp_server
-            .as_deref()
-            .unwrap_or("smtp.gmail.com");
-        let smtp_port = basic_auth.smtp_port.unwrap_or(587);
-
-        let mailer = SmtpTransport::starttls_relay(smtp_server)
-            .map_err(|e| {
-                OxyError::ConfigurationError(format!("Failed to connect to SMTP server: {e}"))
-            })?
-            .credentials(credentials)
-            .port(smtp_port)
-            .build();
-
-        mailer
-            .send(&email_message)
-            .map_err(|e| OxyError::ConfigurationError(format!("Failed to send email: {e}")))?;
-    }
-
-    Ok(())
 }
 
 #[derive(Deserialize)]
@@ -864,4 +663,325 @@ async fn exchange_okta_code_for_user_info(
     })?;
 
     Ok(user_info)
+}
+
+// ─── Magic Link ────────────────────────────────────────────────────────────
+
+/// Basic RFC-5321-bounded email format check. Not exhaustive, but filters out
+/// obviously malformed inputs before they reach the DB or SES.
+fn is_valid_email_format(email: &str) -> bool {
+    if email.len() > 254 {
+        return false;
+    }
+    // split_once splits at the first '@'; rejecting any additional '@' in the
+    // domain part enforces exactly one '@' (RFC 5321 §4.1.2).
+    let Some((local, domain)) = email.split_once('@') else {
+        return false;
+    };
+    if local.is_empty() || domain.is_empty() || domain.contains('@') {
+        return false;
+    }
+    // Domain must have at least one '.' with non-empty labels on both sides.
+    let labels: Vec<&str> = domain.split('.').collect();
+    labels.len() >= 2 && labels.iter().all(|l| !l.is_empty())
+}
+
+fn is_email_allowed(email: &str, config: &MagicLinkAuth) -> bool {
+    if config.allowed_domains.is_empty() && config.allowed_emails.is_empty() {
+        return true;
+    }
+    // email is already lowercased at ingestion; normalize config values too so
+    // operators can write "Company.com" or "company.com" interchangeably.
+    for domain in &config.allowed_domains {
+        if email.ends_with(&format!("@{}", domain.to_lowercase())) {
+            return true;
+        }
+    }
+    config
+        .allowed_emails
+        .iter()
+        .any(|e| e.eq_ignore_ascii_case(email))
+}
+
+pub async fn request_magic_link(
+    headers: HeaderMap,
+    extract::Json(req): extract::Json<MagicLinkRequest>,
+) -> axum::response::Response {
+    use axum::http::header::RETRY_AFTER;
+    use axum::response::IntoResponse;
+
+    // Normalize email to lowercase at the point of ingestion so all downstream
+    // code (allowlist check, DB queries, SES) operates on a consistent value.
+    let req = MagicLinkRequest {
+        email: req.email.to_lowercase(),
+    };
+
+    // Validate email format before doing anything else.
+    if !is_valid_email_format(&req.email) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(MessageResponse {
+                message: "Invalid email address.".to_string(),
+            }),
+        )
+            .into_response();
+    }
+
+    // Rate limit — checked before allowlist so timing cannot reveal allowlist membership.
+    if let Some(retry_after_secs) = check_magic_link_rate_limit(&req.email) {
+        let mins = retry_after_secs.div_ceil(60);
+        tracing::warn!("Magic link rate limit exceeded for: {}", req.email);
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            [(
+                RETRY_AFTER,
+                axum::http::HeaderValue::from_str(&retry_after_secs.to_string())
+                    .unwrap_or_else(|_| axum::http::HeaderValue::from_static("3600")),
+            )],
+            Json(MessageResponse {
+                message: format!(
+                    "Too many sign-in attempts. Please try again in {mins} minute{}.",
+                    if mins == 1 { "" } else { "s" }
+                ),
+            }),
+        )
+            .into_response();
+    }
+
+    request_magic_link_inner(headers, req).await.into_response()
+}
+
+async fn request_magic_link_inner(
+    headers: HeaderMap,
+    req: MagicLinkRequest,
+) -> Result<Json<MessageResponse>, StatusCode> {
+    let auth_config = oxy::config::oxy::get_oxy_config()
+        .ok()
+        .and_then(|c| c.authentication)
+        .and_then(|a| a.magic_link);
+
+    let magic_link_config = auth_config.ok_or_else(|| {
+        tracing::error!("Magic link auth not configured");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    // Always return 200 — don't leak whether email is allowed
+    if !is_email_allowed(&req.email, &magic_link_config) {
+        tracing::info!(
+            "Magic link requested for non-allowlisted email: {}",
+            req.email
+        );
+        return Ok(Json(MessageResponse {
+            message: "If your email is eligible, a sign-in link has been sent.".to_string(),
+        }));
+    }
+
+    let connection = establish_connection().await.map_err(|e| {
+        tracing::error!("Failed to establish database connection: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    // Find or create user
+    let existing = Users::find()
+        .filter_by_email(&req.email)
+        .one(&connection)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to query user: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    // Resolve the user model — either the existing one or a freshly inserted one.
+    // We capture the model here so we can reuse it for the token update below
+    // without an extra DB round-trip.
+    let user_for_update = match existing {
+        Some(u) if u.status == UserStatus::Deleted => {
+            // Silently succeed — don't reveal account status
+            return Ok(Json(MessageResponse {
+                message: "If your email is eligible, a sign-in link has been sent.".to_string(),
+            }));
+        }
+        Some(u) => u, // existing active user — reuse model directly
+        None => {
+            // Auto-create new user
+            let name = req.email.split('@').next().unwrap_or("User").to_string();
+            let new_user = users::ActiveModel {
+                id: Set(Uuid::new_v4()),
+                email: Set(req.email.clone()),
+                name: Set(name),
+                picture: Set(None),
+                email_verified: Set(false),
+                magic_link_token: Set(None),
+                magic_link_token_expires_at: Set(None),
+                role: Set(users::UserRole::Member),
+                status: Set(UserStatus::Active),
+                created_at: sea_orm::ActiveValue::NotSet,
+                last_login_at: sea_orm::ActiveValue::NotSet,
+            };
+            match new_user.insert(&connection).await {
+                Ok(inserted) => inserted,
+                Err(e) if is_unique_violation(&e) => {
+                    // Race condition — another request created the user concurrently.
+                    Users::find()
+                        .filter_active_by_email(&req.email)
+                        .one(&connection)
+                        .await
+                        .map_err(|e| {
+                            tracing::error!("Failed to query user after race condition: {}", e);
+                            StatusCode::INTERNAL_SERVER_ERROR
+                        })?
+                        .ok_or_else(|| {
+                            tracing::error!("User not found after unique violation: {}", req.email);
+                            StatusCode::INTERNAL_SERVER_ERROR
+                        })?
+                }
+                Err(e) => {
+                    tracing::error!("Failed to create user: {}", e);
+                    return Err(StatusCode::INTERNAL_SERVER_ERROR);
+                }
+            }
+        }
+    };
+
+    // Generate 256-bit random token
+    let token_bytes: [u8; 32] = rand::random();
+    let token = hex::encode(token_bytes);
+    let expires_at = Utc::now() + Duration::minutes(15);
+
+    // Update user row with token + expiry — reuses the model from above, no extra query.
+    let mut active: users::ActiveModel = user_for_update.into();
+    active.magic_link_token = Set(Some(token.clone()));
+    active.magic_link_token_expires_at = Set(Some(expires_at.into()));
+    active.update(&connection).await.map_err(|e| {
+        tracing::error!("Failed to save magic link token: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    // Send email async
+    let base_url = extract_base_url_from_headers(&headers);
+
+    // Log the magic link URL at debug level only — the token is a session credential
+    // and must not appear in production log aggregators.
+    tracing::debug!(
+        "Magic link for {}: {}/auth/magic-link/callback?token={}",
+        req.email,
+        base_url,
+        token
+    );
+
+    let email_addr = req.email.clone();
+    let cfg_clone = magic_link_config.clone();
+    tokio::spawn(async move {
+        if let Err(e) = send_magic_link_email(&email_addr, &token, &base_url, &cfg_clone).await {
+            tracing::error!("Failed to send magic link email: {}", e);
+        }
+    });
+
+    Ok(Json(MessageResponse {
+        message: "If your email is eligible, a sign-in link has been sent.".to_string(),
+    }))
+}
+
+pub async fn verify_magic_link(
+    extract::Json(req): extract::Json<MagicLinkVerifyRequest>,
+) -> Result<Json<AuthResponse>, StatusCode> {
+    let connection = establish_connection().await.map_err(|e| {
+        tracing::error!("Failed to establish database connection: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let user = Users::find()
+        .filter_active_by_magic_link_token(&req.token)
+        .one(&connection)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to query user by magic link token: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+
+    // Check expiry
+    let expires_at = user
+        .magic_link_token_expires_at
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+    if Utc::now() > expires_at.with_timezone(&Utc) {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+
+    // Clear token, mark email verified
+    let user_clone = user.clone();
+    let mut user_update: users::ActiveModel = user.into();
+    user_update.magic_link_token = Set(None);
+    user_update.magic_link_token_expires_at = Set(None);
+    user_update.email_verified = Set(true);
+    user_update.update(&connection).await.map_err(|e| {
+        tracing::error!("Failed to clear magic link token: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let token = create_auth_token(user_clone.clone()).await.map_err(|e| {
+        tracing::error!("Failed to create auth token: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    Ok(Json(AuthResponse {
+        token,
+        user: UserInfo {
+            id: user_clone.id.to_string(),
+            email: user_clone.email,
+            name: user_clone.name,
+            picture: user_clone.picture,
+            role: user_clone.role.as_str().to_string(),
+        },
+    }))
+}
+
+async fn send_magic_link_email(
+    to_email: &str,
+    token: &str,
+    base_url: &str,
+    config: &MagicLinkAuth,
+) -> Result<(), OxyError> {
+    use crate::emails::{
+        EmailMessage, EmailProvider, local_test::LocalTestEmailProvider, ses::SesEmailProvider,
+    };
+
+    let magic_link_url = format!("{base_url}/auth/magic-link/callback?token={token}");
+    let message = EmailMessage {
+        subject: "Sign in to Oxy".to_string(),
+        html_body: build_magic_link_email_html(&magic_link_url, to_email)?,
+        text_body: format!(
+            "Your sign-in link for Oxy\n\nClick the link below to sign in. For security, this link expires in 15 minutes and can only be used once.\n\n{magic_link_url}\n\nThis link was requested for {to_email}. If you didn't request this, you can safely ignore this email — your account remains secure."
+        ),
+    };
+
+    if std::env::var("MAGIC_LINK_LOCAL_TEST").is_ok() {
+        LocalTestEmailProvider
+            .send(&config.from_email, to_email, message)
+            .await
+    } else {
+        SesEmailProvider::new(config.aws_region.as_deref())
+            .await
+            .send(&config.from_email, to_email, message)
+            .await
+    }
+}
+
+static MAGIC_LINK_TEMPLATE: Lazy<Handlebars<'static>> = Lazy::new(|| {
+    let mut hbs = Handlebars::new();
+    hbs.register_template_string("magic_link", include_str!("../../emails/magic_link.hbs"))
+        .expect("magic_link.hbs is valid");
+    hbs
+});
+
+fn build_magic_link_email_html(magic_link_url: &str, to_email: &str) -> Result<String, OxyError> {
+    let data = serde_json::json!({
+        "magic_link_url": magic_link_url,
+        "to_email": to_email,
+        "year": Utc::now().format("%Y").to_string(),
+    });
+
+    MAGIC_LINK_TEMPLATE
+        .render("magic_link", &data)
+        .map_err(|e| OxyError::RuntimeError(format!("Failed to render magic link template: {e}")))
 }
