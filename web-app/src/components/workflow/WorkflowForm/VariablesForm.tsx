@@ -143,7 +143,7 @@ export const VariablesForm: React.FC = () => {
                 <div className='rounded-lg bg-amber-50 p-4'>
                   <p className='text-amber-800 text-sm'>
                     <strong>Note:</strong> Variables define the schema for inputs that can be
-                    provided when running the automation. The JSON should be a valid JSON Schema
+                    provided when running the procedure. The JSON should be a valid JSON Schema
                     object where each key is a variable name and the value is its schema definition.
                   </p>
                 </div>

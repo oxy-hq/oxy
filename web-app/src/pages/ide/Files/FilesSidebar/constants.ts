@@ -10,6 +10,7 @@ export const IGNORE_FILES_REGEX = [/^docker-entrypoints/, /^output/, /^\./];
 
 // Object file types that should appear in Objects view
 export const OBJECT_FILE_TYPES = [
+  FileType.PROCEDURE,
   FileType.WORKFLOW,
   FileType.AUTOMATION,
   FileType.AGENT,

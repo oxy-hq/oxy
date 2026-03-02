@@ -4,7 +4,7 @@ import type { Block } from "@/services/types";
 import ArtifactBlockRenderer from "./ArtifactBlockRenderer";
 
 const getSidebarTitle = (block: Block): string => {
-  if (block.type === "group") return "Automation trace";
+  if (block.type === "group") return "Procedure trace";
   if (block.type === "semantic_query") return "Semantic Query";
   if (block.type === "sql") return "SQL Query";
   if (block.type === "text" && block.content?.startsWith("Selected route:"))

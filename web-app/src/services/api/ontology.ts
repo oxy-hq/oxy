@@ -160,17 +160,22 @@ export class OntologyService {
       });
     });
 
-    // Add workflow, app, and automation nodes and link to their dependencies
+    // Add procedure, workflow, app, and automation nodes and link to their dependencies
     workflows.forEach((workflow) => {
       const isApp = workflow.path.endsWith(".app.yml");
+      const isProcedure =
+        workflow.path.endsWith(".procedure.yml") || workflow.path.endsWith(".procedure.yaml");
       const isAutomation = workflow.path.endsWith(".automation.yml");
 
       let nodeId: string;
-      let nodeType: "workflow" | "app" | "automation";
+      let nodeType: "procedure" | "workflow" | "app" | "automation";
 
       if (isApp) {
         nodeId = `app:${workflow.path}`;
         nodeType = "app";
+      } else if (isProcedure) {
+        nodeId = `procedure:${workflow.path}`;
+        nodeType = "procedure";
       } else if (isAutomation) {
         nodeId = `automation:${workflow.path}`;
         nodeType = "automation";
@@ -520,6 +525,7 @@ export class OntologyService {
             file.type === "view" ||
             file.type === "topic" ||
             file.type === "agent" ||
+            file.type === "procedure" ||
             file.type === "workflow" ||
             file.type === "app" ||
             file.type === "automation"
@@ -560,6 +566,7 @@ export class OntologyService {
                 context: parsed.context
               });
             } else if (
+              file.type === "procedure" ||
               file.type === "workflow" ||
               file.type === "app" ||
               file.type === "automation"
@@ -569,7 +576,7 @@ export class OntologyService {
                 file.path
                   .split("/")
                   .pop()
-                  ?.replace(/\.(workflow|app|automation)\.yml$/, "") ||
+                  ?.replace(/\.(procedure|workflow|app|automation)\.yml$/, "") ||
                 "unknown";
               workflows.push({
                 name: workflowName,
@@ -617,6 +624,8 @@ export class OntologyService {
           files.push({ path: currentPath, type: "agent" });
         } else if (node.name.endsWith(".sql")) {
           files.push({ path: currentPath, type: "sql" });
+        } else if (node.name.endsWith(".procedure.yml") || node.name.endsWith(".procedure.yaml")) {
+          files.push({ path: currentPath, type: "procedure" });
         } else if (node.name.endsWith(".workflow.yml") || node.name.endsWith(".workflow.yaml")) {
           files.push({ path: currentPath, type: "workflow" });
         } else if (node.name.endsWith(".app.yml") || node.name.endsWith(".app.yaml")) {

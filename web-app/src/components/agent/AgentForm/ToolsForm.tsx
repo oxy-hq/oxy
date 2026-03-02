@@ -38,12 +38,12 @@ const TOOL_TYPES = [
   { value: "validate_sql", label: "Validate SQL" },
   { value: "retrieval", label: "Retrieval" },
   { value: "visualize", label: "Visualize" },
-  { value: "workflow", label: "Automation" },
+  { value: "workflow", label: "Procedure" },
   { value: "agent", label: "Agent" },
   { value: "create_data_app", label: "Create Data App" },
   { value: "omni_query", label: "Omni Query" },
   { value: "semantic_query", label: "Semantic Query" },
-  { value: "save_automation", label: "Save Automation" }
+  { value: "save_automation", label: "Save Procedure" }
 ];
 
 interface ToolItemFormProps {

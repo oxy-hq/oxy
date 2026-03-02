@@ -217,7 +217,7 @@ export function generateAutomationName(steps: Step[], userQuestion?: string): st
     const slug = slugify(firstMeaningful.objective);
     if (slug) return slug;
   }
-  return `automation_${Date.now()}`;
+  return `procedure_${Date.now()}`;
 }
 
 export function generateAutomationDescription(steps: Step[]): string {
@@ -228,5 +228,5 @@ export function generateAutomationDescription(steps: Step[]): string {
   if (objectives.length > 0) {
     return objectives.join("; ");
   }
-  return "Auto-generated automation from reasoning steps";
+  return "Auto-generated procedure from reasoning steps";
 }

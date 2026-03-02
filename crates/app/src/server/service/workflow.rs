@@ -18,7 +18,7 @@ use oxy::{
         },
     },
     constants::{
-        AUTOMATION_FILE_EXTENSION, AUTOMATION_SAVED_DIR, WORKFLOW_FILE_EXTENSION,
+        PROCEDURE_FILE_EXTENSION, PROCEDURE_SAVED_DIR, WORKFLOW_FILE_EXTENSION,
         WORKFLOW_SAVED_FROM_QUERY_DIR,
     },
     execute::{
@@ -51,7 +51,8 @@ pub async fn list_workflows(config_manager: ConfigManager) -> Result<Vec<Workflo
 
     for path in workflow_paths {
         if let Some(name) = path.file_stem().and_then(|s| s.to_str()).and_then(|s| {
-            s.strip_suffix(".workflow")
+            s.strip_suffix(".procedure")
+                .or_else(|| s.strip_suffix(".workflow"))
                 .or_else(|| s.strip_suffix(".automation"))
         }) {
             let relative_path_str = path
@@ -430,7 +431,7 @@ pub async fn create_automation(
         let slug = slugify!(name, separator = "_");
         if slug.is_empty() {
             return Err(OxyError::ArgumentError(format!(
-                "Automation name {:?} produces an empty slug; please use alphanumeric characters.",
+                "Procedure name {:?} produces an empty slug; please use alphanumeric characters.",
                 name
             )));
         }
@@ -439,7 +440,7 @@ pub async fn create_automation(
 
     if tasks.is_empty() {
         return Err(OxyError::ArgumentError(
-            "Cannot save an automation with no executable tasks.".to_string(),
+            "Cannot save a procedure with no executable tasks.".to_string(),
         ));
     }
 
@@ -453,23 +454,23 @@ pub async fn create_automation(
         consistency_prompt: None,
     };
 
-    let automation_dir = config_manager.resolve_file(AUTOMATION_SAVED_DIR).await?;
-    let automation_dir = PathBuf::from(automation_dir);
-    tokio::fs::create_dir_all(&automation_dir)
+    let procedure_dir = config_manager.resolve_file(PROCEDURE_SAVED_DIR).await?;
+    let procedure_dir = PathBuf::from(procedure_dir);
+    tokio::fs::create_dir_all(&procedure_dir)
         .await
         .map_err(|e| {
-            OxyError::RuntimeError(format!("Failed to create automation directory: {}", e))
+            OxyError::RuntimeError(format!("Failed to create procedure directory: {}", e))
         })?;
 
     let yaml = serde_yaml::to_string(&workflow)
-        .map_err(|e| OxyError::RuntimeError(format!("Failed to serialize automation: {}", e)))?;
+        .map_err(|e| OxyError::RuntimeError(format!("Failed to serialize procedure: {}", e)))?;
 
     // Use create_new(true) to atomically find a unique path and write the file,
     // avoiding both blocking exists() calls and the TOCTOU race.
     let mut candidate_name = automation_name.clone();
     let mut counter = 2u32;
     let automation_path = loop {
-        let path = automation_dir.join(format!("{}{}", candidate_name, AUTOMATION_FILE_EXTENSION));
+        let path = procedure_dir.join(format!("{}{}", candidate_name, PROCEDURE_FILE_EXTENSION));
         match tokio::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -479,7 +480,7 @@ pub async fn create_automation(
             Ok(mut file) => {
                 use tokio::io::AsyncWriteExt;
                 file.write_all(yaml.as_bytes()).await.map_err(|e| {
-                    OxyError::RuntimeError(format!("Failed to write automation file: {}", e))
+                    OxyError::RuntimeError(format!("Failed to write procedure file: {}", e))
                 })?;
                 break path;
             }
@@ -489,15 +490,15 @@ pub async fn create_automation(
             }
             Err(e) => {
                 return Err(OxyError::RuntimeError(format!(
-                    "Failed to create automation file: {}",
+                    "Failed to create procedure file: {}",
                     e
                 )));
             }
         }
     };
-    let relative_path = Path::new(AUTOMATION_SAVED_DIR)
-        .join(format!("{}{}", candidate_name, AUTOMATION_FILE_EXTENSION));
+    let relative_path = Path::new(PROCEDURE_SAVED_DIR)
+        .join(format!("{}{}", candidate_name, PROCEDURE_FILE_EXTENSION));
 
-    tracing::info!("Saved automation to: {}", automation_path.display());
+    tracing::info!("Saved procedure to: {}", automation_path.display());
     Ok((workflow, relative_path.to_string_lossy().to_string()))
 }

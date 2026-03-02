@@ -162,7 +162,7 @@ export const WorkflowForm: React.FC<WorkflowFormProps> = ({ data, onChange }) =>
                 <Label htmlFor='name'>Name</Label>
                 <Input
                   id='name'
-                  placeholder='Describe what this automation does...'
+                  placeholder='Describe what this procedure does...'
                   {...register("name")}
                 />
                 {errors.name && <p className='text-red-500 text-sm'>{errors.name.message}</p>}
@@ -171,7 +171,7 @@ export const WorkflowForm: React.FC<WorkflowFormProps> = ({ data, onChange }) =>
                 <Label htmlFor='description'>Description</Label>
                 <Textarea
                   id='description'
-                  placeholder='Describe what this automation does...'
+                  placeholder='Describe what this procedure does...'
                   {...register("description")}
                   rows={4}
                 />

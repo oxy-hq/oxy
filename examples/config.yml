@@ -138,7 +138,7 @@ mcp:
     - semantics/topics/fruit_business.topic.yml
     - data/*.sql
     - agents/*.agent.yml
-    - workflows/*.workflow.yml
+    - procedures/*.procedure.yml
 
 a2a:
   base_url: "http://localhost:3030"

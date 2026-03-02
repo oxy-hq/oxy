@@ -10,7 +10,7 @@ async function openWorkflowFile(page: Page, mode: "files" | "objects" = "files")
     await page.getByRole("tab", { name: "Objects" }).click();
     await page.waitForTimeout(500);
 
-    const automationsSection = page.getByText("Automations").first();
+    const automationsSection = page.getByText("Procedures").first();
     if (await automationsSection.isVisible()) {
       await automationsSection.click();
       await page.waitForTimeout(300);

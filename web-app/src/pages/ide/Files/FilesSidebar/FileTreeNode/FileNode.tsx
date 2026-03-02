@@ -35,6 +35,7 @@ import RenameNode from "./RenameNode";
 const getFileIcon = (path: string) => {
   const fileType = detectFileType(path);
   switch (fileType) {
+    case FileType.PROCEDURE:
     case FileType.WORKFLOW:
     case FileType.AUTOMATION:
       return Workflow;

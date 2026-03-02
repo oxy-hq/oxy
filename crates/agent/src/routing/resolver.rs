@@ -94,7 +94,8 @@ impl RouteResolver {
     ) -> Result<ToolType, OxyError> {
         match file_ref {
             workflow_path
-                if workflow_path.ends_with(".workflow.yml")
+                if workflow_path.ends_with(".procedure.yml")
+                    || workflow_path.ends_with(".workflow.yml")
                     || workflow_path.ends_with(".automation.yml") =>
             {
                 Self::resolve_workflow_tool(

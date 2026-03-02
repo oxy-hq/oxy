@@ -24,7 +24,7 @@ tools:
   - name: get_5_orders
     type: workflow
     description: Retrieve 5 sample orders from the orders table
-    workflow_ref: workflows/semantic_variables.workflow.yml
+    workflow_ref: procedures/semantic_variables.procedure.yml
 
 max_tool_calls: 10
 max_tool_concurrency: 5

@@ -6,7 +6,7 @@ const RoutePanel = ({ routeName }: { routeName: string }) => (
       <GitBranch className='h-5 w-5 text-node-plan' />
     </div>
     <div>
-      <p className='font-medium text-foreground text-sm'>Routed to automation</p>
+      <p className='font-medium text-foreground text-sm'>Routed to procedure</p>
       <p className='mt-1 font-mono text-muted-foreground text-xs'>{routeName}</p>
     </div>
   </div>

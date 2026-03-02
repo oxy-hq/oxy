@@ -193,7 +193,8 @@ impl Config {
     }
 
     pub fn list_workflows(&self, dir: &PathBuf) -> Vec<PathBuf> {
-        let mut workflows = self.list_by_sub_extension(dir, "workflow");
+        let mut workflows = self.list_by_sub_extension(dir, "procedure");
+        workflows.extend(self.list_by_sub_extension(dir, "workflow"));
         workflows.extend(self.list_by_sub_extension(dir, "automation"));
         workflows
     }
@@ -211,7 +212,8 @@ impl Config {
 
         let workflow_name = workflow_path.file_stem().unwrap().to_str().unwrap();
         let workflow_name = workflow_name
-            .strip_suffix(".workflow")
+            .strip_suffix(".procedure")
+            .or_else(|| workflow_name.strip_suffix(".workflow"))
             .or_else(|| workflow_name.strip_suffix(".automation"))
             .unwrap_or(workflow_name);
 

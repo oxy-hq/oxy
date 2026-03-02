@@ -29,14 +29,14 @@ const useSaveAutomationMutation = (onSuccess?: (data: SaveAutomationResponse) =>
       queryClient.invalidateQueries({
         queryKey: queryKeys.workflow.list(project.id, branchName)
       });
-      toast.success("Automation saved successfully");
+      toast.success("Procedure saved successfully");
       if (onSuccess) {
         onSuccess(data);
       }
     },
     onError: (error) => {
-      console.error("Failed to save automation:", error);
-      toast.error("Failed to save automation");
+      console.error("Failed to save procedure:", error);
+      toast.error("Failed to save procedure");
     }
   });
 };

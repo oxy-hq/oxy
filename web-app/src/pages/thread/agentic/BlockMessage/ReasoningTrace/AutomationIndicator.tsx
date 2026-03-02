@@ -32,7 +32,7 @@ const AutomationIndicator = ({
         <Check className='h-3.5 w-3.5 shrink-0 text-primary' />
         <div className='min-w-0 flex-1'>
           <div className='font-medium text-foreground text-sm leading-tight'>
-            Similar automation exists
+            Similar procedure exists
           </div>
           <div className='mt-0.5 text-muted-foreground text-xs'>{existingAutomationName}</div>
         </div>
@@ -55,7 +55,7 @@ const AutomationIndicator = ({
       />
       <div className='min-w-0 flex-1'>
         <div className='font-medium text-foreground text-sm leading-tight'>
-          {isGoodCandidate ? "Good candidate for automation" : "Low automation potential"}
+          {isGoodCandidate ? "Good candidate for procedure" : "Low procedure potential"}
         </div>
         <div className='mt-0.5 font-mono text-muted-foreground text-xs'>
           {querySteps.length} {querySteps.length === 1 ? "query" : "queries"} &middot;{" "}
@@ -73,7 +73,7 @@ const AutomationIndicator = ({
         ) : (
           <Workflow className='h-3 w-3' />
         )}
-        <span>{isLoading ? "Saving…" : "Automate this"}</span>
+        <span>{isLoading ? "Saving…" : "Save as procedure"}</span>
       </Button>
     </div>
   );

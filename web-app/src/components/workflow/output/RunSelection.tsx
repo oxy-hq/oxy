@@ -198,9 +198,9 @@ const RunSelection: React.FC<Props> = ({ workflowId, runId }) => {
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Automation Run</AlertDialogTitle>
+            <AlertDialogTitle>Delete Procedure Run</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this automation run? This action cannot be undone.
+              Are you sure you want to delete this procedure run? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

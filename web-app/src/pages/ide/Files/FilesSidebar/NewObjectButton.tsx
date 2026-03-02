@@ -57,9 +57,9 @@ tools: []
   },
   {
     type: "workflow",
-    label: "Automation",
+    label: "Procedure",
     icon: Workflow,
-    extension: ".workflow.yml",
+    extension: ".procedure.yml",
     defaultContent: `name: ""
 description: ""
 

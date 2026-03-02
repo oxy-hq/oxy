@@ -23,7 +23,7 @@ pub mod semantic_variables {
         // Even if CubeJS is not running, the workflow should validate
         let mut cmd = setup_command();
         let result = cmd
-            .arg("workflows/semantic_variables.workflow.yml")
+            .arg("procedures/semantic_variables.procedure.yml")
             .assert();
 
         // The workflow will fail to execute without CubeJS, but should not fail on parsing
@@ -37,7 +37,7 @@ pub mod semantic_variables {
     fn run_workflow_with_semantic_variables_override_validates() {
         let mut cmd = setup_command();
         let result = cmd
-            .arg("workflows/semantic_variables.workflow.yml")
+            .arg("procedures/semantic_variables.procedure.yml")
             .arg("-v")
             .arg("orders_table=custom_orders")
             .assert();
@@ -92,7 +92,7 @@ pub mod semantic_variables {
         // Test that workflow variables can override defaults
         let mut cmd = setup_command();
         let result = cmd
-            .arg("workflows/semantic_variables.workflow.yml")
+            .arg("procedures/semantic_variables.procedure.yml")
             .arg("-v")
             .arg("orders_table=priority_orders")
             .assert();

@@ -34,7 +34,7 @@ const GroupedObjectsView: React.FC<GroupedObjectsViewProps> = ({
   const grouped = React.useMemo(() => groupObjectsByType(files), [files]);
   const navigate = useNavigate();
   const [openGroups, setOpenGroups] = React.useState({
-    automations: true,
+    procedures: true,
     agents: true,
     apps: true,
     semanticObjects: true
@@ -91,13 +91,13 @@ const GroupedObjectsView: React.FC<GroupedObjectsViewProps> = ({
         </Collapsible>
       )}
 
-      {grouped.automations.length > 0 && (
-        <Collapsible open={openGroups.automations} onOpenChange={() => toggleGroup("automations")}>
+      {grouped.procedures.length > 0 && (
+        <Collapsible open={openGroups.procedures} onOpenChange={() => toggleGroup("procedures")}>
           <SidebarMenuItem>
             <CollapsibleTrigger asChild>
               <SidebarGroupLabel className='group/label flex justify-between font-semibold text-muted-foreground transition-colors duration-150 ease-in hover:bg-sidebar-accent hover:text-sidebar-foreground'>
-                <span>Automations</span>
-                {openGroups.automations ? (
+                <span>Procedures</span>
+                {openGroups.procedures ? (
                   <ChevronDown className='transition-transform' />
                 ) : (
                   <ChevronRight className='transition-transform' />
@@ -106,7 +106,7 @@ const GroupedObjectsView: React.FC<GroupedObjectsViewProps> = ({
             </CollapsibleTrigger>
             <CollapsibleContent>
               <SidebarMenuSub className='border-l-0'>
-                {grouped.automations.map((file) => (
+                {grouped.procedures.map((file) => (
                   <SidebarMenuSubItem key={file.path}>
                     <SidebarMenuSubButton
                       onClick={() => handleFileClick(file)}

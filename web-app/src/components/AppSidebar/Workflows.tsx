@@ -29,7 +29,7 @@ export function Workflows() {
       <SidebarMenuButton asChild>
         <div>
           <Workflow />
-          <span>Automations</span>
+          <span>Procedures</span>
         </div>
       </SidebarMenuButton>
       <SidebarMenuSub className='ml-4'>
@@ -56,7 +56,7 @@ export function Workflows() {
             onClick={() => setShowAll(!showAll)}
             className='w-full py-1 text-left text-muted-foreground text-sm hover:text-foreground'
           >
-            {showAll ? "Show less" : `Show all (${workflows.length} automations)`}
+            {showAll ? "Show less" : `Show all (${workflows.length} procedures)`}
           </Button>
         )}
       </SidebarMenuSub>

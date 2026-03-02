@@ -39,9 +39,16 @@ export const WorkflowTaskFields: React.FC<WorkflowTaskFieldsProps> = ({
         <Label htmlFor={`${taskPath}.src`}>Source Path</Label>
         <FilePathAutocompleteInput
           id={`${taskPath}.src`}
-          fileExtension={[".workflow.yml", ".workflow.yaml", ".automation.yml", ".automation.yaml"]}
+          fileExtension={[
+            ".procedure.yml",
+            ".procedure.yaml",
+            ".workflow.yml",
+            ".workflow.yaml",
+            ".automation.yml",
+            ".automation.yaml"
+          ]}
           datalistId={`workflow-src-${basePath}-${index}`}
-          placeholder='Path to automation file'
+          placeholder='Path to procedure file'
           // @ts-expect-error - Dynamic field path
           {...register(`${taskPath}.src`, {
             required: "Source path is required"
@@ -93,7 +100,7 @@ export const WorkflowTaskFields: React.FC<WorkflowTaskFieldsProps> = ({
           </div>
         )}
         <p className='text-muted-foreground text-sm'>
-          Add variables to pass to the automation. Values should be valid JSON (string, number,
+          Add variables to pass to the procedure. Values should be valid JSON (string, number,
           boolean, object, array, or null).
         </p>
       </div>

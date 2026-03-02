@@ -264,7 +264,7 @@ export class IDEPage {
 
     // In Objects mode, we should see grouped sections
     const semanticLayerHeading = this.page.locator("text=Semantic Layer");
-    const automationsHeading = this.page.locator("text=Automations");
+    const automationsHeading = this.page.locator("text=Procedures");
     const agentsHeading = this.page.locator("text=Agents");
     const appsHeading = this.page.locator("text=Apps");
 

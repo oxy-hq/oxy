@@ -11,6 +11,7 @@ use super::model::{AgentConfig, AppConfig, Config, Workflow, WorkflowWithRawVari
 const DEFAULT_CONFIG_PATH: &str = "config.yml";
 const WORKFLOW_EXTENSION: &str = ".workflow";
 const AUTOMATION_EXTENSION: &str = ".automation";
+const PROCEDURE_EXTENSION: &str = ".procedure";
 const AGENT_EXTENSION: &str = ".agent";
 const AGENTIC_WORKFLOW_EXTENSION: &str = ".aw";
 
@@ -286,13 +287,14 @@ impl ConfigStorage for LocalSource {
         let mut workflow_config: Workflow = serde_yaml::from_str(&workflow_yml).map_err(|e| {
             OxyError::ConfigurationError(format!("Failed to deserialize workflow config: {e}"))
         })?;
-        let extension = if resolved_path
+        let file_name = resolved_path
             .file_name()
             .and_then(|n| n.to_str())
-            .map(|n| n.ends_with(AUTOMATION_EXTENSION))
-            .unwrap_or(false)
-        {
+            .unwrap_or("");
+        let extension = if file_name.contains(AUTOMATION_EXTENSION) {
             AUTOMATION_EXTENSION
+        } else if file_name.contains(PROCEDURE_EXTENSION) {
+            PROCEDURE_EXTENSION
         } else {
             WORKFLOW_EXTENSION
         };
@@ -312,13 +314,14 @@ impl ConfigStorage for LocalSource {
             .map_err(|e| {
                 OxyError::ConfigurationError(format!("Failed to deserialize workflow config: {e}"))
             })?;
-        let extension = if resolved_path
+        let file_name = resolved_path
             .file_name()
             .and_then(|n| n.to_str())
-            .map(|n| n.ends_with(AUTOMATION_EXTENSION))
-            .unwrap_or(false)
-        {
+            .unwrap_or("");
+        let extension = if file_name.contains(AUTOMATION_EXTENSION) {
             AUTOMATION_EXTENSION
+        } else if file_name.contains(PROCEDURE_EXTENSION) {
+            PROCEDURE_EXTENSION
         } else {
             WORKFLOW_EXTENSION
         };
@@ -359,7 +362,8 @@ impl ConfigStorage for LocalSource {
     }
 
     async fn list_workflows(&self) -> Result<Vec<PathBuf>, OxyError> {
-        let mut workflows = self.list_by_sub_extension(None, "workflow");
+        let mut workflows = self.list_by_sub_extension(None, "procedure");
+        workflows.extend(self.list_by_sub_extension(None, "workflow"));
         workflows.extend(self.list_by_sub_extension(None, "automation"));
         Ok(workflows)
     }

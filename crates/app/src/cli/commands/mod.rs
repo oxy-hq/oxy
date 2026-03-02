@@ -276,7 +276,7 @@ struct AskArgs {
 enum SubCommand {
     /// Initialize a repository as an oxy project. Also creates a ~/.config/oxy/config.yaml file if it doesn't exist
     Init,
-    /// Execute workflow (.workflow.yml or .automation.yml), agent (.agent.yml), or SQL (.sql) files
+    /// Execute procedure (.procedure.yml), workflow (.workflow.yml or .automation.yml), agent (.agent.yml), or SQL (.sql) files
     ///
     /// Run SQL queries against databases, execute workflows for data processing,
     /// or interact with AI agents for analysis and insights.
@@ -401,7 +401,7 @@ pub struct MakeArgs {
 
 #[derive(Parser, Debug)]
 pub struct RunArgs {
-    /// Path to the file to execute (.sql, .workflow.yml, .automation.yml, or .agent.yml)
+    /// Path to the file to execute (.sql, .procedure.yml, .workflow.yml, .automation.yml, or .agent.yml)
     file: String,
 
     /// Database connection to use for SQL execution
@@ -704,7 +704,10 @@ fn validate_single_file(file_path: &PathBuf, config: &Config) -> Result<(), Stri
     let file_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
     match () {
-        _ if file_name.ends_with(".workflow.yml") || file_name.ends_with(".automation.yml") => {
+        _ if file_name.ends_with(".procedure.yml")
+            || file_name.ends_with(".workflow.yml")
+            || file_name.ends_with(".automation.yml") =>
+        {
             let workflow = config.load_workflow(file_path).map_err(|e| e.to_string())?;
             config
                 .validate_workflow(&workflow)
@@ -1662,7 +1665,10 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError
 
     match extension {
         Some("yml") => {
-            if file.ends_with(".workflow.yml") || file.ends_with(".automation.yml") {
+            if file.ends_with(".procedure.yml")
+                || file.ends_with(".workflow.yml")
+                || file.ends_with(".automation.yml")
+            {
                 handle_workflow_file(&file_path, run_args.retry, run_args.retry_from).await?;
                 Ok(RunResult::Workflow)
             } else if file.ends_with(".agent.yml") {
@@ -1673,7 +1679,7 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError
                 Ok(RunResult::Agent)
             } else {
                 Err(OxyError::ArgumentError(
-                    "Invalid YAML file. Must be either *.workflow.yml, *.automation.yml, or *.agent.yml".into(),
+                    "Invalid YAML file. Must be either *.procedure.yml, *.workflow.yml, *.automation.yml, or *.agent.yml".into(),
                 ))
             }
         }
@@ -1702,7 +1708,7 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError
             Ok(RunResult::Sql(sql_result))
         }
         _ => Err(OxyError::ArgumentError(
-            "Invalid file extension. Must be .workflow.yml, .automation.yml, .agent.yml, or .sql"
+            "Invalid file extension. Must be .procedure.yml, .workflow.yml, .automation.yml, .agent.yml, or .sql"
                 .into(),
         )),
     }

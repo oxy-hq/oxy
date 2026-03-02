@@ -70,7 +70,7 @@ test.describe("Navigation", () => {
   test("should navigate to workflow page from sidebar", async ({ page }) => {
     // Ensure sidebar workflows are loaded/expanded
     const showAllButton = page.getByRole("button", {
-      name: /Show all.*automations/i
+      name: /Show all.*procedures/i
     });
     if (await showAllButton.isVisible().catch(() => false)) {
       await showAllButton.click();

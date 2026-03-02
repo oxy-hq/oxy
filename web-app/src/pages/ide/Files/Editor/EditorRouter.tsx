@@ -13,7 +13,9 @@ const EditorRouterComponent = () => {
   const { fileType } = useEditorContext();
 
   switch (fileType) {
+    case FileType.PROCEDURE:
     case FileType.WORKFLOW:
+    case FileType.AUTOMATION:
       return <WorkflowEditor />;
     case FileType.AGENT:
       return <AgentEditor />;

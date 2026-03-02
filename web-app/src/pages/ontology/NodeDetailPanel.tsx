@@ -21,7 +21,8 @@ export function NodeDetailPanel({ node, onClose }: NodeDetailPanelProps) {
 
   const typeLabels: Record<string, string> = {
     agent: "Agent",
-    workflow: "Automation",
+    workflow: "Workflow",
+    procedure: "Procedure",
     topic: "Topic",
     view: "View",
     sql_query: "SQL Query",
@@ -74,6 +75,7 @@ export function NodeDetailPanel({ node, onClose }: NodeDetailPanelProps) {
 
   const isFileNode =
     node.type === "workflow" ||
+    node.type === "procedure" ||
     node.type === "view" ||
     node.type === "topic" ||
     node.type === "agent" ||

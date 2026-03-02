@@ -1,6 +1,7 @@
 import { decodeBase64 } from "@/libs/encoding";
 
 export enum FileType {
+  PROCEDURE = "procedure",
   WORKFLOW = "workflow",
   AUTOMATION = "automation",
   AGENT = "agent",
@@ -19,6 +20,11 @@ export interface FileTypeConfig {
 }
 
 export const FILE_TYPE_CONFIGS: Record<FileType, FileTypeConfig> = {
+  [FileType.PROCEDURE]: {
+    type: FileType.PROCEDURE,
+    extensions: [".procedure.yml", ".procedure.yaml"],
+    editorComponent: "WorkflowEditor"
+  },
   [FileType.WORKFLOW]: {
     type: FileType.WORKFLOW,
     extensions: [".workflow.yml", ".workflow.yaml", ".automation.yml", ".automation.yaml"],

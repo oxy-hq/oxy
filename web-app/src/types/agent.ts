@@ -109,6 +109,6 @@ export const STEP_MAP = {
   visualize: "Generating visualization",
   retrieve: "Retrieving data",
   agent: "Generating answer",
-  workflow: "Running automation",
-  save_automation: "Saving automation"
+  workflow: "Running procedure",
+  save_automation: "Saving procedure"
 };

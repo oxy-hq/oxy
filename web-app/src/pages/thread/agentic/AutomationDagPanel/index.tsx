@@ -24,7 +24,7 @@ const NODE_LABELS: Record<string, string> = {
   [TaskType.AGENT]: "Agent",
   [TaskType.FORMATTER]: "Formatter",
   [TaskType.VISUALIZE]: "Visualize",
-  [TaskType.WORKFLOW]: "Sub-automation"
+  [TaskType.WORKFLOW]: "Sub-procedure"
 };
 
 interface AutomationDagPanelProps {
@@ -48,7 +48,7 @@ const AutomationDagPanel = ({
       {/* Header */}
       <div className='flex shrink-0 items-center justify-between border-border border-b p-4'>
         <span className='font-medium text-muted-foreground text-xs uppercase tracking-wider'>
-          Generated Automation
+          Generated Procedure
         </span>
         <Button variant='ghost' size='icon' className='h-6 w-6 shrink-0' onClick={onClose}>
           <X className='h-3.5 w-3.5' />

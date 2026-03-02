@@ -43,6 +43,7 @@ import { NodeDetailPanel } from "./NodeDetailPanel";
 type FocusType =
   | "auto"
   | "agent"
+  | "procedure"
   | "workflow"
   | "app"
   | "automation"
@@ -63,7 +64,9 @@ const OntologyNode = ({ data }: NodeProps) => {
 
   const typeLabels: Record<string, string> = {
     agent: "agent",
-    workflow: "automation",
+    procedure: "procedure",
+    workflow: "workflow",
+    automation: "automation",
     topic: "topic",
     view: "view",
     sql_query: "sql_query",
@@ -73,6 +76,7 @@ const OntologyNode = ({ data }: NodeProps) => {
 
   const icons = {
     agent: <Bot className='h-4 w-4' />,
+    procedure: <WorkflowIcon className='h-4 w-4' />,
     workflow: <WorkflowIcon className='h-4 w-4' />,
     app: <WorkflowIcon className='h-4 w-4' />,
     automation: <WorkflowIcon className='h-4 w-4' />,
@@ -85,6 +89,7 @@ const OntologyNode = ({ data }: NodeProps) => {
 
   const bgColors = {
     agent: "#fee2e2",
+    procedure: "#ffedd5",
     workflow: "#ffedd5",
     app: "#e0f2fe",
     automation: "#f3e8ff",
@@ -97,6 +102,7 @@ const OntologyNode = ({ data }: NodeProps) => {
 
   const borderColors = {
     agent: "#fca5a5",
+    procedure: "#fdba74",
     workflow: "#fdba74",
     app: "#7dd3fc",
     automation: "#d8b4fe",
@@ -409,6 +415,7 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
     // Determine type order based on focus
     let types = [
       "agent",
+      "procedure",
       "workflow",
       "app",
       "automation",
@@ -592,7 +599,9 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
 
   const typeLabels: Record<string, string> = {
     agent: "Agents",
-    workflow: "Automations",
+    procedure: "Procedures",
+    workflow: "Workflows (legacy)",
+    automation: "Automations (legacy)",
     topic: "Topics",
     view: "Views",
     sql_query: "SQL Queries",
@@ -706,10 +715,16 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
                     <span>Agents</span>
                   </div>
                 </SelectItem>
+                <SelectItem value='procedure' className='text-sm'>
+                  <div className='flex items-center gap-2'>
+                    <WorkflowIcon className='h-4 w-4' />
+                    <span>Procedures</span>
+                  </div>
+                </SelectItem>
                 <SelectItem value='workflow' className='text-sm'>
                   <div className='flex items-center gap-2'>
                     <WorkflowIcon className='h-4 w-4' />
-                    <span>Automations</span>
+                    <span>Workflows (legacy)</span>
                   </div>
                 </SelectItem>
                 <SelectItem value='app' className='text-sm'>
@@ -721,7 +736,7 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
                 <SelectItem value='automation' className='text-sm'>
                   <div className='flex items-center gap-2'>
                     <WorkflowIcon className='h-4 w-4' />
-                    <span>Automations</span>
+                    <span>Automations (legacy)</span>
                   </div>
                 </SelectItem>
                 <SelectItem value='topic' className='text-sm'>

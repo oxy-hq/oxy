@@ -3206,7 +3206,7 @@ fn default_save_automation_tool_name() -> String {
 }
 
 fn default_save_automation_tool_description() -> String {
-    "Save the current analysis steps as a reusable automation.".to_string()
+    "Save the current analysis steps as a reusable procedure.".to_string()
 }
 
 fn default_tools() -> Vec<ToolType> {

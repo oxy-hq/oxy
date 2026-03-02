@@ -74,7 +74,7 @@ fn run_sql_file_with_variables_ok() {
 fn run_example_workflow_ok() {
     let mut cmd = setup_command();
     let result = cmd
-        .arg("workflows/table_values.workflow.yml")
+        .arg("procedures/table_values.automation.yml")
         .assert()
         .success();
     let output = String::from_utf8(result.get_output().stdout.clone()).unwrap();
@@ -92,7 +92,7 @@ fn run_workflow_with_anonymization_ok() {
 
     let mut cmd = setup_command();
     let result = cmd
-        .arg("workflows/anonymize.workflow.yml")
+        .arg("procedures/anonymize.procedure.yml")
         .assert()
         .success();
     let output = String::from_utf8(result.get_output().stdout.clone()).unwrap();
@@ -109,7 +109,7 @@ fn run_workflow_with_loop_ok() {
 
     let mut cmd = setup_command();
     let result = cmd
-        .arg("workflows/survey_responses.workflow.yml")
+        .arg("procedures/survey_responses.procedure.yml")
         .assert()
         .success();
     let output = String::from_utf8(result.get_output().stdout.clone()).unwrap();

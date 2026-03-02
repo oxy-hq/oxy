@@ -24,13 +24,14 @@ export const isObjectFile = (file: FileTreeModel): boolean => {
 export const getObjectName = (file: FileTreeModel): string => {
   const fileName = file.name;
   return fileName
-    .replace(/\.(workflow|automation|agent|aw|app|view|topic)\.(yml|yaml)$/, "")
+    .replace(/\.(procedure|workflow|automation|agent|aw|app|view|topic)\.(yml|yaml)$/, "")
     .replace(/\.(yml|yaml)$/, "");
 };
 
 // Helper to get icon for file type
 export const getFileTypeIcon = (fileType: FileType, fileName?: string) => {
   switch (fileType) {
+    case FileType.PROCEDURE:
     case FileType.WORKFLOW:
     case FileType.AUTOMATION:
       return Workflow;
@@ -58,7 +59,7 @@ export const getFileTypeIcon = (fileType: FileType, fileName?: string) => {
 };
 
 interface GroupedObjects {
-  automations: FileTreeModel[];
+  procedures: FileTreeModel[];
   agents: FileTreeModel[];
   apps: FileTreeModel[];
   semanticObjects: FileTreeModel[];
@@ -67,7 +68,7 @@ interface GroupedObjects {
 // Group objects by type
 export const groupObjectsByType = (files: FileTreeModel[]): GroupedObjects => {
   const groups: GroupedObjects = {
-    automations: [],
+    procedures: [],
     agents: [],
     apps: [],
     semanticObjects: []
@@ -78,10 +79,11 @@ export const groupObjectsByType = (files: FileTreeModel[]): GroupedObjects => {
     const fileType = detectFileType(file.path);
 
     switch (fileType) {
+      case FileType.PROCEDURE:
       case FileType.WORKFLOW:
       case FileType.AUTOMATION:
       case FileType.AGENTIC_WORKFLOW:
-        groups.automations.push(file);
+        groups.procedures.push(file);
         break;
       case FileType.AGENT:
         groups.agents.push(file);
@@ -97,7 +99,7 @@ export const groupObjectsByType = (files: FileTreeModel[]): GroupedObjects => {
   });
 
   // Sort each group alphabetically by name
-  groups.automations.sort((a, b) => NAME_COLLATOR.compare(a.name, b.name));
+  groups.procedures.sort((a, b) => NAME_COLLATOR.compare(a.name, b.name));
   groups.agents.sort((a, b) => NAME_COLLATOR.compare(a.name, b.name));
   groups.apps.sort((a, b) => NAME_COLLATOR.compare(a.name, b.name));
   groups.semanticObjects.sort((a, b) => NAME_COLLATOR.compare(a.name, b.name));

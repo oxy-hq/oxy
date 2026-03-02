@@ -15,7 +15,7 @@ start:
     - **semantic_query**: Query via semantic layer for predefined metrics
     - **visualize**: Create charts (line, bar, pie) from query results
     - **insight**: Generate analytical insights and observations
-    - **save_automation**: Save your reasoning path as reusable automation
+    - **save_automation**: Save your reasoning path as reusable procedure
 
     ## Workflow Approach
     1. Understand the user's goal (dashboard, chart, or analysis)
@@ -85,5 +85,5 @@ transitions:
   # Generate analytical insights from data
   - type: insight
 
-  # Save reasoning path as reusable automation
+  # Save reasoning path as reusable procedure
   - type: save_automation

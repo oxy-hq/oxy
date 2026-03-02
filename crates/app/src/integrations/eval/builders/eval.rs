@@ -66,7 +66,8 @@ impl ParamMapper<EvalInput, Vec<(usize, EvalConfig, EvalTarget)>> for EvalMapper
         let EvalInput { target_ref, index } = input;
         let mapped_input = match &target_ref {
             workflow_ref
-                if workflow_ref.ends_with("workflow.yml")
+                if workflow_ref.ends_with("procedure.yml")
+                    || workflow_ref.ends_with("workflow.yml")
                     || workflow_ref.ends_with("automation.yml") =>
             {
                 let config_manager = &execution_context.project.config_manager;

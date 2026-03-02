@@ -215,7 +215,7 @@ export const WorkflowPreview = ({
       <div className='p-4'>
         <Alert variant='destructive'>
           <CircleAlert />
-          <AlertTitle>Error Loading Automation</AlertTitle>
+          <AlertTitle>Error Loading Procedure</AlertTitle>
           <AlertDescription>{errorMessage}</AlertDescription>
         </Alert>
       </div>
@@ -252,7 +252,7 @@ export const WorkflowPreview = ({
                   variant='outline'
                   onClick={cancelRunHandler}
                   disabled={cancelRun.isPending}
-                  tooltip={"Cancel Automation Run"}
+                  tooltip={"Cancel Procedure Run"}
                 >
                   <StopCircle className='h-4 w-4' />
                 </Button>
@@ -262,7 +262,7 @@ export const WorkflowPreview = ({
                     variant='outline'
                     onClick={replayAllHandler}
                     disabled={run.isPending}
-                    tooltip={"Replay Automation Run"}
+                    tooltip={"Replay Procedure Run"}
                   >
                     <RotateCcw className='h-4 w-4' />
                     Replay
@@ -301,7 +301,7 @@ export const WorkflowPreview = ({
               variant='default'
               onClick={runHandler}
               disabled={run.isPending}
-              tooltip={run.isPending ? "Running..." : "Run Automation"}
+              tooltip={run.isPending ? "Running..." : "Run Procedure"}
               data-testid='run-workflow-button'
             >
               {run.isPending ? (

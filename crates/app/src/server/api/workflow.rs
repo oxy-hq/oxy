@@ -825,11 +825,11 @@ pub struct SaveAutomationResponse {
     pub path: String,
 }
 
-/// Save an automation from provided tasks
+/// Save a procedure from provided tasks
 ///
-/// Creates a new automation file from the provided name, description, tasks, and optional
-/// retrieval configuration. The automation is saved as a `.automation.yml` file in the
-/// `automations/saved` directory.
+/// Creates a new procedure file from the provided name, description, tasks, and optional
+/// retrieval configuration. The procedure is saved as a `.procedure.yml` file in the
+/// `procedures/saved` directory.
 #[utoipa::path(
     method(post),
     path = "/{project_id}/automations/save",
@@ -838,14 +838,14 @@ pub struct SaveAutomationResponse {
     ),
     request_body = SaveAutomationRequest,
     responses(
-        (status = 200, description = "Automation saved successfully", body = SaveAutomationResponse),
+        (status = 200, description = "Procedure saved successfully", body = SaveAutomationResponse),
         (status = 400, description = "Bad request - invalid parameters"),
         (status = 500, description = "Internal server error")
     ),
     security(
         ("ApiKey" = [])
     ),
-    tag = "Automations"
+    tag = "Procedures"
 )]
 pub async fn save_automation(
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,

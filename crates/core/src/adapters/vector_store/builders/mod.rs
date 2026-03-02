@@ -394,7 +394,8 @@ async fn build_retrieval_objects_from_routes(
     let get_retrieval_object = async |path: String| -> Result<RetrievalObject, OxyError> {
         match &path {
             workflow_path
-                if workflow_path.ends_with(".workflow.yml")
+                if workflow_path.ends_with(".procedure.yml")
+                    || workflow_path.ends_with(".workflow.yml")
                     || workflow_path.ends_with(".automation.yml") =>
             {
                 workflow_to_retrieval_object(config, workflow_path).await
