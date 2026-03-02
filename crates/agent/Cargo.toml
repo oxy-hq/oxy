@@ -40,7 +40,7 @@ async-openai = { workspace = true, features = [
 chrono = { workspace = true }
 indexmap = { workspace = true }
 itertools = "0.14.0"
-arrow = { version = "=56.2.0", default-features = false, features = ["json"] }
+arrow = { version = "=58.0.0", default-features = false, features = ["json"] }
 backoff = { version = "0.4", features = ["tokio"] }
 uuid = { version = "1.20.0", features = ["v4", "serde"] }
 schemars = { version = "0.8.22", features = ["derive", "impl_json_schema"] }
