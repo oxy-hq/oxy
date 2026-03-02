@@ -178,11 +178,11 @@ fn discover_charts(tab: &Arc<Tab>) -> Result<Vec<i64>, OxyError> {
     let app_ready_timeout = Duration::from_secs(15);
 
     while app_wait_start.elapsed() < app_ready_timeout {
-        if let Ok(result) = tab.evaluate(wait_for_app, false) {
-            if result.value.and_then(|v| v.as_bool()).unwrap_or(false) {
-                println!("{}", "   App preview container found".text());
-                break;
-            }
+        if let Ok(result) = tab.evaluate(wait_for_app, false)
+            && result.value.and_then(|v| v.as_bool()).unwrap_or(false)
+        {
+            println!("{}", "   App preview container found".text());
+            break;
         }
 
         // Check for error states that indicate the page won't load
@@ -198,15 +198,14 @@ fn discover_charts(tab: &Arc<Tab>) -> Result<Vec<i64>, OxyError> {
                 return null;
             })()
         "#;
-        if let Ok(result) = tab.evaluate(error_check, false) {
-            if let Some(val) = result.value {
-                if let Some(error) = val.as_str() {
-                    return Err(OxyError::RuntimeError(format!(
-                        "Page failed to load: {}. Make sure the web app is running and configured correctly.",
-                        error
-                    )));
-                }
-            }
+        if let Ok(result) = tab.evaluate(error_check, false)
+            && let Some(val) = result.value
+            && let Some(error) = val.as_str()
+        {
+            return Err(OxyError::RuntimeError(format!(
+                "Page failed to load: {}. Make sure the web app is running and configured correctly.",
+                error
+            )));
         }
 
         std::thread::sleep(POLL_INTERVAL_SLOW);
@@ -224,10 +223,10 @@ fn discover_charts(tab: &Arc<Tab>) -> Result<Vec<i64>, OxyError> {
 
     let start_time = std::time::Instant::now();
     while start_time.elapsed() < CHART_DISCOVERY_TIMEOUT {
-        if let Some(indexes) = try_get_chart_indexes(tab, find_charts_js) {
-            if !indexes.is_empty() {
-                return Ok(indexes);
-            }
+        if let Some(indexes) = try_get_chart_indexes(tab, find_charts_js)
+            && !indexes.is_empty()
+        {
+            return Ok(indexes);
         }
         std::thread::sleep(POLL_INTERVAL_SLOW);
     }

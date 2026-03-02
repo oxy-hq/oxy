@@ -22,7 +22,7 @@ use oxy::{
     },
     observability::events::{tool as tool_events, workflow as workflow_events},
     service::types::SemanticQueryParams,
-    types::{DateRange, SemanticQuery, TimeDimension},
+    types::{SemanticQuery, TimeDimension},
     utils::truncate_datasets,
 };
 use oxy_shared::errors::OxyError;

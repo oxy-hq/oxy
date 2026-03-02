@@ -376,7 +376,7 @@ impl EntityGraph {
         for join in &self.joins {
             graph
                 .entry(join.from_view.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(join.to_view.clone());
         }
 

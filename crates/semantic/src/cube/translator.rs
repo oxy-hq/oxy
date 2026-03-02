@@ -63,14 +63,14 @@ fn resolve_table_name(
     datasource: &Option<String>,
     databases: &HashMap<String, DatabaseDetails>,
 ) -> String {
-    if let Some(datasource_name) = datasource {
-        if let Some(db_details) = databases.get(datasource_name) {
-            // For Domo databases, use the dataset_id as the table name
-            if db_details.db_type == "domo" {
-                if let Some(dataset_id) = &db_details.dataset_id {
-                    return format!("\"{}\"", dataset_id); // Quote the dataset_id
-                }
-            }
+    if let Some(datasource_name) = datasource
+        && let Some(db_details) = databases.get(datasource_name)
+    {
+        // For Domo databases, use the dataset_id as the table name
+        if db_details.db_type == "domo"
+            && let Some(dataset_id) = &db_details.dataset_id
+        {
+            return format!("\"{}\"", dataset_id); // Quote the dataset_id
         }
     }
     default_table.to_string()
@@ -514,7 +514,7 @@ async fn _process_semantic_layer_to_cube_internal(
         manifest.set_embedding_file_hashes(embedding_hashes);
 
         // Save manifest
-        manifest.save(&target_dir_ref.join(".build_manifest.json"))?;
+        manifest.save(target_dir_ref.join(".build_manifest.json"))?;
     }
 
     println!("🎉 Semantic layer processing completed successfully!");

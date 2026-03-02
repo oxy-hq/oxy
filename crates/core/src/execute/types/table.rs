@@ -12,7 +12,7 @@ use arrow::{
 };
 use minijinja::{
     Value,
-    value::{Enumerator, Object, ObjectExt, ObjectRepr},
+    value::{Enumerator, Object, ObjectRepr},
 };
 use once_cell::sync::OnceCell;
 use parquet::{arrow::ArrowWriter, basic::Compression, file::properties::WriterProperties};

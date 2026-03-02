@@ -1,6 +1,4 @@
-use chrono::{Local, NaiveDate};
 use oxy::config::{ConfigManager, model::SemanticQueryTask};
-use oxy::types::{DateRange, TimeGranularity};
 use oxy_semantic::{DimensionType, SemanticLayer, Topic, View, parse_semantic_layer_from_dir};
 use oxy_shared::errors::OxyError;
 use serde_json::Value;
@@ -556,14 +554,14 @@ fn validate_time_dimensions(
         }
 
         // 4.2: Validate dimension has type date or datetime
-        if let Some(dim_type) = dimension_types.get(&time_dim.dimension) {
-            if !matches!(dim_type, DimensionType::Date | DimensionType::Datetime) {
-                return Err(SemanticQueryError::NonTimeDimensionType {
-                    field: time_dim.dimension.clone(),
-                    actual_type: dim_type.to_string(),
-                }
-                .into());
+        if let Some(dim_type) = dimension_types.get(&time_dim.dimension)
+            && !matches!(dim_type, DimensionType::Date | DimensionType::Datetime)
+        {
+            return Err(SemanticQueryError::NonTimeDimensionType {
+                field: time_dim.dimension.clone(),
+                actual_type: dim_type.to_string(),
             }
+            .into());
         }
     }
 

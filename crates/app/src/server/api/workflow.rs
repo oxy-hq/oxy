@@ -1413,7 +1413,7 @@ pub async fn get_workflow_run(
                 true
             }
         })
-        .filter_map(|e| event_kind_to_workflow_event(e))
+        .filter_map(event_kind_to_workflow_event)
         .collect();
 
     let runs_manager = project_manager

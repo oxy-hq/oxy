@@ -1,7 +1,7 @@
 use crate::SemanticLayerError;
 use crate::build_manifest::{BuildManifest, hash_file, hash_string};
 use serde_json;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -153,7 +153,7 @@ impl ChangeDetector {
 
         // Check for deleted files
         if !semantic_files_changed {
-            for (old_file, _) in &manifest.file_hashes {
+            for old_file in manifest.file_hashes.keys() {
                 if !current_files.contains_key(old_file) {
                     semantic_files_changed = true;
                     break;
@@ -178,7 +178,7 @@ impl ChangeDetector {
 
             // Check for deleted embedding files
             if !requires_embedding_rebuild {
-                for (old_file, _) in &manifest.embedding_file_hashes {
+                for old_file in manifest.embedding_file_hashes.keys() {
                     if !current_embedding_files.contains_key(old_file) {
                         requires_embedding_rebuild = true;
                         break;
@@ -211,7 +211,7 @@ impl ChangeDetector {
 
         // Check for deleted embedding files
         if !requires_embedding_rebuild {
-            for (old_file, _) in &manifest.embedding_file_hashes {
+            for old_file in manifest.embedding_file_hashes.keys() {
                 if !current_embedding_files.contains_key(old_file) {
                     requires_embedding_rebuild = true;
                     break;
@@ -323,20 +323,20 @@ impl ChangeDetector {
             let path = entry.path();
 
             if path.is_file() {
-                if let Some(file_name) = path.file_name() {
-                    if file_name.to_string_lossy().ends_with(extension) {
-                        let hash = hash_file(&path)?;
+                if let Some(file_name) = path.file_name()
+                    && file_name.to_string_lossy().ends_with(extension)
+                {
+                    let hash = hash_file(&path)?;
 
-                        // Use relative path from semantic_dir
-                        // base_dir is semantic_dir, strip to get relative path like "views/orders.view.yml"
-                        let relative_path = path
-                            .strip_prefix(base_dir)
-                            .unwrap_or(&path)
-                            .to_string_lossy()
-                            .to_string();
+                    // Use relative path from semantic_dir
+                    // base_dir is semantic_dir, strip to get relative path like "views/orders.view.yml"
+                    let relative_path = path
+                        .strip_prefix(base_dir)
+                        .unwrap_or(&path)
+                        .to_string_lossy()
+                        .to_string();
 
-                        file_hashes.insert(relative_path, hash);
-                    }
+                    file_hashes.insert(relative_path, hash);
                 }
             } else if path.is_dir() {
                 // Recursively scan subdirectories

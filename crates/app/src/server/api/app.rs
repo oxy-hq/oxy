@@ -309,10 +309,10 @@ pub async fn get_app_result(
     };
 
     // Try to load cached result if not refreshing
-    if !query.refresh {
-        if let Some(cached) = load_cached_result(&project_manager, &path).await {
-            return (StatusCode::OK, extract::Json(cached));
-        }
+    if !query.refresh
+        && let Some(cached) = load_cached_result(&project_manager, &path).await
+    {
+        return (StatusCode::OK, extract::Json(cached));
     }
 
     // Execute the app to get task results
@@ -451,10 +451,10 @@ pub async fn get_app_result(
                         "file_name": file_path,
                         "title": chart.title,
                     });
-                    if file_path.is_none() {
-                        if let Some(err) = &chart_export_error {
-                            obj["error"] = serde_json::json!(err);
-                        }
+                    if file_path.is_none()
+                        && let Some(err) = &chart_export_error
+                    {
+                        obj["error"] = serde_json::json!(err);
                     }
                     obj
                 }
@@ -465,10 +465,10 @@ pub async fn get_app_result(
                         "file_name": file_path,
                         "title": chart.title,
                     });
-                    if file_path.is_none() {
-                        if let Some(err) = &chart_export_error {
-                            obj["error"] = serde_json::json!(err);
-                        }
+                    if file_path.is_none()
+                        && let Some(err) = &chart_export_error
+                    {
+                        obj["error"] = serde_json::json!(err);
                     }
                     obj
                 }
@@ -479,10 +479,10 @@ pub async fn get_app_result(
                         "file_name": file_path,
                         "title": chart.title,
                     });
-                    if file_path.is_none() {
-                        if let Some(err) = &chart_export_error {
-                            obj["error"] = serde_json::json!(err);
-                        }
+                    if file_path.is_none()
+                        && let Some(err) = &chart_export_error
+                    {
+                        obj["error"] = serde_json::json!(err);
                     }
                     obj
                 }

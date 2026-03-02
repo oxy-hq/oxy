@@ -1277,6 +1277,34 @@
             "type"
           ],
           "properties": {
+            "export": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/TaskExport"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "prompt": {
+              "default": "",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "visualize"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
             "type": {
               "type": "string",
               "enum": [

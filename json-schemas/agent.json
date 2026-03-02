@@ -1217,6 +1217,39 @@
               "additionalProperties": true
             }
           }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "description": {
+              "default": "Save the current analysis steps as a reusable automation.",
+              "type": "string"
+            },
+            "name": {
+              "default": "save_automation",
+              "type": "string"
+            },
+            "retrieval": {
+              "default": null,
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/RouteRetrievalConfig"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "save_automation"
+              ]
+            }
+          }
         }
       ]
     },

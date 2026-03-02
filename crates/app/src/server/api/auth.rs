@@ -15,7 +15,6 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
 
-use crate::api::app;
 use crate::server::router::AppState;
 use oxy::{
     config::constants::AUTHENTICATION_SECRET_KEY,
