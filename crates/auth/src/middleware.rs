@@ -91,7 +91,6 @@ pub async fn internal_auth_middleware(
     }
 
     let internal_identity = crate::types::Identity {
-        idp_id: Some("internal-user".to_string()),
         email: "internal@localhost".to_string(),
         name: Some("Internal".to_string()),
         picture: None,

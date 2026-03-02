@@ -1,5 +1,4 @@
 import { ChevronsUpDown, LogOut, Settings } from "lucide-react";
-import { useEffect, useState } from "react";
 import { SidebarMenu, SidebarMenuItem } from "@/components/ui/shadcn/sidebar";
 import { useAuth } from "@/contexts/AuthContext";
 import useSettingsPage from "@/stores/useSettingsPage";
@@ -12,38 +11,18 @@ import {
   DropdownMenuTrigger
 } from "../ui/shadcn/dropdown-menu";
 
-interface IAPUserInfo {
-  email: string;
-  picture?: string;
-}
-
 export function Footer() {
-  const [userIAPInfo, setUserIAPInfo] = useState<IAPUserInfo | null>(null);
   const { logout, getUser, authConfig } = useAuth();
   const { setIsOpen: setIsSettingsOpen } = useSettingsPage();
 
-  useEffect(() => {
-    (async () => {
-      if (authConfig.is_built_in_mode) {
-        return;
-      }
-      try {
-        const res = await fetch("/api/user", { credentials: "include" });
-        if (!res.ok) throw new Error();
-        const data = await res.json();
-        setUserIAPInfo({
-          email: data?.email || "unknown",
-          picture: data?.picture
-        });
-      } catch {
-        setUserIAPInfo({ email: "unknown" });
-      }
-    })();
-  }, [authConfig.is_built_in_mode]);
+  let parsedUser: ReturnType<typeof JSON.parse> = null;
+  try {
+    parsedUser = JSON.parse(getUser() || "null");
+  } catch {
+    // Malformed JSON in localStorage — treat as unauthenticated
+  }
 
-  const parsedUser = JSON.parse(getUser() || "null");
-
-  let user = authConfig.is_built_in_mode ? parsedUser : userIAPInfo;
+  let user = parsedUser;
 
   if (!user) {
     user = {

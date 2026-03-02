@@ -32,7 +32,6 @@ export interface MessageResponse {
 }
 
 export interface AuthConfigResponse {
-  is_built_in_mode: boolean;
   auth_enabled: boolean;
   google?: {
     client_id: string;

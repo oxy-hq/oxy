@@ -100,7 +100,6 @@ struct Claims {
 
 #[derive(Serialize)]
 pub struct AuthConfigResponse {
-    pub is_built_in_mode: bool,
     pub auth_enabled: bool,
     pub google: Option<GoogleConfig>,
     pub okta: Option<OktaConfig>,
@@ -145,7 +144,6 @@ pub async fn get_config(
 
     if !auth_enabled || app_state.internal {
         return Ok(Json(AuthConfigResponse {
-            is_built_in_mode: true,
             auth_enabled: false,
             google: None,
             okta: None,
@@ -169,7 +167,6 @@ pub async fn get_config(
         });
 
     let config = AuthConfigResponse {
-        is_built_in_mode: false,
         auth_enabled: true,
         google: google_client_id.map(|client_id| GoogleConfig { client_id }),
         okta: okta_config,

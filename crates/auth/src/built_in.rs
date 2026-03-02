@@ -47,7 +47,6 @@ impl Authenticator for BuiltInAuthenticator {
 
             if !has_auth_configured {
                 return Ok(Identity {
-                    idp_id: Some("local-user".to_string()),
                     picture: None,
                     name: Some("Local User".to_string()),
                     email: "<local-user@example.com>".to_string(),
@@ -93,7 +92,6 @@ impl BuiltInAuthenticator {
         })?;
 
         Ok(Identity {
-            idp_id: Some(token_data.claims.sub),
             picture: None,
             name: None,
             email: token_data.claims.email,

@@ -70,7 +70,6 @@ pub async fn authenticate_header_with_config(
 
     // Create Identity with real user information
     let identity = Identity {
-        idp_id: Some(validated_key.id.to_string()), // Use the API key ID as the identity provider ID
         picture: user.picture,
         email: user.email,
         name: Some(user.name),

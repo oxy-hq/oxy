@@ -5,7 +5,6 @@ use entity::users::{self, UserRole, UserStatus};
 // Simple identity structure for email-based identity linking
 #[derive(Debug, Clone)]
 pub struct Identity {
-    pub idp_id: Option<String>, // Identity from the identity provider (e.g., Google IAP)
     pub email: String,
     pub name: Option<String>,
     pub picture: Option<String>,

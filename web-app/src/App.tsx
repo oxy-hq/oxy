@@ -11,7 +11,6 @@ import {
 import { AppSidebar } from "@/components/AppSidebar";
 import { SidebarProvider } from "@/components/ui/shadcn/sidebar";
 import { Toaster as ShadcnToaster } from "@/components/ui/shadcn/sonner";
-import CreateWorkspacePage from "@/pages/create-workspace";
 import Home from "@/pages/home";
 import ClusterMapPage from "@/pages/ide/observability/clusters";
 import MetricDetailPage from "@/pages/ide/observability/metrics/MetricsDetailPage";
@@ -21,7 +20,6 @@ import TracesPage from "@/pages/ide/observability/traces";
 import ThreadPage from "@/pages/thread";
 import Threads from "@/pages/threads";
 import WorkflowPage from "@/pages/workflow";
-import WorkspacesPage from "@/pages/workspaces";
 import "@xyflow/react/dist/style.css";
 import { Loader2 } from "lucide-react";
 import React from "react";
@@ -32,7 +30,6 @@ import { ErrorBoundary } from "@/sentry";
 import ProjectStatus from "./components/ProjectStatus";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { SettingsModal } from "./components/settings/SettingsModal";
-import RequiredSecretsSetup from "./components/settings/secrets/RequiredSecretsSetup";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { useProject } from "./hooks/api/projects/useProjects";
 import useAuthConfig from "./hooks/auth/useAuthConfig";
@@ -40,7 +37,6 @@ import AppPage from "./pages/app";
 import GoogleCallback from "./pages/auth/GoogleCallback";
 import MagicLinkCallback from "./pages/auth/MagicLinkCallback";
 import OktaCallback from "./pages/auth/OktaCallback";
-import GitHubCallback from "./pages/github/callback";
 import IdePage from "./pages/ide";
 import DatabaseLayout from "./pages/ide/Database";
 import QueryWorkspacePage from "./pages/ide/Database/QueryWorkspace";
@@ -198,18 +194,18 @@ const MainLayout = React.memo(function MainLayout() {
           }
         />
 
-        {!authConfig.cloud && <Route path='*' element={<Navigate to='/' />} />}
+        <Route path='*' element={<Navigate to='/' />} />
       </Routes>
     </HotkeysProvider>
   );
 });
 
-const getLocalRouter = (authConfig: AuthConfigResponse) =>
+const getRouter = (authConfig: AuthConfigResponse) =>
   createBrowserRouter(
     createRoutesFromElements(
       <Route>
-        {/* Auth routes for non-cloud mode when auth is enabled */}
-        {authConfig.is_built_in_mode && authConfig.auth_enabled && (
+        {/* Auth routes when auth is enabled */}
+        {authConfig.auth_enabled && (
           <>
             <Route path={ROUTES.AUTH.LOGIN} element={<LoginPage />} />
             <Route path={ROUTES.AUTH.GOOGLE_CALLBACK} element={<GoogleCallback />} />
@@ -238,74 +234,6 @@ const getLocalRouter = (authConfig: AuthConfigResponse) =>
     )
   );
 
-const getRouter = (authConfig: AuthConfigResponse) =>
-  createBrowserRouter(
-    createRoutesFromElements(
-      <Route>
-        {authConfig.is_built_in_mode && (
-          <>
-            <Route path={ROUTES.AUTH.LOGIN} element={<LoginPage />} />
-            <Route path={ROUTES.AUTH.GOOGLE_CALLBACK} element={<GoogleCallback />} />
-            <Route path={ROUTES.AUTH.OKTA_CALLBACK} element={<OktaCallback />} />
-            <Route path={ROUTES.AUTH.MAGIC_LINK_CALLBACK} element={<MagicLinkCallback />} />
-          </>
-        )}
-
-        {/* GitHub callback route for handling app installations */}
-        <Route
-          path={ROUTES.GITHUB.CALLBACK}
-          element={
-            <ProtectedRoute>
-              <GitHubCallback />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path={ROUTES.WORKSPACE.ROOT}
-          element={
-            <ProtectedRoute>
-              <WorkspacesPage />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path={ROUTES.WORKSPACE.CREATE_WORKSPACE}
-          element={
-            <ProtectedRoute>
-              <CreateWorkspacePage />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route path='/projects/:projectId/settings/secrets' element={<RequiredSecretsSetup />} />
-
-        <Route
-          path='/projects/:projectId/*'
-          element={
-            <ProtectedRoute>
-              <SidebarProvider>
-                <MainLayout />
-              </SidebarProvider>
-            </ProtectedRoute>
-          }
-        />
-
-        <Route path='*' element={<Navigate to={ROUTES.WORKSPACE.ROOT} />} />
-
-        <Route
-          path={ROUTES.ROOT}
-          element={
-            <ProtectedRoute>
-              <Navigate to={ROUTES.WORKSPACE.ROOT} replace />
-            </ProtectedRoute>
-          }
-        />
-      </Route>
-    )
-  );
-
 function App() {
   const { data: authConfig, isPending } = useAuthConfig();
 
@@ -320,9 +248,7 @@ function App() {
   return (
     <ErrorBoundary fallback={<div>Something went wrong. Please refresh.</div>} showDialog>
       <AuthProvider authConfig={authConfig}>
-        <RouterProvider
-          router={authConfig.cloud ? getRouter(authConfig) : getLocalRouter(authConfig)}
-        />
+        <RouterProvider router={getRouter(authConfig)} />
         <ShadcnToaster />
       </AuthProvider>
     </ErrorBoundary>
