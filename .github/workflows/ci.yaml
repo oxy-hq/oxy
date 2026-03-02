@@ -331,7 +331,7 @@ jobs:
       - uses: gacts/install-hurl@v1
 
       - name: Download oxy binary
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: oxy-binary-ci
           path: ./bin
@@ -459,7 +459,7 @@ jobs:
 
       # Download pre-built binary (shared artifact!)
       - name: Download oxy binary
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: oxy-binary-ci
           path: ./bin
