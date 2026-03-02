@@ -93,7 +93,7 @@ const FieldsSelectionPanel = () => {
   return (
     <div className='flex w-72 flex-col border-r bg-background'>
       <div className='customScrollbar flex-1 overflow-auto'>
-        <div className='py-2'>
+        <div className='pt-2 pb-20'>
           {/* View Header */}
           <div className='border-b px-3 py-2'>
             <div className='font-semibold text-sm'>{viewData.name}</div>

@@ -112,7 +112,7 @@ const FieldsSelectionPanel = ({
     <div className='flex w-72 flex-col border-r bg-background'>
       <div className='customScrollbar flex-1 overflow-auto'>
         {topicData && (
-          <div className='py-2'>
+          <div className='pt-2 pb-20'>
             {/* Topic Header */}
             <div className='border-b px-3 py-2'>
               <div className='font-semibold text-sm'>{topicData.name}</div>
