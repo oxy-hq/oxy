@@ -1,10 +1,9 @@
-import { Github, Key, Shield, Users, X } from "lucide-react";
+import { Github, Shield, Users, X } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import useSettingsPage from "@/stores/useSettingsPage";
 import { Button } from "../ui/shadcn/button";
 import { Dialog, DialogContent } from "../ui/shadcn/dialog";
-import ApiKeyManagement from "./api-keys";
 import GithubSettings from "./github";
 import SecretManagement from "./secrets";
 import UserManagement from "./users";
@@ -47,14 +46,6 @@ export function SettingsModal() {
       icon: <Users className='h-4 w-4' />,
       show: authConfig.cloud,
       page: <UserManagement />
-    },
-    {
-      id: "api-keys",
-      title: "API Keys",
-      description: "External access keys",
-      icon: <Key className='h-4 w-4' />,
-      show: authConfig.cloud,
-      page: <ApiKeyManagement />
     }
   ];
 

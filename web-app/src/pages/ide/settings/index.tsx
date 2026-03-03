@@ -1,4 +1,4 @@
-import { ChevronsRight, Database, FileText } from "lucide-react";
+import { ChevronsRight, Database, FileText, Key } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
@@ -53,6 +53,17 @@ const SettingsSidebar: React.FC<{
                 <Link to={ROUTES.PROJECT(projectId).IDE.SETTINGS.ACTIVITY_LOGS}>
                   <FileText className='h-4 w-4' />
                   <span>Activity Logs</span>
+                </Link>
+              </SidebarMenuSubButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuSubButton
+                asChild
+                isActive={location.pathname === ROUTES.PROJECT(projectId).IDE.SETTINGS.API_KEYS}
+              >
+                <Link to={ROUTES.PROJECT(projectId).IDE.SETTINGS.API_KEYS}>
+                  <Key className='h-4 w-4' />
+                  <span>API Keys</span>
                 </Link>
               </SidebarMenuSubButton>
             </SidebarMenuItem>

@@ -46,6 +46,7 @@ import ObservabilityLayout from "./pages/ide/observability";
 import ExecutionAnalytics from "./pages/ide/observability/execution-analytics";
 import SettingsLayout from "./pages/ide/settings";
 import ActivityLogsPage from "./pages/ide/settings/activity-logs";
+import ApiKeysPage from "./pages/ide/settings/api-keys";
 import DatabasesPage from "./pages/ide/settings/databases";
 import LoginPage from "./pages/login";
 import useCurrentProject from "./stores/useCurrentProject";
@@ -168,6 +169,7 @@ const MainLayout = React.memo(function MainLayout() {
           <Route path='settings' element={<SettingsLayout />}>
             <Route path='databases' element={<DatabasesPage />} />
             <Route path='activity-logs' element={<ActivityLogsPage />} />
+            <Route path='api-keys' element={<ApiKeysPage />} />
           </Route>
 
           {/* Observability routes (enterprise only) */}

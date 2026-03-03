@@ -56,7 +56,8 @@ const ROUTES = {
         SETTINGS: {
           ROOT: `${base}/ide/settings`,
           DATABASES: `${base}/ide/settings/databases`,
-          ACTIVITY_LOGS: `${base}/ide/settings/activity-logs`
+          ACTIVITY_LOGS: `${base}/ide/settings/activity-logs`,
+          API_KEYS: `${base}/ide/settings/api-keys`
         },
         OBSERVABILITY: {
           ROOT: `${base}/ide/observability`,
