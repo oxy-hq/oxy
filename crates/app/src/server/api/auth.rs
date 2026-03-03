@@ -1,6 +1,6 @@
 use axum::extract::State;
 use axum::{
-    extract,
+    Extension, extract,
     http::{HeaderMap, StatusCode},
     response::Json,
 };
@@ -48,6 +48,7 @@ use oxy::{
     config::constants::AUTHENTICATION_SECRET_KEY,
     database::{client::establish_connection, filters::UserQueryFilterExt},
 };
+use oxy_auth::types::AuthenticatedUser;
 use oxy_shared::errors::OxyError;
 
 #[derive(Deserialize)]
@@ -981,4 +982,258 @@ fn build_magic_link_email_html(magic_link_url: &str, to_email: &str) -> Result<S
     MAGIC_LINK_TEMPLATE
         .render("magic_link", &data)
         .map_err(|e| OxyError::RuntimeError(format!("Failed to render magic link template: {e}")))
+}
+
+// ─── Invite ────────────────────────────────────────────────────────────────
+
+static INVITE_RATE_LIMITER: Lazy<DefaultKeyedRateLimiter<String>> =
+    Lazy::new(|| RateLimiter::keyed(Quota::per_hour(NonZeroU32::new(5).expect("5 > 0"))));
+
+fn check_invite_rate_limit(email: &str) -> Option<u64> {
+    match INVITE_RATE_LIMITER.check_key(&email.to_lowercase()) {
+        Ok(()) => None,
+        Err(not_until) => {
+            let wait = not_until.wait_time_from(DefaultClock::default().now());
+            Some(wait.as_secs().max(1))
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct InviteRequest {
+    pub email: String,
+}
+
+pub async fn invite_user(
+    Extension(caller): Extension<AuthenticatedUser>,
+    headers: HeaderMap,
+    extract::Json(req): extract::Json<InviteRequest>,
+) -> axum::response::Response {
+    use axum::http::header::RETRY_AFTER;
+    use axum::response::IntoResponse;
+
+    let email = req.email.to_lowercase();
+
+    if !is_valid_email_format(&email) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(MessageResponse {
+                message: "Invalid email address.".to_string(),
+            }),
+        )
+            .into_response();
+    }
+
+    // Rate limit per target email address.
+    if let Some(retry_after_secs) = check_invite_rate_limit(&email) {
+        let mins = retry_after_secs.div_ceil(60);
+        tracing::warn!("Invite rate limit exceeded for: {}", email);
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            [(
+                RETRY_AFTER,
+                axum::http::HeaderValue::from_str(&retry_after_secs.to_string())
+                    .unwrap_or_else(|_| axum::http::HeaderValue::from_static("3600")),
+            )],
+            Json(MessageResponse {
+                message: format!(
+                    "Too many invitations to this address. Please try again in {mins} minute{}.",
+                    if mins == 1 { "" } else { "s" }
+                ),
+            }),
+        )
+            .into_response();
+    }
+
+    invite_user_inner(caller, headers, email)
+        .await
+        .into_response()
+}
+
+async fn invite_user_inner(
+    caller: AuthenticatedUser,
+    headers: HeaderMap,
+    email: String,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+
+    // Respect the magic-link allowlist: invited email must be eligible.
+    let magic_link_config = oxy::config::oxy::get_oxy_config()
+        .ok()
+        .and_then(|c| c.authentication)
+        .and_then(|a| a.magic_link);
+    if let Some(ref cfg) = magic_link_config {
+        if !is_email_allowed(&email, cfg) {
+            tracing::info!("Invite attempted for non-allowlisted email: {}", email);
+            return StatusCode::FORBIDDEN.into_response();
+        }
+    }
+
+    let connection = match establish_connection().await {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!("Failed to establish database connection: {}", e);
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    // Check the existing user record before doing anything else.
+    let existing = match Users::find().filter_by_email(&email).one(&connection).await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!("Failed to query user: {}", e);
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let user_for_update = match existing {
+        Some(u) if u.status == UserStatus::Deleted => {
+            tracing::warn!("Invite attempted for deleted user: {}", email);
+            return StatusCode::FORBIDDEN.into_response();
+        }
+        // Already signed in at least once — tell the caller clearly.
+        Some(u) if u.email_verified => {
+            return (
+                StatusCode::CONFLICT,
+                Json(MessageResponse {
+                    message: "This email address already has an active account.".to_string(),
+                }),
+            )
+                .into_response();
+        }
+        // Invited before but hasn't accepted yet — resend.
+        Some(u) => u,
+        // New user — create the record now.
+        None => {
+            let name = email.split('@').next().unwrap_or("User").to_string();
+            let new_user = users::ActiveModel {
+                id: Set(Uuid::new_v4()),
+                email: Set(email.clone()),
+                name: Set(name),
+                picture: Set(None),
+                email_verified: Set(false),
+                magic_link_token: Set(None),
+                magic_link_token_expires_at: Set(None),
+                role: Set(users::UserRole::Member),
+                status: Set(UserStatus::Active),
+                created_at: sea_orm::ActiveValue::NotSet,
+                last_login_at: sea_orm::ActiveValue::NotSet,
+            };
+            match new_user.insert(&connection).await {
+                Ok(inserted) => inserted,
+                Err(e) if is_unique_violation(&e) => {
+                    match Users::find().filter_by_email(&email).one(&connection).await {
+                        Ok(Some(u)) => u,
+                        Ok(None) => {
+                            tracing::error!("User not found after unique violation: {}", email);
+                            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to query user after race condition: {}", e);
+                            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to create invited user: {}", e);
+                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                }
+            }
+        }
+    };
+
+    // Generate token and store it
+    let token_bytes: [u8; 32] = rand::random();
+    let token = hex::encode(token_bytes);
+    let expires_at = Utc::now() + Duration::minutes(15);
+
+    let mut active: users::ActiveModel = user_for_update.into();
+    active.magic_link_token = Set(Some(token.clone()));
+    active.magic_link_token_expires_at = Set(Some(expires_at.into()));
+    if let Err(e) = active.update(&connection).await {
+        tracing::error!("Failed to save invitation token: {}", e);
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+
+    let base_url = extract_base_url_from_headers(&headers);
+    let invited_by = if caller.name.is_empty() {
+        caller.email.clone()
+    } else {
+        caller.name.clone()
+    };
+
+    tokio::spawn(async move {
+        if let Err(e) = send_invitation_email(&email, &token, &base_url, &invited_by).await {
+            tracing::error!("Failed to send invitation email: {}", e);
+        }
+    });
+
+    Json(MessageResponse {
+        message: "Invitation sent.".to_string(),
+    })
+    .into_response()
+}
+
+async fn send_invitation_email(
+    to_email: &str,
+    token: &str,
+    base_url: &str,
+    invited_by: &str,
+) -> Result<(), OxyError> {
+    use crate::emails::{
+        EmailMessage, EmailProvider, local_test::LocalTestEmailProvider, ses::SesEmailProvider,
+    };
+
+    let auth_config = oxy::config::oxy::get_oxy_config()
+        .ok()
+        .and_then(|c| c.authentication)
+        .and_then(|a| a.magic_link);
+
+    let magic_link_config = auth_config.ok_or_else(|| {
+        OxyError::ConfigurationError("Magic link auth not configured".to_string())
+    })?;
+
+    let magic_link_url = format!("{base_url}/auth/magic-link/callback?token={token}");
+    let message = EmailMessage {
+        subject: format!("{invited_by} invited you to Oxy"),
+        html_body: build_invitation_email_html(&magic_link_url, to_email, invited_by)?,
+        text_body: format!(
+            "You've been invited to Oxy\n\n{invited_by} has invited you to join Oxy. Click the link below to accept. For security, this link expires in 15 minutes.\n\n{magic_link_url}\n\nThis invitation was sent to {to_email}. If you weren't expecting this, you can safely ignore this email."
+        ),
+    };
+
+    if std::env::var("MAGIC_LINK_LOCAL_TEST").is_ok() {
+        LocalTestEmailProvider
+            .send(&magic_link_config.from_email, to_email, message)
+            .await
+    } else {
+        SesEmailProvider::new(magic_link_config.aws_region.as_deref())
+            .await
+            .send(&magic_link_config.from_email, to_email, message)
+            .await
+    }
+}
+
+static INVITATION_TEMPLATE: Lazy<Handlebars<'static>> = Lazy::new(|| {
+    let mut hbs = Handlebars::new();
+    hbs.register_template_string("invitation", include_str!("../../emails/invitation.hbs"))
+        .expect("invitation.hbs is valid");
+    hbs
+});
+
+fn build_invitation_email_html(
+    magic_link_url: &str,
+    to_email: &str,
+    invited_by: &str,
+) -> Result<String, OxyError> {
+    let data = serde_json::json!({
+        "magic_link_url": magic_link_url,
+        "to_email": to_email,
+        "invited_by": invited_by,
+        "year": Utc::now().format("%Y").to_string(),
+    });
+
+    INVITATION_TEMPLATE
+        .render("invitation", &data)
+        .map_err(|e| OxyError::RuntimeError(format!("Failed to render invitation template: {e}")))
 }

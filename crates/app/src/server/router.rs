@@ -95,6 +95,7 @@ fn build_slack_routes() -> Router<AppState> {
 fn build_global_routes() -> Router<AppState> {
     Router::new()
         .route("/logout", get(user::logout))
+        .route("/auth/invite", post(auth::invite_user))
         .route("/users/batch", post(user::batch_get_users))
         .route("/github/repositories", get(github::list_repositories))
         .route("/github/branches", get(github::list_branches))

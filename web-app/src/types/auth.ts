@@ -60,3 +60,7 @@ export interface CreateUserRequest {
 export interface UpdateUserRoleRequest {
   role: string;
 }
+
+export interface InviteRequest {
+  email: string;
+}
