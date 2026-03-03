@@ -450,7 +450,7 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
 
       - name: Download release assets from artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
@@ -583,7 +583,7 @@ jobs:
 
       - name: Download pre-built binary
         if: steps.should_build.outputs.should_build == 'true'
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: cli-${{ matrix.rust_target }}
           path: artifacts
