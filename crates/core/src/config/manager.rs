@@ -119,6 +119,14 @@ impl ConfigManager {
         self.config.databases.as_slice()
     }
 
+    pub fn list_looker_integrations(&self) -> Vec<&super::model::Integration> {
+        self.config
+            .integrations
+            .iter()
+            .filter(|i| matches!(i.integration_type, super::model::IntegrationType::Looker(_)))
+            .collect()
+    }
+
     pub async fn list_agents(&self) -> Result<Vec<PathBuf>, OxyError> {
         let agents = self.storage.list_agents().await?;
         tracing::info!("Agents: {:?}", agents);

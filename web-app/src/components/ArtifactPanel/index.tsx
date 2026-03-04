@@ -7,6 +7,7 @@ import type { Artifact } from "@/types/artifact";
 import { Alert, AlertDescription, AlertTitle } from "../ui/shadcn/alert";
 import { Button } from "../ui/shadcn/button";
 import AgentArtifactPanel from "./ArtifactsContent/agent";
+import LookerQueryArtifactPanel from "./ArtifactsContent/looker-query";
 import OmniQueryArtifactPanel from "./ArtifactsContent/omni-query";
 import SandboxArtifactPanel from "./ArtifactsContent/sandbox-app";
 import SemanticQueryArtifactPanel from "./ArtifactsContent/semantic-query";
@@ -121,6 +122,10 @@ const ArtifactPanel = ({
 
     if (currentArtifact.kind === "omni_query") {
       return <OmniQueryArtifactPanel artifact={currentArtifact} />;
+    }
+
+    if (currentArtifact.kind === "looker_query") {
+      return <LookerQueryArtifactPanel artifact={currentArtifact} />;
     }
 
     if (currentArtifact.kind === "agent") {

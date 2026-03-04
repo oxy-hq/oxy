@@ -1221,11 +1221,45 @@
         {
           "type": "object",
           "required": [
+            "explore",
+            "integration",
+            "model",
             "type"
           ],
           "properties": {
             "description": {
-              "default": "Save the current analysis steps as a reusable automation.",
+              "default": "Query data through Looker by selecting fields, filters, sorts, and limit.",
+              "type": "string"
+            },
+            "explore": {
+              "type": "string"
+            },
+            "integration": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "name": {
+              "default": "looker_query",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "looker_query"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "description": {
+              "default": "Save the current analysis steps as a reusable procedure.",
               "type": "string"
             },
             "name": {

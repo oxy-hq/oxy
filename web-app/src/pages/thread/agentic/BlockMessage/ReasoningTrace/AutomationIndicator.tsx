@@ -19,9 +19,12 @@ const AutomationIndicator = ({
   isLoading = false
 }: AutomationIndicatorProps) => {
   const querySteps = steps.filter(
-    (s) => s.step_type === "semantic_query" || s.step_type === "query"
+    (s) =>
+      s.step_type === "semantic_query" || s.step_type === "looker_query" || s.step_type === "query"
   );
-  const hasSemanticQuery = steps.some((s) => s.step_type === "semantic_query");
+  const hasSemanticQuery = steps.some(
+    (s) => s.step_type === "semantic_query" || s.step_type === "looker_query"
+  );
   const hasMultipleQueries = querySteps.length >= 2;
   const isGoodCandidate = hasSemanticQuery || hasMultipleQueries;
   const total = steps.length;

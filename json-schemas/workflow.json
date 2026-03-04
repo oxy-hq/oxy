@@ -198,6 +198,22 @@
         "integer"
       ]
     },
+    "LookerSortField": {
+      "description": "A sort field for a Looker query with explicit field name and direction.",
+      "type": "object",
+      "required": [
+        "field"
+      ],
+      "properties": {
+        "direction": {
+          "default": "asc",
+          "type": "string"
+        },
+        "field": {
+          "type": "string"
+        }
+      }
+    },
     "LoopValues": {
       "anyOf": [
         {
@@ -1591,6 +1607,90 @@
               "type": "string",
               "enum": [
                 "omni_query"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Task configuration for executing a Looker query within a workflow.",
+          "type": "object",
+          "required": [
+            "explore",
+            "fields",
+            "integration",
+            "model",
+            "type"
+          ],
+          "properties": {
+            "explore": {
+              "description": "The explore name within the model",
+              "type": "string"
+            },
+            "export": {
+              "description": "Optional export configuration for query results",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/TaskExport"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "fields": {
+              "description": "Fields to select. Field name must be full name format {view}.{field_name}.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "filter_expression": {
+              "description": "Looker filter expression for complex conditions.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "filters": {
+              "description": "Filter conditions as field name to Looker filter expression mappings.",
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "integration": {
+              "description": "Name of the Looker integration to use",
+              "type": "string"
+            },
+            "limit": {
+              "description": "Maximum number of rows to return.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            },
+            "model": {
+              "description": "The LookML model name",
+              "type": "string"
+            },
+            "sorts": {
+              "description": "Fields to sort by. Prefix with '-' for descending order.",
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "$ref": "#/definitions/LookerSortField"
+              }
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "looker_query"
               ]
             }
           }

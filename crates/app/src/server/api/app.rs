@@ -44,17 +44,6 @@ pub struct GetDisplaysResponse {
     pub displays: Vec<DisplayWithError>,
 }
 
-type ApiError = (StatusCode, extract::Json<ApiErrorResponse>);
-
-fn api_error(status: StatusCode, msg: impl ToString) -> ApiError {
-    (
-        status,
-        extract::Json(ApiErrorResponse {
-            error: msg.to_string(),
-        }),
-    )
-}
-
 fn decode_path(pathb64: &str) -> Result<PathBuf, StatusCode> {
     let decoded_bytes = BASE64_STANDARD.decode(pathb64).map_err(|e| {
         tracing::info!("Base64 decode error: {:?}", e);

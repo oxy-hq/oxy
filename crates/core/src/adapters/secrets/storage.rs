@@ -4,6 +4,7 @@ use crate::adapters::secrets::{SecretsDatabaseStorage, environment::SecretsEnvir
 use oxy_shared::errors::OxyError;
 
 #[enum_dispatch::enum_dispatch]
+#[allow(async_fn_in_trait)]
 pub trait SecretsStorage {
     async fn resolve_secret(&self, secret_name: &str) -> Result<Option<String>, OxyError>;
     async fn create_secret(

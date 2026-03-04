@@ -8,8 +8,8 @@ use crate::{
     config::constants::MARKDOWN_MAX_FENCES,
     execute::types::event::{ArtifactKind, SandboxAppKind, SandboxInfo},
     service::types::{
-        ArtifactContent, Block, BlockValue, ContainerKind, Content, OmniArtifactContent,
-        SemanticQuery,
+        ArtifactContent, Block, BlockValue, ContainerKind, Content, LookerArtifactContent,
+        OmniArtifactContent, SemanticQuery,
     },
 };
 use oxy_shared::errors::OxyError;
@@ -87,6 +87,9 @@ impl ArtifactTracker {
                 }
                 ArtifactKind::OmniQuery { topic, .. } => {
                     Self::create_omni_query_artifact(children, topic.clone())?
+                }
+                ArtifactKind::LookerQuery { model, explore, .. } => {
+                    Self::create_looker_query_artifact(children, model.clone(), explore.clone())?
                 }
                 ArtifactKind::SandboxApp { .. } => Self::create_sandbox_app_artifact(children)?,
             };
@@ -274,6 +277,66 @@ impl ArtifactTracker {
                 _ => Ok(None),
             };
         }
+        Ok(None)
+    }
+
+    fn create_looker_query_artifact(
+        children: &[Block],
+        model: String,
+        explore: String,
+    ) -> Result<Option<ArtifactContent>, OxyError> {
+        let mut artifact_content = LookerArtifactContent {
+            result: vec![],
+            is_result_truncated: false,
+            model: model.clone(),
+            explore: explore.clone(),
+            sql: "".to_string(),
+            fields: vec![],
+            filters: None,
+            sorts: None,
+            limit: None,
+        };
+
+        fn find_content<F>(blocks: &[Block], predicate: F) -> Option<&Block>
+        where
+            F: Fn(&Block) -> bool + Copy,
+        {
+            for block in blocks.iter() {
+                if predicate(block) {
+                    return Some(block);
+                }
+                if let BlockValue::Children { children, .. } = &*block.value
+                    && let Some(found) = find_content(children, predicate)
+                {
+                    return Some(found);
+                }
+            }
+            None
+        }
+
+        if let Some(params_block) = find_content(children, |b| {
+            matches!(
+                &*b.value,
+                BlockValue::Content {
+                    content: Content::LookerQuery(_)
+                }
+            )
+        }) && let BlockValue::Content {
+            content: Content::LookerQuery(params),
+        } = &*params_block.value
+        {
+            artifact_content.result = params.result.clone();
+            artifact_content.is_result_truncated = params.is_result_truncated;
+            artifact_content.model = params.model.clone();
+            artifact_content.explore = params.explore.clone();
+            artifact_content.sql = params.sql.clone();
+            artifact_content.fields = params.fields.clone();
+            artifact_content.filters = params.filters.clone();
+            artifact_content.sorts = params.sorts.clone();
+            artifact_content.limit = params.limit;
+            return Ok(Some(ArtifactContent::LookerQuery(artifact_content)));
+        }
+
         Ok(None)
     }
 

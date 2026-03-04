@@ -264,6 +264,7 @@ impl AgentCardService {
                     ToolType::SemanticQuery(t) => {
                         (t.name.clone(), t.description.clone(), "semantic")
                     }
+                    ToolType::LookerQuery(t) => (t.name.clone(), t.description.clone(), "looker"),
                     ToolType::SaveAutomation(t) => {
                         (t.name.clone(), t.description.clone(), "save-automation")
                     }

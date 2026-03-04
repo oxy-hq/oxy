@@ -261,6 +261,7 @@ async fn handle_omni_sync(project: &ProjectManager) -> Result<(), OxyError> {
             oxy::config::model::IntegrationType::Omni(omni_integration) => {
                 Some((integration.name.clone(), omni_integration.clone()))
             }
+            _ => None,
         })
         .collect();
 

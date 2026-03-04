@@ -103,6 +103,7 @@ pub struct ExtractedMetric {
 
 impl ExtractedMetric {
     /// Convert source string to ContextType
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn context_type(&self) -> ContextType {
         match self.source.to_lowercase().as_str() {
             "question" => ContextType::Question,

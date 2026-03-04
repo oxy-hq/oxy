@@ -162,14 +162,6 @@ impl ServerMetrics {
         }
     }
 
-    fn increment_requests(&self) {
-        self.requests_total.fetch_add(1, Ordering::Relaxed);
-    }
-
-    fn increment_failures(&self) {
-        self.requests_failed.fetch_add(1, Ordering::Relaxed);
-    }
-
     fn get_requests_total(&self) -> u64 {
         self.requests_total.load(Ordering::Relaxed)
     }

@@ -1,6 +1,7 @@
 use crate::fsm::{
     control::config::{End, EndMode, OutputArtifact, Start, StartMode},
     data_app::config::Insight,
+    looker_query::config::LookerQuery,
     query::config::Query,
     save_automation::config::SaveAutomation,
     semantic_query::config::SemanticQuery,
@@ -139,6 +140,7 @@ impl TemplateRegister for TriggerType {
             TriggerType::Start(s) => s.register_template(renderer),
             TriggerType::End(e) => e.register_template(renderer),
             TriggerType::Query(q) => q.register_template(renderer),
+            TriggerType::LookerQuery(lq) => lq.register_template(renderer),
             TriggerType::SemanticQuery(sq) => sq.register_template(renderer),
             TriggerType::Visualize(v) => v.register_template(renderer),
             TriggerType::Insight(i) => i.register_template(renderer),
@@ -159,6 +161,16 @@ impl TemplateRegister for Query {
 }
 
 impl TemplateRegister for SemanticQuery {
+    fn register_template(
+        &self,
+        renderer: &oxy::execute::renderer::Renderer,
+    ) -> Result<(), OxyError> {
+        renderer.register_template(&self.instruction)?;
+        Ok(())
+    }
+}
+
+impl TemplateRegister for LookerQuery {
     fn register_template(
         &self,
         renderer: &oxy::execute::renderer::Renderer,
@@ -359,6 +371,8 @@ pub enum TriggerType {
     Start(Start),
     End(End),
     Query(Query),
+    #[serde(alias = "looker-query")]
+    LookerQuery(LookerQuery),
     SemanticQuery(SemanticQuery),
     Visualize(Visualize),
     Insight(Insight),
@@ -380,6 +394,7 @@ impl TriggerType {
             TriggerType::Start(s) => &s.name,
             TriggerType::End(e) => &e.name,
             TriggerType::Query(q) => &q.name,
+            TriggerType::LookerQuery(lq) => &lq.name,
             TriggerType::SemanticQuery(sq) => &sq.name,
             TriggerType::Visualize(v) => &v.name,
             TriggerType::Insight(i) => &i.name,
@@ -399,6 +414,7 @@ impl TriggerType {
                 _ => StepKind::End,
             },
             TriggerType::Query(_) => StepKind::Query,
+            TriggerType::LookerQuery(_) => StepKind::LookerQuery,
             TriggerType::SemanticQuery(_) => StepKind::SemanticQuery,
             TriggerType::Visualize(_) => StepKind::Visualize,
             TriggerType::Insight(_) => StepKind::Insight,
@@ -412,6 +428,7 @@ impl TriggerType {
             TriggerType::Start(s) => &s.description,
             TriggerType::End(e) => &e.description,
             TriggerType::Query(q) => &q.description,
+            TriggerType::LookerQuery(lq) => &lq.description,
             TriggerType::SemanticQuery(sq) => &sq.description,
             TriggerType::Visualize(v) => &v.description,
             TriggerType::Insight(i) => &i.description,

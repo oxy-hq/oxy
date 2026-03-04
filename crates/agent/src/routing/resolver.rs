@@ -5,8 +5,8 @@ use oxy_semantic::Topic;
 use oxy::{
     adapters::vector_store::parse_sql_source_type,
     config::model::{
-        AgentTool, EmbeddingConfig, ExecuteSQLTool, IntegrationType, OmniQueryTool,
-        SemanticQueryTool, ToolType, VectorDBConfig, WorkflowTool,
+        AgentTool, EmbeddingConfig, ExecuteSQLTool, IntegrationType, LookerQueryTool,
+        OmniQueryTool, SemanticQueryTool, ToolType, VectorDBConfig, WorkflowTool,
     },
     execute::{Executable, ExecutionContext, types::Document},
     tools::{RetrievalExecutable, types::RetrievalInput},
@@ -24,6 +24,25 @@ impl RouteResolver {
             Err(OxyError::AgentError(
                 "Invalid omni route format".to_string(),
             ))
+        }
+    }
+
+    fn parse_looker_route(route: &str) -> Result<(String, String, String), OxyError> {
+        let mut parts = route.split("::");
+        match (parts.next(), parts.next(), parts.next(), parts.next()) {
+            (Some(integration_name), Some(model), Some(explore), None)
+                if !integration_name.is_empty() && !model.is_empty() && !explore.is_empty() =>
+            {
+                Ok((
+                    integration_name.to_string(),
+                    model.to_string(),
+                    explore.to_string(),
+                ))
+            }
+            _ => Err(OxyError::AgentError(
+                "Invalid looker route format. Expected '<integration>::<model>::<explore>'"
+                    .to_string(),
+            )),
         }
     }
 
@@ -81,6 +100,43 @@ impl RouteResolver {
                     description: tool_description,
                     topic,
                     integration: integration_name,
+                }))
+            }
+            IntegrationType::Looker(looker_integration) => {
+                let (integration_name, model, explore) = Self::parse_looker_route(file_ref)?;
+                let configured_explore = looker_integration
+                    .explores
+                    .iter()
+                    .find(|configured| configured.model == model && configured.name == explore)
+                    .ok_or_else(|| {
+                        OxyError::AgentError(format!(
+                            "Looker explore '{}.{}' not found in integration '{}'",
+                            model, explore, integration_name
+                        ))
+                    })?;
+
+                let fallback_description =
+                    configured_explore.description.clone().unwrap_or_else(|| {
+                        format!(
+                            "Query {}.{} explore from {} integration",
+                            model, explore, integration_name
+                        )
+                    });
+
+                let tool_description =
+                    Self::resolve_description(description, &fallback_description);
+
+                Ok(ToolType::LookerQuery(LookerQueryTool {
+                    name: format!(
+                        "{}_query_{}_{}",
+                        integration_name.to_lowercase(),
+                        model.to_lowercase(),
+                        explore.to_lowercase()
+                    ),
+                    description: tool_description,
+                    integration: integration_name,
+                    model,
+                    explore,
                 }))
             }
         }

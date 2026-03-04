@@ -173,6 +173,8 @@ pub struct Transition {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TriggerType {
     Query(serde_json::Value),
+    #[serde(alias = "looker-query")]
+    LookerQuery(serde_json::Value),
     SemanticQuery(serde_json::Value),
     Visualize(serde_json::Value),
     Insight(serde_json::Value),

@@ -3,6 +3,7 @@ pub mod clean;
 pub mod export_chart;
 mod init;
 mod intent;
+mod looker;
 mod make;
 mod mcp;
 mod migrate;
@@ -290,7 +291,7 @@ enum SubCommand {
     ///
     /// Process your project files and create searchable embeddings for
     /// enhanced semantic search and retrieval functionality. Also synchronizes
-    /// configured integrations like Omni semantic layer metadata.
+    /// configured integrations like Omni and Looker metadata.
     Build(BuildArgs),
     /// Perform semantic vector search across your project
     ///
@@ -381,6 +382,11 @@ enum SubCommand {
     /// Launch an A2A server that exposes configured Oxy agents for
     /// external agent communication using JSON-RPC or HTTP+JSON protocols.
     A2a(A2aArgs),
+    /// Manage Looker integration metadata
+    ///
+    /// Synchronize, list, and test Looker integrations configured in your project.
+    /// Use subcommands to sync metadata, list explores, or test connections.
+    Looker(looker::LookerArgs),
     /// Intent classification and clustering
     ///
     /// Discover and classify user intents from agent questions using
@@ -871,6 +877,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             SubCommand::SemanticEngine(_) => "semantic-engine",
             SubCommand::PrepareSemanticEngine(_) => "prepare-semantic-engine",
             SubCommand::A2a(_) => "a2a",
+            SubCommand::Looker(_) => "looker",
             SubCommand::Intent(_) => "intent",
             SubCommand::ExportChart(_) => "export-chart",
         };
@@ -964,6 +971,9 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
 
             // Synchronize Omni integration if configured
             handle_omni_sync().await?;
+
+            // Synchronize Looker metadata if configured
+            handle_looker_auto_sync().await?;
 
             // Setup
             let project_path = resolve_local_project_path()?.to_string_lossy().to_string();
@@ -1350,6 +1360,9 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             handle_prepare_semantic_engine_command(prepare_args).await?;
         }
 
+        Some(SubCommand::Looker(looker_args)) => {
+            looker::handle_looker_command(looker_args).await?;
+        }
         Some(SubCommand::Intent(intent_args)) => {
             intent::handle_intent_command(intent_args).await?;
         }
@@ -1391,6 +1404,7 @@ async fn handle_omni_sync() -> Result<(), OxyError> {
             ::oxy::config::model::IntegrationType::Omni(omni_integration) => {
                 Some((integration.name.clone(), omni_integration.clone()))
             }
+            _ => None,
         })
         .collect();
 
@@ -1511,6 +1525,41 @@ async fn handle_omni_sync() -> Result<(), OxyError> {
     }
 
     Ok(())
+}
+
+async fn handle_looker_auto_sync() -> Result<(), OxyError> {
+    let project_path = resolve_local_project_path()?;
+
+    let project = ProjectBuilder::new(Uuid::nil())
+        .with_project_path(&project_path)
+        .await?
+        .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
+        .build()
+        .await
+        .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create project: {e}")))?;
+
+    let looker_integrations: Vec<_> = project
+        .config_manager
+        .get_config()
+        .integrations
+        .iter()
+        .filter_map(|integration| match &integration.integration_type {
+            ::oxy::config::model::IntegrationType::Looker(_) => Some(integration.name.clone()),
+            _ => None,
+        })
+        .collect();
+
+    if looker_integrations.is_empty() {
+        return Ok(());
+    }
+
+    looker::handle_looker_sync(looker::LookerSyncArgs {
+        integration: None,
+        model: None,
+        explore: None,
+        force: false,
+    })
+    .await
 }
 
 async fn handle_agent_file(file_path: &PathBuf, question: Option<String>) -> Result<(), OxyError> {

@@ -198,6 +198,7 @@ pub(super) fn build_workflow_executable()
         .executable(build_task_executable())
 }
 
+#[allow(dead_code)]
 pub(super) fn build_tasks_executable() -> impl Executable<Vec<Task>, Response = OutputContainer> {
     ExecutableBuilder::new()
         .map(TasksMapper)
@@ -208,6 +209,7 @@ pub(super) fn build_tasks_executable() -> impl Executable<Vec<Task>, Response = 
 }
 
 #[derive(Clone)]
+#[allow(dead_code)]
 pub(super) struct TasksMapper;
 
 #[async_trait::async_trait]

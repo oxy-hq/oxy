@@ -712,41 +712,7 @@ fn levenshtein_distance(s1: &str, s2: &str) -> usize {
 mod tests {
     use super::*;
     use oxy::config::model::SemanticQueryTask;
-    use oxy::types::{SemanticQueryParams, TimeDimension};
-    use oxy_semantic::Topic;
-
-    fn create_test_topic(name: &str, base_view: Option<String>) -> Topic {
-        Topic {
-            name: name.to_string(),
-            description: "Test topic".to_string(),
-            views: vec!["orders".to_string(), "customers".to_string()],
-            base_view,
-            retrieval: None,
-            default_filters: None,
-        }
-    }
-
-    fn create_test_task(
-        topic: &str,
-        dimensions: Vec<&str>,
-        measures: Vec<&str>,
-    ) -> SemanticQueryTask {
-        SemanticQueryTask {
-            query: SemanticQueryParams {
-                topic: Some(topic.to_string()),
-                dimensions: dimensions.iter().map(|d| d.to_string()).collect(),
-                measures: measures.iter().map(|m| m.to_string()).collect(),
-                filters: vec![],
-                orders: vec![],
-                limit: None,
-                offset: None,
-                variables: None,
-                time_dimensions: vec![],
-            },
-            export: None,
-            variables: None,
-        }
-    }
+    use oxy::types::{SemanticQueryParams, TimeDimension, TimeGranularity};
 
     #[test]
     fn test_extract_view_from_field() {

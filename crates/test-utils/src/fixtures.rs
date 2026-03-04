@@ -70,7 +70,9 @@ impl TestFixture {
     /// Keeps the temporary directory (prevents cleanup on drop).
     /// Useful for debugging failed tests.
     pub fn persist(self) -> PathBuf {
-        self.temp_dir.into_path()
+        let path = self.temp_dir.path().to_path_buf();
+        std::mem::forget(self.temp_dir);
+        path
     }
 }
 

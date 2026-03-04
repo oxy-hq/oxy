@@ -39,6 +39,10 @@ export const extractUpdatedValue = (
       updatedValue = artifact_value.value.value;
       break;
     }
+    case "looker_query": {
+      updatedValue = artifact_value.value.value;
+      break;
+    }
     case "sandbox_info": {
       updatedValue = artifact_value.value.value;
       break;

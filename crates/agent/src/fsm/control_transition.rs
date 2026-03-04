@@ -38,6 +38,7 @@ pub fn ensure_ends_with_user_message(
 use crate::fsm::{
     config::{AgenticConfig, Transition},
     data_app::config::Insight,
+    looker_query::config::LookerQuery,
     query::config::Query,
     state::MachineContext,
     viz::config::Visualize,
@@ -94,6 +95,21 @@ pub trait TriggerBuilder {
     {
         Err(OxyError::RuntimeError(format!(
             "SemanticQuery trigger is not implemented for {self:?}"
+        )))
+    }
+
+    async fn build_looker_query_trigger(
+        &self,
+        _execution_context: &ExecutionContext,
+        _agentic_config: &AgenticConfig,
+        _looker_query_config: &LookerQuery,
+        _objective: String,
+    ) -> Result<Box<dyn Trigger<State = Self>>, OxyError>
+    where
+        Self: std::fmt::Debug,
+    {
+        Err(OxyError::RuntimeError(format!(
+            "LookerQuery trigger is not implemented for {self:?}"
         )))
     }
 

@@ -85,6 +85,45 @@ impl BlockHandler {
                     sql_query.clone_from(update_sql_query);
                     results.clone_from(update_results);
                 } else if let (
+                    BlockKind::LookerQuery {
+                        integration,
+                        model,
+                        explore,
+                        sql_query,
+                        fields,
+                        filters,
+                        sorts,
+                        limit,
+                        result,
+                        is_result_truncated,
+                        ..
+                    },
+                    BlockKind::LookerQuery {
+                        integration: update_integration,
+                        model: update_model,
+                        explore: update_explore,
+                        sql_query: update_sql_query,
+                        fields: update_fields,
+                        filters: update_filters,
+                        sorts: update_sorts,
+                        limit: update_limit,
+                        result: update_result,
+                        is_result_truncated: update_is_result_truncated,
+                        ..
+                    },
+                ) = (&mut block.block_kind, &block_kind)
+                {
+                    integration.clone_from(update_integration);
+                    model.clone_from(update_model);
+                    explore.clone_from(update_explore);
+                    sql_query.clone_from(update_sql_query);
+                    fields.clone_from(update_fields);
+                    filters.clone_from(update_filters);
+                    sorts.clone_from(update_sorts);
+                    *limit = *update_limit;
+                    result.clone_from(update_result);
+                    *is_result_truncated = *update_is_result_truncated;
+                } else if let (
                     BlockKind::Text { content },
                     BlockKind::Text {
                         content: update_content,
@@ -218,6 +257,29 @@ impl Handler for BlockHandler {
                             sql_query,
                             results,
                         },
+                        ContentType::LookerQuery {
+                            integration,
+                            model,
+                            explore,
+                            sql_query,
+                            fields,
+                            filters,
+                            sorts,
+                            limit,
+                            result,
+                            is_result_truncated,
+                        } => BlockKind::LookerQuery {
+                            integration,
+                            model,
+                            explore,
+                            sql_query,
+                            fields,
+                            filters,
+                            sorts,
+                            limit,
+                            result,
+                            is_result_truncated,
+                        },
                     },
                 );
             }
@@ -250,6 +312,29 @@ impl Handler for BlockHandler {
                             semantic_query,
                             sql_query,
                             results,
+                        },
+                        ContentType::LookerQuery {
+                            integration,
+                            model,
+                            explore,
+                            sql_query,
+                            fields,
+                            filters,
+                            sorts,
+                            limit,
+                            result,
+                            is_result_truncated,
+                        } => BlockKind::LookerQuery {
+                            integration,
+                            model,
+                            explore,
+                            sql_query,
+                            fields,
+                            filters,
+                            sorts,
+                            limit,
+                            result,
+                            is_result_truncated,
                         },
                     },
                 );

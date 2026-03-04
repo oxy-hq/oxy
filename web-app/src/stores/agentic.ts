@@ -473,6 +473,8 @@ function inferStepType(children: string[], blocks: Record<string, Block>): StepT
     switch (child.type) {
       case "semantic_query":
         return "semantic_query";
+      case "looker_query":
+        return "looker_query";
       case "sql":
         return "query";
       case "viz":
@@ -491,11 +493,11 @@ function inferStepType(children: string[], blocks: Record<string, Block>): StepT
 }
 
 const isArtifactBlock = (block: Block) => {
-  return ["data_app", "sql", "viz"].includes(block.type);
+  return ["data_app", "sql", "semantic_query", "looker_query", "viz"].includes(block.type);
 };
 
 const isRenderableBlock = (block: Block) => {
-  return isArtifactBlock(block) || block.type === "text" || block.type === "semantic_query";
+  return isArtifactBlock(block) || block.type === "text";
 };
 
 const getGroupId = (runInfo?: RunInfo) => {

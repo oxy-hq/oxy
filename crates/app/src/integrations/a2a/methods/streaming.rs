@@ -598,23 +598,6 @@ impl EventHandler for A2aSseEventHandler {
                     let mut state = self.state.lock().await;
                     state.artifacts.push(artifact.clone());
                 }
-
-                let event_data = TaskArtifactUpdateEvent {
-                    task_id: self.task_id.clone(),
-                    context_id: self.context_id.clone(),
-                    kind: ArtifactUpdateKind::ArtifactUpdate,
-                    artifact,
-                    append: Some(false),
-                    last_chunk: None,
-                    metadata: self.metadata.clone(),
-                };
-
-                if let Err(e) = self.tx.send(a2a::streaming::SseEvent::with_type(
-                    SseEventType::ArtifactUpdate,
-                    serde_json::to_string(&event_data).unwrap_or_default(),
-                )) {
-                    tracing::warn!("Failed to send omni query SSE event: {}", e);
-                }
             }
             _ => {}
         }

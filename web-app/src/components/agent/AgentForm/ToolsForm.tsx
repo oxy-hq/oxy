@@ -24,6 +24,7 @@ import {
   AgentToolForm,
   CreateDataAppToolForm,
   ExecuteSqlToolForm,
+  LookerQueryToolForm,
   OmniQueryToolForm,
   RetrievalToolForm,
   SaveAutomationToolForm,
@@ -43,6 +44,7 @@ const TOOL_TYPES = [
   { value: "create_data_app", label: "Create Data App" },
   { value: "omni_query", label: "Omni Query" },
   { value: "semantic_query", label: "Semantic Query" },
+  { value: "looker_query", label: "Looker Query" },
   { value: "save_automation", label: "Save Procedure" }
 ];
 
@@ -76,6 +78,8 @@ const ToolItemForm: React.FC<ToolItemFormProps> = ({ index, onRemove }) => {
         return <AgentToolForm index={index} />;
       case "omni_query":
         return <OmniQueryToolForm index={index} />;
+      case "looker_query":
+        return <LookerQueryToolForm index={index} />;
       case "semantic_query":
         return <SemanticQueryToolForm index={index} />;
       case "retrieval":

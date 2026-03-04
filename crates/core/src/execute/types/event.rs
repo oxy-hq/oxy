@@ -55,6 +55,12 @@ pub enum ArtifactKind {
     SemanticQuery {},
     #[serde(rename = "omni_query")]
     OmniQuery { topic: String, integration: String },
+    #[serde(rename = "looker_query")]
+    LookerQuery {
+        model: String,
+        explore: String,
+        integration: String,
+    },
     #[serde(rename = "sandbox_app")]
     SandboxApp {
         #[serde(flatten)]
@@ -79,6 +85,9 @@ impl std::fmt::Display for ArtifactKind {
             ArtifactKind::OmniQuery { .. } => {
                 write!(f, "omni_query")
             }
+            ArtifactKind::LookerQuery { .. } => {
+                write!(f, "looker_query")
+            }
             ArtifactKind::SandboxApp { .. } => {
                 write!(f, "sandbox_app")
             }
@@ -93,6 +102,7 @@ pub enum StepKind {
     Plan,
     Route,
     Query,
+    LookerQuery,
     Visualize,
     Insight,
     SemanticQuery,
@@ -110,6 +120,7 @@ impl std::fmt::Display for StepKind {
             StepKind::Plan => write!(f, "plan"),
             StepKind::Route => write!(f, "route"),
             StepKind::Query => write!(f, "query"),
+            StepKind::LookerQuery => write!(f, "looker_query"),
             StepKind::SemanticQuery => write!(f, "semantic_query"),
             StepKind::Visualize => write!(f, "visualize"),
             StepKind::Insight => write!(f, "insight"),

@@ -1,11 +1,12 @@
 import AppPreview from "@/components/AppPreview";
 import { DisplayBlock } from "@/components/AppPreview/Displays";
+import LookerQueryArtifactPanel from "@/components/ArtifactPanel/ArtifactsContent/looker-query";
 import SqlArtifactPanel from "@/components/ArtifactPanel/ArtifactsContent/sql";
 import Markdown from "@/components/Markdown";
 import { encodeBase64 } from "@/libs/encoding";
 import type { Block } from "@/services/types";
 import type { Display, TableDisplay } from "@/types/app";
-import type { SqlArtifact } from "@/types/artifact";
+import type { LookerQueryArtifact, SqlArtifact } from "@/types/artifact";
 import RoutePanel from "../../RoutePanel";
 import AgenticSemanticQueryPanel from "./AgenticSemanticQueryPanel";
 import SubGroupReasoningPanel from "./SubGroupReasoningPanel";
@@ -25,6 +26,29 @@ function buildSqlArtifact(block: Block & { type: "sql" }): SqlArtifact {
         sql_query: block.sql_query,
         result: block.result,
         is_result_truncated: block.is_result_truncated
+      }
+    }
+  };
+}
+
+function buildLookerQueryArtifact(block: Block & { type: "looker_query" }): LookerQueryArtifact {
+  return {
+    id: block.id,
+    name: `${block.model}.${block.explore}`,
+    kind: "looker_query",
+    content: {
+      type: "looker_query",
+      value: {
+        model: block.model,
+        explore: block.explore,
+        sql: block.sql_query || block.sql || "",
+        result: block.result,
+        result_file: block.result_file,
+        is_result_truncated: block.is_result_truncated,
+        fields: block.fields,
+        filters: block.filters,
+        sorts: block.sorts,
+        limit: block.limit
       }
     }
   };
@@ -51,6 +75,9 @@ const ArtifactBlockRenderer = ({ block, onRerun }: ArtifactBlockRendererProps) =
 
     case "sql":
       return <SqlArtifactPanel artifact={buildSqlArtifact(block)} />;
+
+    case "looker_query":
+      return <LookerQueryArtifactPanel artifact={buildLookerQueryArtifact(block)} />;
 
     case "viz":
       return (

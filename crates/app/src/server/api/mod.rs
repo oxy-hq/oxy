@@ -11,6 +11,7 @@ pub mod exported_chart;
 pub mod file;
 pub mod github;
 pub mod healthcheck;
+pub mod integration;
 pub mod message;
 pub mod metrics;
 pub mod middlewares;

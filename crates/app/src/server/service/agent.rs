@@ -220,7 +220,8 @@ impl EventHandler for AgentCLIHandler {
                     Output::Bool(_)
                     | Output::Prompt(_)
                     | Output::Documents(_)
-                    | Output::OmniQuery(_) => {}
+                    | Output::OmniQuery(_)
+                    | Output::LookerQuery(_) => {}
                 },
                 EventKind::Message { message } => {
                     println!("{message}");

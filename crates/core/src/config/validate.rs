@@ -153,6 +153,28 @@ pub fn validate_omni_integration_exists(
     }
 }
 
+pub fn validate_looker_integration_exists(
+    integration_name: &str,
+    context: &ValidationContext,
+) -> garde::Result {
+    let integration_exists = context.config.integrations.iter().any(|integration| {
+        integration.name == integration_name
+            && matches!(
+                &integration.integration_type,
+                crate::config::model::IntegrationType::Looker(_)
+            )
+    });
+
+    if integration_exists {
+        Ok(())
+    } else {
+        Err(format_error_message(
+            "Looker integration not found",
+            integration_name,
+        ))
+    }
+}
+
 pub fn validate_task(task_type: &TaskType, _context: &ValidationContext) -> garde::Result {
     match task_type {
         TaskType::Agent(task) => validate_export(
@@ -179,6 +201,11 @@ pub fn validate_task(task_type: &TaskType, _context: &ValidationContext) -> gard
             task.export.as_ref(),
             &[ExportFormat::JSON, ExportFormat::CSV, ExportFormat::SQL],
             "OmniQuery",
+        ),
+        TaskType::LookerQuery(task) => validate_export(
+            task.export.as_ref(),
+            &[ExportFormat::JSON, ExportFormat::CSV, ExportFormat::SQL],
+            "LookerQuery",
         ),
         TaskType::Workflow(_)
         | TaskType::LoopSequential(_)

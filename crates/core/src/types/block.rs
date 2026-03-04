@@ -48,6 +48,18 @@ pub enum BlockKind {
         sql_query: String,
         results: Vec<Vec<String>>,
     },
+    LookerQuery {
+        integration: String,
+        model: String,
+        explore: String,
+        sql_query: String,
+        fields: Vec<String>,
+        filters: Option<std::collections::HashMap<String, String>>,
+        sorts: Option<Vec<String>>,
+        limit: Option<i64>,
+        result: Vec<Vec<String>>,
+        is_result_truncated: bool,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

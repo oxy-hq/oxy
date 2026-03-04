@@ -10,6 +10,7 @@ use crate::api::exported_chart;
 use crate::api::file;
 use crate::api::github;
 use crate::api::healthcheck;
+use crate::api::integration;
 use crate::api::metrics;
 use crate::api::middlewares::project::project_middleware;
 use crate::api::middlewares::timeout::timeout_middleware;
@@ -144,6 +145,7 @@ fn build_project_routes() -> Router<AppState> {
         .nest("/api-keys", build_api_key_routes())
         .nest("/files", build_file_routes())
         .nest("/databases", build_database_routes())
+        .nest("/integrations", build_integration_routes())
         .nest("/secrets", build_secret_routes())
         .nest("/apps", build_app_routes())
         .nest("/traces", traces::traces_routes())
@@ -298,6 +300,10 @@ fn build_database_routes() -> Router<AppState> {
         .route("/sync", post(database::sync_database))
         .route("/build", post(data::build_embeddings))
         .route("/clean", post(database::clean_data))
+}
+
+fn build_integration_routes() -> Router<AppState> {
+    Router::new().route("/looker", get(integration::list_looker_integrations))
 }
 
 fn build_secret_routes() -> Router<AppState> {

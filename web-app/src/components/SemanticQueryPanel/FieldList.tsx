@@ -23,7 +23,7 @@ interface FieldListProps {
 
 const FieldList = ({
   title,
-  fields,
+  fields = [],
   availableItems = [],
   placeholder = "Select...",
   searchPlaceholder = "Search...",

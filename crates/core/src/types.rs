@@ -282,6 +282,48 @@ pub struct OmniQuery {
     pub sorts: Option<std::collections::HashMap<String, String>>,
 }
 
+#[derive(Serialize, Deserialize, Clone, ToSchema, Debug)]
+pub struct LookerQuery {
+    pub result: Vec<Vec<String>>,
+    pub is_result_truncated: bool,
+    pub integration: String,
+    pub model: String,
+    pub explore: String,
+    pub fields: Vec<String>,
+    pub filters: Option<std::collections::HashMap<String, String>>,
+    pub sorts: Option<Vec<String>>,
+    pub limit: Option<i64>,
+    pub sql: String,
+}
+
+impl std::hash::Hash for LookerQuery {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.result.hash(state);
+        self.is_result_truncated.hash(state);
+        self.integration.hash(state);
+        self.model.hash(state);
+        self.explore.hash(state);
+        self.fields.hash(state);
+
+        match &self.filters {
+            Some(filters) => {
+                1u8.hash(state);
+                let mut entries = filters.iter().collect::<Vec<_>>();
+                entries.sort_by(|a, b| a.0.cmp(b.0));
+                for (key, value) in entries {
+                    key.hash(state);
+                    value.hash(state);
+                }
+            }
+            None => 0u8.hash(state),
+        }
+
+        self.sorts.hash(state);
+        self.limit.hash(state);
+        self.sql.hash(state);
+    }
+}
+
 #[derive(Serialize, ToSchema)]
 #[serde(tag = "type", content = "value")]
 pub enum ArtifactValue {
@@ -295,6 +337,8 @@ pub enum ArtifactValue {
     SemanticQuery(SemanticQuery),
     #[serde(rename = "omni_query")]
     OmniQuery(OmniQuery),
+    #[serde(rename = "looker_query")]
+    LookerQuery(LookerQuery),
     #[serde(rename = "sandbox_info")]
     SandboxInfo(SandboxInfo),
 }
@@ -317,6 +361,8 @@ pub enum ArtifactContent {
     SemanticQuery(SemanticQuery),
     #[serde(rename = "omni_query")]
     OmniQuery(OmniArtifactContent),
+    #[serde(rename = "looker_query")]
+    LookerQuery(LookerArtifactContent),
     #[serde(rename = "sandbox_info")]
     SandboxInfo(SandboxInfo),
 }
@@ -330,6 +376,19 @@ pub struct OmniArtifactContent {
     pub fields: Vec<String>,
     pub limit: Option<u64>,
     pub sorts: Option<std::collections::HashMap<String, String>>,
+}
+
+#[derive(Serialize, Deserialize, ToSchema, Debug)]
+pub struct LookerArtifactContent {
+    pub result: Vec<Vec<String>>,
+    pub is_result_truncated: bool,
+    pub model: String,
+    pub explore: String,
+    pub sql: String,
+    pub fields: Vec<String>,
+    pub filters: Option<std::collections::HashMap<String, String>>,
+    pub sorts: Option<Vec<String>>,
+    pub limit: Option<i64>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -385,6 +444,7 @@ pub enum Content {
     SQL(String),
     Table(Table),
     OmniQuery(OmniQueryParams),
+    LookerQuery(LookerQuery),
     SandboxInfo(SandboxInfo),
     SemanticQuery(SemanticQuery),
 }
@@ -400,6 +460,7 @@ impl Content {
                     .unwrap_or_else(|_| "Failed to serialize OmniQueryParams".to_string());
                 format!("\n```json\n{json}\n```\n")
             }
+            Content::LookerQuery(_) => "".to_string(),
             Content::SandboxInfo(sandbox_info) => {
                 format!(
                     "[{} App Preview]({})",
@@ -559,6 +620,13 @@ impl Block {
                         .unwrap_or_else(|_| "Failed to serialize OmniQueryParams".to_string());
                     log_items.push(LogItem::info(format!(
                         "Omni Query:\n```json\n{json}\n```\n"
+                    )));
+                }
+                Content::LookerQuery(looker_query_params) => {
+                    let json = serde_json::to_string_pretty(looker_query_params)
+                        .unwrap_or_else(|_| "Failed to serialize LookerQueryParams".to_string());
+                    log_items.push(LogItem::info(format!(
+                        "Looker Query:\n```json\n{json}\n```\n"
                     )));
                 }
                 Content::SandboxInfo(SandboxInfo { preview_url, kind }) => {

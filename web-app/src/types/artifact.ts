@@ -86,6 +86,28 @@ export type OmniQueryArtifact = {
   };
 };
 
+export type LookerQueryArtifact = {
+  id: string;
+  name: string;
+  kind: "looker_query";
+  is_streaming?: boolean;
+  content: {
+    type: "looker_query";
+    value: {
+      model: string;
+      explore: string;
+      sql: string;
+      result?: string[][];
+      result_file?: string;
+      is_result_truncated: boolean;
+      fields: string[];
+      filters?: Record<string, string>;
+      sorts?: string[];
+      limit?: number;
+    };
+  };
+};
+
 export type AgentArtifact = {
   id: string;
   kind: "agent";
@@ -135,6 +157,7 @@ export type Artifact =
   | SqlArtifact
   | SemanticQueryArtifact
   | OmniQueryArtifact
+  | LookerQueryArtifact
   | AgentArtifact
   | WorkflowArtifact
   | SandboxAppArtifact;

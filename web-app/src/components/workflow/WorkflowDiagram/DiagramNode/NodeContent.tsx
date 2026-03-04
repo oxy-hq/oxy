@@ -12,6 +12,7 @@ import { ConditionalIfNode } from "./nodes/ConditionalIfNode";
 import ConditionalNode from "./nodes/ConditionalNode";
 import { ExecuteSqlNode } from "./nodes/ExecuteSqlNode";
 import { FormatterNode } from "./nodes/FormatterNode";
+import { LookerQueryNode } from "./nodes/LookerQueryNode";
 import { LoopSequentialNode } from "./nodes/LoopSequentialNode";
 import { OmniQueryNode } from "./nodes/OmniQueryNode";
 import { SemanticQueryNode } from "./nodes/SemanticQueryNode";
@@ -46,6 +47,9 @@ export function NodeContent({ parentId, task, type, data, taskRun, loopRuns, ...
   }
   if (task.type === TaskType.SEMANTIC_QUERY) {
     return <SemanticQueryNode task={task} />;
+  }
+  if (task.type === TaskType.LOOKER_QUERY) {
+    return <LookerQueryNode task={task} />;
   }
   if (task.type === TaskType.OMNI_QUERY) {
     return <OmniQueryNode task={task} />;

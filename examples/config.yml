@@ -80,6 +80,10 @@ models:
     vendor: openai
     model_ref: gpt-4o
     key_var: OPENAI_API_KEY
+  - name: openai-5.2
+    vendor: openai
+    model_ref: gpt-5.2
+    key_var: OPENAI_API_KEY
   - name: openai-4.1
     vendor: openai
     model_ref: gpt-4.1

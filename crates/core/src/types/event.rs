@@ -243,6 +243,21 @@ impl TryFrom<Event> for EventKind {
                             results: semantic_query.result,
                         },
                     }),
+                    Output::LookerQuery(looker_query) => Ok(EventKind::ContentAdded {
+                        content_id: event.source.id.to_string(),
+                        item: ContentType::LookerQuery {
+                            integration: looker_query.integration,
+                            model: looker_query.model,
+                            explore: looker_query.explore,
+                            sql_query: looker_query.sql,
+                            fields: looker_query.fields,
+                            filters: looker_query.filters,
+                            sorts: looker_query.sorts,
+                            limit: looker_query.limit,
+                            result: looker_query.result,
+                            is_result_truncated: looker_query.is_result_truncated,
+                        },
+                    }),
                     _ => Err(OxyError::ArgumentError(
                         "Unsupported event kind".to_string(),
                     )),
@@ -320,6 +335,21 @@ impl TryFrom<Event> for EventKind {
                             semantic_query: semantic_query.get_semantic_query_json(),
                             sql_query: semantic_query.sql_query,
                             results: semantic_query.result,
+                        },
+                    }),
+                    Output::LookerQuery(looker_query) => Ok(EventKind::ContentDone {
+                        content_id: event.source.id.to_string(),
+                        item: ContentType::LookerQuery {
+                            integration: looker_query.integration,
+                            model: looker_query.model,
+                            explore: looker_query.explore,
+                            sql_query: looker_query.sql,
+                            fields: looker_query.fields,
+                            filters: looker_query.filters,
+                            sorts: looker_query.sorts,
+                            limit: looker_query.limit,
+                            result: looker_query.result,
+                            is_result_truncated: looker_query.is_result_truncated,
                         },
                     }),
                     _ => Err(OxyError::ArgumentError(

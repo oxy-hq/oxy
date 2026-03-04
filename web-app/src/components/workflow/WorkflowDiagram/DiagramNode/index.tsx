@@ -84,7 +84,7 @@ export function DiagramNode({
         type='target'
         position={Position.Top}
         isConnectable={isConnectable}
-        className='!top-0.5 invisible'
+        className='invisible top-0.5!'
       />
       <StepContainer selected={!!selected}>
         <NodeContent
@@ -103,7 +103,7 @@ export function DiagramNode({
         type='source'
         position={Position.Bottom}
         isConnectable={isConnectable}
-        className='!bottom-0.5 invisible'
+        className='invisible bottom-0.5!'
       />
     </NodeStatusIndicator>
   );

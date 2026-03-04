@@ -1,0 +1,28 @@
+[package]
+name = "oxy-looker"
+version = "0.4.8"
+authors.workspace = true
+description = "Looker integration for Oxy"
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+exclude.workspace = true
+
+[dependencies]
+# Core dependencies for HTTP client and async operations
+reqwest = { version = "0.12.28", features = ["json"] }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+
+# Error handling and validation
+thiserror = { workspace = true }
+garde = { version = "0.22.1", features = ["full"] }
+
+# Logging and tracing
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

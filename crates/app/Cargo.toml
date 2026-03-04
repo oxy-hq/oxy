@@ -145,6 +145,7 @@ backoff = { version = "0.4.0", features = ["tokio"] }
 rustc_version_runtime = "0.3.0"
 sentry = { workspace = true }
 omni = { path = "../omni" }
+oxy-looker = { path = "../integration/looker" }
 
 # Database migration
 migration = { path = "../migration" }

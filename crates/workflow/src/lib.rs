@@ -8,6 +8,7 @@ pub mod consistency_builder;
 pub mod export_builder;
 pub mod logger_types;
 pub mod loggers;
+pub mod looker_builder;
 pub mod loop_concurrency_builder;
 pub mod omni_builder;
 pub mod semantic_builder;

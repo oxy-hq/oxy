@@ -294,6 +294,7 @@ impl OmniQueryExecutable {
                         None
                     }
                 }
+                crate::config::model::IntegrationType::Looker(_) => None,
             });
 
         match omni_config {

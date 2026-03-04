@@ -882,6 +882,44 @@
               ]
             }
           }
+        },
+        {
+          "description": "Looker integration configuration.\n\nProvides connection settings for a Looker instance, including OAuth credentials and the list of explores to expose.",
+          "type": "object",
+          "required": [
+            "base_url",
+            "client_id_var",
+            "client_secret_var",
+            "explores",
+            "type"
+          ],
+          "properties": {
+            "base_url": {
+              "description": "Base URL for the Looker instance (e.g., https://your.looker.com:19999)",
+              "type": "string"
+            },
+            "client_id_var": {
+              "description": "Environment variable containing the Looker client ID",
+              "type": "string"
+            },
+            "client_secret_var": {
+              "description": "Environment variable containing the Looker client secret",
+              "type": "string"
+            },
+            "explores": {
+              "description": "List of explores to expose from this Looker instance",
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/LookerExplore"
+              }
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "looker"
+              ]
+            }
+          }
         }
       ],
       "required": [
@@ -889,6 +927,31 @@
       ],
       "properties": {
         "name": {
+          "type": "string"
+        }
+      }
+    },
+    "LookerExplore": {
+      "description": "Configuration for a Looker explore to expose.",
+      "type": "object",
+      "required": [
+        "model",
+        "name"
+      ],
+      "properties": {
+        "description": {
+          "description": "Optional description for the explore",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "description": "The LookML model name containing this explore",
+          "type": "string"
+        },
+        "name": {
+          "description": "The explore name within the model",
           "type": "string"
         }
       }

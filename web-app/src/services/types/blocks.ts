@@ -50,6 +50,22 @@ export type SemanticQueryContent = {
   results?: string[][];
 };
 
+export type LookerQueryContent = {
+  type: "looker_query";
+  integration: string;
+  model: string;
+  explore: string;
+  sql_query?: string;
+  sql?: string;
+  fields: string[];
+  filters?: Record<string, string>;
+  sorts?: string[];
+  limit?: number;
+  result?: string[][];
+  result_file?: string;
+  is_result_truncated: boolean;
+};
+
 export type SqlContent = {
   type: "sql";
   database: string;
@@ -108,6 +124,7 @@ export type BlockContent =
   | TextContent
   | SqlContent
   | SemanticQueryContent
+  | LookerQueryContent
   | VizContent
   | DataAppContent
   | GroupContent;
@@ -208,6 +225,7 @@ export type StepType =
   | "end"
   | "query"
   | "semantic_query"
+  | "looker_query"
   | "visualize"
   | "insight"
   | "subflow"
@@ -230,7 +248,7 @@ export type StepFinishedEvent = {
 export type ContentEvent = {
   type: "content_added" | "content_done";
   content_id: string;
-  item: TextContent | SqlContent | SemanticQueryContent;
+  item: TextContent | SqlContent | SemanticQueryContent | LookerQueryContent;
 };
 
 export type ArtifactStartedEvent = {

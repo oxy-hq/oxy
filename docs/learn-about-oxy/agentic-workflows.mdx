@@ -60,6 +60,12 @@ transitions:
   - type: query
     description: Execute SQL queries against the database
 
+  - type: looker_query
+    description: Execute Looker queries against a configured Looker explore
+    integration: looker
+    model: finance_reporting
+    explore: sales_segment_mrr
+
   - type: visualize
     description: Create data visualizations and charts
 

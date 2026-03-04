@@ -47,6 +47,15 @@ export interface OmniQueryArtifactKind {
   };
 }
 
+export interface LookerQueryArtifactKind {
+  type: "looker_query";
+  value: {
+    model: string;
+    explore: string;
+    integration: string;
+  };
+}
+
 export interface SandboxAppArtifactKind {
   type: "sandbox_app";
   value: {
@@ -63,6 +72,7 @@ export type ArtifactKind =
   | ExecuteSQLArtifactKind
   | SemanticQueryArtifactKind
   | OmniQueryArtifactKind
+  | LookerQueryArtifactKind
   | SandboxAppArtifactKind;
 
 export interface ArtifactStartedContent {
@@ -118,6 +128,22 @@ export interface SemanticQueryArtifactValue {
   };
 }
 
+export interface LookerQueryArtifactValue {
+  type: "looker_query";
+  value: {
+    model: string;
+    explore: string;
+    sql: string;
+    result?: string[][];
+    result_file?: string;
+    is_result_truncated: boolean;
+    fields: string[];
+    filters?: Record<string, string>;
+    sorts?: string[];
+    limit?: number;
+  };
+}
+
 export interface SandboxAppArtifactValue {
   type: "sandbox_info";
   value: {
@@ -130,6 +156,7 @@ export type ArtifactValue =
   | AgentArtifactValue
   | ExecuteSQLArtifactValue
   | SemanticQueryArtifactValue
+  | LookerQueryArtifactValue
   | SandboxAppArtifactValue;
 
 export interface ArtifactValueContent {

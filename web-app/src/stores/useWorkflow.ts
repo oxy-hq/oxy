@@ -20,6 +20,7 @@ export type NodeData = {
 export enum TaskType {
   EXECUTE_SQL = "execute_sql",
   SEMANTIC_QUERY = "semantic_query",
+  LOOKER_QUERY = "looker_query",
   OMNI_QUERY = "omni_query",
   FORMATTER = "formatter",
   AGENT = "agent",
@@ -142,6 +143,24 @@ export type OmniQueryTaskConfig = BaseTaskConfig & {
   sorts?: Record<string, string>;
 };
 
+export type LookerQueryTaskConfig = BaseTaskConfig & {
+  type: TaskType.LOOKER_QUERY;
+  integration: string;
+  model: string;
+  explore: string;
+  fields?: string[];
+  filters?: Array<{
+    key: string;
+    value: string;
+  }>;
+  filter_expression?: string;
+  sorts?: Array<{
+    field: string;
+    direction: string;
+  }>;
+  limit?: number;
+};
+
 export type VisualizeTaskConfig = BaseTaskConfig & {
   type: TaskType.VISUALIZE;
   prompt?: string;
@@ -151,6 +170,7 @@ export type VisualizeTaskConfig = BaseTaskConfig & {
 export type TaskConfig =
   | ExecuteSqlTaskConfig
   | SemanticQueryTaskConfig
+  | LookerQueryTaskConfig
   | OmniQueryTaskConfig
   | FormatterTaskConfig
   | AgentTaskConfig
@@ -162,6 +182,7 @@ export type TaskConfig =
 export type TaskConfigWithId = (
   | ExecuteSqlTaskConfig
   | SemanticQueryTaskConfig
+  | LookerQueryTaskConfig
   | OmniQueryTaskConfig
   | FormatterTaskConfig
   | AgentTaskConfig

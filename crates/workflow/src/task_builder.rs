@@ -28,6 +28,7 @@ use oxy::{
 use oxy_agent::{AgentLauncherExecutable, types::AgentInput};
 use oxy_shared::errors::OxyError;
 
+use crate::looker_builder::build_looker_query_task_executable;
 use crate::omni_builder::build_omni_query_task_executable;
 
 use crate::{
@@ -123,6 +124,7 @@ pub(crate) async fn create_runtime_input(
         | TaskType::OmniQuery(_)
         | TaskType::Formatter(_)
         | TaskType::Conditional(_)
+        | TaskType::LookerQuery(_)
         | TaskType::Visualize(_)
         | TaskType::Unknown => Ok(None),
     }
@@ -343,6 +345,12 @@ impl Executable<TaskInput> for TaskExecutable {
             TaskType::OmniQuery(omni_query_task) => {
                 let output = build_omni_query_task_executable()
                     .execute(&execution_context, omni_query_task)
+                    .await?;
+                Ok(output.into())
+            }
+            TaskType::LookerQuery(looker_query_task) => {
+                let output = build_looker_query_task_executable()
+                    .execute(&execution_context, looker_query_task)
                     .await?;
                 Ok(output.into())
             }

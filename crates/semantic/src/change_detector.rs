@@ -39,6 +39,7 @@ impl ChangeDetectionResult {
 }
 
 /// File type classification
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq)]
 enum FileType {
     View(String),  // View name
@@ -404,6 +405,7 @@ impl ChangeDetector {
     }
 
     /// Classify a file path as view or topic
+    #[cfg(test)]
     fn classify_file(file_path: &str) -> Option<FileType> {
         let path = Path::new(file_path);
         let file_name = path.file_name()?.to_string_lossy();

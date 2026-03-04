@@ -18,7 +18,7 @@ use crate::{
     adapters::openai::OpenAIToolConfig,
     config::{
         constants::ARTIFACT_SOURCE,
-        model::{RetrievalConfig, ToolType},
+        model::{LookerQueryParams, RetrievalConfig, ToolType},
     },
     execute::{
         Executable, ExecutionContext,
@@ -27,6 +27,7 @@ use crate::{
     },
     observability::events,
     tools::{
+        looker::{executable::LookerQueryExecutable, types::LookerQueryInput},
         omni::{executable::OmniQueryExecutable, types::OmniQueryInput},
         sql::validate_sql::ValidateSQLExecutable,
         visualize::VisualizeParams,
@@ -66,6 +67,7 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                 ToolType::ExecuteSQL(sql_config) => sql_config.sql.is_some(),
                 ToolType::SemanticQuery(_semantic_query_tool) => true,
                 ToolType::OmniQuery(_omni_query_tool) => true,
+                ToolType::LookerQuery(_looker_query_tool) => true,
                 _ => false,
             };
             events::tool::tool_call_is_verified(is_verified);
@@ -327,6 +329,25 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                     };
                     result_t
                 }
+                ToolType::LookerQuery(looker_query_tool) => {
+                    let params =
+                        serde_json::from_str::<LookerQueryParams>(&input.param).map_err(|e| {
+                            OxyError::ArgumentError(format!("Invalid LookerQueryParams: {}", e))
+                        })?;
+
+                    build_looker_query_tool_executable()
+                        .execute(
+                            execution_context,
+                            LookerQueryInput {
+                                params,
+                                integration: looker_query_tool.integration.clone(),
+                                model: looker_query_tool.model.clone(),
+                                explore: looker_query_tool.explore.clone(),
+                            },
+                        )
+                        .await
+                        .map(|output| output.into())
+                }
             };
 
             tracing::info!("Tool execution completed: {:?}", tool_ret);
@@ -494,6 +515,10 @@ where
 fn build_omni_query_tool_executable() -> impl Executable<OmniQueryInput, Response = Output> {
     // OmniQuery doesn't need a mapper - just use executable directly
     OmniQueryExecutable::new()
+}
+
+fn build_looker_query_tool_executable() -> impl Executable<LookerQueryInput, Response = Output> {
+    LookerQueryExecutable::new()
 }
 
 fn build_visualize_executable() -> impl Executable<VisualizeParams, Response = Output> {

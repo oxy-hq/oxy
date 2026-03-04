@@ -33,6 +33,7 @@ import { OmniIcon } from "./OmniIcon";
 const nodeNameMap: Record<NodeType, string> = {
   execute_sql: "SQL",
   semantic_query: "Semantic Query",
+  looker_query: "Looker Query",
   omni_query: "Omni Query",
   loop_sequential: "Loop sequential",
   formatter: "Formatter",
@@ -54,7 +55,8 @@ const nodeIconMap: Record<NodeType, ReactElement> = {
   "conditional-else": <CircleAlert size={14} />,
   "conditional-if": <CircleHelp size={14} />,
   semantic_query: <Globe size={14} />,
-  omni_query: <OmniIcon className='h-[14px] w-[14px]' />,
+  looker_query: <BarChart3 size={14} />,
+  omni_query: <OmniIcon className='h-3.5 w-3.5' />,
   visualize: <BarChart3 size={14} />
 };
 

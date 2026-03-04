@@ -415,6 +415,7 @@ struct EmbeddingWithClassification {
     confidence: f32,
     #[serde(rename = "classified_at_str")]
     classified_at: String,
+    #[allow(dead_code)]
     #[serde(rename = "Source")]
     source: String,
 }

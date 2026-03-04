@@ -8,7 +8,8 @@ use crate::fsm::{
     types::{Artifact, TableSource},
 };
 use oxy::config::model::{
-    ExecuteSQLTask, RouteRetrievalConfig, SQL, SemanticQueryTask, Task, TaskType, Workflow,
+    ExecuteSQLTask, LookerQueryTask, RouteRetrievalConfig, SQL, SemanticQueryTask, Task, TaskType,
+    Workflow,
 };
 use oxy::constants::{PROCEDURE_FILE_EXTENSION, PROCEDURE_SAVED_DIR};
 use oxy::execute::{ExecutionContext, builders::fsm::Trigger};
@@ -32,7 +33,7 @@ impl<S> AutoSaveAutomation<S> {
 
 /// Convert collected artifacts from the MachineContext into Workflow Tasks.
 ///
-/// Only Table artifacts (sourced from SQL or Semantic queries) are converted.
+/// Only Table artifacts (sourced from SQL, Semantic, or Looker queries) are converted.
 /// Viz, Insight, and DataApp artifacts are skipped — they cannot be replayed
 /// as deterministic workflow steps with the information available here.
 fn artifacts_to_tasks(artifacts: &[Artifact]) -> Vec<Task> {
@@ -65,6 +66,20 @@ fn artifacts_to_tasks(artifacts: &[Artifact]) -> Vec<Task> {
                     query: task.query.clone(),
                     export: task.export.clone(),
                     variables: task.variables.clone(),
+                }),
+                cache: None,
+            }),
+            Artifact::Table {
+                source: TableSource::Looker { task },
+                ..
+            } => Some(Task {
+                name: format!("looker_query_{}", i + 1),
+                task_type: TaskType::LookerQuery(LookerQueryTask {
+                    integration: task.integration.clone(),
+                    model: task.model.clone(),
+                    explore: task.explore.clone(),
+                    query: task.query.clone(),
+                    export: task.export.clone(),
                 }),
                 cache: None,
             }),

@@ -46,7 +46,7 @@ const ReasoningItem = ({
     icon = <GitBranch size={16} />;
   } else if (["save_automation"].includes(step.step_type)) {
     icon = <Save size={16} />;
-  } else if (["semantic_query"].includes(step.step_type)) {
+  } else if (["semantic_query", "looker_query"].includes(step.step_type)) {
     icon = <Globe size={16} />;
   } else {
     icon = <CodeXml size={16} />;

@@ -22,6 +22,26 @@ function findBlockOfType(blocks: Block[], type: string): Block | undefined {
   return blocks.find((b) => b.type === type);
 }
 
+function parseLookerSort(sort: string): { field: string; direction: string } {
+  const normalized = sort.trim();
+  if (normalized.startsWith("-")) {
+    const field = normalized.slice(1).trim();
+    return { field: field || normalized, direction: "desc" };
+  }
+  const lastSpace = normalized.lastIndexOf(" ");
+  if (lastSpace === -1) {
+    return { field: normalized, direction: "asc" };
+  }
+
+  const field = normalized.slice(0, lastSpace).trim();
+  const rawDirection = normalized
+    .slice(lastSpace + 1)
+    .trim()
+    .toLowerCase();
+  const direction = rawDirection === "desc" ? "desc" : "asc";
+  return { field: field || normalized, direction };
+}
+
 const FILTER_OPS = [
   "eq",
   "neq",
@@ -102,6 +122,27 @@ function buildSemanticQueryTask(
   return task;
 }
 
+function buildLookerQueryTask(
+  name: string,
+  lookerBlock: Block & { type: "looker_query" }
+): TaskConfig {
+  return {
+    name,
+    type: TaskType.LOOKER_QUERY,
+    integration: lookerBlock.integration,
+    model: lookerBlock.model,
+    explore: lookerBlock.explore,
+    ...(lookerBlock.fields.length > 0 && { fields: lookerBlock.fields }),
+    ...(lookerBlock.filters && {
+      filters: Object.entries(lookerBlock.filters).map(([key, value]) => ({ key, value }))
+    }),
+    ...(lookerBlock.sorts && {
+      sorts: lookerBlock.sorts.map(parseLookerSort)
+    }),
+    ...(lookerBlock.limit != null && { limit: lookerBlock.limit })
+  };
+}
+
 function convertStep(step: Step, index: number): TaskConfig | null {
   const name = getTaskName(step, index);
 
@@ -131,6 +172,16 @@ function convertStep(step: Step, index: number): TaskConfig | null {
       const sqBlock = findBlockOfType(step.childrenBlocks, "semantic_query");
       if (sqBlock && sqBlock.type === "semantic_query") {
         return buildSemanticQueryTask(name, sqBlock);
+      }
+      return null;
+    }
+    case "looker_query": {
+      const lookerBlock = findBlockOfType(step.childrenBlocks, "looker_query");
+      if (lookerBlock && lookerBlock.type === "looker_query") {
+        if (!lookerBlock.integration?.trim()) {
+          return null;
+        }
+        return buildLookerQueryTask(name, lookerBlock);
       }
       return null;
     }

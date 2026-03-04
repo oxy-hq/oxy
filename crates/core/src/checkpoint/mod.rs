@@ -356,6 +356,7 @@ pub struct CheckpointData<T> {
 }
 
 #[enum_dispatch::enum_dispatch]
+#[allow(async_fn_in_trait)]
 pub trait CheckpointStorage {
     async fn write_success_marker(&self, run_info: &RunInfo) -> Result<(), OxyError>;
     async fn create_checkpoint<T: Serialize + Send>(

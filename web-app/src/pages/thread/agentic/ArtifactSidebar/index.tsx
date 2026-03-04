@@ -6,6 +6,7 @@ import ArtifactBlockRenderer from "./ArtifactBlockRenderer";
 const getSidebarTitle = (block: Block): string => {
   if (block.type === "group") return "Procedure trace";
   if (block.type === "semantic_query") return "Semantic Query";
+  if (block.type === "looker_query") return "Looker Query";
   if (block.type === "sql") return "SQL Query";
   if (block.type === "text" && block.content?.startsWith("Selected route:"))
     return "Selected route";

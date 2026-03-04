@@ -6,7 +6,7 @@ use async_openai::types::chat::{
     ChatCompletionRequestUserMessageContent, FunctionCall,
 };
 
-use oxy::config::model::{AppConfig, SemanticQueryTask};
+use oxy::config::model::{AppConfig, LookerQueryTask, SemanticQueryTask};
 use oxy::execute::types::{Table, VizParams};
 
 /// Records the origin of a Table artifact so it can be serialized back to an
@@ -17,6 +17,8 @@ pub enum TableSource {
     SQL { sql: String, database: String },
     /// Produced by an AutoSemanticQuery step — stores the full task config.
     Semantic { task: SemanticQueryTask },
+    /// Produced by an AutoLookerQuery step — stores the full task config.
+    Looker { task: LookerQueryTask },
 }
 
 #[derive(Clone, Debug)]

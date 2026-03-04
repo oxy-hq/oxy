@@ -21,6 +21,7 @@ const nodeTypes: Record<NodeType, typeof DiagramNode> = {
   "conditional-else": DiagramNode,
   "conditional-if": DiagramNode,
   omni_query: DiagramNode,
+  looker_query: DiagramNode,
   visualize: DiagramNode
 } as const;
 
@@ -49,12 +50,12 @@ const WorkflowDiagram: React.FC<WorkflowDiagramProps> = ({ workflowId, runId, wo
   if (nodes.length === 0) {
     return (
       <div className='w-full'>
-        <div className='mx-auto flex max-w-[742px] flex-col gap-10 py-10'>
-          {Array.from({ length: 3 }).map((_, index) => (
-            <div key={index} className='flex flex-col gap-4'>
-              <Skeleton className='h-4 max-w-[200px]' />
-              <Skeleton className='h-4 max-w-[500px]' />
-              <Skeleton className='h-4 max-w-[500px]' />
+        <div className='mx-auto flex max-w-185.5 flex-col gap-10 py-10'>
+          {["workflow-skeleton-1", "workflow-skeleton-2", "workflow-skeleton-3"].map((key) => (
+            <div key={key} className='flex flex-col gap-4'>
+              <Skeleton className='h-4 max-w-50' />
+              <Skeleton className='h-4 max-w-125' />
+              <Skeleton className='h-4 max-w-125' />
             </div>
           ))}
         </div>

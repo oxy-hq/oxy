@@ -26,13 +26,16 @@ use tokio_stream::StreamExt;
 
 use crate::{
     adapters::{
-        create_app_schema, edit_app_schema, project::manager::ProjectManager, read_app_schema,
-        secrets::SecretsManager, semantic_tool_description::get_semantic_query_description,
-        viz_schema,
+        create_app_schema, edit_app_schema, looker_tool_description::get_looker_query_description,
+        project::manager::ProjectManager, read_app_schema, secrets::SecretsManager,
+        semantic_tool_description::get_semantic_query_description, viz_schema,
     },
     config::{
         ConfigManager,
-        model::{HeaderValue, Model, ReasoningConfig, ReasoningEffort, RetrievalConfig, ToolType},
+        model::{
+            HeaderValue, LookerQueryParams, Model, ReasoningConfig, ReasoningEffort,
+            RetrievalConfig, ToolType,
+        },
     },
     execute::types::event::ArtifactKind,
     types::SemanticQueryParams,
@@ -215,6 +218,7 @@ impl IntoOpenAIConfig for RetrievalConfig {
     }
 }
 
+#[allow(async_fn_in_trait)]
 pub trait OpenAIToolConfig {
     async fn description(&self, config: &ConfigManager) -> String;
     fn tool_kind(&self) -> String;
@@ -252,6 +256,10 @@ impl OpenAIToolConfig for &ToolType {
                     }
                 }
             }
+            ToolType::LookerQuery(l) => match get_looker_query_description(l, config).await {
+                Ok(desc) => desc,
+                Err(_) => l.description.clone(),
+            },
             ToolType::SaveAutomation(sr) => sr.description.clone(),
         }
     }
@@ -270,6 +278,7 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::CreateV0App(create_v0_app_tool) => create_v0_app_tool.name.clone(),
             ToolType::OmniQuery(o) => o.name.clone(),
             ToolType::SemanticQuery(s) => s.name.clone(),
+            ToolType::LookerQuery(l) => l.name.clone(),
             ToolType::SaveAutomation(sr) => sr.name.clone(),
         }
     }
@@ -317,6 +326,14 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::Retrieval(_) => None,
             ToolType::Visualize(_) => None,
             ToolType::CreateDataApp(_) => None,
+            ToolType::LookerQuery(l) => Some((
+                self.handle(),
+                ArtifactKind::LookerQuery {
+                    model: l.model.clone(),
+                    explore: l.explore.clone(),
+                    integration: l.integration.clone(),
+                },
+            )),
             ToolType::SaveAutomation(_) => None,
             ToolType::EditDataApp(_) => None,
             ToolType::ReadDataApp(_) => None,
@@ -337,6 +354,7 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::CreateV0App(_) => "create_v0_app".to_string(),
             ToolType::OmniQuery(_) => "omni_query".to_string(),
             ToolType::SemanticQuery(_) => "semantic_query".to_string(),
+            ToolType::LookerQuery(_) => "looker_query".to_string(),
             ToolType::SaveAutomation(_) => "save_automation".to_string(),
         }
     }
@@ -377,6 +395,9 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::SemanticQuery(_) => Ok(serde_json::json!(&schemars::schema_for!(
                 SemanticQueryParams
             ))),
+            ToolType::LookerQuery(_) => {
+                Ok(serde_json::json!(&schemars::schema_for!(LookerQueryParams)))
+            }
             ToolType::SaveAutomation(_) => Ok(serde_json::json!(&schemars::schema_for!(
                 SaveAutomationParams
             ))),
@@ -443,6 +464,7 @@ async fn get_omni_query_description(
                         .iter()
                         .find(|t| t.name == topic_name)
                         .map(|t| t.model_id.as_str()),
+                    IntegrationType::Looker(_) => None,
                 }
             } else {
                 None
@@ -603,6 +625,7 @@ fn format_topic_description(topic: &omni::TopicMetadata) -> String {
     desc
 }
 
+#[allow(async_fn_in_trait)]
 pub trait AsyncFunctionObject {
     async fn from_tool_async(tool: &ToolType, config: &ConfigManager) -> Self;
 }

@@ -25,6 +25,7 @@ import {
   ConditionalTaskFields,
   ExecuteSqlTaskFields,
   FormatterTaskFields,
+  LookerQueryTaskFields,
   LoopSequentialTaskFields,
   OmniQueryTaskFields,
   SemanticQueryTaskFields,
@@ -44,10 +45,11 @@ const TASK_TYPES = [
   { value: "agent", label: "Agent" },
   { value: "execute_sql", label: "Execute SQL" },
   { value: "semantic_query", label: "Semantic Query" },
-  { value: "omni_query", label: "Omni Query" },
+  { value: "looker_query", label: "Looker Query" },
   { value: "loop_sequential", label: "Loop Sequential" },
   { value: "formatter", label: "Formatter" },
   { value: "workflow", label: "Procedure" },
+  { value: "omni_query", label: "Omni Query" },
   { value: "conditional", label: "Conditional" }
 ];
 
@@ -110,6 +112,9 @@ export const TaskForm: React.FC<TaskFormProps> = ({ index, onRemove, basePath = 
 
       case "semantic_query":
         return <SemanticQueryTaskFields index={index} basePath={basePath} />;
+
+      case "looker_query":
+        return <LookerQueryTaskFields index={index} basePath={basePath} />;
 
       case "omni_query":
         return <OmniQueryTaskFields index={index} basePath={basePath} />;

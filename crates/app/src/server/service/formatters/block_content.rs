@@ -22,6 +22,9 @@ impl ContentProcessor {
             Output::OmniQuery(omni_query_params) => {
                 Some(Content::OmniQuery(omni_query_params.clone()))
             }
+            Output::LookerQuery(looker_query_params) => {
+                Some(Content::LookerQuery(looker_query_params.clone()))
+            }
             Output::SemanticQuery(semantic_query_params) => {
                 Some(Content::SemanticQuery(semantic_query_params.clone()))
             }
@@ -39,6 +42,7 @@ impl ContentProcessor {
             Output::Prompt(_prompt) => None,
             Output::Documents(_documents) => None,
             Output::OmniQuery(_omni_query_params) => None,
+            Output::LookerQuery(_looker_query_params) => Some("".to_string()),
         }
     }
 

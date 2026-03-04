@@ -1,3 +1,4 @@
+#[allow(unused_imports)]
 use async_openai::types::chat::{
     ChatCompletionMessageToolCall, ChatCompletionMessageToolCalls,
     ChatCompletionRequestAssistantMessage, ChatCompletionRequestMessage,

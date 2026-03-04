@@ -176,6 +176,56 @@ const logSelector = (
           : [])
       ];
     }
+    case "looker_query": {
+      const queryParams: Record<string, unknown> = {
+        model: block.model,
+        explore: block.explore,
+        fields: block.fields
+      };
+      if (block.filters && Object.keys(block.filters).length > 0)
+        queryParams.filters = block.filters;
+      if (block.sorts && block.sorts.length > 0) queryParams.sorts = block.sorts;
+      if (block.limit != null) queryParams.limit = block.limit;
+
+      const sql = block.sql_query ?? block.sql;
+
+      return [
+        {
+          content: `Looker Query\n${"```json\n"}${JSON.stringify(queryParams, null, 2)}${"\n```"}`,
+          log_type: "info",
+          timestamp: new Date().toISOString(),
+          append: false,
+          is_streaming: block.is_streaming
+        },
+        ...(sql
+          ? [
+              {
+                content: `Generated SQL Query\n${"```sql\n"}${sql}${"\n```"}`,
+                log_type: "info" as const,
+                timestamp: new Date().toISOString(),
+                append: false,
+                is_streaming: block.is_streaming
+              }
+            ]
+          : []),
+        ...(block.result && block.result.length > 0
+          ? [
+              {
+                content: `Results\n\n${block.result
+                  .map((row, index) => {
+                    const separator = index === 0 ? `\n${"|---".repeat(row.length)}|` : "";
+                    return `|${row.join("|")}|${separator}`;
+                  })
+                  .join("\n")}\n`,
+                log_type: "info" as const,
+                timestamp: new Date().toISOString(),
+                append: false,
+                is_streaming: block.is_streaming
+              }
+            ]
+          : [])
+      ];
+    }
     default: {
       return [];
     }

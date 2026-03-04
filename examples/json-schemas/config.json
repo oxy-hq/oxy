@@ -7,6 +7,17 @@
     "models"
   ],
   "properties": {
+    "a2a": {
+      "description": "Optional A2A configuration for exposing agents via A2A protocol If not specified or empty, no agents are exposed via A2A",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/A2aConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "builder_agent": {
       "type": [
         "string",
@@ -37,6 +48,7 @@
       }
     },
     "mcp": {
+      "description": "Optional MCP configuration for exposing resources as tools If not specified, all agents and workflows are exposed by default",
       "anyOf": [
         {
           "$ref": "#/definitions/McpConfig"
@@ -51,9 +63,53 @@
       "items": {
         "$ref": "#/definitions/Model"
       }
+    },
+    "slack": {
+      "default": null,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/SlackSettings"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
+  "additionalProperties": false,
   "definitions": {
+    "A2aAgentConfig": {
+      "description": "Configuration for a single A2A-exposed agent",
+      "type": "object",
+      "required": [
+        "name",
+        "ref"
+      ],
+      "properties": {
+        "name": {
+          "description": "A2A agent name used in URL paths\n\nThis name will be used in the A2A endpoint URLs: - JSON-RPC: `/a2a/agents/{name}/v1/jsonrpc` - HTTP: `/a2a/agents/{name}/v1` - Agent Card: `/a2a/agents/{name}/.well-known/agent-card.json`\n\nMust be a valid URL path segment (alphanumeric, hyphens, underscores only)",
+          "type": "string"
+        },
+        "ref": {
+          "description": "Path to the Oxy agent configuration file (relative to project root)\n\nExample: `agents/sales-assistant.agent.yml`",
+          "type": "string"
+        }
+      }
+    },
+    "A2aConfig": {
+      "description": "A2A configuration from config.yml\n\nThis configures which Oxy agents are exposed via the A2A protocol. If this section is absent or empty, no agents are exposed.",
+      "type": "object",
+      "properties": {
+        "agents": {
+          "description": "List of agents to expose via A2A protocol",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/A2aAgentConfig"
+          }
+        }
+      }
+    },
     "Database": {
       "type": "object",
       "oneOf": [
@@ -111,14 +167,26 @@
         },
         {
           "type": "object",
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "dataset"
+              ],
+              "properties": {
+                "dataset": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "$ref": "#/definitions/DuckLakeConfig"
+            }
+          ],
           "required": [
-            "dataset",
             "type"
           ],
           "properties": {
-            "dataset": {
-              "type": "string"
-            },
             "type": {
               "type": "string",
               "enum": [
@@ -129,6 +197,58 @@
         },
         {
           "type": "object",
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "password"
+              ],
+              "properties": {
+                "password": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "password_var"
+              ],
+              "properties": {
+                "password_var": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "private_key_path"
+              ],
+              "properties": {
+                "private_key_path": {
+                  "type": "string"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "browser_timeout_secs": {
+                  "default": 120,
+                  "type": "integer",
+                  "format": "uint64",
+                  "minimum": 0.0
+                },
+                "cache_dir": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          ],
           "required": [
             "account",
             "database",
@@ -153,26 +273,20 @@
                 }
               }
             },
-            "password": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "password_var": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "private_key_path": {
-              "default": null,
-              "type": [
-                "string",
-                "null"
-              ]
+            "filters": {
+              "default": {},
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/SchemaObject"
+              }
             },
             "role": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "schema": {
               "type": [
                 "string",
                 "null"
@@ -542,6 +656,41 @@
               ]
             }
           }
+        },
+        {
+          "type": "object",
+          "required": [
+            "token_var",
+            "type"
+          ],
+          "properties": {
+            "database": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "schemas": {
+              "default": {},
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "token_var": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "motherduck"
+              ]
+            }
+          }
         }
       ],
       "required": [
@@ -564,7 +713,104 @@
         }
       }
     },
+    "DuckLakeConfig": {
+      "type": "object",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "key_id",
+            "s3_secret_type"
+          ],
+          "properties": {
+            "endpoint_url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "key_id": {
+              "type": "string"
+            },
+            "region": {
+              "default": "us-east-1",
+              "type": "string"
+            },
+            "s3_secret_type": {
+              "type": "string",
+              "enum": [
+                "config"
+              ]
+            },
+            "secret": {
+              "description": "The secret key, referenced by a key variable name stored in SecretManager. In YAML, specify the secret key name: `secret: AWS_S3_SECRET`",
+              "default": "DUCKLAKE_S3_SECRET",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ManagedSecret"
+                }
+              ]
+            },
+            "url_style": {
+              "default": "path",
+              "type": "string"
+            },
+            "use_ssl": {
+              "default": false,
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "s3_secret_type"
+          ],
+          "properties": {
+            "chain": {
+              "default": "sso;config",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "region": {
+              "default": "us-east-1",
+              "type": "string"
+            },
+            "s3_secret_type": {
+              "type": "string",
+              "enum": [
+                "credential_chain"
+              ]
+            }
+          }
+        }
+      ],
+      "required": [
+        "data_path",
+        "schema_name"
+      ],
+      "properties": {
+        "catalog_path": {
+          "description": "The catalog path, referenced by a key variable name stored in SecretManager. The secret value should be a postgres connection string URL like: `postgres://user:pass@localhost:5432/catalog_db`",
+          "default": "DUCKLAKE_CATALOG_PATH",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ManagedSecret"
+            }
+          ]
+        },
+        "data_path": {
+          "type": "string"
+        },
+        "schema_name": {
+          "type": "string"
+        }
+      }
+    },
     "HeaderValue": {
+      "description": "Header value that can be either a direct string or an environment variable reference. Used in model configurations to specify custom HTTP headers.",
       "anyOf": [
         {
           "description": "Direct header value",
@@ -613,6 +859,13 @@
             "api_key_var": {
               "type": "string"
             },
+            "arrow_threshold_rows": {
+              "description": "Row count threshold for switching to Arrow format (file path response) If query result exceeds this threshold, return file_path instead of row arrays Default: 1000 rows",
+              "default": 1000,
+              "type": "integer",
+              "format": "uint",
+              "minimum": 0.0
+            },
             "base_url": {
               "type": "string"
             },
@@ -629,6 +882,44 @@
               ]
             }
           }
+        },
+        {
+          "description": "Looker integration configuration.\n\nProvides connection settings for a Looker instance, including OAuth credentials and the list of explores to expose.",
+          "type": "object",
+          "required": [
+            "base_url",
+            "client_id_var",
+            "client_secret_var",
+            "explores",
+            "type"
+          ],
+          "properties": {
+            "base_url": {
+              "description": "Base URL for the Looker instance (e.g., https://your.looker.com:19999)",
+              "type": "string"
+            },
+            "client_id_var": {
+              "description": "Environment variable containing the Looker client ID",
+              "type": "string"
+            },
+            "client_secret_var": {
+              "description": "Environment variable containing the Looker client secret",
+              "type": "string"
+            },
+            "explores": {
+              "description": "List of explores to expose from this Looker instance",
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/LookerExplore"
+              }
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "looker"
+              ]
+            }
+          }
         }
       ],
       "required": [
@@ -640,9 +931,52 @@
         }
       }
     },
+    "LookerExplore": {
+      "description": "Configuration for a Looker explore to expose.",
+      "type": "object",
+      "required": [
+        "model",
+        "name"
+      ],
+      "properties": {
+        "description": {
+          "description": "Optional description for the explore",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "description": "The LookML model name containing this explore",
+          "type": "string"
+        },
+        "name": {
+          "description": "The explore name within the model",
+          "type": "string"
+        }
+      }
+    },
+    "ManagedSecret": {
+      "type": "string"
+    },
+    "McpConfig": {
+      "type": "object",
+      "properties": {
+        "tools": {
+          "description": "List of file patterns to expose as MCP tools Supports glob patterns like \"agents/*.agent.yml\" Examples: - \"agents/sql-generator.agent.yml\" (specific file) - \"agents/*.agent.yml\" (all agents in directory) - \"workflows/**/*.workflow.yml\" (all workflows recursively) - \"semantics/topics/*.topic.yml\" (semantic topics) - \"sqls/queries/*.sql\" (SQL files)",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "Model": {
+      "description": "LLM model configuration supporting multiple vendors",
       "oneOf": [
         {
+          "description": "OpenAI model configuration",
           "type": "object",
           "required": [
             "key_var",
@@ -691,6 +1025,7 @@
           }
         },
         {
+          "description": "Google Gemini model configuration",
           "type": "object",
           "required": [
             "key_var",
@@ -717,6 +1052,7 @@
           }
         },
         {
+          "description": "Ollama model configuration",
           "type": "object",
           "required": [
             "api_key",
@@ -747,6 +1083,7 @@
           }
         },
         {
+          "description": "Anthropic model configuration",
           "type": "object",
           "required": [
             "key_var",
@@ -761,6 +1098,15 @@
                 "string",
                 "null"
               ]
+            },
+            "headers": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": {
+                "$ref": "#/definitions/HeaderValue"
+              }
             },
             "key_var": {
               "type": "string"
@@ -793,20 +1139,6 @@
         },
         "name": {
           "type": "string"
-        }
-      }
-    },
-    "McpConfig": {
-      "type": "object",
-      "description": "Configuration for MCP tool exposure",
-      "properties": {
-        "tools": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": [],
-          "description": "List of file patterns to expose as MCP tools. Supports glob patterns like 'agents/*.agent.yml'. Examples: 'agents/sql-generator.agent.yml' (specific file), 'agents/*.agent.yml' (all agents), 'workflows/**/*.workflow.yml' (recursive), 'semantics/topics/*.topic.yml' (topics), 'sqls/queries/*.sql' (SQL files)"
         }
       }
     },
@@ -1197,6 +1529,43 @@
           }
         }
       ]
+    },
+    "SlackSettings": {
+      "description": "Slack integration settings for project-level configuration",
+      "type": "object",
+      "required": [
+        "default_agent"
+      ],
+      "properties": {
+        "bot_token_var": {
+          "description": "Environment variable containing the bot token",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "default_agent": {
+          "description": "Default agent to use for Slack DM conversations This is used when users message the bot directly via Slack's AI/Agent interface",
+          "type": "string"
+        },
+        "oxy_app_url": {
+          "description": "Base URL for the Oxy web app (for deep links back to app in Slack messages) If not specified, \"View in Oxy\" links will not be included in responses",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "signing_secret_var": {
+          "description": "Environment variable containing the signing secret",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
     }
   }
 }

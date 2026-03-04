@@ -6,6 +6,13 @@
     "tasks"
   ],
   "properties": {
+    "consistency_prompt": {
+      "description": "Global consistency evaluation prompt for all agent tasks in this workflow This can be overridden per-task via AgentTask.consistency_prompt",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "description": {
       "default": "",
       "type": "string"
@@ -590,22 +597,614 @@
       },
       "additionalProperties": true
     },
-    "SemanticQueryFilter": {
-      "type": "object",
-      "required": [
-        "field",
-        "op",
-        "value"
-      ],
-      "properties": {
-        "field": {
-          "type": "string"
+    "SemanticFilter": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "field",
+            "op",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "description": "The measure/dimension to apply the filter on. Must by full name: <view_name>.<field_name>",
+              "type": "string"
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "eq"
+              ]
+            },
+            "value": {
+              "description": "The value to compare. Can be a string, number, boolean, or null.",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          }
         },
-        "op": {
-          "type": "string"
+        {
+          "type": "object",
+          "required": [
+            "field",
+            "op",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "description": "The measure/dimension to apply the filter on. Must by full name: <view_name>.<field_name>",
+              "type": "string"
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "neq"
+              ]
+            },
+            "value": {
+              "description": "The value to compare. Can be a string, number, boolean, or null.",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          }
         },
-        "value": true
-      }
+        {
+          "type": "object",
+          "required": [
+            "field",
+            "op",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "description": "The measure/dimension to apply the filter on. Must by full name: <view_name>.<field_name>",
+              "type": "string"
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "gt"
+              ]
+            },
+            "value": {
+              "description": "The value to compare. Can be a string, number, boolean, or null.",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "field",
+            "op",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "description": "The measure/dimension to apply the filter on. Must by full name: <view_name>.<field_name>",
+              "type": "string"
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "gte"
+              ]
+            },
+            "value": {
+              "description": "The value to compare. Can be a string, number, boolean, or null.",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "field",
+            "op",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "description": "The measure/dimension to apply the filter on. Must by full name: <view_name>.<field_name>",
+              "type": "string"
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "lt"
+              ]
+            },
+            "value": {
+              "description": "The value to compare. Can be a string, number, boolean, or null.",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "field",
+            "op",
+            "value"
+          ],
+          "properties": {
+            "field": {
+              "description": "The measure/dimension to apply the filter on. Must by full name: <view_name>.<field_name>",
+              "type": "string"
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "lte"
+              ]
+            },
+            "value": {
+              "description": "The value to compare. Can be a string, number, boolean, or null.",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "field",
+            "op",
+            "values"
+          ],
+          "properties": {
+            "field": {
+              "description": "The measure/dimension to apply the filter on. Must by full name: <view_name>.<field_name>",
+              "type": "string"
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "in"
+              ]
+            },
+            "values": {
+              "description": "Array of values to filter by. Each value can be a string, number, boolean, or null.",
+              "type": [
+                "array"
+              ],
+              "items": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "field",
+            "op",
+            "values"
+          ],
+          "properties": {
+            "field": {
+              "description": "The measure/dimension to apply the filter on. Must by full name: <view_name>.<field_name>",
+              "type": "string"
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "not_in"
+              ]
+            },
+            "values": {
+              "description": "Array of values to filter by. Each value can be a string, number, boolean, or null.",
+              "type": [
+                "array"
+              ],
+              "items": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "field",
+            "from",
+            "op",
+            "to"
+          ],
+          "properties": {
+            "field": {
+              "description": "The measure/dimension to apply the filter on. Must by full name: <view_name>.<field_name>",
+              "type": "string"
+            },
+            "from": {
+              "description": "Start of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp).",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "in_date_range"
+              ]
+            },
+            "to": {
+              "description": "End of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp).",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "field",
+            "from",
+            "op",
+            "to"
+          ],
+          "properties": {
+            "field": {
+              "description": "The measure/dimension to apply the filter on. Must by full name: <view_name>.<field_name>",
+              "type": "string"
+            },
+            "from": {
+              "description": "Start of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp).",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "not_in_date_range"
+              ]
+            },
+            "to": {
+              "description": "End of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp).",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "SemanticFilterType": {
+      "description": "Enum representing different filter types with their appropriate value types",
+      "oneOf": [
+        {
+          "description": "Scalar comparison filter (eq, neq, gt, gte, lt, lte)",
+          "type": "object",
+          "required": [
+            "op",
+            "value"
+          ],
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "eq"
+              ]
+            },
+            "value": {
+              "description": "The value to compare. Can be a string, number, boolean, or null.",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Scalar comparison filter (eq, neq, gt, gte, lt, lte)",
+          "type": "object",
+          "required": [
+            "op",
+            "value"
+          ],
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "neq"
+              ]
+            },
+            "value": {
+              "description": "The value to compare. Can be a string, number, boolean, or null.",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Scalar comparison filter (eq, neq, gt, gte, lt, lte)",
+          "type": "object",
+          "required": [
+            "op",
+            "value"
+          ],
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "gt"
+              ]
+            },
+            "value": {
+              "description": "The value to compare. Can be a string, number, boolean, or null.",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Scalar comparison filter (eq, neq, gt, gte, lt, lte)",
+          "type": "object",
+          "required": [
+            "op",
+            "value"
+          ],
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "gte"
+              ]
+            },
+            "value": {
+              "description": "The value to compare. Can be a string, number, boolean, or null.",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Scalar comparison filter (eq, neq, gt, gte, lt, lte)",
+          "type": "object",
+          "required": [
+            "op",
+            "value"
+          ],
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "lt"
+              ]
+            },
+            "value": {
+              "description": "The value to compare. Can be a string, number, boolean, or null.",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Scalar comparison filter (eq, neq, gt, gte, lt, lte)",
+          "type": "object",
+          "required": [
+            "op",
+            "value"
+          ],
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "lte"
+              ]
+            },
+            "value": {
+              "description": "The value to compare. Can be a string, number, boolean, or null.",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Array-based filter (in, not_in)",
+          "type": "object",
+          "required": [
+            "op",
+            "values"
+          ],
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "in"
+              ]
+            },
+            "values": {
+              "description": "Array of values to filter by. Each value can be a string, number, boolean, or null.",
+              "type": [
+                "array"
+              ],
+              "items": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "description": "Array-based filter (in, not_in)",
+          "type": "object",
+          "required": [
+            "op",
+            "values"
+          ],
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "not_in"
+              ]
+            },
+            "values": {
+              "description": "Array of values to filter by. Each value can be a string, number, boolean, or null.",
+              "type": [
+                "array"
+              ],
+              "items": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "description": "Date range filter (in_date_range, not_in_date_range)",
+          "type": "object",
+          "required": [
+            "from",
+            "op",
+            "to"
+          ],
+          "properties": {
+            "from": {
+              "description": "Start of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp).",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "in_date_range"
+              ]
+            },
+            "to": {
+              "description": "End of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp).",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Date range filter (in_date_range, not_in_date_range)",
+          "type": "object",
+          "required": [
+            "from",
+            "op",
+            "to"
+          ],
+          "properties": {
+            "from": {
+              "description": "Start of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp).",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "not_in_date_range"
+              ]
+            },
+            "to": {
+              "description": "End of the date range. Can be a string (ISO date or relative like 'today', '7 days ago'), number (timestamp).",
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        }
+      ]
     },
     "SemanticQueryOrder": {
       "type": "object",
@@ -732,6 +1331,13 @@
             "agent_ref": {
               "type": "string"
             },
+            "consistency_prompt": {
+              "description": "Custom consistency evaluation prompt for this specific task Overrides workflow-level consistency_prompt if specified",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "consistency_run": {
               "default": 1,
               "type": "integer",
@@ -762,6 +1368,13 @@
               "enum": [
                 "agent"
               ]
+            },
+            "variables": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": true
             }
           }
         },
@@ -838,7 +1451,6 @@
         {
           "type": "object",
           "required": [
-            "topic",
             "type"
           ],
           "properties": {
@@ -862,7 +1474,7 @@
             "filters": {
               "type": "array",
               "items": {
-                "$ref": "#/definitions/SemanticQueryFilter"
+                "$ref": "#/definitions/SemanticFilter"
               }
             },
             "limit": {
@@ -894,14 +1506,33 @@
                 "$ref": "#/definitions/SemanticQueryOrder"
               }
             },
+            "time_dimensions": {
+              "description": "List of time dimensions with granularity and date range. Can only use with dimensions of type time or datetime. Format: <view_name>.<dimension_name>",
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/TimeDimension"
+              }
+            },
             "topic": {
-              "type": "string"
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "type": {
               "type": "string",
               "enum": [
                 "semantic_query"
               ]
+            },
+            "variables": {
+              "description": "Variables to resolve in semantic layer expressions. Use {{variables.variable_name}} syntax in semantic definitions.",
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": true
             }
           }
         },
@@ -960,6 +1591,90 @@
               "type": "string",
               "enum": [
                 "omni_query"
+              ]
+            }
+          }
+        },
+        {
+          "description": "Task configuration for executing a Looker query within a workflow.",
+          "type": "object",
+          "required": [
+            "explore",
+            "fields",
+            "integration",
+            "model",
+            "type"
+          ],
+          "properties": {
+            "explore": {
+              "description": "The explore name within the model",
+              "type": "string"
+            },
+            "export": {
+              "description": "Optional export configuration for query results",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/TaskExport"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "fields": {
+              "description": "Fields to select. Field name must be full name format {view}.{field_name}.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "filter_expression": {
+              "description": "Looker filter expression for complex conditions.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "filters": {
+              "description": "Filter conditions as field name to Looker filter expression mappings.",
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "integration": {
+              "description": "Name of the Looker integration to use",
+              "type": "string"
+            },
+            "limit": {
+              "description": "Maximum number of rows to return.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            },
+            "model": {
+              "description": "The LookML model name",
+              "type": "string"
+            },
+            "sorts": {
+              "description": "Fields to sort by. Prefix with '-' for descending order.",
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "looker_query"
               ]
             }
           }
@@ -1095,6 +1810,34 @@
             "type"
           ],
           "properties": {
+            "export": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/TaskExport"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "prompt": {
+              "default": "",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "visualize"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
             "type": {
               "type": "string",
               "enum": [
@@ -1153,6 +1896,44 @@
           "type": "string"
         }
       }
+    },
+    "TimeDimension": {
+      "description": "Time dimension for temporal queries with granularity and date range",
+      "type": "object",
+      "required": [
+        "dimension"
+      ],
+      "properties": {
+        "dimension": {
+          "description": "Dimension name in format: <view_name>.<dimension_name>",
+          "type": "string"
+        },
+        "granularity": {
+          "description": "Time granularity for grouping (year, month, day, etc.)",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/TimeGranularity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "TimeGranularity": {
+      "description": "Time granularity options for time dimension queries",
+      "type": "string",
+      "enum": [
+        "year",
+        "quarter",
+        "month",
+        "week",
+        "day",
+        "hour",
+        "minute",
+        "second"
+      ]
     }
   }
 }

@@ -153,6 +153,12 @@ const ontologyKeys = {
     [...ontologyKeys.all, "graph", projectId, branchName] as const
 };
 
+const integrationKeys = {
+  all: ["integration"] as const,
+  looker: (projectId: string, branchName: string) =>
+    [...integrationKeys.all, "looker", projectId, branchName] as const
+};
+
 const queryKeys = {
   agent: agentKeys,
   thread: threadKeys,
@@ -172,6 +178,7 @@ const queryKeys = {
   config: configKeys,
   artifact: artifactKeys,
   ontology: ontologyKeys,
+  integration: integrationKeys,
   trace: traceKeys
 };
 

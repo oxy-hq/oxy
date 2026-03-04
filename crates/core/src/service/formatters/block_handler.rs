@@ -389,6 +389,23 @@ impl BlockHandler {
                                 .await?;
                         }
                     }
+                    ArtifactKind::LookerQuery { model, explore, .. } => match &chunk.delta {
+                        Output::LookerQuery(query) => {
+                            self.stream_dispatcher
+                                .send_artifact_value(
+                                    artifact_id,
+                                    ArtifactValue::LookerQuery(query.clone()),
+                                    &source.kind,
+                                )
+                                .await?;
+                        }
+                        _ => {
+                            return Err(OxyError::RuntimeError(format!(
+                                "Invalid delta for LookerQuery artifact ({}.{}): expected Output::LookerQuery, got {:?}",
+                                model, explore, chunk.delta
+                            )));
+                        }
+                    },
                     ArtifactKind::SandboxApp { .. } => {
                         // Sandbox apps don't have streaming content
                         // The preview_url is known upfront when the artifact is created

@@ -6,7 +6,13 @@ import { encodeBase64 } from "@/libs/encoding";
 import type { Block } from "@/services/types";
 import type { Display, TableDisplay } from "@/types/app";
 
-const FULLSCREENABLE_BLOCK_TYPES = new Set(["sql", "semantic_query", "viz", "data_app"]);
+const FULLSCREENABLE_BLOCK_TYPES = new Set([
+  "sql",
+  "semantic_query",
+  "looker_query",
+  "viz",
+  "data_app"
+]);
 
 export const isFullscreenableBlock = (block: Block) => FULLSCREENABLE_BLOCK_TYPES.has(block.type);
 
@@ -38,6 +44,29 @@ const SqlBlock = ({ sqlQuery, result }: { sqlQuery: string; result: string[][] }
   </>
 );
 
+const LookerQueryBlock = ({
+  model,
+  explore,
+  fields,
+  result
+}: {
+  model: string;
+  explore: string;
+  fields: string[];
+  result: string[][];
+}) => (
+  <>
+    <span className='text-bold text-sm'>Looker Query</span>
+    <Markdown>{`
+- Model: ${model}
+- Explore: ${explore}
+- Fields: ${fields.join(", ")}
+`}</Markdown>
+    <span className='text-bold text-sm'>Results</span>
+    <TableVirtualized table_id='0' tables={[result]} />
+  </>
+);
+
 const VizBlock = ({ config }: { config: Display }) => (
   <DisplayBlock
     display={config}
@@ -63,6 +92,15 @@ const BlockComponent = ({ block }: { block: Block }) => {
       return <SemanticQueryBlock sqlQuery={block.sql_query} results={block.results} />;
     case "sql":
       return <SqlBlock sqlQuery={block.sql_query} result={block.result} />;
+    case "looker_query":
+      return (
+        <LookerQueryBlock
+          model={block.model}
+          explore={block.explore}
+          fields={block.fields}
+          result={block.result ?? []}
+        />
+      );
     case "viz":
       return <VizBlock config={block.config as Display} />;
     case "data_app":

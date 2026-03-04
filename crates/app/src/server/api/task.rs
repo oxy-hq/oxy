@@ -140,7 +140,8 @@ impl EventHandler for TaskStream {
                 | Output::SQL(_)
                 | Output::Documents(_)
                 | Output::OmniQuery(_)
-                | Output::SemanticQuery(_) => {}
+                | Output::SemanticQuery(_)
+                | Output::LookerQuery(_) => {}
             }
         }
         if let EventKind::DataAppCreated { data_app } = &event.kind {

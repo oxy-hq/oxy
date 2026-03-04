@@ -1,6 +1,7 @@
 pub mod create_data_app;
 pub mod edit_data_app;
 pub mod launcher;
+pub mod looker;
 pub mod omni;
 pub mod read_data_app;
 pub mod registry;

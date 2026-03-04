@@ -446,6 +446,72 @@ pub mod task {
         }
     }
 
+    pub mod looker_query {
+        use super::*;
+
+        pub static NAME_MAP: &str = "workflow.task.looker_query.map";
+        pub static NAME_EXECUTE: &str = "workflow.task.looker_query.execute";
+        pub static NAME_EXECUTE_QUERY: &str = "workflow.task.looker_query.execute_query";
+        pub static TYPE: &str = "looker_query";
+
+        pub static INPUT_MAP: &str = "workflow.task.looker_query.map.input";
+        pub static OUTPUT_MAP: &str = "workflow.task.looker_query.map.output";
+        pub static INPUT_EXECUTE: &str = "workflow.task.looker_query.execute.input";
+        pub static OUTPUT_EXECUTE: &str = "workflow.task.looker_query.execute.output";
+
+        pub fn map_input(task: &crate::config::model::LookerQueryTask) {
+            event!(
+                Level::INFO,
+                name = INPUT_MAP,
+                is_visible = true,
+                integration = %task.integration,
+                model = %task.model,
+                explore = %task.explore,
+                fields = %serde_json::to_string(&task.query.fields).unwrap_or_default()
+            );
+        }
+
+        pub fn map_output(integration: &str, model: &str, explore: &str, fields_count: usize) {
+            event!(
+                Level::INFO,
+                name = OUTPUT_MAP,
+                is_visible = true,
+                status = "success",
+                integration = %integration,
+                model = %model,
+                explore = %explore,
+                fields_count = fields_count
+            );
+        }
+
+        pub fn execute_input(
+            integration: &str,
+            model: &str,
+            explore: &str,
+            params: &crate::config::model::LookerQueryParams,
+        ) {
+            event!(
+                Level::INFO,
+                name = INPUT_EXECUTE,
+                is_visible = true,
+                integration = %integration,
+                model = %model,
+                explore = %explore,
+                params = %serde_json::to_string(params).unwrap_or_default()
+            );
+        }
+
+        pub fn execute_output(output: &crate::execute::types::Output) {
+            event!(
+                Level::INFO,
+                name = OUTPUT_EXECUTE,
+                is_visible = true,
+                status = "success",
+                output = %serde_json::to_string(output).unwrap_or_default()
+            );
+        }
+    }
+
     pub mod loop_task {
         use super::*;
 

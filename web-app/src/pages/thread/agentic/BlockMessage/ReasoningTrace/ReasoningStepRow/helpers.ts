@@ -1,6 +1,6 @@
 import type { Block } from "@/services/types";
 
-export const ARTIFACT_TYPES = new Set(["sql", "semantic_query", "viz", "data_app"]);
+export const ARTIFACT_TYPES = new Set(["sql", "semantic_query", "looker_query", "viz", "data_app"]);
 
 export const PILL_CLASS =
   "flex shrink-0 items-center gap-1 rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground";
@@ -21,6 +21,7 @@ export function findArtifactBlock(blocks: Block[]): Block | null {
 
 export function getArtifactLabel(block: Block): string {
   if (block.type === "semantic_query") return "Semantic query";
+  if (block.type === "looker_query") return "Looker query";
   if (block.type === "sql") return "SQL query";
   return block.type;
 }

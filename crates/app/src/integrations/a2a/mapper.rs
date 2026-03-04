@@ -337,6 +337,13 @@ pub fn oxy_output_to_parts(output: &Output) -> Result<Vec<Part>, A2aError> {
             })?;
             Ok(vec![Part::Data(DataPart::new(json_value))])
         }
+        Output::LookerQuery(query) => {
+            // Convert LookerQuery to JSON DataPart
+            let json_value = serde_json::to_value(query).map_err(|e| {
+                A2aError::ServerError(format!("Failed to serialize LookerQuery: {}", e))
+            })?;
+            Ok(vec![Part::Data(DataPart::new(json_value))])
+        }
     }
 }
 

@@ -17,6 +17,7 @@ use crate::fsm::{
         ensure_ends_with_user_message,
     },
     data_app::{BuildDataApp, GenerateInsight, config::Insight},
+    looker_query::{AutoLookerQuery, config::LookerQuery},
     machine::Agent,
     query::{AutoSQL, config::Query},
     route_trigger::RouteTrigger,
@@ -561,6 +562,26 @@ impl TriggerBuilder for MachineContext {
         )))
     }
 
+    async fn build_looker_query_trigger(
+        &self,
+        execution_context: &ExecutionContext,
+        agentic_config: &AgenticConfig,
+        looker_query_config: &LookerQuery,
+        objective: String,
+    ) -> Result<Box<dyn Trigger<State = Self>>, OxyError> {
+        let model_ref = looker_query_config
+            .query_model
+            .as_deref()
+            .unwrap_or(&agentic_config.model);
+        let openai_adapter =
+            OpenAIAdapter::from_config(execution_context.project.clone(), model_ref).await?;
+        Ok(Box::new(AutoLookerQuery::<MachineContext>::new(
+            openai_adapter,
+            looker_query_config.clone(),
+            objective,
+        )))
+    }
+
     async fn build_viz_trigger(
         &self,
         execution_context: &ExecutionContext,
@@ -706,6 +727,16 @@ impl TriggerBuilder for MachineContext {
                     execution_context,
                     agentic_config,
                     semantic_query_config,
+                    objective,
+                )
+                .await
+            }
+            TriggerType::LookerQuery(looker_query_config) => {
+                tracing::info!("Building LookerQuery Trigger {looker_query_config:?}");
+                self.build_looker_query_trigger(
+                    execution_context,
+                    agentic_config,
+                    looker_query_config,
                     objective,
                 )
                 .await

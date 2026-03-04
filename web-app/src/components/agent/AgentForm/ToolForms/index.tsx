@@ -1,6 +1,7 @@
 export { AgentToolForm } from "./AgentToolForm";
 export { CreateDataAppToolForm } from "./CreateDataAppToolForm";
 export { ExecuteSqlToolForm } from "./ExecuteSqlToolForm";
+export { LookerQueryToolForm } from "./LookerQueryToolForm";
 export { OmniQueryToolForm } from "./OmniQueryToolForm";
 export { RetrievalToolForm } from "./RetrievalToolForm";
 export { SaveAutomationToolForm } from "./SaveAutomationToolForm";

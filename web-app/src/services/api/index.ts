@@ -6,6 +6,8 @@ export { AuthService } from "./auth";
 export { DatabaseService } from "./database";
 export { FileService } from "./files";
 export { GitHubApiService } from "./github";
+export type { LookerExplore, LookerIntegrationInfo } from "./integrations";
+export { IntegrationService } from "./integrations";
 export { ArtifactService, BuilderService, ChartService } from "./misc";
 export { OntologyService } from "./ontology";
 export { ProjectService } from "./projects";

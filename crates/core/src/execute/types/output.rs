@@ -6,7 +6,7 @@ use minijinja::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::types::{SemanticQuery, tool_params::OmniQueryParams};
+use crate::types::{LookerQuery, SemanticQuery, tool_params::OmniQueryParams};
 use oxy_shared::errors::OxyError;
 
 use super::{Document, Prompt, SQL, Table, output_container::Data, table::TableReference};
@@ -21,6 +21,7 @@ pub enum Output {
     Documents(Vec<Document>),
     OmniQuery(OmniQueryParams),
     SemanticQuery(SemanticQuery),
+    LookerQuery(LookerQuery),
 }
 
 impl Default for Output {
@@ -83,6 +84,10 @@ impl Output {
                 // this contains the params of semantic query, not useful to return as data
                 Ok(Data::None)
             }
+            Output::LookerQuery(_) => {
+                // this contains the params of looker query, not useful to return as data
+                Ok(Data::None)
+            }
         }
     }
 
@@ -105,6 +110,9 @@ impl Output {
             }
             Output::SemanticQuery(semantic_query_params) => {
                 serde_json::to_string_pretty(semantic_query_params).unwrap_or_default()
+            }
+            Output::LookerQuery(looker_query_params) => {
+                serde_json::to_string_pretty(looker_query_params).unwrap_or_default()
             }
         }
     }
@@ -173,6 +181,11 @@ impl std::fmt::Display for Output {
                     .map_err(|_| std::fmt::Error)?;
                 write!(f, "{json}")
             }
+            Output::LookerQuery(looker_query_params) => {
+                let json = serde_json::to_string_pretty(looker_query_params)
+                    .map_err(|_| std::fmt::Error)?;
+                write!(f, "{json}")
+            }
         }
     }
 }
@@ -226,6 +239,11 @@ impl Object for Output {
             }
             Output::SemanticQuery(semantic_query_params) => {
                 let json = serde_json::to_string_pretty(semantic_query_params)
+                    .map_err(|_| std::fmt::Error)?;
+                write!(f, "{json}")
+            }
+            Output::LookerQuery(looker_query_params) => {
+                let json = serde_json::to_string_pretty(looker_query_params)
                     .map_err(|_| std::fmt::Error)?;
                 write!(f, "{json}")
             }

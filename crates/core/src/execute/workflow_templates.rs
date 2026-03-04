@@ -18,6 +18,9 @@ impl TemplateRegister for &Task {
             TaskType::OmniQuery(_omni_task) => {
                 // OmniQueryTask doesn't have file templates to register
             }
+            TaskType::LookerQuery(_looker_task) => {
+                // LookerQueryTask doesn't have file templates to register
+            }
             TaskType::Agent(_agent_task) => {
                 // AgentTask doesn't have file templates to register
             }

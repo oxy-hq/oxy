@@ -8274,6 +8274,7 @@ dependencies = [
  "oxy-anthropic",
  "oxy-gemini",
  "oxy-llm",
+ "oxy-looker",
  "oxy-ollama",
  "oxy-openai",
  "oxy-semantic",
@@ -8447,6 +8448,7 @@ dependencies = [
  "oxy",
  "oxy-agent",
  "oxy-auth",
+ "oxy-looker",
  "oxy-project",
  "oxy-semantic",
  "oxy-shared",
@@ -8552,6 +8554,21 @@ dependencies = [
  "schemars 0.8.22",
  "serde",
  "serde_with",
+]
+
+[[package]]
+name = "oxy-looker"
+version = "0.4.8"
+dependencies = [
+ "garde",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

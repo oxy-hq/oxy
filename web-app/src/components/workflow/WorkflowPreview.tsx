@@ -96,7 +96,7 @@ export const WorkflowPreview = ({
     [stream]
   );
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
+  // biome-ignore lint/correctness/useExhaustiveDependencies: streamCall intentionally excluded to avoid re-streaming on callback identity updates
   useEffect(() => {
     const abortRef = new AbortController();
     if (relativePath && runId) {
@@ -197,11 +197,15 @@ export const WorkflowPreview = ({
     return (
       <div className='w-full'>
         <div className='mx-auto flex max-w-page-content flex-col gap-10 p-10'>
-          {Array.from({ length: 3 }).map((_, index) => (
-            <div key={index} className='flex flex-col gap-4'>
-              <Skeleton className='h-4 max-w-[200px]' />
-              <Skeleton className='h-4 max-w-[500px]' />
-              <Skeleton className='h-4 max-w-[500px]' />
+          {[
+            "workflow-preview-skeleton-1",
+            "workflow-preview-skeleton-2",
+            "workflow-preview-skeleton-3"
+          ].map((key) => (
+            <div key={key} className='flex flex-col gap-4'>
+              <Skeleton className='h-4 max-w-50' />
+              <Skeleton className='h-4 max-w-125' />
+              <Skeleton className='h-4 max-w-125' />
             </div>
           ))}
         </div>
@@ -270,7 +274,7 @@ export const WorkflowPreview = ({
                   {workflowConfig.variables ? (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant='outline' className='!pl-2'>
+                        <Button variant='outline' className='pl-2!'>
                           <ChevronDownIcon />
                         </Button>
                       </DropdownMenuTrigger>

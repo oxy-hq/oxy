@@ -12,7 +12,7 @@ use std::hash::Hash;
 use std::path::PathBuf;
 use utoipa::ToSchema;
 
-pub use variables::Variables;
+pub use variables::{Variable, Variables};
 
 use super::validate::{
     AgentValidationContext, validate_model, validate_no_duplicate_tool_names, validate_task,
@@ -21,8 +21,8 @@ use crate::adapters::secrets::SecretsManager;
 use crate::config::validate::validate_file_path;
 use crate::config::validate::{
     ValidationContext, validate_agent_exists, validate_consistency_prompt,
-    validate_database_exists, validate_env_var, validate_omni_integration_exists,
-    validate_task_data_reference,
+    validate_database_exists, validate_env_var, validate_looker_integration_exists,
+    validate_omni_integration_exists, validate_task_data_reference,
 };
 pub use duckdb::{CatalogConfig, DuckDBOptions, DuckLakeConfig, S3StorageSecret, StorageConfig};
 pub use oxy_llm::{
@@ -30,12 +30,11 @@ pub use oxy_llm::{
     OpenAIModelConfig, default_openai_api_url,
 };
 use oxy_shared::errors::OxyError;
-pub use semantics::{SemanticDimension, Semantics};
-pub use variables::Variable;
 pub use workflow::WorkflowWithRawVariables;
 
 mod duckdb;
 mod semantics;
+pub use semantics::{SemanticDimension, Semantics};
 mod variables;
 mod workflow;
 
@@ -93,6 +92,8 @@ pub struct Integration {
 pub enum IntegrationType {
     #[serde(rename = "omni")]
     Omni(OmniIntegration),
+    #[serde(rename = "looker")]
+    Looker(LookerIntegration),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
@@ -123,6 +124,43 @@ pub struct OmniTopic {
     pub name: String,
     #[garde(length(min = 1))]
     pub model_id: String,
+}
+
+/// Looker integration configuration.
+///
+/// Provides connection settings for a Looker instance, including OAuth credentials
+/// and the list of explores to expose.
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
+#[garde(context(ValidationContext))]
+pub struct LookerIntegration {
+    /// Environment variable containing the Looker client ID
+    #[garde(custom(validate_env_var))]
+    pub client_id_var: String,
+    /// Environment variable containing the Looker client secret
+    #[garde(custom(validate_env_var))]
+    pub client_secret_var: String,
+    /// Base URL for the Looker instance (e.g., https://your.looker.com:19999)
+    #[garde(length(min = 1))]
+    pub base_url: String,
+    /// List of explores to expose from this Looker instance
+    #[garde(dive)]
+    pub explores: Vec<LookerExplore>,
+}
+
+/// Configuration for a Looker explore to expose.
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
+#[garde(context(ValidationContext))]
+pub struct LookerExplore {
+    /// The LookML model name containing this explore
+    #[garde(length(min = 1))]
+    pub model: String,
+    /// The explore name within the model
+    #[garde(length(min = 1))]
+    pub name: String,
+    /// Optional description for the explore
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[garde(skip)]
+    pub description: Option<String>,
 }
 
 /// Slack integration settings for project-level configuration
@@ -1604,6 +1642,7 @@ pub struct DateRangeFilter {
 }
 
 impl DateRangeFilter {
+    #[allow(dead_code)]
     fn resolve_date_value(value: &Value) -> Result<Value, oxy_shared::errors::OxyError> {
         match value {
             Value::String(s) => {
@@ -1614,6 +1653,7 @@ impl DateRangeFilter {
         }
     }
 
+    #[allow(dead_code)]
     fn parse_relative_date(expr: &str) -> Result<String, oxy_shared::errors::OxyError> {
         use chrono::Utc;
 
@@ -1956,6 +1996,106 @@ impl Hash for OmniQueryTask {
     }
 }
 
+/// Task configuration for executing a Looker query within a workflow.
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+#[garde(context(ValidationContext))]
+pub struct LookerQueryTask {
+    /// Name of the Looker integration to use
+    #[garde(custom(validate_looker_integration_exists))]
+    pub integration: String,
+    /// The LookML model name
+    #[garde(length(min = 1))]
+    pub model: String,
+    /// The explore name within the model
+    #[garde(length(min = 1))]
+    pub explore: String,
+    /// Query parameters
+    #[serde(flatten)]
+    #[garde(skip)]
+    pub query: LookerQueryParams,
+    /// Optional export configuration for query results
+    #[garde(dive)]
+    pub export: Option<TaskExport>,
+}
+
+impl Hash for LookerQueryTask {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.integration.hash(state);
+        self.model.hash(state);
+        self.explore.hash(state);
+        self.query.hash(state);
+    }
+}
+
+fn default_sort_direction() -> String {
+    "asc".to_string()
+}
+
+/// A sort field for a Looker query with explicit field name and direction.
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, PartialEq, Eq, Hash)]
+pub struct LookerSortField {
+    pub field: String,
+    #[serde(default = "default_sort_direction")]
+    pub direction: String,
+}
+
+impl LookerSortField {
+    pub fn to_looker_string(&self) -> String {
+        if self.direction.eq_ignore_ascii_case("desc") {
+            format!("-{}", self.field)
+        } else {
+            self.field.clone()
+        }
+    }
+}
+
+/// Query parameters for a Looker query.
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, PartialEq, Eq)]
+pub struct LookerQueryParams {
+    /// List of field names to include in the results (e.g., "orders.id", "orders.total")
+    #[schemars(
+        description = "Fields to select. Field name must be full name format {view}.{field_name}."
+    )]
+    pub fields: Vec<String>,
+    /// Filter conditions as field name to filter expression mappings
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(
+        description = "Filter conditions as field name to Looker filter expression mappings."
+    )]
+    pub filters: Option<HashMap<String, String>>,
+    /// Looker filter expression for complex OR conditions
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(description = "Looker filter expression for complex conditions.")]
+    pub filter_expression: Option<String>,
+    /// List of fields to sort by. Each entry can be a string ("field" or "-field" for desc)
+    /// or an object with `field` and `direction` ("asc"/"desc").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(description = "Fields to sort by. Prefix with '-' for descending order.")]
+    pub sorts: Option<Vec<LookerSortField>>,
+    /// Maximum number of rows to return (-1 for unlimited)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(description = "Maximum number of rows to return.")]
+    pub limit: Option<i64>,
+}
+
+impl Hash for LookerQueryParams {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.fields.hash(state);
+        // Sort the hashmap keys to ensure consistent hashing
+        if let Some(filters) = &self.filters {
+            let mut sorted: Vec<_> = filters.iter().collect();
+            sorted.sort_by_key(|(k, _)| *k);
+            for (k, v) in sorted {
+                k.hash(state);
+                v.hash(state);
+            }
+        }
+        self.filter_expression.hash(state);
+        self.sorts.hash(state);
+        self.limit.hash(state);
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Hash)]
 #[serde(untagged)]
 pub enum LoopValues {
@@ -2032,6 +2172,8 @@ pub enum TaskType {
     SemanticQuery(#[garde(dive)] SemanticQueryTask),
     #[serde(rename = "omni_query")]
     OmniQuery(#[garde(dive)] OmniQueryTask),
+    #[serde(rename = "looker_query")]
+    LookerQuery(#[garde(dive)] LookerQueryTask),
     #[serde(rename = "loop_sequential")]
     LoopSequential(#[garde(dive)] LoopSequentialTask),
     #[serde(rename = "formatter")]
@@ -2069,6 +2211,7 @@ impl Task {
             TaskType::ExecuteSQL(_) => "execute_sql",
             TaskType::SemanticQuery(_) => "semantic_query",
             TaskType::OmniQuery(_) => "omni_query",
+            TaskType::LookerQuery(_) => "looker_query",
             TaskType::LoopSequential(_) => "loop",
             TaskType::Formatter(_) => "formatter",
             TaskType::Workflow(_) => "sub_workflow",
@@ -2402,6 +2545,17 @@ pub struct OmniQueryTool {
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+pub struct LookerQueryTool {
+    #[serde(default = "default_looker_query_name")]
+    pub name: String,
+    #[serde(default = "default_looker_query_tool_description")]
+    pub description: String,
+    pub integration: String,
+    pub model: String,
+    pub explore: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct MarkdownDisplay {
     pub content: String,
 }
@@ -2536,6 +2690,8 @@ pub enum ToolType {
     OmniQuery(OmniQueryTool),
     #[serde(rename = "semantic_query")]
     SemanticQuery(SemanticQueryTool),
+    #[serde(rename = "looker_query")]
+    LookerQuery(LookerQueryTool),
     #[serde(rename = "save_automation")]
     SaveAutomation(SaveAutomationTool),
 }
@@ -2568,6 +2724,12 @@ impl From<SemanticQueryTool> for ToolType {
     }
 }
 
+impl From<LookerQueryTool> for ToolType {
+    fn from(tool: LookerQueryTool) -> Self {
+        ToolType::LookerQuery(tool)
+    }
+}
+
 impl From<SaveAutomationTool> for ToolType {
     fn from(tool: SaveAutomationTool) -> Self {
         ToolType::SaveAutomation(tool)
@@ -2590,6 +2752,7 @@ impl ToolType {
             ToolType::CreateV0App(tool) => &tool.name,
             ToolType::OmniQuery(tool) => &tool.name,
             ToolType::SemanticQuery(tool) => &tool.name,
+            ToolType::LookerQuery(tool) => &tool.name,
             ToolType::SaveAutomation(tool) => &tool.name,
         }
     }
@@ -2738,6 +2901,49 @@ impl ToolType {
                     description: rendered_description,
                     topic: rendered_topic,
                     integration: rendered_integration,
+                })
+            }
+            ToolType::LookerQuery(tool) => {
+                renderer.register_template(&tool.description)?;
+                let rendered_description =
+                    renderer
+                        .render_async(&tool.description)
+                        .await
+                        .map_err(|e| {
+                            OxyError::RuntimeError(format!(
+                                "Failed to render LookerQuery description: {}",
+                                e
+                            ))
+                        })?;
+
+                renderer.register_template(&tool.integration)?;
+                let rendered_integration =
+                    renderer
+                        .render_async(&tool.integration)
+                        .await
+                        .map_err(|e| {
+                            OxyError::RuntimeError(format!(
+                                "Failed to render LookerQuery integration: {}",
+                                e
+                            ))
+                        })?;
+
+                renderer.register_template(&tool.model)?;
+                let rendered_model = renderer.render_async(&tool.model).await.map_err(|e| {
+                    OxyError::RuntimeError(format!("Failed to render LookerQuery model: {}", e))
+                })?;
+
+                renderer.register_template(&tool.explore)?;
+                let rendered_explore = renderer.render_async(&tool.explore).await.map_err(|e| {
+                    OxyError::RuntimeError(format!("Failed to render LookerQuery explore: {}", e))
+                })?;
+
+                ToolType::LookerQuery(LookerQueryTool {
+                    name: tool.name.clone(),
+                    description: rendered_description,
+                    integration: rendered_integration,
+                    model: rendered_model,
+                    explore: rendered_explore,
                 })
             }
             ToolType::Workflow(tool) => {
@@ -3144,6 +3350,10 @@ fn default_omni_query_tool_description() -> String {
     "Query data through Omni's semantic layer API. Use this tool to execute queries against topics, dimensions, and measures defined in the Omni semantic model.".to_string()
 }
 
+fn default_looker_query_tool_description() -> String {
+    "Query data through Looker by selecting fields, filters, sorts, and limit.".to_string()
+}
+
 // Default tool names based on tool type
 fn default_execute_sql_name() -> String {
     "execute_sql".to_string()
@@ -3199,6 +3409,10 @@ fn default_omni_query_name() -> String {
 
 fn default_semantic_query_name() -> String {
     "semantic_query".to_string()
+}
+
+fn default_looker_query_name() -> String {
+    "looker_query".to_string()
 }
 
 fn default_save_automation_tool_name() -> String {
@@ -3322,10 +3536,12 @@ fn default_consistency_concurrency() -> usize {
     10
 }
 
+#[allow(dead_code)]
 fn default_v0_api_url() -> String {
     "https://api.v0.dev".to_string()
 }
 
+#[allow(dead_code)]
 fn default_v0_key_var() -> String {
     "V0_API_KEY".to_string()
 }

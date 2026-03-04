@@ -84,12 +84,6 @@ struct ClassificationReadRow {
     trace_id: String,
     #[serde(rename = "Question")]
     question: String,
-    #[serde(rename = "ClusterId")]
-    cluster_id: u32,
-    #[serde(rename = "IntentName")]
-    intent_name: String,
-    #[serde(rename = "Confidence")]
-    confidence: f32,
     #[serde(rename = "Embedding")]
     embedding: Vec<f32>,
     #[serde(rename = "SourceType")]
@@ -165,7 +159,7 @@ impl IntentStorage {
         let rows: Vec<ClassificationReadRow> = self
             .storage
             .client()
-            .query("SELECT TraceId, Question, ClusterId, IntentName, Confidence, Embedding, SourceType, Source FROM intent_classifications")
+            .query("SELECT TraceId, Question, Embedding, SourceType, Source FROM intent_classifications")
             .fetch_all()
             .await
             .map_err(|e| OxyError::RuntimeError(format!("Failed to load embeddings: {e}")))?;
@@ -397,7 +391,7 @@ impl IntentStorage {
             .storage
             .client()
             .query(
-                "SELECT TraceId, Question, ClusterId, IntentName, Confidence, Embedding, SourceType, Source FROM intent_classifications WHERE IntentName = 'unknown'",
+                "SELECT TraceId, Question, Embedding, SourceType, Source FROM intent_classifications WHERE IntentName = 'unknown'",
             )
             .fetch_all()
             .await

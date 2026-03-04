@@ -1,5 +1,6 @@
 pub mod block;
 pub mod formatters;
+pub mod looker_sync;
 pub mod message;
 pub mod omni_sync;
 pub mod retrieval;

@@ -2,7 +2,6 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use assert_cmd::Command;
-use assert_cmd::assert::OutputAssertExt;
 
 #[test]
 pub fn start_server_ok() {
