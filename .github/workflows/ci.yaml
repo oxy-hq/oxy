@@ -217,17 +217,17 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - name: Free disk space
-        if: matrix.task == 'test'
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: false
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
+      # - name: Free disk space
+      #   if: matrix.task == 'test'
+      #   uses: jlumbroso/free-disk-space@main
+      #   with:
+      #     tool-cache: false
+      #     android: true
+      #     dotnet: true
+      #     haskell: true
+      #     large-packages: true
+      #     docker-images: true
+      #     swap-storage: true
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -316,17 +316,6 @@ jobs:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       DOMO_DEVELOPER_TOKEN: "empty"
     steps:
-      - uses: jlumbroso/free-disk-space@main
-        with:
-          {
-            tool-cache: false,
-            android: true,
-            dotnet: true,
-            haskell: true,
-            large-packages: false,
-            docker-images: false,
-            swap-storage: true,
-          }
       - uses: actions/checkout@v6
       - uses: gacts/install-hurl@v1
 
