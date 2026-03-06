@@ -107,13 +107,15 @@ export const LookerQueryTaskFields: React.FC<LookerQueryTaskFieldsProps> = ({
                 setValue(`${taskPath}.explore`, "");
               }}
             >
-              <SelectTrigger>
+              <SelectTrigger className='w-full'>
                 <SelectValue placeholder='Select integration' />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className='min-w-(--radix-select-trigger-width)'>
                 {lookerIntegrations.map((integration) => (
                   <SelectItem key={integration.name} value={integration.name}>
-                    {integration.name}
+                    <span className='block truncate' title={integration.name}>
+                      {integration.name}
+                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -143,7 +145,7 @@ export const LookerQueryTaskFields: React.FC<LookerQueryTaskFieldsProps> = ({
                   setValue(`${taskPath}.explore`, "");
                 }}
               >
-                <SelectTrigger>
+                <SelectTrigger className='w-full'>
                   <SelectValue
                     placeholder={selectedIntegration ? "Select model" : "Select integration first"}
                   />
@@ -182,7 +184,7 @@ export const LookerQueryTaskFields: React.FC<LookerQueryTaskFieldsProps> = ({
                   setValue(`${taskPath}.sorts`, []);
                 }}
               >
-                <SelectTrigger>
+                <SelectTrigger className='w-full'>
                   <SelectValue
                     placeholder={selectedModel ? "Select explore" : "Select model first"}
                   />
@@ -220,7 +222,7 @@ export const LookerQueryTaskFields: React.FC<LookerQueryTaskFieldsProps> = ({
           <div className='space-y-2'>
             {fieldEntries.map((field, fieldIndex) => (
               <div key={field.id} className='flex items-start gap-2'>
-                <div className='flex-1'>
+                <div className='min-w-0 flex-1'>
                   <Controller
                     control={control}
                     // @ts-expect-error - dynamic field path
@@ -231,8 +233,9 @@ export const LookerQueryTaskFields: React.FC<LookerQueryTaskFieldsProps> = ({
                         value={(selectedField.value as string) || ""}
                         onValueChange={selectedField.onChange}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger className='w-full'>
                           <SelectValue
+                            className='min-w-0 truncate'
                             placeholder={
                               selectedExplore
                                 ? availableFieldOptions.length > 0
@@ -287,7 +290,7 @@ export const LookerQueryTaskFields: React.FC<LookerQueryTaskFieldsProps> = ({
           <div className='space-y-2'>
             {filterEntries.map((filter, filterIndex) => (
               <div key={filter.id} className='flex items-start gap-2'>
-                <div className='flex-1'>
+                <div className='min-w-0 flex-1'>
                   <Controller
                     control={control}
                     // @ts-expect-error - dynamic field path
@@ -298,8 +301,9 @@ export const LookerQueryTaskFields: React.FC<LookerQueryTaskFieldsProps> = ({
                         value={(filterField.value as string) || ""}
                         onValueChange={filterField.onChange}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger className='w-full'>
                           <SelectValue
+                            className='min-w-0 truncate'
                             placeholder={
                               selectedExplore
                                 ? availableFieldOptions.length > 0
@@ -371,7 +375,7 @@ export const LookerQueryTaskFields: React.FC<LookerQueryTaskFieldsProps> = ({
           <div className='space-y-2'>
             {sortEntries.map((sort, sortIndex) => (
               <div key={sort.id} className='flex items-start gap-2'>
-                <div className='flex-1'>
+                <div className='min-w-0 flex-1'>
                   <Controller
                     control={control}
                     // @ts-expect-error - dynamic field path
@@ -382,8 +386,9 @@ export const LookerQueryTaskFields: React.FC<LookerQueryTaskFieldsProps> = ({
                         value={(sortField.value as string) || ""}
                         onValueChange={sortField.onChange}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger className='w-full'>
                           <SelectValue
+                            className='min-w-0 truncate'
                             placeholder={
                               selectedExplore
                                 ? availableFieldOptions.length > 0
@@ -414,7 +419,7 @@ export const LookerQueryTaskFields: React.FC<LookerQueryTaskFieldsProps> = ({
                         value={(dirField.value as string) || "asc"}
                         onValueChange={dirField.onChange}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger className='w-full'>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
