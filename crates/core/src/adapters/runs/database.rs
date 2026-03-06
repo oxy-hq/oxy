@@ -115,6 +115,8 @@ impl RunsStorage for RunsDatabaseStorage {
                                     .filter(
                                         entity::runs::Column::SourceId
                                             .eq(&source_id)
+                                            .and(entity::runs::Column::ProjectId.eq(project_id))
+                                            .and(entity::runs::Column::BranchId.eq(branch_id))
                                             .and(entity::runs::Column::RunIndex.is_not_null()),
                                     )
                                     .order_by_desc(entity::runs::Column::RunIndex)
