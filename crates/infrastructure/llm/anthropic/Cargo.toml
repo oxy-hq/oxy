@@ -6,7 +6,7 @@ edition.workspace = true
 name = "oxy-anthropic"
 publish.workspace = true
 rust-version.workspace = true
-version = "0.5.21"
+version = "0.5.22"
 
 [dependencies]
 async-openai = {workspace = true, features = ["byot", "chat-completion-types", "_api"]}

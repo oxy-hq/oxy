@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.22](https://github.com/oxy-hq/oxy-internal/compare/0.5.21...0.5.22) (2026-03-06)
+
+
+### <!-- 0 -->🚀 Features
+
+* improve looker task form ([#1729](https://github.com/oxy-hq/oxy-internal/issues/1729)) ([3fbc284](https://github.com/oxy-hq/oxy-internal/commit/3fbc2843cbf808a6ac435f409458e645f97e34b5))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* disable "Automate this" button in readonly mode ([#1739](https://github.com/oxy-hq/oxy-internal/issues/1739)) ([0a87d83](https://github.com/oxy-hq/oxy-internal/commit/0a87d83156c41d1b8a7979b64942c8178a2f4db3))
+
 ## [0.5.21](https://github.com/oxy-hq/oxy-internal/compare/0.5.18...0.5.21) (2026-03-06)
 
 

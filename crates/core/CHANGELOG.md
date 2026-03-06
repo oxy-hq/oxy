@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.22](https://github.com/oxy-hq/oxy-internal/compare/0.5.21...0.5.22) (2026-03-06)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* run index duplication ([#1743](https://github.com/oxy-hq/oxy-internal/issues/1743)) ([8c18ee4](https://github.com/oxy-hq/oxy-internal/commit/8c18ee41ea7be791661a485daf23776cfa533af8))
+
 ## [0.5.21](https://github.com/oxy-hq/oxy-internal/compare/0.5.20...0.5.21) (2026-03-06)
 
 
