@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.5.21](https://github.com/oxy-hq/oxy-internal/compare/0.5.20...0.5.21) (2026-03-06)
+
+
+### <!-- 0 -->🚀 Features
+
+* login by magic link with email ([#1713](https://github.com/oxy-hq/oxy-internal/issues/1713)) ([0472ade](https://github.com/oxy-hq/oxy-internal/commit/0472ade888e9fb78f0daa8e88c577ab76401d09a))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* remove built-in mode references and clean up authentication logic ([#1716](https://github.com/oxy-hq/oxy-internal/issues/1716)) ([c2648c5](https://github.com/oxy-hq/oxy-internal/commit/c2648c5ac74a261b2e7c48fe3bc80c26b5729cad))
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* release 0.5.21 ([152a129](https://github.com/oxy-hq/oxy-internal/commit/152a12928e4f8183475669ba3d3ef2b9a419fbc6))
+
 ## [0.5.20](https://github.com/oxy-hq/oxy-internal/compare/0.5.19...0.5.20) (2026-02-27)
 
 ## [0.5.19](https://github.com/oxy-hq/oxy-internal/compare/0.5.18...0.5.19) (2026-02-26)

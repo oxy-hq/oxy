@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.5.21](https://github.com/oxy-hq/oxy-internal/compare/0.5.20...0.5.21) (2026-03-06)
+
+
+### <!-- 0 -->🚀 Features
+
+* add simple invitation flow for magic login ([#1717](https://github.com/oxy-hq/oxy-internal/issues/1717)) ([10832ec](https://github.com/oxy-hq/oxy-internal/commit/10832ec68214a71c7054270b62b9e6d6933604e1))
+* login by magic link with email ([#1713](https://github.com/oxy-hq/oxy-internal/issues/1713)) ([0472ade](https://github.com/oxy-hq/oxy-internal/commit/0472ade888e9fb78f0daa8e88c577ab76401d09a))
+* looker integration ([#1542](https://github.com/oxy-hq/oxy-internal/issues/1542)) ([e05e7b0](https://github.com/oxy-hq/oxy-internal/commit/e05e7b03d5dfddeebfcba01a758c883d12296c67))
+* rename automation to procedure ([#1715](https://github.com/oxy-hq/oxy-internal/issues/1715)) ([7af8b30](https://github.com/oxy-hq/oxy-internal/commit/7af8b30cd97c408e22098b5106021266d9bc0bce))
+* start semantic layer by default in `oxy start` ([08f516d](https://github.com/oxy-hq/oxy-internal/commit/08f516d40e224e3997aeb35cc05c46cdbd822e04))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* enhance magic link email design and styling ([2e75a83](https://github.com/oxy-hq/oxy-internal/commit/2e75a83b91ad0b4f5eabd71e574a795a4832c83c))
+* remove built-in mode references and clean up authentication logic ([#1716](https://github.com/oxy-hq/oxy-internal/issues/1716)) ([c2648c5](https://github.com/oxy-hq/oxy-internal/commit/c2648c5ac74a261b2e7c48fe3bc80c26b5729cad))
+* simplify logo display in invitation and magic link email templates ([fd2e947](https://github.com/oxy-hq/oxy-internal/commit/fd2e947df7d212a4e8f06cd5d465894dc5f7c8ae))
+* update footer copyright and description in invitation and magic link email templates ([e7cdd9f](https://github.com/oxy-hq/oxy-internal/commit/e7cdd9f9a37be63bbf8bcb576a35b0d3ad09282b))
+* update logo dimensions in invitation and magic link email templates ([964b444](https://github.com/oxy-hq/oxy-internal/commit/964b444836453865ae6aaadee3e23250b7fc93c7))
+* update logo image source in invitation and magic link email templates ([8a29fec](https://github.com/oxy-hq/oxy-internal/commit/8a29fec8cb2e6f13d46563ebff4bced682014067))
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* release 0.5.21 ([152a129](https://github.com/oxy-hq/oxy-internal/commit/152a12928e4f8183475669ba3d3ef2b9a419fbc6))
+
 ## [0.5.20](https://github.com/oxy-hq/oxy-internal/compare/0.5.19...0.5.20) (2026-02-27)
 
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.21](https://github.com/oxy-hq/oxy-internal/compare/0.5.20...0.5.21) (2026-03-06)
+
+
+### <!-- 0 -->🚀 Features
+
+* looker integration ([#1542](https://github.com/oxy-hq/oxy-internal/issues/1542)) ([e05e7b0](https://github.com/oxy-hq/oxy-internal/commit/e05e7b03d5dfddeebfcba01a758c883d12296c67))
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* release 0.5.21 ([152a129](https://github.com/oxy-hq/oxy-internal/commit/152a12928e4f8183475669ba3d3ef2b9a419fbc6))
+
 ## [0.5.20](https://github.com/oxy-hq/oxy-internal/compare/0.5.19...0.5.20) (2026-02-27)
 
 

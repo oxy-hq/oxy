@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.5.21](https://github.com/oxy-hq/oxy-internal/compare/0.5.18...0.5.21) (2026-03-06)
+
+
+### <!-- 0 -->🚀 Features
+
+* add API Keys page and integrate into settings layout ([#1724](https://github.com/oxy-hq/oxy-internal/issues/1724)) ([486ddfd](https://github.com/oxy-hq/oxy-internal/commit/486ddfdb19b067ede3f5d5e59b052b08228ca1d6))
+* add readonly mode support to server and API endpoints ([#1700](https://github.com/oxy-hq/oxy-internal/issues/1700)) ([940f71d](https://github.com/oxy-hq/oxy-internal/commit/940f71dae2b307a7dfaa1d262c3eaa559d8be79b))
+* add simple invitation flow for magic login ([#1717](https://github.com/oxy-hq/oxy-internal/issues/1717)) ([10832ec](https://github.com/oxy-hq/oxy-internal/commit/10832ec68214a71c7054270b62b9e6d6933604e1))
+* enhance anthropic support  ([#1701](https://github.com/oxy-hq/oxy-internal/issues/1701)) ([6e4fba2](https://github.com/oxy-hq/oxy-internal/commit/6e4fba22685fdede67a612552b6bc9124bca6d6e))
+* login by magic link with email ([#1713](https://github.com/oxy-hq/oxy-internal/issues/1713)) ([0472ade](https://github.com/oxy-hq/oxy-internal/commit/0472ade888e9fb78f0daa8e88c577ab76401d09a))
+* looker integration ([#1542](https://github.com/oxy-hq/oxy-internal/issues/1542)) ([e05e7b0](https://github.com/oxy-hq/oxy-internal/commit/e05e7b03d5dfddeebfcba01a758c883d12296c67))
+* refactor automations into routines ([#1686](https://github.com/oxy-hq/oxy-internal/issues/1686)) ([455cfb2](https://github.com/oxy-hq/oxy-internal/commit/455cfb2cdd898640307c86e7fea88c158fab3ee8))
+* rename automation to procedure ([#1715](https://github.com/oxy-hq/oxy-internal/issues/1715)) ([7af8b30](https://github.com/oxy-hq/oxy-internal/commit/7af8b30cd97c408e22098b5106021266d9bc0bce))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* add bottom padding to FieldsSelectionPanel for full scroll ([#1709](https://github.com/oxy-hq/oxy-internal/issues/1709)) ([ec730be](https://github.com/oxy-hq/oxy-internal/commit/ec730be3ff930f7a466db80602c79c9041ff120e))
+* add horizontal padding to messages container to prevent text cutoff ([3aafdfb](https://github.com/oxy-hq/oxy-internal/commit/3aafdfb05a4b569b8592528294cc7c1626f7ac65))
+* add horizontal padding to thread message containers ([#1711](https://github.com/oxy-hq/oxy-internal/issues/1711)) ([3aafdfb](https://github.com/oxy-hq/oxy-internal/commit/3aafdfb05a4b569b8592528294cc7c1626f7ac65))
+* remove built-in mode references and clean up authentication logic ([#1716](https://github.com/oxy-hq/oxy-internal/issues/1716)) ([c2648c5](https://github.com/oxy-hq/oxy-internal/commit/c2648c5ac74a261b2e7c48fe3bc80c26b5729cad))
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* release 0.5.21 ([152a129](https://github.com/oxy-hq/oxy-internal/commit/152a12928e4f8183475669ba3d3ef2b9a419fbc6))
+
 ## [0.5.18](https://github.com/oxy-hq/oxy-internal/compare/0.5.17...0.5.18) (2026-02-27)
 
 
