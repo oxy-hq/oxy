@@ -16,7 +16,10 @@ pub async fn start_database_and_server(args: StartArgs) -> Result<(), OxyError> 
             "=== Starting Oxy Enterprise with Docker PostgreSQL + ClickHouse + OTel + Semantic Engine ===\n".text()
         );
     } else {
-        println!("{}", "=== Starting Oxy with Docker PostgreSQL ===\n".text());
+        println!(
+            "{}",
+            "=== Starting Oxy with Docker PostgreSQL + Semantic Engine ===\n".text()
+        );
     }
 
     // 1. Check container runtime availability
@@ -47,10 +50,24 @@ pub async fn start_database_and_server(args: StartArgs) -> Result<(), OxyError> 
         start_postgres().await?
     };
 
-    // 4. Show helpful Docker commands
+    // 4. Start Cube.js semantic engine (does not depend on PostgreSQL - only generates SQL)
+    if let Err(e) = start_cubejs_semantic_engine().await {
+        // Cube.js is optional - log the error but continue
+        eprintln!(
+            "{}",
+            format!("   ⚠️  Cube.js semantic engine could not be started: {}", e).warning()
+        );
+        eprintln!(
+            "{}",
+            "   Continuing without semantic engine. Run 'oxy semantic-engine' manually if needed.\n"
+                .warning()
+        );
+    }
+
+    // 5. Show helpful Docker commands
     print_docker_tips(enterprise);
 
-    // 5. Set environment variables for the server
+    // 6. Set environment variables for the server
     // Safety: This is safe because we're setting variables in single-threaded context
     // before the server starts, and they're only read by our own code
     unsafe {
@@ -67,11 +84,11 @@ pub async fn start_database_and_server(args: StartArgs) -> Result<(), OxyError> 
         }
     }
 
-    // 6. Start the web server (runs on host, not in Docker)
+    // 7. Start the web server (runs on host, not in Docker)
     println!("{}", "🚀 Starting Oxy server...".text());
     start_server_and_web_app(args.serve).await?;
 
-    // 7. Cleanup on exit (handled by graceful shutdown in serve.rs)
+    // 8. Cleanup on exit (handled by graceful shutdown in serve.rs)
     Ok(())
 }
 
@@ -202,19 +219,6 @@ async fn start_all_containers() -> Result<String, OxyError> {
     }
     println!("{}", "   ✓ OTel Collector container started\n".success());
 
-    // Start Cube.js semantic engine (does not depend on PostgreSQL - only generates SQL)
-    if let Err(e) = start_cubejs_semantic_engine().await {
-        // Cube.js is optional - log the error but continue
-        eprintln!(
-            "{}",
-            format!("   ⚠️  Cube.js semantic engine could not be started: {}", e).warning()
-        );
-        eprintln!(
-            "{}",
-            "   Continuing without semantic engine. Run 'oxy semantic-engine' manually if needed.\n".warning()
-        );
-    }
-
     Ok(db_url)
 }
 
@@ -283,6 +287,10 @@ fn print_docker_tips(enterprise: bool) {
         "{}",
         "   Access psql:      docker exec -it oxy-postgres psql -U postgres -d oxy".secondary()
     );
+    println!(
+        "{}",
+        "   Cube.js logs:     docker logs oxy-cubejs".secondary()
+    );
     if enterprise {
         println!(
             "{}",
@@ -291,10 +299,6 @@ fn print_docker_tips(enterprise: bool) {
         println!(
             "{}",
             "   OTel logs:        docker logs oxy-otel-collector".secondary()
-        );
-        println!(
-            "{}",
-            "   Cube.js logs:     docker logs oxy-cubejs".secondary()
         );
         println!(
             "{}",
