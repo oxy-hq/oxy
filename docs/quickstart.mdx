@@ -7,158 +7,68 @@ import DownloadButton from "/snippets/download.mdx";
 
 ## Overview
 
-In this quickstart guide, we will install oxy and bootstrap a simple setup
-that uses DuckDB as warehouse and OpenAI as LLM provider. For this walkthrough,
-you'll need an OpenAI API key and access to a terminal.
-
-### Install and configure oxy
-
-Oxy supports both Mac and Windows. To get started with oxy, you will need to
-work within the terminal. For Mac users, we recommend using
-[iTerm2](https://iterm2.com/) as it offers better features, customization
-options, and more frequent updates as compared to the stock Mac terminal. Other
-great terminal options include the GPU-accelerated
-[Alacritty](https://github.com/alacritty/alacritty) or AI-native
-[Warp](https://warp.dev/). For windows, we recommend installing WSL 2 (search
-for`Ubuntu` in the Microsoft store).
-
-Once you have your terminal set up, follow the steps below:
+Install Oxy, scaffold a project, and launch the web interface. You'll need an OpenAI API key and a terminal (on Windows, use [WSL 2](/prerequisites#windows-wsl)).
 
 <Steps>
-  <Step title="Install oxy">
-    Install oxy by running the following within your Mac/Linux/WSL terminal:
+  <Step title="Install Oxy">
+    ```bash
+    bash <(curl --proto '=https' --tlsv1.2 -LsSf https://get.oxy.tech)
+    ```
 
-    <Tabs>
-      <Tab title="Stable Release (Recommended)">
-        ```bash
-        bash <(curl --proto '=https' --tlsv1.2 -LsSf https://get.oxy.tech)
-        ```
+    You may need to restart your terminal for the `oxy` command to be recognized.
 
-        This installs the latest stable release of Oxy.
-      </Tab>
-      <Tab title="Edge Build">
-        ```bash
-        bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)
-        ```
-
-        This installs the latest edge build with the newest features and fixes from the main branch.
-      </Tab>
-    </Tabs>
-
-    Upon successful installation, you should see the message "Oxy has been installed successfully."
-
-    You may need to restart your terminal for the command to be recognized.
-
-    <Info>
-      For transparency, you can review the installation script source code: [stable release](https://github.com/oxy-hq/oxy/blob/main/install_oxy.sh) or [edge/nightly builds](https://github.com/oxy-hq/oxy-internal/blob/main/install_oxy_nightly.sh).
-    </Info>
-
-    <Accordion title="Verify Your Installation (Optional)">
-      After the installation is complete, you may verify that it was successful by running:
-
-      ```sh
-      oxy --version
-      ```
-
-    </Accordion>
-
-    <Accordion title="More Installation Options">
-      **Install specific versions:**
-
+    <Accordion title="Edge builds & specific versions">
       ```bash
+      # Edge build (latest from main)
+      bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)
+
       # Specific stable version
-      OXY_VERSION="0.1.0" bash <(curl --proto '=https' --tlsv1.2 -LsSf https://get.oxy.tech)
-
-      # Specific edge build
-      OXY_VERSION=edge-7cbf0a5 bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)
-
-      # Nightly build (scheduled daily)
-      OXY_CHANNEL=nightly bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)
+      OXY_VERSION="0.5.20" bash <(curl --proto '=https' --tlsv1.2 -LsSf https://get.oxy.tech)
       ```
 
-      Browse all available edge and nightly releases at [oxy-hq/oxy-nightly](https://github.com/oxy-hq/oxy-nightly/releases).
+      Browse all releases at [oxy-hq/oxy-nightly](https://github.com/oxy-hq/oxy-nightly/releases).
     </Accordion>
-
   </Step>
 
-  <Step title="Create a sample repository">
-    In order to get started with a base agent set up, run the following command in an empty directory where you want to store your project:
+  <Step title="Create a project">
+    Run in an empty directory:
 
-    ```sh
+    ```bash
     oxy init
     ```
 
-    This command will generate the main oxy configuration file (`config.yml`), a sample agent file, a sample workflow file, some data, and a sample semantic layer file.
-    If you use all the configuration defaults, you should be able to run the agent and workflow against the sample data out-of-the-box.
-
+    This generates a `config.yml`, a sample agent, workflow, data, and semantic layer file.
   </Step>
 
-  <Step title="Connect oxy to OpenAI">
-    For the model, we recommend using OpenAI's gpt-4.1. For alternative models, please refer to our integration documentation, [here](/integrations/overview).
+  <Step title="Set your API keys">
+    The sample project is configured to use `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`. Create a `.env` file following `.env.example`:
 
-    Replace `OPENAI_API_KEY` with your actual OpenAI API key.
+    ```bash
+    cp .env.example .env
+    ```
 
+    Then fill in your API keys. For alternative models, see [integrations](/integrations/overview).
   </Step>
-</Steps>
 
-### All Done
-
-Congrats! You're ready to start using Oxy now. If you haven't changed the configuration defaults, you should be able to run the following commands to test out oxy against some sample sleep data:
-
-```bash
-oxy run sql-generator.agent.yml "On how many nights did I get good sleep in the last year?"  # ask a question to the sample agent
-oxy test sql-generator.agent.yml  # runs all defined tests against the sql-generator agent
-
-oxy run report-generator.workflow.yml  # execute the sample workflow
-oxy test report-generator.workflow.yml  # run all defined tests against the workflow
-```
-
-### Running Oxy Web Interface
-
-You have **two options** for running Oxy with PostgreSQL:
-
-<Tabs>
-  <Tab title="oxy start (Recommended)">
-    **Automatically manages PostgreSQL in Docker**
-
+  <Step title="Launch the web interface">
     ```bash
     oxy start
     ```
 
-    This command:
-    - ✅ Automatically starts PostgreSQL in a Docker container
-    - ✅ Configures all database connection settings
-    - ✅ Launches the web interface
-    - ✅ No manual database setup needed
+    This starts PostgreSQL in Docker and launches the Oxy web UI.
 
     <Info>
-      **Requirements:** Needs a [Docker-compatible container engine](/deployment/container-runtimes) (Docker Engine, Colima, Podman, etc.)
+      **Requires Docker.** See the [prerequisites guide](/prerequisites) if you
+      don't have a container runtime installed.
     </Info>
 
-    See the [oxy start reference](/reference/oxy-start) for more options.
+    <Accordion title="Using your own PostgreSQL instead">
+      ```bash
+      export OXY_DATABASE_URL="postgresql://user:pass@host:port/database"
+      oxy serve
+      ```
 
-  </Tab>
-
-  <Tab title="oxy serve (External DB)">
-    **Connect to your own PostgreSQL**
-
-    ```bash
-    # Set database URL
-    export OXY_DATABASE_URL="postgresql://user:pass@host:port/database"
-
-    # Start web interface only
-    oxy serve
-    ```
-
-    This command:
-    - Launches only the web interface
-    - Connects to external PostgreSQL (your own server, RDS, Cloud SQL, etc.)
-    - Requires manual PostgreSQL setup and `OXY_DATABASE_URL` configuration
-
-    Use this for:
-    - Production deployments with managed PostgreSQL
-    - When you already have a PostgreSQL instance
-    - Environments where Docker is not available
-
-  </Tab>
-</Tabs>
+      Use `oxy serve` for production deployments or environments where Docker is not available.
+    </Accordion>
+  </Step>
+</Steps>

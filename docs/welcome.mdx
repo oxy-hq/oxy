@@ -21,11 +21,11 @@ description: "The Open-Source, Full-Stack Platform for Agentic Data Analytics"
 
 Specifically, this process is implemented as follows:
 
-- **Agent Configuration**: Define agents using `.agent.yml` files that specify their instructions. Provide context through `.sql` and `.schema.yml` files that supply queries and semantic information, respectively.
-- **Procedure Development**: Create `.procedure.yml` files to orchestrate multi-step processes. Chain validated agents and tasks together into reusable, production-ready procedures.
+- **Agent Configuration**: Define agents using `.agent.yml` files that specify their instructions. Agents are provided tools to generate SQL, execute semantic queries, and execute procedures. We recommend using a routing agent as the first layer, which can deterministically execute procedures, with a SQL-generation agent as a fallback. This ensures that vetted procedures run with high determinism against their attached inclusions, while the SQL generation fallback provides broad coverage for ad-hoc questions.
+- **Procedure Development**: Create `.procedure.yml` files to orchestrate multi-step processes. Use `retrieve: include` and `exclude` to control how these procedures are retrieved by agents that have access to them.
 - **Testing Framework**: Add test cases directly to `.agent.yml` or `.procedure.yml` files. Execute tests using the `oxy test` command.
 
-You can run individual agents with `oxy run path/to/agent_name.agent.yml "question"` or execute complete procedures using `oxy run path/to/procedure_name.procedure.yml`.
+You can interact with all components — agents, procedures, and data — through the web interface launched by `oxy start`. Oxygen is also CLI-native, so every operation can be run from the terminal, making it easy to integrate with coding tools like [Claude Code](https://github.com/oxy-hq/skills) and CI/CD pipelines.
 
 ## Resources
 

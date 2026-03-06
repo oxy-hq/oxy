@@ -1,0 +1,80 @@
+---
+title: "Prerequisites"
+description: "What you need before running oxy start"
+---
+
+## Container Runtime
+
+The `oxy start` command manages PostgreSQL and other services in Docker containers. You need a **Docker-compatible container runtime** installed before using it.
+
+### Quick Install
+
+<Tabs>
+  <Tab title="Docker Desktop">
+    Download and install from [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/) for macOS, Windows, or Linux.
+  </Tab>
+
+  <Tab title="Colima (macOS)">
+    ```bash
+    brew install colima docker
+    colima start
+    ```
+  </Tab>
+
+  <Tab title="Rancher Desktop">
+    Download from [rancherdesktop.io](https://rancherdesktop.io/). After installing, go to **Preferences → Container Engine** and select **dockerd (moby)**.
+  </Tab>
+</Tabs>
+
+### Verify
+
+Run the following to confirm Docker is working:
+
+```bash
+docker ps
+```
+
+If this prints an empty table (or a list of running containers), you're ready to use `oxy start`.
+
+<Info>
+  For alternative runtimes (Podman, OrbStack), custom socket locations, troubleshooting, and advanced configuration, see the full [Container Runtime Support](/deployment/container-runtimes) guide.
+</Info>
+
+## Windows (WSL)
+
+On Windows, Oxy runs inside **WSL 2**. WSL 1 will not work — Docker socket integration requires WSL 2.
+
+<Steps>
+  <Step title="Ensure WSL 2">
+    Check your WSL version from **PowerShell**:
+
+    ```bash
+    wsl -l -v
+    ```
+
+    If your distro shows VERSION 1, upgrade it:
+
+    ```bash
+    wsl --set-version <DistroName> 2
+    wsl --shutdown
+    ```
+  </Step>
+
+  <Step title="Enable WSL integration in your container runtime">
+    If using **Rancher Desktop**: go to **Preferences → WSL → Integrations**, enable the toggle for your WSL distro (e.g., Ubuntu), and click **Apply**.
+
+    If using **Docker Desktop**: go to **Settings → Resources → WSL Integration** and enable your distro.
+
+    <Info>
+      If the Integrations tab is empty (no distros listed), fully quit the application, run `wsl --shutdown` from PowerShell, then reopen it. If it's still empty, uninstall and reinstall.
+    </Info>
+  </Step>
+
+  <Step title="Verify inside WSL">
+    Open your WSL terminal and run:
+
+    ```bash
+    docker ps
+    ```
+  </Step>
+</Steps>
