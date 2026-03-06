@@ -193,6 +193,31 @@ You can install a Docker-compatible container engine in several ways:
         4. Wait 30-60 seconds for the engine to initialize
       </Step>
 
+      <Step title="Windows (WSL): Ensure WSL 2 and Enable Integration">
+        <Warning>
+          **Windows users:** Rancher Desktop requires **WSL 2**. WSL 1 will not work — the Docker socket integration depends on WSL 2.
+        </Warning>
+
+        1. Check your WSL version from **PowerShell**:
+           ```bash
+           wsl -l -v
+           ```
+        2. If your distro shows VERSION 1, upgrade it:
+           ```bash
+           wsl --set-version <DistroName> 2
+           ```
+           Then restart WSL:
+           ```bash
+           wsl --shutdown
+           ```
+        3. After confirming WSL 2, open Rancher Desktop and go to **Preferences → WSL → Integrations**
+        4. Enable the toggle for your WSL distro (e.g., Ubuntu) and click **Apply**
+
+        <Info>
+          If the Integrations tab is empty (no distros listed), fully quit Rancher Desktop, run `wsl --shutdown` from PowerShell, then reopen Rancher Desktop. If it's still empty, uninstall and reinstall Rancher Desktop.
+        </Info>
+      </Step>
+
       <Step title="Verify Installation">
         ```bash
         docker ps
@@ -367,15 +392,16 @@ You can add this to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to make i
 
 ### Common Socket Locations
 
-| Runtime         | Default Socket Location                      |
-| --------------- | -------------------------------------------- |
-| Docker Desktop  | `unix:///var/run/docker.sock` (macOS/Linux)  |
-|                 | `npipe:////./pipe/docker_engine` (Windows)   |
-| Rancher Desktop | `unix://$HOME/.rd/docker.sock` (macOS)       |
-|                 | `unix:///var/run/docker.sock` (Linux)        |
-| Colima          | `unix://$HOME/.colima/default/docker.sock`   |
-| Podman          | `unix://$XDG_RUNTIME_DIR/podman/podman.sock` |
-| OrbStack        | `unix://$HOME/.orbstack/run/docker.sock`     |
+| Runtime         | Default Socket Location                                  |
+| --------------- | -------------------------------------------------------- |
+| Docker Desktop  | `unix:///var/run/docker.sock` (macOS/Linux)              |
+|                 | `npipe:////./pipe/docker_engine` (Windows)               |
+| Rancher Desktop | `unix://$HOME/.rd/docker.sock` (macOS)                   |
+|                 | `unix:///var/run/docker.sock` (Linux)                    |
+|                 | `unix:///mnt/wsl/rancher-desktop/run/docker.sock` (WSL)  |
+| Colima          | `unix://$HOME/.colima/default/docker.sock`               |
+| Podman          | `unix://$XDG_RUNTIME_DIR/podman/podman.sock`             |
+| OrbStack        | `unix://$HOME/.orbstack/run/docker.sock`                 |
 
 ## Troubleshooting
 
@@ -400,9 +426,47 @@ You can add this to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to make i
   </Accordion>
 
 <Accordion title="Rancher Desktop: daemon not responding">
-  1. Open Rancher Desktop preferences 2. Switch Container Engine to **dockerd
-  (moby)** 3. Restart Rancher Desktop 4. Wait for full initialization (30-60
-  seconds) 5. Retry: `oxy start`
+  1. Open Rancher Desktop preferences
+  2. Switch Container Engine to **dockerd (moby)**
+  3. Restart Rancher Desktop
+  4. Wait for full initialization (30-60 seconds)
+  5. Retry: `oxy start`
+</Accordion>
+
+<Accordion title="Rancher Desktop on Windows (WSL): docker command not found or socket missing">
+  This is almost always caused by WSL 1 or missing WSL integration. Follow these steps:
+
+  1. **Verify you're on WSL 2** (from PowerShell):
+
+     ```bash
+     wsl -l -v
+     ```
+
+     If VERSION shows 1, upgrade:
+
+     ```bash
+     wsl --set-version <DistroName> 2
+     wsl --shutdown
+     ```
+
+  2. **Enable WSL Integration in Rancher Desktop:**
+     - Go to **Preferences → WSL → Integrations**
+     - Enable the toggle for your distro (e.g., Ubuntu)
+     - Click **Apply**
+
+  3. **If the Integrations tab is empty:**
+     - Fully quit Rancher Desktop (right-click tray icon → Quit)
+     - Run `wsl --shutdown` from PowerShell
+     - Reopen Rancher Desktop and check again
+     - If still empty, uninstall and reinstall Rancher Desktop
+
+  4. **If Docker socket is not at the default path**, set `DOCKER_HOST`:
+
+     ```bash
+     export DOCKER_HOST=unix:///mnt/wsl/rancher-desktop/run/docker.sock
+     ```
+
+     Add this to `~/.bashrc` or `~/.zshrc` to persist across sessions.
 </Accordion>
 
   <Accordion title="Colima: connection refused">
