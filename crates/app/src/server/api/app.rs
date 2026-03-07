@@ -4,7 +4,9 @@ use std::path::PathBuf;
 use crate::cli::commands::export_chart::export_charts_to_dir;
 use crate::server::api::middlewares::project::ProjectManagerExtractor;
 use crate::server::service::app::{
-    AppResultData, AppService, DisplayWithError, GetAppResultResponse, TaskResult, get_app_displays,
+    AppResultChartDisplay, AppResultData, AppResultDisplay, AppResultMarkdownDisplay,
+    AppResultTableDisplay, AppService, DisplayWithError, GetAppResultResponse, TaskKind,
+    TaskOutput, TaskResult, get_app_displays,
 };
 use axum::body::Body;
 use axum::extract::{self, Path};
@@ -13,7 +15,7 @@ use axum::response::IntoResponse;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use oxy::config::model::Display;
-use oxy::execute::types::DataContainer;
+use oxy::execute::types::{Data, DataContainer};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -251,12 +253,12 @@ pub struct AppResultQuery {
     pub refresh: bool,
 }
 
-fn get_result_cache_filename(app_path: &PathBuf) -> Option<String> {
-    use std::hash::{Hash, Hasher};
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    app_path.hash(&mut hasher);
-    let hash = hasher.finish();
-    Some(format!("{:x}.app.result.yml", hash))
+fn get_result_cache_filename(app_path: &PathBuf) -> String {
+    use sha2::Digest;
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(app_path.as_os_str().as_encoded_bytes());
+    let hash = hasher.finalize();
+    format!("{}.app.result.yml", hex::encode(hash))
 }
 
 #[utoipa::path(
@@ -334,19 +336,12 @@ pub async fn get_app_result(
                 .iter()
                 .map(|task_config| {
                     let task_name = task_config.name.clone();
-                    // Try to find the result for this task and extract JSON data
-                    let output = results.get(&task_name).and_then(|data| {
-                        let value = serde_json::to_value(data).ok()?;
-                        // If the result is a table (has file_path + json), extract the json data
-                        if let Some(json_str) = value.get("json").and_then(|v| v.as_str()) {
-                            serde_json::from_str(json_str).ok()
-                        } else {
-                            Some(value)
-                        }
-                    });
+                    let task_type = TaskKind::from(task_config.kind());
+                    let output = results.get(&task_name).and_then(data_container_to_output);
 
                     TaskResult {
                         task_name,
+                        task_type,
                         output,
                         error: None,
                     }
@@ -361,6 +356,7 @@ pub async fn get_app_result(
                 .iter()
                 .map(|task_config| TaskResult {
                     task_name: task_config.name.clone(),
+                    task_type: TaskKind::from(task_config.kind()),
                     output: None,
                     error: Some(error_msg.clone()),
                 })
@@ -373,6 +369,7 @@ pub async fn get_app_result(
                 .iter()
                 .map(|task_config| TaskResult {
                     task_name: task_config.name.clone(),
+                    task_type: TaskKind::from(task_config.kind()),
                     output: None,
                     error: Some("Unexpected output format".to_string()),
                 })
@@ -382,7 +379,7 @@ pub async fn get_app_result(
     };
 
     // Build a map of task_name -> output data for resolving display references
-    let task_data_map: HashMap<String, JsonValue> = tasks
+    let task_data_map: HashMap<String, TaskOutput> = tasks
         .iter()
         .filter_map(|t| t.output.as_ref().map(|o| (t.task_name.clone(), o.clone())))
         .collect();
@@ -427,68 +424,60 @@ pub async fn get_app_result(
         HashMap::new()
     };
 
-    // Build displays JSON with proper types and resolved data
-    let displays: Vec<JsonValue> = typed_displays
+    // Build typed displays with resolved data
+    let displays: Vec<AppResultDisplay> = typed_displays
         .into_iter()
         .enumerate()
         .filter_map(|(i, d)| match d {
             DisplayWithError::Display(display) => Some(match display {
                 Display::LineChart(chart) => {
                     let file_path = chart_file_map.get(&(i as i64)).cloned();
-                    let mut obj = serde_json::json!({
-                        "type": "line_chart",
-                        "file_name": file_path,
-                        "title": chart.title,
-                    });
-                    if file_path.is_none()
-                        && let Some(err) = &chart_export_error
-                    {
-                        obj["error"] = serde_json::json!(err);
-                    }
-                    obj
+                    AppResultDisplay::LineChart(AppResultChartDisplay {
+                        file_name: file_path.clone(),
+                        title: chart.title,
+                        error: if file_path.is_none() {
+                            chart_export_error.clone()
+                        } else {
+                            None
+                        },
+                    })
                 }
                 Display::BarChart(chart) => {
                     let file_path = chart_file_map.get(&(i as i64)).cloned();
-                    let mut obj = serde_json::json!({
-                        "type": "bar_chart",
-                        "file_name": file_path,
-                        "title": chart.title,
-                    });
-                    if file_path.is_none()
-                        && let Some(err) = &chart_export_error
-                    {
-                        obj["error"] = serde_json::json!(err);
-                    }
-                    obj
+                    AppResultDisplay::BarChart(AppResultChartDisplay {
+                        file_name: file_path.clone(),
+                        title: chart.title,
+                        error: if file_path.is_none() {
+                            chart_export_error.clone()
+                        } else {
+                            None
+                        },
+                    })
                 }
                 Display::PieChart(chart) => {
                     let file_path = chart_file_map.get(&(i as i64)).cloned();
-                    let mut obj = serde_json::json!({
-                        "type": "pie_chart",
-                        "file_name": file_path,
-                        "title": chart.title,
-                    });
-                    if file_path.is_none()
-                        && let Some(err) = &chart_export_error
-                    {
-                        obj["error"] = serde_json::json!(err);
-                    }
-                    obj
+                    AppResultDisplay::PieChart(AppResultChartDisplay {
+                        file_name: file_path.clone(),
+                        title: chart.title,
+                        error: if file_path.is_none() {
+                            chart_export_error.clone()
+                        } else {
+                            None
+                        },
+                    })
                 }
                 Display::Table(table) => {
-                    let data = task_data_map.get(&table.data).cloned();
-                    serde_json::json!({
-                        "type": "table",
-                        "data": data,
-                        "title": table.title,
+                    let data = task_data_map
+                        .get(&table.data)
+                        .and_then(|o| serde_json::to_value(o).ok());
+                    AppResultDisplay::Table(AppResultTableDisplay {
+                        data,
+                        title: table.title,
                     })
                 }
-                Display::Markdown(md) => {
-                    serde_json::json!({
-                        "type": "markdown",
-                        "content": md.content,
-                    })
-                }
+                Display::Markdown(md) => AppResultDisplay::Markdown(AppResultMarkdownDisplay {
+                    content: md.content,
+                }),
             }),
             DisplayWithError::Error(_) => None,
         })
@@ -508,11 +497,51 @@ pub async fn get_app_result(
     (StatusCode::OK, extract::Json(response))
 }
 
+fn data_container_to_output(data: &DataContainer) -> Option<TaskOutput> {
+    match data {
+        DataContainer::Single(Data::Bool(b)) => Some(TaskOutput::Bool(*b)),
+        DataContainer::Single(Data::Text(s)) => Some(TaskOutput::Text(s.clone())),
+        DataContainer::Single(Data::Table(table_data)) => {
+            if let Some(json_str) = table_data.json.as_deref() {
+                match serde_json::from_str(json_str) {
+                    Ok(value) => Some(TaskOutput::Table(value)),
+                    Err(_) => serde_json::to_value(table_data).ok().map(TaskOutput::Table),
+                }
+            } else {
+                serde_json::to_value(table_data).ok().map(TaskOutput::Table)
+            }
+        }
+        DataContainer::Single(Data::None) | DataContainer::None => None,
+        DataContainer::List(items) => {
+            let outputs: Vec<Box<TaskOutput>> = items
+                .iter()
+                .map(|item| Box::new(data_container_to_output(item).unwrap_or(TaskOutput::None)))
+                .collect();
+            if outputs.is_empty() {
+                None
+            } else {
+                Some(TaskOutput::List(outputs))
+            }
+        }
+        DataContainer::Map(map) => {
+            let outputs: HashMap<String, Box<TaskOutput>> = map
+                .iter()
+                .filter_map(|(k, v)| data_container_to_output(v).map(|o| (k.clone(), Box::new(o))))
+                .collect();
+            if outputs.is_empty() {
+                None
+            } else {
+                Some(TaskOutput::Map(outputs))
+            }
+        }
+    }
+}
+
 async fn load_cached_result(
     project_manager: &oxy::adapters::project::manager::ProjectManager,
     app_path: &PathBuf,
 ) -> Option<GetAppResultResponse> {
-    let cache_name = get_result_cache_filename(app_path)?;
+    let cache_name = get_result_cache_filename(app_path);
     let results_dir = project_manager
         .config_manager
         .get_app_results_dir()
@@ -543,9 +572,7 @@ async fn save_cached_result(
     app_path: &PathBuf,
     response: &GetAppResultResponse,
 ) {
-    let Some(cache_name) = get_result_cache_filename(app_path) else {
-        return;
-    };
+    let cache_name = get_result_cache_filename(app_path);
     let Ok(results_dir) = project_manager.config_manager.get_app_results_dir().await else {
         return;
     };

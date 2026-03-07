@@ -19,7 +19,7 @@ pub use document::Document;
 pub use eval::{OutputGetter, RelevantContextGetter, TargetOutput};
 pub use event::{Event, EventKind, Source};
 pub use output::{Chunk, Output};
-pub use output_container::DataContainer;
+pub use output_container::{Data, DataContainer, TableData};
 pub use output_container::{Metadata, OutputContainer};
 pub use prompt::Prompt;
 pub use reference::DataAppReference;
