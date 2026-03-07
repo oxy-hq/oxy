@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.23](https://github.com/oxy-hq/oxy-internal/compare/0.5.22...0.5.23) (2026-03-07)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* infinite loop on FE for procedure with loops ([#1746](https://github.com/oxy-hq/oxy-internal/issues/1746)) ([72a8270](https://github.com/oxy-hq/oxy-internal/commit/72a82703d3232024388b3803422570c1fdd17f6d))
+
 ## [0.5.22](https://github.com/oxy-hq/oxy-internal/compare/0.5.21...0.5.22) (2026-03-06)
 
 
