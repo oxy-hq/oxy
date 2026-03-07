@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use entity::runs::Variables;
 use indexmap::IndexMap;
 use sea_orm::{
-    ActiveValue, Condition, QueryOrder, QuerySelect, TransactionError, TransactionTrait, prelude::*,
+    ActiveValue, Condition, ConnectionTrait, DbBackend, QueryOrder, QuerySelect, Statement,
+    TransactionError, TransactionTrait, prelude::*,
 };
 
 use crate::{
@@ -110,6 +111,27 @@ impl RunsStorage for RunsDatabaseStorage {
                             let source_id = source_id.clone();
                             let root_ref = root_ref.clone();
                             Box::pin(async move {
+                                // Serialize concurrent run creation for the same source using a
+                                // PostgreSQL advisory lock. Without this, concurrent transactions
+                                // that find no existing rows all compute run_index=1 and race to
+                                // insert, causing unique constraint violations.
+                                if txn.get_database_backend() == DbBackend::Postgres {
+                                    // Derive a stable i64 lock key from (project_id, branch_id, source_id)
+                                    let lock_key = {
+                                        use std::hash::{Hash, Hasher};
+                                        let mut h =
+                                            std::collections::hash_map::DefaultHasher::new();
+                                        project_id.hash(&mut h);
+                                        branch_id.hash(&mut h);
+                                        source_id.hash(&mut h);
+                                        h.finish() as i64
+                                    };
+                                    txn.execute(Statement::from_string(
+                                        DbBackend::Postgres,
+                                        format!("SELECT pg_advisory_xact_lock({lock_key})"),
+                                    ))
+                                    .await?;
+                                }
                                 // Find run index based on last run for the new run
                                 let max_run_id = entity::runs::Entity::find()
                                     .filter(
@@ -185,7 +207,8 @@ impl RunsStorage for RunsDatabaseStorage {
                             ))) => match e {
                                 sqlx::Error::Database(db_err) => {
                                     match db_err.code().map(|c| c.to_string()).as_deref() {
-                                        Some("517") | Some("5") => {
+                                        // SQLite locked / PostgreSQL unique constraint violation (concurrent run index conflict)
+                                        Some("517") | Some("5") | Some("23505") => {
                                             backoff::Error::<OxyError>::transient(
                                                 OxyError::DBError(
                                                     "Database is locked, retrying...".to_string(),

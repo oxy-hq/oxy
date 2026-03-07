@@ -16,8 +16,13 @@ const taskRunSelector = (
   groupSlice: {
     groups: Record<string, GroupSlice["groups"][string]>;
     groupBlocks: Record<string, GroupSlice["groupBlocks"][string]>;
-  }
+  },
+  visitedBlocks: Set<string> = new Set()
 ): TaskRun[] => {
+  if (visitedBlocks.has(blockId)) {
+    return [];
+  }
+  const nextVisitedBlocks = new Set([...visitedBlocks, blockId]);
   const block = blocks[blockId];
   if (block?.type !== "task") {
     return [];
@@ -35,7 +40,7 @@ const taskRunSelector = (
       children: block.children
     },
     ...block.children.flatMap((childId) => {
-      return taskRunSelector(childId, blocks, groupSlice);
+      return taskRunSelector(childId, blocks, groupSlice, nextVisitedBlocks);
     })
   ];
 };
@@ -63,25 +68,35 @@ const logSelector = (
   groupSlice: {
     groups: Record<string, GroupSlice["groups"][string]>;
     groupBlocks: Record<string, GroupSlice["groupBlocks"][string]>;
-  }
+  },
+  visitedGroups: Set<string> = new Set(),
+  visitedBlocks: Set<string> = new Set()
 ): LogItem[] => {
+  if (visitedBlocks.has(blockId)) {
+    return [];
+  }
+  const nextVisitedBlocks = new Set([...visitedBlocks, blockId]);
   const block = blocks[blockId];
   switch (block?.type) {
     case "group": {
+      if (visitedGroups.has(block.group_id)) {
+        return [];
+      }
+      const nextVisited = new Set([...visitedGroups, block.group_id]);
       return [
         {
           content: `Group started: ${block.group_id}`,
           log_type: "info",
           timestamp: new Date().toISOString(),
           append: false,
-          children: logsSelector(block.group_id)(groupSlice),
+          children: logsSelector(block.group_id)(groupSlice, nextVisited),
           is_streaming: block.is_streaming
         }
       ];
     }
     case "task": {
       const children = block.children.flatMap((childId) => {
-        return logSelector(childId, blocks, groupSlice);
+        return logSelector(childId, blocks, groupSlice, visitedGroups, nextVisitedBlocks);
       });
       if (block.error) {
         children.push({
@@ -234,10 +249,13 @@ const logSelector = (
 
 const logsSelector =
   (groupKey: string) =>
-  (groupSlice: {
-    groups: Record<string, GroupSlice["groups"][string]>;
-    groupBlocks: Record<string, GroupSlice["groupBlocks"][string]>;
-  }): LogItem[] => {
+  (
+    groupSlice: {
+      groups: Record<string, GroupSlice["groups"][string]>;
+      groupBlocks: Record<string, GroupSlice["groupBlocks"][string]>;
+    },
+    visitedGroups: Set<string> = new Set()
+  ): LogItem[] => {
     const group = groupSlice.groups[groupKey];
     const blocks = groupSlice.groupBlocks[groupKey]?.blocks ?? {};
     const root = groupSlice.groupBlocks[groupKey]?.root ?? [];
@@ -280,7 +298,8 @@ const logsSelector =
                   {} as Record<string, Block>
                 )
             : blocks,
-          groupSlice
+          groupSlice,
+          visitedGroups
         );
       }),
       ...(group.error
