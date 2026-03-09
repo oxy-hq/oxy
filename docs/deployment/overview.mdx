@@ -24,10 +24,13 @@ There are several approaches to deploying Oxy:
 
 1. **Traditional Linux Setup** - Follow the step-by-step guide below to provision a machine, install dependencies, and configure each component manually.
 2. **Docker Deployment** - Use our [Docker image](https://github.com/oxy-hq/oxy/pkgs/container/oxy) for a containerized deployment that simplifies setup and maintenance. See the [Docker deployment guide](/deployment/docker) for details.
-3. **Kubernetes Deployment** - Deploy Oxy on Kubernetes clusters using our official Helm chart or raw YAML manifests. Choose from:
-   - **[Helm Chart](/deployment/kubernetes-helm)** - Recommended for most Kubernetes deployments with sensible defaults and easy configuration
-   - **[Raw YAML](/deployment/kubernetes-raw)** - For advanced users who need full control over Kubernetes resources
-4. **Hands-on Guides** - For practical, ready-to-use deployment recipes, check our [hands-on guides](/deployment/hands-on) section which includes:
+3. **Kubernetes Deployment** - Deploy Oxy on Kubernetes clusters using our official Helm charts or raw YAML manifests. Choose from:
+   - **[oxy-app Helm Chart](/deployment/kubernetes-helm)** - Standard deployment using `oxy serve` with an external PostgreSQL database. Recommended for most Kubernetes deployments.
+   - **[oxy-start Helm Chart](/deployment/kubernetes-helm#oxy-start-self-contained-deployment)** - Self-contained deployment using `oxy start` with Docker-in-Docker. No external database required — ideal for single-tenant instances.
+   - **[Raw YAML](/deployment/kubernetes-raw)** - For advanced users who need full control over Kubernetes resources.
+   - **[GitOps with ArgoCD](/deployment/kubernetes-helm#gitops-deployment-with-argocd)** - Manage Helm deployments declaratively for automated sync and drift detection.
+4. **Cloud Mode** - Deploy Oxy as a [multi-tenant cloud platform](/deployment/cloud-mode) using `oxy serve --cloud --enterprise`. Projects are synced from GitHub repositories and managed through workspaces.
+5. **Hands-on Guides** - For practical, ready-to-use deployment recipes, check our [hands-on guides](/deployment/hands-on) section which includes:
    - **Google Cloud Platform (GCP)** - Deploy Oxy on Google Cloud using our dedicated [GCP deployment guide](/deployment/gcp).
 
 ## Deployment Overview
@@ -178,7 +181,10 @@ Follow these steps to deploy Oxy on your cloud environment:
     icon="dharmachakra"
     href="/deployment/kubernetes-helm"
   >
-    Deploy Oxy on Kubernetes using our official Helm chart
+    Deploy Oxy on Kubernetes using the oxy-app or oxy-start Helm chart
+  </Card>
+  <Card title="Cloud Mode" icon="cloud" href="/deployment/cloud-mode">
+    Multi-tenant deployment with GitHub-synced projects and workspace management
   </Card>
   <Card
     title="Kubernetes (Raw YAML)"

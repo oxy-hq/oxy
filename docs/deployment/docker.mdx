@@ -30,7 +30,7 @@ The fastest way to get started with Oxy on Docker is to use the pre-built image 
 
 ```bash
 # Pull the latest Oxy Docker image
-docker pull ghcr.io/oxy-hq/oxy:0.2.3
+docker pull ghcr.io/oxy-hq/oxy:latest
 
 # Run Oxy with a mounted workspace
 docker run -d \
@@ -39,7 +39,7 @@ docker run -d \
   -v /path/to/your/workspace:/app \
   -e OPENAI_API_KEY=your-api-key \
   -e OXY_STATE_DIR=/var/lib/oxy/data \
-  ghcr.io/oxy-hq/oxy:0.2.3
+  ghcr.io/oxy-hq/oxy:latest
 ```
 
 ## Why Use Docker Compose?
@@ -52,6 +52,76 @@ Docker Compose lets you define and manage multi-container applications with a si
 - Reproduce your deployment setup easily across machines or teams
 
 **In short:** Docker Compose simplifies running Oxy in production or development, especially when you need more than one container.
+
+## Minimal Deployment
+
+The minimal setup runs Oxy and PostgreSQL together. Create a `docker-compose.yml`:
+
+```yaml
+services:
+  oxy:
+    image: ghcr.io/oxy-hq/oxy:latest
+    container_name: oxy-demo
+    ports:
+      - "3000:3000"
+    working_dir: /workspace
+    volumes:
+      # Mount your project directory — edit files from outside Docker
+      - ./examples:/workspace
+      # Persistent Oxy state (agent history, auth, etc.)
+      - oxy-state:/var/lib/oxy/data
+    environment:
+      - OXY_STATE_DIR=/var/lib/oxy/data
+      - OXY_DATABASE_URL=postgresql://demo:demo@postgres:5432/demo
+    env_file:
+      - .env # Put your API keys here (OPENAI_API_KEY, etc.)
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    command: ["oxy", "serve", "--host", "0.0.0.0", "--port", "3000"]
+
+  postgres:
+    image: postgres:18-alpine
+    container_name: oxy-postgres
+    environment:
+      POSTGRES_USER: demo
+      POSTGRES_PASSWORD: demo
+      POSTGRES_DB: demo
+      PGDATA: /var/lib/postgresql/18/docker
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U demo -d demo"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  oxy-state:
+  postgres-data:
+```
+
+Create a `.env` file with your API keys (never commit this):
+
+```bash
+OPENAI_API_KEY=sk-...
+# Add any other provider keys your agents need
+```
+
+Then start everything:
+
+```bash
+docker compose up -d
+```
+
+Oxy will be available at `http://localhost:3000`. The `depends_on` health check ensures Oxy only starts after PostgreSQL is ready to accept connections.
+
+<Note>
+  Replace `./examples` with the path to your own Oxy workspace directory
+  containing your `config.yml`, agents, and workflows.
+</Note>
 
 ## Reference Architecture Diagram
 
@@ -107,7 +177,7 @@ flowchart TD
     version: '3'
     services:
       oxy:
-        image: ghcr.io/oxy-hq/oxy:0.2.3
+        image: ghcr.io/oxy-hq/oxy:latest
         container_name: oxy-instance
         ports:
           - "3000:3000"
@@ -204,7 +274,7 @@ services:
     restart: unless-stopped
 
   oxy:
-    image: ghcr.io/oxy-hq/oxy:0.2.3
+    image: ghcr.io/oxy-hq/oxy:latest
     container_name: oxy-instance
     ports:
       - "3000:3000"
@@ -258,7 +328,7 @@ Common environment variables to configure in your Oxy container:
 If you need to extend the official Oxy image with additional dependencies or configuration, you can create your own Dockerfile:
 
 ```dockerfile
-FROM ghcr.io/oxy-hq/oxy:0.2.3
+FROM ghcr.io/oxy-hq/oxy:latest
 
 # Add custom dependencies
 RUN apt-get update && apt-get install -y your-package

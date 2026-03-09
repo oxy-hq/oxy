@@ -84,12 +84,21 @@ In cloud mode, Oxy operates differently from local mode:
 # Start Oxy in cloud mode
 oxy serve --cloud
 
+# With enterprise features (ClickHouse telemetry, semantic engine)
+oxy serve --cloud --enterprise
+
 # Specify custom port
 oxy serve --cloud --port 8080
 
 # Bind to specific host
 oxy serve --cloud --host 0.0.0.0 --port 3000
 ```
+
+<Note>
+  The `--enterprise` flag enables enterprise features including
+  ClickHouse-backed telemetry and the semantic engine. Use this flag when your
+  deployment includes a ClickHouse instance and OTel Collector.
+</Note>
 
 ### Environment Variables
 
@@ -255,56 +264,61 @@ EXPOSE 3000
 CMD ["oxy", "serve", "--cloud", "--port", "3000"]
 ```
 
-### Kubernetes Deployment
+### Kubernetes Deployment (Helm)
+
+For Kubernetes, use the `oxy-app` Helm chart with the `--cloud --enterprise` command:
 
 ```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: oxy-cloud
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: oxy
-  template:
-    metadata:
-      labels:
-        app: oxy
-    spec:
-      containers:
-        - name: oxy
-          image: oxy:latest
-          args:
-            - "serve"
-            - "--cloud"
-            - "--port"
-            - "3000"
-          env:
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: oxy-secrets
-                  key: database-url
-            - name: OPENAI_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: oxy-secrets
-                  key: openai-api-key
-          ports:
-            - containerPort: 3000
-          livenessProbe:
-            httpGet:
-              path: /health
-              port: 3000
-            initialDelaySeconds: 30
-            periodSeconds: 10
-          readinessProbe:
-            httpGet:
-              path: /ready
-              port: 3000
-            initialDelaySeconds: 10
-            periodSeconds: 5
+# oxy-cloud values.yaml
+app:
+  image: ghcr.io/oxy-hq/oxy
+  imageTag: "0.5.20"
+  imagePullPolicy: IfNotPresent
+  command: ["oxy", "serve", "--cloud", "--enterprise"]
+
+serviceAccount:
+  create: false
+  name: oxy-app-sa
+
+persistence:
+  size: 10Gi
+
+# Cloud mode fetches project files from GitHub on demand — no gitSync needed
+gitSync:
+  enabled: false
+
+env:
+  OXY_STATE_DIR: "/workspace/oxy_data"
+  # OXY_DATABASE_URL injected via external secret
+  OXY_API_URL: https://app.your-domain.com/api
+  MAGIC_LINK_FROM_EMAIL: "noreply@your-domain.com"
+  MAGIC_LINK_AWS_REGION: "us-west-2"
+
+# Inject database URL and API keys from your secrets manager
+externalSecrets:
+  envSecretNames: ["oxy-cloud-env-secret"]
+
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/affinity: "cookie"
+    nginx.ingress.kubernetes.io/session-cookie-name: "route"
+    nginx.ingress.kubernetes.io/session-cookie-expires: "86400"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+  hosts:
+    - host: app.your-domain.com
+      paths: []
+```
+
+```bash
+helm install oxy-cloud oci://ghcr.io/oxy-hq/helm-charts/oxy-app \
+  --namespace oxy-app \
+  --create-namespace \
+  --version 0.4.2 \
+  --values _base.yaml \
+  --values oxy-cloud-values.yaml
 ```
 
 ### AWS ECS with Cloud Mode
