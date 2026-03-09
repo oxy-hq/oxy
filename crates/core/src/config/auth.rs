@@ -22,10 +22,10 @@ pub struct MagicLinkAuth {
     /// AWS region for SES (defaults to AWS_REGION env var)
     #[garde(skip)]
     pub aws_region: Option<String>,
-    /// Allow all emails ending with these domains (e.g. ["company.com"])
+    /// Block all emails ending with these domains (e.g. ["gmail.com"])
     #[garde(skip)]
     #[serde(default)]
-    pub allowed_domains: Vec<String>,
+    pub blocked_domains: Vec<String>,
     /// Allow specific individual emails (for closed beta)
     #[garde(skip)]
     #[serde(default)]
@@ -81,7 +81,7 @@ impl Authentication {
                 from_email: magic_link_from_email
                     .unwrap_or_else(|| "noreply@localhost".to_string()),
                 aws_region: env::var("MAGIC_LINK_AWS_REGION").ok(),
-                allowed_domains: env::var("MAGIC_LINK_ALLOWED_DOMAINS")
+                blocked_domains: env::var("MAGIC_LINK_BLOCKED_DOMAINS")
                     .unwrap_or_default()
                     .split(',')
                     .map(str::trim)

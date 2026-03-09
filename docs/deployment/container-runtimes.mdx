@@ -371,16 +371,16 @@ You can add this to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to make i
 
 ### Common Socket Locations
 
-| Runtime         | Default Socket Location                                  |
-| --------------- | -------------------------------------------------------- |
-| Docker Desktop  | `unix:///var/run/docker.sock` (macOS/Linux)              |
-|                 | `npipe:////./pipe/docker_engine` (Windows)               |
-| Rancher Desktop | `unix://$HOME/.rd/docker.sock` (macOS)                   |
-|                 | `unix:///var/run/docker.sock` (Linux)                    |
-|                 | `unix:///mnt/wsl/rancher-desktop/run/docker.sock` (WSL)  |
-| Colima          | `unix://$HOME/.colima/default/docker.sock`               |
-| Podman          | `unix://$XDG_RUNTIME_DIR/podman/podman.sock`             |
-| OrbStack        | `unix://$HOME/.orbstack/run/docker.sock`                 |
+| Runtime         | Default Socket Location                                 |
+| --------------- | ------------------------------------------------------- |
+| Docker Desktop  | `unix:///var/run/docker.sock` (macOS/Linux)             |
+|                 | `npipe:////./pipe/docker_engine` (Windows)              |
+| Rancher Desktop | `unix://$HOME/.rd/docker.sock` (macOS)                  |
+|                 | `unix:///var/run/docker.sock` (Linux)                   |
+|                 | `unix:///mnt/wsl/rancher-desktop/run/docker.sock` (WSL) |
+| Colima          | `unix://$HOME/.colima/default/docker.sock`              |
+| Podman          | `unix://$XDG_RUNTIME_DIR/podman/podman.sock`            |
+| OrbStack        | `unix://$HOME/.orbstack/run/docker.sock`                |
 
 ## Troubleshooting
 
@@ -405,23 +405,22 @@ You can add this to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) to make i
   </Accordion>
 
 <Accordion title="Rancher Desktop: daemon not responding">
-  1. Open Rancher Desktop preferences
-  2. Switch Container Engine to **dockerd (moby)**
-  3. Restart Rancher Desktop
-  4. Wait for full initialization (30-60 seconds)
-  5. Retry: `oxy start`
+  1. Open Rancher Desktop preferences 2. Switch Container Engine to **dockerd
+  (moby)** 3. Restart Rancher Desktop 4. Wait for full initialization (30-60
+  seconds) 5. Retry: `oxy start`
 </Accordion>
 
 <Accordion title="Rancher Desktop on Windows (WSL): docker command not found or socket missing">
   This is almost always caused by WSL 1 or missing WSL integration. See the [prerequisites guide](/prerequisites#windows-wsl) for WSL 2 setup steps.
 
-  If Docker socket is not at the default path, set `DOCKER_HOST`:
+If Docker socket is not at the default path, set `DOCKER_HOST`:
 
-  ```bash
-  export DOCKER_HOST=unix:///mnt/wsl/rancher-desktop/run/docker.sock
-  ```
+```bash
+export DOCKER_HOST=unix:///mnt/wsl/rancher-desktop/run/docker.sock
+```
 
-  Add this to `~/.bashrc` or `~/.zshrc` to persist across sessions.
+Add this to `~/.bashrc` or `~/.zshrc` to persist across sessions.
+
 </Accordion>
 
   <Accordion title="Colima: connection refused">

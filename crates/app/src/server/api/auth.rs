@@ -685,20 +685,20 @@ fn is_valid_email_format(email: &str) -> bool {
 }
 
 fn is_email_allowed(email: &str, config: &MagicLinkAuth) -> bool {
-    if config.allowed_domains.is_empty() && config.allowed_emails.is_empty() {
-        return true;
-    }
     // email is already lowercased at ingestion; normalize config values too so
-    // operators can write "Company.com" or "company.com" interchangeably.
-    for domain in &config.allowed_domains {
+    // operators can write "Gmail.com" or "gmail.com" interchangeably.
+    for domain in &config.blocked_domains {
         if email.ends_with(&format!("@{}", domain.to_lowercase())) {
-            return true;
+            return false;
         }
     }
-    config
-        .allowed_emails
-        .iter()
-        .any(|e| e.eq_ignore_ascii_case(email))
+    if !config.allowed_emails.is_empty() {
+        return config
+            .allowed_emails
+            .iter()
+            .any(|e| e.eq_ignore_ascii_case(email));
+    }
+    true
 }
 
 pub async fn request_magic_link(

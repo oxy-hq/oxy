@@ -26,7 +26,7 @@ Magic link authentication lets users sign in by clicking a one-time link sent to
 - ✅ No passwords to manage or leak
 - ✅ Tokens expire in 15 minutes and are single-use
 - ✅ Works alongside Google OAuth and Okta OAuth
-- ✅ Optional domain/email allowlist for closed access
+- ✅ Optional domain blocklist and email allowlist for access control
 - ✅ IAM role credentials — no long-lived AWS keys required
 - ✅ Local development mode (browser-based, no SES needed)
 
@@ -42,8 +42,8 @@ Magic link authentication lets users sign in by clicking a one-time link sent to
 | ---------------------------- | ---------------- | ------------------------------------------------------------------- |
 | `MAGIC_LINK_FROM_EMAIL`      | Yes (production) | SES-verified sender address, e.g. `noreply@yourcompany.com`         |
 | `MAGIC_LINK_AWS_REGION`      | No               | AWS region for SES (falls back to `AWS_REGION`)                     |
-| `MAGIC_LINK_ALLOWED_DOMAINS` | No               | Comma-separated domains; only these can sign in                     |
-| `MAGIC_LINK_ALLOWED_EMAILS`  | No               | Comma-separated individual emails (for closed beta)                 |
+| `MAGIC_LINK_BLOCKED_DOMAINS` | No               | Comma-separated domains that are denied sign-in (e.g. `gmail.com`)  |
+| `MAGIC_LINK_ALLOWED_EMAILS`  | No               | Comma-separated individual emails allowed to sign in                |
 | `MAGIC_LINK_LOCAL_TEST`      | No               | Set to any value to enable browser-based local testing              |
 | `AWS_REGION`                 | No               | Default AWS region (used by SES if `MAGIC_LINK_AWS_REGION` not set) |
 
@@ -107,33 +107,32 @@ oxy serve
 
 The login page will display a **"Continue with email"** input. Users enter their email, receive a link, and click it to sign in.
 
-## Access Control (Allowlist)
+## Access Control
 
-By default, **any email address** can request a magic link. To restrict access:
+By default, **any email address** can request a magic link. Use the options below to restrict access:
 
-**Domain allowlist** — only emails matching these domains can sign in:
+**Domain blocklist** — deny sign-in from specific domains (e.g. public email providers):
 
 ```bash
-export MAGIC_LINK_ALLOWED_DOMAINS=yourcompany.com,partner.com
+export MAGIC_LINK_BLOCKED_DOMAINS=gmail.com,yahoo.com,hotmail.com
 ```
 
-**Individual email allowlist** — useful for closed beta programs:
+**Individual email allowlist** — when set, only these specific addresses can sign in:
 
 ```bash
-export MAGIC_LINK_ALLOWED_EMAILS=alice@gmail.com,bob@outlook.com
+export MAGIC_LINK_ALLOWED_EMAILS=alice@example.com,bob@example.com
 ```
 
-**Combined** — emails matching either rule are allowed:
+**Combined** — blocked domains are always rejected first, then the allowlist is checked:
 
 ```bash
-export MAGIC_LINK_ALLOWED_DOMAINS=yourcompany.com
-export MAGIC_LINK_ALLOWED_EMAILS=contractor@gmail.com
+export MAGIC_LINK_BLOCKED_DOMAINS=gmail.com
+export MAGIC_LINK_ALLOWED_EMAILS=contractor@example.com
 ```
 
 <Note>
-  When an email doesn't meet the allowlist rules, Oxy still returns a success
-  response — it never reveals whether a specific address is allowed. No email is
-  sent.
+  When an email is denied, Oxy still returns a success response — it never
+  reveals whether a specific address is allowed. No email is sent.
 </Note>
 
 ## Local Development
@@ -167,10 +166,10 @@ oxy serve
 
 ## Security Details
 
-| Property             | Value                                             |
-| -------------------- | ------------------------------------------------- |
-| Token entropy        | 256 bits (32 random bytes, hex-encoded)           |
-| Token lifetime       | 15 minutes                                        |
-| Single-use           | Yes — token is deleted immediately on first use   |
-| Email verification   | Set automatically on successful sign-in           |
-| Allowlist disclosure | Never — always returns 200 to prevent enumeration |
+| Property                  | Value                                             |
+| ------------------------- | ------------------------------------------------- |
+| Token entropy             | 256 bits (32 random bytes, hex-encoded)           |
+| Token lifetime            | 15 minutes                                        |
+| Single-use                | Yes — token is deleted immediately on first use   |
+| Email verification        | Set automatically on successful sign-in           |
+| Access control disclosure | Never — always returns 200 to prevent enumeration |

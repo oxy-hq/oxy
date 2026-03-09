@@ -14,12 +14,9 @@ The `oxy start` command manages PostgreSQL and other services in Docker containe
     Download and install from [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/) for macOS, Windows, or Linux.
   </Tab>
 
-  <Tab title="Colima (macOS)">
-    ```bash
-    brew install colima docker
-    colima start
-    ```
-  </Tab>
+<Tab title="Colima (macOS)">
+  ```bash brew install colima docker colima start ```
+</Tab>
 
   <Tab title="Rancher Desktop">
     Download from [rancherdesktop.io](https://rancherdesktop.io/). After installing, go to **Preferences → Container Engine** and select **dockerd (moby)**.
@@ -37,7 +34,9 @@ docker ps
 If this prints an empty table (or a list of running containers), you're ready to use `oxy start`.
 
 <Info>
-  For alternative runtimes (Podman, OrbStack), custom socket locations, troubleshooting, and advanced configuration, see the full [Container Runtime Support](/deployment/container-runtimes) guide.
+  For alternative runtimes (Podman, OrbStack), custom socket locations,
+  troubleshooting, and advanced configuration, see the full [Container Runtime
+  Support](/deployment/container-runtimes) guide.
 </Info>
 
 ## Windows (WSL)
@@ -58,6 +57,7 @@ On Windows, Oxy runs inside **WSL 2**. WSL 1 will not work — Docker socket int
     wsl --set-version <DistroName> 2
     wsl --shutdown
     ```
+
   </Step>
 
   <Step title="Enable WSL integration in your container runtime">
@@ -68,6 +68,7 @@ On Windows, Oxy runs inside **WSL 2**. WSL 1 will not work — Docker socket int
     <Info>
       If the Integrations tab is empty (no distros listed), fully quit the application, run `wsl --shutdown` from PowerShell, then reopen it. If it's still empty, uninstall and reinstall.
     </Info>
+
   </Step>
 
   <Step title="Verify inside WSL">
@@ -76,5 +77,6 @@ On Windows, Oxy runs inside **WSL 2**. WSL 1 will not work — Docker socket int
     ```bash
     docker ps
     ```
+
   </Step>
 </Steps>
