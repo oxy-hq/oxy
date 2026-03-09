@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.24](https://github.com/oxy-hq/oxy-internal/compare/0.5.23...0.5.24) (2026-03-09)
+
+
+### <!-- 0 -->🚀 Features
+
+* add type to app result task outputs ([#1731](https://github.com/oxy-hq/oxy-internal/issues/1731)) ([5f1846a](https://github.com/oxy-hq/oxy-internal/commit/5f1846a31ff093b685e78ce0fbc6b64ee3b74727))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* update email validation logic and configuration for magic link authentication ([12613df](https://github.com/oxy-hq/oxy-internal/commit/12613dfe5888eca09d01113ffa2d89e1ec5a921b))
+
 ## [0.5.23](https://github.com/oxy-hq/oxy-internal/compare/0.5.22...0.5.23) (2026-03-07)
 
 
