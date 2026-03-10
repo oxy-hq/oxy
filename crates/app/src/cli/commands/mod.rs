@@ -18,7 +18,7 @@ use crate::server::service::agent::AgentCLIHandler;
 use crate::server::service::agent::run_agent;
 use crate::server::service::agent::run_agentic_workflow;
 use crate::server::service::eval::EvalEventsHandler;
-use crate::server::service::eval::run_eval;
+use crate::server::service::eval::{run_eval, run_eval_with_tag};
 use crate::server::service::retrieval::{ReindexInput, SearchInput, reindex, search};
 use crate::server::service::sync::sync_databases;
 use crate::server::service::workflow::run_workflow;
@@ -27,6 +27,7 @@ use ::oxy::adapters::runs::RunsManager;
 use ::oxy::adapters::secrets::SecretsManager;
 use ::oxy::checkpoint::types::RetryStrategy;
 use ::oxy::config::model::{AppConfig, DatabaseType};
+use ::oxy::config::test_config::TestFileConfig;
 use ::oxy::config::*;
 use ::oxy::connector::Connector;
 use ::oxy::database::docker;
@@ -465,14 +466,17 @@ pub enum ThresholdMode {
 
 #[derive(Parser, Debug)]
 pub struct TestArgs {
-    /// Path to the workflow file to test
-    file: String,
+    /// Path to test/workflow/agent file. If omitted, discovers all *.test.yml files.
+    file: Option<String>,
+    /// Filter test cases by tag
+    #[clap(long)]
+    tag: Option<String>,
     /// Suppress detailed output and show only results summary
-    ///
-    /// Enable quiet mode to reduce verbose logging during test execution
-    /// and display only essential test results and metrics.
     #[clap(long, short = 'q', default_value_t = false)]
     quiet: bool,
+    /// Show full detail including agent steps, actual output, and judge reasoning
+    #[clap(long, short = 'v', default_value_t = false)]
+    verbose: bool,
     /// Output format (pretty or json)
     #[clap(long, value_enum, default_value = "pretty")]
     format: OutputFormat,
@@ -482,6 +486,9 @@ pub struct TestArgs {
     /// Threshold mode: 'average' checks average of all tests, 'all' checks each test individually
     #[clap(long, value_enum, default_value = "average")]
     threshold_mode: ThresholdMode,
+    /// Write full JSON results to a file (derived from test file name, e.g. sales.agent.test.results.json)
+    #[clap(long)]
+    output_json: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -918,6 +925,10 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                     "global-semantics.json",
                     serde_json::to_string_pretty(&schemars::schema_for!(Semantics))?,
                 ),
+                (
+                    "agent-test.json",
+                    serde_json::to_string_pretty(&schemars::schema_for!(TestFileConfig))?,
+                ),
             ];
 
             for (filename, schema) in &schemas {
@@ -963,7 +974,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             handle_run_command(run_args).await?;
         }
         Some(SubCommand::Test(test_args)) => {
-            sentry_config::add_operation_context("test", Some(&test_args.file));
+            sentry_config::add_operation_context("test", test_args.file.as_deref());
             handle_test_command(test_args).await?;
         }
         Some(SubCommand::Build(build_args)) => {
@@ -1764,16 +1775,6 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError
 }
 
 pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
-    let file = &test_args.file;
-    let current_dir = std::env::current_dir().expect("Could not get current directory");
-    let file_path = current_dir.join(file);
-
-    if !file_path.exists() {
-        return Err(OxyError::ConfigurationError(format!(
-            "File not found: {file_path:?}"
-        )));
-    }
-
     // Validate threshold if provided
     if let Some(threshold) = test_args.min_accuracy
         && !(0.0..=1.0).contains(&threshold)
@@ -1793,37 +1794,103 @@ pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
         .await
         .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create project: {e}")))?;
 
-    // Run evaluation and capture results
-    let results = run_eval(
-        project_manager,
-        &file_path,
-        None,
-        EvalEventsHandler::new(test_args.quiet),
-    )
-    .await?;
+    // Determine which files to test
+    let file_paths: Vec<std::path::PathBuf> = match &test_args.file {
+        Some(file) => {
+            let current_dir = std::env::current_dir().expect("Could not get current directory");
+            let file_path = current_dir.join(file);
+            if !file_path.exists() {
+                return Err(OxyError::ConfigurationError(format!(
+                    "File not found: {file_path:?}"
+                )));
+            }
+            vec![file_path]
+        }
+        None => {
+            // Discover all *.test.yml files
+            let test_files = project_manager.config_manager.list_tests().await?;
+            if test_files.is_empty() {
+                return Err(OxyError::ConfigurationError(
+                    "No .test.yml files found in the project".to_string(),
+                ));
+            }
+            test_files
+        }
+    };
 
-    // Select reporter based on format
     use crate::integrations::eval::{JsonReporter, MetricKind, PrettyReporter, Reporter};
+    use crate::server::service::eval::{SharedTokenStats, TokenStats};
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
 
+    let token_stats: SharedTokenStats = Arc::new(Mutex::new(TokenStats::default()));
+    let start_time = std::time::Instant::now();
+
+    let mut all_results = Vec::new();
+    for file_path in &file_paths {
+        let file_name = file_path
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_else(|| file_path.to_string_lossy().to_string());
+        let handler = EvalEventsHandler::new(test_args.quiet, Arc::clone(&token_stats))
+            .with_test_label(file_name.clone());
+        let mut results = run_eval_with_tag(
+            project_manager.clone(),
+            file_path,
+            None,
+            test_args.tag.clone(),
+            handler,
+        )
+        .await?;
+        for result in &mut results {
+            result.test_name = Some(file_name.clone());
+        }
+        all_results.extend(results);
+    }
+
+    let duration_ms = start_time.elapsed().as_millis() as f64;
+    let tokens = token_stats.lock().await.clone();
+
+    // Report results to stdout
     let reporter: Box<dyn Reporter> = match test_args.format {
         OutputFormat::Pretty => Box::new(PrettyReporter {
             quiet: test_args.quiet,
+            verbose: test_args.verbose,
+            total_input_tokens: tokens.total_input_tokens,
+            total_output_tokens: tokens.total_output_tokens,
+            duration_ms,
         }),
         OutputFormat::Json => Box::new(JsonReporter),
     };
-
-    // Generate output
     let mut stdout = std::io::stdout();
-    reporter.report(&results, &mut stdout)?;
+    reporter.report(&all_results, &mut stdout)?;
+
+    // Write full JSON results to file for improvement loops
+    if test_args.output_json {
+        let output_path = match &test_args.file {
+            Some(file) => {
+                let stem = file.trim_end_matches(".yml").trim_end_matches(".yaml");
+                format!("{stem}.results.json")
+            }
+            None => "test-results.json".to_string(),
+        };
+        let file = std::fs::File::create(&output_path).map_err(|e| {
+            OxyError::RuntimeError(format!("Failed to create output file '{output_path}': {e}"))
+        })?;
+        let mut buf_writer = std::io::BufWriter::new(file);
+        JsonReporter.report(&all_results, &mut buf_writer)?;
+        eprintln!("Results written to {output_path}");
+    }
 
     // Check threshold if provided
     if let Some(min_accuracy) = test_args.min_accuracy {
         // Collect all accuracy scores from all results
-        let accuracies: Vec<f32> = results
+        let accuracies: Vec<f32> = all_results
             .iter()
             .flat_map(|r| &r.metrics)
             .filter_map(|m| match m {
                 MetricKind::Similarity(s) => Some(s.score),
+                MetricKind::Correctness(c) => Some(c.score),
                 _ => None,
             })
             .collect();

@@ -7,6 +7,7 @@ use oxy_shared::errors::OxyError;
 
 use super::agent_config::AgenticConfig;
 use super::model::{AgentConfig, AppConfig, Config, Workflow, WorkflowWithRawVariables};
+use super::test_config::TestFileConfig;
 
 const DEFAULT_CONFIG_PATH: &str = "config.yml";
 const WORKFLOW_EXTENSION: &str = ".workflow";
@@ -14,6 +15,7 @@ const AUTOMATION_EXTENSION: &str = ".automation";
 const PROCEDURE_EXTENSION: &str = ".procedure";
 const AGENT_EXTENSION: &str = ".agent";
 const AGENTIC_WORKFLOW_EXTENSION: &str = ".aw";
+const TEST_EXTENSION: &str = ".test";
 
 #[enum_dispatch::enum_dispatch]
 pub(super) trait ConfigStorage {
@@ -48,6 +50,11 @@ pub(super) trait ConfigStorage {
     async fn get_results_dir(&self) -> Result<PathBuf, OxyError>;
     async fn get_exported_chart_dir(&self) -> Result<PathBuf, OxyError>;
     async fn get_app_results_dir(&self) -> Result<PathBuf, OxyError>;
+    async fn load_test_config<P: AsRef<Path>>(
+        &self,
+        test_ref: P,
+    ) -> Result<TestFileConfig, OxyError>;
+    async fn list_tests(&self) -> Result<Vec<PathBuf>, OxyError>;
 }
 
 #[derive(Debug)]
@@ -77,12 +84,17 @@ impl LocalSource {
         })
     }
 
-    fn get_stem_by_extension(&self, path: &PathBuf, extension: &str) -> String {
-        let file_stem = path.file_stem().unwrap().to_str().unwrap();
-        file_stem
+    fn get_stem_by_extension(&self, path: &PathBuf, extension: &str) -> Result<String, OxyError> {
+        let file_stem = path.file_stem().and_then(|s| s.to_str()).ok_or_else(|| {
+            OxyError::ConfigurationError(format!(
+                "Invalid file path (no file stem or non-UTF-8): {}",
+                path.display()
+            ))
+        })?;
+        Ok(file_stem
             .strip_suffix(extension)
             .unwrap_or(file_stem)
-            .to_string()
+            .to_string())
     }
 
     fn list_by_sub_extension(&self, dir: Option<&PathBuf>, sub_extension: &str) -> Vec<PathBuf> {
@@ -253,7 +265,7 @@ impl ConfigStorage for LocalSource {
             ))
         })?;
         if agent_config.name.is_empty() {
-            agent_config.name = self.get_stem_by_extension(&resolved_path, AGENT_EXTENSION);
+            agent_config.name = self.get_stem_by_extension(&resolved_path, AGENT_EXTENSION)?;
         }
         Ok(agent_config)
     }
@@ -271,7 +283,7 @@ impl ConfigStorage for LocalSource {
         })?;
         if agent_config.name.is_empty() {
             agent_config.name =
-                self.get_stem_by_extension(&resolved_path, AGENTIC_WORKFLOW_EXTENSION);
+                self.get_stem_by_extension(&resolved_path, AGENTIC_WORKFLOW_EXTENSION)?;
         }
         Ok(agent_config)
     }
@@ -298,7 +310,7 @@ impl ConfigStorage for LocalSource {
         } else {
             WORKFLOW_EXTENSION
         };
-        workflow_config.name = self.get_stem_by_extension(&resolved_path, extension);
+        workflow_config.name = self.get_stem_by_extension(&resolved_path, extension)?;
         Ok(workflow_config)
     }
 
@@ -325,7 +337,7 @@ impl ConfigStorage for LocalSource {
         } else {
             WORKFLOW_EXTENSION
         };
-        temp_workflow.name = self.get_stem_by_extension(&resolved_path, extension);
+        temp_workflow.name = self.get_stem_by_extension(&resolved_path, extension)?;
         Ok(temp_workflow)
     }
 
@@ -419,5 +431,61 @@ impl ConfigStorage for LocalSource {
         let dir = self.resolve_state_dir().await?.join("apps").join("results");
         self.try_ensure_dir_exists(&dir)?;
         Ok(dir)
+    }
+
+    async fn load_test_config<P: AsRef<Path>>(
+        &self,
+        test_ref: P,
+    ) -> Result<TestFileConfig, OxyError> {
+        let resolved_path = self.validate_path_within_project(&test_ref)?;
+        let test_yml = fs::read_to_string(&resolved_path).await.map_err(|e| {
+            OxyError::ConfigurationError(format!("Failed to read test config from file: {e}"))
+        })?;
+        let mut test_config: TestFileConfig = serde_yaml::from_str(&test_yml).map_err(|e| {
+            OxyError::ConfigurationError(format!(
+                "Failed to deserialize test config {}: {e}",
+                resolved_path.display()
+            ))
+        })?;
+        // Infer target from filename if not specified
+        if test_config.target.is_none() {
+            let file_name = resolved_path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or_default();
+            // e.g. "sales.agent.test.yml" -> "sales.agent.yml"
+            if let Some(base) = file_name.strip_suffix(".test.yml") {
+                let target_name = format!("{base}.yml");
+                // Resolve relative to the test file's directory
+                if let Some(parent) = resolved_path.parent() {
+                    let target_path = parent.join(&target_name);
+                    // Store as relative path from project root
+                    if let Ok(relative) = target_path.strip_prefix(&self.project_path) {
+                        test_config.target = Some(relative.display().to_string());
+                    } else {
+                        test_config.target = Some(target_name);
+                    }
+                } else {
+                    test_config.target = Some(target_name);
+                }
+            }
+        }
+        Ok(test_config)
+    }
+
+    async fn list_tests(&self) -> Result<Vec<PathBuf>, OxyError> {
+        let candidates = self.list_by_sub_extension(None, "test");
+        // Filter to only files that parse as TestFileConfig (skip old dataset files)
+        let mut test_files = Vec::new();
+        for path in candidates {
+            let content = match tokio::fs::read_to_string(&path).await {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            if serde_yaml::from_str::<TestFileConfig>(&content).is_ok() {
+                test_files.push(path);
+            }
+        }
+        Ok(test_files)
     }
 }

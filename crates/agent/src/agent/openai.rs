@@ -149,7 +149,7 @@ impl OpenAIExecutable {
         reasoning_config: Option<ReasoningConfig>,
         synthesize_mode: bool,
     ) -> Self {
-        print!("Building OpenAI executable for model: {}", model);
+        tracing::debug!("Building OpenAI executable for model: {}", model);
         Self {
             client: Arc::new(client),
             model,

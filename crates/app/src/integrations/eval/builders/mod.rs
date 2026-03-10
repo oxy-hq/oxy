@@ -14,6 +14,7 @@ use oxy::{
 use oxy_shared::errors::OxyError;
 use types::{EvalInput, EvalResult};
 
+mod correctness_solver;
 mod eval;
 mod generator;
 mod solver;

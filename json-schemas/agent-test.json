@@ -1,0 +1,97 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TestFileConfig",
+  "type": "object",
+  "required": [
+    "cases"
+  ],
+  "properties": {
+    "cases": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/TestCase"
+      }
+    },
+    "name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "settings": {
+      "default": {
+        "concurrency": 5,
+        "judge_model": null,
+        "runs": 3
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/TestSettings"
+        }
+      ]
+    },
+    "target": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "TestCase": {
+      "type": "object",
+      "required": [
+        "expected",
+        "prompt"
+      ],
+      "properties": {
+        "expected": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "tags": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tool": {
+          "description": "Optional: assert that this tool was invoked (deterministic check). TODO: implement tool-use verification in the eval pipeline.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "TestSettings": {
+      "type": "object",
+      "properties": {
+        "concurrency": {
+          "default": 5,
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        },
+        "judge_model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "runs": {
+          "default": 3,
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

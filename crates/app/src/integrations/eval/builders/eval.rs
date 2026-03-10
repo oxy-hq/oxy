@@ -4,14 +4,16 @@ use oxy::{
     checkpoint::types::RetryStrategy,
     config::{
         constants::EVAL_SOURCE,
-        model::{EvalConfig, EvalKind, Task, TaskType},
+        model::{
+            CorrectnessSolver, EvalConfig, EvalKind, SolverKind, Task, TaskType, TestCaseEval,
+            default_correctness_prompt,
+        },
     },
     execute::{
         Executable, ExecutionContext,
         builders::{ExecutableBuilder, map::ParamMapper},
         types::EventKind,
     },
-    theme::StyledText,
 };
 use oxy_agent::types::AgentInput;
 use oxy_shared::errors::OxyError;
@@ -21,7 +23,7 @@ use super::{
     EvalInput, EvalResult,
     generator::GeneratorExecutable,
     solver::SolverExecutable,
-    types::{EvalTarget, MetricKind},
+    types::{EvalTarget, MetricKind, RunStats},
 };
 
 #[derive(Clone, Debug)]
@@ -63,7 +65,11 @@ impl ParamMapper<EvalInput, Vec<(usize, EvalConfig, EvalTarget)>> for EvalMapper
         ),
         OxyError,
     > {
-        let EvalInput { target_ref, index } = input;
+        let EvalInput {
+            target_ref,
+            index,
+            tag,
+        } = input;
         let mapped_input = match &target_ref {
             workflow_ref
                 if workflow_ref.ends_with("procedure.yml")
@@ -132,9 +138,91 @@ impl ParamMapper<EvalInput, Vec<(usize, EvalConfig, EvalTarget)>> for EvalMapper
                     })
                     .try_collect()
             }
+            test_ref if test_ref.ends_with("test.yml") => {
+                let config_manager = &execution_context.project.config_manager;
+                let test_config = config_manager.resolve_test(&target_ref).await?;
+                let resolved_target = test_config.target.ok_or_else(|| {
+                    OxyError::ConfigurationError(format!(
+                        "Could not determine target for test file: {target_ref}"
+                    ))
+                })?;
+
+                // Determine the eval target based on the resolved target file extension
+                let eval_target = if resolved_target.ends_with("agent.yml") {
+                    EvalTarget::Agent(AgentInput {
+                        agent_ref: resolved_target.clone(),
+                        prompt: String::new(),
+                        memory: vec![],
+                        variables: None,
+                        a2a_task_id: None,
+                        a2a_thread_id: None,
+                        a2a_context_id: None,
+                        sandbox_info: None,
+                    })
+                } else if resolved_target.ends_with("aw.yml") {
+                    // Agentic workflows (.aw.yml) are agent-like: they accept a prompt
+                    EvalTarget::Agent(AgentInput {
+                        agent_ref: resolved_target.clone(),
+                        prompt: String::new(),
+                        memory: vec![],
+                        variables: None,
+                        a2a_task_id: None,
+                        a2a_thread_id: None,
+                        a2a_context_id: None,
+                        sandbox_info: None,
+                    })
+                } else if resolved_target.ends_with("workflow.yml")
+                    || resolved_target.ends_with("automation.yml")
+                    || resolved_target.ends_with("procedure.yml")
+                {
+                    return Err(OxyError::ConfigurationError(format!(
+                        "Unsupported test target: {resolved_target}. \
+                         The testing framework only supports .agent.yml and .aw.yml targets. \
+                         Workflow/automation/procedure files do not accept prompts and cannot be tested with .test.yml files."
+                    )));
+                } else {
+                    return Err(OxyError::ConfigurationError(format!(
+                        "Unsupported test target: {resolved_target}. \
+                         Expected .agent.yml or .aw.yml"
+                    )));
+                };
+
+                let correctness_solver = SolverKind::Correctness(CorrectnessSolver {
+                    prompt: default_correctness_prompt(),
+                    model_ref: test_config.settings.judge_model.clone(),
+                });
+
+                // Filter cases by index and/or tag
+                let cases: Vec<_> = test_config
+                    .cases
+                    .into_iter()
+                    .enumerate()
+                    .filter(|(idx, _)| index.is_none_or(|i| *idx == i))
+                    .filter(|(_, c)| {
+                        tag.as_ref()
+                            .is_none_or(|tag_filter| c.tags.contains(tag_filter))
+                    })
+                    .map(|(_, c)| c)
+                    .collect();
+
+                Ok(vec![(
+                    0,
+                    EvalConfig {
+                        kind: EvalKind::TestCase(TestCaseEval {
+                            cases,
+                            runs: test_config.settings.runs,
+                            judge_model: test_config.settings.judge_model,
+                        }),
+                        metrics: vec![correctness_solver],
+                        concurrency: test_config.settings.concurrency,
+                        task_ref: None,
+                    },
+                    eval_target,
+                )])
+            }
             _ => {
                 return Err(OxyError::ConfigurationError(format!(
-                    "Invalid file extension: {target_ref}. Expected .workflow.yml or .automation.yml"
+                    "Invalid file extension: {target_ref}. Expected .workflow.yml, .automation.yml, .agent.yml, or .test.yml"
                 )));
             }
         };
@@ -169,12 +257,23 @@ impl Executable<(usize, EvalConfig, EvalTarget)> for EvalExecutable {
                 message: "🔄Generating outputs".to_string(),
             })
             .await?;
-        let (outputs, errors) = GeneratorExecutable::new(eval.concurrency)
+        let (outputs, errors_with_expected) = GeneratorExecutable::new(eval.concurrency)
             .execute(
                 &eval_context,
                 (eval.kind.clone(), target, eval.task_ref.clone()),
             )
             .await?;
+
+        let answered = outputs.len();
+        let total_attempted = answered + errors_with_expected.len();
+        let error_strings: Vec<String> = errors_with_expected
+            .iter()
+            .map(|(e, _)| e.clone())
+            .collect();
+        let stats = RunStats {
+            total_attempted,
+            answered,
+        };
 
         eval_context
             .write_kind(EventKind::Message {
@@ -190,19 +289,14 @@ impl Executable<(usize, EvalConfig, EvalTarget)> for EvalExecutable {
                 execution_context,
                 eval.metrics
                     .into_iter()
-                    .map(|solver| (solver, outputs.clone()))
+                    .map(|solver| (solver, outputs.clone(), errors_with_expected.clone()))
                     .collect::<Vec<_>>(),
             )
             .await?
             .into_iter()
             .try_collect::<MetricKind, Vec<_>, OxyError>()?;
 
-        let result = EvalResult::new(errors, metrics);
-        eval_context
-            .write_kind(EventKind::Message {
-                message: format!("{result}").primary().to_string(),
-            })
-            .await?;
+        let result = EvalResult::new(error_strings, metrics, stats);
         eval_context
             .write_kind(EventKind::Finished {
                 message: format!("{result:?}"),

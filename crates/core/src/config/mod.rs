@@ -5,6 +5,7 @@ pub mod auth;
 pub mod model;
 mod parser;
 pub mod schema_type_converter;
+pub mod test_config;
 pub mod validate;
 use garde::Validate;
 mod builder;

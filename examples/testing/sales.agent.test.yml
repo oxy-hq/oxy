@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/agent-test.json
+#
+# Test file for sales agent.
+# Convention: <name>.agent.test.yml pairs with <name>.agent.yml
+# If `target` is omitted, inferred from filename (sales.agent.test.yml -> sales.agent.yml)
+
+target: agents/sales.agent.yml
+
+settings:
+  concurrency: 5
+  runs: 3                          # times to run each case (consistency = variance across runs)
+  judge_model: gpt-5-mini          # model used for LLM-as-judge evaluation
+                                   # recommendation: use a different model family than the agent
+                                   # to avoid self-preference bias
+
+cases:
+  - prompt: "How many users signed up last month?"
+    expected: "1,247 new user signups"
+    tags: [users, signups, critical]
+
+  - prompt: "What's the revenue trend for Q4?"
+    expected: "Q4 revenue showed a 15% increase compared to Q3"
+    tags: [revenue, trends]
+    tool: execute_sql               # optional: assert that this tool was used
+
+  - prompt: "Who is the CEO of Apple?"
+    expected: "Tim Cook"
+    tags: [general-knowledge]
+
+  - prompt: "Show me top 5 customers by lifetime value"
+    expected: |
+      A ranked list of 5 customers ordered by total spend/lifetime value,
+      including customer names and their LTV amounts.
+    tags: [customers, critical]
+    tool: execute_sql
+
+# How evaluation works:
+#
+# For each case, the system:
+#   1. Runs the agent `runs` times (default: 3) with the given prompt
+#   2. For each run, an LLM judge scores correctness (pass/fail):
+#      "Is the agent's answer factually consistent with the expected answer?"
+#      The judge uses CoT reasoning and ignores formatting/style differences.
+#   3. If `tool` is specified, checks that the agent invoked that tool (code-based, not LLM)
+#   4. Aggregates results per case:
+#      - pass_rate: fraction of runs that passed correctness (e.g., 3/3 = 1.0)
+#      - consistent: true if all runs produced the same verdict
+#   5. Aggregates results across cases:
+#      - score: overall pass rate across all cases
+#      - consistency: fraction of cases that were fully consistent
+#
+# CLI usage:
+#   oxy test                                    # run all *.test.yml in project
+#   oxy test sales.agent.test.yml               # run specific test file
+#   oxy test --tag critical                     # filter by tag
+#   oxy test --min-accuracy 0.8                  # fail if score < 80%
+#   oxy test --output-json                      # write results to JSON file

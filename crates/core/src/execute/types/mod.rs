@@ -24,6 +24,7 @@ pub use output_container::{Metadata, OutputContainer};
 pub use prompt::Prompt;
 pub use reference::DataAppReference;
 pub use reference::ReferenceKind;
+pub use reference::SemanticQueryReference;
 pub use sql::SQL;
 pub use table::{Table, TableReference};
 pub use usage::Usage;

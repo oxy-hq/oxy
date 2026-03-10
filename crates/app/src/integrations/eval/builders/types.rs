@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use oxy::{
     checkpoint::types::RetryStrategy,
-    execute::types::{Output, TargetOutput},
+    execute::types::{Output, ReferenceKind, TargetOutput},
     theme::StyledText,
 };
 use oxy_agent::types::AgentInput;
@@ -15,6 +15,7 @@ use oxy_workflow::builders::WorkflowInput;
 pub struct EvalInput {
     pub index: Option<usize>,
     pub target_ref: String,
+    pub tag: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -45,6 +46,10 @@ impl From<EvalRecord> for TargetOutput {
             output: val.response,
             task_description: Some(val.query),
             relevant_contexts: val.relevant_contexts.clone(),
+            references: vec![],
+            duration_ms: 0.0,
+            input_tokens: 0,
+            output_tokens: 0,
         }
     }
 }
@@ -90,6 +95,7 @@ trait Verbose {
 pub enum MetricKind {
     Similarity(Similarity),
     Recall(Recall),
+    Correctness(Correctness),
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -171,6 +177,42 @@ impl Verbose for Recall {
     }
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct Correctness {
+    pub score: f32,
+    pub records: Vec<Record>,
+}
+
+impl Correctness {
+    pub fn from_records(records: Vec<Record>) -> Self {
+        let score = if records.is_empty() {
+            0.0
+        } else {
+            records.iter().map(|r| r.score).sum::<f32>() / records.len() as f32
+        };
+        Self { score, records }
+    }
+}
+
+impl Verbose for Correctness {
+    fn verbose(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut is_header_printed = false;
+        for record in &self.records {
+            if record.score < 1.0 {
+                if !is_header_printed {
+                    writeln!(f)?;
+                    writeln!(f, "{}", "CORRECTNESS FAILURES:".error())?;
+                    writeln!(f, "**********")?;
+                    is_header_printed = true;
+                }
+                write!(f, "{record}")?;
+                writeln!(f, "**********")?;
+            }
+        }
+        Ok(())
+    }
+}
+
 impl std::fmt::Display for MetricKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -179,6 +221,9 @@ impl std::fmt::Display for MetricKind {
             }
             MetricKind::Recall(Recall { score, .. }) => {
                 writeln!(f, "Recall: {:.2}%", score * 100.0)
+            }
+            MetricKind::Correctness(Correctness { score, .. }) => {
+                writeln!(f, "Correctness: {:.2}%", score * 100.0)
             }
         }
     }
@@ -215,6 +260,22 @@ impl MetricKind {
                     }
                 }
             }
+            MetricKind::Correctness(correctness) => {
+                let failing_records: Vec<_> = correctness
+                    .records
+                    .iter()
+                    .filter(|r| r.score < 1.0)
+                    .collect();
+                if !failing_records.is_empty() {
+                    writeln!(writer)?;
+                    writeln!(writer, "{}", "CORRECTNESS FAILURES:".error())?;
+                    writeln!(writer, "**********")?;
+                    for record in failing_records {
+                        write!(writer, "{}", record)?;
+                        writeln!(writer, "**********")?;
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -225,6 +286,17 @@ pub struct Record {
     pub cot: String,
     pub choice: String,
     pub score: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actual_output: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub references: Vec<ReferenceKind>,
+    pub duration_ms: f64,
+    pub input_tokens: i32,
+    pub output_tokens: i32,
 }
 
 impl std::fmt::Display for Record {
@@ -257,6 +329,13 @@ impl TryFrom<Output> for Record {
             cot: String::new(),
             choice: String::new(),
             score: 0.0,
+            prompt: None,
+            expected: None,
+            actual_output: None,
+            references: vec![],
+            duration_ms: 0.0,
+            input_tokens: 0,
+            output_tokens: 0,
         };
         let response = match value {
             Output::Text(text) => text,
@@ -276,15 +355,31 @@ impl TryFrom<Output> for Record {
     }
 }
 
+/// Per-eval run statistics (populated by the generator/solver pipeline).
+#[derive(Debug, Serialize, Clone, Default)]
+pub struct RunStats {
+    /// Total runs attempted (including those that errored).
+    pub total_attempted: usize,
+    /// Runs that completed without an execution error.
+    pub answered: usize,
+}
+
 #[derive(Serialize, Clone)]
 pub struct EvalResult {
     pub errors: Vec<String>,
     pub metrics: Vec<MetricKind>,
+    pub stats: RunStats,
+    pub test_name: Option<String>,
 }
 
 impl EvalResult {
-    pub fn new(errors: Vec<String>, metrics: Vec<MetricKind>) -> Self {
-        Self { errors, metrics }
+    pub fn new(errors: Vec<String>, metrics: Vec<MetricKind>, stats: RunStats) -> Self {
+        Self {
+            errors,
+            metrics,
+            stats,
+            test_name: None,
+        }
     }
 }
 

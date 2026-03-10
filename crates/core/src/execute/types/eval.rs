@@ -17,11 +17,15 @@ impl RelevantContextGetter {
         }
     }
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct TargetOutput {
     pub output: String,
     pub task_description: Option<String>,
     pub relevant_contexts: Vec<String>,
+    pub references: Vec<ReferenceKind>,
+    pub duration_ms: f64,
+    pub input_tokens: i32,
+    pub output_tokens: i32,
 }
 
 #[derive(Debug)]
@@ -34,10 +38,10 @@ impl TryFrom<OutputGetter<'_>> for TargetOutput {
     type Error = OxyError;
 
     fn try_from(getter: OutputGetter) -> Result<Self, Self::Error> {
-        let (output, task_description, relevant_contexts) = match getter.value {
+        let (output, task_description, relevant_contexts, references) = match getter.value {
             OutputContainer::Single(output) => {
                 let output = output.to_string();
-                (output, None, vec![])
+                (output, None, vec![], vec![])
             }
             OutputContainer::Metadata { value } | OutputContainer::Consistency { value, .. } => {
                 let Metadata {
@@ -47,22 +51,24 @@ impl TryFrom<OutputGetter<'_>> for TargetOutput {
                 } = value;
                 let output = output.to_string();
                 let task_description = metadata.get(AGENT_SOURCE_PROMPT).cloned();
+                let relevant_contexts = references
+                    .iter()
+                    .filter_map(|r| match r {
+                        ReferenceKind::Retrieval(r) => Some(
+                            r.documents
+                                .iter()
+                                .map(|doc| getter.relevant_context_getter.get(doc))
+                                .collect::<Vec<_>>(),
+                        ),
+                        _ => None,
+                    })
+                    .flatten()
+                    .collect::<Vec<_>>();
                 (
                     output,
                     task_description,
-                    references
-                        .iter()
-                        .filter_map(|r| match r {
-                            ReferenceKind::Retrieval(r) => Some(
-                                r.documents
-                                    .iter()
-                                    .map(|doc| getter.relevant_context_getter.get(doc))
-                                    .collect::<Vec<_>>(),
-                            ),
-                            _ => None,
-                        })
-                        .flatten()
-                        .collect::<Vec<_>>(),
+                    relevant_contexts,
+                    references.clone(),
                 )
             }
             _ => {
@@ -75,6 +81,10 @@ impl TryFrom<OutputGetter<'_>> for TargetOutput {
             output,
             task_description,
             relevant_contexts,
+            references,
+            duration_ms: 0.0,
+            input_tokens: 0,
+            output_tokens: 0,
         })
     }
 }

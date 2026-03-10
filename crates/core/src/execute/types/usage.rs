@@ -3,7 +3,9 @@ use sea_orm::FromQueryResult;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Hash, ToSchema, FromQueryResult)]
+#[derive(
+    Debug, Clone, Default, Serialize, Deserialize, JsonSchema, Hash, ToSchema, FromQueryResult,
+)]
 pub struct Usage {
     /// Number of tokens in the prompt.
     #[serde(rename = "inputTokens")]

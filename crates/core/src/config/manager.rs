@@ -15,6 +15,7 @@ use oxy_shared::errors::OxyError;
 use super::{
     model::{AgentConfig, AppConfig, Config, Database, Model, Workflow, WorkflowWithRawVariables},
     storage::{ConfigSource, ConfigStorage},
+    test_config::TestFileConfig,
 };
 
 #[derive(Debug, Clone)]
@@ -159,6 +160,17 @@ impl ConfigManager {
 
     pub async fn resolve_app<P: AsRef<Path>>(&self, app_path: P) -> Result<AppConfig, OxyError> {
         self.storage.load_app_config(app_path).await
+    }
+
+    pub async fn resolve_test<P: AsRef<Path>>(
+        &self,
+        test_ref: P,
+    ) -> Result<TestFileConfig, OxyError> {
+        self.storage.load_test_config(test_ref).await
+    }
+
+    pub async fn list_tests(&self) -> Result<Vec<PathBuf>, OxyError> {
+        self.storage.list_tests().await
     }
 
     pub async fn get_build_agent(&self) -> Result<AgentConfig, OxyError> {

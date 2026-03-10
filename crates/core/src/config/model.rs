@@ -2252,6 +2252,8 @@ pub enum EvalKind {
     Consistency(#[garde(dive)] Consistency),
     #[serde(rename = "custom")]
     Custom(#[garde(dive)] Custom),
+    #[serde(rename = "test_case")]
+    TestCase(#[garde(skip)] TestCaseEval),
 }
 
 #[derive(Serialize, Deserialize, Debug, Validate, JsonSchema, Clone)]
@@ -2276,12 +2278,20 @@ pub struct Custom {
     pub is_context_id: bool,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
+pub struct TestCaseEval {
+    pub cases: Vec<super::test_config::TestCase>,
+    pub runs: usize,
+    pub judge_model: Option<String>,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
 #[garde(context(ValidationContext))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SolverKind {
     ContextRecall(#[garde(dive)] ContextRecallSolver),
     Similarity(#[garde(dive)] SimilaritySolver),
+    Correctness(#[garde(dive)] CorrectnessSolver),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
@@ -2315,6 +2325,16 @@ pub struct SimilaritySolver {
     #[garde(skip)]
     #[serde(default = "default_scores")]
     pub scores: HashMap<String, f32>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
+#[garde(context(ValidationContext))]
+pub struct CorrectnessSolver {
+    #[garde(length(min = 1))]
+    #[serde(default = "default_correctness_prompt")]
+    pub prompt: String,
+    #[garde(length(min = 1))]
+    pub model_ref: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Validate, JsonSchema)]
@@ -3522,6 +3542,30 @@ fn default_consistency_prompt() -> String {
 
     Reasoning:
     "}.to_string()
+}
+
+pub fn default_correctness_prompt() -> String {
+    indoc! {"
+    You are evaluating an AI agent's response to a business question.
+
+    [Question]: {{ prompt }}
+    [Expected Answer]: {{ expected }}
+    [Agent's Answer]: {{ actual }}
+
+    Think step by step:
+    1. What are the key facts/claims in the expected answer?
+    2. Does the agent's answer contain these facts?
+    3. Are there any contradictions or significant omissions?
+
+    Ignore differences in formatting, style, phrasing, and level of detail.
+    The agent may include additional correct information beyond the expected answer — this is fine.
+    Mark as PASS if the agent's answer contains the core factual content of the expected answer.
+
+    Reasoning:
+
+    Verdict: PASS or FAIL
+    "}
+    .to_string()
 }
 
 fn default_tests() -> Vec<EvalConfig> {

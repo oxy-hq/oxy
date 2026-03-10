@@ -13,6 +13,7 @@ pub enum ReferenceKind {
     SqlQuery(QueryReference),
     Retrieval(RetrievalReference),
     DataApp(DataAppReference),
+    SemanticQuery(SemanticQueryReference),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -39,6 +40,17 @@ impl TryFrom<Output> for ReferenceKind {
             Output::Documents(documents) => {
                 Ok(ReferenceKind::Retrieval(RetrievalReference { documents }))
             }
+            Output::SemanticQuery(sq) => Ok(ReferenceKind::SemanticQuery(SemanticQueryReference {
+                database: sq.database,
+                topic: sq.topic,
+                sql_query: if sq.sql_query.is_empty() {
+                    None
+                } else {
+                    Some(sq.sql_query)
+                },
+                result: sq.result,
+                is_result_truncated: sq.is_result_truncated,
+            })),
             _ => Err(OxyError::RuntimeError(
                 "Cannot convert Output into Reference".to_string(),
             )),
@@ -50,4 +62,15 @@ impl TryFrom<Output> for ReferenceKind {
 pub struct DataAppReference {
     #[schema(value_type = String)]
     pub file_path: PathBuf,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct SemanticQueryReference {
+    pub database: String,
+    pub topic: Option<String>,
+    pub sql_query: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub result: Vec<Vec<String>>,
+    #[serde(default)]
+    pub is_result_truncated: bool,
 }

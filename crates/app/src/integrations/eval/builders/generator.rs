@@ -10,7 +10,9 @@ use oxy::{
     },
     utils::asyncify,
 };
+use oxy_agent::types::AgentInput;
 use oxy_shared::errors::OxyError;
+use oxy_workflow::builders::WorkflowInput;
 
 use super::{target::TargetExecutable, types::EvalTarget};
 
@@ -27,7 +29,11 @@ impl GeneratorExecutable {
 
 #[async_trait::async_trait]
 impl Executable<(EvalKind, EvalTarget, Option<String>)> for GeneratorExecutable {
-    type Response = (Vec<(TargetOutput, TargetOutput)>, Vec<String>);
+    /// (successful pairs, errored pairs: (error_message, expected_output))
+    type Response = (
+        Vec<(TargetOutput, TargetOutput)>,
+        Vec<(String, TargetOutput)>,
+    );
 
     async fn execute(
         &mut self,
@@ -49,7 +55,8 @@ impl Executable<(EvalKind, EvalTarget, Option<String>)> for GeneratorExecutable 
                     .iter()
                     .filter_map(|res| match res {
                         Ok(_) => None,
-                        Err(err) => Some(err.to_string()),
+                        // Consistency errors have no associated expected output
+                        Err(err) => Some((err.to_string(), TargetOutput::default())),
                     })
                     .collect::<Vec<_>>();
                 let outputs = results
@@ -107,9 +114,12 @@ impl Executable<(EvalKind, EvalTarget, Option<String>)> for GeneratorExecutable 
                     .collect::<Vec<_>>();
                 let errors = results
                     .iter()
-                    .filter_map(|res| match res {
+                    .zip(records.iter())
+                    .filter_map(|(res, record)| match res {
                         Ok(_) => None,
-                        Err(err) => Some(err.to_string()),
+                        Err(err) => {
+                            Some((err.to_string(), Into::<TargetOutput>::into(record.clone())))
+                        }
                     })
                     .collect::<Vec<_>>();
                 let outputs = results
@@ -119,6 +129,79 @@ impl Executable<(EvalKind, EvalTarget, Option<String>)> for GeneratorExecutable 
                     .collect::<Vec<_>>();
 
                 Ok((outputs, errors))
+            }
+
+            EvalKind::TestCase(test_case_eval) => {
+                let runs = test_case_eval.runs;
+
+                // Flatten all cases × runs into a single concurrent batch
+                let mut all_targets = Vec::new();
+                let mut expected_outputs = Vec::new();
+
+                for case in &test_case_eval.cases {
+                    let expected = TargetOutput {
+                        output: case.expected.clone(),
+                        task_description: Some(case.prompt.clone()),
+                        relevant_contexts: vec![],
+                        references: vec![],
+                        duration_ms: 0.0,
+                        input_tokens: 0,
+                        output_tokens: 0,
+                    };
+
+                    for _ in 0..runs {
+                        let target = match &eval_target {
+                            EvalTarget::Agent(agent_input) => EvalTarget::Agent(AgentInput {
+                                agent_ref: agent_input.agent_ref.clone(),
+                                prompt: case.prompt.clone(),
+                                memory: vec![],
+                                variables: None,
+                                a2a_task_id: None,
+                                a2a_thread_id: None,
+                                a2a_context_id: None,
+                                sandbox_info: None,
+                            }),
+                            EvalTarget::Workflow(workflow_input) => {
+                                EvalTarget::Workflow(WorkflowInput {
+                                    workflow_ref: workflow_input.workflow_ref.clone(),
+                                    retry: oxy::checkpoint::types::RetryStrategy::NoRetry {
+                                        variables: None,
+                                    },
+                                })
+                            }
+                        };
+                        all_targets.push(target);
+                        expected_outputs.push(expected.clone());
+                    }
+                }
+
+                // Execute all runs concurrently in a single batch
+                let mut target_executable = ExecutableBuilder::new()
+                    .concurrency(self.concurrency)
+                    .executable(TargetExecutable::new(task_ref, RelevantContextGetter::Id));
+                let results = target_executable
+                    .execute(execution_context, all_targets)
+                    .await?;
+
+                // Pair results back with their expected outputs
+                let mut all_outputs = Vec::new();
+                let mut all_errors = Vec::new();
+                for (result, expected) in results.into_iter().zip(expected_outputs) {
+                    match result {
+                        Ok(actual_outputs) => {
+                            for actual in actual_outputs {
+                                all_outputs.push((actual, expected.clone()));
+                            }
+                        }
+                        Err(err) => {
+                            // Pair the error with its expected output so the solver
+                            // can count it as a FAIL against the correct denominator.
+                            all_errors.push((err.to_string(), expected));
+                        }
+                    }
+                }
+
+                Ok((all_outputs, all_errors))
             }
         }
     }
