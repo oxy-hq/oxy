@@ -325,6 +325,7 @@ fn build_app_routes() -> Router<AppState> {
         .route("/{pathb64}/displays", get(app::get_displays))
         .route("/{pathb64}/charts/{chart_path}", get(app::get_chart_image))
         .route("/file/{pathb64}", get(app::get_data))
+        .route("/source/{pathb64}", get(app::get_source_file))
 }
 
 fn build_protected_routes(app_state: AppState) -> Router<AppState> {

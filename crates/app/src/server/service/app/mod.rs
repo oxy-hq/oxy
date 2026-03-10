@@ -3,7 +3,7 @@ mod cache;
 mod display;
 mod types;
 
-pub use app_service::AppService;
+pub use app_service::{AppService, render_control_default};
 pub use cache::AppCache;
 pub use display::get_app_displays;
 pub use types::{

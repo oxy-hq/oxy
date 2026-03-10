@@ -393,6 +393,7 @@ pub async fn create_workflow_from_query(
             variables: None,
         }),
         cache: None,
+        mode: Default::default(),
         name: "execute_sql".to_string(),
     };
     let workflow_name = slugify!(prompt, separator = "_");

@@ -41,6 +41,7 @@ pub struct WorkflowLauncher {
     filters: Option<SessionFilters>,
     connections: Option<ConnectionOverrides>,
     globals: Option<indexmap::IndexMap<String, serde_json::Value>>,
+    controls: HashMap<String, serde_json::Value>,
 }
 
 impl Default for WorkflowLauncher {
@@ -57,6 +58,7 @@ impl WorkflowLauncher {
             filters: None,
             connections: None,
             globals: None,
+            controls: HashMap::new(),
         }
     }
 
@@ -75,6 +77,11 @@ impl WorkflowLauncher {
         globals: impl Into<Option<indexmap::IndexMap<String, serde_json::Value>>>,
     ) -> Self {
         self.globals = globals.into();
+        self
+    }
+
+    pub fn with_controls(mut self, controls: HashMap<String, serde_json::Value>) -> Self {
+        self.controls = controls;
         self
     }
 
@@ -109,10 +116,12 @@ impl WorkflowLauncher {
         // Convert serde_yaml::Value to minijinja::Value
         let globals = minijinja::Value::from_serialize(&globals_value);
 
+        let controls = minijinja::Value::from_serialize(&self.controls);
         let global_context = context! {
             models => minijinja::Value::from_object(semantic_variables_contexts.clone()),
             dimensions => minijinja::Value::from_object(semantic_dimensions_contexts.clone()),
             globals => globals,
+            controls => controls,
         };
 
         workflow_events::launcher::get_global_context::output(

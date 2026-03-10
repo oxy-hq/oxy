@@ -8,14 +8,27 @@ description: |
   (line, bar, pie) to better visualize different aspects of the retail data.
 
 tasks:
+  # Populates the Store dropdown dynamically from the CSV
+  - name: store_list
+    type: execute_sql
+    sql_query: |
+      SELECT 'All' AS Store
+      UNION ALL
+      SELECT DISTINCT CAST(Store AS VARCHAR) AS Store
+      FROM 'oxymart.csv'
+      ORDER BY Store
+    database: local
+
   - name: top_stores
     type: execute_sql
     sql_query: |
-      SELECT 
+      SELECT
         Store,
         SUM(Weekly_Sales) AS Total_Sales,
         AVG(Weekly_Sales) AS Avg_Weekly_Sales
       FROM 'oxymart.csv'
+      WHERE ({{ controls.store | sqlquote }} = 'All' OR CAST(Store AS VARCHAR) = {{ controls.store | sqlquote }})
+        AND Date >= {{ controls.start_date | sqlquote }}
       GROUP BY Store
       ORDER BY Total_Sales DESC
       LIMIT 5
@@ -24,16 +37,18 @@ tasks:
   - name: temperature_effect
     type: execute_sql
     sql_query: |
-      SELECT 
-        CASE 
+      SELECT
+        CASE
           WHEN Temperature < 40 THEN 'Cold (< 40°F)'
           WHEN Temperature BETWEEN 40 AND 70 THEN 'Moderate (40-70°F)'
           ELSE 'Hot (> 70°F)'
         END AS temp_range,
         AVG(Weekly_Sales) AS avg_sales
       FROM 'oxymart.csv'
+      WHERE ({{ controls.store | sqlquote }} = 'All' OR CAST(Store AS VARCHAR) = {{ controls.store | sqlquote }})
+        AND Date >= {{ controls.start_date | sqlquote }}
       GROUP BY temp_range
-      ORDER BY 
+      ORDER BY
         CASE temp_range
           WHEN 'Cold (< 40°F)' THEN 1
           WHEN 'Moderate (40-70°F)' THEN 2
@@ -44,70 +59,77 @@ tasks:
   - name: holiday_impact
     type: execute_sql
     sql_query: |
-      SELECT 
+      SELECT
         CASE WHEN Holiday_Flag = 1 THEN 'Holiday' ELSE 'Non-Holiday' END AS period,
         AVG(Weekly_Sales) AS avg_sales,
         COUNT(*) AS week_count
       FROM 'oxymart.csv'
+      WHERE ({{ controls.store | sqlquote }} = 'All' OR CAST(Store AS VARCHAR) = {{ controls.store | sqlquote }})
+        AND Date >= {{ controls.start_date | sqlquote }}
       GROUP BY Holiday_Flag
       ORDER BY Holiday_Flag DESC
     database: local
 
-  # New query for sales trend over time (for line chart)
   - name: sales_trend
     type: execute_sql
     sql_query: |
-      SELECT 
+      SELECT
         strftime(Date, '%Y-%m') AS month,
         AVG(Weekly_Sales) AS avg_sales
       FROM 'oxymart.csv'
+      WHERE ({{ controls.store | sqlquote }} = 'All' OR CAST(Store AS VARCHAR) = {{ controls.store | sqlquote }})
+        AND Date >= {{ controls.start_date | sqlquote }}
       GROUP BY month
       ORDER BY month
     database: local
 
-  # New query for economic factors correlation (for line chart with series)
   - name: economic_trends
     type: execute_sql
     sql_query: |
-      SELECT 
+      SELECT
         strftime(Date, '%Y-%m') AS month,
         'Fuel Price' AS indicator,
         AVG(Fuel_Price) AS value
       FROM 'oxymart.csv'
+      WHERE ({{ controls.store | sqlquote }} = 'All' OR CAST(Store AS VARCHAR) = {{ controls.store | sqlquote }})
+        AND Date >= {{ controls.start_date | sqlquote }}
       GROUP BY month
 
       UNION ALL
 
-      SELECT 
+      SELECT
         strftime(Date, '%Y-%m') AS month,
         'Unemployment' AS indicator,
         AVG(Unemployment) AS value
       FROM 'oxymart.csv'
+      WHERE ({{ controls.store | sqlquote }} = 'All' OR CAST(Store AS VARCHAR) = {{ controls.store | sqlquote }})
+        AND Date >= {{ controls.start_date | sqlquote }}
       GROUP BY month
 
       ORDER BY month, indicator
     database: local
 
-  # Updated query with higher thresholds for store performance distribution
   - name: store_performance_distribution
     type: execute_sql
     sql_query: |
-      SELECT 
-        CASE 
+      SELECT
+        CASE
           WHEN avg_sales >= 1500000 THEN 'High-performing (>$1500K)'
           WHEN avg_sales >= 1000000 THEN 'Medium-performing ($1000K-$1500K)'
           ELSE 'Low-performing (<$1000K)'
         END AS performance_category,
         COUNT(*) AS store_count
       FROM (
-        SELECT 
-          Store, 
+        SELECT
+          Store,
           AVG(Weekly_Sales) AS avg_sales
         FROM 'oxymart.csv'
+        WHERE ({{ controls.store | sqlquote }} = 'All' OR CAST(Store AS VARCHAR) = {{ controls.store | sqlquote }})
+          AND Date >= {{ controls.start_date | sqlquote }}
         GROUP BY Store
       )
       GROUP BY performance_category
-      ORDER BY 
+      ORDER BY
         CASE performance_category
           WHEN 'High-performing (>$1500K)' THEN 1
           WHEN 'Medium-performing ($1000K-$1500K)' THEN 2
@@ -116,37 +138,58 @@ tasks:
     database: local
 
 display:
+  - type: control
+    name: store
+    control_type: select
+    label: Store
+    source: store_list
+    default: "All"
+
+  - type: control
+    name: start_date
+    control_type: date
+    label: From Date
+    default: "2010-01-01"
+
   - type: markdown
     content: |
       # Oxymart Retail Analytics Dashboard
 
-      This dashboard provides essential analysis of Oxymart store performance and the impact of 
-      various factors on retail sales. Below you'll find key insights about top-performing stores,
-      temperature impact, and holiday effects visualized through various chart types.
+      This dashboard provides essential analysis of Oxymart store performance and the impact of
+      various factors on retail sales. Use the **Store** and **From Date** controls above to
+      filter all charts to a specific store or time period.
 
-  - type: bar_chart
-    title: Top 5 Stores by Total Sales
-    data: top_stores
-    x: Store
-    y: Total_Sales
+  # Top stores bar + performance distribution pie — side by side
+  - type: row
+    columns: 2
+    children:
+      - type: bar_chart
+        title: Top 5 Stores by Total Sales
+        data: top_stores
+        x: Store
+        y: Total_Sales
 
-  - type: pie_chart
-    title: Store Performance Distribution
-    data: store_performance_distribution
-    name: performance_category
-    value: store_count
+      - type: pie_chart
+        title: Store Performance Distribution
+        data: store_performance_distribution
+        name: performance_category
+        value: store_count
 
-  - type: bar_chart
-    title: Temperature Impact on Average Sales
-    data: temperature_effect
-    x: temp_range
-    y: avg_sales
+  # Temperature impact bar + holiday effect pie — side by side
+  - type: row
+    columns: 2
+    children:
+      - type: bar_chart
+        title: Temperature Impact on Average Sales
+        data: temperature_effect
+        x: temp_range
+        y: avg_sales
 
-  - type: pie_chart
-    title: Holiday vs Non-Holiday Sales
-    data: holiday_impact
-    name: period
-    value: avg_sales
+      - type: pie_chart
+        title: Holiday vs Non-Holiday Sales
+        data: holiday_impact
+        name: period
+        value: avg_sales
 
   - type: line_chart
     title: Sales Trend Over Time

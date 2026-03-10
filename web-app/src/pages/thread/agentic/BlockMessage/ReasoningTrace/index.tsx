@@ -102,7 +102,8 @@ const ReasoningTrace = ({
   }, [getTaskThread, threadId, runInfo, onAutomationGenerated, triggerSaveAutomation, isPending]);
 
   const isComplete = !isStreaming && steps.length > 0;
-  const canAutomate = !automationGenerated && isComplete && !hasRouteWithGroup(steps) && !authConfig.readonly;
+  const canAutomate =
+    !automationGenerated && isComplete && !hasRouteWithGroup(steps) && !authConfig.readonly;
 
   const [collapsed, setCollapsed] = useAutoCollapse(isStreaming, steps.length > 0);
 

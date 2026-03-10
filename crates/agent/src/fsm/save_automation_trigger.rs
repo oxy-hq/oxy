@@ -56,6 +56,7 @@ fn artifacts_to_tasks(artifacts: &[Artifact]) -> Vec<Task> {
                     variables: None,
                 }),
                 cache: None,
+                mode: Default::default(),
             }),
             Artifact::Table {
                 source: TableSource::Semantic { task },
@@ -68,6 +69,7 @@ fn artifacts_to_tasks(artifacts: &[Artifact]) -> Vec<Task> {
                     variables: task.variables.clone(),
                 }),
                 cache: None,
+                mode: Default::default(),
             }),
             Artifact::Table {
                 source: TableSource::Looker { task },
@@ -82,6 +84,7 @@ fn artifacts_to_tasks(artifacts: &[Artifact]) -> Vec<Task> {
                     export: task.export.clone(),
                 }),
                 cache: None,
+                mode: Default::default(),
             }),
             // Viz, Insight, and DataApp artifacts cannot be represented as
             // executable workflow tasks with currently stored information.

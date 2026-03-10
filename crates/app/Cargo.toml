@@ -87,6 +87,7 @@ ndarray = { version = "0.16", features = ["rayon"] }
 # Data processing
 arrow = { version = "=56.2.0", default-features = false, features = ["json"] }
 parquet = "=56.2.0"
+duckdb = { version = "=1.4.4", features = ["bundled"] }
 
 # Utilities
 uuid = { version = "1.20.0", features = ["v4", "serde"] }

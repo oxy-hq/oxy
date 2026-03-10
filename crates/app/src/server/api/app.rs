@@ -6,7 +6,7 @@ use crate::server::api::middlewares::project::ProjectManagerExtractor;
 use crate::server::service::app::{
     AppResultChartDisplay, AppResultData, AppResultDisplay, AppResultMarkdownDisplay,
     AppResultTableDisplay, AppService, DisplayWithError, GetAppResultResponse, TaskKind,
-    TaskOutput, TaskResult, get_app_displays,
+    TaskOutput, TaskResult, get_app_displays, render_control_default,
 };
 use axum::body::Body;
 use axum::extract::{self, Path};
@@ -14,7 +14,9 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::IntoResponse;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
-use oxy::config::model::Display;
+use oxy::config::model::{
+    AppTaskMode, ControlConfig, DatabaseType, Display, DuckDBOptions, SQL, TaskType,
+};
 use oxy::execute::types::{Data, DataContainer};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -41,9 +43,28 @@ pub struct ApiErrorResponse {
     pub error: String,
 }
 
+/// Per-task information exposed to the frontend for client-side execution.
+#[derive(Deserialize, Serialize)]
+pub struct TaskClientInfo {
+    /// Raw SQL template (may contain Jinja syntax like `{{ controls.x }}`).
+    pub sql: String,
+    /// Where to execute this task when controls change. `client` = DuckDB WASM (default),
+    /// `server` = backend round-trip (needed for Snowflake, BigQuery, etc.).
+    pub mode: AppTaskMode,
+    /// Project-relative file paths that the SQL reads (e.g. `oxymart.csv`).
+    /// The frontend downloads these once and registers them in DuckDB WASM so the
+    /// original SQL runs unchanged.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub source_files: Vec<String>,
+}
+
 #[derive(Deserialize, Serialize)]
 pub struct GetDisplaysResponse {
     pub displays: Vec<DisplayWithError>,
+    pub controls: Vec<ControlConfig>,
+    /// SQL templates and execution modes for each task, keyed by task name.
+    /// Only `execute_sql` tasks with inline `sql_query` are included.
+    pub tasks: HashMap<String, TaskClientInfo>,
 }
 
 fn decode_path(pathb64: &str) -> Result<PathBuf, StatusCode> {
@@ -121,21 +142,121 @@ pub async fn list_apps(
     Ok(extract::Json(app_items))
 }
 
+/// Extract all single-quoted file paths (ending in .csv, .parquet, .json) from a SQL string.
+/// These are project-relative source files the browser needs to download before running the
+/// query in DuckDB WASM.
+fn extract_sql_source_files(sql: &str) -> Vec<String> {
+    let mut files = Vec::new();
+    let chars: Vec<char> = sql.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '\'' {
+            let start = i + 1;
+            let mut j = start;
+            while j < chars.len() && chars[j] != '\'' {
+                j += 1;
+            }
+            let content: String = chars[start..j].iter().collect();
+            let lower = content.to_lowercase();
+            if lower.ends_with(".csv") || lower.ends_with(".parquet") || lower.ends_with(".json") {
+                files.push(content);
+            }
+            i = j + 1;
+        } else {
+            i += 1;
+        }
+    }
+    files.sort();
+    files.dedup();
+    files
+}
+
 pub async fn get_displays(
     Path((_project_id, pathb64)): Path<(Uuid, String)>,
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
 ) -> Result<extract::Json<GetDisplaysResponse>, StatusCode> {
     let path = decode_path(&pathb64)?;
 
-    let displays = match get_app_displays(project_manager.clone(), &path).await {
-        Ok(displays) => displays,
+    let (displays, controls) = match get_app_displays(project_manager.clone(), &path).await {
+        Ok(result) => result,
         Err(e) => {
             tracing::debug!("Failed to get app displays: {:?}", e);
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
     };
 
-    Ok(extract::Json(GetDisplaysResponse { displays }))
+    // Collect SQL templates for execute_sql tasks so the frontend can run them
+    // client-side in DuckDB WASM without a server round-trip on control changes.
+    let databases = project_manager.config_manager.list_databases();
+    let mut app_service = AppService::new(project_manager.clone());
+    let tasks: HashMap<String, TaskClientInfo> = app_service
+        .get_config(&path)
+        .await
+        .map(|c| c.tasks)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|task| {
+            let sql_task = match &task.task_type {
+                TaskType::ExecuteSQL(t) => t,
+                _ => return None,
+            };
+            let sql = match &sql_task.sql {
+                SQL::Query { sql_query } => sql_query.clone(),
+                // sql_file tasks can't run in the browser without extra setup
+                SQL::File { .. } => return None,
+            };
+
+            // DuckLake databases use a PostgreSQL catalog + object-storage data files that
+            // are inaccessible from the browser — force server mode regardless of what the
+            // task YAML declares.
+            let is_ducklake = databases.iter().any(|db| {
+                db.name == sql_task.database
+                    && matches!(
+                        &db.database_type,
+                        DatabaseType::DuckDB(d) if matches!(&d.options, DuckDBOptions::DuckLake(_))
+                    )
+            });
+            let source_files = extract_sql_source_files(&sql);
+
+            // DuckLake and explicit server-mode tasks always run on the backend.
+            // Tasks with source files can run client-side — the browser downloads a Parquet
+            // version of each source file via /apps/source/ and re-runs the SQL in DuckDB WASM.
+            let effective_mode = if is_ducklake || task.mode == AppTaskMode::Server {
+                AppTaskMode::Server
+            } else {
+                task.mode.clone()
+            };
+
+            Some((
+                task.name.clone(),
+                TaskClientInfo {
+                    sql,
+                    mode: effective_mode,
+                    source_files,
+                },
+            ))
+        })
+        .collect();
+
+    // Render Jinja expressions in control defaults and options
+    // (e.g. `default: "{{ now(fmt='%Y-%m-%d') }}"` or `options: ["{{ now(fmt='%Y') }}"]`)
+    // so the frontend initialises widgets with computed values, not raw templates.
+    let controls = controls
+        .into_iter()
+        .map(|mut c| {
+            c.default = c.default.map(render_control_default);
+            c.options = c
+                .options
+                .map(|opts| opts.into_iter().map(render_control_default).collect());
+            c
+        })
+        .collect();
+
+    Ok(extract::Json(GetDisplaysResponse {
+        displays,
+        controls,
+        tasks,
+    }))
 }
 
 pub async fn get_app_data(
@@ -163,7 +284,7 @@ pub async fn get_app_data(
         }));
     }
 
-    let data = match app_service.run(&path).await {
+    let data = match app_service.run(&path, HashMap::new()).await {
         Ok(data) => data,
         Err(e) => {
             tracing::debug!("Failed to run app: {:?}", e);
@@ -215,20 +336,117 @@ pub async fn get_data(
     let mut headers = HeaderMap::new();
     headers.insert(
         "Cache-Control",
-        HeaderValue::from_static("public, max-age=31536000, immutable"),
+        HeaderValue::from_static("private, max-age=31536000, immutable"),
     );
 
     Ok((StatusCode::OK, headers, body))
 }
 
+/// Serve a project source file as Parquet so the browser can register it in DuckDB WASM
+/// and re-run SQL client-side. The server reads the file via DuckDB (handling CSV, JSON,
+/// Parquet, etc.) and re-serializes as Parquet — smaller and faster to parse than CSV.
+///
+/// Search order: (1) project root, (2) each local DuckDB database's file_search_path.
+pub async fn get_source_file(
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+) -> impl IntoResponse {
+    let path_string = match decode_path(&pathb64) {
+        Ok(path) => path.to_string_lossy().to_string(),
+        Err(status) => return Err((status, "Invalid path".to_string())),
+    };
+
+    let project_path = project_manager.config_manager.project_path().to_path_buf();
+
+    // Build candidate search directories.
+    let mut search_dirs: Vec<PathBuf> = vec![project_path.clone()];
+    for db in project_manager.config_manager.list_databases() {
+        if let DatabaseType::DuckDB(duckdb) = &db.database_type {
+            if let DuckDBOptions::Local { file_search_path } = &duckdb.options {
+                search_dirs.push(project_path.join(file_search_path));
+            }
+        }
+    }
+
+    // Find the file under one of the search directories.
+    // The canonicalized path is safe to use directly in SQL — the starts_with
+    // check ensures it stays inside the project root.
+    let full_path = search_dirs
+        .iter()
+        .find_map(|dir| {
+            let candidate = dir.join(&path_string);
+            candidate
+                .canonicalize()
+                .ok()
+                .filter(|p| p.starts_with(&project_path))
+        })
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                format!("File not found: {path_string}"),
+            )
+        })?;
+
+    // Use DuckDB to read the file and re-serialize as Parquet bytes.
+    // This is done on a blocking thread because DuckDB is synchronous.
+    let parquet_bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
+        use duckdb::Connection;
+        use parquet::arrow::arrow_writer::ArrowWriter;
+
+        let conn = Connection::open_in_memory().map_err(|e| e.to_string())?;
+        // Use the canonicalized absolute path so subdirectory references
+        // (e.g. 'data/sales.csv') work correctly regardless of DuckDB's
+        // default search path.
+        let full_path_escaped = full_path.to_string_lossy().replace('\'', "''");
+
+        let mut stmt = conn
+            .prepare(&format!("SELECT * FROM '{full_path_escaped}'"))
+            .map_err(|e| e.to_string())?;
+        let arrow_stream = stmt.query_arrow([]).map_err(|e| e.to_string())?;
+        let schema = arrow_stream.get_schema();
+        let batches: Vec<_> = arrow_stream.collect();
+
+        let mut buf = Vec::new();
+        let mut writer = ArrowWriter::try_new(&mut buf, schema, None).map_err(|e| e.to_string())?;
+        for batch in batches {
+            writer.write(&batch).map_err(|e| e.to_string())?;
+        }
+        writer.close().map_err(|e| e.to_string())?;
+        Ok(buf)
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        "Content-Type",
+        HeaderValue::from_static("application/octet-stream"),
+    );
+    headers.insert(
+        "Cache-Control",
+        HeaderValue::from_static("private, max-age=3600"),
+    );
+
+    Ok((StatusCode::OK, headers, Body::from(parquet_bytes)))
+}
+
+#[derive(Deserialize, Default)]
+pub struct RunAppBody {
+    #[serde(default)]
+    pub params: HashMap<String, JsonValue>,
+}
+
 pub async fn run_app(
     Path((_project_id, pathb64)): Path<(Uuid, String)>,
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    body: Option<extract::Json<RunAppBody>>,
 ) -> Result<extract::Json<GetAppDataResponse>, StatusCode> {
     let path = decode_path(&pathb64)?;
+    let params = body.map(|b| b.0.params).unwrap_or_default();
 
     let mut app_service = AppService::new(project_manager.clone());
-    let data = match app_service.run(&path).await {
+    let data = match app_service.run(&path, params).await {
         Ok(data) => data,
         Err(e) => {
             tracing::debug!("Failed to run app: {:?}", e);
@@ -254,11 +472,10 @@ pub struct AppResultQuery {
 }
 
 fn get_result_cache_filename(app_path: &PathBuf) -> String {
-    use sha2::Digest;
-    let mut hasher = sha2::Sha256::new();
-    hasher.update(app_path.as_os_str().as_encoded_bytes());
-    let hash = hasher.finalize();
-    format!("{}.app.result.yml", hex::encode(hash))
+    use xxhash_rust::xxh3::xxh3_64;
+    let path_bytes = app_path.to_string_lossy();
+    let hash = xxh3_64(path_bytes.as_bytes());
+    format!("{hash:x}.app.result.yml")
 }
 
 #[utoipa::path(
@@ -326,7 +543,7 @@ pub async fn get_app_result(
     };
 
     // Execute the app
-    let execution_result = app_service.run(&path).await;
+    let execution_result = app_service.run(&path, HashMap::new()).await;
 
     // Transform execution results into TaskResult objects
     let (tasks, execution_succeeded): (Vec<TaskResult>, bool) = match execution_result {
@@ -386,7 +603,7 @@ pub async fn get_app_result(
 
     // Get typed displays
     let typed_displays = match get_app_displays(project_manager.clone(), &path).await {
-        Ok(displays) => displays,
+        Ok((displays, _controls)) => displays,
         Err(e) => {
             tracing::debug!("Failed to get app displays: {:?}", e);
             vec![]
@@ -478,6 +695,7 @@ pub async fn get_app_result(
                 Display::Markdown(md) => AppResultDisplay::Markdown(AppResultMarkdownDisplay {
                     content: md.content,
                 }),
+                Display::Row(_) | Display::Controls(_) | Display::Control(_) => return None,
             }),
             DisplayWithError::Error(_) => None,
         })
@@ -662,7 +880,7 @@ pub async fn get_chart_image(
     headers.insert("Content-Type", HeaderValue::from_static("image/png"));
     headers.insert(
         "Cache-Control",
-        HeaderValue::from_static("public, max-age=3600"),
+        HeaderValue::from_static("private, max-age=3600"),
     );
 
     Ok((StatusCode::OK, headers, body))

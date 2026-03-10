@@ -43,13 +43,21 @@ export type ErrorDisplay = {
   error: string;
 };
 
+export type RowDisplay = {
+  type: "row";
+  /** Number of equal-width columns; defaults to the number of children */
+  columns?: number;
+  children: Display[];
+};
+
 export type Display =
   | ErrorDisplay
   | BarChartDisplay
   | LineChartDisplay
   | TableDisplay
   | PieChartDisplay
-  | MarkdownDisplay;
+  | MarkdownDisplay
+  | RowDisplay;
 
 export type TableData = {
   file_path: string;
@@ -70,8 +78,38 @@ export type AppData = {
   error: string;
 };
 
+export type ControlType = "select" | "toggle" | "date";
+
+export type ControlConfig = {
+  name: string;
+  type: ControlType;
+  label?: string;
+  /** Task name whose first column populates dropdown options */
+  source?: string;
+  /** Static list of options (used when source is not set) */
+  options?: unknown[];
+  /** Default value injected on initial load */
+  default?: unknown;
+};
+
+export type AppTaskMode = "client" | "server";
+
+export type TaskClientInfo = {
+  /** Raw SQL template, may contain Jinja syntax like {{ controls.x }} */
+  sql: string;
+  /** client = run in DuckDB WASM (default); server = backend round-trip */
+  mode: AppTaskMode;
+  /** Project-relative files (e.g. "oxymart.csv") the SQL reads. The browser
+   *  downloads these once and registers them in DuckDB WASM so the original
+   *  SQL runs without modification. */
+  source_files?: string[];
+};
+
 export type AppDisplay = {
   displays: Display[];
+  controls: ControlConfig[];
+  /** SQL templates per task name; only execute_sql tasks with inline sql_query */
+  tasks: Record<string, TaskClientInfo>;
 };
 
 export type AppItem = {

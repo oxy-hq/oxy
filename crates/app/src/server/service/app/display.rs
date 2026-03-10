@@ -1,13 +1,15 @@
 use super::app_service::AppService;
 use super::types::{AppResult, DISPLAY_KEY, DisplayWithError, ErrorDisplay, TASKS_KEY};
 use oxy::adapters::project::manager::ProjectManager;
-use oxy::config::model::{Display, Task, TaskType};
+use oxy::config::model::{ControlConfig, Display, Task, TaskType};
 use std::path::PathBuf;
+
+const CONTROLS_KEY: &str = "controls";
 
 pub async fn get_app_displays(
     project_manager: ProjectManager,
     path: &PathBuf,
-) -> AppResult<Vec<DisplayWithError>> {
+) -> AppResult<(Vec<DisplayWithError>, Vec<ControlConfig>)> {
     let app_service = AppService::new(project_manager);
     let mut displays = Vec::new();
 
@@ -15,7 +17,7 @@ pub async fn get_app_displays(
         Ok(content) => content,
         Err(e) => {
             displays.push(create_error_display("App config", &e.to_string()));
-            return Ok(displays);
+            return Ok((displays, vec![]));
         }
     };
 
@@ -23,14 +25,54 @@ pub async fn get_app_displays(
         Ok(map) => map,
         Err(e) => {
             displays.push(create_error_display("App config", &e.to_string()));
-            return Ok(displays);
+            return Ok((displays, vec![]));
         }
     };
 
     validate_tasks_section(&root_map, &mut displays);
     process_displays_section(&root_map, &mut displays);
+    let mut controls = parse_controls_section(&root_map, &mut displays);
 
-    Ok(displays)
+    // Extract any inline `type: controls` blocks from the display list.
+    // Their items are merged into the controls vec and the blocks are removed
+    // from displays so clients never see them as raw display items.
+    let mut inline_controls: Vec<ControlConfig> = Vec::new();
+    displays.retain(|d| match d {
+        DisplayWithError::Display(Display::Controls(c)) => {
+            inline_controls.extend(c.items.iter().cloned());
+            false
+        }
+        DisplayWithError::Display(Display::Control(c)) => {
+            inline_controls.push(ControlConfig::from(c.clone()));
+            false
+        }
+        _ => true,
+    });
+    controls.extend(inline_controls);
+
+    Ok((displays, controls))
+}
+
+fn parse_controls_section(
+    root_map: &serde_yaml::Mapping,
+    displays: &mut Vec<DisplayWithError>,
+) -> Vec<ControlConfig> {
+    let mut controls = Vec::new();
+    if let Some(serde_yaml::Value::Sequence(seq)) = root_map.get(yaml_string_value(CONTROLS_KEY)) {
+        for (index, v) in seq.iter().enumerate() {
+            match serde_yaml::from_value::<ControlConfig>(v.clone()) {
+                Ok(c) => controls.push(c),
+                Err(e) => {
+                    tracing::warn!("Skipping malformed control at index {index}: {e}");
+                    displays.push(create_error_display(
+                        &format!("Control at index {index}"),
+                        &e.to_string(),
+                    ));
+                }
+            }
+        }
+    }
+    controls
 }
 
 fn create_error_display(title: &str, error: &str) -> DisplayWithError {

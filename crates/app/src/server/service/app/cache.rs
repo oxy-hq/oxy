@@ -3,6 +3,7 @@ use oxy::config::ConfigManager;
 use oxy::config::model::Task;
 use oxy::execute::types::{DataContainer, OutputContainer};
 use oxy_shared::errors::OxyError;
+use std::collections::HashMap;
 use std::io::{BufReader, BufWriter};
 use std::path::PathBuf;
 use xxhash_rust::xxh3::xxh3_64;
@@ -68,6 +69,39 @@ impl AppCache {
         self.save_to_file(&data, &full_cache_path)?;
 
         Ok(data)
+    }
+
+    /// Converts an OutputContainer to DataContainer without touching the main cache.
+    /// Writes parquet files to a params-specific subdirectory so the main cache is preserved.
+    pub async fn convert_to_data(
+        &self,
+        app_path: &PathBuf,
+        tasks: &[Task],
+        params: &HashMap<String, serde_json::Value>,
+        output_container: OutputContainer,
+    ) -> AppResult<DataContainer> {
+        let (data_path, _) = self.get_data_paths(app_path, tasks)?;
+        let params_hash = self.generate_params_hash(params)?;
+        let params_data_path = data_path.join(format!("params_{params_hash}"));
+
+        let state_dir = self.config_manager.resolve_state_dir().await?;
+        let full_params_data_path = state_dir.join(&params_data_path);
+        self.ensure_directory(&full_params_data_path)?;
+
+        let data = output_container.to_data(&params_data_path, &state_dir)?;
+        Ok(data)
+    }
+
+    fn generate_params_hash(
+        &self,
+        params: &HashMap<String, serde_json::Value>,
+    ) -> AppResult<String> {
+        // Use a sorted serialization for deterministic hashing
+        let mut sorted: Vec<_> = params.iter().collect();
+        sorted.sort_by_key(|(k, _)| k.as_str());
+        let serialized = serde_json::to_string(&sorted)
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to serialize params: {e}")))?;
+        Ok(format!("{:x}", xxh3_64(serialized.as_bytes())))
     }
 
     fn get_data_paths(&self, app_path: &PathBuf, tasks: &[Task]) -> AppResult<(PathBuf, PathBuf)> {

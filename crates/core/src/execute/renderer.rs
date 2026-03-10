@@ -78,6 +78,19 @@ fn add_global_functions(env: &mut Environment<'static>) {
             })
         },
     );
+
+    // Add sqlquote filter for safely embedding string values in SQL.
+    // The filter wraps the value in single quotes and escapes any embedded
+    // single quotes by doubling them (SQL standard):
+    //   {{ controls.store | sqlquote }}  →  'O''Brien'
+    // Do NOT add surrounding quotes in the template — sqlquote provides them.
+    env.add_filter(
+        "sqlquote",
+        |value: Value| -> Result<String, minijinja::Error> {
+            let escaped = value.to_string().replace('\'', "''");
+            Ok(format!("'{escaped}'"))
+        },
+    );
 }
 
 pub trait TemplateRegister: Sync + Send {

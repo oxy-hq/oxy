@@ -9,7 +9,7 @@ import AppPageHeader from "./AppPageHeader";
 
 // Main page
 const AppPage: React.FC = () => {
-  const pathb64 = useParams<{ pathb64: string }>().pathb64!;
+  const pathb64 = useParams<{ pathb64?: string }>().pathb64 ?? "";
   const path = useMemo(() => decodeBase64(pathb64), [pathb64]);
   const { mutate: runApp, isPending: isRunning, isError } = useRunAppMutation(() => {});
 
@@ -17,7 +17,7 @@ const AppPage: React.FC = () => {
     if (isError) toast.error("Error refreshing app. Check configuration and try again.");
   }, [isError]);
 
-  const handleRun = () => runApp(pathb64);
+  const handleRun = () => runApp({ pathb64 });
 
   return (
     <div className='flex h-full w-full flex-col'>

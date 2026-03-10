@@ -21,10 +21,15 @@ export class AppService {
     return response.data;
   }
 
-  static async runApp(projectId: string, branchName: string, pathb64: string): Promise<AppData> {
+  static async runApp(
+    projectId: string,
+    branchName: string,
+    pathb64: string,
+    params: Record<string, unknown> = {}
+  ): Promise<AppData> {
     const response = await apiClient.post(
       `/${projectId}/apps/${pathb64}/run`,
-      {},
+      { params },
       {
         params: { branch: branchName }
       }

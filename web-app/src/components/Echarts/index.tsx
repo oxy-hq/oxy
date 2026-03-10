@@ -20,7 +20,7 @@ export const Echarts = ({
 }) => {
   const chartRef = useRef<HTMLDivElement>(null);
   const [searchParams] = useSearchParams();
-  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
+  // biome-ignore lint/correctness/useExhaustiveDependencies: chartRef identity is stable
   const onResize = useCallback(() => {
     if (chartRef.current) {
       const chart = getInstanceByDom(chartRef.current);
@@ -75,7 +75,7 @@ export const Echarts = ({
     if (chartRef.current) {
       const chart = getInstanceByDom(chartRef.current);
       if (isLoading) {
-        chart?.showLoading();
+        chart?.showLoading("default", { text: "", color: "transparent", maskColor: "transparent" });
       } else {
         chart?.hideLoading();
       }

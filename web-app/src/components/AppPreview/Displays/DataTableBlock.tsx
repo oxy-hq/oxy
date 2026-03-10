@@ -1,3 +1,4 @@
+import type React from "react";
 import { useEffect, useState } from "react";
 import {
   Table as DataTable,
@@ -10,19 +11,21 @@ import {
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { getDuckDB } from "@/libs/duckdb";
 import type { DataContainer, TableData, TableDisplay } from "@/types/app";
-import {
-  getArrowFieldType,
-  getArrowValueWithType,
-  getData,
-  registerAuthenticatedFile
-} from "./utils";
+import { getArrowFieldType, getArrowValueWithType, getData, registerFromTableData } from "./utils";
 
-const load_table = async (filePath: string, projectId: string, branchName: string) => {
+const load_table = async (
+  tableData: { file_path: string; json?: string | null },
+  projectId: string,
+  branchName: string
+) => {
   const db = await getDuckDB();
   const conn = await db.connect();
-  const file_name = await registerAuthenticatedFile(filePath, projectId, branchName);
-  const rs = await conn.query(`select * from "${file_name}"`);
-  return rs;
+  try {
+    const file_name = await registerFromTableData(tableData, projectId, branchName);
+    return await conn.query(`select * from "${file_name}"`);
+  } finally {
+    await conn.close();
+  }
 };
 
 export const DataTableBlock = ({
@@ -39,6 +42,7 @@ export const DataTableBlock = ({
   const dataAvailable = data && display.data;
 
   useEffect(() => {
+    setIsLoading(true);
     (async () => {
       if (!dataAvailable) {
         setTable(null);
@@ -51,17 +55,28 @@ export const DataTableBlock = ({
         setIsLoading(false);
         return;
       }
+      // Empty JSON result → show "No data found" without hitting DuckDB.
+      if (typeof value.json === "string" && value.json.trim() === "[]") {
+        setTable(null);
+        setIsLoading(false);
+        return;
+      }
 
-      const table = await load_table(value.file_path, project.id, branchName);
-      setTable(table);
-      setIsLoading(false);
+      try {
+        const table = await load_table(value, project.id, branchName);
+        setTable(table);
+      } catch {
+        setTable(null);
+      } finally {
+        setIsLoading(false);
+      }
     })();
   }, [branchName, data, dataAvailable, display.data, project.id]);
 
   if (isLoading)
     return <div className='flex h-full w-full items-center justify-center'>Loading...</div>;
 
-  let tableContent;
+  let tableContent: React.ReactNode;
   if (!table) {
     tableContent = <div className='p-2 text-center text-gray-500'>No data found</div>;
   } else {
@@ -78,6 +93,7 @@ export const DataTableBlock = ({
         </TableHeader>
         <TableBody>
           {table.toArray().map((row, idx) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: rows have no stable id
             <TableRow key={idx} className='border'>
               {table.schema.fields.map((field) => {
                 const fieldType = getArrowFieldType(field.name, table.schema);

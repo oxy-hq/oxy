@@ -7,7 +7,9 @@ import { LineChart } from "./LineChart";
 import { MarkdownDisplayBlock } from "./MarkdownDisplayBlock";
 import { PieChart } from "./PieChart";
 
-export const DisplayBlock = ({
+// DisplayBlock is declared as a function so it can be self-referenced recursively
+// inside the "row" case without hoisting issues.
+export function DisplayBlock({
   display,
   data,
   idx
@@ -15,7 +17,7 @@ export const DisplayBlock = ({
   display: Display;
   data?: DataContainer;
   idx?: number;
-}) => {
+}) {
   switch (display.type) {
     case "error":
       return <ErrorDisplayBlock display={display} />;
@@ -32,15 +34,44 @@ export const DisplayBlock = ({
     case "pie_chart":
     case "pie":
       return <PieChart display={display} data={data} index={idx} />;
+    case "row": {
+      const cols = display.columns ?? display.children.length;
+      return (
+        <div
+          style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
+          className='grid gap-4'
+        >
+          {display.children.map((child, childIdx) => (
+            <ErrorBoundary
+              // biome-ignore lint/suspicious/noArrayIndexKey: display children have no stable id
+              key={childIdx}
+              resetKeys={[child, data]}
+              fallback={
+                <ErrorDisplayBlock
+                  display={{
+                    type: "error",
+                    title: "Display Error",
+                    error: `Failed to render display of type ${child.type}`
+                  }}
+                />
+              }
+            >
+              <DisplayBlock display={child} data={data} idx={childIdx} />
+            </ErrorBoundary>
+          ))}
+        </div>
+      );
+    }
     default:
       return <pre>{JSON.stringify(display)}</pre>;
   }
-};
+}
 
 export const Displays = ({ displays, data }: { displays: Display[]; data?: DataContainer }) => (
   <div className='flex flex-col gap-4'>
     {displays.map((display, idx) => (
       <ErrorBoundary
+        // biome-ignore lint/suspicious/noArrayIndexKey: display items have no stable id
         key={idx}
         resetKeys={[display, data]}
         fallback={

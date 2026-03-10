@@ -7,6 +7,14 @@
     "tasks"
   ],
   "properties": {
+    "controls": {
+      "description": "Interactive controls (dropdowns, toggles, date pickers) whose values are injected into task Jinja templates as `{{ controls.<name> }}`.",
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ControlConfig"
+      }
+    },
     "description": {
       "description": "Optional description of the app.",
       "default": "",
@@ -29,6 +37,14 @@
   },
   "additionalProperties": false,
   "definitions": {
+    "AppTaskMode": {
+      "description": "Where a task is executed when used inside an app with interactive controls. `client` (default) — the frontend re-runs the SQL directly in DuckDB WASM on every control change; no server round-trip required. `server` — the server executes the task on every control change (required for tasks that query external databases like Snowflake or BigQuery).",
+      "type": "string",
+      "enum": [
+        "client",
+        "server"
+      ]
+    },
     "Condition": {
       "type": "object",
       "required": [
@@ -46,6 +62,57 @@
           }
         }
       }
+    },
+    "ControlConfig": {
+      "type": "object",
+      "required": [
+        "name",
+        "type"
+      ],
+      "properties": {
+        "default": {
+          "description": "Default value injected into Jinja context on initial load.",
+          "default": null
+        },
+        "label": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "options": {
+          "description": "Static list of options (used when source is not set).",
+          "default": null,
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": true
+        },
+        "source": {
+          "description": "Task name whose first column populates dropdown options dynamically.",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "$ref": "#/definitions/ControlType"
+        }
+      }
+    },
+    "ControlType": {
+      "type": "string",
+      "enum": [
+        "select",
+        "toggle",
+        "date"
+      ]
     },
     "Display": {
       "oneOf": [
@@ -210,6 +277,109 @@
               "type": "string",
               "enum": [
                 "table"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "children",
+            "type"
+          ],
+          "properties": {
+            "children": {
+              "description": "Child display blocks rendered side-by-side in a grid row.",
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/Display"
+              }
+            },
+            "columns": {
+              "description": "Number of equal-width columns; defaults to the number of children.",
+              "default": null,
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint8",
+              "minimum": 1.0
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "row"
+              ]
+            }
+          }
+        },
+        {
+          "description": "A group of controls defined inline in the display list. The backend extracts these items into the controls array before sending to clients.",
+          "type": "object",
+          "required": [
+            "items",
+            "type"
+          ],
+          "properties": {
+            "items": {
+              "description": "Interactive controls defined inline in the display list.",
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/ControlConfig"
+              }
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "controls"
+              ]
+            }
+          }
+        },
+        {
+          "description": "A single control defined inline in the display list. Because the Display enum uses \"type\" as its discriminant, the control kind is expressed as \"control_type\" instead of \"type\" to avoid a duplicate-key conflict:\n\ndisplay: - type: control name: region control_type: select label: Region options: [All, North, South]",
+          "type": "object",
+          "required": [
+            "control_type",
+            "name",
+            "type"
+          ],
+          "properties": {
+            "control_type": {
+              "$ref": "#/definitions/ControlType"
+            },
+            "default": {
+              "default": null
+            },
+            "label": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "options": {
+              "default": null,
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": true
+            },
+            "source": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "control"
               ]
             }
           }
@@ -1425,6 +1595,15 @@
             },
             {
               "type": "null"
+            }
+          ]
+        },
+        "mode": {
+          "description": "Execution mode when this task is used inside a data app. Defaults to `client`.",
+          "default": "client",
+          "allOf": [
+            {
+              "$ref": "#/definitions/AppTaskMode"
             }
           ]
         },

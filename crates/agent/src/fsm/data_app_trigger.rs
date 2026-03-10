@@ -163,6 +163,7 @@ impl Trigger for BuildDataApp<MachineContext> {
                 Result::<Task, OxyError>::Ok(Task {
                     name: t.name.clone(),
                     cache: None,
+                    mode: Default::default(),
                     task_type: TaskType::ExecuteSQL(ExecuteSQLTask {
                         database: table_ref.database_ref,
                         sql: SQL::Query {

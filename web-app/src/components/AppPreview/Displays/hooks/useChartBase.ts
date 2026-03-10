@@ -4,7 +4,7 @@ import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { getDuckDB } from "@/libs/duckdb";
 import useTheme from "@/stores/useTheme";
 import type { DataContainer, TableData } from "@/types/app";
-import { getData, registerAuthenticatedFile } from "../utils";
+import { getData, registerFromTableData } from "../utils";
 import type { BaseChartDisplay, ChartOptionsBuilder } from "./types";
 
 interface UseChartBaseOptions<T extends BaseChartDisplay> {
@@ -43,22 +43,28 @@ export const useChartBase = <T extends BaseChartDisplay>({
           setIsLoading(false);
           return;
         }
+        // Empty JSON result (e.g. date filter returns 0 rows) — show "No data"
+        // instead of trying to register an empty array in DuckDB, which fails.
+        if (typeof tableData.json === "string" && tableData.json.trim() === "[]") {
+          setChartOptions(createNoDataOptions(display.title, isDarkMode));
+          setIsLoading(false);
+          return;
+        }
+        const fileName = await registerFromTableData(tableData, project.id, branchName);
         const db = await getDuckDB();
-        const fileName = await registerAuthenticatedFile(
-          tableData.file_path,
-          project.id,
-          branchName
-        );
         const connection = await db.connect();
 
-        const options = await buildChartOptions({
-          display,
-          connection,
-          fileName,
-          isDarkMode
-        });
-
-        setChartOptions(options);
+        try {
+          const options = await buildChartOptions({
+            display,
+            connection,
+            fileName,
+            isDarkMode
+          });
+          setChartOptions(options);
+        } finally {
+          await connection.close();
+        }
       } catch (error) {
         console.error("Error loading chart:", error);
         setChartOptions(createErrorOptions(display.title, isDarkMode));
@@ -79,71 +85,60 @@ export const useChartBase = <T extends BaseChartDisplay>({
 
 const createNoDataOptions = (title?: string, isDarkMode = false): EChartsOption => ({
   darkMode: isDarkMode,
-  title: {
-    text: title,
-    textStyle: {
-      color: isDarkMode ? "#ffffff" : "#333333"
+  title: title
+    ? {
+        text: title,
+        textStyle: {
+          color: isDarkMode ? "#f3f4f6" : "#111827",
+          fontSize: 16,
+          fontWeight: "bold"
+        }
+      }
+    : undefined,
+  graphic: [
+    {
+      type: "text",
+      left: "center",
+      top: "middle",
+      style: {
+        text: "No data found",
+        fontSize: 14,
+        fill: isDarkMode ? "#6b7280" : "#9ca3af"
+      }
     }
-  },
-  graphic: {
-    type: "text",
-    left: "center",
-    top: "middle",
-    style: {
-      text: "No data found",
-      fontSize: 16,
-      fontWeight: "bold",
-      fill: isDarkMode ? "#888888" : "#666666"
-    }
-  },
-  xAxis: {
-    type: "category",
-    show: false
-  },
-  yAxis: {
-    type: "value",
-    show: false
-  },
+  ],
+  xAxis: { type: "category", show: false },
+  yAxis: { type: "value", show: false },
   series: [],
-  grid: {
-    containLabel: true,
-    show: false
-  }
+  grid: { containLabel: true, show: false }
 });
 
-/**
- * Creates standard error state chart options
- */
 const createErrorOptions = (title?: string, isDarkMode = false): EChartsOption => ({
   darkMode: isDarkMode,
-  title: {
-    text: title,
-    textStyle: {
-      color: isDarkMode ? "#ffffff" : "#333333"
+  title: title
+    ? {
+        text: title,
+        textStyle: {
+          color: isDarkMode ? "#f3f4f6" : "#111827",
+          fontSize: 16,
+          fontWeight: "bold"
+        }
+      }
+    : undefined,
+  graphic: [
+    {
+      type: "text",
+      left: "center",
+      top: "middle",
+      style: {
+        text: "Error loading chart",
+        fontSize: 14,
+        fill: "#f43f5e"
+      }
     }
-  },
-  graphic: {
-    type: "text",
-    left: "center",
-    top: "middle",
-    style: {
-      text: "Error loading chart",
-      fontSize: 16,
-      fontWeight: "bold",
-      fill: isDarkMode ? "#ff6b6b" : "#e74c3c"
-    }
-  },
-  xAxis: {
-    type: "category",
-    show: false
-  },
-  yAxis: {
-    type: "value",
-    show: false
-  },
+  ],
+  xAxis: { type: "category", show: false },
+  yAxis: { type: "value", show: false },
   series: [],
-  grid: {
-    containLabel: true,
-    show: false
-  }
+  grid: { containLabel: true, show: false }
 });
