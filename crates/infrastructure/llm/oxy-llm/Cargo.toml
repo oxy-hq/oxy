@@ -16,4 +16,4 @@ oxy-openai = { path = "../openai" }
 oxy-shared = { path = "../../../shared" }
 schemars = { version = "0.8.22", features = ["derive"] }
 serde = { workspace = true }
-serde_with = "3.16.1"
+serde_with = "3.17.0"

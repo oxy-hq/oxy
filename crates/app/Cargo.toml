@@ -31,9 +31,18 @@ entity = { path = "../entity" }
 # Async runtime
 tokio = { workspace = true }
 async-trait = "0.1.89"
-futures = "0.3.31"
+futures = "0.3.32"
 async-stream = "0.3.6"
-async-openai = { workspace = true, features = ["byot", "chat-completion-types", "response-types", "_api", "responses", "chat-completion", "embedding-types", "embedding"] }
+async-openai = { workspace = true, features = [
+    "byot",
+    "chat-completion-types",
+    "response-types",
+    "_api",
+    "responses",
+    "chat-completion",
+    "embedding-types",
+    "embedding",
+] }
 
 # Serialization
 serde = { workspace = true }
@@ -50,7 +59,11 @@ anyhow = "1.0"
 
 # Logging/Tracing
 tracing = { workspace = true }
-tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt", "json"] }
+tracing-subscriber = { version = "0.3.22", features = [
+    "env-filter",
+    "fmt",
+    "json",
+] }
 log = { workspace = true }
 
 # Web framework
@@ -58,9 +71,15 @@ axum = { workspace = true }
 axum-server = { workspace = true }
 tower = "0.5"
 tower-http = { version = "0.6.8", features = ["cors", "trace", "timeout"] }
-utoipa = {git="https://github.com/haitrr/utoipa.git", rev="776f86e", features = ["uuid", "chrono", "axum_extras"] }
-utoipa-axum = {git="https://github.com/haitrr/utoipa.git",rev="776f86e" }
-utoipa-swagger-ui={git="https://github.com/haitrr/utoipa.git",rev="776f86e", features = ["axum"] }
+utoipa = { git = "https://github.com/haitrr/utoipa.git", rev = "776f86e", features = [
+    "uuid",
+    "chrono",
+    "axum_extras",
+] }
+utoipa-axum = { git = "https://github.com/haitrr/utoipa.git", rev = "776f86e" }
+utoipa-swagger-ui = { git = "https://github.com/haitrr/utoipa.git", rev = "776f86e", features = [
+    "axum",
+] }
 
 # HTTP client
 reqwest = { version = "0.12.28" }
@@ -70,7 +89,7 @@ enum_dispatch = "0.3.13"
 rapidfuzz = "0.5.0"
 
 # CLI
-clap = { version = "4.5.57", features = ["derive"] }
+clap = { version = "4.5.60", features = ["derive"] }
 colored = "3.1.1"
 indicatif = "0.17"
 headless_chrome = { version = "1.0" }
@@ -90,7 +109,7 @@ parquet = "=56.2.0"
 duckdb = { version = "=1.4.4", features = ["bundled"] }
 
 # Utilities
-uuid = { version = "1.20.0", features = ["v4", "serde"] }
+uuid = { workspace = true }
 chrono = { workspace = true }
 minijinja = { workspace = true, features = ["loader"] }
 once_cell = "1.21.3"
@@ -130,11 +149,11 @@ tabled = "0.20.0"
 terminal-light = "1.8.0"
 terminal_size = "0.4.3"
 secrecy = "0.10.3"
-serde_with = "3.16.1"
+serde_with = "3.17.0"
 strip-ansi-escapes = "=0.2.1"
 url = "2.5.8"
-urlencoding="2.1.3"
-rustls = { version = "0.23.36", features = ["aws_lc_rs"] }
+urlencoding = "2.1.3"
+rustls = { version = "0.23.37", features = ["aws_lc_rs"] }
 tracing-appender = "0.2.4"
 tracing-log = "0.2.0"
 apalis = "0.7.4"
@@ -152,7 +171,11 @@ oxy-looker = { path = "../integration/looker" }
 migration = { path = "../migration" }
 
 # MCP
-rmcp = {version = "0.8.5", features = ["server", "transport-sse-server", "transport-io"]}
+rmcp = { version = "0.8.5", features = [
+    "server",
+    "transport-sse-server",
+    "transport-io",
+] }
 
 # Other dependencies from core that might be needed
 dotenv = "0.15.0"
@@ -164,6 +187,6 @@ chrono = { workspace = true }
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }
-assert_cmd = "2.1.2"
-serial_test = "3.3.1"
+assert_cmd = "2.2.0"
+serial_test = "3.4.0"
 oxy-test-utils = { path = "../test-utils" }

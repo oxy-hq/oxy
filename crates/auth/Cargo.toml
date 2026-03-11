@@ -38,7 +38,7 @@ log = { workspace = true }
 
 # Utilities
 chrono = { workspace = true }
-uuid = { version = "1.20", features = ["v4", "serde"] }
+uuid = { workspace = true }
 
 # Shared infrastructure
 oxy-shared = { path = "../shared" }

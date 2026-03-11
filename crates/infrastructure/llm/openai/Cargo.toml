@@ -20,5 +20,5 @@ oxy-shared = { path = "../../../shared" }
 schemars = { version = "0.8.22", features = ["derive"] }
 secrecy = "0.10.3"
 serde = { workspace = true }
-serde_with = "3.16.1"
+serde_with = "3.17.0"
 tracing = "0.1"
