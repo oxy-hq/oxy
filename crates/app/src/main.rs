@@ -67,20 +67,24 @@ fn init_tracing_logging(log_to_stdout: bool) {
         }
     });
 
-    let (non_blocking, guard) = if log_to_stdout {
-        tracing_appender::non_blocking(std::io::stdout())
-    } else {
-        let log_file_path = std::path::Path::new(&get_state_dir()).join("oxy.log");
-        let file_appender = tracing_appender::rolling::never(
-            log_file_path.parent().unwrap(),
-            log_file_path.file_name().unwrap(),
-        );
-        tracing_appender::non_blocking(file_appender)
-    };
+    // Always log to file
+    let log_file_path = std::path::Path::new(&get_state_dir()).join("oxy.log");
+    let file_appender = tracing_appender::rolling::never(
+        log_file_path.parent().unwrap(),
+        log_file_path.file_name().unwrap(),
+    );
+    let (file_writer, guard) = tracing_appender::non_blocking(file_appender);
     LOG_GUARD.set(guard).ok();
 
     match log_format {
         LogFormat::Local => {
+            let stdout_layer = log_to_stdout.then(|| {
+                fmt::layer()
+                    .with_target(true)
+                    .with_level(true)
+                    .with_writer(std::io::stdout)
+                    .with_ansi(true)
+            });
             tracing_subscriber::registry()
                 .with(env_filter)
                 .with(sentry::integrations::tracing::layer())
@@ -88,12 +92,21 @@ fn init_tracing_logging(log_to_stdout: bool) {
                     fmt::layer()
                         .with_target(true)
                         .with_level(true)
-                        .with_writer(non_blocking)
-                        .with_ansi(true),
+                        .with_writer(file_writer)
+                        .with_ansi(false),
                 )
+                .with(stdout_layer)
                 .init();
         }
         LogFormat::Cloud => {
+            let stdout_layer = log_to_stdout.then(|| {
+                fmt::layer()
+                    .with_target(false)
+                    .with_level(true)
+                    .with_writer(std::io::stdout)
+                    .with_ansi(false)
+                    .compact()
+            });
             tracing_subscriber::registry()
                 .with(env_filter)
                 .with(sentry::integrations::tracing::layer())
@@ -101,10 +114,11 @@ fn init_tracing_logging(log_to_stdout: bool) {
                     fmt::layer()
                         .with_target(false)
                         .with_level(true)
-                        .with_writer(non_blocking)
-                        .with_ansi(false) // No colors in cloud
+                        .with_writer(file_writer)
+                        .with_ansi(false)
                         .compact(),
                 )
+                .with(stdout_layer)
                 .init();
         }
     }
@@ -127,14 +141,11 @@ fn main() {
     // Parse args early to check for log level override
     let args: Vec<String> = env::args().collect();
 
-    // Log to stdout if `oxy serve` or `oxy a2a`
-    let log_to_stdout = args
-        .iter()
-        .any(|a| a == "serve" || a == "start" || a == "a2a")
-        || env::var("OXY_DEBUG")
-            .as_deref()
-            .unwrap_or("false")
-            .eq_ignore_ascii_case("true");
+    // Log to stdout only when OXY_DEBUG=true, otherwise always log to file
+    let log_to_stdout = env::var("OXY_DEBUG")
+        .as_deref()
+        .unwrap_or("false")
+        .eq_ignore_ascii_case("true");
 
     // Check if --enterprise flag is present (enables observability)
     let enterprise_enabled = args.iter().any(|a| a == "--enterprise");
