@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.24](https://github.com/oxy-hq/oxy-internal/compare/0.5.23...0.5.24) (2026-03-11)
+
+
+### <!-- 0 -->🚀 Features
+
+* add control and row to block editor of apps ([#1761](https://github.com/oxy-hq/oxy-internal/issues/1761)) ([2b53f4a](https://github.com/oxy-hq/oxy-internal/commit/2b53f4a7f8c80316b439924b00aa1daaa95e881b))
+* improve chart ([#1728](https://github.com/oxy-hq/oxy-internal/issues/1728)) ([79ef2e1](https://github.com/oxy-hq/oxy-internal/commit/79ef2e1f0dcb05232882127134f0e489fbadc03f))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* UI ux inconsitant ([#1740](https://github.com/oxy-hq/oxy-internal/issues/1740)) ([954c9ef](https://github.com/oxy-hq/oxy-internal/commit/954c9ef28ab72ce31897d90f90f3f87fb75de5e0))
+
 ## [0.5.23](https://github.com/oxy-hq/oxy-internal/compare/0.5.22...0.5.23) (2026-03-07)
 
 

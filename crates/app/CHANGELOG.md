@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.25](https://github.com/oxy-hq/oxy-internal/compare/0.5.24...0.5.25) (2026-03-11)
+
+
+### <!-- 0 -->🚀 Features
+
+* agent testing framework ([#1714](https://github.com/oxy-hq/oxy-internal/issues/1714)) ([cb9104b](https://github.com/oxy-hq/oxy-internal/commit/cb9104bcc8417d90c43fc54a831cb0ba6238d8c3))
+* improve chart ([#1728](https://github.com/oxy-hq/oxy-internal/issues/1728)) ([79ef2e1](https://github.com/oxy-hq/oxy-internal/commit/79ef2e1f0dcb05232882127134f0e489fbadc03f))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* always log to file, mirror to stdout when OXY_DEBUG=true ([#1759](https://github.com/oxy-hq/oxy-internal/issues/1759)) ([a52b1f6](https://github.com/oxy-hq/oxy-internal/commit/a52b1f6c14d297f78da37873dfb0bd85aba8e72d))
+
 ## [0.5.24](https://github.com/oxy-hq/oxy-internal/compare/0.5.23...0.5.24) (2026-03-09)
 
 
