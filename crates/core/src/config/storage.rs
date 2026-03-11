@@ -104,7 +104,14 @@ impl LocalSource {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_dir() {
-                    files.extend(self.list_by_sub_extension(Some(&path), sub_extension));
+                    let is_hidden = path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .map(|n| n.starts_with('.'))
+                        .unwrap_or(false);
+                    if !is_hidden {
+                        files.extend(self.list_by_sub_extension(Some(&path), sub_extension));
+                    }
                 } else if path.is_file()
                     && path.extension().and_then(|s| s.to_str()) == Some("yml")
                     && path
