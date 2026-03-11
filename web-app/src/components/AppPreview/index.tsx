@@ -15,6 +15,16 @@ import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import type { DataContainer, TableData } from "@/types/app";
 import AppDataState from "./AppDataState";
 
+// Module-level cache: survives component unmount/remount (i.e. navigation away and back).
+// Keyed by appPath64; cleared on explicit refresh so stale data is never permanently stuck.
+// Capped at MAX_CLIENT_DATA_CACHE_SIZE entries (FIFO) to prevent unbounded memory growth
+// during long sessions with many apps.
+const MAX_CLIENT_DATA_CACHE_SIZE = 20;
+const clientDataCache = new Map<
+  string,
+  { data: DataContainer; controlValues: Record<string, unknown> }
+>();
+
 type Props = {
   appPath64: string;
   runButton?: boolean;
@@ -109,7 +119,13 @@ export default function AppPreview({ appPath64, runButton = true }: Props) {
         );
         // Only apply results from the most recent invocation.
         if (gen === clientGenRef.current) {
-          setParamData(Object.fromEntries(entries) as DataContainer);
+          const result = Object.fromEntries(entries) as DataContainer;
+          if (clientDataCache.size >= MAX_CLIENT_DATA_CACHE_SIZE) {
+            const oldest = clientDataCache.keys().next().value;
+            if (oldest !== undefined) clientDataCache.delete(oldest);
+          }
+          clientDataCache.set(appPath64, { data: result, controlValues: values });
+          setParamData(result);
         }
       } catch {
         if (gen === clientGenRef.current) {
@@ -134,13 +150,24 @@ export default function AppPreview({ appPath64, runButton = true }: Props) {
     setControlValues(defaults);
 
     if (allClientMode) {
-      runClientTasks(defaults);
+      const cached = clientDataCache.get(appPath64);
+      if (cached && JSON.stringify(cached.controlValues) === JSON.stringify(defaults)) {
+        setParamData(cached.data);
+      } else {
+        runClientTasks(defaults);
+      }
     }
-  }, [appDisplayControls, allClientMode, runClientTasks]);
+  }, [appDisplayControls, allClientMode, runClientTasks, appPath64]);
 
   const handleRun = () => {
     setParamData(undefined);
-    if (allClientMode && !forcedServerMode) {
+    clientDataCache.delete(appPath64);
+    // Reset the DuckDB fallback flag on explicit refresh so the user can retry
+    // client-mode execution after a transient failure.
+    setForcedServerMode(false);
+    // forcedServerMode was just reset above; read allClientMode directly so this
+    // render's stale closure value doesn't send us to the server unnecessarily.
+    if (allClientMode) {
       runClientTasks(controlValues);
     } else {
       runApp({ pathb64: appPath64, params: controlValues as Record<string, unknown> });

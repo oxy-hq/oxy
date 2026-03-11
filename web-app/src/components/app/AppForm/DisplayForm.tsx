@@ -18,9 +18,11 @@ import {
 } from "@/components/ui/shadcn/select";
 import {
   BarChartDisplayFields,
+  ControlDisplayFields,
   LineChartDisplayFields,
   MarkdownDisplayFields,
   PieChartDisplayFields,
+  RowDisplayFields,
   TableDisplayFields
 } from "./DisplayFields";
 import type { AppFormData } from "./index";
@@ -35,7 +37,9 @@ const DISPLAY_TYPES = [
   { value: "line_chart", label: "Line Chart" },
   { value: "pie_chart", label: "Pie Chart" },
   { value: "bar_chart", label: "Bar Chart" },
-  { value: "table", label: "Table" }
+  { value: "table", label: "Table" },
+  { value: "control", label: "Control" },
+  { value: "row", label: "Row (multi-column)" }
 ];
 
 export const DisplayForm: React.FC<DisplayFormProps> = ({ index, onRemove }) => {
@@ -70,6 +74,12 @@ export const DisplayForm: React.FC<DisplayFormProps> = ({ index, onRemove }) => 
 
       case "table":
         return <TableDisplayFields index={index} />;
+
+      case "control":
+        return <ControlDisplayFields index={index} />;
+
+      case "row":
+        return <RowDisplayFields index={index} />;
 
       default:
         return null;
@@ -135,7 +145,7 @@ export const DisplayForm: React.FC<DisplayFormProps> = ({ index, onRemove }) => 
                       onTypeChange(value);
                       field.onChange(value);
                     }}
-                    defaultValue={field.value}
+                    value={field.value}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder='Select display type' />
