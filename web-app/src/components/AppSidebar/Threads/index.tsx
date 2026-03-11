@@ -62,13 +62,13 @@ const Threads = () => {
             </SidebarMenuAction>
           </DropdownMenuTrigger>
           <DropdownMenuContent side='bottom' align='start'>
-            <DropdownMenuItem onSelect={() => setConfirmOpen(true)}>
+            <DropdownMenuItem className='cursor-pointer' onSelect={() => setConfirmOpen(true)}>
               <Trash2 className='text-destructive' />
               <span className='text-destructive'>Clear all threads</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <SidebarMenuSub className='ml-4'>
+        <SidebarMenuSub className='ml-[15px]'>
           {isLoading && <ItemsSkeleton />}
 
           {!isLoading &&

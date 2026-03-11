@@ -76,7 +76,7 @@ export default function AgentBreakdownTable({
   });
   if (isLoading) {
     return (
-      <Card>
+      <Card className='bg-transparent shadow-none'>
         <CardHeader>
           <div className='flex items-center gap-2'>
             <Users className='h-5 w-5 text-primary' />
@@ -97,7 +97,7 @@ export default function AgentBreakdownTable({
 
   if (agents.length === 0) {
     return (
-      <Card>
+      <Card className='bg-transparent shadow-none'>
         <CardHeader>
           <div className='flex items-center gap-2'>
             <Users className='h-5 w-5 text-primary' />
@@ -113,7 +113,7 @@ export default function AgentBreakdownTable({
   }
 
   return (
-    <Card>
+    <Card className='bg-transparent shadow-none'>
       <CardHeader>
         <div className='flex items-center gap-2'>
           <Users className='h-5 w-5 text-primary' />

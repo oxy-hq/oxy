@@ -1,4 +1,4 @@
-import { ChevronsRight, Database, FileText, Key } from "lucide-react";
+import { ChevronsRight, Database, Key } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
@@ -12,8 +12,8 @@ import {
   SidebarContent,
   SidebarGroup,
   SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuSubButton
+  SidebarMenuButton,
+  SidebarMenuItem
 } from "@/components/ui/shadcn/sidebar";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import ROUTES from "@/libs/utils/routes";
@@ -30,10 +30,10 @@ const SettingsSidebar: React.FC<{
     <div className='flex h-full flex-col overflow-hidden bg-sidebar-background'>
       <SidebarHeader title='Settings' onCollapse={() => setSidebarOpen(false)} />
       <SidebarContent className='customScrollbar h-full flex-1 overflow-y-auto'>
-        <SidebarGroup className='pt-2'>
+        <SidebarGroup className='px-1 pt-2'>
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuSubButton
+              <SidebarMenuButton
                 asChild
                 isActive={location.pathname === ROUTES.PROJECT(projectId).IDE.SETTINGS.DATABASES}
               >
@@ -41,23 +41,10 @@ const SettingsSidebar: React.FC<{
                   <Database className='h-4 w-4' />
                   <span>Databases</span>
                 </Link>
-              </SidebarMenuSubButton>
+              </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
-              <SidebarMenuSubButton
-                asChild
-                isActive={
-                  location.pathname === ROUTES.PROJECT(projectId).IDE.SETTINGS.ACTIVITY_LOGS
-                }
-              >
-                <Link to={ROUTES.PROJECT(projectId).IDE.SETTINGS.ACTIVITY_LOGS}>
-                  <FileText className='h-4 w-4' />
-                  <span>Activity Logs</span>
-                </Link>
-              </SidebarMenuSubButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuSubButton
+              <SidebarMenuButton
                 asChild
                 isActive={location.pathname === ROUTES.PROJECT(projectId).IDE.SETTINGS.API_KEYS}
               >
@@ -65,7 +52,7 @@ const SettingsSidebar: React.FC<{
                   <Key className='h-4 w-4' />
                   <span>API Keys</span>
                 </Link>
-              </SidebarMenuSubButton>
+              </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroup>
@@ -84,7 +71,7 @@ const SettingsLayout: React.FC = () => {
           <ResizablePanel defaultSize={20} minSize={10} className='min-w-[200px]'>
             <SettingsSidebar setSidebarOpen={setSidebarOpen} />
           </ResizablePanel>
-          <ResizableHandle />
+          <ResizableHandle withHandle />
         </>
       ) : (
         <div className='flex items-start border-r bg-sidebar-background px-1 py-2'>

@@ -1,10 +1,9 @@
-import { cx } from "class-variance-authority";
-import { ArrowRight, Hammer, Loader2, MessageCircleQuestion, Play, Workflow } from "lucide-react";
+import { ArrowUp, Hammer, Loader2, MessageCircleQuestion, Play } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/shadcn/button";
+import { Select, SelectContent, SelectTrigger, SelectValue } from "@/components/ui/shadcn/select";
 import { Textarea } from "@/components/ui/shadcn/textarea";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/shadcn/toggle-group";
 import useThreadMutation from "@/hooks/api/threads/useThreadMutation";
 import useBuilderAvailable from "@/hooks/api/useBuilderAvailable";
 import useAskAgent from "@/hooks/messaging/agent";
@@ -16,10 +15,8 @@ import ROUTES from "@/libs/utils/routes";
 import { getShortTitle } from "@/libs/utils/string";
 import { useAskAgentic } from "@/stores/agentic";
 import AgentsDropdown, { type Agent } from "./AgentsDropdown";
+import SelectItemWithDetail from "./SelectItemWithDetail";
 import WorkflowsDropdown, { type WorkflowOption } from "./WorkflowsDropdown";
-
-const ToggleGroupItemClasses =
-  "data-[state=on]:border data-[state=on]:border-blue-500 data-[state=on]:bg-blue-500 data-[state=on]:text-white hover:bg-blue-500/20 hover:text-blue-300 hover:border-blue-400/50 transition-colors border-gray-600 rounded-md text-gray-400";
 
 const ChatPanel = () => {
   const navigate = useNavigate();
@@ -105,7 +102,7 @@ const ChatPanel = () => {
     }
   };
 
-  const submitIcon = mode === "workflow" ? <Play /> : <ArrowRight />;
+  const submitIcon = mode === "workflow" ? <Play /> : <ArrowUp />;
   const disabled = () => {
     if (isPending) return true;
     switch (mode) {
@@ -121,11 +118,11 @@ const ChatPanel = () => {
   const placeholder = (() => {
     switch (mode) {
       case "ask":
-        return "Ask anything";
+        return "✧˖ Start your request, and let Oxygen handle everything.";
       case "build":
-        return "Enter anything you want to build";
+        return "✧˖ Enter anything you want to build, and Oxygen will figure out the rest.";
       case "workflow":
-        return "Enter a title for this procedure run";
+        return "Enter a title for this procedure run.";
     }
   })();
 
@@ -133,7 +130,7 @@ const ChatPanel = () => {
     <form
       ref={formRef}
       onSubmit={handleFormSubmit}
-      className='mx-auto flex w-full max-w-[672px] flex-col gap-1 rounded-md border-2 bg-secondary p-2 shadow-sm'
+      className='mx-auto flex w-full max-w-[672px] flex-col gap-1 rounded-md border bg-secondary p-2'
     >
       <Textarea
         disabled={isPending}
@@ -142,52 +139,66 @@ const ChatPanel = () => {
         onKeyDown={onKeyDown}
         value={message}
         onChange={(e) => setMessage(e.target.value)}
-        className={cx(
-          "border-none shadow-none",
-          "hover:border-none focus-visible:border-none focus-visible:shadow-none",
-          "focus-visible:ring-0 focus-visible:ring-offset-0",
-          "customScrollbar max-h-[200px] resize-none px-0 outline-none"
-        )}
+        className='customScrollbar max-h-[200px] resize-none border-none bg-transparent px-0 shadow-none outline-none hover:border-none focus-visible:border-none focus-visible:shadow-none focus-visible:ring-0 focus-visible:ring-offset-0'
         placeholder={placeholder}
       />
 
       <div className='flex justify-between'>
         <div className='flex items-center justify-center'>
-          <ToggleGroup
-            size='sm'
-            type='single'
-            value={mode}
-            className='gap-1 rounded-md bg-sidebar-background p-1 text-accent-main-000'
-            onValueChange={(value) => {
-              if (value) {
-                setMode(value);
-              }
-            }}
-          >
-            <ToggleGroupItem size='sm' value='ask' className={ToggleGroupItemClasses}>
-              <MessageCircleQuestion />
-              <span>Ask</span>
-            </ToggleGroupItem>
-            <ToggleGroupItem
-              size='sm'
-              value='build'
-              className={ToggleGroupItemClasses}
-              disabled={!isBuilderAvailable || isCheckingBuilder}
-              title={!isBuilderAvailable ? "Builder agent not available" : ""}
-            >
-              <Hammer />
-              <span>Build</span>
-            </ToggleGroupItem>
-            <ToggleGroupItem size='sm' value='workflow' className={ToggleGroupItemClasses}>
-              <Workflow />
-              <span>Procedure</span>
-            </ToggleGroupItem>
-          </ToggleGroup>
+          <Select value={mode} onValueChange={setMode}>
+            <SelectTrigger size='sm' className='border-none bg-transparent'>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItemWithDetail
+                className='cursor-pointer'
+                value='ask'
+                detail={{
+                  title: "Ask",
+                  description:
+                    "Interact in natural language to get instant insights. No SQL or technical knowledge required."
+                }}
+              >
+                <MessageCircleQuestion className='size-4' />
+                Ask
+              </SelectItemWithDetail>
+              <SelectItemWithDetail
+                className='cursor-pointer'
+                value='build'
+                disabled={!isBuilderAvailable || isCheckingBuilder}
+                detail={{
+                  title: "Build",
+                  description:
+                    "Build data applications and dashboards by describing what you need in natural language."
+                }}
+              >
+                <Hammer className='size-4' />
+                Build
+              </SelectItemWithDetail>
+              <SelectItemWithDetail
+                className='cursor-pointer'
+                value='workflow'
+                detail={{
+                  title: "Procedure",
+                  description:
+                    "Automate multi-step workflows with intelligent agents that execute complex processes autonomously."
+                }}
+              >
+                <Play className='size-4' />
+                Procedure
+              </SelectItemWithDetail>
+            </SelectContent>
+          </Select>
         </div>
         <div className='flex items-center gap-2'>
           {mode === "ask" && <AgentsDropdown onSelect={setAgent} agentSelected={agent} />}
           {mode === "workflow" && <WorkflowsDropdown onSelect={setWorkflow} workflow={workflow} />}
-          <Button disabled={disabled()} type='submit' data-testid='chat-panel-submit-button'>
+          <Button
+            size='sm'
+            disabled={disabled()}
+            type='submit'
+            data-testid='chat-panel-submit-button'
+          >
             {isPending ? <Loader2 className='animate-spin' /> : submitIcon}
           </Button>
         </div>

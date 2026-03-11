@@ -1,6 +1,5 @@
 import { AlertCircle, CheckCircle2, Clock, Coins, Timer } from "lucide-react";
 import { Badge } from "@/components/ui/shadcn/badge";
-import { Card } from "@/components/ui/shadcn/card";
 import type { Trace } from "@/services/api/traces";
 import {
   getAgentRef,
@@ -42,7 +41,10 @@ export function TraceCard({ trace, onClick }: TraceCardProps) {
     : prompt || formatSpanLabel(trace.spanName);
 
   return (
-    <Card className='cursor-pointer px-3 py-2 transition-colors hover:bg-accent' onClick={onClick}>
+    <div
+      className='cursor-pointer rounded-lg border px-3 py-2 transition-colors hover:bg-accent'
+      onClick={onClick}
+    >
       <div className='flex flex-col gap-1'>
         <div className='flex items-center gap-2'>
           {isError ? (
@@ -89,6 +91,6 @@ export function TraceCard({ trace, onClick }: TraceCardProps) {
           )}
         </div>
       </div>
-    </Card>
+    </div>
   );
 }

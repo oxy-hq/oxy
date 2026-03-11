@@ -20,7 +20,7 @@ function getRowStyle(isHighlighted: boolean, isRunning: boolean, stepType: strin
   if (isRunning) {
     return cn("border-l-2", STEP_COLOR_BORDER[stepType], "bg-secondary/80");
   }
-  return "border-transparent bg-secondary/50 hover:bg-secondary";
+  return "border-transparent bg-card/50 hover:bg-card";
 }
 
 interface StepHeaderProps {

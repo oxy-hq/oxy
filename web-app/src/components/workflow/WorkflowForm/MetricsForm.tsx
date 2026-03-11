@@ -166,7 +166,11 @@ export const MetricsForm: React.FC<MetricsFormProps> = ({ testIndex }) => {
                     </SelectTrigger>
                     <SelectContent>
                       {DISTANCE_METHODS.map((method) => (
-                        <SelectItem key={method.value} value={method.value}>
+                        <SelectItem
+                          className='cursor-pointer'
+                          key={method.value}
+                          value={method.value}
+                        >
                           {method.label}
                         </SelectItem>
                       ))}

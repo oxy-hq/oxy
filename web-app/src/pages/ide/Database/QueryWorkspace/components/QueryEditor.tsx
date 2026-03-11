@@ -42,7 +42,10 @@ export default function QueryEditor({ onSave }: QueryEditorProps) {
   } = useDatabaseClient();
 
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
-  const [tabToClose, setTabToClose] = useState<{ id: string; name: string } | null>(null);
+  const [tabToClose, setTabToClose] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
 
@@ -161,10 +164,8 @@ export default function QueryEditor({ onSave }: QueryEditorProps) {
 
   return (
     <div className='flex h-full flex-col bg-background'>
-      {/* Toolbar */}
-      <div className='flex items-center justify-between border-b bg-muted/30 px-2 py-1'>
+      <div className='flex items-center justify-between border-b px-2 py-1'>
         <div className='flex items-center gap-1'>
-          {/* Database Selector */}
           <div className='mr-2'>
             <DatabaseSelector
               onSelect={(db) => activeTab && updateTab(activeTab.id, { selectedDatabase: db })}
@@ -184,7 +185,7 @@ export default function QueryEditor({ onSave }: QueryEditorProps) {
             ) : (
               <Play className='h-4 w-4' />
             )}
-            <span className='ml-1'>Run</span>
+            <span>Run</span>
           </Button>
           <Button
             variant='ghost'
@@ -194,7 +195,7 @@ export default function QueryEditor({ onSave }: QueryEditorProps) {
             className='h-7 px-2'
           >
             <Save className='h-4 w-4' />
-            <span className='ml-1'>Save</span>
+            <span>Save</span>
           </Button>
           <Button
             variant='ghost'
@@ -204,7 +205,7 @@ export default function QueryEditor({ onSave }: QueryEditorProps) {
             className='h-7 px-2'
           >
             <Code className='h-4 w-4' />
-            <span className='ml-1'>Format</span>
+            <span>Format</span>
           </Button>
         </div>
 
@@ -214,13 +215,13 @@ export default function QueryEditor({ onSave }: QueryEditorProps) {
       </div>
 
       {/* Tabs */}
-      <div className='customScrollbar scrollbar-gutter-auto flex items-center overflow-x-auto border-b bg-muted/20'>
+      <div className='customScrollbar scrollbar-gutter-auto flex items-center overflow-x-auto border-b'>
         {tabs.map((tab) => (
           <div
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={cn(
-              "flex shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap border-r px-3 py-1.5 text-sm",
+              "flex h-full shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap border-r px-3 py-1.5 text-sm",
               "transition-colors hover:bg-muted/50",
               activeTabId === tab.id ? "border-b-2 border-b-primary bg-background" : "bg-muted/30"
             )}
@@ -232,14 +233,14 @@ export default function QueryEditor({ onSave }: QueryEditorProps) {
             <Button
               variant='ghost'
               size='icon'
-              className='h-4 w-4 p-0 hover:bg-muted'
+              className='h-4 w-4 hover:bg-muted/50'
               onClick={(e) => handleCloseTab(e, tab.id)}
             >
               <X className='h-3 w-3' />
             </Button>
           </div>
         ))}
-        <Button variant='ghost' size='icon' className='mx-1 h-7 w-7' onClick={handleNewTab}>
+        <Button variant='ghost' size='icon' className='mx-1 my-1 h-7 w-7' onClick={handleNewTab}>
           <Plus className='h-4 w-4' />
         </Button>
       </div>

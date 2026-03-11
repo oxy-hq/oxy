@@ -1,5 +1,4 @@
-import { X } from "lucide-react";
-import { Button } from "@/components/ui/shadcn/button";
+import { Panel, PanelContent, PanelHeader } from "@/components/ui/panel";
 import type { Block } from "@/services/types";
 import ArtifactBlockRenderer from "./ArtifactBlockRenderer";
 
@@ -22,19 +21,12 @@ interface ArtifactSidebarProps {
 }
 
 const ArtifactSidebar = ({ block, onClose, onRerun }: ArtifactSidebarProps) => (
-  <div className='flex h-full flex-col bg-card/50'>
-    <div className='flex shrink-0 items-center justify-between border-border border-b px-3 py-2'>
-      <span className='truncate font-medium text-muted-foreground text-sm'>
-        {getSidebarTitle(block)}
-      </span>
-      <Button variant='ghost' size='icon' className='h-6 w-6 shrink-0' onClick={onClose}>
-        <X className='h-3.5 w-3.5' />
-      </Button>
-    </div>
-    <div className='min-h-0 flex-1'>
+  <Panel>
+    <PanelHeader title={getSidebarTitle(block)} onClose={onClose} />
+    <PanelContent scrollable={false} padding={false} className='min-h-0'>
       <ArtifactBlockRenderer block={block} onRerun={onRerun} />
-    </div>
-  </div>
+    </PanelContent>
+  </Panel>
 );
 
 export default ArtifactSidebar;

@@ -1,19 +1,18 @@
-import { ChevronDown, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useEffect, useMemo } from "react";
-import { Button } from "@/components/ui/shadcn/button";
 import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger
-} from "@/components/ui/shadcn/dropdown-menu";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/shadcn/select";
 import useDatabases from "@/hooks/api/databases/useDatabases";
 import type { DatabaseInfo } from "@/types/database";
 
 export interface DatabaseSelectorProps {
   onSelect: (database: string) => void;
   database: string | null;
-  variant?: "dropdown" | "select";
   placeholder?: string;
   className?: string;
 }
@@ -44,25 +43,22 @@ const DatabaseSelector = ({
   }, [isSuccess, databases, databaseOptions, onSelect, database]);
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button size='sm' disabled={isLoading} variant='outline' className={className}>
-          <span className='block max-w-[120px] truncate'>{database ?? placeholder}</span>
-          {isLoading ? <Loader2 className='animate-spin' /> : <ChevronDown />}
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent>
+    <Select value={database ?? ""} onValueChange={(id) => onSelect(id)} disabled={isLoading}>
+      <SelectTrigger size='sm' className={className}>
+        {isLoading ? (
+          <Loader2 className='size-4 animate-spin' />
+        ) : (
+          <SelectValue placeholder={placeholder} />
+        )}
+      </SelectTrigger>
+      <SelectContent>
         {databaseOptions.map((item) => (
-          <DropdownMenuCheckboxItem
-            key={item.id}
-            checked={item.id === database}
-            onCheckedChange={() => onSelect(item.id)}
-          >
+          <SelectItem className='cursor-pointer' key={item.id} value={item.id}>
             {item.name}
-          </DropdownMenuCheckboxItem>
+          </SelectItem>
         ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </SelectContent>
+    </Select>
   );
 };
 

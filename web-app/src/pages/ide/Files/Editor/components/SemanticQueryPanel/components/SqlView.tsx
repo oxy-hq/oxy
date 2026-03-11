@@ -8,7 +8,7 @@ interface SqlViewProps {
 
 const SqlView = ({ generatedSql, sqlError }: SqlViewProps) => {
   return (
-    <div className='customScrollbar h-full overflow-auto p-4'>
+    <div className='customScrollbar h-full overflow-auto px-4 py-2'>
       {(() => {
         if (sqlError) {
           return (

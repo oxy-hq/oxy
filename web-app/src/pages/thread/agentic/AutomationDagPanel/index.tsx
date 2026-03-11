@@ -1,12 +1,13 @@
-import { BarChart3, Bot, CodeXml, FileText, GitBranch, Globe, Pencil, X } from "lucide-react";
+import { BarChart3, Bot, CodeXml, FileText, GitBranch, Globe, Pencil } from "lucide-react";
 import type { ElementType } from "react";
 import { useNavigate } from "react-router-dom";
+import { Panel, PanelContent, PanelHeader } from "@/components/ui/panel";
+import { Button } from "@/components/ui/shadcn/button";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
 import { TaskType } from "@/stores/useWorkflow";
-import { Button } from "../../../../components/ui/shadcn/button";
 import type { AutomationGenerated } from "../BlockMessage";
 
 const NODE_ICONS: Record<string, ElementType> = {
@@ -44,19 +45,28 @@ const AutomationDagPanel = ({
   const { project } = useCurrentProjectBranch();
   const navigate = useNavigate();
   return (
-    <div className='flex h-full min-w-[256px] flex-col'>
-      {/* Header */}
-      <div className='flex shrink-0 items-center justify-between border-border border-b p-4'>
-        <span className='font-medium text-muted-foreground text-xs uppercase tracking-wider'>
-          Generated Procedure
-        </span>
-        <Button variant='ghost' size='icon' className='h-6 w-6 shrink-0' onClick={onClose}>
-          <X className='h-3.5 w-3.5' />
-        </Button>
-      </div>
+    <Panel>
+      <PanelHeader
+        title='Generated Procedure'
+        onClose={onClose}
+        actions={
+          <Button
+            variant='ghost'
+            size='icon'
+            className='h-7 w-7'
+            onClick={() => {
+              navigate(
+                ROUTES.PROJECT(project.id).IDE.FILES.FILE(encodeBase64(automationGenerated.path))
+              );
+            }}
+          >
+            <Pencil className='h-4 w-4' />
+          </Button>
+        }
+      />
 
       {/* Node list */}
-      <div className='relative flex-1 overflow-y-auto p-4'>
+      <PanelContent scrollable={false} padding={false} className='overflow-y-auto p-4'>
         <div className='flex flex-col items-center gap-0'>
           {tasks.map((task, i) => {
             const Icon = NODE_ICONS[task.type] ?? Globe;
@@ -112,21 +122,8 @@ const AutomationDagPanel = ({
             );
           })}
         </div>
-
-        {/* Floating Action Button */}
-        <Button
-          size='icon'
-          className='absolute right-4 bottom-4 shadow-lg'
-          onClick={() => {
-            navigate(
-              ROUTES.PROJECT(project.id).IDE.FILES.FILE(encodeBase64(automationGenerated.path))
-            );
-          }}
-        >
-          <Pencil className='h-4 w-4' />
-        </Button>
-      </div>
-    </div>
+      </PanelContent>
+    </Panel>
   );
 };
 

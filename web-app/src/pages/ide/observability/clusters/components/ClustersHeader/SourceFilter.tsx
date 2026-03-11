@@ -1,13 +1,12 @@
-import { ChevronDown, Loader2 } from "lucide-react";
 import { useMemo } from "react";
-import { Button } from "@/components/ui/shadcn/button";
 import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger
-} from "@/components/ui/shadcn/dropdown-menu";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/shadcn/select";
 import useAgents from "@/hooks/api/agents/useAgents";
 import { getAgentNameFromPath } from "@/libs/utils/string";
 
@@ -23,7 +22,7 @@ type Props = {
 };
 
 const SourceFilter = ({ onSelect, selectedSource }: Props) => {
-  const { data: agents, isPending } = useAgents();
+  const { data: agents } = useAgents();
 
   const options = useMemo(() => {
     const allOption: SourceOption = {
@@ -45,46 +44,31 @@ const SourceFilter = ({ onSelect, selectedSource }: Props) => {
     return { allOption, agentOptions };
   }, [agents]);
 
-  const selectedOption = useMemo(() => {
-    if (!selectedSource) return options.allOption;
-    const agentMatch = options.agentOptions.find((opt) => opt.id === selectedSource);
-    if (agentMatch) return agentMatch;
-
-    return options.allOption;
-  }, [selectedSource, options]);
-
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant='outline' className='w-40'>
-          <span className='truncate'>{selectedOption.name}</span>
-          {isPending ? <Loader2 className='animate-spin' /> : <ChevronDown />}
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent className='customScrollbar'>
-        <DropdownMenuCheckboxItem
-          checked={selectedOption.id === "all"}
-          onCheckedChange={() => onSelect(undefined)}
-        >
+    <Select
+      value={selectedSource ?? "all"}
+      onValueChange={(v) => onSelect(v === "all" ? undefined : v)}
+    >
+      <SelectTrigger size='sm'>
+        <SelectValue placeholder='All agents' />
+      </SelectTrigger>
+      <SelectContent className='customScrollbar'>
+        <SelectItem className='cursor-pointer' value='all'>
           {options.allOption.name}
-        </DropdownMenuCheckboxItem>
+        </SelectItem>
 
         {options.agentOptions.length > 0 && (
           <>
-            <DropdownMenuSeparator />
+            <SelectSeparator />
             {options.agentOptions.map((item) => (
-              <DropdownMenuCheckboxItem
-                key={item.id}
-                checked={item.id === selectedSource}
-                onCheckedChange={() => onSelect(item.id)}
-              >
+              <SelectItem className='cursor-pointer' key={item.id} value={item.id}>
                 {item.name}
-              </DropdownMenuCheckboxItem>
+              </SelectItem>
             ))}
           </>
         )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </SelectContent>
+    </Select>
   );
 };
 

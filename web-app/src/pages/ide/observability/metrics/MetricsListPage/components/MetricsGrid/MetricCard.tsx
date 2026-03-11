@@ -19,8 +19,7 @@ export default function MetricCard({ metric, rank, maxCount, onClick }: MetricCa
       onClick={onClick}
       className={cn(
         "group relative cursor-pointer rounded-xl border p-4 transition-all duration-200",
-        "hover:border-primary/50 hover:shadow-lg hover:shadow-primary/5",
-        "bg-gradient-to-br from-card to-card/50",
+        "hover:border-primary/50",
         isTop3 && "ring-1 ring-primary/20"
       )}
     >

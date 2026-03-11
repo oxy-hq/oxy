@@ -1,4 +1,5 @@
 import { AlertCircle, CheckCircle, ExternalLink, Loader2, XCircle } from "lucide-react";
+import { ErrorAlert, ErrorAlertMessage } from "@/components/AppPreview/ErrorAlert";
 import { Button } from "@/components/ui/shadcn/button";
 import type { useTestDatabaseConnection } from "@/hooks/api/databases/useTestDatabaseConnection";
 import { cn } from "@/libs/utils/cn";
@@ -128,12 +129,9 @@ export function TestConnectionSection({
 
       {/* General Error */}
       {showTestResult && testConnection.error && !testConnection.result && (
-        <div className='rounded border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-950'>
-          <div className='flex items-start gap-2'>
-            <XCircle className='mt-0.5 h-4 w-4 flex-shrink-0 text-red-600' />
-            <p className='text-red-900 text-sm dark:text-red-100'>{testConnection.error}</p>
-          </div>
-        </div>
+        <ErrorAlert>
+          <ErrorAlertMessage>{testConnection.error}</ErrorAlertMessage>
+        </ErrorAlert>
       )}
     </div>
   );

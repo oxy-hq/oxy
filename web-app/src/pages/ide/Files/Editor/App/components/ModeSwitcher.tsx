@@ -17,19 +17,15 @@ export const ModeSwitcher = ({ viewMode, setViewMode }: ModeSwitcherProps) => {
         }
       }}
     >
-      <TabsList className='h-8'>
-        <TabsTrigger
-          value={AppViewMode.Visualization}
-          className='h-6 px-2'
-          aria-label='Visualization view'
-        >
-          <AppWindow className='h-4 w-4' />
+      <TabsList>
+        <TabsTrigger value={AppViewMode.Visualization} aria-label='Visualization view'>
+          <AppWindow />
         </TabsTrigger>
-        <TabsTrigger value={AppViewMode.Editor} className='h-6 px-2' aria-label='Editor view'>
-          <Code className='h-4 w-4' />
+        <TabsTrigger value={AppViewMode.Editor} aria-label='Editor view'>
+          <Code />
         </TabsTrigger>
-        <TabsTrigger value={AppViewMode.Form} className='h-6 px-2' aria-label='Form view'>
-          <FileText className='h-4 w-4' />
+        <TabsTrigger value={AppViewMode.Form} aria-label='Form view'>
+          <FileText />
         </TabsTrigger>
       </TabsList>
     </Tabs>

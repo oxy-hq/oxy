@@ -62,7 +62,7 @@ export default function Sidebar({ clusters, points, isLoading }: SidebarProps) {
   }, [clusters, points, topClusters]);
 
   return (
-    <Card className='h-full'>
+    <Card className='h-full bg-transparent shadow-none'>
       <CardHeader className='pb-2'>
         <div className='flex items-center justify-between'>
           <div className='flex items-center gap-2'>

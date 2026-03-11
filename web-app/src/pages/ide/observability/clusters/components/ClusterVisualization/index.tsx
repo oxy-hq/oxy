@@ -74,7 +74,7 @@ export default function ClusterVisualization({
   }, [internalSelectedPoint, clusters]);
 
   return (
-    <Card className='flex h-[800px] flex-col'>
+    <Card className='flex h-[800px] flex-col bg-transparent shadow-none'>
       <CardHeader className='pb-4'>
         <div className='flex items-center justify-between'>
           <div className='flex items-center gap-2'>

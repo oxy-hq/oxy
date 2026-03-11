@@ -1,5 +1,6 @@
 import { ExternalLink, Loader2, Maximize, Minimize, RotateCw, Terminal, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { ErrorAlert, ErrorAlertMessage } from "@/components/AppPreview/ErrorAlert";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/shadcn/alert";
 import { apiBaseURL } from "@/services/env";
 import useCurrentProject from "@/stores/useCurrentProject";
@@ -251,20 +252,12 @@ const SandboxArtifactPanel = ({ artifact, apiKey }: Props) => {
       {/* Error state */}
       {hasError && (
         <div className='p-4'>
-          <Alert variant='destructive'>
-            <AlertTitle>Failed to Load Preview</AlertTitle>
-            <AlertDescription>
-              Unable to load the sandbox preview. The preview may have expired or is unavailable.
-              <a
-                href={preview_url}
-                target='_blank'
-                rel='noopener noreferrer'
-                className='mt-2 flex items-center gap-1 text-primary hover:underline'
-              >
-                Open in new tab <ExternalLink className='h-3 w-3' />
-              </a>
-            </AlertDescription>
-          </Alert>
+          <ErrorAlert>
+            <ErrorAlertMessage>Failed to Load Preview</ErrorAlertMessage>
+            <ErrorAlertMessage>
+              Open in new tab <ExternalLink className='h-3 w-3' />
+            </ErrorAlertMessage>
+          </ErrorAlert>
         </div>
       )}
 

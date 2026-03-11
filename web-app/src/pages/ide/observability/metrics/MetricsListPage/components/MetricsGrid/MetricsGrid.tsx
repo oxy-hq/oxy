@@ -102,7 +102,7 @@ export default function MetricsGrid({ viewMode, daysFilter }: MetricsGridProps) 
   };
 
   return (
-    <Card>
+    <Card className='bg-transparent shadow-none'>
       <CardHeader className='pb-3'>
         <div className='flex items-center justify-between'>
           <div className='flex items-center gap-2'>

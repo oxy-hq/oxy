@@ -68,7 +68,7 @@ export function Footer() {
 
                 {!user.isGuest && (
                   <>
-                    <DropdownMenuSeparator />
+                    {authConfig.cloud && <DropdownMenuSeparator />}
                     {authConfig.magic_link && (
                       <DropdownMenuItem
                         className='cursor-pointer'

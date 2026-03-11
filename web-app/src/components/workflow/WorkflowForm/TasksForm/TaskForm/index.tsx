@@ -137,7 +137,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({ index, onRemove, basePath = 
   };
 
   return (
-    <div className='rounded-lg border bg-card p-3'>
+    <div className='rounded-lg border p-3'>
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
         <CollapsibleTrigger className='w-full rounded-lg'>
           <div className='flex min-w-0 items-center justify-between'>
@@ -215,7 +215,11 @@ export const TaskForm: React.FC<TaskFormProps> = ({ index, onRemove, basePath = 
                       </SelectTrigger>
                       <SelectContent>
                         {TASK_TYPES.map((type) => (
-                          <SelectItem key={type.value} value={type.value}>
+                          <SelectItem
+                            className='cursor-pointer'
+                            key={type.value}
+                            value={type.value}
+                          >
                             {type.label}
                           </SelectItem>
                         ))}
@@ -299,7 +303,11 @@ export const TaskForm: React.FC<TaskFormProps> = ({ index, onRemove, basePath = 
                           </SelectTrigger>
                           <SelectContent>
                             {EXPORT_FORMATS.map((format) => (
-                              <SelectItem key={format.value} value={format.value}>
+                              <SelectItem
+                                className='cursor-pointer'
+                                key={format.value}
+                                value={format.value}
+                              >
                                 {format.label}
                               </SelectItem>
                             ))}

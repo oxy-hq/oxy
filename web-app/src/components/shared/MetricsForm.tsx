@@ -164,7 +164,11 @@ export function MetricsForm<T extends FieldValues>({ testIndex }: MetricsFormPro
                     </SelectTrigger>
                     <SelectContent>
                       {DISTANCE_METHODS.map((method) => (
-                        <SelectItem key={method.value} value={method.value}>
+                        <SelectItem
+                          className='cursor-pointer'
+                          key={method.value}
+                          value={method.value}
+                        >
                           {method.label}
                         </SelectItem>
                       ))}
@@ -243,7 +247,7 @@ export function MetricsForm<T extends FieldValues>({ testIndex }: MetricsFormPro
         const isOpen = openMetricIndex === metricIndex || newlyAddedMetricIndex === metricIndex;
 
         return (
-          <div key={metricIndex} className='rounded-lg border bg-card p-3'>
+          <div key={metricIndex} className='rounded-lg border p-3'>
             <Collapsible
               open={isOpen}
               onOpenChange={(open) => {
@@ -304,7 +308,11 @@ export function MetricsForm<T extends FieldValues>({ testIndex }: MetricsFormPro
                           </SelectTrigger>
                           <SelectContent>
                             {METRIC_TYPES.map((type) => (
-                              <SelectItem key={type.value} value={type.value}>
+                              <SelectItem
+                                className='cursor-pointer'
+                                key={type.value}
+                                value={type.value}
+                              >
                                 {type.label}
                               </SelectItem>
                             ))}

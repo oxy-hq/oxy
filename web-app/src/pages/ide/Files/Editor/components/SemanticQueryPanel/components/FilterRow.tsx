@@ -1,5 +1,14 @@
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
+import { Input } from "@/components/ui/shadcn/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/shadcn/select";
+import { cn } from "@/libs/shadcn/utils";
 import type { SemanticQueryFilter } from "@/services/api/semantic";
 import type { Filter } from "../../../types";
 import DateRangeSelector from "./DateRangeSelector";
@@ -32,7 +41,6 @@ const FilterRow = ({ filter, availableDimensions, onUpdate, onRemove }: FilterRo
   const dimensionType = selectedDimension?.type || "string";
 
   const availableOperators = FILTER_OPERATORS.filter((op) => {
-    // Only show date range operators for time dimensions
     if (["in_date_range", "not_in_date_range"].includes(op.value)) {
       return isTimeDimension;
     }
@@ -40,14 +48,12 @@ const FilterRow = ({ filter, availableDimensions, onUpdate, onRemove }: FilterRo
   });
 
   const validateValue = (value: string, type: string): boolean => {
-    if (!value || value.trim() === "") return true; // Allow empty values
-
+    if (!value || value.trim() === "") return true;
     switch (type) {
       case "number":
         return !Number.isNaN(Number(value));
       case "date":
       case "datetime": {
-        // Check if it's a valid date format (ISO or common formats)
         const date = new Date(value);
         return !Number.isNaN(date.getTime());
       }
@@ -68,6 +74,30 @@ const FilterRow = ({ filter, availableDimensions, onUpdate, onRemove }: FilterRo
         return "datetime-local";
       default:
         return "text";
+    }
+  };
+
+  const handleFieldChange = (newField: string) => {
+    const newDimension = availableDimensions.find((d) => d.fullName === newField);
+    const newType = newDimension?.type || "string";
+    if (newType !== dimensionType) {
+      if (["eq", "neq", "gt", "gte", "lt", "lte"].includes(filter.op)) {
+        onUpdate({
+          field: newField,
+          op: filter.op,
+          value: ""
+        } as SemanticQueryFilter);
+      } else if (["in", "not_in"].includes(filter.op)) {
+        onUpdate({
+          field: newField,
+          op: filter.op,
+          values: []
+        } as SemanticQueryFilter);
+      } else {
+        onUpdate({ ...filter, field: newField });
+      }
+    } else {
+      onUpdate({ ...filter, field: newField });
     }
   };
 
@@ -99,107 +129,78 @@ const FilterRow = ({ filter, availableDimensions, onUpdate, onRemove }: FilterRo
     }
   };
 
+  const isValueInvalid =
+    "value" in filter &&
+    filter.value != null &&
+    !validateValue(String(filter.value), dimensionType);
+
   return (
     <div className='flex items-center gap-2'>
-      <select
-        value={filter.field}
-        onChange={(e) => {
-          const newDimension = availableDimensions.find((d) => d.fullName === e.target.value);
-          const newType = newDimension?.type || "string";
-          const oldType = dimensionType;
+      {/* Field selector */}
+      <Select value={filter.field} onValueChange={handleFieldChange}>
+        <SelectTrigger className='min-w-0 flex-1'>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {availableDimensions.map((dim) => (
+            <SelectItem className='cursor-pointer' key={dim.fullName} value={dim.fullName}>
+              {dim.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
-          // Reset value if dimension type changes
-          if (newType !== oldType) {
-            if (["eq", "neq", "gt", "gte", "lt", "lte"].includes(filter.op)) {
-              onUpdate({
-                field: e.target.value,
-                op: filter.op,
-                value: ""
-              } as SemanticQueryFilter);
-            } else if (["in", "not_in"].includes(filter.op)) {
-              onUpdate({
-                field: e.target.value,
-                op: filter.op,
-                values: []
-              } as SemanticQueryFilter);
-            } else {
-              onUpdate({
-                ...filter,
-                field: e.target.value
-              });
-            }
-          } else {
-            onUpdate({
-              ...filter,
-              field: e.target.value
-            });
-          }
-        }}
-        className='rounded border bg-background px-2 py-1 text-xs'
-      >
-        {availableDimensions.map((dim) => (
-          <option key={dim.fullName} value={dim.fullName}>
-            {dim.name}
-          </option>
-        ))}
-      </select>
-      <select
-        value={filter.op}
-        onChange={(e) => handleOperatorChange(e.target.value)}
-        className='rounded border bg-background px-2 py-1 text-xs'
-      >
-        {availableOperators.map((op) => (
-          <option key={op.value} value={op.value}>
-            {op.label}
-          </option>
-        ))}
-      </select>
-      {["eq", "neq", "gt", "gte", "lt", "lte"].includes(filter.op) &&
-        (isTimeDimension ? (
-          <div className='flex-1'>
+      {/* Operator selector */}
+      <Select value={filter.op} onValueChange={handleOperatorChange}>
+        <SelectTrigger className='w-auto shrink-0'>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {availableOperators.map((op) => (
+            <SelectItem className='cursor-pointer' key={op.value} value={op.value}>
+              {op.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      {/* Value input */}
+
+      <div className='flex-1'>
+        {["eq", "neq", "gt", "gte", "lt", "lte"].includes(filter.op) &&
+          (isTimeDimension ? (
             <DateValueInput
-              className='h-6.5 rounded-xs'
               value={"value" in filter && filter.value != null ? String(filter.value) : undefined}
-              onChange={(val) =>
-                onUpdate({
-                  ...filter,
-                  value: val ?? ""
-                } as SemanticQueryFilter)
-              }
+              onChange={(val) => onUpdate({ ...filter, value: val ?? "" } as SemanticQueryFilter)}
               placeholder='Select date...'
             />
-          </div>
-        ) : (
-          <input
-            type={getInputType(dimensionType)}
-            value={"value" in filter ? String(filter.value ?? "") : ""}
-            onChange={(e) => {
-              const newValue = e.target.value;
+          ) : (
+            <Input
+              type={getInputType(dimensionType)}
+              value={"value" in filter ? String(filter.value ?? "") : ""}
+              onChange={(e) => {
+                const newValue = e.target.value;
+                onUpdate({
+                  ...filter,
+                  value: dimensionType === "number" && newValue ? Number(newValue) : newValue
+                } as SemanticQueryFilter);
+              }}
+              placeholder='Value'
+              aria-invalid={isValueInvalid || undefined}
+              className={cn("w-full", isValueInvalid && "border-destructive")}
+              title={
+                dimensionType === "number"
+                  ? "Enter a numeric value"
+                  : dimensionType === "boolean"
+                    ? "Enter true or false"
+                    : "Enter a value"
+              }
+            />
+          ))}
+      </div>
 
-              onUpdate({
-                ...filter,
-                value: dimensionType === "number" && newValue ? Number(newValue) : newValue
-              } as SemanticQueryFilter);
-            }}
-            placeholder='Value'
-            className={`flex-1 rounded border bg-background px-2 py-1 text-xs ${
-              "value" in filter &&
-              filter.value &&
-              !validateValue(String(filter.value), dimensionType)
-                ? "border-red-500"
-                : ""
-            }`}
-            title={
-              dimensionType === "number"
-                ? "Enter a numeric value"
-                : dimensionType === "boolean"
-                  ? "Enter true or false"
-                  : "Enter a value"
-            }
-          />
-        ))}
       {["in", "not_in"].includes(filter.op) && (
-        <input
+        <Input
           type='text'
           defaultValue={("values" in filter ? filter.values : []).join(", ")}
           onBlur={(e) => {
@@ -207,7 +208,6 @@ const FilterRow = ({ filter, availableDimensions, onUpdate, onRemove }: FilterRo
               .split(",")
               .map((v) => v.trim())
               .filter(Boolean);
-
             onUpdate({
               ...filter,
               values: dimensionType === "number" ? values.map((v) => Number(v)) : values
@@ -220,7 +220,7 @@ const FilterRow = ({ filter, availableDimensions, onUpdate, onRemove }: FilterRo
                 ? "2024-01-01, 2024-12-31"
                 : "Value1, Value2, Value3"
           }
-          className='flex-1 rounded border bg-background px-2 py-1 text-xs'
+          className='flex-1'
           title={
             dimensionType === "number"
               ? "Enter comma-separated numeric values"
@@ -230,21 +230,17 @@ const FilterRow = ({ filter, availableDimensions, onUpdate, onRemove }: FilterRo
           }
         />
       )}
+
       {["in_date_range", "not_in_date_range"].includes(filter.op) && (
         <DateRangeSelector
-          className='h-6.5 rounded-xs'
           from={"from" in filter ? filter.from : undefined}
           to={"to" in filter ? filter.to : undefined}
-          onChange={(updates) =>
-            onUpdate({
-              ...filter,
-              ...updates
-            } as SemanticQueryFilter)
-          }
+          onChange={(updates) => onUpdate({ ...filter, ...updates } as SemanticQueryFilter)}
         />
       )}
-      <Button size='sm' variant='ghost' onClick={onRemove} className='h-7 w-7 p-0'>
-        <X className='h-3 w-3' />
+
+      <Button size='sm' variant='ghost' onClick={onRemove}>
+        <X />
       </Button>
     </div>
   );

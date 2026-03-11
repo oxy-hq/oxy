@@ -4,33 +4,21 @@ import { cn } from "@/libs/shadcn/utils";
 interface PageHeaderProps {
   icon: LucideIcon;
   title: string;
-  description: string;
   actions?: React.ReactNode;
   className?: string;
 }
 
-export default function PageHeader({
-  icon: Icon,
-  title,
-  description,
-  actions,
-  className
-}: PageHeaderProps) {
+export default function PageHeader({ icon: Icon, title, actions, className }: PageHeaderProps) {
   return (
     <div
       className={cn(
-        "flex items-center justify-between border-b bg-background/95 p-4 backdrop-blur supports-[backdrop-filter]:bg-background/60",
+        "flex items-center justify-between border-b bg-background/95 px-4 py-1 backdrop-blur supports-[backdrop-filter]:bg-background/60",
         className
       )}
     >
-      <div className='flex items-center gap-3'>
-        <div className='rounded-lg bg-primary/10 p-2'>
-          <Icon className='h-5 w-5 text-primary' />
-        </div>
-        <div>
-          <h1 className='font-semibold text-xl'>{title}</h1>
-          <p className='text-muted-foreground text-sm'>{description}</p>
-        </div>
+      <div className='flex min-h-8 items-center gap-3'>
+        <Icon className='h-4 w-4 text-primary' />
+        <h1 className='font-semibold text-sm'>{title}</h1>
       </div>
       {actions && <div className='flex items-center gap-3'>{actions}</div>}
     </div>

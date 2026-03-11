@@ -79,7 +79,7 @@ const VizBlock = ({ config }: { config: Display }) => (
 );
 
 const DataAppBlock = ({ filePath }: { filePath: string }) => (
-  <div className='relative h-96 space-y-1.5 rounded-lg border border-border bg-card p-3'>
+  <div className='relative h-96 space-y-1.5 rounded-lg border border-border p-3'>
     <AppPreview appPath64={encodeBase64(filePath)} />
   </div>
 );

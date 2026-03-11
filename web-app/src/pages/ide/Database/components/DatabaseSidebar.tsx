@@ -8,7 +8,6 @@ import useDatabases from "@/hooks/api/databases/useDatabases";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import ROUTES from "@/libs/utils/routes";
 import { SidebarHeader } from "@/pages/ide/components/SidebarHeader";
-import useDatabaseClient from "@/stores/useDatabaseClient";
 import { ConnectionItem } from "./ConnectionItem";
 
 interface DatabaseSidebarProps {
@@ -24,7 +23,6 @@ export const DatabaseSidebar: React.FC<DatabaseSidebarProps> = ({
   const projectId = project.id;
 
   const { data: databases = [], isLoading, refetch, isFetching } = useDatabases();
-  const { activeConnectionId, setActiveConnection } = useDatabaseClient();
 
   return (
     <div className='flex h-full flex-col overflow-hidden bg-sidebar-background'>
@@ -34,25 +32,24 @@ export const DatabaseSidebar: React.FC<DatabaseSidebarProps> = ({
         actions={
           <>
             <Link to={ROUTES.PROJECT(projectId).IDE.SETTINGS.DATABASES}>
-              <Button tooltip='Add new connection' variant='ghost' size='icon' className='h-6 w-6'>
-                <Plus className='h-4 w-4' />
+              <Button tooltip='Add new connection' variant='ghost' size='sm'>
+                <Plus />
               </Button>
             </Link>
             <Button
               tooltip='Refresh'
               variant='ghost'
-              size='icon'
-              className='h-6 w-6'
+              size='sm'
               onClick={() => refetch()}
               disabled={isFetching}
             >
-              <RotateCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
+              <RotateCw className={` ${isFetching ? "animate-spin" : ""}`} />
             </Button>
           </>
         }
       />
-      <SidebarContent className='customScrollbar h-full flex-1 overflow-y-auto'>
-        <SidebarGroup className='pt-2'>
+      <SidebarContent className='customScrollbar h-full flex-1'>
+        <SidebarGroup className='px-1 pt-2'>
           {isLoading && (
             <div className='flex items-center justify-center p-4'>
               <Loader2 className='h-4 w-4 animate-spin' />
@@ -77,12 +74,7 @@ export const DatabaseSidebar: React.FC<DatabaseSidebarProps> = ({
               {databases
                 .sort((a, b) => a.name.localeCompare(b.name))
                 .map((database) => (
-                  <ConnectionItem
-                    key={database.name}
-                    database={database}
-                    isActive={activeConnectionId === database.name.toLowerCase()}
-                    onSelect={() => setActiveConnection(database.name.toLowerCase())}
-                  />
+                  <ConnectionItem key={database.name} database={database} />
                 ))}
             </SidebarMenu>
           )}

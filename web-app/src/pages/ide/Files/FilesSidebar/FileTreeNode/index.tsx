@@ -127,7 +127,7 @@ const DirNode = ({ fileTree, activePath }: { fileTree: FileTreeModel; activePath
                 setIsOpen(!isOpen);
               }}
               className={cn(
-                "h-6 overflow-visible py-0.5 text-muted-foreground transition-colors duration-150 ease-in hover:text-sidebar-foreground",
+                "text-sidebar-foreground hover:bg-sidebar-accent",
                 isContextMenuOpen ? "border border-border" : ""
               )}
             >
@@ -151,7 +151,7 @@ const DirNode = ({ fileTree, activePath }: { fileTree: FileTreeModel; activePath
             </SidebarMenuButton>
 
             {isOpen && (
-              <SidebarMenuSub className='ml-4'>
+              <SidebarMenuSub className='ml-[15px]'>
                 {isCreating && !isReadOnly && (
                   <NewNode
                     ref={newItemInputRef}
@@ -163,7 +163,7 @@ const DirNode = ({ fileTree, activePath }: { fileTree: FileTreeModel; activePath
                 )}
                 {fileTree.children?.map((f) => (
                   <SidebarMenuSubItem key={f.path}>
-                    <SidebarMenuSubButton asChild className='translate-none h-6 py-0.5'>
+                    <SidebarMenuSubButton asChild>
                       <FileTreeNode fileTree={f} activePath={activePath} />
                     </SidebarMenuSubButton>
                   </SidebarMenuSubItem>
@@ -189,19 +189,19 @@ const DirNode = ({ fileTree, activePath }: { fileTree: FileTreeModel; activePath
           {!isReadOnly && (
             <>
               <ContextMenuItem className='cursor-pointer' onClick={handleCreateFile}>
-                <FilePlus className='mr-2 h-4 w-4' />
+                <FilePlus />
                 <span>New File</span>
               </ContextMenuItem>
               <ContextMenuItem className='cursor-pointer' onClick={handleCreateFolder}>
-                <FolderPlus className='mr-2 h-4 w-4' />
+                <FolderPlus />
                 <span>New Folder</span>
               </ContextMenuItem>
               <ContextMenuItem className='cursor-pointer' onClick={handleRename}>
-                <Pencil className='mr-2 h-4 w-4' />
+                <Pencil />
                 <span>Rename</span>
               </ContextMenuItem>
               <ContextMenuItem className='cursor-pointer text-red-600' onClick={handleDelete}>
-                <Trash2 className='mr-2 h-4 w-4' />
+                <Trash2 />
                 <span>Delete</span>
               </ContextMenuItem>
             </>

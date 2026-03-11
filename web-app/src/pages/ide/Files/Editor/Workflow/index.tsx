@@ -1,137 +1,43 @@
 import { debounce } from "lodash";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import YAML from "yaml";
 import { useFileEditorContext } from "@/components/FileEditor/useFileEditorContext";
-import { useListWorkflowRuns } from "@/components/workflow/useWorkflowRun";
 import {
   type TaskFormData,
   WorkflowForm,
   type WorkflowFormData
 } from "@/components/workflow/WorkflowForm";
 import { WorkflowPreview } from "@/components/workflow/WorkflowPreview";
-import { decodeBase64 } from "@/libs/encoding";
 import { useFilesContext } from "../../FilesContext";
 import { FilesSubViewMode } from "../../FilesSidebar/constants";
+import EditorPageWrapper from "../components/EditorPageWrapper";
 import { useEditorContext } from "../contexts/useEditorContext";
 import { usePreviewRefresh } from "../usePreviewRefresh";
+import ModeSwitcher from "./components/ModeSwitcher";
 import { WorkflowViewMode } from "./components/types";
-import WorkflowEditorView from "./components/WorkflowEditorView";
-import WorkflowOutputView from "./components/WorkflowOutputView";
 
 const WorkflowEditor = () => {
   const { pathb64, isReadOnly, gitEnabled } = useEditorContext();
   const { refreshPreview, previewKey } = usePreviewRefresh();
-  const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const runIdFromParams = searchParams.get("run") || undefined;
   const { filesSubViewMode } = useFilesContext();
 
-  // Default to Form for object mode (GUI editor), Output for file mode
+  const [searchParams] = useSearchParams();
+  const runId = searchParams.get("run") || undefined;
+
   const defaultViewMode =
     filesSubViewMode === FilesSubViewMode.OBJECTS ? WorkflowViewMode.Form : WorkflowViewMode.Output;
 
   const [viewMode, setViewMode] = useState<WorkflowViewMode>(defaultViewMode);
 
-  const [validationError, setValidationError] = useState<string | null>(null);
-  const hasNavigatedRef = useRef(false);
-
-  // Get the workflow path for fetching runs
-  const workflowPath = useMemo(() => decodeBase64(pathb64 ?? ""), [pathb64]);
-
-  // Reset navigation flag when workflow path changes
-  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
-  useEffect(() => {
-    hasNavigatedRef.current = false;
-  }, [workflowPath]);
-
-  // Fetch the most recent workflow run
-  const { data: runsData, isPending: isRunsLoading } = useListWorkflowRuns(workflowPath, {
-    pageIndex: 0,
-    pageSize: 1
-  });
-
-  // Determine the run ID to use
-  const runId = useMemo(() => {
-    if (runIdFromParams) return runIdFromParams;
-    // Auto-load the most recent run if available
-    if (runsData?.items && runsData.items.length > 0) {
-      return runsData.items[0].run_index.toString();
-    }
-    return undefined;
-  }, [runIdFromParams, runsData]);
-
-  // Auto-navigate to the most recent run when in output mode and no run is specified
-  useEffect(() => {
-    if (
-      viewMode === WorkflowViewMode.Output &&
-      !runIdFromParams &&
-      runId &&
-      !isRunsLoading &&
-      !hasNavigatedRef.current
-    ) {
-      hasNavigatedRef.current = true;
-      const newSearchParams = new URLSearchParams(location.search);
-      newSearchParams.set("run", runId);
-      navigate(
-        {
-          pathname: location.pathname,
-          search: newSearchParams.toString()
-        },
-        { replace: true }
-      );
-    }
-  }, [
-    viewMode,
-    runIdFromParams,
-    runId,
-    isRunsLoading,
-    navigate,
-    location.pathname,
-    location.search
-  ]);
-
-  const validateContent = (value: string) => {
-    try {
-      YAML.parse(value);
-      setValidationError(null);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Invalid YAML format";
-      setValidationError(errorMessage);
-    }
-  };
-
-  // Render full-screen output mode
-  if (viewMode === WorkflowViewMode.Output) {
-    return (
-      <WorkflowOutputView
-        viewMode={viewMode}
-        onViewModeChange={setViewMode}
-        workflowPath={workflowPath}
-        pathb64={pathb64}
-        runId={runId}
-      />
-    );
-  }
-
-  // Render editor or form mode with EditorPageWrapper
   return (
-    <WorkflowEditorView
-      viewMode={viewMode}
-      onViewModeChange={setViewMode}
-      workflowPath={workflowPath}
-      validationError={validationError}
+    <EditorPageWrapper
+      headerPrefixAction={<ModeSwitcher viewMode={viewMode} onViewModeChange={setViewMode} />}
       pathb64={pathb64}
-      isReadOnly={isReadOnly}
+      readOnly={isReadOnly}
       onSaved={refreshPreview}
       customEditor={viewMode === WorkflowViewMode.Form ? <WorkflowFormWrapper /> : undefined}
-      gitEnabled={gitEnabled}
-      onChanged={(value) => {
-        if (viewMode === WorkflowViewMode.Editor) {
-          validateContent(value);
-        }
-      }}
+      git={gitEnabled}
       preview={
         <WorkflowPreview
           key={previewKey + runId}
@@ -140,6 +46,7 @@ const WorkflowEditor = () => {
           direction='vertical'
         />
       }
+      previewOnly={viewMode === WorkflowViewMode.Output}
     />
   );
 };

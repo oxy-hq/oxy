@@ -1,6 +1,6 @@
 import { ReactFlowProvider } from "@xyflow/react";
+import { ContentSkeleton } from "@/components/ui/ContentSkeleton";
 import EmptyState from "@/components/ui/EmptyState";
-import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import OutputLogs from "@/components/workflow/output/Logs";
 import WorkflowDiagram from "@/components/workflow/WorkflowDiagram";
 import useWorkflowConfig from "@/hooks/api/workflows/useWorkflowConfig";
@@ -15,13 +15,7 @@ const WorkflowArtifactPanel = ({ artifact, onArtifactClick }: Props) => {
   const { data: workflowConfig } = useWorkflowConfig(artifact.content.value.ref);
 
   if (!workflowConfig) {
-    return (
-      <div className='flex flex-col gap-4'>
-        <Skeleton className='h-4 max-w-[200px]' />
-        <Skeleton className='h-4 max-w-[500px]' />
-        <Skeleton className='h-4 max-w-[500px]' />
-      </div>
-    );
+    return <ContentSkeleton />;
   }
 
   return (
@@ -35,7 +29,7 @@ const WorkflowArtifactPanel = ({ artifact, onArtifactClick }: Props) => {
         </ReactFlowProvider>
       </div>
 
-      <div className='flex-1'>
+      <div className='flex-1 border-border border-t'>
         <div className='flex h-full flex-col bg-sidebar-background'>
           {(artifact.content.value.output ?? []).length === 0 && (
             <EmptyState

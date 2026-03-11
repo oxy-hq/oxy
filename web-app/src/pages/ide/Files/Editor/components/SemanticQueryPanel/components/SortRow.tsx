@@ -1,5 +1,12 @@
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/shadcn/select";
 import type { Field, Order } from "../../../types";
 
 interface SortRowProps {
@@ -11,38 +18,39 @@ interface SortRowProps {
 
 const SortRow = ({ order, availableFields, onUpdate, onRemove }: SortRowProps) => {
   return (
-    <div className='flex w-full flex-1 items-center gap-2'>
-      <select
-        value={order.field}
-        onChange={(e) =>
-          onUpdate({
-            ...order,
-            field: e.target.value
-          })
-        }
-        className='rounded border bg-background px-2 py-1 text-xs'
-      >
-        {availableFields.map((field) => (
-          <option key={field.fullName} value={field.fullName}>
-            {field.name}
-          </option>
-        ))}
-      </select>
-      <select
+    <div className='flex w-full items-center gap-2'>
+      <Select value={order.field} onValueChange={(val) => onUpdate({ ...order, field: val })}>
+        <SelectTrigger className='min-w-0 flex-1'>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {availableFields.map((field) => (
+            <SelectItem className='cursor-pointer' key={field.fullName} value={field.fullName}>
+              {field.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      <Select
         value={order.direction}
-        onChange={(e) =>
-          onUpdate({
-            ...order,
-            direction: e.target.value as "asc" | "desc"
-          })
-        }
-        className='w-34 flex-1 rounded border bg-background px-2 py-1 text-xs'
+        onValueChange={(val) => onUpdate({ ...order, direction: val as "asc" | "desc" })}
       >
-        <option value='asc'>Ascending</option>
-        <option value='desc'>Descending</option>
-      </select>
-      <Button size='sm' variant='ghost' onClick={onRemove} className='h-7 w-7 p-0'>
-        <X className='h-3 w-3' />
+        <SelectTrigger>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem className='cursor-pointer' value='asc'>
+            Ascending
+          </SelectItem>
+          <SelectItem className='cursor-pointer' value='desc'>
+            Descending
+          </SelectItem>
+        </SelectContent>
+      </Select>
+
+      <Button size='sm' variant='ghost' onClick={onRemove}>
+        <X />
       </Button>
     </div>
   );

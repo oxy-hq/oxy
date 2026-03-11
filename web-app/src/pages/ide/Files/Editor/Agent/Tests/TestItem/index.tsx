@@ -1,4 +1,4 @@
-import { CirclePlay, LoaderCircle } from "lucide-react";
+import { LoaderCircle, Play } from "lucide-react";
 import { Badge } from "@/components/ui/shadcn/badge";
 import { Button } from "@/components/ui/shadcn/button";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
@@ -31,12 +31,10 @@ const TestItem = ({
   };
 
   return (
-    <div className='rounded-lg bg-card-accent'>
+    <div className='rounded-lg'>
       <div
         className={cn(
-          "flex justify-between gap-1 gap-3 rounded-lg border border-border p-6 shadow-sm",
-          "transition-colors hover:bg-card-accent",
-          "group bg-card focus-within:bg-card-accent"
+          "group flex justify-between gap-1 gap-3 rounded-lg border border-border p-4 shadow-sm"
         )}
       >
         <div className='flex flex-1 flex-col gap-1'>
@@ -47,13 +45,12 @@ const TestItem = ({
           {!!test.n && <p className='text-muted-foreground'>{test.n} tries</p>}
         </div>
         <div className='flex flex-col items-end gap-2'>
-          <Button variant='outline' onClick={handleRunTest} disabled={!!isRunning}>
+          <Button variant='outline' size='sm' onClick={handleRunTest} disabled={!!isRunning}>
             {isRunning ? (
               <LoaderCircle className='h-4 w-4 animate-spin' />
             ) : (
-              <CirclePlay className='h-4 w-4' />
+              <Play className='h-4 w-4' />
             )}
-            Run
           </Button>
           {state && <State testState={testState} />}
         </div>

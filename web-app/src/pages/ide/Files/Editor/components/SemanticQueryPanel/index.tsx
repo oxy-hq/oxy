@@ -81,7 +81,7 @@ const SemanticQueryPanel = () => {
     <Tabs
       value={showSql ? "sql" : "results"}
       onValueChange={(value) => setShowSql(value === "sql")}
-      className='flex min-h-0 flex-1 flex-col overflow-hidden'
+      className='flex min-h-0 flex-1 flex-col gap-0 overflow-hidden'
     >
       <TabsHeader
         showSql={showSql}

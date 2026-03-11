@@ -9,7 +9,6 @@ import { useCopyTimeout } from "./useCopyTimeout";
 type OutputItemProps = {
   onArtifactClick?: (id: string) => void;
   log: LogItem;
-  isPending?: boolean;
   depth?: number;
   isExpandable?: boolean;
   isExpanded?: boolean;
@@ -50,7 +49,7 @@ const OutputItem = ({
   if (isExpandable && onToggleExpanded) {
     return (
       <div
-        className='group w-full min-w-[500px]'
+        className='group w-full'
         style={{ paddingLeft: depth > 0 ? `${depth * 24}px` : undefined }}
         data-testid='workflow-output-item'
       >
@@ -67,7 +66,7 @@ const OutputItem = ({
                 variant='ghost'
                 size='sm'
                 className={cn(
-                  "h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100",
+                  "h-6 w-6 p-1 opacity-0 transition-opacity group-hover:opacity-100",
                   copied && "opacity-100"
                 )}
                 onClick={handleCopy}
@@ -85,29 +84,25 @@ const OutputItem = ({
 
   return (
     <div
-      className='group relative min-w-[500px]'
+      className='group relative'
       style={{
         paddingLeft: depth > 0 ? `${depth * 24}px` : undefined
       }}
       data-testid='workflow-output-item'
     >
-      <div className='flex items-start gap-2'>
-        <div className='flex-1'>
-          <Markdown onArtifactClick={onArtifactClick}>{log.content}</Markdown>
-        </div>
-        <Button
-          variant='ghost'
-          size='sm'
-          className={cn(
-            "mt-1 h-6 w-6 flex-shrink-0 p-0 opacity-0 transition-opacity group-hover:opacity-100",
-            copied && "opacity-100"
-          )}
-          onClick={handleCopy}
-          title='Copy output'
-        >
-          {copied ? <Check size={14} className='text-green-500' /> : <Copy size={14} />}
-        </Button>
-      </div>
+      <Markdown onArtifactClick={onArtifactClick}>{log.content}</Markdown>
+      <Button
+        variant='ghost'
+        size='sm'
+        className={cn(
+          "absolute top-1 right-0 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100",
+          copied && "opacity-100"
+        )}
+        onClick={handleCopy}
+        title='Copy output'
+      >
+        {copied ? <Check size={14} className='text-green-500' /> : <Copy size={14} />}
+      </Button>
     </div>
   );
 };

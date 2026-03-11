@@ -1,5 +1,6 @@
 import {
   Background,
+  BackgroundVariant,
   type Edge,
   Handle,
   type Node,
@@ -34,6 +35,7 @@ import {
 } from "@/components/ui/shadcn/select";
 import { SidebarTrigger } from "@/components/ui/shadcn/sidebar";
 import useSidebar from "@/components/ui/shadcn/sidebar-context";
+import useTheme from "@/stores/useTheme";
 import type {
   OntologyGraph as OntologyGraphType,
   OntologyNode as OntologyNodeType
@@ -200,6 +202,7 @@ interface OntologyGraphProps {
 }
 
 function OntologyGraphInner({ data }: OntologyGraphProps) {
+  const { theme } = useTheme();
   // Focus state management
   const [focusType, setFocusType] = useState<FocusType>(() => {
     const saved = localStorage.getItem("ontology-focus-type");
@@ -640,7 +643,11 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
         proOptions={{ hideAttribution: true }}
         style={{ width: "100%", height: "100%" }}
       >
-        <Background />
+        <Background
+          color={theme === "dark" ? "#a9a9b2" : "#ddd"}
+          bgColor={theme === "dark" ? "oklch(14.5% 0 0)" : "oklch(1 0 0)"}
+          variant={BackgroundVariant.Dots}
+        />
         <Panel
           position='top-left'
           className='rounded-lg border border-sidebar-border bg-sidebar-background p-4 shadow-lg'
@@ -704,66 +711,66 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
                 <SelectValue placeholder='Select focus' />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value='auto' className='text-sm'>
+                <SelectItem value='auto' className='cursor-pointer text-sm'>
                   <div className='flex items-center gap-2'>
                     <span>All Types</span>
                   </div>
                 </SelectItem>
-                <SelectItem value='agent' className='text-sm'>
+                <SelectItem value='agent' className='cursor-pointer text-sm'>
                   <div className='flex items-center gap-2'>
                     <Bot className='h-4 w-4' />
                     <span>Agents</span>
                   </div>
                 </SelectItem>
-                <SelectItem value='procedure' className='text-sm'>
+                <SelectItem value='procedure' className='cursor-pointer text-sm'>
                   <div className='flex items-center gap-2'>
                     <WorkflowIcon className='h-4 w-4' />
                     <span>Procedures</span>
                   </div>
                 </SelectItem>
-                <SelectItem value='workflow' className='text-sm'>
+                <SelectItem value='workflow' className='cursor-pointer text-sm'>
                   <div className='flex items-center gap-2'>
                     <WorkflowIcon className='h-4 w-4' />
                     <span>Workflows (legacy)</span>
                   </div>
                 </SelectItem>
-                <SelectItem value='app' className='text-sm'>
+                <SelectItem value='app' className='cursor-pointer text-sm'>
                   <div className='flex items-center gap-2'>
                     <WorkflowIcon className='h-4 w-4' />
                     <span>Apps</span>
                   </div>
                 </SelectItem>
-                <SelectItem value='automation' className='text-sm'>
+                <SelectItem value='automation' className='cursor-pointer text-sm'>
                   <div className='flex items-center gap-2'>
                     <WorkflowIcon className='h-4 w-4' />
                     <span>Automations (legacy)</span>
                   </div>
                 </SelectItem>
-                <SelectItem value='topic' className='text-sm'>
+                <SelectItem value='topic' className='cursor-pointer text-sm'>
                   <div className='flex items-center gap-2'>
                     <BookOpen className='h-4 w-4' />
                     <span>Topics</span>
                   </div>
                 </SelectItem>
-                <SelectItem value='view' className='text-sm'>
+                <SelectItem value='view' className='cursor-pointer text-sm'>
                   <div className='flex items-center gap-2'>
                     <Layout className='h-4 w-4' />
                     <span>Views</span>
                   </div>
                 </SelectItem>
-                <SelectItem value='sql_query' className='text-sm'>
+                <SelectItem value='sql_query' className='cursor-pointer text-sm'>
                   <div className='flex items-center gap-2'>
                     <FileCode2 className='h-4 w-4' />
                     <span>SQL Queries</span>
                   </div>
                 </SelectItem>
-                <SelectItem value='table' className='text-sm'>
+                <SelectItem value='table' className='cursor-pointer text-sm'>
                   <div className='flex items-center gap-2'>
                     <Table2 className='h-4 w-4' />
                     <span>Tables</span>
                   </div>
                 </SelectItem>
-                <SelectItem value='entity' className='text-sm'>
+                <SelectItem value='entity' className='cursor-pointer text-sm'>
                   <div className='flex items-center gap-2'>
                     <Box className='h-4 w-4' />
                     <span>Entities</span>

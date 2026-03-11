@@ -85,7 +85,7 @@ export const DisplayForm: React.FC<DisplayFormProps> = ({ index, onRemove }) => 
   };
 
   return (
-    <div className='rounded-lg border bg-card p-3'>
+    <div className='rounded-lg border p-3'>
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
         <CollapsibleTrigger className='w-full rounded-lg transition-colors'>
           <div className='flex items-center justify-between transition-colors'>
@@ -142,7 +142,7 @@ export const DisplayForm: React.FC<DisplayFormProps> = ({ index, onRemove }) => 
                     </SelectTrigger>
                     <SelectContent>
                       {DISPLAY_TYPES.map((type) => (
-                        <SelectItem key={type.value} value={type.value}>
+                        <SelectItem className='cursor-pointer' key={type.value} value={type.value}>
                           {type.label}
                         </SelectItem>
                       ))}

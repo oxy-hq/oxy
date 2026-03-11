@@ -86,7 +86,7 @@ const MainLayout = React.memo(function MainLayout() {
   if (isError) {
     return (
       <div className='flex h-full w-full items-center justify-center'>
-        <p className='text-red-600'>Failed to load project.</p>
+        <p className='text-destructive'>Failed to load project.</p>
       </div>
     );
   }
@@ -94,7 +94,7 @@ const MainLayout = React.memo(function MainLayout() {
   if (!project) {
     return (
       <div className='flex h-full w-full items-center justify-center'>
-        <p className='text-red-600'>Project not found.</p>
+        <p className='text-destructive'>Project not found.</p>
       </div>
     );
   }

@@ -161,7 +161,7 @@ const FilterRow: React.FC<FilterRowProps> = ({
               </SelectTrigger>
               <SelectContent>
                 {availableOperators.map((op) => (
-                  <SelectItem key={op.value} value={op.value}>
+                  <SelectItem className='cursor-pointer' key={op.value} value={op.value}>
                     {op.label}
                   </SelectItem>
                 ))}

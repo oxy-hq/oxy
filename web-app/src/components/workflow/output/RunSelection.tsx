@@ -154,7 +154,11 @@ const RunSelection: React.FC<Props> = ({ workflowId, runId }) => {
               (run.user_id ? run.user_id.charAt(0).toUpperCase() : "?");
 
             return (
-              <SelectItem key={run.run_index} value={run.run_index.toString()}>
+              <SelectItem
+                className='cursor-pointer'
+                key={run.run_index}
+                value={run.run_index.toString()}
+              >
                 <div className='flex w-full items-center justify-between gap-2'>
                   <TooltipProvider>
                     <Tooltip>

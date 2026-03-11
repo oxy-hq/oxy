@@ -110,7 +110,7 @@ export default function ClusterBreakdownTable({
 
   if (isLoading) {
     return (
-      <Card>
+      <Card className='bg-transparent shadow-none'>
         <CardHeader>
           <div className='flex items-center gap-2'>
             <Layers className='h-5 w-5 text-primary' />
@@ -132,7 +132,7 @@ export default function ClusterBreakdownTable({
 
   if (clusterStats.length === 0) {
     return (
-      <Card>
+      <Card className='bg-transparent shadow-none'>
         <CardHeader>
           <div className='flex items-center gap-2'>
             <Layers className='h-5 w-5 text-primary' />
@@ -150,7 +150,7 @@ export default function ClusterBreakdownTable({
   }
 
   return (
-    <Card>
+    <Card className='bg-transparent shadow-none'>
       <CardHeader>
         <div className='flex items-center gap-2'>
           <Layers className='h-5 w-5 text-primary' />

@@ -18,7 +18,7 @@ const Similarity = ({ score, records }: SimilarityMetric) => {
   return (
     <>
       <div
-        className='flex cursor-pointer items-center gap-2 px-2 py-1'
+        className='flex cursor-pointer items-center gap-2 py-1'
         onClick={() => {
           if (haveInconsistencies) {
             setShowResult(!showResult);
@@ -82,7 +82,7 @@ const Recall = ({ score, records }: RecallMetric) => {
   return (
     <>
       <div
-        className='flex cursor-pointer items-center gap-2 px-2 py-1'
+        className='flex cursor-pointer items-center gap-2 py-1'
         onClick={() => {
           if (haveInconsistencies) {
             setShowResult(!showResult);
@@ -142,7 +142,7 @@ const Result = ({ result }: { result: TestResult }) => {
   const { metrics } = result;
 
   return (
-    <div className='rounded-b-lg px-1'>
+    <div className='rounded-b-lg'>
       {metrics.map((metric) => {
         switch (metric.type) {
           case MetricKind.Similarity:

@@ -1,6 +1,7 @@
 import { Plus, Trash2 } from "lucide-react";
 import type React from "react";
-import { useFieldArray, useFormContext } from "react-hook-form";
+import { Controller, useFieldArray, useFormContext } from "react-hook-form";
+import { Checkbox } from "@/components/ui/checkbox";
 import { FilePathAutocompleteInput } from "@/components/ui/FilePathAutocompleteInput";
 import { Button } from "@/components/ui/shadcn/button";
 import { CardTitle } from "@/components/ui/shadcn/card";
@@ -45,7 +46,7 @@ export const RoutingForm: React.FC = () => {
             <p className='text-muted-foreground text-sm'>List of agent routes to choose from</p>
           </div>
           <Button type='button' onClick={() => appendRoute("")} variant='outline' size='sm'>
-            <Plus className='mr-2 h-4 w-4' />
+            <Plus />
             Add Route
           </Button>
         </div>
@@ -66,8 +67,8 @@ export const RoutingForm: React.FC = () => {
                 {...register(`routes.${index}`)}
               />
             </div>
-            <Button type='button' onClick={() => removeRoute(index)} variant='outline' size='sm'>
-              <Trash2 className='h-4 w-4' />
+            <Button type='button' onClick={() => removeRoute(index)} variant='ghost' size='sm'>
+              <Trash2 />
             </Button>
           </div>
         ))}
@@ -139,12 +140,16 @@ export const RoutingForm: React.FC = () => {
       </div>
 
       <div className='flex items-center space-x-2'>
-        <input
-          type='checkbox'
-          id='synthesize_results'
-          defaultChecked={true}
-          {...register("synthesize_results")}
-          className='rounded'
+        <Controller
+          control={control}
+          name='synthesize_results'
+          render={({ field }) => (
+            <Checkbox
+              id='synthesize_results'
+              checked={field.value}
+              onCheckedChange={field.onChange}
+            />
+          )}
         />
         <Label htmlFor='synthesize_results'>Synthesize Results</Label>
       </div>

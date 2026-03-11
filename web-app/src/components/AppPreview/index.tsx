@@ -174,7 +174,7 @@ export default function AppPreview({ appPath64, runButton = true }: Props) {
   const displayData = paramData ?? appDataQueryResult.data?.data;
 
   return (
-    <div className='relative h-full w-full overflow-hidden' data-testid='app-preview'>
+    <div className='relative h-full w-full overflow-hidden px-2' data-testid='app-preview'>
       {runButton && controls.length === 0 && (
         <Button
           className='absolute right-6 bottom-6 z-1'
@@ -182,6 +182,7 @@ export default function AppPreview({ appPath64, runButton = true }: Props) {
           disabled={isRunning || appDataQueryResult.isPending}
           variant='default'
           content='icon'
+          size='sm'
         >
           {isRunning ? <LoaderCircle className='animate-spin' /> : <RefreshCw />}
         </Button>

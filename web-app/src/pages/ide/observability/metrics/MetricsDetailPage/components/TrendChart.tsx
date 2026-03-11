@@ -19,7 +19,7 @@ export default function TrendChart({ detailData, daysFilter }: TrendChartProps) 
 
   if (!trends || trends.length === 0) {
     return (
-      <Card className='lg:col-span-2'>
+      <Card className='bg-transparent shadow-none lg:col-span-2'>
         <CardHeader>
           <div className='flex items-center gap-2'>
             <TrendingUp className='h-5 w-5 text-primary' />
@@ -40,7 +40,7 @@ export default function TrendChart({ detailData, daysFilter }: TrendChartProps) 
   const avgUsage = Math.round(trends.reduce((sum, t) => sum + t.count, 0) / trends.length);
 
   return (
-    <Card className='lg:col-span-2'>
+    <Card className='bg-transparent shadow-none lg:col-span-2'>
       <CardHeader>
         <div className='flex items-center gap-2'>
           <TrendingUp className='h-5 w-5 text-primary' />

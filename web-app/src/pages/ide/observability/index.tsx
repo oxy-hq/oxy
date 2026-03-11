@@ -12,8 +12,8 @@ import {
   SidebarContent,
   SidebarGroup,
   SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuSubButton
+  SidebarMenuButton,
+  SidebarMenuItem
 } from "@/components/ui/shadcn/sidebar";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import ROUTES from "@/libs/utils/routes";
@@ -30,10 +30,10 @@ const ObservabilitySidebar: React.FC<{
     <div className='flex h-full flex-col overflow-hidden bg-sidebar-background'>
       <SidebarHeader title='Observability' onCollapse={() => setSidebarOpen(false)} />
       <SidebarContent className='customScrollbar h-full flex-1 overflow-y-auto'>
-        <SidebarGroup className='pt-2'>
+        <SidebarGroup className='px-1 pt-2'>
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuSubButton
+              <SidebarMenuButton
                 asChild
                 isActive={location.pathname === ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.TRACES}
               >
@@ -41,10 +41,10 @@ const ObservabilitySidebar: React.FC<{
                   <Zap className='h-4 w-4' />
                   <span>Traces</span>
                 </Link>
-              </SidebarMenuSubButton>
+              </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
-              <SidebarMenuSubButton
+              <SidebarMenuButton
                 asChild
                 isActive={
                   location.pathname === ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.CLUSTERS
@@ -54,10 +54,10 @@ const ObservabilitySidebar: React.FC<{
                   <Server className='h-4 w-4' />
                   <span>Clusters</span>
                 </Link>
-              </SidebarMenuSubButton>
+              </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
-              <SidebarMenuSubButton
+              <SidebarMenuButton
                 asChild
                 isActive={location.pathname === ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.METRICS}
               >
@@ -65,10 +65,10 @@ const ObservabilitySidebar: React.FC<{
                   <BarChart3 className='h-4 w-4' />
                   <span>Metrics</span>
                 </Link>
-              </SidebarMenuSubButton>
+              </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
-              <SidebarMenuSubButton
+              <SidebarMenuButton
                 asChild
                 isActive={
                   location.pathname ===
@@ -79,7 +79,7 @@ const ObservabilitySidebar: React.FC<{
                   <LucideActivity className='h-4 w-4' />
                   <span>Execution Analytics</span>
                 </Link>
-              </SidebarMenuSubButton>
+              </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroup>
@@ -98,7 +98,7 @@ const ObservabilityLayout: React.FC = () => {
           <ResizablePanel defaultSize={20} minSize={10} className='min-w-[200px]'>
             <ObservabilitySidebar setSidebarOpen={setSidebarOpen} />
           </ResizablePanel>
-          <ResizableHandle />
+          <ResizableHandle withHandle />
         </>
       ) : (
         <div className='flex items-start border-r bg-sidebar-background px-1 py-2'>

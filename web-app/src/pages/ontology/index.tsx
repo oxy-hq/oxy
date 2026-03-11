@@ -1,4 +1,5 @@
 import { Loader2 } from "lucide-react";
+import { ErrorAlert, ErrorAlertMessage } from "@/components/AppPreview/ErrorAlert";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/shadcn/alert";
 import useOntology from "@/hooks/api/ontology/useOntology";
 import { OntologyGraph } from "./OntologyGraph";
@@ -19,13 +20,13 @@ export default function OntologyPage() {
 
   if (error) {
     return (
-      <div className='flex h-full items-center justify-center p-4'>
-        <Alert variant='destructive' className='max-w-lg'>
-          <AlertTitle>Error loading ontology</AlertTitle>
-          <AlertDescription>
+      <div className='p-2'>
+        <ErrorAlert>
+          <ErrorAlertMessage>Error loading ontology</ErrorAlertMessage>
+          <ErrorAlertMessage>
             {error instanceof Error ? error.message : "An unexpected error occurred"}
-          </AlertDescription>
-        </Alert>
+          </ErrorAlertMessage>
+        </ErrorAlert>
       </div>
     );
   }

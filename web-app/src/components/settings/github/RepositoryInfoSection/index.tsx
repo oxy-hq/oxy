@@ -1,9 +1,8 @@
-import { Loader2 } from "lucide-react";
 import { useState } from "react";
+import { ContentSkeleton } from "@/components/ui/ContentSkeleton";
 import { Badge } from "@/components/ui/shadcn/badge";
 import { Button } from "@/components/ui/shadcn/button";
 import { Label } from "@/components/ui/shadcn/label";
-import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import useRevisionInfo from "@/hooks/api/projects/useRevisionInfo";
 import useCurrentProject from "@/stores/useCurrentProject";
 import { CommitDisplay } from "./CommitDisplay";
@@ -22,26 +21,7 @@ const RepositoryInfoSection = () => {
   };
 
   if (revisionLoading) {
-    return (
-      <div className='space-y-4'>
-        <div className='flex items-center gap-2'>
-          <Loader2 className='h-4 w-4 animate-spin' />
-          <span className='text-muted-foreground text-sm'>Loading repository info...</span>
-        </div>
-        <div className='grid grid-cols-1 gap-6 md:grid-cols-2'>
-          <div className='space-y-2'>
-            <Skeleton className='h-4 w-24' />
-            <Skeleton className='h-8 w-20' />
-            <Skeleton className='h-3 w-48' />
-          </div>
-          <div className='space-y-2'>
-            <Skeleton className='h-4 w-24' />
-            <Skeleton className='h-8 w-20' />
-            <Skeleton className='h-3 w-48' />
-          </div>
-        </div>
-      </div>
-    );
+    return <ContentSkeleton />;
   }
 
   return (

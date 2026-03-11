@@ -1,8 +1,19 @@
-import { Calendar } from "lucide-react";
+import { Calendar as CalendarIcon, Clock2Icon } from "lucide-react";
 import { useState } from "react";
+import { Button } from "@/components/ui/shadcn/button";
+import { Calendar } from "@/components/ui/shadcn/calendar";
+import { FieldDescription } from "@/components/ui/shadcn/field";
 import { Input } from "@/components/ui/shadcn/input";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/shadcn/input-group";
 import { Label } from "@/components/ui/shadcn/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/shadcn/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/shadcn/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
 import type { DateRangeValue } from "@/services/api/semantic";
 
@@ -22,282 +33,216 @@ const RELATIVE_PRESETS = [
   { label: "Custom", value: "custom" }
 ];
 
-const DateRangeSelector = ({ from, to, onChange, className }: DateRangeSelectorProps) => {
-  const [fromOpen, setFromOpen] = useState(false);
-  const [toOpen, setToOpen] = useState(false);
-  const [fromTab, setFromTab] = useState<string>("calendar");
-  const [toTab, setToTab] = useState<string>("calendar");
-  const [fromRelativePreset, setFromRelativePreset] = useState<string>("custom");
-  const [toRelativePreset, setToRelativePreset] = useState<string>("custom");
-  const [fromCustomRelative, setFromCustomRelative] = useState<string>("");
-  const [toCustomRelative, setToCustomRelative] = useState<string>("");
-  const [fromError, setFromError] = useState<string>("");
-  const [toError, setToError] = useState<string>("");
+function parseToDate(value?: DateRangeValue): Date | undefined {
+  if (!value) return undefined;
+  if (value instanceof Date) return value;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
 
-  const formatDateTimeValue = (value?: DateRangeValue): string => {
-    if (!value) return "";
-    if (typeof value === "string") {
-      // Try to parse as ISO date
-      const date = new Date(value);
-      if (!Number.isNaN(date.getTime())) {
-        return date.toISOString().slice(0, 16);
-      }
-      return "";
+function formatTimeValue(value?: DateRangeValue): string {
+  const date = parseToDate(value);
+  if (!date) return "12:00:00";
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}:${String(date.getSeconds()).padStart(2, "0")}`;
+}
+
+const formatDisplayValue = (value?: DateRangeValue): string => {
+  if (!value) return "Select...";
+  if (typeof value === "string") {
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) {
+      return new Intl.DateTimeFormat("en-US", {
+        dateStyle: "medium",
+        timeStyle: "short"
+      }).format(date);
     }
-    return value.toISOString().slice(0, 16);
-  };
+    return value;
+  }
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short"
+  }).format(value);
+};
 
-  const formatDisplayValue = (value?: DateRangeValue): string => {
-    if (!value) return "Select...";
-    if (typeof value === "string") {
-      // Try to parse as ISO date
-      const date = new Date(value);
-      if (!Number.isNaN(date.getTime())) {
-        return new Intl.DateTimeFormat("en-US", {
-          dateStyle: "medium",
-          timeStyle: "short"
-        }).format(date);
-      }
-      // Otherwise show the relative string
-      return value;
+interface DatePickerPopoverProps {
+  className?: string;
+  value?: DateRangeValue;
+  otherValue?: DateRangeValue;
+  field: "from" | "to";
+  onChange: DateRangeSelectorProps["onChange"];
+}
+
+const DatePickerPopover = ({
+  className,
+  value,
+  otherValue,
+  field,
+  onChange
+}: DatePickerPopoverProps) => {
+  const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<string>("calendar");
+  const [relativePreset, setRelativePreset] = useState<string>("custom");
+  const [customRelative, setCustomRelative] = useState<string>("");
+  const [error, setError] = useState<string>("");
+
+  const selectedDate = parseToDate(value);
+
+  const handleDaySelect = (day: Date | undefined) => {
+    if (!day) return;
+    const existing = parseToDate(value);
+    if (existing) {
+      day.setHours(existing.getHours(), existing.getMinutes());
     }
-    return new Intl.DateTimeFormat("en-US", {
-      dateStyle: "medium",
-      timeStyle: "short"
-    }).format(value);
-  };
-
-  const handleFromCalendarChange = (dateString: string) => {
+    const iso = day.toISOString();
     onChange({
       relative: undefined,
-      from: dateString ? new Date(dateString).toISOString() : undefined,
-      to
+      from: field === "from" ? iso : otherValue,
+      to: field === "to" ? iso : otherValue
     });
   };
 
-  const handleToCalendarChange = (dateString: string) => {
+  const handleTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const [hours, minutes, seconds] = e.target.value.split(":").map(Number);
+    const base = parseToDate(value) ?? new Date();
+    base.setHours(hours ?? 0, minutes ?? 0, seconds ?? 0);
+    const iso = base.toISOString();
     onChange({
       relative: undefined,
-      from,
-      to: dateString ? new Date(dateString).toISOString() : undefined
+      from: field === "from" ? iso : otherValue,
+      to: field === "to" ? iso : otherValue
     });
   };
 
-  const handleFromRelativePresetChange = (value: string) => {
-    setFromRelativePreset(value);
-    if (value !== "custom") {
+  const handlePresetChange = (preset: string) => {
+    setRelativePreset(preset);
+    if (preset !== "custom") {
       onChange({
         relative: undefined,
-        from: value,
-        to
+        from: field === "from" ? preset : otherValue,
+        to: field === "to" ? preset : otherValue
       });
-      setFromOpen(false);
+      setOpen(false);
     }
   };
 
-  const handleToRelativePresetChange = (value: string) => {
-    setToRelativePreset(value);
-    if (value !== "custom") {
-      onChange({
-        relative: undefined,
-        from,
-        to: value
-      });
-      setToOpen(false);
-    }
-  };
-
-  const handleFromCustomRelativeApply = () => {
-    const trimmed = fromCustomRelative.trim();
+  const handleCustomApply = () => {
+    const trimmed = customRelative.trim();
     if (!trimmed) {
-      setFromError("Please enter a value");
+      setError("Please enter a value");
       return;
     }
-
-    setFromError("");
+    setError("");
     onChange({
       relative: undefined,
-      from: trimmed,
-      to
+      from: field === "from" ? trimmed : otherValue,
+      to: field === "to" ? trimmed : otherValue
     });
-    setFromOpen(false);
-  };
-
-  const handleToCustomRelativeApply = () => {
-    const trimmed = toCustomRelative.trim();
-    if (!trimmed) {
-      setToError("Please enter a value");
-      return;
-    }
-
-    setToError("");
-    onChange({
-      relative: undefined,
-      from,
-      to: trimmed
-    });
-    setToOpen(false);
+    setOpen(false);
   };
 
   return (
-    <div className='flex h-full flex-1 items-center gap-2'>
-      <Popover open={fromOpen} onOpenChange={setFromOpen}>
-        <PopoverTrigger asChild className={className}>
-          <button
-            type='button'
-            className='flex flex-1 items-center gap-1 rounded border bg-background px-2 py-1 text-left text-xs hover:bg-muted'
-          >
-            <Calendar className='w-3' />
-            <span className='flex-1 truncate'>{formatDisplayValue(from)}</span>
-          </button>
-        </PopoverTrigger>
-        <PopoverContent className='w-80' align='start'>
-          <Tabs value={fromTab} onValueChange={setFromTab}>
-            <TabsList className='grid w-full grid-cols-2'>
-              <TabsTrigger value='calendar'>Calendar</TabsTrigger>
-              <TabsTrigger value='relative'>Relative</TabsTrigger>
-            </TabsList>
-            <TabsContent value='calendar' className='space-y-2'>
-              <Label htmlFor='from-datetime'>Select date and time</Label>
-              <Input
-                id='from-datetime'
-                type='datetime-local'
-                value={formatDateTimeValue(from)}
-                onChange={(e) => handleFromCalendarChange(e.target.value)}
-                className='text-xs'
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild className={className}>
+        <Button variant='outline' className='flex-1 bg-input/30 font-normal'>
+          <CalendarIcon />
+          <span className='flex-1 truncate text-left'>{formatDisplayValue(value)}</span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className='w-auto p-0' align='start'>
+        <Tabs className='max-w-[300px] space-y-2 p-3' value={tab} onValueChange={setTab}>
+          <TabsList className='grid w-full grid-cols-2'>
+            <TabsTrigger value='calendar'>Calendar</TabsTrigger>
+            <TabsTrigger value='relative'>Relative</TabsTrigger>
+          </TabsList>
+          <TabsContent value='calendar'>
+            <div className='space-y-2'>
+              <Calendar
+                mode='single'
+                className='p-0'
+                selected={selectedDate}
+                onSelect={handleDaySelect}
+                defaultMonth={selectedDate}
               />
-            </TabsContent>
-            <TabsContent value='relative' className='space-y-2'>
-              <Label htmlFor='from-relative-preset'>Relative time</Label>
-              <select
-                id='from-relative-preset'
-                value={fromRelativePreset}
-                onChange={(e) => handleFromRelativePresetChange(e.target.value)}
-                className='w-full rounded border bg-background px-2 py-1 text-xs'
-              >
+              <InputGroup>
+                <InputGroupInput
+                  type='time'
+                  step='1'
+                  value={formatTimeValue(value)}
+                  onChange={handleTimeChange}
+                  className='appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none'
+                />
+                <InputGroupAddon>
+                  <Clock2Icon className='text-muted-foreground' />
+                </InputGroupAddon>
+              </InputGroup>
+            </div>
+          </TabsContent>
+          <TabsContent value='relative' className='space-y-2'>
+            <Label>Relative time</Label>
+            <Select value={relativePreset} onValueChange={handlePresetChange}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
                 {RELATIVE_PRESETS.map((preset) => (
-                  <option key={preset.value} value={preset.value}>
+                  <SelectItem className='cursor-pointer' key={preset.value} value={preset.value}>
                     {preset.label}
-                  </option>
+                  </SelectItem>
                 ))}
-              </select>
-              {fromRelativePreset === "custom" && (
-                <div className='space-y-2'>
-                  <Label htmlFor='from-custom-relative'>
-                    We support chrono-english syntax. E.g., "7 days ago", "3 months ago".
-                  </Label>
-                  <div className='flex gap-2'>
-                    <Input
-                      id='from-custom-relative'
-                      type='text'
-                      placeholder='e.g., 7 days ago'
-                      value={fromCustomRelative}
-                      onChange={(e) => {
-                        setFromCustomRelative(e.target.value);
-                        if (fromError) setFromError("");
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          handleFromCustomRelativeApply();
-                        }
-                      }}
-                      className='text-xs'
-                    />
-                    <button
-                      type='button'
-                      onClick={handleFromCustomRelativeApply}
-                      className='rounded border bg-primary px-3 py-1 text-primary-foreground text-xs hover:bg-primary/90'
-                    >
-                      Apply
-                    </button>
-                  </div>
-                  {fromError && <p className='text-destructive text-xs'>{fromError}</p>}
+              </SelectContent>
+            </Select>
+            {relativePreset === "custom" && (
+              <div className='space-y-2'>
+                <div className='flex gap-2'>
+                  <Input
+                    type='text'
+                    placeholder='e.g., 7 days ago'
+                    value={customRelative}
+                    onChange={(e) => {
+                      setCustomRelative(e.target.value);
+                      if (error) setError("");
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        handleCustomApply();
+                      }
+                    }}
+                  />
+                  <Button type='button' size='sm' onClick={handleCustomApply}>
+                    Apply
+                  </Button>
                 </div>
-              )}
-            </TabsContent>
-          </Tabs>
-        </PopoverContent>
-      </Popover>
+                {error && <p className='text-destructive'>{error}</p>}
+                <FieldDescription>
+                  Supports chrono-english syntax, e.g. "7 days ago", "3 months ago".
+                </FieldDescription>
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
+      </PopoverContent>
+    </Popover>
+  );
+};
 
+const DateRangeSelector = ({ from, to, onChange, className }: DateRangeSelectorProps) => {
+  return (
+    <div className='flex flex-1 items-center gap-2'>
+      <DatePickerPopover
+        className={className}
+        value={from}
+        otherValue={to}
+        field='from'
+        onChange={onChange}
+      />
       <span className='text-muted-foreground text-xs'>→</span>
-
-      <Popover open={toOpen} onOpenChange={setToOpen}>
-        <PopoverTrigger asChild className={className}>
-          <button
-            type='button'
-            className='flex flex-1 items-center gap-1 rounded border bg-background px-2 py-1 text-left text-xs hover:bg-muted'
-          >
-            <Calendar className='w-3' />
-            <span className='flex-1 truncate'>{formatDisplayValue(to)}</span>
-          </button>
-        </PopoverTrigger>
-        <PopoverContent className='w-80' align='start'>
-          <Tabs value={toTab} onValueChange={setToTab}>
-            <TabsList className='grid w-full grid-cols-2'>
-              <TabsTrigger value='calendar'>Calendar</TabsTrigger>
-              <TabsTrigger value='relative'>Relative</TabsTrigger>
-            </TabsList>
-            <TabsContent value='calendar' className='space-y-2'>
-              <Label htmlFor='to-datetime'>Select date and time</Label>
-              <Input
-                id='to-datetime'
-                type='datetime-local'
-                value={formatDateTimeValue(to)}
-                onChange={(e) => handleToCalendarChange(e.target.value)}
-                className='text-xs'
-              />
-            </TabsContent>
-            <TabsContent value='relative' className='space-y-2'>
-              <Label htmlFor='to-relative-preset'>Relative time</Label>
-              <select
-                id='to-relative-preset'
-                value={toRelativePreset}
-                onChange={(e) => handleToRelativePresetChange(e.target.value)}
-                className='w-full rounded border bg-background px-2 py-1 text-xs'
-              >
-                {RELATIVE_PRESETS.map((preset) => (
-                  <option key={preset.value} value={preset.value}>
-                    {preset.label}
-                  </option>
-                ))}
-              </select>
-              {toRelativePreset === "custom" && (
-                <div className='space-y-2'>
-                  <Label htmlFor='to-custom-relative'>
-                    Custom expression (e.g., "now", "today", "3 hours ago")
-                  </Label>
-                  <div className='flex gap-2'>
-                    <Input
-                      id='to-custom-relative'
-                      type='text'
-                      placeholder='e.g., now'
-                      value={toCustomRelative}
-                      onChange={(e) => {
-                        setToCustomRelative(e.target.value);
-                        if (toError) setToError("");
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          handleToCustomRelativeApply();
-                        }
-                      }}
-                      className='text-xs'
-                    />
-                    <button
-                      type='button'
-                      onClick={handleToCustomRelativeApply}
-                      className='rounded border bg-primary px-3 py-1 text-primary-foreground text-xs hover:bg-primary/90'
-                    >
-                      Apply
-                    </button>
-                  </div>
-                  {toError && <p className='text-destructive text-xs'>{toError}</p>}
-                </div>
-              )}
-            </TabsContent>
-          </Tabs>
-        </PopoverContent>
-      </Popover>
+      <DatePickerPopover
+        className={className}
+        value={to}
+        otherValue={from}
+        field='to'
+        onChange={onChange}
+      />
     </div>
   );
 };

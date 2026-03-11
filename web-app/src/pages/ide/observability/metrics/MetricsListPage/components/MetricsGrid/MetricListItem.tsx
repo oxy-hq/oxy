@@ -16,7 +16,7 @@ export default function MetricListItem({ metric, rank, maxCount, onClick }: Metr
       onClick={onClick}
       className={cn(
         "flex cursor-pointer items-center gap-4 rounded-lg border p-3 transition-all",
-        "hover:border-primary/50 hover:bg-accent"
+        "hover:border-primary/50"
       )}
     >
       <div

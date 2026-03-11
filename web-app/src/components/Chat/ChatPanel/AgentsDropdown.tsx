@@ -1,12 +1,12 @@
-import { ChevronDown, Loader2 } from "lucide-react";
+import { Bot, Loader2, Route } from "lucide-react";
 import { useEffect, useMemo } from "react";
-import { Button } from "@/components/ui/shadcn/button";
 import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger
-} from "@/components/ui/shadcn/dropdown-menu";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/shadcn/select";
 import useAgents from "@/hooks/api/agents/useAgents";
 import { getAgentNameFromPath } from "@/libs/utils/string";
 
@@ -45,30 +45,38 @@ const AgentsDropdown = ({ onSelect, agentSelected, disabled = false }: Props) =>
   }, [isSuccess, agents, agentOptions, onSelect, agentSelected]);
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger disabled={isPending || disabled} asChild>
-        <Button
-          disabled={isPending || disabled}
-          variant='outline'
-          className='border-sidebar-background bg-sidebar-background'
-          data-testid='agent-selector-button'
-        >
-          <span>{agentSelected?.name}</span>
-          {isPending ? <Loader2 className='animate-spin' /> : <ChevronDown />}
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent className='customScrollbar'>
+    <Select
+      value={agentSelected?.id ?? ""}
+      onValueChange={(id) => {
+        const agent = agentOptions.find((a) => a.id === id);
+        if (agent) onSelect(agent);
+      }}
+      disabled={isPending || disabled}
+    >
+      <SelectTrigger
+        size='sm'
+        className='w-auto border-none shadow-none'
+        data-testid='agent-selector-button'
+      >
+        {isPending ? (
+          <Loader2 className='size-4 animate-spin' />
+        ) : (
+          <SelectValue placeholder='Select agent' />
+        )}
+      </SelectTrigger>
+      <SelectContent>
         {agentOptions.map((item) => (
-          <DropdownMenuCheckboxItem
-            key={item.id}
-            checked={item.id === agentSelected?.id}
-            onCheckedChange={() => onSelect(item)}
-          >
+          <SelectItem className='cursor-pointer' key={item.id} value={item.id}>
+            {item.name.includes("routing") ? (
+              <Route className='size-4' />
+            ) : (
+              <Bot className='size-4' />
+            )}
             {item.name}
-          </DropdownMenuCheckboxItem>
+          </SelectItem>
         ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </SelectContent>
+    </Select>
   );
 };
 

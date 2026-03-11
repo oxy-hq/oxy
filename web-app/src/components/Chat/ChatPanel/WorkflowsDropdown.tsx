@@ -1,12 +1,12 @@
-import { ChevronDown, Loader2 } from "lucide-react";
+import { Loader2, Workflow } from "lucide-react";
 import { useEffect, useMemo } from "react";
-import { Button } from "@/components/ui/shadcn/button";
 import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger
-} from "@/components/ui/shadcn/dropdown-menu";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/shadcn/select";
 import useWorkflows from "@/hooks/api/workflows/useWorkflows";
 
 export type WorkflowOption = {
@@ -41,30 +41,34 @@ const WorkflowsDropdown = ({ onSelect, workflow, disabled = false }: Props) => {
   }, [isSuccess, workflows, workflowOptions, onSelect, workflow]);
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger disabled={isLoading || disabled} asChild>
-        <Button
-          disabled={isLoading || disabled}
-          variant='outline'
-          className='border-sidebar-background bg-sidebar-background'
-          data-testid='workflow-selector-button'
-        >
-          <span>{workflow?.name}</span>
-          {isLoading ? <Loader2 className='animate-spin' /> : <ChevronDown />}
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent className='customScrollbar'>
+    <Select
+      value={workflow?.id ?? ""}
+      onValueChange={(id) => {
+        const option = workflowOptions.find((w) => w.id === id);
+        if (option) onSelect(option);
+      }}
+      disabled={isLoading || disabled}
+    >
+      <SelectTrigger
+        size='sm'
+        className='w-auto border-none shadow-none'
+        data-testid='workflow-selector-button'
+      >
+        {isLoading ? (
+          <Loader2 className='size-4 animate-spin' />
+        ) : (
+          <SelectValue placeholder='Select procedure' />
+        )}
+      </SelectTrigger>
+      <SelectContent className='customScrollbar'>
         {workflowOptions.map((item) => (
-          <DropdownMenuCheckboxItem
-            key={item.id}
-            checked={item.id === workflow?.id}
-            onCheckedChange={() => onSelect(item)}
-          >
+          <SelectItem className='cursor-pointer' key={item.id} value={item.id}>
+            <Workflow className='size-4' />
             {item.name}
-          </DropdownMenuCheckboxItem>
+          </SelectItem>
         ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </SelectContent>
+    </Select>
   );
 };
 

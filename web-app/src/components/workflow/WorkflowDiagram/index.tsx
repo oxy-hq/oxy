@@ -2,7 +2,7 @@ import type { ReactFlowInstance } from "@xyflow/react";
 import { Background, BackgroundVariant, type ColorMode, Controls, ReactFlow } from "@xyflow/react";
 import type React from "react";
 import { useRef } from "react";
-import { Skeleton } from "@/components/ui/shadcn/skeleton";
+import { ContentSkeleton } from "@/components/ui/ContentSkeleton";
 import useTheme from "@/stores/useTheme";
 import useWorkflow, { type NodeType, type WorkflowConfig } from "@/stores/useWorkflow";
 import { DiagramNode } from "./DiagramNode";
@@ -48,19 +48,7 @@ const WorkflowDiagram: React.FC<WorkflowDiagramProps> = ({ workflowId, runId, wo
   const { theme } = useTheme();
 
   if (nodes.length === 0) {
-    return (
-      <div className='w-full'>
-        <div className='mx-auto flex max-w-185.5 flex-col gap-10 py-10'>
-          {["workflow-skeleton-1", "workflow-skeleton-2", "workflow-skeleton-3"].map((key) => (
-            <div key={key} className='flex flex-col gap-4'>
-              <Skeleton className='h-4 max-w-50' />
-              <Skeleton className='h-4 max-w-125' />
-              <Skeleton className='h-4 max-w-125' />
-            </div>
-          ))}
-        </div>
-      </div>
-    );
+    return <ContentSkeleton />;
   }
 
   return (
@@ -88,7 +76,8 @@ const WorkflowDiagram: React.FC<WorkflowDiagramProps> = ({ workflowId, runId, wo
       >
         <Controls showInteractive={false} />
         <Background
-          color={theme === "dark" ? "#2a2a2a" : "#ddd"}
+          color={theme === "dark" ? "#a9a9b2" : "#ddd"}
+          bgColor={theme === "dark" ? "oklch(14.5% 0 0)" : "oklch(1 0 0)"}
           variant={BackgroundVariant.Dots}
         />
       </ReactFlow>

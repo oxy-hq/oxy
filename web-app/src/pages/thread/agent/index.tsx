@@ -92,7 +92,7 @@ const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
         <div className='flex h-full w-full flex-1 flex-col overflow-hidden'>
           <div className='relative w-full flex-1 overflow-hidden'>
             <div ref={scrollContainerRef} className='customScrollbar h-full w-full overflow-auto'>
-              <div className='mx-auto w-full max-w-[742px] p-4'>
+              <div className='mx-auto w-full max-w-page-content p-4'>
                 <Messages messages={messages} onArtifactClick={handleArtifactClick} />
                 <div ref={bottomRef} />
               </div>
@@ -111,7 +111,7 @@ const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
             )}
           </div>
 
-          <div className='mx-auto flex w-full max-w-[742px] flex-shrink-0 flex-col gap-1 p-4 pt-0'>
+          <div className='mx-auto flex w-full max-w-page-content flex-shrink-0 flex-col gap-1 p-4 pt-0'>
             <ProcessingWarning
               threadId={thread.id}
               isLoading={isLoading}

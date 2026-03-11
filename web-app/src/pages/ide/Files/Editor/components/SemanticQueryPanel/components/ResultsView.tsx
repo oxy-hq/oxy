@@ -9,7 +9,7 @@ interface ResultsViewProps {
 const ResultsView = ({ result, resultFile, executionError }: ResultsViewProps) => {
   if (executionError) {
     return (
-      <div className='customScrollbar h-full overflow-auto p-4'>
+      <div className='customScrollbar h-full overflow-auto px-4 py-2'>
         <div className='whitespace-pre-wrap rounded bg-destructive/10 p-4 font-mono text-destructive text-xs'>
           {executionError}
         </div>

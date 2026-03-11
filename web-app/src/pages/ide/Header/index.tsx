@@ -55,6 +55,7 @@ export const Header = () => {
         size='sm'
         onClick={handleHomeClick}
         tooltip={{ content: "Back to Home", side: "right" }}
+        className='h-8 w-8'
       >
         <Home className='h-4 w-4' />
       </Button>

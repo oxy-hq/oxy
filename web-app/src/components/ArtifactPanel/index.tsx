@@ -1,10 +1,11 @@
 import { useQueries } from "@tanstack/react-query";
-import { Loader2, X, XCircle } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import { useCallback } from "react";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { ArtifactService } from "@/services/api";
 import type { Artifact } from "@/types/artifact";
-import { Alert, AlertDescription, AlertTitle } from "../ui/shadcn/alert";
+import { ErrorAlert, ErrorAlertMessage } from "../AppPreview/ErrorAlert";
+import { Panel } from "../ui/panel";
 import { Button } from "../ui/shadcn/button";
 import AgentArtifactPanel from "./ArtifactsContent/agent";
 import LookerQueryArtifactPanel from "./ArtifactsContent/looker-query";
@@ -69,24 +70,24 @@ const ArtifactPanel = ({
 
   if (isCurrentArtifactLoading) {
     return (
-      <div className='flex h-full flex-col'>
+      <Panel>
         <div className='flex w-full justify-end px-4 py-2'>
           <Button variant='outline' size='icon' onClick={onClose}>
             <X />
           </Button>
         </div>
 
-        <div className='flex flex-1 flex-col items-center justify-center space-y-4 text-gray-600'>
+        <div className='flex flex-1 flex-col items-center justify-center space-y-4 text-muted-foreground'>
           <Loader2 className='animate-spin' />
           <p>Loading artifact...</p>
         </div>
-      </div>
+      </Panel>
     );
   }
 
   if (hasError && !currentArtifact) {
     return (
-      <div className='flex h-full w-full flex-col'>
+      <Panel>
         <div className='flex w-full justify-end px-4 py-2'>
           <Button variant='outline' size='icon' onClick={onClose}>
             <X />
@@ -94,16 +95,19 @@ const ArtifactPanel = ({
         </div>
 
         <div className='flex flex-1 flex-col items-center justify-center gap-4 p-4'>
-          <Alert variant='destructive'>
-            <XCircle />
-            <AlertTitle>Error</AlertTitle>
-            <AlertDescription>
+          <ErrorAlert>
+            <ErrorAlertMessage>
               Unable to load the selected artifact. Please check your connection or try again later.
-            </AlertDescription>
-          </Alert>
-          <Button onClick={() => artifactQueries.forEach((query) => query.refetch())}>Retry</Button>
+            </ErrorAlertMessage>
+          </ErrorAlert>
+          <Button
+            variant='outline'
+            onClick={() => artifactQueries.forEach((query) => query.refetch())}
+          >
+            Retry
+          </Button>
         </div>
-      </div>
+      </Panel>
     );
   }
 
@@ -153,7 +157,7 @@ const ArtifactPanel = ({
   };
 
   return (
-    <div className='flex h-full flex-col'>
+    <Panel>
       <Header
         currentArtifact={currentArtifact}
         artifactData={artifactData}
@@ -162,7 +166,7 @@ const ArtifactPanel = ({
         onClose={handleClose}
       />
       <div className='min-h-0 flex-1'>{renderContent()}</div>
-    </div>
+    </Panel>
   );
 };
 

@@ -35,7 +35,7 @@ export default function StatsCard({
   };
 
   return (
-    <Card className='overflow-hidden'>
+    <Card className='overflow-hidden bg-transparent shadow-none'>
       <CardContent className='p-4'>
         <div className='flex items-start justify-between'>
           <div className='min-w-0 space-y-1'>

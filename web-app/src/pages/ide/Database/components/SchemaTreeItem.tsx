@@ -3,11 +3,6 @@ import React from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger
-} from "@/components/ui/shadcn/collapsible";
-import {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem
@@ -90,31 +85,30 @@ export const SchemaTreeItem: React.FC<SchemaTreeItemProps> = ({
   };
 
   return (
-    <Collapsible open={isOpen} onOpenChange={() => setIsOpen(!isOpen)}>
-      <SidebarMenuSubItem>
-        <CollapsibleTrigger asChild>
-          <SidebarMenuSubButton className='text-muted-foreground hover:text-sidebar-foreground'>
-            {isOpen ? <ChevronDown className='h-3 w-3' /> : <ChevronRight className='h-3 w-3' />}
-            <Folder className='h-3 w-3' />
-            <span className='text-xs'>{schemaName}</span>
-          </SidebarMenuSubButton>
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <SidebarMenuSub className='ml-4'>
-            {Object.entries(tables).map(([tableName, semanticInfo]) => (
-              <SidebarMenuSubItem key={tableName}>
-                <SidebarMenuSubButton
-                  onClick={() => handleTableClick(tableName, semanticInfo)}
-                  className='text-muted-foreground hover:text-sidebar-foreground'
-                >
-                  <Table className='h-3 w-3' />
-                  <span className='text-xs'>{tableName}</span>
-                </SidebarMenuSubButton>
-              </SidebarMenuSubItem>
-            ))}
-          </SidebarMenuSub>
-        </CollapsibleContent>
-      </SidebarMenuSubItem>
-    </Collapsible>
+    <SidebarMenuSubItem>
+      <SidebarMenuSubButton
+        onClick={() => setIsOpen((open) => !open)}
+        className='text-muted-foreground hover:text-sidebar-foreground'
+      >
+        {isOpen ? <ChevronDown /> : <ChevronRight />}
+        <Folder />
+        <span>{schemaName}</span>
+      </SidebarMenuSubButton>
+      {isOpen && (
+        <SidebarMenuSub className='ml-[15px]'>
+          {Object.entries(tables).map(([tableName, semanticInfo]) => (
+            <SidebarMenuSubItem key={tableName}>
+              <SidebarMenuSubButton
+                onClick={() => handleTableClick(tableName, semanticInfo)}
+                className='text-muted-foreground hover:text-sidebar-foreground'
+              >
+                <Table />
+                <span>{tableName}</span>
+              </SidebarMenuSubButton>
+            </SidebarMenuSubItem>
+          ))}
+        </SidebarMenuSub>
+      )}
+    </SidebarMenuSubItem>
   );
 };

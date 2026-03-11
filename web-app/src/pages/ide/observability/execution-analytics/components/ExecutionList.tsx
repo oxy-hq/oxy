@@ -93,7 +93,7 @@ export default function ExecutionList({ projectId, days }: ExecutionListProps) {
 
   if (isLoading) {
     return (
-      <Card>
+      <Card className='bg-transparent shadow-none'>
         <CardHeader>
           <div className='flex items-center gap-2'>
             <History className='h-5 w-5 text-primary' />
@@ -113,7 +113,7 @@ export default function ExecutionList({ projectId, days }: ExecutionListProps) {
   }
 
   return (
-    <Card>
+    <Card className='bg-transparent shadow-none'>
       <CardHeader className='pb-0'>
         <div className='flex items-center gap-2'>
           <History className='h-5 w-5 text-primary' />
@@ -153,9 +153,11 @@ export default function ExecutionList({ projectId, days }: ExecutionListProps) {
                   <SelectValue placeholder='Type' />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value='all'>All Types</SelectItem>
+                  <SelectItem className='cursor-pointer' value='all'>
+                    All Types
+                  </SelectItem>
                   {availableTypes.map((type) => (
-                    <SelectItem key={type} value={type}>
+                    <SelectItem className='cursor-pointer' key={type} value={type}>
                       {EXECUTION_TYPES[type].shortLabel}
                     </SelectItem>
                   ))}
@@ -168,9 +170,15 @@ export default function ExecutionList({ projectId, days }: ExecutionListProps) {
                   <SelectValue placeholder='Status' />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value='all'>All Status</SelectItem>
-                  <SelectItem value='success'>Success</SelectItem>
-                  <SelectItem value='error'>Error</SelectItem>
+                  <SelectItem className='cursor-pointer' value='all'>
+                    All Status
+                  </SelectItem>
+                  <SelectItem className='cursor-pointer' value='success'>
+                    Success
+                  </SelectItem>
+                  <SelectItem className='cursor-pointer' value='error'>
+                    Error
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>

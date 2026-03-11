@@ -26,12 +26,15 @@ const MessageInfo: FunctionComponent<MessageInfoProps> = ({ createdAt, tokensUsa
             <TooltipTrigger className='ml-1 inline' asChild>
               <InfoIcon className='h-3 w-3' />
             </TooltipTrigger>
-            <TooltipContent arrowClassName='invisible' className='bg-muted'>
+            <TooltipContent
+              arrowClassName='invisible'
+              className='border border-border bg-popover text-popover-foreground'
+            >
               <div className='flex flex-col space-y-1'>
                 <div className='font-medium text-sm'>
                   {tokensUsage.inputTokens + tokensUsage.outputTokens} tokens used
                 </div>
-                <div className='space-y-0.5 border-t pt-1'>
+                <div className='space-y-0.5 border-border border-t pt-1'>
                   <div className='flex justify-between gap-4'>
                     <span className='text-muted-foreground'>Input:</span>
                     <span className='font-medium'>{tokensUsage.inputTokens}</span>

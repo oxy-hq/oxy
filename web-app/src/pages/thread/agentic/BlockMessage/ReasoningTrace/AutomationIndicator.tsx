@@ -31,7 +31,7 @@ const AutomationIndicator = ({
 
   if (existingAutomationName) {
     return (
-      <div className='flex items-center gap-3 rounded-md border border-border bg-secondary/30 px-3 py-2 transition-all duration-500'>
+      <div className='flex items-center gap-3 rounded-md border border-border bg-card/50 px-3 py-2 transition-all duration-500'>
         <Check className='h-3.5 w-3.5 shrink-0 text-primary' />
         <div className='min-w-0 flex-1'>
           <div className='font-medium text-foreground text-sm leading-tight'>
@@ -46,8 +46,8 @@ const AutomationIndicator = ({
   return (
     <div
       className={cn(
-        "flex items-center gap-3 rounded-md border px-3 py-2 transition-all duration-500",
-        isGoodCandidate ? "border-primary/30 bg-primary/5" : "border-border bg-secondary/30"
+        "flex items-center gap-3 rounded-md px-3 py-2 transition-all duration-500",
+        isGoodCandidate ? "border bg-card/50" : "bg-card/50"
       )}
     >
       <Zap
@@ -65,12 +65,7 @@ const AutomationIndicator = ({
           {dagLinkedCount}/{total} steps mappable
         </div>
       </div>
-      <Button
-        size='sm'
-        variant={isGoodCandidate ? "default" : "secondary"}
-        onClick={onGenerate}
-        disabled={isLoading}
-      >
+      <Button size='sm' onClick={onGenerate} disabled={isLoading}>
         {isLoading ? (
           <Loader2 className='h-3 w-3 animate-spin' />
         ) : (

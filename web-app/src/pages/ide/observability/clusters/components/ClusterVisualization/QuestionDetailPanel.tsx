@@ -1,5 +1,5 @@
 import { formatDistanceToNow } from "date-fns";
-import { X } from "lucide-react";
+import { Panel, PanelContent, PanelHeader } from "@/components/ui/panel";
 import { Badge } from "@/components/ui/shadcn/badge";
 import { Button } from "@/components/ui/shadcn/button";
 import type { ClusterMapPoint, ClusterSummary } from "@/services/api/traces";
@@ -13,7 +13,6 @@ interface QuestionDetailPanelProps {
 type PointStatus = "ok" | "error" | "unset";
 
 function getPointStatus(point: ClusterMapPoint): PointStatus {
-  // Use status from API if available
   if (point.status) {
     return point.status;
   }
@@ -25,7 +24,7 @@ function getStatusBadgeClass(status: PointStatus): string {
     case "ok":
       return "bg-emerald-500/10 text-emerald-600";
     case "error":
-      return "bg-rose-500/10 text-rose-600";
+      return "bg-destructive/10 text-destructive";
     default:
       return "bg-muted text-muted-foreground";
   }
@@ -46,23 +45,21 @@ export default function QuestionDetailPanel({ point, cluster, onClose }: Questio
   const status = getPointStatus(point);
 
   return (
-    <div className='flex h-full flex-col border-l bg-background'>
-      {/* Header */}
-      <div className='flex items-center justify-between border-b p-4'>
-        <div className='flex items-center gap-2'>
-          <div
-            className='h-3 w-3 rounded-full'
-            style={{ backgroundColor: cluster?.color || "#9ca3af" }}
-          />
-          <span className='font-medium text-sm'>{cluster?.intentName || "Outlier"}</span>
-        </div>
-        <Button variant='ghost' size='icon' className='h-8 w-8' onClick={onClose}>
-          <X className='h-4 w-4' />
-        </Button>
-      </div>
+    <Panel>
+      <PanelHeader
+        title={
+          <div className='flex items-center gap-2'>
+            <div
+              className='h-3 w-3 rounded-full'
+              style={{ backgroundColor: cluster?.color || "#9ca3af" }}
+            />
+            <span className='font-medium text-sm'>{cluster?.intentName || "Outlier"}</span>
+          </div>
+        }
+        onClose={onClose}
+      />
 
-      {/* Content */}
-      <div className='flex-1 space-y-4 overflow-auto p-4'>
+      <PanelContent className='space-y-4'>
         {/* Status & Metadata */}
         <div className='flex flex-wrap items-center gap-2'>
           <Badge variant='secondary' className={getStatusBadgeClass(status)}>
@@ -142,7 +139,7 @@ export default function QuestionDetailPanel({ point, cluster, onClose }: Questio
             </a>
           </Button>
         </div>
-      </div>
-    </div>
+      </PanelContent>
+    </Panel>
   );
 }

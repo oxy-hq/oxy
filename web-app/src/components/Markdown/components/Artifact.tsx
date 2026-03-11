@@ -1,4 +1,4 @@
-import { CircleAlert, CircleCheck, MessagesSquare, SquareTerminal, Workflow } from "lucide-react";
+import { Bot, CircleAlert, CircleCheck, SquareTerminal, Workflow } from "lucide-react";
 import React from "react";
 import {
   Tooltip,
@@ -30,7 +30,7 @@ const ArtifactContainer = React.memo(
         icon = <Workflow />;
         break;
       case "agent":
-        icon = <MessagesSquare />;
+        icon = <Bot />;
         break;
     }
 
@@ -46,7 +46,7 @@ const ArtifactContainer = React.memo(
       case "execute_sql":
       case "semantic_query":
         children = children ? (
-          <details>
+          <details className='flex flex-col gap-2'>
             <summary>{title}</summary>
             {propChildren}
           </details>

@@ -22,10 +22,9 @@ export interface EditorPageWrapperRef {
 
 export interface EditorPageWrapperProps {
   pathb64: string;
-  onSaved?: (content?: string) => void;
-  onChanged?: (content: string) => void;
-  preview?: JSX.Element;
   headerActions?: JSX.Element;
+  headerPrefixAction?: JSX.Element;
+  preview?: JSX.Element;
   className?: string;
   pageContentClassName?: string;
   editorClassName?: string;
@@ -34,6 +33,8 @@ export interface EditorPageWrapperProps {
   defaultDirection?: "horizontal" | "vertical";
   customEditor?: JSX.Element;
   previewOnly?: boolean;
+  onSaved?: (content?: string) => void;
+  onChanged?: (content: string) => void;
 }
 
 const useViewportDetection = (breakpoint: number = NARROW_VIEWPORT_BREAKPOINT) => {
@@ -60,14 +61,15 @@ const EditorPageWrapper = ({
   pathb64,
   preview,
   headerActions,
+  headerPrefixAction,
   className,
   readOnly,
   git = false,
-  onSaved,
-  onChanged,
   defaultDirection = "horizontal",
   customEditor,
-  previewOnly = false
+  previewOnly = false,
+  onSaved,
+  onChanged
 }: EditorPageWrapperProps) => {
   const filePath = decodeBase64(pathb64 ?? "");
 
@@ -85,7 +87,6 @@ const EditorPageWrapper = ({
       className={cn("flex min-h-0 flex-col overflow-hidden bg-editor-background")}
       style={{ width: "100%", height: "100%" }}
     >
-      <EditorHeader readOnly={readOnly} actions={headerActions} filePath={filePath} />
       {customEditor ? (
         customEditor
       ) : (
@@ -106,15 +107,23 @@ const EditorPageWrapper = ({
 
   return (
     <FileEditorProvider pathb64={pathb64} git={git} onSaved={onSaved} onChanged={onChanged}>
-      <EditorPageWrapperContent
-        className={className}
-        hasPreview={hasPreview}
-        previewOnly={previewOnly}
-        storageKey={storageKey}
-        layoutDirection={layoutDirection}
-        renderEditor={renderEditor}
-        renderPreview={renderPreview}
-      />
+      <div className='flex h-full flex-1 flex-col overflow-hidden'>
+        <EditorHeader
+          prefixAction={headerPrefixAction}
+          readOnly={readOnly}
+          actions={headerActions}
+          filePath={filePath}
+        />
+        <EditorPageWrapperContent
+          className={className}
+          hasPreview={hasPreview}
+          previewOnly={previewOnly}
+          storageKey={storageKey}
+          layoutDirection={layoutDirection}
+          renderEditor={renderEditor}
+          renderPreview={renderPreview}
+        />
+      </div>
     </FileEditorProvider>
   );
 };
@@ -176,9 +185,7 @@ const EditorPageWrapperContent = ({
 
   return (
     <>
-      <div className={cn("flex h-full flex-col", className)}>
-        <div className={cn("flex flex-1 overflow-hidden")}>{renderContent()}</div>
-      </div>
+      <div className={cn("flex min-h-0 flex-1", className)}>{renderContent()}</div>
 
       <UnsavedChangesDialog
         open={unsavedChangesDialogOpen}

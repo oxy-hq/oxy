@@ -36,7 +36,7 @@ const ReasoningTraceHeader = ({ isStreaming, steps, toggleCollapse, collapsed }:
   const isComplete = !isStreaming && steps.length > 0;
 
   return (
-    <button type='button' onClick={toggleCollapse} className='mb-1 flex w-full items-center gap-2'>
+    <button type='button' onClick={toggleCollapse} className='mb-2 flex w-full items-center gap-2'>
       <TraceHeaderIcon isComplete={isComplete} collapsed={collapsed} />
       <span className='font-medium text-muted-foreground text-sm'>Reasoning trace</span>
       <span className='ml-auto font-mono text-muted-foreground text-xs'>

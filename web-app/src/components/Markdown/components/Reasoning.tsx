@@ -20,7 +20,7 @@ const ReasoningContainer = React.memo(function ReasoningContainer({ children }: 
         <span className='flex items-center gap-2'>Reasoning...</span>
       </button>
       {isExpanded && (
-        <div className='mt-2 ml-6 border-muted border-l-2 pl-3 text-muted-foreground text-sm leading-relaxed'>
+        <div className='mt-2 ml-2 border-muted border-l-2 pl-3 text-muted-foreground text-sm leading-relaxed'>
           {children}
         </div>
       )}

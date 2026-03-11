@@ -84,7 +84,7 @@ export const OrdersField: React.FC<OrdersFieldProps> = ({
                     </SelectTrigger>
                     <SelectContent>
                       {ORDER_DIRECTIONS.map((dir) => (
-                        <SelectItem key={dir.value} value={dir.value}>
+                        <SelectItem className='cursor-pointer' key={dir.value} value={dir.value}>
                           {dir.label}
                         </SelectItem>
                       ))}

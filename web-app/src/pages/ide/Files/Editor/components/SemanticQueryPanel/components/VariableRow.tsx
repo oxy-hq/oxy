@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
+import { Input } from "@/components/ui/shadcn/input";
 import type { Variable } from "..";
 
 interface VariableRowProps {
@@ -11,22 +12,22 @@ interface VariableRowProps {
 const VariableRow = ({ variable, onUpdate, onRemove }: VariableRowProps) => {
   return (
     <div className='flex items-center gap-2'>
-      <input
+      <Input
         type='text'
         value={variable.key}
         onChange={(e) => onUpdate({ key: e.target.value })}
-        placeholder='Variable Name'
-        className='w-32 rounded border bg-background px-2 py-1 text-xs'
+        placeholder='Variable name'
+        className='w-32'
       />
-      <input
+      <Input
         type='text'
         value={variable.value}
         onChange={(e) => onUpdate({ value: e.target.value })}
         placeholder='Value'
-        className='flex-1 rounded border bg-background px-2 py-1 text-xs'
+        className='flex-1'
       />
-      <Button size='sm' variant='ghost' onClick={onRemove} className='h-7 w-7 p-0'>
-        <X className='h-3 w-3' />
+      <Button size='sm' variant='ghost' onClick={onRemove}>
+        <X />
       </Button>
     </div>
   );

@@ -27,19 +27,14 @@ const ProcessingWarning = ({ threadId, isLoading, className, onRefresh }: Props)
   if (!shouldShowProcessingWarning) return null;
 
   return (
-    <div
-      className={cn(
-        "mb-2 w-full rounded-lg border border-blue-600/30 bg-blue-900/20 px-3",
-        className
-      )}
-    >
+    <div className={cn("mb-2 w-full rounded-lg border border-border bg-card px-3 py-2", className)}>
       <div className='flex items-center justify-between'>
         <span className='font-medium text-blue-100 text-sm'>
           Thread is still processing. The last message may not be complete yet.
         </span>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant='ghost' onClick={onRefresh}>
+            <Button size='sm' variant='ghost' onClick={onRefresh}>
               <RefreshCcw />
             </Button>
           </TooltipTrigger>

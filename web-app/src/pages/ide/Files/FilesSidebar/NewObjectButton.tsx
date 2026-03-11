@@ -239,20 +239,28 @@ const NewObjectButton: React.FC<NewObjectButtonProps> = ({ disabled }) => {
         </DropdownMenuTrigger>
         <DropdownMenuContent align='start'>
           {OBJECT_TYPE_CONFIGS.map((config) => (
-            <DropdownMenuItem key={config.type} onClick={() => handleTypeSelect(config)}>
+            <DropdownMenuItem
+              className='cursor-pointer'
+              key={config.type}
+              onClick={() => handleTypeSelect(config)}
+            >
               <config.icon className='mr-2 h-4 w-4' />
               {config.label}
             </DropdownMenuItem>
           ))}
           <DropdownMenuSub>
-            <DropdownMenuSubTrigger className='px-3 py-2'>
+            <DropdownMenuSubTrigger className='cursor-pointer px-3 py-2'>
               <Layers2 className='mr-4 h-4 w-4' />
               Semantic Layer
               <div className='mr-2'></div>
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
               {SEMANTIC_LAYER_CONFIGS.map((config) => (
-                <DropdownMenuItem key={config.type} onClick={() => handleTypeSelect(config)}>
+                <DropdownMenuItem
+                  className='cursor-pointer'
+                  key={config.type}
+                  onClick={() => handleTypeSelect(config)}
+                >
                   <config.icon className='mr-2 h-4 w-4' />
                   {config.label}
                 </DropdownMenuItem>

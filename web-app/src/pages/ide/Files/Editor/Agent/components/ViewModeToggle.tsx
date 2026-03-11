@@ -30,12 +30,12 @@ const ViewModeToggle = ({ viewMode, onViewModeChange, validationError }: ViewMod
             }
           }}
         >
-          <TabsList className='h-8'>
-            <TabsTrigger value='editor' className='h-6 px-2' aria-label='Editor view'>
-              <Code className='h-4 w-4' />
+          <TabsList>
+            <TabsTrigger value='editor' aria-label='Editor view'>
+              <Code />
             </TabsTrigger>
-            <TabsTrigger value='form' className='h-6 px-2' aria-label='Form view'>
-              <FileText className='h-4 w-4' />
+            <TabsTrigger value='form' aria-label='Form view'>
+              <FileText />
             </TabsTrigger>
           </TabsList>
         </Tabs>

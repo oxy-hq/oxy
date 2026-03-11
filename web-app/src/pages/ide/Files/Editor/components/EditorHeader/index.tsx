@@ -18,10 +18,11 @@ import FileStatus from "./FileStatus";
 interface HeaderProps {
   filePath: string;
   actions?: React.ReactNode;
+  prefixAction?: React.ReactNode;
   readOnly?: boolean;
 }
 
-const EditorHeader = ({ filePath, actions, readOnly = false }: HeaderProps) => {
+const EditorHeader = ({ filePath, actions, prefixAction, readOnly = false }: HeaderProps) => {
   const {
     state: { fileState, git, showDiff },
     actions: fileActions
@@ -29,11 +30,11 @@ const EditorHeader = ({ filePath, actions, readOnly = false }: HeaderProps) => {
   return (
     <div
       className={cn(
-        // keep header visually above Monaco editor and add spacing so buttons don't get overlapped
-        "relative z-10 flex min-h-[40px] flex-col items-start justify-between bg-editor-background px-2 py-1 md:flex-row md:items-center"
+        "flex min-h-[40px] flex-col items-start justify-between gap-4 border-border border-b bg-editor-background px-2 py-1 md:flex-row md:items-center"
       )}
     >
-      <div className='flex items-center gap-1.5'>
+      {prefixAction}
+      <div className='flex flex-1 items-center gap-1.5'>
         <Breadcrumb data-testid='ide-breadcrumb'>
           <BreadcrumbList>
             {filePath.split("/").map((part, index, array) => (
@@ -73,9 +74,8 @@ const EditorHeader = ({ filePath, actions, readOnly = false }: HeaderProps) => {
       <div className='flex items-center gap-1.5'>
         {fileState === "modified" && !readOnly && (
           <Button
-            variant='secondary'
+            variant='outline'
             size='sm'
-            className='text-foreground hover:text-secondary-foreground'
             onClick={() => fileActions.save()}
             data-testid='ide-save-button'
           >

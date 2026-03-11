@@ -62,7 +62,7 @@ const AgentPreview = ({ agentPathb64 }: { agentPathb64: string }) => {
         <form
           ref={formRef}
           onSubmit={handleFormSubmit}
-          className='mx-auto flex w-full max-w-[672px] gap-1 rounded-md border-2 p-2 shadow-sm'
+          className='mx-auto flex w-full max-w-[672px] gap-1 rounded-md border p-2'
         >
           <Textarea
             disabled={isLoading}
@@ -72,6 +72,7 @@ const AgentPreview = ({ agentPathb64 }: { agentPathb64: string }) => {
             onChange={(e) => setQuestion(e.target.value)}
             value={question}
             className={cx(
+              "bg-transparent",
               "border-none shadow-none",
               "hover:border-none focus-visible:border-none focus-visible:shadow-none",
               "focus-visible:ring-0 focus-visible:ring-offset-0",

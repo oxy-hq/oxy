@@ -41,7 +41,6 @@ export default function UsageContextCard({
     <div
       className={cn(
         "group relative rounded-xl border transition-all duration-200",
-        "bg-gradient-to-br from-card to-card/50",
         "hover:border-primary/30 hover:shadow-md hover:shadow-primary/5",
         isExpanded && "border-primary/30"
       )}

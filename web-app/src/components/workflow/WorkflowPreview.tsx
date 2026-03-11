@@ -2,7 +2,6 @@ import { ReactFlowProvider } from "@xyflow/react";
 import { get } from "lodash";
 import {
   ChevronDownIcon,
-  CircleAlert,
   LoaderCircle,
   LoaderCircleIcon,
   LogsIcon,
@@ -11,18 +10,19 @@ import {
   StopCircle
 } from "lucide-react";
 import React, { Suspense, useCallback, useEffect, useMemo } from "react";
+import { toast } from "sonner";
+import { ContentSkeleton } from "@/components/ui/ContentSkeleton";
 import { Button } from "@/components/ui/shadcn/button";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup
 } from "@/components/ui/shadcn/resizable";
-import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import useWorkflowConfig from "@/hooks/api/workflows/useWorkflowConfig";
 import { decodeBase64 } from "@/libs/encoding";
 import { cn } from "@/libs/shadcn/utils";
 import { useBlockStore } from "@/stores/block";
-import { Alert, AlertDescription, AlertTitle } from "../ui/shadcn/alert";
+import { ErrorAlert, ErrorAlertMessage } from "../AppPreview/ErrorAlert";
 import { ButtonGroup } from "../ui/shadcn/button-group";
 import {
   DropdownMenu,
@@ -173,19 +173,23 @@ export const WorkflowPreview = ({
 
   const replayAllHandler = async () => {
     if (runId) {
-      await run.mutateAsync({
-        workflowId: relativePath,
-        retryType: {
-          type: "retry",
-          run_index: parseInt(runId, 10),
-          replay_id: ""
-        }
-      });
-      setShowOutput(true);
-      await stream.mutateAsync({
-        sourceId: relativePath,
-        runIndex: parseInt(runId, 10)
-      });
+      try {
+        await run.mutateAsync({
+          workflowId: relativePath,
+          retryType: {
+            type: "retry",
+            run_index: parseInt(runId, 10),
+            replay_id: ""
+          }
+        });
+        setShowOutput(true);
+        await stream.mutateAsync({
+          sourceId: relativePath,
+          runIndex: parseInt(runId, 10)
+        });
+      } catch {
+        toast.error("Failed to replay the automation run");
+      }
     }
   };
 
@@ -194,34 +198,17 @@ export const WorkflowPreview = ({
   };
 
   if (!workflowConfig && !error) {
-    return (
-      <div className='w-full'>
-        <div className='mx-auto flex max-w-page-content flex-col gap-10 p-10'>
-          {[
-            "workflow-preview-skeleton-1",
-            "workflow-preview-skeleton-2",
-            "workflow-preview-skeleton-3"
-          ].map((key) => (
-            <div key={key} className='flex flex-col gap-4'>
-              <Skeleton className='h-4 max-w-50' />
-              <Skeleton className='h-4 max-w-125' />
-              <Skeleton className='h-4 max-w-125' />
-            </div>
-          ))}
-        </div>
-      </div>
-    );
+    return <ContentSkeleton />;
   }
 
   if (error) {
     const errorMessage = get(error, "response.data.error", error.message);
     return (
-      <div className='p-4'>
-        <Alert variant='destructive'>
-          <CircleAlert />
-          <AlertTitle>Error Loading Procedure</AlertTitle>
-          <AlertDescription>{errorMessage}</AlertDescription>
-        </Alert>
+      <div className='p-2'>
+        <ErrorAlert>
+          <ErrorAlertMessage>Error Loading Automation</ErrorAlertMessage>
+          <ErrorAlertMessage>{errorMessage}</ErrorAlertMessage>
+        </ErrorAlert>
       </div>
     );
   }
@@ -256,7 +243,7 @@ export const WorkflowPreview = ({
                   variant='outline'
                   onClick={cancelRunHandler}
                   disabled={cancelRun.isPending}
-                  tooltip={"Cancel Procedure Run"}
+                  tooltip={"Cancel Automation Run"}
                 >
                   <StopCircle className='h-4 w-4' />
                 </Button>
@@ -266,7 +253,7 @@ export const WorkflowPreview = ({
                     variant='outline'
                     onClick={replayAllHandler}
                     disabled={run.isPending}
-                    tooltip={"Replay Procedure Run"}
+                    tooltip={"Replay Automation Run"}
                   >
                     <RotateCcw className='h-4 w-4' />
                     Replay
@@ -305,7 +292,7 @@ export const WorkflowPreview = ({
               variant='default'
               onClick={runHandler}
               disabled={run.isPending}
-              tooltip={run.isPending ? "Running..." : "Run Procedure"}
+              tooltip={run.isPending ? "Running..." : "Run Automation"}
               data-testid='run-workflow-button'
             >
               {run.isPending ? (
@@ -319,7 +306,7 @@ export const WorkflowPreview = ({
         </div>
       </ResizablePanel>
 
-      <ResizableHandle />
+      <ResizableHandle withHandle />
 
       <ResizablePanel defaultSize={50} minSize={20} className={cn(!showOutput && "flex-[unset]!")}>
         {showOutput && (

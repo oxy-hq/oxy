@@ -16,7 +16,9 @@ const VariablesSection = ({
 
   return (
     <div className='space-y-2 border-b p-3'>
-      <div>Variables</div>
+      <p className='font-medium text-muted-foreground text-xs uppercase tracking-wider'>
+        Variables
+      </p>
       {variables.map((variable, index) => (
         <VariableRow
           key={index}

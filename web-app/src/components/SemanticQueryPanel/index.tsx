@@ -126,7 +126,7 @@ const SemanticQueryPanel = ({
   }, [availableMeasures, measures]);
 
   return (
-    <div className='flex h-full flex-col overflow-y-auto'>
+    <div className='customScrollbar flex h-full flex-col overflow-y-auto'>
       <TopicHeader
         topic={topic}
         database={showDatabase ? database : undefined}

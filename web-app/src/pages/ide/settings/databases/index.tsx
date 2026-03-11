@@ -36,8 +36,8 @@ export default function DatabasesPage() {
 
   const listViewActions = (
     <div className='flex gap-2'>
-      <Button size='sm' variant='default' onClick={() => setIsAddDialogOpen(true)}>
-        <Plus className='h-4 w-4' />
+      <Button size='sm' variant='outline' onClick={() => setIsAddDialogOpen(true)}>
+        <Plus />
         Add Database
       </Button>
       <Button size='sm' variant='outline' onClick={handleCleanAll} disabled={cleaningInProgress}>
@@ -48,7 +48,7 @@ export default function DatabasesPage() {
           </>
         ) : (
           <>
-            <Trash2 className='h-4 w-4' />
+            <Trash2 />
             Reset Oxy State
           </>
         )}
@@ -58,12 +58,7 @@ export default function DatabasesPage() {
 
   return (
     <div className='flex h-full flex-col'>
-      <PageHeader
-        icon={Database}
-        title='Databases'
-        description='Manage database connections and embeddings'
-        actions={listViewActions}
-      />
+      <PageHeader icon={Database} title='Databases' actions={listViewActions} />
 
       <div className='customScrollbar scrollbar-gutter-auto min-h-0 flex-1 overflow-auto p-4'>
         <DatabaseTable />

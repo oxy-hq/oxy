@@ -74,9 +74,9 @@ const TabsHeader = ({
   return (
     <div
       ref={containerRef}
-      className='scrollbar-none customScrollbar flex items-center justify-between gap-4 overflow-x-auto border-b px-4 py-2'
+      className='scrollbar-none customScrollbar flex min-h-12.5 items-center justify-between gap-4 overflow-x-auto border-b px-4 py-2'
     >
-      <TabsList className='flex-shrink-0'>
+      <TabsList>
         <TabsTrigger value='results'>Results</TabsTrigger>
         <TabsTrigger value='sql'>SQL</TabsTrigger>
       </TabsList>
@@ -84,13 +84,8 @@ const TabsHeader = ({
         {!showSql && hasResults && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                size='sm'
-                variant='ghost'
-                onClick={handleDownloadCsv}
-                className='h-7 w-7 flex-shrink-0 p-0'
-              >
-                <Download className='h-4 w-4' />
+              <Button size='sm' variant='ghost' onClick={handleDownloadCsv}>
+                <Download />
               </Button>
             </TooltipTrigger>
             <TooltipContent>Download results as CSV</TooltipContent>
@@ -99,49 +94,42 @@ const TabsHeader = ({
         {isCollapsed ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size='sm' variant='outline' className='h-7 flex-shrink-0'>
-                <Plus className='mr-1 h-3 w-3' />
+              <Button size='sm' variant='outline'>
+                <Plus />
                 Add
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align='end'>
-              <DropdownMenuItem onClick={onAddFilter}>
-                <Filter className='h-4 w-4' />
+              <DropdownMenuItem className='cursor-pointer' onClick={onAddFilter}>
+                <Filter />
                 Add Filter
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={onAddOrder} disabled={!hasSelectedFields}>
-                <ArrowUpDown className='h-4 w-4' />
+              <DropdownMenuItem
+                className='cursor-pointer'
+                onClick={onAddOrder}
+                disabled={!hasSelectedFields}
+              >
+                <ArrowUpDown />
                 Add Sort
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={onAddVariable}>
-                <Variable className='h-4 w-4' />
+              <DropdownMenuItem className='cursor-pointer' onClick={onAddVariable}>
+                <Variable />
                 Add Variable
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         ) : (
           <>
-            <Button size='sm' variant='outline' onClick={onAddFilter} className='h-7 flex-shrink-0'>
-              <Plus className='mr-1 h-3 w-3' />
+            <Button size='sm' variant='outline' onClick={onAddFilter}>
+              <Plus />
               Add Filter
             </Button>
-            <Button
-              size='sm'
-              variant='outline'
-              onClick={onAddOrder}
-              className='h-7 flex-shrink-0'
-              disabled={!hasSelectedFields}
-            >
-              <Plus className='mr-1 h-3 w-3' />
+            <Button size='sm' variant='outline' onClick={onAddOrder} disabled={!hasSelectedFields}>
+              <Plus />
               Add Sort
             </Button>
-            <Button
-              size='sm'
-              variant='outline'
-              onClick={onAddVariable}
-              className='h-7 flex-shrink-0'
-            >
-              <Plus className='mr-1 h-3 w-3' />
+            <Button size='sm' variant='outline' onClick={onAddVariable}>
+              <Plus />
               Add Variable
             </Button>
           </>

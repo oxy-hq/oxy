@@ -40,7 +40,7 @@ export const RetrievalForm: React.FC = () => {
             </p>
           </div>
           <Button type='button' onClick={() => appendInclude("")} variant='outline' size='sm'>
-            <Plus className='mr-2 h-4 w-4' />
+            <Plus />
             Add Include
           </Button>
         </div>
@@ -53,8 +53,8 @@ export const RetrievalForm: React.FC = () => {
                 {...register(`retrieval.include.${index}` as never)}
               />
             </div>
-            <Button type='button' onClick={() => removeInclude(index)} variant='outline' size='sm'>
-              <Trash2 className='h-4 w-4' />
+            <Button type='button' onClick={() => removeInclude(index)} variant='ghost' size='sm'>
+              <Trash2 />
             </Button>
           </div>
         ))}
@@ -69,7 +69,7 @@ export const RetrievalForm: React.FC = () => {
             </p>
           </div>
           <Button type='button' onClick={() => appendExclude("")} variant='outline' size='sm'>
-            <Plus className='mr-2 h-4 w-4' />
+            <Plus />
             Add Exclude
           </Button>
         </div>
@@ -86,8 +86,8 @@ export const RetrievalForm: React.FC = () => {
                 {...register(`retrieval.exclude.${index}` as never)}
               />
             </div>
-            <Button type='button' onClick={() => removeExclude(index)} variant='outline' size='sm'>
-              <Trash2 className='h-4 w-4' />
+            <Button type='button' onClick={() => removeExclude(index)} variant='ghost' size='sm'>
+              <Trash2 />
             </Button>
           </div>
         ))}

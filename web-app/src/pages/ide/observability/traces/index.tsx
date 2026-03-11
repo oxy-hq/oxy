@@ -1,7 +1,7 @@
 import { Activity } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Button } from "@/components/ui/shadcn/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
 import TablePagination from "@/components/ui/TablePagination";
 import useTraces from "@/hooks/api/traces/useTraces";
 import ROUTES from "@/libs/utils/routes";
@@ -52,32 +52,21 @@ export default function TracesPage() {
   };
 
   const durationActions = (
-    <div className='flex gap-1 rounded-lg border bg-muted/30 p-1'>
-      {DURATION_OPTIONS.map((option) => (
-        <Button
-          key={option.value}
-          variant={durationFilter === option.value ? "default" : "ghost"}
-          size='sm'
-          className='h-7 px-3'
-          onClick={() => handleDurationChange(option.value)}
-        >
-          {option.label}
-        </Button>
-      ))}
-    </div>
+    <Tabs value={durationFilter} onValueChange={(v) => handleDurationChange(v as DurationValue)}>
+      <TabsList>
+        {DURATION_OPTIONS.map((option) => (
+          <TabsTrigger key={option.value} value={option.value}>
+            {option.label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </Tabs>
   );
 
   return (
     <div className='flex h-full flex-col'>
       <div className='flex min-h-0 flex-1 flex-col'>
-        <PageHeader
-          icon={Activity}
-          title='Traces'
-          description='View and analyze execution traces'
-          actions={durationActions}
-        />
-
-        {/* Charts Section */}
+        <PageHeader icon={Activity} title='Traces' actions={durationActions} />
 
         <div className='customScrollbar scrollbar-gutter-auto min-h-0 flex-1 overflow-auto p-4'>
           <TraceCharts traces={chartResponse?.items} isLoading={isChartLoading} />

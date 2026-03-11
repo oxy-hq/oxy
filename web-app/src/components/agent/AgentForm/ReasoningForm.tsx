@@ -36,7 +36,7 @@ export const ReasoningForm: React.FC = () => {
           size='sm'
           onClick={() => setShowReasoningEffort(true)}
         >
-          <Plus className='h-4 w-4' />
+          <Plus />
           Add Reasoning Effort
         </Button>
       ) : (
@@ -52,8 +52,7 @@ export const ReasoningForm: React.FC = () => {
                 setShowReasoningEffort(false);
               }}
             >
-              <Trash2 className='h-4 w-4' />
-              Remove
+              <Trash2 />
             </Button>
           </div>
           <Controller
@@ -69,7 +68,7 @@ export const ReasoningForm: React.FC = () => {
                 </SelectTrigger>
                 <SelectContent>
                   {REASONING_EFFORTS.map((effort) => (
-                    <SelectItem key={effort.value} value={effort.value}>
+                    <SelectItem className='cursor-pointer' key={effort.value} value={effort.value}>
                       {effort.label}
                     </SelectItem>
                   ))}

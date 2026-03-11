@@ -11,12 +11,7 @@ import {
 } from "@/components/icons";
 import DomoIcon from "@/components/icons/Domoicon";
 import { Button } from "@/components/ui/shadcn/button";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger
-} from "@/components/ui/shadcn/collapsible";
-import { SidebarMenuItem } from "@/components/ui/shadcn/sidebar";
+import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/shadcn/sidebar";
 import { useDatabaseSync } from "@/hooks/api/databases/useDatabaseSync";
 import { cn } from "@/libs/shadcn/utils";
 import type { DatabaseInfo } from "@/types/database";
@@ -50,11 +45,9 @@ const getDatabaseIcon = (dialect: string) => {
 
 interface ConnectionItemProps {
   database: DatabaseInfo;
-  isActive: boolean;
-  onSelect: () => void;
 }
 
-export const ConnectionItem: React.FC<ConnectionItemProps> = ({ database, isActive, onSelect }) => {
+export const ConnectionItem: React.FC<ConnectionItemProps> = ({ database }) => {
   const [isOpen, setIsOpen] = React.useState(false);
 
   const syncMutation = useDatabaseSync();
@@ -64,45 +57,38 @@ export const ConnectionItem: React.FC<ConnectionItemProps> = ({ database, isActi
     syncMutation.mutate({ database: database.name });
   };
 
+  const Chevron = isOpen ? ChevronDown : ChevronRight;
+
   return (
-    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-      <SidebarMenuItem>
-        <CollapsibleTrigger asChild>
-          <div
-            className={cn(
-              "group flex w-full cursor-pointer items-center gap-1 rounded-md px-2 py-1",
-              isActive
-                ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                : "hover:bg-sidebar-accent/50"
-            )}
-            onClick={onSelect}
-          >
-            <Button variant='ghost' size='icon' className='h-4 w-4 p-0'>
-              {isOpen ? <ChevronDown className='h-3 w-3' /> : <ChevronRight className='h-3 w-3' />}
-            </Button>
-            {getDatabaseIcon(database.dialect)}
-            <span className='flex-1 truncate text-sm'>{database.name}</span>
-            <Button
-              variant='ghost'
-              size='icon'
-              className='h-5 w-5 p-0 opacity-0 group-hover:opacity-100'
-              onClick={handleSyncClick}
-              disabled={syncMutation.isPending}
-              tooltip='Sync Schema'
-            >
-              <RotateCw className={cn("h-3 w-3", syncMutation.isPending && "animate-spin")} />
-            </Button>
-          </div>
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <ConnectionSchemaContent
-            database={database}
-            isSyncing={syncMutation.isPending}
-            syncError={syncMutation.isError ? syncMutation.error?.message : undefined}
-            handleSyncDatabase={handleSyncClick}
-          />
-        </CollapsibleContent>
-      </SidebarMenuItem>
-    </Collapsible>
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        onClick={() => setIsOpen((open) => !open)}
+        className='text-sidebar-foreground hover:bg-sidebar-accent'
+      >
+        <Chevron className='h-4 w-4' />
+        {getDatabaseIcon(database.dialect)}
+        <span className='flex-1 truncate'>{database.name}</span>
+
+        <Button
+          variant='ghost'
+          size='icon'
+          className='opacity-0 group-hover/menu-item:opacity-100'
+          onClick={handleSyncClick}
+          disabled={syncMutation.isPending}
+          tooltip='Sync Schema'
+        >
+          <RotateCw className={cn(syncMutation.isPending && "animate-spin")} />
+        </Button>
+      </SidebarMenuButton>
+
+      {isOpen && (
+        <ConnectionSchemaContent
+          database={database}
+          isSyncing={syncMutation.isPending}
+          syncError={syncMutation.isError ? syncMutation.error?.message : undefined}
+          handleSyncDatabase={handleSyncClick}
+        />
+      )}
+    </SidebarMenuItem>
   );
 };

@@ -1,7 +1,7 @@
-import { BrushCleaning, Play } from "lucide-react";
+import { BrushCleaning, FlaskConical, MessageCircleDashed, Play } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/shadcn/button";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/shadcn/toggle-group";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
 import useAgent from "@/hooks/api/agents/useAgent";
 import useAgentThreadStore, { getThreadIdFromPath } from "@/stores/useAgentThread";
 import useTests from "@/stores/useTests";
@@ -15,7 +15,7 @@ interface PreviewSectionProps {
 }
 
 const PreviewSection = ({ pathb64, previewKey }: PreviewSectionProps) => {
-  const [selected, setSelected] = useState<string>("preview");
+  const [selected, setSelected] = useState("preview");
   const { setMessages } = useAgentThreadStore();
   const { project, branchName } = useEditorContext();
   const { data: agent, isLoading } = useAgent(pathb64);
@@ -33,15 +33,19 @@ const PreviewSection = ({ pathb64, previewKey }: PreviewSectionProps) => {
 
   return (
     <div className='flex flex-1 flex-col overflow-hidden'>
-      <div className='relative z-10 flex flex-shrink-0 justify-between bg-background p-4'>
-        <ToggleGroup size='sm' value={selected} onValueChange={setSelected} type='single'>
-          <ToggleGroupItem value='preview' aria-label='Preview'>
-            Preview
-          </ToggleGroupItem>
-          <ToggleGroupItem value='test' aria-label='Test'>
-            Test
-          </ToggleGroupItem>
-        </ToggleGroup>
+      <div className='relative z-10 flex flex-shrink-0 justify-between bg-background p-2'>
+        <Tabs value={selected} onValueChange={setSelected}>
+          <TabsList>
+            <TabsTrigger value='preview'>
+              <MessageCircleDashed className='h-4 w-4' />
+              Preview
+            </TabsTrigger>
+            <TabsTrigger value='test'>
+              <FlaskConical />
+              Test
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
         {selected === "test" && (
           <Button size='sm' variant='ghost' onClick={handleRunAllTests} title={"Run all tests"}>
             <Play className='h-4 w-4' />

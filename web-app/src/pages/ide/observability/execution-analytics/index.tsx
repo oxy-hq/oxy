@@ -1,6 +1,7 @@
 import { Activity } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/shadcn/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
 import { useExecutionSummary } from "@/hooks/api/useExecutionAnalytics";
 import PageHeader from "@/pages/ide/components/PageHeader";
 import { timeRangeToDays } from "@/services/api/executionAnalytics";
@@ -62,29 +63,20 @@ export default function ExecutionAnalytics() {
   }
 
   const timeRangeActions = (
-    <div className='flex gap-1 rounded-lg border bg-muted/30 p-1'>
-      {TIME_RANGE_OPTIONS.map((option) => (
-        <Button
-          key={option.value}
-          variant={timeRange === option.value ? "default" : "ghost"}
-          size='sm'
-          className='h-7 px-3'
-          onClick={() => setTimeRange(option.value)}
-        >
-          {option.label}
-        </Button>
-      ))}
-    </div>
+    <Tabs value={timeRange} onValueChange={(v) => setTimeRange(v as TimeRange)}>
+      <TabsList>
+        {TIME_RANGE_OPTIONS.map((option) => (
+          <TabsTrigger key={option.value} value={option.value}>
+            {option.label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </Tabs>
   );
 
   return (
     <div className='flex h-full flex-col overflow-auto'>
-      <PageHeader
-        icon={Activity}
-        title='Execution Analytics'
-        description='Track verified vs generated executions'
-        actions={timeRangeActions}
-      />
+      <PageHeader icon={Activity} title='Execution Analytics' actions={timeRangeActions} />
 
       <div className='customScrollbar min-h-0 flex-1 overflow-auto p-6'>
         {error ? (

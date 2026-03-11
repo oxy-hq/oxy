@@ -48,7 +48,7 @@ export default function DetailStatsRow({ detailData }: DetailStatsRowProps) {
 
   return (
     <div className='grid grid-cols-1 gap-4 md:grid-cols-4'>
-      <Card className='overflow-hidden'>
+      <Card className='overflow-hidden bg-transparent shadow-none'>
         <CardContent className='p-4'>
           <div className='flex items-center gap-3'>
             <div className='rounded-lg bg-primary/10 p-2'>
@@ -62,7 +62,7 @@ export default function DetailStatsRow({ detailData }: DetailStatsRowProps) {
         </CardContent>
       </Card>
 
-      <Card className='overflow-hidden'>
+      <Card className='overflow-hidden bg-transparent shadow-none'>
         <CardContent className='p-4'>
           <div className='flex items-center gap-3'>
             <TrendIcon isPositive={isPositive} isNegative={isNegative} />
@@ -82,7 +82,7 @@ export default function DetailStatsRow({ detailData }: DetailStatsRowProps) {
         </CardContent>
       </Card>
 
-      <Card className='overflow-hidden'>
+      <Card className='overflow-hidden bg-transparent shadow-none'>
         <CardContent className='p-4'>
           <div className='flex items-center gap-3'>
             <div className='rounded-lg bg-blue-500/10 p-2'>
@@ -96,7 +96,7 @@ export default function DetailStatsRow({ detailData }: DetailStatsRowProps) {
         </CardContent>
       </Card>
 
-      <Card className='overflow-hidden'>
+      <Card className='overflow-hidden bg-transparent shadow-none'>
         <CardContent className='p-4'>
           <div className='flex items-center gap-3'>
             <div className='rounded-lg bg-purple-500/10 p-2'>

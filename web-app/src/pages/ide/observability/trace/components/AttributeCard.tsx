@@ -41,7 +41,7 @@ export function AttributeCard({ name, value }: AttributeCardProps) {
     <>
       <div className='overflow-hidden rounded-lg border'>
         {/* Header */}
-        <div className='flex items-center justify-between border-b bg-muted/50 px-3 py-2'>
+        <div className='flex items-center justify-between border-b bg-card px-3 py-2'>
           <span className='font-semibold text-xs'>{name}</span>
           <div className='flex items-center gap-1'>
             {isJson && (

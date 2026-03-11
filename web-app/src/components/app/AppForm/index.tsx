@@ -119,8 +119,8 @@ export const AppForm: React.FC<AppFormProps> = ({ data, onChange }) => {
 
   return (
     <FormProvider {...methods}>
-      <div className='flex min-h-0 flex-1 flex-col bg-card'>
-        <div className='customScrollbar flex-1 overflow-auto p-6'>
+      <div className='flex min-h-0 flex-1 flex-col'>
+        <div className='customScrollbar flex-1 overflow-auto p-4'>
           <form id='app-form' className='space-y-8'>
             <NestedTasksForm
               label={<CardTitle>Tasks</CardTitle>}
@@ -140,7 +140,7 @@ export const AppForm: React.FC<AppFormProps> = ({ data, onChange }) => {
                 variant='outline'
                 size='sm'
               >
-                <Plus className='mr-2 h-4 w-4' />
+                <Plus />
                 Add Display
               </Button>
             </div>

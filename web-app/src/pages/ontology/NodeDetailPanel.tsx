@@ -1,6 +1,9 @@
-import { Loader2, Pencil, X } from "lucide-react";
+import { Loader2, Pencil } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { Panel, PanelContent, PanelHeader } from "@/components/ui/panel";
 import { Button } from "@/components/ui/shadcn/button";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
@@ -81,31 +84,35 @@ export function NodeDetailPanel({ node, onClose }: NodeDetailPanelProps) {
     node.type === "agent" ||
     node.type === "sql_query";
 
+  const getLanguage = () => {
+    if (node.type === "sql_query") return "sql";
+    const ext = node.data.path?.split(".").pop();
+    if (ext === "sql") return "sql";
+    if (ext === "yaml" || ext === "yml") return "yaml";
+    return "yaml";
+  };
+
   return (
-    <div
-      className='fixed top-0 right-0 z-50 flex h-full w-96 flex-col border-border border-l bg-background shadow-xl'
-      style={{ animation: "slideIn 0.2s ease-out" }}
-    >
-      {/* Header */}
-      <div className='flex items-center justify-between border-border border-b p-4'>
-        <div className='min-w-0 flex-1'>
-          <h2 className='truncate font-semibold text-lg'>{node.label}</h2>
-          <p className='text-muted-foreground text-sm'>{typeLabels[node.type] || node.type}</p>
-        </div>
-        <div className='flex items-center gap-2'>
-          {isFileNode && node.data.path && (
-            <Button variant='ghost' size='icon' onClick={handleOpenInIDE} title='Open in IDE'>
+    <Panel className='fixed top-0 right-0 z-50 w-96 shadow-xl' animate>
+      <PanelHeader
+        title={node.label}
+        subtitle={typeLabels[node.type] || node.type}
+        onClose={onClose}
+        actions={
+          isFileNode && node.data.path ? (
+            <Button
+              variant='ghost'
+              size='icon'
+              className='h-7 w-7'
+              onClick={handleOpenInIDE}
+              title='Open in IDE'
+            >
               <Pencil className='h-4 w-4' />
             </Button>
-          )}
-          <Button variant='ghost' size='icon' onClick={onClose}>
-            <X className='h-4 w-4' />
-          </Button>
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className='flex-1 overflow-auto p-4'>
+          ) : undefined
+        }
+      />
+      <PanelContent>
         {/* Metadata */}
         <div className='mb-4 space-y-3'>
           {node.data.path && (
@@ -150,27 +157,25 @@ export function NodeDetailPanel({ node, onClose }: NodeDetailPanelProps) {
               </div>
             )}
             {!isLoading && content && (
-              <pre className='max-h-96 overflow-auto whitespace-pre-wrap break-words rounded bg-muted p-3 text-xs'>
+              <SyntaxHighlighter
+                language={getLanguage()}
+                style={oneDark}
+                PreTag='div'
+                className='rounded-lg! text-xs!'
+                lineProps={{
+                  style: { wordBreak: "break-all", whiteSpace: "pre-wrap" }
+                }}
+                wrapLines={true}
+              >
                 {content}
-              </pre>
+              </SyntaxHighlighter>
             )}
             {!isLoading && !content && (
               <p className='text-muted-foreground text-sm italic'>No content available</p>
             )}
           </div>
         )}
-      </div>
-
-      <style>{`
-        @keyframes slideIn {
-          from {
-            transform: translateX(100%);
-          }
-          to {
-            transform: translateX(0);
-          }
-        }
-      `}</style>
-    </div>
+      </PanelContent>
+    </Panel>
   );
 }

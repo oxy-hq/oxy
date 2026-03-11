@@ -99,7 +99,7 @@ export default function AgentForm({ models, databases }: AgentFormProps) {
           </SelectTrigger>
           <SelectContent>
             {modelOptions.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
+              <SelectItem className='cursor-pointer' key={option.value} value={option.value}>
                 {option.label}
               </SelectItem>
             ))}
@@ -211,7 +211,11 @@ export default function AgentForm({ models, databases }: AgentFormProps) {
                         </SelectTrigger>
                         <SelectContent>
                           {databasesOptions.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
+                            <SelectItem
+                              className='cursor-pointer'
+                              key={option.value}
+                              value={option.value}
+                            >
                               {option.label}
                             </SelectItem>
                           ))}

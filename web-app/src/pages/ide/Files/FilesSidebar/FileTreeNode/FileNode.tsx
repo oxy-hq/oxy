@@ -150,7 +150,7 @@ const FileNode = ({ fileTree, activePath }: { fileTree: FileTreeModel; activePat
               asChild
               isActive={isActive}
               className={cn(
-                "h-6 overflow-visible py-0.5 text-muted-foreground transition-colors duration-150 ease-in hover:text-sidebar-foreground",
+                "text-sidebar-foreground hover:bg-sidebar-accent",
                 isContextMenuOpen ? "border border-border" : ""
               )}
             >
@@ -182,11 +182,11 @@ const FileNode = ({ fileTree, activePath }: { fileTree: FileTreeModel; activePat
           {!isReadOnly && (
             <>
               <ContextMenuItem className='cursor-pointer' onClick={handleRename}>
-                <Pencil className='mr-2 h-4 w-4' />
+                <Pencil />
                 <span>Rename</span>
               </ContextMenuItem>
               <ContextMenuItem className='cursor-pointer text-red-600' onClick={handleDelete}>
-                <Trash2 className='mr-2 h-4 w-4' />
+                <Trash2 />
                 <span>Delete</span>
               </ContextMenuItem>
             </>

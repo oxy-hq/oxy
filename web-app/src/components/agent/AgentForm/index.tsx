@@ -2,6 +2,7 @@ import { Plus } from "lucide-react";
 import { useEffect } from "react";
 import { Controller, FormProvider, useFieldArray, useForm } from "react-hook-form";
 import { TestsForm } from "@/components/shared/TestsForm";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/shadcn/button";
 import { CardTitle } from "@/components/ui/shadcn/card";
 import { Input } from "@/components/ui/shadcn/input";
@@ -211,8 +212,8 @@ export const AgentForm: React.FC<AgentFormProps> = ({ data, onChange }) => {
 
   return (
     <FormProvider {...methods}>
-      <div className='flex min-h-0 flex-1 flex-col bg-card'>
-        <div className='customScrollbar flex-1 overflow-auto p-6'>
+      <div className='flex min-h-0 flex-1 flex-col'>
+        <div className='customScrollbar flex-1 overflow-auto p-4'>
           <form id='agent-form' className='space-y-8'>
             {/* Basic fields */}
             <div className='space-y-4'>
@@ -238,8 +239,12 @@ export const AgentForm: React.FC<AgentFormProps> = ({ data, onChange }) => {
                         <SelectValue placeholder='Select agent type' />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value='default'>Default Agent</SelectItem>
-                        <SelectItem value='routing'>Routing Agent</SelectItem>
+                        <SelectItem className='cursor-pointer' value='default'>
+                          Default Agent
+                        </SelectItem>
+                        <SelectItem className='cursor-pointer' value='routing'>
+                          Routing Agent
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   )}
@@ -273,7 +278,13 @@ export const AgentForm: React.FC<AgentFormProps> = ({ data, onChange }) => {
               </div>
 
               <div className='flex items-center space-x-2'>
-                <input type='checkbox' id='public' {...register("public")} className='rounded' />
+                <Controller
+                  control={control}
+                  name='public'
+                  render={({ field }) => (
+                    <Checkbox id='public' checked={field.value} onCheckedChange={field.onChange} />
+                  )}
+                />
                 <Label htmlFor='public'>Public</Label>
               </div>
             </div>
@@ -296,7 +307,7 @@ export const AgentForm: React.FC<AgentFormProps> = ({ data, onChange }) => {
                 variant='outline'
                 size='sm'
               >
-                <Plus className='mr-2 h-4 w-4' />
+                <Plus />
                 Add Test
               </Button>
             </div>

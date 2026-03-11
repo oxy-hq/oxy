@@ -33,7 +33,7 @@ export const ConnectionSchemaContent: React.FC<ConnectionSchemaContentProps> = (
 }) => {
   if (syncError) {
     return (
-      <SidebarMenuSub className='ml-4'>
+      <SidebarMenuSub className='ml-[15px]'>
         <div className='px-2 py-2 text-xs'>
           <div className='mb-1 text-destructive'>Sync failed: {syncError}</div>
           <button
@@ -50,7 +50,7 @@ export const ConnectionSchemaContent: React.FC<ConnectionSchemaContentProps> = (
 
   if (!database.synced) {
     return (
-      <SidebarMenuSub className='ml-4'>
+      <SidebarMenuSub className='ml-[15px]'>
         <div className='px-2 py-2 text-muted-foreground text-xs italic'>
           Not synced.{" "}
           <button
@@ -69,14 +69,14 @@ export const ConnectionSchemaContent: React.FC<ConnectionSchemaContentProps> = (
 
   if (filteredSchemas.length === 0) {
     return (
-      <SidebarMenuSub className='ml-4'>
+      <SidebarMenuSub className='ml-[15px]'>
         <div className='px-2 py-2 text-muted-foreground text-xs italic'>No tables found</div>
       </SidebarMenuSub>
     );
   }
 
   return (
-    <SidebarMenuSub className='ml-4'>
+    <SidebarMenuSub className='ml-[15px]'>
       {filteredSchemas
         .sort((a, b) => a.name.localeCompare(b.name))
         .map((schema) => (

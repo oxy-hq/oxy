@@ -196,10 +196,7 @@ export function AddDatabaseForm({ onSuccess, onCancel }: AddDatabaseFormProps) {
               const showTestResult = displayResultsForIndex === index;
 
               return (
-                <div
-                  key={field.id}
-                  className={cn("flex flex-col gap-4 rounded-md border bg-muted/40 p-3")}
-                >
+                <div key={field.id} className={cn("flex flex-col gap-4 rounded-md")}>
                   <div>
                     <div className='flex flex-row items-center justify-between gap-4'>
                       <div className='flex flex-1 items-center gap-2'>

@@ -60,7 +60,7 @@ export default function InfoLegend() {
   ];
 
   return (
-    <Card>
+    <Card className='bg-transparent shadow-none'>
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
         <CollapsibleTrigger asChild>
           <Button variant='ghost' className='h-auto w-full justify-between p-4 hover:bg-muted/50'>

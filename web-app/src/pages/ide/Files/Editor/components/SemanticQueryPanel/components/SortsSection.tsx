@@ -18,10 +18,10 @@ const SortsSection = ({
 
   return (
     <div className='flex w-full flex-col space-y-2 border-b p-3'>
-      <div>Sorts</div>
+      <p className='font-medium text-muted-foreground text-xs uppercase tracking-wider'>Sorts</p>
       {orders.map((order, index) => (
         <SortRow
-          key={`${index}`}
+          key={`${order.field}-${order.direction}-${index}`}
           order={order}
           availableFields={availableFields}
           onUpdate={(updates) => onUpdateOrder(index, updates)}

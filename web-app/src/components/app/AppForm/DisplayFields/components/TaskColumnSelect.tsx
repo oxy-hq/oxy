@@ -126,7 +126,7 @@ export const TaskColumnSelect: React.FC<TaskColumnSelectProps> = ({
       </SelectTrigger>
       <SelectContent>
         {columnItems.map((item) => (
-          <SelectItem key={item.value} value={item.value}>
+          <SelectItem className='cursor-pointer' key={item.value} value={item.value}>
             {item.label}
           </SelectItem>
         ))}

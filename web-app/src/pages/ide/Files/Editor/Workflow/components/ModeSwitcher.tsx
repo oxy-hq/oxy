@@ -16,15 +16,15 @@ const ModeSwitcher = ({ viewMode, onViewModeChange }: ModeSwitcherProps) => (
       }
     }}
   >
-    <TabsList className='h-8'>
-      <TabsTrigger value={WorkflowViewMode.Output} className='h-6 px-2' aria-label='Output view'>
-        <Play className='h-4 w-4' />
+    <TabsList>
+      <TabsTrigger value={WorkflowViewMode.Output} aria-label='Output view'>
+        <Play />
       </TabsTrigger>
-      <TabsTrigger value={WorkflowViewMode.Editor} className='h-6 px-2' aria-label='Editor view'>
-        <Code className='h-4 w-4' />
+      <TabsTrigger value={WorkflowViewMode.Editor} aria-label='Editor view'>
+        <Code />
       </TabsTrigger>
-      <TabsTrigger value={WorkflowViewMode.Form} className='h-6 px-2' aria-label='Form view'>
-        <FileText className='h-4 w-4' />
+      <TabsTrigger value={WorkflowViewMode.Form} aria-label='Form view'>
+        <FileText />
       </TabsTrigger>
     </TabsList>
   </Tabs>

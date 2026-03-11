@@ -52,7 +52,7 @@ const getExtendedComponents = (data?: MarkdownData): ExtendedComponents => ({
   h3: ({ children }) => <h3 className='mt-4 mb-2 font-medium text-xl'>{children}</h3>,
   h4: ({ children }) => <h4 className='mt-4 mb-2 font-medium text-lg'>{children}</h4>,
   h5: ({ children }) => <h5 className='mt-4 mb-2 font-medium text-md'>{children}</h5>,
-  p: ({ children }) => <p className='mb-2 text-sm leading-7'>{children}</p>,
+  p: ({ children }) => <p className='mt-1 text-sm leading-7'>{children}</p>,
   ul: ({ children }) => <ul className='mb-2 list-disc pl-6 [&>li]:mb-1'>{children}</ul>,
   ol: ({ children, start, ...props }) => (
     <ol className='mb-2 list-decimal pl-6 [&>li]:mb-1' start={start} {...props}>
@@ -67,7 +67,7 @@ const getExtendedComponents = (data?: MarkdownData): ExtendedComponents => ({
     </blockquote>
   ),
   table: ({ children, ...props }) => (
-    <div className='customScrollbar scrollbar-gutter-auto max-h-96 overflow-auto rounded-lg border border-[#27272A]'>
+    <div className='customScrollbar scrollbar-gutter-auto mt-2 max-h-96 overflow-auto rounded-lg border border-[#27272A]'>
       <table className='w-full border-collapse text-sm' {...props}>
         {children}
       </table>
@@ -94,7 +94,11 @@ const getExtendedComponents = (data?: MarkdownData): ExtendedComponents => ({
       {children}
     </td>
   ),
-  code: (props) => <CodeBlock {...props} />,
+  code: (props) => (
+    <div className='mt-2'>
+      <CodeBlock {...props} />
+    </div>
+  ),
   chart: (props) => <ChartContainer {...props} />,
   artifact: (props) => <ArtifactContainer {...props} onClick={data?.onArtifactClick} />,
   reasoning: (props: { children?: React.ReactNode }) => (

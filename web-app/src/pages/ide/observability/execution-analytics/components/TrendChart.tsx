@@ -125,7 +125,7 @@ export default function TrendChart({ projectId, days }: TrendChartProps) {
   }, [isLoading]);
 
   return (
-    <Card>
+    <Card className='bg-transparent shadow-none'>
       <CardHeader className='pb-2'>
         <div className='flex items-center gap-2'>
           <TrendingUp className='h-5 w-5 text-primary' />

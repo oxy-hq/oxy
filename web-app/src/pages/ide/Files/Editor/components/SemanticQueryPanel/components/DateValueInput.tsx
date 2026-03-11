@@ -1,7 +1,10 @@
-import { Calendar } from "lucide-react";
+import { Calendar as CalendarIcon, Clock2Icon } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/shadcn/button";
+import { Calendar } from "@/components/ui/shadcn/calendar";
+import { FieldDescription } from "@/components/ui/shadcn/field";
 import { Input } from "@/components/ui/shadcn/input";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/shadcn/input-group";
 import { Label } from "@/components/ui/shadcn/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/shadcn/popover";
 import {
@@ -12,7 +15,6 @@ import {
   SelectValue
 } from "@/components/ui/shadcn/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
-import { cn } from "@/libs/utils/cn";
 import type { DateRangeValue } from "@/services/api/semantic";
 
 const RELATIVE_PRESETS = [
@@ -31,16 +33,11 @@ interface DateValueInputProps {
   placeholder?: string;
 }
 
-function formatDateTimeValue(value?: DateRangeValue): string {
-  if (!value) return "";
-  if (typeof value === "string") {
-    const date = new Date(value);
-    if (!Number.isNaN(date.getTime())) {
-      return date.toISOString().slice(0, 16);
-    }
-    return "";
-  }
-  return value.toISOString().slice(0, 16);
+function parseToDate(value?: DateRangeValue): Date | undefined {
+  if (!value) return undefined;
+  if (value instanceof Date) return value;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
 }
 
 function formatDisplayValue(value?: DateRangeValue, placeholder = "Select date..."): string {
@@ -73,8 +70,29 @@ const DateValueInput = ({
   const [customRelative, setCustomRelative] = useState<string>("");
   const [error, setError] = useState<string>("");
 
-  const handleCalendarChange = (dateString: string) => {
-    onChange(dateString ? new Date(dateString).toISOString() : undefined);
+  const selectedDate = parseToDate(value);
+
+  const timeValue = selectedDate
+    ? `${String(selectedDate.getHours()).padStart(2, "0")}:${String(selectedDate.getMinutes()).padStart(2, "0")}:${String(selectedDate.getSeconds()).padStart(2, "0")}`
+    : "12:00:00";
+
+  const handleTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const [hours, minutes, seconds] = e.target.value.split(":").map(Number);
+    const date = selectedDate ? new Date(selectedDate) : new Date();
+    date.setHours(hours ?? 0, minutes ?? 0, seconds ?? 0);
+    onChange(date.toISOString());
+  };
+
+  const handleDaySelect = (day: Date | undefined) => {
+    if (!day) {
+      onChange(undefined);
+      return;
+    }
+    const existing = parseToDate(value);
+    if (existing) {
+      day.setHours(existing.getHours(), existing.getMinutes());
+    }
+    onChange(day.toISOString());
   };
 
   const handlePresetChange = (preset: string) => {
@@ -99,29 +117,42 @@ const DateValueInput = ({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild className={className}>
-        <button
-          type='button'
-          className='flex w-full items-center gap-2 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none transition-[color,box-shadow] hover:bg-accent focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50'
-        >
-          <Calendar className='h-4 w-4 text-muted-foreground' />
+        <Button variant='outline' className='w-full bg-input/30 font-normal'>
+          <CalendarIcon />
           <span className='flex-1 truncate text-left'>
             {formatDisplayValue(value, placeholder)}
           </span>
-        </button>
+        </Button>
       </PopoverTrigger>
-      <PopoverContent className={cn("w-80")} align='start'>
-        <Tabs value={tab} onValueChange={setTab}>
+      <PopoverContent className='w-auto p-0' align='start'>
+        <Tabs className='max-w-[300px] space-y-2 p-3' value={tab} onValueChange={setTab}>
           <TabsList className='grid w-full grid-cols-2'>
             <TabsTrigger value='calendar'>Calendar</TabsTrigger>
             <TabsTrigger value='relative'>Relative</TabsTrigger>
           </TabsList>
-          <TabsContent value='calendar' className='space-y-2'>
-            <Label>Select date and time</Label>
-            <Input
-              type='datetime-local'
-              value={formatDateTimeValue(value)}
-              onChange={(e) => handleCalendarChange(e.target.value)}
-            />
+          <TabsContent value='calendar'>
+            <div className='space-y-2'>
+              <Calendar
+                mode='single'
+                className='p-0'
+                selected={selectedDate}
+                onSelect={handleDaySelect}
+                defaultMonth={selectedDate}
+              />
+              <InputGroup>
+                <InputGroupInput
+                  id='time-from'
+                  type='time'
+                  step='1'
+                  value={timeValue}
+                  onChange={handleTimeChange}
+                  className='appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none'
+                />
+                <InputGroupAddon>
+                  <Clock2Icon className='text-muted-foreground' />
+                </InputGroupAddon>
+              </InputGroup>
+            </div>
           </TabsContent>
           <TabsContent value='relative' className='space-y-2'>
             <Label>Relative time</Label>
@@ -131,7 +162,7 @@ const DateValueInput = ({
               </SelectTrigger>
               <SelectContent>
                 {RELATIVE_PRESETS.map((preset) => (
-                  <SelectItem key={preset.value} value={preset.value}>
+                  <SelectItem className='cursor-pointer' key={preset.value} value={preset.value}>
                     {preset.label}
                   </SelectItem>
                 ))}
@@ -139,7 +170,6 @@ const DateValueInput = ({
             </Select>
             {relativePreset === "custom" && (
               <div className='space-y-2'>
-                <Label>Supports chrono-english syntax, e.g. "7 days ago", "3 months ago".</Label>
                 <div className='flex gap-2'>
                   <Input
                     type='text'
@@ -159,7 +189,10 @@ const DateValueInput = ({
                     Apply
                   </Button>
                 </div>
-                {error && <p className='text-destructive text-xs'>{error}</p>}
+                {error && <p className='text-destructive'>{error}</p>}
+                <FieldDescription>
+                  Supports chrono-english syntax, e.g. "7 days ago", "3 months ago".
+                </FieldDescription>
               </div>
             )}
           </TabsContent>

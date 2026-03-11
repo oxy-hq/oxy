@@ -2,6 +2,7 @@ import { ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
 import { Controller, useFormContext } from "react-hook-form";
+import { Checkbox } from "@/components/ui/checkbox";
 import { FilePathAutocompleteInput } from "@/components/ui/FilePathAutocompleteInput";
 import { Button } from "@/components/ui/shadcn/button";
 import {
@@ -109,13 +110,11 @@ export const TestsForm: React.FC<TestsFormProps> = ({ index, onRemove }) => {
               <Controller
                 name={`tests.${index}.is_context_id`}
                 control={control}
-                render={({ field: { value, onChange } }) => (
-                  <input
-                    type='checkbox'
+                render={({ field }) => (
+                  <Checkbox
                     id={`tests.${index}.is_context_id`}
-                    checked={Boolean(value)}
-                    onChange={onChange}
-                    className='rounded'
+                    checked={Boolean(field.value)}
+                    onCheckedChange={field.onChange}
                   />
                 )}
               />
@@ -182,7 +181,11 @@ export const TestsForm: React.FC<TestsFormProps> = ({ index, onRemove }) => {
                       </SelectTrigger>
                       <SelectContent>
                         {TEST_TYPES.map((type) => (
-                          <SelectItem key={type.value} value={type.value}>
+                          <SelectItem
+                            className='cursor-pointer'
+                            key={type.value}
+                            value={type.value}
+                          >
                             {type.label}
                           </SelectItem>
                         ))}

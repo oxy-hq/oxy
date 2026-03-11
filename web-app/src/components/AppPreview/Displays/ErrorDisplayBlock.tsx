@@ -1,13 +1,11 @@
-import { CircleAlert } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/shadcn/alert";
 import type { ErrorDisplay } from "@/types/app";
+import { ErrorAlert, ErrorAlertMessage } from "../ErrorAlert";
 
 const ErrorDisplayBlock = ({ display }: { display: ErrorDisplay }) => (
-  <Alert variant='destructive'>
-    <CircleAlert />
-    <AlertTitle>{display.title}</AlertTitle>
-    <AlertDescription>Error: {display.error}</AlertDescription>
-  </Alert>
+  <ErrorAlert>
+    <ErrorAlertMessage>{display.title}</ErrorAlertMessage>
+    <ErrorAlertMessage>Error: {display.error}</ErrorAlertMessage>
+  </ErrorAlert>
 );
 
 export default ErrorDisplayBlock;

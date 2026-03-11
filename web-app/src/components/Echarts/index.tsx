@@ -75,7 +75,12 @@ export const Echarts = ({
     if (chartRef.current) {
       const chart = getInstanceByDom(chartRef.current);
       if (isLoading) {
-        chart?.showLoading("default", { text: "", color: "transparent", maskColor: "transparent" });
+        chart?.showLoading("default", {
+          text: "Loading",
+          color: "var(--primary)",
+          textColor: "var(--muted-foreground)",
+          maskColor: "var(--background)"
+        });
       } else {
         chart?.hideLoading();
       }

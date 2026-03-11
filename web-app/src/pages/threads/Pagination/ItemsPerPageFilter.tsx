@@ -34,7 +34,7 @@ const ItemsPerPageFilter: React.FC<ItemsPerPageFilterProps> = ({
       </SelectTrigger>
       <SelectContent align='end' className='min-w-[70px]'>
         {ITEMS_PER_PAGE_OPTIONS.map((option) => (
-          <SelectItem key={option} value={option.toString()}>
+          <SelectItem className='cursor-pointer' key={option} value={option.toString()}>
             {option} / page
           </SelectItem>
         ))}

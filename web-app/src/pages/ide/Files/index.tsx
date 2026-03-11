@@ -25,7 +25,7 @@ const FilesLayout: React.FC = () => {
             <ResizablePanel defaultSize={20} minSize={10} className='min-w-[200px]'>
               <FilesSidebar setSidebarOpen={setSidebarOpen} />
             </ResizablePanel>
-            <ResizableHandle />
+            <ResizableHandle withHandle />
           </>
         ) : (
           <div className='flex items-start border-r bg-sidebar-background px-1 py-2'>

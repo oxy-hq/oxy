@@ -122,7 +122,7 @@ const ReasoningTrace = ({
   if (!isStreaming && steps.length === 0) return null;
 
   return (
-    <div className='space-y-1.5 rounded-lg border border-border bg-card p-3'>
+    <div className='space-y-1.5 rounded-lg border border-border p-3'>
       <ReasoningTraceHeader
         isStreaming={isStreaming}
         steps={steps}

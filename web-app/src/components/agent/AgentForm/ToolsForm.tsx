@@ -96,7 +96,7 @@ const ToolItemForm: React.FC<ToolItemFormProps> = ({ index, onRemove }) => {
   };
 
   return (
-    <div className='rounded-lg border bg-card p-3'>
+    <div className='rounded-lg border p-3'>
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
         <CollapsibleTrigger className='w-full rounded-lg transition-colors'>
           <div className='flex items-center justify-between transition-colors'>
@@ -159,7 +159,7 @@ const ToolItemForm: React.FC<ToolItemFormProps> = ({ index, onRemove }) => {
                     </SelectTrigger>
                     <SelectContent>
                       {TOOL_TYPES.map((type) => (
-                        <SelectItem key={type.value} value={type.value}>
+                        <SelectItem className='cursor-pointer' key={type.value} value={type.value}>
                           {type.label}
                         </SelectItem>
                       ))}
@@ -218,7 +218,7 @@ export const ToolsForm: React.FC = () => {
           variant='outline'
           size='sm'
         >
-          <Plus className='mr-2 h-4 w-4' />
+          <Plus />
           Add Tool
         </Button>
       </div>

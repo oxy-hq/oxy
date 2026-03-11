@@ -1,4 +1,4 @@
-import { ArrowRight, CircleX } from "lucide-react";
+import { ArrowUp, CircleX } from "lucide-react";
 import { useRef } from "react";
 import { Button } from "@/components/ui/shadcn/button";
 import { Textarea } from "@/components/ui/shadcn/textarea";
@@ -78,7 +78,7 @@ const MessageInput = ({
               disabled={!value.trim() || disabled}
               data-testid='message-input-send-button'
             >
-              <ArrowRight className='h-5 w-5' />
+              <ArrowUp />
             </Button>
           )}
         </div>

@@ -64,7 +64,7 @@ export const NestedTasksForm: React.FC<NestedTasksFormProps> = ({
             variant='outline'
             size='sm'
           >
-            <Plus className='mr-2 h-4 w-4' />
+            <Plus />
             Add Task
           </Button>
         </div>

@@ -15,7 +15,7 @@ interface TraceHeaderProps {
 export function TraceHeader({ traceId, totalDurationMs, spansCount, startTime }: TraceHeaderProps) {
   const { project } = useCurrentProject();
   return (
-    <div className='flex items-center justify-between border-b px-4 py-3'>
+    <div className='flex items-center justify-between border-b px-2 py-1'>
       <div className='flex items-center gap-3'>
         <Button variant='ghost' size='icon' className='h-8 w-8' asChild>
           <Link to={ROUTES.PROJECT(project?.id || "").IDE.OBSERVABILITY.TRACES}>

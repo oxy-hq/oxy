@@ -20,11 +20,7 @@ export default function ActivityLogsPage() {
 
   return (
     <div className='flex h-full flex-col'>
-      <PageHeader
-        icon={FileText}
-        title='Activity Logs'
-        description='View system audit logs and query history'
-      />
+      <PageHeader icon={FileText} title='Activity Logs' />
 
       <div className='customScrollbar scrollbar-gutter-auto min-h-0 flex-1 overflow-auto p-4'>
         <TableWrapper>

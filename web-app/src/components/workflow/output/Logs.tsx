@@ -148,7 +148,11 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
   // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
     if (isPending && !isUserScrolledUp.current) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" });
+      bottomRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+        inline: "start"
+      });
     }
   }, [logs]);
 
@@ -175,7 +179,7 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
     <div
       ref={parentRef}
       onScroll={handleScroll}
-      className='customScrollbar scrollbar-gutter-auto relative h-full overflow-y-auto break-all bg-card p-4 pt-0 contain-strict'
+      className='customScrollbar scrollbar-gutter-auto relative h-full overflow-y-auto break-all p-4 pt-0 contain-strict'
       data-testid='workflow-output-logs'
     >
       {!onlyShowResult && (
@@ -205,7 +209,6 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
                   ref={logsVirtualizer.measureElement}
                 >
                   <OutputItem
-                    isPending={isPending}
                     onArtifactClick={onArtifactClick}
                     log={flatItem.log}
                     depth={flatItem.depth}

@@ -44,7 +44,7 @@ const AgentEditor = () => {
 
   return (
     <EditorPageWrapper
-      headerActions={
+      headerPrefixAction={
         <ViewModeToggle
           viewMode={viewMode}
           onViewModeChange={setViewMode}

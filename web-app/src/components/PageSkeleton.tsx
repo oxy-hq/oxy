@@ -1,4 +1,5 @@
 import PageHeader from "@/components/PageHeader";
+import { ContentSkeleton } from "@/components/ui/ContentSkeleton";
 import { Separator } from "@/components/ui/shadcn/separator";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 
@@ -18,17 +19,7 @@ const PageSkeleton = () => {
         </div>
       </PageHeader>
 
-      <div className='w-full flex-1'>
-        <div className='mx-auto flex max-w-page-content flex-col gap-10 py-10'>
-          {Array.from({ length: 3 }).map((_, index) => (
-            <div key={index} className='flex flex-col gap-4'>
-              <Skeleton className='h-4 max-w-[200px]' />
-              <Skeleton className='h-4 max-w-[500px]' />
-              <Skeleton className='h-4 max-w-[500px]' />
-            </div>
-          ))}
-        </div>
-      </div>
+      <ContentSkeleton />
     </div>
   );
 };

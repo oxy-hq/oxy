@@ -1,5 +1,4 @@
 import { Network } from "lucide-react";
-import { Button } from "@/components/ui/shadcn/button";
 import {
   Select,
   SelectContent,
@@ -7,6 +6,7 @@ import {
   SelectTrigger,
   SelectValue
 } from "@/components/ui/shadcn/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
 import PageHeader from "@/pages/ide/components/PageHeader";
 import { LIMIT_OPTIONS, TIME_RANGE_OPTIONS, type TimeRange } from "../../types";
 import SourceFilter from "./SourceFilter";
@@ -35,12 +35,16 @@ export default function ClustersHeader({
 
       {/* Limit Selector */}
       <Select value={limit.toString()} onValueChange={(v) => onLimitChange(parseInt(v, 10))}>
-        <SelectTrigger className='w-28'>
+        <SelectTrigger size='sm'>
           <SelectValue placeholder='Points' />
         </SelectTrigger>
         <SelectContent>
           {LIMIT_OPTIONS.map((option) => (
-            <SelectItem key={option.value} value={option.value.toString()}>
+            <SelectItem
+              className='cursor-pointer'
+              key={option.value}
+              value={option.value.toString()}
+            >
               {option.label} points
             </SelectItem>
           ))}
@@ -48,28 +52,17 @@ export default function ClustersHeader({
       </Select>
 
       {/* Time Filter */}
-      <div className='flex gap-1 rounded-lg border bg-muted/30 p-1'>
-        {TIME_RANGE_OPTIONS.map((option) => (
-          <Button
-            key={option.value}
-            variant={timeRange === option.value ? "default" : "ghost"}
-            size='sm'
-            className='h-7 px-3'
-            onClick={() => onTimeRangeChange(option.value)}
-          >
-            {option.label}
-          </Button>
-        ))}
-      </div>
+      <Tabs value={timeRange} onValueChange={(v) => onTimeRangeChange(v as TimeRange)}>
+        <TabsList>
+          {TIME_RANGE_OPTIONS.map((option) => (
+            <TabsTrigger key={option.value} value={option.value}>
+              {option.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
     </>
   );
 
-  return (
-    <PageHeader
-      icon={Network}
-      title='Semantic Cluster Map'
-      description='Analyze user queries by semantic similarity'
-      actions={actions}
-    />
-  );
+  return <PageHeader icon={Network} title='Semantic Cluster Map' actions={actions} />;
 }

@@ -20,7 +20,7 @@ export default function InsightsCard({
     mostPopularCount && totalUsage > 0 ? Math.round((mostPopularCount / totalUsage) * 100) : 0;
 
   return (
-    <Card className='border-primary/20 bg-gradient-to-br from-primary/5 to-primary/10'>
+    <Card className='border-primary/20 bg-gradient-to-br bg-transparent from-primary/5 to-primary/10 shadow-none'>
       <CardHeader className='pb-2'>
         <CardTitle className='flex items-center gap-2 text-base'>
           <Sparkles className='h-4 w-4 text-primary' />

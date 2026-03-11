@@ -134,7 +134,7 @@ export default function DistributionChart({ summary, isLoading }: DistributionCh
   }, [isLoading]);
 
   return (
-    <Card>
+    <Card className='bg-transparent shadow-none'>
       <CardHeader className='pb-2'>
         <div className='flex items-center justify-between'>
           <div className='flex items-center gap-2'>

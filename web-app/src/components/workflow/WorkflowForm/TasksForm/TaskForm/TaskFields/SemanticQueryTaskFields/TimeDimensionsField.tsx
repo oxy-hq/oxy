@@ -134,7 +134,11 @@ export const TimeDimensionsField: React.FC<TimeDimensionsFieldProps> = ({
                         </SelectTrigger>
                         <SelectContent>
                           {granularityOptions.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
+                            <SelectItem
+                              className='cursor-pointer'
+                              key={option.value}
+                              value={option.value}
+                            >
                               {option.label}
                             </SelectItem>
                           ))}

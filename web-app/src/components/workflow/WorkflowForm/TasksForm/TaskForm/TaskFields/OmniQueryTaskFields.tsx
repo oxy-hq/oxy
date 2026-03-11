@@ -167,7 +167,11 @@ export const OmniQueryTaskFields: React.FC<OmniQueryTaskFieldsProps> = ({
                       </SelectTrigger>
                       <SelectContent>
                         {ORDER_TYPES.map((type) => (
-                          <SelectItem key={type.value} value={type.value}>
+                          <SelectItem
+                            className='cursor-pointer'
+                            key={type.value}
+                            value={type.value}
+                          >
                             {type.label}
                           </SelectItem>
                         ))}

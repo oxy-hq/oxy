@@ -2,6 +2,7 @@ import { ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Controller, type FieldValues, type Path, useFormContext } from "react-hook-form";
 import { MetricsForm } from "@/components/shared/MetricsForm";
+import { Checkbox } from "@/components/ui/checkbox";
 import { FilePathAutocompleteInput } from "@/components/ui/FilePathAutocompleteInput";
 import { Button } from "@/components/ui/shadcn/button";
 import {
@@ -124,13 +125,11 @@ export function TestsForm<T extends FieldValues>({ index, onRemove }: TestsFormP
               <Controller
                 name={`tests.${index}.is_context_id` as Path<T>}
                 control={control}
-                render={({ field: { value, onChange } }) => (
-                  <input
-                    type='checkbox'
+                render={({ field }) => (
+                  <Checkbox
                     id={`tests.${index}.is_context_id`}
-                    checked={Boolean(value)}
-                    onChange={onChange}
-                    className='rounded'
+                    checked={Boolean(field.value)}
+                    onCheckedChange={field.onChange}
                   />
                 )}
               />
@@ -145,7 +144,7 @@ export function TestsForm<T extends FieldValues>({ index, onRemove }: TestsFormP
   };
 
   return (
-    <div className='rounded-lg border bg-card p-3'>
+    <div className='rounded-lg border p-3'>
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
         <CollapsibleTrigger className='w-full rounded-lg transition-colors'>
           <div className='flex items-center justify-between transition-colors'>
@@ -203,7 +202,11 @@ export function TestsForm<T extends FieldValues>({ index, onRemove }: TestsFormP
                       </SelectTrigger>
                       <SelectContent>
                         {TEST_TYPES.map((type) => (
-                          <SelectItem key={type.value} value={type.value}>
+                          <SelectItem
+                            className='cursor-pointer'
+                            key={type.value}
+                            value={type.value}
+                          >
                             {type.label}
                           </SelectItem>
                         ))}

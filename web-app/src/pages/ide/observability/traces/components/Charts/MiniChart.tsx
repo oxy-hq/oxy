@@ -54,7 +54,7 @@ export default function MiniChart({ options, isLoading }: MiniChartProps) {
   }, [isLoading]);
 
   return (
-    <div className='flex flex-col rounded-lg border border-border bg-card p-3'>
+    <div className='flex flex-col rounded-lg border border-border p-3'>
       <div ref={chartRef} className='h-[100px] w-full' />
     </div>
   );

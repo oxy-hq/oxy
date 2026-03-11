@@ -147,6 +147,7 @@ const Actions: React.FC<Props> = ({ user, workspaceId }) => {
               <SelectContent>
                 {roleOptions.map((role) => (
                   <SelectItem
+                    className='cursor-pointer'
                     key={role}
                     value={role}
                     disabled={role === "owner" && user.role !== "owner"}

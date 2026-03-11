@@ -96,8 +96,12 @@ const AddMemberForm: React.FC<AddMemberFormProps> = ({ workspaceId }) => {
                     <SelectValue placeholder='Select role' />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value='member'>Member</SelectItem>
-                    <SelectItem value='admin'>Admin</SelectItem>
+                    <SelectItem className='cursor-pointer' value='member'>
+                      Member
+                    </SelectItem>
+                    <SelectItem className='cursor-pointer' value='admin'>
+                      Admin
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               )}

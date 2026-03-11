@@ -124,19 +124,19 @@ const FilesSidebar: React.FC<{
         }
       />
 
-      <div className='border-sidebar-border border-b px-2 py-2'>
+      <div className='min-h-12.5 border-sidebar-border border-b px-2 py-2'>
         <Tabs
           value={filesSubViewMode}
           onValueChange={(v) => setFilesSubViewMode(v as FilesSubViewMode)}
           className='w-full'
         >
-          <TabsList className='grid h-7 w-full grid-cols-2'>
-            <TabsTrigger value='objects' className='h-6 gap-1 text-xs'>
-              <Layers2 className='h-3 w-3' />
+          <TabsList className='w-full'>
+            <TabsTrigger value='objects'>
+              <Layers2 />
               Objects
             </TabsTrigger>
-            <TabsTrigger value='files' className='h-6 gap-1 text-xs'>
-              <Folder className='h-3 w-3' />
+            <TabsTrigger value='files'>
+              <Folder />
               Files
             </TabsTrigger>
           </TabsList>
@@ -144,7 +144,7 @@ const FilesSidebar: React.FC<{
       </div>
 
       <SidebarContent className='customScrollbar h-full flex-1 overflow-y-auto'>
-        <SidebarGroup className='pt-2'>
+        <SidebarGroup className='px-1 pt-2'>
           {isPending && (
             <div className='flex items-center justify-center p-4'>
               <Loader2 className='h-4 w-4 animate-spin' />

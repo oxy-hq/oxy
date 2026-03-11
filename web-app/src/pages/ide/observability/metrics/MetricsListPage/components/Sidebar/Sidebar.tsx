@@ -85,7 +85,7 @@ export default function Sidebar({ analyticsData, isLoading }: SidebarProps) {
   return (
     <div className='space-y-6'>
       {/* Source Type Distribution */}
-      <Card>
+      <Card className='bg-transparent shadow-none'>
         <CardHeader className='pb-3'>
           <CardTitle className='flex items-center gap-2 text-base'>
             <Database className='h-4 w-4' />
@@ -100,7 +100,7 @@ export default function Sidebar({ analyticsData, isLoading }: SidebarProps) {
       </Card>
 
       {/* Context Type Distribution */}
-      <Card>
+      <Card className='bg-transparent shadow-none'>
         <CardHeader className='pb-3'>
           <CardTitle className='flex items-center gap-2 text-base'>
             <FileText className='h-4 w-4' />

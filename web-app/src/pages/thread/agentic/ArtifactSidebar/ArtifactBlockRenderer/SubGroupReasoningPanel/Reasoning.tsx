@@ -55,7 +55,8 @@ const ReasoningItem = ({
   return (
     <>
       <div className='w-full min-w-[500px]'>
-        <div
+        <button
+          type='button'
           className='flex w-full cursor-pointer items-center justify-center gap-2 py-2'
           onClick={() => setIsExpanded(!isExpanded)}
         >
@@ -68,21 +69,21 @@ const ReasoningItem = ({
             <span className='flex justify-end text-xs'>
               {(() => {
                 if (step.is_streaming) {
-                  return <span className='text-blue-800'>Processing</span>;
+                  return <span className='text-primary'>Processing</span>;
                 }
                 if (step.error) {
-                  return <span className='text-red-800'>Error</span>;
+                  return <span className='text-destructive'>Error</span>;
                 }
-                return <span className='text-green-800'>Success</span>;
+                return <span className='text-emerald-600'>Success</span>;
               })()}
             </span>
           </div>
-        </div>
+        </button>
       </div>
       {isExpanded && (
         <div className='w-full min-w-[500px]' style={{ paddingLeft: 24 }}>
           {!!step.objective && <AnswerContent content={step.objective} />}
-          {!!step.error && <span className='text-red-800'>{step.error}</span>}
+          {!!step.error && <span className='text-destructive'>{step.error}</span>}
           {step.childrenBlocks.map((child) => {
             return <BlockContent key={child.id} block={child} onFullscreen={onFullscreen} />;
           })}

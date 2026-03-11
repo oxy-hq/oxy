@@ -32,7 +32,7 @@ export function Workflows() {
           <span>Procedures</span>
         </div>
       </SidebarMenuButton>
-      <SidebarMenuSub className='ml-4'>
+      <SidebarMenuSub className='ml-[15px]'>
         {isPending && <ItemsSkeleton />}
 
         {!isPending &&

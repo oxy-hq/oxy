@@ -44,17 +44,19 @@ const WorkflowThread = ({
       </PageHeader>
 
       <div className='w-full flex-1'>
-        <ProcessingWarning
-          className='mx-auto mt-2 w-full max-w-page-content'
-          threadId={thread.id}
-          isLoading={isLoading}
-          onRefresh={refetchThread}
-        />
+        <div className='px-4'>
+          <ProcessingWarning
+            className='mx-auto mt-2 w-full max-w-page-content'
+            threadId={thread.id}
+            isLoading={isLoading}
+            onRefresh={refetchThread}
+          />
+        </div>
 
         <OutputLogs
           isPending={isLoading}
           logs={logs}
-          contentClassName='max-w-page-content mx-auto'
+          contentClassName='max-w-page-content mx-auto mt-4'
         />
       </div>
     </div>
