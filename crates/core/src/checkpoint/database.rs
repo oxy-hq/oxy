@@ -1,4 +1,6 @@
-use sea_orm::{ActiveValue, prelude::*};
+use std::collections::HashMap;
+
+use sea_orm::{ActiveValue, Condition, QuerySelect, QueryTrait, prelude::*};
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{database::client::establish_connection, execute::types::Event};
@@ -32,6 +34,138 @@ impl CheckpointStorage for DatabaseStorage {
         Ok(())
     }
 
+    async fn has_any_checkpoint(&self, run_info: &RunInfo) -> Result<bool, OxyError> {
+        let run_index = run_info.get_run_index();
+        let run_id_subquery = entity::runs::Entity::find()
+            .select_only()
+            .column(entity::runs::Column::Id)
+            .filter(entity::runs::Column::SourceId.eq(&run_info.source_id))
+            .filter(entity::runs::Column::RunIndex.eq(Some(run_index)))
+            .into_query();
+
+        let checkpoint = entity::checkpoints::Entity::find()
+            .filter(entity::checkpoints::Column::RunId.in_subquery(run_id_subquery))
+            .one(&self.connection)
+            .await;
+        checkpoint
+            .map(|checkpoint| checkpoint.is_some())
+            .map_err(|err| OxyError::DBError(format!("Failed to check checkpoints: {err}")))
+    }
+
+    async fn create_checkpoints_batch(
+        &self,
+        items: Vec<(RunInfo, CheckpointData<serde_json::Value>)>,
+    ) -> Result<(), OxyError> {
+        if items.is_empty() {
+            return Ok(());
+        }
+
+        // Collect unique (source_id, run_index) pairs
+        let mut unique_runs: Vec<(String, u32)> = items
+            .iter()
+            .map(|(ri, _)| (ri.get_source_id(), ri.get_run_index()))
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+        unique_runs.sort_unstable();
+
+        // Single query for all relevant runs
+        let mut condition = Condition::any();
+        for (source_id, run_index) in &unique_runs {
+            condition = condition.add(
+                entity::runs::Column::SourceId
+                    .eq(source_id)
+                    .and(entity::runs::Column::RunIndex.eq(Some(*run_index as i32))),
+            );
+        }
+        let runs = entity::runs::Entity::find()
+            .filter(condition)
+            .all(&self.connection)
+            .await
+            .map_err(|err| OxyError::DBError(format!("Failed to find runs for batch: {err}")))?;
+
+        let run_id_map: HashMap<(String, u32), uuid::Uuid> = runs
+            .into_iter()
+            .filter_map(|r| r.run_index.map(|idx| ((r.source_id, idx as u32), r.id)))
+            .collect();
+
+        // Serialize and build all ActiveModels
+        let now = chrono::Utc::now();
+        let mut models = Vec::with_capacity(items.len());
+        for (run_info, checkpoint) in items {
+            let run_index = run_info.get_run_index();
+            let run_id = run_id_map
+                .get(&(run_info.get_source_id(), run_index))
+                .copied()
+                .ok_or_else(|| {
+                    OxyError::RuntimeError(format!(
+                        "Run not found for source_id={} run_index={}",
+                        run_info.get_source_id(),
+                        run_index
+                    ))
+                })?;
+            let output_json = serde_json::to_value(&checkpoint.output).map_err(|e| {
+                OxyError::SerializerError(format!("Failed to serialize checkpoint output: {e}"))
+            })?;
+            let events_json = serde_json::to_value(&checkpoint.events).map_err(|e| {
+                OxyError::SerializerError(format!("Failed to serialize checkpoint events: {e}"))
+            })?;
+            let child_info_json = checkpoint
+                .run_info
+                .map(|info| {
+                    serde_json::to_value(info).map_err(|e| {
+                        OxyError::SerializerError(format!(
+                            "Failed to serialize child run info: {e}"
+                        ))
+                    })
+                })
+                .transpose()?;
+            let loop_values_json = checkpoint
+                .loop_values
+                .map(|values| {
+                    serde_json::to_value(values).map_err(|e| {
+                        OxyError::SerializerError(format!("Failed to serialize loop values: {e}"))
+                    })
+                })
+                .transpose()?;
+            models.push(entity::checkpoints::ActiveModel {
+                id: ActiveValue::Set(uuid::Uuid::new_v4()),
+                run_id: ActiveValue::Set(run_id),
+                replay_id: ActiveValue::Set(checkpoint.replay_id),
+                checkpoint_hash: ActiveValue::Set(checkpoint.checkpoint_hash),
+                output: ActiveValue::Set(Some(output_json)),
+                events: ActiveValue::Set(Some(events_json)),
+                child_run_info: ActiveValue::Set(child_info_json),
+                loop_values: ActiveValue::Set(loop_values_json),
+                created_at: ActiveValue::Set(now.into()),
+                updated_at: ActiveValue::Set(now.into()),
+                ..Default::default()
+            });
+        }
+
+        entity::checkpoints::Entity::insert_many(models)
+            .on_conflict(
+                sea_orm::sea_query::OnConflict::columns([
+                    entity::checkpoints::Column::RunId,
+                    entity::checkpoints::Column::ReplayId,
+                ])
+                .update_columns([
+                    entity::checkpoints::Column::CheckpointHash,
+                    entity::checkpoints::Column::Output,
+                    entity::checkpoints::Column::Events,
+                    entity::checkpoints::Column::UpdatedAt,
+                ])
+                .to_owned(),
+            )
+            .exec(&self.connection)
+            .await
+            .map_err(|err| {
+                OxyError::DBError(format!("Failed to create checkpoint batch: {err}"))
+            })?;
+
+        Ok(())
+    }
+
     async fn create_checkpoint<T: Serialize + Send>(
         &self,
         run_info: &RunInfo,
@@ -46,7 +180,8 @@ impl CheckpointStorage for DatabaseStorage {
                     .and(entity::runs::Column::RunIndex.eq(Some(run_index))),
             )
             .one(&self.connection)
-            .await
+            .await;
+        let run = run
             .map_err(|err| OxyError::DBError(format!("Failed to find run: {err}")))?
             .ok_or_else(|| OxyError::RuntimeError("Run not found".to_string()))?;
         // Serialize the checkpoint data
@@ -114,21 +249,20 @@ impl CheckpointStorage for DatabaseStorage {
         run_info: &RunInfo,
         replay_id: &str,
     ) -> Result<CheckpointData<T>, OxyError> {
-        // Find the run to read the checkpoint from
         let run_index = run_info.get_run_index();
-        let run = entity::runs::Entity::find()
+        let run_id_subquery = entity::runs::Entity::find()
+            .select_only()
+            .column(entity::runs::Column::Id)
             .filter(entity::runs::Column::SourceId.eq(&run_info.source_id))
             .filter(entity::runs::Column::RunIndex.eq(Some(run_index)))
-            .one(&self.connection)
-            .await
-            .map_err(|err| OxyError::DBError(format!("Failed to find run: {err}")))?
-            .ok_or_else(|| OxyError::RuntimeError("Run not found".to_string()))?;
-        // Read the checkpoint data
+            .into_query();
+
         let checkpoint = entity::checkpoints::Entity::find()
-            .filter(entity::checkpoints::Column::RunId.eq(run.id))
+            .filter(entity::checkpoints::Column::RunId.in_subquery(run_id_subquery))
             .filter(entity::checkpoints::Column::ReplayId.eq(replay_id))
             .one(&self.connection)
-            .await
+            .await;
+        let checkpoint = checkpoint
             .map_err(|err| OxyError::DBError(format!("Failed to read checkpoint: {err}")))?
             .ok_or_else(|| OxyError::RuntimeError("Checkpoint not found".to_string()))?;
         // Deserialize the checkpoint data

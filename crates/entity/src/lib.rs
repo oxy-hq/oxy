@@ -16,6 +16,7 @@ pub mod logs;
 pub mod messages;
 pub mod project_repos;
 pub mod projects;
+pub mod run_sequences;
 pub mod runs;
 pub mod secrets;
 pub mod settings;

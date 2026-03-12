@@ -1,8 +1,11 @@
+use std::sync::Arc;
+
 use database::DatabaseStorage;
 use file::FileStorage;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use tokio::sync::OnceCell;
 
 use crate::{
     adapters::runs::RunsManager,
@@ -74,6 +77,7 @@ pub struct CheckpointContext {
     run_info: RunInfo,
     current_ref: Vec<String>,
     storage: CheckpointStorageImpl,
+    has_checkpoints: Arc<OnceCell<bool>>,
     run_storage: RunsManager,
     user_id: Option<uuid::Uuid>,
 }
@@ -90,6 +94,7 @@ impl CheckpointContext {
             run_info,
             storage,
             current_ref: vec![],
+            has_checkpoints: Arc::new(OnceCell::new()),
             run_storage,
             user_id,
         }
@@ -102,6 +107,7 @@ impl CheckpointContext {
             run_info,
             storage: self.storage.clone(),
             current_ref: vec![],
+            has_checkpoints: Arc::new(OnceCell::new()),
             run_storage: self.run_storage.clone(),
             user_id: self.user_id,
         }
@@ -116,6 +122,7 @@ impl CheckpointContext {
             run_info: self.run_info.clone(),
             current_ref,
             storage: self.storage.clone(),
+            has_checkpoints: self.has_checkpoints.clone(),
             run_storage: self.run_storage.clone(),
             user_id: self.user_id,
         }
@@ -143,6 +150,14 @@ impl CheckpointContext {
         self.current_ref.join(".")
     }
 
+    pub(crate) fn storage(&self) -> &CheckpointStorageImpl {
+        &self.storage
+    }
+
+    pub(crate) fn run_info(&self) -> &RunInfo {
+        &self.run_info
+    }
+
     pub fn get_full_ref(&self, replay_id: &str) -> String {
         self.current_ref
             .iter()
@@ -165,11 +180,27 @@ impl CheckpointContext {
         source_id: &str,
         variables: Option<IndexMap<String, serde_json::Value>>,
     ) -> Result<RunInfo, OxyError> {
-        let checkpoint_data = self
-            .storage
-            .read_checkpoint::<serde_json::Value>(&self.run_info, &self.get_full_ref(replay_id))
-            .await
-            .ok();
+        let checkpoint_data = match self.has_any_checkpoint().await {
+            Ok(true) => self
+                .storage
+                .read_checkpoint::<serde_json::Value>(&self.run_info, &self.get_full_ref(replay_id))
+                .await
+                .ok(),
+            Ok(false) => None,
+            Err(err) => {
+                tracing::warn!(
+                    "Failed to determine checkpoint existence for child run lookup; falling back to direct read: {}",
+                    err
+                );
+                self.storage
+                    .read_checkpoint::<serde_json::Value>(
+                        &self.run_info,
+                        &self.get_full_ref(replay_id),
+                    )
+                    .await
+                    .ok()
+            }
+        };
         let mut root_ref = self.get_root_ref();
         root_ref.replay_ref = self.get_full_ref(replay_id);
         let mut run_info: RunInfo = match checkpoint_data {
@@ -226,6 +257,9 @@ impl CheckpointContext {
                 self.run_info.run_index
             )));
         }
+        if !self.has_any_checkpoint().await? {
+            return Err(OxyError::RuntimeError("Checkpoint not found".to_string()));
+        }
         let replay_id = self.current_ref_str();
         let checkpoint_data = self
             .storage
@@ -251,6 +285,16 @@ impl CheckpointContext {
             return replay_id.starts_with(&current_ref);
         }
         false
+    }
+
+    async fn has_any_checkpoint(&self) -> Result<bool, OxyError> {
+        let storage = self.storage.clone();
+        let run_info = self.run_info.clone();
+
+        self.has_checkpoints
+            .get_or_try_init(|| async move { storage.has_any_checkpoint(&run_info).await })
+            .await
+            .copied()
     }
 }
 
@@ -355,14 +399,40 @@ pub struct CheckpointData<T> {
     pub loop_values: Option<Vec<serde_json::Value>>,
 }
 
+impl<T: Serialize> CheckpointData<T> {
+    pub fn into_value(self) -> Result<CheckpointData<serde_json::Value>, OxyError> {
+        let output = self
+            .output
+            .map(|v| {
+                serde_json::to_value(v).map_err(|e| {
+                    OxyError::SerializerError(format!("Failed to serialize checkpoint output: {e}"))
+                })
+            })
+            .transpose()?;
+        Ok(CheckpointData {
+            replay_id: self.replay_id,
+            checkpoint_hash: self.checkpoint_hash,
+            output,
+            events: self.events,
+            run_info: self.run_info,
+            loop_values: self.loop_values,
+        })
+    }
+}
+
 #[enum_dispatch::enum_dispatch]
 #[allow(async_fn_in_trait)]
 pub trait CheckpointStorage {
     async fn write_success_marker(&self, run_info: &RunInfo) -> Result<(), OxyError>;
+    async fn has_any_checkpoint(&self, run_info: &RunInfo) -> Result<bool, OxyError>;
     async fn create_checkpoint<T: Serialize + Send>(
         &self,
         run_info: &RunInfo,
         checkpoint: CheckpointData<T>,
+    ) -> Result<(), OxyError>;
+    async fn create_checkpoints_batch(
+        &self,
+        items: Vec<(RunInfo, CheckpointData<serde_json::Value>)>,
     ) -> Result<(), OxyError>;
     async fn read_checkpoint<T: DeserializeOwned>(
         &self,
@@ -373,7 +443,7 @@ pub trait CheckpointStorage {
 
 #[enum_dispatch::enum_dispatch(CheckpointStorage)]
 #[derive(Debug, Clone)]
-enum CheckpointStorageImpl {
+pub(crate) enum CheckpointStorageImpl {
     FileStorage(FileStorage),
     DatabaseStorage(DatabaseStorage),
 }

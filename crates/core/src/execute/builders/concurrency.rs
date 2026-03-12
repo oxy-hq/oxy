@@ -138,7 +138,7 @@ where
                     param,
                     self.inner.clone(),
                     execution_context.clone(),
-                    execution_context.wrap_writer(ordered_writer.create_writer(None)),
+                    execution_context.wrap_writer(ordered_writer.create_writer(Some(10_000))),
                 )
             })
             .collect::<Vec<_>>();

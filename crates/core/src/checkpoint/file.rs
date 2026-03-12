@@ -63,6 +63,42 @@ impl FileStorage {
 }
 
 impl CheckpointStorage for FileStorage {
+    async fn has_any_checkpoint(&self, run_info: &RunInfo) -> Result<bool, OxyError> {
+        let data_path = self
+            .dir
+            .join(slugify::slugify(&run_info.source_id, "", "_", None))
+            .join(run_info.get_run_index().to_string())
+            .join(&self.data_path);
+
+        if !tokio::fs::try_exists(&data_path).await.map_err(|err| {
+            OxyError::IOError(format!("Failed to inspect checkpoint directory:\n{err}"))
+        })? {
+            return Ok(false);
+        }
+
+        let mut entries = tokio::fs::read_dir(&data_path).await.map_err(|err| {
+            OxyError::IOError(format!("Failed to read checkpoint directory:\n{err}"))
+        })?;
+
+        Ok(entries
+            .next_entry()
+            .await
+            .map_err(|err| {
+                OxyError::IOError(format!("Failed to inspect checkpoint entries:\n{err}"))
+            })?
+            .is_some())
+    }
+
+    async fn create_checkpoints_batch(
+        &self,
+        items: Vec<(super::RunInfo, super::CheckpointData<serde_json::Value>)>,
+    ) -> Result<(), oxy_shared::errors::OxyError> {
+        for (run_info, checkpoint) in items {
+            self.create_checkpoint(&run_info, checkpoint).await?;
+        }
+        Ok(())
+    }
+
     async fn create_checkpoint<T: Serialize + Send>(
         &self,
         run_info: &RunInfo,

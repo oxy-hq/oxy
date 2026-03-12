@@ -53,6 +53,7 @@ mod m20260109_000001_add_sandbox_fields_to_threads;
 mod m20260302_000001_add_magic_link_to_users;
 mod m20260302_000002_drop_email_verification_token;
 mod m20260302_000003_drop_password_hash;
+mod m20260312_000001_create_run_sequences_table;
 
 pub struct Migrator;
 
@@ -112,6 +113,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260302_000001_add_magic_link_to_users::Migration),
             Box::new(m20260302_000002_drop_email_verification_token::Migration),
             Box::new(m20260302_000003_drop_password_hash::Migration),
+            Box::new(m20260312_000001_create_run_sequences_table::Migration),
         ]
     }
 }

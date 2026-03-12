@@ -1,10 +1,11 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, sync::OnceLock};
 
 use serde::{Serialize, de::DeserializeOwned};
+use tokio::sync::mpsc;
 use tracing::Instrument;
 
 use crate::{
-    checkpoint::{CheckpointBuilder, CheckpointData, RunInfo},
+    checkpoint::{CheckpointBuilder, CheckpointData, CheckpointStorage, RunInfo},
     execute::{
         Executable, ExecutionContext,
         writer::{BufWriter, Writer},
@@ -13,6 +14,54 @@ use crate::{
 use oxy_shared::errors::OxyError;
 
 use super::wrap::Wrap;
+
+// Best-effort background checkpoint persistence. Execution should never wait
+// on checkpoint writes; when the queue is full we drop the checkpoint.
+const CHECKPOINT_WRITE_QUEUE_SIZE: usize = 10000;
+// Maximum number of checkpoints to batch into a single DB write.
+const CHECKPOINT_BATCH_SIZE: usize = 64;
+static CHECKPOINT_WRITE_QUEUE: OnceLock<mpsc::Sender<QueuedCheckpoint>> = OnceLock::new();
+
+#[derive(Clone)]
+struct QueuedCheckpoint {
+    storage: crate::checkpoint::CheckpointStorageImpl,
+    run_info: RunInfo,
+    checkpoint: CheckpointData<serde_json::Value>,
+}
+
+fn checkpoint_write_queue() -> &'static mpsc::Sender<QueuedCheckpoint> {
+    CHECKPOINT_WRITE_QUEUE.get_or_init(|| {
+        let (tx, rx) = mpsc::channel(CHECKPOINT_WRITE_QUEUE_SIZE);
+        tokio::spawn(async move {
+            run_checkpoint_write_worker(rx).await;
+            tracing::error!(
+                "Checkpoint write worker exited — checkpoints will be dropped for this process"
+            );
+        });
+        tx
+    })
+}
+
+async fn run_checkpoint_write_worker(mut receiver: mpsc::Receiver<QueuedCheckpoint>) {
+    let mut batch: Vec<QueuedCheckpoint> = Vec::with_capacity(CHECKPOINT_BATCH_SIZE);
+    loop {
+        batch.clear();
+        // Block until at least one item is available
+        let n = receiver.recv_many(&mut batch, CHECKPOINT_BATCH_SIZE).await;
+        if n == 0 {
+            break; // channel closed
+        }
+        // All checkpoints in a process share the same storage instance
+        let storage = batch[0].storage.clone();
+        let items: Vec<(RunInfo, CheckpointData<serde_json::Value>)> = batch
+            .drain(..)
+            .map(|q| (q.run_info, q.checkpoint))
+            .collect();
+        if let Err(e) = storage.create_checkpoints_batch(items).await {
+            tracing::warn!("Failed to write checkpoint batch (non-fatal): {}", e);
+        }
+    }
+}
 
 pub struct CheckpointRootWrapper;
 
@@ -232,7 +281,32 @@ where
             }
         };
         if let Some(checkpoint_data) = checkpoint_data {
-            execution_context.create_checkpoint(checkpoint_data).await?;
+            match checkpoint_data.into_value() {
+                Ok(mut json_checkpoint) => {
+                    if let Some(checkpoint_context) = execution_context.checkpoint.as_ref() {
+                        // Pre-resolve replay_id here so the worker only needs to write
+                        json_checkpoint.replay_id = checkpoint_context.current_ref_str();
+                        let queued_checkpoint = QueuedCheckpoint {
+                            storage: checkpoint_context.storage().clone(),
+                            run_info: checkpoint_context.run_info().clone(),
+                            checkpoint: json_checkpoint,
+                        };
+                        if let Err(e) = checkpoint_write_queue().try_send(queued_checkpoint) {
+                            tracing::warn!(
+                                "Checkpoint queue is full or unavailable; dropping checkpoint (non-fatal): {}",
+                                e
+                            );
+                        }
+                    } else {
+                        tracing::warn!(
+                            "Checkpoint context missing; dropping checkpoint (non-fatal)"
+                        );
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to serialize checkpoint (non-fatal): {}", e);
+                }
+            }
         }
         response
     }

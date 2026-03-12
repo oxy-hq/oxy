@@ -3,13 +3,13 @@ use std::collections::HashMap;
 use entity::runs::Variables;
 use indexmap::IndexMap;
 use sea_orm::{
-    ActiveValue, Condition, ConnectionTrait, DbBackend, QueryOrder, QuerySelect, Statement,
-    TransactionError, TransactionTrait, prelude::*,
+    ActiveValue, Condition, QueryOrder,
+    prelude::*,
+    sea_query::{Expr, OnConflict},
 };
 
 use crate::{
     adapters::runs::storage::RunsStorage,
-    config::constants::AGENT_RETRY_MAX_ELAPSED_TIME,
     types::{
         block::{Block, Group, GroupId, GroupKind},
         pagination::{Paginated, Pagination},
@@ -33,6 +33,40 @@ impl RunsDatabaseStorage {
             branch_id,
         }
     }
+
+    /// Atomically increments and returns the next run index for the given
+    /// source.  A single `INSERT … ON CONFLICT DO UPDATE … RETURNING` is
+    /// sufficient: the DB guarantees atomicity, so no advisory lock or
+    /// application-level mutex is required.
+    async fn next_run_index(&self, source_id: &str) -> Result<i32, OxyError> {
+        let row = entity::run_sequences::Entity::insert(entity::run_sequences::ActiveModel {
+            project_id: ActiveValue::Set(self.project_id),
+            branch_id: ActiveValue::Set(self.branch_id),
+            source_id: ActiveValue::Set(source_id.to_string()),
+            last_value: ActiveValue::Set(1),
+        })
+        .on_conflict(
+            OnConflict::columns([
+                entity::run_sequences::Column::ProjectId,
+                entity::run_sequences::Column::BranchId,
+                entity::run_sequences::Column::SourceId,
+            ])
+            .value(
+                entity::run_sequences::Column::LastValue,
+                Expr::col((
+                    entity::run_sequences::Entity,
+                    entity::run_sequences::Column::LastValue,
+                ))
+                .add(1),
+            )
+            .to_owned(),
+        )
+        .exec_with_returning(&self.connection)
+        .await;
+        let row =
+            row.map_err(|e| OxyError::DBError(format!("Failed to advance run sequence: {e}")))?;
+        Ok(row.last_value)
+    }
 }
 
 impl RunsStorage for RunsDatabaseStorage {
@@ -43,8 +77,9 @@ impl RunsStorage for RunsDatabaseStorage {
             .filter(entity::runs::Column::BranchId.eq(self.branch_id))
             .order_by_desc(entity::runs::Column::RunIndex)
             .one(&self.connection)
-            .await
-            .map_err(|err| OxyError::DBError(format!("Failed to fetch last run: {err}")))?;
+            .await;
+        let run =
+            run.map_err(|err| OxyError::DBError(format!("Failed to fetch last run: {err}")))?;
         if run.is_none() {
             return Ok(None);
         }
@@ -82,176 +117,50 @@ impl RunsStorage for RunsDatabaseStorage {
         lookup_id: Option<Uuid>,
         user_id: Option<Uuid>,
     ) -> Result<RunInfo, OxyError> {
-        let connection = self.connection.clone();
-        let project_id = self.project_id;
-        let branch_id = self.branch_id;
-        let source_id = source_id.to_string();
-        let root_ref = root_ref.clone();
-
-        let mut attempt = 0;
-
-        let new_run_func = {
-            let connection = connection.clone();
-            let project_id = project_id;
-            let branch_id = branch_id;
-            let source_id = source_id.clone();
-            let root_ref = root_ref.clone();
-            move || {
-                let connection = connection.clone();
-                let project_id = project_id;
-                let branch_id = branch_id;
-                let source_id = source_id.clone();
-                let root_ref = root_ref.clone();
-                let variables = variables.clone();
-                let lookup_id_clone = lookup_id;
-
-                async move {
-                    connection
-                        .transaction::<_, RunInfo, DbErr>(move |txn| {
-                            let source_id = source_id.clone();
-                            let root_ref = root_ref.clone();
-                            Box::pin(async move {
-                                // Serialize concurrent run creation for the same source using a
-                                // PostgreSQL advisory lock. Without this, concurrent transactions
-                                // that find no existing rows all compute run_index=1 and race to
-                                // insert, causing unique constraint violations.
-                                if txn.get_database_backend() == DbBackend::Postgres {
-                                    // Derive a stable i64 lock key from (project_id, branch_id, source_id)
-                                    let lock_key = {
-                                        use std::hash::{Hash, Hasher};
-                                        let mut h =
-                                            std::collections::hash_map::DefaultHasher::new();
-                                        project_id.hash(&mut h);
-                                        branch_id.hash(&mut h);
-                                        source_id.hash(&mut h);
-                                        h.finish() as i64
-                                    };
-                                    txn.execute(Statement::from_string(
-                                        DbBackend::Postgres,
-                                        format!("SELECT pg_advisory_xact_lock({lock_key})"),
-                                    ))
-                                    .await?;
-                                }
-                                // Find run index based on last run for the new run
-                                let max_run_id = entity::runs::Entity::find()
-                                    .filter(
-                                        entity::runs::Column::SourceId
-                                            .eq(&source_id)
-                                            .and(entity::runs::Column::ProjectId.eq(project_id))
-                                            .and(entity::runs::Column::BranchId.eq(branch_id))
-                                            .and(entity::runs::Column::RunIndex.is_not_null()),
-                                    )
-                                    .order_by_desc(entity::runs::Column::RunIndex)
-                                    .lock_exclusive()
-                                    .one(txn)
-                                    .await
-                                    .map(|opt| opt.map(|run| run.run_index))?;
-                                let run_index = match max_run_id {
-                                    None => Some(1),
-                                    Some(index) => index.map(|id| id + 1),
-                                };
-                                // Create a new run with the initial state
-                                let mut run = entity::runs::ActiveModel {
-                                    id: ActiveValue::Set(uuid::Uuid::new_v4()),
-                                    source_id: ActiveValue::Set(source_id.to_string()),
-                                    run_index: ActiveValue::Set(run_index),
-                                    metadata: ActiveValue::Set(None), // Start with no metadata
-                                    blocks: ActiveValue::Set(None),   // Start with no blocks
-                                    error: ActiveValue::Set(None),
-                                    project_id: ActiveValue::Set(project_id),
-                                    branch_id: ActiveValue::Set(branch_id),
-                                    user_id: ActiveValue::Set(user_id),
-                                    created_at: ActiveValue::Set(chrono::Utc::now().into()),
-                                    updated_at: ActiveValue::Set(chrono::Utc::now().into()),
-                                    variables: ActiveValue::Set(variables.clone().map(Variables)),
-                                    lookup_id: ActiveValue::Set(lookup_id_clone),
-                                    ..Default::default()
-                                };
-                                match root_ref {
-                                    Some(ref root) => {
-                                        run.root_source_id =
-                                            ActiveValue::Set(Some(root.source_id.clone()));
-                                        run.root_run_index = ActiveValue::Set(root.run_index);
-                                        run.root_replay_ref =
-                                            ActiveValue::Set(Some(root.replay_ref.clone()));
-                                    }
-                                    None => {
-                                        run.root_source_id = ActiveValue::Set(None);
-                                        run.root_run_index = ActiveValue::Set(None);
-                                        run.root_replay_ref = ActiveValue::Set(None);
-                                    }
-                                }
-                                run.insert(txn).await?;
-                                tracing::info!(
-                                    "New run created successfully for source_id: {}",
-                                    source_id
-                                );
-                                Ok(RunInfo {
-                                    metadata: None,
-                                    root_ref,
-                                    source_id: source_id.to_string(),
-                                    run_index,
-                                    lookup_id: lookup_id_clone.map(|id| id.to_string()),
-                                    user_id,
-                                    variables,
-                                    status: RunStatus::Pending,
-                                    created_at: chrono::Utc::now(),
-                                    updated_at: chrono::Utc::now(),
-                                })
-                            })
-                        })
-                        .await
-                        .map_err(|err| match err {
-                            TransactionError::Transaction(DbErr::Exec(RuntimeErr::SqlxError(
-                                e,
-                            ))) => match e {
-                                sqlx::Error::Database(db_err) => {
-                                    match db_err.code().map(|c| c.to_string()).as_deref() {
-                                        // SQLite locked / PostgreSQL unique constraint violation (concurrent run index conflict)
-                                        Some("517") | Some("5") | Some("23505") => {
-                                            backoff::Error::<OxyError>::transient(
-                                                OxyError::DBError(
-                                                    "Database is locked, retrying...".to_string(),
-                                                ),
-                                            )
-                                        }
-                                        _ => backoff::Error::<OxyError>::permanent(
-                                            OxyError::DBError(format!(
-                                                "Database error({:?}): {}",
-                                                db_err.code(),
-                                                db_err.message()
-                                            )),
-                                        ),
-                                    }
-                                }
-                                _ => backoff::Error::<OxyError>::permanent(OxyError::DBError(
-                                    format!("SQLx error: {e}"),
-                                )),
-                            },
-                            _ => backoff::Error::<OxyError>::permanent(OxyError::DBError(format!(
-                                "Failed to create new run: {err}"
-                            ))),
-                        })
-                }
-            }
+        let run_index = self.next_run_index(source_id).await?;
+        let mut run = entity::runs::ActiveModel {
+            id: ActiveValue::Set(uuid::Uuid::new_v4()),
+            source_id: ActiveValue::Set(source_id.to_string()),
+            run_index: ActiveValue::Set(Some(run_index)),
+            metadata: ActiveValue::Set(None),
+            blocks: ActiveValue::Set(None),
+            error: ActiveValue::Set(None),
+            project_id: ActiveValue::Set(self.project_id),
+            branch_id: ActiveValue::Set(self.branch_id),
+            user_id: ActiveValue::Set(user_id),
+            created_at: ActiveValue::Set(chrono::Utc::now().into()),
+            updated_at: ActiveValue::Set(chrono::Utc::now().into()),
+            variables: ActiveValue::Set(variables.clone().map(Variables)),
+            lookup_id: ActiveValue::Set(lookup_id),
+            ..Default::default()
         };
-
-        backoff::future::retry_notify(
-            backoff::ExponentialBackoffBuilder::default()
-                .with_max_elapsed_time(Some(AGENT_RETRY_MAX_ELAPSED_TIME))
-                .build(),
-            new_run_func,
-            |err, b| {
-                attempt += 1;
-                tracing::error!(
-                    "Error happened at {:?} in RunsManager new run: {:?}",
-                    b,
-                    err
-                );
-                tracing::warn!("Retrying({})...", attempt);
-            },
-        )
-        .await
+        match root_ref {
+            Some(ref root) => {
+                run.root_source_id = ActiveValue::Set(Some(root.source_id.clone()));
+                run.root_run_index = ActiveValue::Set(root.run_index);
+                run.root_replay_ref = ActiveValue::Set(Some(root.replay_ref.clone()));
+            }
+            None => {
+                run.root_source_id = ActiveValue::Set(None);
+                run.root_run_index = ActiveValue::Set(None);
+                run.root_replay_ref = ActiveValue::Set(None);
+            }
+        }
+        run.insert(&self.connection)
+            .await
+            .map_err(|err| OxyError::DBError(format!("Failed to create run: {err}")))?;
+        Ok(RunInfo {
+            metadata: None,
+            root_ref,
+            source_id: source_id.to_string(),
+            run_index: Some(run_index),
+            lookup_id: lookup_id.map(|id| id.to_string()),
+            user_id,
+            variables,
+            status: RunStatus::Pending,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        })
     }
 
     async fn upsert_run(&self, group: Group, user_id: Option<Uuid>) -> Result<(), OxyError> {
@@ -297,7 +206,8 @@ impl RunsStorage for RunsDatabaseStorage {
                     .and(entity::runs::Column::RunIndex.eq(run_index)),
             )
             .one(&self.connection)
-            .await
+            .await;
+        let existing_run = existing_run
             .map_err(|err| OxyError::DBError(format!("Failed to check existing run: {err}")))?;
 
         if let Some(run) = existing_run {
@@ -371,7 +281,8 @@ impl RunsStorage for RunsDatabaseStorage {
                     .and(entity::runs::Column::BranchId.eq(self.branch_id)),
             )
             .exec(&self.connection)
-            .await
+            .await;
+        let updated_run = updated_run
             .map_err(|err| OxyError::DBError(format!("Failed to update run variables: {err}")))?;
 
         if updated_run.rows_affected == 0 {
@@ -419,7 +330,8 @@ impl RunsStorage for RunsDatabaseStorage {
                     .and(entity::runs::Column::BranchId.eq(self.branch_id)),
             )
             .exec(&self.connection)
-            .await
+            .await;
+        let updated_run = updated_run
             .map_err(|err| OxyError::DBError(format!("Failed to update run output: {err}")))?;
 
         if updated_run.rows_affected == 0 {
@@ -449,7 +361,8 @@ impl RunsStorage for RunsDatabaseStorage {
                     .and(entity::runs::Column::BranchId.eq(self.branch_id)),
             )
             .one(&self.connection)
-            .await
+            .await;
+        let run = run
             .map_err(|err| OxyError::DBError(format!("Failed to fetch run: {err}")))?
             .map(|run| RunInfo {
                 metadata: None,

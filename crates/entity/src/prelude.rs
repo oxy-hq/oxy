@@ -14,6 +14,7 @@ pub use super::logs::Entity as Logs;
 pub use super::messages::Entity as Messages;
 pub use super::project_repos::Entity as ProjectRepos;
 pub use super::projects::Entity as Projects;
+pub use super::run_sequences::Entity as RunSequences;
 pub use super::runs::Entity as Runs;
 pub use super::secrets::Entity as Secrets;
 pub use super::settings::Entity as Settings;
