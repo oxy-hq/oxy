@@ -13,8 +13,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import ROUTES from "@/libs/utils/routes";
 import useTheme from "@/stores/useTheme";
+import ContextGraph from "./ContextGraph";
 import Ide from "./Ide";
-import Ontology from "./Ontology";
 import Workspaces from "./Workspaces";
 
 export function Header() {
@@ -61,7 +61,7 @@ export function Header() {
           </SidebarMenuButton>
         </SidebarMenuItem>
         <Ide />
-        <Ontology />
+        <ContextGraph />
         {authConfig.cloud && <Workspaces />}
       </SidebarMenu>
     </SidebarGroup>

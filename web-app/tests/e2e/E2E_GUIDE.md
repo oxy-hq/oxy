@@ -39,7 +39,7 @@ Located in `pages/` directory:
 - `IDEPage` - File browsing, editing, folder navigation
 - `ThreadsPage` - Thread listing, pagination, selection
 - `NavigationPage` - Sidebar, page routing
-- `OntologyPage` - Ontology graph interactions
+- `ContextGraphPage` - Context graph interactions
 
 ## Test Structure
 

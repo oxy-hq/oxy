@@ -9,10 +9,10 @@ import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
 import { FileService } from "@/services/api/files";
-import type { OntologyNode } from "@/types/ontology";
+import type { ContextGraphNode } from "@/types/contextGraph";
 
 interface NodeDetailPanelProps {
-  node: OntologyNode | null;
+  node: ContextGraphNode | null;
   onClose: () => void;
 }
 

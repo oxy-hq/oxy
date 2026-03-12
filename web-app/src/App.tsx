@@ -25,7 +25,7 @@ import { Loader2 } from "lucide-react";
 import React from "react";
 import { HotkeysProvider } from "react-hotkeys-hook";
 import ROUTES from "@/libs/utils/routes";
-import OntologyPage from "@/pages/ontology";
+import ContextGraphPage from "@/pages/context-graph";
 import { ErrorBoundary } from "@/sentry";
 import ProjectStatus from "./components/ProjectStatus";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -188,10 +188,10 @@ const MainLayout = React.memo(function MainLayout() {
           <Route index element={<Navigate to='files' replace />} />
         </Route>
         <Route
-          path='/ontology'
+          path='/context-graph'
           element={
             <MainPageWrapper>
-              <OntologyPage />
+              <ContextGraphPage />
             </MainPageWrapper>
           }
         />

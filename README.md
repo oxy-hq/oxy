@@ -13,7 +13,7 @@
 
 ## The Open-Source, Full-Stack Platform for Agentic Data Analytics
 
-Oxygen is an open-source, full-stack Data + AI platform for agentic data analytics. We combine a context modeling engine, an agent and automation engine, an agentic application engine, a data lakehouse, and an ETL engine, to become a one-stop shop for anything Data and AI.
+Oxygen is an open-source, full-stack Data + AI platform for agentic data analytics. We combine a data modeling engine (ontology engine), an agent and automation engine, an agentic application engine, a data lakehouse, and an ETL engine, to become a one-stop shop for anything Data and AI.
 
 Oxygen is grounded in deterministic execution principles. Written in Rust and declarative by design, Oxygen provides the foundational components needed to transform AI-driven data analysis into reliable, production-ready systems through structured primitives, semantic understanding, and predictable execution.
 

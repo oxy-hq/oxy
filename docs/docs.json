@@ -37,7 +37,7 @@
         "learn-about-oxy/data-apps",
         "learn-about-oxy/debugging",
         "learn-about-oxy/globals",
-        "learn-about-oxy/ontology",
+        "learn-about-oxy/context-graph",
         "learn-about-oxy/semantic-model",
         "learn-about-oxy/testing",
         "learn-about-oxy/workflows",

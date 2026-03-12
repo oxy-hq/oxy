@@ -4,7 +4,7 @@ export class NavigationPage {
   readonly page: Page;
   readonly homeLink: Locator;
   readonly threadsLink: Locator;
-  readonly ontologyLink: Locator;
+  readonly contextGraphLink: Locator;
   readonly ideLink: Locator;
   readonly workflowsLink: Locator;
   readonly appsLink: Locator;
@@ -13,7 +13,7 @@ export class NavigationPage {
     this.page = page;
     this.homeLink = page.getByRole("link", { name: "Home" });
     this.threadsLink = page.getByRole("link", { name: "Threads" });
-    this.ontologyLink = page.getByRole("link", { name: "Ontology" });
+    this.contextGraphLink = page.getByRole("link", { name: "Context Graph" });
     this.ideLink = page.getByRole("link", { name: "IDE" });
     this.workflowsLink = page.getByRole("link", { name: "Automations" });
     this.appsLink = page.getByRole("link", { name: "Apps" });
@@ -29,9 +29,9 @@ export class NavigationPage {
     await expect(this.page).toHaveURL(/\/threads/);
   }
 
-  async goToOntology() {
-    await this.ontologyLink.click();
-    await expect(this.page).toHaveURL(/\/ontology/);
+  async goToContextGraph() {
+    await this.contextGraphLink.click();
+    await expect(this.page).toHaveURL(/\/context-graph/);
   }
 
   async goToIDE() {

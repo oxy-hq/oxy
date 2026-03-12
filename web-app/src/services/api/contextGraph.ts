@@ -1,15 +1,21 @@
 import { parse } from "yaml";
 import { encodeBase64 } from "@/libs/encoding";
+import type {
+  ContextGraph,
+  ContextGraphEdge,
+  ContextGraphNode,
+  Topic,
+  View
+} from "@/types/contextGraph";
 import type { FileTreeModel } from "@/types/file";
-import type { OntologyEdge, OntologyGraph, OntologyNode, Topic, View } from "@/types/ontology";
 import { DatabaseService } from "./database";
 import { FileService } from "./files";
 
-export class OntologyService {
+export class ContextGraphService {
   /**
-   * Builds the complete ontology graph by fetching all assets and computing linkages
+   * Builds the complete context graph by fetching all assets and computing linkages
    */
-  static async getOntologyGraph(projectId: string, branchName: string): Promise<OntologyGraph> {
+  static async getContextGraph(projectId: string, branchName: string): Promise<ContextGraph> {
     // Fetch all necessary data in parallel
     const [databases, fileTree] = await Promise.all([
       DatabaseService.listDatabases(projectId, branchName),
@@ -18,11 +24,11 @@ export class OntologyService {
 
     // Parse semantic models, agents, queries, workflows, and apps from file tree
     const { views, topics, agents, sqlQueries, workflows } =
-      await OntologyService.parseProjectFiles(projectId, branchName, fileTree);
+      await ContextGraphService.parseProjectFiles(projectId, branchName, fileTree);
 
     // Build nodes
-    const nodes: OntologyNode[] = [];
-    const edges: OntologyEdge[] = [];
+    const nodes: ContextGraphNode[] = [];
+    const edges: ContextGraphEdge[] = [];
 
     // Add table nodes
     databases.forEach((db) => {
@@ -199,7 +205,7 @@ export class OntologyService {
       });
 
       // Analyze workflow/app tasks to find dependencies
-      OntologyService.extractWorkflowDependencies(workflow.tasks, nodeId, nodes, edges);
+      ContextGraphService.extractWorkflowDependencies(workflow.tasks, nodeId, nodes, edges);
     });
 
     // Helper function to check if a path matches a pattern (with wildcards)
@@ -513,7 +519,7 @@ export class OntologyService {
     }> = [];
 
     // Find all relevant files
-    const projectFiles = OntologyService.findProjectFiles(fileTree);
+    const projectFiles = ContextGraphService.findProjectFiles(fileTree);
 
     // Fetch and parse each file
     await Promise.all(
@@ -614,7 +620,7 @@ export class OntologyService {
       const currentPath = basePath ? `${basePath}/${node.name}` : node.name;
 
       if (node.is_dir && node.children) {
-        files.push(...OntologyService.findProjectFiles(node.children, currentPath));
+        files.push(...ContextGraphService.findProjectFiles(node.children, currentPath));
       } else if (!node.is_dir) {
         if (node.name.endsWith(".view.yml") || node.name.endsWith(".view.yaml")) {
           files.push({ path: currentPath, type: "view" });
@@ -648,8 +654,8 @@ export class OntologyService {
   private static extractWorkflowDependencies(
     tasks: unknown[],
     workflowId: string,
-    nodes: OntologyNode[],
-    edges: OntologyEdge[]
+    nodes: ContextGraphNode[],
+    edges: ContextGraphEdge[]
   ): void {
     if (!Array.isArray(tasks)) return;
 
@@ -761,7 +767,7 @@ export class OntologyService {
 
       // Recursively handle nested tasks
       if (Array.isArray(taskObj.tasks)) {
-        OntologyService.extractWorkflowDependencies(taskObj.tasks, workflowId, nodes, edges);
+        ContextGraphService.extractWorkflowDependencies(taskObj.tasks, workflowId, nodes, edges);
       }
     });
   }

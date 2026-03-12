@@ -72,7 +72,7 @@ const ROUTES = {
         }
       },
 
-      ONTOLOGY: `${base}/ontology`
+      CONTEXT_GRAPH: `${base}/context-graph`
     };
   }
 } as const;

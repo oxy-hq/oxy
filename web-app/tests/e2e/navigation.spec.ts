@@ -26,22 +26,22 @@ test.describe("Navigation", () => {
     await expect(page.getByRole("heading", { name: "Threads", level: 1 })).toBeVisible();
   });
 
-  test("should navigate to ontology page", async ({ page }) => {
-    // Click on Ontology link - scroll into view first to ensure it's clickable
-    const ontologyLink = page.getByRole("link", { name: "Ontology" });
-    await ontologyLink.scrollIntoViewIfNeeded();
-    await ontologyLink.click({ force: true });
+  test("should navigate to context graph page", async ({ page }) => {
+    // Click on Context Graph link - scroll into view first to ensure it's clickable
+    const contextGraphLink = page.getByRole("link", { name: "Context Graph" });
+    await contextGraphLink.scrollIntoViewIfNeeded();
+    await contextGraphLink.click({ force: true });
 
     // Verify navigation
-    await expect(page).toHaveURL(/\/ontology/);
+    await expect(page).toHaveURL(/\/context-graph/);
 
-    // Wait for ontology graph to load - use data-testid instead of text that may appear later
-    await expect(page.getByTestId("ontology-graph-container")).toBeVisible({
+    // Wait for context graph to load - use data-testid instead of text that may appear later
+    await expect(page.getByTestId("context-graph-container")).toBeVisible({
       timeout: 10000
     });
 
     // Verify the graph has actually loaded by checking for the overview text
-    await expect(page.getByText("Ontology Overview")).toBeVisible({
+    await expect(page.getByText("Context Graph Overview")).toBeVisible({
       timeout: 10000
     });
   });
@@ -114,8 +114,8 @@ test.describe("Navigation", () => {
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("link", { name: "Home" })).toBeVisible();
 
-    // Navigate to Ontology page directly since the link may be outside viewport on IDE page
-    await page.goto("/ontology");
+    // Navigate to Context Graph page directly since the link may be outside viewport on IDE page
+    await page.goto("/context-graph");
     await page.waitForLoadState("networkidle");
     await expect(page.getByRole("link", { name: "Home" })).toBeVisible();
   });

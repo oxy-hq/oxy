@@ -1,13 +1,13 @@
 ---
-title: "Ontology"
+title: "Context Graph"
 description: "Interactive graph visualization of your data project's semantic and operational assets"
 ---
 
-The **Ontology** is an interactive graph-based visualization and navigation tool that maps all semantic and operational assets in your Oxy project and their relationships. It provides a complete, visual understanding of how data flows through your system by showing connections between data assets, automations, and AI agents.
+The **Context Graph** is an interactive graph-based visualization and navigation tool that maps all semantic and operational assets in your Oxy project and their relationships. It provides a complete, visual understanding of how data flows through your system by showing connections between data assets, automations, and AI agents.
 
-# What is the Ontology?
+# What is the Context Graph?
 
-The Ontology feature creates a visual knowledge graph of your entire Oxy project, displaying:
+The Context Graph feature creates a visual knowledge graph of your entire Oxy project, displaying:
 
 - **Data Assets**: Tables, Views, Topics, Entities, SQL Queries
 - **Automation Assets**: Workflows, Apps, Automations
@@ -19,7 +19,7 @@ Each asset appears as a node in an interactive graph, with edges showing how the
 
 ## Node Types
 
-The Ontology visualizes 9 different types of nodes:
+The Context Graph visualizes 9 different types of nodes:
 
 | Node Type    | Description                                        | Visual Representation |
 | ------------ | -------------------------------------------------- | --------------------- |
@@ -48,7 +48,7 @@ Edges represent relationships between nodes:
 
 ## Semantic Layer Foundation
 
-The Ontology builds upon Oxy's semantic layer concepts:
+The Context Graph builds upon Oxy's semantic layer concepts:
 
 ### Views (.view.yaml)
 
@@ -67,11 +67,11 @@ Represent distinct business objects (customers, orders, products, etc.) and enab
 - **Dimensions**: Attributes and properties of entities
 - **Measures**: Aggregations and calculations (count, sum, average)
 
-# How to Use the Ontology
+# How to Use the Context Graph
 
-## Accessing the Ontology View
+## Accessing the Context Graph View
 
-Navigate to the Ontology page in the Oxy IDE to see the interactive graph visualization of your project.
+Navigate to the Context Graph page in the Oxy IDE to see the interactive graph visualization of your project.
 
 ## Exploring the Graph
 
@@ -109,7 +109,7 @@ Click any node to:
 
 ## Understanding Data Lineage
 
-The Ontology makes it easy to trace how data flows through your system:
+The Context Graph makes it easy to trace how data flows through your system:
 
 ```
 Database Tables → Views → Topics → Agents/Workflows
@@ -134,7 +134,7 @@ You can see:
 
 ## Impact Analysis
 
-Before making changes, use the Ontology to:
+Before making changes, use the Context Graph to:
 
 - See what will be affected if you modify a view or topic
 - Understand downstream dependencies
@@ -143,9 +143,9 @@ Before making changes, use the Ontology to:
 
 ## AI Context
 
-The Ontology helps with AI agent development:
+The Context Graph helps with AI agent development:
 
-- **Agent Understanding**: Agents use the ontology to understand available data
+- **Agent Understanding**: Agents use the context graph to understand available data
 - **Semantic Context**: Topics provide semantic context for natural language queries
 - **Routing**: Routing agents can intelligently route between topics and workflows
 
@@ -162,22 +162,22 @@ Speed up development by:
 
 ## Graph Structure
 
-The Ontology graph follows this structure:
+The Context Graph follows this structure:
 
 ```typescript
-OntologyGraph {
-  nodes: OntologyNode[]
-  edges: OntologyEdge[]
+ContextGraph {
+  nodes: ContextGraphNode[]
+  edges: ContextGraphEdge[]
 }
 
-OntologyNode {
+ContextGraphNode {
   id: string
   type: NodeType
   label: string
   data: NodeMetadata
 }
 
-OntologyEdge {
+ContextGraphEdge {
   source: string
   target: string
   type: EdgeType
@@ -186,7 +186,7 @@ OntologyEdge {
 
 ## Graph Building Process
 
-The Ontology service:
+The Context Graph service:
 
 1. Fetches all databases and file trees
 2. Parses views, topics, agents, workflows, apps, automations, and SQL queries
@@ -196,7 +196,7 @@ The Ontology service:
 
 ## UI Components
 
-The Ontology visualization uses:
+The Context Graph visualization uses:
 
 - **React Flow**: Interactive graph rendering with force-directed layout
 - **Custom Node Rendering**: Color-coding and styling by node type
@@ -207,7 +207,7 @@ The Ontology visualization uses:
 
 ## Example: Tracing a Data Flow
 
-Imagine you have a customer analytics agent. Using the Ontology, you can trace:
+Imagine you have a customer analytics agent. Using the Context Graph, you can trace:
 
 1. **Database Table**: `customers` table in your database
 2. **View**: `customer_view.view.yaml` derived from `customers` table
@@ -220,27 +220,27 @@ This visual trace helps you understand exactly where your agent's data comes fro
 
 Before renaming an entity in a view:
 
-1. Click on the view node in the Ontology
+1. Click on the view node in the Context Graph
 2. See all topics that contain this view
 3. See all agents that use those topics
 4. Understand the full scope of impact before making changes
 
 # File Locations
 
-The Ontology feature is implemented in:
+The Context Graph feature is implemented in:
 
-- **Types**: `/web-app/src/types/ontology.ts`
-- **API Service**: `/web-app/src/services/api/ontology.ts`
-- **UI Components**: `/web-app/src/pages/ontology/`
-- **React Hook**: `/web-app/src/hooks/api/ontology/useOntology.ts`
+- **Types**: `/web-app/src/types/contextGraph.ts`
+- **API Service**: `/web-app/src/services/api/contextGraph.ts`
+- **UI Components**: `/web-app/src/pages/context-graph/`
+- **React Hook**: `/web-app/src/hooks/api/contextGraph/useContextGraph.ts`
 - **Semantic Specs**: `/crates/semantic/specs/` (view.md, topic.md, entity.md)
 
 # Best Practices
 
-1. **Regular Review**: Periodically review the Ontology to understand your project's evolution
-2. **Before Major Changes**: Always check the Ontology before refactoring or renaming assets
-3. **Onboarding**: Use the Ontology to help new team members understand the project structure
-4. **Documentation**: Reference Ontology screenshots in project documentation
-5. **Cleanup**: Use the Ontology to identify and remove unused assets
+1. **Regular Review**: Periodically review the Context Graph to understand your project's evolution
+2. **Before Major Changes**: Always check the Context Graph before refactoring or renaming assets
+3. **Onboarding**: Use the Context Graph to help new team members understand the project structure
+4. **Documentation**: Reference Context Graph screenshots in project documentation
+5. **Cleanup**: Use the Context Graph to identify and remove unused assets
 
-The Ontology is your visual map to understanding, navigating, and maintaining your Oxy data project. It transforms abstract configurations into a concrete, explorable graph that makes complex relationships immediately clear.
+The Context Graph is your visual map to understanding, navigating, and maintaining your Oxy data project. It transforms abstract configurations into a concrete, explorable graph that makes complex relationships immediately clear.

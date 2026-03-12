@@ -37,9 +37,9 @@ import { SidebarTrigger } from "@/components/ui/shadcn/sidebar";
 import useSidebar from "@/components/ui/shadcn/sidebar-context";
 import useTheme from "@/stores/useTheme";
 import type {
-  OntologyGraph as OntologyGraphType,
-  OntologyNode as OntologyNodeType
-} from "@/types/ontology";
+  ContextGraphNode as ContextGraphNodeType,
+  ContextGraph as ContextGraphType
+} from "@/types/contextGraph";
 import { NodeDetailPanel } from "./NodeDetailPanel";
 
 type FocusType =
@@ -56,7 +56,7 @@ type FocusType =
   | "entity";
 
 // Custom node component with explicit handles
-const OntologyNode = ({ data }: NodeProps) => {
+const ContextGraphNode = ({ data }: NodeProps) => {
   const nodeData = data as {
     label: string;
     type: string;
@@ -194,25 +194,25 @@ const OntologyNode = ({ data }: NodeProps) => {
 };
 
 const nodeTypes = {
-  ontology: OntologyNode
+  "context-graph": ContextGraphNode
 };
 
-interface OntologyGraphProps {
-  data: OntologyGraphType;
+interface ContextGraphProps {
+  data: ContextGraphType;
 }
 
-function OntologyGraphInner({ data }: OntologyGraphProps) {
+function ContextGraphInner({ data }: ContextGraphProps) {
   const { theme } = useTheme();
   // Focus state management
   const [focusType, setFocusType] = useState<FocusType>(() => {
-    const saved = localStorage.getItem("ontology-focus-type");
+    const saved = localStorage.getItem("context-graph-focus-type");
     return (saved as FocusType) || "auto";
   });
 
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
-  const [selectedNode, setSelectedNode] = useState<OntologyNodeType | null>(null);
+  const [selectedNode, setSelectedNode] = useState<ContextGraphNodeType | null>(null);
   const [expandAll, setExpandAll] = useState<boolean>(() => {
-    const saved = localStorage.getItem("ontology-expand-all");
+    const saved = localStorage.getItem("context-graph-expand-all");
     return saved === "true";
   });
 
@@ -222,12 +222,12 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
 
   // Save expand all preference to localStorage
   useEffect(() => {
-    localStorage.setItem("ontology-expand-all", expandAll.toString());
+    localStorage.setItem("context-graph-expand-all", expandAll.toString());
   }, [expandAll]);
 
   // Save focus type to localStorage
   useEffect(() => {
-    localStorage.setItem("ontology-focus-type", focusType);
+    localStorage.setItem("context-graph-focus-type", focusType);
   }, [focusType]);
 
   // Build connection graph for filtering
@@ -284,9 +284,9 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
   const handleNodeClick = useCallback(
     (_event: React.MouseEvent, node: { id: string }) => {
       setFocusedNodeId((prev) => (prev === node.id ? null : node.id));
-      // Find the ontology node data to pass to the detail panel
-      const ontologyNode = data.nodes.find((n) => n.id === node.id);
-      setSelectedNode(ontologyNode || null);
+      // Find the context graph node data to pass to the detail panel
+      const contextGraphNode = data.nodes.find((n) => n.id === node.id);
+      setSelectedNode(contextGraphNode || null);
     },
     [data.nodes]
   );
@@ -306,7 +306,7 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
 
   // Helper function to calculate node styling based on focus
   const getNodeStyle = useCallback(
-    (node: OntologyNodeType) => {
+    (node: ContextGraphNodeType) => {
       let opacity = 1;
       let scale = 1;
 
@@ -333,7 +333,7 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
   // Helper function to group nodes into rows based on width
   const groupNodesIntoRows = useCallback(
     (
-      nodeInfos: Array<{ node: OntologyNodeType; estimatedWidth: number }>,
+      nodeInfos: Array<{ node: ContextGraphNodeType; estimatedWidth: number }>,
       maxRowWidth: number,
       padding: number
     ) => {
@@ -366,7 +366,7 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
   // Helper function to convert a single row into ReactFlow nodes
   const createNodesFromRow = useCallback(
     (
-      row: Array<{ node: OntologyNodeType; estimatedWidth: number }>,
+      row: Array<{ node: ContextGraphNodeType; estimatedWidth: number }>,
       rowIndex: number,
       padding: number,
       rowHeight: number
@@ -382,7 +382,7 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
 
         nodes.push({
           id: node.id,
-          type: "ontology",
+          type: "context-graph",
           data: {
             label: node.label,
             type: node.type,
@@ -404,7 +404,7 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
     [getNodeStyle]
   );
 
-  // Transform ontology data into ReactFlow nodes
+  // Transform context graph data into ReactFlow nodes
   // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   const initialNodes = useMemo(() => {
     const typeGroups: Record<string, typeof data.nodes> = {};
@@ -464,7 +464,7 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
     return reactFlowNodes;
   }, [data.nodes, focusType, visibleNodes, getNodeStyle, groupNodesIntoRows, createNodesFromRow]);
 
-  // Transform ontology edges into ReactFlow edges
+  // Transform context graph edges into ReactFlow edges
   const initialEdges = useMemo(() => {
     // Create a map of node visibility for quick lookup
     const nodeVisibilityMap = new Map<string, boolean>();
@@ -658,17 +658,17 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
           }
         >
           <div className='mb-2 font-semibold text-sidebar-foreground text-sm'>
-            Ontology Overview
+            Context Graph Overview
           </div>
           <div
             className='space-y-1 text-sidebar-foreground/70 text-sm'
-            data-testid='ontology-stats'
+            data-testid='context-graph-stats'
           >
             <div className='flex justify-between gap-4'>
               <span>Total Nodes:</span>
               <span
                 className='font-medium text-sidebar-foreground'
-                data-testid='ontology-total-nodes'
+                data-testid='context-graph-total-nodes'
               >
                 {nodeCount}
               </span>
@@ -677,7 +677,7 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
               <span>Total Edges:</span>
               <span
                 className='font-medium text-sidebar-foreground'
-                data-testid='ontology-total-edges'
+                data-testid='context-graph-total-edges'
               >
                 {edgeCount}
               </span>
@@ -706,7 +706,7 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
             >
               <SelectTrigger
                 className='h-9 border-sidebar-border bg-sidebar-accent text-sidebar-foreground text-sm'
-                data-testid='ontology-filter-type'
+                data-testid='context-graph-filter-type'
               >
                 <SelectValue placeholder='Select focus' />
               </SelectTrigger>
@@ -820,10 +820,10 @@ function OntologyGraphInner({ data }: OntologyGraphProps) {
   );
 }
 
-export function OntologyGraph(props: OntologyGraphProps) {
+export function ContextGraph(props: ContextGraphProps) {
   return (
     <ReactFlowProvider>
-      <OntologyGraphInner {...props} />
+      <ContextGraphInner {...props} />
     </ReactFlowProvider>
   );
 }

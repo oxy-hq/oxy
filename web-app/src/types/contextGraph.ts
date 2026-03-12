@@ -1,4 +1,4 @@
-export interface OntologyNode {
+export interface ContextGraphNode {
   id: string;
   type:
     | "table"
@@ -22,7 +22,7 @@ export interface OntologyNode {
   };
 }
 
-export interface OntologyEdge {
+export interface ContextGraphEdge {
   id: string;
   source: string;
   target: string;
@@ -30,9 +30,9 @@ export interface OntologyEdge {
   type?: "references" | "uses" | "contains" | "derived_from";
 }
 
-export interface OntologyGraph {
-  nodes: OntologyNode[];
-  edges: OntologyEdge[];
+export interface ContextGraph {
+  nodes: ContextGraphNode[];
+  edges: ContextGraphEdge[];
 }
 
 export interface View {

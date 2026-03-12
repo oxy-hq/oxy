@@ -3,13 +3,13 @@
 export { AgentService } from "./agents";
 export { AppService } from "./apps";
 export { AuthService } from "./auth";
+export { ContextGraphService } from "./contextGraph";
 export { DatabaseService } from "./database";
 export { FileService } from "./files";
 export { GitHubApiService } from "./github";
 export type { LookerExplore, LookerIntegrationInfo } from "./integrations";
 export { IntegrationService } from "./integrations";
 export { ArtifactService, BuilderService, ChartService } from "./misc";
-export { OntologyService } from "./ontology";
 export { ProjectService } from "./projects";
 export { RunService } from "./run";
 export { SemanticService } from "./semantic";

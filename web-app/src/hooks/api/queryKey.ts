@@ -147,10 +147,10 @@ const artifactKeys = {
     [...artifactKeys.all, "get", projectId, branchName, id] as const
 };
 
-const ontologyKeys = {
-  all: ["ontology"] as const,
+const contextGraphKeys = {
+  all: ["context-graph"] as const,
   graph: (projectId: string, branchName: string) =>
-    [...ontologyKeys.all, "graph", projectId, branchName] as const
+    [...contextGraphKeys.all, "graph", projectId, branchName] as const
 };
 
 const integrationKeys = {
@@ -177,7 +177,7 @@ const queryKeys = {
   repositories: repositoryKeys,
   config: configKeys,
   artifact: artifactKeys,
-  ontology: ontologyKeys,
+  contextGraph: contextGraphKeys,
   integration: integrationKeys,
   trace: traceKeys
 };

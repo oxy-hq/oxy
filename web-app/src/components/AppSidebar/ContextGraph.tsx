@@ -4,23 +4,23 @@ import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/shadcn/sideb
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import ROUTES from "@/libs/utils/routes";
 
-const Ontology = () => {
+const ContextGraph = () => {
   const location = useLocation();
   const { project } = useCurrentProjectBranch();
 
-  const ontologyUri = ROUTES.PROJECT(project.id).ONTOLOGY;
-  const isOntologyPage = location.pathname === ontologyUri;
+  const contextGraphUri = ROUTES.PROJECT(project.id).CONTEXT_GRAPH;
+  const isContextGraphPage = location.pathname === contextGraphUri;
 
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton asChild isActive={isOntologyPage}>
-        <Link to={ontologyUri}>
+      <SidebarMenuButton asChild isActive={isContextGraphPage}>
+        <Link to={contextGraphUri}>
           <Network />
-          <span>Ontology</span>
+          <span>Context Graph</span>
         </Link>
       </SidebarMenuButton>
     </SidebarMenuItem>
   );
 };
 
-export default Ontology;
+export default ContextGraph;
