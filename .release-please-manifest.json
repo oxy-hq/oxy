@@ -18,7 +18,7 @@
   "crates/infrastructure/llm/ollama": "0.5.25",
   "crates/infrastructure/llm/openai": "0.5.25",
   "crates/infrastructure/llm/oxy-llm": "0.5.25",
-  "web-app": "0.5.24",
+  "web-app": "0.5.25",
   "crates/test-utils": "0.5.23",
   "crates/integration/looker": "0.4.13"
 }
