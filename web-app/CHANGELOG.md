@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.5.26](https://github.com/oxy-hq/oxy-internal/compare/0.5.25...0.5.26) (2026-03-12)
+
+
+### <!-- 0 -->🚀 Features
+
+* enhance DateControl with calendar popover and input synchronization ([ef01a9f](https://github.com/oxy-hq/oxy-internal/commit/ef01a9ff464206910d7ea85604f2e51fb14cb1ac))
+* replace ontology with context graph ([#1771](https://github.com/oxy-hq/oxy-internal/issues/1771)) ([7b8c555](https://github.com/oxy-hq/oxy-internal/commit/7b8c5552d68285100a8bd6cd5ed60d97e198fb56))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* optimize chunking strategy in Vite config for better performance ([6e9280f](https://github.com/oxy-hq/oxy-internal/commit/6e9280f70cef1d0664fda647dc5f161853fe193d))
+* remove unnecessary react-dom/client dependency from Vite config ([9a1203f](https://github.com/oxy-hq/oxy-internal/commit/9a1203fa1664f57d867d2f28eaff82e987fa5e07))
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* release 0.5.26 ([1beec19](https://github.com/oxy-hq/oxy-internal/commit/1beec19a8c19d309b65d54ed3eaa25bfd8cd5264))
+
 ## [0.5.25](https://github.com/oxy-hq/oxy-internal/compare/0.5.24...0.5.25) (2026-03-12)
 
 
