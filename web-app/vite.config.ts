@@ -2,18 +2,23 @@ import { resolve } from "node:path";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react-swc";
-import esbuild from "rollup-plugin-esbuild";
 import { visualizer } from "rollup-plugin-visualizer";
 import { defineConfig } from "vite";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
 
 // Shared dependency configuration for both dev optimization and production chunking
 const dependencies = {
-  // Core React ecosystem - most stable, loaded first
-  reactCore: ["react", "react-dom", "react-router-dom", "react-error-boundary"],
+  // Core React runtime only — must be alone so Rollup generates a proper
+  // cross-chunk import from react-dom, ensuring react initializes first.
+  reactCore: ["react"],
+
+  // React DOM and router — separate chunk so Rollup enforces load order
+  reactDom: ["react-dom"],
 
   // React UI components - commonly used together
   reactUI: [
+    "react-router-dom",
+    "react-error-boundary",
     "react-intersection-observer",
     "react-textarea-autosize",
     "react-window",
@@ -134,6 +139,46 @@ const dependencies = {
 // Flatten all dependencies for optimizeDeps.include
 const allDependencies = Object.values(dependencies).flat();
 
+// Build a map of package name → chunk name for function-based manualChunks.
+// The function form is required so Rollup matches actual module file paths and
+// always emits proper ES import statements between chunks (guaranteeing that
+// react initializes before any consumer chunk runs).
+const chunkNameMap: Record<string, string> = {};
+const chunkEntries: [string, string[]][] = [
+  ["react-vendor", dependencies.reactCore],
+  ["react-dom-vendor", dependencies.reactDom],
+  ["react-ui", dependencies.reactUI],
+  ["radix-ui", dependencies.radixUI],
+  ["editor-vendor", dependencies.editors],
+  ["visualization", dependencies.visualization],
+  ["content-processing", dependencies.contentProcessing],
+  ["data-vendor", dependencies.dataVendor],
+  ["ui-utils", dependencies.uiUtils],
+  ["animations", dependencies.animations],
+  ["date-utils", dependencies.dateUtils],
+  ["data-processing", dependencies.dataProcessing],
+  ["utils-vendor", dependencies.utils],
+  ["persistence", dependencies.persistence],
+  ["network-vendor", dependencies.network],
+  ["dev-vendor", dependencies.dev]
+];
+for (const [chunkName, pkgs] of chunkEntries) {
+  for (const pkg of pkgs) {
+    chunkNameMap[pkg] = chunkName;
+  }
+}
+
+function manualChunks(id: string): string | undefined {
+  if (!id.includes("/node_modules/")) return undefined;
+  for (const [pkg, chunk] of Object.entries(chunkNameMap)) {
+    // Match /node_modules/pkg/ or /node_modules/@scope/pkg/
+    if (id.includes(`/node_modules/${pkg}/`)) {
+      return chunk;
+    }
+  }
+  return undefined;
+}
+
 // https://vitejs.dev/config/
 export default defineConfig({
   base: "/",
@@ -214,32 +259,8 @@ export default defineConfig({
     rollupOptions: {
       // Optimize rollup for memory efficiency
       maxParallelFileOps: 2, // Reduce parallel operations to save memory
-      plugins: [
-        esbuild({
-          target: "es2020",
-          minify: true,
-          legalComments: "none",
-          treeShaking: true
-        })
-      ],
       output: {
-        manualChunks: {
-          "react-vendor": dependencies.reactCore,
-          "react-ui": dependencies.reactUI,
-          "radix-ui": dependencies.radixUI,
-          "editor-vendor": dependencies.editors,
-          visualization: dependencies.visualization,
-          "content-processing": dependencies.contentProcessing,
-          "data-vendor": dependencies.dataVendor,
-          "ui-utils": dependencies.uiUtils,
-          animations: dependencies.animations,
-          "date-utils": dependencies.dateUtils,
-          "data-processing": dependencies.dataProcessing,
-          "utils-vendor": dependencies.utils,
-          persistence: dependencies.persistence,
-          "network-vendor": dependencies.network,
-          "dev-vendor": dependencies.dev
-        }
+        manualChunks
       }
     }
   }
