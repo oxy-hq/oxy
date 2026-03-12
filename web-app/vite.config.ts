@@ -10,13 +10,7 @@ import { nodePolyfills } from "vite-plugin-node-polyfills";
 // Shared dependency configuration for both dev optimization and production chunking
 const dependencies = {
   // Core React ecosystem - most stable, loaded first
-  reactCore: [
-    "react",
-    "react-dom",
-    "react-dom/client", // Added - important for React 18+
-    "react-router-dom",
-    "react-error-boundary"
-  ],
+  reactCore: ["react", "react-dom", "react-router-dom", "react-error-boundary"],
 
   // React UI components - commonly used together
   reactUI: [
