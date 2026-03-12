@@ -14,6 +14,7 @@ import {
   SelectValue
 } from "@/components/ui/shadcn/select";
 import { Switch } from "@/components/ui/shadcn/switch";
+import DateValueInput from "@/pages/ide/Files/Editor/components/SemanticQueryPanel/components/DateValueInput";
 import type { AppFormData } from "../index";
 import { TaskRefSelect } from "./components";
 
@@ -262,12 +263,21 @@ export const ControlDisplayFields: React.FC<ControlDisplayFieldsProps> = ({ inde
       {/* Date-specific */}
       {controlType === "date" && (
         <div className='space-y-2'>
-          <Label htmlFor={`display.${index}.default`}>Default Date</Label>
-          <Input
-            id={`display.${index}.default`}
-            type='date'
-            {...register(`display.${index}.default`)}
+          <Label>Default Date</Label>
+          <Controller
+            name={fp(`display.${index}.default`)}
+            control={control}
+            render={({ field }) => (
+              <DateValueInput
+                value={field.value as string | undefined}
+                onChange={(v) => field.onChange(v ?? undefined)}
+                placeholder='Pick a default date'
+              />
+            )}
           />
+          <p className='text-muted-foreground text-sm'>
+            Supports relative dates like "today" or "1 week ago".
+          </p>
         </div>
       )}
     </div>
