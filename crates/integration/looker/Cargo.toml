@@ -1,6 +1,6 @@
 [package]
 name = "oxy-looker"
-version = "0.4.14"
+version = "0.4.15"
 authors.workspace = true
 description = "Looker integration for Oxy"
 documentation.workspace = true

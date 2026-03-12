@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.27](https://github.com/oxy-hq/oxy-internal/compare/0.5.26...0.5.27) (2026-03-12)
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* db connections not reused ([#1763](https://github.com/oxy-hq/oxy-internal/issues/1763)) ([385fbf4](https://github.com/oxy-hq/oxy-internal/commit/385fbf46052667dd1f97869d328e1f01bba1d7fa))
+
 ## [0.5.26](https://github.com/oxy-hq/oxy-internal/compare/0.5.25...0.5.26) (2026-03-12)
 
 
