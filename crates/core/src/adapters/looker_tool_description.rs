@@ -103,7 +103,7 @@ pub async fn get_looker_query_description(
     description.push_str("    - \"[10,20]\" (between)\n");
     description.push_str("- Set appropriate limits for large datasets\n");
     description.push_str(
-        "- Sort by relevant fields using field names, prefix with \"-\" for descending\n",
+        "- Sort by relevant fields using Looker syntax: \"view.field asc\" or \"view.field desc\"\n",
     );
 
     tracing::info!("Looker query description: {}", description);

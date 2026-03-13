@@ -303,7 +303,10 @@ fn build_database_routes() -> Router<AppState> {
 }
 
 fn build_integration_routes() -> Router<AppState> {
-    Router::new().route("/looker", get(integration::list_looker_integrations))
+    Router::new()
+        .route("/looker", get(integration::list_looker_integrations))
+        .route("/looker/query", post(integration::execute_looker_query))
+        .route("/looker/query/sql", post(integration::compile_looker_query))
 }
 
 fn build_secret_routes() -> Router<AppState> {

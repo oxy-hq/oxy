@@ -1,14 +1,17 @@
+import type { ReactNode } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 interface SqlViewProps {
   generatedSql: string;
   sqlError: string | null;
+  loading?: boolean;
+  loadingIndicator?: ReactNode;
 }
 
-const SqlView = ({ generatedSql, sqlError }: SqlViewProps) => {
+const SqlView = ({ generatedSql, sqlError, loading, loadingIndicator }: SqlViewProps) => {
   return (
-    <div className='customScrollbar h-full overflow-auto px-4 py-2'>
+    <div className='customScrollbar h-full overflow-auto p-4'>
       {(() => {
         if (sqlError) {
           return (
@@ -27,6 +30,15 @@ const SqlView = ({ generatedSql, sqlError }: SqlViewProps) => {
             >
               {generatedSql}
             </SyntaxHighlighter>
+          );
+        }
+        if (loading) {
+          return (
+            <div className='flex h-full items-center justify-center'>
+              {loadingIndicator ?? (
+                <span className='text-muted-foreground text-sm'>Building SQL...</span>
+              )}
+            </div>
           );
         }
         return (

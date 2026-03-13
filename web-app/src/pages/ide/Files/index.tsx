@@ -1,7 +1,7 @@
 import { ChevronsRight } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
-import { Outlet, useParams } from "react-router-dom";
+import { Outlet, useOutlet } from "react-router-dom";
 import EmptyState from "@/components/ui/EmptyState";
 import { Button } from "@/components/ui/shadcn/button";
 import {
@@ -14,8 +14,8 @@ import FilesSidebar from "./FilesSidebar";
 
 const FilesLayout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const { pathb64 } = useParams();
-  const hasContent = !!pathb64;
+  const outlet = useOutlet();
+  const hasContent = !!outlet;
 
   return (
     <FilesProvider>
@@ -25,7 +25,7 @@ const FilesLayout: React.FC = () => {
             <ResizablePanel defaultSize={20} minSize={10} className='min-w-[200px]'>
               <FilesSidebar setSidebarOpen={setSidebarOpen} />
             </ResizablePanel>
-            <ResizableHandle withHandle />
+            <ResizableHandle />
           </>
         ) : (
           <div className='flex items-start border-r bg-sidebar-background px-1 py-2'>

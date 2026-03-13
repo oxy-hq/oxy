@@ -22,11 +22,14 @@ interface TabsHeaderProps {
   onAddFilter: () => void;
   onAddOrder: () => void;
   onAddVariable: () => void;
+  showAddVariable?: boolean;
   onExecuteQuery: () => void;
   loading: boolean;
   canExecuteQuery: boolean;
   disabledMessage?: string;
   hasSelectedFields: boolean;
+  limit?: number;
+  onLimitChange?: (limit: number) => void;
 }
 
 const TabsHeader = ({
@@ -36,11 +39,14 @@ const TabsHeader = ({
   onAddFilter,
   onAddOrder,
   onAddVariable,
+  showAddVariable = true,
   onExecuteQuery,
   loading,
   canExecuteQuery,
   disabledMessage,
-  hasSelectedFields
+  hasSelectedFields,
+  limit,
+  onLimitChange
 }: TabsHeaderProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -74,18 +80,23 @@ const TabsHeader = ({
   return (
     <div
       ref={containerRef}
-      className='scrollbar-none customScrollbar flex min-h-12.5 items-center justify-between gap-4 overflow-x-auto border-b px-4 py-2'
+      className='scrollbar-none customScrollbar flex items-center justify-between gap-4 overflow-x-auto border-b px-4 py-2'
     >
-      <TabsList>
+      <TabsList className='shrink-0'>
         <TabsTrigger value='results'>Results</TabsTrigger>
         <TabsTrigger value='sql'>SQL</TabsTrigger>
       </TabsList>
-      <div className='flex flex-shrink-0 items-center gap-2'>
+      <div className='flex shrink-0 items-center gap-2'>
         {!showSql && hasResults && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button size='sm' variant='ghost' onClick={handleDownloadCsv}>
-                <Download />
+              <Button
+                size='sm'
+                variant='ghost'
+                onClick={handleDownloadCsv}
+                className='h-7 w-7 shrink-0 p-0'
+              >
+                <Download className='h-4 w-4' />
               </Button>
             </TooltipTrigger>
             <TooltipContent>Download results as CSV</TooltipContent>
@@ -94,47 +105,68 @@ const TabsHeader = ({
         {isCollapsed ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size='sm' variant='outline'>
-                <Plus />
+              <Button size='sm' variant='outline' className='h-7 shrink-0'>
+                <Plus className='mr-1 h-3 w-3' />
                 Add
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align='end'>
-              <DropdownMenuItem className='cursor-pointer' onClick={onAddFilter}>
-                <Filter />
+              <DropdownMenuItem onClick={onAddFilter}>
+                <Filter className='h-4 w-4' />
                 Add Filter
               </DropdownMenuItem>
-              <DropdownMenuItem
-                className='cursor-pointer'
-                onClick={onAddOrder}
-                disabled={!hasSelectedFields}
-              >
-                <ArrowUpDown />
+              <DropdownMenuItem onClick={onAddOrder} disabled={!hasSelectedFields}>
+                <ArrowUpDown className='h-4 w-4' />
                 Add Sort
               </DropdownMenuItem>
-              <DropdownMenuItem className='cursor-pointer' onClick={onAddVariable}>
-                <Variable />
-                Add Variable
-              </DropdownMenuItem>
+              {showAddVariable && (
+                <DropdownMenuItem onClick={onAddVariable}>
+                  <Variable className='h-4 w-4' />
+                  Add Variable
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         ) : (
           <>
-            <Button size='sm' variant='outline' onClick={onAddFilter}>
-              <Plus />
+            <Button size='sm' variant='outline' onClick={onAddFilter} className='h-7 shrink-0'>
+              <Plus className='mr-1 h-3 w-3' />
               Add Filter
             </Button>
-            <Button size='sm' variant='outline' onClick={onAddOrder} disabled={!hasSelectedFields}>
-              <Plus />
+            <Button
+              size='sm'
+              variant='outline'
+              onClick={onAddOrder}
+              className='h-7 shrink-0'
+              disabled={!hasSelectedFields}
+            >
+              <Plus className='mr-1 h-3 w-3' />
               Add Sort
             </Button>
-            <Button size='sm' variant='outline' onClick={onAddVariable}>
-              <Plus />
-              Add Variable
-            </Button>
+            {showAddVariable && (
+              <Button size='sm' variant='outline' onClick={onAddVariable} className='h-7 shrink-0'>
+                <Plus className='mr-1 h-3 w-3' />
+                Add Variable
+              </Button>
+            )}
           </>
         )}
-        <div className='flex-shrink-0'>
+        {limit !== undefined && onLimitChange && (
+          <div className='flex shrink-0 items-center gap-1'>
+            <span className='text-muted-foreground text-xs'>Limit</span>
+            <input
+              type='number'
+              min={1}
+              value={limit}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                if (!Number.isNaN(v) && v > 0) onLimitChange(v);
+              }}
+              className='h-7 w-20 rounded-md border bg-background px-2 text-sm'
+            />
+          </div>
+        )}
+        <div className='shrink-0'>
           <HeaderActions
             onExecuteQuery={onExecuteQuery}
             loading={loading}

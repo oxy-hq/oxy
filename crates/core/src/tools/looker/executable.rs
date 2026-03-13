@@ -186,23 +186,108 @@ impl LookerQueryExecutable {
             sql,
         });
 
-        execution_context
+        let _ = execution_context
             .write_chunk(Chunk {
                 key: None,
                 delta: looker_output,
                 finished: true,
             })
-            .await?;
+            .await;
 
-        execution_context
+        let _ = execution_context
             .write_kind(EventKind::Finished {
                 message: format!("Executed Looker query: {} rows returned", row_count),
                 attributes: [].into(),
                 error: None,
             })
-            .await?;
+            .await;
 
         Ok(Output::Table(table_output))
+    }
+
+    /// Returns the SQL that Looker would generate for the given query parameters,
+    /// without executing the data query.
+    pub async fn get_sql(
+        &self,
+        execution_context: &ExecutionContext,
+        params: &LookerQueryParams,
+        integration: &str,
+        model: &str,
+        explore: &str,
+    ) -> Result<String, OxyError> {
+        self.validate_params(params)?;
+
+        let looker_config = self.get_looker_config(execution_context, integration)?;
+
+        let client_id = execution_context
+            .project
+            .secrets_manager
+            .resolve_secret(&looker_config.client_id_var)
+            .await?
+            .ok_or_else(|| OxyError::ToolCallError {
+                call_id: "unknown".to_string(),
+                handle: "looker_query".to_string(),
+                param: "client_id".to_string(),
+                msg: format!(
+                    "Looker client ID not found in environment variable: {}",
+                    looker_config.client_id_var
+                ),
+            })?;
+
+        let client_secret = execution_context
+            .project
+            .secrets_manager
+            .resolve_secret(&looker_config.client_secret_var)
+            .await?
+            .ok_or_else(|| OxyError::ToolCallError {
+                call_id: "unknown".to_string(),
+                handle: "looker_query".to_string(),
+                param: "client_secret".to_string(),
+                msg: format!(
+                    "Looker client secret not found in environment variable: {}",
+                    looker_config.client_secret_var
+                ),
+            })?;
+
+        let auth_config = LookerAuthConfig {
+            base_url: looker_config.base_url.clone(),
+            client_id,
+            client_secret,
+        };
+
+        let mut api_client =
+            LookerApiClient::new(auth_config).map_err(|e| OxyError::ToolCallError {
+                call_id: "unknown".to_string(),
+                handle: "looker_query".to_string(),
+                param: "".to_string(),
+                msg: format!("Failed to create Looker API client: {}", e),
+            })?;
+
+        let query_request = self
+            .build_query_request(execution_context, params, integration, model, explore)
+            .await?;
+
+        tracing::debug!(
+            model = model,
+            explore = explore,
+            fields = ?query_request.fields,
+            sorts = ?query_request.sorts,
+            filters = ?query_request.filters,
+            limit = ?query_request.limit,
+            "Looker SQL query request"
+        );
+
+        let sql = api_client
+            .run_inline_query_sql(query_request)
+            .await
+            .map_err(|e| OxyError::ToolCallError {
+                call_id: "unknown".to_string(),
+                handle: "looker_query".to_string(),
+                param: "".to_string(),
+                msg: format!("SQL generation failed: {}", e),
+            })?;
+
+        Ok(sql)
     }
 
     /// Validate the query parameters
@@ -432,11 +517,14 @@ impl LookerQueryExecutable {
             return Ok(file_path_str);
         }
 
-        // Infer schema from first row
+        // Infer schema from first row; sort keys for deterministic column ordering
         let first_row = &data[0];
+        let mut sorted_keys: Vec<&String> = first_row.keys().collect();
+        sorted_keys.sort();
         let mut fields = Vec::new();
 
-        for (key, value) in first_row.iter() {
+        for key in sorted_keys {
+            let value = first_row.get(key).unwrap();
             let value = Self::normalize_looker_value(value);
             let data_type = match value {
                 serde_json::Value::Number(n) => {

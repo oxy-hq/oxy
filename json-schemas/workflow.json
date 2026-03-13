@@ -1743,7 +1743,7 @@
               "type": "string"
             },
             "sorts": {
-              "description": "Fields to sort by. Prefix with '-' for descending order.",
+              "description": "Fields to sort by using Looker syntax: 'view.field asc' or 'view.field desc'.",
               "type": [
                 "array",
                 "null"

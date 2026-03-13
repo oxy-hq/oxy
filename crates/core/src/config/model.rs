@@ -2042,9 +2042,9 @@ pub struct LookerSortField {
 impl LookerSortField {
     pub fn to_looker_string(&self) -> String {
         if self.direction.eq_ignore_ascii_case("desc") {
-            format!("-{}", self.field)
+            format!("{} desc", self.field)
         } else {
-            self.field.clone()
+            format!("{} asc", self.field)
         }
     }
 }
@@ -2067,10 +2067,12 @@ pub struct LookerQueryParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(description = "Looker filter expression for complex conditions.")]
     pub filter_expression: Option<String>,
-    /// List of fields to sort by. Each entry can be a string ("field" or "-field" for desc)
-    /// or an object with `field` and `direction` ("asc"/"desc").
+    /// List of fields to sort by as `field asc` or `field desc`.
+    /// Input accepts objects with `field` and `direction` ("asc"/"desc").
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(description = "Fields to sort by. Prefix with '-' for descending order.")]
+    #[schemars(
+        description = "Fields to sort by using Looker syntax: 'view.field asc' or 'view.field desc'."
+    )]
     pub sorts: Option<Vec<LookerSortField>>,
     /// Maximum number of rows to return (-1 for unlimited)
     #[serde(default, skip_serializing_if = "Option::is_none")]

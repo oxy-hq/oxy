@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { type ReactNode, useEffect, useMemo } from "react";
 import { Tabs, TabsContent } from "@/components/ui/shadcn/tabs";
 import { useSemanticExplorerContext } from "../../contexts/SemanticExplorerContext";
 import FiltersSection from "./components/FiltersSection";
@@ -13,7 +13,19 @@ export interface Variable {
   value: string;
 }
 
-const SemanticQueryPanel = () => {
+interface SemanticQueryPanelProps {
+  extraSectionAboveSorts?: ReactNode;
+  showAddVariable?: boolean;
+  sqlLoadingIndicator?: ReactNode;
+  executeLoadingIndicator?: ReactNode;
+}
+
+const SemanticQueryPanel = ({
+  extraSectionAboveSorts,
+  showAddVariable = true,
+  sqlLoadingIndicator,
+  executeLoadingIndicator
+}: SemanticQueryPanelProps) => {
   const {
     result,
     showSql,
@@ -36,11 +48,14 @@ const SemanticQueryPanel = () => {
     onRemoveVariable,
     resultFile,
     onExecuteQuery,
-    loading,
+    sqlLoading,
+    executeLoading,
     availableDimensions,
     availableMeasures,
     selectedDimensions,
-    selectedMeasures
+    selectedMeasures,
+    limit,
+    onLimitChange
   } = useSemanticExplorerContext();
   const availableFields = useMemo(() => {
     return [...availableDimensions, ...availableMeasures];
@@ -72,10 +87,10 @@ const SemanticQueryPanel = () => {
   }, [generatedSql, setShowSql, sqlError]);
 
   useEffect(() => {
-    if (result.length > 0 || resultFile || executionError) {
+    if (executeLoading || result.length > 0 || resultFile || executionError) {
       setShowSql(false);
     }
-  }, [result, resultFile, setShowSql, executionError]);
+  }, [executeLoading, result, resultFile, setShowSql, executionError]);
 
   return (
     <Tabs
@@ -90,11 +105,14 @@ const SemanticQueryPanel = () => {
         onAddFilter={onAddFilter}
         onAddOrder={onAddOrder}
         onAddVariable={onAddVariable}
+        showAddVariable={showAddVariable}
         onExecuteQuery={onExecuteQuery}
-        loading={loading}
+        loading={executeLoading}
         canExecuteQuery={canExecuteQuery}
         disabledMessage=''
         hasSelectedFields={selectedFields.length > 0}
+        limit={limit}
+        onLimitChange={onLimitChange}
       />
 
       <FiltersSection
@@ -103,6 +121,8 @@ const SemanticQueryPanel = () => {
         onUpdateFilter={onUpdateFilter}
         onRemoveFilter={onRemoveFilter}
       />
+
+      {extraSectionAboveSorts}
 
       <SortsSection
         orders={orders}
@@ -119,10 +139,21 @@ const SemanticQueryPanel = () => {
 
       <div className='min-h-0 flex-1 overflow-hidden'>
         <TabsContent value='sql' className='mt-0 h-full'>
-          <SqlView generatedSql={generatedSql} sqlError={sqlError} />
+          <SqlView
+            generatedSql={generatedSql}
+            sqlError={sqlError}
+            loading={sqlLoading}
+            loadingIndicator={sqlLoadingIndicator}
+          />
         </TabsContent>
         <TabsContent value='results' className='mt-0 h-full'>
-          <ResultsView result={result} resultFile={resultFile} executionError={executionError} />
+          <ResultsView
+            result={result}
+            resultFile={resultFile}
+            executionError={executionError}
+            loading={executeLoading}
+            loadingIndicator={executeLoadingIndicator}
+          />
         </TabsContent>
       </div>
     </Tabs>

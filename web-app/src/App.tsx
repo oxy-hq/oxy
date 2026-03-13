@@ -42,6 +42,7 @@ import DatabaseLayout from "./pages/ide/Database";
 import QueryWorkspacePage from "./pages/ide/Database/QueryWorkspace";
 import FilesLayout from "./pages/ide/Files";
 import EditorPage from "./pages/ide/Files/Editor";
+import LookerExplorerPage from "./pages/ide/Files/Editor/LookerExplore";
 import ObservabilityLayout from "./pages/ide/observability";
 import ExecutionAnalytics from "./pages/ide/observability/execution-analytics";
 import SettingsLayout from "./pages/ide/settings";
@@ -158,6 +159,10 @@ const MainLayout = React.memo(function MainLayout() {
           {/* Files routes */}
           <Route path='files' element={<FilesLayout />}>
             <Route path=':pathb64' element={<EditorPage />} />
+            <Route
+              path='looker/:integrationName/:model/:exploreName'
+              element={<LookerExplorerPage />}
+            />
           </Route>
 
           {/* Database routes */}

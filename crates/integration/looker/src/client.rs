@@ -482,6 +482,33 @@ impl LookerApiClient {
         Ok(query_response)
     }
 
+    /// Runs an inline query and returns the generated SQL string.
+    ///
+    /// This method calls Looker's `queries/run/sql` endpoint which returns the SQL
+    /// that Looker would execute, without running the actual data query.
+    pub async fn run_inline_query_sql(
+        &mut self,
+        query: InlineQueryRequest,
+    ) -> Result<String, LookerError> {
+        debug!(
+            model = query.model,
+            view = query.view,
+            field_count = query.fields.len(),
+            "Running inline query for SQL generation"
+        );
+
+        let request = self.post("queries/run/sql").await?;
+        let response = request.json(&query).send().await?;
+        let response = self.handle_response(response).await?;
+
+        let sql = response.text().await.map_err(|e| LookerError::QueryError {
+            message: format!("Failed to read SQL response: {}", e),
+        })?;
+
+        debug!("SQL generation completed");
+        Ok(sql)
+    }
+
     async fn parse_query_response(&self, response: Response) -> Result<QueryResponse, LookerError> {
         let response_text = response.text().await.map_err(|e| LookerError::QueryError {
             message: format!("Failed to read response: {}", e),
@@ -632,7 +659,7 @@ mod tests {
             fields: vec!["orders.id".to_string(), "orders.total".to_string()],
             filters: None,
             filter_expression: None,
-            sorts: Some(vec!["-orders.created_date".to_string()]),
+            sorts: Some(vec!["orders.created_date desc".to_string()]),
             limit: Some(100),
             query_timezone: None,
             pivots: None,

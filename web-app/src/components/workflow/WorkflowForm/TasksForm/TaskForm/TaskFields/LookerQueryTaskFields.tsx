@@ -55,7 +55,9 @@ export const LookerQueryTaskFields: React.FC<LookerQueryTaskFieldsProps> = ({
     : [];
 
   const currentExplore = availableExplores.find((explore) => explore.name === selectedExplore);
-  const availableFieldOptions = currentExplore?.fields ?? [];
+  const availableFieldOptions: string[] = currentExplore
+    ? [...currentExplore.dimensions, ...currentExplore.measures]
+    : [];
 
   const {
     fields: fieldEntries,

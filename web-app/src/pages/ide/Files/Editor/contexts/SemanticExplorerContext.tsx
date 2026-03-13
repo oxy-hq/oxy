@@ -11,6 +11,8 @@ type SemanticExplorerContextType = {
   dataLoading: boolean;
   loadingError?: string;
   loading: boolean;
+  sqlLoading: boolean;
+  executeLoading: boolean;
   refetchData?: () => void;
 
   // Selection state
@@ -52,6 +54,10 @@ type SemanticExplorerContextType = {
   onUpdateTimeDimension: (index: number, updates: Partial<TimeDimension>) => void;
   onRemoveTimeDimension: (index: number) => void;
 
+  // Limit
+  limit?: number;
+  onLimitChange?: (limit: number) => void;
+
   // Actions
   onExecuteQuery: () => void;
   availableDimensions: Field[];
@@ -62,7 +68,8 @@ type SemanticExplorerContextType = {
   resultFile?: string;
 };
 
-const SemanticExplorerContext = createContext<SemanticExplorerContextType | null>(null);
+export const SemanticExplorerContext = createContext<SemanticExplorerContextType | null>(null);
+export type { SemanticExplorerContextType };
 
 type SemanticExplorerProviderProps = {
   children: ReactNode;
@@ -126,6 +133,8 @@ export const SemanticExplorerProvider = ({
   const { mutate: compileSemanticQuery, isPending: isCompiling } = useCompileSemanticQuery();
 
   const loading = isExecuting || isCompiling || dataLoading;
+  const sqlLoading = isCompiling;
+  const executeLoading = isExecuting;
 
   // Auto-compile query when selection changes
   useEffect(() => {
@@ -146,6 +155,9 @@ export const SemanticExplorerProvider = ({
       variables,
       timeDimensions
     });
+
+    setGeneratedSql("");
+    setSqlError(null);
 
     compileSemanticQuery(request, {
       onSuccess: (data) => {
@@ -232,6 +244,8 @@ export const SemanticExplorerProvider = ({
       dataLoading,
       loadingError,
       loading,
+      sqlLoading,
+      executeLoading,
       refetchData,
       selectedDimensions,
       selectedMeasures,
@@ -273,6 +287,8 @@ export const SemanticExplorerProvider = ({
       dataLoading,
       loadingError,
       loading,
+      sqlLoading,
+      executeLoading,
       refetchData,
       selectedDimensions,
       selectedMeasures,

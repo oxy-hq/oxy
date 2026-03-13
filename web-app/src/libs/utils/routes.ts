@@ -48,7 +48,9 @@ const ROUTES = {
         ROOT: `${base}/ide`,
         FILES: {
           ROOT: `${base}/ide/files`,
-          FILE: (pathb64: string) => `${base}/ide/files/${pathb64}`
+          FILE: (pathb64: string) => `${base}/ide/files/${pathb64}`,
+          LOOKER_EXPLORE: (integrationName: string, model: string, exploreName: string) =>
+            `${base}/ide/files/looker/${encodeURIComponent(integrationName)}/${encodeURIComponent(model)}/${encodeURIComponent(exploreName)}`
         },
         DATABASE: {
           ROOT: `${base}/ide/database`

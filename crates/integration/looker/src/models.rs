@@ -137,7 +137,7 @@ pub struct InlineQueryRequest {
     /// Looker filter expression for complex OR conditions
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filter_expression: Option<String>,
-    /// List of field names to sort by (prefix with "-" for descending)
+    /// List of sort expressions (e.g. "orders.created_date desc")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sorts: Option<Vec<String>>,
     /// Maximum number of rows to return (-1 for unlimited)
@@ -459,7 +459,7 @@ mod tests {
             fields: vec!["orders.id".to_string(), "orders.total".to_string()],
             filters: Some(filters),
             filter_expression: None,
-            sorts: Some(vec!["-orders.created_date".to_string()]),
+            sorts: Some(vec!["orders.created_date desc".to_string()]),
             limit: Some(100),
             query_timezone: None,
             pivots: None,
