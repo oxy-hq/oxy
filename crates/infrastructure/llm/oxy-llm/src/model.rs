@@ -5,8 +5,9 @@ use std::collections::HashMap;
 // Re-export provider config types
 pub use oxy_anthropic::AnthropicModelConfig;
 pub use oxy_gemini::GeminiModelConfig;
+pub use oxy_novita::NovitaModelConfig;
 pub use oxy_ollama::OllamaModelConfig;
-pub use oxy_openai::{HeaderValue, OPENAI_API_URL, OpenAIModelConfig, default_openai_api_url};
+pub use oxy_openai::{default_openai_api_url, HeaderValue, OpenAIModelConfig, OPENAI_API_URL};
 
 // Re-export from dependencies for convenience
 pub use oxy_shared::AzureModel;
@@ -35,6 +36,11 @@ pub enum Model {
         #[serde(flatten)]
         config: AnthropicModelConfig,
     },
+    #[serde(rename = "novita")]
+    Novita {
+        #[serde(flatten)]
+        config: NovitaModelConfig,
+    },
 }
 
 impl Model {
@@ -45,6 +51,7 @@ impl Model {
             Model::Ollama { config } => config.model_name(),
             Model::Google { config } => config.model_name(),
             Model::Anthropic { config } => config.model_name(),
+            Model::Novita { config } => config.model_name(),
         }
     }
 
@@ -55,6 +62,7 @@ impl Model {
             Model::Ollama { config } => config.name(),
             Model::Google { config } => config.name(),
             Model::Anthropic { config } => config.name(),
+            Model::Novita { config } => config.name(),
         }
     }
 
@@ -65,6 +73,7 @@ impl Model {
             Model::Google { config } => config.key_var(),
             Model::Anthropic { config } => config.key_var(),
             Model::Ollama { config } => config.key_var(), // Returns None
+            Model::Novita { config } => config.key_var(),
         }
     }
 
@@ -73,6 +82,7 @@ impl Model {
         match self {
             Model::OpenAI { config } => config.headers(),
             Model::Anthropic { config } => config.headers(),
+            Model::Novita { config } => config.headers(),
             _ => None,
         }
     }
@@ -105,6 +115,14 @@ impl Model {
     pub fn as_ollama(&self) -> Option<&OllamaModelConfig> {
         match self {
             Model::Ollama { config } => Some(config),
+            _ => None,
+        }
+    }
+
+    /// Get inner Novita config if this is a Novita model
+    pub fn as_novita(&self) -> Option<&NovitaModelConfig> {
+        match self {
+            Model::Novita { config } => Some(config),
             _ => None,
         }
     }

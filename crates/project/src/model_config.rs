@@ -1,11 +1,12 @@
 use crate::models::{
     AnthropicModelConfig, GoogleModelConfig, ModelConfig, ModelVendor, ModelsFormData,
-    OllamaModelConfig, OpenAIModelConfig,
+    NovitaModelConfig, OllamaModelConfig, OpenAIModelConfig,
 };
 use axum::http::StatusCode;
 use oxy::config::model::{
     AnthropicModelConfig as LlmAnthropicConfig, GeminiModelConfig as LlmGeminiConfig, Model,
-    OllamaModelConfig as LlmOllamaConfig, OpenAIModelConfig as LlmOpenAIConfig,
+    NovitaModelConfig as LlmNovitaConfig, OllamaModelConfig as LlmOllamaConfig,
+    OpenAIModelConfig as LlmOpenAIConfig,
 };
 use oxy::service::secret_manager::{CreateSecretParams, SecretManagerService};
 use oxy_shared::errors::OxyError;
@@ -36,6 +37,7 @@ impl ModelConfigBuilder {
                     Self::build_google_model(project_id, user_id, model_config, txn).await?
                 }
                 ModelVendor::Ollama => Self::build_ollama_model(model_config),
+                ModelVendor::Novita => Self::build_novita_model(model_config),
             };
 
             config_models.push(model);
@@ -189,17 +191,42 @@ impl ModelConfigBuilder {
             .api_key
             .unwrap_or_else(|| "api_key".to_string());
 
-        Model::Ollama {
-            config: LlmOllamaConfig {
-                name,
-                model_ref,
-                api_key,
-                api_url,
-            },
-        }
-    }
+         Model::Ollama {
+             config: LlmOllamaConfig {
+                 name,
+                 model_ref,
+                 api_key,
+                 api_url,
+             },
+         }
+     }
 
-    async fn create_secret(
+     fn build_novita_model(model_config: &ModelConfig) -> Model {
+         let novita_config: NovitaModelConfig = model_config.get_novita_config();
+
+         let name = model_config
+             .name
+             .clone()
+             .unwrap_or_else(|| "novita-model".to_string());
+         let model_ref = novita_config
+             .model_ref
+             .unwrap_or_else(|| "deepseek/deepseek-v3.2".to_string());
+         let key_var = name.to_uppercase() + "_API_KEY";
+
+         Model::Novita {
+             config: LlmNovitaConfig {
+                 name,
+                 model_ref,
+                 key_var,
+                 api_url: novita_config
+                     .api_url
+                     .filter(|url| !url.is_empty()),
+                 headers: None,
+             },
+         }
+     }
+
+     async fn create_secret(
         project_id: Uuid,
         user_id: Uuid,
         key: String,

@@ -1,5 +1,5 @@
 [package]
-name = "oxy-llm"
+name = "oxy-novita"
 version = "0.5.27"
 authors.workspace = true
 description.workspace = true
@@ -9,12 +9,16 @@ publish.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-oxy-anthropic = { path = "../anthropic" }
-oxy-gemini = { path = "../gemini" }
-oxy-novita = { path = "../novita" }
-oxy-ollama = { path = "../ollama" }
-oxy-openai = { path = "../openai" }
+async-openai = { workspace = true, features = [
+    "byot",
+    "chat-completion-types",
+    "response-types",
+    "_api",
+] }
+axum = { version = "0.8.8" }
 oxy-shared = { path = "../../../shared" }
 schemars = { version = "0.8.22", features = ["derive"] }
+secrecy = "0.10.3"
 serde = { workspace = true }
 serde_with = "3.17.0"
+tracing = "0.1"

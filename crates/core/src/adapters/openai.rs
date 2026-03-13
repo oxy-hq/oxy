@@ -92,6 +92,7 @@ impl ModelHeadersExt for Model {
         let headers_map = match self {
             Model::OpenAI { config } => config.headers.as_ref(),
             Model::Anthropic { config } => config.headers.as_ref(),
+            Model::Novita { config } => config.headers.as_ref(),
             _ => None,
         };
         let mut resolved_headers = HashMap::new();
@@ -180,6 +181,32 @@ impl IntoOpenAIConfig for Model {
 
                 // Delegate to oxy-anthropic for config creation
                 Ok(oxy_anthropic::create_openai_config(
+                    api_key,
+                    config.api_url.clone(),
+                    resolved_headers,
+                ))
+            }
+            Model::Novita { config } => {
+                // Resolve API key from secrets
+                let api_key = secrets_manager
+                    .resolve_secret(&config.key_var)
+                    .await
+                    .map_err(|_e| {
+                        OxyError::ConfigurationError("Novita API key not found".to_string())
+                    })?
+                    .ok_or_else(|| {
+                        OxyError::ConfigurationError("Novita API key not found".to_string())
+                    })?;
+
+                // Resolve custom headers if present
+                let resolved_headers = if config.headers.is_some() {
+                    Some(self.resolve_headers(secrets_manager).await?)
+                } else {
+                    None
+                };
+
+                // Delegate to oxy-novita for config creation
+                Ok(oxy_novita::create_openai_config(
                     api_key,
                     config.api_url.clone(),
                     resolved_headers,
