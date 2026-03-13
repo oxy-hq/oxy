@@ -99,10 +99,10 @@ pub async fn handle_looker_sync(args: LookerSyncArgs) -> Result<(), OxyError> {
         .filter_map(|integration| match &integration.integration_type {
             IntegrationType::Looker(looker_integration) => {
                 // Filter by integration name if specified
-                if let Some(ref filter_name) = args.integration {
-                    if &integration.name != filter_name {
-                        return None;
-                    }
+                if let Some(ref filter_name) = args.integration
+                    && &integration.name != filter_name
+                {
+                    return None;
                 }
                 Some((integration.name.clone(), looker_integration.clone()))
             }
@@ -336,10 +336,10 @@ async fn handle_looker_list(args: LookerListArgs) -> Result<(), OxyError> {
         .filter_map(|integration| match &integration.integration_type {
             IntegrationType::Looker(looker_integration) => {
                 // Filter by integration name if specified
-                if let Some(ref filter_name) = args.integration {
-                    if &integration.name != filter_name {
-                        return None;
-                    }
+                if let Some(ref filter_name) = args.integration
+                    && &integration.name != filter_name
+                {
+                    return None;
                 }
                 Some((integration.name.clone(), looker_integration.clone()))
             }
@@ -427,10 +427,10 @@ async fn handle_looker_test(args: LookerTestArgs) -> Result<(), OxyError> {
         .filter_map(|integration| match &integration.integration_type {
             IntegrationType::Looker(looker_integration) => {
                 // Filter by integration name if specified
-                if let Some(ref filter_name) = args.integration {
-                    if &integration.name != filter_name {
-                        return None;
-                    }
+                if let Some(ref filter_name) = args.integration
+                    && &integration.name != filter_name
+                {
+                    return None;
                 }
                 Some((integration.name.clone(), looker_integration.clone()))
             }

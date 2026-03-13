@@ -3,7 +3,7 @@ use oxy::config::model::Display;
 use oxy::config::validate::ValidationContext;
 use oxy_shared::errors::OxyError;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value as JsonValue, json};
+use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use utoipa::ToSchema;
 

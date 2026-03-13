@@ -18,7 +18,7 @@ use crate::server::service::agent::AgentCLIHandler;
 use crate::server::service::agent::run_agent;
 use crate::server::service::agent::run_agentic_workflow;
 use crate::server::service::eval::EvalEventsHandler;
-use crate::server::service::eval::{run_eval, run_eval_with_tag};
+use crate::server::service::eval::run_eval_with_tag;
 use crate::server::service::retrieval::{ReindexInput, SearchInput, reindex, search};
 use crate::server::service::sync::sync_databases;
 use crate::server::service::workflow::run_workflow;

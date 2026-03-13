@@ -2,7 +2,7 @@ use super::cache::AppCache;
 use super::types::{AppResult, TASKS_KEY};
 use crate::server::service::workflow::WorkflowEventHandler;
 use oxy::adapters::project::manager::ProjectManager;
-use oxy::config::model::{AppConfig, ControlConfig, Display, SingleControlDisplay, Task};
+use oxy::config::model::{AppConfig, ControlConfig, Display, Task};
 use oxy::execute::renderer::Renderer;
 use oxy::execute::types::DataContainer;
 use oxy_shared::errors::OxyError;

@@ -71,7 +71,7 @@ pub(super) fn parse_correctness_record(output: Output) -> Result<Record, OxyErro
     for line in lines.iter().rev().take(5) {
         let upper = line.to_uppercase();
         // Strip common formatting characters
-        let cleaned = upper.replace('*', "").replace('#', "").replace('_', " ");
+        let cleaned = upper.replace(['*', '#'], "").replace('_', " ");
         if cleaned.contains("PASS") && !cleaned.contains("FAIL") {
             verdict = Some("PASS");
             break;

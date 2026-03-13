@@ -324,19 +324,19 @@ impl LookerQueryExecutable {
             }
         };
 
-        if let Some(base_view_name) = metadata.base_view_name {
-            if !base_view_name.trim().is_empty() {
-                if base_view_name != explore {
-                    tracing::debug!(
-                        integration = integration,
-                        model = model,
-                        explore = explore,
-                        base_view = base_view_name,
-                        "Resolved query view from synced Looker metadata"
-                    );
-                }
-                return base_view_name;
+        if let Some(base_view_name) = metadata.base_view_name
+            && !base_view_name.trim().is_empty()
+        {
+            if base_view_name != explore {
+                tracing::debug!(
+                    integration = integration,
+                    model = model,
+                    explore = explore,
+                    base_view = base_view_name,
+                    "Resolved query view from synced Looker metadata"
+                );
             }
+            return base_view_name;
         }
 
         explore.to_string()

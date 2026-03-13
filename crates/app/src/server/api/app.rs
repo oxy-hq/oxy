@@ -188,7 +188,7 @@ pub async fn get_displays(
     // Collect SQL templates for execute_sql tasks so the frontend can run them
     // client-side in DuckDB WASM without a server round-trip on control changes.
     let databases = project_manager.config_manager.list_databases();
-    let mut app_service = AppService::new(project_manager.clone());
+    let app_service = AppService::new(project_manager.clone());
     let tasks: HashMap<String, TaskClientInfo> = app_service
         .get_config(&path)
         .await
@@ -361,10 +361,10 @@ pub async fn get_source_file(
     // Build candidate search directories.
     let mut search_dirs: Vec<PathBuf> = vec![project_path.clone()];
     for db in project_manager.config_manager.list_databases() {
-        if let DatabaseType::DuckDB(duckdb) = &db.database_type {
-            if let DuckDBOptions::Local { file_search_path } = &duckdb.options {
-                search_dirs.push(project_path.join(file_search_path));
-            }
+        if let DatabaseType::DuckDB(duckdb) = &db.database_type
+            && let DuckDBOptions::Local { file_search_path } = &duckdb.options
+        {
+            search_dirs.push(project_path.join(file_search_path));
         }
     }
 

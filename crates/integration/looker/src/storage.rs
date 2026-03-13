@@ -250,13 +250,11 @@ impl MetadataStorage {
             let path = entry.path();
             if path
                 .extension()
-                .map_or(false, |ext| ext == "yml" || ext == "yaml")
+                .is_some_and(|ext| ext == "yml" || ext == "yaml")
+                && let Some(stem) = path.file_stem()
+                && let Some(name) = stem.to_str()
             {
-                if let Some(stem) = path.file_stem() {
-                    if let Some(name) = stem.to_str() {
-                        explores.push(name.to_string());
-                    }
-                }
+                explores.push(name.to_string());
             }
         }
 

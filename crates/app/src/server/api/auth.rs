@@ -1062,11 +1062,11 @@ async fn invite_user_inner(
         .ok()
         .and_then(|c| c.authentication)
         .and_then(|a| a.magic_link);
-    if let Some(ref cfg) = magic_link_config {
-        if !is_email_allowed(&email, cfg) {
-            tracing::info!("Invite attempted for non-allowlisted email: {}", email);
-            return StatusCode::FORBIDDEN.into_response();
-        }
+    if let Some(ref cfg) = magic_link_config
+        && !is_email_allowed(&email, cfg)
+    {
+        tracing::info!("Invite attempted for non-allowlisted email: {}", email);
+        return StatusCode::FORBIDDEN.into_response();
     }
 
     let connection = match establish_connection().await {
