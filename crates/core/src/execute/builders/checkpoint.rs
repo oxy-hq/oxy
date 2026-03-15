@@ -221,8 +221,8 @@ where
                 }
             },
             Err(e) => {
-                tracing::warn!(
-                    "Checkpoint not found for replay_id: {}, hash: {}\nError: {}",
+                tracing::debug!(
+                    "Checkpoint not found for replay_id: {}, hash: {}, error: {}",
                     replay_id,
                     checkpoint_hash,
                     e
