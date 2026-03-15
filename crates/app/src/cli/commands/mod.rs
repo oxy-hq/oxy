@@ -7,6 +7,7 @@ mod looker;
 mod make;
 mod mcp;
 mod migrate;
+pub mod run;
 mod seed;
 mod serve;
 mod start;
@@ -14,44 +15,35 @@ mod status;
 
 use crate::cli::commands::mcp::{start_mcp_sse_server, start_mcp_stdio};
 use crate::cli::commands::migrate::migrate;
+use crate::cli::commands::run::{RunArgs, handle_run_command};
 use crate::server::service::agent::AgentCLIHandler;
 use crate::server::service::agent::run_agent;
-use crate::server::service::agent::run_agentic_workflow;
 use crate::server::service::eval::EvalEventsHandler;
 use crate::server::service::eval::run_eval_with_tag;
 use crate::server::service::retrieval::{ReindexInput, SearchInput, reindex, search};
 use crate::server::service::sync::sync_databases;
-use crate::server::service::workflow::run_workflow;
 use ::oxy::adapters::project::builder::ProjectBuilder;
 use ::oxy::adapters::runs::RunsManager;
 use ::oxy::adapters::secrets::SecretsManager;
-use ::oxy::checkpoint::types::RetryStrategy;
 use ::oxy::config::model::{AppConfig, DatabaseType};
 use ::oxy::config::test_config::TestFileConfig;
 use ::oxy::config::*;
-use ::oxy::connector::Connector;
 use ::oxy::database::docker;
-use ::oxy::execute::types::utils::record_batches_to_table;
 use ::oxy::sentry_config;
 use ::oxy::theme::StyledText;
 use ::oxy::theme::detect_true_color_support;
 use ::oxy::theme::get_current_theme_mode;
-use ::oxy::utils::print_colored_sql;
 use clap::CommandFactory;
 use clap::Parser;
-use clap::builder::ValueParser;
 use make::handle_make_command;
-use minijinja::{Environment, Value};
 use model::AgentConfig;
 use model::{Config, Semantics, Workflow};
 use oxy_globals::GlobalRegistry;
 use oxy_semantic::cube::models::DatabaseDetails;
 use oxy_semantic::cube::translator::process_semantic_layer_to_cube;
 use oxy_shared::errors::OxyError;
-use oxy_workflow::loggers::cli::WorkflowCLILogger;
 use serve::start_server_and_web_app;
 use std::backtrace;
-use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::error::Error;
 use std::path::PathBuf;
@@ -149,17 +141,6 @@ fn clear_directory_contents_selective(
         }
     }
     Ok(())
-}
-
-type Variable = (String, String);
-fn parse_variable(env: &str) -> Result<Variable, OxyError> {
-    if let Some((var, value)) = env.split_once('=') {
-        Ok((var.to_owned(), value.to_owned()))
-    } else {
-        Err(OxyError::ArgumentError(
-            "Invalid variable format. Must be in the form of VAR=VALUE".to_string(),
-        ))
-    }
 }
 
 #[derive(Parser, Debug)]
@@ -406,50 +387,6 @@ pub struct MakeArgs {
     file: String,
 }
 
-#[derive(Parser, Debug)]
-pub struct RunArgs {
-    /// Path to the file to execute (.sql, .procedure.yml, .workflow.yml, .automation.yml, or .agent.yml)
-    file: String,
-
-    /// Database connection to use for SQL execution
-    ///
-    /// Specify which database from your config.yml to use.
-    /// If not provided, uses the default database from configuration.
-    #[clap(long)]
-    database: Option<String>,
-
-    /// Template variables in the format VAR=VALUE
-    ///
-    /// Pass variables to SQL templates using Jinja2 syntax.
-    /// Example: --variables user_id=123 --variables status=active
-    #[clap(long, short = 'v', value_parser=ValueParser::new(parse_variable), num_args = 1..)]
-    variables: Vec<(String, String)>,
-
-    /// Question to ask when running agent files
-    ///
-    /// Required when executing .agent.yml files to provide context
-    /// for the AI agent's analysis or response.
-    question: Option<String>,
-
-    /// Retry failed operations automatically
-    ///
-    /// Enable automatic retry logic for transient failures
-    /// during workflow or query execution.
-    #[clap(long, default_value_t = false, group = "named")]
-    retry: bool,
-
-    /// Retry from a specific step in the workflow
-    #[clap(long, group = "unnamed", conflicts_with = "named")]
-    retry_from: Option<String>,
-
-    /// Preview SQL without executing against the database
-    ///
-    /// Validate and display the generated SQL query without
-    /// actually running it against your database.
-    #[clap(long, default_value_t = false)]
-    dry_run: bool,
-}
-
 #[derive(clap::ValueEnum, Clone, Debug)]
 pub enum OutputFormat {
     Pretty,
@@ -506,40 +443,6 @@ pub struct BuildArgs {
     /// and regenerate all CubeJS files from scratch.
     #[clap(long, short = 'f', default_value_t = false)]
     force: bool,
-}
-
-#[derive(Clone)]
-pub struct RunOptions {
-    database: Option<String>,
-    variables: Option<Vec<(String, String)>>,
-    question: Option<String>,
-    retry: bool,
-    dry_run: bool,
-}
-
-impl RunArgs {
-    pub fn from(file: String, options: Option<RunOptions>) -> Self {
-        match options {
-            Some(options) => Self {
-                file,
-                database: options.database,
-                variables: options.variables.unwrap_or(vec![]),
-                question: options.question,
-                retry: options.retry,
-                dry_run: options.dry_run,
-                retry_from: None,
-            },
-            None => Self {
-                file,
-                database: None,
-                variables: vec![],
-                question: None,
-                retry: false,
-                dry_run: false,
-                retry_from: None,
-            },
-        }
-    }
 }
 
 #[derive(Parser, Debug)]
@@ -743,102 +646,6 @@ fn validate_single_file(file_path: &PathBuf, config: &Config) -> Result<(), Stri
             file_path.display()
         )),
     }
-}
-
-async fn handle_workflow_file(
-    workflow_name: &PathBuf,
-    retry: bool,
-    retry_from: Option<String>,
-) -> Result<(), OxyError> {
-    let project_path = resolve_local_project_path()?;
-    let project = ProjectBuilder::new(Uuid::nil())
-        .with_project_path(&project_path)
-        .await?
-        .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
-        .build()
-        .await
-        .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create project: {e}")))?;
-    // Add Sentry context for workflow execution
-    let workflow_name_str = workflow_name
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("unknown");
-    sentry_config::add_workflow_context(workflow_name_str, None);
-
-    if let Some(retry_from) = retry_from {
-        tracing::debug!(retry_from = %retry_from, "Running workflow from last run with retry from step");
-        sentry_config::add_workflow_context(workflow_name_str, Some("retry_from"));
-
-        // Extract the run_id and replay_id from the retry_from string
-        let (run_id, replay_id) = if retry_from.contains("::") {
-            let parts: Vec<&str> = retry_from.split("::").collect();
-            if parts.len() == 2 {
-                (
-                    parts[0].to_string().parse::<u32>().map_err(|err| {
-                        OxyError::ArgumentError(format!(
-                            "Invalid replay_id format: {err}. Expected a number."
-                        ))
-                    })?,
-                    parts[1].to_string(),
-                )
-            } else {
-                return Err(OxyError::ArgumentError(
-                    "Invalid retry_from format. Expected 'run_id::replay_id'".to_string(),
-                ));
-            }
-        } else {
-            return Err(OxyError::ArgumentError(
-                "Invalid retry_from format. Expected 'run_id::replay_id'".to_string(),
-            ));
-        };
-
-        run_workflow(
-            workflow_name,
-            WorkflowCLILogger,
-            RetryStrategy::Retry {
-                replay_id: Some(replay_id),
-                run_index: run_id,
-            },
-            project,
-            None,
-            None,
-            None, // No globals override from CLI
-            Some(crate::server::service::agent::ExecutionSource::Cli),
-            None, // No authenticated user in CLI context
-        )
-        .await?;
-    } else if retry {
-        tracing::debug!("Running workflow from last failed run");
-        sentry_config::add_workflow_context(workflow_name_str, Some("retry"));
-        run_workflow(
-            workflow_name,
-            WorkflowCLILogger,
-            RetryStrategy::LastFailure,
-            project,
-            None,
-            None,
-            None, // No globals override from CLI
-            Some(crate::server::service::agent::ExecutionSource::Cli),
-            None, // No authenticated user in CLI context
-        )
-        .await?;
-    } else {
-        tracing::debug!("Running workflow without retry");
-        sentry_config::add_workflow_context(workflow_name_str, Some("normal"));
-        run_workflow(
-            workflow_name,
-            WorkflowCLILogger,
-            RetryStrategy::NoRetry { variables: None },
-            project,
-            None,
-            None,
-            None, // No globals override from CLI
-            Some(crate::server::service::agent::ExecutionSource::Cli),
-            None, // No authenticated user in CLI context
-        )
-        .await?;
-    }
-    Ok(())
 }
 
 pub async fn cli() -> Result<(), Box<dyn Error>> {
@@ -1571,207 +1378,6 @@ async fn handle_looker_auto_sync() -> Result<(), OxyError> {
         force: false,
     })
     .await
-}
-
-async fn handle_agent_file(file_path: &PathBuf, question: Option<String>) -> Result<(), OxyError> {
-    let agent_name = file_path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("unknown");
-    sentry_config::add_agent_context(agent_name, question.as_deref());
-
-    let question = question.ok_or_else(|| {
-        OxyError::ArgumentError("Question is required for agent files".to_string())
-    })?;
-    let project_path = resolve_local_project_path()?;
-
-    let project_manager = ProjectBuilder::new(Uuid::nil())
-        .with_project_path(&project_path)
-        .await?
-        .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
-        .build()
-        .await
-        .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create project: {e}")))?;
-
-    let _ = run_agent(
-        project_manager,
-        file_path,
-        question,
-        AgentCLIHandler::default(),
-        vec![],
-        None,
-        None,
-        None, // No globals from CLI
-        None, // No variables from CLI (yet)
-        Some(crate::server::service::agent::ExecutionSource::Cli),
-        None, // No sandbox info from CLI
-        None, // No data_app_file_path from CLI
-    )
-    .await?;
-    Ok(())
-}
-
-async fn handle_agentic_workflow_file(
-    file_path: &PathBuf,
-    question: Option<String>,
-) -> Result<(), OxyError> {
-    let agent_name = file_path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("unknown");
-    sentry_config::add_agent_context(agent_name, question.as_deref());
-
-    let question = question.ok_or_else(|| {
-        OxyError::ArgumentError("Question is required for agentic workflow files".to_string())
-    })?;
-    let project_path = resolve_local_project_path()?;
-
-    let project_manager = ProjectBuilder::new(Uuid::nil())
-        .with_project_path(&project_path)
-        .await?
-        .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
-        .build()
-        .await
-        .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create project: {e}")))?;
-
-    println!("🤖 Running agentic workflow: {}", file_path.display());
-    let res = run_agentic_workflow(
-        project_manager,
-        file_path,
-        question,
-        AgentCLIHandler::default(),
-        vec![],
-    )
-    .await?;
-    println!("{:?}", res);
-    Ok(())
-}
-
-async fn handle_sql_file(
-    file_path: &PathBuf,
-    database: Option<String>,
-    config: &ConfigManager,
-    variables: &[(String, String)],
-    dry_run: bool,
-) -> Result<String, OxyError> {
-    let database = database.ok_or_else(|| {
-        OxyError::ArgumentError(
-            "Database is required for running SQL file. Please provide the database using --database or set a default database in config.yml".to_string(),
-        )
-    })?;
-
-    // Add Sentry context for SQL execution
-    sentry_config::add_database_context(&database, Some("sql_file"));
-    sentry_config::add_operation_context("sql", Some(&file_path.to_string_lossy()));
-
-    let content = std::fs::read_to_string(file_path)
-        .map_err(|e| OxyError::RuntimeError(format!("Failed to read SQL file: {e}")))?;
-    let mut env = Environment::new();
-    let mut query = content.clone();
-
-    // Handle variable templating if variables are provided
-    if !variables.is_empty() {
-        env.add_template("query", &query)
-            .map_err(|e| OxyError::RuntimeError(format!("Failed to parse SQL template: {e}")))?;
-        let tmpl = env.get_template("query").unwrap();
-        let ctx = Value::from({
-            let mut m = BTreeMap::new();
-            for var in variables {
-                m.insert(var.0.clone(), var.1.clone());
-            }
-            m
-        });
-        query = tmpl
-            .render(ctx)
-            .map_err(|e| OxyError::RuntimeError(format!("Failed to render SQL template: {e}")))?
-    }
-
-    // Print colored SQL and execute query
-    print_colored_sql(&query);
-    let secrets_manager = SecretsManager::from_environment()?;
-    let connector =
-        Connector::from_database(&database, config, &secrets_manager, None, None, None).await?;
-    let (datasets, schema) = match dry_run {
-        false => connector.run_query_and_load(&query).await,
-        true => connector.dry_run(&query).await,
-    }?;
-    let batches_display = record_batches_to_table(&datasets, &schema)
-        .map_err(|e| OxyError::RuntimeError(format!("Failed to display query results: {e}")))?;
-    println!("\n\x1b[1;32mResults:\x1b[0m");
-    println!("{batches_display}");
-
-    Ok(batches_display.to_string())
-}
-
-pub enum RunResult {
-    Workflow,
-    Agent,
-    Sql(String),
-}
-
-pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError> {
-    let file = &run_args.file;
-
-    let current_dir = std::env::current_dir().expect("Could not get current directory");
-
-    let file_path = current_dir.join(file);
-    if !file_path.exists() {
-        return Err(OxyError::ConfigurationError(format!(
-            "File not found: {file_path:?}"
-        )));
-    }
-
-    let extension = file_path.extension().and_then(std::ffi::OsStr::to_str);
-
-    match extension {
-        Some("yml") => {
-            if file.ends_with(".procedure.yml")
-                || file.ends_with(".workflow.yml")
-                || file.ends_with(".automation.yml")
-            {
-                handle_workflow_file(&file_path, run_args.retry, run_args.retry_from).await?;
-                Ok(RunResult::Workflow)
-            } else if file.ends_with(".agent.yml") {
-                handle_agent_file(&file_path, run_args.question).await?;
-                Ok(RunResult::Agent)
-            } else if file.ends_with(".aw.yml") {
-                handle_agentic_workflow_file(&file_path, run_args.question).await?;
-                Ok(RunResult::Agent)
-            } else {
-                Err(OxyError::ArgumentError(
-                    "Invalid YAML file. Must be either *.procedure.yml, *.workflow.yml, *.automation.yml, or *.agent.yml".into(),
-                ))
-            }
-        }
-        Some("sql") => {
-            let config = ConfigBuilder::new()
-                .with_project_path(&resolve_local_project_path()?)?
-                .build()
-                .await?;
-            let database = run_args
-                .database
-                .or_else(|| config.default_database_ref().cloned());
-
-            if database.is_none() {
-                return Err(OxyError::ArgumentError(
-                    "Database is required for running SQL file. Please provide the database using --database or set a default database in config.yml".into(),
-                ));
-            }
-            let sql_result = handle_sql_file(
-                &file_path,
-                database,
-                &config,
-                &run_args.variables,
-                run_args.dry_run,
-            )
-            .await?;
-            Ok(RunResult::Sql(sql_result))
-        }
-        _ => Err(OxyError::ArgumentError(
-            "Invalid file extension. Must be .procedure.yml, .workflow.yml, .automation.yml, .agent.yml, or .sql"
-                .into(),
-        )),
-    }
 }
 
 pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {

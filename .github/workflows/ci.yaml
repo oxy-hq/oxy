@@ -315,6 +315,7 @@ jobs:
       GEMINI_API_KEY: "empty"
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       DOMO_DEVELOPER_TOKEN: "empty"
+      OXY_LOG_LEVEL: debug
     steps:
       - uses: actions/checkout@v6
       - uses: gacts/install-hurl@v1
@@ -358,7 +359,10 @@ jobs:
           oxy run data_fruit/example_food_calories.sql
 
       - name: Smoke test - HTTP (Hurl)
-        run: hurl --test --retry 3 tests/smoke/smoke.hurl
+        run: |
+          set -o pipefail
+          echo '## Smoke Test Results' >> $GITHUB_STEP_SUMMARY
+          hurl --test tests/smoke/smoke.hurl 2>&1 | tee -a $GITHUB_STEP_SUMMARY
 
       - name: Test restart (data persistence)
         working-directory: examples
@@ -380,7 +384,8 @@ jobs:
           for c in oxy-postgres oxy-clickhouse oxy-otel-collector oxy-cubejs; do
             docker ps --format "{{.Names}}" | grep -q "^${c}$" || { echo "::error::$c not running after restart"; exit 1; }
           done
-          hurl --test tests/smoke/smoke.hurl
+          set -o pipefail
+          hurl --test tests/smoke/smoke.hurl 2>&1 | tee -a $GITHUB_STEP_SUMMARY
 
       - name: Cleanup
         if: always()

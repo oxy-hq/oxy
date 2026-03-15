@@ -4,6 +4,8 @@
 
 # Health endpoint (includes database connectivity check)
 GET http://localhost:3000/api/health
+[Options]
+verbose: true
 HTTP 200
 [Asserts]
 header "Content-Type" contains "application/json"
@@ -13,6 +15,8 @@ duration < 5000
 
 # Version endpoint
 GET http://localhost:3000/api/version
+[Options]
+verbose: true
 HTTP 200
 [Asserts]
 header "Content-Type" contains "application/json"
@@ -21,6 +25,8 @@ duration < 1000
 
 # Project status (validates config)
 GET http://localhost:3000/api/00000000-0000-0000-0000-000000000000/status?branch=main
+[Options]
+verbose: true
 HTTP 200
 [Asserts]
 header "Content-Type" contains "application/json"
@@ -29,6 +35,8 @@ duration < 5000
 
 # Agents endpoint
 GET http://localhost:3000/api/00000000-0000-0000-0000-000000000000/agents?branch=main
+[Options]
+verbose: true
 HTTP 200
 [Asserts]
 header "Content-Type" contains "application/json"
@@ -36,6 +44,8 @@ duration < 5000
 
 # Databases endpoint
 GET http://localhost:3000/api/00000000-0000-0000-0000-000000000000/databases?branch=main
+[Options]
+verbose: true
 HTTP 200
 [Asserts]
 header "Content-Type" contains "application/json"
@@ -43,13 +53,17 @@ duration < 5000
 
 # Workflows endpoint
 GET http://localhost:3000/api/00000000-0000-0000-0000-000000000000/workflows?branch=main
+[Options]
+verbose: true
 HTTP 200
 [Asserts]
 header "Content-Type" contains "application/json"
 duration < 5000
 
-# App endpoint
-GET http://localhost:3000/api/00000000-0000-0000-0000-000000000000/app?branch=main
+# Apps endpoint
+GET http://localhost:3000/api/00000000-0000-0000-0000-000000000000/apps?branch=main
+[Options]
+verbose: true
 HTTP 200
 [Asserts]
 header "Content-Type" contains "application/json"
@@ -57,6 +71,8 @@ duration < 5000
 
 # Threads endpoint
 GET http://localhost:3000/api/00000000-0000-0000-0000-000000000000/threads?page=1&limit=50
+[Options]
+verbose: true
 HTTP 200
 [Asserts]
 header "Content-Type" contains "application/json"

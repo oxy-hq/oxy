@@ -4,7 +4,7 @@ use uuid::Uuid;
 use crate::{
     adapters::runs::{
         database::RunsDatabaseStorage,
-        storage::{RunsStorage, RunsStorageImpl},
+        storage::{RunsNoopStorage, RunsStorage, RunsStorageImpl},
     },
     checkpoint::types::RetryStrategy,
     database::client::establish_connection,
@@ -31,6 +31,18 @@ impl RunsManager {
             branch_id,
         ));
         Ok(RunsManager { storage })
+    }
+
+    /// Creates a `RunsManager` that does not require a database connection.
+    /// Run history and checkpoints are not persisted. Retry operations are not supported.
+    pub fn noop() -> Self {
+        RunsManager {
+            storage: RunsStorageImpl::Noop(RunsNoopStorage),
+        }
+    }
+
+    pub fn is_noop(&self) -> bool {
+        matches!(self.storage, RunsStorageImpl::Noop(_))
     }
 
     pub async fn list_runs(

@@ -93,10 +93,7 @@ pub async fn list(
 ) -> Result<impl IntoResponse, StatusCode> {
     let config_manager = project_manager.config_manager;
     match crate::service::workflow::list_workflows(config_manager.clone()).await {
-        Ok(workflows) => {
-            let response = serde_json::to_string(&workflows).unwrap();
-            Ok((StatusCode::OK, response))
-        }
+        Ok(workflows) => Ok(extract::Json(workflows)),
         Err(e) => {
             tracing::error!("Failed to list workflows: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)

@@ -73,7 +73,7 @@ After making changes to CLI commands:
 
 ```bash
 # Build in debug mode
-cargo build -p oxy
+cargo build
 
 # Test using the debug binary
 ./target/debug/oxy <command>
@@ -128,7 +128,6 @@ The `oxy start` command manages Docker containers programmatically via the `boll
 
 ## Common Pitfalls
 
-- Do not run `cargo build` without `-p oxy` — the full workspace build is slow.
 - Do not use `--release` for local development or CI checks.
 - Do not use `println!` in library code — use `tracing` macros instead.
 - Do not add new crates without adding them to the workspace `Cargo.toml` members list.

@@ -4,6 +4,7 @@ use database::DatabaseStorage;
 use file::FileStorage;
 use indexmap::IndexMap;
 use itertools::Itertools;
+use noop::NoopStorage;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio::sync::OnceCell;
 
@@ -16,6 +17,7 @@ use oxy_shared::errors::OxyError;
 
 mod database;
 mod file;
+mod noop;
 pub mod types;
 
 pub struct CheckpointBuilder {
@@ -27,7 +29,11 @@ impl CheckpointBuilder {
     pub async fn from_runs_manager(
         runs_manager: &RunsManager,
     ) -> Result<CheckpointManager, OxyError> {
-        let storage = CheckpointStorageImpl::DatabaseStorage(DatabaseStorage::default().await?);
+        let storage = if runs_manager.is_noop() {
+            CheckpointStorageImpl::Noop(NoopStorage)
+        } else {
+            CheckpointStorageImpl::DatabaseStorage(DatabaseStorage::default().await?)
+        };
         CheckpointBuilder {
             storage: Some(storage),
             run_storage: Some(runs_manager.clone()),
@@ -446,4 +452,5 @@ pub trait CheckpointStorage {
 pub(crate) enum CheckpointStorageImpl {
     FileStorage(FileStorage),
     DatabaseStorage(DatabaseStorage),
+    Noop(NoopStorage),
 }
