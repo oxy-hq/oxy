@@ -8,6 +8,12 @@ members = [
   "crates/core",
   "crates/entity",
   "crates/globals",
+  "crates/infrastructure/llm/anthropic",
+  "crates/infrastructure/llm/gemini",
+  "crates/infrastructure/llm/novita",
+  "crates/infrastructure/llm/ollama",
+  "crates/infrastructure/llm/openai",
+  "crates/infrastructure/llm/oxy-llm",
   "crates/integration/looker",
   "crates/migration",
   "crates/omni",
@@ -17,11 +23,6 @@ members = [
   "crates/test-utils",
   "crates/thread",
   "crates/workflow",
-  "crates/infrastructure/llm/anthropic",
-  "crates/infrastructure/llm/ollama",
-  "crates/infrastructure/llm/gemini",
-  "crates/infrastructure/llm/openai",
-  "crates/infrastructure/llm/oxy-llm",
 ]
 
 default-members = ["crates/app"]

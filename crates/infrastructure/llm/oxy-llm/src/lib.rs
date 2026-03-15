@@ -10,8 +10,8 @@ mod traits;
 
 // Re-export the unified Model enum and all provider config types
 pub use model::{
-    AnthropicModelConfig, AzureModel, GeminiModelConfig, HeaderValue, Model, OPENAI_API_URL,
-    OllamaModelConfig, OpenAIModelConfig, default_openai_api_url,
+    default_openai_api_url, AnthropicModelConfig, AzureModel, GeminiModelConfig, HeaderValue,
+    Model, NovitaModelConfig, OllamaModelConfig, OpenAIModelConfig, OPENAI_API_URL,
 };
 
 // Re-export the trait
@@ -19,3 +19,6 @@ pub use traits::ModelConfig;
 
 // Re-export Anthropic's default API URL function
 pub use oxy_anthropic::default_api_url as default_anthropic_api_url;
+
+// Re-export Novita's default API URL function
+pub use oxy_novita::default_novita_api_url;

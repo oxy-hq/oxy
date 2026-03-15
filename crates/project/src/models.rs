@@ -196,6 +196,7 @@ pub enum ModelVendor {
     Google,
     Anthropic,
     Ollama,
+    Novita,
 }
 
 #[derive(Deserialize, Serialize, ToSchema, Debug, Clone)]
@@ -221,6 +222,13 @@ pub struct AnthropicModelConfig {
 
 #[derive(Deserialize, Serialize, ToSchema, Debug, Clone)]
 pub struct OllamaModelConfig {
+    pub model_ref: Option<String>,
+    pub api_key: Option<String>,
+    pub api_url: Option<String>,
+}
+
+#[derive(Deserialize, Serialize, ToSchema, Debug, Clone)]
+pub struct NovitaModelConfig {
     pub model_ref: Option<String>,
     pub api_key: Option<String>,
     pub api_url: Option<String>,
@@ -267,6 +275,16 @@ impl ModelConfig {
     pub fn get_ollama_config(&self) -> OllamaModelConfig {
         serde_json::from_value::<OllamaModelConfig>(self.config.clone()).unwrap_or({
             OllamaModelConfig {
+                model_ref: None,
+                api_key: None,
+                api_url: None,
+            }
+        })
+    }
+
+    pub fn get_novita_config(&self) -> NovitaModelConfig {
+        serde_json::from_value::<NovitaModelConfig>(self.config.clone()).unwrap_or({
+            NovitaModelConfig {
                 model_ref: None,
                 api_key: None,
                 api_url: None,
