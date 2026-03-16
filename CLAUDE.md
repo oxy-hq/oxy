@@ -126,6 +126,10 @@ The `oxy start` command manages Docker containers programmatically via the `boll
 - Enterprise services run on the `oxy-enterprise` Docker network.
 - Use `oxy start --clean` to remove all containers and volumes before starting fresh.
 
+## Product Context (Web UI)
+
+@product-context.md
+
 ## Common Pitfalls
 
 - Do not use `--release` for local development or CI checks.
