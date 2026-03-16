@@ -10,6 +10,7 @@ export enum FileType {
   SQL = "sql",
   VIEW = "view",
   TOPIC = "topic",
+  TEST = "test",
   DEFAULT = "default"
 }
 
@@ -20,6 +21,11 @@ export interface FileTypeConfig {
 }
 
 export const FILE_TYPE_CONFIGS: Record<FileType, FileTypeConfig> = {
+  [FileType.TEST]: {
+    type: FileType.TEST,
+    extensions: [".test.yml", ".test.yaml"],
+    editorComponent: "TestEditor"
+  },
   [FileType.PROCEDURE]: {
     type: FileType.PROCEDURE,
     extensions: [".procedure.yml", ".procedure.yaml"],

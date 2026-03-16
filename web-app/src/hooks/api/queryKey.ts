@@ -159,6 +159,33 @@ const integrationKeys = {
     [...integrationKeys.all, "looker", projectId, branchName] as const
 };
 
+const testFileKeys = {
+  all: ["testFile"] as const,
+  list: (projectId: string, branchName: string) =>
+    [...testFileKeys.all, "list", projectId, branchName] as const,
+  get: (pathb64: string, projectId: string, branchName: string) =>
+    [...testFileKeys.all, "get", pathb64, projectId, branchName] as const
+};
+
+const testProjectRunKeys = {
+  all: ["testProjectRun"] as const,
+  list: (projectId: string) => [...testProjectRunKeys.all, "list", projectId] as const
+};
+
+const testRunKeys = {
+  all: ["testRun"] as const,
+  list: (projectId: string, pathb64: string) =>
+    [...testRunKeys.all, "list", projectId, pathb64] as const,
+  detail: (projectId: string, pathb64: string, runIndex: number) =>
+    [...testRunKeys.all, "detail", projectId, pathb64, runIndex] as const
+};
+
+const humanVerdictKeys = {
+  all: ["humanVerdict"] as const,
+  list: (projectId: string, pathb64: string, runIndex: number) =>
+    [...humanVerdictKeys.all, "list", projectId, pathb64, runIndex] as const
+};
+
 const queryKeys = {
   agent: agentKeys,
   thread: threadKeys,
@@ -179,7 +206,11 @@ const queryKeys = {
   artifact: artifactKeys,
   contextGraph: contextGraphKeys,
   integration: integrationKeys,
-  trace: traceKeys
+  trace: traceKeys,
+  testFile: testFileKeys,
+  testProjectRun: testProjectRunKeys,
+  testRun: testRunKeys,
+  humanVerdict: humanVerdictKeys
 };
 
 export default queryKeys;

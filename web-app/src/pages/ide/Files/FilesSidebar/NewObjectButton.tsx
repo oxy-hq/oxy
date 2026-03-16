@@ -1,4 +1,4 @@
-import { AppWindow, BookOpen, Bot, Eye, Layers2, Plus, Workflow } from "lucide-react";
+import { AppWindow, BookOpen, Bot, Eye, FlaskConical, Layers2, Plus, Workflow } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -30,7 +30,7 @@ import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
 import type { FileTreeModel } from "@/types/file";
 
-type ObjectType = "agent" | "workflow" | "view" | "topic" | "app";
+type ObjectType = "agent" | "workflow" | "view" | "topic" | "app" | "test";
 
 interface ObjectTypeConfig {
   type: ObjectType;
@@ -74,6 +74,20 @@ tasks: []
     defaultContent: `tasks:
 
 display:
+`
+  },
+  {
+    type: "test",
+    label: "Test File",
+    icon: FlaskConical,
+    extension: ".test.yml",
+    defaultContent: `target: ""
+
+settings:
+  runs: 1
+  concurrency: 2
+
+cases: []
 `
   }
 ];

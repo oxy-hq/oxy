@@ -28,6 +28,13 @@ export interface Record {
   cot: string;
   choice: string;
   score: number;
+  prompt?: string;
+  expected?: string;
+  actual_output?: string;
+  references?: unknown[];
+  duration_ms: number;
+  input_tokens: number;
+  output_tokens: number;
 }
 
 export interface RecallRecord {
@@ -37,9 +44,17 @@ export interface RecallRecord {
   reference_contexts: string[];
 }
 
+export interface RunStats {
+  /** Total runs attempted, including those that errored out */
+  total_attempted: number;
+  /** Runs that produced output (didn't crash) */
+  answered: number;
+}
+
 export enum MetricKind {
   Similarity = "Similarity",
-  Recall = "Recall"
+  Recall = "Recall",
+  Correctness = "Correctness"
 }
 
 export type SimilarityMetric = {
@@ -54,9 +69,16 @@ export type RecallMetric = {
   records: RecallRecord[];
 };
 
-export type MetricValue = SimilarityMetric | RecallMetric;
+export type CorrectnessMetric = {
+  type: MetricKind.Correctness;
+  score: number;
+  records: Record[];
+};
+
+export type MetricValue = SimilarityMetric | RecallMetric | CorrectnessMetric;
 
 export type Metric = {
   errors: string[];
   metrics: MetricValue[];
+  stats: RunStats;
 };

@@ -49,6 +49,10 @@ import SettingsLayout from "./pages/ide/settings";
 import ActivityLogsPage from "./pages/ide/settings/activity-logs";
 import ApiKeysPage from "./pages/ide/settings/api-keys";
 import DatabasesPage from "./pages/ide/settings/databases";
+import TestsLayout from "./pages/ide/tests";
+import TestFileDetailPage from "./pages/ide/tests/TestFileDetailPage";
+import TestsDashboardPage from "./pages/ide/tests/TestsDashboardPage";
+import TestsRunsPage from "./pages/ide/tests/TestsRunsPage";
 import LoginPage from "./pages/login";
 import useCurrentProject from "./stores/useCurrentProject";
 import type { AuthConfigResponse } from "./types/auth";
@@ -175,6 +179,13 @@ const MainLayout = React.memo(function MainLayout() {
             <Route path='databases' element={<DatabasesPage />} />
             <Route path='activity-logs' element={<ActivityLogsPage />} />
             <Route path='api-keys' element={<ApiKeysPage />} />
+          </Route>
+
+          {/* Tests routes */}
+          <Route path='tests' element={<TestsLayout />}>
+            <Route index element={<TestsDashboardPage />} />
+            <Route path='runs' element={<TestsRunsPage />} />
+            <Route path=':pathb64' element={<TestFileDetailPage />} />
           </Route>
 
           {/* Observability routes (enterprise only) */}

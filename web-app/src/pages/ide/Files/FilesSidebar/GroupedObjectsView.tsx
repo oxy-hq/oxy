@@ -21,6 +21,67 @@ import type { FileTreeModel } from "@/types/file";
 import { detectFileType } from "@/utils/fileTypes";
 import { getFileTypeIcon, getObjectName, groupObjectsByType } from "./utils";
 
+function FileIcon({ file }: { file: FileTreeModel }) {
+  const fileType = detectFileType(file.path);
+  const Icon = getFileTypeIcon(fileType, file.name);
+  return Icon ? <Icon /> : null;
+}
+
+interface CollapsibleGroupProps {
+  label: string;
+  files: FileTreeModel[];
+  isOpen: boolean;
+  activePath?: string;
+  onToggle: () => void;
+  onFileClick: (file: FileTreeModel) => void;
+  icon?: React.ComponentType;
+}
+
+const CollapsibleGroup: React.FC<CollapsibleGroupProps> = ({
+  label,
+  files,
+  isOpen,
+  activePath,
+  onToggle,
+  onFileClick,
+  icon: Icon
+}) => {
+  if (files.length === 0) return null;
+
+  return (
+    <Collapsible open={isOpen} onOpenChange={onToggle}>
+      <SidebarMenuItem>
+        <CollapsibleTrigger asChild>
+          <SidebarGroupLabel className='group/label flex justify-between font-semibold text-muted-foreground transition-colors duration-150 ease-in hover:bg-sidebar-accent hover:text-sidebar-foreground'>
+            <span>{label}</span>
+            {isOpen ? (
+              <ChevronDown className='transition-transform' />
+            ) : (
+              <ChevronRight className='transition-transform' />
+            )}
+          </SidebarGroupLabel>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <SidebarMenuSub className='border-l-0'>
+            {files.map((file) => (
+              <SidebarMenuSubItem key={file.path}>
+                <SidebarMenuSubButton
+                  onClick={() => onFileClick(file)}
+                  isActive={activePath === file.path}
+                  className='text-muted-foreground transition-colors duration-150 ease-in hover:text-sidebar-foreground'
+                >
+                  {Icon ? <Icon /> : <FileIcon file={file} />}
+                  <span>{getObjectName(file)}</span>
+                </SidebarMenuSubButton>
+              </SidebarMenuSubItem>
+            ))}
+          </SidebarMenuSub>
+        </CollapsibleContent>
+      </SidebarMenuItem>
+    </Collapsible>
+  );
+};
+
 interface GroupedObjectsViewProps {
   files: FileTreeModel[];
   activePath?: string;
@@ -47,7 +108,8 @@ const GroupedObjectsView: React.FC<GroupedObjectsViewProps> = ({
     semanticObjects: true,
     procedures: true,
     agents: true,
-    apps: true
+    apps: true,
+    tests: true
   });
 
   const { data: lookerIntegrations } = useLookerIntegrations();
@@ -140,108 +202,43 @@ const GroupedObjectsView: React.FC<GroupedObjectsViewProps> = ({
         </Collapsible>
       )}
 
-      {grouped.procedures.length > 0 && (
-        <Collapsible open={openGroups.procedures} onOpenChange={() => toggleGroup("procedures")}>
-          <SidebarMenuItem>
-            <CollapsibleTrigger asChild>
-              <SidebarGroupLabel className='group/label flex justify-between font-semibold text-muted-foreground transition-colors duration-150 ease-in hover:bg-sidebar-accent hover:text-sidebar-foreground'>
-                <span>Procedures</span>
-                {openGroups.procedures ? (
-                  <ChevronDown className='transition-transform' />
-                ) : (
-                  <ChevronRight className='transition-transform' />
-                )}
-              </SidebarGroupLabel>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <SidebarMenuSub className='border-l-0'>
-                {grouped.procedures.map((file) => (
-                  <SidebarMenuSubItem key={file.path}>
-                    <SidebarMenuSubButton
-                      onClick={() => handleFileClick(file)}
-                      isActive={activePath === file.path}
-                      className='text-muted-foreground transition-colors duration-150 ease-in hover:text-sidebar-foreground'
-                    >
-                      <Workflow />
-                      <span>{getObjectName(file)}</span>
-                    </SidebarMenuSubButton>
-                  </SidebarMenuSubItem>
-                ))}
-              </SidebarMenuSub>
-            </CollapsibleContent>
-          </SidebarMenuItem>
-        </Collapsible>
-      )}
+      <CollapsibleGroup
+        label='Procedures'
+        files={grouped.procedures}
+        isOpen={openGroups.procedures}
+        activePath={activePath}
+        onToggle={() => toggleGroup("procedures")}
+        onFileClick={handleFileClick}
+        icon={Workflow}
+      />
 
-      {grouped.agents.length > 0 && (
-        <Collapsible open={openGroups.agents} onOpenChange={() => toggleGroup("agents")}>
-          <SidebarMenuItem>
-            <CollapsibleTrigger asChild>
-              <SidebarGroupLabel className='group/label flex justify-between font-semibold text-muted-foreground transition-colors duration-150 ease-in hover:bg-sidebar-accent hover:text-sidebar-foreground'>
-                <span>Agents</span>
-                {openGroups.agents ? (
-                  <ChevronDown className='transition-transform' />
-                ) : (
-                  <ChevronRight className='transition-transform' />
-                )}
-              </SidebarGroupLabel>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <SidebarMenuSub className='border-l-0'>
-                {grouped.agents.map((file) => {
-                  const fileType = detectFileType(file.path);
-                  const Icon = getFileTypeIcon(fileType, file.name);
-                  return (
-                    <SidebarMenuSubItem key={file.path}>
-                      <SidebarMenuSubButton
-                        onClick={() => handleFileClick(file)}
-                        isActive={activePath === file.path}
-                        className='text-muted-foreground transition-colors duration-150 ease-in hover:text-sidebar-foreground'
-                      >
-                        {Icon && <Icon />}
-                        <span>{getObjectName(file)}</span>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                  );
-                })}
-              </SidebarMenuSub>
-            </CollapsibleContent>
-          </SidebarMenuItem>
-        </Collapsible>
-      )}
+      <CollapsibleGroup
+        label='Agents'
+        files={grouped.agents}
+        isOpen={openGroups.agents}
+        activePath={activePath}
+        onToggle={() => toggleGroup("agents")}
+        onFileClick={handleFileClick}
+      />
 
-      {grouped.apps.length > 0 && (
-        <Collapsible open={openGroups.apps} onOpenChange={() => toggleGroup("apps")}>
-          <SidebarMenuItem>
-            <CollapsibleTrigger asChild>
-              <SidebarGroupLabel className='group/label flex justify-between font-semibold text-muted-foreground transition-colors duration-150 ease-in hover:bg-sidebar-accent hover:text-sidebar-foreground'>
-                <span>Apps</span>
-                {openGroups.apps ? (
-                  <ChevronDown className='transition-transform' />
-                ) : (
-                  <ChevronRight className='transition-transform' />
-                )}
-              </SidebarGroupLabel>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <SidebarMenuSub className='border-l-0'>
-                {grouped.apps.map((file) => (
-                  <SidebarMenuSubItem key={file.path}>
-                    <SidebarMenuSubButton
-                      onClick={() => handleFileClick(file)}
-                      isActive={activePath === file.path}
-                      className='text-muted-foreground transition-colors duration-150 ease-in hover:text-sidebar-foreground'
-                    >
-                      <AppWindow />
-                      <span>{getObjectName(file)}</span>
-                    </SidebarMenuSubButton>
-                  </SidebarMenuSubItem>
-                ))}
-              </SidebarMenuSub>
-            </CollapsibleContent>
-          </SidebarMenuItem>
-        </Collapsible>
-      )}
+      <CollapsibleGroup
+        label='Apps'
+        files={grouped.apps}
+        isOpen={openGroups.apps}
+        activePath={activePath}
+        onToggle={() => toggleGroup("apps")}
+        onFileClick={handleFileClick}
+        icon={AppWindow}
+      />
+
+      <CollapsibleGroup
+        label='Tests'
+        files={grouped.tests}
+        isOpen={openGroups.tests}
+        activePath={activePath}
+        onToggle={() => toggleGroup("tests")}
+        onFileClick={handleFileClick}
+      />
     </SidebarMenu>
   );
 };

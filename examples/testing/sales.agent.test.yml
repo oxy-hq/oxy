@@ -4,14 +4,15 @@
 # Convention: <name>.agent.test.yml pairs with <name>.agent.yml
 # If `target` is omitted, inferred from filename (sales.agent.test.yml -> sales.agent.yml)
 
-target: agents/sales.agent.yml
+target: agents/default.agent.yml
 
 settings:
   concurrency: 5
-  runs: 3                          # times to run each case (consistency = variance across runs)
-  judge_model: gpt-5-mini          # model used for LLM-as-judge evaluation
-                                   # recommendation: use a different model family than the agent
-                                   # to avoid self-preference bias
+  runs: 3 # times to run each case (consistency = variance across runs)
+  judge_model:
+    gpt-5-mini-2025-08-07 # model used for LLM-as-judge evaluation
+    # recommendation: use a different model family than the agent
+    # to avoid self-preference bias
 
 cases:
   - prompt: "How many users signed up last month?"
@@ -21,7 +22,7 @@ cases:
   - prompt: "What's the revenue trend for Q4?"
     expected: "Q4 revenue showed a 15% increase compared to Q3"
     tags: [revenue, trends]
-    tool: execute_sql               # optional: assert that this tool was used
+    tool: execute_sql # optional: assert that this tool was used
 
   - prompt: "Who is the CEO of Apple?"
     expected: "Tim Cook"

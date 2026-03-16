@@ -20,6 +20,9 @@ use crate::api::run;
 use crate::api::secrets;
 use crate::api::semantic;
 use crate::api::slack;
+use crate::api::test_file;
+use crate::api::test_project_run;
+use crate::api::test_run;
 use crate::api::thread;
 use crate::api::traces;
 use crate::api::user;
@@ -147,6 +150,7 @@ fn build_project_routes() -> Router<AppState> {
         .nest("/databases", build_database_routes())
         .nest("/integrations", build_integration_routes())
         .nest("/secrets", build_secret_routes())
+        .nest("/tests", build_test_file_routes())
         .nest("/apps", build_app_routes())
         .nest("/traces", traces::traces_routes())
         .nest("/metrics", metrics::metrics_routes())
@@ -317,6 +321,40 @@ fn build_secret_routes() -> Router<AppState> {
         .route("/{id}", get(secrets::get_secret))
         .route("/{id}", put(secrets::update_secret))
         .route("/{id}", delete(secrets::delete_secret))
+}
+
+fn build_test_file_routes() -> Router<AppState> {
+    Router::new()
+        .route("/", get(test_file::list_test_files))
+        .route(
+            "/project-runs",
+            get(test_project_run::list_project_runs).post(test_project_run::create_project_run),
+        )
+        .route(
+            "/project-runs/{project_run_id}",
+            delete(test_project_run::delete_project_run),
+        )
+        .route("/{pathb64}", get(test_file::get_test_file))
+        .route(
+            "/{pathb64}/cases/{case_index}",
+            post(test_file::run_test_case),
+        )
+        .route(
+            "/{pathb64}/runs",
+            get(test_run::list_runs).post(test_run::create_run),
+        )
+        .route(
+            "/{pathb64}/runs/{run_index}",
+            get(test_run::get_run).delete(test_run::delete_run),
+        )
+        .route(
+            "/{pathb64}/runs/{run_index}/human-verdicts",
+            get(test_run::list_human_verdicts),
+        )
+        .route(
+            "/{pathb64}/runs/{run_index}/cases/{case_index}/human-verdict",
+            put(test_run::set_human_verdict),
+        )
 }
 
 fn build_app_routes() -> Router<AppState> {

@@ -5,6 +5,7 @@ import AppEditor from "./App";
 import { useEditorContext } from "./contexts/useEditorContext";
 import DefaultEditor from "./Default";
 import SqlEditor from "./Sql";
+import TestFileEditor from "./TestFile";
 import TopicEditor from "./Topic";
 import ViewEditor from "./View";
 import WorkflowEditor from "./Workflow";
@@ -27,6 +28,8 @@ const EditorRouterComponent = () => {
       return <ViewEditor />;
     case FileType.TOPIC:
       return <TopicEditor />;
+    case FileType.TEST:
+      return <TestFileEditor />;
     default:
       return <DefaultEditor />;
   }

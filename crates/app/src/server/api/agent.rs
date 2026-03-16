@@ -230,7 +230,7 @@ pub async fn run_test(
         Err(error) => return Ok(Sse::new(create_error_stream(error))),
     };
 
-    let test_stream = match run_agent_test(project_manager.clone(), path, test_index).await {
+    let test_stream = match run_agent_test(project_manager.clone(), path, test_index, None).await {
         Ok(stream) => stream,
         Err(e) => {
             let error = format!("Failed to run agent test: {e}");

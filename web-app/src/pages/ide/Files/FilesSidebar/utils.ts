@@ -6,6 +6,7 @@ import {
   Eye,
   FileCode,
   Network,
+  ShieldCheck,
   Table,
   Workflow
 } from "lucide-react";
@@ -24,6 +25,7 @@ export const isObjectFile = (file: FileTreeModel): boolean => {
 export const getObjectName = (file: FileTreeModel): string => {
   const fileName = file.name;
   return fileName
+    .replace(/\.test\.(yml|yaml)$/, "")
     .replace(/\.(procedure|workflow|automation|agent|aw|app|view|topic)\.(yml|yaml)$/, "")
     .replace(/\.(yml|yaml)$/, "");
 };
@@ -45,6 +47,8 @@ export const getFileTypeIcon = (fileType: FileType, fileName?: string) => {
       return Eye;
     case FileType.TOPIC:
       return BookOpen;
+    case FileType.TEST:
+      return ShieldCheck;
     case FileType.SQL:
       return FileCode;
     default:
@@ -62,6 +66,7 @@ interface GroupedObjects {
   procedures: FileTreeModel[];
   agents: FileTreeModel[];
   apps: FileTreeModel[];
+  tests: FileTreeModel[];
   semanticObjects: FileTreeModel[];
 }
 
@@ -71,6 +76,7 @@ export const groupObjectsByType = (files: FileTreeModel[]): GroupedObjects => {
     procedures: [],
     agents: [],
     apps: [],
+    tests: [],
     semanticObjects: []
   };
 
@@ -91,6 +97,9 @@ export const groupObjectsByType = (files: FileTreeModel[]): GroupedObjects => {
       case FileType.APP:
         groups.apps.push(file);
         break;
+      case FileType.TEST:
+        groups.tests.push(file);
+        break;
       case FileType.VIEW:
       case FileType.TOPIC:
         groups.semanticObjects.push(file);
@@ -102,6 +111,7 @@ export const groupObjectsByType = (files: FileTreeModel[]): GroupedObjects => {
   groups.procedures.sort((a, b) => NAME_COLLATOR.compare(a.name, b.name));
   groups.agents.sort((a, b) => NAME_COLLATOR.compare(a.name, b.name));
   groups.apps.sort((a, b) => NAME_COLLATOR.compare(a.name, b.name));
+  groups.tests.sort((a, b) => NAME_COLLATOR.compare(a.name, b.name));
   groups.semanticObjects.sort((a, b) => NAME_COLLATOR.compare(a.name, b.name));
 
   return groups;

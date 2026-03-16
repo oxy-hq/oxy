@@ -61,6 +61,11 @@ const ROUTES = {
           ACTIVITY_LOGS: `${base}/ide/settings/activity-logs`,
           API_KEYS: `${base}/ide/settings/api-keys`
         },
+        TESTS: {
+          ROOT: `${base}/ide/tests`,
+          RUNS: `${base}/ide/tests/runs`,
+          TEST_FILE: (pathb64: string) => `${base}/ide/tests/${pathb64}`
+        },
         OBSERVABILITY: {
           ROOT: `${base}/ide/observability`,
           TRACES: `${base}/ide/observability/traces`,

@@ -1,4 +1,4 @@
-import { Activity, Database, Folder, Settings } from "lucide-react";
+import { Activity, Database, Folder, Settings, ShieldCheck } from "lucide-react";
 import type React from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/shadcn/button";
@@ -9,12 +9,16 @@ import ROUTES from "@/libs/utils/routes";
 
 enum SidebarViewMode {
   FILES = "files",
+  TESTS = "tests",
   OBSERVABILITY = "observability",
   DATABASE = "database",
   SETTINGS = "settings"
 }
 
 const getViewModeFromPath = (pathname: string): SidebarViewMode => {
+  if (pathname.includes("/ide/tests")) {
+    return SidebarViewMode.TESTS;
+  }
   if (pathname.includes("/ide/observability")) {
     return SidebarViewMode.OBSERVABILITY;
   }
@@ -47,6 +51,9 @@ const Sidebar: React.FC = () => {
       case SidebarViewMode.DATABASE:
         navigate(ROUTES.PROJECT(projectId).IDE.DATABASE.ROOT);
         break;
+      case SidebarViewMode.TESTS:
+        navigate(ROUTES.PROJECT(projectId).IDE.TESTS.ROOT);
+        break;
       case SidebarViewMode.SETTINGS:
         navigate(ROUTES.PROJECT(projectId).IDE.SETTINGS.DATABASES);
         break;
@@ -69,6 +76,21 @@ const Sidebar: React.FC = () => {
           )}
         >
           <Folder className='h-4 w-4' />
+        </Button>
+
+        <Button
+          variant='ghost'
+          size='icon'
+          onClick={() => handleNavigate(SidebarViewMode.TESTS)}
+          tooltip={{ content: "Tests", side: "right" }}
+          className={cn(
+            "h-8 w-8",
+            currentViewMode === SidebarViewMode.TESTS
+              ? "bg-sidebar-accent text-sidebar-accent-foreground"
+              : "opacity-60 hover:opacity-100"
+          )}
+        >
+          <ShieldCheck className='h-4 w-4' />
         </Button>
 
         {authConfig.enterprise && (
