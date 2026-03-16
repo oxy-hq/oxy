@@ -11,14 +11,14 @@
     "prepare": "husky"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.6",
-    "@commitlint/cli": "^20.4.3",
-    "@commitlint/config-conventional": "^20.4.3",
+    "@biomejs/biome": "^2.4.7",
+    "@commitlint/cli": "^20.5.0",
+    "@commitlint/config-conventional": "^20.5.0",
     "husky": "^9.1.7",
-    "lint-staged": "^16.3.3",
+    "lint-staged": "^16.4.0",
     "markdownlint-cli2": "^0.21.0",
     "prettier": "^3.8.1",
-    "turbo": "^2.8.16",
+    "turbo": "^2.8.17",
     "typescript": "^5.9.3"
   },
   "name": "oxy",
