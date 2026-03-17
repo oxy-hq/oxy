@@ -633,7 +633,7 @@ jobs:
 
       - name: Build and push ${{ matrix.target.name }} image
         if: steps.should_build.outputs.should_build == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.prebuilt
