@@ -426,6 +426,11 @@ pub struct TestArgs {
     /// Write full JSON results to a file (derived from test file name, e.g. sales.agent.test.results.json)
     #[clap(long)]
     output_json: bool,
+    /// Run only a specific test case by 0-based index, name, or prompt string (name/prompt lookup
+    /// requires a .test.yml file). Requires a file to be specified.
+    /// If --tag is also set, both filters apply: the case must match both the index/name/prompt and the tag.
+    #[clap(long, value_name = "CASE")]
+    case: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -1429,6 +1434,72 @@ pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
     use std::sync::Arc;
     use tokio::sync::Mutex;
 
+    // Resolve --case to an index
+    let case_index: Option<usize> = if let Some(ref case_str) = test_args.case {
+        if test_args.file.is_none() {
+            return Err(OxyError::ConfigurationError(
+                "--case requires a specific file to be specified".to_string(),
+            ));
+        }
+        // Use the explicit file argument to make the invariant clear.
+        let file_path = file_paths[0].as_path();
+        let path_str = file_path.to_string_lossy();
+
+        if let Ok(idx) = case_str.parse::<usize>() {
+            // For .test.yml files, validate the index is in bounds.
+            if path_str.ends_with(".test.yml") {
+                let test_config = project_manager
+                    .config_manager
+                    .resolve_test(file_path)
+                    .await?;
+                if idx >= test_config.cases.len() {
+                    return Err(OxyError::ConfigurationError(format!(
+                        "Case index {idx} is out of bounds: {:?} has {} case(s) (0-based)",
+                        file_path,
+                        test_config.cases.len()
+                    )));
+                }
+            }
+            Some(idx)
+        } else {
+            // Name/prompt lookup: only valid for .test.yml files
+            if !path_str.ends_with(".test.yml") {
+                return Err(OxyError::ConfigurationError(
+                    "--case <name|prompt> is only supported for .test.yml files; use a 0-based integer index for agent/workflow files".to_string(),
+                ));
+            }
+            let test_config = project_manager
+                .config_manager
+                .resolve_test(file_path)
+                .await?;
+            let mut matching = test_config
+                .cases
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| {
+                    c.name.as_deref() == Some(case_str.as_str()) || c.prompt == case_str.as_str()
+                })
+                .map(|(i, _)| i);
+            let idx = matching.next().ok_or_else(|| {
+                OxyError::ConfigurationError(format!(
+                    "No test case with name or prompt {:?} found in {:?}",
+                    case_str, file_path
+                ))
+            })?;
+            if matching.next().is_some() {
+                tracing::warn!(
+                    "Multiple cases with name or prompt {:?} found in {:?}; using the first (index {})",
+                    case_str,
+                    file_path,
+                    idx
+                );
+            }
+            Some(idx)
+        }
+    } else {
+        None
+    };
+
     let token_stats: SharedTokenStats = Arc::new(Mutex::new(TokenStats::default()));
     let start_time = std::time::Instant::now();
 
@@ -1438,12 +1509,45 @@ pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
             .file_name()
             .map(|f| f.to_string_lossy().to_string())
             .unwrap_or_else(|| file_path.to_string_lossy().to_string());
+
+        // For .test.yml files, load case labels and runs count so the progress bar can
+        // show which case is currently being worked on.
+        let (case_labels, runs_per_case) = if file_path.to_string_lossy().ends_with(".test.yml") {
+            match project_manager.config_manager.resolve_test(file_path).await {
+                Ok(test_config) => {
+                    let labels = test_config
+                        .cases
+                        .iter()
+                        .enumerate()
+                        .filter(|(idx, _)| case_index.is_none_or(|i| *idx == i))
+                        .filter(|(_, c)| test_args.tag.as_ref().is_none_or(|t| c.tags.contains(t)))
+                        .map(|(_, c)| {
+                            c.name.clone().unwrap_or_else(|| {
+                                let p = c.prompt.trim();
+                                let truncated: String = p.chars().take(60).collect();
+                                if truncated.len() < p.chars().count() {
+                                    format!("{truncated}…")
+                                } else {
+                                    truncated
+                                }
+                            })
+                        })
+                        .collect::<Vec<_>>();
+                    (labels, test_config.settings.runs)
+                }
+                Err(_) => (vec![], 0),
+            }
+        } else {
+            (vec![], 0)
+        };
+
         let handler = EvalEventsHandler::new(test_args.quiet, Arc::clone(&token_stats))
-            .with_test_label(file_name.clone());
+            .with_test_label(file_name.clone())
+            .with_case_info(case_labels, runs_per_case);
         let mut results = run_eval_with_tag(
             project_manager.clone(),
             file_path,
-            None,
+            case_index,
             test_args.tag.clone(),
             handler,
         )

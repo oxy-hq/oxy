@@ -106,6 +106,10 @@ pub struct EvalEventsHandler {
     eval_completed: u64,
     token_stats: SharedTokenStats,
     test_label: Option<String>,
+    /// Display labels for each case (name if set, otherwise truncated prompt).
+    case_labels: Vec<String>,
+    /// Number of runs per case (from test settings).
+    runs_per_case: usize,
 }
 
 impl EvalEventsHandler {
@@ -118,7 +122,15 @@ impl EvalEventsHandler {
             eval_completed: 0,
             token_stats,
             test_label: None,
+            case_labels: vec![],
+            runs_per_case: 0,
         }
+    }
+
+    pub fn with_case_info(mut self, labels: Vec<String>, runs_per_case: usize) -> Self {
+        self.case_labels = labels;
+        self.runs_per_case = runs_per_case;
+        self
     }
 
     pub fn with_test_label(mut self, label: String) -> Self {
@@ -126,44 +138,64 @@ impl EvalEventsHandler {
         self
     }
 
-    fn set_spinner(&mut self, msg: String) {
+    fn update_spinner(&mut self) {
         if self.quiet {
             return;
         }
-        if let Some(pb) = self.progress_bar.take() {
-            pb.finish_and_clear();
+        let msg = self.build_msg();
+        match &self.progress_bar {
+            Some(pb) => pb.set_message(msg),
+            None => {
+                let pb = ProgressBar::new_spinner();
+                pb.set_style(
+                    ProgressStyle::with_template("  {spinner:.green} {msg}")
+                        .unwrap()
+                        .tick_chars(SPINNER_CHARS),
+                );
+                pb.set_message(msg);
+                pb.enable_steady_tick(std::time::Duration::from_millis(TICK_MS));
+                self.progress_bar = Some(pb);
+            }
         }
-        let pb = ProgressBar::new_spinner();
-        pb.set_style(
-            ProgressStyle::with_template("  {spinner:.green} {msg}")
-                .unwrap()
-                .tick_chars(SPINNER_CHARS),
-        );
-        pb.set_message(msg);
-        pb.enable_steady_tick(std::time::Duration::from_millis(TICK_MS));
-        self.progress_bar = Some(pb);
     }
 
-    fn set_progress_bar(&mut self, msg: String, total: u64, pos: u64) {
-        if self.quiet {
-            return;
+    /// Build the spinner message. Up to three lines:
+    ///
+    /// ```text
+    ///   ⠙ Running test cases · velocity_test.test.yml
+    ///     case 1/4 · What were the top 5 videos…          ← only when case info present
+    ///     [████████████░░░░░░░░░░░░░░░░░░░░░░░░░░] 2/12   ← only when total is known
+    /// ```
+    fn build_msg(&self) -> String {
+        let phase = match &self.phase {
+            Phase::Generating => "Running test cases",
+            Phase::Evaluating => "Judging responses",
+            Phase::Idle => "Processing",
+        };
+        let file_part = match &self.test_label {
+            Some(label) => format!(" · {label}"),
+            None => String::new(),
+        };
+        let mut lines = vec![format!("{phase}{file_part}")];
+
+        if self.runs_per_case > 0 && !self.case_labels.is_empty() {
+            let num_cases = self.case_labels.len();
+            let case_idx = ((self.eval_completed as usize) / self.runs_per_case)
+                .min(num_cases.saturating_sub(1));
+            let label = &self.case_labels[case_idx];
+            lines.push(format!("    case {}/{num_cases} · {label}", case_idx + 1));
         }
-        if let Some(pb) = self.progress_bar.take() {
-            pb.finish_and_clear();
+
+        if self.eval_total > 0 {
+            const BAR_WIDTH: usize = 40;
+            let filled = ((self.eval_completed * BAR_WIDTH as u64) / self.eval_total) as usize;
+            let empty = BAR_WIDTH.saturating_sub(filled);
+            let pct = (self.eval_completed * 100) / self.eval_total;
+            let bar = format!("    {}{}  {}%", "█".repeat(filled), "░".repeat(empty), pct,);
+            lines.push(bar);
         }
-        let pb = ProgressBar::new(total);
-        pb.set_style(
-            ProgressStyle::with_template(
-                "  {spinner:.green} {msg} [{bar:30.green}] {pos} of {len}",
-            )
-            .unwrap()
-            .tick_chars(SPINNER_CHARS)
-            .progress_chars("█░"),
-        );
-        pb.set_message(msg);
-        pb.set_position(pos);
-        pb.enable_steady_tick(std::time::Duration::from_millis(TICK_MS));
-        self.progress_bar = Some(pb);
+
+        lines.join("\n")
     }
 
     fn finish_progress(&mut self) {
@@ -188,58 +220,36 @@ impl EventHandler for EvalEventsHandler {
 
         match event.source.kind.as_str() {
             EVAL_SOURCE => match event.kind {
-                EventKind::Started { name, .. } => {
-                    self.set_spinner(format!("Starting {name}"));
+                EventKind::Started { .. } => {
+                    self.update_spinner();
                 }
                 EventKind::Finished { .. } => {
                     self.finish_progress();
                 }
-                EventKind::Progress { progress } => {
-                    let phase_msg = match &self.phase {
-                        Phase::Generating => "Running test cases...",
-                        Phase::Evaluating => "Judging responses...",
-                        Phase::Idle => "Processing...",
-                    };
-                    let msg = match &self.test_label {
-                        Some(label) => format!("{phase_msg} [{label}]"),
-                        None => phase_msg.to_string(),
-                    };
-                    match progress {
-                        ProgressType::Started(total) => {
-                            let total = total.unwrap_or(0) as u64;
-                            self.eval_total = total;
-                            self.eval_completed = 0;
-                            self.set_progress_bar(msg, total, 0);
-                        }
-                        ProgressType::Updated(n) => {
-                            self.eval_completed += n as u64;
-                            if let Some(pb) = &self.progress_bar {
-                                pb.set_position(self.eval_completed);
-                            }
-                        }
-                        ProgressType::Finished => {
-                            self.finish_progress();
-                        }
+                EventKind::Progress { progress } => match progress {
+                    ProgressType::Started(total) => {
+                        self.eval_total = total.unwrap_or(0) as u64;
+                        self.eval_completed = 0;
+                        self.update_spinner();
                     }
-                }
+                    ProgressType::Updated(n) => {
+                        self.eval_completed += n as u64;
+                        self.update_spinner();
+                    }
+                    ProgressType::Finished => {
+                        self.finish_progress();
+                    }
+                },
                 EventKind::Message { message } => {
                     let stripped = strip_ansi_escapes::strip_str(&message);
                     if stripped.contains("Generating outputs") {
                         self.phase = Phase::Generating;
-                        let msg = match &self.test_label {
-                            Some(label) => format!("Running test cases... [{label}]"),
-                            None => "Running test cases...".to_string(),
-                        };
-                        self.set_spinner(msg);
+                        self.update_spinner();
                     } else if stripped.contains("Evaluating records") {
                         self.phase = Phase::Evaluating;
                         self.eval_total = 0;
                         self.eval_completed = 0;
-                        let msg = match &self.test_label {
-                            Some(label) => format!("Judging responses... [{label}]"),
-                            None => "Judging responses...".to_string(),
-                        };
-                        self.set_spinner(msg);
+                        self.update_spinner();
                     }
                     // Suppress all other messages.
                 }

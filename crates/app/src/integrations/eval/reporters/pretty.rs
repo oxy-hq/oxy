@@ -230,9 +230,21 @@ impl Reporter for PrettyReporter {
             )?;
         }
 
-        if self.duration_ms > 0.0 && total_attempted > 0 {
-            let avg_secs = self.duration_ms / 1000.0 / total_attempted as f64;
-            writeln!(writer, " Avg Time:     {:.1}s per run", avg_secs)?;
+        if self.duration_ms > 0.0 {
+            let total_secs = self.duration_ms / 1000.0;
+            let total_str = if total_secs >= 60.0 {
+                let m = (total_secs / 60.0) as u64;
+                let s = total_secs % 60.0;
+                format!("{m}m {s:.1}s")
+            } else {
+                format!("{total_secs:.1}s")
+            };
+            writeln!(writer, " Total Time:   {total_str}")?;
+
+            if total_attempted > 0 {
+                let avg_secs = self.duration_ms / 1000.0 / total_attempted as f64;
+                writeln!(writer, " Avg Time:     {:.1}s per run", avg_secs)?;
+            }
         }
 
         let total_tokens = self.total_input_tokens + self.total_output_tokens;

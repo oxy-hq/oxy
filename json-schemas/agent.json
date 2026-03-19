@@ -860,6 +860,13 @@
         "expected": {
           "type": "string"
         },
+        "name": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "prompt": {
           "type": "string"
         },

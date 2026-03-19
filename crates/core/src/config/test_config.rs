@@ -42,6 +42,8 @@ impl Default for TestSettings {
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TestCase {
+    #[serde(default)]
+    pub name: Option<String>,
     pub prompt: String,
     pub expected: String,
     #[serde(default)]
