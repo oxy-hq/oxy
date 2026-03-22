@@ -56,3 +56,15 @@ export interface SecretEditFormData {
   value?: string;
   description?: string;
 }
+
+/** A secret that is sourced from an environment variable reference in config.yml */
+export interface EnvSecret {
+  /** The environment variable name, e.g. "SLACK_BOT_TOKEN" */
+  env_var: string;
+  /** The config.yml field that references this var, e.g. "slack.bot_token_var" */
+  config_field: string;
+  /** Whether the env var is currently set to a non-empty value */
+  is_set: boolean;
+  /** Masked value of the env var if set, e.g. "sk-a****bcde" */
+  masked_value?: string;
+}

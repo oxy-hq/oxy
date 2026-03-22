@@ -1,13 +1,14 @@
+import { KeyRound, Plus } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { CreateSecretDialog } from "@/components/settings/secrets/CreateSecretDialog";
+import { SecretTable } from "@/components/settings/secrets/SecretTable";
 import { Button } from "@/components/ui/shadcn/button";
 import useEnvSecrets from "@/hooks/api/secrets/useEnvSecrets";
-import PageWrapper from "../components/PageWrapper";
-import { CreateSecretDialog } from "./CreateSecretDialog";
-import { SecretTable } from "./SecretTable";
+import PageHeader from "@/pages/ide/components/PageHeader";
 
-const SecretManagement: React.FC = () => {
+const SecretsPage: React.FC = () => {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const { data: envSecrets } = useEnvSecrets();
 
@@ -17,19 +18,19 @@ const SecretManagement: React.FC = () => {
   };
 
   return (
-    <PageWrapper
-      title='Secrets'
-      actions={
-        <Button
-          size='sm'
-          onClick={() => setIsCreateDialogOpen(true)}
-          className='flex items-center gap-2'
-        >
-          Create
-        </Button>
-      }
-    >
-      <div className='flex flex-col gap-6'>
+    <div className='flex h-full flex-col'>
+      <PageHeader
+        icon={KeyRound}
+        title='Secrets'
+        actions={
+          <Button size='sm' variant='outline' onClick={() => setIsCreateDialogOpen(true)}>
+            <Plus />
+            Create
+          </Button>
+        }
+      />
+
+      <div className='customScrollbar scrollbar-gutter-auto min-h-0 flex-1 space-y-6 overflow-auto p-4'>
         <SecretTable />
 
         {envSecrets && envSecrets.length > 0 && (
@@ -63,15 +64,15 @@ const SecretManagement: React.FC = () => {
             </p>
           </div>
         )}
-
-        <CreateSecretDialog
-          open={isCreateDialogOpen}
-          onOpenChange={setIsCreateDialogOpen}
-          onSecretCreated={handleSecretCreated}
-        />
       </div>
-    </PageWrapper>
+
+      <CreateSecretDialog
+        open={isCreateDialogOpen}
+        onOpenChange={setIsCreateDialogOpen}
+        onSecretCreated={handleSecretCreated}
+      />
+    </div>
   );
 };
 
-export default SecretManagement;
+export default SecretsPage;

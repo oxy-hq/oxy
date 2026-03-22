@@ -59,7 +59,8 @@ const ROUTES = {
           ROOT: `${base}/ide/settings`,
           DATABASES: `${base}/ide/settings/databases`,
           ACTIVITY_LOGS: `${base}/ide/settings/activity-logs`,
-          API_KEYS: `${base}/ide/settings/api-keys`
+          API_KEYS: `${base}/ide/settings/api-keys`,
+          SECRETS: `${base}/ide/settings/secrets`
         },
         TESTS: {
           ROOT: `${base}/ide/tests`,

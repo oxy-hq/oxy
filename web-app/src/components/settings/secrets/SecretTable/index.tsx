@@ -1,5 +1,4 @@
 import type React from "react";
-import { useMediaQuery } from "usehooks-ts";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/shadcn/table";
 import useSecrets from "@/hooks/api/secrets/useSecrets";
 import TableContentWrapper from "../../components/TableContentWrapper";
@@ -9,7 +8,6 @@ import { SecretRow } from "./Row";
 export const SecretTable: React.FC = () => {
   const { data: secretsResponse, isLoading: loading, error, refetch } = useSecrets();
   const secrets = secretsResponse?.secrets || [];
-  const isMobile = useMediaQuery("(max-width: 767px)");
 
   return (
     <TableWrapper>
@@ -17,11 +15,8 @@ export const SecretTable: React.FC = () => {
         <TableHeader>
           <TableRow>
             <TableHead>Name</TableHead>
-            {!isMobile && <TableHead>Description</TableHead>}
-            <TableHead>Status</TableHead>
-            {!isMobile && <TableHead>Created</TableHead>}
-            {!isMobile && <TableHead>Updated</TableHead>}
-            <TableHead className='text-center'>Actions</TableHead>
+            <TableHead>Created</TableHead>
+            <TableHead>Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -29,8 +24,8 @@ export const SecretTable: React.FC = () => {
             error={error?.message}
             isEmpty={secrets.length === 0}
             loading={loading}
-            colSpan={isMobile ? 3 : 6}
-            noFoundTitle='No secrets found'
+            colSpan={3}
+            noFoundTitle='No secrets'
             noFoundDescription='Create your first secret to securely store configuration values'
             onRetry={refetch}
           >

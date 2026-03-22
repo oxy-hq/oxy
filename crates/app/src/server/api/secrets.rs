@@ -1,3 +1,4 @@
+use crate::server::api::middlewares::project::ProjectManagerExtractor;
 use crate::server::service::secret_manager::{
     CreateSecretParams, SecretInfo, SecretManagerService, UpdateSecretParams,
 };
@@ -7,6 +8,7 @@ use axum::{
     response::IntoResponse,
 };
 use garde::Validate;
+use oxy::config::model::IntegrationType;
 use oxy::database::client::establish_connection;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use oxy_shared::errors::OxyError;
@@ -393,6 +395,156 @@ pub async fn update_secret(
                 .into_response())
         }
     }
+}
+
+/// Masks a secret value for safe display.
+/// Shows first 4 + stars + last 4 for values longer than 8 chars; otherwise all stars.
+fn mask_secret_value(value: &str) -> String {
+    if value.len() <= 8 {
+        return "*".repeat(value.len());
+    }
+    let start = &value[..4];
+    let end = &value[value.len() - 4..];
+    format!("{}****{}", start, end)
+}
+
+/// Parses a `.env` file and returns `(key, value)` pairs.
+/// Skips blank lines, comment lines (`#`), and lines without `=`.
+fn parse_dotenv_file(path: &std::path::Path) -> Vec<(String, String)> {
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    content
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                return None;
+            }
+            let eq_pos = line.find('=')?;
+            let key = line[..eq_pos].trim().to_string();
+            if key.is_empty() {
+                return None;
+            }
+            let raw = line[eq_pos + 1..].to_string();
+            // Strip surrounding single or double quotes
+            let value = if raw.len() >= 2
+                && ((raw.starts_with('"') && raw.ends_with('"'))
+                    || (raw.starts_with('\'') && raw.ends_with('\'')))
+            {
+                raw[1..raw.len() - 1].to_string()
+            } else {
+                raw
+            };
+            Some((key, value))
+        })
+        .collect()
+}
+
+/// Info about a secret that is sourced from an environment variable reference in config.yml.
+#[derive(Serialize)]
+pub struct EnvSecretInfo {
+    /// The environment variable name (e.g. "SLACK_BOT_TOKEN")
+    pub env_var: String,
+    /// The config field that references this env var (e.g. "slack.bot_token_var")
+    pub config_field: String,
+    /// Whether the environment variable is currently set (non-empty value)
+    pub is_set: bool,
+    /// Masked value of the env var if set (e.g. "sk-a****bcde"), None if not set
+    pub masked_value: Option<String>,
+}
+
+/// List all environment-variable-referenced secrets from config.yml.
+///
+/// Scans the project config for `*_var` fields and returns their status.
+/// This helps users see which secrets are being read from the environment
+/// and potentially override them with database-stored secrets.
+pub async fn list_env_secrets(
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path(_project_id): Path<Uuid>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let config = project_manager.config_manager.get_config();
+    let mut env_secrets: Vec<EnvSecretInfo> = Vec::new();
+
+    let mut seen_vars: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    let make_config_entry = |env_var: String, config_field: String| {
+        let value = std::env::var(&env_var).ok().filter(|v| !v.is_empty());
+        let is_set = value.is_some();
+        let masked_value = value.as_deref().map(mask_secret_value);
+        EnvSecretInfo {
+            env_var,
+            config_field,
+            is_set,
+            masked_value,
+        }
+    };
+
+    // Scan Slack settings
+    if let Some(slack) = &config.slack {
+        if let Some(var) = &slack.bot_token_var {
+            seen_vars.insert(var.clone());
+            env_secrets.push(make_config_entry(
+                var.clone(),
+                "slack.bot_token_var".to_string(),
+            ));
+        }
+        if let Some(var) = &slack.signing_secret_var {
+            seen_vars.insert(var.clone());
+            env_secrets.push(make_config_entry(
+                var.clone(),
+                "slack.signing_secret_var".to_string(),
+            ));
+        }
+    }
+
+    // Scan integrations
+    for integration in &config.integrations {
+        match &integration.integration_type {
+            IntegrationType::Omni(omni) => {
+                seen_vars.insert(omni.api_key_var.clone());
+                env_secrets.push(make_config_entry(
+                    omni.api_key_var.clone(),
+                    format!("integrations.{}.api_key_var", integration.name),
+                ));
+            }
+            IntegrationType::Looker(looker) => {
+                seen_vars.insert(looker.client_id_var.clone());
+                env_secrets.push(make_config_entry(
+                    looker.client_id_var.clone(),
+                    format!("integrations.{}.client_id_var", integration.name),
+                ));
+                seen_vars.insert(looker.client_secret_var.clone());
+                env_secrets.push(make_config_entry(
+                    looker.client_secret_var.clone(),
+                    format!("integrations.{}.client_secret_var", integration.name),
+                ));
+            }
+        }
+    }
+
+    // Parse .env file and add vars not already covered by config references
+    let dotenv_path = project_manager.config_manager.project_path().join(".env");
+    for (key, value) in parse_dotenv_file(&dotenv_path) {
+        if seen_vars.contains(&key) {
+            continue;
+        }
+        let is_set = !value.is_empty();
+        let masked_value = if is_set {
+            Some(mask_secret_value(&value))
+        } else {
+            None
+        };
+        env_secrets.push(EnvSecretInfo {
+            env_var: key,
+            config_field: ".env".to_string(),
+            is_set,
+            masked_value,
+        });
+    }
+
+    Ok((StatusCode::OK, axum::Json(env_secrets)).into_response())
 }
 
 /// Delete a secret by ID

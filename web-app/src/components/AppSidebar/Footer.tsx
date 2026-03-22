@@ -16,6 +16,7 @@ import { InviteModal } from "./InviteModal";
 export function Footer() {
   const { logout, getUser, authConfig } = useAuth();
   const { setIsOpen: setIsSettingsOpen } = useSettingsPage();
+  const showSettings = authConfig.cloud;
   const [isInviteOpen, setIsInviteOpen] = useState(false);
 
   let parsedUser: ReturnType<typeof JSON.parse> = null;
@@ -56,7 +57,7 @@ export function Footer() {
                 </div>
               </DropdownMenuTrigger>
               <DropdownMenuContent align='end' className='w-56'>
-                {authConfig.cloud && (
+                {showSettings && (
                   <DropdownMenuItem
                     className='cursor-pointer'
                     onClick={() => setIsSettingsOpen(true)}
@@ -68,7 +69,7 @@ export function Footer() {
 
                 {!user.isGuest && (
                   <>
-                    {authConfig.cloud && <DropdownMenuSeparator />}
+                    {showSettings && <DropdownMenuSeparator />}
                     {authConfig.magic_link && (
                       <DropdownMenuItem
                         className='cursor-pointer'

@@ -267,6 +267,7 @@ pub async fn handle_make_command(make_args: &MakeArgs) -> anyhow::Result<()> {
         slack: None,
         mcp: None,
         a2a: None,
+        admins: vec![],
     };
     serde_yaml::to_writer(
         std::fs::File::create(setup.output_dir.join("config.yml"))?,
