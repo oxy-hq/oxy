@@ -1,6 +1,6 @@
 ---
-title: 'Lovable Starter Prompt'
-description: 'A ready-to-use prompt for scaffolding an Oxy SDK dashboard in Lovable'
+title: "Lovable Starter Prompt"
+description: "A ready-to-use prompt for scaffolding an Oxy SDK dashboard in Lovable"
 ---
 
 Build a dashboard that connects to a local Oxy backend to display monthly metrics in real-time.
@@ -17,57 +17,57 @@ Use this clean, professional design system inspired by modern SaaS dashboards:
 
 ```css
 /* Backgrounds */
---background: #F9FAFB;        /* Light gray page background */
---card-bg: #FFFFFF;           /* White card background */
+--background: #f9fafb; /* Light gray page background */
+--card-bg: #ffffff; /* White card background */
 
 /* Text */
---text-primary: #1F2937;      /* Dark gray for headings and primary text */
---text-secondary: #6B7280;    /* Medium gray for secondary text */
---text-muted: #9CA3AF;        /* Light gray for labels and muted text */
+--text-primary: #1f2937; /* Dark gray for headings and primary text */
+--text-secondary: #6b7280; /* Medium gray for secondary text */
+--text-muted: #9ca3af; /* Light gray for labels and muted text */
 
 /* Accents */
---accent-primary: #FF7A59;    /* Coral/salmon orange for primary actions and highlights */
---accent-success: #10B981;    /* Green for positive metrics */
---accent-danger: #EF4444;     /* Red for negative metrics */
+--accent-primary: #ff7a59; /* Coral/salmon orange for primary actions and highlights */
+--accent-success: #10b981; /* Green for positive metrics */
+--accent-danger: #ef4444; /* Red for negative metrics */
 
 /* Borders & Dividers */
---border-color: #E5E7EB;      /* Light gray borders */
+--border-color: #e5e7eb; /* Light gray borders */
 
 /* Chart Colors */
---chart-primary: #FF7A59;     /* Coral for main data line */
---chart-secondary: #9CA3AF;   /* Gray for secondary lines */
---chart-grid: #F3F4F6;        /* Very light gray for grid lines */
+--chart-primary: #ff7a59; /* Coral for main data line */
+--chart-secondary: #9ca3af; /* Gray for secondary lines */
+--chart-grid: #f3f4f6; /* Very light gray for grid lines */
 ```
 
 ### Typography
 
 ```css
 /* Font Family */
-font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
 
 /* Headings */
 .page-title {
-  font-size: 1.875rem;  /* 30px */
+  font-size: 1.875rem; /* 30px */
   font-weight: 700;
   color: var(--text-primary);
 }
 
 .section-title {
-  font-size: 1.125rem;  /* 18px */
+  font-size: 1.125rem; /* 18px */
   font-weight: 600;
   color: var(--text-primary);
 }
 
 /* Metric Values */
 .metric-value {
-  font-size: 2rem;      /* 32px */
+  font-size: 2rem; /* 32px */
   font-weight: 700;
   color: var(--text-primary);
 }
 
 /* Labels */
 .label {
-  font-size: 0.75rem;   /* 12px */
+  font-size: 0.75rem; /* 12px */
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.025em;
@@ -76,7 +76,7 @@ font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
 
 /* Body Text */
 .body-text {
-  font-size: 0.875rem;  /* 14px */
+  font-size: 0.875rem; /* 14px */
   color: var(--text-secondary);
 }
 ```
@@ -165,6 +165,7 @@ npm install @oxy-hq/sdk recharts date-fns
 ```
 
 **Packages:**
+
 - `@oxy-hq/sdk` (version 0.3.0+) - Oxy SDK for data access
 - `recharts` - For charts
 - `date-fns` - For date formatting (optional)
@@ -186,10 +187,9 @@ export default defineConfig(({ mode }) => ({
     host: "::",
     port: 8080,
   },
-  plugins: [
-    react(),
-    mode === "development" && componentTagger()
-  ].filter(Boolean),
+  plugins: [react(), mode === "development" && componentTagger()].filter(
+    Boolean,
+  ),
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -257,6 +257,7 @@ export default App;
 ```
 
 **Key features:**
+
 - Uses `loadingFallback` and `errorFallback` props for graceful SDK loading
 - Global error handler for unhandled promise rejections
 - Error boundary for React errors
@@ -333,22 +334,23 @@ Create `src/integrations/oxy/oxy-integration.ts`:
 import type { OxySDK } from "@oxy-hq/sdk";
 
 export interface MonthlyMetric {
-  period: string;  // Date string (e.g., "2024-11-01")
-  value: number;   // Metric value
+  period: string; // Date string (e.g., "2024-11-01")
+  value: number; // Metric value
 }
 
 // BigInt-safe JSON serializer
 function safeStringify(obj: any): string {
   return JSON.stringify(
     obj,
-    (_key, value) => (typeof value === "bigint" ? `BigInt(${value.toString()})` : value),
-    2
+    (_key, value) =>
+      typeof value === "bigint" ? `BigInt(${value.toString()})` : value,
+    2,
   );
 }
 
 export async function fetchMonthlyMetrics(
   sdk: OxySDK,
-  appPath: string = "apps/monthly_metrics_starter.app.yml"
+  appPath: string = "apps/monthly_metrics_starter.app.yml",
 ): Promise<MonthlyMetric[]> {
   try {
     console.log("[Oxy] Loading app data...");
@@ -387,7 +389,8 @@ export async function fetchMonthlyMetrics(
         const epochValue =
           typeof rawDate.epoch === "bigint"
             ? Number(rawDate.epoch)
-            : typeof rawDate.epoch === "object" && rawDate.epoch._type === "BigInt"
+            : typeof rawDate.epoch === "object" &&
+                rawDate.epoch._type === "BigInt"
               ? Number(rawDate.epoch.value)
               : Number(rawDate.epoch);
         const ms = epochValue < 1e12 ? epochValue * 1000 : epochValue / 1000;
@@ -415,10 +418,18 @@ export async function fetchMonthlyMetrics(
           }
         } else if (typeof rawValue === "object") {
           // Could be a DuckDB decimal or other structured type
-          console.log(`  [Oxy] col[${i}] object keys:`, Object.keys(rawValue), safeStringify(rawValue));
+          console.log(
+            `  [Oxy] col[${i}] object keys:`,
+            Object.keys(rawValue),
+            safeStringify(rawValue),
+          );
           if (rawValue.value !== undefined) value = Number(rawValue.value);
           else if (rawValue.epoch !== undefined)
-            value = Number(typeof rawValue.epoch === "bigint" ? rawValue.epoch : rawValue.epoch);
+            value = Number(
+              typeof rawValue.epoch === "bigint"
+                ? rawValue.epoch
+                : rawValue.epoch,
+            );
           if (value !== 0) break;
         }
       }
@@ -437,6 +448,7 @@ export async function fetchMonthlyMetrics(
 ```
 
 **Key features:**
+
 - BigInt-safe JSON serializer for logging
 - Handles epoch date objects with BigInt support
 - Checks multiple columns for numeric values
