@@ -264,7 +264,7 @@ jobs:
           - os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
     steps:
-      - uses: actions/create-github-app-token@v2
+      - uses: actions/create-github-app-token@v3
         name: Create GitHub App Token
         id: app-token
         with:
@@ -431,7 +431,7 @@ jobs:
       needs.determine-build-type.result == 'success' &&
       needs.build-cli.result == 'success'
     steps:
-      - uses: actions/create-github-app-token@v2
+      - uses: actions/create-github-app-token@v3
         name: Create GitHub App Token
         id: app-token
         with:
