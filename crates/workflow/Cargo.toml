@@ -6,7 +6,7 @@ edition.workspace = true
 name = "oxy-workflow"
 publish.workspace = true
 rust-version.workspace = true
-version = "0.5.27"
+version = "0.5.28"
 
 [dependencies]
 # Async runtime

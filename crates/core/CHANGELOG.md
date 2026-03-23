@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.28](https://github.com/oxy-hq/oxy-internal/compare/0.5.27...0.5.28) (2026-03-23)
+
+
+### <!-- 0 -->🚀 Features
+
+* allow for individual test case runs via cli ([#1792](https://github.com/oxy-hq/oxy-internal/issues/1792)) ([522f5dc](https://github.com/oxy-hq/oxy-internal/commit/522f5dc8489bfefb04910220427af6e2d5a96e7d))
+* remove database dependency for oxy run cli command  ([#1778](https://github.com/oxy-hq/oxy-internal/issues/1778)) ([6edad0d](https://github.com/oxy-hq/oxy-internal/commit/6edad0d9c72c3aca062a7274624e2626c4c82332))
+* support Looker Explore in Dev Portal semantic layer ([#1730](https://github.com/oxy-hq/oxy-internal/issues/1730)) ([d1051e7](https://github.com/oxy-hq/oxy-internal/commit/d1051e721a515c16a3c9fedaee49ae9e882204bd))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* change log level to debug for checkpoint not found error ([#1749](https://github.com/oxy-hq/oxy-internal/issues/1749)) ([b6b06d4](https://github.com/oxy-hq/oxy-internal/commit/b6b06d44e1ca41961375a90111a0dab912453f73))
+
 ## [0.5.27](https://github.com/oxy-hq/oxy-internal/compare/0.5.26...0.5.27) (2026-03-12)
 
 

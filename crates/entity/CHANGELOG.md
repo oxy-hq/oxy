@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.28](https://github.com/oxy-hq/oxy-internal/compare/0.5.27...0.5.28) (2026-03-23)
+
+
+### <!-- 0 -->🚀 Features
+
+* new testing UI ([#1727](https://github.com/oxy-hq/oxy-internal/issues/1727)) ([7d5b2e7](https://github.com/oxy-hq/oxy-internal/commit/7d5b2e79b52915de1e59d7aa4af4807f1db28465))
+
 ## [0.5.27](https://github.com/oxy-hq/oxy-internal/compare/0.5.26...0.5.27) (2026-03-12)
 
 
