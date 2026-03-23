@@ -43,14 +43,14 @@ const init = async () => {
           })
         );
         worker = new Worker(worker_url);
-        // Use a local variable so `duckDB` is only assigned after instantiation
-        // completes. Assigning it earlier (as a side-effect inside the call
-        // arguments) caused a race: a concurrent getDuckDB() would see a truthy
-        // `duckDB`, skip `await init()`, and try to connect to an uninstantiated
-        // instance, triggering "DuckDB not initialized" errors.
-        const cdnDb = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(), worker);
-        await cdnDb.instantiate(bundle.mainModule, bundle.pthreadWorker);
-        duckDB = cdnDb;
+        // Clean up after instantiation
+        const origInstantiate = duckdb.AsyncDuckDB.prototype.instantiate;
+        await origInstantiate.call(
+          // eslint-disable-next-line sonarjs/no-nested-assignment
+          (duckDB = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(), worker)),
+          bundle.mainModule,
+          bundle.pthreadWorker
+        );
         URL.revokeObjectURL(worker_url);
         return;
       }
