@@ -25,7 +25,6 @@ export interface UserInfo {
   name: string;
   picture?: string;
   role: string;
-  is_admin: boolean;
 }
 
 export interface MessageResponse {

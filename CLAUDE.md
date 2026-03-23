@@ -105,8 +105,8 @@ cargo nextest run test_internal_port_disabled
 
 ### Frontend (web-app)
 
-- Uses pnpm, not npm or yarn. Always use `pnpm exec <tool>` not `npx <tool>`.
-- Lint/format with Biome: `pnpm exec biome check --write <file>` to auto-fix.
+- Uses pnpm, not npm or yarn.
+- Lint with ESLint, format with Prettier.
 - `pnpm run dev` for development, `pnpm build` for production.
 
 ## Database

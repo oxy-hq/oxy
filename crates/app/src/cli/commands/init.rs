@@ -407,7 +407,6 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
         slack: None,
         mcp: None,
         a2a: None,
-        admins: vec![],
     };
 
     let yaml =

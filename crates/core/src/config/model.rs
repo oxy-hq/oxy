@@ -75,13 +75,6 @@ pub struct Config {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     #[garde(dive)]
     pub a2a: Option<crate::config::a2a_config::A2aConfig>,
-
-    /// List of email addresses that are granted admin access in local (non-cloud) mode.
-    /// If empty or not set, all users are treated as admin (permissive default for single-user local installs).
-    /// The built-in local guest user (<local-user@example.com>) is always admin regardless of this list.
-    #[serde(default)]
-    #[garde(skip)]
-    pub admins: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]

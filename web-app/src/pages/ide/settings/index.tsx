@@ -1,4 +1,4 @@
-import { ChevronsRight, Database, Key, KeyRound } from "lucide-react";
+import { ChevronsRight, Database, Key } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
@@ -15,7 +15,6 @@ import {
   SidebarMenuButton,
   SidebarMenuItem
 } from "@/components/ui/shadcn/sidebar";
-import useCurrentUser from "@/hooks/api/users/useCurrentUser";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import ROUTES from "@/libs/utils/routes";
 import { SidebarHeader } from "@/pages/ide/components/SidebarHeader";
@@ -26,8 +25,6 @@ const SettingsSidebar: React.FC<{
   const location = useLocation();
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
-  const { data: currentUser } = useCurrentUser();
-  const isAdmin = currentUser?.is_admin ?? false;
 
   return (
     <div className='flex h-full flex-col overflow-hidden bg-sidebar-background'>
@@ -57,19 +54,6 @@ const SettingsSidebar: React.FC<{
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
-            {isAdmin && (
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  isActive={location.pathname === ROUTES.PROJECT(projectId).IDE.SETTINGS.SECRETS}
-                >
-                  <Link to={ROUTES.PROJECT(projectId).IDE.SETTINGS.SECRETS}>
-                    <KeyRound className='h-4 w-4' />
-                    <span>Secrets</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            )}
           </SidebarMenu>
         </SidebarGroup>
       </SidebarContent>

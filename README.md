@@ -11,11 +11,13 @@
 > 📖 **Looking for up-to-date code documentation?**  
 > Check out our DeepWiki, which updates weekly with the latest code changes: [![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/oxy-hq/oxy)
 
-## The Open-Source, Full-Stack Platform for Agentic Data Analytics
+## The Open-Source AI Data Analyst built for Speed and Precision 
 
-Oxygen is an open-source, full-stack Data + AI platform for agentic data analytics. We combine a context modeling engine, an agent and automation engine, an agentic application engine, a data lakehouse, and an ETL engine, to become a one-stop shop for anything Data and AI.
+Oxygen is the open-source AI data analyst built for speed and precision. Written in Rust and declarative by design, Oxygen provides the foundational components needed to transform AI-driven data analysis into reliable, production-ready systems through structured primitives, semantic understanding, and predictable execution.
 
-Oxygen is grounded in deterministic execution principles. Written in Rust and declarative by design, Oxygen provides the foundational components needed to transform AI-driven data analysis into reliable, production-ready systems through structured primitives, semantic understanding, and predictable execution.
+Using Oxygen, users can automate data Q&A and reporting, and accelerate building data artifacts such as semantic topics and data applications. 
+
+Oxygen integrates natively with your existing data stack - data warehouses, ELT tools, semantic layers, and BI tools. Oxygen also comes with its own data tools for a zero-config experience. 
 
 To learn more, read our [docs](https://oxy.tech/docs).
 

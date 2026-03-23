@@ -49,7 +49,6 @@ import SettingsLayout from "./pages/ide/settings";
 import ActivityLogsPage from "./pages/ide/settings/activity-logs";
 import ApiKeysPage from "./pages/ide/settings/api-keys";
 import DatabasesPage from "./pages/ide/settings/databases";
-import SecretsPage from "./pages/ide/settings/secrets";
 import TestsLayout from "./pages/ide/tests";
 import TestFileDetailPage from "./pages/ide/tests/TestFileDetailPage";
 import TestsDashboardPage from "./pages/ide/tests/TestsDashboardPage";
@@ -180,7 +179,6 @@ const MainLayout = React.memo(function MainLayout() {
             <Route path='databases' element={<DatabasesPage />} />
             <Route path='activity-logs' element={<ActivityLogsPage />} />
             <Route path='api-keys' element={<ApiKeysPage />} />
-            <Route path='secrets' element={<SecretsPage />} />
           </Route>
 
           {/* Tests routes */}

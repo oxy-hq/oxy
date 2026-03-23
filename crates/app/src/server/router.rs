@@ -31,21 +31,15 @@ use crate::api::workspace;
 use axum::Router;
 use axum::body::Body;
 use axum::extract::FromRequestParts;
-use axum::extract::State;
 use axum::http::Request;
 use axum::http::StatusCode;
 use axum::http::request::Parts;
 use axum::middleware;
-use axum::middleware::Next;
-use axum::response::Response;
 use axum::routing::delete;
 use axum::routing::put;
 use axum::routing::{get, post};
 use entity::projects;
-use entity::users::UserRole;
-use oxy::adapters::project::manager::ProjectManager;
 use oxy_auth::middleware::{AuthState, auth_middleware, internal_auth_middleware};
-use oxy_auth::types::AuthenticatedUser;
 use oxy_shared::errors::OxyError;
 use sentry::integrations::tower::NewSentryLayer;
 use std::future::Future;
@@ -133,7 +127,7 @@ fn build_workspace_routes() -> Router<AppState> {
         )
 }
 
-fn build_project_routes(app_state: AppState) -> Router<AppState> {
+fn build_project_routes() -> Router<AppState> {
     Router::new()
         .route("/details", get(project::get_project))
         .route("/status", get(project::get_project_status))
@@ -155,7 +149,7 @@ fn build_project_routes(app_state: AppState) -> Router<AppState> {
         .nest("/files", build_file_routes())
         .nest("/databases", build_database_routes())
         .nest("/integrations", build_integration_routes())
-        .nest("/secrets", build_secret_routes(app_state))
+        .nest("/secrets", build_secret_routes())
         .nest("/tests", build_test_file_routes())
         .nest("/apps", build_app_routes())
         .nest("/traces", traces::traces_routes())
@@ -319,80 +313,14 @@ fn build_integration_routes() -> Router<AppState> {
         .route("/looker/query/sql", post(integration::compile_looker_query))
 }
 
-/// Middleware that gates secrets routes to admin users only.
-///
-/// - Cloud mode: requires `UserRole::Admin` DB role.
-/// - Local mode: checks `config.admins` list; auto-grants access when the list is empty
-///   (permissive default for single-user local installs). The built-in local guest
-///   (`<local-user@example.com>`) always passes.
-async fn secrets_access_middleware(
-    State(app_state): State<AppState>,
-    request: Request<Body>,
-    next: Next,
-) -> Result<Response, StatusCode> {
-    let user = request
-        .extensions()
-        .get::<AuthenticatedUser>()
-        .cloned()
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-
-    if app_state.cloud {
-        if user.role != UserRole::Admin {
-            tracing::warn!(
-                "Non-admin user {} attempted to access secrets (cloud mode)",
-                user.email
-            );
-            return Err(StatusCode::FORBIDDEN);
-        }
-    } else {
-        let is_admin = is_local_admin(&user.email, &request);
-        if !is_admin {
-            tracing::warn!(
-                "Non-admin user {} attempted to access secrets (local mode)",
-                user.email
-            );
-            return Err(StatusCode::FORBIDDEN);
-        }
-    }
-
-    Ok(next.run(request).await)
-}
-
-/// Checks whether a user email is considered admin in local (non-cloud) mode.
-///
-/// Logic:
-/// 1. The built-in local guest (`<local-user@example.com>`) is always admin.
-/// 2. If `config.admins` is non-empty, the email must be listed there.
-/// 3. If `config.admins` is empty/absent, all users are admin (permissive default).
-fn is_local_admin(email: &str, request: &Request<Body>) -> bool {
-    // Built-in local guest is always admin
-    if email == "<local-user@example.com>" {
-        return true;
-    }
-
-    // Try to get admins list from project config (set by project_middleware)
-    if let Some(project_manager) = request.extensions().get::<ProjectManager>() {
-        let admins = &project_manager.config_manager.get_config().admins;
-        return admins.is_empty() || admins.contains(&email.to_string());
-    }
-
-    // If project manager not available, default to permissive (allow)
-    true
-}
-
-fn build_secret_routes(app_state: AppState) -> Router<AppState> {
+fn build_secret_routes() -> Router<AppState> {
     Router::new()
         .route("/", get(secrets::list_secrets))
         .route("/", post(secrets::create_secret))
         .route("/bulk", post(secrets::bulk_create_secrets))
-        .route("/env", get(secrets::list_env_secrets))
         .route("/{id}", get(secrets::get_secret))
         .route("/{id}", put(secrets::update_secret))
         .route("/{id}", delete(secrets::delete_secret))
-        .layer(middleware::from_fn_with_state(
-            app_state,
-            secrets_access_middleware,
-        ))
 }
 
 fn build_test_file_routes() -> Router<AppState> {
@@ -447,7 +375,7 @@ fn build_protected_routes(app_state: AppState) -> Router<AppState> {
         .nest("/workspaces", build_workspace_routes())
         .nest(
             "/{project_id}",
-            build_project_routes(app_state.clone()).layer(middleware::from_fn_with_state(
+            build_project_routes().layer(middleware::from_fn_with_state(
                 app_state,
                 project_middleware,
             )),

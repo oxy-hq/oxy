@@ -39,8 +39,7 @@
       "WebFetch(domain:crates.io)",
       "mcp__playwright__browser_navigate",
       "mcp__playwright__browser_resize",
-      "mcp__playwright__browser_take_screenshot",
-      "Bash(pnpm exec:*)"
+      "mcp__playwright__browser_take_screenshot"
     ],
     "deny": [],
     "ask": []

@@ -90,8 +90,7 @@ const apiKeyKeys = {
 const secretKeys = {
   all: ["secret"] as const,
   list: (projectId: string) => [...secretKeys.all, "list", projectId] as const,
-  item: (projectId: string, id: string) => [...secretKeys.all, projectId, { id }] as const,
-  envList: (projectId: string) => [...secretKeys.all, "env", projectId] as const
+  item: (projectId: string, id: string) => [...secretKeys.all, projectId, { id }] as const
 };
 
 const logsKeys = {

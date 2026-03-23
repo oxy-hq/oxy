@@ -1,5 +1,5 @@
 import type React from "react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { SecretInput } from "@/components/ui/SecretInput";
 import { Button } from "@/components/ui/shadcn/button";
 import {
@@ -21,31 +21,20 @@ interface CreateSecretDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSecretCreated: (secret: CreateSecretResponse) => void;
-  initialName?: string;
 }
 
 export const CreateSecretDialog: React.FC<CreateSecretDialogProps> = ({
   open,
   onOpenChange,
-  onSecretCreated,
-  initialName
+  onSecretCreated
 }) => {
   const createSecretMutation = useCreateSecret();
   const [formData, setFormData] = useState<SecretFormData>({
-    name: initialName ?? "",
+    name: "",
     value: "",
     description: ""
   });
-
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
-
-  // Sync name when dialog opens with a new initialName (e.g. switching override target)
-  useEffect(() => {
-    if (open) {
-      setFormData({ name: initialName ?? "", value: "", description: "" });
-      setErrors({});
-    }
-  }, [open, initialName]);
 
   const validateForm = (): boolean => {
     const newErrors: { [key: string]: string } = {};

@@ -3,6 +3,8 @@ import { Edit, Trash2 } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { useMediaQuery } from "usehooks-ts";
+import { Badge } from "@/components/ui/shadcn/badge";
 import { Button } from "@/components/ui/shadcn/button";
 import { TableCell, TableRow } from "@/components/ui/shadcn/table";
 import { useDeleteSecret } from "@/hooks/api/secrets/useSecretMutations";
@@ -19,6 +21,8 @@ export const SecretRow: React.FC<Props> = ({ secret }) => {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const deleteSecretMutation = useDeleteSecret();
 
+  const isMobile = useMediaQuery("(max-width: 767px)");
+
   const handleDeleteSecret = async () => {
     await deleteSecretMutation.mutateAsync(secret.id);
     setIsDeleteDialogOpen(false);
@@ -29,18 +33,43 @@ export const SecretRow: React.FC<Props> = ({ secret }) => {
   };
 
   return (
-    <TableRow>
-      <TableCell>
-        <div className='font-medium'>{secret.name}</div>
-        {secret.description && (
-          <div className='font-mono text-muted-foreground text-sm'>{secret.description}</div>
-        )}
+    <TableRow key={secret.id}>
+      <TableCell className='font-medium'>
+        <div className='flex flex-col gap-1'>
+          <span>{secret.name}</span>
+          {isMobile && secret.description && (
+            <span className='mt-1 text-muted-foreground text-xs'>{secret.description}</span>
+          )}
+        </div>
       </TableCell>
-      <TableCell className='text-muted-foreground text-sm'>
-        {formatDistanceToNow(new Date(secret.created_at), { addSuffix: true })}
-      </TableCell>
+      {!isMobile && (
+        <TableCell>
+          {secret.description || (
+            <span className='text-muted-foreground italic'>No description</span>
+          )}
+        </TableCell>
+      )}
       <TableCell>
-        <div className='flex items-center gap-1'>
+        <Badge variant={secret.is_active ? "default" : "secondary"}>
+          {secret.is_active ? "Active" : "Inactive"}
+        </Badge>
+      </TableCell>
+      {!isMobile && (
+        <TableCell>
+          {formatDistanceToNow(new Date(secret.created_at), {
+            addSuffix: true
+          })}
+        </TableCell>
+      )}
+      {!isMobile && (
+        <TableCell>
+          {formatDistanceToNow(new Date(secret.updated_at), {
+            addSuffix: true
+          })}
+        </TableCell>
+      )}
+      <TableCell>
+        <div className='flex items-center justify-center gap-2'>
           <Button
             variant='ghost'
             size='sm'
@@ -59,13 +88,13 @@ export const SecretRow: React.FC<Props> = ({ secret }) => {
           </Button>
         </div>
       </TableCell>
-
       <EditSecretDialog
         open={isEditDialogOpen}
         onOpenChange={setIsEditDialogOpen}
         secret={secret}
         onSecretUpdated={handleSecretUpdated}
       />
+
       <DeleteSecretDialog
         open={isDeleteDialogOpen}
         onOpenChange={setIsDeleteDialogOpen}
