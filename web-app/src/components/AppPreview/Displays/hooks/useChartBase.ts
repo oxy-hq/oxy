@@ -1,5 +1,5 @@
+import { useQuery } from "@tanstack/react-query";
 import type { EChartsOption } from "echarts";
-import { useEffect, useState } from "react";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { getDuckDB } from "@/libs/duckdb";
 import useTheme from "@/stores/useTheme";
@@ -18,67 +18,49 @@ export const useChartBase = <T extends BaseChartDisplay>({
   data,
   buildChartOptions
 }: UseChartBaseOptions<T>) => {
-  const [isLoading, setIsLoading] = useState(true);
   const { project, branchName } = useCurrentProjectBranch();
-  const [chartOptions, setChartOptions] = useState<EChartsOption>({});
   const { theme } = useTheme();
   const isDarkMode = theme === "dark";
-
   const dataAvailable = data && display.data;
 
-  useEffect(() => {
-    const loadChart = async () => {
-      setIsLoading(true);
-
+  const {
+    isPending,
+    isError,
+    data: chartOptions
+  } = useQuery({
+    queryKey: ["chart", display, data, isDarkMode, branchName, project.id],
+    queryFn: async () => {
       if (!dataAvailable) {
-        setChartOptions(createNoDataOptions(display.title, isDarkMode));
-        setIsLoading(false);
-        return;
+        return createNoDataOptions(display.title, isDarkMode);
       }
+
+      const tableData = getData(data, display.data) as TableData | null;
+      if (!tableData) {
+        return createNoDataOptions(display.title, isDarkMode);
+      }
+
+      // Empty JSON result (e.g. date filter returns 0 rows) — show "No data"
+      // instead of trying to register an empty array in DuckDB, which fails.
+      if (typeof tableData.json === "string" && tableData.json.trim() === "[]") {
+        return createNoDataOptions(display.title, isDarkMode);
+      }
+
+      const fileName = await registerFromTableData(tableData, project.id, branchName);
+      const db = await getDuckDB();
+      const connection = await db.connect();
 
       try {
-        const tableData = getData(data, display.data) as TableData | null;
-        if (!tableData) {
-          setChartOptions(createNoDataOptions(display.title, isDarkMode));
-          setIsLoading(false);
-          return;
-        }
-        // Empty JSON result (e.g. date filter returns 0 rows) — show "No data"
-        // instead of trying to register an empty array in DuckDB, which fails.
-        if (typeof tableData.json === "string" && tableData.json.trim() === "[]") {
-          setChartOptions(createNoDataOptions(display.title, isDarkMode));
-          setIsLoading(false);
-          return;
-        }
-        const fileName = await registerFromTableData(tableData, project.id, branchName);
-        const db = await getDuckDB();
-        const connection = await db.connect();
-
-        try {
-          const options = await buildChartOptions({
-            display,
-            connection,
-            fileName,
-            isDarkMode
-          });
-          setChartOptions(options);
-        } finally {
-          await connection.close();
-        }
-      } catch (error) {
-        console.error("Error loading chart:", error);
-        setChartOptions(createErrorOptions(display.title, isDarkMode));
+        return await buildChartOptions({ display, connection, fileName, isDarkMode });
       } finally {
-        setIsLoading(false);
+        await connection.close();
       }
-    };
-
-    loadChart();
-  }, [display, data, isDarkMode, dataAvailable, buildChartOptions, branchName, project.id]);
+    },
+    retry: false
+  });
 
   return {
-    isLoading,
-    chartOptions,
+    isLoading: isPending,
+    chartOptions: isError ? createErrorOptions(display.title, isDarkMode) : (chartOptions ?? {}),
     isDarkMode
   };
 };
