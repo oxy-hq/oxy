@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.5.29](https://github.com/oxy-hq/oxy-internal/compare/0.5.27...0.5.29) (2026-03-24)
+
+
+### <!-- 0 -->🚀 Features
+
+* new testing UI ([#1727](https://github.com/oxy-hq/oxy-internal/issues/1727)) ([7d5b2e7](https://github.com/oxy-hq/oxy-internal/commit/7d5b2e79b52915de1e59d7aa4af4807f1db28465))
+* support Looker Explore in Dev Portal semantic layer ([#1730](https://github.com/oxy-hq/oxy-internal/issues/1730)) ([d1051e7](https://github.com/oxy-hq/oxy-internal/commit/d1051e721a515c16a3c9fedaee49ae9e882204bd))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* chart rendering race condition ([b755c65](https://github.com/oxy-hq/oxy-internal/commit/b755c6561070af449771cc6cf4b3635269d2194b))
+* chart rendering race condition ([#1800](https://github.com/oxy-hq/oxy-internal/issues/1800)) ([525c9cf](https://github.com/oxy-hq/oxy-internal/commit/525c9cf7cb98538f43a838cd9d371b7f5839106c))
+
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+
+* release 0.5.29 ([4182ca3](https://github.com/oxy-hq/oxy-internal/commit/4182ca39d122c9ab1894d7c2ee87f78ef9ff86de))
+
 ## [0.5.27](https://github.com/oxy-hq/oxy-internal/compare/0.5.26...0.5.27) (2026-03-23)
 
 
