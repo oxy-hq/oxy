@@ -1,5 +1,5 @@
 use crate::SemanticLayerError;
-use crate::cube::entity_graph::EntityGraph;
+use crate::entity_graph::EntityGraph;
 use crate::models::*;
 use regex::Regex;
 use std::collections::HashSet;

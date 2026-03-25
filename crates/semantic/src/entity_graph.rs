@@ -3,8 +3,6 @@ use std::collections::HashMap;
 
 use crate::{EntityType, SemanticLayer, errors::SemanticLayerError};
 
-use super::models::CubeJoin;
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JoinRelationship {
     pub from_view: String,
@@ -34,39 +32,18 @@ pub enum RelationshipType {
     ManyToMany,
 }
 
-impl JoinType {
-    pub fn to_string(&self) -> String {
-        match self {
-            JoinType::LeftJoin => "LEFT JOIN".to_string(),
-            JoinType::RightJoin => "RIGHT JOIN".to_string(),
-            JoinType::InnerJoin => "INNER JOIN".to_string(),
-            JoinType::FullOuterJoin => "FULL OUTER JOIN".to_string(),
-        }
-    }
-}
-
 /// Represents the entity graph for automatic join resolution
 ///
 /// The EntityGraph analyzes the semantic layer to identify relationships between views
 /// based on shared entities. It automatically generates join relationships that can be
-/// used by query engines like CubeJS to perform intelligent cross-view queries.
+/// used by query engines to perform intelligent cross-view queries.
 ///
 /// # How it works:
 /// 1. Scans all views in the semantic layer for entities
-/// 2. Maps primary entities to their owning views  
+/// 2. Maps primary entities to their owning views
 /// 3. Maps foreign entities to views that reference them
 /// 4. Generates join relationships between views that share entities
 /// 5. Creates appropriate join conditions using entity expressions
-///
-/// # Example:
-/// If you have:
-/// - `customers` view with primary entity `customer` (expr: `customer_id`)
-/// - `orders` view with foreign entity `customer` (expr: `customer_id`)
-///
-/// The EntityGraph will generate a join relationship:
-/// ```sql
-/// ${orders.customer_id} = ${customers.customer_id}
-/// ```
 #[derive(Debug, Clone)]
 pub struct EntityGraph {
     /// Map of entity name to views that contain this entity as primary
@@ -203,7 +180,7 @@ impl EntityGraph {
         &self.primary_entities
     }
 
-    /// Get foreign entities map  
+    /// Get foreign entities map
     pub fn get_foreign_entities(&self) -> &HashMap<String, Vec<String>> {
         &self.foreign_entities
     }
@@ -306,51 +283,6 @@ impl EntityGraph {
             .collect()
     }
 
-    /// Generate CubeJS joins for a specific view
-    pub fn generate_cube_joins(&self, view_name: &str) -> Vec<CubeJoin> {
-        let mut joins = Vec::new();
-
-        for join in self.get_joins_for_view(view_name) {
-            // Determine which view this cube should join to
-            let target_view = if join.from_view == view_name {
-                &join.to_view
-            } else {
-                &join.from_view
-            };
-
-            // Determine the relationship type from the perspective of the current view
-            // If the join direction is reversed, we need to flip the relationship
-            let relationship = if join.from_view == view_name {
-                // We're joining in the stored direction
-                match join.relationship_type {
-                    RelationshipType::OneToOne => "one_to_one".to_string(),
-                    RelationshipType::OneToMany => "one_to_many".to_string(),
-                    RelationshipType::ManyToOne => "many_to_one".to_string(),
-                    RelationshipType::ManyToMany => "many_to_many".to_string(),
-                }
-            } else {
-                // We're joining in the reverse direction, flip the relationship
-                match join.relationship_type {
-                    RelationshipType::OneToOne => "one_to_one".to_string(), // Symmetric
-                    RelationshipType::OneToMany => "many_to_one".to_string(), // Flip
-                    RelationshipType::ManyToOne => "one_to_many".to_string(), // Flip
-                    RelationshipType::ManyToMany => "many_to_many".to_string(), // Symmetric
-                }
-            };
-
-            // Create CubeJS join definition
-            let cube_join = CubeJoin {
-                name: target_view.clone(),
-                sql: join.on_condition.clone(),
-                relationship,
-            };
-
-            joins.push(cube_join);
-        }
-
-        joins
-    }
-
     /// Get dependency graph for incremental builds
     ///
     /// Returns a BTreeMap where:
@@ -361,12 +293,6 @@ impl EntityGraph {
     /// the other view's primary entity.
     ///
     /// Note: Uses BTreeMap for stable iteration order (sorted keys).
-    ///
-    /// # Example
-    /// If `orders` view has a foreign entity `customer` that references
-    /// `customers` view's primary entity, then:
-    /// - `orders` depends on `customers`
-    /// - The map will contain: `{"orders": ["customers"]}`
     pub fn get_dependency_graph(&self) -> std::collections::BTreeMap<String, Vec<String>> {
         let mut graph: std::collections::BTreeMap<String, Vec<String>> =
             std::collections::BTreeMap::new();
@@ -391,7 +317,6 @@ mod tests {
 
     #[test]
     fn test_composite_key_join_generation() {
-        // Create a view with composite primary key
         let order_items_view = View {
             name: "order_items".to_string(),
             description: "Order line items".to_string(),
@@ -410,7 +335,6 @@ mod tests {
             measures: None,
         };
 
-        // Create a view with composite foreign key
         let shipments_view = View {
             name: "shipments".to_string(),
             description: "Order shipments".to_string(),
@@ -446,19 +370,16 @@ mod tests {
 
         let entity_graph = EntityGraph::from_semantic_layer(&semantic_layer).unwrap();
 
-        // Check that a join was generated
         assert_eq!(entity_graph.joins.len(), 1);
 
         let join = &entity_graph.joins[0];
         assert_eq!(join.from_view, "shipments");
         assert_eq!(join.to_view, "order_items");
 
-        // Check that the join condition includes both keys with AND
         assert!(join.on_condition.contains("order_id"));
         assert!(join.on_condition.contains("line_item_id"));
         assert!(join.on_condition.contains(" AND "));
 
-        // Check the exact format
         assert_eq!(
             join.on_condition,
             "{shipments.order_id} = {order_items.order_id} AND {shipments.line_item_id} = {order_items.line_item_id}"
@@ -467,7 +388,6 @@ mod tests {
 
     #[test]
     fn test_mismatched_composite_key_counts() {
-        // Create a view with 2-column composite key
         let view1 = View {
             name: "view1".to_string(),
             description: "View 1".to_string(),
@@ -486,7 +406,6 @@ mod tests {
             measures: None,
         };
 
-        // Create a view with 3-column composite key (mismatch)
         let view2 = View {
             name: "view2".to_string(),
             description: "View 2".to_string(),
@@ -515,7 +434,6 @@ mod tests {
             metadata: None,
         };
 
-        // This should return an error due to mismatched key counts
         let result = EntityGraph::from_semantic_layer(&semantic_layer);
         assert!(result.is_err());
 
@@ -527,7 +445,6 @@ mod tests {
 
     #[test]
     fn test_single_key_still_works() {
-        // Test that single-key entities still work correctly
         let customers_view = View {
             name: "customers".to_string(),
             description: "Customers".to_string(),
@@ -572,7 +489,6 @@ mod tests {
 
         let entity_graph = EntityGraph::from_semantic_layer(&semantic_layer).unwrap();
 
-        // Check that a join was generated
         assert_eq!(entity_graph.joins.len(), 1);
 
         let join = &entity_graph.joins[0];

@@ -345,7 +345,7 @@ jobs:
 
       - name: Verify containers
         run: |
-          for c in oxy-postgres oxy-clickhouse oxy-otel-collector oxy-cubejs; do
+          for c in oxy-postgres oxy-clickhouse oxy-otel-collector; do
             docker ps --format "{{.Names}}" | grep -q "^${c}$" || { echo "::error::$c not running"; exit 1; }
           done
 
@@ -381,7 +381,7 @@ jobs:
 
       - name: Verify restart
         run: |
-          for c in oxy-postgres oxy-clickhouse oxy-otel-collector oxy-cubejs; do
+          for c in oxy-postgres oxy-clickhouse oxy-otel-collector; do
             docker ps --format "{{.Names}}" | grep -q "^${c}$" || { echo "::error::$c not running after restart"; exit 1; }
           done
           set -o pipefail
@@ -391,7 +391,7 @@ jobs:
         if: always()
         run: |
           kill -TERM $OXY_PID 2>/dev/null || true; sleep 3
-          docker rm -f oxy-postgres oxy-clickhouse oxy-otel-collector oxy-cubejs 2>/dev/null || true
+          docker rm -f oxy-postgres oxy-clickhouse oxy-otel-collector 2>/dev/null || true
 
   e2e-tests:
     name: E2E Tests (Playwright)

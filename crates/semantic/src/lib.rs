@@ -2,7 +2,7 @@
 pub mod build_manifest;
 pub mod builder;
 pub mod change_detector;
-pub mod cube;
+pub mod entity_graph;
 pub mod errors;
 pub mod models;
 pub mod parser;
@@ -21,9 +21,9 @@ pub use change_detector::{
 };
 pub use errors::SemanticLayerError;
 pub use models::{
-    AccessLevel, Dimension, DimensionType, Entity, EntityType, Measure, MeasureFilter, MeasureType,
-    SemanticLayer, SemanticTableRef, Topic, TopicArrayFilter, TopicDateRangeFilter, TopicFilter,
-    TopicFilterType, TopicScalarFilter, View,
+    AccessLevel, DatabaseDetails, Dimension, DimensionType, Entity, EntityType, Measure,
+    MeasureFilter, MeasureType, SemanticLayer, SemanticTableRef, Topic, TopicArrayFilter,
+    TopicDateRangeFilter, TopicFilter, TopicFilterType, TopicScalarFilter, View,
 };
 pub use parser::{ParseResult, ParserConfig, SemanticLayerParser, parse_semantic_layer_from_dir};
 pub use types::SyncMetrics;

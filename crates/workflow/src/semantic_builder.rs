@@ -9,10 +9,7 @@ use std::{
 };
 
 use oxy::{
-    config::model::{
-        SemanticFilter, SemanticFilterType, SemanticOrder, SemanticOrderDirection,
-        SemanticQueryTask,
-    },
+    config::model::{SemanticFilterType, SemanticQueryTask},
     connector::Connector,
     execute::{
         Executable, ExecutionContext,
@@ -28,8 +25,7 @@ use oxy::{
 use oxy_shared::errors::OxyError;
 
 use crate::semantic_validator_builder::{
-    SemanticQueryError, SemanticQueryValidation, ValidatedSemanticQuery,
-    validate_semantic_query_task,
+    SemanticQueryValidation, ValidatedSemanticQuery, validate_semantic_query_task,
 };
 
 #[tracing::instrument(skip_all, err, fields(
@@ -258,19 +254,18 @@ impl SemanticQueryExecutable {
         // Record explicit metrics and emit tracing event
         tool_events::semantic_query_compile_input(&input.topic.name, &input.task.query);
 
-        let requested_views = self.extract_views_from_query(&input.task, &input.topic.name);
+        let config_manager = &execution_context.project.config_manager;
         let date_fields = collect_date_fields(&input.views);
 
-        let cubejs_query = self.convert_to_cubejs_query(
+        let mut sql_query = compile_with_airlayer(
             &input.task,
             &input.topic.name,
             input.topic.base_view.as_ref(),
-            &requested_views,
             input.topic.default_filters.as_ref(),
+            &input.views,
+            config_manager,
             &date_fields,
         )?;
-
-        let mut sql_query = self.get_sql_from_cubejs(&cubejs_query).await?;
 
         let variables = input.task.variables.clone().unwrap_or_default();
 
@@ -425,48 +420,23 @@ impl SemanticQueryExecutable {
             })
             .await?;
 
-        // Step 1: Extract unique views from requested fields to determine join hints
-        let requested_views = self.extract_views_from_query(&input.task, &input.topic.name);
+        let config_manager = &execution_context.project.config_manager;
         let date_fields = collect_date_fields(&input.views);
 
-        // Step 2: Convert to CubeJS query and get SQL with base_view enforcement and default filters
-        // Default filters from the topic will be automatically merged with user-provided filters
-        let cubejs_query = match self.convert_to_cubejs_query(
+        // Compile semantic query to SQL using airlayer engine
+        let mut sql_query = match compile_with_airlayer(
             &input.task,
             &input.topic.name,
             input.topic.base_view.as_ref(),
-            &requested_views,
             input.topic.default_filters.as_ref(),
+            &input.views,
+            config_manager,
             &date_fields,
         ) {
-            Ok(query) => query,
-            Err(e) => {
-                tracing::error!(
-                    "Failed to convert semantic query to CubeJS format for topic '{}': {e}",
-                    input.topic.name
-                );
-                artifact_value.sql_generation_error =
-                    Some("Failed to process semantic query".to_string());
-                task_context
-                    .write_chunk(Chunk {
-                        key: None,
-                        delta: Output::SemanticQuery(artifact_value.clone()),
-                        finished: true,
-                    })
-                    .await?;
-                return Err(e);
-            }
-        };
-        tracing::info!(
-            "Generated CubeJS query for topic '{}': {cubejs_query:?}",
-            input.topic.name
-        );
-
-        let mut sql_query = match self.get_sql_from_cubejs(&cubejs_query).await {
             Ok(sql) => sql,
             Err(e) => {
                 tracing::error!(
-                    "Failed to generate SQL from CubeJS query for topic '{}': {e}",
+                    "Failed to compile semantic query for topic '{}': {e}",
                     input.topic.name
                 );
                 artifact_value.sql_generation_error = Some("Failed to generate SQL".to_string());
@@ -480,6 +450,11 @@ impl SemanticQueryExecutable {
                 return Err(e);
             }
         };
+        tracing::info!(
+            "Generated SQL for topic '{}': {}",
+            input.topic.name,
+            sql_query
+        );
 
         let variables = input.task.variables.clone().unwrap_or_default();
 
@@ -580,71 +555,6 @@ impl SemanticQueryExecutable {
         Ok(table_output)
     }
 
-    /// Extract unique view names from the query fields (dimensions, measures, filters, orders)
-    fn extract_views_from_query(&self, task: &SemanticQueryTask, topic_name: &str) -> Vec<String> {
-        let mut views = HashSet::new();
-
-        // Extract from dimensions
-        for dim in &task.query.dimensions {
-            if let Some(view_name) = self.extract_view_name(dim, topic_name) {
-                views.insert(view_name);
-            }
-        }
-
-        // Extract from measures
-        for measure in &task.query.measures {
-            if let Some(view_name) = self.extract_view_name(measure, topic_name) {
-                views.insert(view_name);
-            }
-        }
-
-        // Extract from filters
-        for filter in &task.query.filters {
-            if let Some(view_name) = self.extract_view_name(&filter.field, topic_name) {
-                views.insert(view_name);
-            }
-        }
-
-        // Extract from orders
-        for order in &task.query.orders {
-            if let Some(view_name) = self.extract_view_name(&order.field, topic_name) {
-                views.insert(view_name);
-            }
-        }
-
-        views.into_iter().collect()
-    }
-
-    /// Extract view name from a field reference
-    /// Field can be in format "view.field" or just "field" (assumes topic name as view)
-    fn extract_view_name(&self, field: &str, topic_name: &str) -> Option<String> {
-        if field.contains('.') {
-            field.split('.').next().map(|s| s.to_string())
-        } else {
-            // If no view prefix, assume it's from the topic itself
-            Some(topic_name.to_string())
-        }
-    }
-
-    /// Generate join hints for base_view enforcement
-    /// Returns an array of [from_view, to_view] pairs that CubeJS should use for joins.
-    /// This ensures all joins start from the base_view, creating a star schema pattern
-    /// where the base_view is at the center and all other views join to it.
-    fn generate_join_hints(&self, base_view: &str, requested_views: &[String]) -> Vec<JsonValue> {
-        let mut hints = Vec::new();
-
-        for view in requested_views {
-            // Don't create a hint for the base view to itself
-            if view != base_view {
-                // Create a join hint from base_view to this view
-                // Format: ["base_view", "target_view"]
-                hints.push(serde_json::json!([base_view, view]));
-            }
-        }
-
-        hints
-    }
-
     /// Determine the database from the topic's views
     fn determine_database_from_topic(
         &self,
@@ -665,296 +575,6 @@ impl SemanticQueryExecutable {
         )))
     }
 
-    /// Convert validated semantic query to CubeJS query JSON format
-    fn convert_to_cubejs_query(
-        &self,
-        task: &SemanticQueryTask,
-        topic_name: &str,
-        base_view: Option<&String>,
-        requested_views: &[String],
-        default_filters: Option<&Vec<oxy_semantic::TopicFilter>>,
-        date_fields: &HashSet<String>,
-    ) -> Result<JsonValue, OxyError> {
-        let mut query = serde_json::json!({
-            "measures": task.query.measures,
-            "dimensions": task.query.dimensions
-        });
-
-        // Add join hints if base_view is specified
-        // This enforces that all joins start from the base_view
-        if let Some(base_view_name) = base_view {
-            let join_hints = self.generate_join_hints(base_view_name, requested_views);
-            if !join_hints.is_empty() {
-                query["joinHints"] = JsonValue::Array(join_hints);
-                tracing::info!(
-                    "Applied base_view enforcement: all joins will start from '{}' (join hints: {:?})",
-                    base_view_name,
-                    query["joinHints"]
-                );
-            }
-        }
-
-        // Merge default filters from topic with user-provided filters
-        let mut all_filters = Vec::new();
-
-        // Add default filters from topic (applied first, with AND logic)
-        if let Some(default_filters) = default_filters {
-            for default_filter in default_filters {
-                // Convert TopicFilter to SemanticFilter, then to CubeJS format
-                let filter_type = match &default_filter.filter_type {
-                    oxy_semantic::TopicFilterType::Eq(f) => {
-                        SemanticFilterType::Eq(oxy::config::model::ScalarFilter {
-                            value: f.value.clone(),
-                        })
-                    }
-                    oxy_semantic::TopicFilterType::Neq(f) => {
-                        SemanticFilterType::Neq(oxy::config::model::ScalarFilter {
-                            value: f.value.clone(),
-                        })
-                    }
-                    oxy_semantic::TopicFilterType::Gt(f) => {
-                        SemanticFilterType::Gt(oxy::config::model::ScalarFilter {
-                            value: f.value.clone(),
-                        })
-                    }
-                    oxy_semantic::TopicFilterType::Gte(f) => {
-                        SemanticFilterType::Gte(oxy::config::model::ScalarFilter {
-                            value: f.value.clone(),
-                        })
-                    }
-                    oxy_semantic::TopicFilterType::Lt(f) => {
-                        SemanticFilterType::Lt(oxy::config::model::ScalarFilter {
-                            value: f.value.clone(),
-                        })
-                    }
-                    oxy_semantic::TopicFilterType::Lte(f) => {
-                        SemanticFilterType::Lte(oxy::config::model::ScalarFilter {
-                            value: f.value.clone(),
-                        })
-                    }
-                    oxy_semantic::TopicFilterType::In(f) => {
-                        SemanticFilterType::In(oxy::config::model::ArrayFilter {
-                            values: f.values.clone(),
-                        })
-                    }
-                    oxy_semantic::TopicFilterType::NotIn(f) => {
-                        SemanticFilterType::NotIn(oxy::config::model::ArrayFilter {
-                            values: f.values.clone(),
-                        })
-                    }
-                    oxy_semantic::TopicFilterType::InDateRange(f) => {
-                        SemanticFilterType::InDateRange(oxy::config::model::DateRangeFilter {
-                            from: f.from.clone(),
-                            to: f.to.clone(),
-                        })
-                    }
-                    oxy_semantic::TopicFilterType::NotInDateRange(f) => {
-                        SemanticFilterType::NotInDateRange(oxy::config::model::DateRangeFilter {
-                            from: f.from.clone(),
-                            to: f.to.clone(),
-                        })
-                    }
-                };
-
-                let semantic_filter = SemanticFilter {
-                    field: default_filter.field.clone(),
-                    filter_type,
-                };
-
-                let cubejs_filter =
-                    self.convert_filter_to_cubejs(&semantic_filter, topic_name, date_fields)?;
-                all_filters.push(cubejs_filter);
-            }
-
-            if !default_filters.is_empty() {
-                tracing::info!(
-                    "Applied {} default filter(s) from topic '{}'",
-                    default_filters.len(),
-                    topic_name
-                );
-            }
-        }
-
-        // Add user-provided filters
-        if !task.query.filters.is_empty() {
-            let user_filters: Vec<JsonValue> = task
-                .query
-                .filters
-                .iter()
-                .map(|f| self.convert_filter_to_cubejs(f, topic_name, date_fields))
-                .collect::<Result<Vec<_>, _>>()?;
-            all_filters.extend(user_filters);
-        }
-
-        // Set filters in query if any exist
-        if !all_filters.is_empty() {
-            query["filters"] = JsonValue::Array(all_filters);
-        }
-
-        // Add order - always include the order field, even if empty
-        // This prevents Cube from adding a default ORDER BY
-        let orders = task
-            .query
-            .orders
-            .iter()
-            .map(|order| {
-                // Convert SemanticQueryOrder to SemanticOrder for CubeJS conversion
-                let direction = match order.direction.to_lowercase().as_str() {
-                    "asc" => SemanticOrderDirection::Asc,
-                    "desc" => SemanticOrderDirection::Desc,
-                    _ => SemanticOrderDirection::Asc, // Default fallback
-                };
-                let semantic_order = SemanticOrder {
-                    field: order.field.clone(),
-                    direction,
-                };
-                self.convert_order_to_cubejs(&semantic_order, topic_name)
-            })
-            .collect::<Vec<_>>();
-        query["order"] = JsonValue::Array(orders);
-
-        // Add limit and offset if present
-        if let Some(limit) = task.query.limit {
-            query["limit"] = JsonValue::Number(serde_json::Number::from(limit));
-        }
-        if let Some(offset) = task.query.offset {
-            query["offset"] = JsonValue::Number(serde_json::Number::from(offset));
-        }
-
-        // Add time dimensions if present
-        if !task.query.time_dimensions.is_empty() {
-            let time_dims: Vec<JsonValue> = task
-                .query
-                .time_dimensions
-                .iter()
-                .map(|td| self.convert_time_dimension_to_cubejs(td, topic_name))
-                .collect::<Result<Vec<_>, _>>()?;
-            query["timeDimensions"] = JsonValue::Array(time_dims);
-            tracing::info!(
-                "Added {} time dimension(s) to CubeJS query",
-                task.query.time_dimensions.len()
-            );
-        }
-
-        Ok(query)
-    }
-
-    /// Convert a TimeDimension to CubeJS timeDimensions format
-    /// Cube.dev format: { "dimension": "View.field", "granularity": "month", "dateRange": ["2023-01-01", "2023-12-31"] }
-    fn convert_time_dimension_to_cubejs(
-        &self,
-        td: &TimeDimension,
-        topic_name: &str,
-    ) -> Result<JsonValue, OxyError> {
-        // Qualify dimension name with topic if not already qualified
-        let dimension_name = if td.dimension.contains('.') {
-            td.dimension.clone()
-        } else {
-            format!("{}.{}", topic_name, td.dimension)
-        };
-
-        let mut obj = serde_json::json!({
-            "dimension": dimension_name
-        });
-
-        // Add granularity if present
-        if let Some(ref granularity) = td.granularity {
-            obj["granularity"] = self.convert_granularity_to_cubejs(granularity);
-        }
-
-        Ok(obj)
-    }
-
-    /// Convert TimeGranularity to Cube.dev granularity string
-    fn convert_granularity_to_cubejs(&self, granularity: &TimeGranularity) -> JsonValue {
-        match granularity {
-            TimeGranularity::Year => serde_json::json!("year"),
-            TimeGranularity::Quarter => serde_json::json!("quarter"),
-            TimeGranularity::Month => serde_json::json!("month"),
-            TimeGranularity::Week => serde_json::json!("week"),
-            TimeGranularity::Day => serde_json::json!("day"),
-            TimeGranularity::Hour => serde_json::json!("hour"),
-            TimeGranularity::Minute => serde_json::json!("minute"),
-            TimeGranularity::Second => serde_json::json!("second"),
-        }
-    }
-
-    /// Convert semantic filter to CubeJS filter format
-    fn convert_filter_to_cubejs(
-        &self,
-        filter: &SemanticFilter,
-        topic_name: &str,
-        date_fields: &HashSet<String>,
-    ) -> Result<JsonValue, OxyError> {
-        let field_name = if filter.field.contains('.') {
-            filter.field.clone()
-        } else {
-            format!("{}.{}", topic_name, filter.field)
-        };
-
-        let operator = filter.filter_type.operator_name();
-        let is_date_field = date_fields.contains(&field_name);
-
-        // Resolve relative dates for date range filters and date-typed scalar/array filters
-        let values = match &filter.filter_type {
-            oxy::config::model::SemanticFilterType::InDateRange(date_filter)
-            | oxy::config::model::SemanticFilterType::NotInDateRange(date_filter) => {
-                let mut vals = Vec::new();
-                let resolved_from = if let Some(from_str) = date_filter.from.as_str() {
-                    serde_json::Value::String(normalize_date_value(from_str)?)
-                } else {
-                    date_filter.from.clone()
-                };
-                vals.push(resolved_from);
-                let resolved_to = if let Some(to_str) = date_filter.to.as_str() {
-                    serde_json::Value::String(normalize_date_value(to_str)?)
-                } else {
-                    date_filter.to.clone()
-                };
-                vals.push(resolved_to);
-                vals
-            }
-            _ if is_date_field => {
-                // Resolve relative date expressions for scalar/array filters on date fields
-                filter
-                    .filter_type
-                    .values()
-                    .into_iter()
-                    .map(|v| {
-                        if let Some(s) = v.as_str() {
-                            Ok(serde_json::Value::String(normalize_date_value(s)?))
-                        } else {
-                            Ok(v)
-                        }
-                    })
-                    .collect::<Result<Vec<_>, OxyError>>()?
-            }
-            _ => filter.filter_type.values(),
-        };
-
-        Ok(serde_json::json!({
-            "member": field_name,
-            "operator": operator,
-            "values": values
-        }))
-    }
-
-    /// Convert semantic order to CubeJS order format
-    fn convert_order_to_cubejs(&self, order: &SemanticOrder, topic_name: &str) -> JsonValue {
-        let field_name = if order.field.contains('.') {
-            order.field.clone()
-        } else {
-            format!("{}.{}", topic_name, order.field)
-        };
-
-        let direction = match order.direction {
-            oxy::config::model::SemanticOrderDirection::Asc => "asc",
-            oxy::config::model::SemanticOrderDirection::Desc => "desc",
-        };
-
-        serde_json::json!([field_name, direction])
-    }
-
     /// Resolve variables in SQL query using RuntimeVariableResolver
     fn resolve_variables_in_sql(
         &self,
@@ -962,251 +582,31 @@ impl SemanticQueryExecutable {
         sql_query: String,
         variables: HashMap<String, JsonValue>,
     ) -> Result<String, OxyError> {
-        // TODO: Implement global variables extraction from GlobalRegistry
-        // For now, we'll use an empty HashMap for globals
         let global_vars: HashMap<String, JsonValue> = HashMap::new();
 
-        // Collect environment variables (prefixed with OXY_)
         let env_vars: HashMap<String, JsonValue> = std::env::vars()
             .filter(|(key, _)| key.starts_with("OXY_VAR_"))
             .map(|(key, value)| {
-                // Remove OXY_VAR_ prefix for cleaner variable names
                 let var_name = key.strip_prefix("OXY_VAR_").unwrap_or(&key).to_lowercase();
                 (var_name, JsonValue::String(value))
             })
             .collect();
 
-        // Create variable resolver from multiple sources with priority order
         let resolver = RuntimeVariableResolver::from_sources(
-            Some(variables),   // Task variables have highest priority
-            None,              // No agent variables for now (could be added later)
-            Some(global_vars), // Global variables from config
-            Some(env_vars),    // Environment variables (lowest priority)
+            Some(variables),
+            None,
+            Some(global_vars),
+            Some(env_vars),
         )
         .map_err(|e| {
             OxyError::RuntimeError(format!("Failed to create variable resolver: {}", e))
         })?;
 
-        // Resolve variables in the SQL query
         let resolved_sql = resolver.resolve_sql_variables(sql_query).map_err(|e| {
             OxyError::RuntimeError(format!("Failed to resolve variables in SQL: {}", e))
         })?;
 
         Ok(resolved_sql)
-    }
-
-    /// Get SQL query from CubeJS /sql endpoint and handle parameters
-    #[tracing::instrument(skip_all, err, fields(
-        otel.name = workflow_events::task::semantic_query::NAME_GET_SQL_FROM_CUBEJS,
-        oxy.span_type = workflow_events::task::semantic_query::TYPE,
-    ))]
-    async fn get_sql_from_cubejs(&self, query: &JsonValue) -> Result<String, OxyError> {
-        workflow_events::task::semantic_query::get_sql_input(query);
-
-        // Default CubeJS URL
-        let cubejs_url =
-            std::env::var("CUBEJS_API_URL").unwrap_or_else(|_| "http://localhost:4000".to_string());
-
-        let client = reqwest::Client::new();
-
-        // Get SQL from CubeJS sql API
-        let sql_url = format!("{}/cubejs-api/v1/sql", cubejs_url);
-        tracing::info!(
-            "Calling CubeJS SQL API at {} with query: {}",
-            sql_url,
-            query
-        );
-        let sql_response = client
-            .post(&sql_url)
-            .json(&serde_json::json!({
-                "query": query
-            }))
-            .send()
-            .await
-            .map_err(|e| SemanticQueryError::CubeJSError {
-                details: format!("Failed to call CubeJS SQL API: {e}"),
-            })?;
-
-        let sql_status = sql_response.status();
-        if !sql_status.is_success() {
-            let error_text = sql_response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(SemanticQueryError::CubeJSError {
-                details: format!("SQL API Status {}: {}", sql_status, error_text),
-            }
-            .into());
-        }
-
-        let sql_response_json: JsonValue =
-            sql_response
-                .json()
-                .await
-                .map_err(|e| SemanticQueryError::CubeJSError {
-                    details: format!("Failed to parse CubeJS SQL response JSON: {e}"),
-                })?;
-
-        // Extract SQL from response
-        // CubeJS SQL response structure: { "sql": { "status": "ok", "sql": ["SELECT ...", [parameters]] } }
-        let sql_obj =
-            sql_response_json
-                .get("sql")
-                .ok_or_else(|| SemanticQueryError::CubeJSError {
-                    details: format!(
-                        "CubeJS SQL response missing 'sql' object. Response: {}",
-                        sql_response_json
-                    ),
-                })?;
-
-        // Check status
-        if let Some(status) = sql_obj.get("status").and_then(|s| s.as_str())
-            && status != "ok"
-        {
-            let error_msg = sql_obj
-                .get("error")
-                .and_then(|e| e.as_str())
-                .unwrap_or("Unknown error");
-            return Err(SemanticQueryError::CubeJSError {
-                details: format!(
-                    "CubeJS SQL generation failed with status '{}': {}",
-                    status, error_msg
-                ),
-            }
-            .into());
-        }
-
-        let sql_array = sql_obj
-            .get("sql")
-            .and_then(|sql_array| sql_array.as_array())
-            .ok_or_else(
-                || SemanticQueryError::CubeJSError {
-                    details: format!("CubeJS SQL response missing expected 'sql' array structure. Expected: {{\"sql\": [\"SELECT ...\", []]}}, got: {}", sql_obj),
-                },
-            )?;
-
-        // Extract SQL query (first element)
-        let sql_template = sql_array.first().and_then(|s| s.as_str()).ok_or_else(|| {
-            SemanticQueryError::CubeJSError {
-                details: format!(
-                    "CubeJS SQL response missing SQL query string in sql[0]. Got: {:?}",
-                    sql_array
-                ),
-            }
-        })?;
-
-        // Extract parameters (second element)
-        let empty_params = Vec::new();
-        let parameters = sql_array
-            .get(1)
-            .and_then(|p| p.as_array())
-            .unwrap_or(&empty_params); // Default to empty if no parameters
-
-        // Substitute parameters into SQL query
-        let final_sql = self.substitute_sql_parameters(sql_template, parameters)?;
-
-        tracing::info!("Generated SQL: {}", final_sql);
-        tracing::debug!("Original SQL template: {}", sql_template);
-        tracing::debug!("Parameters: {:?}", parameters);
-
-        workflow_events::task::semantic_query::get_sql_output(&final_sql);
-
-        Ok(final_sql)
-    }
-
-    /// Substitute parameters into SQL query
-    /// CubeJS typically uses positional parameters like $1, $2, etc.
-    fn substitute_sql_parameters(
-        &self,
-        sql_template: &str,
-        parameters: &[JsonValue],
-    ) -> Result<String, OxyError> {
-        let mut result = sql_template.to_string();
-
-        // Replace positional parameters ($1, $2, etc.)
-        for (index, param) in parameters.iter().enumerate() {
-            let placeholder = format!("${}", index + 1);
-            let param_value = self.json_value_to_sql_literal(param)?;
-            result = result.replace(&placeholder, &param_value);
-        }
-
-        // Also handle ? placeholders (some drivers use this format)
-        let mut param_index = 0;
-        while result.contains('?') && param_index < parameters.len() {
-            let param_value = self.json_value_to_sql_literal(&parameters[param_index])?;
-            result = result.replacen('?', &param_value, 1);
-            param_index += 1;
-        }
-
-        Ok(result)
-    }
-
-    /// Convert a JSON value to a SQL literal string for parameter substitution.
-    ///
-    /// ## CubeJS Boolean Parameter Handling
-    ///
-    /// CubeJS converts boolean filter values to strings "true"/"false" in its parameter
-    /// arrays. This causes issues with computed boolean expressions in ClickHouse:
-    ///
-    /// - Direct column: `deleted = 'true'` works (ClickHouse casts string to Bool)
-    /// - Computed expr: `(deleted = true) = 'true'` fails (UInt8 result can't cast from string)
-    ///
-    /// We detect string "true"/"false" and output them as unquoted boolean literals.
-    ///
-    /// ## Edge Case: String columns with literal "true"/"false" values
-    ///
-    /// If you have a string column containing literal "true"/"false" values and need
-    /// to filter on them as strings, use the `in` filter instead of `eq`:
-    ///
-    /// ```yaml
-    /// # This will be treated as boolean (unquoted):
-    /// default_filters:
-    ///   - field: "string_column"
-    ///     eq:
-    ///       value: "true"
-    ///
-    /// # Use this for string comparison:
-    /// default_filters:
-    ///   - field: "string_column"
-    ///     in:
-    ///       values: ["true"]
-    /// ```
-    fn json_value_to_sql_literal(&self, value: &JsonValue) -> Result<String, OxyError> {
-        match value {
-            JsonValue::Null => Ok("NULL".to_string()),
-            JsonValue::Bool(b) => Ok(b.to_string()),
-            JsonValue::Number(n) => Ok(n.to_string()),
-            JsonValue::String(s) => {
-                // CubeJS converts boolean filter values to strings "true"/"false".
-                // Output as unquoted boolean literals for SQL compatibility with
-                // computed boolean expressions (see docstring for details).
-                if s == "true" || s == "false" {
-                    Ok(s.clone())
-                } else {
-                    // Escape single quotes and wrap in quotes
-                    let escaped = s.replace('\'', "''");
-                    Ok(format!("'{}'", escaped))
-                }
-            }
-            JsonValue::Array(arr) => {
-                // Convert array to SQL array literal
-                let elements = arr
-                    .iter()
-                    .map(|v| self.json_value_to_sql_literal(v))
-                    .collect::<Result<Vec<_>, _>>()?;
-                Ok(format!("ARRAY[{}]", elements.join(", ")))
-            }
-            JsonValue::Object(_) => {
-                // For objects, convert to JSON string literal
-                let json_str = serde_json::to_string(value).map_err(|e| {
-                    OxyError::RuntimeError(format!(
-                        "Failed to serialize JSON object parameter: {e}"
-                    ))
-                })?;
-                let escaped = json_str.replace('\'', "''");
-                Ok(format!("'{}'", escaped))
-            }
-        }
     }
 
     /// Execute SQL query directly using database connector and save results to file
@@ -1259,8 +659,655 @@ impl SemanticQueryExecutable {
     }
 }
 
+/// Compile a semantic query to SQL using the airlayer in-process engine.
+/// Replaces the previous CubeJS HTTP-based compilation.
+fn compile_with_airlayer(
+    task: &SemanticQueryTask,
+    topic_name: &str,
+    base_view: Option<&String>,
+    default_filters: Option<&Vec<oxy_semantic::TopicFilter>>,
+    views: &[oxy_semantic::View],
+    config_manager: &oxy::config::ConfigManager,
+    date_fields: &HashSet<String>,
+) -> Result<String, OxyError> {
+    // 1. Convert oxy-semantic views to airlayer views
+    let airlayer_views: Vec<airlayer::View> = views.iter().map(convert_view_to_airlayer).collect();
+
+    // 2. Build datasource→dialect map from oxy-internal's config databases
+    let dialects = build_dialect_map(config_manager);
+
+    // 3. Build airlayer SemanticLayer and engine
+    let layer = airlayer::SemanticLayer::new(airlayer_views, None);
+    let engine = airlayer::SemanticEngine::from_semantic_layer(layer, dialects)
+        .map_err(|e| OxyError::RuntimeError(format!("airlayer engine error: {e}")))?;
+
+    // 4. Convert query params to airlayer QueryRequest
+    let request = build_airlayer_query(task, topic_name, base_view, default_filters, date_fields)?;
+
+    // 5. Compile
+    let result = engine
+        .compile_query(&request)
+        .map_err(|e| OxyError::RuntimeError(format!("airlayer compilation error: {e}")))?;
+
+    // 6. Substitute parameter placeholders with actual values.
+    // Airlayer returns parameterized SQL (e.g. $1, ?, @p0) with a separate params vec,
+    // but oxy-internal's Engine trait only accepts raw SQL with no param binding.
+    let sql = substitute_params(&result.sql, &result.params);
+
+    Ok(sql)
+}
+
+/// Substitute positional parameter placeholders ($1, $2, ...) and ? placeholders
+/// with escaped string literals. This is needed because the Engine trait sends raw SQL
+/// to connectors with no separate param binding support.
+fn substitute_params(sql: &str, params: &[String]) -> String {
+    if params.is_empty() {
+        return sql.to_string();
+    }
+
+    // Check if the original SQL uses positional ($N or @pN) placeholders.
+    // $N/@pN and ? are mutually exclusive dialects — we must check the original SQL
+    // to avoid corrupting already-substituted values that contain '?' characters
+    // (e.g., URLs like 'https://example.com?q=test').
+    let uses_positional = (0..params.len())
+        .any(|i| sql.contains(&format!("${}", i + 1)) || sql.contains(&format!("@p{}", i)));
+
+    let mut result = sql.to_string();
+
+    if uses_positional {
+        // Replace $1, $2, ... and @p0, @p1, ... (Postgres/DuckDB/ClickHouse and BigQuery styles)
+        for (i, param) in params.iter().enumerate().rev() {
+            let escaped = param.replace('\'', "''");
+            let literal = format!("'{}'", escaped);
+            result = result.replace(&format!("${}", i + 1), &literal);
+            result = result.replace(&format!("@p{}", i), &literal);
+        }
+    } else {
+        // Replace ? placeholders (MySQL/Snowflake/Databricks/SQLite style)
+        let mut param_index = 0;
+        while result.contains('?') && param_index < params.len() {
+            let escaped = params[param_index].replace('\'', "''");
+            let literal = format!("'{}'", escaped);
+            result = result.replacen('?', &literal, 1);
+            param_index += 1;
+        }
+    }
+
+    result
+}
+
+/// Convert an oxy-semantic View to an airlayer View.
+fn convert_view_to_airlayer(view: &oxy_semantic::View) -> airlayer::View {
+    airlayer::View {
+        name: view.name.clone(),
+        description: view.description.clone(),
+        label: view.label.clone(),
+        datasource: view.datasource.clone(),
+        dialect: None, // Dialect comes from datasource mapping
+        table: view.table.clone(),
+        sql: view.sql.clone(),
+        entities: view
+            .entities
+            .iter()
+            .map(convert_entity_to_airlayer)
+            .collect(),
+        dimensions: view
+            .dimensions
+            .iter()
+            .map(convert_dimension_to_airlayer)
+            .collect(),
+        measures: view
+            .measures
+            .as_ref()
+            .map(|ms| ms.iter().map(convert_measure_to_airlayer).collect()),
+        // TODO: pass through segments when oxy-semantic adds support
+        segments: vec![],
+    }
+}
+
+fn convert_entity_to_airlayer(entity: &oxy_semantic::Entity) -> airlayer::Entity {
+    airlayer::Entity {
+        name: entity.name.clone(),
+        entity_type: match entity.entity_type {
+            oxy_semantic::EntityType::Primary => airlayer::schema::models::EntityType::Primary,
+            oxy_semantic::EntityType::Foreign => airlayer::schema::models::EntityType::Foreign,
+        },
+        description: Some(entity.description.clone()),
+        key: entity.key.clone(),
+        keys: entity.keys.clone(),
+        inherits_from: None,
+    }
+}
+
+fn convert_dimension_to_airlayer(dim: &oxy_semantic::Dimension) -> airlayer::Dimension {
+    airlayer::Dimension {
+        name: dim.name.clone(),
+        dimension_type: match dim.dimension_type {
+            oxy_semantic::DimensionType::String => airlayer::schema::models::DimensionType::String,
+            oxy_semantic::DimensionType::Number => airlayer::schema::models::DimensionType::Number,
+            oxy_semantic::DimensionType::Date => airlayer::schema::models::DimensionType::Date,
+            oxy_semantic::DimensionType::Datetime => {
+                airlayer::schema::models::DimensionType::Datetime
+            }
+            oxy_semantic::DimensionType::Boolean => {
+                airlayer::schema::models::DimensionType::Boolean
+            }
+        },
+        description: dim.description.clone(),
+        expr: dim.expr.clone(),
+        original_expr: dim.original_expr.clone(),
+        samples: dim.samples.clone(),
+        synonyms: dim.synonyms.clone(),
+        primary_key: None,
+        sub_query: None,
+        inherits_from: None,
+    }
+}
+
+fn convert_measure_to_airlayer(measure: &oxy_semantic::Measure) -> airlayer::Measure {
+    airlayer::Measure {
+        name: measure.name.clone(),
+        measure_type: match measure.measure_type {
+            oxy_semantic::MeasureType::Count => airlayer::schema::models::MeasureType::Count,
+            oxy_semantic::MeasureType::Sum => airlayer::schema::models::MeasureType::Sum,
+            oxy_semantic::MeasureType::Average => airlayer::schema::models::MeasureType::Average,
+            oxy_semantic::MeasureType::Min => airlayer::schema::models::MeasureType::Min,
+            oxy_semantic::MeasureType::Max => airlayer::schema::models::MeasureType::Max,
+            oxy_semantic::MeasureType::CountDistinct => {
+                airlayer::schema::models::MeasureType::CountDistinct
+            }
+            oxy_semantic::MeasureType::Median => airlayer::schema::models::MeasureType::Median,
+            oxy_semantic::MeasureType::Custom => airlayer::schema::models::MeasureType::Custom,
+        },
+        description: measure.description.clone(),
+        expr: measure.expr.clone(),
+        original_expr: measure.original_expr.clone(),
+        filters: measure.filters.as_ref().map(|fs| {
+            fs.iter()
+                .map(|f| airlayer::schema::models::MeasureFilter {
+                    expr: f.expr.clone(),
+                    original_expr: f.original_expr.clone(),
+                    description: f.description.clone(),
+                })
+                .collect()
+        }),
+        samples: measure.samples.clone(),
+        synonyms: measure.synonyms.clone(),
+        rolling_window: None,
+        inherits_from: None,
+    }
+}
+
+/// Build a DatasourceDialectMap from the oxy-internal config databases.
+fn build_dialect_map(
+    config_manager: &oxy::config::ConfigManager,
+) -> airlayer::DatasourceDialectMap {
+    let mut map = airlayer::DatasourceDialectMap::new();
+    let databases = config_manager.list_databases();
+
+    for db in databases {
+        let dialect_str = db.database_type.to_string();
+        if let Some(dialect) = airlayer::Dialect::from_str(&dialect_str) {
+            map.insert(&db.name, dialect);
+        }
+    }
+
+    // Use first database as default
+    if let Some(first_db) = databases.first() {
+        let dialect_str = first_db.database_type.to_string();
+        if let Some(dialect) = airlayer::Dialect::from_str(&dialect_str) {
+            map.set_default(dialect);
+        }
+    }
+
+    map
+}
+
+/// Build an airlayer QueryRequest from oxy-internal's SemanticQueryTask.
+fn build_airlayer_query(
+    task: &SemanticQueryTask,
+    topic_name: &str,
+    base_view: Option<&String>,
+    default_filters: Option<&Vec<oxy_semantic::TopicFilter>>,
+    date_fields: &HashSet<String>,
+) -> Result<airlayer::engine::query::QueryRequest, OxyError> {
+    use airlayer::engine::query::{OrderBy, QueryFilter, QueryRequest, TimeDimensionQuery};
+
+    let mut filters = Vec::new();
+
+    // Add default filters from topic
+    if let Some(default_filters) = default_filters {
+        for df in default_filters {
+            let field = qualify_field(&df.field, topic_name);
+            let (operator, values) =
+                convert_topic_filter_type(&df.filter_type, &field, date_fields)?;
+            filters.push(QueryFilter {
+                member: Some(field),
+                operator: Some(operator),
+                values,
+                and: None,
+                or: None,
+            });
+        }
+    }
+
+    // Add user-provided filters
+    for f in &task.query.filters {
+        let field = qualify_field(&f.field, topic_name);
+        let (operator, values) = convert_semantic_filter_type(&f.filter_type, &field, date_fields)?;
+        filters.push(QueryFilter {
+            member: Some(field),
+            operator: Some(operator),
+            values,
+            and: None,
+            or: None,
+        });
+    }
+
+    // Convert orders
+    let order: Vec<OrderBy> = task
+        .query
+        .orders
+        .iter()
+        .map(|o| OrderBy {
+            id: qualify_field(&o.field, topic_name),
+            desc: o.direction.to_lowercase() == "desc",
+        })
+        .collect();
+
+    // Convert time dimensions
+    let time_dimensions: Vec<TimeDimensionQuery> = task
+        .query
+        .time_dimensions
+        .iter()
+        .map(|td| {
+            let dimension = qualify_field(&td.dimension, topic_name);
+            let granularity = td.granularity.as_ref().map(|g| granularity_to_string(g));
+            TimeDimensionQuery {
+                dimension,
+                granularity,
+                date_range: None,
+            }
+        })
+        .collect();
+
+    // Build through hints from base_view
+    let through = if let Some(bv) = base_view {
+        vec![bv.clone()]
+    } else {
+        vec![]
+    };
+
+    Ok(QueryRequest {
+        measures: task.query.measures.clone(),
+        dimensions: task.query.dimensions.clone(),
+        filters,
+        // TODO: pass through segments when oxy-semantic adds support
+        segments: vec![],
+        time_dimensions,
+        order,
+        limit: task.query.limit,
+        offset: task.query.offset,
+        timezone: None,
+        // TODO: expose ungrouped option when oxy-semantic adds support
+        ungrouped: false,
+        through,
+    })
+}
+
+/// Qualify a field name with the topic name if not already qualified.
+fn qualify_field(field: &str, topic_name: &str) -> String {
+    if field.contains('.') {
+        field.to_string()
+    } else {
+        format!("{}.{}", topic_name, field)
+    }
+}
+
+/// Convert TimeGranularity to airlayer granularity string.
+fn granularity_to_string(g: &TimeGranularity) -> String {
+    match g {
+        TimeGranularity::Year => "year",
+        TimeGranularity::Quarter => "quarter",
+        TimeGranularity::Month => "month",
+        TimeGranularity::Week => "week",
+        TimeGranularity::Day => "day",
+        TimeGranularity::Hour => "hour",
+        TimeGranularity::Minute => "minute",
+        TimeGranularity::Second => "second",
+    }
+    .to_string()
+}
+
+/// Convert oxy_semantic::TopicFilterType to airlayer FilterOperator + values.
+fn convert_topic_filter_type(
+    filter_type: &oxy_semantic::TopicFilterType,
+    field: &str,
+    date_fields: &HashSet<String>,
+) -> Result<(airlayer::engine::query::FilterOperator, Vec<String>), OxyError> {
+    use airlayer::engine::query::FilterOperator;
+
+    match filter_type {
+        oxy_semantic::TopicFilterType::Eq(f) => Ok((
+            FilterOperator::Equals,
+            vec![json_value_to_string(&f.value, field, date_fields)?],
+        )),
+        oxy_semantic::TopicFilterType::Neq(f) => Ok((
+            FilterOperator::NotEquals,
+            vec![json_value_to_string(&f.value, field, date_fields)?],
+        )),
+        oxy_semantic::TopicFilterType::Gt(f) => Ok((
+            FilterOperator::Gt,
+            vec![json_value_to_string(&f.value, field, date_fields)?],
+        )),
+        oxy_semantic::TopicFilterType::Gte(f) => Ok((
+            FilterOperator::Gte,
+            vec![json_value_to_string(&f.value, field, date_fields)?],
+        )),
+        oxy_semantic::TopicFilterType::Lt(f) => Ok((
+            FilterOperator::Lt,
+            vec![json_value_to_string(&f.value, field, date_fields)?],
+        )),
+        oxy_semantic::TopicFilterType::Lte(f) => Ok((
+            FilterOperator::Lte,
+            vec![json_value_to_string(&f.value, field, date_fields)?],
+        )),
+        // airlayer's Equals/NotEquals with a Vec of values generates IN (...) / NOT IN (...) SQL
+        oxy_semantic::TopicFilterType::In(f) => {
+            let values = f
+                .values
+                .iter()
+                .map(|v| json_value_to_string(v, field, date_fields))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok((FilterOperator::Equals, values))
+        }
+        oxy_semantic::TopicFilterType::NotIn(f) => {
+            let values = f
+                .values
+                .iter()
+                .map(|v| json_value_to_string(v, field, date_fields))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok((FilterOperator::NotEquals, values))
+        }
+        oxy_semantic::TopicFilterType::InDateRange(f) => {
+            let from = json_value_to_string(&f.from, field, date_fields)?;
+            let to = json_value_to_string(&f.to, field, date_fields)?;
+            Ok((FilterOperator::InDateRange, vec![from, to]))
+        }
+        oxy_semantic::TopicFilterType::NotInDateRange(f) => {
+            let from = json_value_to_string(&f.from, field, date_fields)?;
+            let to = json_value_to_string(&f.to, field, date_fields)?;
+            Ok((FilterOperator::NotInDateRange, vec![from, to]))
+        }
+    }
+}
+
+/// Convert SemanticFilterType to airlayer FilterOperator + values.
+fn convert_semantic_filter_type(
+    filter_type: &SemanticFilterType,
+    field: &str,
+    date_fields: &HashSet<String>,
+) -> Result<(airlayer::engine::query::FilterOperator, Vec<String>), OxyError> {
+    use airlayer::engine::query::FilterOperator;
+
+    match filter_type {
+        SemanticFilterType::Eq(f) => Ok((
+            FilterOperator::Equals,
+            vec![json_value_to_string(&f.value, field, date_fields)?],
+        )),
+        SemanticFilterType::Neq(f) => Ok((
+            FilterOperator::NotEquals,
+            vec![json_value_to_string(&f.value, field, date_fields)?],
+        )),
+        SemanticFilterType::Gt(f) => Ok((
+            FilterOperator::Gt,
+            vec![json_value_to_string(&f.value, field, date_fields)?],
+        )),
+        SemanticFilterType::Gte(f) => Ok((
+            FilterOperator::Gte,
+            vec![json_value_to_string(&f.value, field, date_fields)?],
+        )),
+        SemanticFilterType::Lt(f) => Ok((
+            FilterOperator::Lt,
+            vec![json_value_to_string(&f.value, field, date_fields)?],
+        )),
+        SemanticFilterType::Lte(f) => Ok((
+            FilterOperator::Lte,
+            vec![json_value_to_string(&f.value, field, date_fields)?],
+        )),
+        SemanticFilterType::In(f) => {
+            let values = f
+                .values
+                .iter()
+                .map(|v| json_value_to_string(v, field, date_fields))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok((FilterOperator::Equals, values))
+        }
+        SemanticFilterType::NotIn(f) => {
+            let values = f
+                .values
+                .iter()
+                .map(|v| json_value_to_string(v, field, date_fields))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok((FilterOperator::NotEquals, values))
+        }
+        SemanticFilterType::InDateRange(f) => {
+            let from = json_value_to_string(&f.from, field, date_fields)?;
+            let to = json_value_to_string(&f.to, field, date_fields)?;
+            Ok((FilterOperator::InDateRange, vec![from, to]))
+        }
+        SemanticFilterType::NotInDateRange(f) => {
+            let from = json_value_to_string(&f.from, field, date_fields)?;
+            let to = json_value_to_string(&f.to, field, date_fields)?;
+            Ok((FilterOperator::NotInDateRange, vec![from, to]))
+        }
+    }
+}
+
+/// Convert a JSON value to a string suitable for airlayer filter values.
+/// Resolves relative date expressions for date fields.
+fn json_value_to_string(
+    value: &JsonValue,
+    field: &str,
+    date_fields: &HashSet<String>,
+) -> Result<String, OxyError> {
+    let s = match value {
+        JsonValue::String(s) => s.clone(),
+        JsonValue::Number(n) => n.to_string(),
+        JsonValue::Bool(b) => b.to_string(),
+        JsonValue::Null => {
+            return Err(OxyError::RuntimeError(format!(
+                "NULL filter value for field '{field}' is not supported"
+            )));
+        }
+        other => serde_json::to_string(other).unwrap_or_default(),
+    };
+
+    // Resolve relative dates for date fields
+    if date_fields.contains(field) {
+        return normalize_date_value(&s);
+    }
+
+    Ok(s)
+}
+
 pub fn build_semantic_query_executable() -> impl Executable<SemanticQueryTask, Response = Output> {
     ExecutableBuilder::new()
         .map(SemanticQueryTaskMapper)
         .executable(SemanticQueryExecutable::new())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- Basic functionality ---
+
+    #[test]
+    fn test_substitute_params_empty_params() {
+        let sql = "SELECT * FROM users WHERE id = $1";
+        assert_eq!(substitute_params(sql, &[]), sql);
+    }
+
+    #[test]
+    fn test_substitute_params_single_postgres() {
+        let result = substitute_params("SELECT * FROM users WHERE id = $1", &["42".to_string()]);
+        assert_eq!(result, "SELECT * FROM users WHERE id = '42'");
+    }
+
+    #[test]
+    fn test_substitute_params_multiple_postgres() {
+        let result = substitute_params(
+            "SELECT * FROM users WHERE id = $1 AND name = $2",
+            &["42".to_string(), "alice".to_string()],
+        );
+        assert_eq!(
+            result,
+            "SELECT * FROM users WHERE id = '42' AND name = 'alice'"
+        );
+    }
+
+    #[test]
+    fn test_substitute_params_single_bigquery() {
+        let result = substitute_params("SELECT * FROM users WHERE id = @p0", &["42".to_string()]);
+        assert_eq!(result, "SELECT * FROM users WHERE id = '42'");
+    }
+
+    #[test]
+    fn test_substitute_params_multiple_bigquery() {
+        let result = substitute_params(
+            "SELECT * FROM users WHERE id = @p0 AND name = @p1",
+            &["42".to_string(), "alice".to_string()],
+        );
+        assert_eq!(
+            result,
+            "SELECT * FROM users WHERE id = '42' AND name = 'alice'"
+        );
+    }
+
+    #[test]
+    fn test_substitute_params_question_marks_snowflake() {
+        let result = substitute_params(
+            "SELECT * FROM users WHERE id = ? AND name = ?",
+            &["42".to_string(), "alice".to_string()],
+        );
+        assert_eq!(
+            result,
+            "SELECT * FROM users WHERE id = '42' AND name = 'alice'"
+        );
+    }
+
+    // --- The prefix collision bug (the fix we're testing) ---
+
+    #[test]
+    fn test_substitute_params_postgres_prefix_collision_11_params() {
+        let params: Vec<String> = (1..=11).map(|i| format!("val{}", i)).collect();
+        let sql = "SELECT * FROM t WHERE a = $1 AND b = $2 AND c = $3 AND d = $4 \
+                   AND e = $5 AND f = $6 AND g = $7 AND h = $8 AND i = $9 AND j = $10 \
+                   AND k = $11";
+        let result = substitute_params(sql, &params);
+        assert_eq!(
+            result,
+            "SELECT * FROM t WHERE a = 'val1' AND b = 'val2' AND c = 'val3' AND d = 'val4' \
+             AND e = 'val5' AND f = 'val6' AND g = 'val7' AND h = 'val8' AND i = 'val9' AND j = 'val10' \
+             AND k = 'val11'"
+        );
+        // Key assertions: $11 must NOT become 'val1'1
+        assert!(!result.contains("'val1'1"));
+        assert!(result.contains("'val11'"));
+    }
+
+    #[test]
+    fn test_substitute_params_bigquery_prefix_collision_11_params() {
+        let params: Vec<String> = (0..11).map(|i| format!("val{}", i)).collect();
+        let sql = "SELECT * FROM t WHERE a = @p0 AND b = @p1 AND c = @p10";
+        let result = substitute_params(sql, &params);
+        assert_eq!(
+            result,
+            "SELECT * FROM t WHERE a = 'val0' AND b = 'val1' AND c = 'val10'"
+        );
+        assert!(!result.contains("'val1'0"));
+        assert!(result.contains("'val10'"));
+    }
+
+    #[test]
+    fn test_substitute_params_postgres_20_params() {
+        let params: Vec<String> = (1..=20).map(|i| format!("p{}", i)).collect();
+        let placeholders: Vec<String> = (1..=20).map(|i| format!("${}", i)).collect();
+        let sql = format!("SELECT {}", placeholders.join(", "));
+        let result = substitute_params(&sql, &params);
+        let expected_vals: Vec<String> = (1..=20).map(|i| format!("'p{}'", i)).collect();
+        let expected = format!("SELECT {}", expected_vals.join(", "));
+        assert_eq!(result, expected);
+    }
+
+    // --- SQL injection / escaping ---
+
+    #[test]
+    fn test_substitute_params_escapes_single_quotes() {
+        let result = substitute_params(
+            "SELECT * FROM users WHERE name = $1",
+            &["O'Brien".to_string()],
+        );
+        assert_eq!(result, "SELECT * FROM users WHERE name = 'O''Brien'");
+    }
+
+    #[test]
+    fn test_substitute_params_escapes_multiple_quotes() {
+        let result = substitute_params(
+            "SELECT * FROM t WHERE a = $1",
+            &["it's a 'test'".to_string()],
+        );
+        assert_eq!(result, "SELECT * FROM t WHERE a = 'it''s a ''test'''");
+    }
+
+    // --- Dialect detection: $N/@pN and ? are mutually exclusive ---
+
+    #[test]
+    fn test_substitute_params_mixed_dollar_and_question() {
+        // When $N placeholders are present, the SQL is treated as positional dialect.
+        // The ? is NOT treated as a placeholder — it's left as-is.
+        let result = substitute_params("SELECT $1, ?", &["a".to_string(), "b".to_string()]);
+        // $1 → 'a', ? left untouched because positional dialect detected
+        assert_eq!(result, "SELECT 'a', ?");
+    }
+
+    #[test]
+    fn test_substitute_params_positional_value_with_question_mark() {
+        // Critical: substituted values containing '?' must not be treated as placeholders.
+        // e.g., a URL with query params: https://example.com?q=test
+        let result = substitute_params(
+            "SELECT * FROM t WHERE url = $1 AND status = $2",
+            &[
+                "https://example.com?q=test".to_string(),
+                "active".to_string(),
+            ],
+        );
+        assert_eq!(
+            result,
+            "SELECT * FROM t WHERE url = 'https://example.com?q=test' AND status = 'active'"
+        );
+    }
+
+    // --- Edge cases ---
+
+    #[test]
+    fn test_substitute_params_repeated_placeholder() {
+        let result =
+            substitute_params("SELECT * FROM t WHERE a = $1 OR b = $1", &["x".to_string()]);
+        assert_eq!(result, "SELECT * FROM t WHERE a = 'x' OR b = 'x'");
+    }
+
+    #[test]
+    fn test_substitute_params_no_placeholders_in_sql() {
+        let result = substitute_params("SELECT 1", &["unused".to_string()]);
+        assert_eq!(result, "SELECT 1");
+    }
+
+    #[test]
+    fn test_substitute_params_question_mark_fewer_params() {
+        let result = substitute_params("SELECT ? , ? , ?", &["a".to_string(), "b".to_string()]);
+        // Only first two ? get replaced; third remains
+        assert_eq!(result, "SELECT 'a' , 'b' , ?");
+    }
 }

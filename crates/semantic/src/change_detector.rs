@@ -423,9 +423,7 @@ impl ChangeDetector {
 }
 
 /// Helper to compute hash of database configuration from HashMap
-pub fn hash_database_config(
-    databases: &HashMap<String, crate::cube::models::DatabaseDetails>,
-) -> String {
+pub fn hash_database_config(databases: &HashMap<String, crate::models::DatabaseDetails>) -> String {
     // Convert to BTreeMap for deterministic ordering before serializing
     let ordered: BTreeMap<_, _> = databases.iter().collect();
     let json_str = serde_json::to_string(&ordered).unwrap_or_default();
@@ -600,7 +598,7 @@ mod tests {
 
     #[test]
     fn test_hash_database_config() {
-        use crate::cube::models::DatabaseDetails;
+        use crate::models::DatabaseDetails;
 
         let mut databases = HashMap::new();
         databases.insert(

@@ -1,7 +1,6 @@
 # This docker-compose setup runs Oxy from the examples/ folder
 # - The examples/ folder contains sample semantic layer definitions, config.yml, and workflows
-# - Both services mount examples/ as their working directory
-# - The semantic engine automatically generates Cube.js config from examples/semantics/
+# - Semantic SQL compilation is handled in-process by airlayer (no external engine needed)
 # - Copy examples/.env.example to examples/.env and configure your database credentials
 
 services:
@@ -21,23 +20,10 @@ services:
     environment:
       - OXY_STATE_DIR=/var/lib/oxy/data
       - OXY_DATABASE_URL=postgresql://admin:password@postgres:5432/default
-      - CUBEJS_API_URL=http://semantic-engine:4000
     working_dir: /app
     depends_on:
       postgres:
         condition: service_healthy
-
-  semantic-engine:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: semantic-engine
-    ports:
-      - "4000:4000"
-    volumes:
-      - ./examples:/app:rw
-    working_dir: /app
-
 
   # Example database (replace with your actual database)
   postgres:

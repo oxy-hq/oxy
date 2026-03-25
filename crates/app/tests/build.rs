@@ -19,25 +19,9 @@ fn setup_command() -> Command {
 
 #[test]
 #[serial]
-fn test_build_creates_semantics_output() {
+fn test_build_succeeds() {
     let mut cmd = setup_command();
     cmd.assert().success();
-
-    // Verify the .semantics directory exists after build
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let workspace_dir = PathBuf::from(manifest_dir)
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf();
-    let examples_dir = workspace_dir.join("examples");
-    let semantics_dir = examples_dir.join(".semantics");
-
-    assert!(
-        semantics_dir.exists(),
-        "Semantics output directory was not created"
-    );
 }
 
 #[test]

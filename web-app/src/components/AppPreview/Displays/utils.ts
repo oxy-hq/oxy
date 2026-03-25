@@ -98,7 +98,15 @@ function formatDateTime(value: number | string, tz?: string | null): string {
   return dayjs.utc(value).format("YYYY-MM-DD HH:mm");
 }
 
-function formatTime(value: number | string): string {
+function formatTime(value: number | bigint | string): string {
+  if (typeof value === "bigint") {
+    // DuckDB returns TIME as BigInt microseconds since midnight
+    const totalSeconds = Number(value / 1000000n);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
   return dayjs.utc(value).format("HH:mm:ss");
 }
 

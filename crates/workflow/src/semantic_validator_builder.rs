@@ -30,10 +30,6 @@ pub enum SemanticQueryError {
     MetadataMissing {
         path: String,
     },
-    /// CubeJS returned an error payload or non-success status
-    CubeJSError {
-        details: String,
-    },
     UnsupportedFilters {
         details: String,
     },
@@ -122,9 +118,6 @@ impl std::fmt::Display for SemanticQueryError {
             SemanticQueryError::MetadataMissing { path } => {
                 write!(f, "Semantic metadata not found at path: {}", path)
             }
-            SemanticQueryError::CubeJSError { details } => {
-                write!(f, "CubeJS API error: {}", details)
-            }
             SemanticQueryError::UnsupportedFilters { details } => {
                 write!(f, "Unsupported filter configuration: {}", details)
             }
@@ -190,9 +183,7 @@ impl From<SemanticQueryError> for OxyError {
             // Configuration / environment issues
             SQE::MetadataMissing { .. } => OxyError::ConfigurationError(err.to_string()),
             // Execution / runtime failures
-            SQE::CubeJSError { .. } | SQE::ExecutionFailed { .. } => {
-                OxyError::RuntimeError(err.to_string())
-            }
+            SQE::ExecutionFailed { .. } => OxyError::RuntimeError(err.to_string()),
         }
     }
 }

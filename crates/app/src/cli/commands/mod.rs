@@ -25,10 +25,9 @@ use crate::server::service::sync::sync_databases;
 use ::oxy::adapters::project::builder::ProjectBuilder;
 use ::oxy::adapters::runs::RunsManager;
 use ::oxy::adapters::secrets::SecretsManager;
-use ::oxy::config::model::{AppConfig, DatabaseType};
+use ::oxy::config::model::AppConfig;
 use ::oxy::config::test_config::TestFileConfig;
 use ::oxy::config::*;
-use ::oxy::database::docker;
 use ::oxy::sentry_config;
 use ::oxy::theme::StyledText;
 use ::oxy::theme::detect_true_color_support;
@@ -38,13 +37,9 @@ use clap::Parser;
 use make::handle_make_command;
 use model::AgentConfig;
 use model::{Config, Semantics, Workflow};
-use oxy_globals::GlobalRegistry;
-use oxy_semantic::cube::models::DatabaseDetails;
-use oxy_semantic::cube::translator::process_semantic_layer_to_cube;
 use oxy_shared::errors::OxyError;
 use serve::start_server_and_web_app;
 use std::backtrace;
-use std::collections::HashMap;
 use std::error::Error;
 use std::path::PathBuf;
 use std::process::Command;
@@ -55,93 +50,6 @@ use init::init;
 
 use dotenv;
 use tracing::{debug, error};
-
-// Constants
-const CUBE_CONFIG_DIR_PATH: &str = ".semantics";
-
-/// Get the cube configuration directory path (inside the project directory)
-pub fn get_cube_config_dir() -> Result<PathBuf, OxyError> {
-    Ok(resolve_local_project_path()?.join(CUBE_CONFIG_DIR_PATH))
-}
-
-/// Clear all contents of a directory without removing the directory itself
-///
-/// This is useful when the directory is mounted as a Docker volume, where
-/// removing the directory itself would fail with "Device or resource busy"
-fn clear_directory_contents(dir_path: &PathBuf) -> Result<(), OxyError> {
-    for entry in std::fs::read_dir(dir_path)
-        .map_err(|e| OxyError::RuntimeError(format!("Failed to read directory: {}", e)))?
-    {
-        let entry = entry.map_err(|e| {
-            OxyError::RuntimeError(format!("Failed to read directory entry: {}", e))
-        })?;
-        let path = entry.path();
-        let result = if path.is_dir() {
-            std::fs::remove_dir_all(&path)
-        } else {
-            std::fs::remove_file(&path)
-        };
-        if let Err(e) = result {
-            if e.kind() == std::io::ErrorKind::PermissionDenied {
-                return Err(OxyError::RuntimeError(format!(
-                    "Permission denied removing '{}'. This commonly happens on WSL/Linux when \
-                     container-created files are owned by root. Fix with:\n  \
-                     sudo chown -R $(id -u):$(id -g) {}",
-                    path.display(),
-                    dir_path.display()
-                )));
-            }
-            return Err(OxyError::RuntimeError(format!(
-                "Failed to remove {}: {}",
-                path.display(),
-                e
-            )));
-        }
-    }
-    Ok(())
-}
-
-/// Clear directory contents but preserve specified files/directories
-///
-/// This is used for selective clearing during incremental builds.
-///
-/// # Arguments
-/// * `dir_path` - Directory to clear
-/// * `preserve` - List of file/directory names to preserve
-fn clear_directory_contents_selective(
-    dir_path: &PathBuf,
-    preserve: &[&str],
-) -> Result<(), OxyError> {
-    for entry in std::fs::read_dir(dir_path)
-        .map_err(|e| OxyError::RuntimeError(format!("Failed to read directory: {}", e)))?
-    {
-        let entry = entry.map_err(|e| {
-            OxyError::RuntimeError(format!("Failed to read directory entry: {}", e))
-        })?;
-        let path = entry.path();
-        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-
-        // Skip preserved files/directories
-        if preserve.contains(&name) {
-            continue;
-        }
-
-        if path.is_dir() {
-            std::fs::remove_dir_all(&path).map_err(|e| {
-                OxyError::RuntimeError(format!(
-                    "Failed to remove directory {}: {}",
-                    path.display(),
-                    e
-                ))
-            })?;
-        } else {
-            std::fs::remove_file(&path).map_err(|e| {
-                OxyError::RuntimeError(format!("Failed to remove file {}: {}", path.display(), e))
-            })?;
-        }
-    }
-    Ok(())
-}
 
 #[derive(Parser, Debug)]
 #[clap(
@@ -348,17 +256,6 @@ enum SubCommand {
     /// Remove cached data, vector embeddings, and temporary files to reset
     /// the project to a clean state. Useful for troubleshooting data corruption.
     Clean(CleanArgs),
-    /// Start the semantic engine (Cube.js) server for semantic layer queries
-    ///
-    /// Launch a Cube.js server that provides access to your semantic layer
-    /// with pre-configured data sources and schema definitions.
-    SemanticEngine(SemanticEngineArgs),
-    /// Prepare Cube.js configuration from semantic layer without starting server
-    ///
-    /// Generate Cube.js schema files from your semantic layer definitions.
-    /// Useful for deploying to containerized environments or when running
-    /// Cube.js separately from the Oxy CLI.
-    PrepareSemanticEngine(PrepareSemanticEngineArgs),
     /// Start A2A (Agent-to-Agent) protocol server
     ///
     /// Launch an A2A server that exposes configured Oxy agents for
@@ -441,13 +338,6 @@ pub struct BuildArgs {
     /// and rebuild the entire search index from scratch.
     #[clap(long, short = 'd', default_value_t = false)]
     drop_all_tables: bool,
-
-    /// Force full rebuild of semantic layer (ignore incremental manifest)
-    ///
-    /// This will clear the .semantics directory completely (including .cubestore cache)
-    /// and regenerate all CubeJS files from scratch.
-    #[clap(long, short = 'f', default_value_t = false)]
-    force: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -577,49 +467,6 @@ pub enum CleanTarget {
     Cache,
 }
 
-#[derive(Parser, Debug)]
-pub struct SemanticEngineArgs {
-    /// Port number for the Cube.js server
-    ///
-    /// Specify which port to bind the Cube.js semantic engine.
-    /// Default is 4000 if not specified.
-    #[clap(long, default_value_t = 4000)]
-    port: u16,
-    /// Host address to bind the Cube.js server
-    ///
-    /// Specify which host address to bind the Cube.js server.
-    /// Default is 0.0.0.0 to listen on all interfaces.
-    #[clap(long, default_value = "0.0.0.0")]
-    host: String,
-    /// Enable development mode with hot reloading
-    ///
-    /// When enabled, Cube.js will run in development mode with
-    /// automatic schema reloading and enhanced debugging.
-    #[clap(long, default_value_t = true)]
-    dev_mode: bool,
-    /// Set log level for Cube.js server
-    ///
-    /// Control the verbosity of Cube.js logging output.
-    /// Options: error, warn, info, debug, trace
-    #[clap(long, default_value = "info")]
-    log_level: String,
-}
-
-#[derive(Parser, Debug)]
-pub struct PrepareSemanticEngineArgs {
-    /// Output directory for generated Cube.js configuration
-    ///
-    /// Specify where to write the generated Cube.js schema files.
-    /// If not specified, uses the default .semantics directory.
-    #[clap(long)]
-    output_dir: Option<PathBuf>,
-    /// Force regeneration even if configuration already exists
-    ///
-    /// Clean and regenerate all Cube.js configuration files.
-    #[clap(long, default_value_t = false)]
-    force: bool,
-}
-
 /// Validates a single file based on its extension.
 fn validate_single_file(file_path: &PathBuf, config: &Config) -> Result<(), String> {
     let file_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -693,8 +540,6 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             SubCommand::Ask(_) => "ask",
             SubCommand::Seed(_) => "seed",
             SubCommand::Clean(_) => "clean",
-            SubCommand::SemanticEngine(_) => "semantic-engine",
-            SubCommand::PrepareSemanticEngine(_) => "prepare-semantic-engine",
             SubCommand::A2a(_) => "a2a",
             SubCommand::Looker(_) => "looker",
             SubCommand::Intent(_) => "intent",
@@ -806,146 +651,15 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 .await?;
             let secrets_manager = SecretsManager::from_environment()?;
 
-            // Run change detection for both semantic layer and embeddings
-            let semantic_dir = resolve_semantics_dir()?;
-            let target_dir = get_cube_config_dir()?;
+            // Build vector embeddings
+            reindex(ReindexInput {
+                config: config_manager.clone(),
+                secrets_manager,
+                drop_all_tables: build_args.drop_all_tables,
+            })
+            .await?;
 
-            // Ensure the target directory exists
-            if !target_dir.exists() {
-                std::fs::create_dir_all(&target_dir).map_err(|e| {
-                    OxyError::RuntimeError(format!("Failed to create cube directory: {}", e))
-                })?;
-            }
-
-            let changes = if semantic_dir.exists() {
-                use oxy_semantic::{ChangeDetector, hash_database_config};
-
-                let config_manager_clone = config_manager.clone();
-                let databases: HashMap<String, DatabaseDetails> = config_manager_clone
-                    .list_databases()
-                    .iter()
-                    .map(|db| {
-                        // Extract dataset_id for Domo databases
-                        let dataset_id = match &db.database_type {
-                            DatabaseType::DOMO(domo) => Some(domo.dataset_id.clone()),
-                            _ => None,
-                        };
-
-                        (
-                            db.name.clone(),
-                            DatabaseDetails {
-                                name: db.name.clone(),
-                                db_type: db.dialect(),
-                                dataset_id,
-                            },
-                        )
-                    })
-                    .collect();
-
-                // Compute hashes for change detection
-                let config_hash = hash_database_config(&databases);
-                let globals_dir = resolve_local_project_path()?.join(".oxy/globals");
-                let globals_hash =
-                    oxy_semantic::hash_globals_registry(&globals_dir).unwrap_or_default();
-
-                // Run change detection
-                let change_detector = ChangeDetector::new(&semantic_dir, &target_dir);
-                change_detector
-                    .detect_changes(config_hash, globals_hash, build_args.force)
-                    .map_err(|e| {
-                        OxyError::RuntimeError(format!("Change detection failed: {}", e))
-                    })?
-            } else {
-                // No semantic dir, create a result that requires embedding rebuild only
-                use oxy_semantic::ChangeDetectionResult;
-                ChangeDetectionResult {
-                    views_to_rebuild: Vec::new(),
-                    topics_to_rebuild: Vec::new(),
-                    files_to_delete: Vec::new(),
-                    requires_full_rebuild: false,
-                    full_rebuild_reason: None,
-                    requires_embedding_rebuild: true,
-                }
-            };
-
-            // Build vector embeddings if needed
-            if changes.requires_embedding_rebuild || changes.requires_full_rebuild {
-                reindex(ReindexInput {
-                    config: config_manager.clone(),
-                    secrets_manager,
-                    drop_all_tables: build_args.drop_all_tables,
-                })
-                .await?;
-            }
-
-            // Process semantic layer to generate CubeJS schema
-            if semantic_dir.exists() {
-                let config_manager_clone = config_manager.clone();
-                let databases: HashMap<String, DatabaseDetails> = config_manager_clone
-                    .list_databases()
-                    .iter()
-                    .map(|db| {
-                        // Extract dataset_id for Domo databases
-                        let dataset_id = match &db.database_type {
-                            DatabaseType::DOMO(domo) => Some(domo.dataset_id.clone()),
-                            _ => None,
-                        };
-
-                        (
-                            db.name.clone(),
-                            DatabaseDetails {
-                                name: db.name.clone(),
-                                db_type: db.dialect(),
-                                dataset_id,
-                            },
-                        )
-                    })
-                    .collect();
-
-                if changes.requires_full_rebuild {
-                    // Full rebuild required
-                    let reason = changes
-                        .full_rebuild_reason
-                        .unwrap_or_else(|| "Unknown reason".to_string());
-                    println!("🔨 Full rebuild required: {}", reason);
-
-                    // Delete the manifest FIRST to ensure a fresh build
-                    // If the rebuild fails, the missing manifest forces a retry next time
-                    let manifest_path = target_dir.join(".build_manifest.json");
-                    if manifest_path.exists() {
-                        std::fs::remove_file(&manifest_path).map_err(|e| {
-                            OxyError::RuntimeError(format!("Failed to remove manifest: {}", e))
-                        })?;
-                    }
-
-                    // Clear directory - don't preserve the manifest
-                    if build_args.force {
-                        // Force rebuild: clear everything including .cubestore
-                        clear_directory_contents_selective(&target_dir, &[])?;
-                    } else {
-                        // Natural full rebuild (globals/config changed): preserve .cubestore
-                        clear_directory_contents_selective(&target_dir, &[".cubestore"])?;
-                    }
-
-                    // Now attempt the build - manifest will be written by semantic layer processor
-                    process_semantic_layer_to_cube(
-                        semantic_dir,
-                        target_dir,
-                        databases,
-                        config_manager.get_globals_registry(),
-                    )
-                    .await
-                    .map_err(|e| {
-                        OxyError::RuntimeError(format!("Semantic layer build failed: {}", e))
-                    })?;
-                } else if !changes.requires_embedding_rebuild {
-                    // Nothing changed at all (no semantic changes, no embedding changes)
-                    println!("✅ No changes detected, build is up to date");
-                } else {
-                    // Only embeddings changed, semantic layer is up to date
-                    println!("✅ Semantic layer is up to date (embeddings rebuilt)");
-                }
-            }
+            println!("✅ Build complete");
         }
         Some(SubCommand::VecSearch(search_args)) => {
             sentry_config::add_agent_context(&search_args.agent, Some(&search_args.question));
@@ -1173,14 +887,6 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
 
         Some(SubCommand::Clean(clean_args)) => {
             handle_clean_command(clean_args).await?;
-        }
-
-        Some(SubCommand::SemanticEngine(semantic_args)) => {
-            handle_semantic_engine_command(semantic_args).await?;
-        }
-
-        Some(SubCommand::PrepareSemanticEngine(prepare_args)) => {
-            handle_prepare_semantic_engine_command(prepare_args).await?;
         }
 
         Some(SubCommand::Looker(looker_args)) => {
@@ -1731,228 +1437,5 @@ async fn handle_clean_command(clean_args: CleanArgs) -> Result<(), OxyError> {
             clean_cache(true, &config_manager).await?;
         }
     }
-    Ok(())
-}
-
-async fn handle_semantic_engine_command(semantic_args: SemanticEngineArgs) -> Result<(), OxyError> {
-    sentry_config::add_operation_context("semantic-engine", None);
-
-    // Note: The semantic engine does NOT require PostgreSQL - it only generates SQL
-    // for target databases (BigQuery, Snowflake, DuckDB, etc.). Database connections
-    // are handled by Oxy, not by CubeJS.
-
-    // Check if Docker is available
-    println!("{}", "🔍 Checking container runtime availability...".text());
-    docker::check_docker_available().await?;
-    println!("{}", "   ✓ Container runtime is available\n".success());
-
-    // Ensure we're in a valid project
-    let project_path = resolve_local_project_path()?;
-
-    // Get config to access globals registry
-    let config = ConfigBuilder::new()
-        .with_project_path(&project_path)?
-        .build()
-        .await?;
-
-    // Ensure cube configuration directory exists
-    let cube_config_dir = get_cube_config_dir()?;
-
-    // Always regenerate configuration for isolation
-    generate_cube_config(cube_config_dir.clone(), true, config.get_globals_registry()).await?;
-
-    let display_host = if semantic_args.host == "0.0.0.0" {
-        "localhost"
-    } else {
-        &semantic_args.host
-    };
-
-    println!(
-        "{} {}",
-        "🚀 Starting Cube.js semantic engine at".text(),
-        format!("http://{}:{}", display_host, semantic_args.port).secondary()
-    );
-    println!(
-        "{}",
-        "📊 Cube.js Developer Playground will be available for testing queries".info()
-    );
-    println!(
-        "{}",
-        "Press Ctrl+C to stop the semantic engine\n".tertiary()
-    );
-
-    // Start Cube.js container
-    println!("{}", "🐳 Starting Cube.js container...".text());
-    println!("{}", format!("   Container: {}", "oxy-cubejs").tertiary());
-    println!(
-        "{}",
-        format!("   Image: {}", "cubejs/cube:v1.3.81").tertiary()
-    );
-    println!(
-        "{}",
-        format!("   Port: {}:4000", semantic_args.port).tertiary()
-    );
-
-    docker::start_cubejs_container(
-        cube_config_dir.display().to_string(),
-        project_path.display().to_string(),
-        semantic_args.dev_mode,
-        semantic_args.log_level.clone(),
-    )
-    .await?;
-
-    println!("{}", "   ✓ Cube.js container started\n".success());
-
-    // Wait for Cube.js to be ready
-    println!("{}", "⏳ Waiting for Cube.js to be ready...".text());
-    docker::wait_for_cubejs_ready(docker::CUBEJS_READY_TIMEOUT_SECS).await?;
-    println!("{}", "✓ Cube.js is ready".success());
-    println!(
-        "{}",
-        format!(
-            "   Access at: http://{}:{}\n",
-            display_host, semantic_args.port
-        )
-        .tertiary()
-    );
-
-    println!("{}", "💡 Useful Docker Commands:".text());
-    println!(
-        "{}",
-        "   View logs:        docker logs oxy-cubejs".secondary()
-    );
-    println!(
-        "{}",
-        "   Follow logs:      docker logs -f oxy-cubejs".secondary()
-    );
-    println!(
-        "{}",
-        "   Stop container:   docker stop oxy-cubejs".secondary()
-    );
-    println!();
-
-    // Wait for Ctrl+C signal
-    println!("{}", "Container is running. Press Ctrl+C to stop...".text());
-    tokio::signal::ctrl_c().await.map_err(|e| {
-        OxyError::RuntimeError(format!("Failed to listen for shutdown signal: {}", e))
-    })?;
-
-    println!("\n{}", "🛑 Stopping Cube.js container...".text());
-    docker::stop_cubejs_container().await?;
-    println!("{}", "   ✓ Cube.js container stopped".success());
-
-    Ok(())
-}
-
-/// Generate Cube.js configuration from semantic layer
-pub async fn generate_cube_config(
-    cube_config_dir: PathBuf,
-    force: bool,
-    globals_registry: GlobalRegistry,
-) -> Result<(), OxyError> {
-    // Ensure we're in a valid project
-    let project_path = resolve_local_project_path()?;
-
-    // Check if semantic layer exists
-    let semantic_dir = resolve_semantics_dir()?;
-    if !semantic_dir.exists() {
-        return Err(OxyError::ConfigurationError(
-            "No semantic layer found. Please create a 'semantics' directory with your semantic definitions.".to_string()
-        ));
-    }
-
-    // Get config first to get database details
-    let config = ConfigBuilder::new()
-        .with_project_path(&project_path)?
-        .build()
-        .await?;
-
-    if cube_config_dir.exists() && !force {
-        println!(
-            "✅ Cube.js configuration already exists at {}",
-            cube_config_dir.display()
-        );
-        return Ok(());
-    }
-
-    if cube_config_dir.exists() {
-        // Clean up existing cube directory contents and regenerate
-        println!("🧹 Cleaning existing Cube.js configuration...");
-        // Instead of removing the directory itself (which fails when mounted as a volume),
-        // remove all contents within it
-        clear_directory_contents(&cube_config_dir)?;
-    }
-
-    println!("🔄 Generating Cube.js configuration from semantic layer...");
-
-    // Get database details from config
-    let databases: HashMap<String, DatabaseDetails> = config
-        .list_databases()
-        .iter()
-        .map(|db| {
-            // Extract dataset_id for Domo databases
-            let dataset_id = match &db.database_type {
-                DatabaseType::DOMO(domo) => Some(domo.dataset_id.clone()),
-                _ => None,
-            };
-
-            (
-                db.name.clone(),
-                DatabaseDetails {
-                    name: db.name.clone(),
-                    db_type: db.dialect(),
-                    dataset_id,
-                },
-            )
-        })
-        .collect();
-
-    // Process semantic layer to generate CubeJS schema
-    process_semantic_layer_to_cube(
-        semantic_dir.clone(),
-        cube_config_dir.clone(),
-        databases,
-        globals_registry,
-    )
-    .await?;
-
-    println!(
-        "✅ Cube.js configuration generated successfully at {}",
-        cube_config_dir.display()
-    );
-    Ok(())
-}
-
-async fn handle_prepare_semantic_engine_command(
-    prepare_args: PrepareSemanticEngineArgs,
-) -> Result<(), OxyError> {
-    sentry_config::add_operation_context("prepare-semantic-engine", None);
-
-    let cube_config_dir = prepare_args
-        .output_dir
-        .unwrap_or_else(|| get_cube_config_dir().unwrap());
-
-    let config_manager = ConfigBuilder::new()
-        .with_project_path(&resolve_local_project_path()?)?
-        .build()
-        .await?;
-
-    generate_cube_config(
-        cube_config_dir,
-        prepare_args.force,
-        config_manager.get_globals_registry(),
-    )
-    .await?;
-
-    println!();
-    println!(
-        "{}",
-        "📦 Cube.js configuration is ready for deployment".text()
-    );
-    println!(
-        "{}",
-        "You can now run Cube.js natively or in a container using the generated config".tertiary()
-    );
-
     Ok(())
 }

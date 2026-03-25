@@ -43,12 +43,6 @@ const OTEL_IMAGE: &str = "otel/opentelemetry-collector-contrib:0.144.0";
 const OTEL_GRPC_PORT: u16 = 4317;
 const OTEL_HTTP_PORT: u16 = 4318;
 
-/// Docker Cube.js configuration constants
-const CUBEJS_CONTAINER_NAME: &str = "oxy-cubejs";
-const CUBEJS_IMAGE: &str = "cubejs/cube:v1.3.81";
-const CUBEJS_PORT: u16 = 4000;
-pub const CUBEJS_READY_TIMEOUT_SECS: u64 = 30;
-
 /// Docker network for enterprise services
 const ENTERPRISE_NETWORK: &str = "oxy-enterprise";
 
@@ -764,198 +758,11 @@ pub async fn stop_otel_collector_container() -> Result<(), OxyError> {
     }
 }
 
-/// Start the Cube.js semantic engine container.
-/// Containers are cleaned before startup, so this always creates fresh.
-pub async fn start_cubejs_container(
-    cube_config_dir: String,
-    project_path: String,
-    dev_mode: bool,
-    log_level: String,
-) -> Result<(), OxyError> {
-    info!("Creating Cube.js container...");
-    let docker = get_docker_client().await?;
-
-    ensure_enterprise_network().await?;
-    pull_image(&docker, CUBEJS_IMAGE).await?;
-
-    // Configure port bindings
-    let mut port_bindings = HashMap::new();
-    port_bindings.insert(
-        "4000/tcp".to_string(),
-        Some(vec![PortBinding {
-            host_ip: Some("0.0.0.0".to_string()),
-            host_port: Some(CUBEJS_PORT.to_string()),
-        }]),
-    );
-
-    // Configure volume bindings
-    let binds = vec![
-        format!("{}:/cube/conf", cube_config_dir),
-        format!("{}/.db:/cube/.db", project_path),
-    ];
-
-    let host_config = HostConfig {
-        port_bindings: Some(port_bindings),
-        binds: Some(binds),
-        network_mode: Some(ENTERPRISE_NETWORK.to_string()),
-        ..Default::default()
-    };
-
-    // Configure environment variables
-    // Note: CUBEJS_DB_URL is NOT needed - the semantic engine only generates SQL,
-    // it doesn't execute queries. Database connections are handled by Oxy.
-    let env: Vec<String> = vec![
-        format!("CUBEJS_DEV_MODE={}", dev_mode),
-        format!("CUBEJS_LOG_LEVEL={}", log_level),
-    ];
-
-    // Run as the host user's UID:GID so bind-mounted files are owned by the host user.
-    // This prevents permission issues (especially on WSL) where container-created files
-    // end up owned by root and can't be cleaned up by the host user.
-    #[cfg(unix)]
-    let user = {
-        let uid = unsafe { libc::getuid() };
-        let gid = unsafe { libc::getgid() };
-        Some(format!("{}:{}", uid, gid))
-    };
-    #[cfg(not(unix))]
-    let user: Option<String> = None;
-
-    let config = ContainerCreateBody {
-        image: Some(CUBEJS_IMAGE.to_string()),
-        env: Some(env),
-        hostname: Some("cubejs".to_string()),
-        host_config: Some(host_config),
-        user,
-        ..Default::default()
-    };
-
-    let options = CreateContainerOptions {
-        name: Some(CUBEJS_CONTAINER_NAME.to_string()),
-        ..Default::default()
-    };
-
-    docker
-        .create_container(Some(options), config)
-        .await
-        .map_err(|e| {
-            OxyError::InitializationError(format!("Failed to create Cube.js container: {}", e))
-        })?;
-
-    docker
-        .start_container(CUBEJS_CONTAINER_NAME, None::<StartContainerOptions>)
-        .await
-        .map_err(|e| {
-            OxyError::InitializationError(format!("Failed to start Cube.js container: {}", e))
-        })?;
-
-    info!("Cube.js container created and started successfully");
-    Ok(())
-}
-
-/// Wait for Cube.js to be ready to accept connections
-pub async fn wait_for_cubejs_ready(timeout_secs: u64) -> Result<(), OxyError> {
-    info!(
-        "Waiting for Cube.js to be ready (max {} seconds)...",
-        timeout_secs
-    );
-
-    let docker = get_docker_client().await?;
-    let start = std::time::Instant::now();
-    let mut retry_count = 0u32;
-
-    loop {
-        if start.elapsed().as_secs() >= timeout_secs {
-            return Err(OxyError::InitializationError(format!(
-                "Cube.js did not become ready within {} seconds",
-                timeout_secs
-            )));
-        }
-
-        // Check if container is running
-        let inspect_result = docker
-            .inspect_container(CUBEJS_CONTAINER_NAME, None::<InspectContainerOptions>)
-            .await;
-
-        match inspect_result {
-            Ok(container) => {
-                if let Some(state) = &container.state
-                    && state.status == Some(ContainerStateStatusEnum::RUNNING)
-                {
-                    // For Cube.js, we'll check if the HTTP endpoint is responsive
-                    // This is a simple check - in production you might want to check /readyz or /livez
-                    if let Ok(response) = reqwest::get("http://localhost:4000/").await
-                        && (response.status().is_success() || response.status().is_client_error())
-                    {
-                        // 200 or 4xx means the server is up (4xx is expected for unauthenticated requests)
-                        info!("Cube.js is ready!");
-                        return Ok(());
-                    }
-                } else {
-                    return Err(OxyError::InitializationError(format!(
-                        "Cube.js container is not running (status: {:?})",
-                        container.state.as_ref().and_then(|s| s.status.as_ref())
-                    )));
-                }
-            }
-            Err(e) => {
-                return Err(OxyError::InitializationError(format!(
-                    "Failed to inspect Cube.js container: {}",
-                    e
-                )));
-            }
-        }
-
-        retry_count += 1;
-        if retry_count == 1 || retry_count.is_multiple_of(5) {
-            info!(
-                "Cube.js not ready yet, retrying... ({} seconds elapsed)",
-                start.elapsed().as_secs()
-            );
-        }
-
-        let wait_ms = std::cmp::min(100 * 2u64.pow(retry_count.min(4)), 2000);
-        tokio::time::sleep(tokio::time::Duration::from_millis(wait_ms)).await;
-    }
-}
-
-/// Stop the Cube.js container (handles non-existent/stopped containers gracefully)
-pub async fn stop_cubejs_container() -> Result<(), OxyError> {
-    let docker = get_docker_client().await?;
-    let options = StopContainerOptions {
-        t: Some(5),
-        signal: None,
-    };
-
-    match docker
-        .stop_container(CUBEJS_CONTAINER_NAME, Some(options))
-        .await
-    {
-        Ok(_) => {
-            info!("Cube.js container stopped");
-            Ok(())
-        }
-        Err(bollard::errors::Error::DockerResponseServerError {
-            status_code: 404, ..
-        })
-        | Err(bollard::errors::Error::DockerResponseServerError {
-            status_code: 304, ..
-        }) => Ok(()),
-        Err(e) => {
-            warn!("Failed to stop Cube.js container: {}", e);
-            Ok(())
-        }
-    }
-}
-
-/// Stop all enterprise containers (ClickHouse + OTel Collector + Cube.js)
+/// Stop all enterprise containers (ClickHouse + OTel Collector)
 pub async fn stop_enterprise_containers() -> Result<(), OxyError> {
     // Stop OTel first since it depends on ClickHouse
     if let Err(e) = stop_otel_collector_container().await {
         warn!("Failed to stop OTel Collector container: {}", e);
-    }
-    if let Err(e) = stop_cubejs_container().await {
-        warn!("Failed to stop Cube.js container: {}", e);
     }
     if let Err(e) = stop_clickhouse_container().await {
         warn!("Failed to stop ClickHouse container: {}", e);
@@ -979,7 +786,6 @@ pub async fn cleanup_containers() {
     // Remove all containers in parallel for faster cleanup
     tokio::join!(
         remove_container(&docker, OTEL_CONTAINER_NAME),
-        remove_container(&docker, CUBEJS_CONTAINER_NAME),
         remove_container(&docker, CLICKHOUSE_CONTAINER_NAME),
         remove_container(&docker, POSTGRES_CONTAINER_NAME),
     );
@@ -1045,9 +851,8 @@ pub async fn clean_all(enterprise: bool) -> Result<(), OxyError> {
     let docker = get_docker_client().await?;
 
     if enterprise {
-        // Remove enterprise containers (order: otel → cubejs → clickhouse)
+        // Remove enterprise containers (order: otel → clickhouse)
         remove_container(&docker, OTEL_CONTAINER_NAME).await;
-        remove_container(&docker, CUBEJS_CONTAINER_NAME).await;
         remove_container(&docker, CLICKHOUSE_CONTAINER_NAME).await;
     }
 
