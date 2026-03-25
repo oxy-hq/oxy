@@ -171,6 +171,7 @@ pub struct CreateSecretParams {
 pub struct UpdateSecretParams {
     pub value: Option<String>,
     pub description: Option<String>,
+    pub updated_by: Uuid,
 }
 
 #[derive(Debug, Clone)]
@@ -181,6 +182,7 @@ pub struct SecretInfo {
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub created_by: Uuid,
+    pub updated_by: Option<Uuid>,
     pub is_active: bool,
 }
 
@@ -328,6 +330,7 @@ impl SecretManagerService {
             created_at: Set(now.into()),
             updated_at: Set(now.into()),
             created_by: Set(params.created_by),
+            updated_by: sea_orm::ActiveValue::NotSet,
             is_active: Set(true),
             project_id: Set(self.project_id),
         };
@@ -350,8 +353,55 @@ impl SecretManagerService {
             created_at: saved_secret.created_at.into(),
             updated_at: saved_secret.updated_at.into(),
             created_by: saved_secret.created_by,
+            updated_by: saved_secret.updated_by,
             is_active: saved_secret.is_active,
         })
+    }
+
+    /// Get secret metadata by UUID (without decrypting the value)
+    pub async fn get_secret_by_id(&self, id: Uuid) -> Option<SecretInfo> {
+        let db = establish_connection().await.ok()?;
+        let secret = Secret::find()
+            .filter(secrets::Column::Id.eq(id))
+            .filter(secrets::Column::IsActive.eq(true))
+            .filter(secrets::Column::ProjectId.eq(self.project_id))
+            .one(&db)
+            .await
+            .ok()
+            .flatten()?;
+        Some(SecretInfo {
+            id: secret.id,
+            name: secret.name,
+            description: secret.description,
+            created_at: secret.created_at.into(),
+            updated_at: secret.updated_at.into(),
+            created_by: secret.created_by,
+            updated_by: secret.updated_by,
+            is_active: secret.is_active,
+        })
+    }
+
+    /// Get a decrypted secret value by UUID — single DB roundtrip.
+    pub async fn get_secret_value_by_id(&self, id: Uuid) -> Option<String> {
+        let db = establish_connection().await.ok()?;
+        let secret = Secret::find()
+            .filter(secrets::Column::Id.eq(id))
+            .filter(secrets::Column::IsActive.eq(true))
+            .filter(secrets::Column::ProjectId.eq(self.project_id))
+            .one(&db)
+            .await
+            .ok()
+            .flatten()?;
+        match self.decrypt_value(&secret.encrypted_value) {
+            Ok(value) => {
+                self.cache_value(&secret.name, &value).await;
+                Some(value)
+            }
+            Err(e) => {
+                tracing::error!("Failed to decrypt secret {}: {}", id, e);
+                None
+            }
+        }
     }
 
     /// Get a secret value by name
@@ -426,6 +476,7 @@ impl SecretManagerService {
                 created_at: secret.created_at.into(),
                 updated_at: secret.updated_at.into(),
                 created_by: secret.created_by,
+                updated_by: secret.updated_by,
                 is_active: secret.is_active,
             })
             .collect())
@@ -465,6 +516,7 @@ impl SecretManagerService {
         }
 
         secret_model.updated_at = Set(chrono::Utc::now().into());
+        secret_model.updated_by = Set(Some(params.updated_by));
 
         let updated_secret = secret_model
             .update(db)
@@ -481,6 +533,7 @@ impl SecretManagerService {
             created_at: updated_secret.created_at.into(),
             updated_at: updated_secret.updated_at.into(),
             created_by: updated_secret.created_by,
+            updated_by: updated_secret.updated_by,
             is_active: updated_secret.is_active,
         })
     }

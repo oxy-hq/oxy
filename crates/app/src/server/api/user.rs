@@ -26,6 +26,10 @@ pub struct UserInfo {
     pub picture: Option<String>,
     pub role: String,
     pub status: String,
+    /// True when the user has admin access. In cloud mode this reflects the DB role.
+    /// In local mode it is also true when the user's email is in `config.admins`
+    /// (or the list is empty — permissive default).
+    pub is_admin: bool,
 }
 
 #[derive(Serialize)]
@@ -53,6 +57,7 @@ pub struct BatchUsersRequest {
 
 impl From<AuthenticatedUser> for UserInfo {
     fn from(user: AuthenticatedUser) -> Self {
+        let is_admin = user.role == UserRole::Admin;
         Self {
             id: user.id.to_string(),
             email: user.email,
@@ -60,6 +65,48 @@ impl From<AuthenticatedUser> for UserInfo {
             picture: user.picture,
             role: user.role.as_str().to_string(),
             status: user.status.as_str().to_string(),
+            is_admin,
+        }
+    }
+}
+
+/// Checks whether a user is admin in local (non-cloud) mode based on `config.admins`.
+///
+/// Falls back to `true` (permissive) when the config cannot be read.
+fn is_local_admin_from_config(email: &str) -> bool {
+    let admins = read_admins_from_config();
+    oxy_auth::is_admin_email(&admins, email)
+}
+
+/// Reads only the `admins` list from config.yml, returning an empty vec on any error.
+fn read_admins_from_config() -> Vec<String> {
+    let Ok(project_path) = oxy::config::resolve_local_project_path() else {
+        tracing::warn!(
+            "read_admins_from_config: could not resolve project path — treating all users as admin"
+        );
+        return vec![];
+    };
+
+    let config_path = project_path.join("config.yml");
+    let Ok(yaml) = std::fs::read_to_string(&config_path) else {
+        tracing::warn!(
+            "read_admins_from_config: could not read {:?} — treating all users as admin",
+            config_path
+        );
+        return vec![];
+    };
+
+    #[derive(serde::Deserialize, Default)]
+    struct AdminsOnly {
+        #[serde(default)]
+        admins: Vec<String>,
+    }
+
+    match serde_yaml::from_str::<AdminsOnly>(&yaml) {
+        Ok(ac) => ac.admins,
+        Err(e) => {
+            tracing::warn!("Failed to parse config.yml for admin check: {}", e);
+            vec![] // Parse error → permissive (empty = all admin)
         }
     }
 }
@@ -250,7 +297,15 @@ pub async fn get_current_user_public(
         Ok(identity) => {
             // Get or create user based on identity
             match UserService::get_or_create_user(&identity).await {
-                Ok(user) => Ok(Json(Some(user.into()))),
+                Ok(user) => {
+                    let mut user_info = UserInfo::from(user);
+                    // In local (non-cloud) mode override is_admin based on config.admins
+                    // so the frontend can correctly gate the admin UI.
+                    if !app_state.cloud {
+                        user_info.is_admin = is_local_admin_from_config(&user_info.email);
+                    }
+                    Ok(Json(Some(user_info)))
+                }
                 Err(e) => {
                     tracing::error!("Failed to get user from identity: {}", e);
                     Ok(Json(None))

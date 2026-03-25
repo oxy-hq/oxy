@@ -96,8 +96,7 @@ export const EditSecretDialog: React.FC<EditSecretDialogProps> = ({
         <DialogHeader>
           <DialogTitle>Edit Secret</DialogTitle>
           <DialogDescription>
-            Update the secret value and description for "{secret?.name}". The value will be
-            encrypted and cannot be viewed after saving.
+            Update the secret value and description for "{secret?.name}".
           </DialogDescription>
         </DialogHeader>
 

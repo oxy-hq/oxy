@@ -8,6 +8,20 @@ use uuid::Uuid;
 use crate::types::{AuthenticatedUser, Identity};
 use entity::users::{UserRole, UserStatus};
 
+/// Email address for the built-in local guest user (no-auth local mode).
+/// This user is always granted Admin role so local installs work out of the box.
+pub const LOCAL_GUEST_EMAIL: &str = "<local-user@example.com>";
+
+/// Returns `true` if `email` should be treated as admin in local (non-cloud) mode.
+///
+/// Logic:
+/// 1. The built-in local guest is always admin.
+/// 2. If `admins` is non-empty, the email must be listed.
+/// 3. If `admins` is empty, everyone is admin (permissive default for single-user installs).
+pub fn is_admin_email(admins: &[String], email: &str) -> bool {
+    email == LOCAL_GUEST_EMAIL || admins.is_empty() || admins.iter().any(|a| a == email)
+}
+
 pub struct UserService;
 
 impl UserService {
@@ -21,10 +35,28 @@ impl UserService {
             .await
             .map_err(|e| OxyError::DBError(format!("Failed to query user: {e}")))?
         {
+            // Ensure the local guest user always has Admin role so the admin
+            // middleware and UI correctly identify them as administrator.
+            if existing_user.email == LOCAL_GUEST_EMAIL && existing_user.role != UserRole::Admin {
+                let mut active: users::ActiveModel = existing_user.into();
+                active.role = Set(UserRole::Admin);
+                let updated = active
+                    .update(&connection)
+                    .await
+                    .map_err(|e| OxyError::DBError(format!("Failed to promote local user: {e}")))?;
+                return Ok(updated.into());
+            }
             return Ok(existing_user.into());
         }
 
         // User not found, try to create
+        // The local guest user is always created with Admin role.
+        let initial_role = if identity.email == LOCAL_GUEST_EMAIL {
+            UserRole::Admin
+        } else {
+            UserRole::Member
+        };
+
         let new_user = users::ActiveModel {
             id: Set(Uuid::new_v4()),
             email: Set(identity.email.clone()),
@@ -36,7 +68,7 @@ impl UserService {
             email_verified: Set(true),
             magic_link_token: ActiveValue::not_set(),
             magic_link_token_expires_at: ActiveValue::not_set(),
-            role: Set(users::UserRole::Member),
+            role: Set(initial_role),
             status: Set(UserStatus::Active),
             created_at: ActiveValue::not_set(), // Will use database default
             last_login_at: ActiveValue::not_set(), // Will use database default

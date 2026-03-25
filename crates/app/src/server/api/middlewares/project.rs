@@ -7,7 +7,7 @@ use axum::http::request::Parts;
 use axum::{
     http::{Request, StatusCode},
     middleware::Next,
-    response::Response,
+    response::{IntoResponse, Response},
 };
 use entity::prelude::*;
 use oxy::adapters::project::builder::ProjectBuilder;
@@ -25,11 +25,25 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct ProjectManagerExtractor(pub ProjectManager);
 
+pub struct ProjectManagerMissing;
+
+impl IntoResponse for ProjectManagerMissing {
+    fn into_response(self) -> Response {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            axum::Json(serde_json::json!({
+                "error": "Project configuration is not available. Check that the project path is accessible and config.yml is valid."
+            })),
+        )
+            .into_response()
+    }
+}
+
 impl<S> FromRequestParts<S> for ProjectManagerExtractor
 where
     S: Send + Sync,
 {
-    type Rejection = StatusCode;
+    type Rejection = ProjectManagerMissing;
 
     fn from_request_parts(
         parts: &mut Parts,
@@ -40,7 +54,7 @@ where
             .get::<ProjectManager>()
             .cloned()
             .map(ProjectManagerExtractor)
-            .ok_or(StatusCode::INTERNAL_SERVER_ERROR);
+            .ok_or(ProjectManagerMissing);
 
         async move { result }
     }
@@ -94,7 +108,12 @@ pub async fn project_middleware(
                     .await
                 {
                     Ok(mut builder) => {
-                        if let Ok(secrets_manager) = SecretsManager::from_environment() {
+                        // Use DB-first with env fallback so DB secrets hot-reload
+                        // and override env vars without a server restart.
+                        let sm_result = SecretsManager::from_database_with_env_fallback(
+                            SecretManagerService::new(project_id),
+                        );
+                        if let Ok(secrets_manager) = sm_result {
                             builder = builder.with_secrets_manager(secrets_manager);
                         } else {
                             tracing::warn!(
@@ -168,7 +187,7 @@ pub async fn project_middleware(
         return Ok(next.run(request).await);
     }
 
-    println!("Project ID from path: {}", project_id);
+    tracing::debug!("Project ID from path: {}", project_id);
     let db = establish_connection().await.map_err(|e| {
         tracing::error!("Failed to establish database connection: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
@@ -233,15 +252,10 @@ pub async fn project_middleware(
 
     request.extensions_mut().insert(project);
 
-    print!("Request URI path: {}", request.uri().path());
     let skip_project_manager = should_skip_project_manager(request.uri().path());
 
     if skip_project_manager {
         tracing::debug!(
-            "Skipping project manager creation for route: {}",
-            request.uri().path()
-        );
-        println!(
             "Skipping project manager creation for route: {}",
             request.uri().path()
         );

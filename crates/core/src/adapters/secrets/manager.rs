@@ -2,8 +2,9 @@ use uuid::Uuid;
 
 use crate::{
     adapters::secrets::{
-        SecretsDatabaseStorage, SecretsStorage, environment::SecretsEnvironmentStorage,
-        storage::SecretsStorageImpl,
+        SecretsDatabaseStorage, SecretsStorage,
+        environment::SecretsEnvironmentStorage,
+        storage::{SecretsFallbackStorage, SecretsStorageImpl},
     },
     service::secret_manager::SecretManagerService,
 };
@@ -25,6 +26,17 @@ impl SecretsManager {
         let secrets_database_storage = SecretsDatabaseStorage::new(secret_manager);
         Ok(SecretsManager {
             storage: SecretsStorageImpl::DatabaseStorage(secrets_database_storage),
+        })
+    }
+
+    /// DB-first with env fallback. Used in local mode so that a DB secret
+    /// immediately overrides the matching env var without a server restart.
+    pub fn from_database_with_env_fallback(
+        secret_manager: SecretManagerService,
+    ) -> Result<Self, OxyError> {
+        let db_storage = SecretsDatabaseStorage::new(secret_manager);
+        Ok(SecretsManager {
+            storage: SecretsStorageImpl::FallbackStorage(SecretsFallbackStorage::new(db_storage)),
         })
     }
 

@@ -117,6 +117,7 @@ impl A2aConfig {
             integrations: Vec::new(),
             mcp: None,
             a2a: None,
+            admins: Vec::new(),
         };
         let context = ValidationContext {
             config: dummy_config,
@@ -298,6 +299,7 @@ mod tests {
             mcp: None,
             a2a: None,
             slack: None,
+            admins: Vec::new(),
         };
         let context = ValidationContext {
             config: dummy_config,
@@ -338,6 +340,7 @@ mod tests {
             integrations: Vec::new(),
             mcp: None,
             a2a: None,
+            admins: Vec::new(),
         };
         let context = ValidationContext {
             config: dummy_config,

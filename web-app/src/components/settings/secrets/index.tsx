@@ -4,15 +4,10 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/shadcn/button";
 import PageWrapper from "../components/PageWrapper";
 import { CreateSecretDialog } from "./CreateSecretDialog";
-import { SecretTable } from "./SecretTable";
+import { UnifiedSecretsTable } from "./UnifiedSecretsTable";
 
 const SecretManagement: React.FC = () => {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-
-  const handleSecretCreated = () => {
-    toast.success("Secret created successfully");
-    setIsCreateDialogOpen(false);
-  };
 
   return (
     <PageWrapper
@@ -27,14 +22,16 @@ const SecretManagement: React.FC = () => {
         </Button>
       }
     >
-      <div>
-        <SecretTable />
-        <CreateSecretDialog
-          open={isCreateDialogOpen}
-          onOpenChange={setIsCreateDialogOpen}
-          onSecretCreated={handleSecretCreated}
-        />
-      </div>
+      <UnifiedSecretsTable />
+
+      <CreateSecretDialog
+        open={isCreateDialogOpen}
+        onOpenChange={setIsCreateDialogOpen}
+        onSecretCreated={() => {
+          toast.success("Secret created successfully");
+          setIsCreateDialogOpen(false);
+        }}
+      />
     </PageWrapper>
   );
 };

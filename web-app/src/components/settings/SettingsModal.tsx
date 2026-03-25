@@ -1,6 +1,7 @@
 import { Github, Shield, Users, X } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import useCurrentUser from "@/hooks/api/users/useCurrentUser";
 import useSettingsPage from "@/stores/useSettingsPage";
 import { Button } from "../ui/shadcn/button";
 import { Dialog, DialogContent } from "../ui/shadcn/dialog";
@@ -19,8 +20,12 @@ interface SettingsSection {
 
 export function SettingsModal() {
   const { authConfig } = useAuth();
+  const { data: currentUser } = useCurrentUser();
   const { isOpen, setIsOpen } = useSettingsPage();
-  const [activeSection, setActiveSection] = useState<string>("github-settings");
+
+  const isAdmin = currentUser?.is_admin ?? false;
+  const defaultSection = authConfig.cloud ? "github-settings" : "secrets";
+  const [activeSection, setActiveSection] = useState<string>(defaultSection);
 
   const settingsSections: SettingsSection[] = [
     {
@@ -36,7 +41,7 @@ export function SettingsModal() {
       title: "Secret Management",
       description: "Manage sensitive data",
       icon: <Shield className='h-4 w-4' />,
-      show: authConfig.cloud,
+      show: isAdmin,
       page: <SecretManagement />
     },
     {

@@ -49,7 +49,7 @@ impl Authenticator for BuiltInAuthenticator {
                 return Ok(Identity {
                     picture: None,
                     name: Some("Local User".to_string()),
-                    email: "<local-user@example.com>".to_string(),
+                    email: crate::user::LOCAL_GUEST_EMAIL.to_string(),
                 });
             }
         }

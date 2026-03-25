@@ -27,3 +27,7 @@ databases:
   #   schema_name: ducklake
 
 builder_agent: builder.agent.yml
+
+admins:
+  - hello@oxy.tech
+  - luong@oxy.tech

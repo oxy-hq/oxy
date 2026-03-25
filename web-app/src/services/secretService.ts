@@ -3,6 +3,7 @@ import type {
   BulkCreateSecretsResponse,
   CreateSecretRequest,
   CreateSecretResponse,
+  EnvSecret,
   Secret,
   SecretListResponse,
   UpdateSecretRequest
@@ -68,6 +69,22 @@ export class SecretService {
    */
   static async deleteSecret(projectId: string, id: string): Promise<void> {
     await apiClient.delete(`/${projectId}/secrets/${id}`);
+  }
+
+  /**
+   * List environment-variable-referenced secrets from config.yml
+   */
+  static async listEnvSecrets(projectId: string): Promise<EnvSecret[]> {
+    const response = await apiClient.get<EnvSecret[]>(`/${projectId}/secrets/env`);
+    return response.data;
+  }
+
+  /**
+   * Reveal the plaintext value of a DB secret by ID (admin only)
+   */
+  static async revealSecret(projectId: string, id: string): Promise<string> {
+    const response = await apiClient.get<{ value: string }>(`/${projectId}/secrets/${id}/value`);
+    return response.data.value;
   }
 
   /**

@@ -18,6 +18,14 @@
         }
       ]
     },
+    "admins": {
+      "description": "List of email addresses that are granted admin access in local (non-cloud) mode. If empty or not set, all users are treated as admin (permissive default for single-user local installs). The built-in local guest user (<local-user@example.com>) is always admin regardless of this list.",
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "builder_agent": {
       "type": [
         "string",

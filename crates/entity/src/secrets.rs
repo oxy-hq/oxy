@@ -16,6 +16,7 @@ pub struct Model {
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
     pub created_by: Uuid,
+    pub updated_by: Option<Uuid>,
     pub project_id: Uuid,
     pub is_active: bool,
 }
