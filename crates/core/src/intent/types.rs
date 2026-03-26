@@ -61,7 +61,8 @@ impl IntentConfig {
             clickhouse_password: std::env::var("OXY_CLICKHOUSE_PASSWORD").unwrap_or_default(),
             clickhouse_database: std::env::var("OXY_CLICKHOUSE_DATABASE")
                 .unwrap_or_else(|_| "otel".to_string()),
-            openai_api_key: std::env::var("OPENAI_API_KEY").unwrap_or_default(),
+            openai_api_key: std::env::var(crate::config::constants::OPENAI_API_KEY_VAR)
+                .unwrap_or_default(),
             embed_model: std::env::var("INTENT_EMBED_MODEL")
                 .unwrap_or_else(|_| "text-embedding-3-small".to_string()),
             embed_dims: std::env::var("INTENT_EMBED_DIMS")

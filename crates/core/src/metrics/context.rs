@@ -323,7 +323,9 @@ impl MetricContext {
             );
 
             // Tier 2: LLM extraction from question/response/SQL
-            let has_openai_key = std::env::var("OPENAI_API_KEY").is_ok();
+            let has_openai_key = std::env::var(crate::config::constants::OPENAI_API_KEY_VAR)
+                .ok()
+                .is_some_and(|v| !v.is_empty());
 
             tracing::info!(
                 "🔍 Tier 2 check for trace_id={}: OPENAI_API_KEY={}, question={}, response={}, sql_count={}",

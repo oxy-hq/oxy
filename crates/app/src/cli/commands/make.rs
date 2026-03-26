@@ -27,9 +27,7 @@ use tokio::fs::create_dir;
 
 use super::MakeArgs;
 
-const OPENAI_API_KEY_VAR: &str = "OPENAI_API_KEY";
-const GEMINI_API_KEY_VAR: &str = "GEMINI_API_KEY";
-const ANTHROPIC_API_KEY_VAR: &str = "ANTHROPIC_API_KEY";
+use ::oxy::config::constants::{ANTHROPIC_API_KEY_VAR, GEMINI_API_KEY_VAR, OPENAI_API_KEY_VAR};
 
 struct ProjectSetup {
     file_path: String,

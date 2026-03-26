@@ -12,7 +12,7 @@ use oxy::{
     },
     config::{
         ConfigManager,
-        constants::ARTIFACT_SOURCE,
+        constants::{ARTIFACT_SOURCE, OPENAI_API_KEY_VAR},
         model::{Model, ReasoningConfig, RoutingAgent, ToolType},
     },
     execute::{
@@ -84,7 +84,7 @@ impl Executable<RoutingAgentInput> for RoutingAgentExecutable {
             // RoutingAgent has no api_url/key_var fields; falls back to OpenAI defaults.
             // TODO: add api_url/key_var to RoutingAgent for non-OpenAI embedding providers.
             "https://api.openai.com/v1",
-            "OPENAI_API_KEY",
+            OPENAI_API_KEY_VAR,
             &prompt,
         )
         .await?;

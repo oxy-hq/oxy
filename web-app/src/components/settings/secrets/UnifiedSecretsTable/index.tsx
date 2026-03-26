@@ -1,5 +1,15 @@
 import { formatDistanceToNow } from "date-fns";
-import { Code2, Edit, Eye, EyeOff, Plus, Trash2, UserRound } from "lucide-react";
+import {
+  Check,
+  ClipboardCopy,
+  Code2,
+  Edit,
+  Eye,
+  EyeOff,
+  Plus,
+  Trash2,
+  UserRound
+} from "lucide-react";
 import type React from "react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -28,8 +38,8 @@ import TableWrapper from "../../components/TableWrapper";
 interface UnifiedRow {
   key: string;
   name: string;
-  source: "secret" | "env" | "config";
-  configField?: string;
+  source: "secret" | "dot_env" | "environment" | "not_set";
+  referencedBy?: string | null;
   maskedValue?: string;
   envFullValue?: string; // always available for env rows (admin-only endpoint)
   secretInfo?: Secret;
@@ -54,12 +64,11 @@ function buildRows(secrets: Secret[], envSecrets: EnvSecret[]): UnifiedRow[] {
   for (const secret of secrets) {
     const env = envMap.get(secret.name);
     // DB secret always shows as "Secret" — the env backing is shown via "overrides X" text
-    const source: UnifiedRow["source"] = "secret";
     rows.push({
       key: `secret-${secret.id}`,
       name: secret.name,
-      source,
-      configField: env?.config_field,
+      source: "secret",
+      referencedBy: env?.referenced_by,
       maskedValue: env?.masked_value, // env masked value (env source)
       envFullValue: env?.full_value,
       secretInfo: secret,
@@ -71,12 +80,11 @@ function buildRows(secrets: Secret[], envSecrets: EnvSecret[]): UnifiedRow[] {
   // Env vars not overridden by a DB secret (include unset ones so users know what's missing)
   for (const env of envSecrets) {
     if (seen.has(env.env_var)) continue;
-    const source: UnifiedRow["source"] = env.config_field === ".env" ? "env" : "config";
     rows.push({
-      key: `env-${env.env_var}-${env.config_field}`,
+      key: `env-${env.env_var}-${env.referenced_by ?? ""}`,
       name: env.env_var,
-      source,
-      configField: env.config_field,
+      source: env.source,
+      referencedBy: env.referenced_by,
       maskedValue: env.masked_value,
       envFullValue: env.full_value,
       envInfo: env
@@ -88,15 +96,10 @@ function buildRows(secrets: Secret[], envSecrets: EnvSecret[]): UnifiedRow[] {
 }
 
 const SOURCE_CONFIG = {
-  secret: {
-    label: "Secret",
-    className: "border-blue-500/30 bg-blue-500/10 text-blue-400"
-  },
-  env: { label: ".env", className: "border-amber-500/30 bg-amber-500/10 text-amber-400" },
-  config: {
-    label: "config",
-    className: "border-slate-500/30 bg-slate-500/10 text-slate-400"
-  }
+  secret: { label: "Secret", className: "border-blue-500/30 bg-blue-500/10 text-blue-400" },
+  dot_env: { label: ".env", className: "border-amber-500/30 bg-amber-500/10 text-amber-400" },
+  environment: { label: "env", className: "border-green-500/30 bg-green-500/10 text-green-400" },
+  not_set: { label: "not set", className: "border-red-500/30 bg-red-500/10 text-red-400" }
 } as const;
 
 const DOTS = "••••••••••••••";
@@ -122,6 +125,7 @@ export const UnifiedSecretsTable: React.FC = () => {
 
   const [revealedValues, setRevealedValues] = useState<Record<string, string>>({});
   const [revealLoading, setRevealLoading] = useState<Record<string, boolean>>({});
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [createDialogName, setCreateDialogName] = useState<string | undefined>();
   const [editSecret, setEditSecret] = useState<Secret | null>(null);
   const [deleteSecret, setDeleteSecret] = useState<Secret | null>(null);
@@ -159,6 +163,30 @@ export const UnifiedSecretsTable: React.FC = () => {
       // Env vars: full value already available from API
       setRevealedValues((prev) => ({ ...prev, [key]: row.envFullValue ?? "" }));
     }
+  };
+
+  const handleCopy = async (row: UnifiedRow) => {
+    let value = revealedValues[row.key];
+    if (value === undefined) {
+      if (row.secretInfo) {
+        try {
+          value = await SecretService.revealSecret(projectId, row.secretInfo.id);
+        } catch {
+          toast.error("Failed to copy secret value");
+          return;
+        }
+      } else {
+        value = row.envFullValue ?? "";
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      toast.error("Failed to copy to clipboard");
+      return;
+    }
+    setCopiedKey(row.key);
+    setTimeout(() => setCopiedKey((k) => (k === row.key ? null : k)), 1500);
   };
 
   const handleDelete = async () => {
@@ -218,7 +246,7 @@ export const UnifiedSecretsTable: React.FC = () => {
                       )}
                     </TableCell>
 
-                    <TableCell className='w-1/4 max-w-0'>
+                    <TableCell className='w-1/4 max-w-0 overflow-hidden'>
                       {isUnset ? (
                         <Badge
                           variant='outline'
@@ -230,8 +258,8 @@ export const UnifiedSecretsTable: React.FC = () => {
                         <span
                           className={
                             revealed
-                              ? "block break-all font-mono text-sm tabular-nums"
-                              : "font-mono text-muted-foreground/40 text-sm tracking-widest"
+                              ? "block min-w-0 truncate font-mono text-sm tabular-nums"
+                              : "block truncate font-mono text-muted-foreground/40 text-sm tracking-widest"
                           }
                         >
                           {displayValue}
@@ -247,14 +275,14 @@ export const UnifiedSecretsTable: React.FC = () => {
                         >
                           {sourceConfig.label}
                         </Badge>
-                        {row.secretInfo && row.envInfo && (
+                        {row.secretInfo && row.referencedBy && (
                           <span className='text-[10px] text-muted-foreground/50'>
-                            overrides {row.envInfo.config_field}
+                            overrides {row.referencedBy}
                           </span>
                         )}
-                        {row.configField && !row.secretInfo && (
+                        {row.referencedBy && !row.secretInfo && (
                           <span className='text-[10px] text-muted-foreground/50'>
-                            {row.configField}
+                            {row.referencedBy}
                           </span>
                         )}
                       </div>
@@ -296,6 +324,23 @@ export const UnifiedSecretsTable: React.FC = () => {
                               <EyeOff className='size-3.5' />
                             ) : (
                               <Eye className='size-3.5' />
+                            )}
+                          </Button>
+                        )}
+
+                        {/* Copy value — hidden for unset env vars */}
+                        {!isUnset && (
+                          <Button
+                            variant='ghost'
+                            size='sm'
+                            className='size-7 p-0'
+                            onClick={() => handleCopy(row)}
+                            title='Copy value'
+                          >
+                            {copiedKey === row.key ? (
+                              <Check className='size-3.5 text-green-400' />
+                            ) : (
+                              <ClipboardCopy className='size-3.5' />
                             )}
                           </Button>
                         )}

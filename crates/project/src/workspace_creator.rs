@@ -9,6 +9,7 @@ use include_dir::{Dir, include_dir};
 use oxy::adapters::secrets::SecretsManager;
 use oxy::api_types::{ProjectInfo, WorkspaceResponse};
 use oxy::config::ConfigBuilder;
+use oxy::config::constants::OPENAI_API_KEY_VAR;
 use oxy::database::client::establish_connection;
 use oxy::github::{GitHubClient, GitOperations};
 use oxy::service::retrieval::{ReindexInput, reindex};
@@ -204,7 +205,7 @@ impl WorkspaceCreator {
         Self::create_secret(
             project_id,
             user_id,
-            "OPENAI_API_KEY".to_string(),
+            OPENAI_API_KEY_VAR.to_string(),
             req.openai_api_key
                 .clone()
                 .unwrap_or("sk-demo-key".to_string()),

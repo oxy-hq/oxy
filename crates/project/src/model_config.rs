@@ -3,6 +3,7 @@ use crate::models::{
     OllamaModelConfig, OpenAIModelConfig,
 };
 use axum::http::StatusCode;
+use oxy::config::constants::{ANTHROPIC_API_KEY_VAR, OPENAI_API_KEY_VAR};
 use oxy::config::model::{
     AnthropicModelConfig as LlmAnthropicConfig, GeminiModelConfig as LlmGeminiConfig, Model,
     OllamaModelConfig as LlmOllamaConfig, OpenAIModelConfig as LlmOpenAIConfig,
@@ -67,7 +68,7 @@ impl ModelConfigBuilder {
             key_var.clone(),
             openai_config
                 .api_key
-                .unwrap_or_else(|| "OPENAI_API_KEY".to_string()),
+                .unwrap_or_else(|| OPENAI_API_KEY_VAR.to_string()),
             txn,
         )
         .await
@@ -111,7 +112,7 @@ impl ModelConfigBuilder {
             key_var.clone(),
             anthropic_config
                 .api_key
-                .unwrap_or_else(|| "ANTHROPIC_API_KEY".to_string()),
+                .unwrap_or_else(|| ANTHROPIC_API_KEY_VAR.to_string()),
             txn,
         )
         .await

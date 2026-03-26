@@ -8,7 +8,7 @@ use crate::fsm::{
     subflow::config::Subflow,
     viz::config::Visualize,
 };
-use oxy::config::constants::{AGENT_END_TRANSITION, AGENT_START_TRANSITION};
+use oxy::config::constants::{AGENT_END_TRANSITION, AGENT_START_TRANSITION, OPENAI_API_KEY_VAR};
 use oxy::config::model::{EmbeddingConfig, VectorDBConfig};
 use oxy::execute::{renderer::TemplateRegister, types::event::StepKind};
 use oxy_shared::errors::OxyError;
@@ -229,7 +229,7 @@ fn default_routing_api_url() -> String {
 }
 
 fn default_routing_key_var() -> String {
-    "OPENAI_API_KEY".to_string()
+    OPENAI_API_KEY_VAR.to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]

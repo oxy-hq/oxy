@@ -1,4 +1,5 @@
 use include_dir::{Dir, include_dir};
+use oxy::config::constants::OPENAI_API_KEY_VAR;
 use oxy::config::model::{
     BigQuery, ClickHouse, Config, DatabaseType, DuckDB, DuckDBOptions, Mysql, Postgres, Redshift,
 };
@@ -275,7 +276,7 @@ fn collect_models() -> Result<Vec<Model>, InitError> {
                     config: OpenAIModelConfig {
                         name: prompt_with_default("Name", "openai-4.1", None)?,
                         model_ref: prompt_with_default("Model reference", "gpt-4.1", None)?,
-                        key_var: prompt_with_default("Key variable", "OPENAI_API_KEY", None)?,
+                        key_var: prompt_with_default("Key variable", OPENAI_API_KEY_VAR, None)?,
                         api_url: Some(api_url),
                         azure,
                         headers: None,
@@ -296,7 +297,7 @@ fn collect_models() -> Result<Vec<Model>, InitError> {
                     config: OpenAIModelConfig {
                         name: prompt_with_default("Name", "openai-4.1", None)?,
                         model_ref: prompt_with_default("Model reference", "gpt-4.1", None)?,
-                        key_var: prompt_with_default("Key variable", "OPENAI_API_KEY", None)?,
+                        key_var: prompt_with_default("Key variable", OPENAI_API_KEY_VAR, None)?,
                         api_url: Some(prompt_with_default(
                             "API URL",
                             "https://api.openai.com/v1",

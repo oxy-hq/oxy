@@ -18,6 +18,7 @@ use super::validate::{
     AgentValidationContext, validate_model, validate_no_duplicate_tool_names, validate_task,
 };
 use crate::adapters::secrets::SecretsManager;
+use crate::config::constants::OPENAI_API_KEY_VAR;
 use crate::config::validate::validate_file_path;
 use crate::config::validate::{
     ValidationContext, validate_agent_exists, validate_consistency_prompt,
@@ -3455,7 +3456,7 @@ fn default_api_url() -> String {
 }
 
 fn default_key_var() -> String {
-    "OPENAI_API_KEY".to_string()
+    OPENAI_API_KEY_VAR.to_string()
 }
 
 fn default_retrieval_n_dims() -> usize {

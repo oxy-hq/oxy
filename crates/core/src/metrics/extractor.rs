@@ -44,7 +44,8 @@ impl ExtractorConfig {
     /// Create config from environment variables
     pub fn from_env() -> Self {
         Self {
-            openai_api_key: std::env::var("OPENAI_API_KEY").unwrap_or_default(),
+            openai_api_key: std::env::var(crate::config::constants::OPENAI_API_KEY_VAR)
+                .unwrap_or_default(),
             model: std::env::var("METRIC_EXTRACTOR_MODEL")
                 .unwrap_or_else(|_| "gpt-4o-mini".to_string()),
         }

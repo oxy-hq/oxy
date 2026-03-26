@@ -44,6 +44,13 @@ pub const RETRIEVAL_EMBEDDINGS_BATCH_SIZE: usize = 128;
 pub const RETRIEVAL_CACHE_PATH: &str = ".cache";
 pub const VECTOR_INDEX_MIN_ROWS: usize = 1000;
 
+/// Default environment variable names for LLM provider API keys.
+/// These are the canonical names Oxy uses internally (e.g. routing agent, model defaults).
+/// Update here and all callers pick up the change automatically.
+pub const OPENAI_API_KEY_VAR: &str = "OPENAI_API_KEY";
+pub const ANTHROPIC_API_KEY_VAR: &str = "ANTHROPIC_API_KEY";
+pub const GEMINI_API_KEY_VAR: &str = "GEMINI_API_KEY";
+
 pub const DEFAULT_API_KEY_HEADER: &str = "X-API-Key";
 pub const AUTHENTICATION_HEADER_KEY: &str = "authorization";
 pub const AUTHENTICATION_SECRET_KEY: &str = "authentication_secret";

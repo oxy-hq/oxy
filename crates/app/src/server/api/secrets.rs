@@ -9,7 +9,8 @@ use axum::{
 };
 use entity::users::Entity as Users;
 use garde::Validate;
-use oxy::config::model::IntegrationType;
+use oxy::config::constants::{ANTHROPIC_API_KEY_VAR, GEMINI_API_KEY_VAR, OPENAI_API_KEY_VAR};
+use oxy::config::model::{DatabaseType, IntegrationType, SnowflakeAuthType};
 use oxy::database::client::establish_connection;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use oxy_shared::errors::OxyError;
@@ -457,13 +458,41 @@ fn parse_dotenv_file(path: &std::path::Path) -> Vec<(String, String)> {
         .collect()
 }
 
-/// Info about a secret that is sourced from an environment variable reference in config.yml.
+/// Env vars that Oxy reads internally by default (not via config.yml *_var fields).
+/// Always shown in the secrets panel so users know what the app needs, even when they
+/// haven't yet referenced these vars in config.yml or .env.
+const BUILT_IN_VARS: &[(&str, &str)] = &[
+    // Routing agent hardcodes OPENAI_API_KEY_VAR for embedding (routing.rs).
+    // RetrievalConfig also defaults key_var to OPENAI_API_KEY_VAR.
+    (OPENAI_API_KEY_VAR, "routing-agent"),
+    // Defaults for LLM model configs when created without a custom key_var.
+    (ANTHROPIC_API_KEY_VAR, "models (Anthropic default)"),
+    (GEMINI_API_KEY_VAR, "models (Google default)"),
+];
+
+/// Where a secret's value is currently set.
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SecretSource {
+    /// Value is defined in the project's .env file.
+    DotEnv,
+    /// Value is set in the process/shell environment (not via .env).
+    Environment,
+    /// Variable is not currently set.
+    NotSet,
+}
+
+/// Info about a secret environment variable known to Oxy.
 #[derive(Serialize)]
 pub struct EnvSecretInfo {
     /// The environment variable name (e.g. "SLACK_BOT_TOKEN")
     pub env_var: String,
-    /// The config field that references this env var (e.g. "slack.bot_token_var")
-    pub config_field: String,
+    /// Where Oxy references this variable: a config.yml field path
+    /// (e.g. "slack.bot_token_var") or built-in label (e.g. "routing-agent").
+    /// None if the variable appears only in .env and is not referenced by config.
+    pub referenced_by: Option<String>,
+    /// Where the secret value is currently set.
+    pub source: SecretSource,
     /// Whether the environment variable is currently set (non-empty value)
     pub is_set: bool,
     /// Masked value of the env var if set (e.g. "sk-a****bcde"), None if not set
@@ -487,17 +516,33 @@ pub async fn list_env_secrets(
 
     let mut seen_vars: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    let make_config_entry = |env_var: String, config_field: String| {
+    // Parse .env upfront so source resolution works for all vars, including config-referenced ones.
+    let dotenv_path = project_manager.config_manager.project_path().join(".env");
+    let dotenv_entries = parse_dotenv_file(&dotenv_path);
+    let dotenv_keys: std::collections::HashSet<String> =
+        dotenv_entries.iter().map(|(k, _)| k.clone()).collect();
+
+    let make_entry = |env_var: String, referenced_by: Option<String>| {
         let value = std::env::var(&env_var).ok().filter(|v| !v.is_empty());
-        let is_set = value.is_some();
-        let masked_value = value.as_deref().map(mask_secret_value);
-        let full_value = value.clone();
+        // Note: DotEnv means the key is declared in the project's .env file.
+        // is_set reflects std::env::var(), which reads vars loaded at startup
+        // from the CWD .env (via dotenv().ok() in main.rs). If the project path
+        // differs from the startup CWD, source may be DotEnv while is_set is
+        // false — accurate but potentially surprising in non-standard setups.
+        let source = if dotenv_keys.contains(&env_var) {
+            SecretSource::DotEnv
+        } else if value.is_some() {
+            SecretSource::Environment
+        } else {
+            SecretSource::NotSet
+        };
         EnvSecretInfo {
+            source,
+            referenced_by,
+            is_set: value.is_some(),
+            masked_value: value.as_deref().map(mask_secret_value),
+            full_value: value,
             env_var,
-            config_field,
-            is_set,
-            masked_value,
-            full_value,
         }
     };
 
@@ -505,16 +550,16 @@ pub async fn list_env_secrets(
     if let Some(slack) = &config.slack {
         if let Some(var) = &slack.bot_token_var {
             seen_vars.insert(var.clone());
-            env_secrets.push(make_config_entry(
+            env_secrets.push(make_entry(
                 var.clone(),
-                "slack.bot_token_var".to_string(),
+                Some("slack.bot_token_var".to_string()),
             ));
         }
         if let Some(var) = &slack.signing_secret_var {
             seen_vars.insert(var.clone());
-            env_secrets.push(make_config_entry(
+            env_secrets.push(make_entry(
                 var.clone(),
-                "slack.signing_secret_var".to_string(),
+                Some("slack.signing_secret_var".to_string()),
             ));
         }
     }
@@ -524,46 +569,155 @@ pub async fn list_env_secrets(
         match &integration.integration_type {
             IntegrationType::Omni(omni) => {
                 seen_vars.insert(omni.api_key_var.clone());
-                env_secrets.push(make_config_entry(
+                env_secrets.push(make_entry(
                     omni.api_key_var.clone(),
-                    format!("integrations.{}.api_key_var", integration.name),
+                    Some(format!("integrations.{}.api_key_var", integration.name)),
                 ));
             }
             IntegrationType::Looker(looker) => {
                 seen_vars.insert(looker.client_id_var.clone());
-                env_secrets.push(make_config_entry(
+                env_secrets.push(make_entry(
                     looker.client_id_var.clone(),
-                    format!("integrations.{}.client_id_var", integration.name),
+                    Some(format!("integrations.{}.client_id_var", integration.name)),
                 ));
                 seen_vars.insert(looker.client_secret_var.clone());
-                env_secrets.push(make_config_entry(
+                env_secrets.push(make_entry(
                     looker.client_secret_var.clone(),
-                    format!("integrations.{}.client_secret_var", integration.name),
+                    Some(format!(
+                        "integrations.{}.client_secret_var",
+                        integration.name
+                    )),
                 ));
             }
         }
     }
 
-    // Parse .env file and add vars not already covered by config references.
-    // is_set and masked_value are derived from the live process environment
-    // (std::env::var), not the file contents, so the status reflects what the
-    // running server actually sees regardless of how the .env file was loaded.
-    let dotenv_path = project_manager.config_manager.project_path().join(".env");
-    for (key, _file_value) in parse_dotenv_file(&dotenv_path) {
-        if seen_vars.contains(&key) {
+    // Scan LLM model key_var references (e.g. OPENAI_API_KEY, ANTHROPIC_API_KEY)
+    for model in &config.models {
+        if let Some(key_var) = model.key_var() {
+            if seen_vars.insert(key_var.to_string()) {
+                env_secrets.push(make_entry(
+                    key_var.to_string(),
+                    Some(format!("models.{}.key_var", model.name())),
+                ));
+            }
+        }
+    }
+
+    // Scan database *_var fields (credentials that may be supplied via env)
+    for db in &config.databases {
+        let name = &db.name;
+        let mut pairs: Vec<(String, String)> = Vec::new();
+        match &db.database_type {
+            DatabaseType::Postgres(pg) => {
+                if let Some(v) = &pg.password_var {
+                    pairs.push((v.clone(), format!("databases.{name}.password_var")));
+                }
+                if let Some(v) = &pg.host_var {
+                    pairs.push((v.clone(), format!("databases.{name}.host_var")));
+                }
+                if let Some(v) = &pg.user_var {
+                    pairs.push((v.clone(), format!("databases.{name}.user_var")));
+                }
+                if let Some(v) = &pg.port_var {
+                    pairs.push((v.clone(), format!("databases.{name}.port_var")));
+                }
+                if let Some(v) = &pg.database_var {
+                    pairs.push((v.clone(), format!("databases.{name}.database_var")));
+                }
+            }
+            DatabaseType::Redshift(rs) => {
+                if let Some(v) = &rs.password_var {
+                    pairs.push((v.clone(), format!("databases.{name}.password_var")));
+                }
+                if let Some(v) = &rs.host_var {
+                    pairs.push((v.clone(), format!("databases.{name}.host_var")));
+                }
+                if let Some(v) = &rs.user_var {
+                    pairs.push((v.clone(), format!("databases.{name}.user_var")));
+                }
+                if let Some(v) = &rs.port_var {
+                    pairs.push((v.clone(), format!("databases.{name}.port_var")));
+                }
+                if let Some(v) = &rs.database_var {
+                    pairs.push((v.clone(), format!("databases.{name}.database_var")));
+                }
+            }
+            DatabaseType::Mysql(my) => {
+                if let Some(v) = &my.password_var {
+                    pairs.push((v.clone(), format!("databases.{name}.password_var")));
+                }
+                if let Some(v) = &my.host_var {
+                    pairs.push((v.clone(), format!("databases.{name}.host_var")));
+                }
+                if let Some(v) = &my.user_var {
+                    pairs.push((v.clone(), format!("databases.{name}.user_var")));
+                }
+                if let Some(v) = &my.port_var {
+                    pairs.push((v.clone(), format!("databases.{name}.port_var")));
+                }
+                if let Some(v) = &my.database_var {
+                    pairs.push((v.clone(), format!("databases.{name}.database_var")));
+                }
+            }
+            DatabaseType::ClickHouse(ch) => {
+                if let Some(v) = &ch.password_var {
+                    pairs.push((v.clone(), format!("databases.{name}.password_var")));
+                }
+                if let Some(v) = &ch.host_var {
+                    pairs.push((v.clone(), format!("databases.{name}.host_var")));
+                }
+                if let Some(v) = &ch.user_var {
+                    pairs.push((v.clone(), format!("databases.{name}.user_var")));
+                }
+                if let Some(v) = &ch.database_var {
+                    pairs.push((v.clone(), format!("databases.{name}.database_var")));
+                }
+            }
+            DatabaseType::Snowflake(sf) => {
+                if let SnowflakeAuthType::PasswordVar { password_var } = &sf.auth_type {
+                    pairs.push((
+                        password_var.clone(),
+                        format!("databases.{name}.password_var"),
+                    ));
+                }
+            }
+            DatabaseType::Bigquery(bq) => {
+                if let Some(v) = &bq.key_path_var {
+                    pairs.push((v.clone(), format!("databases.{name}.key_path_var")));
+                }
+            }
+            DatabaseType::MotherDuck(md) => {
+                pairs.push((md.token_var.clone(), format!("databases.{name}.token_var")));
+            }
+            DatabaseType::DOMO(domo) => {
+                pairs.push((
+                    domo.developer_token_var.clone(),
+                    format!("databases.{name}.developer_token_var"),
+                ));
+            }
+            DatabaseType::DuckDB(_) => {}
+        }
+        for (var, config_field) in pairs {
+            if seen_vars.insert(var.clone()) {
+                env_secrets.push(make_entry(var, Some(config_field)));
+            }
+        }
+    }
+
+    // Add .env-only vars not already covered by config references.
+    for (key, _) in &dotenv_entries {
+        if !seen_vars.insert(key.clone()) {
             continue;
         }
-        let live_value = std::env::var(&key).ok().filter(|v| !v.is_empty());
-        let is_set = live_value.is_some();
-        let masked_value = live_value.as_deref().map(mask_secret_value);
-        let full_value = live_value.clone();
-        env_secrets.push(EnvSecretInfo {
-            env_var: key,
-            config_field: ".env".to_string(),
-            is_set,
-            masked_value,
-            full_value,
-        });
+        env_secrets.push(make_entry(key.clone(), None));
+    }
+
+    // Add built-in app env vars not already covered by config or .env
+    for (var, label) in BUILT_IN_VARS {
+        if seen_vars.insert(var.to_string()) {
+            env_secrets.push(make_entry(var.to_string(), Some(label.to_string())));
+        }
     }
 
     Ok((StatusCode::OK, axum::Json(env_secrets)).into_response())
