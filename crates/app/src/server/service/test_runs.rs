@@ -918,21 +918,21 @@ impl TestRunsManager {
 
         // Recompute avg score for affected runs
         for (run_id, run_cases) in &cases_by_run {
-            if let Some(&(source_id, run_index)) = run_info.get(run_id) {
-                if let Some(verdicts) = verdict_map.get(&(source_id.to_string(), run_index)) {
-                    let n = run_cases.len() as f64;
-                    if n > 0.0 {
-                        let sum: f64 = run_cases
-                            .iter()
-                            .map(|c| {
-                                Self::human_effective_score(
-                                    c.score,
-                                    verdicts.get(&c.case_index).map(|s| s.as_str()),
-                                )
-                            })
-                            .sum();
-                        base_scores.insert(*run_id, Some(sum / n));
-                    }
+            if let Some(&(source_id, run_index)) = run_info.get(run_id)
+                && let Some(verdicts) = verdict_map.get(&(source_id.to_string(), run_index))
+            {
+                let n = run_cases.len() as f64;
+                if n > 0.0 {
+                    let sum: f64 = run_cases
+                        .iter()
+                        .map(|c| {
+                            Self::human_effective_score(
+                                c.score,
+                                verdicts.get(&c.case_index).map(|s| s.as_str()),
+                            )
+                        })
+                        .sum();
+                    base_scores.insert(*run_id, Some(sum / n));
                 }
             }
         }

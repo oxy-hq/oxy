@@ -922,7 +922,7 @@ fn build_airlayer_query(
         .iter()
         .map(|td| {
             let dimension = qualify_field(&td.dimension, topic_name);
-            let granularity = td.granularity.as_ref().map(|g| granularity_to_string(g));
+            let granularity = td.granularity.as_ref().map(granularity_to_string);
             TimeDimensionQuery {
                 dimension,
                 granularity,

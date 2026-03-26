@@ -115,10 +115,11 @@ pub async fn set_human_verdict(
     ProjectManagerExtractor(_pm): ProjectManagerExtractor,
     extract::Json(body): extract::Json<SetHumanVerdictBody>,
 ) -> Result<extract::Json<Option<HumanVerdictInfo>>, StatusCode> {
-    if let Some(ref v) = body.verdict {
-        if v != "pass" && v != "fail" {
-            return Err(StatusCode::UNPROCESSABLE_ENTITY);
-        }
+    if let Some(ref v) = body.verdict
+        && v != "pass"
+        && v != "fail"
+    {
+        return Err(StatusCode::UNPROCESSABLE_ENTITY);
     }
     let source_id = decode_path_from_base64(pathb64)?;
     let manager = TestRunsManager::new(project_id).await.map_err(|e| {

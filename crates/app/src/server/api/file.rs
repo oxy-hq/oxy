@@ -543,19 +543,19 @@ fn get_file_tree_recursive(path: &PathBuf, root: &PathBuf) -> FileTree {
         is_dir: path.is_dir(),
         children: vec![],
     };
-    if path.is_dir() {
-        if let Ok(entries) = sync_fs::read_dir(path) {
-            for entry in entries.flatten() {
-                let entry_path = entry.path();
-                // Skip hidden git/worktree internals
-                let name = entry_path.file_name().unwrap_or_default().to_string_lossy();
-                if HIDDEN_DIRS.iter().any(|hidden| name == *hidden) {
-                    continue;
-                }
-                file_tree
-                    .children
-                    .push(get_file_tree_recursive(&entry_path, root));
+    if path.is_dir()
+        && let Ok(entries) = sync_fs::read_dir(path)
+    {
+        for entry in entries.flatten() {
+            let entry_path = entry.path();
+            // Skip hidden git/worktree internals
+            let name = entry_path.file_name().unwrap_or_default().to_string_lossy();
+            if HIDDEN_DIRS.iter().any(|hidden| name == *hidden) {
+                continue;
             }
+            file_tree
+                .children
+                .push(get_file_tree_recursive(&entry_path, root));
         }
     }
     file_tree

@@ -69,21 +69,21 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
 
     // Initialize local git: clone from GIT_REPOSITORY_URL if set, or init a
     // fresh repo.  No-op when .git already exists.
-    if !args.cloud {
-        if let Ok(project_root) = resolve_local_project_path() {
-            let repo_url = std::env::var("GIT_REPOSITORY_URL").ok();
-            let branch = std::env::var("GIT_BRANCH").unwrap_or_else(|_| "main".to_string());
-            let token = LocalGitService::get_remote_token().await;
-            if let Err(e) = LocalGitService::clone_or_init(
-                &project_root,
-                repo_url.as_deref(),
-                &branch,
-                token.as_deref(),
-            )
-            .await
-            {
-                tracing::warn!("Failed to initialize local git repository: {}", e);
-            }
+    if !args.cloud
+        && let Ok(project_root) = resolve_local_project_path()
+    {
+        let repo_url = std::env::var("GIT_REPOSITORY_URL").ok();
+        let branch = std::env::var("GIT_BRANCH").unwrap_or_else(|_| "main".to_string());
+        let token = LocalGitService::get_remote_token().await;
+        if let Err(e) = LocalGitService::clone_or_init(
+            &project_root,
+            repo_url.as_deref(),
+            &branch,
+            token.as_deref(),
+        )
+        .await
+        {
+            tracing::warn!("Failed to initialize local git repository: {}", e);
         }
     }
 

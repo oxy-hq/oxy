@@ -121,10 +121,10 @@ pub async fn run_test<P: AsRef<Path> + Send + 'static>(
             Ok(response) => {
                 for metric in response.iter() {
                     // Persist case result if a run context was provided
-                    if let Some(ref ctx) = persist {
-                        if let Err(e) = persist_case_result(ctx, metric).await {
-                            tracing::warn!("Failed to persist test case result: {e}");
-                        }
+                    if let Some(ref ctx) = persist
+                        && let Err(e) = persist_case_result(ctx, metric).await
+                    {
+                        tracing::warn!("Failed to persist test case result: {e}");
                     }
                     if response_tx
                         .send(TestStreamMessage {

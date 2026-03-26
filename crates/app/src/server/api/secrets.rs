@@ -594,13 +594,13 @@ pub async fn list_env_secrets(
 
     // Scan LLM model key_var references (e.g. OPENAI_API_KEY, ANTHROPIC_API_KEY)
     for model in &config.models {
-        if let Some(key_var) = model.key_var() {
-            if seen_vars.insert(key_var.to_string()) {
-                env_secrets.push(make_entry(
-                    key_var.to_string(),
-                    Some(format!("models.{}.key_var", model.name())),
-                ));
-            }
+        if let Some(key_var) = model.key_var()
+            && seen_vars.insert(key_var.to_string())
+        {
+            env_secrets.push(make_entry(
+                key_var.to_string(),
+                Some(format!("models.{}.key_var", model.name())),
+            ));
         }
     }
 

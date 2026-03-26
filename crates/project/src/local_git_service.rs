@@ -672,14 +672,13 @@ impl LocalGitService {
     /// we read that path so callers can find worktree-specific state (rebase-merge, etc.).
     fn resolve_git_dir(root: &Path) -> PathBuf {
         let dot_git = root.join(".git");
-        if dot_git.is_file() {
-            if let Ok(content) = std::fs::read_to_string(&dot_git) {
-                if let Some(rel) = content.trim().strip_prefix("gitdir: ") {
-                    let resolved = root.join(rel);
-                    if let Ok(canonical) = resolved.canonicalize() {
-                        return canonical;
-                    }
-                }
+        if dot_git.is_file()
+            && let Ok(content) = std::fs::read_to_string(&dot_git)
+            && let Some(rel) = content.trim().strip_prefix("gitdir: ")
+        {
+            let resolved = root.join(rel);
+            if let Ok(canonical) = resolved.canonicalize() {
+                return canonical;
             }
         }
         dot_git
@@ -706,7 +705,7 @@ impl LocalGitService {
     /// state files (rebase-merge/, MERGE_HEAD) are cleaned up.
     pub async fn reset_to_commit(root: &Path, commit: &str) -> Result<(), OxyError> {
         // Basic guard: reject refs that look like shell injection attempts.
-        if commit.contains(|c: char| matches!(c, ';' | '|' | '&' | '`' | '$' | '(' | ')')) {
+        if commit.contains([';', '|', '&', '`', '$', '(', ')']) {
             return Err(OxyError::ArgumentError(format!(
                 "Invalid commit ref: {commit}"
             )));
@@ -823,12 +822,12 @@ impl LocalGitService {
     pub async fn unresolve_conflict_file(root: &Path, file_path: &str) -> Result<(), OxyError> {
         // Guard against path traversal
         let full_path = root.join(file_path);
-        if let Ok(canonical) = full_path.canonicalize() {
-            if !canonical.starts_with(root) {
-                return Err(OxyError::ArgumentError(format!(
-                    "File path escapes project root: {file_path}"
-                )));
-            }
+        if let Ok(canonical) = full_path.canonicalize()
+            && !canonical.starts_with(root)
+        {
+            return Err(OxyError::ArgumentError(format!(
+                "File path escapes project root: {file_path}"
+            )));
         }
 
         let git_dir = Self::resolve_git_dir(root);
@@ -993,10 +992,10 @@ impl LocalGitService {
     pub async fn get_default_branch(project_root: &Path) -> String {
         DEFAULT_BRANCH
             .get_or_init(|| async {
-                if let Ok(b) = std::env::var("GIT_DEFAULT_BRANCH") {
-                    if !b.is_empty() {
-                        return b;
-                    }
+                if let Ok(b) = std::env::var("GIT_DEFAULT_BRANCH")
+                    && !b.is_empty()
+                {
+                    return b;
                 }
                 match Self::run_git(
                     project_root,
