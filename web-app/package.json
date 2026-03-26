@@ -51,7 +51,7 @@
     "@remoteoss/json-schema-form": "0.12.1-beta.0",
     "@sentry/react": "^10.43.0",
     "@sentry/vite-plugin": "^4.9.1",
-    "@tailwindcss/vite": "^4.2.1",
+    "@tailwindcss/vite": "^4.2.2",
     "@tanstack/react-query": "^5.90.21",
     "@tanstack/react-table": "^8.21.3",
     "@tanstack/react-virtual": "^3.13.21",
@@ -131,8 +131,8 @@
     "i": "^0.3.7",
     "rollup-plugin-esbuild": "^6.2.1",
     "rollup-plugin-visualizer": "^7.0.1",
-    "typescript": "^5.9.3",
-    "vite": "^7.3.1",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.2",
     "vite-plugin-node-polyfills": "^0.25.0"
   },
   "engines": {

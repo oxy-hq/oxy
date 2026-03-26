@@ -682,19 +682,16 @@ const CaseDetailPanel: React.FC<CaseDetailPanelProps> = ({
         )}
 
         {/* Historical actual output — only when no live attempt records */}
-        {attemptRecords.length === 0 &&
-          isViewingHistorical &&
-          historicalCase &&
-          historicalCase.actual_output && (
-            <div>
-              <SectionHeader
-                label='Actual output'
-                copyText={historicalCase.actual_output}
-                className='mb-1.5'
-              />
-              <TruncatedText text={historicalCase.actual_output} mono />
-            </div>
-          )}
+        {attemptRecords.length === 0 && isViewingHistorical && historicalCase?.actual_output && (
+          <div>
+            <SectionHeader
+              label='Actual output'
+              copyText={historicalCase.actual_output}
+              className='mb-1.5'
+            />
+            <TruncatedText text={historicalCase.actual_output} mono />
+          </div>
+        )}
 
         {/* Expected — collapsed by default, with inline preview */}
         {testCase.expected && (

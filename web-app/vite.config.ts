@@ -189,14 +189,7 @@ export default defineConfig({
       // These are optional Node.js-only peer dependencies of memfs that don't exist in browser
       "@jsonjoy.com/fs-node",
       "@jsonjoy.com/fs-node-utils"
-    ],
-    // Use esbuild for faster dependency pre-bundling
-    esbuildOptions: {
-      target: "es2020",
-      supported: {
-        "top-level-await": true
-      }
-    }
+    ]
   },
   resolve: {
     alias: {
@@ -257,8 +250,6 @@ export default defineConfig({
     // Increase chunk size warning limit (500kb)
     chunkSizeWarningLimit: 500,
     rollupOptions: {
-      // Optimize rollup for memory efficiency
-      maxParallelFileOps: 2, // Reduce parallel operations to save memory
       output: {
         manualChunks
       }
