@@ -12,11 +12,12 @@ import {
   SelectTrigger,
   SelectValue
 } from "@/components/ui/shadcn/select";
+import type { WorkflowFormData } from "../../..";
 import { getItemsWithUnknownValue } from "./utils";
 
 type TimeDimensionsFieldProps = {
   taskPath: string;
-  control: Control<any>;
+  control: Control<WorkflowFormData>;
   topicValue?: string;
   fieldsLoading: boolean;
   dimensionItems: Array<{
@@ -51,6 +52,7 @@ export const TimeDimensionsField: React.FC<TimeDimensionsFieldProps> = ({
     remove: removeTimeDimension
   } = useFieldArray({
     control,
+    // @ts-expect-error - dynamic field path
     name: `${taskPath}.time_dimensions`
   });
 
@@ -104,6 +106,7 @@ export const TimeDimensionsField: React.FC<TimeDimensionsFieldProps> = ({
                   {/* Dimension selector */}
                   <Controller
                     control={control}
+                    // @ts-expect-error - dynamic field path
                     name={`${taskPath}.time_dimensions.${tdIndex}.dimension`}
                     render={({ field: controllerField }) => {
                       const value = controllerField.value as string;
@@ -123,10 +126,11 @@ export const TimeDimensionsField: React.FC<TimeDimensionsFieldProps> = ({
                   {/* Granularity selector */}
                   <Controller
                     control={control}
+                    // @ts-expect-error - dynamic field path
                     name={`${taskPath}.time_dimensions.${tdIndex}.granularity`}
                     render={({ field: controllerField }) => (
                       <Select
-                        value={controllerField.value || "value"}
+                        value={(controllerField.value as string) || "value"}
                         onValueChange={controllerField.onChange}
                       >
                         <SelectTrigger>
