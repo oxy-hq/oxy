@@ -47,6 +47,7 @@ jobs:
                 fi
               done
 
+      # TODO: remove semantic-engine after we stop building it as a separate package
       - name: Delete old nightly Docker tags (oxy, oxy-semantic-engine)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

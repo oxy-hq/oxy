@@ -160,12 +160,11 @@ impl ClickHouse {
                     .join("\n")
             }
             Err(err) => {
-                // Parsing failed - likely due to dialect mismatch (e.g., backticks from CubeJS)
+                // Parsing failed - likely due to dialect mismatch (e.g., backticks from another dialect)
                 // ClickHouse can handle the query natively, so pass it through
                 tracing::warn!(
                     error = %err,
-                    "Failed to parse ClickHouse query for comment stripping, passing through unchanged. \
-                    This is expected when using CubeJS with ClickHouse."
+                    "Failed to parse ClickHouse query for comment stripping, passing through unchanged."
                 );
                 query.to_string()
             }

@@ -84,7 +84,7 @@ In cloud mode, Oxy operates differently from local mode:
 # Start Oxy in cloud mode
 oxy serve --cloud
 
-# With enterprise features (ClickHouse telemetry, semantic engine)
+# With enterprise features (ClickHouse telemetry, OTel Collector)
 oxy serve --cloud --enterprise
 
 # Specify custom port
@@ -96,7 +96,7 @@ oxy serve --cloud --host 0.0.0.0 --port 3000
 
 <Note>
   The `--enterprise` flag enables enterprise features including
-  ClickHouse-backed telemetry and the semantic engine. Use this flag when your
+  ClickHouse-backed telemetry and OpenTelemetry collection. Use this flag when your
   deployment includes a ClickHouse instance and OTel Collector.
 </Note>
 

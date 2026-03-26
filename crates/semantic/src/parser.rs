@@ -607,7 +607,7 @@ impl SemanticLayerParser {
         })?;
 
         // Pre-process: temporarily replace non-globals templates with placeholders
-        // Variables should be preserved as-is for encoding by the CubeJS translator
+        // Variables should be preserved as-is for encoding by the semantic translator
         let placeholder_prefix = "___TEMPLATE_PLACEHOLDER_";
         let mut placeholders = Vec::new();
         let re = Regex::new(r"\{\{[^}]+\}\}").unwrap();
@@ -625,7 +625,7 @@ impl SemanticLayerParser {
                     matched.to_string()
                 } else {
                     // Replace ALL other templates (including variables.*) with placeholders
-                    // Variables will be encoded later by the CubeJS translator
+                    // Variables will be encoded later by the semantic translator
                     let placeholder = format!("{}{}", placeholder_prefix, placeholders.len());
                     placeholders.push(matched.to_string());
                     placeholder

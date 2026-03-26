@@ -1782,23 +1782,7 @@ impl PartialEq for SemanticFilterType {
 impl Eq for SemanticFilterType {}
 
 impl SemanticFilterType {
-    /// Get the operator name as a string (for CubeJS conversion)
-    pub fn operator_name(&self) -> &'static str {
-        match self {
-            SemanticFilterType::Eq(_) => "equals",
-            SemanticFilterType::Neq(_) => "notEquals",
-            SemanticFilterType::Gt(_) => "gt",
-            SemanticFilterType::Gte(_) => "gte",
-            SemanticFilterType::Lt(_) => "lt",
-            SemanticFilterType::Lte(_) => "lte",
-            SemanticFilterType::In(_) => "equals",
-            SemanticFilterType::NotIn(_) => "notEquals",
-            SemanticFilterType::InDateRange(_) => "inDateRange",
-            SemanticFilterType::NotInDateRange(_) => "notInDateRange",
-        }
-    }
-
-    /// Get the values as a Vec<Value> for CubeJS conversion
+    /// Get the filter values as a `Vec<Value>`
     pub fn values(&self) -> Vec<Value> {
         match self {
             SemanticFilterType::Eq(f)

@@ -660,7 +660,6 @@ impl SemanticQueryExecutable {
 }
 
 /// Compile a semantic query to SQL using the airlayer in-process engine.
-/// Replaces the previous CubeJS HTTP-based compilation.
 fn compile_with_airlayer(
     task: &SemanticQueryTask,
     topic_name: &str,

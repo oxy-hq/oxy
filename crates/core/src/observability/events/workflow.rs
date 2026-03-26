@@ -240,8 +240,6 @@ pub mod task {
         pub static NAME_MAP: &str = "workflow.task.semantic_query.map";
         pub static NAME_COMPILE: &str = "workflow.task.semantic_query.compile";
         pub static NAME_EXECUTE: &str = "workflow.task.semantic_query.execute";
-        pub static NAME_GET_SQL_FROM_CUBEJS: &str =
-            "workflow.task.semantic_query.get_sql_from_cubejs";
         pub static NAME_EXECUTE_SQL: &str = "workflow.task.semantic_query.execute_sql";
         pub static TYPE: &str = "semantic_query";
 
@@ -253,8 +251,6 @@ pub mod task {
         pub static OUTPUT_COMPILE: &str = "workflow.task.semantic_query.compile.output";
         pub static INPUT_EXECUTE: &str = "workflow.task.semantic_query.execute.input";
         pub static OUTPUT_EXECUTE: &str = "workflow.task.semantic_query.execute.output";
-        pub static INPUT_GET_SQL: &str = "workflow.task.semantic_query.get_sql_from_cubejs.input";
-        pub static OUTPUT_GET_SQL: &str = "workflow.task.semantic_query.get_sql_from_cubejs.output";
         pub static INPUT_EXECUTE_SQL: &str = "workflow.task.semantic_query.execute_sql.input";
         pub static OUTPUT_EXECUTE_SQL: &str = "workflow.task.semantic_query.execute_sql.output";
 
@@ -336,25 +332,6 @@ pub mod task {
                 is_visible = true,
                 status = "success",
                 output = %serde_json::to_string(output).unwrap_or_default()
-            );
-        }
-
-        pub fn get_sql_input(cubejs_query: &serde_json::Value) {
-            event!(
-                Level::INFO,
-                name = INPUT_GET_SQL,
-                is_visible = true,
-                cubejs_query = %cubejs_query
-            );
-        }
-
-        pub fn get_sql_output(sql: &str) {
-            event!(
-                Level::INFO,
-                name = OUTPUT_GET_SQL,
-                is_visible = true,
-                status = "success",
-                sql = %sql
             );
         }
 

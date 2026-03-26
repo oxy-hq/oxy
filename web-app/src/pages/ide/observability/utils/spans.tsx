@@ -21,7 +21,6 @@ export function formatSpanLabel(spanName: string): string {
     "workflow.task.semantic_query.map": "Map Semantic Query",
     "workflow.task.semantic_query.compile": "Compile Query to SQL",
     "workflow.task.semantic_query.execute": "Execute Semantic Query",
-    "workflow.task.semantic_query.get_sql_from_cubejs": "Generate SQL from CubeJS",
     "workflow.task.semantic_query.execute_sql": "Execute SQL Query",
 
     // SQL execution operations

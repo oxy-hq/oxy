@@ -20,13 +20,12 @@ pub mod semantic_variables {
     #[test]
     fn run_workflow_with_semantic_variables_validates() {
         // This test verifies the workflow with variables parses correctly
-        // Even if CubeJS is not running, the workflow should validate
         let mut cmd = setup_command();
         let result = cmd
             .arg("procedures/semantic_variables.procedure.yml")
             .assert();
 
-        // The workflow will fail to execute without CubeJS, but should not fail on parsing
+        // The workflow may fail to execute without infrastructure, but should not fail on parsing
         let output = String::from_utf8(result.get_output().stderr.clone()).unwrap();
         // Should not have parsing errors
         assert!(!output.contains("Failed to deserialize"));
@@ -65,7 +64,7 @@ pub mod semantic_variables {
             println!("Stderr: {}", stderr);
             println!("Stdout: {}", stdout);
         }
-        // Allow execution failures (CubeJS not running), but not parsing failures
+        // Allow execution failures, but not parsing failures
         assert!(
             !stderr.contains("missing field `topic`") && !stderr.contains("invalid type"),
             "Workflow should parse correctly even if execution fails. Stderr: {}",

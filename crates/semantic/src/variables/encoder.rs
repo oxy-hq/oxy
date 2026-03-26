@@ -6,9 +6,9 @@ use super::errors::VariableError;
 /// Maps original variable expressions to their encoded equivalents
 pub type VariableMapping = HashMap<String, String>;
 
-/// Handles encoding and decoding of variable expressions for CubeJS compatibility
+/// Handles encoding and decoding of variable expressions
 ///
-/// Transforms expressions like `{{variables.user_table}}` into CubeJS-safe identifiers
+/// Transforms expressions like `{{variables.user_table}}` into safe identifiers
 /// like `__VAR_user_table__` and maintains bidirectional mapping for decoding.
 #[derive(Debug, Clone)]
 pub struct VariableEncoder {
@@ -36,7 +36,7 @@ impl VariableEncoder {
         }
     }
 
-    /// Encode variable expressions in a string to CubeJS-safe format
+    /// Encode variable expressions in a string to a safe placeholder format
     ///
     /// Transforms `{{variables.user_table}}` → `__VAR_user_table__`
     /// Handles nested paths: `{{variables.schema.table}}` → `__VAR_schema_table__`
@@ -208,7 +208,7 @@ impl VariableEncoder {
         self.variable_mapping.clear();
     }
 
-    /// Encode a variable path to CubeJS-safe identifier format
+    /// Encode a variable path to a safe hex identifier
     ///
     /// Converts variable path to hex encoding to avoid ambiguity
     /// `schema.table` → `__VAR_736368656d612e7461626c65__`
@@ -218,7 +218,7 @@ impl VariableEncoder {
     /// * `variable_path` - Variable path like "schema.table" or "orders_table"
     ///
     /// # Returns
-    /// * Encoded identifier safe for CubeJS parsing with unambiguous decoding
+    /// * Hex-encoded identifier with unambiguous decoding
     fn encode_variable_path(&self, variable_path: &str) -> String {
         // Encode variable path as hex to avoid ambiguity with dots/underscores
         let hex_encoded = variable_path

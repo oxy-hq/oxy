@@ -100,7 +100,7 @@ impl RuntimeVariableResolver {
         Self::new(variables_context)
     }
 
-    /// Resolve variables in encoded SQL from CubeJS
+    /// Resolve variables in encoded SQL
     pub fn resolve_sql_variables(&self, encoded_sql: String) -> Result<String, VariableError> {
         // First decode any encoded variables back to template syntax
         let decoded_sql = self.encoder.decode_all_variables(&encoded_sql);
@@ -340,7 +340,7 @@ mod tests {
 
         let resolver = RuntimeVariableResolver::new(context).unwrap();
 
-        // Simulate encoded SQL from CubeJS using hex encoding
+        // Simulate encoded SQL using hex encoding
         // "id_column" hex = "69645f636f6c756d6e", "table_name" hex = "7461626c655f6e616d65"
         let encoded_sql = "SELECT __VAR_69645f636f6c756d6e__ FROM __VAR_7461626c655f6e616d65__";
 

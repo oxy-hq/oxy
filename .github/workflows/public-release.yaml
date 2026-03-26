@@ -32,12 +32,10 @@ on:
       build_targets:
         description: "Docker targets to build"
         required: false
-        default: "both"
+        default: "runtime"
         type: choice
         options:
-          - both
           - runtime
-          - semantic-engine
           - none
 
 env:
@@ -83,7 +81,7 @@ jobs:
         run: |
           SHORT_SHA=${GITHUB_SHA::7}
           CURRENT_DATE=$(date -u +'%Y%m%d')
-          BUILD_TARGETS="${{ inputs.build_targets || 'both' }}"
+          BUILD_TARGETS="${{ inputs.build_targets || 'runtime' }}"
 
           echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
           echo "current_date=${CURRENT_DATE}" >> $GITHUB_OUTPUT
@@ -135,7 +133,7 @@ jobs:
           fi
 
           # Determine if Docker should be built
-          if [ "$BUILD_TARGETS" == "none" ]; then
+          if [ "$BUILD_TARGETS" = "none" ]; then
             SHOULD_BUILD_DOCKER="false"
           else
             SHOULD_BUILD_DOCKER="true"
@@ -549,9 +547,6 @@ jobs:
           - name: runtime
             image: oxy
             target: runtime
-          - name: semantic-engine
-            image: oxy-semantic-engine
-            target: semantic-engine
         include:
           - arch: linux/amd64
             runner: ubuntu-latest
@@ -565,14 +560,14 @@ jobs:
       - name: Check if should build ${{ matrix.target.name }}
         id: should_build
         run: |
-          BUILD_TARGETS="${{ inputs.build_targets || 'both' }}"
+          BUILD_TARGETS="${{ inputs.build_targets || 'runtime' }}"
           TARGET="${{ matrix.target.name }}"
 
-          if [ "$BUILD_TARGETS" = "both" ] || [ "$BUILD_TARGETS" = "$TARGET" ]; then
+          if [ "$BUILD_TARGETS" = "runtime" ] || [ "$BUILD_TARGETS" = "$TARGET" ]; then
             echo "should_build=true" >> $GITHUB_OUTPUT
           else
             echo "should_build=false" >> $GITHUB_OUTPUT
-            echo "⏭️  Skipping $TARGET"
+            echo "Skipping $TARGET"
           fi
 
       - name: Checkout code
@@ -662,20 +657,18 @@ jobs:
         target:
           - name: runtime
             image: oxy
-          - name: semantic-engine
-            image: oxy-semantic-engine
     steps:
       - name: Check if should publish ${{ matrix.target.name }}
         id: should_publish
         run: |
-          BUILD_TARGETS="${{ inputs.build_targets || 'both' }}"
+          BUILD_TARGETS="${{ inputs.build_targets || 'runtime' }}"
           TARGET="${{ matrix.target.name }}"
 
-          if [ "$BUILD_TARGETS" = "both" ] || [ "$BUILD_TARGETS" = "$TARGET" ]; then
+          if [ "$BUILD_TARGETS" = "runtime" ] || [ "$BUILD_TARGETS" = "$TARGET" ]; then
             echo "should_publish=true" >> $GITHUB_OUTPUT
           else
             echo "should_publish=false" >> $GITHUB_OUTPUT
-            echo "⏭️  Skipping manifest for $TARGET"
+            echo "Skipping manifest for $TARGET"
           fi
 
       - name: Log in to GitHub Container Registry
@@ -752,16 +745,16 @@ jobs:
         run: |
           VERSION="${{ needs.determine-build-type.outputs.version }}"
           CHANNEL="${{ needs.determine-build-type.outputs.channel }}"
-          BUILD_TARGETS="${{ inputs.build_targets || 'both' }}"
+          BUILD_TARGETS="${{ inputs.build_targets || 'runtime' }}"
 
           cat >> $GITHUB_STEP_SUMMARY << 'EOF'
-          # 🚀 Docker Images Published
+          # Docker Images Published
 
           ## Published Images
 
           EOF
 
-          if [ "$BUILD_TARGETS" = "both" ] || [ "$BUILD_TARGETS" = "runtime" ]; then
+          if [ "$BUILD_TARGETS" = "runtime" ]; then
             if [ "$CHANNEL" = "stable" ]; then
               TAG="${VERSION}"
             else
@@ -775,25 +768,6 @@ jobs:
           - **Pull:**
             \`\`\`bash
             docker pull ghcr.io/${{ github.repository_owner }}/oxy:${TAG}
-            \`\`\`
-
-          EOF
-          fi
-
-          if [ "$BUILD_TARGETS" = "both" ] || [ "$BUILD_TARGETS" = "semantic-engine" ]; then
-            if [ "$CHANNEL" = "stable" ]; then
-              TAG="${VERSION}"
-            else
-              TAG="edge-latest"
-            fi
-
-            cat >> $GITHUB_STEP_SUMMARY << EOF
-          ### Oxy Semantic Engine
-          - **Image:** \`ghcr.io/${{ github.repository_owner }}/oxy-semantic-engine:${TAG}\`
-          - **Architectures:** linux/amd64, linux/arm64
-          - **Pull:**
-            \`\`\`bash
-            docker pull ghcr.io/${{ github.repository_owner }}/oxy-semantic-engine:${TAG}
             \`\`\`
 
           EOF

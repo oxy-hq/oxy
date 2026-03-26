@@ -2,7 +2,7 @@
 title: oxy build
 ---
 
-The `oxy build` command processes your semantic layer (views and topics) into CubeJS configuration files and generates embeddings for vector search. It features an intelligent incremental build system that provides **10-100x speedup** for small changes.
+The `oxy build` command processes your semantic layer (views and topics) and generates embeddings for vector search. It features an intelligent incremental build system that provides **10-100x speedup** for small changes.
 
 ## Quick start
 
@@ -47,7 +47,7 @@ oxy build
 - Compares current file hashes with previous build
 - Identifies modified, added, or deleted files
 - Automatically rebuilds dependent views (e.g., if view B references view A's entity)
-- Preserves CubeJS `.cubestore` cache for faster startup
+- Preserves semantic layer cache for faster startup
 
 ### No-op build (nothing changed)
 
@@ -71,7 +71,7 @@ oxy build
 
 ### Full rebuild
 
-Rebuilds all views and topics from scratch. Clears the CubeJS cache when using `--force`.
+Rebuilds all views and topics from scratch. Clears the semantic layer cache when using `--force`.
 
 ```bash
 oxy build --force
@@ -101,7 +101,7 @@ oxy build -f
 
 ### --force, -f
 
-Force a complete rebuild and clear the CubeJS cache.
+Force a complete rebuild and clear the semantic layer cache.
 
 ```bash
 oxy build --force
@@ -111,7 +111,6 @@ oxy build -f
 **Use this when:**
 
 - After database schema migrations
-- To clear the CubeJS cache (`.semantics/.cubestore/`)
 - When troubleshooting semantic layer issues
 - When you want a clean slate
 
@@ -122,7 +121,7 @@ oxy build -f
 The incremental build system maintains a manifest file at `.semantics/.build_manifest.json` that tracks:
 
 - **File hashes**: SHA256 hashes of all semantic files
-- **Output mappings**: Which CubeJS files were generated from which source files
+- **Output mappings**: Which semantic layer files were generated from which source files
 - **Dependency graph**: Relationships between views (e.g., foreign key references)
 - **Configuration hashes**: Database config and global settings for change detection
 
@@ -160,9 +159,9 @@ When you modify `customers.view.yml`, the incremental build automatically rebuil
 
 ### Cache preservation
 
-The incremental build preserves the CubeJS cache (`.semantics/.cubestore/`) to avoid expensive schema recompilation:
+The incremental build preserves the semantic layer cache to avoid expensive schema recompilation:
 
-- **Incremental builds**: Cache is preserved (CubeJS picks up changes automatically)
+- **Incremental builds**: Cache is preserved
 - **Natural full rebuilds**: Cache is preserved (config/globals change)
 - **Forced rebuilds**: Cache is cleared with `--force` flag
 
@@ -210,7 +209,7 @@ If the build manifest becomes corrupted, the system automatically falls back to 
 
 ### Stale cache after manual edits
 
-If you manually edit files in `.semantics/model/` while CubeJS is running, the cache may become stale:
+If you manually edit files in `.semantics/model/`, the cache may become stale:
 
 ```bash
 # Clear the cache and rebuild
@@ -255,5 +254,5 @@ oxy build --force
 ## Related commands
 
 - [`oxy sync`](/reference/oxy-commands#database-synchronization) - Sync database schema information
-- [`oxy start`](/reference/oxy-commands#agent-interaction) - Start the semantic engine and web server
+- [`oxy start`](/reference/oxy-commands#agent-interaction) - Start infrastructure services and web server
 - `oxy vec-search` - Search the vector store

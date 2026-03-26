@@ -46,7 +46,6 @@ oxy start --clean --enterprise  # clean + start with enterprise features
 | PostgreSQL (oxy-postgres)                       |       15432 |
 | ClickHouse (oxy-clickhouse) HTTP / Native       | 8123 / 9000 |
 | OTel Collector (oxy-otel-collector) gRPC / HTTP | 4317 / 4318 |
-| Cube.js Semantic Engine (oxy-cubejs)            |        4000 |
 
 ## Clean option
 
@@ -95,8 +94,7 @@ The `--clean` flag removes all existing Oxy-managed Docker resources before star
 </ParamField>
 
 <ParamField path="--enterprise" type="boolean" default="false">
-  Enable enterprise features including ClickHouse, OpenTelemetry Collector, and
-  Cube.js semantic engine.
+  Enable enterprise features including ClickHouse and OpenTelemetry Collector.
 </ParamField>
 
 ## Important Notes
