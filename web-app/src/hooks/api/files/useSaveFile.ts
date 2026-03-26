@@ -18,6 +18,10 @@ export default function useSaveFile() {
         queryKeys.file.get(project.id, branchName, variables.pathb64),
         variables.data
       );
+      // Refresh git status immediately so the header badge reflects the save
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.file.diffSummary(project.id, branchName)
+      });
     }
   });
 }

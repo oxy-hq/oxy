@@ -1,36 +1,47 @@
 import { ContentSkeleton } from "@/components/ui/ContentSkeleton";
-import { Badge } from "@/components/ui/shadcn/badge";
 import { Label } from "@/components/ui/shadcn/label";
+import { useAuth } from "@/contexts/AuthContext";
 import useRevisionInfo from "@/hooks/api/projects/useRevisionInfo";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import DiffSummary from "@/pages/ide/Header/BranchSettings/BranchInfo/DiffSummary";
+import { SyncStatusBadge } from "@/pages/ide/Header/BranchSettings/SyncStatusBadge";
 import Actions from "./Actions";
 import { CommitDisplay } from "./CommitDisplay";
+import ConflictPanel from "./ConflictPanel";
 
 const BranchInfo = ({ onFileClick }: { onFileClick: () => void }) => {
+  const { authConfig } = useAuth();
+  const { branchName } = useCurrentProjectBranch();
   const { data: revisionInfo, isLoading: revisionLoading } = useRevisionInfo();
-
-  const getSyncStatusBadgeVariant = (status: string) => {
-    if (status === "synced") return "secondary";
-    if (status === "syncing") return "outline";
-    return "destructive";
-  };
 
   if (revisionLoading) {
     return <ContentSkeleton />;
   }
 
+  // latest_revision is empty when there is no remote configured — hide the section.
+  const hasRemoteRevision = authConfig.local_git && !!revisionInfo?.latest_revision;
+
+  // In local mode the server now computes sync_status using git ancestry
+  // (git rev-list --count HEAD..{remote_sha}) so raw SHA comparison is not needed.
+  // After a pull --rebase the rebased local commit has a new SHA but is still
+  // "up to date" — ancestry check catches this correctly.
+  const showSyncStatus = authConfig.local_git ? hasRemoteRevision : true;
+  const syncStatus = revisionInfo?.sync_status ?? "idle";
+
   return (
     <div className='min-w-0 space-y-6'>
-      <div>
-        <Label className='font-medium text-sm'>Sync Status</Label>
-        <div className='mt-2'>
-          <Badge variant={getSyncStatusBadgeVariant(revisionInfo?.sync_status || "idle")}>
-            {revisionInfo?.sync_status
-              ? revisionInfo.sync_status.charAt(0).toUpperCase() + revisionInfo.sync_status.slice(1)
-              : "Idle"}
-          </Badge>
+      {showSyncStatus && (
+        <div>
+          <Label className='font-medium text-sm'>Sync Status</Label>
+          <div className='mt-2'>
+            <SyncStatusBadge status={syncStatus} />
+          </div>
         </div>
-      </div>
+      )}
+
+      {syncStatus === "conflict" && (
+        <ConflictPanel remoteUrl={revisionInfo?.remote_url} branch={branchName} />
+      )}
 
       <div className='grid grid-cols-1 gap-6 md:grid-cols-2'>
         <CommitDisplay

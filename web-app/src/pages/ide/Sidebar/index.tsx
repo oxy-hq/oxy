@@ -15,7 +15,10 @@ enum SidebarViewMode {
   SETTINGS = "settings"
 }
 
-const getViewModeFromPath = (pathname: string): SidebarViewMode => {
+const getViewModeFromPath = (pathname: string, filesRoot: string): SidebarViewMode => {
+  if (pathname.includes("/ide/files") || pathname === filesRoot) {
+    return SidebarViewMode.FILES;
+  }
   if (pathname.includes("/ide/tests")) {
     return SidebarViewMode.TESTS;
   }
@@ -38,12 +41,13 @@ const Sidebar: React.FC = () => {
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
 
-  const currentViewMode = getViewModeFromPath(location.pathname);
+  const filesRoot = ROUTES.PROJECT(projectId).IDE.FILES.ROOT;
+  const currentViewMode = getViewModeFromPath(location.pathname, filesRoot);
 
   const handleNavigate = (mode: SidebarViewMode) => {
     switch (mode) {
       case SidebarViewMode.FILES:
-        navigate(ROUTES.PROJECT(projectId).IDE.FILES.ROOT);
+        navigate(filesRoot);
         break;
       case SidebarViewMode.OBSERVABILITY:
         navigate(ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.TRACES);

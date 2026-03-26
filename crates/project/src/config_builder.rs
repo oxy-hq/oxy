@@ -38,6 +38,7 @@ impl ConfigBuilder {
             slack: None,
             mcp: None,
             a2a: None,
+            protected_branches: None,
             admins: Vec::new(),
         };
 

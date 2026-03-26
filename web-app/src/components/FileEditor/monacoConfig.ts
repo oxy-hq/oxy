@@ -31,7 +31,7 @@ export const configureMonaco = (monaco: Monaco) => {
 
   configureMonacoYaml(monaco, {
     enableSchemaRequest: true,
-    hover: true,
+    hover: false,
     completion: true,
     validate: true,
     format: true,

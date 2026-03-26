@@ -82,12 +82,43 @@ export const usePullChanges = () => {
     mutationFn: ({ projectId, branchName }: { projectId: string; branchName: string }) =>
       ProjectService.pullChanges(projectId, branchName),
     onSuccess: (_, variables) => {
-      // Invalidate revision info to refetch after pull
+      // Refetch revision info immediately after pull, including inactive observers
+      // so the status updates even if BranchInfo unmounts during navigation.
       queryClient.invalidateQueries({
-        queryKey: queryKeys.projects.revisionInfo(variables.projectId, variables.branchName)
+        queryKey: queryKeys.projects.revisionInfo(variables.projectId, variables.branchName),
+        refetchType: "all"
       });
       queryClient.invalidateQueries({
-        queryKey: queryKeys.file.all(variables.projectId, variables.branchName)
+        queryKey: queryKeys.file.all(variables.projectId, variables.branchName),
+        refetchType: "all"
+      });
+    }
+  });
+};
+
+// Hook to delete a branch
+export const useDeleteBranch = (projectId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (branchName: string) => ProjectService.deleteBranch(projectId, branchName),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.projects.branches(projectId)
+      });
+    }
+  });
+};
+
+// Hook to force-push the current branch to remote
+export const useForcePush = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ projectId, branchName }: { projectId: string; branchName: string }) =>
+      ProjectService.forcePushBranch(projectId, branchName),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.projects.revisionInfo(variables.projectId, variables.branchName)
       });
     }
   });

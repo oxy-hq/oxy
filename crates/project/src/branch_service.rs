@@ -162,6 +162,7 @@ impl BranchService {
             last_sync_time: Some(branch.updated_at.to_string()),
             base_sha: current_commit_sha.clone(),
             head_sha: latest_hash,
+            remote_url: None,
         })
     }
 

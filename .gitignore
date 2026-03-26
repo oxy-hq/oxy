@@ -107,3 +107,4 @@ examples/.oxy_state/
 .playwright-mcp/homepage.png
 examples/test-file-for-e2e.txt
 examples/agents/test-agent-e2e.agent.yml
+.playwright-mcp/

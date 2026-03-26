@@ -98,4 +98,8 @@ export class FileService {
     const response = await apiClient.get(`/${projectId}/files/diff-summary?branch=${branchId}`);
     return response.data;
   }
+
+  static async revertFile(projectId: string, pathb64: string, branchId: string): Promise<void> {
+    await apiClient.post(`/${projectId}/files/${pathb64}/revert?branch=${branchId}`);
+  }
 }

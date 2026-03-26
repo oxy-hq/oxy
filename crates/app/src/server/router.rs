@@ -28,6 +28,7 @@ use crate::api::traces;
 use crate::api::user;
 use crate::api::workflow;
 use crate::api::workspace;
+use crate::server::providers;
 use axum::Router;
 use axum::body::Body;
 use axum::extract::FromRequestParts;
@@ -64,6 +65,7 @@ pub struct AppState {
     pub enterprise: bool,
     pub internal: bool,
     pub readonly: bool,
+    pub backend: std::sync::Arc<providers::ProjectBackend>,
 }
 
 fn build_cors_layer() -> CorsLayer {
@@ -139,6 +141,7 @@ fn build_project_routes(app_state: AppState) -> Router<AppState> {
         .route("/status", get(project::get_project_status))
         .route("/revision-info", get(project::get_revision_info))
         .route("/branches", get(project::get_project_branches))
+        .route("/branches/{branch_name}", delete(project::delete_branch))
         .route("/switch-branch", post(project::switch_project_branch))
         .route(
             "/switch-active-branch",
@@ -146,6 +149,23 @@ fn build_project_routes(app_state: AppState) -> Router<AppState> {
         )
         .route("/pull-changes", post(project::pull_changes))
         .route("/push-changes", post(project::push_changes))
+        .route("/abort-rebase", post(project::abort_rebase))
+        .route("/continue-rebase", post(project::continue_rebase))
+        .route(
+            "/resolve-conflict-file",
+            post(project::resolve_conflict_file),
+        )
+        .route(
+            "/unresolve-conflict-file",
+            post(project::unresolve_conflict_file),
+        )
+        .route(
+            "/resolve-conflict-with-content",
+            post(project::resolve_conflict_with_content),
+        )
+        .route("/force-push", post(project::force_push_branch))
+        .route("/recent-commits", get(project::get_recent_commits))
+        .route("/reset-to-commit", post(project::reset_to_commit))
         .route("/create-repo", post(project::create_repo_from_project))
         .nest("/workflows", build_workflow_routes())
         .nest("/automations", build_automation_routes())
@@ -293,6 +313,7 @@ fn build_file_routes() -> Router<AppState> {
         .route("/diff-summary", get(file::get_diff_summary))
         .route("/{pathb64}", get(file::get_file))
         .route("/{pathb64}/from-git", get(file::get_file_from_git))
+        .route("/{pathb64}/revert", post(file::revert_file))
         .route("/{pathb64}", post(file::save_file))
         .route("/{pathb64}/delete-file", delete(file::delete_file))
         .route("/{pathb64}/delete-folder", delete(file::delete_folder))
@@ -465,12 +486,31 @@ fn apply_middleware(
 
     Ok(protected_regular_routes)
 }
+fn build_backend(cloud: bool) -> providers::ProjectBackend {
+    if cloud {
+        providers::ProjectBackend::Cloud
+    } else {
+        let root = match oxy::config::resolve_local_project_path() {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!(
+                    "Could not resolve project root ({}); falling back to current directory",
+                    e
+                );
+                std::path::PathBuf::from(".")
+            }
+        };
+        providers::ProjectBackend::Local(providers::LocalBackend { root })
+    }
+}
+
 pub async fn api_router(cloud: bool, enterprise: bool, readonly: bool) -> Result<Router, OxyError> {
     let app_state = AppState {
         cloud,
         enterprise,
         internal: false,
         readonly,
+        backend: std::sync::Arc::new(build_backend(cloud)),
     };
     let public_routes = build_public_routes();
     let protected_routes = build_protected_routes(app_state.clone());
@@ -500,6 +540,7 @@ pub async fn internal_api_router(
         enterprise,
         internal: true,
         readonly,
+        backend: std::sync::Arc::new(build_backend(cloud)),
     };
     let public_routes = build_public_routes();
     let protected_routes = build_protected_routes(app_state.clone());
@@ -521,7 +562,7 @@ pub async fn internal_api_router(
         .layer(ServiceBuilder::new().layer(NewSentryLayer::<Request<Body>>::new_from_top())))
 }
 
-pub async fn openapi_router() -> OpenApiRouter {
+pub async fn openapi_router() -> OpenApiRouter<AppState> {
     let cors = build_cors_layer();
 
     OpenApiRouter::new()

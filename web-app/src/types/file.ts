@@ -7,7 +7,7 @@ export interface FileTreeModel {
 
 export interface FileStatus {
   path: string;
-  status: "M" | "A" | "D";
+  status: "M" | "A" | "D" | "U";
   insert: number;
   delete: number;
 }

@@ -1,4 +1,4 @@
-import { AlertCircle, CheckCircle, Clock, Loader2 } from "lucide-react";
+import { AlertCircle, CheckCircle, Clock, GitMerge, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/shadcn/badge";
 import { cn } from "@/libs/shadcn/utils";
 
@@ -33,6 +33,14 @@ export const SyncStatusBadge = ({ status, isInSync = false }: SyncStatusBadgePro
           label: "Behind",
           className:
             "bg-yellow-100 text-yellow-800 border-yellow-200 hover:bg-yellow-200 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-800"
+        };
+      case "conflict":
+        return {
+          variant: "outline" as const,
+          icon: <GitMerge className='h-3 w-3' />,
+          label: "Merge conflict",
+          className:
+            "bg-amber-100 text-amber-800 border-amber-200 hover:bg-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800"
         };
       case "error":
       case "failed":

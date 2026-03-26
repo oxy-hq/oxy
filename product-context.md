@@ -62,3 +62,28 @@ a built-in Developer Portal IDE.
 - **Sidebar thread list staleness** — The sidebar shows recent threads fetched at load. After creating a new thread it may not appear in the list without a refresh.
 - **Workflow mode in chat** — Requires selecting a workflow from the workflow selector dropdown before submitting. The selector and the title input have separate validation states that can desync.
 - **Context Graph load** — The graph container and "Context Graph Overview" text are the key indicators of a successful load. The graph can silently fail to render if the backend entity graph is empty or malformed.
+
+---
+
+## Design System — Brand Color Scale
+
+The primary color is **Blue-500 `#3550FF`**. CSS variable `--primary` is set to this value in both light and dark mode. Use Tailwind's `text-primary`, `bg-primary`, `border-primary` etc. wherever possible.
+
+| Token | Hex | Usage |
+| --- | --- | --- |
+| Blue-100 | `#D7DCFF` | Highlights, subtle backgrounds |
+| Blue-200 | `#AEB9FF` | Emphasis, tinted surfaces |
+| Blue-300 | `#8696FF` | Secondary emphasis |
+| Blue-400 | `#5D73FF` | Hover states in dark mode (brighter = more visible) |
+| **Blue-500** | **`#3550FF`** | **Primary — all key actions, `--primary` variable** |
+| Blue-600 | `#2A40CC` | Gradient bottom stop, hover in light mode |
+| Blue-700 | `#203099` | Deep shadows, pressed states |
+| Blue-800 | `#152066` | Very deep accents |
+| Blue-900 | `#0B1033` | Shadow color (`shadow-[#0B1033]/40`) |
+
+### Usage rules examples
+
+- Use `--primary` / `text-primary` / `bg-primary` for interactive brand elements.
+- For gradient buttons: `from-[#3550FF] to-[#2A40CC]` with `hover:from-[#5D73FF] hover:to-[#3550FF]` (brighter hover for dark-mode visibility).
+- Avoid Blue-600–900 for text on dark backgrounds (insufficient contrast).
+- Git action buttons: **brand blue** for Commit & Push and Open PR (both use the same Blue-500→600 gradient), **amber** for conflicts. Emerald is reserved for workflow node success indicators only.

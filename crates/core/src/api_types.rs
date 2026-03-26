@@ -34,6 +34,22 @@ pub struct RevisionInfoResponse {
     pub latest_commit: String,
     pub sync_status: String,
     pub last_sync_time: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remote_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct CommitEntry {
+    pub hash: String,
+    pub short_hash: String,
+    pub message: String,
+    pub author: String,
+    pub date: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct RecentCommitsResponse {
+    pub commits: Vec<CommitEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

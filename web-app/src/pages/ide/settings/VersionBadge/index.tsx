@@ -41,12 +41,12 @@ export const VersionBadge = () => {
       <PopoverTrigger asChild>
         <button
           type='button'
-          className='select-none text-[10px] text-muted-foreground opacity-50 transition-opacity hover:opacity-100'
+          className='select-none text-[10px] text-muted-foreground transition-opacity hover:opacity-80'
         >
           v{versionInfo.version}
         </button>
       </PopoverTrigger>
-      <PopoverContent className='w-80' align='end'>
+      <PopoverContent className='w-80' align='start'>
         <div className='space-y-2'>
           <div className='font-semibold text-sm'>Build Information</div>
           <div className='space-y-1 text-xs'>

@@ -1,4 +1,3 @@
-import { Calendar, MessageSquare, User } from "lucide-react";
 import { Label } from "@/components/ui/shadcn/label";
 import {
   Tooltip,
@@ -6,73 +5,37 @@ import {
   TooltipProvider,
   TooltipTrigger
 } from "@/components/ui/shadcn/tooltip";
-import type { CommitInfo } from "@/types/settings";
 
 interface CommitDisplayProps {
-  commit?: CommitInfo;
+  // "full-sha - commit message" string from the backend, or a bare SHA
+  commit?: string;
   revision?: string;
   label: string;
 }
 
 export const CommitDisplay = ({ commit, revision, label }: CommitDisplayProps) => {
+  // Parse "sha - message" format from the backend, falling back to bare revision SHA.
+  let sha: string | undefined;
+  let message: string | undefined;
   if (commit) {
-    return (
-      <div className='space-y-3'>
-        <Label className='font-medium text-sm'>{label}</Label>
-        <div className='space-y-3'>
-          <div>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <code className='cursor-help rounded bg-muted px-2 py-1 font-mono text-sm'>
-                    {commit.sha.substring(0, 7)}
-                  </code>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <div className='space-y-1 text-sm'>
-                    <p className='font-mono'>{commit.sha}</p>
-                    <div className='space-y-1 text-sm'>
-                      <div className='flex items-center gap-1'>
-                        <MessageSquare className='h-3 w-3' />
-                        <span>{commit.message}</span>
-                      </div>
-                      <div className='flex items-center gap-1'>
-                        <User className='h-3 w-3' />
-                        <span className='truncate'>{commit.author_name}</span>
-                      </div>
-                      <div className='flex items-center gap-1'>
-                        <Calendar className='h-3 w-3' />
-                        <span>{new Date(commit.date).toLocaleString()}</span>
-                      </div>
-                    </div>
-                  </div>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </div>
-        </div>
-      </div>
-    );
+    const idx = commit.indexOf(" - ");
+    if (idx > -1) {
+      sha = commit.substring(0, idx);
+      message = commit.substring(idx + 3);
+    } else {
+      sha = commit;
+    }
+  } else {
+    sha = revision;
   }
+  const shortHash = sha?.substring(0, 7);
 
-  if (revision) {
+  if (!sha) {
     return (
       <div className='space-y-3'>
         <Label className='font-medium text-sm'>{label}</Label>
-        <div className='space-y-2'>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <code className='cursor-help rounded bg-muted px-2 py-1 font-mono text-sm'>
-                  {revision.substring(0, 7)}
-                </code>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p className='font-mono'>{revision}</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          <p className='text-muted-foreground text-xs'>Detailed commit information unavailable</p>
+        <div>
+          <code className='rounded bg-muted px-2 py-1 font-mono text-sm'>None</code>
         </div>
       </div>
     );
@@ -81,8 +44,33 @@ export const CommitDisplay = ({ commit, revision, label }: CommitDisplayProps) =
   return (
     <div className='space-y-3'>
       <Label className='font-medium text-sm'>{label}</Label>
-      <div>
-        <code className='rounded bg-muted px-2 py-1 font-mono text-sm'>None</code>
+      <div className='space-y-1'>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <code className='cursor-help rounded bg-muted px-2 py-1 font-mono text-sm'>
+                {shortHash}
+              </code>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p className='font-mono text-xs'>{sha}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        {message && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <p className='max-w-[160px] cursor-help truncate text-muted-foreground text-xs'>
+                  {message}
+                </p>
+              </TooltipTrigger>
+              <TooltipContent className='max-w-sm'>
+                <p className='whitespace-normal break-words text-sm'>{message}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
       </div>
     </div>
   );

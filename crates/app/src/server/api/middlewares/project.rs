@@ -18,6 +18,7 @@ use oxy::config::resolve_local_project_path;
 use oxy::database::client::establish_connection;
 use oxy::github::GitOperations;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
+use oxy_project::LocalGitService;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use std::future::Future;
 use uuid::Uuid;
@@ -70,12 +71,12 @@ pub struct BranchQuery {
     pub branch: Option<String>,
 }
 
-const SKIP_PROJECT_MANAGER_ROUTES: &[&str] = &["/details", "/branches"];
+const SKIP_PROJECT_MANAGER_ROUTE_SUFFIXES: &[&str] = &["/details", "/branches"];
 
 fn should_skip_project_manager(uri_path: &str) -> bool {
-    SKIP_PROJECT_MANAGER_ROUTES
+    SKIP_PROJECT_MANAGER_ROUTE_SUFFIXES
         .iter()
-        .any(|route| uri_path.starts_with(route))
+        .any(|suffix| uri_path.ends_with(suffix))
 }
 
 pub async fn project_middleware(
@@ -103,8 +104,16 @@ pub async fn project_middleware(
 
         match resolve_local_project_path() {
             Ok(project_path) => {
+                // Use the worktree path for non-main branches when one exists,
+                // so that workflow/app/agent execution reads from the correct branch.
+                let effective_path = query
+                    .branch
+                    .as_deref()
+                    .filter(|b| !b.is_empty() && *b != "main")
+                    .and_then(|b| LocalGitService::get_worktree_path(&project_path, b))
+                    .unwrap_or(project_path);
                 match ProjectBuilder::new(project_id)
-                    .with_project_path_and_fallback_config(&project_path)
+                    .with_project_path_and_fallback_config(&effective_path)
                     .await
                 {
                     Ok(mut builder) => {

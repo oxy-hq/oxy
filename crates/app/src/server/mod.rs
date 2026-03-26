@@ -1,6 +1,7 @@
 //! HTTP server and API endpoints
 
 pub mod api;
+pub mod providers;
 pub mod router;
 pub mod service;
 

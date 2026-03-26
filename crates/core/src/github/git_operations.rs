@@ -726,7 +726,9 @@ impl GitOperations {
                     "R " | " R" => "M",        // Renamed -> treat as Modified
                     "C " | " C" => "A",        // Copied -> treat as Added
                     "??" => "A",               // Untracked -> treat as Added
-                    _ => "M",                  // Default to Modified for other cases
+                    // Unmerged / conflict states (both sides modified, added, or deleted)
+                    "UU" | "AA" | "DD" | "AU" | "UA" | "DU" | "UD" => "U",
+                    _ => "M", // Default to Modified for other cases
                 }
                 .to_string();
 

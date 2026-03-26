@@ -77,6 +77,18 @@ pub struct Config {
     #[garde(dive)]
     pub a2a: Option<crate::config::a2a_config::A2aConfig>,
 
+    /// Branches that are protected: saving a file while on one of these branches
+    /// will auto-create a new feature branch instead of writing directly.
+    /// Defaults to [default_branch] (usually "main") when not set.
+    ///
+    /// Example config.yml:
+    ///   protected_branches:
+    ///     - main
+    ///     - develop
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[garde(skip)]
+    pub protected_branches: Option<Vec<String>>,
+
     /// List of email addresses that are granted admin access in local (non-cloud) mode.
     /// If empty or not set, all users are treated as admin (permissive default for single-user local installs).
     /// The built-in local guest user (<local-user@example.com>) is always admin regardless of this list.

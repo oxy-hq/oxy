@@ -4,6 +4,7 @@ import type { FileState } from ".";
 export interface EditorContextActions {
   setContent: (content: string) => void;
   setShowDiff: (show: boolean) => void;
+  markSaved: () => void;
   save: (onSuccess?: () => void) => Promise<void>;
 }
 

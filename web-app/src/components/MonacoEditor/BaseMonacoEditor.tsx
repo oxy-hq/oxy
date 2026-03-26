@@ -1,6 +1,8 @@
-import Editor, { DiffEditor } from "@monaco-editor/react";
+import Editor, { DiffEditor, type Monaco } from "@monaco-editor/react";
 import { Loader2 } from "lucide-react";
 import type { editor } from "monaco-editor";
+import { useEffect, useRef } from "react";
+import { configureMonaco } from "@/components/FileEditor/monacoConfig";
 import { cn } from "@/libs/shadcn/utils";
 
 export interface BaseMonacoEditorOptions {
@@ -10,9 +12,11 @@ export interface BaseMonacoEditorOptions {
   formatOnType?: boolean;
   automaticLayout?: boolean;
   readOnly?: boolean;
+  readOnlyMessage?: { value: string };
   fontSize?: number;
   lineNumbers?: "on" | "off" | "relative" | "interval";
   wordWrap?: "on" | "off" | "wordWrapColumn" | "bounded";
+  wrappingStrategy?: "simple" | "advanced";
   tabSize?: number;
   renderSideBySide?: boolean;
 }
@@ -20,7 +24,7 @@ export interface BaseMonacoEditorOptions {
 export interface BaseMonacoEditorProps {
   value: string;
   onChange?: (value: string) => void;
-  onMount?: (editor: editor.IStandaloneCodeEditor) => void;
+  onMount?: (editor: editor.IStandaloneCodeEditor, monaco: Monaco) => void;
   language?: string;
   theme?: "github-dark" | "vs-dark" | "light";
   height?: string;
@@ -32,6 +36,7 @@ export interface BaseMonacoEditorProps {
   // Diff mode props
   diffMode?: boolean;
   original?: string;
+  splitView?: boolean;
 }
 
 const defaultOptions: BaseMonacoEditorOptions = {
@@ -66,9 +71,17 @@ export default function BaseMonacoEditor({
   options = {},
   isLoading = false,
   diffMode = false,
-  original
+  original,
+  splitView = true
 }: BaseMonacoEditorProps) {
   const mergedOptions = { ...defaultOptions, ...options };
+  const diffEditorRef = useRef<editor.IStandaloneDiffEditor | null>(null);
+
+  // Imperatively toggle renderSideBySide — bypasses @monaco-editor/react's
+  // options-tracking which can miss updates in React 19 concurrent rendering.
+  useEffect(() => {
+    diffEditorRef.current?.updateOptions({ renderSideBySide: splitView });
+  }, [splitView]);
 
   if (isLoading) {
     return <LoadingSpinner />;
@@ -99,10 +112,25 @@ export default function BaseMonacoEditor({
               modified={value}
               language={language}
               loading={<LoadingSpinner />}
+              beforeMount={configureMonaco}
+              onMount={(e) => {
+                diffEditorRef.current = e;
+                // Set renderSideBySide immediately on mount — the options prop
+                // alone is unreliable because Monaco initialises async and may
+                // ignore the value set during createDiffEditor.
+                e.updateOptions({ renderSideBySide: splitView });
+                // Re-apply after the Sheet open animation (~500ms) completes.
+                // Monaco auto-switches to inline mode when the container is
+                // narrow during the animation; this overrides that once the
+                // container reaches its final width.
+                setTimeout(() => {
+                  diffEditorRef.current?.updateOptions({ renderSideBySide: splitView });
+                }, 600);
+              }}
               options={{
                 ...mergedOptions,
                 readOnly: true,
-                renderSideBySide: options.renderSideBySide ?? true
+                renderSideBySide: splitView
               }}
             />
           ) : (
@@ -116,8 +144,9 @@ export default function BaseMonacoEditor({
               value={value}
               loading={<LoadingSpinner />}
               options={mergedOptions}
+              beforeMount={configureMonaco}
               onChange={(v) => onChange?.(v || "")}
-              onMount={onMount}
+              onMount={(ed, monaco) => onMount?.(ed, monaco)}
             />
           )}
         </div>

@@ -1,4 +1,4 @@
-import { type JSX, useEffect, useMemo, useState } from "react";
+import { type JSX, useContext, useEffect, useMemo, useState } from "react";
 import FileEditor from "@/components/FileEditor";
 import { FileEditorProvider } from "@/components/FileEditor/FileEditorContext";
 import { useNavigationBlock } from "@/components/FileEditor/hooks/useNavigationBlock";
@@ -9,8 +9,10 @@ import {
   ResizablePanel,
   ResizablePanelGroup
 } from "@/components/ui/shadcn/resizable";
+import { useSaveToNewBranch } from "@/hooks/api/files/useSaveToNewBranch";
 import { decodeBase64 } from "@/libs/encoding";
 import { cn } from "@/libs/shadcn/utils";
+import { EditorContext } from "@/pages/ide/Files/Editor/contexts/EditorContextTypes";
 import EditorHeader from "../EditorHeader";
 
 const MIN_PANE_SIZE_PERCENT = 10;
@@ -72,6 +74,10 @@ const EditorPageWrapper = ({
   onChanged
 }: EditorPageWrapperProps) => {
   const filePath = decodeBase64(pathb64 ?? "");
+  const editorCtx = useContext(EditorContext);
+  const isMainEditMode = editorCtx?.isMainEditMode ?? false;
+
+  const { saveToNewBranch } = useSaveToNewBranch();
 
   const isNarrowViewport = useViewportDetection();
   const hasPreview = !!preview;
@@ -81,6 +87,12 @@ const EditorPageWrapper = ({
   }, [defaultDirection, isNarrowViewport]);
 
   const storageKey = `ide:split:${filePath}`;
+
+  const onSaveOverride = useMemo(() => {
+    if (!isMainEditMode) return undefined;
+    return (pb64: string, content: string, onSuccess?: () => void) =>
+      saveToNewBranch(pb64, content, onSuccess);
+  }, [isMainEditMode, saveToNewBranch]);
 
   const renderEditor = () => (
     <div
@@ -106,7 +118,13 @@ const EditorPageWrapper = ({
     ) : null;
 
   return (
-    <FileEditorProvider pathb64={pathb64} git={git} onSaved={onSaved} onChanged={onChanged}>
+    <FileEditorProvider
+      pathb64={pathb64}
+      git={git}
+      onSaved={onSaved}
+      onChanged={onChanged}
+      onSaveOverride={onSaveOverride}
+    >
       <div className='flex h-full flex-1 flex-col overflow-hidden'>
         <EditorHeader
           prefixAction={headerPrefixAction}
@@ -120,6 +138,7 @@ const EditorPageWrapper = ({
           previewOnly={previewOnly}
           storageKey={storageKey}
           layoutDirection={layoutDirection}
+          isMainEditMode={isMainEditMode}
           renderEditor={renderEditor}
           renderPreview={renderPreview}
         />
@@ -134,6 +153,7 @@ interface EditorPageWrapperContentProps {
   previewOnly?: boolean;
   storageKey: string;
   layoutDirection: "horizontal" | "vertical";
+  isMainEditMode: boolean;
   renderEditor: () => JSX.Element;
   renderPreview: () => JSX.Element | null;
 }
@@ -144,6 +164,7 @@ const EditorPageWrapperContent = ({
   previewOnly = false,
   storageKey,
   layoutDirection,
+  isMainEditMode,
   renderEditor,
   renderPreview
 }: EditorPageWrapperContentProps) => {
@@ -190,6 +211,7 @@ const EditorPageWrapperContent = ({
       <UnsavedChangesDialog
         open={unsavedChangesDialogOpen}
         onOpenChange={setUnsavedChangesDialogOpen}
+        isMainEditMode={isMainEditMode}
         onDiscard={() => {
           setUnsavedChangesDialogOpen(false);
           blocker.proceed?.();

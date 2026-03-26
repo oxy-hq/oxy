@@ -64,8 +64,8 @@ dev: ## Start backend + frontend dev servers (requires two terminals or a proces
 	@echo "  make dev-backend"
 	@echo "  make dev-frontend"
 
-dev-backend: ## Start the Rust API server (https://localhost:3000)
-	cargo run serve -- --http2-only
+dev-backend: ## Start the Rust API server (http://localhost:3000)
+	cargo run start
 
 dev-frontend: ## Start the Vite dev server (http://localhost:5173)
 	pnpm run dev

@@ -1,8 +1,7 @@
 import { ChevronsRight } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
-import { Outlet, useOutlet } from "react-router-dom";
-import EmptyState from "@/components/ui/EmptyState";
+import { Outlet } from "react-router-dom";
 import { Button } from "@/components/ui/shadcn/button";
 import {
   ResizableHandle,
@@ -14,8 +13,6 @@ import FilesSidebar from "./FilesSidebar";
 
 const FilesLayout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const outlet = useOutlet();
-  const hasContent = !!outlet;
 
   return (
     <FilesProvider>
@@ -41,15 +38,7 @@ const FilesLayout: React.FC = () => {
           </div>
         )}
         <ResizablePanel defaultSize={sidebarOpen ? 80 : 100} minSize={20} className='relative'>
-          {!hasContent ? (
-            <EmptyState
-              title='No file is open'
-              description='Select a file from the sidebar to start editing'
-              className='absolute inset-0 mt-[-150px]'
-            />
-          ) : (
-            <Outlet />
-          )}
+          <Outlet />
         </ResizablePanel>
       </ResizablePanelGroup>
     </FilesProvider>

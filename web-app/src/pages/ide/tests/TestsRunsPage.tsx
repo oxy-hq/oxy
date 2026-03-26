@@ -4,10 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/shadcn/badge";
 import { Button } from "@/components/ui/shadcn/button";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
-import {
-  useDeleteTestProjectRun,
-  useTestProjectRuns
-} from "@/hooks/api/tests/useTestProjectRuns";
+import { useDeleteTestProjectRun, useTestProjectRuns } from "@/hooks/api/tests/useTestProjectRuns";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import ROUTES from "@/libs/utils/routes";
 import PageHeader from "@/pages/ide/components/PageHeader";
@@ -40,19 +37,16 @@ const scoreClass = (pct: number) =>
       ? "border-amber-500 text-amber-400"
       : "border-red-600 text-red-400";
 
-const ScoreBadge: React.FC<{ score: number | null; failed?: boolean }> = ({
-  score,
-  failed
-}) => {
+const ScoreBadge: React.FC<{ score: number | null; failed?: boolean }> = ({ score, failed }) => {
   if (failed) {
     return (
-      <Badge variant='outline' className='gap-1 text-xs border-red-600/50 text-red-400'>
+      <Badge variant='outline' className='gap-1 border-red-600/50 text-red-400 text-xs'>
         <AlertCircle className='h-3 w-3 text-red-400' />
         Failed
       </Badge>
     );
   }
-  if (score === null) return <span className='text-xs text-muted-foreground'>—</span>;
+  if (score === null) return <span className='text-muted-foreground text-xs'>—</span>;
   const pct = Math.round(score * 100);
   return (
     <Badge variant='outline' className={`text-xs tabular-nums ${scoreClass(pct)}`}>
@@ -61,7 +55,7 @@ const ScoreBadge: React.FC<{ score: number | null; failed?: boolean }> = ({
   );
 };
 
-const Dash = () => <span className='text-xs text-muted-foreground'>—</span>;
+const Dash = () => <span className='text-muted-foreground text-xs'>—</span>;
 
 const TestsRunsPage: React.FC = () => {
   const { project } = useCurrentProjectBranch();
@@ -76,10 +70,7 @@ const TestsRunsPage: React.FC = () => {
 
   return (
     <div className='flex h-full flex-col'>
-      <PageHeader
-        icon={History}
-        title='Runs'
-      />
+      <PageHeader icon={History} title='Runs' />
       <div className='customScrollbar min-h-0 flex-1 overflow-auto p-4'>
         {isLoading && (
           <div className='space-y-2'>
@@ -92,8 +83,8 @@ const TestsRunsPage: React.FC = () => {
         {!isLoading && (!runs || runs.length === 0) && (
           <div className='flex flex-col items-center justify-center rounded-lg border border-dashed p-12 text-center'>
             <History className='mb-3 h-10 w-10 text-muted-foreground' />
-            <p className='text-sm font-medium'>No runs yet</p>
-            <p className='mt-1 text-xs text-muted-foreground'>
+            <p className='font-medium text-sm'>No runs yet</p>
+            <p className='mt-1 text-muted-foreground text-xs'>
               Use <strong>Run All</strong> on the Dashboard to create your first test suite run.
             </p>
           </div>
@@ -103,7 +94,7 @@ const TestsRunsPage: React.FC = () => {
           <div className='overflow-hidden rounded-lg border'>
             <table className='w-full text-sm'>
               <thead>
-                <tr className='border-b bg-muted/40 text-left text-xs text-muted-foreground'>
+                <tr className='border-b bg-muted/40 text-left text-muted-foreground text-xs'>
                   <th className='px-4 py-2 font-medium'>Run</th>
                   <th className='px-4 py-2 font-medium'>Date</th>
                   <th className='px-4 py-2 font-medium'>Cases</th>
@@ -116,15 +107,10 @@ const TestsRunsPage: React.FC = () => {
               </thead>
               <tbody className='divide-y'>
                 {runs.map((run, i) => (
-                  <tr
-                    key={run.id}
-                    className='group transition-colors hover:bg-muted/30'
-                  >
+                  <tr key={run.id} className='group transition-colors hover:bg-muted/30'>
                     <td className='px-4 py-2.5'>
                       <div className='flex items-center gap-2'>
-                        <span className='font-medium'>
-                          {run.name ?? `Run #${runs.length - i}`}
-                        </span>
+                        <span className='font-medium'>{run.name ?? `Run #${runs.length - i}`}</span>
                         {i === 0 && (
                           <Badge variant='secondary' className='text-[10px]'>
                             latest
@@ -132,24 +118,28 @@ const TestsRunsPage: React.FC = () => {
                         )}
                       </div>
                     </td>
-                    <td className='px-4 py-2.5 text-xs text-muted-foreground tabular-nums'>
+                    <td className='px-4 py-2.5 text-muted-foreground text-xs tabular-nums'>
                       {formatDate(run.created_at)}
                     </td>
-                    <td className='px-4 py-2.5 text-xs text-muted-foreground tabular-nums'>
+                    <td className='px-4 py-2.5 text-muted-foreground text-xs tabular-nums'>
                       {run.total_cases !== null ? run.total_cases : <Dash />}
                     </td>
-                    <td className='px-4 py-2.5 text-xs text-muted-foreground tabular-nums'>
-                      {run.total_duration_ms !== null
-                        ? formatDuration(run.total_duration_ms)
-                        : <Dash />}
+                    <td className='px-4 py-2.5 text-muted-foreground text-xs tabular-nums'>
+                      {run.total_duration_ms !== null ? (
+                        formatDuration(run.total_duration_ms)
+                      ) : (
+                        <Dash />
+                      )}
                     </td>
-                    <td className='px-4 py-2.5 text-xs text-muted-foreground tabular-nums'>
+                    <td className='px-4 py-2.5 text-muted-foreground text-xs tabular-nums'>
                       {run.total_tokens !== null ? formatTokens(run.total_tokens) : <Dash />}
                     </td>
-                    <td className='px-4 py-2.5 text-xs text-muted-foreground tabular-nums'>
-                      {run.consistency !== null
-                        ? `${Math.round(run.consistency * 100)}%`
-                        : <Dash />}
+                    <td className='px-4 py-2.5 text-muted-foreground text-xs tabular-nums'>
+                      {run.consistency !== null ? (
+                        `${Math.round(run.consistency * 100)}%`
+                      ) : (
+                        <Dash />
+                      )}
                     </td>
                     <td className='px-4 py-2.5'>
                       <ScoreBadge

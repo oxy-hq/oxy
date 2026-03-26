@@ -27,10 +27,7 @@ export interface TestFileConfig {
 }
 
 export class TestFileService {
-  static async listTestFiles(
-    projectId: string,
-    branchName: string
-  ): Promise<TestFileSummary[]> {
+  static async listTestFiles(projectId: string, branchName: string): Promise<TestFileSummary[]> {
     const response = await apiClient.get(`/${projectId}/tests`, {
       params: { branch: branchName }
     });
@@ -42,10 +39,9 @@ export class TestFileService {
     branchName: string,
     pathb64: string
   ): Promise<TestFileConfig> {
-    const response = await apiClient.get(
-      `/${projectId}/tests/${encodeURIComponent(pathb64)}`,
-      { params: { branch: branchName } }
-    );
+    const response = await apiClient.get(`/${projectId}/tests/${encodeURIComponent(pathb64)}`, {
+      params: { branch: branchName }
+    });
     return response.data;
   }
 

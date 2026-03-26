@@ -117,6 +117,7 @@ impl A2aConfig {
             integrations: Vec::new(),
             mcp: None,
             a2a: None,
+            protected_branches: None,
             admins: Vec::new(),
         };
         let context = ValidationContext {

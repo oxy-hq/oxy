@@ -1,0 +1,833 @@
+import { useQuery } from "@tanstack/react-query";
+import { AlertTriangle, CheckCircle2, ChevronsDown, Loader2, RotateCcw } from "lucide-react";
+import type { editor } from "monaco-editor";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
+import { getLanguageFromFileName } from "@/components/FileEditor/constants";
+import { BaseMonacoEditor } from "@/components/MonacoEditor";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup
+} from "@/components/ui/shadcn/resizable";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { encodeBase64 } from "@/libs/encoding";
+import { FileService, ProjectService } from "@/services/api";
+import type { FileStatus } from "@/types/file";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type ConflictAction = "mine" | "theirs" | "both" | "ignored";
+
+interface ConflictBlock {
+  index: number;
+  startLine: number; // <<<<<<< (1-based)
+  baseLine?: number; // ||||||| diff3
+  equalLine: number; // =======
+  endLine: number; // >>>>>>>
+  mineLines: string[];
+  baseLines: string[];
+  theirsLines: string[];
+}
+
+type DecIds = string[];
+interface ZoneRec {
+  id: string;
+  dom: HTMLElement;
+}
+
+// ─── Conflict parsing ─────────────────────────────────────────────────────────
+
+function parseConflicts(content: string): ConflictBlock[] {
+  const lines = content.split("\n");
+  const blocks: ConflictBlock[] = [];
+  let state: "normal" | "mine" | "base" | "theirs" = "normal";
+  let startLine = 0,
+    baseLine: number | undefined,
+    equalLine = 0;
+  let mineLines: string[] = [],
+    baseLines: string[] = [],
+    theirsLines: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const n = i + 1;
+    if (line.startsWith("<<<<<<<") && state === "normal") {
+      state = "mine";
+      startLine = n;
+      mineLines = [];
+      baseLines = [];
+      theirsLines = [];
+      baseLine = undefined;
+    } else if (line.startsWith("|||||||") && state === "mine") {
+      state = "base";
+      baseLine = n;
+    } else if (line.startsWith("=======") && (state === "mine" || state === "base")) {
+      state = "theirs";
+      equalLine = n;
+    } else if (line.startsWith(">>>>>>>") && state === "theirs") {
+      blocks.push({
+        index: blocks.length,
+        startLine,
+        baseLine,
+        equalLine,
+        endLine: n,
+        mineLines: [...mineLines],
+        baseLines: [...baseLines],
+        theirsLines: [...theirsLines]
+      });
+      state = "normal";
+    } else if (state === "mine") {
+      mineLines.push(line);
+    } else if (state === "base") {
+      baseLines.push(line);
+    } else if (state === "theirs") {
+      theirsLines.push(line);
+    }
+  }
+  return blocks;
+}
+
+function hasMarkers(content: string): boolean {
+  return content.includes("<<<<<<<") || content.includes("|||||||");
+}
+
+// ─── Content transforms ───────────────────────────────────────────────────────
+
+/** Resolve all conflicts to one side, returning resolved text + conflict highlight ranges. */
+function resolveSideWithRanges(
+  content: string,
+  side: "mine" | "theirs"
+): { text: string; ranges: { startLine: number; endLine: number }[] } {
+  const lines = content.split("\n");
+  const out: string[] = [];
+  const ranges: { startLine: number; endLine: number }[] = [];
+  let state: "normal" | "mine" | "base" | "theirs" = "normal";
+  let rangeStart = 0;
+
+  for (const line of lines) {
+    if (line.startsWith("<<<<<<<")) {
+      state = "mine";
+      rangeStart = out.length + 1;
+    } else if (line.startsWith("|||||||") && state !== "normal") {
+      state = "base";
+    } else if (line.startsWith("=======") && state !== "normal") {
+      state = "theirs";
+    } else if (line.startsWith(">>>>>>>") && state !== "normal") {
+      if (out.length >= rangeStart) ranges.push({ startLine: rangeStart, endLine: out.length });
+      state = "normal";
+    } else if (state === "normal" || state === side) {
+      out.push(line);
+    }
+  }
+  return { text: out.join("\n"), ranges };
+}
+
+/** Replace one conflict block (by current index) with the chosen content. */
+function resolveBlock(content: string, blockIndex: number, action: ConflictAction): string {
+  const blocks = parseConflicts(content);
+  const block = blocks[blockIndex];
+  if (!block) return content;
+
+  let chosen: string[];
+  switch (action) {
+    case "mine":
+      chosen = block.mineLines;
+      break;
+    case "theirs":
+      chosen = block.theirsLines;
+      break;
+    case "both":
+      chosen = [...block.mineLines, ...block.theirsLines];
+      break;
+    case "ignored":
+      chosen = [];
+      break;
+    default:
+      return content;
+  }
+
+  const lines = content.split("\n");
+  return [...lines.slice(0, block.startLine - 1), ...chosen, ...lines.slice(block.endLine)].join(
+    "\n"
+  );
+}
+
+/** Resolve all conflicts to a single side at once. */
+function resolveAll(content: string, action: ConflictAction): string {
+  let c = content;
+  for (let i = 0; hasMarkers(c) && i < 500; i++) {
+    const blocks = parseConflicts(c);
+    if (!blocks.length) break;
+    c = resolveBlock(c, 0, action);
+  }
+  return c;
+}
+
+// ─── Monaco CSS injection ─────────────────────────────────────────────────────
+
+const STYLE_ID = "oxy-merge-editor-styles";
+
+function injectStyles() {
+  if (document.getElementById(STYLE_ID)) return;
+  const s = document.createElement("style");
+  s.id = STYLE_ID;
+  s.textContent = `
+    .cmx-mine   { background: rgba(52,211,153,0.09) !important; border-left: 2px solid rgba(52,211,153,0.35) !important; }
+    .cmx-theirs { background: rgba(96,165,250,0.09) !important; border-left: 2px solid rgba(96,165,250,0.35) !important; }
+    .cmx-base   { background: rgba(156,163,175,0.05) !important; }
+    .cmx-marker { background: rgba(245,158,11,0.14) !important; }
+    .cmx-hl-mine   { background: rgba(52,211,153,0.11) !important; border-left: 2px solid rgba(52,211,153,0.5) !important; }
+    .cmx-hl-theirs { background: rgba(96,165,250,0.11) !important; border-left: 2px solid rgba(96,165,250,0.5) !important; }
+    /* zone bars live inside Monaco's overflow-visible layer — need z-index */
+    .cmx-zone { z-index: 1; }
+  `;
+  document.head.appendChild(s);
+}
+
+// ─── Decoration helpers ───────────────────────────────────────────────────────
+
+function applyResultDecs(
+  ed: editor.IStandaloneCodeEditor,
+  conflicts: ConflictBlock[],
+  prev: DecIds
+): DecIds {
+  const decs: editor.IModelDeltaDecoration[] = [];
+  const d = (s: number, e: number, cls: string) =>
+    decs.push({
+      range: { startLineNumber: s, startColumn: 1, endLineNumber: e, endColumn: 9999 },
+      options: { isWholeLine: true, className: cls }
+    });
+
+  for (const c of conflicts) {
+    d(c.startLine, c.startLine, "cmx-marker");
+    d(c.equalLine, c.equalLine, "cmx-marker");
+    d(c.endLine, c.endLine, "cmx-marker");
+    if (c.baseLine) d(c.baseLine, c.baseLine, "cmx-marker");
+
+    const mineEnd = (c.baseLine ?? c.equalLine) - 1;
+    if (mineEnd >= c.startLine + 1) d(c.startLine + 1, mineEnd, "cmx-mine");
+
+    if (c.baseLine) {
+      const baseEnd = c.equalLine - 1;
+      if (baseEnd >= c.baseLine + 1) d(c.baseLine + 1, baseEnd, "cmx-base");
+    }
+
+    const theirsEnd = c.endLine - 1;
+    if (theirsEnd >= c.equalLine + 1) d(c.equalLine + 1, theirsEnd, "cmx-theirs");
+  }
+
+  return ed.deltaDecorations(prev, decs);
+}
+
+function applyHighlightDecs(
+  ed: editor.IStandaloneCodeEditor,
+  ranges: { startLine: number; endLine: number }[],
+  cls: string,
+  prev: DecIds
+): DecIds {
+  return ed.deltaDecorations(
+    prev,
+    ranges.map((r) => ({
+      range: {
+        startLineNumber: r.startLine,
+        startColumn: 1,
+        endLineNumber: r.endLine,
+        endColumn: 9999
+      },
+      options: { isWholeLine: true, className: cls }
+    }))
+  );
+}
+
+// ─── ViewZone spacer (height reservation only — buttons rendered as React overlay) ─
+
+function makeSpacerDom(): HTMLElement {
+  const div = document.createElement("div");
+  div.style.height = "22px";
+  return div;
+}
+
+function clearZones(ed: editor.IStandaloneCodeEditor, recs: ZoneRec[]) {
+  if (!recs.length) return;
+  ed.changeViewZones((a) => recs.forEach((z) => a.removeZone(z.id)));
+}
+
+// Zones only reserve 22px of vertical space — actual buttons are React overlays.
+function injectZones(ed: editor.IStandaloneCodeEditor, conflicts: ConflictBlock[]): ZoneRec[] {
+  const recs: ZoneRec[] = [];
+  ed.changeViewZones((accessor) => {
+    for (const c of conflicts) {
+      const dom = makeSpacerDom();
+      const id = accessor.addZone({
+        afterLineNumber: c.startLine - 1,
+        heightInPx: 22,
+        domNode: dom
+      });
+      recs.push({ id, dom });
+    }
+  });
+  return recs;
+}
+
+// ─── Editor options ───────────────────────────────────────────────────────────
+
+const RO_OPTIONS = {
+  readOnly: true,
+  minimap: { enabled: false },
+  scrollBeyondLastLine: false,
+  fontSize: 12,
+  lineNumbers: "on" as const,
+  wordWrap: "on" as const,
+  wrappingStrategy: "advanced" as const
+};
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
+interface MergeConflictEditorProps {
+  file: FileStatus;
+  onResolved: () => void;
+}
+
+export function MergeConflictEditor({ file, onResolved }: MergeConflictEditorProps) {
+  const { project, branchName } = useCurrentProjectBranch();
+  const pathb64 = encodeBase64(file.path);
+  const language = getLanguageFromFileName(file.path);
+
+  const { data: rawContent = "", isLoading } = useQuery({
+    queryKey: ["file-current", project.id, branchName, file.path],
+    queryFn: () => FileService.getFile(project.id, pathb64, branchName),
+    retry: false
+  });
+
+  const [result, setResult] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
+
+  useEffect(() => {
+    if (rawContent && result === "") setResult(rawContent);
+  }, [rawContent, result]);
+
+  // Top panel content: each side resolved, with conflict region ranges
+  const { text: incomingText, ranges: incomingRanges } = useMemo(
+    () => resolveSideWithRanges(rawContent, "theirs"),
+    [rawContent]
+  );
+  const { text: currentText, ranges: currentRanges } = useMemo(
+    () => resolveSideWithRanges(rawContent, "mine"),
+    [rawContent]
+  );
+
+  // Current conflict blocks in the result (live-derived)
+  const conflicts = useMemo(() => parseConflicts(result), [result]);
+  const stillHasMarkers = hasMarkers(result);
+  const fileName = file.path.split("/").pop() ?? file.path;
+
+  // Editor refs
+  const incomingRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  const currentRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  const resultRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+
+  // Decoration ID refs
+  const incomingDecRef = useRef<DecIds>([]);
+  const currentDecRef = useRef<DecIds>([]);
+  const resultDecRef = useRef<DecIds>([]);
+  const resultZonesRef = useRef<ZoneRec[]>([]);
+
+  // Editor-ready flags (to trigger initial decoration effects)
+  const [_incomingReady, setIncomingReady] = useState(false);
+  const [_currentReady, setCurrentReady] = useState(false);
+  const [resultReady, setResultReady] = useState(false);
+
+  // Overlay button positions computed from Monaco's coordinate APIs
+  const [barPositions, setBarPositions] = useState<{ blockIndex: number; top: number }[]>([]);
+
+  // Stable callback refs to avoid stale closures in imperative handlers
+  const saveDraftRef = useRef<(() => void) | undefined>(undefined);
+
+  const handleConflictAction = useCallback((blockIndex: number, action: ConflictAction) => {
+    setResult((prev) => resolveBlock(prev, blockIndex, action));
+  }, []);
+
+  // Recompute the Y position of each conflict's action bar using Monaco APIs.
+  // The ViewZone at afterLineNumber = c.startLine - 1 occupies the 22px
+  // immediately before line c.startLine; getTopForLineNumber already accounts
+  // for view zone heights, so the bar top = getTopForLineNumber(start) - 22 - scrollTop.
+  const computeBarPositions = useCallback(() => {
+    const ed = resultRef.current;
+    if (!ed) return;
+    const scrollTop = ed.getScrollTop();
+    setBarPositions(
+      conflicts.map((c) => ({
+        blockIndex: c.index,
+        top: ed.getTopForLineNumber(c.startLine) - 22 - scrollTop
+      }))
+    );
+  }, [conflicts]);
+
+  // ── Save draft to disk (Ctrl+S) ───────────────────────────────────────────
+  const handleSaveDraft = useCallback(async () => {
+    if (!project?.id || !branchName || isSavingDraft) return;
+    setIsSavingDraft(true);
+    try {
+      await FileService.saveFile(project.id, pathb64, result, branchName);
+    } catch {
+      toast.error("Failed to save file");
+    } finally {
+      setIsSavingDraft(false);
+    }
+  }, [project?.id, branchName, pathb64, result, isSavingDraft]);
+
+  useEffect(() => {
+    saveDraftRef.current = handleSaveDraft;
+  }, [handleSaveDraft]);
+
+  // Disposable for the Incoming ↔ Current scroll sync — set up once both editors are mounted.
+  const scrollSyncRef = useRef<{ dispose: () => void } | null>(null);
+
+  const setupScrollSync = useCallback(() => {
+    const inc = incomingRef.current;
+    const cur = currentRef.current;
+    if (!inc || !cur) return;
+    scrollSyncRef.current?.dispose();
+    let syncing = false;
+    const d1 = inc.onDidScrollChange((e) => {
+      if (syncing) return;
+      syncing = true;
+      cur.setScrollPosition({ scrollTop: e.scrollTop, scrollLeft: e.scrollLeft });
+      syncing = false;
+    });
+    const d2 = cur.onDidScrollChange((e) => {
+      if (syncing) return;
+      syncing = true;
+      inc.setScrollPosition({ scrollTop: e.scrollTop, scrollLeft: e.scrollLeft });
+      syncing = false;
+    });
+    scrollSyncRef.current = {
+      dispose: () => {
+        d1.dispose();
+        d2.dispose();
+      }
+    };
+  }, []);
+
+  useEffect(() => () => scrollSyncRef.current?.dispose(), []);
+
+  // Subscribe to scroll and layout changes to keep overlay bars aligned
+  useEffect(() => {
+    const ed = resultRef.current;
+    if (!ed || !resultReady) return;
+    computeBarPositions();
+    const d1 = ed.onDidScrollChange(computeBarPositions);
+    const d2 = ed.onDidLayoutChange(computeBarPositions);
+    return () => {
+      d1.dispose();
+      d2.dispose();
+    };
+  }, [resultReady, computeBarPositions]);
+
+  // Inject styles once
+  useEffect(() => {
+    injectStyles();
+  }, []);
+
+  // ── Top panel decorations ─────────────────────────────────────────────────
+  useEffect(() => {
+    const ed = incomingRef.current;
+    if (!ed) return;
+    incomingDecRef.current = applyHighlightDecs(
+      ed,
+      incomingRanges,
+      "cmx-hl-theirs",
+      incomingDecRef.current
+    );
+  }, [incomingRanges]);
+
+  useEffect(() => {
+    const ed = currentRef.current;
+    if (!ed) return;
+    currentDecRef.current = applyHighlightDecs(
+      ed,
+      currentRanges,
+      "cmx-hl-mine",
+      currentDecRef.current
+    );
+  }, [currentRanges]);
+
+  // ── Result decorations (update on every result change) ────────────────────
+  useEffect(() => {
+    const ed = resultRef.current;
+    if (!ed) return;
+    resultDecRef.current = applyResultDecs(ed, conflicts, resultDecRef.current);
+  }, [conflicts]);
+
+  // ── Result zones (height reservation only, re-inject when positions change) ─
+  useEffect(() => {
+    const ed = resultRef.current;
+    if (!ed) return;
+    clearZones(ed, resultZonesRef.current);
+    resultZonesRef.current = injectZones(ed, conflicts);
+    // Recompute overlay positions after zones are re-injected (async layout)
+    setTimeout(computeBarPositions, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [computeBarPositions, conflicts]);
+
+  // ── Cleanup zones on unmount ──────────────────────────────────────────────
+  useEffect(() => {
+    return () => {
+      const ed = resultRef.current;
+      if (ed) clearZones(ed, resultZonesRef.current);
+    };
+  }, []);
+
+  // ── Jump to next conflict ─────────────────────────────────────────────────
+  const handleJumpNext = () => {
+    const ed = resultRef.current;
+    if (!ed) return;
+    const model = ed.getModel();
+    if (!model) return;
+    const cur = ed.getPosition()?.lineNumber ?? 0;
+    const total = model.getLineCount();
+    for (let pass = 0; pass < 2; pass++) {
+      const start = pass === 0 ? cur + 1 : 1;
+      const end = pass === 0 ? total : cur;
+      for (let i = start; i <= end; i++) {
+        if (model.getLineContent(i).startsWith("<<<<<<<")) {
+          ed.revealLineInCenter(i);
+          ed.setPosition({ lineNumber: i, column: 1 });
+          ed.focus();
+          return;
+        }
+      }
+    }
+  };
+
+  // ── Save (Complete Merge) ─────────────────────────────────────────────────
+  const handleSave = async () => {
+    if (!project?.id || !branchName || stillHasMarkers) return;
+    setIsSaving(true);
+    try {
+      const res = await ProjectService.resolveConflictWithContent(
+        project.id,
+        branchName,
+        file.path,
+        result
+      );
+      if (res.success) {
+        onResolved();
+      } else {
+        toast.error("Failed to resolve conflict", {
+          action: res.message
+            ? { label: "Show details", onClick: () => toast.message(res.message) }
+            : undefined
+        });
+      }
+    } catch {
+      toast.error("Failed to resolve conflict");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className='flex h-full items-center justify-center'>
+        <Loader2 className='h-4 w-4 animate-spin text-muted-foreground' />
+      </div>
+    );
+  }
+
+  return (
+    <div className='flex h-full flex-col'>
+      {/* ── Toolbar ── */}
+      <div className='flex shrink-0 items-center gap-1.5 border-border/40 border-b bg-sidebar-background px-3 py-1.5'>
+        <span className='min-w-0 truncate font-mono text-[11px] text-muted-foreground/60'>
+          {fileName}
+        </span>
+
+        <div className='ml-auto flex items-center gap-1.5'>
+          {/* Conflict status */}
+          {stillHasMarkers ? (
+            <span className='flex items-center gap-1 font-mono text-[10px] text-amber-400/80'>
+              <AlertTriangle className='h-3 w-3' />
+              {conflicts.length} remaining
+            </span>
+          ) : (
+            <span className='flex items-center gap-1 font-mono text-[10px] text-emerald-400/80'>
+              <CheckCircle2 className='h-3 w-3' />
+              all resolved
+            </span>
+          )}
+
+          <div className='mx-1 h-3 w-px bg-border/50' />
+
+          {/* Reset */}
+          {result !== rawContent && (
+            <button
+              type='button'
+              onClick={() => setResult(rawContent)}
+              title='Reset — restore original conflict markers'
+              className='flex h-5 items-center gap-1 rounded border border-border/40 px-1.5 font-mono text-[10px] text-muted-foreground transition-colors hover:border-border hover:bg-accent/40 hover:text-foreground'
+            >
+              <RotateCcw className='h-3 w-3' />
+              Reset
+            </button>
+          )}
+
+          {/* Jump */}
+          {stillHasMarkers && (
+            <button
+              type='button'
+              onClick={handleJumpNext}
+              title='Jump to next conflict'
+              className='flex h-5 items-center gap-1 rounded border border-border/40 px-1.5 font-mono text-[10px] text-muted-foreground transition-colors hover:border-border hover:bg-accent/40 hover:text-foreground'
+            >
+              <ChevronsDown className='h-3 w-3' />
+              Next
+            </button>
+          )}
+
+          {stillHasMarkers && <div className='mx-1 h-3 w-px bg-border/50' />}
+
+          {/* Global accept shortcuts */}
+          <button
+            type='button'
+            onClick={() => setResult(resolveAll(rawContent, "mine"))}
+            className='flex h-5 items-center rounded border border-emerald-500/30 bg-emerald-500/8 px-2 font-mono text-[10px] text-emerald-400 transition-colors hover:border-emerald-500/50 hover:bg-emerald-500/15'
+          >
+            Accept Mine
+          </button>
+          <button
+            type='button'
+            onClick={() => setResult(resolveAll(rawContent, "both" as ConflictAction))}
+            className='flex h-5 items-center rounded border border-violet-500/30 bg-violet-500/8 px-2 font-mono text-[10px] text-violet-400 transition-colors hover:border-violet-500/50 hover:bg-violet-500/15'
+          >
+            Accept Both
+          </button>
+          <button
+            type='button'
+            onClick={() => setResult(resolveAll(rawContent, "theirs"))}
+            className='flex h-5 items-center rounded border border-blue-500/30 bg-blue-500/8 px-2 font-mono text-[10px] text-blue-400 transition-colors hover:border-blue-500/50 hover:bg-blue-500/15'
+          >
+            Accept Theirs
+          </button>
+
+          <div className='mx-1 h-3 w-px bg-border/50' />
+
+          {/* Complete Merge */}
+          <button
+            type='button'
+            onClick={handleSave}
+            disabled={stillHasMarkers || isSaving}
+            title={
+              stillHasMarkers
+                ? "Resolve all conflicts first"
+                : "Mark as resolved and continue rebase"
+            }
+            className='flex h-5 items-center gap-1 rounded bg-gradient-to-b from-[#3550FF] to-[#2A40CC] px-2.5 font-medium font-mono text-[10px] text-white shadow-sm transition-all hover:from-[#5D73FF] hover:to-[#3550FF] disabled:opacity-40'
+          >
+            {isSaving && <Loader2 className='h-2.5 w-2.5 animate-spin' />}
+            {isSaving ? "Resolving…" : "Resolve Conflict"}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Body ── */}
+      <ResizablePanelGroup direction='vertical' className='min-h-0 flex-1'>
+        {/* Top: Incoming | Current */}
+        <ResizablePanel defaultSize={38} minSize={15}>
+          <ResizablePanelGroup direction='horizontal' className='h-full'>
+            {/* Incoming (theirs) */}
+            <ResizablePanel defaultSize={50} className='flex min-h-0 flex-col'>
+              <div className='flex shrink-0 items-center gap-1.5 border-amber-500/15 border-b bg-amber-500/[0.03] px-3 py-1 font-mono text-[10px] text-amber-400/60'>
+                <span className='font-semibold'>Incoming</span>
+                <span className='rounded bg-amber-500/10 px-1 py-0.5 text-[9px] text-amber-400/50'>
+                  theirs
+                </span>
+              </div>
+              <div className='min-h-0 flex-1'>
+                <BaseMonacoEditor
+                  value={incomingText}
+                  language={language}
+                  path={`incoming:${file.path}`}
+                  height='100%'
+                  options={RO_OPTIONS}
+                  onMount={(ed) => {
+                    incomingRef.current = ed;
+                    incomingDecRef.current = applyHighlightDecs(
+                      ed,
+                      incomingRanges,
+                      "cmx-hl-theirs",
+                      []
+                    );
+                    setupScrollSync();
+                    setIncomingReady(true);
+                  }}
+                />
+              </div>
+            </ResizablePanel>
+
+            <ResizableHandle className='bg-border/40 hover:bg-border' />
+
+            {/* Current (mine) */}
+            <ResizablePanel defaultSize={50} className='flex min-h-0 flex-col'>
+              <div className='flex shrink-0 items-center gap-1.5 border-blue-500/15 border-b bg-blue-500/[0.03] px-3 py-1 font-mono text-[10px] text-blue-400/60'>
+                <span className='font-semibold'>Current</span>
+                <span className='rounded bg-blue-500/10 px-1 py-0.5 text-[9px] text-blue-400/50'>
+                  mine
+                </span>
+              </div>
+              <div className='min-h-0 flex-1'>
+                <BaseMonacoEditor
+                  value={currentText}
+                  language={language}
+                  path={`current:${file.path}`}
+                  height='100%'
+                  options={RO_OPTIONS}
+                  onMount={(ed) => {
+                    currentRef.current = ed;
+                    currentDecRef.current = applyHighlightDecs(
+                      ed,
+                      currentRanges,
+                      "cmx-hl-mine",
+                      []
+                    );
+                    setupScrollSync();
+                    setCurrentReady(true);
+                  }}
+                />
+              </div>
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        </ResizablePanel>
+
+        <ResizableHandle className='bg-border/40 hover:bg-border' />
+
+        {/* Result */}
+        <ResizablePanel defaultSize={62} minSize={25} className='flex min-h-0 flex-col'>
+          <div
+            className={`flex shrink-0 items-center gap-1.5 border-b px-3 py-1 font-mono text-[10px] ${
+              stillHasMarkers
+                ? "border-amber-500/15 bg-amber-500/[0.03] text-amber-400/60"
+                : "border-emerald-500/15 bg-emerald-500/[0.03] text-emerald-400/60"
+            }`}
+          >
+            <span className='font-semibold'>Result</span>
+            <span className='opacity-50'>
+              {stillHasMarkers
+                ? `${conflicts.length} conflict${conflicts.length !== 1 ? "s" : ""} remaining`
+                : "ready to stage"}
+            </span>
+          </div>
+          {/* Relative container: Monaco editor + React action-bar overlay */}
+          <div className='relative min-h-0 flex-1'>
+            <BaseMonacoEditor
+              value={result}
+              onChange={(v) => setResult(v)}
+              language={language}
+              path={`result:${file.path}`}
+              height='100%'
+              options={{ ...RO_OPTIONS, readOnly: false }}
+              onMount={(ed, m) => {
+                resultRef.current = ed;
+                const initial = parseConflicts(result);
+                resultDecRef.current = applyResultDecs(ed, initial, []);
+                resultZonesRef.current = injectZones(ed, initial);
+                ed.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyS, () => saveDraftRef.current?.());
+                setResultReady(true);
+              }}
+            />
+            {/* Action bars rendered as a React overlay — completely outside
+                Monaco's DOM so mouse events are never intercepted by Monaco. */}
+            <div className='pointer-events-none absolute inset-0 overflow-hidden'>
+              {barPositions.map(({ blockIndex, top }) => (
+                <div
+                  key={blockIndex}
+                  className='pointer-events-auto absolute right-0 left-0 flex items-center gap-1 px-2.5'
+                  style={{
+                    top,
+                    height: 22,
+                    background: "rgba(10,10,14,0.72)",
+                    borderBottom: "1px solid rgba(255,255,255,0.07)",
+                    backdropFilter: "blur(4px)",
+                    fontFamily: "monospace",
+                    fontSize: 10
+                  }}
+                >
+                  {(
+                    [
+                      {
+                        label: "Accept Mine",
+                        action: "mine" as ConflictAction,
+                        bg: "rgba(52,211,153,0.15)",
+                        hbg: "rgba(52,211,153,0.28)",
+                        color: "rgb(110,231,183)"
+                      },
+                      {
+                        label: "Accept Both",
+                        action: "both" as ConflictAction,
+                        bg: "rgba(167,139,250,0.15)",
+                        hbg: "rgba(167,139,250,0.28)",
+                        color: "rgb(196,181,253)"
+                      },
+                      {
+                        label: "Accept Theirs",
+                        action: "theirs" as ConflictAction,
+                        bg: "rgba(96,165,250,0.15)",
+                        hbg: "rgba(96,165,250,0.28)",
+                        color: "rgb(147,197,253)"
+                      },
+                      {
+                        label: "Ignore",
+                        action: "ignored" as ConflictAction,
+                        bg: "rgba(255,255,255,0.05)",
+                        hbg: "rgba(255,255,255,0.12)",
+                        color: "rgba(255,255,255,0.35)"
+                      }
+                    ] as const
+                  ).map(({ label, action, bg, hbg, color }) => (
+                    <button
+                      key={action}
+                      type='button'
+                      onClick={() => handleConflictAction(blockIndex, action)}
+                      onMouseEnter={(e) => {
+                        (e.currentTarget as HTMLButtonElement).style.background = hbg;
+                      }}
+                      onMouseLeave={(e) => {
+                        (e.currentTarget as HTMLButtonElement).style.background = bg;
+                      }}
+                      style={{
+                        height: 16,
+                        padding: "0 7px",
+                        borderRadius: 3,
+                        border: "none",
+                        cursor: "pointer",
+                        fontFamily: "monospace",
+                        fontSize: 10,
+                        background: bg,
+                        color,
+                        transition: "background 0.1s"
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                  <span
+                    style={{
+                      marginLeft: "auto",
+                      opacity: 0.25,
+                      fontSize: 9,
+                      letterSpacing: "0.05em"
+                    }}
+                  >
+                    {blockIndex + 1} / {conflicts.length}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </ResizablePanel>
+      </ResizablePanelGroup>
+    </div>
+  );
+}

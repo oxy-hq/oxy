@@ -11,8 +11,19 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: #3a71d6;
-  --primary-foreground: oklch(0.985 0 0);
+  /* Brand blue scale */
+  --blue-100: #d7dcff;
+  --blue-200: #aeb9ff;
+  --blue-300: #8696ff;
+  --blue-400: #5d73ff;
+  --blue-500: #3550ff;
+  --blue-600: #2a40cc;
+  --blue-700: #203099;
+  --blue-800: #152066;
+  --blue-900: #0b1033;
+
+  --primary: #3550ff;
+  --primary-foreground: #ffffff;
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
@@ -72,8 +83,8 @@
   --card-foreground: oklch(94.6% 0 0);
   --popover: #1a1a1a;
   --popover-foreground: #e8e8e8;
-  --primary: oklch(94.6% 0 0);
-  --primary-foreground: oklch(14.5% 0 0);
+  --primary: #3550ff;
+  --primary-foreground: #ffffff;
   --secondary: oklch(18.2% 0 0);
   --secondary-foreground: #a9a9b2;
   --muted: #262626;
@@ -341,4 +352,42 @@ body {
 
 .react-flow__node-toolbar button:hover {
   background: var(--sidebar-accent);
+}
+
+/* ─── Monaco gutter decorations (git line changes) ─────────────────────── */
+/* These classes are applied via Monaco's linesDecorationsClassName option.
+   The ::after pseudo-element draws the coloured bar without conflicting with
+   Monaco's own inline width on the gutter element. */
+.gutter-line-added::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 3px;
+  background: rgba(40, 167, 69, 0.9);
+}
+.gutter-line-added-bg {
+  background: rgba(40, 167, 69, 0.08);
+}
+.gutter-line-modified::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 3px;
+  background: rgba(253, 126, 20, 0.9);
+}
+.gutter-line-modified-bg {
+  background: rgba(253, 126, 20, 0.06);
+}
+.gutter-line-deleted::after {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: rgba(220, 53, 69, 0.7);
 }

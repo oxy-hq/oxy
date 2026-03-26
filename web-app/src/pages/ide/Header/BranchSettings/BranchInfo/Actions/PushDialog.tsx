@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/shadcn/dialog";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
+import { useAuth } from "@/contexts/AuthContext";
 import { usePushChanges } from "@/hooks/api/projects/useProjects";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import ROUTES from "@/libs/utils/routes";
@@ -23,9 +24,25 @@ interface PushDialogProps {
 
 export const PushDialog = ({ open, onOpenChange }: PushDialogProps) => {
   const { project, branchName } = useCurrentProjectBranch();
+  const { authConfig } = useAuth();
   const pushChangesMutation = usePushChanges();
   const [commitMessage, setCommitMessage] = useState("Auto-commit: Oxy changes");
   const navigate = useNavigate();
+
+  const isLocalOnly = !!authConfig.local_git && !authConfig.cloud;
+  const hasRemote = authConfig.git_remote;
+
+  const actionLabel = isLocalOnly
+    ? hasRemote
+      ? "Commit & Push"
+      : "Commit Changes"
+    : "Push Changes";
+
+  const description = isLocalOnly
+    ? hasRemote
+      ? "This will commit all changes to the current branch and push to the remote repository."
+      : "This will commit all changes to the current branch in your local repository."
+    : "This will push all local changes to the remote repository and force update the remote branch.";
 
   const onConfirm = async (e: { preventDefault: () => void }) => {
     e.preventDefault();
@@ -42,14 +59,18 @@ export const PushDialog = ({ open, onOpenChange }: PushDialogProps) => {
       });
 
       if (result.success) {
-        toast.success(result.message || "Changes pushed successfully");
+        toast.success(result.message || `${actionLabel} succeeded`);
         const ideUri = ROUTES.PROJECT(project.id).IDE.ROOT;
         navigate(ideUri);
       } else {
-        toast.error(result.message || "Failed to push changes");
+        toast.error(`${actionLabel} failed`, {
+          action: result.message
+            ? { label: "Show details", onClick: () => toast.message(result.message) }
+            : undefined
+        });
       }
     } catch (error) {
-      toast.error("Failed to push changes");
+      toast.error(`${actionLabel} failed`);
       console.error("Push changes error:", error);
     } finally {
       onOpenChange(false);
@@ -68,13 +89,10 @@ export const PushDialog = ({ open, onOpenChange }: PushDialogProps) => {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Push Changes</DialogTitle>
+          <DialogTitle>{actionLabel}</DialogTitle>
         </DialogHeader>
         <div className='space-y-4 py-4'>
-          <p className='text-muted-foreground text-sm'>
-            This will push all local changes to the remote repository and force update the remote
-            branch.
-          </p>
+          <p className='text-muted-foreground text-sm'>{description}</p>
           <div className='space-y-2'>
             <Label htmlFor='commit-message'>Commit Message (Optional)</Label>
             <Input
@@ -92,7 +110,7 @@ export const PushDialog = ({ open, onOpenChange }: PushDialogProps) => {
           </Button>
           <Button onClick={onConfirm} disabled={isDisabled}>
             {pushChangesMutation.isPending && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
-            Push Changes
+            {actionLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -28,9 +28,10 @@ const clientDataCache = new Map<
 type Props = {
   appPath64: string;
   runButton?: boolean;
+  autoRun?: boolean;
 };
 
-export default function AppPreview({ appPath64, runButton = true }: Props) {
+export default function AppPreview({ appPath64, runButton = true, autoRun = true }: Props) {
   const { project, branchName } = useCurrentProjectBranch();
   const { data: appDisplay } = useAppDisplays(appPath64);
   const controls = appDisplay?.controls ?? [];
@@ -142,7 +143,7 @@ export default function AppPreview({ appPath64, runButton = true }: Props) {
   );
 
   // When the displays metadata loads, initialize control defaults and — for
-  // all-client apps — immediately run the initial SQL in DuckDB WASM.
+  // all-client apps — immediately run the initial SQL in DuckDB WASM (unless autoRun is disabled).
   const appDisplayControls = appDisplay?.controls;
   useEffect(() => {
     if (!appDisplayControls) return;
@@ -153,11 +154,11 @@ export default function AppPreview({ appPath64, runButton = true }: Props) {
       const cached = clientDataCache.get(appPath64);
       if (cached && JSON.stringify(cached.controlValues) === JSON.stringify(defaults)) {
         setParamData(cached.data);
-      } else {
+      } else if (autoRun) {
         runClientTasks(defaults);
       }
     }
-  }, [appDisplayControls, allClientMode, runClientTasks, appPath64]);
+  }, [appDisplayControls, allClientMode, runClientTasks, appPath64, autoRun]);
 
   const handleRun = () => {
     setParamData(undefined);

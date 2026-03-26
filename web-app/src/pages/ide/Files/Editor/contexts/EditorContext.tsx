@@ -9,7 +9,7 @@ interface EditorProviderProps {
 }
 
 export const EditorProvider = ({ children, pathb64 }: EditorProviderProps) => {
-  const { project, branchName, isReadOnly, gitEnabled } = useCurrentProjectBranch();
+  const { project, branchName, isReadOnly, isMainEditMode, gitEnabled } = useCurrentProjectBranch();
   const filePath = decodeFilePath(pathb64);
   const fileType = detectFileType(filePath);
 
@@ -20,6 +20,7 @@ export const EditorProvider = ({ children, pathb64 }: EditorProviderProps) => {
     project,
     branchName,
     isReadOnly: !!isReadOnly,
+    isMainEditMode: !!isMainEditMode,
     gitEnabled: !!gitEnabled
   };
 

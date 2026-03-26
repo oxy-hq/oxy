@@ -20,8 +20,11 @@ const AppEditor = () => {
     filesSubViewMode === FilesSubViewMode.OBJECTS ? AppViewMode.Form : AppViewMode.Visualization;
 
   const [viewMode, setViewMode] = useState<AppViewMode>(defaultViewMode);
+  // Don't auto-run on initial navigation; only run after an explicit save.
+  const [autoRun, setAutoRun] = useState(false);
 
   const handleSaved = () => {
+    setAutoRun(true);
     refreshPreview();
     invalidateAppQueries();
   };
@@ -38,7 +41,7 @@ const AppEditor = () => {
       previewOnly={viewMode === AppViewMode.Visualization}
       preview={
         <div className='flex-1 overflow-hidden'>
-          <AppPreview key={previewKey} appPath64={pathb64} />
+          <AppPreview key={previewKey} appPath64={pathb64} autoRun={autoRun} />
         </div>
       }
     />

@@ -26,14 +26,10 @@ export interface TestProjectRunInfo {
 }
 
 export class TestProjectRunService {
-  static async createProjectRun(
-    projectId: string,
-    name?: string
-  ): Promise<TestProjectRunInfo> {
-    const response = await apiClient.post(
-      `/${projectId}/tests/project-runs`,
-      { name: name ?? null }
-    );
+  static async createProjectRun(projectId: string, name?: string): Promise<TestProjectRunInfo> {
+    const response = await apiClient.post(`/${projectId}/tests/project-runs`, {
+      name: name ?? null
+    });
     return response.data;
   }
 

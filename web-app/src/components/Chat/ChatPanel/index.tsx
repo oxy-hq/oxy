@@ -52,8 +52,7 @@ const ChatPanel = () => {
         runWorkflow(data.id);
         break;
     }
-    const threadUri = ROUTES.PROJECT(projectId).THREAD(data.id);
-    navigate(threadUri);
+    navigate(ROUTES.PROJECT(projectId).THREAD(data.id));
   });
 
   const {

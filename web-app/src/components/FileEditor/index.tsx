@@ -1,6 +1,8 @@
-import { useMemo } from "react";
+import type { editor } from "monaco-editor";
+import { useMemo, useState } from "react";
 import { BaseMonacoEditor } from "@/components/MonacoEditor";
 import { getLanguageFromFileName } from "./constants";
+import { useGutterDecorations } from "./hooks/useGutterDecorations";
 import useMonacoEditor from "./hooks/useMonacoEditor";
 import { useFileEditorContext } from "./useFileEditorContext";
 
@@ -19,13 +21,24 @@ interface Props {
 
 const FileEditor = ({ readOnly = false, className }: Props) => {
   const {
-    state: { fileName, content, originalContent, showDiff, isLoading },
+    state: { fileName, content, originalContent, showDiff, isLoading, git },
     actions
   } = useFileEditorContext();
+
+  const [editorInstance, setEditorInstance] = useState<editor.IStandaloneCodeEditor | null>(null);
 
   useMonacoEditor({
     saveFile: actions.save
   });
+
+  // Show git gutter decorations when: git is enabled, not in diff mode, not read-only.
+  // originalContent holds the git-committed version of the file.
+  useGutterDecorations(
+    editorInstance,
+    content,
+    originalContent,
+    git === true && !showDiff && !readOnly
+  );
 
   const language = useMemo(() => getLanguageFromFileName(fileName), [fileName]);
 
@@ -38,6 +51,7 @@ const FileEditor = ({ readOnly = false, className }: Props) => {
       path={`file://${fileName}`}
       value={content}
       onChange={actions.setContent}
+      onMount={setEditorInstance}
       language={language}
       className={className}
       isLoading={isLoading}
@@ -47,7 +61,14 @@ const FileEditor = ({ readOnly = false, className }: Props) => {
       options={{
         minimap: { enabled: true },
         scrollBeyondLastLine: true,
-        readOnly: showDiff ? true : readOnly
+        readOnly: showDiff ? true : readOnly,
+        ...(readOnly && !showDiff
+          ? {
+              readOnlyMessage: {
+                value: "This branch is protected — create a branch to make edits"
+              }
+            }
+          : {})
       }}
     />
   );

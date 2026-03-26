@@ -5,19 +5,31 @@ import {
   TooltipProvider,
   TooltipTrigger
 } from "@/components/ui/shadcn/tooltip";
-import type { CommitInfo } from "@/types/settings";
 
 interface CommitShortInfoProps {
-  commit?: CommitInfo;
+  commit?: string;
   revision?: string;
 }
 
 export const CommitShortInfo = ({ commit, revision }: CommitShortInfoProps) => {
-  const commitHash = commit?.sha || revision;
-  const shortHash = commitHash?.substring(0, 7);
-  const message = commit?.message;
+  let sha: string | undefined;
+  let message: string | undefined;
 
-  if (!commitHash) {
+  if (commit) {
+    const idx = commit.indexOf(" - ");
+    if (idx > -1) {
+      sha = commit.substring(0, idx);
+      message = commit.substring(idx + 3);
+    } else {
+      sha = commit;
+    }
+  } else {
+    sha = revision;
+  }
+
+  const shortHash = sha?.substring(0, 7);
+
+  if (!sha) {
     return (
       <Badge variant='outline' className='text-muted-foreground'>
         No commit
@@ -38,7 +50,7 @@ export const CommitShortInfo = ({ commit, revision }: CommitShortInfoProps) => {
             </Badge>
           </TooltipTrigger>
           <TooltipContent side='bottom'>
-            <p className='font-mono text-xs'>{commitHash}</p>
+            <p className='font-mono text-xs'>{sha}</p>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>

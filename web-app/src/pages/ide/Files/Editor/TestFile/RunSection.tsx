@@ -1,15 +1,16 @@
 import { CirclePlay, Play } from "lucide-react";
-import React, { useEffect, useMemo } from "react";
+import type React from "react";
+import { useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import YAML from "yaml";
+import { useFileEditorContext } from "@/components/FileEditor/useFileEditorContext";
 import { Badge } from "@/components/ui/shadcn/badge";
 import { Button } from "@/components/ui/shadcn/button";
-import { useFileEditorContext } from "@/components/FileEditor/useFileEditorContext";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import ROUTES from "@/libs/utils/routes";
 import useTestFileResults from "@/stores/useTestFileResults";
+import { EvalEventState, MetricKind, type MetricValue } from "@/types/eval";
 import type { TestFileFormData } from "./TestFileForm";
-import { EvalEventState, type MetricValue, MetricKind } from "@/types/eval";
 
 interface RunSectionProps {
   pathb64: string;
@@ -57,11 +58,11 @@ const RunSection: React.FC<RunSectionProps> = ({ pathb64 }) => {
   return (
     <div className='flex h-full flex-col overflow-hidden'>
       <div className='flex items-center justify-between border-b px-4 py-3'>
-        <span className='text-sm font-medium'>Results</span>
+        <span className='font-medium text-sm'>Results</span>
         <div className='flex items-center gap-2'>
           <Link
             to={ROUTES.PROJECT(project.id).IDE.TESTS.TEST_FILE(pathb64)}
-            className='text-xs text-muted-foreground hover:text-foreground'
+            className='text-muted-foreground text-xs hover:text-foreground'
           >
             View in Dashboard
           </Link>
@@ -79,20 +80,26 @@ const RunSection: React.FC<RunSectionProps> = ({ pathb64 }) => {
       </div>
       <div className='customScrollbar flex-1 overflow-y-auto'>
         {cases.length === 0 ? (
-          <div className='flex h-full items-center justify-center text-sm text-muted-foreground'>
+          <div className='flex h-full items-center justify-center text-muted-foreground text-sm'>
             No test cases defined
           </div>
         ) : (
           <div className='divide-y'>
             {cases.map((testCase, index) => {
               const caseState = getCase(project.id, branchName, pathb64, index);
-              const isRunning = caseState.state === EvalEventState.Progress || caseState.state === EvalEventState.Started;
-              const scoreDisplay = caseState.result ? getScoreDisplay(caseState.result.metrics) : null;
+              const isRunning =
+                caseState.state === EvalEventState.Progress ||
+                caseState.state === EvalEventState.Started;
+              const scoreDisplay = caseState.result
+                ? getScoreDisplay(caseState.result.metrics)
+                : null;
 
               return (
                 <div key={index} className='space-y-1 px-4 py-3'>
                   <div className='flex items-start justify-between gap-2'>
-                    <p className='line-clamp-2 flex-1 text-sm'>{testCase.prompt || "Empty prompt"}</p>
+                    <p className='line-clamp-2 flex-1 text-sm'>
+                      {testCase.prompt || "Empty prompt"}
+                    </p>
                     <Button
                       variant='ghost'
                       size='icon'
@@ -109,52 +116,59 @@ const RunSection: React.FC<RunSectionProps> = ({ pathb64 }) => {
                         <div
                           className='h-full rounded-full bg-primary transition-all'
                           style={{
-                            width: caseState.progress.total > 0
-                              ? `${(caseState.progress.progress / caseState.progress.total) * 100}%`
-                              : "0%"
+                            width:
+                              caseState.progress.total > 0
+                                ? `${(caseState.progress.progress / caseState.progress.total) * 100}%`
+                                : "0%"
                           }}
                         />
                       </div>
-                      <span className='text-xs text-muted-foreground'>
+                      <span className='text-muted-foreground text-xs'>
                         {caseState.progress.progress}/{caseState.progress.total}
                       </span>
                     </div>
                   )}
-                  {caseState.error && (
-                    <p className='text-xs text-destructive'>{caseState.error}</p>
-                  )}
+                  {caseState.error && <p className='text-destructive text-xs'>{caseState.error}</p>}
                   {scoreDisplay && (
                     <div className='flex items-center gap-2'>
-                      <Badge variant={scoreDisplay.passed ? "default" : "destructive"} className='text-xs'>
+                      <Badge
+                        variant={scoreDisplay.passed ? "default" : "destructive"}
+                        className='text-xs'
+                      >
                         {scoreDisplay.passed ? "PASS" : "FAIL"}
                       </Badge>
-                      <span className='text-xs text-muted-foreground'>{scoreDisplay.score}%</span>
+                      <span className='text-muted-foreground text-xs'>{scoreDisplay.score}%</span>
                     </div>
                   )}
                   {caseState.result && caseState.result.metrics.length > 0 && (
                     <div className='mt-1'>
                       {caseState.result.metrics.map((metric, mIdx) => (
                         <div key={mIdx}>
-                          {(metric.type === MetricKind.Similarity || metric.type === MetricKind.Correctness) &&
-                            metric.records.map((record, rIdx) => (
-                              record.cot && (
-                                <details key={rIdx} className='mt-1'>
-                                  <summary className='cursor-pointer text-xs text-muted-foreground'>
-                                    Judge reasoning
-                                  </summary>
-                                  <p className='mt-1 whitespace-pre-wrap rounded bg-muted p-2 text-xs'>
-                                    {record.cot}
-                                  </p>
-                                </details>
-                              )
-                            ))}
+                          {(metric.type === MetricKind.Similarity ||
+                            metric.type === MetricKind.Correctness) &&
+                            metric.records.map(
+                              (record, rIdx) =>
+                                record.cot && (
+                                  <details key={rIdx} className='mt-1'>
+                                    <summary className='cursor-pointer text-muted-foreground text-xs'>
+                                      Judge reasoning
+                                    </summary>
+                                    <p className='mt-1 whitespace-pre-wrap rounded bg-muted p-2 text-xs'>
+                                      {record.cot}
+                                    </p>
+                                  </details>
+                                )
+                            )}
                         </div>
                       ))}
                     </div>
                   )}
-                  {!isRunning && !caseState.result && !caseState.error && caseState.state === null && (
-                    <p className='text-xs text-muted-foreground'>Not run yet</p>
-                  )}
+                  {!isRunning &&
+                    !caseState.result &&
+                    !caseState.error &&
+                    caseState.state === null && (
+                      <p className='text-muted-foreground text-xs'>Not run yet</p>
+                    )}
                 </div>
               );
             })}

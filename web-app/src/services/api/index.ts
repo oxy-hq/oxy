@@ -10,7 +10,7 @@ export { GitHubApiService } from "./github";
 export type { LookerExplore, LookerIntegrationInfo } from "./integrations";
 export { IntegrationService } from "./integrations";
 export { ArtifactService, BuilderService, ChartService } from "./misc";
-export { ProjectService } from "./projects";
+export { type CommitEntry, ProjectService } from "./projects";
 export { RunService } from "./run";
 export { SemanticService } from "./semantic";
 export { TestFileService } from "./testFiles";

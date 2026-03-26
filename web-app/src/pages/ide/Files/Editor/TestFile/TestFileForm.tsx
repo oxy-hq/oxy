@@ -58,9 +58,7 @@ const CaseItem: React.FC<CaseItemProps> = ({ index, register, onRemove, prompt }
                 {index + 1}
               </span>
               <div className='flex min-w-0 flex-1 items-center gap-2'>
-                <span className='truncate font-medium text-sm'>
-                  {prompt || "Untitled Case"}
-                </span>
+                <span className='truncate font-medium text-sm'>{prompt || "Untitled Case"}</span>
               </div>
             </div>
             <Button
@@ -179,19 +177,11 @@ const TestFileForm: React.FC<TestFileFormProps> = ({ data, onChange }) => {
           <div className='space-y-4'>
             <div className='space-y-2'>
               <Label htmlFor='name'>Display Name</Label>
-              <Input
-                id='name'
-                placeholder='e.g. Restaurant Analyst Tests'
-                {...register("name")}
-              />
+              <Input id='name' placeholder='e.g. Restaurant Analyst Tests' {...register("name")} />
             </div>
             <div className='space-y-2'>
               <Label htmlFor='target'>Target</Label>
-              <Input
-                id='target'
-                placeholder='e.g. sales.agent.yml'
-                {...register("target")}
-              />
+              <Input id='target' placeholder='e.g. sales.agent.yml' {...register("target")} />
             </div>
             <div className='grid grid-cols-2 gap-4'>
               <div className='space-y-2'>

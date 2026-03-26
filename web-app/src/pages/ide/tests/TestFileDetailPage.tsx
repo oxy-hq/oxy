@@ -815,7 +815,7 @@ const TestFileDetailPage: React.FC = () => {
   const { project, branchName } = useCurrentProjectBranch();
   const projectId = project.id;
   const { data: testFile, isLoading } = useTestFile(pathb64 ?? "", !!pathb64);
-  const { runCase, getCase, getCasesForFile, stopFile, caseMap } = useTestFileResults();
+  const { runCase, getCase, getCasesForFile, stopFile } = useTestFileResults();
 
   // Run history
   const { data: runs } = useTestRuns(pathb64 ?? "", !!pathb64);
@@ -985,7 +985,6 @@ const TestFileDetailPage: React.FC = () => {
     pathb64,
     histMap,
     isViewingHistorical,
-    caseMap,
     getCase,
     humanOverrides
   ]);
@@ -1100,7 +1099,6 @@ const TestFileDetailPage: React.FC = () => {
     projectId,
     branchName,
     pathb64,
-    caseMap,
     getCasesForFile,
     humanOverrides
   ]);
@@ -1112,7 +1110,7 @@ const TestFileDetailPage: React.FC = () => {
       if (cs.state === EvalEventState.Started || cs.state === EvalEventState.Progress) return true;
     }
     return false;
-  }, [testFile, projectId, branchName, pathb64, caseMap, getCase]);
+  }, [testFile, projectId, branchName, pathb64, getCase]);
 
   if (!pathb64) return null;
 
@@ -1211,7 +1209,7 @@ const TestFileDetailPage: React.FC = () => {
                       ) : (
                         <Badge
                           variant='outline'
-                          className='ml-1 shrink-0 gap-1 text-[10px] border-red-600/50 text-red-400'
+                          className='ml-1 shrink-0 gap-1 border-red-600/50 text-[10px] text-red-400'
                         >
                           <AlertCircle className='h-3 w-3 text-red-400' />
                           Failed
@@ -1272,15 +1270,18 @@ const TestFileDetailPage: React.FC = () => {
       />
 
       {/* Failed run banner */}
-      {isViewingHistorical && historicalRun && historicalRun.cases.length === 0 && !isFileRunning && (
-        <div className='flex items-center gap-2 border-b border-red-600/30 bg-red-500/5 px-4 py-2 text-sm'>
-          <AlertCircle className='h-3.5 w-3.5 shrink-0 text-red-400' />
-          <span className='font-medium text-red-400'>Run failed</span>
-          <span className='text-[11px] text-muted-foreground'>
-            No results were recorded — something went wrong
-          </span>
-        </div>
-      )}
+      {isViewingHistorical &&
+        historicalRun &&
+        historicalRun.cases.length === 0 &&
+        !isFileRunning && (
+          <div className='flex items-center gap-2 border-red-600/30 border-b bg-red-500/5 px-4 py-2 text-sm'>
+            <AlertCircle className='h-3.5 w-3.5 shrink-0 text-red-400' />
+            <span className='font-medium text-red-400'>Run failed</span>
+            <span className='text-[11px] text-muted-foreground'>
+              No results were recorded — something went wrong
+            </span>
+          </div>
+        )}
 
       {/* Main 2-pane layout */}
       <ResizablePanelGroup

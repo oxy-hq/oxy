@@ -3,12 +3,12 @@ import YAML from "yaml";
 import { useFileEditorContext } from "@/components/FileEditor/useFileEditorContext";
 import { useFilesContext } from "../../FilesContext";
 import { FilesSubViewMode } from "../../FilesSidebar/constants";
-import EditorPageWrapper from "../components/EditorPageWrapper";
-import { useEditorContext } from "../contexts/useEditorContext";
 import ViewModeToggle from "../Agent/components/ViewModeToggle";
 import { AgentViewMode } from "../Agent/types";
-import TestFileForm, { type TestFileFormData } from "./TestFileForm";
+import EditorPageWrapper from "../components/EditorPageWrapper";
+import { useEditorContext } from "../contexts/useEditorContext";
 import RunSection from "./RunSection";
+import TestFileForm, { type TestFileFormData } from "./TestFileForm";
 
 const TestFileEditor = () => {
   const { pathb64, isReadOnly, gitEnabled } = useEditorContext();

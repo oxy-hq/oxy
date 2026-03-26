@@ -718,7 +718,7 @@ const TestsDashboardPage: React.FC = () => {
       }
     }
     return false;
-  }, [testFiles, projectId, branchName, store.caseMap, store.getCase]);
+  }, [testFiles, projectId, branchName, store.getCase]);
 
   // Live health from Zustand (used while a run is in progress)
   const liveHealth = useMemo(() => {
@@ -806,7 +806,7 @@ const TestsDashboardPage: React.FC = () => {
       totalOutputTokens,
       verdictCounts: { pass: verdictPass, fail: verdictFail, flaky: verdictFlaky }
     };
-  }, [testFiles, projectId, branchName, store.caseMap, store.getCase]);
+  }, [testFiles, projectId, branchName, store.getCase]);
 
   // Historical health aggregated from FileStatsLoaders
   const historicalHealth = useMemo(() => {
@@ -867,7 +867,7 @@ const TestsDashboardPage: React.FC = () => {
     }
     if (total === 0) return null;
     return { total, completed, percent: Math.round((completed / total) * 100) };
-  }, [testFiles, projectId, branchName, store.caseMap, store.getCase]);
+  }, [testFiles, projectId, branchName, store.getCase]);
 
   // Brief "Run complete" banner state
   const [justFinished, setJustFinished] = useState(false);
@@ -911,7 +911,10 @@ const TestsDashboardPage: React.FC = () => {
             const file = testFiles.find((tf) => tf.path === f.source_id);
             const name =
               file?.name ??
-              f.source_id.split("/").pop()?.replace(/\.test\.(yml|yaml)$/, "") ??
+              f.source_id
+                .split("/")
+                .pop()
+                ?.replace(/\.test\.(yml|yaml)$/, "") ??
               f.source_id;
             return { name, score: f.score! };
           });
@@ -985,7 +988,7 @@ const TestsDashboardPage: React.FC = () => {
                       ) : pr.total_cases === null && pr.file_scores.length > 0 ? (
                         <Badge
                           variant='outline'
-                          className='ml-1 shrink-0 gap-1 text-[10px] border-red-600/50 text-red-400'
+                          className='ml-1 shrink-0 gap-1 border-red-600/50 text-[10px] text-red-400'
                         >
                           <AlertCircle className='h-3 w-3 text-red-400' />
                           Failed
@@ -1567,7 +1570,7 @@ const TestFileCard: React.FC<TestFileCardProps> = ({
       totalInputTokens,
       totalOutputTokens
     };
-  }, [projectId, branchName, pathb64, caseCount, selectedRunIndex, historicalRun, store.caseMap, store.getCase]);
+  }, [projectId, branchName, pathb64, caseCount, selectedRunIndex, historicalRun, store.getCase]);
 
   const fileState = useMemo(() => {
     let running = 0,
@@ -1596,7 +1599,7 @@ const TestFileCard: React.FC<TestFileCardProps> = ({
       else if (passing > 0 && failing > 0) verdict = "flaky";
     }
     return { running, completed, verdict, isRunning };
-  }, [projectId, branchName, pathb64, caseCount, store.caseMap, store.getCase]);
+  }, [projectId, branchName, pathb64, caseCount, store.getCase]);
 
   // Border accent: historical verdict takes precedence over live verdict when not running
   const displayVerdict = fileState.isRunning
@@ -1658,7 +1661,9 @@ const TestFileCard: React.FC<TestFileCardProps> = ({
             <Button
               variant='ghost'
               size='icon'
-              className={fileState.isRunning ? "h-7 w-7 text-destructive hover:text-destructive" : "h-7 w-7"}
+              className={
+                fileState.isRunning ? "h-7 w-7 text-destructive hover:text-destructive" : "h-7 w-7"
+              }
               onClick={(e) => {
                 e.stopPropagation();
                 if (fileState.isRunning) onStopFile();

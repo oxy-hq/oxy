@@ -14,11 +14,29 @@ use handlebars::Handlebars;
 use jsonwebtoken::{EncodingKey, Header, encode};
 use once_cell::sync::Lazy;
 use oxy::config::auth::MagicLinkAuth;
+use oxy::config::{ConfigBuilder, resolve_local_project_path};
+use oxy_project::LocalGitService;
 use sea_orm::{ActiveModelTrait, DatabaseConnection, DbErr, EntityTrait, Set};
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
+use tokio::sync::OnceCell;
 use url::Url;
 use uuid::Uuid;
+
+// ─── Git remote cache ────────────────────────────────────────────────────────
+//
+// `git remote` is forked to detect whether the local repo has a configured
+// remote.  Remote configuration almost never changes at runtime, so we cache
+// the result for the lifetime of the process instead of forking on every
+// /auth/config request.
+static GIT_HAS_REMOTE: OnceCell<bool> = OnceCell::const_new();
+
+// ─── Protected-branches config cache ─────────────────────────────────────────
+//
+// The `protected_branches` list from config.yml is read once and cached for
+// the lifetime of the process.  A server restart is required to pick up
+// changes, consistent with other config.yml mutations.
+static PROTECTED_BRANCHES_FROM_CONFIG: OnceCell<Option<Vec<String>>> = OnceCell::const_new();
 
 // ─── Magic Link Rate Limiter ────────────────────────────────────────────────
 //
@@ -108,6 +126,22 @@ pub struct AuthConfigResponse {
     pub cloud: bool,
     pub enterprise: bool,
     pub readonly: bool,
+    /// True when the project directory contains a local git repository.
+    /// Enables the branch UI (create branch, commit, diff) without requiring
+    /// `--cloud` mode or a connected GitHub repository.
+    pub local_git: bool,
+    /// True when a remote repository is configured (`GIT_REPOSITORY_URL` is set).
+    /// Shows the Pull button and changes the Push label to "Commit & Push".
+    pub git_remote: bool,
+    /// The default branch name (e.g. "main", "master"). Resolved from
+    /// `git symbolic-ref refs/remotes/origin/HEAD`; falls back to "main".
+    /// Only meaningful when `local_git` is true.
+    pub default_branch: String,
+    /// Branches where saving a file auto-creates a new feature branch instead
+    /// of writing directly.  Configured via `protected_branches` in config.yml;
+    /// defaults to `[default_branch]` when not set.
+    /// Only meaningful when `local_git` is true.
+    pub protected_branches: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -143,6 +177,66 @@ pub async fn get_config(
 
     let auth_enabled = has_google || has_okta || has_magic_link;
 
+    // local_git is only meaningful in local (non-cloud) mode.
+    // In cloud mode the git lifecycle is managed via project_repo_id.
+    let local_git = resolve_local_project_path()
+        .map(|p| app_state.backend.is_git_enabled(&p))
+        .unwrap_or(false);
+
+    // Resolve the default branch (e.g. "main", "master") for the local repo.
+    // Used by the frontend to gate isMainEditMode and the diff-badge guard.
+    let default_branch = if local_git {
+        match resolve_local_project_path() {
+            Ok(p) => LocalGitService::get_default_branch(&p).await,
+            Err(_) => "main".to_string(),
+        }
+    } else {
+        "main".to_string()
+    };
+
+    // Resolve protected_branches from config.yml, falling back to [default_branch].
+    // Cached for the process lifetime — requires restart to pick up config changes.
+    let protected_branches: Vec<String> = if local_git {
+        let config_branches = PROTECTED_BRANCHES_FROM_CONFIG
+            .get_or_init(|| async {
+                match resolve_local_project_path() {
+                    Ok(p) => match ConfigBuilder::new().with_project_path(&p) {
+                        Ok(builder) => match builder.build_with_fallback_config().await {
+                            Ok(manager) => manager.protected_branches().map(|b| b.to_vec()),
+                            Err(_) => None,
+                        },
+                        Err(_) => None,
+                    },
+                    Err(_) => None,
+                }
+            })
+            .await;
+        config_branches
+            .clone()
+            .unwrap_or_else(|| vec![default_branch.clone()])
+    } else {
+        vec![default_branch.clone()]
+    };
+
+    // git_remote: true when GIT_REPOSITORY_URL is set OR the repo already has
+    // a configured remote (e.g. cloned manually). Only checked in local mode.
+    let git_remote = app_state.backend.is_local() && {
+        if std::env::var("GIT_REPOSITORY_URL").is_ok() {
+            true
+        } else if local_git {
+            match resolve_local_project_path() {
+                Ok(p) => {
+                    *GIT_HAS_REMOTE
+                        .get_or_init(|| async { LocalGitService::has_remote(&p).await })
+                        .await
+                }
+                Err(_) => false,
+            }
+        } else {
+            false
+        }
+    };
+
     if !auth_enabled || app_state.internal {
         return Ok(Json(AuthConfigResponse {
             auth_enabled: false,
@@ -152,6 +246,10 @@ pub async fn get_config(
             cloud: app_state.cloud,
             enterprise: app_state.enterprise,
             readonly: app_state.readonly,
+            local_git,
+            git_remote,
+            default_branch,
+            protected_branches,
         }));
     }
 
@@ -175,6 +273,10 @@ pub async fn get_config(
         cloud: app_state.cloud,
         enterprise: app_state.enterprise,
         readonly: app_state.readonly,
+        local_git,
+        git_remote,
+        default_branch,
+        protected_branches,
     };
 
     Ok(Json(config))

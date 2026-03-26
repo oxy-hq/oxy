@@ -19,6 +19,7 @@ import useCurrentUser from "@/hooks/api/users/useCurrentUser";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import ROUTES from "@/libs/utils/routes";
 import { SidebarHeader } from "@/pages/ide/components/SidebarHeader";
+import { VersionBadge } from "./VersionBadge";
 
 const SettingsSidebar: React.FC<{
   setSidebarOpen: (open: boolean) => void;
@@ -73,6 +74,9 @@ const SettingsSidebar: React.FC<{
           </SidebarMenu>
         </SidebarGroup>
       </SidebarContent>
+      <div className='flex items-center px-3 py-2'>
+        <VersionBadge />
+      </div>
     </div>
   );
 };

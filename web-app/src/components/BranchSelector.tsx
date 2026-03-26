@@ -1,8 +1,19 @@
-import { AlertCircle, Loader2 } from "lucide-react";
+import { AlertCircle, GitBranch, Loader2 } from "lucide-react";
+import * as React from "react";
 import { Alert, AlertDescription } from "@/components/ui/shadcn/alert";
 import { Badge } from "@/components/ui/shadcn/badge";
-import { Combobox } from "@/components/ui/shadcn/combobox";
+import { Button } from "@/components/ui/shadcn/button";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList
+} from "@/components/ui/shadcn/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/shadcn/popover";
 import { useProjectBranches } from "@/hooks/api/projects/useProjects";
+import { cn } from "@/libs/shadcn/utils";
 import useCurrentProject from "@/stores/useCurrentProject";
 
 interface Props {
@@ -13,6 +24,8 @@ interface Props {
 const BranchSelector = ({ selectedBranch, setSelectedBranch }: Props) => {
   const { project } = useCurrentProject();
   const { data: branchResponse, isLoading, error } = useProjectBranches(project?.id || "");
+  const [open, setOpen] = React.useState(false);
+  const [inputValue, setInputValue] = React.useState("");
 
   const branches = branchResponse?.branches || [];
   const activeBranchName = project?.active_branch?.name;
@@ -35,49 +48,89 @@ const BranchSelector = ({ selectedBranch, setSelectedBranch }: Props) => {
     );
   }
 
-  if (branches.length === 0) {
-    return (
-      <Alert>
-        <AlertCircle className='h-4 w-4' />
-        <AlertDescription>No branches found for this project.</AlertDescription>
-      </Alert>
-    );
-  }
+  const trimmed = inputValue.trim();
+  const showCreate = trimmed.length > 0 && !branches.some((b) => b.name === trimmed);
 
   return (
-    <Combobox
-      items={branches.map((branch) => ({
-        value: branch.name,
-        label: branch.name,
-        searchText: branch.name.toLowerCase()
-      }))}
-      value={selectedBranch}
-      onValueChange={setSelectedBranch}
-      placeholder='Select a branch'
-      searchPlaceholder='Search branches...'
-      renderItem={(item) => (
-        <div className='flex w-full items-center justify-between'>
-          <div className='flex items-center gap-2'>
-            <span className='font-medium text-sm'>{item.label}</span>
-            <div className='flex gap-1'>
-              {item.value === activeBranchName && (
-                <Badge variant='secondary' className='px-1.5 py-0.5 text-xs'>
-                  active
-                </Badge>
-              )}
-              {item.value === selectedBranch && item.value !== activeBranchName && (
-                <Badge
-                  variant='outline'
-                  className='border-blue-200 bg-blue-50 px-1.5 py-0.5 text-blue-700 text-xs dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-400'
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant='outline'
+          role='combobox'
+          aria-expanded={open}
+          className='w-full justify-between bg-input/30'
+        >
+          <span className='flex items-center gap-2'>
+            <GitBranch className='h-4 w-4 shrink-0 text-muted-foreground' />
+            {selectedBranch || "Select a branch"}
+          </span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className='w-[--radix-popover-trigger-width] p-0'>
+        <Command>
+          <CommandInput
+            placeholder='Search or create branch…'
+            value={inputValue}
+            onValueChange={setInputValue}
+          />
+          <CommandList>
+            {!showCreate && branches.length === 0 && (
+              <CommandEmpty>No branches found.</CommandEmpty>
+            )}
+            <CommandGroup>
+              {branches.map((branch) => (
+                <CommandItem
+                  key={branch.name}
+                  value={branch.name}
+                  onSelect={() => {
+                    setSelectedBranch(branch.name);
+                    setOpen(false);
+                    setInputValue("");
+                  }}
                 >
-                  current
-                </Badge>
+                  <GitBranch
+                    className={cn(
+                      "mr-2 h-4 w-4",
+                      branch.name === selectedBranch ? "opacity-100" : "opacity-30"
+                    )}
+                  />
+                  <span className='font-medium text-sm'>{branch.name}</span>
+                  <div className='ml-2 flex gap-1'>
+                    {branch.name === activeBranchName && (
+                      <Badge variant='secondary' className='px-1.5 py-0.5 text-xs'>
+                        active
+                      </Badge>
+                    )}
+                    {branch.name === selectedBranch && branch.name !== activeBranchName && (
+                      <Badge
+                        variant='outline'
+                        className='border-blue-200 bg-blue-50 px-1.5 py-0.5 text-blue-700 text-xs dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-400'
+                      >
+                        current
+                      </Badge>
+                    )}
+                  </div>
+                </CommandItem>
+              ))}
+              {showCreate && (
+                <CommandItem
+                  value={`__create__:${trimmed}`}
+                  onSelect={() => {
+                    setSelectedBranch(trimmed);
+                    setOpen(false);
+                    setInputValue("");
+                  }}
+                  className='text-primary'
+                >
+                  <GitBranch className='mr-2 h-4 w-4' />
+                  Create branch &ldquo;<strong>{trimmed}</strong>&rdquo;
+                </CommandItem>
               )}
-            </div>
-          </div>
-        </div>
-      )}
-    />
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 };
 

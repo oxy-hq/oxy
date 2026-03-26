@@ -40,9 +40,16 @@ export const PullDialog = ({ open, onOpenChange }: Props) => {
       });
 
       if (result.success) {
-        toast.success(result.message || "Changes pulled successfully");
+        toast.success("Pulled latest changes");
       } else {
-        toast.error(result.message || "Failed to pull changes");
+        const isConflict = result.message?.toLowerCase().includes("conflict");
+        if (!isConflict) {
+          toast.error("Pull failed", {
+            action: result.message
+              ? { label: "Show details", onClick: () => toast.message(result.message) }
+              : undefined
+          });
+        }
       }
       const ideUri = ROUTES.PROJECT(project.id).IDE.ROOT;
       navigate(ideUri);

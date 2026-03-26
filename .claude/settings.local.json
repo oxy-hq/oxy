@@ -40,7 +40,11 @@
       "mcp__playwright__browser_navigate",
       "mcp__playwright__browser_resize",
       "mcp__playwright__browser_take_screenshot",
-      "Bash(pnpm exec:*)"
+      "Bash(pnpm exec:*)",
+      "mcp__playwright__browser_snapshot",
+      "mcp__playwright__browser_click",
+      "Bash(pnpm tsc:*)",
+      "Bash(pnpm --filter web-app exec tsc --noEmit)"
     ],
     "deny": [],
     "ask": []

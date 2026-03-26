@@ -66,6 +66,11 @@ impl ConfigManager {
         self.config.defaults.as_ref().map(|d| d.database.as_ref())?
     }
 
+    /// Returns the configured protected branches, if any.
+    pub fn protected_branches(&self) -> Option<&[String]> {
+        self.config.protected_branches.as_deref()
+    }
+
     pub async fn resolve_file<P: AsRef<Path>>(&self, file_ref: P) -> Result<String, OxyError> {
         self.storage.fs_link(file_ref).await
     }

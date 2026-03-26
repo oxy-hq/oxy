@@ -1,4 +1,5 @@
-import { FileDiff, Loader2 } from "lucide-react";
+import { FileDiff, GitBranch, Loader2 } from "lucide-react";
+import { useContext } from "react";
 import { Fragment } from "react/jsx-runtime";
 import { useFileEditorContext } from "@/components/FileEditor/useFileEditorContext";
 import {
@@ -12,6 +13,7 @@ import {
 import { Button } from "@/components/ui/shadcn/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/tooltip";
 import { cn } from "@/libs/shadcn/utils";
+import { EditorContext } from "@/pages/ide/Files/Editor/contexts/EditorContextTypes";
 import { SIDEBAR_REVEAL_FILE } from "@/pages/ide/Files/FilesSidebar";
 import FileStatus from "./FileStatus";
 
@@ -27,6 +29,10 @@ const EditorHeader = ({ filePath, actions, prefixAction, readOnly = false }: Hea
     state: { fileState, git, showDiff },
     actions: fileActions
   } = useFileEditorContext();
+
+  const editorCtx = useContext(EditorContext);
+  const isMainEditMode = editorCtx?.isMainEditMode ?? false;
+
   return (
     <div
       className={cn(
@@ -72,6 +78,12 @@ const EditorHeader = ({ filePath, actions, prefixAction, readOnly = false }: Hea
       </div>
 
       <div className='flex items-center gap-1.5'>
+        {isMainEditMode && fileState === "modified" && (
+          <div className='flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2 py-1 text-amber-400 text-xs'>
+            <GitBranch className='h-3 w-3 flex-shrink-0' />
+            <span>Saving will create a new branch</span>
+          </div>
+        )}
         {fileState === "modified" && !readOnly && (
           <Button
             variant='outline'
@@ -79,7 +91,7 @@ const EditorHeader = ({ filePath, actions, prefixAction, readOnly = false }: Hea
             onClick={() => fileActions.save()}
             data-testid='ide-save-button'
           >
-            Save changes
+            {isMainEditMode ? "Save to new branch" : "Save changes"}
           </Button>
         )}
         {fileState === "modified" && readOnly && (

@@ -1,4 +1,12 @@
-import { Bot, FileText, FlaskConical, History, LayoutDashboard, LoaderCircle, Plus } from "lucide-react";
+import {
+  Bot,
+  FileText,
+  FlaskConical,
+  History,
+  LayoutDashboard,
+  LoaderCircle,
+  Plus
+} from "lucide-react";
 import type React from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { Badge } from "@/components/ui/shadcn/badge";
@@ -21,8 +29,8 @@ import {
   SidebarMenuSubButton
 } from "@/components/ui/shadcn/sidebar";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
-import { useCreateTestFile } from "@/hooks/useCreateTestFile";
 import useTestFiles from "@/hooks/api/tests/useTestFiles";
+import { useCreateTestFile } from "@/hooks/useCreateTestFile";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
@@ -104,7 +112,7 @@ const TestsSidebar: React.FC<TestsSidebarProps> = ({ setSidebarOpen }) => {
           </SidebarMenu>
         </SidebarGroup>
         <SidebarGroup className='pt-1'>
-          <SidebarGroupLabel className='px-2 text-xs font-semibold text-muted-foreground'>
+          <SidebarGroupLabel className='px-2 font-semibold text-muted-foreground text-xs'>
             Agent tests
           </SidebarGroupLabel>
           <SidebarMenu>
@@ -139,7 +147,7 @@ const TestsSidebar: React.FC<TestsSidebarProps> = ({ setSidebarOpen }) => {
               );
             })}
             {!isLoading && testFiles?.length === 0 && (
-              <div className='px-3 py-4 text-center text-xs text-muted-foreground'>
+              <div className='px-3 py-4 text-center text-muted-foreground text-xs'>
                 No test files found. Create a <code>.test.yml</code> file to get started.
               </div>
             )}

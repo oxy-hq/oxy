@@ -12,6 +12,9 @@ interface EditorProviderProps {
   git?: boolean;
   onSaved?: (content?: string) => void;
   onChanged?: (content: string) => void;
+  /** When provided, replaces the default save-to-current-branch behaviour.
+   *  Receives (pathb64, content, onSuccess) and must resolve when the save is complete. */
+  onSaveOverride?: (pathb64: string, content: string, onSuccess?: () => void) => Promise<void>;
 }
 
 export function FileEditorProvider({
@@ -19,7 +22,8 @@ export function FileEditorProvider({
   pathb64,
   git = false,
   onSaved,
-  onChanged
+  onChanged,
+  onSaveOverride
 }: EditorProviderProps) {
   const { mutate: saveFile } = useSaveFile();
   const fileName = decodeFilePath(pathb64);
@@ -48,8 +52,24 @@ export function FileEditorProvider({
     setShowDiff: (show: boolean) => {
       setShowDiff(show);
     },
+    markSaved: () => {
+      setFileState("saved");
+    },
     save: async (onSuccess?: () => void) => {
       if (fileState === "saving") return;
+      if (onSaveOverride) {
+        setFileState("saving");
+        try {
+          await onSaveOverride(pathb64, content, () => {
+            setFileState("saved");
+            onSaved?.(content);
+            onSuccess?.();
+          });
+        } catch {
+          setFileState("modified");
+        }
+        return;
+      }
       saveFile(
         { pathb64, data: content },
         {

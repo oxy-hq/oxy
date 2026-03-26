@@ -265,6 +265,7 @@ pub async fn handle_make_command(make_args: &MakeArgs) -> anyhow::Result<()> {
         slack: None,
         mcp: None,
         a2a: None,
+        protected_branches: None,
         admins: vec![],
     };
     serde_yaml::to_writer(

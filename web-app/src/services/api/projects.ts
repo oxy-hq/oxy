@@ -3,6 +3,18 @@ import type { Project, ProjectBranch, ProjectBranchesResponse } from "@/types/pr
 import type { RevisionInfo } from "@/types/settings";
 import { apiClient } from "./axios";
 
+export interface CommitEntry {
+  hash: string;
+  short_hash: string;
+  message: string;
+  author: string;
+  date: string;
+}
+
+export interface RecentCommitsResponse {
+  commits: CommitEntry[];
+}
+
 export class ProjectService {
   static async getGithubRevisionInfo(projectId: string, branchName: string): Promise<RevisionInfo> {
     const response = await apiClient.get(`/${projectId}/revision-info`, {
@@ -64,6 +76,63 @@ export class ProjectService {
     return response.data;
   }
 
+  static async continueRebase(
+    projectId: string,
+    branchName: string
+  ): Promise<{ success: boolean; message: string }> {
+    const response = await apiClient.post(`/${projectId}/continue-rebase`, null, {
+      params: { branch: branchName }
+    });
+    return response.data;
+  }
+
+  static async resolveConflictWithContent(
+    projectId: string,
+    branchName: string,
+    filePath: string,
+    content: string
+  ): Promise<{ success: boolean; message: string }> {
+    const response = await apiClient.post(
+      `/${projectId}/resolve-conflict-with-content`,
+      { content },
+      { params: { branch: branchName, file: filePath } }
+    );
+    return response.data;
+  }
+
+  static async unresolveConflictFile(
+    projectId: string,
+    branchName: string,
+    filePath: string
+  ): Promise<{ success: boolean; message: string }> {
+    const response = await apiClient.post(`/${projectId}/unresolve-conflict-file`, null, {
+      params: { branch: branchName, file: filePath }
+    });
+    return response.data;
+  }
+
+  static async resolveConflictFile(
+    projectId: string,
+    branchName: string,
+    filePath: string,
+    side: "mine" | "theirs"
+  ): Promise<{ success: boolean; message: string }> {
+    const response = await apiClient.post(`/${projectId}/resolve-conflict-file`, null, {
+      params: { branch: branchName, file: filePath, side }
+    });
+    return response.data;
+  }
+
+  static async abortRebase(
+    projectId: string,
+    branchName: string
+  ): Promise<{ success: boolean; message: string }> {
+    const response = await apiClient.post(`/${projectId}/abort-rebase`, null, {
+      params: { branch: branchName }
+    });
+    return response.data;
+  }
+
   static async pushChanges(
     projectId: string,
     branchName: string,
@@ -86,6 +155,47 @@ export class ProjectService {
     projectId: string
   ): Promise<{ success: boolean; message: string }> {
     const response = await apiClient.post(`/${projectId}/git-token`, { token });
+    return response.data;
+  }
+
+  static async deleteBranch(
+    projectId: string,
+    branchName: string
+  ): Promise<{ success: boolean; message: string }> {
+    const response = await apiClient.delete(
+      `/${projectId}/branches/${encodeURIComponent(branchName)}`
+    );
+    return response.data;
+  }
+
+  static async forcePushBranch(
+    projectId: string,
+    branchName: string
+  ): Promise<{ success: boolean; message: string }> {
+    const response = await apiClient.post(`/${projectId}/force-push`, null, {
+      params: { branch: branchName }
+    });
+    return response.data;
+  }
+
+  static async getRecentCommits(
+    projectId: string,
+    branchName: string
+  ): Promise<RecentCommitsResponse> {
+    const response = await apiClient.get(`/${projectId}/recent-commits`, {
+      params: { branch: branchName }
+    });
+    return response.data;
+  }
+
+  static async resetToCommit(
+    projectId: string,
+    branchName: string,
+    commit: string
+  ): Promise<{ success: boolean; message: string }> {
+    const response = await apiClient.post(`/${projectId}/reset-to-commit`, null, {
+      params: { branch: branchName, commit }
+    });
     return response.data;
   }
 

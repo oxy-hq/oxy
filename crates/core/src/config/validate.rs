@@ -327,6 +327,7 @@ mod tests {
                 slack: None,
                 mcp: None,
                 a2a: None,
+                protected_branches: None,
                 admins: vec![],
             },
             metadata: None,

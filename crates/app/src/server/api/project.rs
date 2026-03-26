@@ -11,9 +11,11 @@ use crate::server::service::project::ProjectService;
 use crate::server::service::secret_manager::SecretManagerService;
 use oxy::adapters::project::builder::ProjectBuilder;
 use oxy::adapters::secrets::SecretsManager;
-use oxy::api_types::{BranchType, ProjectBranch, RevisionInfoResponse};
+use oxy::api_types::{BranchType, ProjectBranch, RecentCommitsResponse, RevisionInfoResponse};
+use oxy::config::resolve_local_project_path;
 use oxy::database::client::establish_connection;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
+use oxy_project::LocalGitService;
 
 use entity::{prelude::WorkspaceUsers, workspace_users};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
@@ -76,19 +78,248 @@ pub struct ProjectBranchesResponse {
 }
 
 pub async fn pull_changes(
+    State(app_state): State<AppState>,
     Query(query): Query<BranchQuery>,
     Path(project_id): Path<Uuid>,
 ) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
-    match ProjectService::pull_changes(project_id, query.branch.clone()).await {
-        Ok(_) => Ok(ResponseJson(ProjectResponse {
+    match app_state
+        .backend
+        .pull(project_id, query.branch.clone())
+        .await
+    {
+        Ok(message) => Ok(ResponseJson(ProjectResponse {
             success: true,
-            message: "Changes pulled successfully".to_string(),
+            message,
         })),
         Err(e) => {
             error!("Failed to pull changes: {}", e);
             Ok(ResponseJson(ProjectResponse {
                 success: false,
-                message: format!("Failed to pull changes: {e}"),
+                message: format!("{e}"),
+            }))
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ResolveConflictQuery {
+    pub branch: Option<String>,
+    pub file: String,
+    /// `"mine"` = keep your local version; `"theirs"` = accept the remote version
+    pub side: String,
+}
+
+#[derive(Deserialize)]
+pub struct ResolveConflictWithContentQuery {
+    pub branch: Option<String>,
+    pub file: String,
+}
+
+#[derive(Deserialize)]
+pub struct UnresolveConflictQuery {
+    pub branch: Option<String>,
+    pub file: String,
+}
+
+#[derive(Deserialize)]
+pub struct ResetToCommitQuery {
+    pub branch: Option<String>,
+    pub commit: String,
+}
+
+#[derive(Deserialize)]
+pub struct ResolveConflictWithContentBody {
+    pub content: String,
+}
+
+pub async fn resolve_conflict_with_content(
+    State(app_state): State<AppState>,
+    Path(_project_id): Path<Uuid>,
+    Query(query): Query<ResolveConflictWithContentQuery>,
+    Json(body): Json<ResolveConflictWithContentBody>,
+) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
+    if app_state.readonly {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    match app_state
+        .backend
+        .resolve_conflict_with_content(query.branch.as_deref(), &query.file, &body.content)
+        .await
+    {
+        Ok(()) => Ok(ResponseJson(ProjectResponse {
+            success: true,
+            message: format!("Resolved {}", query.file),
+        })),
+        Err(e) => {
+            error!("Failed to resolve conflict with content: {}", e);
+            Ok(ResponseJson(ProjectResponse {
+                success: false,
+                message: format!("{e}"),
+            }))
+        }
+    }
+}
+
+pub async fn resolve_conflict_file(
+    State(app_state): State<AppState>,
+    Path(_project_id): Path<Uuid>,
+    Query(query): Query<ResolveConflictQuery>,
+) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
+    if app_state.readonly {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    let use_mine = query.side == "mine";
+    match app_state
+        .backend
+        .resolve_conflict_file(query.branch.as_deref(), &query.file, use_mine)
+        .await
+    {
+        Ok(()) => Ok(ResponseJson(ProjectResponse {
+            success: true,
+            message: format!("Resolved {} using {}", query.file, query.side),
+        })),
+        Err(e) => {
+            error!("Failed to resolve conflict file: {}", e);
+            Ok(ResponseJson(ProjectResponse {
+                success: false,
+                message: format!("{e}"),
+            }))
+        }
+    }
+}
+
+pub async fn unresolve_conflict_file(
+    State(app_state): State<AppState>,
+    Path(_project_id): Path<Uuid>,
+    Query(query): Query<UnresolveConflictQuery>,
+) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
+    if app_state.readonly {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    match app_state
+        .backend
+        .unresolve_conflict_file(query.branch.as_deref(), &query.file)
+        .await
+    {
+        Ok(()) => Ok(ResponseJson(ProjectResponse {
+            success: true,
+            message: format!("Conflict markers restored for {}", query.file),
+        })),
+        Err(e) => {
+            error!("Failed to unresolve conflict file: {}", e);
+            Ok(ResponseJson(ProjectResponse {
+                success: false,
+                message: format!("{e}"),
+            }))
+        }
+    }
+}
+
+pub async fn force_push_branch(
+    State(app_state): State<AppState>,
+    Path(_project_id): Path<Uuid>,
+    Query(query): Query<BranchQuery>,
+) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
+    if app_state.readonly {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    match app_state.backend.force_push(query.branch.as_deref()).await {
+        Ok(message) => Ok(ResponseJson(ProjectResponse {
+            success: true,
+            message,
+        })),
+        Err(e) => {
+            error!("Failed to force push: {}", e);
+            Ok(ResponseJson(ProjectResponse {
+                success: false,
+                message: format!("{e}"),
+            }))
+        }
+    }
+}
+
+pub async fn get_recent_commits(
+    State(app_state): State<AppState>,
+    Path(_project_id): Path<Uuid>,
+    Query(query): Query<BranchQuery>,
+) -> Result<ResponseJson<RecentCommitsResponse>, StatusCode> {
+    let result = app_state
+        .backend
+        .get_recent_commits(query.branch.as_deref(), 10)
+        .await;
+    Ok(ResponseJson(result))
+}
+
+pub async fn reset_to_commit(
+    State(app_state): State<AppState>,
+    Path(_project_id): Path<Uuid>,
+    Query(query): Query<ResetToCommitQuery>,
+) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
+    if app_state.readonly {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    match app_state
+        .backend
+        .reset_to_commit(query.branch.as_deref(), &query.commit)
+        .await
+    {
+        Ok(()) => Ok(ResponseJson(ProjectResponse {
+            success: true,
+            message: format!("Restored to {}", query.commit),
+        })),
+        Err(e) => {
+            error!("Failed to restore to commit: {}", e);
+            Ok(ResponseJson(ProjectResponse {
+                success: false,
+                message: format!("{e}"),
+            }))
+        }
+    }
+}
+
+pub async fn abort_rebase(
+    State(app_state): State<AppState>,
+    Path(_project_id): Path<Uuid>,
+    Query(query): Query<BranchQuery>,
+) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
+    match app_state
+        .backend
+        .abort_rebase(query.branch.as_deref())
+        .await
+    {
+        Ok(()) => Ok(ResponseJson(ProjectResponse {
+            success: true,
+            message: "Rebase aborted".to_string(),
+        })),
+        Err(e) => {
+            error!("Failed to abort rebase: {}", e);
+            Ok(ResponseJson(ProjectResponse {
+                success: false,
+                message: format!("{e}"),
+            }))
+        }
+    }
+}
+
+pub async fn continue_rebase(
+    State(app_state): State<AppState>,
+    Path(_project_id): Path<Uuid>,
+    Query(query): Query<BranchQuery>,
+) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
+    match app_state
+        .backend
+        .continue_rebase(query.branch.as_deref())
+        .await
+    {
+        Ok(()) => Ok(ResponseJson(ProjectResponse {
+            success: true,
+            message: "Rebase continued successfully".to_string(),
+        })),
+        Err(e) => {
+            error!("Failed to continue rebase: {}", e);
+            Ok(ResponseJson(ProjectResponse {
+                success: false,
+                message: format!("{e}"),
             }))
         }
     }
@@ -113,16 +344,20 @@ pub async fn push_changes(
         .clone()
         .unwrap_or_else(|| "Auto-commit: Oxy changes".to_string());
 
-    match ProjectService::push_changes(project_id, query.branch.clone(), commit_message).await {
-        Ok(_) => Ok(ResponseJson(ProjectResponse {
+    match app_state
+        .backend
+        .push(project_id, query.branch.clone(), commit_message)
+        .await
+    {
+        Ok(message) => Ok(ResponseJson(ProjectResponse {
             success: true,
-            message: "Changes pushed successfully".to_string(),
+            message,
         })),
         Err(e) => {
             error!("Failed to push changes: {}", e);
             Ok(ResponseJson(ProjectResponse {
                 success: false,
-                message: format!("Failed to push changes: {e}"),
+                message: format!("{e}"),
             }))
         }
     }
@@ -131,12 +366,19 @@ pub async fn push_changes(
 // RevisionInfoResponse imported from oxy::api_types
 
 pub async fn get_revision_info(
+    State(app_state): State<AppState>,
     Path(project_id): Path<Uuid>,
     Query(query): Query<BranchQuery>,
 ) -> Result<ResponseJson<RevisionInfoResponse>, StatusCode> {
-    let info = ProjectService::get_revision_info(project_id, query.branch.clone()).await?;
-
-    Ok(ResponseJson(info))
+    app_state
+        .backend
+        .revision_info(project_id, query.branch.as_deref())
+        .await
+        .map(ResponseJson)
+        .map_err(|e| {
+            error!("{}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })
 }
 
 /// Get detailed information about a specific project including its active branch.
@@ -161,10 +403,42 @@ pub async fn get_revision_info(
     tag = "Projects"
 )]
 pub async fn get_project(
+    State(app_state): State<AppState>,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Path(project_id): Path<Uuid>,
 ) -> Result<ResponseJson<ProjectDetailsResponse>, StatusCode> {
     info!("Getting project details for ID: {}", project_id);
+
+    // In local mode, build a synthetic project from the local git state.
+    if !app_state.cloud {
+        let project_root = resolve_local_project_path().map_err(|e| {
+            error!("Failed to resolve local project path: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+        let default_branch = LocalGitService::get_default_branch(&project_root).await;
+        let current_branch = LocalGitService::get_current_branch(&project_root)
+            .await
+            .unwrap_or_else(|_| default_branch.clone());
+        let now = chrono::Utc::now().to_string();
+        return Ok(ResponseJson(ProjectDetailsResponse {
+            id: project_id,
+            name: "Oxy".to_string(),
+            workspace_id: Uuid::nil(),
+            project_repo_id: None,
+            created_at: now.clone(),
+            updated_at: now.clone(),
+            active_branch: Some(ProjectBranch {
+                id: Uuid::nil(),
+                name: current_branch,
+                revision: String::new(),
+                project_id,
+                branch_type: BranchType::Local,
+                sync_status: "synced".to_string(),
+                created_at: now.clone(),
+                updated_at: now,
+            }),
+        }));
+    }
 
     let project = match ProjectService::get_project(project_id).await {
         Ok(Some(project)) => project,
@@ -232,23 +506,48 @@ pub async fn get_project(
     tag = "Projects"
 )]
 pub async fn get_project_branches(
+    State(app_state): State<AppState>,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Path(project_id): Path<Uuid>,
 ) -> Result<ResponseJson<ProjectBranchesResponse>, StatusCode> {
     info!("Getting branches for project: {}", project_id);
 
-    match ProjectService::get_project_branches(project_id).await {
-        Ok(branches) => {
-            info!(
-                "Found {} branches for project {}",
-                branches.len(),
-                project_id
-            );
-            Ok(ResponseJson(ProjectBranchesResponse { branches }))
-        }
+    app_state
+        .backend
+        .list_branches(project_id)
+        .await
+        .map(|branches| {
+            info!("Found {} branches", branches.len());
+            ResponseJson(ProjectBranchesResponse { branches })
+        })
+        .map_err(|e| {
+            error!("{}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })
+}
+
+pub async fn delete_branch(
+    State(app_state): State<AppState>,
+    Path((project_id, branch_name)): Path<(Uuid, String)>,
+) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
+    if app_state.readonly {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    match app_state
+        .backend
+        .delete_branch(project_id, &branch_name)
+        .await
+    {
+        Ok(()) => Ok(ResponseJson(ProjectResponse {
+            success: true,
+            message: format!("Branch '{}' deleted", branch_name),
+        })),
         Err(e) => {
-            error!("Failed to get branches for project {}: {}", project_id, e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            error!("{}", e);
+            Ok(ResponseJson(ProjectResponse {
+                success: false,
+                message: format!("{e}"),
+            }))
         }
     }
 }
@@ -262,27 +561,17 @@ pub async fn switch_project_branch(
     if app_state.readonly {
         return Err(StatusCode::FORBIDDEN);
     }
-    info!("Getting switched branches for project: {}", project_id);
+    info!("Switching branch for project: {}", project_id);
 
-    match ProjectService::switch_project_branch(project_id, request.branch).await {
-        Ok(branch) => {
-            info!("Successfully switched branches for project {}", project_id);
-            Ok(ResponseJson(ProjectBranch {
-                id: branch.id,
-                project_id,
-                branch_type: BranchType::Local,
-                name: branch.name,
-                revision: branch.revision,
-                sync_status: branch.sync_status,
-                created_at: branch.created_at.to_string(),
-                updated_at: branch.updated_at.to_string(),
-            }))
-        }
-        Err(e) => {
-            error!("Failed to get branches for project {}: {}", project_id, e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-    }
+    app_state
+        .backend
+        .switch_branch(project_id, &request.branch)
+        .await
+        .map(ResponseJson)
+        .map_err(|e| {
+            error!("{}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })
 }
 
 pub async fn switch_project_active_branch(

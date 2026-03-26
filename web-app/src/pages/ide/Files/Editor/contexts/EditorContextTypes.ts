@@ -9,6 +9,7 @@ export interface EditorContextValue {
   project: ReturnType<typeof useCurrentProjectBranch>["project"];
   branchName: string;
   isReadOnly: boolean;
+  isMainEditMode: boolean;
   gitEnabled: boolean;
 }
 

@@ -32,12 +32,7 @@ interface TestFileResultsState {
   caseMap: Map<string, TestCaseState>;
   abortControllers: Map<string, AbortController>;
   setCase: (key: string, state: TestCaseState) => void;
-  getCase: (
-    projectId: string,
-    branchName: string,
-    pathb64: string,
-    index: number
-  ) => TestCaseState;
+  getCase: (projectId: string, branchName: string, pathb64: string, index: number) => TestCaseState;
   getCasesForFile: (
     projectId: string,
     branchName: string,
@@ -84,7 +79,7 @@ const useTestFileResults = create<TestFileResultsState>()((set, get) => ({
     for (const [key, value] of get().caseMap) {
       if (key.startsWith(prefix)) {
         const index = parseInt(key.slice(prefix.length), 10);
-        if (!isNaN(index)) {
+        if (!Number.isNaN(index)) {
           result.set(index, value);
         }
       }

@@ -72,6 +72,16 @@
         "$ref": "#/definitions/Model"
       }
     },
+    "protected_branches": {
+      "description": "Branches that are protected: saving a file while on one of these branches will auto-create a new feature branch instead of writing directly. Defaults to [default_branch] (usually \"main\") when not set.\n\nExample config.yml: protected_branches: - main - develop",
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
     "slack": {
       "default": null,
       "anyOf": [
