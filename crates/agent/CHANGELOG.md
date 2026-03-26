@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.30](https://github.com/oxy-hq/oxy-internal/compare/0.5.29...0.5.30) (2026-03-26)
+
+
+### <!-- 0 -->🚀 Features
+
+* detect secrets from ENV ([#1812](https://github.com/oxy-hq/oxy-internal/issues/1812)) ([a3f91b9](https://github.com/oxy-hq/oxy-internal/commit/a3f91b9587bb5fa25c8b6e13b6305c7e6e36551f))
+
 ## [0.5.29](https://github.com/oxy-hq/oxy-internal/compare/0.5.28...0.5.29) (2026-03-24)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.30](https://github.com/oxy-hq/oxy-internal/compare/0.5.29...0.5.30) (2026-03-26)
+
+
+### <!-- 0 -->🚀 Features
+
+* add secrets management feature with environment variable support ([#1795](https://github.com/oxy-hq/oxy-internal/issues/1795)) ([09e4538](https://github.com/oxy-hq/oxy-internal/commit/09e4538b0bae6ed33374aa05c6200948c7aa23e9))
+
 ## [0.5.29](https://github.com/oxy-hq/oxy-internal/compare/0.5.28...0.5.29) (2026-03-24)
 
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.30](https://github.com/oxy-hq/oxy-internal/compare/0.5.29...0.5.30) (2026-03-26)
+
+
+### <!-- 0 -->🚀 Features
+
+* add secrets management feature with environment variable support ([#1795](https://github.com/oxy-hq/oxy-internal/issues/1795)) ([09e4538](https://github.com/oxy-hq/oxy-internal/commit/09e4538b0bae6ed33374aa05c6200948c7aa23e9))
+* detect secrets from ENV ([#1812](https://github.com/oxy-hq/oxy-internal/issues/1812)) ([a3f91b9](https://github.com/oxy-hq/oxy-internal/commit/a3f91b9587bb5fa25c8b6e13b6305c7e6e36551f))
+* git workflow for IDE ([#1790](https://github.com/oxy-hq/oxy-internal/issues/1790)) ([9bbfff3](https://github.com/oxy-hq/oxy-internal/commit/9bbfff36257ce0d3bab4b09b44647fda3e1db65f))
+* replace CubeJS with o3 for in-process semantic SQL compilation ([#1794](https://github.com/oxy-hq/oxy-internal/issues/1794)) ([d649295](https://github.com/oxy-hq/oxy-internal/commit/d649295ba6aac73d88246ca3029248426f817753))
+
 ## [0.5.29](https://github.com/oxy-hq/oxy-internal/compare/0.5.27...0.5.29) (2026-03-24)
 
 

@@ -1,6 +1,6 @@
 [package]
 name = "oxy-app"
-version = "0.5.29"
+version = "0.5.30"
 authors.workspace = true
 description = "Oxy Application - CLI and HTTP server"
 documentation.workspace = true

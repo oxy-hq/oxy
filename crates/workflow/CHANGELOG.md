@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.30](https://github.com/oxy-hq/oxy-internal/compare/0.5.29...0.5.30) (2026-03-26)
+
+
+### <!-- 0 -->🚀 Features
+
+* replace CubeJS with o3 for in-process semantic SQL compilation ([#1794](https://github.com/oxy-hq/oxy-internal/issues/1794)) ([d649295](https://github.com/oxy-hq/oxy-internal/commit/d649295ba6aac73d88246ca3029248426f817753))
+
 ## [0.5.29](https://github.com/oxy-hq/oxy-internal/compare/0.5.28...0.5.29) (2026-03-24)
 
 
