@@ -207,12 +207,13 @@ export default defineConfig({
         fs: "memfs"
       }
     }),
-    visualizer({
-      open: true,
-      filename: "bundle-report.html",
-      gzipSize: true,
-      brotliSize: true
-    }),
+    !process.env.CI &&
+      visualizer({
+        open: true,
+        filename: "bundle-report.html",
+        gzipSize: true,
+        brotliSize: true
+      }),
     sentryVitePlugin({
       org: process.env.SENTRY_ORG || "oxy-z9",
       project: process.env.VITE_SENTRY_PROJECT || "oxy-frontend",
@@ -245,8 +246,6 @@ export default defineConfig({
   build: {
     target: "es2020",
     sourcemap: false, // Disable source maps to reduce memory usage
-    // Enable minification and tree-shaking
-    minify: "esbuild",
     // Increase chunk size warning limit (500kb)
     chunkSizeWarningLimit: 500,
     rollupOptions: {
