@@ -40,7 +40,9 @@ impl DuckDB {
         let relative_path = normalized_file_path
             .strip_prefix(file_search_path)
             .map_err(|err| connector_internal_error(CREATE_TEMP_TABLE, &err))?
-            .to_string_lossy()
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unnamed")
             .to_string();
 
         let create_stmt = format!(

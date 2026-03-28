@@ -1,0 +1,219 @@
+//! Domain-specific events for the analytics pipeline.
+
+use agentic_core::events::DomainEvents;
+use serde::{Deserialize, Serialize};
+
+/// Describes a single top-level task in a procedure definition.
+///
+/// Included in [`AnalyticsEvent::ProcedureStarted`] so the frontend can render
+/// the full DAG — including task type badges — before any step events arrive.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProcedureStepInfo {
+    /// Human-readable task name from the procedure YAML.
+    pub name: String,
+    /// Task type string (e.g. `"execute_sql"`, `"loop_sequential"`).
+    pub task_type: String,
+}
+
+/// Events emitted by analytics workers.
+///
+/// These travel on the same [`EventStream`] as [`CoreEvent`]s, wrapped in
+/// [`Event::Domain`].
+///
+/// [`EventStream`]: crate::events::EventStream
+/// [`CoreEvent`]: crate::events::CoreEvent
+/// [`Event::Domain`]: crate::events::Event::Domain
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "event_type", rename_all = "snake_case")]
+pub enum AnalyticsEvent {
+    /// The schema catalog was resolved: these tables will be referenced.
+    SchemaResolved { tables: Vec<String> },
+
+    /// The Triage sub-phase of Clarify completed: topic and question type
+    /// identified before column-level exploration.
+    TriageCompleted {
+        /// Natural-language summary of the interpreted question.
+        summary: String,
+        /// Tables deemed relevant by triage.
+        relevant_tables: Vec<String>,
+        /// Question type chosen by triage.
+        question_type: String,
+        /// Confidence in the interpretation (0.0–1.0).
+        confidence: f32,
+        /// Language-level ambiguities identified during triage. Empty when
+        /// the question is unambiguous.
+        ambiguities: Vec<String>,
+    },
+
+    /// The Clarify stage produced a structured intent.
+    IntentClarified {
+        /// Classified question type (e.g. `"Breakdown"`).
+        question_type: String,
+        /// Metric names extracted from the question.
+        metrics: Vec<String>,
+        /// Dimension names extracted from the question.
+        dimensions: Vec<String>,
+        /// Filter expressions extracted from the question.
+        filters: Vec<String>,
+        /// Path to the procedure selected during Ground, if any.
+        ///
+        /// When set, the pipeline skips SQL generation and executes the
+        /// procedure instead.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        selected_procedure: Option<String>,
+    },
+
+    /// The Specify stage produced a resolved query spec.
+    SpecResolved {
+        /// SQL-level metric expressions (e.g. `"SUM(orders.amount)"`).
+        resolved_metrics: Vec<String>,
+        /// Tables that will appear in the FROM clause.
+        resolved_tables: Vec<String>,
+        /// Join triples `(left, right, key)`.
+        join_path: Vec<(String, String, String)>,
+        /// Human-readable result shape (e.g. `"Table[region, revenue]"`).
+        result_shape: String,
+        /// Assumptions noted by the LLM during resolution.
+        assumptions: Vec<String>,
+        /// Which resolution path was taken (`"SemanticLayer"` or `"Llm"`).
+        solution_source: String,
+    },
+
+    /// A SQL query was generated from the spec.
+    QueryGenerated { sql: String },
+
+    /// A query was executed (successfully or not).
+    QueryExecuted {
+        /// The query string that was executed.
+        query: String,
+        /// Number of rows returned (0 on failure).
+        row_count: usize,
+        /// Wall-clock duration of the execution in milliseconds.
+        duration_ms: u64,
+        /// Whether the execution succeeded.
+        success: bool,
+        /// Error message on failure, `None` on success.
+        error: Option<String>,
+        /// Column names from the result set (empty on failure).
+        columns: Vec<String>,
+        /// Result rows as JSON values, capped to a preview limit (empty on failure).
+        rows: Vec<Vec<serde_json::Value>>,
+    },
+
+    /// A validation check failed for a pipeline stage.
+    #[serde(rename = "analytics_validation_failed")]
+    ValidationFailed {
+        /// Pipeline stage where validation failed (e.g. `"specifying"`).
+        state: String,
+        /// Human-readable explanation of what failed.
+        reason: String,
+        /// Debug representation of the model output that failed validation
+        /// (e.g. the `QuerySpec` or generated SQL), so the developer can
+        /// see exactly what the LLM produced.
+        model_response: String,
+    },
+
+    /// The Interpret stage produced a chart or table to display alongside the
+    /// natural-language answer.
+    ///
+    /// Emitted *before* the `Done` event so the frontend can render the visual
+    /// as soon as it arrives, without waiting for the text answer to be fully
+    /// accumulated.
+    ChartRendered {
+        /// Chart / table configuration chosen by the LLM.
+        config: crate::types::ChartConfig,
+        /// Column names from the underlying query result.
+        columns: Vec<String>,
+        /// Row data as JSON values (parallel to `columns`).
+        rows: Vec<Vec<serde_json::Value>>,
+    },
+
+    /// The executing stage encountered an error — query failure, validation
+    /// failure, or connector error.  Emitted so the frontend can surface it
+    /// prominently to the user.
+    ExecutionFailed {
+        /// The SQL or query identifier that was executed (empty when no SQL).
+        query: String,
+        /// Human-readable error message.
+        error: String,
+        /// Which solution path produced the failing query.
+        source: String,
+        /// Whether the pipeline will retry (back-edge to an earlier stage).
+        will_retry: bool,
+    },
+
+    /// A procedure started execution.
+    ///
+    /// Emitted by [`OxyProcedureRunner`] before launching the workflow so the
+    /// frontend can render the full step DAG with all steps in idle state
+    /// immediately, then update each step as it begins and finishes.
+    ///
+    /// [`OxyProcedureRunner`]: agentic_workflow::OxyProcedureRunner
+    ProcedureStarted {
+        /// Human-readable procedure name (file stem without `.procedure` suffix).
+        procedure_name: String,
+        /// Ordered list of top-level task descriptors from the procedure definition.
+        steps: Vec<ProcedureStepInfo>,
+    },
+
+    /// A procedure completed execution (success or failure).
+    ///
+    /// Emitted by [`OxyProcedureRunner`] after the workflow finishes.
+    /// Paired with the preceding [`ProcedureStarted`] event.
+    ///
+    /// [`OxyProcedureRunner`]: agentic_workflow::OxyProcedureRunner
+    ProcedureCompleted {
+        /// Human-readable procedure name, matching the paired `ProcedureStarted`.
+        procedure_name: String,
+        /// `true` when the procedure completed without error.
+        success: bool,
+        /// Error message when `success == false`; absent on success.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
+
+    /// A task step within a procedure started execution.
+    ///
+    /// Emitted by [`WorkflowEventBridge`] when the analytics pipeline delegates
+    /// execution to `OxyProcedureRunner` and an individual task begins.  Lets
+    /// the frontend show per-step progress during multi-step procedure runs.
+    ///
+    /// [`WorkflowEventBridge`]: agentic_workflow::WorkflowEventBridge
+    ProcedureStepStarted {
+        /// Human-readable step name taken from the procedure task definition.
+        step: String,
+    },
+
+    /// A task step within a procedure completed (successfully or not).
+    ///
+    /// Emitted by [`WorkflowEventBridge`] when the corresponding task finishes.
+    /// Paired with the preceding [`ProcedureStepStarted`] event by matching
+    /// the `step` field.
+    ///
+    /// [`WorkflowEventBridge`]: agentic_workflow::WorkflowEventBridge
+    ProcedureStepCompleted {
+        /// Human-readable step name, matching the paired `ProcedureStepStarted`.
+        step: String,
+        /// `true` when the step succeeded without error.
+        success: bool,
+        /// Error message when `success == false`; absent on success.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
+}
+
+impl DomainEvents for AnalyticsEvent {}
+
+impl AnalyticsEvent {
+    /// Returns true for events whose payload should be injected into the
+    /// `step_end` metadata block for frontend debugging.
+    pub fn is_accumulated(&self) -> bool {
+        matches!(
+            self,
+            Self::IntentClarified { .. }
+                | Self::SpecResolved { .. }
+                | Self::QueryGenerated { .. }
+                | Self::QueryExecuted { .. }
+        )
+    }
+}

@@ -446,8 +446,10 @@ impl WorkflowLauncher {
 
                 // Execute all tasks
                 let mut results = IndexMap::new();
+                let all_tasks_start = std::time::Instant::now();
                 for task_input in task_inputs {
                     // Override result data so it can be referenced by subsequent tasks
+                    let ctx_start = std::time::Instant::now();
                     let current_context = minijinja::Value::from_iter(
                         results
                             .iter()
@@ -455,15 +457,31 @@ impl WorkflowLauncher {
                             .collect::<Vec<_>>(),
                     );
                     let execution_context = execution_context.wrap_render_context(&current_context);
+                    tracing::info!(
+                        elapsed_ms = ctx_start.elapsed().as_millis(),
+                        result_count = results.len(),
+                        "⏱ jinja context update"
+                    );
                     let task_name = task_input.task.name.clone();
+                    let task_start = std::time::Instant::now();
                     match task_executable
                         .execute(&execution_context, task_input)
                         .await
                     {
                         Ok(result) => {
+                            tracing::info!(
+                                elapsed_ms = task_start.elapsed().as_millis(),
+                                task = %task_name,
+                                "⏱ task completed"
+                            );
                             results.insert(task_name, result);
                         }
                         Err(e) => {
+                            tracing::info!(
+                                elapsed_ms = task_start.elapsed().as_millis(),
+                                task = %task_name,
+                                "⏱ task failed"
+                            );
                             execution_context
                                 .write_kind(EventKind::Finished {
                                     attributes: Default::default(),
@@ -475,6 +493,11 @@ impl WorkflowLauncher {
                         }
                     }
                 }
+                tracing::info!(
+                    elapsed_ms = all_tasks_start.elapsed().as_millis(),
+                    task_count = results.len(),
+                    "⏱ all tasks completed"
+                );
 
                 execution_context
                     .write_kind(EventKind::Finished {

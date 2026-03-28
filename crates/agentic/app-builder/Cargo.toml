@@ -1,0 +1,31 @@
+[package]
+name = "agentic-app-builder"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Data app builder domain for the agentic workflow framework"
+license = "MIT"
+
+[features]
+duckdb = ["agentic-connector/duckdb"]
+
+[dependencies]
+agentic-core = { path = "../core" }
+agentic-connector = { path = "../connector" }
+agentic-analytics = { path = "../analytics" }
+agentic-llm = { path = "../llm" }
+async-trait = "0.1"
+futures-core = "0.3"
+glob = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+tokio = { version = "1", features = ["sync"] }
+regex = "1"
+tracing = "0.1"
+sqlparser = { version = "0.53", features = ["visitor"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt", "sync"] }
+tokio-stream = "0.1"
+async-trait = "0.1"

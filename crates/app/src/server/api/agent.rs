@@ -112,10 +112,15 @@ pub async fn get_agents(
         tracing::error!("Failed to list agentic workflows: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+    let analytics_paths = config_manager.list_analytics_agents().await.map_err(|e| {
+        tracing::error!("Failed to list analytics agents: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let agent_relative_paths: Vec<String> = agent_paths
         .iter()
         .chain(agentic_paths.iter())
+        .chain(analytics_paths.iter())
         .filter_map(|agent| {
             agent
                 .strip_prefix(project_path)
@@ -133,6 +138,17 @@ pub async fn get_agents(
                     let aw_config = config.resolve_agentic_workflow(&path).await?;
                     Ok::<AgentConfigResponse, anyhow::Error>(AgentConfigResponse::from_aw_config(
                         aw_config, &path,
+                    ))
+                } else if path.ends_with(".agentic.yml") || path.ends_with(".agentic.yaml") {
+                    let agent_id = std::path::Path::new(&path)
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or(&path)
+                        .trim_end_matches(".agentic.yaml")
+                        .trim_end_matches(".agentic.yml")
+                        .to_string();
+                    Ok::<AgentConfigResponse, anyhow::Error>(AgentConfigResponse::new(
+                        agent_id, path, true,
                     ))
                 } else {
                     let agent_config = config.resolve_agent(&path).await?;

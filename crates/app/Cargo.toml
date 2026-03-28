@@ -18,6 +18,8 @@ handlebars = "6"
 # Core functionality
 oxy = { path = "../core" }
 oxy-shared = { path = "../shared" }
+agentic-http = { path = "../agentic/http" }
+agentic-db = { path = "../agentic/db" }
 oxy-agent = { path = "../agent" }
 oxy-auth = { path = "../auth" }
 oxy-project = { path = "../project" }

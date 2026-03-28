@@ -6,6 +6,8 @@ import queryKeys from "@/hooks/api/queryKey";
 import useThread from "@/hooks/api/threads/useThread";
 import AgentThread from "./agent";
 import AgenticThread from "./agentic";
+import AnalyticsThread from "./analytics";
+import AppBuilderThread from "./app-builder";
 import TaskThread from "./task";
 import WorkflowThread from "./workflow";
 
@@ -17,6 +19,7 @@ const ThreadNotFound = () => (
       The thread you're looking for doesn't exist or may have been removed.
     </p>
     <button
+      type='button'
       onClick={() => window.history.back()}
       className='mt-6 rounded-md bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700'
     >
@@ -55,6 +58,10 @@ const Thread = () => {
         return <TaskThread thread={thread} refetchThread={refetchThread} />;
       case "agentic":
         return <AgenticThread key={thread.id} thread={thread} />;
+      case "analytics":
+        return <AnalyticsThread key={thread.id} thread={thread} />;
+      case "app_builder":
+        return <AppBuilderThread key={thread.id} thread={thread} />;
       default:
         return <AgentThread thread={thread} refetchThread={refetchThread} />;
     }

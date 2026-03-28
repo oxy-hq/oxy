@@ -8,6 +8,20 @@ const agentKeys = {
     [...agentKeys.all, "get", pathb64, projectId, branchName] as const
 };
 
+const analyticsKeys = {
+  all: ["analytics"] as const,
+  runByThread: (projectId: string, threadId: string) =>
+    [...analyticsKeys.all, "runByThread", projectId, threadId] as const,
+  runsByThread: (projectId: string, threadId: string) =>
+    [...analyticsKeys.all, "runsByThread", projectId, threadId] as const
+};
+
+const appBuilderKeys = {
+  all: ["appBuilder"] as const,
+  runsByThread: (projectId: string, threadId: string) =>
+    [...appBuilderKeys.all, "runsByThread", projectId, threadId] as const
+};
+
 const threadKeys = {
   all: ["thread"] as const,
   list: (projectId: string, page?: number, limit?: number) =>
@@ -189,6 +203,8 @@ const humanVerdictKeys = {
 
 const queryKeys = {
   agent: agentKeys,
+  analytics: analyticsKeys,
+  appBuilder: appBuilderKeys,
   thread: threadKeys,
   apiKey: apiKeyKeys,
   secret: secretKeys,

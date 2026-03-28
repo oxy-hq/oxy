@@ -1,0 +1,38 @@
+[package]
+name = "agentic-analytics"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Analytics domain implementation for the agentic workflow framework"
+license = "MIT"
+
+[features]
+# Enable the DuckDB connector in AgentConfig::build_solver (scans CSV/Parquet dirs).
+duckdb = ["agentic-connector/duckdb"]
+# Enable real-DuckDB integration tests (not for CI without bundled DuckDB).
+duckdb-test = ["dep:duckdb"]
+
+[dependencies]
+agentic-core = { path = "../core" }
+agentic-connector = { path = "../connector" }
+agentic-llm = { path = "../llm" }
+duckdb = { version = "1.2", features = ["bundled"], optional = true }
+async-stream = "0.3"
+async-trait = "0.1"
+futures-core = "0.3"
+glob = "0.3"
+reqwest = { version = "0.12", features = ["json", "stream"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+sqlparser = { version = "0.53", features = ["visitor"] }
+statrs = "0.17"
+tokio = { version = "1", features = ["sync"] }
+tokio-stream = "0.1"
+airlayer = { git = "https://github.com/oxy-hq/airlayer.git", rev = "34178e6" }
+strsim = "0.11"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt", "sync", "net", "io-util"] }
+async-trait = "0.1"
+rusqlite = { version = "0.32", features = ["bundled"] }

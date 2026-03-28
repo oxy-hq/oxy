@@ -13,6 +13,7 @@ import { getAgentNameFromPath } from "@/libs/utils/string";
 export type Agent = {
   id: string;
   isAgentic: boolean;
+  isAnalytics: boolean;
   name: string;
 };
 
@@ -32,6 +33,7 @@ const AgentsDropdown = ({ onSelect, agentSelected, disabled = false }: Props) =>
         ?.map((agent) => ({
           id: agent.path,
           isAgentic: agent.path.endsWith(".aw.yaml") || agent.path.endsWith(".aw.yml"),
+          isAnalytics: agent.path.endsWith(".agentic.yml") || agent.path.endsWith(".agentic.yaml"),
           name: agent.name ?? getAgentNameFromPath(agent.path)
         }))
         .sort((a, b) => a.name.localeCompare(b.name)) ?? [],

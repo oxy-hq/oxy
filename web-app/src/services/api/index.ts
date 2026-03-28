@@ -1,6 +1,12 @@
 // Re-export all API services for easy importing
 
 export { AgentService } from "./agents";
+export type {
+  AnalyticsRunSummary,
+  CreateAnalyticsRunRequest,
+  CreateAnalyticsRunResponse
+} from "./analytics";
+export { AnalyticsService } from "./analytics";
 export { AppService } from "./apps";
 export { AuthService } from "./auth";
 export { ContextGraphService } from "./contextGraph";

@@ -159,6 +159,9 @@ impl ConfigManager {
     pub async fn list_agentic_workflows(&self) -> Result<Vec<PathBuf>, OxyError> {
         self.storage.list_agentic_workflows().await
     }
+    pub async fn list_analytics_agents(&self) -> Result<Vec<PathBuf>, OxyError> {
+        self.storage.list_analytics_agents().await
+    }
     pub async fn list_workflows(&self) -> Result<Vec<PathBuf>, OxyError> {
         self.storage.list_workflows().await
     }

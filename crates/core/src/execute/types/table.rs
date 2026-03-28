@@ -157,6 +157,16 @@ impl Table {
             .to_string())
     }
 
+    pub fn columns(&self) -> Result<Vec<String>, OxyError> {
+        let table = self.get_inner()?;
+        Ok(table
+            .schema
+            .fields()
+            .iter()
+            .map(|f| f.name().clone())
+            .collect())
+    }
+
     pub fn to_2d_array(&self) -> Result<(Vec<Vec<String>>, bool), OxyError> {
         let table = self.get_inner()?;
         let (truncated_results, truncated) = truncate_datasets(&table.batches, None);
@@ -165,6 +175,41 @@ impl Table {
                 OxyError::RuntimeError(format!("Failed to convert table to 2D array: {err}"))
             })?;
         Ok((table_2d_array, truncated))
+    }
+
+    /// Extract rows as typed JSON values, preserving numeric/null types.
+    ///
+    /// Unlike [`to_2d_array`] which stringifies every cell via `ArrayFormatter`,
+    /// this method uses `serde_arrow` to serialize each Arrow column to its natural
+    /// JSON type (numbers stay numbers, nulls stay null).  The result does **not**
+    /// include a header row — column names are returned separately via
+    /// [`columns`](Self::columns).
+    ///
+    /// Returns `(rows, truncated)`.
+    pub fn to_typed_rows(&self) -> Result<(Vec<Vec<serde_json::Value>>, bool), OxyError> {
+        let table = self.get_inner()?;
+        let columns = table
+            .schema
+            .fields()
+            .iter()
+            .map(|f| f.name().clone())
+            .collect::<Vec<_>>();
+        let (truncated_results, truncated) = truncate_datasets(&table.batches, None);
+        let mut all_rows: Vec<Vec<serde_json::Value>> = Vec::new();
+        for batch in &truncated_results {
+            let json_rows: Vec<serde_json::Value> =
+                serde_arrow::from_record_batch(batch).map_err(|e| {
+                    OxyError::RuntimeError(format!("Failed to serialize record batch: {e}"))
+                })?;
+            for obj in json_rows {
+                let row = columns
+                    .iter()
+                    .map(|col| obj.get(col).cloned().unwrap_or(serde_json::Value::Null))
+                    .collect();
+                all_rows.push(row);
+            }
+        }
+        Ok((all_rows, truncated))
     }
 
     pub fn get_database_ref(&self) -> Option<String> {

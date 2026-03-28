@@ -13,6 +13,8 @@ import { useEnterSubmit } from "@/hooks/useEnterSubmit";
 import useRunWorkflowThread from "@/hooks/workflow/useRunWorkflowThread";
 import ROUTES from "@/libs/utils/routes";
 import { getShortTitle } from "@/libs/utils/string";
+import { AnalyticsService } from "@/services/api";
+import { AppBuilderService } from "@/services/api/appBuilder";
 import { useAskAgentic } from "@/stores/agentic";
 import AgentsDropdown, { type Agent } from "./AgentsDropdown";
 import SelectItemWithDetail from "./SelectItemWithDetail";
@@ -48,6 +50,20 @@ const ChatPanel = () => {
           agentRef: data.source
         });
         break;
+      case "analytics":
+        AnalyticsService.createRun(projectId, {
+          agent_id: data.source,
+          question: data.input,
+          thread_id: data.id
+        });
+        break;
+      case "app_builder":
+        AppBuilderService.createRun(projectId, {
+          agent_id: data.source,
+          request: data.input,
+          thread_id: data.id
+        });
+        break;
       case "workflow":
         runWorkflow(data.id);
         break;
@@ -58,7 +74,9 @@ const ChatPanel = () => {
   const {
     isAvailable: isBuilderAvailable,
     isLoading: isCheckingBuilder,
-    isAgentic
+    isAgentic,
+    isAppBuilder,
+    builderPath
   } = useBuilderAvailable();
 
   const [message, setMessage] = useState("");
@@ -75,7 +93,7 @@ const ChatPanel = () => {
         createThread({
           title: title,
           source: agent.id,
-          source_type: agent.isAgentic ? "agentic" : "agent",
+          source_type: agent.isAnalytics ? "analytics" : agent.isAgentic ? "agentic" : "agent",
           input: message
         });
         break;
@@ -83,8 +101,8 @@ const ChatPanel = () => {
         if (isBuilderAvailable) {
           createThread({
             title: title,
-            source: "",
-            source_type: isAgentic ? "agentic" : "task",
+            source: builderPath,
+            source_type: isAppBuilder ? "app_builder" : isAgentic ? "agentic" : "task",
             input: message
           });
         }

@@ -15,6 +15,38 @@ import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import type { DataContainer, TableData } from "@/types/app";
 import AppDataState from "./AppDataState";
 
+const RUNNING_MESSAGES = [
+  "Running queries…",
+  "Crunching numbers…",
+  "Fetching data…",
+  "Analyzing results…",
+  "Building visualizations…",
+  "Almost there…",
+];
+
+function RotatingStatus({ active }: { active: boolean }) {
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    if (!active) {
+      setIndex(0);
+      return;
+    }
+    const id = setInterval(() => {
+      setIndex((i) => (i + 1) % RUNNING_MESSAGES.length);
+    }, 2000);
+    return () => clearInterval(id);
+  }, [active]);
+
+  if (!active) return null;
+
+  return (
+    <p className='h-5 text-muted-foreground text-sm transition-opacity duration-300'>
+      {RUNNING_MESSAGES[index]}
+    </p>
+  );
+}
+
 // Module-level cache: survives component unmount/remount (i.e. navigation away and back).
 // Keyed by appPath64; cleared on explicit refresh so stale data is never permanently stuck.
 // Capped at MAX_CLIENT_DATA_CACHE_SIZE entries (FIFO) to prevent unbounded memory growth
@@ -234,8 +266,14 @@ export default function AppPreview({ appPath64, runButton = true, autoRun = true
         <div className='mx-auto w-full max-w-200 p-2'>
           <AppDataState appDataQueryResult={appDataQueryResult} />
           <div
-            className={`transition-opacity duration-150 ${isRunning ? "pointer-events-none opacity-40" : "opacity-100"}`}
+            className={`relative transition-opacity duration-150 ${isRunning ? "pointer-events-none opacity-40" : "opacity-100"}`}
           >
+            {isRunning && (
+              <div className='absolute inset-0 z-10 flex flex-col items-center justify-center gap-3'>
+                <LoaderCircle className='h-8 w-8 animate-spin text-muted-foreground' />
+                <RotatingStatus active={isRunning} />
+              </div>
+            )}
             <Displays displays={appDisplay?.displays || []} data={displayData} />
           </div>
         </div>

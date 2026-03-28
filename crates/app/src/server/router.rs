@@ -59,6 +59,11 @@ use utoipa_axum::routes;
 
 use crate::api::{app, message, task};
 
+use agentic_http::{
+    AgenticState, app_builder_router, cleanup_stale_runs, router as agentic_router,
+};
+use std::sync::Arc;
+
 #[derive(Clone)]
 pub struct AppState {
     pub cloud: bool,
@@ -135,7 +140,7 @@ fn build_workspace_routes() -> Router<AppState> {
         )
 }
 
-fn build_project_routes(app_state: AppState) -> Router<AppState> {
+fn build_project_routes(app_state: AppState, agentic_state: Arc<AgenticState>) -> Router<AppState> {
     Router::new()
         .route("/details", get(project::get_project))
         .route("/status", get(project::get_project_status))
@@ -223,6 +228,8 @@ fn build_project_routes(app_state: AppState) -> Router<AppState> {
             "/results/files/{file_id}",
             delete(result_files::delete_result_file),
         )
+        .nest("/analytics", agentic_router(agentic_state.clone()))
+        .nest("/app-builder", app_builder_router(agentic_state))
 }
 
 #[derive(Clone)]
@@ -458,18 +465,21 @@ fn build_app_routes() -> Router<AppState> {
         .route("/{pathb64}/charts/{chart_path}", get(app::get_chart_image))
         .route("/file/{pathb64}", get(app::get_data))
         .route("/source/{pathb64}", get(app::get_source_file))
+        .route("/save-from-run/{run_id}", post(app::save_app_builder_run))
 }
 
-fn build_protected_routes(app_state: AppState) -> Router<AppState> {
+fn build_protected_routes(
+    app_state: AppState,
+    agentic_state: Arc<AgenticState>,
+) -> Router<AppState> {
     Router::new()
         .merge(build_global_routes())
         .nest("/workspaces", build_workspace_routes())
         .nest(
             "/{project_id}",
-            build_project_routes(app_state.clone()).layer(middleware::from_fn_with_state(
-                app_state,
-                project_middleware,
-            )),
+            build_project_routes(app_state.clone(), agentic_state).layer(
+                middleware::from_fn_with_state(app_state, project_middleware),
+            ),
         )
 }
 
@@ -512,8 +522,10 @@ pub async fn api_router(cloud: bool, enterprise: bool, readonly: bool) -> Result
         readonly,
         backend: std::sync::Arc::new(build_backend(cloud)),
     };
+    cleanup_stale_runs().await.ok();
+    let agentic_state = Arc::new(AgenticState::new());
     let public_routes = build_public_routes();
-    let protected_routes = build_protected_routes(app_state.clone());
+    let protected_routes = build_protected_routes(app_state.clone(), agentic_state);
     let protected_routes = apply_middleware(protected_routes, cloud)?;
     let app_routes = public_routes.merge(protected_routes);
     let cors = build_cors_layer();
@@ -542,8 +554,10 @@ pub async fn internal_api_router(
         readonly,
         backend: std::sync::Arc::new(build_backend(cloud)),
     };
+    cleanup_stale_runs().await.ok();
+    let agentic_state = Arc::new(AgenticState::new());
     let public_routes = build_public_routes();
-    let protected_routes = build_protected_routes(app_state.clone());
+    let protected_routes = build_protected_routes(app_state.clone(), agentic_state);
 
     let protected_routes = protected_routes
         .layer(middleware::from_fn(timeout_middleware))

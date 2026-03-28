@@ -14,6 +14,8 @@ export default function useBuilderAvailable() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [builderPath, setBuilderPath] = useState<string>("");
   const isAgentic = builderPath.endsWith(".aw.yaml") || builderPath.endsWith(".aw.yml");
+  const isAppBuilder =
+    builderPath.endsWith(".agentic.yml") || builderPath.endsWith(".agentic.yaml");
 
   useEffect(() => {
     const checkBuilderAvailability = async () => {
@@ -34,5 +36,5 @@ export default function useBuilderAvailable() {
     checkBuilderAvailability();
   }, [projectId]);
 
-  return { isAvailable, isAgentic, isLoading, builderPath };
+  return { isAvailable, isAgentic, isAppBuilder, isLoading, builderPath };
 }

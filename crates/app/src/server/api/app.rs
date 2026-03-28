@@ -885,3 +885,68 @@ pub async fn get_chart_image(
 
     Ok((StatusCode::OK, headers, body))
 }
+
+// ── App-builder run → save as app file ──────────────────────────────────────
+
+#[derive(Serialize)]
+pub struct SaveAppBuilderRunResponse {
+    /// Base64-encoded app file path for use with AppPreview.
+    pub app_path64: String,
+    /// Project-relative path of the saved file.
+    pub app_path: String,
+}
+
+/// Save a completed app-builder run's generated YAML as an `.app.yml` file
+/// in the project directory and return the base64-encoded path for AppPreview.
+///
+/// The file is written to `generated/{run_id}.app.yml` within the project root.
+pub async fn save_app_builder_run(
+    Path((_project_id, run_id)): Path<(Uuid, String)>,
+    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+) -> Result<extract::Json<SaveAppBuilderRunResponse>, StatusCode> {
+    use agentic_db::entity::agentic_run;
+    use sea_orm::EntityTrait;
+
+    let db = oxy::database::client::establish_connection()
+        .await
+        .map_err(|e| {
+            tracing::error!("db connect failed: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    let run = agentic_run::Entity::find_by_id(&run_id)
+        .one(&db)
+        .await
+        .map_err(|e| {
+            tracing::error!("db query failed: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let yaml = run.answer.ok_or(StatusCode::CONFLICT)?;
+
+    // Write to {project_path}/generated/{run_id}.app.yml
+    let project_path = project_manager.config_manager.project_path();
+    let generated_dir = project_path.join("generated");
+    tokio::fs::create_dir_all(&generated_dir)
+        .await
+        .map_err(|e| {
+            tracing::error!("create generated dir: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    let file_name = format!("{run_id}.app.yml");
+    let full_path = generated_dir.join(&file_name);
+    tokio::fs::write(&full_path, &yaml).await.map_err(|e| {
+        tracing::error!("write app file: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let relative = format!("generated/{file_name}");
+    let app_path64 = BASE64_STANDARD.encode(&relative);
+
+    Ok(extract::Json(SaveAppBuilderRunResponse {
+        app_path64,
+        app_path: relative,
+    }))
+}

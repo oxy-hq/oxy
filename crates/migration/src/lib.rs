@@ -55,6 +55,9 @@ mod m20260302_000002_drop_email_verification_token;
 mod m20260302_000003_drop_password_hash;
 mod m20260304_000001_create_testing_tables;
 mod m20260312_000001_create_run_sequences_table;
+mod m20260317_000001_create_agentic_tables;
+mod m20260317_000002_rename_legacy_agentic_tables;
+mod m20260318_000001_add_thread_id_to_agentic_runs;
 mod m20260324_000001_add_updated_by_to_secrets;
 
 pub struct Migrator;
@@ -117,6 +120,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260302_000003_drop_password_hash::Migration),
             Box::new(m20260304_000001_create_testing_tables::Migration),
             Box::new(m20260312_000001_create_run_sequences_table::Migration),
+            Box::new(m20260317_000001_create_agentic_tables::Migration),
+            Box::new(m20260317_000002_rename_legacy_agentic_tables::Migration),
+            Box::new(m20260318_000001_add_thread_id_to_agentic_runs::Migration),
             Box::new(m20260324_000001_add_updated_by_to_secrets::Migration),
         ]
     }

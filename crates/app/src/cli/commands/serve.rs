@@ -65,7 +65,9 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
         ));
     }
 
+    println!("serve: running database migrations");
     run_database_migrations(args.enterprise).await?;
+    println!("serve: migrations done, finding available port");
 
     // Initialize local git: clone from GIT_REPOSITORY_URL if set, or init a
     // fresh repo.  No-op when .git already exists.
@@ -88,26 +90,41 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     }
 
     let _available_port = find_available_port(args.host.clone(), args.port).await?;
+    println!("serve: port found, creating web application");
+
     let app = create_web_application(args.cloud, args.enterprise, args.readonly).await?;
+    println!("serve: web application created");
 
     let internal_app = if args.internal_port > 0 {
-        Some(create_internal_application(args.cloud, args.enterprise, args.readonly).await?)
+        println!(
+            "serve: creating internal application on port {}",
+            args.internal_port
+        );
+        let internal =
+            create_internal_application(args.cloud, args.enterprise, args.readonly).await?;
+        println!("serve: internal application created");
+        Some(internal)
     } else {
+        println!("serve: internal port disabled (internal_port=0)");
         None
     };
 
+    println!("serve: starting application");
     serve_application(app, internal_app, args).await
 }
 
 async fn run_database_migrations(enterprise: bool) -> Result<(), OxyError> {
+    println!("migrations: establishing database connection (this builds the connection pool)");
     let db = establish_connection()
         .await
         .map_err(|e| OxyError::RuntimeError(format!("Failed to connect to database: {}", e)))?;
+    println!("migrations: database connection established, running SeaORM migrations");
 
     // Run SeaORM migrations for PostgreSQL
     Migrator::up(&db, None)
         .await
         .map_err(|e| OxyError::RuntimeError(format!("Failed to run database migrations: {}", e)))?;
+    println!("migrations: SeaORM migrations complete");
 
     // Run ClickHouse migrations only when enterprise mode is enabled
     if enterprise {
@@ -183,10 +200,13 @@ async fn create_web_application(
     enterprise: bool,
     readonly: bool,
 ) -> Result<Router, OxyError> {
+    println!("create_web_application: building api_router");
     let api_router = crate::server::router::api_router(cloud, enterprise, readonly)
         .await
         .map_err(|e| OxyError::RuntimeError(format!("Failed to create API router: {}", e)))?;
+    println!("create_web_application: api_router done, building openapi_router");
     let openapi_router = crate::server::router::openapi_router().await;
+    println!("create_web_application: openapi_router done, assembling final router");
     let mut openapi_doc = openapi_router.into_openapi().clone();
 
     openapi_doc.info.title = "oxy-api-docs".to_string();
@@ -207,7 +227,7 @@ async fn create_web_application(
     openapi_doc.servers = Some(vec![Server::new("/api")]);
     let static_service = service_fn(handle_static_files);
 
-    Ok(Router::new()
+    let router = Router::new()
         .nest("/api", api_router)
         .merge(
             SwaggerUi::new("/apidoc")
@@ -221,7 +241,9 @@ async fn create_web_application(
                 ),
         )
         .fallback_service(static_service)
-        .layer(create_trace_layer(cloud)))
+        .layer(create_trace_layer(cloud));
+    println!("create_web_application: router fully assembled");
+    Ok(router)
 }
 
 async fn create_internal_application(

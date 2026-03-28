@@ -1,0 +1,137 @@
+name: ''
+description: ''
+controls: []
+tasks:
+- name: get_all_tables_in_the_database
+  type: execute_sql
+  database: local
+  sql_query: SELECT table_name, table_type FROM information_schema.tables WHERE table_schema = 'main' ORDER BY table_name;
+  variables: null
+  export: null
+  dry_run_limit: null
+  cache: null
+  mode: client
+- name: schema_of_oxymart_csv
+  type: execute_sql
+  database: local
+  sql_query: DESCRIBE oxymart_csv;
+  variables: null
+  export: null
+  dry_run_limit: null
+  cache: null
+  mode: client
+- name: sample_rows_from_oxymart_csv
+  type: execute_sql
+  database: local
+  sql_query: SELECT Store, Date, Weekly_Sales, Holiday_Flag, Temperature, Fuel_Price, CPI, Unemployment FROM oxymart_csv LIMIT 10;
+  variables: null
+  export: null
+  dry_run_limit: null
+  cache: null
+  mode: client
+- name: total_kpis_from_oxymart_csv
+  type: execute_sql
+  database: local
+  sql_query: |2
+
+    SELECT
+        SUM(Weekly_Sales)        AS Total_Sales,
+        AVG(Weekly_Sales)        AS Average_Weekly_Sales,
+        COUNT(DISTINCT Store)    AS Total_Stores,
+        COUNT(DISTINCT Date)     AS Total_Weeks
+    FROM oxymart_csv;
+  variables: null
+  export: null
+  dry_run_limit: null
+  cache: null
+  mode: client
+- name: monthly_sales_trend
+  type: execute_sql
+  database: local
+  sql_query: |2
+
+        SELECT
+            YEAR(Date) AS Year,
+            MONTH(Date) AS Month,
+            DATE_TRUNC('month', Date) AS Month_Date,
+            SUM(Weekly_Sales) AS Total_Monthly_Sales
+        FROM oxymart_csv
+        GROUP BY YEAR(Date), MONTH(Date), DATE_TRUNC('month', Date)
+        ORDER BY Year ASC, Month ASC
+  variables: null
+  export: null
+  dry_run_limit: null
+  cache: null
+  mode: client
+- name: top_performing_stores_by_total_sales
+  type: execute_sql
+  database: local
+  sql_query: |2
+
+        SELECT
+            Store,
+            ROUND(SUM(Weekly_Sales), 2) AS Total_Sales,
+            ROUND(AVG(Weekly_Sales), 2) AS Avg_Weekly_Sales,
+            COUNT(*) AS Total_Weeks,
+            RANK() OVER (ORDER BY SUM(Weekly_Sales) DESC) AS Sales_Rank
+        FROM oxymart_csv
+        GROUP BY Store
+        ORDER BY Total_Sales DESC
+  variables: null
+  export: null
+  dry_run_limit: null
+  cache: null
+  mode: client
+- name: holiday_vs_non_holiday_sales_comparison
+  type: execute_sql
+  database: local
+  sql_query: "\nSELECT\n    CASE \n        WHEN Holiday_Flag = 1 THEN 'Holiday Week'\n        ELSE 'Non-Holiday Week'\n    END AS Week_Type,\n    Holiday_Flag,\n    COUNT(*) AS Total_Records,\n    ROUND(AVG(Weekly_Sales), 2) AS Avg_Weekly_Sales,\n    ROUND(SUM(Weekly_Sales), 2) AS Total_Weekly_Sales,\n    ROUND(MIN(Weekly_Sales), 2) AS Min_Weekly_Sales,\n    ROUND(MAX(Weekly_Sales), 2) AS Max_Weekly_Sales\nFROM main.oxymart_csv\nGROUP BY Holiday_Flag\nORDER BY Holiday_Flag DESC\n"
+  variables: null
+  export: null
+  dry_run_limit: null
+  cache: null
+  mode: client
+display:
+- type: markdown
+  content: ''
+- type: line_chart
+  x: Month_Date
+  y: Total_Monthly_Sales
+  x_axis_label: Month_Date
+  y_axis_label: Total_Monthly_Sales
+  data: monthly_sales_trend
+  series: null
+  title: Total_Monthly_Sales over Month_Date
+- type: bar_chart
+  x: Store
+  y: Total_Sales
+  title: Total_Sales vs Store
+  data: top_performing_stores_by_total_sales
+  series: null
+- type: bar_chart
+  x: Week_Type
+  y: Avg_Weekly_Sales
+  title: Avg_Weekly_Sales by Week_Type
+  data: holiday_vs_non_holiday_sales_comparison
+  series: null
+- type: table
+  data: get_all_tables_in_the_database
+  title: get_all_tables_in_the_database
+- type: table
+  data: schema_of_oxymart_csv
+  title: schema_of_oxymart_csv
+- type: table
+  data: sample_rows_from_oxymart_csv
+  title: sample_rows_from_oxymart_csv
+- type: table
+  data: total_kpis_from_oxymart_csv
+  title: total_kpis_from_oxymart_csv
+- type: table
+  data: monthly_sales_trend
+  title: monthly_sales_trend
+- type: table
+  data: top_performing_stores_by_total_sales
+  title: top_performing_stores_by_total_sales
+- type: table
+  data: holiday_vs_non_holiday_sales_comparison
+  title: holiday_vs_non_holiday_sales_comparison

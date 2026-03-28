@@ -15,7 +15,8 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
-    "test:e2e:debug": "playwright test --debug"
+    "test:e2e:debug": "playwright test --debug",
+    "test:unit": "vitest run"
   },
   "dependencies": {
     "@codemirror/lang-python": "^6.2.1",
@@ -117,6 +118,8 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/invariant": "^2.2.37",
     "@types/js-cookie": "^3.0.6",
     "@types/lodash": "^4.17.24",
@@ -129,10 +132,13 @@
     "@types/react-window": "^2.0.0",
     "@vitejs/plugin-react-swc": "^4.3.0",
     "i": "^0.3.7",
+    "jsdom": "^29.0.0",
+    "rollup-plugin-esbuild": "^6.2.1",
     "rollup-plugin-visualizer": "^7.0.1",
     "typescript": "^6.0.2",
     "vite": "^8.0.3",
-    "vite-plugin-node-polyfills": "^0.25.0"
+    "vite-plugin-node-polyfills": "^0.25.0",
+    "vitest": "^4.0.18"
   },
   "engines": {
     "node": ">=22.19.0"

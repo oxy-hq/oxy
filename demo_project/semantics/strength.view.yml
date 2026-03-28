@@ -1,0 +1,59 @@
+name: strength
+description: Strength training log — each row is one set of an exercise.
+datasource: training
+table: "strength.csv"
+
+entities:
+  - name: strength_set
+    type: primary
+    key: date
+  - name: nutrition_day
+    type: foreign
+    key: date
+
+dimensions:
+  - name: date
+    type: date
+    expr: "Date"
+    description: Training date (YYYY-MM-DD)
+  - name: day_of_week
+    type: string
+    expr: "Day of Week"
+    description: Day of the week (Monday, Tuesday, etc.)
+  - name: exercise
+    type: string
+    expr: "Exercise"
+    description: Exercise name (e.g. Flat Barbell Bench Press, Barbell Deadlift)
+  - name: start_time
+    type: string
+    expr: "Start Time"
+    description: Time the set started (HH:MM AM/PM)
+  - name: notes
+    type: string
+    expr: "Notes"
+    description: Free-text notes for the set
+
+measures:
+  - name: weight
+    type: max
+    expr: "Weight"
+    description: Weight lifted in lbs (max across sets)
+  - name: reps
+    type: sum
+    expr: "Reps"
+    description: Total reps performed
+  - name: set_count
+    type: count
+    description: Number of sets
+  - name: avg_rpe
+    type: average
+    expr: "RPE"
+    description: Average Rate of Perceived Exertion (1-10 scale)
+  - name: max_weight
+    type: max
+    expr: "Weight"
+    description: Heaviest weight lifted in lbs
+  - name: total_volume
+    type: sum
+    expr: "CAST(\"Weight\" AS DOUBLE) * CAST(\"Reps\" AS DOUBLE)"
+    description: Total training volume (weight x reps summed across sets)

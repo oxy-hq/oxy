@@ -1,0 +1,13 @@
+[package]
+name = "agentic-db"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Shared SeaORM entities and migrations for the agentic pipeline"
+
+[dependencies]
+sea-orm = { workspace = true }
+sea-orm-migration = { workspace = true }
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+serde_json = "1"

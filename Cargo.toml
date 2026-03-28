@@ -22,6 +22,14 @@ members = [
   "crates/infrastructure/llm/gemini",
   "crates/infrastructure/llm/openai",
   "crates/infrastructure/llm/oxy-llm",
+  "crates/agentic/analytics",
+  "crates/agentic/app-builder",
+  "crates/agentic/core",
+  "crates/agentic/llm",
+  "crates/agentic/db",
+  "crates/agentic/connector",
+  "crates/agentic/http",
+  "crates/agentic/workflow",
 ]
 
 default-members = ["crates/app"]
@@ -86,5 +94,5 @@ sqlx-postgres = {opt-level = 0}
 
 [profile.ci]
 debug = false # reduces compilation time and resource usage by omitting debug symbols.
-inherits = "dev" 
+inherits = "dev"
 strip = true # reduces memory usage during linking
