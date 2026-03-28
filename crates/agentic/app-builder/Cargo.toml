@@ -23,7 +23,7 @@ serde_yaml = "0.9"
 tokio = { version = "1", features = ["sync"] }
 regex = "1"
 tracing = "0.1"
-sqlparser = { version = "0.53", features = ["visitor"] }
+sqlparser = { version = "0.59", features = ["visitor"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "sync"] }

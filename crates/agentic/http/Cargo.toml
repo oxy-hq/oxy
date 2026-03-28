@@ -27,7 +27,7 @@ sea-orm = { workspace = true }
 tokio = { workspace = true }
 
 # State
-dashmap = "5"
+dashmap = "6"
 uuid = { workspace = true }
 
 # Serde / JSON

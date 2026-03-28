@@ -25,8 +25,8 @@ reqwest = { version = "0.12", features = ["json", "stream"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
-sqlparser = { version = "0.53", features = ["visitor"] }
-statrs = "0.17"
+sqlparser = { version = "0.59", features = ["visitor"] }
+statrs = "0.18"
 tokio = { version = "1", features = ["sync"] }
 tokio-stream = "0.1"
 airlayer = { git = "https://github.com/oxy-hq/airlayer.git", rev = "34178e6" }
