@@ -68,9 +68,9 @@
     "@typescript-eslint/parser": "^8.57.2",
     "eslint": "^10.1.0",
     "react": "^19.2.4",
-    "tsdown": "^0.21.5",
+    "tsdown": "^0.21.7",
     "typescript": "^6.0.2",
-    "vitest": "^4.1.1"
+    "vitest": "^4.1.2"
   },
   "engines": {
     "node": ">=18.0.0"
