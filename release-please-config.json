@@ -8,6 +8,38 @@
       "release-type": "rust",
       "component": "agent"
     },
+    "crates/agentic/analytics": {
+      "release-type": "rust",
+      "component": "agentic-analytics"
+    },
+    "crates/agentic/app-builder": {
+      "release-type": "rust",
+      "component": "agentic-app-builder"
+    },
+    "crates/agentic/connector": {
+      "release-type": "rust",
+      "component": "agentic-connector"
+    },
+    "crates/agentic/core": {
+      "release-type": "rust",
+      "component": "agentic-core"
+    },
+    "crates/agentic/db": {
+      "release-type": "rust",
+      "component": "agentic-db"
+    },
+    "crates/agentic/http": {
+      "release-type": "rust",
+      "component": "agentic-http"
+    },
+    "crates/agentic/llm": {
+      "release-type": "rust",
+      "component": "agentic-llm"
+    },
+    "crates/agentic/workflow": {
+      "release-type": "rust",
+      "component": "agentic-workflow"
+    },
     "crates/app": {
       "release-type": "rust",
       "component": "app"
@@ -76,6 +108,14 @@
       "release-type": "rust",
       "component": "oxy-llm"
     },
+    "crates/integration/looker": {
+      "release-type": "rust",
+      "component": "looker"
+    },
+    "crates/test-utils": {
+      "release-type": "rust",
+      "component": "test-utils"
+    },
     "web-app": {
       "release-type": "node",
       "component": "web-app"
@@ -92,7 +132,38 @@
     {
       "type": "linked-versions",
       "groupName": "oxy",
-      "components": ["a2a", "agent", "app", "auth", "core", "entity", "globals", "migration", "omni", "project", "semantic", "shared", "thread", "workflow", "anthropic", "gemini", "ollama", "openai", "oxy-llm", "web-app"]
+      "components": [
+        "a2a",
+        "agent",
+        "agentic-analytics",
+        "agentic-app-builder",
+        "agentic-connector",
+        "agentic-core",
+        "agentic-db",
+        "agentic-http",
+        "agentic-llm",
+        "agentic-workflow",
+        "app",
+        "auth",
+        "core",
+        "entity",
+        "globals",
+        "looker",
+        "migration",
+        "omni",
+        "project",
+        "semantic",
+        "shared",
+        "test-utils",
+        "thread",
+        "workflow",
+        "anthropic",
+        "gemini",
+        "ollama",
+        "openai",
+        "oxy-llm",
+        "web-app"
+      ]
     }
   ],
   "changelog-sections": [
