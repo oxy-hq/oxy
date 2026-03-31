@@ -6,27 +6,27 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Extension, Path},
     http::{HeaderMap, StatusCode},
     response::{
-        sse::{Event as SseEvent, KeepAlive, Sse},
         IntoResponse, Response,
+        sse::{Event as SseEvent, KeepAlive, Sse},
     },
-    Json,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
 
 use agentic_analytics::{
-    analytics_step_summary, analytics_tool_summary, build_analytics_handlers,
+    AnalyticsEvent, AnalyticsIntent, QuestionType, analytics_step_summary, analytics_tool_summary,
+    build_analytics_handlers,
     config::{AgentConfig, BuildContext},
-    AnalyticsEvent, AnalyticsIntent, QuestionType,
 };
 use agentic_core::{
+    UiTransformState,
     events::{CoreEvent, Event, EventStream},
     orchestrator::{Orchestrator, OrchestratorError},
-    UiTransformState,
 };
 
 use crate::{
@@ -109,7 +109,7 @@ pub async fn create_run(
     let config = match AgentConfig::from_file(&config_path) {
         Ok(c) => c,
         Err(e) => {
-            return (StatusCode::BAD_REQUEST, format!("agent config error: {e}")).into_response()
+            return (StatusCode::BAD_REQUEST, format!("agent config error: {e}")).into_response();
         }
     };
 
@@ -299,7 +299,7 @@ pub async fn answer_run(
     let tx = match state.answer_txs.get(&run_id) {
         Some(t) => t.clone(),
         None => {
-            return (StatusCode::GONE, "orchestrator task is no longer running").into_response()
+            return (StatusCode::GONE, "orchestrator task is no longer running").into_response();
         }
     };
 
@@ -440,14 +440,13 @@ async fn run_pipeline(
 
                     // Inject wall-time into terminal events so every SSE client
                     // sees the total duration without a separate request.
-                    if sse::is_terminal(&event_type) {
-                        if let serde_json::Value::Object(ref mut map) = payload {
+                    if sse::is_terminal(&event_type)
+                        && let serde_json::Value::Object(ref mut map) = payload {
                             map.insert(
                                 "duration_ms".into(),
                                 (pipeline_start.elapsed().as_millis() as u64).into(),
                             );
                         }
-                    }
 
                     match event_type.as_str() {
                         "llm_token" | "thinking_token" => {
@@ -662,7 +661,7 @@ pub async fn list_runs_by_thread(Path(ThreadIdPath { thread_id }): Path<ThreadId
     let db = match establish_connection().await {
         Ok(db) => db,
         Err(e) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")).into_response()
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")).into_response();
         }
     };
 
@@ -714,7 +713,7 @@ pub async fn get_run_by_thread(Path(ThreadIdPath { thread_id }): Path<ThreadIdPa
     let db = match establish_connection().await {
         Ok(db) => db,
         Err(e) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")).into_response()
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")).into_response();
         }
     };
 

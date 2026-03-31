@@ -17,8 +17,8 @@ use async_trait::async_trait;
 use tokio::io::AsyncWriteExt;
 
 use crate::app_storage::{
-    truncate_artifact_content, PersistedTurn, PreferenceStore, QueryLog, QueryLogEntry,
-    SessionSummary, StorageError, SuspendedPipeline, SuspendedPipelineStore, TurnStore,
+    PersistedTurn, PreferenceStore, QueryLog, QueryLogEntry, SessionSummary, StorageError,
+    SuspendedPipeline, SuspendedPipelineStore, TurnStore, truncate_artifact_content,
 };
 
 // ── Internal session row ───────────────────────────────────────────────────────

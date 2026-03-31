@@ -1,42 +1,53 @@
 [package]
 name = "agentic-connector"
-version = "0.1.0"
-edition = "2021"
 description = "Database connector trait, configuration, and backend implementations"
+version = "0.5.31"
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
 
 [features]
-duckdb     = ["dep:duckdb"]
-postgres   = ["dep:tokio-postgres"]
+duckdb = ["dep:duckdb"]
+postgres = ["dep:tokio-postgres"]
 clickhouse = ["dep:reqwest", "dep:serde_json", "dep:serde"]
-snowflake  = ["dep:snowflake-api", "dep:arrow", "dep:serde_json"]
-bigquery   = ["dep:gcp-bigquery-client"]
+snowflake = ["dep:snowflake-api", "dep:arrow", "dep:serde_json"]
+bigquery = ["dep:gcp-bigquery-client"]
 
 [dependencies]
 agentic-core = { path = "../core" }
-async-trait  = "0.1"
-tokio        = { version = "1", features = ["sync", "rt"] }
-tracing      = { version = "0.1" }
+async-trait = "0.1"
+tokio = { version = "1", features = ["sync", "rt"] }
+tracing = { version = "0.1" }
 
 # DuckDB
 duckdb = { version = "1.2", features = ["bundled"], optional = true }
 
 # Postgres
-tokio-postgres = { version = "0.7", features = ["with-chrono-0_4"], optional = true }
-chrono         = { version = "*", optional = true }
+tokio-postgres = { version = "0.7", features = [
+    "with-chrono-0_4",
+], optional = true }
+chrono = { version = "*", optional = true }
 
 # ClickHouse (HTTP API)
-reqwest    = { version = "0.12", default-features = false, features = ["rustls-tls", "json"], optional = true }
+reqwest = { version = "0.12", default-features = false, features = [
+    "rustls-tls",
+    "json",
+], optional = true }
 serde_json = { version = "1.0", optional = true }
-serde      = { version = "1.0", features = ["derive"], optional = true }
+serde = { version = "1.0", features = ["derive"], optional = true }
 
 # Snowflake
 snowflake-api = { git = "https://github.com/oxy-hq/snowflake-rs.git", tag = "v0.13.0-browser-auth", optional = true }
-arrow         = { version = "=56.2.0", default-features = false, features = ["json"], optional = true }
+arrow = { version = "=56.2.0", default-features = false, features = [
+    "json",
+], optional = true }
 
 # BigQuery
 gcp-bigquery-client = { version = "0.25.1", optional = true }
 
 [dev-dependencies]
-duckdb   = { version = "1.2", features = ["bundled"] }
-tokio    = { version = "1", features = ["macros", "rt-multi-thread"] }
+duckdb = { version = "1.2", features = ["bundled"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tempfile = "3"

@@ -4,14 +4,14 @@
 //! No disk I/O, no setup, no runtime constraints.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicI64, Ordering};
 
 use async_trait::async_trait;
 
 use crate::app_storage::{
-    truncate_artifact_content, PersistedTurn, PreferenceStore, QueryLog, QueryLogEntry,
-    SessionSummary, StorageError, SuspendedPipeline, SuspendedPipelineStore, TurnStore,
+    PersistedTurn, PreferenceStore, QueryLog, QueryLogEntry, SessionSummary, StorageError,
+    SuspendedPipeline, SuspendedPipelineStore, TurnStore, truncate_artifact_content,
 };
 
 // ── Internal session row ───────────────────────────────────────────────────────

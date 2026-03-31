@@ -3,12 +3,12 @@ use std::sync::Arc;
 
 use agentic_connector::DatabaseConnector;
 use agentic_core::{
+    BackTarget,
     events::{CoreEvent, DomainEvents, EventStream, Outcome},
     human_input::{DeferredInputProvider, HumanInputHandle, ResumeInput, SuspendedRunData},
     orchestrator::{RunContext, SessionMemory},
     result::CellValue,
     solver::FanoutWorker,
-    BackTarget,
 };
 use async_trait::async_trait;
 
@@ -19,7 +19,7 @@ use crate::llm::{InitialMessages, LlmClient, ThinkingConfig, ToolLoopConfig};
 use crate::procedure::ProcedureRunner;
 use crate::schemas::solve_response_schema;
 use crate::semantic::SemanticCatalog;
-use crate::tools::{execute_solving_tool, new_schema_cache, SchemaCache};
+use crate::tools::{SchemaCache, execute_solving_tool, new_schema_cache};
 use crate::types::{SolutionPayload, SolutionSource};
 use crate::validation::Validator;
 use crate::{AnalyticsDomain, AnalyticsError, AnalyticsResult, AnalyticsSolution, QuerySpec};
@@ -235,24 +235,23 @@ impl AnalyticsSolver {
             _ => {}
         }
 
-        if let Some(global) = &self.global_instructions {
-            if !global.trim().is_empty() {
-                parts.push(format!(
-                    "<global_instructions>\n{}\n</global_instructions>",
-                    global.trim()
-                ));
-            }
+        if let Some(global) = &self.global_instructions
+            && !global.trim().is_empty()
+        {
+            parts.push(format!(
+                "<global_instructions>\n{}\n</global_instructions>",
+                global.trim()
+            ));
         }
 
-        if let Some(state_cfg) = self.state_configs.get(state) {
-            if let Some(state_instr) = &state_cfg.instructions {
-                if !state_instr.trim().is_empty() {
-                    parts.push(format!(
-                        "<state_instructions>\n{}\n</state_instructions>",
-                        state_instr.trim()
-                    ));
-                }
-            }
+        if let Some(state_cfg) = self.state_configs.get(state)
+            && let Some(state_instr) = &state_cfg.instructions
+            && !state_instr.trim().is_empty()
+        {
+            parts.push(format!(
+                "<state_instructions>\n{}\n</state_instructions>",
+                state_instr.trim()
+            ));
         }
 
         match state {
@@ -375,24 +374,23 @@ impl AnalyticsFanoutWorker {
             _ => {}
         }
 
-        if let Some(global) = &self.global_instructions {
-            if !global.trim().is_empty() {
-                parts.push(format!(
-                    "<global_instructions>\n{}\n</global_instructions>",
-                    global.trim()
-                ));
-            }
+        if let Some(global) = &self.global_instructions
+            && !global.trim().is_empty()
+        {
+            parts.push(format!(
+                "<global_instructions>\n{}\n</global_instructions>",
+                global.trim()
+            ));
         }
 
-        if let Some(state_cfg) = self.state_configs.get(state) {
-            if let Some(state_instr) = &state_cfg.instructions {
-                if !state_instr.trim().is_empty() {
-                    parts.push(format!(
-                        "<state_instructions>\n{}\n</state_instructions>",
-                        state_instr.trim()
-                    ));
-                }
-            }
+        if let Some(state_cfg) = self.state_configs.get(state)
+            && let Some(state_instr) = &state_cfg.instructions
+            && !state_instr.trim().is_empty()
+        {
+            parts.push(format!(
+                "<state_instructions>\n{}\n</state_instructions>",
+                state_instr.trim()
+            ));
         }
 
         match state {
@@ -577,7 +575,7 @@ impl AnalyticsFanoutWorker {
         spec: &QuerySpec,
         sub_spec_index: Option<usize>,
     ) -> Result<AnalyticsSolution, (AnalyticsError, BackTarget<AnalyticsDomain>)> {
-        use super::prompts::{solve_type_addendum, SOLVE_BASE_PROMPT};
+        use super::prompts::{SOLVE_BASE_PROMPT, solve_type_addendum};
         use super::solving::build_solve_user_prompt;
         use super::strip_json_fences;
 

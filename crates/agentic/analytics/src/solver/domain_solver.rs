@@ -24,9 +24,9 @@ use crate::{
     AnalyticsSolution, QuerySpec,
 };
 
+use super::AnalyticsSolver;
 use super::diagnosing;
 use super::resuming::{self, ask_user_tool_def};
-use super::AnalyticsSolver;
 
 // ---------------------------------------------------------------------------
 // DomainSolver impl
@@ -239,39 +239,39 @@ impl DomainSolver<AnalyticsDomain> for AnalyticsSolver {
         data: &ProblemState<AnalyticsDomain>,
         _run_ctx: &RunContext<AnalyticsDomain>,
     ) -> Option<ProblemState<AnalyticsDomain>> {
-        if state == "solving" {
-            if let ProblemState::Solving(spec) = data {
-                match &spec.solution_source {
-                    SolutionSource::SemanticLayer => {
-                        if let Some(payload) = spec.precomputed.clone() {
-                            let connector_name = spec.connector_name.clone();
-                            return Some(ProblemState::Executing(AnalyticsSolution {
-                                payload,
-                                solution_source: SolutionSource::SemanticLayer,
-                                connector_name,
-                            }));
-                        }
-                    }
-                    SolutionSource::Procedure { file_path } => {
+        if state == "solving"
+            && let ProblemState::Solving(spec) = data
+        {
+            match &spec.solution_source {
+                SolutionSource::SemanticLayer => {
+                    if let Some(payload) = spec.precomputed.clone() {
+                        let connector_name = spec.connector_name.clone();
                         return Some(ProblemState::Executing(AnalyticsSolution {
-                            payload: SolutionPayload::Sql(String::new()),
-                            solution_source: SolutionSource::Procedure {
-                                file_path: file_path.clone(),
-                            },
+                            payload,
+                            solution_source: SolutionSource::SemanticLayer,
+                            connector_name,
+                        }));
+                    }
+                }
+                SolutionSource::Procedure { file_path } => {
+                    return Some(ProblemState::Executing(AnalyticsSolution {
+                        payload: SolutionPayload::Sql(String::new()),
+                        solution_source: SolutionSource::Procedure {
+                            file_path: file_path.clone(),
+                        },
+                        connector_name: spec.connector_name.clone(),
+                    }));
+                }
+                SolutionSource::VendorEngine(_) => {
+                    if let Some(payload) = spec.precomputed.clone() {
+                        return Some(ProblemState::Executing(AnalyticsSolution {
+                            payload,
+                            solution_source: spec.solution_source.clone(),
                             connector_name: spec.connector_name.clone(),
                         }));
                     }
-                    SolutionSource::VendorEngine(_) => {
-                        if let Some(payload) = spec.precomputed.clone() {
-                            return Some(ProblemState::Executing(AnalyticsSolution {
-                                payload,
-                                solution_source: spec.solution_source.clone(),
-                                connector_name: spec.connector_name.clone(),
-                            }));
-                        }
-                    }
-                    SolutionSource::LlmWithSemanticContext => {}
                 }
+                SolutionSource::LlmWithSemanticContext => {}
             }
         }
         None

@@ -1,10 +1,12 @@
 [package]
 name = "agentic-analytics"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.75"
 description = "Analytics domain implementation for the agentic workflow framework"
-license = "MIT"
+version = "0.5.31"
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
 
 [features]
 # Enable the DuckDB connector in AgentConfig::build_solver (scans CSV/Parquet dirs).

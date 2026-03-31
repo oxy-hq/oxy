@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use futures_core::Stream;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::*;
 use tokio::sync::mpsc;

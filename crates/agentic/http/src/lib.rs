@@ -45,8 +45,8 @@ pub async fn cleanup_stale_runs() -> Result<u64, Box<dyn std::error::Error + Sen
 }
 
 use axum::{
-    routing::{get, post},
     Router,
+    routing::{get, post},
 };
 use std::sync::Arc;
 

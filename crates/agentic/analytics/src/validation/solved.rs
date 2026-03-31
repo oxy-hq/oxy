@@ -779,8 +779,8 @@ mod tests {
     use super::validate_solved;
     use crate::validation::test_fixtures::*;
     use crate::{AnalyticsError, AnalyticsResult, QuerySpec, ResultShape};
-    use agentic_core::result::CellValue;
     use agentic_core::QueryResult;
+    use agentic_core::result::CellValue;
 
     // ── validate_solved: happy paths ──────────────────────────────────────────
 

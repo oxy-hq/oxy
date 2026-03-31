@@ -74,7 +74,7 @@ documentation = "https://oxy.tech/docs"
 edition = "2024"
 exclude = ["examples/"]
 publish = false
-rust-version = "1.93.0"
+rust-version = "1.94.0"
 
 [profile.dev.package]
 # Disable optimization for native build dependencies to speed up dev builds

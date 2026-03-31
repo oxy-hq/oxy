@@ -21,7 +21,7 @@ use crate::types::{SolutionPayload, SolutionSource};
 
 use crate::{AnalyticsDomain, AnalyticsError, AnalyticsResult, AnalyticsSolution};
 
-use super::{emit_domain, AnalyticsSolver};
+use super::{AnalyticsSolver, emit_domain};
 
 // ---------------------------------------------------------------------------
 // Compact result formatter (for retry context)
@@ -249,8 +249,8 @@ impl AnalyticsSolver {
 /// Path-aware diagnosis:
 /// - `SemanticLayer` failures → `BackTarget::Specify` (re-enter LLM specifying)
 /// - `LlmWithSemanticContext` failures → `BackTarget::Solve` (retry SQL generation)
-pub(super) fn build_executing_handler(
-) -> StateHandler<AnalyticsDomain, AnalyticsSolver, AnalyticsEvent> {
+pub(super) fn build_executing_handler()
+-> StateHandler<AnalyticsDomain, AnalyticsSolver, AnalyticsEvent> {
     StateHandler {
         next: "interpreting",
         execute: Arc::new(
@@ -318,64 +318,64 @@ pub(super) fn build_executing_handler(
                                 solution_source,
                                 result.primary().data.rows.len()
                             );
-                            if let Some(spec) = &run_ctx.spec {
-                                if let Err(err) = solver.validator.validate_solved(&result, spec) {
-                                    eprintln!(
-                                        "[executing] post-execution validation FAILED source={:?} error={err}",
-                                        solution_source,
-                                    );
-                                    emit_domain(
-                                        &solver.event_tx,
-                                        AnalyticsEvent::ExecutionFailed {
-                                            query: String::new(),
-                                            error: err.to_string(),
-                                            source: format!("{:?}", solution_source),
-                                            will_retry: true,
-                                        },
-                                    )
-                                    .await;
-                                    emit_domain(
-                                        &solver.event_tx,
-                                        AnalyticsEvent::ValidationFailed {
-                                            state: "executing".to_string(),
-                                            reason: err.to_string(),
-                                            model_response: format!("{result:#?}"),
-                                        },
-                                    )
-                                    .await;
-                                    let base = run_ctx.retry_ctx.clone().unwrap_or_default();
-                                    let compact = format_compact_result(&result);
-                                    let mut hint = base.advance(err.to_string());
-                                    hint.previous_output = Some(compact);
-                                    let back = if matches!(err, AnalyticsError::ValueAnomaly { .. })
-                                    {
-                                        BackTarget::Interpret(result, hint)
-                                    } else {
-                                        match solution_source {
-                                            SolutionSource::SemanticLayer
-                                            | SolutionSource::Procedure { .. }
-                                            | SolutionSource::VendorEngine(_) => {
-                                                let intent = run_ctx
-                                                    .spec
-                                                    .as_ref()
-                                                    .map(|s| s.intent.clone())
-                                                    .expect(
-                                                        "run_ctx.spec must be set before executing",
-                                                    );
-                                                BackTarget::Specify(intent, hint)
-                                            }
-                                            SolutionSource::LlmWithSemanticContext => {
-                                                let spec = run_ctx.spec.clone().expect(
+                            if let Some(spec) = &run_ctx.spec
+                                && let Err(err) = solver.validator.validate_solved(&result, spec)
+                            {
+                                eprintln!(
+                                    "[executing] post-execution validation FAILED source={:?} error={err}",
+                                    solution_source,
+                                );
+                                emit_domain(
+                                    &solver.event_tx,
+                                    AnalyticsEvent::ExecutionFailed {
+                                        query: String::new(),
+                                        error: err.to_string(),
+                                        source: format!("{:?}", solution_source),
+                                        will_retry: true,
+                                    },
+                                )
+                                .await;
+                                emit_domain(
+                                    &solver.event_tx,
+                                    AnalyticsEvent::ValidationFailed {
+                                        state: "executing".to_string(),
+                                        reason: err.to_string(),
+                                        model_response: format!("{result:#?}"),
+                                    },
+                                )
+                                .await;
+                                let base = run_ctx.retry_ctx.clone().unwrap_or_default();
+                                let compact = format_compact_result(&result);
+                                let mut hint = base.advance(err.to_string());
+                                hint.previous_output = Some(compact);
+                                let back = if matches!(err, AnalyticsError::ValueAnomaly { .. }) {
+                                    BackTarget::Interpret(result, hint)
+                                } else {
+                                    match solution_source {
+                                        SolutionSource::SemanticLayer
+                                        | SolutionSource::Procedure { .. }
+                                        | SolutionSource::VendorEngine(_) => {
+                                            let intent = run_ctx
+                                                .spec
+                                                .as_ref()
+                                                .map(|s| s.intent.clone())
+                                                .expect(
                                                     "run_ctx.spec must be set before executing",
                                                 );
-                                                BackTarget::Solve(spec, hint)
-                                            }
+                                            BackTarget::Specify(intent, hint)
                                         }
-                                    };
-                                    return TransitionResult::diagnosing(
-                                        ProblemState::Diagnosing { error: err, back },
-                                    );
-                                }
+                                        SolutionSource::LlmWithSemanticContext => {
+                                            let spec = run_ctx.spec.clone().expect(
+                                                "run_ctx.spec must be set before executing",
+                                            );
+                                            BackTarget::Solve(spec, hint)
+                                        }
+                                    }
+                                };
+                                return TransitionResult::diagnosing(ProblemState::Diagnosing {
+                                    error: err,
+                                    back,
+                                });
                             }
                             TransitionResult::ok(ProblemState::Interpreting(result))
                         }

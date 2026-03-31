@@ -140,9 +140,7 @@ pub struct OrderItem {
 impl QueryRequestItem {
     /// Convert to an airlayer `QueryRequest` for compilation.
     pub fn to_query_request(&self) -> airlayer::engine::query::QueryRequest {
-        use airlayer::engine::query::{
-            FilterOperator, OrderBy, QueryFilter, QueryRequest, TimeDimensionQuery,
-        };
+        use airlayer::engine::query::{OrderBy, QueryFilter, QueryRequest, TimeDimensionQuery};
 
         let filters = self
             .filters
@@ -470,7 +468,10 @@ impl std::fmt::Display for AnalyticsError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AnalyticsError::UnresolvedMetric { metric } => {
-                write!(f, "unresolved metric or column: '{metric}' — check the schema and use a fully-qualified table.column reference")
+                write!(
+                    f,
+                    "unresolved metric or column: '{metric}' — check the schema and use a fully-qualified table.column reference"
+                )
             }
             AnalyticsError::AmbiguousColumn { column, tables } => {
                 write!(

@@ -32,11 +32,10 @@ use std::collections::HashMap;
 
 use agentic_core::orchestrator::StateHandler;
 
-use crate::events::AnalyticsEvent;
 use crate::AnalyticsDomain;
+use crate::events::AnalyticsEvent;
 
 mod builder;
-pub use builder::AnalyticsSolverBuilder;
 
 mod domain_solver;
 
@@ -52,8 +51,8 @@ mod domain_solver;
 /// - **solving** — delegates to `solve_impl`; propagates `solution_source`.
 /// - **executing** — path-aware diagnosis: `SemanticLayer` → Specify, `LlmWithSemanticContext` → Solve.
 /// - **interpreting** — delegates to `interpret_impl`.
-pub fn build_analytics_handlers(
-) -> HashMap<&'static str, StateHandler<AnalyticsDomain, AnalyticsSolver, AnalyticsEvent>> {
+pub fn build_analytics_handlers()
+-> HashMap<&'static str, StateHandler<AnalyticsDomain, AnalyticsSolver, AnalyticsEvent>> {
     let mut map = HashMap::new();
     map.insert("clarifying", clarifying::build_clarifying_handler());
     map.insert("specifying", specifying::build_specifying_handler());
@@ -1626,7 +1625,10 @@ ORDER BY activity_date ASC
             assert!(
                 matches!(
                     result,
-                    Err((AnalyticsError::SyntaxError { .. }, BackTarget::Execute(_, _)))
+                    Err((
+                        AnalyticsError::SyntaxError { .. },
+                        BackTarget::Execute(_, _)
+                    ))
                 ),
                 "execute() must return SyntaxError with BackTarget::Execute for a DuckDB binder error",
             );

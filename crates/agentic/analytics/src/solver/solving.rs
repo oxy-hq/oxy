@@ -8,13 +8,13 @@
 use std::sync::Arc;
 
 use agentic_core::{
+    HumanInputQuestion,
     back_target::BackTarget,
     back_target::RetryContext,
     human_input::SuspendedRunData,
     orchestrator::{RunContext, SessionMemory, StateHandler, TransitionResult},
     solver::DomainSolver,
     state::ProblemState,
-    HumanInputQuestion,
 };
 
 use crate::events::AnalyticsEvent;
@@ -26,9 +26,9 @@ use crate::types::SolutionPayload;
 use crate::{AnalyticsDomain, AnalyticsError, AnalyticsSolution, QuerySpec};
 
 use super::{
-    emit_domain, fmt_result_shape,
-    prompts::{format_retry_section, solve_type_addendum, SOLVE_BASE_PROMPT},
-    strip_json_fences, AnalyticsSolver,
+    AnalyticsSolver, emit_domain, fmt_result_shape,
+    prompts::{SOLVE_BASE_PROMPT, format_retry_section, solve_type_addendum},
+    strip_json_fences,
 };
 
 // ---------------------------------------------------------------------------
@@ -361,8 +361,8 @@ impl AnalyticsSolver {
 /// 2. QueryRequest with no precomputed SQL (compile failed in Specifying) —
 ///    try compile once more, then translate to raw context for LLM fallback.
 /// 3. No QueryRequest — standard LLM SQL generation via `solve_impl`.
-pub(super) fn build_solving_handler(
-) -> StateHandler<AnalyticsDomain, AnalyticsSolver, AnalyticsEvent> {
+pub(super) fn build_solving_handler()
+-> StateHandler<AnalyticsDomain, AnalyticsSolver, AnalyticsEvent> {
     StateHandler {
         next: "executing",
         execute: Arc::new(
@@ -394,28 +394,28 @@ pub(super) fn build_solving_handler(
                                     &sql[..sql.len().min(200)]
                                 );
                                 // Validate before forwarding to Executing.
-                                if let Some(run_spec) = &run_ctx.spec {
-                                    if let Err(err) = solver.validator.validate_solvable(
+                                if let Some(run_spec) = &run_ctx.spec
+                                    && let Err(err) = solver.validator.validate_solvable(
                                         &sql,
                                         run_spec,
                                         &solver.catalog,
-                                    ) {
-                                        emit_domain(
-                                            &solver.event_tx,
-                                            AnalyticsEvent::ValidationFailed {
-                                                state: "solving".to_string(),
-                                                reason: err.to_string(),
-                                                model_response: sql.clone(),
-                                            },
-                                        )
-                                        .await;
-                                        let base = retry_ctx.clone().unwrap_or_default();
-                                        let hint = base.advance(err.to_string());
-                                        let back = BackTarget::Solve(run_spec.clone(), hint);
-                                        return TransitionResult::diagnosing(
-                                            ProblemState::Diagnosing { error: err, back },
-                                        );
-                                    }
+                                    )
+                                {
+                                    emit_domain(
+                                        &solver.event_tx,
+                                        AnalyticsEvent::ValidationFailed {
+                                            state: "solving".to_string(),
+                                            reason: err.to_string(),
+                                            model_response: sql.clone(),
+                                        },
+                                    )
+                                    .await;
+                                    let base = retry_ctx.clone().unwrap_or_default();
+                                    let hint = base.advance(err.to_string());
+                                    let back = BackTarget::Solve(run_spec.clone(), hint);
+                                    return TransitionResult::diagnosing(
+                                        ProblemState::Diagnosing { error: err, back },
+                                    );
                                 }
                                 let solution = AnalyticsSolution {
                                     payload: SolutionPayload::Sql(sql),
@@ -444,31 +444,29 @@ pub(super) fn build_solving_handler(
                     match solver.solve_impl(spec, retry_ctx.as_ref()).await {
                         Ok(mut solution) => {
                             solution.solution_source = solution_source;
-                            if let Some(spec) = &run_ctx.spec {
-                                if let Err(err) = solver.validator.validate_solvable(
+                            if let Some(spec) = &run_ctx.spec
+                                && let Err(err) = solver.validator.validate_solvable(
                                     solution.payload.expect_sql(),
                                     spec,
                                     &solver.catalog,
-                                ) {
-                                    emit_domain(
-                                        &solver.event_tx,
-                                        AnalyticsEvent::ValidationFailed {
-                                            state: "solving".to_string(),
-                                            reason: err.to_string(),
-                                            model_response: solution
-                                                .payload
-                                                .expect_sql()
-                                                .to_string(),
-                                        },
-                                    )
-                                    .await;
-                                    let base = retry_ctx.clone().unwrap_or_default();
-                                    let hint = base.advance(err.to_string());
-                                    let back = BackTarget::Solve(spec.clone(), hint);
-                                    return TransitionResult::diagnosing(
-                                        ProblemState::Diagnosing { error: err, back },
-                                    );
-                                }
+                                )
+                            {
+                                emit_domain(
+                                    &solver.event_tx,
+                                    AnalyticsEvent::ValidationFailed {
+                                        state: "solving".to_string(),
+                                        reason: err.to_string(),
+                                        model_response: solution.payload.expect_sql().to_string(),
+                                    },
+                                )
+                                .await;
+                                let base = retry_ctx.clone().unwrap_or_default();
+                                let hint = base.advance(err.to_string());
+                                let back = BackTarget::Solve(spec.clone(), hint);
+                                return TransitionResult::diagnosing(ProblemState::Diagnosing {
+                                    error: err,
+                                    back,
+                                });
                             }
                             TransitionResult::ok(ProblemState::Executing(solution))
                         }

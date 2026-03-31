@@ -4,8 +4,8 @@
 use agentic_core::back_target::RetryContext;
 use agentic_core::orchestrator::CompletedTurn;
 
-use crate::types::{ConversationTurn, QuestionType, SpecHint};
 use crate::AnalyticsDomain;
+use crate::types::{ConversationTurn, QuestionType, SpecHint};
 
 // ---------------------------------------------------------------------------
 // Shared definitions
@@ -364,7 +364,7 @@ These are independent queries: different tables, incompatible result shapes (tim
 
 pub(super) fn specify_type_addendum(question_type: &QuestionType) -> &'static str {
     match question_type {
-        QuestionType::Trend =>
+        QuestionType::Trend => {
             "\n<question_type_guidance>\n\
             This is a Trend question. Resolve the time dimension to a date/time column. \
             Use aggregate expressions for metrics (e.g. AVG, SUM). Ensure the join path \
@@ -374,30 +374,35 @@ pub(super) fn specify_type_addendum(question_type: &QuestionType) -> &'static st
             if date_distinct_count > 365 prefer monthly (DATE_TRUNC month / strftime '%Y-%m'), \
             if > 90 prefer weekly, otherwise keep daily. Record the chosen granularity in \
             assumptions (e.g. \"Using monthly granularity — 484 distinct days over 7 years\").\n\
-            </question_type_guidance>",
-        QuestionType::Comparison =>
+            </question_type_guidance>"
+        }
+        QuestionType::Comparison => {
             "\n<question_type_guidance>\n\
             This is a Comparison question. Resolve the comparison dimension (the axis of contrast). \
             Focus on the same aggregate metric across each group or period. \
             Include the join path if the comparison dimension is in a different table from the metric.\n\
-            </question_type_guidance>",
-        QuestionType::Breakdown =>
+            </question_type_guidance>"
+        }
+        QuestionType::Breakdown => {
             "\n<question_type_guidance>\n\
             This is a Breakdown question. Resolve all grouping dimensions to concrete columns. \
             Use aggregate expressions for the metric(s). Include join paths for any cross-table lookups.\n\
-            </question_type_guidance>",
-        QuestionType::SingleValue =>
+            </question_type_guidance>"
+        }
+        QuestionType::SingleValue => {
             "\n<question_type_guidance>\n\
             This is a SingleValue question. Resolve exactly ONE aggregate metric. \
             Do NOT include dimensions \u{2014} a single aggregate with optional filters is correct. \
             No join is needed unless the filter requires a related table.\n\
-            </question_type_guidance>",
-        QuestionType::Distribution =>
+            </question_type_guidance>"
+        }
+        QuestionType::Distribution => {
             "\n<question_type_guidance>\n\
             This is a Distribution question. Resolve the metric column for raw value listing (series), \
             or resolve the bucket expression and count for a histogram (table). \
             Use the question context to decide between raw and histogram output.\n\
-            </question_type_guidance>",
+            </question_type_guidance>"
+        }
         // GeneralInquiry is short-circuited in the Clarifying handler before
         // specify_impl is ever called, so this arm is unreachable.
         QuestionType::GeneralInquiry => unreachable!("GeneralInquiry must not reach specify_impl"),
@@ -651,34 +656,39 @@ Date filters go in WHERE only. Example: SELECT weight FROM body_composition WHER
 
 pub(super) fn solve_type_addendum(question_type: &QuestionType) -> &'static str {
     match question_type {
-        QuestionType::Trend =>
+        QuestionType::Trend => {
             "\n<sql_pattern>\n\
             Trend query: SELECT date_col, aggregate(metric) ... GROUP BY date_col ORDER BY date_col ASC.\n\
             Use DATE_TRUNC or strftime for granularity (daily for short ranges, monthly for long).\n\
             Result shape: TimeSeries \u{2014} SELECT a date/time column AND the metric(s). GROUP BY date if aggregating.\n\
-            </sql_pattern>",
-        QuestionType::Comparison =>
+            </sql_pattern>"
+        }
+        QuestionType::Comparison => {
             "\n<sql_pattern>\n\
             Comparison query: SELECT comparison_dim, aggregate(metric) ... GROUP BY comparison_dim.\n\
             For time-period comparisons use CASE WHEN or UNION to label periods.\n\
             Result shape: Table \u{2014} SELECT the metric(s) AND all grouping dimension columns. Include GROUP BY for dims.\n\
-            </sql_pattern>",
-        QuestionType::Breakdown =>
+            </sql_pattern>"
+        }
+        QuestionType::Breakdown => {
             "\n<sql_pattern>\n\
             Breakdown query: SELECT grouping_dim(s), aggregate(metric) ... GROUP BY grouping_dim(s) ORDER BY aggregate DESC.\n\
             Result shape: Table \u{2014} SELECT the metric(s) AND all grouping dimension columns. Include GROUP BY for dims.\n\
-            </sql_pattern>",
-        QuestionType::SingleValue =>
+            </sql_pattern>"
+        }
+        QuestionType::SingleValue => {
             "\n<sql_pattern>\n\
             SingleValue query: SELECT aggregate(metric) ... WHERE scope_filters. No GROUP BY. 1 row \u{00d7} 1 col.\n\
             Result shape: Scalar \u{2014} SELECT exactly ONE aggregate expression. No GROUP BY. Returns 1 row \u{00d7} 1 column.\n\
-            </sql_pattern>",
-        QuestionType::Distribution =>
+            </sql_pattern>"
+        }
+        QuestionType::Distribution => {
             "\n<sql_pattern>\n\
             Distribution query: Raw values: SELECT metric_column ... ; \
             Histogram: SELECT bucket_expr AS bucket, COUNT(*) ... GROUP BY bucket ORDER BY bucket.\n\
             Result shape: Series (raw values, 1 column) or Table (histogram with bucket + count columns).\n\
-            </sql_pattern>",
+            </sql_pattern>"
+        }
         // GeneralInquiry is short-circuited before solve_impl is called.
         QuestionType::GeneralInquiry => unreachable!("GeneralInquiry must not reach solve_impl"),
     }

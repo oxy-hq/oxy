@@ -1,9 +1,12 @@
 [package]
 name = "agentic-db"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.75"
 description = "Shared SeaORM entities and migrations for the agentic pipeline"
+version = "0.5.31"
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
 
 [dependencies]
 sea-orm = { workspace = true }

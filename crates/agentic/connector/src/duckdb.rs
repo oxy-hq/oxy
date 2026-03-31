@@ -19,8 +19,8 @@ use std::{
 
 use async_trait::async_trait;
 use duckdb::{
-    types::{TimeUnit, Value},
     Connection,
+    types::{TimeUnit, Value},
 };
 
 use agentic_core::result::{CellValue, QueryResult, QueryRow};
@@ -545,10 +545,10 @@ impl DatabaseConnector for DuckDbConnector {
                 if let Ok(Ok(rows)) = sample_res {
                     for row_vals in rows {
                         for (i, v) in row_vals.into_iter().enumerate() {
-                            if samples_by_idx[i].len() < 5 {
-                                if let Some(cell) = duckdb_to_cell_opt(v) {
-                                    samples_by_idx[i].push(cell);
-                                }
+                            if samples_by_idx[i].len() < 5
+                                && let Some(cell) = duckdb_to_cell_opt(v)
+                            {
+                                samples_by_idx[i].push(cell);
                             }
                         }
                     }

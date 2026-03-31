@@ -2,10 +2,10 @@
 
 use std::path::{Path, PathBuf};
 
+use agentic_analytics::AnalyticsEvent;
 use agentic_analytics::procedure::{
     ProcedureError, ProcedureOutput, ProcedureRef, ProcedureRunner, ProcedureStepResult,
 };
-use agentic_analytics::AnalyticsEvent;
 use agentic_core::events::{Event, EventStream};
 use oxy::adapters::project::manager::ProjectManager;
 use oxy::checkpoint::types::RetryStrategy;

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use dashmap::DashMap;
-use tokio::sync::{mpsc, watch, Notify};
+use tokio::sync::{Notify, mpsc, watch};
 
 /// Shared state for all agentic routes.
 ///
@@ -28,6 +28,12 @@ pub struct AgenticState {
     /// Shared with [`BuildContext`] so that `build_solver_with_context` can
     /// skip re-introspecting a database whose schema hasn't changed.
     pub schema_cache: Arc<Mutex<HashMap<String, agentic_analytics::SchemaCatalog>>>,
+}
+
+impl Default for AgenticState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AgenticState {

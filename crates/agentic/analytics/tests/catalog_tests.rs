@@ -16,8 +16,8 @@
 //!    both layers — semantic wins.
 
 use agentic_analytics::{
-    airlayer_compat, AnalyticsIntent, Catalog, CatalogError, QuestionType, SchemaCatalog,
-    SemanticCatalog,
+    AnalyticsIntent, Catalog, CatalogError, QuestionType, SchemaCatalog, SemanticCatalog,
+    airlayer_compat,
 };
 use agentic_connector::{SchemaColumnInfo, SchemaInfo, SchemaTableInfo};
 use agentic_core::result::CellValue;
@@ -337,9 +337,11 @@ fn semantic_list_metrics_filters_by_query() {
     let sem = semantic_catalog();
     let found = sem.list_metrics("revenue");
     assert!(!found.is_empty());
-    assert!(found
-        .iter()
-        .all(|m| m.name.contains("revenue") || m.description.contains("revenue")));
+    assert!(
+        found
+            .iter()
+            .all(|m| m.name.contains("revenue") || m.description.contains("revenue"))
+    );
 
     let none = sem.list_metrics("zzz_no_match");
     assert!(none.is_empty());
@@ -392,10 +394,12 @@ fn semantic_get_column_range_returns_samples() {
         !range.sample_values.is_empty(),
         "status should have samples"
     );
-    assert!(range
-        .sample_values
-        .iter()
-        .any(|v| v.as_str() == Some("completed")));
+    assert!(
+        range
+            .sample_values
+            .iter()
+            .any(|v| v.as_str() == Some("completed"))
+    );
 }
 
 #[test]
@@ -646,10 +650,11 @@ fn hybrid_get_context_merges_semantic_and_schema() {
     let ctx = cat.get_context(&i);
     // Metric defs come from semantic layer
     assert!(!ctx.metric_definitions.is_empty());
-    assert!(ctx
-        .metric_definitions
-        .iter()
-        .any(|m| m.name == "orders_view.revenue"));
+    assert!(
+        ctx.metric_definitions
+            .iter()
+            .any(|m| m.name == "orders_view.revenue")
+    );
     // Schema description is non-empty (both sources present)
     assert!(!ctx.schema_description.is_empty());
 }

@@ -112,7 +112,9 @@ impl<D: Domain> BackTarget<D> {
             | BackTarget::Execute(_, ctx)
             | BackTarget::Interpret(_, ctx) => ctx,
             BackTarget::Suspend { .. } => {
-                unreachable!("retry_ctx() called on BackTarget::Suspend — orchestrator must short-circuit before this point")
+                unreachable!(
+                    "retry_ctx() called on BackTarget::Suspend — orchestrator must short-circuit before this point"
+                )
             }
         }
     }

@@ -461,8 +461,8 @@ impl AppBuilderSolver {
 // ---------------------------------------------------------------------------
 
 /// Build the `StateHandler` for the **executing** state.
-pub(super) fn build_executing_handler(
-) -> StateHandler<AppBuilderDomain, AppBuilderSolver, AppBuilderEvent> {
+pub(super) fn build_executing_handler()
+-> StateHandler<AppBuilderDomain, AppBuilderSolver, AppBuilderEvent> {
     StateHandler {
         next: "interpreting",
         execute: Arc::new(

@@ -11,9 +11,9 @@ use sqlparser::ast::{Expr, SetExpr, Statement};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
-use crate::semantic::SemanticCatalog;
 use crate::AnalyticsError;
 use crate::QuerySpec;
+use crate::semantic::SemanticCatalog;
 
 use super::registry::RegistryError;
 use super::rule::{SpecifiedCtx, SpecifiedRule};

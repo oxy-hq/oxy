@@ -7,28 +7,28 @@
 use std::sync::Arc;
 
 use axum::{
+    Json,
     extract::{Extension, Path},
     http::StatusCode,
     response::{
-        sse::{Event as SseEvent, KeepAlive, Sse},
         IntoResponse, Response,
+        sse::{Event as SseEvent, KeepAlive, Sse},
     },
-    Json,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
 
 use agentic_analytics::ConversationTurn;
 use agentic_app_builder::{
-    build_app_builder_handlers, build_app_solver_with_context, AppBuilderConfig, AppBuilderEvent,
-    AppIntent, AppSpec, AppValidator,
+    AppBuilderConfig, AppBuilderEvent, AppIntent, AppSpec, AppValidator,
+    build_app_builder_handlers, build_app_solver_with_context,
 };
 use agentic_core::{
+    UiBlock, UiTransformState,
     events::{CoreEvent, Event, EventStream},
     orchestrator::{Orchestrator, OrchestratorError},
-    UiBlock, UiTransformState,
 };
 
 use crate::{
@@ -240,8 +240,7 @@ impl AppBuilderUiBlockSerializer {
                 let (event_type, mut payload) = serialize_app_builder_domain(e);
                 // Inject the current sub_spec_index so the frontend can route
                 // domain events to the correct fan-out card.
-                if let (Some(idx), Value::Object(ref mut map)) =
-                    (self.current_sub_spec_index, &mut payload)
+                if let (Some(idx), Value::Object(map)) = (self.current_sub_spec_index, &mut payload)
                 {
                     map.insert("sub_spec_index".into(), json!(idx));
                 }
@@ -450,7 +449,7 @@ pub async fn create_app_run(
     let config = match AppBuilderConfig::from_file(&config_path) {
         Ok(c) => c,
         Err(e) => {
-            return (StatusCode::BAD_REQUEST, format!("agent config error: {e}")).into_response()
+            return (StatusCode::BAD_REQUEST, format!("agent config error: {e}")).into_response();
         }
     };
 
@@ -612,7 +611,7 @@ pub async fn answer_app_run(
     let tx = match state.answer_txs.get(&run_id) {
         Some(t) => t.clone(),
         None => {
-            return (StatusCode::GONE, "orchestrator task is no longer running").into_response()
+            return (StatusCode::GONE, "orchestrator task is no longer running").into_response();
         }
     };
 
@@ -659,7 +658,7 @@ pub async fn retry_app_run(
         Ok(Some(r)) => r,
         Ok(None) => return (StatusCode::NOT_FOUND, "run not found").into_response(),
         Err(e) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")).into_response()
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")).into_response();
         }
     };
     if run.status != "failed" {
@@ -678,10 +677,10 @@ pub async fn retry_app_run(
                 StatusCode::CONFLICT,
                 "no checkpoint data available for retry",
             )
-                .into_response()
+                .into_response();
         }
         Err(e) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")).into_response()
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")).into_response();
         }
     };
 
@@ -693,7 +692,7 @@ pub async fn retry_app_run(
     let config = match AppBuilderConfig::from_file(&config_path) {
         Ok(c) => c,
         Err(e) => {
-            return (StatusCode::BAD_REQUEST, format!("agent config error: {e}")).into_response()
+            return (StatusCode::BAD_REQUEST, format!("agent config error: {e}")).into_response();
         }
     };
 
@@ -803,13 +802,13 @@ fn extract_pre_solved_sqls(
     // Build a map of task_name → sql from TaskSqlResolved events.
     let mut task_sqls: Vec<(String, String)> = Vec::new();
     for row in events {
-        if row.event_type == "task_sql_resolved" {
-            if let (Some(name), Some(sql)) = (
+        if row.event_type == "task_sql_resolved"
+            && let (Some(name), Some(sql)) = (
                 row.payload.get("task_name").and_then(|v| v.as_str()),
                 row.payload.get("sql").and_then(|v| v.as_str()),
-            ) {
-                task_sqls.push((name.to_string(), sql.to_string()));
-            }
+            )
+        {
+            task_sqls.push((name.to_string(), sql.to_string()));
         }
     }
 
@@ -817,22 +816,22 @@ fn extract_pre_solved_sqls(
     // A sub-spec succeeded if it has a SubSpecEnd event AND a TaskExecuted event.
     let mut executed_tasks: std::collections::HashSet<String> = std::collections::HashSet::new();
     for row in events {
-        if row.event_type == "task_executed" {
-            if let Some(name) = row.payload.get("task_name").and_then(|v| v.as_str()) {
-                executed_tasks.insert(name.to_string());
-            }
+        if row.event_type == "task_executed"
+            && let Some(name) = row.payload.get("task_name").and_then(|v| v.as_str())
+        {
+            executed_tasks.insert(name.to_string());
         }
     }
 
     // The spec in the checkpoint tells us the task order (index → task_name).
-    if let Some(spec_val) = checkpoint.stage_data.get("spec") {
-        if let Ok(spec) = serde_json::from_value::<AppSpec>(spec_val.clone()) {
-            for (index, task) in spec.tasks.iter().enumerate() {
-                if executed_tasks.contains(&task.name) {
-                    // Find the SQL for this task.
-                    if let Some((_, sql)) = task_sqls.iter().find(|(n, _)| n == &task.name) {
-                        sqls.insert(index, sql.clone());
-                    }
+    if let Some(spec_val) = checkpoint.stage_data.get("spec")
+        && let Ok(spec) = serde_json::from_value::<AppSpec>(spec_val.clone())
+    {
+        for (index, task) in spec.tasks.iter().enumerate() {
+            if executed_tasks.contains(&task.name) {
+                // Find the SQL for this task.
+                if let Some((_, sql)) = task_sqls.iter().find(|(n, _)| n == &task.name) {
+                    sqls.insert(index, sql.clone());
                 }
             }
         }
@@ -959,14 +958,13 @@ async fn run_app_pipeline_retry(
 
                     let (event_type, mut payload) = serialize_app_builder_event(&event);
 
-                    if crate::sse::is_terminal(&event_type) {
-                        if let serde_json::Value::Object(ref mut map) = payload {
+                    if crate::sse::is_terminal(&event_type)
+                        && let serde_json::Value::Object(ref mut map) = payload {
                             map.insert(
                                 "duration_ms".into(),
                                 (pipeline_start.elapsed().as_millis() as u64).into(),
                             );
                         }
-                    }
 
                     let flush_now = crate::sse::is_terminal(&event_type)
                         || matches!(event_type.as_str(), "awaiting_input" | "human_input_resolved");
@@ -1266,14 +1264,13 @@ async fn run_app_pipeline(
 
                     let (event_type, mut payload) = serialize_app_builder_event(&event);
 
-                    if crate::sse::is_terminal(&event_type) {
-                        if let serde_json::Value::Object(ref mut map) = payload {
+                    if crate::sse::is_terminal(&event_type)
+                        && let serde_json::Value::Object(ref mut map) = payload {
                             map.insert(
                                 "duration_ms".into(),
                                 (pipeline_start.elapsed().as_millis() as u64).into(),
                             );
                         }
-                    }
 
                     let flush_now = crate::sse::is_terminal(&event_type)
                         || matches!(event_type.as_str(), "awaiting_input" | "human_input_resolved");

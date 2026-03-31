@@ -8,13 +8,13 @@
 use std::sync::Arc;
 
 use agentic_core::{
+    HumanInputQuestion,
     back_target::{BackTarget, RetryContext},
     events::EventStream,
     human_input::SuspendedRunData,
     orchestrator::{RunContext, SessionMemory, StateHandler, TransitionResult},
     solver::DomainSolver,
     state::ProblemState,
-    HumanInputQuestion,
 };
 
 use crate::catalog::{Catalog, JoinPath};
@@ -29,13 +29,13 @@ use crate::types::{QueryRequestEnvelope, ResultShape, SolutionPayload, SolutionS
 use crate::{AnalyticsDomain, AnalyticsError, AnalyticsIntent, QuerySpec};
 
 use super::{
-    emit_domain, fmt_result_shape, infer_result_shape, is_retryable_compile_error,
+    AnalyticsSolver, emit_domain, fmt_result_shape, infer_result_shape, is_retryable_compile_error,
     prompts::{
-        format_retry_section, format_spec_hint_section, specify_query_request_type_addendum,
-        specify_type_addendum, SPECIFY_BASE_PROMPT, SPECIFY_QUERY_REQUEST_PROMPT,
+        SPECIFY_BASE_PROMPT, SPECIFY_QUERY_REQUEST_PROMPT, format_retry_section,
+        format_spec_hint_section, specify_query_request_type_addendum, specify_type_addendum,
     },
     resuming::{ask_user_tool_def, handle_ask_user},
-    strip_json_fences, AnalyticsSolver,
+    strip_json_fences,
 };
 
 // ---------------------------------------------------------------------------
@@ -803,7 +803,7 @@ impl AnalyticsSolver {
             }
         };
 
-        let mut specs: Vec<QuerySpec> = specs
+        let specs: Vec<QuerySpec> = specs
             .into_iter()
             .map(|mut spec| {
                 if !matches!(spec.solution_source, SolutionSource::Procedure { .. }) {
@@ -1091,8 +1091,8 @@ fn parse_query_request_response(
 /// 2. VendorEngine (first-pass only)
 /// 3. Primary path (LLM → QueryRequest → airlayer compile) when semantic layer exists
 /// 4. Legacy path (LLM → SQL fragments) when no semantic layer
-pub(super) fn build_specifying_handler(
-) -> StateHandler<AnalyticsDomain, AnalyticsSolver, AnalyticsEvent> {
+pub(super) fn build_specifying_handler()
+-> StateHandler<AnalyticsDomain, AnalyticsSolver, AnalyticsEvent> {
     StateHandler {
         next: "solving",
         execute: Arc::new(
@@ -1132,10 +1132,10 @@ pub(super) fn build_specifying_handler(
                     }
 
                     // ── 1. VendorEngine (first-pass only) ──────────────────────
-                    if retry_ctx.is_none() {
-                        if let Some(result) = solver.specifying_try_vendor_engine(&intent).await {
-                            return result;
-                        }
+                    if retry_ctx.is_none()
+                        && let Some(result) = solver.specifying_try_vendor_engine(&intent).await
+                    {
+                        return result;
                     }
 
                     // ── 2. Primary or legacy path ──────────────────────────────

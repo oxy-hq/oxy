@@ -51,8 +51,8 @@ pub(crate) fn strip_json_fences(raw: &str) -> &str {
 // ---------------------------------------------------------------------------
 
 /// Build the app-builder-specific state handler table.
-pub fn build_app_builder_handlers(
-) -> HashMap<&'static str, StateHandler<AppBuilderDomain, AppBuilderSolver, AppBuilderEvent>> {
+pub fn build_app_builder_handlers()
+-> HashMap<&'static str, StateHandler<AppBuilderDomain, AppBuilderSolver, AppBuilderEvent>> {
     let mut map = HashMap::new();
     map.insert("clarifying", clarifying::build_clarifying_handler());
     map.insert("specifying", specifying::build_specifying_handler());

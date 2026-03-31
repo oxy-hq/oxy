@@ -1,6 +1,6 @@
 //! Tool definitions and executors for the app builder domain.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use agentic_connector::DatabaseConnector;
 use agentic_core::result::CellValue;
@@ -17,8 +17,7 @@ pub fn clarifying_tools() -> Vec<ToolDef> {
     vec![
         ToolDef {
             name: "search_catalog",
-            description:
-                "Search the catalog for tables, metrics, and dimensions matching given query terms.",
+            description: "Search the catalog for tables, metrics, and dimensions matching given query terms.",
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -112,19 +111,17 @@ pub fn specifying_tools() -> Vec<ToolDef> {
 
 /// Tools available during the **solving** state.
 pub fn solving_tools() -> Vec<ToolDef> {
-    vec![
-        ToolDef {
-            name: "execute_preview",
-            description: "Execute a SQL query preview (LIMIT 5). Template refs like {{ controls.X | sqlquote }} are replaced with '__preview__'. Returns rows on success or {error: string} on failure.",
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "sql": { "type": "string", "description": "SQL query to preview" }
-                },
-                "required": ["sql"]
-            }),
-        },
-    ]
+    vec![ToolDef {
+        name: "execute_preview",
+        description: "Execute a SQL query preview (LIMIT 5). Template refs like {{ controls.X | sqlquote }} are replaced with '__preview__'. Returns rows on success or {error: string} on failure.",
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "sql": { "type": "string", "description": "SQL query to preview" }
+            },
+            "required": ["sql"]
+        }),
+    }]
 }
 
 // ── Tool executors ────────────────────────────────────────────────────────────

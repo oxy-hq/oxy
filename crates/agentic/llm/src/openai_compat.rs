@@ -3,11 +3,11 @@ use std::pin::Pin;
 use async_stream::stream;
 use async_trait::async_trait;
 use futures_core::Stream;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use agentic_core::tools::ToolDef;
 
-use super::sse::{pop_sse_event, sse_data, ApiError};
+use super::sse::{ApiError, pop_sse_event, sse_data};
 use super::{
     Chunk, ContentBlock, LlmError, LlmProvider, ResponseSchema, StopReason, ThinkingConfig,
     ToolCallChunk, Usage,
@@ -393,8 +393,8 @@ impl LlmProvider for OpenAiCompatProvider {
                     let delta = &choice["delta"];
 
                     // Text content delta.
-                    if let Some(content) = delta["content"].as_str() {
-                        if !content.is_empty() {
+                    if let Some(content) = delta["content"].as_str()
+                        && !content.is_empty() {
                             if enable_cot {
                                 for chunk in parser.push(content) {
                                     match chunk {
@@ -416,7 +416,6 @@ impl LlmProvider for OpenAiCompatProvider {
                                 yield Ok(Chunk::Text(content.to_string()));
                             }
                         }
-                    }
 
                     // Tool call deltas.
                     if let Some(tool_calls) = delta["tool_calls"].as_array() {

@@ -23,7 +23,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use agentic_connector::{DatabaseConnector, SchemaInfo};
 use agentic_core::events::{Event, EventStream};
@@ -454,25 +454,25 @@ pub async fn execute_specifying_tool(
 
             // If the semantic layer has static samples, return them directly.
             // When a search_term is provided, filter the static samples.
-            if let Some(ref target) = resolved {
-                if !target.static_samples.is_empty() {
-                    let values: Vec<Value> = target
-                        .static_samples
-                        .iter()
-                        .filter(|s| {
-                            search_term
-                                .map(|term| s.to_lowercase().contains(&term.to_lowercase()))
-                                .unwrap_or(true)
-                        })
-                        .map(|s| Value::String(s.clone()))
-                        .collect();
-                    return Ok(json!({
-                        "data_type": target.data_type.as_deref().unwrap_or("string"),
-                        "sample_values": values,
-                        "source": "semantic_layer",
-                        "hint": "These are pre-defined sample values from the semantic layer definition."
-                    }));
-                }
+            if let Some(ref target) = resolved
+                && !target.static_samples.is_empty()
+            {
+                let values: Vec<Value> = target
+                    .static_samples
+                    .iter()
+                    .filter(|s| {
+                        search_term
+                            .map(|term| s.to_lowercase().contains(&term.to_lowercase()))
+                            .unwrap_or(true)
+                    })
+                    .map(|s| Value::String(s.clone()))
+                    .collect();
+                return Ok(json!({
+                    "data_type": target.data_type.as_deref().unwrap_or("string"),
+                    "sample_values": values,
+                    "source": "semantic_layer",
+                    "hint": "These are pre-defined sample values from the semantic layer definition."
+                }));
             }
 
             // When the semantic layer resolves the target, `column_expr` is
@@ -557,36 +557,36 @@ pub async fn execute_specifying_tool(
                 let range_sql = format!(
                     "SELECT MIN({col_sql}), MAX({col_sql}), COUNT(DISTINCT {col_sql}) FROM {table_sql}"
                 );
-                if let Ok(range_res) = connector.execute_query(&range_sql, 1).await {
-                    if let Some(row) = range_res.result.rows.first() {
-                        let date_min = row.0.first().and_then(|c| {
-                            if let CellValue::Text(s) = c {
-                                Some(s.clone())
-                            } else {
-                                None
-                            }
-                        });
-                        let date_max = row.0.get(1).and_then(|c| {
-                            if let CellValue::Text(s) = c {
-                                Some(s.clone())
-                            } else {
-                                None
-                            }
-                        });
-                        let date_distinct_count = row.0.get(2).and_then(|c| match c {
-                            CellValue::Number(n) => Some(*n as u64),
-                            CellValue::Text(s) => s.parse().ok(),
-                            CellValue::Null => None,
-                        });
-                        return Ok(json!({
-                            "data_type": data_type,
-                            "sample_values": values,
-                            "row_count": row_count,
-                            "date_min": date_min,
-                            "date_max": date_max,
-                            "date_distinct_count": date_distinct_count,
-                        }));
-                    }
+                if let Ok(range_res) = connector.execute_query(&range_sql, 1).await
+                    && let Some(row) = range_res.result.rows.first()
+                {
+                    let date_min = row.0.first().and_then(|c| {
+                        if let CellValue::Text(s) = c {
+                            Some(s.clone())
+                        } else {
+                            None
+                        }
+                    });
+                    let date_max = row.0.get(1).and_then(|c| {
+                        if let CellValue::Text(s) = c {
+                            Some(s.clone())
+                        } else {
+                            None
+                        }
+                    });
+                    let date_distinct_count = row.0.get(2).and_then(|c| match c {
+                        CellValue::Number(n) => Some(*n as u64),
+                        CellValue::Text(s) => s.parse().ok(),
+                        CellValue::Null => None,
+                    });
+                    return Ok(json!({
+                        "data_type": data_type,
+                        "sample_values": values,
+                        "row_count": row_count,
+                        "date_min": date_min,
+                        "date_max": date_max,
+                        "date_distinct_count": date_distinct_count,
+                    }));
                 }
             }
 
@@ -1123,9 +1123,11 @@ mod tests {
             !metrics.is_empty(),
             "revenue should match at least one metric"
         );
-        assert!(metrics
-            .iter()
-            .any(|m| m["name"].as_str().unwrap_or("").contains("revenue")));
+        assert!(
+            metrics
+                .iter()
+                .any(|m| m["name"].as_str().unwrap_or("").contains("revenue"))
+        );
         let dims = result["dimensions"].as_array().unwrap();
         assert!(!dims.is_empty(), "matched metric should have dimensions");
     }

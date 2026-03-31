@@ -182,24 +182,23 @@ impl AppBuilderSolver {
     pub(crate) fn build_system_prompt(&self, state: &str, base: &str) -> String {
         let mut parts = vec![base.to_string()];
 
-        if let Some(global) = &self.instructions {
-            if !global.trim().is_empty() {
-                parts.push(format!(
-                    "<global_instructions>\n{}\n</global_instructions>",
-                    global.trim()
-                ));
-            }
+        if let Some(global) = &self.instructions
+            && !global.trim().is_empty()
+        {
+            parts.push(format!(
+                "<global_instructions>\n{}\n</global_instructions>",
+                global.trim()
+            ));
         }
 
-        if let Some(state_cfg) = self.state_configs.get(state) {
-            if let Some(state_instr) = &state_cfg.instructions {
-                if !state_instr.trim().is_empty() {
-                    parts.push(format!(
-                        "<state_instructions>\n{}\n</state_instructions>",
-                        state_instr.trim()
-                    ));
-                }
-            }
+        if let Some(state_cfg) = self.state_configs.get(state)
+            && let Some(state_instr) = &state_cfg.instructions
+            && !state_instr.trim().is_empty()
+        {
+            parts.push(format!(
+                "<state_instructions>\n{}\n</state_instructions>",
+                state_instr.trim()
+            ));
         }
 
         parts.join("\n\n")
@@ -263,24 +262,23 @@ impl AppBuilderFanoutWorker {
     pub(crate) fn build_system_prompt(&self, state: &str, base: &str) -> String {
         let mut parts = vec![base.to_string()];
 
-        if let Some(global) = &self.instructions {
-            if !global.trim().is_empty() {
-                parts.push(format!(
-                    "<global_instructions>\n{}\n</global_instructions>",
-                    global.trim()
-                ));
-            }
+        if let Some(global) = &self.instructions
+            && !global.trim().is_empty()
+        {
+            parts.push(format!(
+                "<global_instructions>\n{}\n</global_instructions>",
+                global.trim()
+            ));
         }
 
-        if let Some(state_cfg) = self.state_configs.get(state) {
-            if let Some(state_instr) = &state_cfg.instructions {
-                if !state_instr.trim().is_empty() {
-                    parts.push(format!(
-                        "<state_instructions>\n{}\n</state_instructions>",
-                        state_instr.trim()
-                    ));
-                }
-            }
+        if let Some(state_cfg) = self.state_configs.get(state)
+            && let Some(state_instr) = &state_cfg.instructions
+            && !state_instr.trim().is_empty()
+        {
+            parts.push(format!(
+                "<state_instructions>\n{}\n</state_instructions>",
+                state_instr.trim()
+            ));
         }
 
         parts.join("\n\n")

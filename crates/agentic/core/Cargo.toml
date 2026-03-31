@@ -1,10 +1,11 @@
 [package]
 name = "agentic-core"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.75"
 description = "Generic agentic workflow orchestration framework"
-license = "MIT"
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
 
 [features]
 storage = []

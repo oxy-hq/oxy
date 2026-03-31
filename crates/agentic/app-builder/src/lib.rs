@@ -37,7 +37,7 @@ pub use schemas::{solve_response_schema, specify_response_schema, triage_respons
 
 // ── Solver ────────────────────────────────────────────────────────────────────
 
-pub use solver::{build_app_builder_handlers, AppBuilderSolver};
+pub use solver::{AppBuilderSolver, build_app_builder_handlers};
 
 // ── Domain types ──────────────────────────────────────────────────────────────
 
@@ -50,6 +50,6 @@ pub use types::{
 // ── Config re-exports ─────────────────────────────────────────────────────────
 
 pub use config::{
-    build_app_solver_with_context, AppBuilderConfig, BuildContext, ConfigError, StateConfig,
-    ThinkingConfigYaml,
+    AppBuilderConfig, BuildContext, ConfigError, StateConfig, ThinkingConfigYaml,
+    build_app_solver_with_context,
 };

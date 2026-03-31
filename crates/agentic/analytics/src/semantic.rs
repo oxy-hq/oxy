@@ -120,10 +120,7 @@ impl SemanticCatalog {
 
         let engine = airlayer::SemanticEngine::load(&views_dir, topics_path, dialects).map_err(
             |e| -> Box<dyn std::error::Error + Send + Sync> {
-                Box::new(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    e.to_string(),
-                ))
+                Box::new(std::io::Error::other(e.to_string()))
             },
         )?;
 
@@ -163,10 +160,7 @@ impl SemanticCatalog {
         let layer = airlayer::SemanticLayer::new(views, topic_opt);
         let engine = airlayer::SemanticEngine::from_semantic_layer(layer, dialects).map_err(
             |e| -> Box<dyn std::error::Error + Send + Sync> {
-                Box::new(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    e.to_string(),
-                ))
+                Box::new(std::io::Error::other(e.to_string()))
             },
         )?;
 
@@ -334,10 +328,10 @@ impl SemanticCatalog {
         }
         // Check if `table` is the underlying table name of a view.
         use crate::catalog::Catalog;
-        if let Some(def) = self.get_metric_definition(column) {
-            if def.table.eq_ignore_ascii_case(table) {
-                return true;
-            }
+        if let Some(def) = self.get_metric_definition(column)
+            && def.table.eq_ignore_ascii_case(table)
+        {
+            return true;
         }
         false
     }
@@ -496,7 +490,7 @@ impl SemanticCatalog {
                         for m in view.measures_list() {
                             let score =
                                 strsim::jaro_winkler(&normalized, &normalize_for_fuzzy(&m.name));
-                            if score >= 0.8 && best.as_ref().map_or(true, |b| score > b.0) {
+                            if score >= 0.8 && best.as_ref().is_none_or(|b| score > b.0) {
                                 best = Some((score, view.name.clone(), m.name.clone()));
                             }
                         }
@@ -504,7 +498,7 @@ impl SemanticCatalog {
                         for d in &view.dimensions {
                             let score =
                                 strsim::jaro_winkler(&normalized, &normalize_for_fuzzy(&d.name));
-                            if score >= 0.8 && best.as_ref().map_or(true, |b| score > b.0) {
+                            if score >= 0.8 && best.as_ref().is_none_or(|b| score > b.0) {
                                 best = Some((score, view.name.clone(), d.name.clone()));
                             }
                         }
@@ -530,8 +524,6 @@ impl SemanticCatalog {
         filters: &[String],
         preferred_views: &[String],
     ) -> Result<Vec<airlayer::engine::query::QueryFilter>, CatalogError> {
-        use airlayer::engine::query::{FilterOperator, QueryFilter};
-
         filters
             .iter()
             .map(|raw| {
@@ -793,11 +785,11 @@ impl SemanticCatalog {
                     data_type: dim.dimension_type.to_string(),
                 });
                 // Convert date_range to raw filter expressions
-                if let Some(range) = &td.date_range {
-                    if range.len() == 2 {
-                        resolved_filters.push(format!("{} >= '{}'", col_expr, range[0]));
-                        resolved_filters.push(format!("{} < '{}'", col_expr, range[1]));
-                    }
+                if let Some(range) = &td.date_range
+                    && range.len() == 2
+                {
+                    resolved_filters.push(format!("{} >= '{}'", col_expr, range[0]));
+                    resolved_filters.push(format!("{} < '{}'", col_expr, range[1]));
                 }
             }
         }
@@ -1034,7 +1026,7 @@ impl Catalog for SemanticCatalog {
                             || m.name.to_lowercase().contains(&q2)
                             || m.description
                                 .as_deref()
-                                .map_or(false, |d| d.to_lowercase().contains(&q2))
+                                .is_some_and(|d| d.to_lowercase().contains(&q2))
                             || view_name.to_lowercase().contains(&q2)
                     })
                     .map(move |m| MetricSummary {
@@ -1152,7 +1144,7 @@ impl Catalog for SemanticCatalog {
             v.name.eq_ignore_ascii_case(table)
                 || v.table
                     .as_deref()
-                    .map_or(false, |t| t.eq_ignore_ascii_case(table))
+                    .is_some_and(|t| t.eq_ignore_ascii_case(table))
         })?;
 
         // Look up `column` as a dimension first, then as a measure.
@@ -1371,7 +1363,7 @@ impl Catalog for SemanticCatalog {
             let matches = v.name.eq_ignore_ascii_case(table)
                 || v.table
                     .as_deref()
-                    .map_or(false, |t| t.eq_ignore_ascii_case(table));
+                    .is_some_and(|t| t.eq_ignore_ascii_case(table));
             if matches {
                 v.datasource.as_deref()
             } else {

@@ -3,12 +3,12 @@ use std::pin::Pin;
 use async_stream::stream;
 use async_trait::async_trait;
 use futures_core::Stream;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use agentic_core::tools::ToolDef;
 
 use super::constants::*;
-use super::sse::{pop_sse_event, sse_data, ApiError};
+use super::sse::{ApiError, pop_sse_event, sse_data};
 use super::{
     Chunk, ContentBlock, LlmError, LlmProvider, ResponseSchema, StopReason, ThinkingConfig,
     ToolCallChunk, Usage,

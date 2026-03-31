@@ -34,9 +34,9 @@ mod anthropic;
 pub use anthropic::AnthropicProvider;
 
 mod openai;
+pub use openai::OpenAiProvider;
 pub use openai::inject_additional_properties_false;
 pub use openai::validate_openai_strict_schema;
-pub use openai::OpenAiProvider;
 
 mod openai_compat;
 pub use openai_compat::OpenAiCompatProvider;

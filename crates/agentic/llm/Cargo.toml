@@ -1,10 +1,12 @@
 [package]
 name = "agentic-llm"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.75"
 description = "Shared LLM provider abstraction for agentic domains"
-license = "MIT"
+version = "0.5.31"
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
 
 [dependencies]
 agentic-core = { path = "../core" }

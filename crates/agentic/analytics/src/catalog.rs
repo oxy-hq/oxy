@@ -220,7 +220,7 @@ pub trait Catalog: Send + Sync {
             if hits.is_empty() {
                 let all_metrics = self.list_metrics("");
                 for m in &all_metrics {
-                    let bare_name = m.name.split('.').last().unwrap_or(&m.name);
+                    let bare_name = m.name.split('.').next_back().unwrap_or(&m.name);
                     if fuzzy_matches(q, &m.name)
                         || fuzzy_matches(q, bare_name)
                         || fuzzy_matches(q, &m.description)
@@ -232,7 +232,7 @@ pub trait Catalog: Send + Sync {
                 if hits.is_empty() && q.split_whitespace().count() > 1 {
                     for word in q.split_whitespace() {
                         for m in &all_metrics {
-                            let bare_name = m.name.split('.').last().unwrap_or(&m.name);
+                            let bare_name = m.name.split('.').next_back().unwrap_or(&m.name);
                             if fuzzy_matches(word, &m.name) || fuzzy_matches(word, bare_name) {
                                 hits.push(m.clone());
                             }
@@ -809,7 +809,7 @@ impl SchemaCatalog {
         self.tables
             .iter()
             .filter(|(t, cols)| {
-                table_hint.as_deref().map_or(true, |h| h == t.as_str())
+                table_hint.as_deref().is_none_or(|h| h == t.as_str())
                     && cols.iter().any(|c| c.to_lowercase() == col_name)
             })
             .map(|(t, cols)| {
@@ -840,11 +840,11 @@ impl SchemaCatalog {
                 } else {
                     None
                 };
-                if let Some(n) = neighbor {
-                    if !visited.contains(&n) {
-                        visited.push(n.clone());
-                        queue.push(n);
-                    }
+                if let Some(n) = neighbor
+                    && !visited.contains(&n)
+                {
+                    visited.push(n.clone());
+                    queue.push(n);
                 }
             }
         }
@@ -982,7 +982,7 @@ impl Catalog for SchemaCatalog {
     fn get_column_range(&self, dimension: &str) -> Option<ColumnRange> {
         let col = dimension
             .split('.')
-            .last()
+            .next_back()
             .unwrap_or(dimension)
             .to_lowercase();
 

@@ -14,7 +14,7 @@ pub use agentic_analytics::{
 };
 
 use agentic_analytics::config::LlmVendor;
-use agentic_analytics::{LlmClient, OpenAiProvider, SemanticCatalog, DEFAULT_MODEL};
+use agentic_analytics::{DEFAULT_MODEL, LlmClient, OpenAiProvider, SemanticCatalog};
 use agentic_llm::OpenAiCompatProvider;
 
 use crate::solver::AppBuilderSolver;

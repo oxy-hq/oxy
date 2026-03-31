@@ -1,10 +1,12 @@
 [package]
 name = "agentic-app-builder"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.75"
 description = "Data app builder domain for the agentic workflow framework"
-license = "MIT"
+version = "0.5.31"
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
 
 [features]
 duckdb = ["agentic-connector/duckdb"]

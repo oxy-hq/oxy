@@ -1,20 +1,29 @@
 [package]
 name = "agentic-http"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.75"
 description = "Axum HTTP routes for the agentic analytics pipeline"
+version = "0.5.31"
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
 
 [dependencies]
 agentic-analytics = { path = "../analytics" }
 agentic-app-builder = { path = "../app-builder" }
-agentic-connector = { path = "../connector", features = ["duckdb", "postgres", "clickhouse", "snowflake", "bigquery"] }
-agentic-core      = { path = "../core" }
-agentic-db        = { path = "../db" }
-agentic-workflow  = { path = "../workflow" }
-oxy               = { path = "../../core" }
-oxy-workflow      = { path = "../../workflow" }
-async-trait       = "0.1"
+agentic-connector = { path = "../connector", features = [
+    "duckdb",
+    "postgres",
+    "clickhouse",
+    "snowflake",
+    "bigquery",
+] }
+agentic-core = { path = "../core" }
+agentic-db = { path = "../db" }
+agentic-workflow = { path = "../workflow" }
+oxy = { path = "../../core" }
+oxy-workflow = { path = "../../workflow" }
+async-trait = "0.1"
 
 # Web
 axum = { workspace = true }

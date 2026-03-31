@@ -14,7 +14,7 @@
 //! "orders.deleted_at IS NULL"    →  { "member": "orders.deleted_at", "operator": "notSet", "values": [] }
 //! ```
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::{EngineError, TranslationContext, VendorQuery};
 use crate::types::AnalyticsIntent;

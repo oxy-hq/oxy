@@ -7,12 +7,12 @@ use std::sync::Arc;
 
 use agentic_analytics::SemanticCatalog;
 use agentic_core::{
+    HumanInputQuestion,
     back_target::BackTarget,
     human_input::SuspendedRunData,
     orchestrator::{RunContext, SessionMemory, StateHandler, TransitionResult},
     solver::DomainSolver,
     state::ProblemState,
-    HumanInputQuestion,
 };
 use agentic_llm::{InitialMessages, LlmError, ThinkingConfig, ToolLoopConfig};
 
@@ -27,7 +27,7 @@ use crate::types::{
 };
 
 use super::{
-    prompts::{format_history_section, APP_FORMAT_EXAMPLE, SPECIFYING_SYSTEM_PROMPT},
+    prompts::{APP_FORMAT_EXAMPLE, SPECIFYING_SYSTEM_PROMPT, format_history_section},
     solver::AppBuilderSolver,
 };
 
@@ -402,7 +402,7 @@ impl AppBuilderSolver {
                     let cat = Arc::clone(&catalog_arc);
                     let conn = Arc::clone(&connector);
                     Box::pin(
-                        async move { execute_specifying_tool(&name, params, &*cat, &*conn).await },
+                        async move { execute_specifying_tool(&name, params, &cat, &*conn).await },
                     )
                 },
                 &self.event_tx,
@@ -553,8 +553,8 @@ impl AppBuilderSolver {
 // ---------------------------------------------------------------------------
 
 /// Build the `StateHandler` for the **specifying** state.
-pub(super) fn build_specifying_handler(
-) -> StateHandler<AppBuilderDomain, AppBuilderSolver, AppBuilderEvent> {
+pub(super) fn build_specifying_handler()
+-> StateHandler<AppBuilderDomain, AppBuilderSolver, AppBuilderEvent> {
     StateHandler {
         next: "solving",
         execute: Arc::new(
@@ -706,9 +706,11 @@ mod tests {
             preferred: ChartPreference::Auto,
         });
         let errors = validate_spec(&spec);
-        assert!(errors
-            .iter()
-            .any(|e| e.contains("non-existent task: 'nonexistent'")));
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("non-existent task: 'nonexistent'"))
+        );
     }
 
     #[test]
@@ -716,9 +718,11 @@ mod tests {
         let mut spec = make_valid_spec();
         spec.controls[0].source_task = Some("revenue".into()); // not a control-source task
         let errors = validate_spec(&spec);
-        assert!(errors
-            .iter()
-            .any(|e| e.contains("not marked as control-source")));
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("not marked as control-source"))
+        );
     }
 
     #[test]
@@ -726,9 +730,11 @@ mod tests {
         let mut spec = make_valid_spec();
         spec.tasks[0].control_deps = vec!["nonexistent_ctrl".into()];
         let errors = validate_spec(&spec);
-        assert!(errors
-            .iter()
-            .any(|e| e.contains("non-existent control dependency")));
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("non-existent control dependency"))
+        );
     }
 
     #[test]
@@ -737,9 +743,11 @@ mod tests {
         spec.controls[0].source_task = None;
         spec.controls[0].options = vec![];
         let errors = validate_spec(&spec);
-        assert!(errors
-            .iter()
-            .any(|e| e.contains("no source_task and no static options")));
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("no source_task and no static options"))
+        );
     }
 
     #[test]
@@ -759,9 +767,11 @@ mod tests {
         spec.controls[0].options = vec!["Store A".into(), "Store B".into()];
         spec.controls[0].default = "All".into();
         let errors = validate_spec(&spec);
-        assert!(errors
-            .iter()
-            .any(|e| e.contains("default 'All' is not in its options list")));
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("default 'All' is not in its options list"))
+        );
     }
 
     // ── Insight validation tests ────────────────────────────────────────
@@ -785,8 +795,10 @@ mod tests {
             focus: None,
         });
         let errors = validate_spec(&spec);
-        assert!(errors
-            .iter()
-            .any(|e| e.contains("non-existent task: 'nonexistent'")));
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("non-existent task: 'nonexistent'"))
+        );
     }
 }

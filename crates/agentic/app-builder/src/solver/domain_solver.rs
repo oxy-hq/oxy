@@ -20,7 +20,7 @@ use crate::types::{
     AppAnswer, AppBuilderDomain, AppBuilderError, AppIntent, AppResult, AppSolution, AppSpec,
 };
 
-use super::{diagnosing, resuming, AppBuilderSolver};
+use super::{AppBuilderSolver, diagnosing, resuming};
 
 // ---------------------------------------------------------------------------
 // DomainSolver impl
@@ -54,7 +54,7 @@ impl DomainSolver<AppBuilderDomain> for AppBuilderSolver {
                 crate::tools::execute_clarifying_tool_with_connector(
                     name,
                     params,
-                    &*self.catalog,
+                    &self.catalog,
                     connector.as_ref(),
                 )
                 .await
@@ -63,7 +63,7 @@ impl DomainSolver<AppBuilderDomain> for AppBuilderSolver {
                 crate::tools::execute_specifying_tool(
                     name,
                     params,
-                    &*self.catalog,
+                    &self.catalog,
                     connector.as_ref(),
                 )
                 .await

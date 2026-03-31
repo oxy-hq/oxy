@@ -8,12 +8,12 @@ use std::sync::Arc;
 
 use agentic_analytics::{Catalog, ConversationTurn, SemanticCatalog};
 use agentic_core::{
+    HumanInputQuestion,
     back_target::BackTarget,
     human_input::SuspendedRunData,
     orchestrator::{RunContext, SessionMemory, StateHandler, TransitionResult},
     solver::DomainSolver,
     state::ProblemState,
-    HumanInputQuestion,
 };
 use agentic_llm::{InitialMessages, LlmError, ThinkingConfig, ToolLoopConfig};
 
@@ -24,7 +24,7 @@ use crate::types::{AppBuilderDomain, AppBuilderError, AppIntent};
 
 use super::{
     prompts::{
-        format_history_section, CLARIFYING_GROUND_SYSTEM_PROMPT, CLARIFYING_TRIAGE_SYSTEM_PROMPT,
+        CLARIFYING_GROUND_SYSTEM_PROMPT, CLARIFYING_TRIAGE_SYSTEM_PROMPT, format_history_section,
     },
     solver::AppBuilderSolver,
 };
@@ -317,7 +317,7 @@ impl AppBuilderSolver {
                     let cat = Arc::clone(&catalog_arc);
                     let conn = Arc::clone(&connector);
                     Box::pin(async move {
-                        execute_clarifying_tool_with_connector(&name, params, &*cat, &*conn).await
+                        execute_clarifying_tool_with_connector(&name, params, &cat, &*conn).await
                     })
                 },
                 &self.event_tx,
@@ -455,8 +455,8 @@ impl AppBuilderSolver {
 // ---------------------------------------------------------------------------
 
 /// Build the `StateHandler` for the **clarifying** state.
-pub(super) fn build_clarifying_handler(
-) -> StateHandler<AppBuilderDomain, AppBuilderSolver, AppBuilderEvent> {
+pub(super) fn build_clarifying_handler()
+-> StateHandler<AppBuilderDomain, AppBuilderSolver, AppBuilderEvent> {
     StateHandler {
         next: "specifying",
         execute: Arc::new(

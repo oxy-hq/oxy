@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::{
     back_target::{BackTarget, RetryContext},
@@ -844,7 +844,7 @@ where
                         ProblemState::Clarifying(d) => d,
                         _ => unreachable!("clarifying handler called with wrong state"),
                     };
-                    match solver.clarify(data, &run_ctx, &memory).await {
+                    match solver.clarify(data, run_ctx, memory).await {
                         Ok(output) => TransitionResult::ok(ProblemState::Specifying(output)),
                         Err((err, back)) => {
                             TransitionResult::diagnosing(ProblemState::Diagnosing {
@@ -872,7 +872,7 @@ where
                         ProblemState::Specifying(d) => d,
                         _ => unreachable!("specifying handler called with wrong state"),
                     };
-                    match solver.specify(data, &run_ctx, &memory).await {
+                    match solver.specify(data, run_ctx, memory).await {
                         Ok(specs) if specs.len() == 1 => {
                             // Fast path: single spec → standard Solving transition.
                             TransitionResult::ok(ProblemState::Solving(
@@ -928,7 +928,7 @@ where
                         ProblemState::Solving(d) => d,
                         _ => unreachable!("solving handler called with wrong state"),
                     };
-                    match solver.solve(data, &run_ctx, &memory).await {
+                    match solver.solve(data, run_ctx, memory).await {
                         Ok(output) => TransitionResult::ok(ProblemState::Executing(output)),
                         Err((err, back)) => {
                             TransitionResult::diagnosing(ProblemState::Diagnosing {
@@ -954,7 +954,7 @@ where
                         ProblemState::Executing(d) => d,
                         _ => unreachable!("executing handler called with wrong state"),
                     };
-                    match solver.execute(data, &run_ctx, &memory).await {
+                    match solver.execute(data, run_ctx, memory).await {
                         Ok(output) => TransitionResult::ok(ProblemState::Interpreting(output)),
                         Err((err, back)) => {
                             TransitionResult::diagnosing(ProblemState::Diagnosing {
@@ -980,7 +980,7 @@ where
                         ProblemState::Interpreting(d) => d,
                         _ => unreachable!("interpreting handler called with wrong state"),
                     };
-                    match solver.interpret(data, &run_ctx, &memory).await {
+                    match solver.interpret(data, run_ctx, memory).await {
                         Ok(output) => TransitionResult::ok(ProblemState::Done(output)),
                         Err((err, back)) => {
                             TransitionResult::diagnosing(ProblemState::Diagnosing {
@@ -1870,7 +1870,10 @@ impl<D: Domain, S: DomainSolver<D> + 'static, Ev: DomainEvents> Orchestrator<D, 
             spec: None,
             retry_ctx: None,
         };
-        match self.run_pipeline_inner(start, trace_id, run_ctx, Some(stop_before)).await? {
+        match self
+            .run_pipeline_inner(start, trace_id, run_ctx, Some(stop_before))
+            .await?
+        {
             PipelineResult::Stopped { state, .. } => Ok(state),
             PipelineResult::Done(_) => panic!(
                 "run_subpipeline: pipeline reached Done without hitting stop_before = '{stop_before}'"

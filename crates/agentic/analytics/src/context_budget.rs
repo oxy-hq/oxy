@@ -35,7 +35,7 @@
 /// This is the same heuristic used by OpenAI's tiktoken docs for a quick
 /// upper bound without running a real tokenizer.
 pub fn estimate_tokens(text: &str) -> usize {
-    (text.len() + 3) / 4
+    text.len().div_ceil(4)
 }
 
 /// Trim `text` so that its estimated token count does not exceed `max_tokens`.
@@ -173,7 +173,7 @@ mod tests {
     #[test]
     fn budget_reserve_overflow() {
         let mut b = ContextBudget::new(1); // only 1 token
-                                           // "hello world" is ~3 tokens → won't fit
+        // "hello world" is ~3 tokens → won't fit
         let (fits, consumed) = b.reserve("a", "hello world");
         assert!(!fits);
         assert_eq!(consumed, 1); // consumed what remained

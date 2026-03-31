@@ -34,12 +34,8 @@ mod solvable;
 mod solved;
 mod specified;
 
-pub use config::{
-    DuplicateRowCheckParams, NullRatioCheckParams, OutlierDetectionParams, RuleEntry,
-    RuleSetConfig, SqlSyntaxParams, ValidationConfig,
-};
-pub use registry::{RegistryError, RuleRegistry};
-pub use rule::{SolvableCtx, SolvableRule, SolvedCtx, SolvedRule, SpecifiedCtx, SpecifiedRule};
+pub use config::ValidationConfig;
+pub use registry::RegistryError;
 pub use validator::Validator;
 
 // Backward-compatible free functions — delegate to Validator::default().

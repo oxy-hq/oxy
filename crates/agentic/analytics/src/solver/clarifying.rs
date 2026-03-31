@@ -11,13 +11,13 @@
 use std::sync::Arc;
 
 use agentic_core::{
+    HumanInputQuestion,
     back_target::{BackTarget, RetryContext},
     human_input::SuspendedRunData,
     orchestrator::{CompletedTurn, RunContext, SessionMemory, StateHandler, TransitionResult},
     solver::DomainSolver,
     state::ProblemState,
     tools::ToolError,
-    HumanInputQuestion,
 };
 
 use crate::catalog::Catalog;
@@ -30,13 +30,13 @@ use crate::types::{DomainHypothesis, QuestionType};
 use crate::{AnalyticsAnswer, AnalyticsDomain, AnalyticsError, AnalyticsIntent};
 
 use super::{
-    emit_domain,
+    AnalyticsSolver, emit_domain,
     prompts::{
-        format_history_section, format_retry_section, format_session_turns_section,
         GENERAL_INQUIRY_SYSTEM_PROMPT, GROUND_SYSTEM_PROMPT, TRIAGE_SYSTEM_PROMPT,
+        format_history_section, format_retry_section, format_session_turns_section,
     },
     resuming::{ask_user_tool_def, handle_ask_user},
-    strip_json_fences, AnalyticsSolver,
+    strip_json_fences,
 };
 
 // ---------------------------------------------------------------------------
@@ -667,8 +667,8 @@ impl AnalyticsSolver {
 // ---------------------------------------------------------------------------
 
 /// Build the `StateHandler` for the **clarifying** state.
-pub(super) fn build_clarifying_handler(
-) -> StateHandler<AnalyticsDomain, AnalyticsSolver, AnalyticsEvent> {
+pub(super) fn build_clarifying_handler()
+-> StateHandler<AnalyticsDomain, AnalyticsSolver, AnalyticsEvent> {
     StateHandler {
         next: "specifying",
         execute: Arc::new(

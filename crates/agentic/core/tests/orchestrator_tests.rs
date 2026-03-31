@@ -724,9 +724,11 @@ async fn event_stream_happy_path_state_sequence() {
         .collect();
 
     assert_eq!(exited.len(), 5);
-    assert!(exited
-        .iter()
-        .all(|(_, o)| *o == agentic_core::Outcome::Advanced));
+    assert!(
+        exited
+            .iter()
+            .all(|(_, o)| *o == agentic_core::Outcome::Advanced)
+    );
 
     // There must be a terminal Done event.
     let has_done = events
@@ -2046,9 +2048,9 @@ impl DomainSolver<MockDomain> for PassSolver {
 /// the run eventually succeeds.
 #[tokio::test]
 async fn state_handler_diagnose_none_acts_as_passthrough() {
-    use agentic_core::{build_default_handlers, StateHandler, TransitionResult};
-    use std::sync::atomic::{AtomicU32, Ordering};
+    use agentic_core::{StateHandler, TransitionResult, build_default_handlers};
     use std::sync::Arc as StdArc;
+    use std::sync::atomic::{AtomicU32, Ordering};
 
     // Shared counter so the closure can track calls without capturing &mut.
     let calls = StdArc::new(AtomicU32::new(0));
@@ -2102,7 +2104,7 @@ async fn state_handler_diagnose_none_acts_as_passthrough() {
 /// error to a fatal `OrchestratorError::Fatal`.
 #[tokio::test]
 async fn state_handler_diagnose_some_none_escalates_to_fatal() {
-    use agentic_core::{build_default_handlers, StateHandler, TransitionResult};
+    use agentic_core::{StateHandler, TransitionResult, build_default_handlers};
 
     let mut handlers = build_default_handlers::<MockDomain, PassSolver, ()>();
 

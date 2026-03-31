@@ -95,7 +95,7 @@ fn cell_looks_temporal(v: &CellValue) -> bool {
         // A Number that is a plausible calendar year (integer in 1800-2200).
         CellValue::Number(n) => {
             let i = *n as i64;
-            i >= 1800 && i <= 2200 && (*n - i as f64).abs() < 1e-9
+            (1800..=2200).contains(&i) && (*n - i as f64).abs() < 1e-9
         }
         CellValue::Null => false,
     }
@@ -356,7 +356,7 @@ async fn resolve_insight_node(
     let data_blocks: Vec<String> = tasks
         .iter()
         .filter_map(|name| task_results.iter().find(|r| &r.name == name))
-        .map(|r| format_task_data_for_insight(r))
+        .map(format_task_data_for_insight)
         .collect();
 
     if data_blocks.is_empty() {
@@ -782,13 +782,13 @@ fn assemble_yaml(
         // Control-source tasks first, then display tasks.
         for task in control_source_tasks.iter().chain(display_tasks.iter()) {
             lines.push(format!("  - name: {}", task.name));
-            lines.push(format!("    type: execute_sql"));
+            lines.push("    type: execute_sql".to_string());
             lines.push(format!("    database: {}", result.connector_name));
-            lines.push(format!("    sql_query: >"));
+            lines.push("    sql_query: >".to_string());
             for sql_line in task.sql.lines() {
                 lines.push(format!("      {}", sql_line.trim()));
             }
-            lines.push(format!("    mode: server"));
+            lines.push("    mode: server".to_string());
         }
         lines.push(String::new());
     }
@@ -955,8 +955,8 @@ impl AppBuilderSolver {
 // ---------------------------------------------------------------------------
 
 /// Build the `StateHandler` for the **interpreting** state.
-pub(super) fn build_interpreting_handler(
-) -> StateHandler<AppBuilderDomain, AppBuilderSolver, AppBuilderEvent> {
+pub(super) fn build_interpreting_handler()
+-> StateHandler<AppBuilderDomain, AppBuilderSolver, AppBuilderEvent> {
     StateHandler {
         next: "done",
         execute: Arc::new(

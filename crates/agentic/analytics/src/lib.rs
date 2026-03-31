@@ -54,9 +54,9 @@ pub use semantic::SemanticCatalog;
 
 pub use events::{AnalyticsEvent, ProcedureStepInfo};
 pub use llm::{
-    AnthropicProvider, Chunk, ContentBlock, LlmClient, LlmError, LlmOutput, LlmProvider,
-    OpenAiProvider, ReasoningEffort, ResponseSchema, ThinkingConfig, ToolCallChunk, ToolLoopConfig,
-    Usage as LlmUsage, DEFAULT_MODEL,
+    AnthropicProvider, Chunk, ContentBlock, DEFAULT_MODEL, LlmClient, LlmError, LlmOutput,
+    LlmProvider, OpenAiProvider, ReasoningEffort, ResponseSchema, ThinkingConfig, ToolCallChunk,
+    ToolLoopConfig, Usage as LlmUsage,
 };
 pub use schemas::{
     clarify_response_schema, solve_response_schema, specify_response_schema,
@@ -73,14 +73,14 @@ pub use procedure::{ProcedureError, ProcedureOutput, ProcedureRef, ProcedureRunn
 
 // ── Solver ────────────────────────────────────────────────────────────────────
 
-pub use solver::{build_analytics_handlers, AnalyticsSolver};
+pub use solver::{AnalyticsSolver, build_analytics_handlers};
 
 // ── Tools ─────────────────────────────────────────────────────────────────────
 
 pub use tools::{
-    clarifying_tools, execute_clarifying_tool, execute_database_lookup_tool,
+    SchemaCache, clarifying_tools, execute_clarifying_tool, execute_database_lookup_tool,
     execute_interpreting_tool, execute_solving_tool, execute_specifying_tool, interpreting_tools,
-    new_schema_cache, solving_tools, specifying_tools, SchemaCache,
+    new_schema_cache, solving_tools, specifying_tools,
 };
 
 // ── Domain types ──────────────────────────────────────────────────────────────
@@ -94,8 +94,8 @@ pub use types::{
 // ── Validation ────────────────────────────────────────────────────────────────
 
 pub use validation::{
-    validate_solvable, validate_solved, validate_specified, RegistryError, ValidationConfig,
-    Validator,
+    RegistryError, ValidationConfig, Validator, validate_solvable, validate_solved,
+    validate_specified,
 };
 
 // ── UI ────────────────────────────────────────────────────────────────────────

@@ -1,25 +1,27 @@
 [package]
 name = "agentic-workflow"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.75"
 description = "Procedure runner backed by oxy-workflow for the agentic framework"
-license = "MIT"
+version = "0.5.31"
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
 
 [dependencies]
-agentic-core      = { path = "../core" }
+agentic-core = { path = "../core" }
 agentic-analytics = { path = "../analytics" }
-oxy-workflow      = { path = "../../workflow" }
-oxy               = { path = "../../core" }
-oxy-shared        = { path = "../../shared" }
+oxy-workflow = { path = "../../workflow" }
+oxy = { path = "../../core" }
+oxy-shared = { path = "../../shared" }
 
 async-trait = "0.1"
-serde       = { version = "1", features = ["derive"] }
-serde_json  = "1"
-serde_yaml  = "0.9"
-strsim      = "0.11"
-tracing     = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+strsim = "0.11"
+tracing = "0.1"
 
 [dev-dependencies]
 tempfile = "3"
-tokio    = { version = "1", features = ["macros", "rt"] }
+tokio = { version = "1", features = ["macros", "rt"] }

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use agentic_core::events::{CoreEvent, DomainEvents, Event, EventStream};
 use agentic_core::tools::ToolDef;
@@ -113,25 +113,24 @@ impl LlmClient {
         // `tool_result` blocks.  We must merge the ask_user result into
         // that existing message rather than appending a new user message
         // (Anthropic requires ALL tool_results for a batch in one message).
-        if let Some(last) = msgs.last_mut() {
-            if last["role"].as_str() == Some("user") {
-                if let Some(content) = last["content"].as_array() {
-                    let has_tool_results = content
-                        .iter()
-                        .any(|b| b["type"].as_str() == Some("tool_result"));
-                    if has_tool_results {
-                        // Merge: extract tool_result blocks from new_results
-                        // and append them to the existing user message content.
-                        let mut merged_content = content.clone();
-                        for r in &new_results {
-                            if let Some(blocks) = r["content"].as_array() {
-                                merged_content.extend(blocks.iter().cloned());
-                            }
-                        }
-                        last["content"] = Value::Array(merged_content);
-                        return msgs;
+        if let Some(last) = msgs.last_mut()
+            && last["role"].as_str() == Some("user")
+            && let Some(content) = last["content"].as_array()
+        {
+            let has_tool_results = content
+                .iter()
+                .any(|b| b["type"].as_str() == Some("tool_result"));
+            if has_tool_results {
+                // Merge: extract tool_result blocks from new_results
+                // and append them to the existing user message content.
+                let mut merged_content = content.clone();
+                for r in &new_results {
+                    if let Some(blocks) = r["content"].as_array() {
+                        merged_content.extend(blocks.iter().cloned());
                     }
                 }
+                last["content"] = Value::Array(merged_content);
+                return msgs;
             }
         }
 
@@ -431,33 +430,33 @@ impl LlmClient {
 
             // Check if any tool call is the structured-response tool.
             // When found, treat it as the final output rather than executing it.
-            if let Some(ref schema) = config.response_schema {
-                if let Some(schema_tc) = tool_calls.iter().find(|tc| tc.name == schema.name) {
-                    let structured = schema_tc.input.clone();
-                    let text_json =
-                        serde_json::to_string(&structured).unwrap_or_else(|_| "{}".to_string());
-                    emit_core(
-                        events,
-                        CoreEvent::LlmEnd {
-                            state: config.state.clone(),
-                            output_tokens: usage.output_tokens,
-                            duration_ms: start_time.elapsed().as_millis() as u64,
-                            sub_spec_index: ssi,
-                        },
-                    )
-                    .await;
-                    return Ok(LlmOutput {
-                        text: text_json,
-                        thinking_summary: if thinking_summary.is_empty() {
-                            None
-                        } else {
-                            Some(thinking_summary)
-                        },
-                        raw_content_blocks: raw_blocks,
-                        structured_response: Some(structured),
-                        tool_calls: all_tool_calls,
-                    });
-                }
+            if let Some(ref schema) = config.response_schema
+                && let Some(schema_tc) = tool_calls.iter().find(|tc| tc.name == schema.name)
+            {
+                let structured = schema_tc.input.clone();
+                let text_json =
+                    serde_json::to_string(&structured).unwrap_or_else(|_| "{}".to_string());
+                emit_core(
+                    events,
+                    CoreEvent::LlmEnd {
+                        state: config.state.clone(),
+                        output_tokens: usage.output_tokens,
+                        duration_ms: start_time.elapsed().as_millis() as u64,
+                        sub_spec_index: ssi,
+                    },
+                )
+                .await;
+                return Ok(LlmOutput {
+                    text: text_json,
+                    thinking_summary: if thinking_summary.is_empty() {
+                        None
+                    } else {
+                        Some(thinking_summary)
+                    },
+                    raw_content_blocks: raw_blocks,
+                    structured_response: Some(structured),
+                    tool_calls: all_tool_calls,
+                });
             }
 
             // No tool calls — final response.

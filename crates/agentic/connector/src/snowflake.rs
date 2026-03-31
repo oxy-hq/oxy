@@ -16,9 +16,9 @@
 use std::collections::HashMap;
 
 use arrow::array::{
-    Array, BooleanArray, Date32Array, Decimal128Array, Float32Array, Float64Array, Int16Array,
-    Int32Array, Int64Array, Int8Array, LargeStringArray, StringArray, UInt16Array, UInt32Array,
-    UInt64Array, UInt8Array,
+    Array, BooleanArray, Date32Array, Decimal128Array, Float32Array, Float64Array, Int8Array,
+    Int16Array, Int32Array, Int64Array, LargeStringArray, StringArray, UInt8Array, UInt16Array,
+    UInt32Array, UInt64Array,
 };
 use arrow::datatypes::DataType;
 use async_trait::async_trait;
@@ -163,7 +163,7 @@ impl SnowflakeConnector {
         schema_str: Option<String>,
     ) -> Result<Self, ConnectorError> {
         // Authenticate once to validate credentials.
-        let mut api = SnowflakeApi::with_password_auth(
+        let api = SnowflakeApi::with_password_auth(
             &account,
             Some(&warehouse),
             database.as_deref(),
@@ -204,7 +204,7 @@ impl SnowflakeConnector {
 
     /// Create and authenticate a fresh [`SnowflakeApi`] for a single query.
     async fn connect(&self) -> Result<SnowflakeApi, ConnectorError> {
-        let mut api = SnowflakeApi::with_password_auth(
+        let api = SnowflakeApi::with_password_auth(
             &self.account,
             Some(&self.warehouse),
             self.database.as_deref(),
@@ -534,7 +534,7 @@ async fn fetch_schema(
     database: Option<&str>,
     schema_str: Option<&str>,
 ) -> Result<SchemaInfo, ConnectorError> {
-    let mut api = SnowflakeApi::with_password_auth(
+    let api = SnowflakeApi::with_password_auth(
         account,
         Some(warehouse),
         database,

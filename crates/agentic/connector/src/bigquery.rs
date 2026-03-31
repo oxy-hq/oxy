@@ -20,10 +20,7 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use gcp_bigquery_client::{
-    model::{query_request::QueryRequest, table_field_schema::TableFieldSchema},
-    Client,
-};
+use gcp_bigquery_client::{Client, model::query_request::QueryRequest};
 
 use agentic_core::result::{CellValue, QueryResult, QueryRow};
 

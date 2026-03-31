@@ -11,10 +11,10 @@
 //!   for the SSE handler to send to the frontend.
 
 use agentic_analytics::AnalyticsEvent;
-use agentic_core::events::{CoreEvent, Event};
 use agentic_core::UiBlock;
+use agentic_core::events::{CoreEvent, Event};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// A serialized UI event used in REST responses (e.g. `list_runs_by_thread`).
 /// Mirrors what the SSE stream emits, but as a plain JSON object.
@@ -49,6 +49,12 @@ pub struct UiBlockSerializer {
     /// Domain-event payloads accumulated since the last `StepStart`, keyed by
     /// event type (e.g. `"intent_clarified"`). Cleared on each `StepEnd`.
     pending_domain: serde_json::Map<String, Value>,
+}
+
+impl Default for UiBlockSerializer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl UiBlockSerializer {
@@ -163,15 +169,14 @@ pub fn squash_deltas(events: Vec<UiEvent>) -> Vec<UiEvent> {
         match ev.event_type.as_str() {
             "text_delta" | "thinking_token" => {
                 let token = ev.payload["token"].as_str().unwrap_or("").to_string();
-                if let Some(last) = out.last_mut() {
-                    if last.event_type == ev.event_type {
-                        // Append to the existing merged event.
-                        let merged =
-                            last.payload["token"].as_str().unwrap_or("").to_string() + &token;
-                        last.payload = serde_json::json!({ "token": merged });
-                        last.seq = ev.seq;
-                        continue;
-                    }
+                if let Some(last) = out.last_mut()
+                    && last.event_type == ev.event_type
+                {
+                    // Append to the existing merged event.
+                    let merged = last.payload["token"].as_str().unwrap_or("").to_string() + &token;
+                    last.payload = serde_json::json!({ "token": merged });
+                    last.seq = ev.seq;
+                    continue;
                 }
                 out.push(ev);
             }

@@ -6,11 +6,11 @@
 use std::sync::Arc;
 
 use agentic_core::{
+    HumanInputQuestion,
     back_target::BackTarget,
     human_input::SuspendedRunData,
     orchestrator::{RunContext, SessionMemory, StateHandler, TransitionResult},
     state::ProblemState,
-    HumanInputQuestion,
 };
 use agentic_llm::{InitialMessages, LlmError, ThinkingConfig, ToolLoopConfig};
 
@@ -25,7 +25,7 @@ use crate::types::{
 
 use super::{
     interpreting::infer_result_shape,
-    prompts::{format_retry_section_str, SOLVING_SYSTEM_PROMPT},
+    prompts::{SOLVING_SYSTEM_PROMPT, format_retry_section_str},
     solver::AppBuilderSolver,
 };
 
@@ -343,8 +343,8 @@ impl AppBuilderSolver {
 // ---------------------------------------------------------------------------
 
 /// Build the `StateHandler` for the **solving** state.
-pub(super) fn build_solving_handler(
-) -> StateHandler<AppBuilderDomain, AppBuilderSolver, AppBuilderEvent> {
+pub(super) fn build_solving_handler()
+-> StateHandler<AppBuilderDomain, AppBuilderSolver, AppBuilderEvent> {
     StateHandler {
         next: "executing",
         execute: Arc::new(

@@ -8,6 +8,7 @@
 use std::sync::{Arc, Mutex};
 
 use agentic_core::{
+    HumanInputQuestion,
     back_target::BackTarget,
     back_target::RetryContext,
     human_input::SuspendedRunData,
@@ -15,7 +16,6 @@ use agentic_core::{
     result::CellValue,
     solver::DomainSolver,
     state::ProblemState,
-    HumanInputQuestion,
 };
 
 use crate::llm::{InitialMessages, ThinkingConfig, ToolLoopConfig};
@@ -24,12 +24,11 @@ use crate::types::{ConversationTurn, DisplayBlock, QuestionType};
 use crate::{AnalyticsAnswer, AnalyticsDomain, AnalyticsError, AnalyticsResult};
 
 use super::{
-    emit_domain,
-    prompts::{
-        format_history_section, format_retry_section, INTERPRET_SYSTEM_PROMPT,
-        MULTI_RESULT_INTERPRET_ADDON,
-    },
     AnalyticsSolver,
+    prompts::{
+        INTERPRET_SYSTEM_PROMPT, MULTI_RESULT_INTERPRET_ADDON, format_history_section,
+        format_retry_section,
+    },
 };
 
 fn cell_to_json(cell: &CellValue) -> serde_json::Value {
@@ -448,8 +447,8 @@ impl AnalyticsSolver {
 // ---------------------------------------------------------------------------
 
 /// Build the `StateHandler` for the **interpreting** state.
-pub(super) fn build_interpreting_handler(
-) -> StateHandler<AnalyticsDomain, AnalyticsSolver, crate::AnalyticsEvent> {
+pub(super) fn build_interpreting_handler()
+-> StateHandler<AnalyticsDomain, AnalyticsSolver, crate::AnalyticsEvent> {
     StateHandler {
         next: "done",
         execute: Arc::new(

@@ -73,7 +73,7 @@ use crate::engine::cube::CubeEngine;
 use crate::engine::looker::LookerEngine;
 use crate::engine::{EngineError, SemanticEngine};
 use crate::llm::{
-    LlmClient, OpenAiCompatProvider, OpenAiProvider, ReasoningEffort, ThinkingConfig, DEFAULT_MODEL,
+    DEFAULT_MODEL, LlmClient, OpenAiCompatProvider, OpenAiProvider, ReasoningEffort, ThinkingConfig,
 };
 use crate::semantic::SemanticCatalog;
 use crate::solver::AnalyticsSolver;
@@ -507,10 +507,10 @@ fn extract_procedure_databases(content: &str) -> Vec<String> {
             serde_yaml::Value::Mapping(m) => {
                 if let Some(serde_yaml::Value::String(db)) =
                     m.get(serde_yaml::Value::String("database".into()))
+                    && !db.is_empty()
+                    && !out.contains(db)
                 {
-                    if !db.is_empty() && !out.contains(db) {
-                        out.push(db.clone());
-                    }
+                    out.push(db.clone());
                 }
                 for (_, v) in m {
                     collect(v, out);
@@ -721,13 +721,13 @@ impl AgentConfig {
                     ctx.semantic_files.push(path);
                 } else if name.ends_with(".topic.yml") || name.ends_with(".topic.yaml") {
                     ctx.semantic_files.push(path);
-                } else if path.extension().map_or(false, |e| e == "sql") {
+                } else if path.extension().is_some_and(|e| e == "sql") {
                     let content = std::fs::read_to_string(&path).map_err(ConfigError::Io)?;
                     if let Some(db) = extract_sql_oxy_database(&content) {
                         push_unique(&mut ctx.referenced_databases, db);
                     }
                     ctx.sql_examples.push(content);
-                } else if path.extension().map_or(false, |e| e == "md") {
+                } else if path.extension().is_some_and(|e| e == "md") {
                     let content = std::fs::read_to_string(&path).map_err(ConfigError::Io)?;
                     ctx.domain_docs.push(content);
                 }

@@ -220,7 +220,7 @@ dependencies = [
 
 [[package]]
 name = "agentic-analytics"
-version = "0.1.0"
+version = "0.5.31"
 dependencies = [
  "agentic-connector",
  "agentic-core",
@@ -245,7 +245,7 @@ dependencies = [
 
 [[package]]
 name = "agentic-app-builder"
-version = "0.1.0"
+version = "0.5.31"
 dependencies = [
  "agentic-analytics",
  "agentic-connector",
@@ -266,7 +266,7 @@ dependencies = [
 
 [[package]]
 name = "agentic-connector"
-version = "0.1.0"
+version = "0.5.31"
 dependencies = [
  "agentic-core",
  "arrow 56.2.0",
@@ -286,7 +286,7 @@ dependencies = [
 
 [[package]]
 name = "agentic-core"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -302,7 +302,7 @@ dependencies = [
 
 [[package]]
 name = "agentic-db"
-version = "0.1.0"
+version = "0.5.31"
 dependencies = [
  "async-trait",
  "chrono",
@@ -313,7 +313,7 @@ dependencies = [
 
 [[package]]
 name = "agentic-http"
-version = "0.1.0"
+version = "0.5.31"
 dependencies = [
  "agentic-analytics",
  "agentic-app-builder",
@@ -339,7 +339,7 @@ dependencies = [
 
 [[package]]
 name = "agentic-llm"
-version = "0.1.0"
+version = "0.5.31"
 dependencies = [
  "agentic-core",
  "async-stream",
@@ -354,7 +354,7 @@ dependencies = [
 
 [[package]]
 name = "agentic-workflow"
-version = "0.1.0"
+version = "0.5.31"
 dependencies = [
  "agentic-analytics",
  "agentic-core",

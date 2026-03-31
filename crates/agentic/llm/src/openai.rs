@@ -3,12 +3,12 @@ use std::pin::Pin;
 use async_stream::stream;
 use async_trait::async_trait;
 use futures_core::Stream;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use agentic_core::tools::ToolDef;
 
-use super::constants::{DEFAULT_MAX_TOKENS, OPENAI_BASE_URL, THINKING_MAX_TOKENS};
-use super::sse::{pop_sse_event, sse_data, sse_event_type, ApiError};
+use super::constants::OPENAI_BASE_URL;
+use super::sse::{ApiError, pop_sse_event, sse_data, sse_event_type};
 use super::{
     Chunk, ContentBlock, LlmError, LlmProvider, ReasoningEffort, ResponseSchema, StopReason,
     ThinkingConfig, ToolCallChunk, Usage,
@@ -33,21 +33,21 @@ pub fn validate_openai_strict_schema(schema: &Value, path: &str) -> Vec<String> 
 }
 
 fn validate_openai_strict_inner(schema: &Value, path: &str, out: &mut Vec<String>) {
-    if schema.get("type").map_or(false, |t| t == "object") {
-        if let Some(props) = schema["properties"].as_object() {
-            let required: Vec<&str> = schema["required"]
-                .as_array()
-                .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
-                .unwrap_or_default();
-            for key in props.keys() {
-                if !required.contains(&key.as_str()) {
-                    out.push(format!(
-                        "'{path}': property '{key}' is not in 'required' \
+    if schema.get("type").is_some_and(|t| t == "object")
+        && let Some(props) = schema["properties"].as_object()
+    {
+        let required: Vec<&str> = schema["required"]
+            .as_array()
+            .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
+            .unwrap_or_default();
+        for key in props.keys() {
+            if !required.contains(&key.as_str()) {
+                out.push(format!(
+                    "'{path}': property '{key}' is not in 'required' \
                          (mark it required and use {{\"type\": [\"T\", \"null\"]}} if optional)"
-                    ));
-                }
-                validate_openai_strict_inner(&props[key], &format!("{path}.{key}"), out);
+                ));
             }
+            validate_openai_strict_inner(&props[key], &format!("{path}.{key}"), out);
         }
     }
     if let Some(branches) = schema.get("anyOf").and_then(|v| v.as_array()) {
@@ -320,11 +320,10 @@ impl LlmProvider for OpenAiProvider {
 
                         // ── Text content delta ────────────────────────────────
                         "response.output_text.delta" => {
-                            if let Some(delta) = ev["delta"].as_str() {
-                                if !delta.is_empty() {
+                            if let Some(delta) = ev["delta"].as_str()
+                                && !delta.is_empty() {
                                     yield Ok(Chunk::Text(delta.to_string()));
                                 }
-                            }
                         }
 
                         // ── Function call argument delta ──────────────────────
@@ -412,8 +411,8 @@ impl LlmProvider for OpenAiProvider {
                             }
                             // OpenAI: status "incomplete" with reason "max_output_tokens"
                             // signals the response was truncated.
-                            if let Some(status) = ev.get("response").and_then(|r| r["status"].as_str()) {
-                                if status == "incomplete" {
+                            if let Some(status) = ev.get("response").and_then(|r| r["status"].as_str())
+                                && status == "incomplete" {
                                     let reason = ev["response"]["incomplete_details"]["reason"]
                                         .as_str()
                                         .unwrap_or("");
@@ -421,7 +420,6 @@ impl LlmProvider for OpenAiProvider {
                                         usage.stop_reason = StopReason::MaxTokens;
                                     }
                                 }
-                            }
                             yield Ok(Chunk::Done(usage));
                             break 'outer;
                         }
@@ -451,7 +449,7 @@ impl LlmProvider for OpenAiProvider {
                 out.push(json!({
                     "type": "message",
                     "role": "assistant",
-                    "content": parts.drain(..).collect::<Vec<_>>()
+                    "content": std::mem::take(parts)
                 }));
             }
         };

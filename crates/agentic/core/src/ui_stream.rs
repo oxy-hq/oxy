@@ -656,13 +656,14 @@ mod tests {
     #[test]
     fn llm_start_dropped_end_emits_usage() {
         let mut s: UiTransformState<()> = UiTransformState::new();
-        assert!(s
-            .process(Event::Core(CoreEvent::LlmStart {
+        assert!(
+            s.process(Event::Core(CoreEvent::LlmStart {
                 state: "s".into(),
                 prompt_tokens: 100,
                 sub_spec_index: None,
             }))
-            .is_empty());
+            .is_empty()
+        );
         let blocks = s.process(Event::Core(CoreEvent::LlmEnd {
             state: "s".into(),
             output_tokens: 50,
@@ -684,15 +685,17 @@ mod tests {
     #[test]
     fn validation_events_dropped() {
         let mut s: UiTransformState<()> = UiTransformState::new();
-        assert!(s
-            .process(Event::Core(CoreEvent::ValidationPass { state: "s".into() }))
-            .is_empty());
-        assert!(s
-            .process(Event::Core(CoreEvent::ValidationFail {
+        assert!(
+            s.process(Event::Core(CoreEvent::ValidationPass { state: "s".into() }))
+                .is_empty()
+        );
+        assert!(
+            s.process(Event::Core(CoreEvent::ValidationFail {
                 state: "s".into(),
                 errors: vec![]
             }))
-            .is_empty());
+            .is_empty()
+        );
     }
 
     #[test]

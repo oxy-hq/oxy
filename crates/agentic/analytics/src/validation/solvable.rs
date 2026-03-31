@@ -11,7 +11,7 @@
 use std::ops::ControlFlow;
 
 use serde_json::Value;
-use sqlparser::ast::{visit_relations, Query, SetExpr, Statement};
+use sqlparser::ast::{Query, SetExpr, Statement, visit_relations};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
@@ -284,10 +284,10 @@ fn query_has_order_by(q: &Query) -> bool {
     // 3. Subqueries in the SET body (e.g. `SELECT * FROM (SELECT ... ORDER BY ...)`)
     if let SetExpr::Select(select) = q.body.as_ref() {
         for from in &select.from {
-            if let sqlparser::ast::TableFactor::Derived { subquery, .. } = &from.relation {
-                if query_has_order_by(subquery) {
-                    return true;
-                }
+            if let sqlparser::ast::TableFactor::Derived { subquery, .. } = &from.relation
+                && query_has_order_by(subquery)
+            {
+                return true;
             }
         }
     }
@@ -380,8 +380,8 @@ pub fn validate_solvable(
 #[cfg(test)]
 mod tests {
     use super::validate_solvable;
-    use crate::validation::test_fixtures::*;
     use crate::AnalyticsError;
+    use crate::validation::test_fixtures::*;
 
     // ── validate_solvable: happy path ─────────────────────────────────────────
 
@@ -557,8 +557,8 @@ mod tests {
     #[test]
     fn timeseries_order_by_present() {
         use super::{SolvableRule, TimeseriesOrderByCheckRule};
-        use crate::validation::rule::SolvableCtx;
         use crate::ResultShape;
+        use crate::validation::rule::SolvableCtx;
 
         let spec = {
             let mut s = make_spec();
@@ -580,8 +580,8 @@ mod tests {
     #[test]
     fn timeseries_order_by_missing() {
         use super::{SolvableRule, TimeseriesOrderByCheckRule};
-        use crate::validation::rule::SolvableCtx;
         use crate::ResultShape;
+        use crate::validation::rule::SolvableCtx;
 
         let spec = {
             let mut s = make_spec();
@@ -606,8 +606,8 @@ mod tests {
     #[test]
     fn timeseries_order_by_in_cte_is_ok() {
         use super::{SolvableRule, TimeseriesOrderByCheckRule};
-        use crate::validation::rule::SolvableCtx;
         use crate::ResultShape;
+        use crate::validation::rule::SolvableCtx;
 
         let spec = {
             let mut s = make_spec();
@@ -632,8 +632,8 @@ mod tests {
     #[test]
     fn timeseries_order_by_in_subquery_is_ok() {
         use super::{SolvableRule, TimeseriesOrderByCheckRule};
-        use crate::validation::rule::SolvableCtx;
         use crate::ResultShape;
+        use crate::validation::rule::SolvableCtx;
 
         let spec = {
             let mut s = make_spec();
