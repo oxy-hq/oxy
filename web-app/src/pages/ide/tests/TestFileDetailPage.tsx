@@ -62,7 +62,7 @@ import ROUTES from "@/libs/utils/routes";
 import PageHeader from "@/pages/ide/components/PageHeader";
 import type { TestRunCaseResult } from "@/services/api/testRuns";
 import type { TestCaseState } from "@/stores/useTestFileResults";
-import useTestFileResults from "@/stores/useTestFileResults";
+import useTestFileResults, { createCasePrefix } from "@/stores/useTestFileResults";
 import {
   EvalEventState,
   type Record as EvalRecord,
@@ -812,7 +812,7 @@ const TestFileDetailPage: React.FC = () => {
   const { project, branchName } = useCurrentProjectBranch();
   const projectId = project.id;
   const { data: testFile, isLoading } = useTestFile(pathb64 ?? "", !!pathb64);
-  const { runCase, getCase, getCasesForFile, stopFile } = useTestFileResults();
+  const { runCase, getCase, stopFile, caseMap } = useTestFileResults();
 
   // Run history
   const { data: runs } = useTestRuns(pathb64 ?? "", !!pathb64);
@@ -1040,8 +1040,15 @@ const TestFileDetailPage: React.FC = () => {
       };
     }
 
-    // Live mode
-    const casesMap = getCasesForFile(projectId, branchName, pathb64 ?? "");
+    // Live mode — use caseMap directly so this memo recomputes when any case changes
+    const prefix = createCasePrefix(projectId, branchName, pathb64 ?? "");
+    const casesMap = new Map<number, TestCaseState>();
+    for (const [key, value] of caseMap) {
+      if (key.startsWith(prefix)) {
+        const index = parseInt(key.slice(prefix.length), 10);
+        if (!Number.isNaN(index)) casesMap.set(index, value);
+      }
+    }
     let completedCases = 0,
       passingCases = 0,
       flakyCases = 0,
@@ -1096,18 +1103,21 @@ const TestFileDetailPage: React.FC = () => {
     projectId,
     branchName,
     pathb64,
-    getCasesForFile,
+    caseMap,
     humanOverrides
   ]);
 
   const isFileRunning = useMemo(() => {
     if (!testFile) return false;
-    for (let i = 0; i < testFile.cases.length; i++) {
-      const cs = getCase(projectId, branchName, pathb64 ?? "", i);
-      if (cs.state === EvalEventState.Started || cs.state === EvalEventState.Progress) return true;
+    const prefix = createCasePrefix(projectId, branchName, pathb64 ?? "");
+    for (const [key, cs] of caseMap) {
+      if (key.startsWith(prefix)) {
+        if (cs.state === EvalEventState.Started || cs.state === EvalEventState.Progress)
+          return true;
+      }
     }
     return false;
-  }, [testFile, projectId, branchName, pathb64, getCase]);
+  }, [testFile, projectId, branchName, pathb64, caseMap]);
 
   if (!pathb64) return null;
 

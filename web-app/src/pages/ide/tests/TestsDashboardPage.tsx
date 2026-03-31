@@ -68,6 +68,7 @@ import type { TestFileConfig } from "@/services/api/testFiles";
 import type { TestProjectRunInfo } from "@/services/api/testProjectRuns";
 import type { TestRunCaseResult } from "@/services/api/testRuns";
 import useTestFileResults, {
+  createCaseKey,
   type TestCaseResult,
   type TestCaseState
 } from "@/stores/useTestFileResults";
@@ -712,13 +713,13 @@ const TestsDashboardPage: React.FC = () => {
     for (const file of testFiles) {
       const pathb64 = encodeBase64(file.path);
       for (let i = 0; i < file.case_count; i++) {
-        const cs = store.getCase(projectId, branchName, pathb64, i);
-        if (cs.state === EvalEventState.Started || cs.state === EvalEventState.Progress)
+        const cs = store.caseMap.get(createCaseKey(projectId, branchName, pathb64, i));
+        if (cs?.state === EvalEventState.Started || cs?.state === EvalEventState.Progress)
           return true;
       }
     }
     return false;
-  }, [testFiles, projectId, branchName, store.getCase]);
+  }, [testFiles, projectId, branchName, store.caseMap]);
 
   // Live health from Zustand (used while a run is in progress)
   const liveHealth = useMemo(() => {
@@ -741,8 +742,8 @@ const TestsDashboardPage: React.FC = () => {
       const pathb64 = encodeBase64(file.path);
       for (let i = 0; i < file.case_count; i++) {
         totalCases++;
-        const cs = store.getCase(projectId, branchName, pathb64, i);
-        if (cs.result) {
+        const cs = store.caseMap.get(createCaseKey(projectId, branchName, pathb64, i));
+        if (cs?.result) {
           casesWithResults++;
           const { passing, total } = getConsistency(cs.result.metrics);
           if (total > 0) {
@@ -780,8 +781,8 @@ const TestsDashboardPage: React.FC = () => {
         let fileScored = 0,
           fileTotal = 0;
         for (let i = 0; i < file.case_count; i++) {
-          const cs = store.getCase(projectId, branchName, pathb64, i);
-          if (cs.result) {
+          const cs = store.caseMap.get(createCaseKey(projectId, branchName, pathb64, i));
+          if (cs?.result) {
             const s = getScorePercent(cs.result.metrics);
             if (s !== null) {
               fileTotal += s;
@@ -806,7 +807,7 @@ const TestsDashboardPage: React.FC = () => {
       totalOutputTokens,
       verdictCounts: { pass: verdictPass, fail: verdictFail, flaky: verdictFlaky }
     };
-  }, [testFiles, projectId, branchName, store.getCase]);
+  }, [testFiles, projectId, branchName, store.caseMap]);
 
   // Historical health aggregated from FileStatsLoaders
   const historicalHealth = useMemo(() => {
@@ -861,13 +862,13 @@ const TestsDashboardPage: React.FC = () => {
       const pathb64 = encodeBase64(file.path);
       for (let i = 0; i < file.case_count; i++) {
         total++;
-        const cs = store.getCase(projectId, branchName, pathb64, i);
-        if (cs.result || cs.error) completed++;
+        const cs = store.caseMap.get(createCaseKey(projectId, branchName, pathb64, i));
+        if (cs?.result || cs?.error) completed++;
       }
     }
     if (total === 0) return null;
     return { total, completed, percent: Math.round((completed / total) * 100) };
-  }, [testFiles, projectId, branchName, store.getCase]);
+  }, [testFiles, projectId, branchName, store.caseMap]);
 
   // Brief "Run complete" banner state
   const [justFinished, setJustFinished] = useState(false);
@@ -1536,8 +1537,8 @@ const TestFileCard: React.FC<TestFileCardProps> = ({
     let totalInputTokens = 0,
       totalOutputTokens = 0;
     for (let i = 0; i < caseCount; i++) {
-      const cs = store.getCase(projectId, branchName, pathb64, i);
-      if (cs.result) {
+      const cs = store.caseMap.get(createCaseKey(projectId, branchName, pathb64, i));
+      if (cs?.result) {
         const s = getScorePercent(cs.result.metrics);
         if (s !== null) {
           totalScore += s;
@@ -1570,7 +1571,7 @@ const TestFileCard: React.FC<TestFileCardProps> = ({
       totalInputTokens,
       totalOutputTokens
     };
-  }, [projectId, branchName, pathb64, caseCount, selectedRunIndex, historicalRun, store.getCase]);
+  }, [projectId, branchName, pathb64, caseCount, selectedRunIndex, historicalRun, store.caseMap]);
 
   const fileState = useMemo(() => {
     let running = 0,
@@ -1578,9 +1579,9 @@ const TestFileCard: React.FC<TestFileCardProps> = ({
       passing = 0,
       failing = 0;
     for (let i = 0; i < caseCount; i++) {
-      const cs = store.getCase(projectId, branchName, pathb64, i);
-      if (cs.state === EvalEventState.Started || cs.state === EvalEventState.Progress) running++;
-      if (cs.result || cs.error) {
+      const cs = store.caseMap.get(createCaseKey(projectId, branchName, pathb64, i));
+      if (cs?.state === EvalEventState.Started || cs?.state === EvalEventState.Progress) running++;
+      if (cs?.result || cs?.error) {
         completed++;
         if (cs.error) failing++;
         else if (cs.result) {
@@ -1599,7 +1600,7 @@ const TestFileCard: React.FC<TestFileCardProps> = ({
       else if (passing > 0 && failing > 0) verdict = "flaky";
     }
     return { running, completed, verdict, isRunning };
-  }, [projectId, branchName, pathb64, caseCount, store.getCase]);
+  }, [projectId, branchName, pathb64, caseCount, store.caseMap]);
 
   // Border accent: historical verdict takes precedence over live verdict when not running
   const displayVerdict = fileState.isRunning

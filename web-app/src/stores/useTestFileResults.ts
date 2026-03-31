@@ -33,11 +33,6 @@ interface TestFileResultsState {
   abortControllers: Map<string, AbortController>;
   setCase: (key: string, state: TestCaseState) => void;
   getCase: (projectId: string, branchName: string, pathb64: string, index: number) => TestCaseState;
-  getCasesForFile: (
-    projectId: string,
-    branchName: string,
-    pathb64: string
-  ) => Map<number, TestCaseState>;
   clearCasesForFile: (projectId: string, branchName: string, pathb64: string) => void;
   stopFile: (projectId: string, branchName: string, pathb64: string) => void;
   stopAll: () => void;
@@ -50,14 +45,15 @@ interface TestFileResultsState {
   ) => void;
 }
 
-const createCaseKey = (
+export const createCaseKey = (
   projectId: string,
   branchName: string,
   pathb64: string,
   index: number
-): string => {
-  return `${projectId}:${branchName}:${pathb64}:${index}`;
-};
+): string => `${projectId}:${branchName}:${pathb64}:${index}`;
+
+export const createCasePrefix = (projectId: string, branchName: string, pathb64: string): string =>
+  `${projectId}:${branchName}:${pathb64}:`;
 
 const useTestFileResults = create<TestFileResultsState>()((set, get) => ({
   caseMap: new Map(),
@@ -73,23 +69,10 @@ const useTestFileResults = create<TestFileResultsState>()((set, get) => ({
     const key = createCaseKey(projectId, branchName, pathb64, index);
     return get().caseMap.get(key) ?? { ...defaultCaseState };
   },
-  getCasesForFile: (projectId, branchName, pathb64) => {
-    const prefix = `${projectId}:${branchName}:${pathb64}:`;
-    const result = new Map<number, TestCaseState>();
-    for (const [key, value] of get().caseMap) {
-      if (key.startsWith(prefix)) {
-        const index = parseInt(key.slice(prefix.length), 10);
-        if (!Number.isNaN(index)) {
-          result.set(index, value);
-        }
-      }
-    }
-    return result;
-  },
   clearCasesForFile: (projectId, branchName, pathb64) => {
     // Abort any active SSE streams before clearing to avoid zombie connections
     get().stopFile(projectId, branchName, pathb64);
-    const prefix = `${projectId}:${branchName}:${pathb64}:`;
+    const prefix = createCasePrefix(projectId, branchName, pathb64);
     set((prev) => {
       const newMap = new Map(prev.caseMap);
       for (const key of newMap.keys()) {
@@ -101,7 +84,7 @@ const useTestFileResults = create<TestFileResultsState>()((set, get) => ({
     });
   },
   stopFile: (projectId, branchName, pathb64) => {
-    const prefix = `${projectId}:${branchName}:${pathb64}:`;
+    const prefix = createCasePrefix(projectId, branchName, pathb64);
     const { abortControllers } = get();
     for (const [key, controller] of abortControllers) {
       if (key.startsWith(prefix)) {
