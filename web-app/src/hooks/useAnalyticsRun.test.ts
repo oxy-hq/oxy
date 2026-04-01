@@ -86,7 +86,14 @@ describe("buildAnalyticsNodes", () => {
     const nodes = buildAnalyticsNodes([
       ev("step_start", { label: "Running" }),
       ev("query_generated", { sql: "SELECT 1" }),
-      ev("query_executed", { query: "SELECT 1", success: true, columns: [], rows: [], duration_ms: 10, row_count: 0 }),
+      ev("query_executed", {
+        query: "SELECT 1",
+        success: true,
+        columns: [],
+        rows: [],
+        duration_ms: 10,
+        row_count: 0
+      }),
       ev("step_end", { label: "Running", success: true })
     ]);
     expect(nodes).toHaveLength(3);
@@ -96,9 +103,7 @@ describe("buildAnalyticsNodes", () => {
   });
 
   it("schema_resolved → domain node with tables", () => {
-    const nodes = buildAnalyticsNodes([
-      ev("schema_resolved", { tables: ["orders", "users"] })
-    ]);
+    const nodes = buildAnalyticsNodes([ev("schema_resolved", { tables: ["orders", "users"] })]);
     expect(nodes).toHaveLength(1);
     expect(nodes[0]).toMatchObject({
       kind: "domain",
@@ -142,9 +147,7 @@ describe("buildAnalyticsNodes", () => {
   });
 
   it("fan_out → running step node with count label", () => {
-    const nodes = buildAnalyticsNodes([
-      ev("step_start", { label: "Running 3 queries" })
-    ]);
+    const nodes = buildAnalyticsNodes([ev("step_start", { label: "Running 3 queries" })]);
     expect(nodes[0]).toMatchObject({ kind: "step", status: "running", label: "Running 3 queries" });
   });
 
@@ -164,7 +167,11 @@ describe("buildAnalyticsNodes", () => {
 
   it("analytics_validation_failed → failed domain node", () => {
     const nodes = buildAnalyticsNodes([
-      ev("analytics_validation_failed", { state: "specifying", reason: "Invalid spec", model_response: "{}" })
+      ev("analytics_validation_failed", {
+        state: "specifying",
+        reason: "Invalid spec",
+        model_response: "{}"
+      })
     ]);
     expect(nodes[0]).toMatchObject({
       kind: "domain",
@@ -249,7 +256,14 @@ describe("groupNodesByStep", () => {
     const nodes = buildAnalyticsNodes([
       ev("step_start", { label: "Running" }),
       ev("query_generated", { sql: "SELECT 1" }),
-      ev("query_executed", { query: "SELECT 1", success: true, columns: [], rows: [], duration_ms: 10, row_count: 0 }),
+      ev("query_executed", {
+        query: "SELECT 1",
+        success: true,
+        columns: [],
+        rows: [],
+        duration_ms: 10,
+        row_count: 0
+      }),
       ev("step_end", { label: "Running", success: true }),
       ev("step_start", { label: "Answering" })
     ]);
@@ -267,10 +281,23 @@ describe("groupNodesByStep", () => {
     const nodes = buildAnalyticsNodes([
       ev("step_start", { label: "Analyzing" }),
       ev("schema_resolved", { tables: [] }),
-      ev("triage_completed", { summary: "s", question_type: "q", confidence: 1, relevant_tables: [], ambiguities: [] }),
+      ev("triage_completed", {
+        summary: "s",
+        question_type: "q",
+        confidence: 1,
+        relevant_tables: [],
+        ambiguities: []
+      }),
       ev("step_end", { label: "Analyzing", success: true }),
       ev("step_start", { label: "Planning" }),
-      ev("spec_resolved", { resolved_metrics: [], resolved_tables: [], join_path: [], result_shape: "T", assumptions: [], solution_source: "Llm" }),
+      ev("spec_resolved", {
+        resolved_metrics: [],
+        resolved_tables: [],
+        join_path: [],
+        result_shape: "T",
+        assumptions: [],
+        solution_source: "Llm"
+      }),
       ev("step_end", { label: "Planning", success: true })
     ]);
     const groups = groupNodesByStep(nodes);
@@ -283,16 +310,44 @@ describe("groupNodesByStep", () => {
 
   it("fan-out: outer step has sub-groups for each sub-spec", () => {
     const nodes = buildAnalyticsNodes([
-      ev("step_start", { label: "Running 3 queries" }),      // depth 0
-        ev("step_start", { label: "Query 1 of 3" }),         // depth 1
-          ev("spec_resolved", { resolved_metrics: [], resolved_tables: [], join_path: [], result_shape: "T", assumptions: [], solution_source: "Llm" }),
-          ev("query_executed", { query: "SELECT 1", success: true, columns: [], rows: [], duration_ms: 10, row_count: 1 }),
-        ev("step_end", { label: "Query 1 of 3", success: true }),
-        ev("step_start", { label: "Query 2 of 3" }),         // depth 1
-          ev("spec_resolved", { resolved_metrics: [], resolved_tables: [], join_path: [], result_shape: "T", assumptions: [], solution_source: "Llm" }),
-          ev("query_executed", { query: "SELECT 2", success: true, columns: [], rows: [], duration_ms: 15, row_count: 2 }),
-        ev("step_end", { label: "Query 2 of 3", success: true }),
-      ev("step_end", { label: "Running 3 queries", success: true }),
+      ev("step_start", { label: "Running 3 queries" }), // depth 0
+      ev("step_start", { label: "Query 1 of 3" }), // depth 1
+      ev("spec_resolved", {
+        resolved_metrics: [],
+        resolved_tables: [],
+        join_path: [],
+        result_shape: "T",
+        assumptions: [],
+        solution_source: "Llm"
+      }),
+      ev("query_executed", {
+        query: "SELECT 1",
+        success: true,
+        columns: [],
+        rows: [],
+        duration_ms: 10,
+        row_count: 1
+      }),
+      ev("step_end", { label: "Query 1 of 3", success: true }),
+      ev("step_start", { label: "Query 2 of 3" }), // depth 1
+      ev("spec_resolved", {
+        resolved_metrics: [],
+        resolved_tables: [],
+        join_path: [],
+        result_shape: "T",
+        assumptions: [],
+        solution_source: "Llm"
+      }),
+      ev("query_executed", {
+        query: "SELECT 2",
+        success: true,
+        columns: [],
+        rows: [],
+        duration_ms: 15,
+        row_count: 2
+      }),
+      ev("step_end", { label: "Query 2 of 3", success: true }),
+      ev("step_end", { label: "Running 3 queries", success: true })
     ]);
     const groups = groupNodesByStep(nodes);
     expect(groups).toHaveLength(1);
@@ -308,13 +363,28 @@ describe("groupNodesByStep", () => {
   it("fan-out: outer step status is independent of sub-spec statuses", () => {
     const nodes = buildAnalyticsNodes([
       ev("step_start", { label: "Running 2 queries" }),
-        ev("step_start", { label: "Query 1 of 2" }),
-          ev("query_executed", { query: "SELECT 1", success: false, error: "bad", columns: [], rows: [], duration_ms: 5, row_count: 0 }),
-        ev("step_end", { label: "Query 1 of 2", success: false }),
-        ev("step_start", { label: "Query 2 of 2" }),
-          ev("query_executed", { query: "SELECT 2", success: true, columns: [], rows: [], duration_ms: 5, row_count: 0 }),
-        ev("step_end", { label: "Query 2 of 2", success: true }),
-      ev("step_end", { label: "Running 2 queries", success: false }),
+      ev("step_start", { label: "Query 1 of 2" }),
+      ev("query_executed", {
+        query: "SELECT 1",
+        success: false,
+        error: "bad",
+        columns: [],
+        rows: [],
+        duration_ms: 5,
+        row_count: 0
+      }),
+      ev("step_end", { label: "Query 1 of 2", success: false }),
+      ev("step_start", { label: "Query 2 of 2" }),
+      ev("query_executed", {
+        query: "SELECT 2",
+        success: true,
+        columns: [],
+        rows: [],
+        duration_ms: 5,
+        row_count: 0
+      }),
+      ev("step_end", { label: "Query 2 of 2", success: true }),
+      ev("step_end", { label: "Running 2 queries", success: false })
     ]);
     const groups = groupNodesByStep(nodes);
     expect(groups[0].step?.status).toBe("failed");
@@ -325,10 +395,17 @@ describe("groupNodesByStep", () => {
   it("fan-out while running: outer step stays running while sub-specs execute", () => {
     const nodes = buildAnalyticsNodes([
       ev("step_start", { label: "Running 3 queries" }),
-        ev("step_start", { label: "Query 1 of 3" }),
-          ev("query_executed", { query: "SELECT 1", success: true, columns: [], rows: [], duration_ms: 5, row_count: 0 }),
-        ev("step_end", { label: "Query 1 of 3", success: true }),
-        ev("step_start", { label: "Query 2 of 3" }), // still running
+      ev("step_start", { label: "Query 1 of 3" }),
+      ev("query_executed", {
+        query: "SELECT 1",
+        success: true,
+        columns: [],
+        rows: [],
+        duration_ms: 5,
+        row_count: 0
+      }),
+      ev("step_end", { label: "Query 1 of 3", success: true }),
+      ev("step_start", { label: "Query 2 of 3" }) // still running
     ]);
     const groups = groupNodesByStep(nodes);
     expect(groups[0].step?.status).toBe("running"); // outer still open
@@ -340,7 +417,7 @@ describe("groupNodesByStep", () => {
     const nodes = buildAnalyticsNodes([
       ev("step_start", { label: "Analyzing" }),
       ev("schema_resolved", { tables: [] }),
-      ev("step_end", { label: "Analyzing", success: true }),
+      ev("step_end", { label: "Analyzing", success: true })
     ]);
     const groups = groupNodesByStep(nodes);
     expect(groups[0].subGroups).toHaveLength(0);

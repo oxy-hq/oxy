@@ -5,7 +5,7 @@ export default defineConfig({
   format: ["cjs", "esm"],
   dts: true,
   css: {
-    splitting: false,
+    splitting: false
   },
   sourcemap: true,
   clean: true,
@@ -14,7 +14,7 @@ export default defineConfig({
   external: ["@duckdb/duckdb-wasm"],
   outDir: "dist",
   banner: {
-    js: "// @oxy/sdk - TypeScript SDK for Oxy data platform",
+    js: "// @oxy/sdk - TypeScript SDK for Oxy data platform"
   },
-  target: false,
+  target: false
 });

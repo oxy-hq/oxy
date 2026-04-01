@@ -5,10 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@lottiefiles/react-lottie-player", () => ({ Player: "div" }));
 
 import type { ArtifactItem } from "@/hooks/analyticsSteps";
-import {
-  parseToolJson,
-  sqlArtifactFromExecutePreview,
-} from "./analyticsArtifactHelpers";
+import { parseToolJson, sqlArtifactFromExecutePreview } from "./analyticsArtifactHelpers";
 
 // ── parseToolJson ───────────────────────────────────────────────────────────
 
@@ -27,7 +24,7 @@ describe("parseToolJson", () => {
 
 function makeArtifact(
   input: Record<string, unknown>,
-  output: Record<string, unknown> | undefined,
+  output: Record<string, unknown> | undefined
 ): ArtifactItem {
   return {
     kind: "artifact",
@@ -35,7 +32,7 @@ function makeArtifact(
     toolName: "execute_preview",
     toolInput: JSON.stringify(JSON.stringify(input)),
     toolOutput: output ? JSON.stringify(JSON.stringify(output)) : undefined,
-    isStreaming: false,
+    isStreaming: false
   };
 }
 
@@ -43,38 +40,50 @@ describe("sqlArtifactFromExecutePreview", () => {
   it("handles rows that are arrays", () => {
     const item = makeArtifact(
       { sql: "SELECT 1" },
-      { columns: ["a", "b"], rows: [["1", "2"], ["3", "4"]] },
+      {
+        columns: ["a", "b"],
+        rows: [
+          ["1", "2"],
+          ["3", "4"]
+        ]
+      }
     );
     const result = sqlArtifactFromExecutePreview(item);
     expect(result?.content.value.result).toEqual([
       ["a", "b"],
       ["1", "2"],
-      ["3", "4"],
+      ["3", "4"]
     ]);
   });
 
   it("handles rows that are objects (not arrays)", () => {
     const item = makeArtifact(
       { sql: "SELECT 1" },
-      { columns: ["a", "b"], rows: [{ a: "1", b: "2" }, { a: "3", b: "4" }] },
+      {
+        columns: ["a", "b"],
+        rows: [
+          { a: "1", b: "2" },
+          { a: "3", b: "4" }
+        ]
+      }
     );
     const result = sqlArtifactFromExecutePreview(item);
     expect(result?.content.value.result).toEqual([
       ["a", "b"],
       ["1", "2"],
-      ["3", "4"],
+      ["3", "4"]
     ]);
   });
 
   it("handles rows with null/undefined values", () => {
     const item = makeArtifact(
       { sql: "SELECT 1" },
-      { columns: ["a", "b"], rows: [[null, undefined]] },
+      { columns: ["a", "b"], rows: [[null, undefined]] }
     );
     const result = sqlArtifactFromExecutePreview(item);
     expect(result?.content.value.result).toEqual([
       ["a", "b"],
-      ["", ""],
+      ["", ""]
     ]);
   });
 

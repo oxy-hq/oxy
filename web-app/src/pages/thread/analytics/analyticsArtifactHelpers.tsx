@@ -33,10 +33,10 @@ export function toDisplayProps(block: AnalyticsDisplayBlock): {
 } {
   const { config, columns, rows } = block;
   const json = JSON.stringify(
-    rows.map((row) => Object.fromEntries(columns.map((col, i) => [col, row[i]]))),
+    rows.map((row) => Object.fromEntries(columns.map((col, i) => [col, row[i]])))
   );
   const data: DataContainer = {
-    [AGENTIC_DATA_KEY]: { file_path: AGENTIC_DATA_KEY, json },
+    [AGENTIC_DATA_KEY]: { file_path: AGENTIC_DATA_KEY, json }
   };
 
   const ct = config.chart_type;
@@ -50,7 +50,7 @@ export function toDisplayProps(block: AnalyticsDisplayBlock): {
       series: config.series,
       title: config.title,
       xAxisTitle: config.x_axis_label,
-      yAxisTitle: config.y_axis_label,
+      yAxisTitle: config.y_axis_label
     };
   } else if (ct === "bar_chart") {
     display = {
@@ -59,7 +59,7 @@ export function toDisplayProps(block: AnalyticsDisplayBlock): {
       y: config.y ?? columns[1] ?? "",
       data: AGENTIC_DATA_KEY,
       series: config.series,
-      title: config.title,
+      title: config.title
     };
   } else if (ct === "pie_chart") {
     display = {
@@ -67,7 +67,7 @@ export function toDisplayProps(block: AnalyticsDisplayBlock): {
       name: config.name ?? columns[0] ?? "",
       value: config.value ?? columns[1] ?? "",
       data: AGENTIC_DATA_KEY,
-      title: config.title,
+      title: config.title
     };
   } else {
     display = { type: "table", data: AGENTIC_DATA_KEY, title: config.title };
@@ -77,12 +77,10 @@ export function toDisplayProps(block: AnalyticsDisplayBlock): {
 }
 
 /** Stable wrapper so parent re-renders don't recreate display/data objects. */
-export const AnalyticsDisplayBlockItem = memo(
-  ({ block }: { block: AnalyticsDisplayBlock }) => {
-    const { display, data } = toDisplayProps(block);
-    return <DisplayBlock display={display} data={data} />;
-  },
-);
+export const AnalyticsDisplayBlockItem = memo(({ block }: { block: AnalyticsDisplayBlock }) => {
+  const { display, data } = toDisplayProps(block);
+  return <DisplayBlock display={display} data={data} />;
+});
 
 // ── SQL artifact helpers ──────────────────────────────────────────────────────
 
@@ -97,9 +95,9 @@ export function sqlArtifactFromSqlItem(item: SqlItem): SqlArtifact {
         database: item.database ?? "",
         sql_query: item.sql,
         result: item.result,
-        is_result_truncated: false,
-      },
-    },
+        is_result_truncated: false
+      }
+    }
   };
 }
 
@@ -120,8 +118,8 @@ export function sqlArtifactFromPreviewData(item: ArtifactItem): SqlArtifact | nu
       ...(rows ?? []).map((row) =>
         Array.isArray(row)
           ? row.map((v) => String(v ?? ""))
-          : cols.map((col) => String((row as Record<string, unknown>)?.[col] ?? "")),
-      ),
+          : cols.map((col) => String((row as Record<string, unknown>)?.[col] ?? ""))
+      )
     ];
   }
 
@@ -131,8 +129,8 @@ export function sqlArtifactFromPreviewData(item: ArtifactItem): SqlArtifact | nu
     kind: "execute_sql",
     content: {
       type: "execute_sql",
-      value: { database: "", sql_query: sql, result, is_result_truncated: false },
-    },
+      value: { database: "", sql_query: sql, result, is_result_truncated: false }
+    }
   };
 }
 
@@ -151,8 +149,8 @@ export function sqlArtifactFromExecutePreview(item: ArtifactItem): SqlArtifact |
       ...(rows ?? []).map((row) =>
         Array.isArray(row)
           ? row.map((v) => String(v ?? ""))
-          : cols.map((col) => String((row as Record<string, unknown>)?.[col] ?? "")),
-      ),
+          : cols.map((col) => String((row as Record<string, unknown>)?.[col] ?? ""))
+      )
     ];
   }
 
@@ -162,7 +160,7 @@ export function sqlArtifactFromExecutePreview(item: ArtifactItem): SqlArtifact |
     kind: "execute_sql",
     content: {
       type: "execute_sql",
-      value: { database: "", sql_query: sql, result, is_result_truncated: false },
-    },
+      value: { database: "", sql_query: sql, result, is_result_truncated: false }
+    }
   };
 }

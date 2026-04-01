@@ -21,7 +21,7 @@ const RUNNING_MESSAGES = [
   "Fetching data…",
   "Analyzing results…",
   "Building visualizations…",
-  "Almost there…",
+  "Almost there…"
 ];
 
 function RotatingStatus({ active }: { active: boolean }) {

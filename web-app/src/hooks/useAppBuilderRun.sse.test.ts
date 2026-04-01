@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { renderHook, act, cleanup } from "@testing-library/react";
+import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppBuilderRun } from "./useAppBuilderRun";
 
@@ -28,7 +28,10 @@ vi.mock("@/services/api/appBuilder", () => ({
     createRun: vi.fn().mockResolvedValue({ run_id: "run-1" }),
     cancelRun: vi.fn().mockResolvedValue(undefined),
     submitAnswer: vi.fn().mockResolvedValue(undefined),
-    saveRun: vi.fn().mockResolvedValue({ app_path64: "Z2VuZXJhdGVkL3J1bi0xLmFwcC55bWw=", app_path: "generated/run-1.app.yml" })
+    saveRun: vi.fn().mockResolvedValue({
+      app_path64: "Z2VuZXJhdGVkL3J1bi0xLmFwcC55bWw=",
+      app_path: "generated/run-1.app.yml"
+    })
   }
 }));
 
@@ -209,12 +212,12 @@ describe("useAppBuilderRun — onerror behavior", () => {
     act(() => {
       result.current.reconnect("run-1");
     });
-    expect(capturedOptions.signal!.aborted).toBe(false);
+    expect(capturedOptions.signal?.aborted).toBe(false);
 
     act(() => {
       result.current.reset();
     });
-    expect(capturedOptions.signal!.aborted).toBe(true);
+    expect(capturedOptions.signal?.aborted).toBe(true);
     expect(result.current.state.tag).toBe("idle");
 
     const abortErr = new DOMException("The user aborted a request.", "AbortError");
@@ -260,9 +263,9 @@ describe("useAppBuilderRun — SSE cleanup on unmount", () => {
     act(() => {
       result.current.reconnect("run-1");
     });
-    expect(capturedOptions.signal!.aborted).toBe(false);
+    expect(capturedOptions.signal?.aborted).toBe(false);
     unmount();
-    expect(capturedOptions.signal!.aborted).toBe(true);
+    expect(capturedOptions.signal?.aborted).toBe(true);
   });
 });
 

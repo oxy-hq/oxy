@@ -1,7 +1,7 @@
 import { OxyClient } from "./client";
-import { OxyConfig, createConfigAsync } from "./config";
-import { ParquetReader, QueryResult } from "./parquet";
-import { DataContainer } from "./types";
+import { createConfigAsync, type OxyConfig } from "./config";
+import { ParquetReader, type QueryResult } from "./parquet";
+import type { DataContainer } from "./types";
 
 /**
  * OxySDK provides a unified interface for fetching data from Oxy and querying it with SQL.
@@ -90,9 +90,7 @@ export class OxySDK {
    * const result = await sdk.query('SELECT * FROM sales');
    * ```
    */
-  async loadFiles(
-    files: Array<{ filePath: string; tableName: string }>,
-  ): Promise<void> {
+  async loadFiles(files: Array<{ filePath: string; tableName: string }>): Promise<void> {
     for (const file of files) {
       await this.loadFile(file.filePath, file.tableName);
     }
@@ -126,11 +124,9 @@ export class OxySDK {
     }
 
     // Load each file in the data container
-    const loadPromises = Object.entries(appDataResponse.data).map(
-      async ([tableName, fileRef]) => {
-        await this.loadFile(fileRef.file_path, tableName);
-      },
-    );
+    const loadPromises = Object.entries(appDataResponse.data).map(async ([tableName, fileRef]) => {
+      await this.loadFile(fileRef.file_path, tableName);
+    });
 
     await Promise.all(loadPromises);
 

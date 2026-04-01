@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { renderHook, act, cleanup } from "@testing-library/react";
+import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAnalyticsRun } from "./useAnalyticsRun";
 
@@ -53,14 +53,14 @@ describe("useAnalyticsRun — onerror with intentional abort", () => {
 
     expect(result.current.state.tag).toBe("running");
     expect(capturedOptions.signal).toBeDefined();
-    expect(capturedOptions.signal!.aborted).toBe(false);
+    expect(capturedOptions.signal?.aborted).toBe(false);
 
     // Abort intentionally (simulates thread switch or stop)
     act(() => {
       result.current.reset();
     });
 
-    expect(capturedOptions.signal!.aborted).toBe(true);
+    expect(capturedOptions.signal?.aborted).toBe(true);
     expect(result.current.state.tag).toBe("idle");
 
     // Simulate fetchEventSource calling onerror after the abort
@@ -118,10 +118,10 @@ describe("useAnalyticsRun — SSE cleanup on unmount", () => {
     });
 
     expect(capturedOptions.signal).toBeDefined();
-    expect(capturedOptions.signal!.aborted).toBe(false);
+    expect(capturedOptions.signal?.aborted).toBe(false);
 
     unmount();
 
-    expect(capturedOptions.signal!.aborted).toBe(true);
+    expect(capturedOptions.signal?.aborted).toBe(true);
   });
 });

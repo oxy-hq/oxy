@@ -1,12 +1,6 @@
-import React, {
-  createContext,
-  useContext,
-  useEffect,
-  useState,
-  ReactNode,
-} from "react";
+import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
+import type { OxyConfig } from "./config";
 import { OxySDK } from "./sdk";
-import { OxyConfig } from "./config";
 
 /**
  * Context value provided to child components
@@ -106,7 +100,7 @@ export function OxyProvider({
   appPath,
   files,
   onReady,
-  onError,
+  onError
 }: OxyProviderProps) {
   const [sdk, setSdk] = useState<OxySDK | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -129,19 +123,17 @@ export function OxyProvider({
           }
 
           if (files) {
-            const fileEntries = Object.entries(files).map(
-              ([tableName, filePath]) => ({
-                tableName,
-                filePath,
-              }),
-            );
+            const fileEntries = Object.entries(files).map(([tableName, filePath]) => ({
+              tableName,
+              filePath
+            }));
             await sdkInstance.loadFiles(fileEntries);
           }
         } else {
           // Sync initialization with provided config
           if (!config) {
             throw new Error(
-              "Config is required when useAsync is false. Either provide config or set useAsync=true.",
+              "Config is required when useAsync is false. Either provide config or set useAsync=true."
             );
           }
           sdkInstance = new OxySDK(config as OxyConfig);
@@ -153,8 +145,7 @@ export function OxyProvider({
           onReady?.(sdkInstance);
         }
       } catch (err) {
-        const error =
-          err instanceof Error ? err : new Error("Failed to initialize SDK");
+        const error = err instanceof Error ? err : new Error("Failed to initialize SDK");
 
         if (mounted) {
           setError(error);
@@ -173,13 +164,9 @@ export function OxyProvider({
         sdkInstance.close().catch(console.error);
       }
     };
-  }, [config, useAsync, onReady, onError]);
+  }, [config, useAsync, onReady, onError, appPath, files]);
 
-  return (
-    <OxyContext.Provider value={{ sdk, isLoading, error }}>
-      {children}
-    </OxyContext.Provider>
-  );
+  return <OxyContext.Provider value={{ sdk, isLoading, error }}>{children}</OxyContext.Provider>;
 }
 
 /**

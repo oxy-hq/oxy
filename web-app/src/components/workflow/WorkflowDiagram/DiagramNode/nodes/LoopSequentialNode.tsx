@@ -38,7 +38,7 @@ export function LoopSequentialNode({ parentId, task, taskRun, loopRuns, expanded
   const onExpandClick = () => {
     setNodeExpanded(task.id, !expanded);
   };
-  if (!node || !node.height) return null;
+  if (!node?.height) return null;
   const usedHeight =
     headerHeight + distanceBetweenHeaderAndContent + paddingHeight + nodeBorderHeight;
   const childSpace = node.height - usedHeight;

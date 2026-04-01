@@ -99,7 +99,7 @@ function buildSemanticQueryTask(
   sqBlock: Block & { type: "semantic_query" }
 ): TaskConfig {
   const parsed = parseSemanticQueryJson(sqBlock.semantic_query);
-  if (!parsed || !parsed.topic) {
+  if (!parsed?.topic) {
     return {
       name,
       type: TaskType.SEMANTIC_QUERY,

@@ -1,15 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  getXAxisData,
+  getPieChartData,
   getSeriesData,
   getSeriesValues,
   getSimpleAggregatedData,
-  getPieChartData
+  getXAxisData
 } from "./chartQueries";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-function makeArrowResult(columnName: string, values: unknown[]) {
+function _makeArrowResult(columnName: string, values: unknown[]) {
   return {
     getChildAt: () => ({ toArray: () => values }),
     schema: { fields: [{ name: columnName }] }
@@ -61,7 +61,14 @@ describe("chartQueries – column names with spaces are quoted", () => {
     const yWithSpace = "Total Calories (kcal)";
     const seriesWithSpace = "Meal Type";
     const { connection, prepare } = makeConnection();
-    await getSeriesValues(connection as never, fileName, xWithSpace, yWithSpace, seriesWithSpace, "Lunch");
+    await getSeriesValues(
+      connection as never,
+      fileName,
+      xWithSpace,
+      yWithSpace,
+      seriesWithSpace,
+      "Lunch"
+    );
     const sql: string = prepare.mock.calls[0][0];
     expect(sql).toContain(`"${xWithSpace}"`);
     expect(sql).toContain(`"${yWithSpace}"`);

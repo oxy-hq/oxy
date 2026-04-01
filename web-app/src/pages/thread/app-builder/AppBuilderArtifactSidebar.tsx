@@ -17,12 +17,12 @@ import {
   GetJoinPathView,
   RawArtifactView,
   ResolveSchemaView,
-  SearchCatalogView,
+  SearchCatalogView
 } from "../analytics/AnalyticsArtifactViews";
 import {
   sqlArtifactFromExecutePreview,
   sqlArtifactFromPreviewData,
-  sqlArtifactFromSqlItem,
+  sqlArtifactFromSqlItem
 } from "../analytics/analyticsArtifactHelpers";
 
 export type AppPreviewItem = { kind: "app_preview"; appPath64: string };
@@ -42,47 +42,44 @@ const AppPreviewPanel = ({ appPath64, onClose }: { appPath64: string; onClose: (
   const { data: yamlContent, isLoading: isLoadingYaml } = useQuery({
     queryKey: ["app-yaml", project.id, branchName, appPath64],
     queryFn: () => FileService.getFile(project.id, appPath64, branchName),
-    enabled: activeTab === "code",
+    enabled: activeTab === "code"
   });
 
   return (
     <Panel>
       <PanelHeader
         title={
-          <Tabs
-            value={activeTab}
-            onValueChange={(v) => setActiveTab(v as "preview" | "code")}
-          >
-            <TabsList variant="line" className="h-auto">
-              <TabsTrigger value="preview">Preview</TabsTrigger>
-              <TabsTrigger value="code">Code</TabsTrigger>
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "preview" | "code")}>
+            <TabsList variant='line' className='h-auto'>
+              <TabsTrigger value='preview'>Preview</TabsTrigger>
+              <TabsTrigger value='code'>Code</TabsTrigger>
             </TabsList>
           </Tabs>
         }
         onClose={onClose}
       />
-      <PanelContent scrollable={false} padding={false} className="flex-1 overflow-hidden">
+      <PanelContent scrollable={false} padding={false} className='flex-1 overflow-hidden'>
         {activeTab === "preview" ? (
           <AppPreview appPath64={appPath64} runButton={false} />
         ) : (
-          <div className="h-full">
+          <div className='h-full'>
             {isLoadingYaml ? (
-              <div className="flex h-full items-center justify-center">
-                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              <div className='flex h-full items-center justify-center'>
+                <Loader2 className='h-4 w-4 animate-spin text-muted-foreground' />
               </div>
             ) : (
               <Editor
-                height="100%"
-                width="100%"
-                theme="vs-dark"
-                language="yaml"
+                height='100%'
+                width='100%'
+                theme='vs-dark'
+                language='yaml'
                 value={yamlContent ?? ""}
                 options={{
                   readOnly: true,
                   scrollBeyondLastLine: false,
                   automaticLayout: true,
                   minimap: { enabled: false },
-                  fontSize: 13,
+                  fontSize: 13
                 }}
               />
             )}
@@ -93,10 +90,7 @@ const AppPreviewPanel = ({ appPath64, onClose }: { appPath64: string; onClose: (
   );
 };
 
-const AppBuilderArtifactSidebar = ({
-  item,
-  onClose,
-}: Props) => {
+const AppBuilderArtifactSidebar = ({ item, onClose }: Props) => {
   // ── kind === "app_preview" ────────────────────────────────────────────────
   if (item.kind === "app_preview") {
     return <AppPreviewPanel appPath64={item.appPath64} onClose={onClose} />;
@@ -107,7 +101,7 @@ const AppBuilderArtifactSidebar = ({
     return (
       <Panel>
         <PanelHeader
-          title="SQL Query"
+          title='SQL Query'
           subtitle={
             item.rowCount !== undefined
               ? `${item.rowCount} rows · ${item.durationMs ?? 0}ms`
@@ -115,8 +109,8 @@ const AppBuilderArtifactSidebar = ({
           }
           onClose={onClose}
         />
-        <PanelContent scrollable={false} padding={false} className="flex min-h-0 flex-col">
-          <div className="min-h-0 flex-1">
+        <PanelContent scrollable={false} padding={false} className='flex min-h-0 flex-col'>
+          <div className='min-h-0 flex-1'>
             <SqlArtifactPanel artifact={sqlArtifactFromSqlItem(item)} />
           </div>
         </PanelContent>
@@ -130,12 +124,16 @@ const AppBuilderArtifactSidebar = ({
     return (
       <Panel>
         <PanelHeader
-          title="Preview Query"
+          title='Preview Query'
           subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
           onClose={onClose}
         />
-        <PanelContent scrollable={false} padding={false} className="min-h-0">
-          {sqlArtifact ? <SqlArtifactPanel artifact={sqlArtifact} /> : <RawArtifactView item={item} />}
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          {sqlArtifact ? (
+            <SqlArtifactPanel artifact={sqlArtifact} />
+          ) : (
+            <RawArtifactView item={item} />
+          )}
         </PanelContent>
       </Panel>
     );
@@ -146,11 +144,11 @@ const AppBuilderArtifactSidebar = ({
     return (
       <Panel>
         <PanelHeader
-          title="Catalog Search"
+          title='Catalog Search'
           subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
           onClose={onClose}
         />
-        <PanelContent scrollable={false} padding={false} className="min-h-0">
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
           <SearchCatalogView item={item} />
         </PanelContent>
       </Panel>
@@ -163,12 +161,16 @@ const AppBuilderArtifactSidebar = ({
     return (
       <Panel>
         <PanelHeader
-          title="Preview Table"
+          title='Preview Table'
           subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
           onClose={onClose}
         />
-        <PanelContent scrollable={false} padding={false} className="min-h-0">
-          {sqlArtifact ? <SqlArtifactPanel artifact={sqlArtifact} /> : <RawArtifactView item={item} />}
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          {sqlArtifact ? (
+            <SqlArtifactPanel artifact={sqlArtifact} />
+          ) : (
+            <RawArtifactView item={item} />
+          )}
         </PanelContent>
       </Panel>
     );
@@ -179,11 +181,11 @@ const AppBuilderArtifactSidebar = ({
     return (
       <Panel>
         <PanelHeader
-          title="Column Values"
+          title='Column Values'
           subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
           onClose={onClose}
         />
-        <PanelContent scrollable={false} padding={false} className="min-h-0">
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
           <ColumnValuesView item={item} />
         </PanelContent>
       </Panel>
@@ -195,11 +197,11 @@ const AppBuilderArtifactSidebar = ({
     return (
       <Panel>
         <PanelHeader
-          title="Column Range"
+          title='Column Range'
           subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
           onClose={onClose}
         />
-        <PanelContent scrollable={false} padding={false} className="min-h-0">
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
           <ColumnRangeView item={item} />
         </PanelContent>
       </Panel>
@@ -211,11 +213,11 @@ const AppBuilderArtifactSidebar = ({
     return (
       <Panel>
         <PanelHeader
-          title="Join Path"
+          title='Join Path'
           subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
           onClose={onClose}
         />
-        <PanelContent scrollable={false} padding={false} className="min-h-0">
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
           <GetJoinPathView item={item} />
         </PanelContent>
       </Panel>
@@ -227,11 +229,11 @@ const AppBuilderArtifactSidebar = ({
     return (
       <Panel>
         <PanelHeader
-          title="Count Rows"
+          title='Count Rows'
           subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
           onClose={onClose}
         />
-        <PanelContent scrollable={false} padding={false} className="min-h-0">
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
           <CountRowsView item={item} />
         </PanelContent>
       </Panel>
@@ -243,11 +245,11 @@ const AppBuilderArtifactSidebar = ({
     return (
       <Panel>
         <PanelHeader
-          title="Schema"
+          title='Schema'
           subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
           onClose={onClose}
         />
-        <PanelContent scrollable={false} padding={false} className="min-h-0">
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
           <ResolveSchemaView item={item} />
         </PanelContent>
       </Panel>
@@ -262,7 +264,7 @@ const AppBuilderArtifactSidebar = ({
         subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
         onClose={onClose}
       />
-      <PanelContent scrollable={false} padding={false} className="min-h-0">
+      <PanelContent scrollable={false} padding={false} className='min-h-0'>
         <RawArtifactView item={item} />
       </PanelContent>
     </Panel>

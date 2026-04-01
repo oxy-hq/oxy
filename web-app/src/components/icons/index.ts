@@ -12,16 +12,16 @@ import RedshiftIcon from "./RedshiftIcon";
 import SnowflakeIcon from "./SnowflakeIcon";
 
 export {
-  OpenAiIcon,
-  GoogleIcon,
+  AgentIcon,
   AnthropicIcon,
-  OllamaIcon,
   BigQueryIcon,
-  SnowflakeIcon,
+  ClickHouseIcon,
+  DuckDBIcon,
+  GoogleIcon,
+  MysqlIcon,
+  OllamaIcon,
+  OpenAiIcon,
   PostgresIcon,
   RedshiftIcon,
-  MysqlIcon,
-  DuckDBIcon,
-  ClickHouseIcon,
-  AgentIcon
+  SnowflakeIcon
 };

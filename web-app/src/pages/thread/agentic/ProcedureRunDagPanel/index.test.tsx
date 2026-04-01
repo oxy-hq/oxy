@@ -55,7 +55,7 @@ describe("ProcedureRunDagPanel — rendering", () => {
   it("renders all step names", () => {
     render(
       <ProcedureRunDagPanel
-        procedureName="my_procedure"
+        procedureName='my_procedure'
         steps={STEPS}
         events={[]}
         isRunning={false}
@@ -70,7 +70,7 @@ describe("ProcedureRunDagPanel — rendering", () => {
   it("renders procedure name in the header", () => {
     render(
       <ProcedureRunDagPanel
-        procedureName="my_procedure"
+        procedureName='my_procedure'
         steps={STEPS}
         events={[]}
         isRunning={false}
@@ -83,7 +83,7 @@ describe("ProcedureRunDagPanel — rendering", () => {
   it("falls back to 'Procedure Run' when procedure name is empty", () => {
     render(
       <ProcedureRunDagPanel
-        procedureName=""
+        procedureName=''
         steps={STEPS}
         events={[]}
         isRunning={false}
@@ -96,7 +96,7 @@ describe("ProcedureRunDagPanel — rendering", () => {
   it("renders nothing beyond the header when steps is empty", () => {
     const { container } = render(
       <ProcedureRunDagPanel
-        procedureName="p"
+        procedureName='p'
         steps={[]}
         events={[]}
         isRunning={false}
@@ -111,7 +111,7 @@ describe("ProcedureRunDagPanel — rendering", () => {
   it("renders one node per step", () => {
     render(
       <ProcedureRunDagPanel
-        procedureName="p"
+        procedureName='p'
         steps={[
           { name: "a", task_type: "execute_sql" },
           { name: "b", task_type: "execute_sql" },
@@ -134,7 +134,7 @@ describe("ProcedureRunDagPanel — header subtitle", () => {
   it("shows 'Running…' subtitle when isRunning is true and no events", () => {
     render(
       <ProcedureRunDagPanel
-        procedureName="p"
+        procedureName='p'
         steps={STEPS}
         events={[]}
         isRunning={true}
@@ -148,7 +148,7 @@ describe("ProcedureRunDagPanel — header subtitle", () => {
   it("shows 'Completed' subtitle when procedure_completed success=true", () => {
     render(
       <ProcedureRunDagPanel
-        procedureName="p"
+        procedureName='p'
         steps={STEPS}
         events={[procedureStarted("p", STEPS), procedureCompleted("p", true)]}
         isRunning={false}
@@ -162,7 +162,7 @@ describe("ProcedureRunDagPanel — header subtitle", () => {
   it("shows 'Failed' subtitle when procedure_completed success=false", () => {
     render(
       <ProcedureRunDagPanel
-        procedureName="p"
+        procedureName='p'
         steps={STEPS}
         events={[procedureStarted("p", STEPS), procedureCompleted("p", false, "timeout")]}
         isRunning={false}
@@ -176,7 +176,7 @@ describe("ProcedureRunDagPanel — header subtitle", () => {
   it("renders no subtitle when not running and no procedure_completed event", () => {
     const { container } = render(
       <ProcedureRunDagPanel
-        procedureName="p"
+        procedureName='p'
         steps={STEPS}
         events={[]}
         isRunning={false}
@@ -191,7 +191,7 @@ describe("ProcedureRunDagPanel — header subtitle", () => {
     // Edge case: both isRunning=true and procedure_completed in events
     render(
       <ProcedureRunDagPanel
-        procedureName="p"
+        procedureName='p'
         steps={STEPS}
         events={[procedureCompleted("p", true)]}
         isRunning={true}
@@ -210,8 +210,11 @@ describe("ProcedureRunDagPanel — step statuses", () => {
   it("all steps are idle (no status label) when no step events", () => {
     const { container } = render(
       <ProcedureRunDagPanel
-        procedureName="p"
-        steps={[{ name: "step_a", task_type: "execute_sql" }, { name: "step_b", task_type: "execute_sql" }]}
+        procedureName='p'
+        steps={[
+          { name: "step_a", task_type: "execute_sql" },
+          { name: "step_b", task_type: "execute_sql" }
+        ]}
         events={[]}
         isRunning={false}
         onClose={noop}
@@ -226,8 +229,11 @@ describe("ProcedureRunDagPanel — step statuses", () => {
   it("procedure_step_started marks the target step as running", () => {
     const { container } = render(
       <ProcedureRunDagPanel
-        procedureName="p"
-        steps={[{ name: "step_a", task_type: "execute_sql" }, { name: "step_b", task_type: "execute_sql" }]}
+        procedureName='p'
+        steps={[
+          { name: "step_a", task_type: "execute_sql" },
+          { name: "step_b", task_type: "execute_sql" }
+        ]}
         events={[stepStarted("step_a")]}
         isRunning={false}
         onClose={noop}
@@ -242,7 +248,7 @@ describe("ProcedureRunDagPanel — step statuses", () => {
   it("procedure_step_completed success=true marks step as done", () => {
     const { container } = render(
       <ProcedureRunDagPanel
-        procedureName="p"
+        procedureName='p'
         steps={[{ name: "step_a", task_type: "execute_sql" }]}
         events={[stepStarted("step_a"), stepCompleted("step_a", true)]}
         isRunning={false}
@@ -257,7 +263,7 @@ describe("ProcedureRunDagPanel — step statuses", () => {
   it("procedure_step_completed success=false marks step as failed", () => {
     const { container } = render(
       <ProcedureRunDagPanel
-        procedureName="p"
+        procedureName='p'
         steps={[{ name: "step_a", task_type: "execute_sql" }]}
         events={[stepStarted("step_a"), stepCompleted("step_a", false, "connection refused")]}
         isRunning={false}
@@ -273,17 +279,13 @@ describe("ProcedureRunDagPanel — step statuses", () => {
   it("tracks multiple steps independently", () => {
     const { container } = render(
       <ProcedureRunDagPanel
-        procedureName="p"
+        procedureName='p'
         steps={[
           { name: "step_a", task_type: "execute_sql" },
           { name: "step_b", task_type: "execute_sql" },
           { name: "step_c", task_type: "execute_sql" }
         ]}
-        events={[
-          stepStarted("step_a"),
-          stepCompleted("step_a", true),
-          stepStarted("step_b")
-        ]}
+        events={[stepStarted("step_a"), stepCompleted("step_a", true), stepStarted("step_b")]}
         isRunning={false}
         onClose={noop}
       />
@@ -299,7 +301,7 @@ describe("ProcedureRunDagPanel — step statuses", () => {
     // An unknown step name in events should not crash or affect the known steps.
     const { container } = render(
       <ProcedureRunDagPanel
-        procedureName="p"
+        procedureName='p'
         steps={[{ name: "step_a", task_type: "execute_sql" }]}
         events={[stepStarted("unknown_step")]}
         isRunning={false}
@@ -316,7 +318,7 @@ describe("ProcedureRunDagPanel — step statuses", () => {
     // procedure_step_started fired twice for the same step, then completed
     const { container } = render(
       <ProcedureRunDagPanel
-        procedureName="p"
+        procedureName='p'
         steps={[{ name: "step_a", task_type: "execute_sql" }]}
         events={[
           stepStarted("step_a"),
@@ -375,7 +377,7 @@ describe("ProcedureRunDagPanel — incremental rerender", () => {
 
     const { rerender } = render(
       <ProcedureRunDagPanel
-        procedureName="p"
+        procedureName='p'
         steps={[{ name: "step_a", task_type: "execute_sql" }]}
         events={allEvents.slice(0, 1)}
         isRunning={true}
@@ -391,7 +393,7 @@ describe("ProcedureRunDagPanel — incremental rerender", () => {
     // Procedure completed
     rerender(
       <ProcedureRunDagPanel
-        procedureName="p"
+        procedureName='p'
         steps={[{ name: "step_a", task_type: "execute_sql" }]}
         events={allEvents}
         isRunning={false}
@@ -411,7 +413,7 @@ describe("ProcedureRunDagPanel — incremental rerender", () => {
 
     const { rerender } = render(
       <ProcedureRunDagPanel
-        procedureName="p"
+        procedureName='p'
         steps={[{ name: "step_a", task_type: "execute_sql" }]}
         events={allEvents.slice(0, 1)}
         isRunning={true}
@@ -424,7 +426,7 @@ describe("ProcedureRunDagPanel — incremental rerender", () => {
 
     rerender(
       <ProcedureRunDagPanel
-        procedureName="p"
+        procedureName='p'
         steps={[{ name: "step_a", task_type: "execute_sql" }]}
         events={allEvents}
         isRunning={false}
@@ -438,7 +440,7 @@ describe("ProcedureRunDagPanel — incremental rerender", () => {
     // If procedure_completed fires more than once, the last one wins
     const { container } = render(
       <ProcedureRunDagPanel
-        procedureName="p"
+        procedureName='p'
         steps={[{ name: "step_a", task_type: "execute_sql" }]}
         events={[
           procedureCompleted("p", false, "first failure"),
@@ -461,7 +463,7 @@ describe("ProcedureRunDagPanel — close button", () => {
     const onClose = vi.fn();
     render(
       <ProcedureRunDagPanel
-        procedureName="p"
+        procedureName='p'
         steps={STEPS}
         events={[]}
         isRunning={false}
@@ -476,7 +478,7 @@ describe("ProcedureRunDagPanel — close button", () => {
     const onClose = vi.fn();
     render(
       <ProcedureRunDagPanel
-        procedureName="p"
+        procedureName='p'
         steps={STEPS}
         events={[]}
         isRunning={false}

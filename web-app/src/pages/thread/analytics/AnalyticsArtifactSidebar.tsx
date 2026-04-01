@@ -13,12 +13,9 @@ import {
   ResolveSchemaView,
   SampleColumnView,
   SearchCatalogView,
-  SearchProceduresView,
+  SearchProceduresView
 } from "./AnalyticsArtifactViews";
-import {
-  sqlArtifactFromExecutePreview,
-  sqlArtifactFromSqlItem,
-} from "./analyticsArtifactHelpers";
+import { sqlArtifactFromExecutePreview, sqlArtifactFromSqlItem } from "./analyticsArtifactHelpers";
 
 interface Props {
   item: ArtifactItem | SqlItem | ProcedureItem;
@@ -33,7 +30,7 @@ const AnalyticsArtifactSidebar = ({
   displayBlocks = [],
   runEvents = [],
   isRunning = false,
-  onClose,
+  onClose
 }: Props) => {
   // ── kind === "procedure" → full DAG panel ─────────────────────────────────
   if (item.kind === "procedure") {
@@ -53,7 +50,7 @@ const AnalyticsArtifactSidebar = ({
     return (
       <Panel>
         <PanelHeader
-          title="SQL Query"
+          title='SQL Query'
           subtitle={
             item.rowCount !== undefined
               ? `${item.rowCount} rows · ${item.durationMs ?? 0}ms`
@@ -61,8 +58,8 @@ const AnalyticsArtifactSidebar = ({
           }
           onClose={onClose}
         />
-        <PanelContent scrollable={false} padding={false} className="flex min-h-0 flex-col">
-          <div className="min-h-0 flex-1">
+        <PanelContent scrollable={false} padding={false} className='flex min-h-0 flex-col'>
+          <div className='min-h-0 flex-1'>
             <SqlArtifactPanel artifact={sqlArtifactFromSqlItem(item)} />
           </div>
         </PanelContent>
@@ -76,12 +73,16 @@ const AnalyticsArtifactSidebar = ({
     return (
       <Panel>
         <PanelHeader
-          title="Preview Query"
+          title='Preview Query'
           subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
           onClose={onClose}
         />
-        <PanelContent scrollable={false} padding={false} className="min-h-0">
-          {sqlArtifact ? <SqlArtifactPanel artifact={sqlArtifact} /> : <RawArtifactView item={item} />}
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          {sqlArtifact ? (
+            <SqlArtifactPanel artifact={sqlArtifact} />
+          ) : (
+            <RawArtifactView item={item} />
+          )}
         </PanelContent>
       </Panel>
     );
@@ -92,12 +93,12 @@ const AnalyticsArtifactSidebar = ({
     return (
       <Panel>
         <PanelHeader
-          title="Render Chart"
+          title='Render Chart'
           subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
           onClose={onClose}
         />
-        <PanelContent scrollable={false} padding={false} className="flex min-h-0 flex-col">
-          <div className="min-h-0 flex-1 overflow-auto">
+        <PanelContent scrollable={false} padding={false} className='flex min-h-0 flex-col'>
+          <div className='min-h-0 flex-1 overflow-auto'>
             <RenderChartView item={item} />
           </div>
           <ChartSection displayBlocks={displayBlocks} />
@@ -111,11 +112,11 @@ const AnalyticsArtifactSidebar = ({
     return (
       <Panel>
         <PanelHeader
-          title="Catalog Search"
+          title='Catalog Search'
           subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
           onClose={onClose}
         />
-        <PanelContent scrollable={false} padding={false} className="min-h-0">
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
           <SearchCatalogView item={item} />
         </PanelContent>
       </Panel>
@@ -127,11 +128,11 @@ const AnalyticsArtifactSidebar = ({
     return (
       <Panel>
         <PanelHeader
-          title="Procedure Search"
+          title='Procedure Search'
           subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
           onClose={onClose}
         />
-        <PanelContent scrollable={false} padding={false} className="min-h-0">
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
           <SearchProceduresView item={item} />
         </PanelContent>
       </Panel>
@@ -143,11 +144,11 @@ const AnalyticsArtifactSidebar = ({
     return (
       <Panel>
         <PanelHeader
-          title="Metric Definition"
+          title='Metric Definition'
           subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
           onClose={onClose}
         />
-        <PanelContent scrollable={false} padding={false} className="min-h-0">
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
           <GetMetricDefinitionView item={item} />
         </PanelContent>
       </Panel>
@@ -159,11 +160,11 @@ const AnalyticsArtifactSidebar = ({
     return (
       <Panel>
         <PanelHeader
-          title="Join Path"
+          title='Join Path'
           subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
           onClose={onClose}
         />
-        <PanelContent scrollable={false} padding={false} className="min-h-0">
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
           <GetJoinPathView item={item} />
         </PanelContent>
       </Panel>
@@ -175,11 +176,11 @@ const AnalyticsArtifactSidebar = ({
     return (
       <Panel>
         <PanelHeader
-          title="Column Sample"
+          title='Column Sample'
           subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
           onClose={onClose}
         />
-        <PanelContent scrollable={false} padding={false} className="min-h-0">
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
           <SampleColumnView item={item} />
         </PanelContent>
       </Panel>
@@ -191,11 +192,11 @@ const AnalyticsArtifactSidebar = ({
     return (
       <Panel>
         <PanelHeader
-          title="Schema"
+          title='Schema'
           subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
           onClose={onClose}
         />
-        <PanelContent scrollable={false} padding={false} className="min-h-0">
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
           <ResolveSchemaView item={item} />
         </PanelContent>
       </Panel>
@@ -210,15 +211,11 @@ const AnalyticsArtifactSidebar = ({
         <PanelHeader
           title={item.toolName}
           subtitle={
-            item.isStreaming
-              ? "Running"
-              : item.toolOutput === "Completed"
-                ? "Completed"
-                : "Failed"
+            item.isStreaming ? "Running" : item.toolOutput === "Completed" ? "Completed" : "Failed"
           }
           onClose={onClose}
         />
-        <PanelContent scrollable={false} padding={false} className="min-h-0">
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
           <ProcedureStepView item={item} />
         </PanelContent>
       </Panel>
@@ -233,7 +230,7 @@ const AnalyticsArtifactSidebar = ({
         subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
         onClose={onClose}
       />
-      <PanelContent scrollable={false} padding={false} className="min-h-0">
+      <PanelContent scrollable={false} padding={false} className='min-h-0'>
         <RawArtifactView item={item} />
       </PanelContent>
     </Panel>

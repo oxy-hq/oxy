@@ -29,9 +29,7 @@ const FanOutGroupRow = ({ group, onSelectArtifact }: FanOutGroupRowProps) => {
       {/* Card navigation header */}
       <div className='flex items-center gap-2 border-border border-b px-3 py-1.5'>
         <Layers className='h-3 w-3 shrink-0 text-muted-foreground' />
-        <span className='flex-1 text-muted-foreground text-sm'>
-          {group.total} parallel queries
-        </span>
+        <span className='flex-1 text-muted-foreground text-sm'>{group.total} parallel queries</span>
         {group.isStreaming && <Loader2 className='h-3 w-3 animate-spin text-primary' />}
 
         <div className='flex items-center gap-1'>
@@ -192,11 +190,7 @@ const AppBuilderReasoningTrace = ({
         <div className='space-y-1.5'>
           {items.map((item) =>
             item.kind === "fan_out" ? (
-              <FanOutGroupRow
-                key={item.id}
-                group={item}
-                onSelectArtifact={onSelectArtifact}
-              />
+              <FanOutGroupRow key={item.id} group={item} onSelectArtifact={onSelectArtifact} />
             ) : (
               <AppBuilderStepRow
                 key={item.id}

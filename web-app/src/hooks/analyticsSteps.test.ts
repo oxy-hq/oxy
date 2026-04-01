@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildAnalyticsSteps } from "./analyticsSteps";
 import type { UiBlock } from "@/services/api/analytics";
+import { buildAnalyticsSteps } from "./analyticsSteps";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -8,14 +8,19 @@ let seq = 0;
 const ev = <T extends UiBlock["event_type"]>(
   type: T,
   payload: Extract<UiBlock, { event_type: T }>["payload"]
-): UiBlock => ({ seq: seq++, event_type: type, payload } as UiBlock);
+): UiBlock => ({ seq: seq++, event_type: type, payload }) as UiBlock;
 
 const stepStart = (label: string, subSpecIndex?: number) =>
   ev("step_start", { label, ...(subSpecIndex != null ? { sub_spec_index: subSpecIndex } : {}) });
 const stepEnd = (outcome: "advanced" | "failed" = "advanced", subSpecIndex?: number) =>
-  ev("step_end", { label: "", outcome, ...(subSpecIndex != null ? { sub_spec_index: subSpecIndex } : {}) });
+  ev("step_end", {
+    label: "",
+    outcome,
+    ...(subSpecIndex != null ? { sub_spec_index: subSpecIndex } : {})
+  });
 const fanOutStart = (total: number) => ev("fan_out_start", { total });
-const subSpecStart = (index: number, label: string) => ev("sub_spec_start", { index, total: 0, label });
+const subSpecStart = (index: number, label: string) =>
+  ev("sub_spec_start", { index, total: 0, label });
 const subSpecEnd = (index: number, success = true) => ev("sub_spec_end", { index, success });
 const fanOutEnd = () => ev("fan_out_end", { success: true });
 const queryExecuted = (sql = "SELECT 1") =>
@@ -54,8 +59,10 @@ describe("buildAnalyticsSteps — basic steps", () => {
 
   it("sequential steps are all in result", () => {
     const items = buildAnalyticsSteps([
-      stepStart("A"), stepEnd(),
-      stepStart("B"), stepEnd(),
+      stepStart("A"),
+      stepEnd(),
+      stepStart("B"),
+      stepEnd(),
       stepStart("C")
     ]);
     expect(items).toHaveLength(3);
@@ -107,8 +114,14 @@ describe("buildAnalyticsSteps — fan-out (complete)", () => {
   it("fan-out group appears in result after fan_out_end", () => {
     const items = buildAnalyticsSteps([
       fanOutStart(2),
-      subSpecStart(0, "Q1"), stepStart("Solving", 0), stepEnd("advanced", 0), subSpecEnd(0),
-      subSpecStart(1, "Q2"), stepStart("Solving", 1), stepEnd("advanced", 1), subSpecEnd(1),
+      subSpecStart(0, "Q1"),
+      stepStart("Solving", 0),
+      stepEnd("advanced", 0),
+      subSpecEnd(0),
+      subSpecStart(1, "Q2"),
+      stepStart("Solving", 1),
+      stepEnd("advanced", 1),
+      subSpecEnd(1),
       fanOutEnd()
     ]);
     expect(items).toHaveLength(1);
@@ -119,12 +132,14 @@ describe("buildAnalyticsSteps — fan-out (complete)", () => {
     const items = buildAnalyticsSteps([
       fanOutStart(2),
       subSpecStart(0, "Q1"),
-        stepStart("Solving", 0), stepEnd("advanced", 0),
-        queryExecuted("SELECT 1"),
+      stepStart("Solving", 0),
+      stepEnd("advanced", 0),
+      queryExecuted("SELECT 1"),
       subSpecEnd(0),
       subSpecStart(1, "Q2"),
-        stepStart("Solving", 1), stepEnd("advanced", 1),
-        queryExecuted("SELECT 2"),
+      stepStart("Solving", 1),
+      stepEnd("advanced", 1),
+      queryExecuted("SELECT 2"),
       subSpecEnd(1),
       fanOutEnd()
     ]);
@@ -140,7 +155,8 @@ describe("buildAnalyticsSteps — fan-out (complete)", () => {
     const items = buildAnalyticsSteps([
       fanOutStart(1),
       subSpecStart(0, "Q1"),
-        stepStart("Solving", 0), stepEnd("advanced", 0),
+      stepStart("Solving", 0),
+      stepEnd("advanced", 0),
       subSpecEnd(0),
       fanOutEnd()
     ]);
@@ -153,9 +169,9 @@ describe("buildAnalyticsSteps — fan-out (complete)", () => {
     const items = buildAnalyticsSteps([
       fanOutStart(1),
       subSpecStart(0, "Q1"),
-        stepStart("Executing", 0),
-          ev("text_delta", { token: "analysis result", sub_spec_index: 0 }),
-        stepEnd("advanced", 0),
+      stepStart("Executing", 0),
+      ev("text_delta", { token: "analysis result", sub_spec_index: 0 }),
+      stepEnd("advanced", 0),
       subSpecEnd(0),
       fanOutEnd()
     ]);
@@ -174,8 +190,9 @@ describe("buildAnalyticsSteps — fan-out (streaming / flush)", () => {
     const items = buildAnalyticsSteps([
       fanOutStart(2),
       subSpecStart(0, "Q1"),
-        stepStart("Solving", 0), stepEnd("advanced", 0)
-        // ← sub_spec_end has NOT arrived yet
+      stepStart("Solving", 0),
+      stepEnd("advanced", 0)
+      // ← sub_spec_end has NOT arrived yet
     ]);
     expect(items).toHaveLength(1);
     expect(items[0].kind).toBe("fan_out");
@@ -190,8 +207,8 @@ describe("buildAnalyticsSteps — fan-out (streaming / flush)", () => {
     const items = buildAnalyticsSteps([
       fanOutStart(1),
       subSpecStart(0, "Q1"),
-        stepStart("Solving", 0)
-        // step_end has NOT arrived
+      stepStart("Solving", 0)
+      // step_end has NOT arrived
     ]);
     const group = items[0] as { cards: { steps: { isStreaming: boolean }[] }[] };
     expect(group.cards[0].steps).toHaveLength(1);
@@ -208,8 +225,12 @@ describe("buildAnalyticsSteps — fan-out (streaming / flush)", () => {
   it("completed card + in-progress card both visible while streaming", () => {
     const items = buildAnalyticsSteps([
       fanOutStart(2),
-      subSpecStart(0, "Q1"), stepStart("Solving", 0), stepEnd("advanced", 0), subSpecEnd(0),
-      subSpecStart(1, "Q2"), stepStart("Solving", 1)
+      subSpecStart(0, "Q1"),
+      stepStart("Solving", 0),
+      stepEnd("advanced", 0),
+      subSpecEnd(0),
+      subSpecStart(1, "Q2"),
+      stepStart("Solving", 1)
       // Q2's step_end and sub_spec_end not yet received
     ]);
     const group = items[0] as { cards: { label: string; steps: unknown[] }[] };
@@ -227,15 +248,17 @@ describe("buildAnalyticsSteps — procedure steps", () => {
   it("procedure_step_started creates a streaming artifact with toolInput 'Running…'", () => {
     const items = buildAnalyticsSteps([
       stepStart("Executing"),
-      ev("procedure_step_started", { step: "Run monthly report" }),
+      ev("procedure_step_started", { step: "Run monthly report" })
     ]);
-    const step = items[0] as { items: { kind: string; toolName: string; toolInput: string; isStreaming: boolean }[] };
+    const step = items[0] as {
+      items: { kind: string; toolName: string; toolInput: string; isStreaming: boolean }[];
+    };
     expect(step.items).toHaveLength(1);
     expect(step.items[0]).toMatchObject({
       kind: "artifact",
       toolName: "Run monthly report",
       toolInput: "Running\u2026",
-      isStreaming: true,
+      isStreaming: true
     });
   });
 
@@ -243,7 +266,7 @@ describe("buildAnalyticsSteps — procedure steps", () => {
     const items = buildAnalyticsSteps([
       stepStart("Executing"),
       ev("procedure_step_started", { step: "Run monthly report" }),
-      ev("procedure_step_completed", { step: "Run monthly report", success: true }),
+      ev("procedure_step_completed", { step: "Run monthly report", success: true })
     ]);
     const step = items[0] as { items: { toolOutput: string; isStreaming: boolean }[] };
     expect(step.items[0]).toMatchObject({ toolOutput: "Completed", isStreaming: false });
@@ -253,7 +276,11 @@ describe("buildAnalyticsSteps — procedure steps", () => {
     const items = buildAnalyticsSteps([
       stepStart("Executing"),
       ev("procedure_step_started", { step: "Run monthly report" }),
-      ev("procedure_step_completed", { step: "Run monthly report", success: false, error: "Connection refused" }),
+      ev("procedure_step_completed", {
+        step: "Run monthly report",
+        success: false,
+        error: "Connection refused"
+      })
     ]);
     const step = items[0] as { items: { toolOutput: string; isStreaming: boolean }[] };
     expect(step.items[0]).toMatchObject({ toolOutput: "Connection refused", isStreaming: false });
@@ -263,7 +290,7 @@ describe("buildAnalyticsSteps — procedure steps", () => {
     const items = buildAnalyticsSteps([
       stepStart("S"),
       ev("procedure_step_started", { step: "Step A" }),
-      ev("procedure_step_completed", { step: "Step A", success: false }),
+      ev("procedure_step_completed", { step: "Step A", success: false })
     ]);
     const step = items[0] as { items: { toolOutput: string }[] };
     expect(step.items[0]).toMatchObject({ toolOutput: "Failed" });
@@ -275,18 +302,28 @@ describe("buildAnalyticsSteps — procedure steps", () => {
       ev("procedure_step_started", { step: "Step A" }),
       ev("procedure_step_started", { step: "Step B" }),
       ev("procedure_step_completed", { step: "Step A", success: true }),
-      ev("procedure_step_completed", { step: "Step B", success: false, error: "oops" }),
+      ev("procedure_step_completed", { step: "Step B", success: false, error: "oops" })
     ]);
-    const step = items[0] as { items: { toolName: string; toolOutput: string; isStreaming: boolean }[] };
+    const step = items[0] as {
+      items: { toolName: string; toolOutput: string; isStreaming: boolean }[];
+    };
     expect(step.items).toHaveLength(2);
-    expect(step.items[0]).toMatchObject({ toolName: "Step A", toolOutput: "Completed", isStreaming: false });
-    expect(step.items[1]).toMatchObject({ toolName: "Step B", toolOutput: "oops", isStreaming: false });
+    expect(step.items[0]).toMatchObject({
+      toolName: "Step A",
+      toolOutput: "Completed",
+      isStreaming: false
+    });
+    expect(step.items[1]).toMatchObject({
+      toolName: "Step B",
+      toolOutput: "oops",
+      isStreaming: false
+    });
   });
 
   it("unmatched procedure_step_completed (no prior start) is a no-op", () => {
     const items = buildAnalyticsSteps([
       stepStart("S"),
-      ev("procedure_step_completed", { step: "Ghost step", success: true }),
+      ev("procedure_step_completed", { step: "Ghost step", success: true })
     ]);
     const step = items[0] as { items: unknown[] };
     expect(step.items).toHaveLength(0);
@@ -295,7 +332,7 @@ describe("buildAnalyticsSteps — procedure steps", () => {
   it("still-streaming step (no completed yet) stays streaming with no toolOutput", () => {
     const items = buildAnalyticsSteps([
       stepStart("S"),
-      ev("procedure_step_started", { step: "Long running step" }),
+      ev("procedure_step_started", { step: "Long running step" })
     ]);
     const step = items[0] as { items: { toolOutput: unknown; isStreaming: boolean }[] };
     expect(step.items[0]).toMatchObject({ isStreaming: true });
@@ -316,7 +353,7 @@ type ProcedureItemShape = {
 const MAIN_STEPS = [
   { name: "fetch_data", task_type: "execute_sql" },
   { name: "process_data", task_type: "execute_sql" },
-  { name: "generate_report", task_type: "formatter" },
+  { name: "generate_report", task_type: "formatter" }
 ];
 
 const procedureStarted = (name = "my_proc", steps = MAIN_STEPS) =>
@@ -343,10 +380,7 @@ const getProcItem = (items: ReturnType<typeof buildAnalyticsSteps>): ProcedureIt
 
 describe("buildAnalyticsSteps — procedure item stepsDone", () => {
   it("starts at 0 with no step events", () => {
-    const items = buildAnalyticsSteps([
-      stepStart("Running"),
-      procedureStarted(),
-    ]);
+    const items = buildAnalyticsSteps([stepStart("Running"), procedureStarted()]);
     expect(getProcItem(items).stepsDone).toBe(0);
   });
 
@@ -357,7 +391,7 @@ describe("buildAnalyticsSteps — procedure item stepsDone", () => {
       procStepStarted("fetch_data"),
       procStepCompleted("fetch_data"),
       procStepStarted("process_data"),
-      procStepCompleted("process_data"),
+      procStepCompleted("process_data")
     ]);
     expect(getProcItem(items).stepsDone).toBe(2);
   });
@@ -367,7 +401,7 @@ describe("buildAnalyticsSteps — procedure item stepsDone", () => {
       stepStart("Running"),
       procedureStarted(),
       procStepStarted("fetch_data"),
-      procStepCompleted("fetch_data", false, "timeout"),
+      procStepCompleted("fetch_data", false, "timeout")
     ]);
     expect(getProcItem(items).stepsDone).toBe(0);
   });
@@ -382,7 +416,7 @@ describe("buildAnalyticsSteps — procedure item stepsDone", () => {
       procStepStarted("sub_1"),
       procStepCompleted("sub_1"),
       procStepStarted("sub_2"),
-      procStepCompleted("sub_2"),
+      procStepCompleted("sub_2")
     ]);
     expect(getProcItem(items).stepsDone).toBe(0);
   });
@@ -391,21 +425,21 @@ describe("buildAnalyticsSteps — procedure item stepsDone", () => {
     const steps = [
       { name: "prepare", task_type: "execute_sql" },
       { name: "loop_step", task_type: "loop_sequential" },
-      { name: "finalize", task_type: "execute_sql" },
+      { name: "finalize", task_type: "execute_sql" }
     ];
     const items = buildAnalyticsSteps([
       stepStart("Running"),
       procedureStarted("p", steps),
       procStepStarted("prepare"),
-      procStepCompleted("prepare"),          // +1
+      procStepCompleted("prepare"), // +1
       procStepStarted("loop_step"),
       procStepStarted("sub_1"),
-      procStepCompleted("sub_1"),            // sub-step — no increment
+      procStepCompleted("sub_1"), // sub-step — no increment
       procStepStarted("sub_2"),
-      procStepCompleted("sub_2"),            // sub-step — no increment
-      procStepCompleted("loop_step"),        // +1
+      procStepCompleted("sub_2"), // sub-step — no increment
+      procStepCompleted("loop_step"), // +1
       procStepStarted("finalize"),
-      procStepCompleted("finalize"),         // +1
+      procStepCompleted("finalize") // +1
     ]);
     expect(getProcItem(items).stepsDone).toBe(3);
   });
@@ -414,11 +448,14 @@ describe("buildAnalyticsSteps — procedure item stepsDone", () => {
     const items = buildAnalyticsSteps([
       stepStart("Running"),
       procedureStarted(),
-      procStepStarted("fetch_data"),   procStepCompleted("fetch_data"),
-      procStepStarted("process_data"), procStepCompleted("process_data"),
-      procStepStarted("generate_report"), procStepCompleted("generate_report"),
+      procStepStarted("fetch_data"),
+      procStepCompleted("fetch_data"),
+      procStepStarted("process_data"),
+      procStepCompleted("process_data"),
+      procStepStarted("generate_report"),
+      procStepCompleted("generate_report"),
       procCompleted(),
-      stepEnd(),
+      stepEnd()
     ]);
     const proc = getProcItem(items);
     expect(proc.stepsDone).toBe(MAIN_STEPS.length);
@@ -429,10 +466,11 @@ describe("buildAnalyticsSteps — procedure item stepsDone", () => {
     const items = buildAnalyticsSteps([
       stepStart("Running"),
       procedureStarted(),
-      procStepStarted("fetch_data"), procStepCompleted("fetch_data"),
+      procStepStarted("fetch_data"),
+      procStepCompleted("fetch_data"),
       procCompleted(),
       // ghost completion after procedure is done — should not increment
-      procStepCompleted("fetch_data"),
+      procStepCompleted("fetch_data")
     ]);
     // procedure is now not streaming, but stepsDone should still be 1
     expect(getProcItem(items).stepsDone).toBe(1);
@@ -446,7 +484,10 @@ describe("buildAnalyticsSteps — outer steps around fan-out", () => {
     const items = buildAnalyticsSteps([
       stepStart("Outer"),
       fanOutStart(1),
-      subSpecStart(0, "Q1"), stepStart("Inner", 0), stepEnd("advanced", 0), subSpecEnd(0),
+      subSpecStart(0, "Q1"),
+      stepStart("Inner", 0),
+      stepEnd("advanced", 0),
+      subSpecEnd(0),
       fanOutEnd(),
       stepEnd() // outer closes after fan-out
     ]);
@@ -459,9 +500,12 @@ describe("buildAnalyticsSteps — outer steps around fan-out", () => {
   it("outer step items accumulated before fan-out are preserved", () => {
     const items = buildAnalyticsSteps([
       stepStart("Outer"),
-        ev("text_delta", { token: "prefix" }),
+      ev("text_delta", { token: "prefix" }),
       fanOutStart(1),
-      subSpecStart(0, "Q1"), stepStart("Inner", 0), stepEnd("advanced", 0), subSpecEnd(0),
+      subSpecStart(0, "Q1"),
+      stepStart("Inner", 0),
+      stepEnd("advanced", 0),
+      subSpecEnd(0),
       fanOutEnd(),
       stepEnd()
     ]);
@@ -475,9 +519,9 @@ describe("buildAnalyticsSteps — outer steps around fan-out", () => {
       stepStart("Outer"),
       fanOutStart(1),
       subSpecStart(0, "Q1"),
-        stepStart("Inner", 0),
-          ev("text_delta", { token: "inner-text", sub_spec_index: 0 }),
-        stepEnd("advanced", 0),
+      stepStart("Inner", 0),
+      ev("text_delta", { token: "inner-text", sub_spec_index: 0 }),
+      stepEnd("advanced", 0),
       subSpecEnd(0),
       fanOutEnd(),
       stepEnd()
@@ -507,7 +551,7 @@ describe("buildAnalyticsSteps — concurrent fan-out", () => {
       stepStart("solving", 2),
       stepEnd("advanced", 2),
       subSpecEnd(2, true),
-      fanOutEnd(),
+      fanOutEnd()
     ]);
 
     expect(items).toHaveLength(1);
@@ -537,14 +581,16 @@ describe("buildAnalyticsSteps — concurrent fan-out", () => {
       subSpecStart(0, "Card A"),
       stepStart("analyzing", 0),
       subSpecStart(1, "Card B"),
-      stepStart("analyzing", 1),
+      stepStart("analyzing", 1)
       // Neither card is closed — flush happens at end of buildAnalyticsSteps
     ]);
 
     expect(items).toHaveLength(1);
     expect(items[0].kind).toBe("fan_out");
 
-    const group = items[0] as { cards: { label: string; isStreaming: boolean; steps: { isStreaming: boolean }[] }[] };
+    const group = items[0] as {
+      cards: { label: string; isStreaming: boolean; steps: { isStreaming: boolean }[] }[];
+    };
     expect(group.cards).toHaveLength(2);
 
     // Both cards should be streaming
@@ -560,17 +606,17 @@ describe("buildAnalyticsSteps — concurrent fan-out", () => {
   it("events without sub_spec_index go to outer scope", () => {
     const items = buildAnalyticsSteps([
       stepStart("Before fan-out"),
-        ev("text_delta", { token: "before" }),
+      ev("text_delta", { token: "before" }),
       stepEnd(),
       fanOutStart(1),
       subSpecStart(0, "Q1"),
-        stepStart("solving", 0),
-        stepEnd("advanced", 0),
+      stepStart("solving", 0),
+      stepEnd("advanced", 0),
       subSpecEnd(0),
       fanOutEnd(),
       stepStart("After fan-out"),
-        ev("text_delta", { token: "after" }),
-      stepEnd(),
+      ev("text_delta", { token: "after" }),
+      stepEnd()
     ]);
 
     // Should have: outer step "Before fan-out", fan_out group, outer step "After fan-out"
@@ -600,14 +646,14 @@ describe("buildAnalyticsSteps — concurrent fan-out", () => {
     const items = buildAnalyticsSteps([
       fanOutStart(2),
       subSpecStart(0, "Q1"),
-        stepStart("Solving", 0),
-        stepEnd("advanced", 0),
+      stepStart("Solving", 0),
+      stepEnd("advanced", 0),
       subSpecEnd(0),
       subSpecStart(1, "Q2"),
-        stepStart("Solving", 1),
-        stepEnd("advanced", 1),
+      stepStart("Solving", 1),
+      stepEnd("advanced", 1),
       subSpecEnd(1),
-      fanOutEnd(),
+      fanOutEnd()
     ]);
 
     expect(items).toHaveLength(1);

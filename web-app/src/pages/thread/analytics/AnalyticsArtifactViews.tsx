@@ -309,7 +309,12 @@ export const GetMetricDefinitionView = ({ item }: { item: ArtifactItem }) => {
 // ── GetJoinPathView ───────────────────────────────────────────────────────────
 
 export const GetJoinPathView = ({ item }: { item: ArtifactItem }) => {
-  const input = parseToolJson<{ from_entity?: string; to_entity?: string; from?: string; to?: string }>(item.toolInput);
+  const input = parseToolJson<{
+    from_entity?: string;
+    to_entity?: string;
+    from?: string;
+    to?: string;
+  }>(item.toolInput);
   // analytics uses from_entity/to_entity; app-builder uses from/to
   const from = input?.from_entity ?? input?.from ?? "?";
   const to = input?.to_entity ?? input?.to ?? "?";
@@ -600,7 +605,7 @@ export const ColumnRangeView = ({ item }: { item: ArtifactItem }) => {
     output?.max !== undefined ? { label: "Max", value: output.max } : null,
     output?.distinct_count !== undefined
       ? { label: "Distinct", value: output.distinct_count }
-      : null,
+      : null
   ].filter(Boolean) as { label: string; value: string }[];
 
   return (

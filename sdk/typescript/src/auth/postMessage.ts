@@ -9,13 +9,13 @@ import type {
   OxyAuthRequestMessage,
   OxyAuthResponseMessage,
   PostMessageAuthOptions,
-  PostMessageAuthResult,
+  PostMessageAuthResult
 } from "../types";
 
 import {
-  PostMessageAuthTimeoutError,
-  PostMessageAuthNotInIframeError,
   PostMessageAuthInvalidResponseError,
+  PostMessageAuthNotInIframeError,
+  PostMessageAuthTimeoutError
 } from "../types";
 
 /**
@@ -64,10 +64,7 @@ export function generateRequestId(): string {
  * @param allowedOrigin - The expected/allowed origin
  * @returns true if origin is valid, false otherwise
  */
-export function validateOrigin(
-  messageOrigin: string,
-  allowedOrigin?: string,
-): boolean {
+export function validateOrigin(messageOrigin: string, allowedOrigin?: string): boolean {
   // If no allowed origin is specified, reject (security)
   if (!allowedOrigin) {
     return false;
@@ -105,7 +102,7 @@ export function validateOrigin(
 function createAuthListener(
   requestId: string,
   origin: string | undefined,
-  timeout: number,
+  timeout: number
 ): Promise<OxyAuthResponseMessage> {
   return new Promise((resolve, reject) => {
     // Set up message listener
@@ -137,8 +134,8 @@ function createAuthListener(
         window.removeEventListener("message", listener);
         reject(
           new PostMessageAuthInvalidResponseError(
-            `Unsupported protocol version: ${response.version}`,
-          ),
+            `Unsupported protocol version: ${response.version}`
+          )
         );
         return;
       }
@@ -183,7 +180,7 @@ function createAuthListener(
  * ```
  */
 export async function requestAuthFromParent(
-  options: PostMessageAuthOptions = {},
+  options: PostMessageAuthOptions = {}
 ): Promise<PostMessageAuthResult> {
   const { parentOrigin, timeout = 5000, retries = 0 } = options;
 
@@ -205,7 +202,7 @@ export async function requestAuthFromParent(
     type: "OXY_AUTH_REQUEST",
     version: "1.0",
     timestamp: Date.now(),
-    requestId,
+    requestId
   };
 
   // Attempt authentication with retries
@@ -215,11 +212,7 @@ export async function requestAuthFromParent(
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       // Set up listener before sending request to avoid race condition
-      const responsePromise = createAuthListener(
-        requestId,
-        parentOrigin,
-        timeout,
-      );
+      const responsePromise = createAuthListener(requestId, parentOrigin, timeout);
 
       // Send request to parent
       const targetOrigin = parentOrigin || "*";
@@ -233,7 +226,7 @@ export async function requestAuthFromParent(
         apiKey: response.apiKey,
         projectId: response.projectId,
         baseUrl: response.baseUrl,
-        source: "postmessage",
+        source: "postmessage"
       };
     } catch (error) {
       lastError = error as Error;

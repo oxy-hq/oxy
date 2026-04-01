@@ -100,9 +100,9 @@ const useSyncGitHubRepository = () => {
 
 export {
   useGithubSettings,
-  useRevisionInfo,
-  useUpdateGitHubToken,
-  useSelectRepository,
   useListRepositories,
-  useSyncGitHubRepository
+  useRevisionInfo,
+  useSelectRepository,
+  useSyncGitHubRepository,
+  useUpdateGitHubToken
 };

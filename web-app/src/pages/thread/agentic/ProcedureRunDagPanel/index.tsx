@@ -29,7 +29,12 @@ function deriveStepStatuses(
   const topLevelNames = new Set(steps.map((s) => s.name));
   const statuses: Record<string, StepState> = {};
   for (const s of steps) {
-    statuses[s.name] = { status: "idle", taskType: s.task_type, subStepsStarted: 0, subStepsCompleted: 0 };
+    statuses[s.name] = {
+      status: "idle",
+      taskType: s.task_type,
+      subStepsStarted: 0,
+      subStepsCompleted: 0
+    };
   }
   let activeLoopStep: string | null = null;
   for (const ev of events) {
@@ -61,10 +66,10 @@ function deriveStepStatuses(
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 const STATUS_ICON: Record<ProcedureStepStatus, React.ReactNode> = {
-  idle: <Circle className="h-3.5 w-3.5 text-muted-foreground" />,
-  running: <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />,
-  done: <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />,
-  failed: <XCircle className="h-3.5 w-3.5 text-destructive" />
+  idle: <Circle className='h-3.5 w-3.5 text-muted-foreground' />,
+  running: <Loader2 className='h-3.5 w-3.5 animate-spin text-primary' />,
+  done: <CheckCircle2 className='h-3.5 w-3.5 text-green-500' />,
+  failed: <XCircle className='h-3.5 w-3.5 text-destructive' />
 };
 
 const STATUS_LABEL: Record<ProcedureStepStatus, string | null> = {
@@ -83,8 +88,7 @@ const ICON_BG: Record<ProcedureStepStatus, string> = {
 
 const NODE_BORDER: Record<ProcedureStepStatus, string> = {
   idle: "border-border bg-card opacity-60",
-  running:
-    "border-primary bg-primary/10 shadow-[0_0_12px_rgba(58,113,214,0.15)]",
+  running: "border-primary bg-primary/10 shadow-[0_0_12px_rgba(58,113,214,0.15)]",
   done: "border-green-500/40 bg-green-500/5",
   failed: "border-destructive/40 bg-destructive/5"
 };
@@ -112,16 +116,10 @@ const ProcedureRunDagPanel = ({
   isRunning,
   onClose
 }: ProcedureRunDagPanelProps) => {
-  const stepStatuses = useMemo(
-    () => deriveStepStatuses(steps, events),
-    [steps, events]
-  );
+  const stepStatuses = useMemo(() => deriveStepStatuses(steps, events), [steps, events]);
 
   const completionEv = useMemo(
-    () =>
-      [...events]
-        .reverse()
-        .find((ev) => ev.type === "procedure_completed") ?? null,
+    () => [...events].reverse().find((ev) => ev.type === "procedure_completed") ?? null,
     [events]
   );
 
@@ -135,21 +133,22 @@ const ProcedureRunDagPanel = ({
 
   return (
     <Panel>
-      <PanelHeader
-        title={procedureName || "Procedure Run"}
-        subtitle={subtitle}
-        onClose={onClose}
-      />
+      <PanelHeader title={procedureName || "Procedure Run"} subtitle={subtitle} onClose={onClose} />
 
-      <PanelContent scrollable={false} padding={false} className="overflow-y-auto p-4">
-        <div className="flex flex-col items-center gap-0">
+      <PanelContent scrollable={false} padding={false} className='overflow-y-auto p-4'>
+        <div className='flex flex-col items-center gap-0'>
           {steps.map((step, i) => {
-            const state = stepStatuses[step.name] ?? { status: "idle", taskType: step.task_type, subStepsStarted: 0, subStepsCompleted: 0 };
+            const state = stepStatuses[step.name] ?? {
+              status: "idle",
+              taskType: step.task_type,
+              subStepsStarted: 0,
+              subStepsCompleted: 0
+            };
             const status = state.status;
             const isHighlighted = status === "running";
 
             return (
-              <div key={step.name} className="flex w-full flex-col items-center">
+              <div key={step.name} className='flex w-full flex-col items-center'>
                 {i > 0 && (
                   <div
                     className={cn(
@@ -176,26 +175,26 @@ const ProcedureRunDagPanel = ({
                   </div>
 
                   {/* Label */}
-                  <div className="min-w-0 flex-1">
+                  <div className='min-w-0 flex-1'>
                     <div
                       className={cn(
                         "truncate font-mono text-[10px]",
-                        status === "idle"
-                          ? "text-muted-foreground"
-                          : "text-foreground"
+                        status === "idle" ? "text-muted-foreground" : "text-foreground"
                       )}
                     >
                       {step.name}
                     </div>
                     {STATUS_LABEL[status] && (
-                      <div className="mt-0.5 text-[10px] text-muted-foreground">
+                      <div className='mt-0.5 text-[10px] text-muted-foreground'>
                         {STATUS_LABEL[status]}
                       </div>
                     )}
                     {step.task_type === "loop_sequential" && state.subStepsStarted > 0 && (
-                      <div className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
-                        <Repeat className="h-2.5 w-2.5" />
-                        <span>{state.subStepsCompleted} / {state.subStepsStarted} sub-steps</span>
+                      <div className='mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground'>
+                        <Repeat className='h-2.5 w-2.5' />
+                        <span>
+                          {state.subStepsCompleted} / {state.subStepsStarted} sub-steps
+                        </span>
                       </div>
                     )}
                   </div>

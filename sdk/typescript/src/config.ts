@@ -86,15 +86,11 @@ export function createConfig(overrides?: Partial<OxyConfig>): OxyConfig {
   const projectId = overrides?.projectId || getEnvVar("OXY_PROJECT_ID");
 
   if (!baseUrl) {
-    throw new Error(
-      "OXY_URL environment variable or baseUrl config is required",
-    );
+    throw new Error("OXY_URL environment variable or baseUrl config is required");
   }
 
   if (!projectId) {
-    throw new Error(
-      "OXY_PROJECT_ID environment variable or projectId config is required",
-    );
+    throw new Error("OXY_PROJECT_ID environment variable or projectId config is required");
   }
 
   return {
@@ -104,7 +100,7 @@ export function createConfig(overrides?: Partial<OxyConfig>): OxyConfig {
     branch: overrides?.branch || getEnvVar("OXY_BRANCH"),
     timeout: overrides?.timeout || 30000,
     parentOrigin: overrides?.parentOrigin,
-    disableAutoAuth: overrides?.disableAutoAuth,
+    disableAutoAuth: overrides?.disableAutoAuth
   };
 }
 
@@ -141,9 +137,7 @@ export function createConfig(overrides?: Partial<OxyConfig>): OxyConfig {
  * });
  * ```
  */
-export async function createConfigAsync(
-  overrides?: Partial<OxyConfig>,
-): Promise<OxyConfig> {
+export async function createConfigAsync(overrides?: Partial<OxyConfig>): Promise<OxyConfig> {
   // Import postMessage utilities (dynamic to avoid circular deps)
   const { isInIframe } = await import("./auth/postMessage");
 
@@ -168,7 +162,7 @@ export async function createConfigAsync(
         overrides?.timeout || 5000,
         apiKey,
         projectId,
-        baseUrl,
+        baseUrl
       )
         .then((result) => {
           if (result.projectId) projectId = result.projectId;
@@ -178,7 +172,7 @@ export async function createConfigAsync(
         .catch((error) => {
           console.error(
             "[Oxy SDK] Failed to authenticate via postMessage:",
-            (error as Error).message,
+            (error as Error).message
           );
           return apiKey;
         });
@@ -192,7 +186,7 @@ function logWarningAboutMissingParentOrigin(): void {
   console.warn(
     "[Oxy SDK] Running in iframe without API key and no parentOrigin specified. " +
       "PostMessage authentication will be skipped. " +
-      "Provide parentOrigin config to enable automatic authentication.",
+      "Provide parentOrigin config to enable automatic authentication."
   );
 }
 
@@ -201,7 +195,7 @@ async function attemptPostMessageAuth(
   timeout: number,
   currentApiKey: string | undefined,
   currentProjectId: string | undefined,
-  currentBaseUrl: string | undefined,
+  currentBaseUrl: string | undefined
 ): Promise<{ apiKey?: string; projectId?: string; baseUrl?: string }> {
   const { requestAuthFromParent } = await import("./auth/postMessage");
   const authResult = await requestAuthFromParent({ parentOrigin, timeout });
@@ -211,7 +205,7 @@ async function attemptPostMessageAuth(
   return {
     apiKey: authResult.apiKey || currentApiKey,
     projectId: authResult.projectId || currentProjectId,
-    baseUrl: authResult.baseUrl || currentBaseUrl,
+    baseUrl: authResult.baseUrl || currentBaseUrl
   };
 }
 
@@ -219,19 +213,15 @@ function createFinalConfig(
   baseUrl: string | undefined,
   apiKey: string | undefined,
   projectId: string | undefined,
-  overrides?: Partial<OxyConfig>,
+  overrides?: Partial<OxyConfig>
 ): OxyConfig {
   // Validation
   if (!baseUrl) {
-    throw new Error(
-      "OXY_URL environment variable or baseUrl config is required",
-    );
+    throw new Error("OXY_URL environment variable or baseUrl config is required");
   }
 
   if (!projectId) {
-    throw new Error(
-      "OXY_PROJECT_ID environment variable or projectId config is required",
-    );
+    throw new Error("OXY_PROJECT_ID environment variable or projectId config is required");
   }
 
   return {
@@ -241,6 +231,6 @@ function createFinalConfig(
     branch: overrides?.branch || getEnvVar("OXY_BRANCH"),
     timeout: overrides?.timeout || 30000,
     parentOrigin: overrides?.parentOrigin,
-    disableAutoAuth: overrides?.disableAutoAuth,
+    disableAutoAuth: overrides?.disableAutoAuth
   };
 }

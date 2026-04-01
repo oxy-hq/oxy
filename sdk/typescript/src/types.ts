@@ -131,7 +131,7 @@ export class PostMessageAuthTimeoutError extends Error {
         `Troubleshooting:\n` +
         `1. Verify parent window has message listener set up\n` +
         `2. Check parentOrigin configuration matches parent window origin\n` +
-        `3. Open browser console in parent window for errors`,
+        `3. Open browser console in parent window for errors`
     );
     this.name = "PostMessageAuthTimeoutError";
   }
@@ -146,7 +146,7 @@ export class PostMessageAuthInvalidOriginError extends Error {
       `Received authentication response from unauthorized origin.\n\n` +
         `Expected: ${expected}\n` +
         `Actual: ${actual}\n\n` +
-        `This is a security error. Verify your parentOrigin configuration.`,
+        `This is a security error. Verify your parentOrigin configuration.`
     );
     this.name = "PostMessageAuthInvalidOriginError";
   }
@@ -162,7 +162,7 @@ export class PostMessageAuthNotInIframeError extends Error {
       `PostMessage authentication is only available when running in an iframe context.\n\n` +
         `Current context: ${currentContext}\n\n` +
         `If you're running in a regular browser window, use direct configuration instead:\n` +
-        `const client = new OxyClient({ apiKey: 'your-key', ... })`,
+        `const client = new OxyClient({ apiKey: 'your-key', ... })`
     );
     this.name = "PostMessageAuthNotInIframeError";
   }

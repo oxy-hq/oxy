@@ -16,12 +16,20 @@ const q = (prompt: string, suggestions: string[] = []): HumanInputQuestion => ({
 
 describe("SuspensionPrompt — input display logic", () => {
   it("renders the question prompt", () => {
-    render(<SuspensionPrompt questions={[q("What date range?")]} onAnswer={vi.fn()} isAnswering={false} />);
+    render(
+      <SuspensionPrompt
+        questions={[q("What date range?")]}
+        onAnswer={vi.fn()}
+        isAnswering={false}
+      />
+    );
     expect(screen.getByText("What date range?")).toBeTruthy();
   });
 
   it("renders a single textarea for one question", () => {
-    render(<SuspensionPrompt questions={[q("Pick a metric")]} onAnswer={vi.fn()} isAnswering={false} />);
+    render(
+      <SuspensionPrompt questions={[q("Pick a metric")]} onAnswer={vi.fn()} isAnswering={false} />
+    );
     expect(screen.getAllByRole("textbox")).toHaveLength(1);
   });
 
@@ -79,11 +87,7 @@ describe("SuspensionPrompt — input display logic", () => {
 
   it("shows 'Send all answers' button for multiple questions", () => {
     render(
-      <SuspensionPrompt
-        questions={[q("Q1"), q("Q2")]}
-        onAnswer={vi.fn()}
-        isAnswering={false}
-      />
+      <SuspensionPrompt questions={[q("Q1"), q("Q2")]} onAnswer={vi.fn()} isAnswering={false} />
     );
     expect(screen.getByText("Send all answers")).toBeTruthy();
   });
@@ -91,11 +95,7 @@ describe("SuspensionPrompt — input display logic", () => {
   it("submits combined answers for multiple questions", () => {
     const onAnswer = vi.fn();
     render(
-      <SuspensionPrompt
-        questions={[q("Q1"), q("Q2")]}
-        onAnswer={onAnswer}
-        isAnswering={false}
-      />
+      <SuspensionPrompt questions={[q("Q1"), q("Q2")]} onAnswer={onAnswer} isAnswering={false} />
     );
     const [ta1, ta2] = screen.getAllByRole("textbox") as HTMLTextAreaElement[];
     fireEvent.change(ta1, { target: { value: "Answer 1" } });
@@ -106,11 +106,7 @@ describe("SuspensionPrompt — input display logic", () => {
 
   it("disables inputs and buttons while isAnswering", () => {
     render(
-      <SuspensionPrompt
-        questions={[q("Q1", ["chip"])]}
-        onAnswer={vi.fn()}
-        isAnswering={true}
-      />
+      <SuspensionPrompt questions={[q("Q1", ["chip"])]} onAnswer={vi.fn()} isAnswering={true} />
     );
     expect((screen.getByRole("textbox") as HTMLTextAreaElement).disabled).toBe(true);
     expect((screen.getByText("chip") as HTMLButtonElement).disabled).toBe(true);

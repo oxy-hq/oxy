@@ -50,7 +50,7 @@ export default function QueryEditor({ onSave }: QueryEditorProps) {
   const activeTab = tabs.find((t) => t.id === activeTabId);
 
   const handleRunQuery = useCallback(async () => {
-    if (!activeTab || !activeTab.content.trim()) {
+    if (!activeTab?.content.trim()) {
       toast.error("No query to execute");
       return;
     }
@@ -139,7 +139,7 @@ export default function QueryEditor({ onSave }: QueryEditorProps) {
   };
 
   const handleFormatSQL = useCallback(() => {
-    if (!activeTab || !activeTab.content.trim()) {
+    if (!activeTab?.content.trim()) {
       toast.error("No query to format");
       return;
     }

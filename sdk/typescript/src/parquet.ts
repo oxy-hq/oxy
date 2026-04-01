@@ -17,7 +17,7 @@ function enqueueOperation<T>(operation: () => Promise<T>): Promise<T> {
     },
     () => {
       return;
-    },
+    }
   );
   return currentOperation;
 }
@@ -37,8 +37,8 @@ export async function initializeDuckDB(): Promise<duckdb.AsyncDuckDB> {
 
   const worker_url = URL.createObjectURL(
     new Blob([`importScripts("${bundle.mainWorker}");`], {
-      type: "text/javascript",
-    }),
+      type: "text/javascript"
+    })
   );
 
   const worker = new Worker(worker_url);
@@ -79,10 +79,6 @@ export interface QueryResult {
  */
 export class ParquetReader {
   private tableMap: Map<string, string> = new Map(); // Maps user table name -> internal unique table name
-
-  constructor() {
-    // No default table name - all tables must be explicitly named
-  }
 
   /**
    * Generate a unique internal table name to prevent conflicts
@@ -140,7 +136,7 @@ export class ParquetReader {
 
       // Create table from parquet
       await conn.query(
-        `CREATE TABLE ${internalTableName} AS SELECT * FROM '${internalTableName}.parquet'`,
+        `CREATE TABLE ${internalTableName} AS SELECT * FROM '${internalTableName}.parquet'`
       );
 
       // Store mapping
@@ -164,9 +160,7 @@ export class ParquetReader {
    * const result = await reader.query('SELECT * FROM sales JOIN customers ON sales.customer_id = customers.id');
    * ```
    */
-  async registerMultipleParquet(
-    files: Array<{ blob: Blob; tableName: string }>,
-  ): Promise<void> {
+  async registerMultipleParquet(files: Array<{ blob: Blob; tableName: string }>): Promise<void> {
     for (const file of files) {
       await this.registerParquet(file.blob, file.tableName);
     }
@@ -199,9 +193,7 @@ export class ParquetReader {
    */
   async query(sql: string): Promise<QueryResult> {
     if (this.tableMap.size === 0) {
-      throw new Error(
-        "No Parquet files registered. Call registerParquet() first.",
-      );
+      throw new Error("No Parquet files registered. Call registerParquet() first.");
     }
 
     return enqueueOperation(async () => {
@@ -209,13 +201,10 @@ export class ParquetReader {
 
       // Replace all registered table names with their internal unique names
       let rewrittenSql = sql;
-      for (const [
-        userTableName,
-        internalTableName,
-      ] of this.tableMap.entries()) {
+      for (const [userTableName, internalTableName] of this.tableMap.entries()) {
         rewrittenSql = rewrittenSql.replace(
           new RegExp(`\\b${userTableName}\\b`, "g"),
-          internalTableName,
+          internalTableName
         );
       }
 
@@ -237,7 +226,7 @@ export class ParquetReader {
       return {
         columns,
         rows,
-        rowCount: result.numRows,
+        rowCount: result.numRows
       };
     });
   }
@@ -290,9 +279,7 @@ export class ParquetReader {
    * ```
    */
   async count(tableName: string): Promise<number> {
-    const result = await this.query(
-      `SELECT COUNT(*) as count FROM ${tableName}`,
-    );
+    const result = await this.query(`SELECT COUNT(*) as count FROM ${tableName}`);
     return result.rows[0][0] as number;
   }
 
@@ -347,7 +334,7 @@ export class ParquetReader {
 export async function queryParquet(
   blob: Blob,
   tableName: string = "data",
-  sql?: string,
+  sql?: string
 ): Promise<QueryResult> {
   const reader = new ParquetReader();
 
@@ -378,7 +365,7 @@ export async function queryParquet(
 export async function readParquet(
   blob: Blob,
   tableName: string = "data",
-  limit?: number,
+  limit?: number
 ): Promise<QueryResult> {
   const reader = new ParquetReader();
 

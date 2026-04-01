@@ -143,11 +143,11 @@ function CommandShortcut({ className, ...props }: React.ComponentProps<"span">) 
 export {
   Command,
   CommandDialog,
-  CommandInput,
-  CommandList,
   CommandEmpty,
   CommandGroup,
+  CommandInput,
   CommandItem,
-  CommandShortcut,
-  CommandSeparator
+  CommandList,
+  CommandSeparator,
+  CommandShortcut
 };
