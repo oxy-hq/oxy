@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.32](https://github.com/oxy-hq/oxy-internal/compare/0.5.31...0.5.32) (2026-04-01)
+
+
+### <!-- 0 -->🚀 Features
+
+* new fsm agentic workflow ([#1781](https://github.com/oxy-hq/oxy-internal/issues/1781)) ([a602850](https://github.com/oxy-hq/oxy-internal/commit/a60285010d97eae83d22bc7c0e0b243fcbaab02f))
+
 ## [0.5.31](https://github.com/oxy-hq/oxy-internal/compare/0.5.30...0.5.31) (2026-03-26)
 
 

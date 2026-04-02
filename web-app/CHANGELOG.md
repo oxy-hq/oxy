@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.32](https://github.com/oxy-hq/oxy-internal/compare/0.5.31...0.5.32) (2026-04-01)
+
+
+### <!-- 0 -->🚀 Features
+
+* new fsm agentic workflow ([#1781](https://github.com/oxy-hq/oxy-internal/issues/1781)) ([a602850](https://github.com/oxy-hq/oxy-internal/commit/a60285010d97eae83d22bc7c0e0b243fcbaab02f))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* biome format ([#1840](https://github.com/oxy-hq/oxy-internal/issues/1840)) ([85c8e92](https://github.com/oxy-hq/oxy-internal/commit/85c8e925158ea71e67056d8d085480ae291ce397))
+* issue with testing progress bar ([#1827](https://github.com/oxy-hq/oxy-internal/issues/1827)) ([13b4824](https://github.com/oxy-hq/oxy-internal/commit/13b482418c6edeb7ba5488fcc36755fefc057d51))
+
 ## [0.5.31](https://github.com/oxy-hq/oxy-internal/compare/0.5.30...0.5.31) (2026-03-26)
 
 
