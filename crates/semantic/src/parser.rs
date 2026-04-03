@@ -71,31 +71,84 @@ impl SemanticLayerParser {
         }
     }
 
-    /// Parses the semantic layer from the configured directory structure
+    /// Parses the semantic layer from the configured directory structure.
+    /// Recursively scans the base path for `.view.yml`/`.view.yaml` and
+    /// `.topic.yml`/`.topic.yaml` files, so they can live anywhere under
+    /// the base path (flat, nested, etc.).
     pub fn parse(&self) -> Result<ParseResult, SemanticLayerError> {
         let mut views = Vec::new();
         let mut topics = Vec::new();
         let mut parsed_files = Vec::new();
 
-        // Parse views from views/ directory
-        let views_dir = self.config.base_path.join("views");
-        if views_dir.exists() {
-            let (parsed_views, view_files) = self.parse_views(&views_dir)?;
-            views.extend(parsed_views);
-            parsed_files.extend(view_files);
-        } else {
+        if !self.config.base_path.exists() {
             return Err(SemanticLayerError::IOError(format!(
-                "Views directory not found: {}",
-                views_dir.display()
+                "Base path not found: {}",
+                self.config.base_path.display()
             )));
         }
 
-        // Parse topics from topics/ directory
-        let topics_dir = self.config.base_path.join("topics");
-        if topics_dir.exists() {
-            let (parsed_topics, topic_files) = self.parse_topics(&topics_dir)?;
-            topics.extend(parsed_topics);
-            parsed_files.extend(topic_files);
+        // Track visited canonical paths to avoid symlink cycles
+        let mut visited = HashSet::new();
+
+        // Recursively discover all view and topic files under the base path
+        let mut dirs_to_scan = vec![self.config.base_path.clone()];
+        while let Some(dir) = dirs_to_scan.pop() {
+            // Resolve canonical path to detect cycles
+            let canonical = dir.canonicalize().unwrap_or_else(|_| dir.clone());
+            if !visited.insert(canonical) {
+                continue;
+            }
+
+            let entries = fs::read_dir(&dir).map_err(|e| {
+                SemanticLayerError::IOError(format!(
+                    "Failed to read directory {}: {}",
+                    dir.display(),
+                    e
+                ))
+            })?;
+
+            for entry in entries {
+                let entry = entry.map_err(|e| {
+                    SemanticLayerError::IOError(format!("Failed to read directory entry: {}", e))
+                })?;
+                let path = entry.path();
+
+                if path.is_dir() {
+                    // Skip symlinked directories unless follow_symlinks is enabled
+                    if path.is_symlink() && !self.config.follow_symlinks {
+                        continue;
+                    }
+                    // Skip hidden directories and common non-project directories
+                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                        if name.starts_with('.')
+                            || name == "target"
+                            || name == "node_modules"
+                            || name == "dist"
+                            || name == "build"
+                        {
+                            continue;
+                        }
+                    }
+                    dirs_to_scan.push(path);
+                } else if path.is_file() {
+                    if self.is_view_file(&path) {
+                        let view = self.parse_view_file(&path)?;
+                        views.push(view);
+                        parsed_files.push(path);
+                    } else if self.is_topic_file(&path) {
+                        let topic = self.parse_topic_file(&path)?;
+                        topics.push(topic);
+                        parsed_files.push(path);
+                    }
+                }
+            }
+        }
+
+        if views.is_empty() && self.config.validate {
+            return Err(SemanticLayerError::IOError(format!(
+                "No view files (*.view.yml or *.view.yaml) found under: {}",
+                self.config.base_path.display()
+            )));
         }
 
         // Create semantic layer
@@ -173,62 +226,6 @@ impl SemanticLayerParser {
             parsed_files,
             variables_found,
         })
-    }
-
-    /// Parses all view files from the given directory
-    fn parse_views(
-        &self,
-        views_dir: &Path,
-    ) -> Result<(Vec<View>, Vec<PathBuf>), SemanticLayerError> {
-        let mut views = Vec::new();
-        let mut parsed_files = Vec::new();
-
-        let entries = fs::read_dir(views_dir).map_err(|e| {
-            SemanticLayerError::IOError(format!("Failed to read views directory: {}", e))
-        })?;
-
-        for entry in entries {
-            let entry = entry.map_err(|e| {
-                SemanticLayerError::IOError(format!("Failed to read directory entry: {}", e))
-            })?;
-            let path = entry.path();
-
-            if path.is_file() && self.is_view_file(&path) {
-                let view = self.parse_view_file(&path)?;
-                views.push(view);
-                parsed_files.push(path);
-            }
-        }
-
-        Ok((views, parsed_files))
-    }
-
-    /// Parses all topic files from the given directory
-    fn parse_topics(
-        &self,
-        topics_dir: &Path,
-    ) -> Result<(Vec<Topic>, Vec<PathBuf>), SemanticLayerError> {
-        let mut topics = Vec::new();
-        let mut parsed_files = Vec::new();
-
-        let entries = fs::read_dir(topics_dir).map_err(|e| {
-            SemanticLayerError::IOError(format!("Failed to read topics directory: {}", e))
-        })?;
-
-        for entry in entries {
-            let entry = entry.map_err(|e| {
-                SemanticLayerError::IOError(format!("Failed to read directory entry: {}", e))
-            })?;
-            let path = entry.path();
-
-            if path.is_file() && self.is_topic_file(&path) {
-                let topic = self.parse_topic_file(&path)?;
-                topics.push(topic);
-                parsed_files.push(path);
-            }
-        }
-
-        Ok((topics, parsed_files))
     }
 
     /// Parses a single view file
@@ -755,10 +752,7 @@ mod tests {
 
     /// Creates a test fixture with a minimal semantic layer structure.
     fn create_test_fixture() -> TempDir {
-        let temp_dir = TempDir::new().unwrap();
-        let views_dir = temp_dir.path().join("views");
-        std::fs::create_dir(&views_dir).unwrap();
-        temp_dir
+        TempDir::new().unwrap()
     }
 
     /// Creates a minimal view YAML content.
@@ -888,10 +882,21 @@ dimensions:
         use super::*;
 
         #[test]
-        fn test_parse_missing_views_dir_fails() {
-            let temp_dir = TempDir::new().unwrap();
-            // Don't create views directory
-            let config = ParserConfig::new(temp_dir.path());
+        fn test_parse_missing_base_dir_fails() {
+            let config = ParserConfig::new("/nonexistent/semantics");
+            let parser =
+                SemanticLayerParser::new(config, GlobalRegistry::new("/nonexistent/globals"));
+
+            let result = parser.parse();
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            assert!(matches!(err, SemanticLayerError::IOError(_)));
+        }
+
+        #[test]
+        fn test_parse_no_view_files_with_validation_fails() {
+            let temp_dir = create_test_fixture();
+            let config = ParserConfig::new(temp_dir.path()).with_validation(true);
             let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
 
             let result = parser.parse();
@@ -901,7 +906,7 @@ dimensions:
         }
 
         #[test]
-        fn test_parse_empty_views_dir_succeeds() {
+        fn test_parse_no_view_files_without_validation_returns_empty() {
             let temp_dir = create_test_fixture();
             let config = ParserConfig::new(temp_dir.path()).with_validation(false);
             let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
@@ -913,11 +918,13 @@ dimensions:
         }
 
         #[test]
-        fn test_parse_single_view_file() {
+        fn test_parse_single_view_file_flat() {
             let temp_dir = create_test_fixture();
-            let views_dir = temp_dir.path().join("views");
-            let view_path = views_dir.join("orders.view.yaml");
-            std::fs::write(&view_path, minimal_view_yaml("orders")).unwrap();
+            std::fs::write(
+                temp_dir.path().join("orders.view.yaml"),
+                minimal_view_yaml("orders"),
+            )
+            .unwrap();
 
             let config = ParserConfig::new(temp_dir.path()).with_validation(false);
             let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
@@ -931,17 +938,59 @@ dimensions:
         }
 
         #[test]
-        fn test_parse_multiple_view_files() {
+        fn test_parse_single_view_file_in_subdirectory() {
             let temp_dir = create_test_fixture();
             let views_dir = temp_dir.path().join("views");
-
+            std::fs::create_dir(&views_dir).unwrap();
             std::fs::write(
                 views_dir.join("orders.view.yaml"),
                 minimal_view_yaml("orders"),
             )
             .unwrap();
+
+            let config = ParserConfig::new(temp_dir.path()).with_validation(false);
+            let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
+
+            let result = parser.parse();
+            assert!(result.is_ok());
+            let parse_result = result.unwrap();
+            assert_eq!(parse_result.semantic_layer.views.len(), 1);
+            assert_eq!(parse_result.semantic_layer.views[0].name, "orders");
+            assert_eq!(parse_result.parsed_files.len(), 1);
+        }
+
+        #[test]
+        fn test_parse_deeply_nested_view_file() {
+            let temp_dir = create_test_fixture();
+            let nested_dir = temp_dir.path().join("semantics/domain/subdomain");
+            std::fs::create_dir_all(&nested_dir).unwrap();
             std::fs::write(
-                views_dir.join("users.view.yaml"),
+                nested_dir.join("orders.view.yaml"),
+                minimal_view_yaml("orders"),
+            )
+            .unwrap();
+
+            let config = ParserConfig::new(temp_dir.path()).with_validation(false);
+            let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
+
+            let result = parser.parse();
+            assert!(result.is_ok());
+            let parse_result = result.unwrap();
+            assert_eq!(parse_result.semantic_layer.views.len(), 1);
+            assert_eq!(parse_result.semantic_layer.views[0].name, "orders");
+        }
+
+        #[test]
+        fn test_parse_multiple_view_files() {
+            let temp_dir = create_test_fixture();
+
+            std::fs::write(
+                temp_dir.path().join("orders.view.yaml"),
+                minimal_view_yaml("orders"),
+            )
+            .unwrap();
+            std::fs::write(
+                temp_dir.path().join("users.view.yaml"),
                 minimal_view_yaml("users"),
             )
             .unwrap();
@@ -959,15 +1008,14 @@ dimensions:
         #[test]
         fn test_parse_ignores_non_view_files() {
             let temp_dir = create_test_fixture();
-            let views_dir = temp_dir.path().join("views");
 
             std::fs::write(
-                views_dir.join("orders.view.yaml"),
+                temp_dir.path().join("orders.view.yaml"),
                 minimal_view_yaml("orders"),
             )
             .unwrap();
-            std::fs::write(views_dir.join("readme.txt"), "This is not a view").unwrap();
-            std::fs::write(views_dir.join("data.json"), "{}").unwrap();
+            std::fs::write(temp_dir.path().join("readme.txt"), "This is not a view").unwrap();
+            std::fs::write(temp_dir.path().join("data.json"), "{}").unwrap();
 
             let config = ParserConfig::new(temp_dir.path()).with_validation(false);
             let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
@@ -1125,7 +1173,6 @@ views:
         #[test]
         fn test_parse_view_with_variables_succeeds() {
             let temp_dir = create_test_fixture();
-            let views_dir = temp_dir.path().join("views");
 
             // View with variable references in table and dimension expressions
             let view_with_vars = r#"
@@ -1138,7 +1185,7 @@ dimensions:
     expr: "CASE WHEN region = '{{variables.region}}' THEN amount ELSE 0 END"
     type: number
 "#;
-            std::fs::write(views_dir.join("orders.view.yaml"), view_with_vars).unwrap();
+            std::fs::write(temp_dir.path().join("orders.view.yaml"), view_with_vars).unwrap();
 
             let config = ParserConfig::new(temp_dir.path()).with_validation(false);
             let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));

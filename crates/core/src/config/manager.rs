@@ -249,9 +249,16 @@ impl ConfigManager {
         &self.config.project_path
     }
 
-    /// Gets the semantics directory path (project_path/semantics)
+    /// Gets the semantics directory path (project_path/semantics).
+    /// Used for writing semantic files.
     pub fn semantics_path(&self) -> PathBuf {
         self.config.project_path.join("semantics")
+    }
+
+    /// Gets the base path for scanning semantic layer files.
+    /// Scans the entire project so .view.yml/.topic.yml files can live anywhere.
+    pub fn semantics_scan_path(&self) -> PathBuf {
+        self.config.project_path.clone()
     }
 
     pub fn global_semantic_path(&self) -> PathBuf {

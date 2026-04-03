@@ -197,19 +197,12 @@ pub async fn validate_semantic_query_task(
         "Validating semantic query task: {:?}",
         serde_json::to_string_pretty(&task).unwrap_or_default()
     );
-    // Load semantic layer metadata from the project's semantics directory
-    let semantic_dir = config.semantics_path();
+    // Load semantic layer metadata by scanning the project directory
+    let scan_path = config.semantics_scan_path();
 
-    if !semantic_dir.exists() {
-        return Err(SemanticQueryError::MetadataMissing {
-            path: semantic_dir.display().to_string(),
-        }
-        .into());
-    }
-
-    let parse_result = parse_semantic_layer_from_dir(&semantic_dir, config.get_globals_registry())
-        .map_err(|e| SemanticQueryError::ExecutionFailed {
-            details: format!("Failed to parse semantic layer: {}", e),
+    let parse_result = parse_semantic_layer_from_dir(&scan_path, config.get_globals_registry())
+        .map_err(|e| SemanticQueryError::MetadataMissing {
+            path: format!("{} ({})", scan_path.display(), e),
         })?;
 
     let semantic_layer = parse_result.semantic_layer;

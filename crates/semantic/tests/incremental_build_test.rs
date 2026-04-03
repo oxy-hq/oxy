@@ -48,8 +48,8 @@ table: orders.csv
     // Create initial manifest
     let mut manifest = BuildManifest::new();
     manifest.add_file_hash(
-        "views/orders.view.yml",
-        oxy_semantic::hash_file(&semantic_dir.join("views/orders.view.yml")).unwrap(),
+        "semantics/views/orders.view.yml",
+        oxy_semantic::hash_file(&project_root.join("semantics/views/orders.view.yml")).unwrap(),
     );
     manifest.set_config_hash("config_hash".to_string());
     manifest.set_globals_hash("globals_hash".to_string());
@@ -92,7 +92,7 @@ table: orders.csv
 
     // Create initial manifest with old hash
     let mut manifest = BuildManifest::new();
-    manifest.add_file_hash("views/orders.view.yml", "old_hash".to_string());
+    manifest.add_file_hash("semantics/views/orders.view.yml", "old_hash".to_string());
     manifest.set_config_hash("config_hash".to_string());
     manifest.set_globals_hash("globals_hash".to_string());
     manifest
@@ -148,8 +148,8 @@ table: orders.csv
     // Create initial manifest
     let mut manifest = BuildManifest::new();
     manifest.add_file_hash(
-        "views/orders.view.yml",
-        oxy_semantic::hash_file(&semantic_dir.join("views/orders.view.yml")).unwrap(),
+        "semantics/views/orders.view.yml",
+        oxy_semantic::hash_file(&project_root.join("semantics/views/orders.view.yml")).unwrap(),
     );
     manifest.set_config_hash("config_hash".to_string());
     manifest.set_globals_hash("globals_hash".to_string());
@@ -194,10 +194,10 @@ fn test_incremental_build_view_deleted() {
 
     // Create initial manifest with two views
     let mut manifest = BuildManifest::new();
-    manifest.add_file_hash("views/orders.view.yml", "hash1".to_string());
-    manifest.add_file_hash("views/customers.view.yml", "hash2".to_string());
+    manifest.add_file_hash("semantics/views/orders.view.yml", "hash1".to_string());
+    manifest.add_file_hash("semantics/views/customers.view.yml", "hash2".to_string());
     manifest.add_output_mapping(
-        "views/customers.view.yml",
+        "semantics/views/customers.view.yml",
         vec![".semantics/model/customers.yml".to_string()],
     );
     manifest.set_config_hash("config_hash".to_string());
@@ -264,10 +264,10 @@ table: orders.csv
 
     // Create manifest with dependency: orders depends on customers
     let mut manifest = BuildManifest::new();
-    manifest.add_file_hash("views/customers.view.yml", "old_hash".to_string());
+    manifest.add_file_hash("semantics/views/customers.view.yml", "old_hash".to_string());
     manifest.add_file_hash(
-        "views/orders.view.yml",
-        oxy_semantic::hash_file(&semantic_dir.join("views/orders.view.yml")).unwrap(),
+        "semantics/views/orders.view.yml",
+        oxy_semantic::hash_file(&project_root.join("semantics/views/orders.view.yml")).unwrap(),
     );
 
     let mut dep_graph = BTreeMap::new();
@@ -333,8 +333,8 @@ table: orders.csv
     let old_globals_hash = hash_globals_registry(&project_root.join(".oxy/globals")).unwrap();
     let mut manifest = BuildManifest::new();
     manifest.add_file_hash(
-        "views/orders.view.yml",
-        oxy_semantic::hash_file(&semantic_dir.join("views/orders.view.yml")).unwrap(),
+        "semantics/views/orders.view.yml",
+        oxy_semantic::hash_file(&project_root.join("semantics/views/orders.view.yml")).unwrap(),
     );
     manifest.set_config_hash("config_hash".to_string());
     manifest.set_globals_hash(old_globals_hash);
@@ -384,8 +384,8 @@ table: orders.csv
     // Create manifest with old config hash
     let mut manifest = BuildManifest::new();
     manifest.add_file_hash(
-        "views/orders.view.yml",
-        oxy_semantic::hash_file(&semantic_dir.join("views/orders.view.yml")).unwrap(),
+        "semantics/views/orders.view.yml",
+        oxy_semantic::hash_file(&project_root.join("semantics/views/orders.view.yml")).unwrap(),
     );
     manifest.set_config_hash("old_config".to_string());
     manifest.set_globals_hash("globals_hash".to_string());
@@ -429,7 +429,7 @@ base_view: orders
 
     // Create manifest with old hash
     let mut manifest = BuildManifest::new();
-    manifest.add_file_hash("topics/sales.topic.yml", "old_hash".to_string());
+    manifest.add_file_hash("semantics/topics/sales.topic.yml", "old_hash".to_string());
     manifest.set_config_hash("config_hash".to_string());
     manifest.set_globals_hash("globals_hash".to_string());
     manifest

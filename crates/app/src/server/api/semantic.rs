@@ -374,7 +374,7 @@ pub async fn get_view_details(
     }
 
     // Parse the specific view file
-    let parser_config = ParserConfig::new(project_manager.config_manager.semantics_path());
+    let parser_config = ParserConfig::new(project_manager.config_manager.semantics_scan_path());
     let parser = SemanticLayerParser::new(parser_config, global_registry);
 
     let view = parser.parse_view_file(&full_path).map_err(|e| {
@@ -421,7 +421,7 @@ pub async fn get_topic_details(
     use oxy_semantic::parser::SemanticLayerParser;
 
     let global_registry = project_manager.config_manager.get_globals_registry();
-    let semantics_path = project_manager.config_manager.semantics_path();
+    let semantics_path = project_manager.config_manager.semantics_scan_path();
 
     // Decode base64 file path
     let decoded_path = BASE64_STANDARD.decode(&file_path_b64).map_err(|e| {

@@ -231,30 +231,19 @@ impl ChangeDetector {
         })
     }
 
-    /// Scan semantic files and compute their hashes
+    /// Scan semantic files and compute their hashes.
+    /// Scans from the project root to match the parser's scope.
     fn scan_semantic_files(&self) -> Result<BTreeMap<String, String>, SemanticLayerError> {
         let mut file_hashes = BTreeMap::new();
 
-        // Scan views directory
-        let views_dir = self.semantic_dir.join("views");
-        if views_dir.exists() {
-            Self::scan_directory(
-                &views_dir,
-                &self.semantic_dir,
-                ".view.yml",
-                &mut file_hashes,
-            )?;
-        }
+        let project_root = self
+            .target_dir
+            .parent()
+            .ok_or_else(|| SemanticLayerError::IOError("Invalid target directory".to_string()))?;
 
-        // Scan topics directory
-        let topics_dir = self.semantic_dir.join("topics");
-        if topics_dir.exists() {
-            Self::scan_directory(
-                &topics_dir,
-                &self.semantic_dir,
-                ".topic.yml",
-                &mut file_hashes,
-            )?;
+        // Scan for both .yml and .yaml extensions to match parser behavior
+        for ext in &[".view.yml", ".view.yaml", ".topic.yml", ".topic.yaml"] {
+            Self::scan_directory(project_root, project_root, ext, &mut file_hashes)?;
         }
 
         Ok(file_hashes)
@@ -295,9 +284,8 @@ impl ChangeDetector {
         )?;
 
         // Topics are scanned here too for embeddings (separate from semantic layer)
-        let topics_dir = self.semantic_dir.join("topics");
-        if topics_dir.exists() {
-            Self::scan_directory(&topics_dir, project_root, ".topic.yml", &mut file_hashes)?;
+        for ext in &[".topic.yml", ".topic.yaml"] {
+            Self::scan_directory(project_root, project_root, ext, &mut file_hashes)?;
         }
 
         Ok(file_hashes)
@@ -340,6 +328,17 @@ impl ChangeDetector {
                     file_hashes.insert(relative_path, hash);
                 }
             } else if path.is_dir() {
+                // Skip hidden directories and common non-project directories
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    if name.starts_with('.')
+                        || name == "target"
+                        || name == "node_modules"
+                        || name == "dist"
+                        || name == "build"
+                    {
+                        continue;
+                    }
+                }
                 // Recursively scan subdirectories
                 Self::scan_directory(&path, base_dir, extension, file_hashes)?;
             }
