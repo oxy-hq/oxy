@@ -86,6 +86,7 @@ pub fn parse_view_yaml(
         dimensions: shim.dimensions,
         measures: shim.measures,
         segments: shim.segments,
+        meta: None,
     })
 }
 
@@ -101,6 +102,7 @@ pub fn parse_topic_yaml(
         base_view: shim.base_view,
         retrieval: shim.retrieval,
         default_filters: shim.default_filters,
+        meta: None,
     })
 }
 

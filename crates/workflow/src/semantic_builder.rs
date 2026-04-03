@@ -761,6 +761,7 @@ fn convert_view_to_airlayer(view: &oxy_semantic::View) -> airlayer::View {
             .map(|ms| ms.iter().map(convert_measure_to_airlayer).collect()),
         // TODO: pass through segments when oxy-semantic adds support
         segments: vec![],
+        meta: None,
     }
 }
 
@@ -775,6 +776,7 @@ fn convert_entity_to_airlayer(entity: &oxy_semantic::Entity) -> airlayer::Entity
         key: entity.key.clone(),
         keys: entity.keys.clone(),
         inherits_from: None,
+        meta: None,
     }
 }
 
@@ -800,6 +802,7 @@ fn convert_dimension_to_airlayer(dim: &oxy_semantic::Dimension) -> airlayer::Dim
         primary_key: None,
         sub_query: None,
         inherits_from: None,
+        meta: None,
     }
 }
 
@@ -834,6 +837,7 @@ fn convert_measure_to_airlayer(measure: &oxy_semantic::Measure) -> airlayer::Mea
         synonyms: measure.synonyms.clone(),
         rolling_window: None,
         inherits_from: None,
+        meta: None,
     }
 }
 
@@ -951,6 +955,8 @@ fn build_airlayer_query(
         // TODO: expose ungrouped option when oxy-semantic adds support
         ungrouped: false,
         through,
+        motif: None,
+        motif_params: Default::default(),
     })
 }
 

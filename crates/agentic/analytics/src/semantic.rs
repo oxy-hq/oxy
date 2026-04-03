@@ -1251,6 +1251,8 @@ impl Catalog for SemanticCatalog {
             timezone: None,
             ungrouped: false,
             through: vec![],
+            motif: None,
+            motif_params: Default::default(),
         };
 
         let result = self.engine.compile_query(&request).map_err(|e| {

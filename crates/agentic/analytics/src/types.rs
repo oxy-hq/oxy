@@ -185,6 +185,8 @@ impl QueryRequestItem {
             timezone: None,
             ungrouped: false,
             through: vec![],
+            motif: None,
+            motif_params: Default::default(),
         }
     }
 }

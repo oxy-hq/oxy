@@ -408,16 +408,20 @@ dependencies = [
 
 [[package]]
 name = "airlayer"
-version = "0.1.0"
-source = "git+https://github.com/oxy-hq/airlayer.git?rev=34178e6#34178e6b69ebc0651b94484a93e1a359b2de87ee"
+version = "0.0.7"
+source = "git+https://github.com/oxy-hq/airlayer.git?rev=4b92e5f#4b92e5fd1e3bb2e375351277f034d6783d5e2ce1"
 dependencies = [
  "anyhow",
  "chrono",
  "chrono-tz 0.8.6",
  "clap",
+ "console",
  "convert_case 0.7.1",
+ "dialoguer",
  "glob",
+ "indicatif",
  "itertools 0.10.5",
+ "libc",
  "minijinja 1.0.22",
  "petgraph 0.6.5",
  "regex",
@@ -4057,6 +4061,19 @@ dependencies = [
  "arrow 56.2.0",
  "paste",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "dialoguer"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "658bce805d770f407bc62102fca7c2c64ceef2fbcb2b8bd19d2765ce093980de"
+dependencies = [
+ "console",
+ "shell-words",
+ "tempfile",
+ "thiserror 1.0.69",
+ "zeroize",
 ]
 
 [[package]]
@@ -11744,6 +11761,12 @@ checksum = "f40ca3c46823713e0d4209592e8d6e826aa57e928f09752619fc696c499637f6"
 dependencies = [
  "lazy_static",
 ]
+
+[[package]]
+name = "shell-words"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc6fe69c597f9c37bfeeeeeb33da3530379845f10be461a66d16d03eca2ded77"
 
 [[package]]
 name = "shellexpand"
