@@ -40,12 +40,12 @@ serde = { version = "1.0", features = ["derive"], optional = true }
 
 # Snowflake
 snowflake-api = { git = "https://github.com/oxy-hq/snowflake-rs.git", tag = "v0.13.0-browser-auth", optional = true }
-arrow = { version = "=56.2.0", default-features = false, features = [
+arrow = { version = "=58.1.0", default-features = false, features = [
     "json",
 ], optional = true }
 
 # BigQuery
-gcp-bigquery-client = { version = "0.25.1", optional = true }
+gcp-bigquery-client = { version = "0.28.0", optional = true }
 
 [dev-dependencies]
 duckdb = { version = "1.2", features = ["bundled"] }
