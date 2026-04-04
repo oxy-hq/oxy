@@ -1,0 +1,67 @@
+name: Weekly Auto-fix
+
+on:
+  schedule:
+    - cron: "30 7 * * 0" # Every Sunday at 15:30 Vietnam time (07:30 UTC)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  autofix:
+    if: ${{ github.repository == 'oxy-hq/oxy-internal' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web-app/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        working-directory: web-app
+        run: pnpm install --frozen-lockfile
+
+      - name: Cargo clippy --fix
+        run: cargo clippy --fix --allow-dirty --allow-staged --broken-code --workspace --lib
+
+      - name: Cargo fmt
+        run: cargo fmt --all
+
+      - name: pnpm format
+        working-directory: web-app
+        run: pnpm format
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: autofix/weekly-${{ github.run_id }}
+          commit-message: "chore: weekly clippy fix, rustfmt, and frontend format"
+          title: "chore: weekly auto-fix (clippy + fmt)"
+          body: |
+            Automated weekly auto-fix run.
+
+            - `cargo clippy --fix --allow-dirty --allow-staged --broken-code --workspace --lib`
+            - `cargo fmt --all`
+            - `pnpm format` (Biome)
+
+            Review and merge if the changes look correct.
+          delete-branch: true
+          labels: "automated,chore"

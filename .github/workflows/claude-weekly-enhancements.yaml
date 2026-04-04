@@ -15,7 +15,7 @@ jobs:
   suggest-enhancements:
     if: ${{ github.repository == 'oxy-hq/oxy-internal' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -75,7 +75,7 @@ jobs:
             - Review recent commits: `git log --oneline --since="7 days ago"`
             - Inspect the changed files in those commits for the issues above
             - Look at open TODO/FIXME/HACK comments in recently changed files
-            - Check for Clippy-style issues in changed Rust files (do NOT run cargo build)
+            - Do NOT check for clippy-style issues (a separate automated job handles that)
 
             Output:
             - Create a single GitHub issue titled "Weekly Enhancement Suggestions — <date>" using `gh issue create`
