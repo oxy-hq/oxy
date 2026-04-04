@@ -8,27 +8,39 @@ Oxy is a Rust workspace with a web frontend. The CLI binary lives in the `app` c
 
 ```
 crates/
-  app/            # CLI + HTTP server (binary, default member)
-  core/           # Core platform library (published as "oxy")
-  agent/          # Agent execution engine
-  auth/           # Authentication and authorization
-  entity/         # Sea-ORM database entity models
-  migration/      # Sea-ORM database migrations
-  semantic/       # Semantic query layer
-  shared/         # Shared types and infrastructure
-  workflow/       # Workflow orchestration
-  thread/         # Conversation / thread management
-  project/        # Project and workspace management
-  globals/        # Global semantics registry
-  omni/           # Omni integration
-  a2a/            # A2A protocol server
+  app/                      # (oxy-app / oxy binary) CLI + HTTP server, default workspace member
+  core/                     # (oxy) Core platform library, published as "oxy"
+  agent/                    # (oxy-agent) Agent execution engine
+  auth/                     # (oxy-auth) Authentication and authorization
+  entity/                   # (entity) Sea-ORM database entity models
+  migration/                # (migration) Sea-ORM database migrations
+  semantic/                 # (oxy-semantic) Semantic query layer powered by airlayer
+  shared/                   # (oxy-shared) Shared types, errors, and infrastructure
+  workflow/                 # (oxy-workflow) Workflow orchestration
+  thread/                   # (oxy-thread) Thread and conversation management
+  project/                  # (oxy-project) Project and workspace management
+  globals/                  # (oxy_globals) Global semantics registry and inheritance support
+  omni/                     # (omni) Omni integration
+  a2a/                      # (a2a) A2A protocol server
+  test-utils/               # (oxy-test-utils) Test utilities, fixtures, and mocks
+  agentic/
+    core/                   # (agentic-core) Generic agentic workflow orchestration framework
+    analytics/              # (agentic-analytics) Analytics domain for the agentic framework
+    app-builder/            # (agentic-app-builder) Data app builder domain for the agentic framework
+    connector/              # (agentic-connector) Database connector trait and backend implementations
+    db/                     # (agentic-db) Shared SeaORM entities and migrations for agentic pipeline
+    http/                   # (agentic-http) Axum HTTP routes for the agentic analytics pipeline
+    llm/                    # (agentic-llm) Shared LLM provider abstraction for agentic domains
+    workflow/               # (agentic-workflow) Procedure runner backed by oxy-workflow
   infrastructure/llm/
-    anthropic/    # Anthropic LLM provider
-    gemini/       # Google Gemini provider
-    ollama/       # Ollama provider
-    openai/       # OpenAI provider
-    oxy-llm/      # Unified LLM abstraction
-web-app/          # Frontend (Vite + React + TypeScript)
+    anthropic/              # (oxy-anthropic) Anthropic LLM provider
+    gemini/                 # (oxy-gemini) Google Gemini provider
+    ollama/                 # (oxy-ollama) Ollama provider
+    openai/                 # (oxy-openai) OpenAI provider
+    oxy-llm/                # (oxy-llm) Unified LLM abstraction over all providers
+  integration/
+    looker/                 # (oxy-looker) Looker integration
+web-app/                    # Frontend (Vite + React + TypeScript)
 ```
 
 ### Key Technical Details

@@ -30,14 +30,36 @@ jobs:
             You are reviewing the Oxy codebase — a Rust workspace with a React/TypeScript frontend.
 
             Workspace layout:
-            - crates/app        — CLI + HTTP server (Axum)
-            - crates/core       — Core platform library
-            - crates/agent      — Agent execution engine
-            - crates/semantic   — Semantic query layer (airlayer)
-            - crates/workflow   — Workflow orchestration
-            - crates/thread     — Conversation / thread management
-            - crates/shared     — Shared types and infrastructure
-            - web-app/          — Vite + React + TypeScript frontend
+            - crates/app                      — (oxy-app / oxy binary) CLI + HTTP server, default workspace member
+            - crates/core                     — (oxy) Core platform library, published as "oxy"
+            - crates/agent                    — (oxy-agent) Agent execution engine
+            - crates/auth                     — (oxy-auth) Authentication and authorization
+            - crates/entity                   — (entity) Sea-ORM database entity models
+            - crates/migration                — (migration) Sea-ORM database migrations
+            - crates/semantic                 — (oxy-semantic) Semantic query layer powered by airlayer
+            - crates/shared                   — (oxy-shared) Shared types, errors, and infrastructure
+            - crates/workflow                 — (oxy-workflow) Workflow orchestration
+            - crates/thread                   — (oxy-thread) Thread and conversation management
+            - crates/project                  — (oxy-project) Project and workspace management
+            - crates/globals                  — (oxy_globals) Global semantics registry and inheritance support
+            - crates/omni                     — (omni) Omni integration
+            - crates/a2a                      — (a2a) A2A protocol server
+            - crates/test-utils               — (oxy-test-utils) Test utilities, fixtures, and mocks
+            - crates/agentic/core             — (agentic-core) Generic agentic workflow orchestration framework
+            - crates/agentic/analytics        — (agentic-analytics) Analytics domain for the agentic framework
+            - crates/agentic/app-builder      — (agentic-app-builder) Data app builder domain for the agentic framework
+            - crates/agentic/connector        — (agentic-connector) Database connector trait and backend implementations
+            - crates/agentic/db               — (agentic-db) Shared SeaORM entities and migrations for agentic pipeline
+            - crates/agentic/http             — (agentic-http) Axum HTTP routes for the agentic analytics pipeline
+            - crates/agentic/llm              — (agentic-llm) Shared LLM provider abstraction for agentic domains
+            - crates/agentic/workflow         — (agentic-workflow) Procedure runner backed by oxy-workflow
+            - crates/infrastructure/llm/anthropic — (oxy-anthropic) Anthropic LLM provider
+            - crates/infrastructure/llm/gemini    — (oxy-gemini) Google Gemini provider
+            - crates/infrastructure/llm/ollama    — (oxy-ollama) Ollama provider
+            - crates/infrastructure/llm/openai    — (oxy-openai) OpenAI provider
+            - crates/infrastructure/llm/oxy-llm   — (oxy-llm) Unified LLM abstraction over all providers
+            - crates/integration/looker       — (oxy-looker) Looker integration
+            - web-app/                        — Frontend (Vite + React + TypeScript)
 
             Your task is to identify the most impactful improvement opportunities across the codebase from the past week. Focus on:
 
