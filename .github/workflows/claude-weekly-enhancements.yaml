@@ -1,0 +1,64 @@
+name: Weekly Claude Enhancements
+
+on:
+  schedule:
+    - cron: "30 7 * * 0" # Every Sunday at 15:30 Vietnam time (07:30 UTC)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  suggest-enhancements:
+    if: ${{ github.repository == 'oxy-hq/oxy-internal' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          track_progress: true
+          prompt: |
+            REPO: ${{ github.repository }}
+
+            You are reviewing the Oxy codebase — a Rust workspace with a React/TypeScript frontend.
+
+            Workspace layout:
+            - crates/app        — CLI + HTTP server (Axum)
+            - crates/core       — Core platform library
+            - crates/agent      — Agent execution engine
+            - crates/semantic   — Semantic query layer (airlayer)
+            - crates/workflow   — Workflow orchestration
+            - crates/thread     — Conversation / thread management
+            - crates/shared     — Shared types and infrastructure
+            - web-app/          — Vite + React + TypeScript frontend
+
+            Your task is to identify the most impactful improvement opportunities across the codebase from the past week. Focus on:
+
+            1. **Refactoring opportunities** — duplicated logic, overly complex functions, poor separation of concerns
+            2. **Performance improvements** — inefficient queries, unnecessary clones/allocations, blocking calls in async contexts
+            3. **Code quality** — missing error handling, clippy warnings, inconsistent patterns vs. established conventions
+            4. **Security** — unsafe unwraps on external input, potential injection vectors, overly broad permissions
+            5. **Test coverage gaps** — untested public APIs, missing edge-case tests, flaky test patterns
+
+            Steps:
+            - Review recent commits: `git log --oneline --since="7 days ago"`
+            - Inspect the changed files in those commits for the issues above
+            - Look at open TODO/FIXME/HACK comments in recently changed files
+            - Check for Clippy-style issues in changed Rust files (do NOT run cargo build)
+
+            Output:
+            - Create a single GitHub issue titled "Weekly Enhancement Suggestions — <date>" using `gh issue create`
+            - The issue body should use markdown with one section per category above
+            - Only include categories where you found real issues (skip empty sections)
+            - For each finding include: file path + line reference, a one-sentence description, and a concrete suggestion
+            - Cap the issue at 10 findings total — prioritize by impact
+
+          claude_args: |
+            --allowedTools "Read,Glob,Grep,Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash(gh issue create:*),Bash(gh issue list:*)"
