@@ -136,6 +136,7 @@ fn semantic_catalog() -> SemanticCatalog {
 fn intent(metrics: &[&str], dimensions: &[&str]) -> AnalyticsIntent {
     AnalyticsIntent {
         raw_question: "test".into(),
+        summary: String::new(),
         question_type: QuestionType::Breakdown,
         metrics: metrics.iter().map(|s| s.to_string()).collect(),
         dimensions: dimensions.iter().map(|s| s.to_string()).collect(),
@@ -143,12 +144,15 @@ fn intent(metrics: &[&str], dimensions: &[&str]) -> AnalyticsIntent {
         history: vec![],
         spec_hint: None,
         selected_procedure: None,
+        semantic_query: Default::default(),
+        semantic_confidence: 0.0,
     }
 }
 
 fn intent_with_filters(metrics: &[&str], dimensions: &[&str], filters: &[&str]) -> AnalyticsIntent {
     AnalyticsIntent {
         raw_question: "test".into(),
+        summary: String::new(),
         question_type: QuestionType::Breakdown,
         metrics: metrics.iter().map(|s| s.to_string()).collect(),
         dimensions: dimensions.iter().map(|s| s.to_string()).collect(),
@@ -156,6 +160,8 @@ fn intent_with_filters(metrics: &[&str], dimensions: &[&str], filters: &[&str]) 
         history: vec![],
         spec_hint: None,
         selected_procedure: None,
+        semantic_query: Default::default(),
+        semantic_confidence: 0.0,
     }
 }
 
@@ -1422,6 +1428,7 @@ fn demo_project_semantic_layer_loads_and_compiles() {
     // Verify a known metric compiles
     let intent = AnalyticsIntent {
         raw_question: "test".into(),
+        summary: String::new(),
         question_type: QuestionType::Breakdown,
         metrics: vec!["set_count".into()],
         dimensions: vec!["exercise".into()],
@@ -1429,6 +1436,8 @@ fn demo_project_semantic_layer_loads_and_compiles() {
         history: vec![],
         spec_hint: None,
         selected_procedure: None,
+        semantic_query: Default::default(),
+        semantic_confidence: 0.0,
     };
     let sql = cat
         .try_compile(&intent)
@@ -1448,6 +1457,7 @@ fn qualify_names_resolves_llm_raw_column_names() {
     // Case: bare name with spaces → fuzzy matches "order_count"
     let i = AnalyticsIntent {
         raw_question: "test".into(),
+        summary: String::new(),
         question_type: QuestionType::Breakdown,
         metrics: vec!["order count".into()],
         dimensions: vec!["status".into()],
@@ -1455,6 +1465,8 @@ fn qualify_names_resolves_llm_raw_column_names() {
         history: vec![],
         spec_hint: None,
         selected_procedure: None,
+        semantic_query: Default::default(),
+        semantic_confidence: 0.0,
     };
     let result = sem.try_compile(&i);
     assert!(
@@ -1465,6 +1477,7 @@ fn qualify_names_resolves_llm_raw_column_names() {
     // Case: table-qualified raw column name ("orders.Revenue") → "orders_view.revenue"
     let i2 = AnalyticsIntent {
         raw_question: "test".into(),
+        summary: String::new(),
         question_type: QuestionType::Breakdown,
         metrics: vec!["Revenue".into()],
         dimensions: vec!["Status".into()],
@@ -1472,6 +1485,8 @@ fn qualify_names_resolves_llm_raw_column_names() {
         history: vec![],
         spec_hint: None,
         selected_procedure: None,
+        semantic_query: Default::default(),
+        semantic_confidence: 0.0,
     };
     let result2 = sem.try_compile(&i2);
     assert!(
@@ -1605,6 +1620,7 @@ fn hybrid_catalog_cardio_raw_column_names_resolve() {
     // LLM outputs "Max Heart Rate" (raw column) instead of "max_heart_rate" (semantic)
     let i = AnalyticsIntent {
         raw_question: "test".into(),
+        summary: String::new(),
         question_type: QuestionType::Trend,
         metrics: vec!["Max Heart Rate".into()],
         dimensions: vec!["Date".into()],
@@ -1612,6 +1628,8 @@ fn hybrid_catalog_cardio_raw_column_names_resolve() {
         history: vec![],
         spec_hint: None,
         selected_procedure: None,
+        semantic_query: Default::default(),
+        semantic_confidence: 0.0,
     };
     let result = hybrid.try_compile(&i);
     assert!(
@@ -1629,6 +1647,7 @@ fn hybrid_catalog_cardio_table_qualified_raw_names_resolve() {
 
     let i = AnalyticsIntent {
         raw_question: "test".into(),
+        summary: String::new(),
         question_type: QuestionType::Trend,
         metrics: vec!["cardio_4_4.Max Heart Rate".into()],
         dimensions: vec!["cardio_4_4.Date".into()],
@@ -1636,6 +1655,8 @@ fn hybrid_catalog_cardio_table_qualified_raw_names_resolve() {
         history: vec![],
         spec_hint: None,
         selected_procedure: None,
+        semantic_query: Default::default(),
+        semantic_confidence: 0.0,
     };
     let result = hybrid.try_compile(&i);
     assert!(

@@ -163,11 +163,20 @@ pub(super) fn build_solve_user_prompt(
 
 impl AnalyticsSolver {
     /// Core solve logic; `retry_ctx` is appended to the prompt on retries.
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            otel.name = "analytics.solve",
+            oxy.span_type = "analytics",
+            connector = tracing::field::Empty,
+        )
+    )]
     pub(crate) async fn solve_impl(
         &mut self,
         spec: QuerySpec,
         retry_ctx: Option<&RetryContext>,
     ) -> Result<AnalyticsSolution, (AnalyticsError, BackTarget<AnalyticsDomain>)> {
+        tracing::Span::current().record("connector", &spec.connector_name);
         let user_prompt = build_solve_user_prompt(&spec, retry_ctx);
 
         // On resume from a budget suspension, rebuild the message history and
@@ -218,7 +227,7 @@ impl AnalyticsSolver {
             .expect("connector for spec must be registered");
         let spec_for_stage = spec.clone();
         let output = match self
-            .client
+            .client_for_state("solving")
             .run_with_tools(
                 &system_prompt,
                 initial,
@@ -330,7 +339,10 @@ impl AnalyticsSolver {
         };
         emit_domain(
             &self.event_tx,
-            AnalyticsEvent::QueryGenerated { sql: sql.clone() },
+            AnalyticsEvent::QueryGenerated {
+                sql: sql.clone(),
+                sub_spec_index: None,
+            },
         )
         .await;
 
@@ -389,7 +401,7 @@ pub(super) fn build_solving_handler()
                                     &result.sql,
                                     &result.params,
                                 );
-                                eprintln!(
+                                tracing::info!(
                                     "[solving] re-compile SUCCESS: {}",
                                     &sql[..sql.len().min(200)]
                                 );
@@ -425,7 +437,9 @@ pub(super) fn build_solving_handler()
                                 return TransitionResult::ok(ProblemState::Executing(solution));
                             }
                             Err(e) => {
-                                eprintln!("[solving] re-compile FAILED: {e}, falling back to LLM");
+                                tracing::info!(
+                                    "[solving] re-compile FAILED: {e}, falling back to LLM"
+                                );
                                 // Enrich spec with raw context for LLM SQL generation.
                                 let translation =
                                     solver.catalog.translate_to_raw_context(qr, &e.to_string());

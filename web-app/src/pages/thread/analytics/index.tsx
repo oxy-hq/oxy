@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode, RefObject } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DisplayBlock } from "@/components/AppPreview/Displays";
+import ThinkingModeMenu from "@/components/Chat/ChatPanel/ThinkingModeMenu";
 import Markdown from "@/components/Markdown";
 import MessageInput from "@/components/MessageInput";
 import UserMessage from "@/components/Messages/UserMessage";
@@ -20,8 +21,9 @@ import {
   useAnalyticsRun
 } from "@/hooks/useAnalyticsRun";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
-import type { AnalyticsRunSummary, UiBlock } from "@/services/api/analytics";
+import type { AnalyticsRunSummary, ThinkingMode, UiBlock } from "@/services/api/analytics";
 import { AnalyticsService } from "@/services/api/analytics";
+import { consumePendingThinkingMode } from "@/stores/analyticsThinkingMode";
 import type { DataContainer, Display } from "@/types/app";
 import type { ThreadItem } from "@/types/chat";
 import ProcedureRunDagPanel from "../agentic/ProcedureRunDagPanel";
@@ -41,14 +43,19 @@ const AGENTIC_DATA_KEY = "__agentic_result__";
  * embedded as `TableData.json` under AGENTIC_DATA_KEY, matching the format
  * expected by registerFromTableData → DuckDB WASM.
  */
-function toDisplayProps(block: AnalyticsDisplayBlock): { display: Display; data: DataContainer } {
+function toDisplayProps(
+  block: AnalyticsDisplayBlock,
+  index: number,
+  runId: string
+): { display: Display; data: DataContainer } {
   const { config, columns, rows } = block;
 
   // Row-oriented JSON: [{col1: val1, col2: val2}, ...]
   const json = JSON.stringify(
     rows.map((row) => Object.fromEntries(columns.map((col, i) => [col, row[i]])))
   );
-  const data: DataContainer = { [AGENTIC_DATA_KEY]: { file_path: AGENTIC_DATA_KEY, json } };
+  const dataKey = `${AGENTIC_DATA_KEY}_${runId}_${index}`;
+  const data: DataContainer = { [dataKey]: { file_path: dataKey, json } };
 
   let display: Display;
   const ct = config.chart_type;
@@ -57,7 +64,7 @@ function toDisplayProps(block: AnalyticsDisplayBlock): { display: Display; data:
       type: "line_chart",
       x: config.x ?? columns[0] ?? "",
       y: config.y ?? columns[1] ?? "",
-      data: AGENTIC_DATA_KEY,
+      data: dataKey,
       series: config.series,
       title: config.title,
       xAxisTitle: config.x_axis_label,
@@ -68,7 +75,7 @@ function toDisplayProps(block: AnalyticsDisplayBlock): { display: Display; data:
       type: "bar_chart",
       x: config.x ?? columns[0] ?? "",
       y: config.y ?? columns[1] ?? "",
-      data: AGENTIC_DATA_KEY,
+      data: dataKey,
       series: config.series,
       title: config.title
     };
@@ -77,22 +84,24 @@ function toDisplayProps(block: AnalyticsDisplayBlock): { display: Display; data:
       type: "pie_chart",
       name: config.name ?? columns[0] ?? "",
       value: config.value ?? columns[1] ?? "",
-      data: AGENTIC_DATA_KEY,
+      data: dataKey,
       title: config.title
     };
   } else {
     // table or unknown — fall back to table
-    display = { type: "table", data: AGENTIC_DATA_KEY, title: config.title };
+    display = { type: "table", data: dataKey, title: config.title };
   }
 
   return { display, data };
 }
 
 /** Stable wrapper so parent re-renders don't recreate display/data objects. */
-const AnalyticsDisplayBlockItem = memo(({ block }: { block: AnalyticsDisplayBlock }) => {
-  const { display, data } = toDisplayProps(block);
-  return <DisplayBlock display={display} data={data} />;
-});
+const AnalyticsDisplayBlockItem = memo(
+  ({ block, index, runId }: { block: AnalyticsDisplayBlock; index: number; runId: string }) => {
+    const { display, data } = toDisplayProps(block, index, runId);
+    return <DisplayBlock display={display} data={data} />;
+  }
+);
 
 interface Props {
   thread: ThreadItem;
@@ -124,6 +133,14 @@ function useScrollToBottom(
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   });
+
+  /** Reset scroll tracking so the next render auto-scrolls to bottom. */
+  const scrollToBottom = useCallback(() => {
+    isUserScrolledUp.current = false;
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [bottomRef]);
+
+  return { scrollToBottom };
 }
 
 // ── Shared run layout ──────────────────────────────────────────────────────────
@@ -181,7 +198,9 @@ const PastRunEntry = ({
           {run.ui_events &&
             extractDisplayBlocks(run.ui_events.map((e) => uiBlockToSseEvent(e))).map((block, i) => {
               const key = `${block.config.chart_type}-${block.config.title ?? i}`;
-              return <AnalyticsDisplayBlockItem key={key} block={block} />;
+              return (
+                <AnalyticsDisplayBlockItem key={key} block={block} index={i} runId={run.run_id} />
+              );
             })}
           {run.answer && (
             <div className='rounded-lg border border-border bg-card p-4'>
@@ -211,8 +230,13 @@ const AnalyticsThread = ({ thread }: Props) => {
   const [selectedRunEvents, setSelectedRunEvents] = useState<SseEvent[]>([]);
   const [activeQuestion, setActiveQuestion] = useState<string | null>(null);
   const [showProcedurePanel, setShowProcedurePanel] = useState(false);
+  const [thinkingMode, setThinkingMode] = useState<ThinkingMode>(
+    () => consumePendingThinkingMode(thread.id) ?? "auto"
+  );
 
-  useScrollToBottom(containerRef, bottomRef);
+  const hasSyncedThinkingMode = useRef(false);
+
+  const { scrollToBottom } = useScrollToBottom(containerRef, bottomRef);
 
   const queryClient = useQueryClient();
   const { state, start, reconnect, answer, stop, reset, isStarting, isAnswering } = useAnalyticsRun(
@@ -223,12 +247,27 @@ const AnalyticsThread = ({ thread }: Props) => {
   const stateRef = useRef(state);
   stateRef.current = state;
 
-  const { data: allRuns = [], isLoading: isLookingUp } = useQuery({
+  const {
+    data: allRuns = [],
+    isLoading: isLookingUp,
+    isFetching: isFetchingRuns
+  } = useQuery({
     queryKey: queryKeys.analytics.runsByThread(project.id, thread.id),
     queryFn: () => AnalyticsService.getRunsByThread(project.id, thread.id)
   });
 
   const latestRun = allRuns.at(-1) ?? null;
+
+  const handleThinkingModeChange = useCallback(
+    (mode: ThinkingMode) => {
+      setThinkingMode(mode);
+      const runId = latestRun?.run_id;
+      if (runId) {
+        AnalyticsService.updateThinkingMode(project.id, runId, mode).catch(() => {});
+      }
+    },
+    [latestRun, project.id]
+  );
 
   // Page load: reconnect SSE only for active runs. Terminal runs render via allRuns.
   useEffect(() => {
@@ -267,17 +306,25 @@ const AnalyticsThread = ({ thread }: Props) => {
     if (state.tag === "idle") setActiveQuestion(null);
   }, [state.tag]);
 
-  const autoStartedRef = useRef(false);
-
   // Reset run state and sidebar selection when navigating to a different thread.
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional reset on thread change
   useEffect(() => {
     reset();
-    autoStartedRef.current = false;
     setSelectedArtifact(null);
     setSelectedRunEvents([]);
     setShowProcedurePanel(false);
+    hasSyncedThinkingMode.current = false;
   }, [thread.id]);
+
+  // Restore the thinking mode from the most recent run once the run list loads.
+  // Only syncs once per thread so the user's in-session selection isn't overridden.
+  useEffect(() => {
+    if (hasSyncedThinkingMode.current || isLookingUp || isFetchingRuns) return;
+    hasSyncedThinkingMode.current = true;
+    if (latestRun?.thinking_mode) {
+      setThinkingMode(latestRun.thinking_mode);
+    }
+  }, [latestRun, isLookingUp, isFetchingRuns]);
 
   // ── Derived state ──────────────────────────────────────────────────────────
 
@@ -312,16 +359,21 @@ const AnalyticsThread = ({ thread }: Props) => {
 
   const streamingEvents = runExists ? state.events.map(sseEventToUiBlock) : ([] as UiBlock[]);
 
-  const isFirstVisit = !isLookingUp && allRuns.length === 0 && state.tag === "idle";
+  // Guard against stale-cache duplicates: when React Query returns a cached []
+  // while a background refetch is in progress (isFetchingRuns=true), we must wait
+  // for the refetch to complete before concluding this is truly a first visit.
+  // Without this, navigating back to a thread whose run hasn't finished yet would
+  // see allRuns=[] + isLoading=false and fire a second auto-start run.
+  const isFirstVisit =
+    !isLookingUp && !isFetchingRuns && allRuns.length === 0 && state.tag === "idle";
 
   // Auto-start the run on first visit so the user doesn't need to click a button
   // after already submitting their question from ChatPanel.
   useEffect(() => {
-    if (isFirstVisit && !autoStartedRef.current) {
-      autoStartedRef.current = true;
-      start(agentId, question, thread.id);
+    if (isFirstVisit) {
+      start(agentId, question, thread.id, thinkingMode);
     }
-  }, [isFirstVisit, agentId, question, thread.id, start]);
+  }, [isFirstVisit, agentId, question, thread.id, start, thinkingMode]);
 
   // For new starts / follow-ups use the locally-tracked question so the UI is responsive
   // before allRuns has picked up the new run. Fall back to latestRun for reconnects.
@@ -329,7 +381,8 @@ const AnalyticsThread = ({ thread }: Props) => {
 
   const handleStart = (q: string) => {
     setActiveQuestion(q);
-    start(agentId, q, thread.id);
+    scrollToBottom();
+    start(agentId, q, thread.id, thinkingMode);
   };
 
   const handleSend = () => {
@@ -366,7 +419,7 @@ const AnalyticsThread = ({ thread }: Props) => {
               className='customScrollbar flex w-full flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable_both-edges]'
             >
               <div className='mx-auto mb-6 w-full max-w-page-content px-4'>
-                {isLookingUp && (
+                {(isLookingUp || (isFetchingRuns && allRuns.length === 0)) && (
                   <div className='flex items-center gap-2 text-muted-foreground text-sm'>
                     <span className='h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent' />
                     Loading…
@@ -403,7 +456,14 @@ const AnalyticsThread = ({ thread }: Props) => {
                       <div className='flex flex-col gap-4'>
                         {state.displayBlocks.map((block, i) => {
                           const key = `${block.config.chart_type}-${block.config.title ?? i}`;
-                          return <AnalyticsDisplayBlockItem key={key} block={block} />;
+                          return (
+                            <AnalyticsDisplayBlockItem
+                              key={key}
+                              block={block}
+                              index={i}
+                              runId={state.runId}
+                            />
+                          );
                         })}
                         {state.answer && (
                           <div className='rounded-lg border border-border bg-card p-4'>
@@ -415,8 +475,10 @@ const AnalyticsThread = ({ thread }: Props) => {
 
                     {state.tag === "failed" && (
                       <div className='rounded-lg border border-destructive bg-destructive/10 p-4'>
-                        <p className='font-medium text-destructive text-sm'>Run failed</p>
-                        <Markdown>{state.message}</Markdown>
+                        <p className='font-medium text-destructive text-sm'>
+                          {state.message === "Cancelled" ? "Cancelled" : "Run failed"}
+                        </p>
+                        {state.message !== "Cancelled" && <Markdown>{state.message}</Markdown>}
                         <button
                           type='button'
                           onClick={() => {
@@ -436,7 +498,7 @@ const AnalyticsThread = ({ thread }: Props) => {
               </div>
             </div>
 
-            <div className='mx-auto w-full max-w-page-content p-6 pt-0'>
+            <div className='mx-auto w-full max-w-page-content p-4 pt-0'>
               {state.tag === "suspended" ? (
                 <SuspensionPrompt
                   questions={state.questions}
@@ -444,14 +506,27 @@ const AnalyticsThread = ({ thread }: Props) => {
                   isAnswering={isAnswering}
                 />
               ) : (
-                <MessageInput
-                  value={followUpQuestion}
-                  onChange={setFollowUpQuestion}
-                  onSend={handleSend}
-                  onStop={stop}
-                  disabled={state.tag === "running" || isStarting}
-                  isLoading={state.tag === "running" || isStarting}
-                />
+                <div className='flex-col items-end gap-2 rounded-md border border-neutral-700 bg-secondary'>
+                  <div className='flex-1'>
+                    <MessageInput
+                      value={followUpQuestion}
+                      onChange={setFollowUpQuestion}
+                      onSend={handleSend}
+                      onStop={stop}
+                      disabled={state.tag === "running" || isStarting}
+                      isLoading={state.tag === "running" || isStarting}
+                      inputClassName='border-0'
+                      noFocusRing
+                    />
+                  </div>
+                  <div className='flex items-center justify-end px-2 pb-2'>
+                    <ThinkingModeMenu
+                      value={thinkingMode}
+                      onChange={handleThinkingModeChange}
+                      disabled={state.tag === "running" || isStarting}
+                    />
+                  </div>
+                </div>
               )}
             </div>
           </div>

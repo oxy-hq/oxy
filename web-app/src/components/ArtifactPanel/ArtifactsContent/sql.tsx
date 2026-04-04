@@ -1,5 +1,5 @@
 import { Editor } from "@monaco-editor/react";
-import { Loader2 } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 import SqlResultsTable from "@/components/sql/SqlResultsTable";
 import type { SqlArtifact } from "@/types/artifact";
 
@@ -29,14 +29,21 @@ const SqlArtifactPanel = ({ artifact }: Props) => {
         />
       </div>
 
-      <div className='flex-1 overflow-auto'>
-        {(artifact.content.value.result || artifact.content.value.result_file) && (
+      {!!artifact.content.value.error && (
+        <div className='mx-3 my-2 flex max-h-32 flex-1 items-start gap-2 overflow-y-auto rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-red-400 text-sm'>
+          <AlertCircle className='mt-0.5 h-4 w-4 shrink-0' />
+          <span className='whitespace-pre-wrap'>{artifact.content.value.error}</span>
+        </div>
+      )}
+
+      {(!artifact.content.value.error || artifact.content.value.result_file) && (
+        <div className='flex-1 overflow-auto'>
           <SqlResultsTable
             result={artifact.content.value.result}
             resultFile={artifact.content.value.result_file}
           />
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -3,6 +3,7 @@ import ChartCard from "./ChartCard";
 import type { TraceChartsProps } from "./types";
 import {
   useAgentRunsChartOptions,
+  useAnalyticsRunsChartOptions,
   useDurationChartOptions,
   useTokensChartOptions,
   useWorkflowRunsChartOptions
@@ -18,6 +19,7 @@ export default function TraceCharts({ traces, isLoading }: TraceChartsProps) {
 
   const agentRunsChartOptions = useAgentRunsChartOptions(timeBuckets);
   const workflowRunsChartOptions = useWorkflowRunsChartOptions(timeBuckets);
+  const analyticsRunsChartOptions = useAnalyticsRunsChartOptions(timeBuckets);
   const durationChartOptions = useDurationChartOptions(durationBuckets);
   const tokensChartOptions = useTokensChartOptions(timeBuckets);
 
@@ -36,6 +38,14 @@ export default function TraceCharts({ traces, isLoading }: TraceChartsProps) {
         value={`${stats.workflowRuns} Workflow Runs`}
         subtitle=''
         options={workflowRunsChartOptions}
+        isLoading={isLoading}
+      />
+
+      <ChartCard
+        title='Analytics Runs'
+        value={`${stats.analyticsRuns} Analytics Runs`}
+        subtitle=''
+        options={analyticsRunsChartOptions}
         isLoading={isLoading}
       />
 

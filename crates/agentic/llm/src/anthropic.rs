@@ -88,7 +88,8 @@ impl LlmProvider for AnthropicProvider {
                 json!({
                     "name": t.name,
                     "description": t.description,
-                    "input_schema": t.parameters
+                    "input_schema": t.parameters,
+                    "strict": true
                 })
             })
             .collect();
@@ -112,27 +113,30 @@ impl LlmProvider for AnthropicProvider {
             "stream": true,
         });
 
-        // Inject structured-output schema as a synthetic tool.
+        // Structured output: when no real tools, use output_config (constrained
+        // decoding).  When real tools are present, inject a synthetic tool so the
+        // model can call it when done — output_config + tools is unreliable on
+        // smaller models (e.g. Haiku) which may return empty text.
         if let Some(schema) = response_schema {
-            tools_json.push(json!({
-                "name": schema.name,
-                "description": "Return the structured response.",
-                "input_schema": schema.schema
-            }));
+            if tools.is_empty() {
+                body["output_config"] = json!({
+                    "format": {
+                        "type": "json_schema",
+                        "schema": schema.schema
+                    }
+                });
+            } else {
+                tools_json.push(json!({
+                    "name": schema.name,
+                    "description": "You MUST call this tool to return your final structured response. Do NOT embed JSON in your text — always use this tool.",
+                    "input_schema": schema.schema,
+                    "strict": true
+                }));
+            }
         }
 
         if !tools_json.is_empty() {
             body["tools"] = json!(tools_json);
-            // When the only tool is the schema tool (no real tools), force the
-            // model to call it.  With real tools present, use "auto" so the
-            // model can choose between exploration tools and the response tool.
-            if let Some(schema) = response_schema {
-                if tools.is_empty() && matches!(thinking, ThinkingConfig::Disabled) {
-                    body["tool_choice"] = json!({"type": "tool", "name": schema.name});
-                } else {
-                    body["tool_choice"] = json!({"type": "auto"});
-                }
-            }
         }
 
         // Map cross-provider thinking configs: OpenAI `Effort` → Anthropic
@@ -375,5 +379,9 @@ impl LlmProvider for AnthropicProvider {
             })
             .collect();
         vec![json!({"role": "user", "content": result_blocks})]
+    }
+
+    fn model_name(&self) -> &str {
+        &self.model
     }
 }

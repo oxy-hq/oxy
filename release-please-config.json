@@ -12,10 +12,6 @@
       "release-type": "rust",
       "component": "agentic-analytics"
     },
-    "crates/agentic/app-builder": {
-      "release-type": "rust",
-      "component": "agentic-app-builder"
-    },
     "crates/agentic/connector": {
       "release-type": "rust",
       "component": "agentic-connector"
@@ -136,7 +132,6 @@
         "a2a",
         "agent",
         "agentic-analytics",
-        "agentic-app-builder",
         "agentic-connector",
         "agentic-core",
         "agentic-db",

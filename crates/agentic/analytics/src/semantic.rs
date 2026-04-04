@@ -273,6 +273,7 @@ impl SemanticCatalog {
         use crate::catalog::Catalog;
         let dummy = crate::types::AnalyticsIntent {
             raw_question: String::new(),
+            summary: String::new(),
             question_type: crate::types::QuestionType::SingleValue,
             metrics: vec![],
             dimensions: vec![],
@@ -280,6 +281,8 @@ impl SemanticCatalog {
             history: vec![],
             spec_hint: None,
             selected_procedure: None,
+            semantic_query: Default::default(),
+            semantic_confidence: 0.0,
         };
         self.get_context(&dummy).schema_description
     }
@@ -899,6 +902,44 @@ impl SemanticCatalog {
     pub fn engine(&self) -> &airlayer::SemanticEngine {
         &self.engine
     }
+
+    /// Return a concise summary of all topics in the semantic layer.
+    ///
+    /// Each topic is rendered as `"- <name>: <description> (views: v1, v2, …)"`.
+    /// Returns an empty string when no topics are defined.
+    pub fn topics_summary(&self) -> String {
+        let topics = self.engine.semantic_layer().topics_list();
+        if topics.is_empty() {
+            return String::new();
+        }
+        let lines: Vec<String> = topics
+            .iter()
+            .map(|t| {
+                let views: Vec<String> = t
+                    .views
+                    .iter()
+                    .map(|v_name| {
+                        if let Some(view) = self.engine.view(v_name) {
+                            if view.description.is_empty() {
+                                v_name.clone()
+                            } else {
+                                format!("{} ({})", v_name, view.description)
+                            }
+                        } else {
+                            v_name.clone()
+                        }
+                    })
+                    .collect();
+                format!(
+                    "- {}: {} (views: {})",
+                    t.name,
+                    t.description,
+                    views.join(", ")
+                )
+            })
+            .collect();
+        format!("<topics>\n{}\n</topics>", lines.join("\n"))
+    }
 }
 
 /// Result of translating an airlayer `QueryRequest` to raw-schema references.
@@ -1037,6 +1078,7 @@ impl Catalog for SemanticCatalog {
                             format!("{} measure from view `{}`", m.measure_type, v.name)
                         }),
                         metric_type: m.measure_type.to_string(),
+                        expr: m.expr.clone(),
                     })
             })
             .collect()
@@ -1199,7 +1241,7 @@ impl Catalog for SemanticCatalog {
                     .find(|m| self.find_measure(m).is_none())
                     .cloned()
                     .unwrap_or_default();
-                eprintln!(
+                tracing::info!(
                     "[try_compile] qualify_names FAILED for metrics: {:?} → unresolvable: {bad}",
                     intent.metrics
                 );
@@ -1224,20 +1266,20 @@ impl Catalog for SemanticCatalog {
                     .find(|d| self.find_dimension(d).is_none())
                     .cloned()
                     .unwrap_or_default();
-                eprintln!(
+                tracing::info!(
                     "[try_compile] qualify_names FAILED for dimensions: {:?} → unresolvable: {bad}",
                     intent.dimensions
                 );
                 CatalogError::UnresolvableDimension(bad)
             })?;
 
-        eprintln!("[try_compile] qualified: measures={measures:?} dimensions={dimensions:?}");
+        tracing::info!("[try_compile] qualified: measures={measures:?} dimensions={dimensions:?}");
 
         // Parse intent filters into structured airlayer QueryFilters.
         // Filters that contain SQL functions or complex expressions cannot be
         // represented in airlayer's filter API, so we bail to TooComplex.
         let filters = self.parse_intent_filters(&intent.filters, &metric_views)?;
-        eprintln!("[try_compile] parsed filters: {filters:?}");
+        tracing::info!("[try_compile] parsed filters: {filters:?}");
 
         let request = airlayer::engine::query::QueryRequest {
             measures,
@@ -1256,7 +1298,7 @@ impl Catalog for SemanticCatalog {
         };
 
         let result = self.engine.compile_query(&request).map_err(|e| {
-            eprintln!("[try_compile] airlayer compile_query FAILED: {e}");
+            tracing::info!("[try_compile] airlayer compile_query FAILED: {e}");
             CatalogError::TooComplex(format!("airlayer compile error: {e}"))
         })?;
 

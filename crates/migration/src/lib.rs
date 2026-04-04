@@ -59,6 +59,8 @@ mod m20260317_000001_create_agentic_tables;
 mod m20260317_000002_rename_legacy_agentic_tables;
 mod m20260318_000001_add_thread_id_to_agentic_runs;
 mod m20260324_000001_add_updated_by_to_secrets;
+mod m20260401_000001_add_spec_hint_to_agentic_runs;
+mod m20260402_000001_add_thinking_mode_to_agentic_runs;
 
 pub struct Migrator;
 
@@ -124,6 +126,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260317_000002_rename_legacy_agentic_tables::Migration),
             Box::new(m20260318_000001_add_thread_id_to_agentic_runs::Migration),
             Box::new(m20260324_000001_add_updated_by_to_secrets::Migration),
+            Box::new(m20260401_000001_add_spec_hint_to_agentic_runs::Migration),
+            Box::new(m20260402_000001_add_thinking_mode_to_agentic_runs::Migration),
         ]
     }
 }

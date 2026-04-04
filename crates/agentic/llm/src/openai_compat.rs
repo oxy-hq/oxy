@@ -530,4 +530,8 @@ impl LlmProvider for OpenAiCompatProvider {
             })
             .collect()
     }
+
+    fn model_name(&self) -> &str {
+        &self.model
+    }
 }

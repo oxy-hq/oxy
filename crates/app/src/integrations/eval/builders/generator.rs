@@ -169,6 +169,12 @@ impl Executable<(EvalKind, EvalTarget, Option<String>)> for GeneratorExecutable 
                                     },
                                 })
                             }
+                            EvalTarget::Agentic(agentic_input) => {
+                                EvalTarget::Agentic(super::types::AgenticInput {
+                                    config_path: agentic_input.config_path.clone(),
+                                    prompt: case.prompt.clone(),
+                                })
+                            }
                         };
                         all_targets.push(target);
                         expected_outputs.push(expected.clone());

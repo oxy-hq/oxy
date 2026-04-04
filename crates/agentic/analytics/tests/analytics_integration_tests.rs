@@ -140,6 +140,7 @@ impl DomainSolver<AnalyticsDomain> for FullPipelineSolver {
     ) -> Result<AnalyticsIntent, (AnalyticsError, BackTarget<AnalyticsDomain>)> {
         Ok(AnalyticsIntent {
             raw_question: intent.raw_question,
+            summary: String::new(),
             question_type: QuestionType::Breakdown,
             metrics: vec!["amount".into()],
             dimensions: vec!["region_name".into()],
@@ -147,6 +148,8 @@ impl DomainSolver<AnalyticsDomain> for FullPipelineSolver {
             history: intent.history,
             spec_hint: None,
             selected_procedure: None,
+            semantic_query: Default::default(),
+            semantic_confidence: 0.0,
         })
     }
 
@@ -170,6 +173,7 @@ impl DomainSolver<AnalyticsDomain> for FullPipelineSolver {
             precomputed: None,
             context: None,
             connector_name: String::new(),
+            query_request_item: None,
             query_request: None,
             compile_error: None,
         })
@@ -234,6 +238,7 @@ impl DomainSolver<AnalyticsDomain> for FullPipelineSolver {
         Ok(AnalyticsAnswer {
             display_blocks: vec![],
             text: lines.join("\n"),
+            spec_hint: None,
         })
     }
 
@@ -258,6 +263,7 @@ async fn full_pipeline_with_sqlite_returns_real_data() {
     let answer = orch
         .run(AnalyticsIntent {
             raw_question: "What is total revenue by region?".into(),
+            summary: String::new(),
             question_type: QuestionType::Breakdown,
             metrics: vec![],
             dimensions: vec![],
@@ -265,6 +271,8 @@ async fn full_pipeline_with_sqlite_returns_real_data() {
             history: vec![],
             spec_hint: None,
             selected_procedure: None,
+            semantic_query: Default::default(),
+            semantic_confidence: 0.0,
         })
         .await
         .expect("pipeline must complete");
@@ -322,6 +330,7 @@ impl DomainSolver<AnalyticsDomain> for PriorIntentSolver {
     ) -> Result<AnalyticsIntent, (AnalyticsError, BackTarget<AnalyticsDomain>)> {
         Ok(AnalyticsIntent {
             raw_question: intent.raw_question,
+            summary: String::new(),
             question_type: QuestionType::SingleValue,
             metrics: vec!["order_count".into()],
             dimensions: vec![],
@@ -329,6 +338,8 @@ impl DomainSolver<AnalyticsDomain> for PriorIntentSolver {
             history: intent.history,
             spec_hint: None,
             selected_procedure: None,
+            semantic_query: Default::default(),
+            semantic_confidence: 0.0,
         })
     }
 
@@ -363,6 +374,7 @@ impl DomainSolver<AnalyticsDomain> for PriorIntentSolver {
             precomputed: None,
             context: None,
             connector_name: String::new(),
+            query_request_item: None,
             query_request: None,
             compile_error: None,
         })
@@ -431,6 +443,7 @@ impl DomainSolver<AnalyticsDomain> for PriorIntentSolver {
         Ok(AnalyticsAnswer {
             display_blocks: vec![],
             text: format!("There are {count} orders in total."),
+            spec_hint: None,
         })
     }
 
@@ -468,6 +481,7 @@ async fn follow_up_reuses_prior_intent_via_has_intent() {
     let answer = orch
         .run(AnalyticsIntent {
             raw_question: "How many orders were placed?".into(),
+            summary: String::new(),
             question_type: QuestionType::SingleValue,
             metrics: vec![],
             dimensions: vec![],
@@ -475,6 +489,8 @@ async fn follow_up_reuses_prior_intent_via_has_intent() {
             history: vec![],
             spec_hint: None,
             selected_procedure: None,
+            semantic_query: Default::default(),
+            semantic_confidence: 0.0,
         })
         .await
         .expect("pipeline must succeed after the back-edge retry");
@@ -527,6 +543,7 @@ impl DomainSolver<AnalyticsDomain> for AmbiguousColumnSolver {
             // First pass: return intent with an unqualified "status" filter.
             Ok(AnalyticsIntent {
                 raw_question: intent.raw_question,
+                summary: String::new(),
                 question_type: QuestionType::SingleValue,
                 metrics: vec!["order_count".into()],
                 dimensions: vec![],
@@ -535,11 +552,14 @@ impl DomainSolver<AnalyticsDomain> for AmbiguousColumnSolver {
                 history: intent.history.clone(),
                 spec_hint: None,
                 selected_procedure: None,
+                semantic_query: Default::default(),
+                semantic_confidence: 0.0,
             })
         } else {
             // Second pass (after the AmbiguousColumn back-edge): qualify the column.
             Ok(AnalyticsIntent {
                 raw_question: intent.raw_question,
+                summary: String::new(),
                 question_type: QuestionType::SingleValue,
                 metrics: vec!["order_count".into()],
                 dimensions: vec![],
@@ -547,6 +567,8 @@ impl DomainSolver<AnalyticsDomain> for AmbiguousColumnSolver {
                 history: intent.history,
                 spec_hint: None,
                 selected_procedure: None,
+                semantic_query: Default::default(),
+                semantic_confidence: 0.0,
             })
         }
     }
@@ -586,6 +608,7 @@ impl DomainSolver<AnalyticsDomain> for AmbiguousColumnSolver {
             precomputed: None,
             context: None,
             connector_name: String::new(),
+            query_request_item: None,
             query_request: None,
             compile_error: None,
         })
@@ -644,6 +667,7 @@ impl DomainSolver<AnalyticsDomain> for AmbiguousColumnSolver {
         Ok(AnalyticsAnswer {
             display_blocks: vec![],
             text: format!("{count} completed orders found."),
+            spec_hint: None,
         })
     }
 
@@ -683,6 +707,7 @@ async fn ambiguous_column_triggers_back_edge_to_clarifying() {
     let answer = orch
         .run(AnalyticsIntent {
             raw_question: "How many completed orders are there?".into(),
+            summary: String::new(),
             question_type: QuestionType::SingleValue,
             metrics: vec![],
             dimensions: vec![],
@@ -690,6 +715,8 @@ async fn ambiguous_column_triggers_back_edge_to_clarifying() {
             history: vec![],
             spec_hint: None,
             selected_procedure: None,
+            semantic_query: Default::default(),
+            semantic_confidence: 0.0,
         })
         .await
         .expect("pipeline must succeed after column disambiguation");
@@ -737,6 +764,7 @@ impl DomainSolver<AnalyticsDomain> for ProcedureSolver {
         // Simulate the Ground sub-phase selecting a procedure.
         Ok(AnalyticsIntent {
             raw_question: intent.raw_question,
+            summary: String::new(),
             question_type: QuestionType::SingleValue,
             metrics: vec![],
             dimensions: vec![],
@@ -746,6 +774,8 @@ impl DomainSolver<AnalyticsDomain> for ProcedureSolver {
             selected_procedure: Some(std::path::PathBuf::from(
                 "workflows/monthly_sales.procedure.yml",
             )),
+            semantic_query: Default::default(),
+            semantic_confidence: 0.0,
         })
     }
 
@@ -774,6 +804,7 @@ impl DomainSolver<AnalyticsDomain> for ProcedureSolver {
             precomputed: None,
             context: None,
             connector_name: String::new(),
+            query_request_item: None,
             query_request: None,
             compile_error: None,
             intent,
@@ -851,6 +882,7 @@ impl DomainSolver<AnalyticsDomain> for ProcedureSolver {
         Ok(agentic_analytics::AnalyticsAnswer {
             display_blocks: vec![],
             text: format!("Procedure result: {text}"),
+            spec_hint: None,
         })
     }
 
@@ -881,6 +913,7 @@ async fn selected_procedure_routes_through_procedure_execution_path() {
     let answer = orch
         .run(AnalyticsIntent {
             raw_question: "Show me the monthly sales summary.".into(),
+            summary: String::new(),
             question_type: QuestionType::SingleValue,
             metrics: vec![],
             dimensions: vec![],
@@ -888,6 +921,8 @@ async fn selected_procedure_routes_through_procedure_execution_path() {
             history: vec![],
             spec_hint: None,
             selected_procedure: None,
+            semantic_query: Default::default(),
+            semantic_confidence: 0.0,
         })
         .await
         .expect("pipeline must complete for procedure path");

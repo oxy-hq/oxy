@@ -13,9 +13,9 @@ import { useEnterSubmit } from "@/hooks/useEnterSubmit";
 import useRunWorkflowThread from "@/hooks/workflow/useRunWorkflowThread";
 import ROUTES from "@/libs/utils/routes";
 import { getShortTitle } from "@/libs/utils/string";
-import { AnalyticsService } from "@/services/api";
-import { AppBuilderService } from "@/services/api/appBuilder";
+import type { ThinkingMode } from "@/services/api/analytics";
 import { useAskAgentic } from "@/stores/agentic";
+import { setPendingThinkingMode } from "@/stores/analyticsThinkingMode";
 import AgentsDropdown, { type Agent } from "./AgentsDropdown";
 import SelectItemWithDetail from "./SelectItemWithDetail";
 import WorkflowsDropdown, { type WorkflowOption } from "./WorkflowsDropdown";
@@ -51,40 +51,33 @@ const ChatPanel = () => {
         });
         break;
       case "analytics":
-        AnalyticsService.createRun(projectId, {
-          agent_id: data.source,
-          question: data.input,
-          thread_id: data.id
-        });
-        break;
-      case "app_builder":
-        AppBuilderService.createRun(projectId, {
-          agent_id: data.source,
-          request: data.input,
-          thread_id: data.id
-        });
+        // Run creation is handled by AnalyticsThread's auto-start on first visit.
+        // Do NOT create a run here — it races with auto-start and causes duplicates.
+        setPendingThinkingMode(data.id, thinkingMode);
         break;
       case "workflow":
         runWorkflow(data.id);
         break;
     }
-    navigate(ROUTES.PROJECT(projectId).THREAD(data.id));
+    const threadUrl = ROUTES.PROJECT(projectId).THREAD(data.id);
+    navigate(threadUrl);
   });
 
   const {
     isAvailable: isBuilderAvailable,
     isLoading: isCheckingBuilder,
     isAgentic,
-    isAppBuilder,
     builderPath
   } = useBuilderAvailable();
 
   const [message, setMessage] = useState("");
   const { formRef, onKeyDown } = useEnterSubmit();
   const [mode, setMode] = useState<string>("ask");
+  const [thinkingMode, setThinkingMode] = useState<ThinkingMode>("auto");
 
   const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (isPending) return;
     const title = getShortTitle(message);
 
     switch (mode) {
@@ -102,7 +95,7 @@ const ChatPanel = () => {
           createThread({
             title: title,
             source: builderPath,
-            source_type: isAppBuilder ? "app_builder" : isAgentic ? "agentic" : "task",
+            source_type: isAgentic ? "agentic" : "task",
             input: message
           });
         }
@@ -208,7 +201,18 @@ const ChatPanel = () => {
           </Select>
         </div>
         <div className='flex items-center gap-2'>
-          {mode === "ask" && <AgentsDropdown onSelect={setAgent} agentSelected={agent} />}
+          {mode === "ask" && (
+            <AgentsDropdown
+              onSelect={(a) => {
+                if (!a.isAnalytics) setThinkingMode("auto");
+                setAgent(a);
+              }}
+              agentSelected={agent}
+              thinkingMode={thinkingMode}
+              onThinkingModeChange={setThinkingMode}
+              disabled={isPending}
+            />
+          )}
           {mode === "workflow" && <WorkflowsDropdown onSelect={setWorkflow} workflow={workflow} />}
           <Button
             size='sm'

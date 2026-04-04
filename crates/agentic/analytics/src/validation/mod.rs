@@ -294,6 +294,7 @@ dimensions:
     pub fn make_intent() -> AnalyticsIntent {
         AnalyticsIntent {
             raw_question: "What is total revenue by region?".into(),
+            summary: "Total revenue broken down by region".into(),
             question_type: QuestionType::Breakdown,
             metrics: vec!["revenue".into()],
             dimensions: vec!["region".into()],
@@ -301,6 +302,8 @@ dimensions:
             history: vec![],
             spec_hint: None,
             selected_procedure: None,
+            semantic_query: Default::default(),
+            semantic_confidence: 0.0,
         }
     }
 
@@ -319,6 +322,7 @@ dimensions:
             precomputed: None,
             context: None,
             connector_name: "default".to_string(),
+            query_request_item: None,
             query_request: None,
             compile_error: None,
         }

@@ -10,11 +10,12 @@ import {
   Info,
   Layers,
   Loader2,
+  MessageSquare,
   Search,
   Table2,
   Wrench
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/tooltip";
 import type {
   AnalyticsStep,
@@ -24,7 +25,8 @@ import type {
   SqlItem,
   StepLlmUsage,
   TextItem,
-  ThinkingItem
+  ThinkingItem,
+  TraceItem
 } from "@/hooks/analyticsSteps";
 import { cn } from "@/libs/shadcn/utils";
 
@@ -34,9 +36,20 @@ function formatTokens(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 }
 
+function formatMs(ms: number): string {
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
+}
+
 function LlmUsageTooltip({ usage }: { usage: StepLlmUsage }) {
+  const llmInferenceMs = Math.max(0, usage.durationMs - usage.toolDurationMs);
   return (
     <div className='flex flex-col gap-1 font-mono text-[10px] leading-relaxed'>
+      {usage.model && (
+        <div className='flex justify-between gap-4'>
+          <span className='text-muted-foreground'>Model</span>
+          <span>{usage.model}</span>
+        </div>
+      )}
       <div className='flex justify-between gap-4'>
         <span className='text-muted-foreground'>Input tokens</span>
         <span>{formatTokens(usage.inputTokens)}</span>
@@ -45,9 +58,18 @@ function LlmUsageTooltip({ usage }: { usage: StepLlmUsage }) {
         <span className='text-muted-foreground'>Output tokens</span>
         <span>{formatTokens(usage.outputTokens)}</span>
       </div>
+      <div className='my-0.5 border-border/50 border-t' />
       <div className='flex justify-between gap-4'>
-        <span className='text-muted-foreground'>Wall time</span>
-        <span>{(usage.durationMs / 1000).toFixed(1)}s</span>
+        <span className='text-muted-foreground'>Total time</span>
+        <span>{formatMs(usage.durationMs)}</span>
+      </div>
+      <div className='flex justify-between gap-4'>
+        <span className='text-muted-foreground'>↳ LLM inference</span>
+        <span>{formatMs(llmInferenceMs)}</span>
+      </div>
+      <div className='flex justify-between gap-4'>
+        <span className='text-muted-foreground'>↳ Tool execution</span>
+        <span>{formatMs(usage.toolDurationMs)}</span>
       </div>
     </div>
   );
@@ -91,10 +113,35 @@ function stepColors(label: string): Colors {
   }
 }
 
+// ── Artifact pill ────────────────────────────────────────────────────────────
+
+const PILL_CLASS =
+  "flex shrink-0 items-center gap-1 rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground max-w-[120px]";
+
+interface ArtifactPillProps {
+  icon: React.FC<React.SVGProps<SVGSVGElement>>;
+  label: string;
+  onClick: () => void;
+}
+
+const ArtifactPill = ({ icon: Icon, label, onClick }: ArtifactPillProps) => (
+  <button
+    type='button'
+    onClick={(e) => {
+      e.stopPropagation();
+      onClick();
+    }}
+    className={PILL_CLASS}
+  >
+    <Icon className='h-3 w-3 shrink-0' />
+    <span className='truncate'>{label}</span>
+  </button>
+);
+
 // ── Child item renderers ──────────────────────────────────────────────────────
 
 const ThinkingChild = ({ item, border }: { item: ThinkingItem; border: string }) => {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const preview = item.text
     ? item.text.slice(0, 60) + (item.text.length > 60 ? "…" : "")
     : "Thinking…";
@@ -164,6 +211,15 @@ function getToolDisplay(item: ArtifactItem): ToolDisplay {
   const input = tryParseJson(item.toolInput);
 
   switch (item.toolName) {
+    // ── Ask user ──────────────────────────────────────────────────────────────
+    case "ask_user": {
+      const prompt = typeof input?.prompt === "string" ? input.prompt : "Asking user…";
+      const output = tryParseJson(item.toolOutput ?? "");
+      const answer = typeof output?.answer === "string" ? output.answer : null;
+      const preview = answer ? `${trunc(prompt, 30)} → ${trunc(answer, 30)}` : trunc(prompt);
+      return { Icon: MessageSquare, label: "Ask User", preview };
+    }
+
     // ── Clarifying ────────────────────────────────────────────────────────────
     case "search_catalog": {
       const queries = Array.isArray(input?.queries) ? (input.queries as string[]) : [];
@@ -185,10 +241,28 @@ function getToolDisplay(item: ArtifactItem): ToolDisplay {
       const to = typeof input?.to_entity === "string" ? input.to_entity : "?";
       return { Icon: GitMerge, label: "Join Path", preview: `${from} → ${to}` };
     }
-    case "sample_column": {
-      const table = typeof input?.table === "string" ? input.table : "?";
-      const col = typeof input?.column === "string" ? input.column : "?";
-      return { Icon: Table2, label: "Sample Column", preview: `${table}.${col}` };
+    case "sample_columns": {
+      const cols = Array.isArray(input?.columns) ? input.columns : [];
+      const preview = cols
+        .map((c: Record<string, unknown>) => {
+          const t = typeof c?.table === "string" ? c.table : "?";
+          const col = typeof c?.column === "string" ? c.column : "?";
+          return `${t}.${col}`;
+        })
+        .join(", ");
+      return { Icon: Table2, label: "Sample Columns", preview: trunc(preview || "?") };
+    }
+
+    // ── Specifying (semantic compile) ─────────────────────────────────────────
+    case "compile_semantic_query": {
+      const output = tryParseJson(item.toolOutput ?? "");
+      const success = output?.success !== false;
+      const preview = success
+        ? "Compiled"
+        : typeof output?.error === "string"
+          ? output.error
+          : "Compile failed";
+      return { Icon: GitBranch, label: "Compile Semantic Query", preview: trunc(preview) };
     }
 
     // ── Solving ───────────────────────────────────────────────────────────────
@@ -246,7 +320,7 @@ const ArtifactChild = ({
       {item.isStreaming && <Loader2 className='h-3 w-3 shrink-0 animate-spin text-primary' />}
       {!item.isStreaming && item.durationMs !== undefined && (
         <span className='shrink-0 font-mono text-[10px] text-muted-foreground/60'>
-          {item.durationMs}ms
+          {formatMs(item.durationMs)}
         </span>
       )}
       <ChevronRight className='h-3 w-3 shrink-0 text-muted-foreground' />
@@ -274,7 +348,7 @@ const SqlChild = ({
       <span className='flex-1 truncate font-mono text-muted-foreground text-xs'>{truncated}</span>
       {item.isStreaming && <Loader2 className='h-3 w-3 shrink-0 animate-spin text-primary' />}
       {!item.isStreaming && item.error && (
-        <span className='shrink-0 text-[10px] text-destructive'>Failed</span>
+        <span className='shrink-0 text-[10px] text-destructive'>Failed: {item.error}</span>
       )}
       {!item.isStreaming && !item.error && item.rowCount !== undefined && (
         <span className='shrink-0 font-mono text-[10px] text-muted-foreground/60'>
@@ -318,6 +392,30 @@ const TextChild = ({ item }: { item: TextItem }) => (
 
 // ── Step row ──────────────────────────────────────────────────────────────────
 
+type PillInfo = {
+  id: string;
+  icon: React.FC<React.SVGProps<SVGSVGElement>>;
+  label: string;
+  item: SelectableItem;
+};
+
+function collectPills(items: TraceItem[]): PillInfo[] {
+  const pills: PillInfo[] = [];
+  for (const item of items) {
+    if (item.kind === "artifact") {
+      const { Icon, label } = getToolDisplay(item);
+      pills.push({ id: item.id, icon: Icon, label, item });
+    } else if (item.kind === "sql") {
+      const firstLine = item.sql.trim().split("\n")[0] ?? "SQL";
+      const label = firstLine.length > 20 ? `${firstLine.slice(0, 20)}…` : firstLine;
+      pills.push({ id: item.id, icon: Database, label, item });
+    } else if (item.kind === "procedure") {
+      pills.push({ id: item.id, icon: GitBranch, label: item.procedureName, item });
+    }
+  }
+  return pills;
+}
+
 interface AnalyticsStepRowProps {
   step: AnalyticsStep;
   onSelectArtifact: (item: SelectableItem) => void;
@@ -329,6 +427,7 @@ const AnalyticsStepRow = ({ step, onSelectArtifact }: AnalyticsStepRowProps) => 
   const isRunning = step.isStreaming;
   const hasError = !!step.error;
   const isDone = !isRunning && !hasError;
+  const pills = useMemo(() => collectPills(step.items), [step.items]);
 
   return (
     <div>
@@ -339,52 +438,66 @@ const AnalyticsStepRow = ({ step, onSelectArtifact }: AnalyticsStepRowProps) => 
       >
         <div
           className={cn(
-            "flex items-center gap-2 rounded-md border px-3 py-1.5 transition-all duration-200",
+            "rounded-md border px-3 py-1.5 transition-all duration-200",
             isRunning
               ? cn("border-l-2", colors.border, "bg-secondary/80")
               : "border-transparent bg-card/50 hover:bg-card"
           )}
         >
-          <div
-            className={cn(
-              "h-1.5 w-1.5 shrink-0 rounded-full transition-all duration-200",
-              colors.dot,
-              isRunning && "animate-pulse",
-              !isRunning && "opacity-30"
-            )}
-          />
-          <div className='flex min-w-0 flex-1 flex-col'>
-            <span
+          <div className='flex items-center gap-2'>
+            <div
               className={cn(
-                "text-sm transition-colors duration-200",
-                isRunning ? "text-foreground" : "text-muted-foreground"
+                "h-1.5 w-1.5 shrink-0 rounded-full transition-all duration-200",
+                colors.dot,
+                isRunning && "animate-pulse",
+                !isRunning && "opacity-30"
               )}
-            >
-              {step.summary || step.label}
-            </span>
-          </div>
-          {isRunning && <Loader2 className='h-3 w-3 shrink-0 animate-spin text-primary' />}
-          {isDone && <Check className='h-3 w-3 shrink-0 text-primary' />}
-          {hasError && <span className='shrink-0 text-destructive text-xs'>Error</span>}
-          {isDone && step.llmUsage && (
-            <Tooltip>
-              <TooltipTrigger asChild onClick={(e) => e.stopPropagation()}>
-                <Info className='h-3 w-3 shrink-0 cursor-pointer text-muted-foreground/50 hover:text-muted-foreground' />
-              </TooltipTrigger>
-              <TooltipContent
-                side='left'
-                className='max-w-xs bg-popover p-2 text-popover-foreground'
+            />
+            <div className='flex min-w-0 flex-1 flex-col'>
+              <span
+                className={cn(
+                  "text-sm transition-colors duration-200",
+                  isRunning ? "text-foreground" : "text-muted-foreground"
+                )}
               >
-                <LlmUsageTooltip usage={step.llmUsage} />
-              </TooltipContent>
-            </Tooltip>
-          )}
-          <ChevronRight
-            className={cn(
-              "h-3 w-3 shrink-0 text-muted-foreground transition-transform",
-              expanded && "rotate-90"
+                {step.summary || step.label}
+              </span>
+            </div>
+            {isRunning && <Loader2 className='h-3 w-3 shrink-0 animate-spin text-primary' />}
+            {isDone && <Check className='h-3 w-3 shrink-0 text-primary' />}
+            {hasError && <span className='shrink-0 text-destructive text-xs'>Error</span>}
+            {isDone && step.llmUsage && (
+              <Tooltip>
+                <TooltipTrigger asChild onClick={(e) => e.stopPropagation()}>
+                  <Info className='h-3 w-3 shrink-0 cursor-pointer text-muted-foreground/50 hover:text-muted-foreground' />
+                </TooltipTrigger>
+                <TooltipContent
+                  side='left'
+                  className='max-w-xs bg-popover p-2 text-popover-foreground'
+                >
+                  <LlmUsageTooltip usage={step.llmUsage} />
+                </TooltipContent>
+              </Tooltip>
             )}
-          />
+            <ChevronRight
+              className={cn(
+                "h-3 w-3 shrink-0 text-muted-foreground transition-transform",
+                expanded && "rotate-90"
+              )}
+            />
+          </div>
+          {pills.length > 0 && (
+            <div className='mt-1.5 flex flex-wrap items-center gap-1 pl-3.5'>
+              {pills.map((pill) => (
+                <ArtifactPill
+                  key={pill.id}
+                  icon={pill.icon}
+                  label={pill.label}
+                  onClick={() => onSelectArtifact(pill.item)}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </button>
 

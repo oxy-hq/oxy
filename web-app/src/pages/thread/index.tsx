@@ -7,7 +7,6 @@ import useThread from "@/hooks/api/threads/useThread";
 import AgentThread from "./agent";
 import AgenticThread from "./agentic";
 import AnalyticsThread from "./analytics";
-import AppBuilderThread from "./app-builder";
 import TaskThread from "./task";
 import WorkflowThread from "./workflow";
 
@@ -60,8 +59,6 @@ const Thread = () => {
         return <AgenticThread key={thread.id} thread={thread} />;
       case "analytics":
         return <AnalyticsThread key={thread.id} thread={thread} />;
-      case "app_builder":
-        return <AppBuilderThread key={thread.id} thread={thread} />;
       default:
         return <AgentThread thread={thread} refetchThread={refetchThread} />;
     }

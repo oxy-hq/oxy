@@ -49,11 +49,13 @@
 //!       "Last quarter" means the most recent completed fiscal quarter.
 //!     thinking: adaptive
 //!     max_retries: 3
+//!     model: claude-haiku-4-5   # fast/cheap model for triage
 //!   solving:
 //!     instructions: Prefer CTEs over subqueries.
 //!     thinking:
 //!       budget_tokens: 10000
 //!     max_retries: 2
+//!     model: claude-opus-4-6    # powerful model for SQL generation
 //!   # OpenAI o-series effort (shorthand or map form):
 //!   diagnosing:
 //!     thinking: "effort:high"
@@ -324,6 +326,22 @@ pub struct StateConfig {
     /// Maximum tool-use rounds before failing.
     #[serde(default)]
     pub max_retries: Option<u32>,
+
+    /// Model ID override for this state.
+    ///
+    /// When set, this model is used instead of the global `llm.model`.
+    /// The vendor, API key, and base URL from the global `llm:` section are
+    /// inherited; only the model ID is replaced.
+    ///
+    /// ```yaml
+    /// states:
+    ///   clarifying:
+    ///     model: claude-haiku-4-5   # cheap model for fast triage
+    ///   solving:
+    ///     model: claude-opus-4-6    # powerful model for SQL generation
+    /// ```
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 /// Thinking configuration as expressed in YAML.
@@ -349,9 +367,10 @@ impl ThinkingConfigYaml {
             ThinkingConfigYaml::Shorthand(s) if s.eq_ignore_ascii_case("adaptive") => {
                 ThinkingConfig::Adaptive
             }
-            // Shorthand "effort:low", "effort:medium", "effort:high"
+            // Shorthand "effort:low", "effort::low", etc.
             ThinkingConfigYaml::Shorthand(s) if s.to_ascii_lowercase().starts_with("effort:") => {
-                parse_effort_level(&s["effort:".len()..])
+                let rest = s["effort:".len()..].trim_start_matches(':');
+                parse_effort_level(rest)
             }
             ThinkingConfigYaml::Shorthand(_) => ThinkingConfig::Disabled,
             ThinkingConfigYaml::Manual { budget_tokens } => ThinkingConfig::Manual {
@@ -439,6 +458,44 @@ pub struct LlmConfigYaml {
     /// Maximum output tokens per call.  Defaults to 4096.
     #[serde(default)]
     pub max_tokens: Option<u32>,
+
+    /// Default thinking/reasoning config for all pipeline states.
+    ///
+    /// Takes precedence over the top-level `thinking:` field on `AgentConfig`.
+    ///
+    /// ```yaml
+    /// llm:
+    ///   thinking: adaptive
+    /// ```
+    #[serde(default)]
+    pub thinking: Option<ThinkingConfigYaml>,
+
+    /// "Extended thinking" mode preset: an alternative model + thinking configuration
+    /// activated at runtime via the UI toggle.
+    ///
+    /// ```yaml
+    /// llm:
+    ///   thinking: effort:low
+    ///   extended_thinking:
+    ///     model: gpt-5.4
+    ///     thinking: effort:medium
+    /// ```
+    #[serde(default)]
+    pub extended_thinking: Option<ExtendedThinkingConfigYaml>,
+}
+
+/// Extended thinking mode preset configuration.
+///
+/// Overrides the default model and/or thinking config when the user
+/// activates "extended thinking" mode from the UI.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ExtendedThinkingConfigYaml {
+    /// Model ID override for extended thinking mode.
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Thinking config override for extended thinking mode.
+    #[serde(default)]
+    pub thinking: Option<ThinkingConfigYaml>,
 }
 
 impl Default for LlmConfigYaml {
@@ -450,6 +507,8 @@ impl Default for LlmConfigYaml {
             api_key: None,
             base_url: None,
             max_tokens: None,
+            thinking: None,
+            extended_thinking: None,
         }
     }
 }
@@ -618,6 +677,18 @@ pub struct BuildContext {
     /// `ref` is set the ref's vendor is preferred even if `llm.model` is also
     /// explicitly overridden.
     pub has_explicit_ref: bool,
+
+    /// Runtime thinking config override (from UI "extended thinking" mode toggle).
+    ///
+    /// When set, overrides the YAML-configured global thinking config.
+    /// Per-state thinking overrides still take precedence.
+    pub thinking_override: Option<ThinkingConfig>,
+
+    /// Runtime model override (from UI "extended thinking" mode toggle).
+    ///
+    /// When set, a new LLM client is built with this model ID (inheriting
+    /// vendor, api_key, and base_url from the resolved config).
+    pub model_override: Option<String>,
 }
 
 // ── AgentConfig methods ───────────────────────────────────────────────────────
@@ -640,8 +711,7 @@ fn build_schema_named(
     match connector.introspect_schema() {
         Ok(info) => SchemaCatalog::from_schema_info_named(&info, connector_name),
         Err(e) => {
-            // Non-fatal: log and continue with an empty schema.
-            eprintln!("[agentic] schema introspection failed for '{connector_name}': {e}");
+            tracing::warn!(connector = connector_name, error = %e, "schema introspection failed, using empty schema");
             SchemaCatalog::default()
         }
     }
@@ -672,6 +742,33 @@ fn build_engine(cfg: &SemanticEngineConfig) -> Result<Box<dyn SemanticEngine>, C
                 client_id,
                 client_secret,
             )))
+        }
+    }
+}
+
+/// Build an [`LlmClient`] from the resolved vendor / key / model / base_url.
+///
+/// Extracted so it can be called both for the global client and for per-state
+/// model overrides (which inherit vendor, key, and base_url).
+fn build_llm_client(
+    vendor: &LlmVendor,
+    api_key: &str,
+    model: &str,
+    base_url: Option<&str>,
+) -> LlmClient {
+    match vendor {
+        LlmVendor::Anthropic => LlmClient::with_model(api_key, model),
+        LlmVendor::OpenAi => {
+            let provider = if let Some(url) = base_url {
+                OpenAiProvider::with_base_url(api_key, model, url)
+            } else {
+                OpenAiProvider::new(api_key, model)
+            };
+            LlmClient::with_provider(provider)
+        }
+        LlmVendor::OpenAiCompat => {
+            let url = base_url.unwrap_or("http://localhost:11434/v1");
+            LlmClient::with_provider(OpenAiCompatProvider::new(api_key, model, url))
         }
     }
 }
@@ -772,7 +869,6 @@ impl AgentConfig {
     ) -> Result<(AnalyticsSolver, Vec<PathBuf>), ConfigError> {
         // 1. Resolve context.
         let ctx = self.resolve_context(base_dir)?;
-
         // 2. Merge connectors injected by the HTTP layer from `databases:` names.
         if build_ctx.extra_connectors.is_empty() {
             return Err(ConfigError::NoDatabases);
@@ -861,21 +957,25 @@ impl AgentConfig {
             .as_deref()
             .or(build_ctx.project_base_url.as_deref());
 
-        let client = match effective_vendor {
-            LlmVendor::Anthropic => LlmClient::with_model(api_key, model),
-            LlmVendor::OpenAi => {
-                let provider = if let Some(base_url) = effective_base_url {
-                    OpenAiProvider::with_base_url(api_key, model, base_url)
-                } else {
-                    OpenAiProvider::new(api_key, model)
-                };
-                LlmClient::with_provider(provider)
-            }
-            LlmVendor::OpenAiCompat => {
-                let base_url = effective_base_url.unwrap_or("http://localhost:11434/v1");
-                LlmClient::with_provider(OpenAiCompatProvider::new(api_key, model, base_url))
-            }
-        };
+        let client = build_llm_client(effective_vendor, &api_key, &model, effective_base_url);
+
+        // Build per-state clients for states that declare a `model:` override.
+        // Inherits vendor / api_key / base_url from the global config.
+        let state_clients: std::collections::HashMap<String, LlmClient> = self
+            .states
+            .iter()
+            .filter_map(|(state_name, state_cfg)| {
+                state_cfg.model.as_deref().map(|state_model| {
+                    let c = build_llm_client(
+                        effective_vendor,
+                        &api_key,
+                        state_model,
+                        effective_base_url,
+                    );
+                    (state_name.clone(), c)
+                })
+            })
+            .collect();
 
         // 6. Build validator from config (defaults to all rules enabled).
         let validator = match &self.validation {
@@ -903,12 +1003,38 @@ impl AgentConfig {
             .with_sql_examples(ctx.sql_examples)
             .with_domain_docs(ctx.domain_docs)
             .with_state_configs(self.states.clone())
+            .with_state_clients(state_clients)
             .with_validator(validator)
             .with_max_tokens(self.llm.max_tokens);
 
-        // Wire global thinking config when present.
-        if let Some(thinking_cfg) = &self.thinking {
+        // Wire global thinking config: llm.thinking > top-level thinking.
+        let effective_thinking = self.llm.thinking.as_ref().or(self.thinking.as_ref());
+        if let Some(thinking_cfg) = effective_thinking {
             solver = solver.with_global_thinking(thinking_cfg.to_thinking_config());
+        }
+
+        // Apply runtime overrides from the UI "extended thinking" mode toggle.
+        // These override *all* config — including per-state thinking and
+        // model overrides — so the extended thinking preset wins unconditionally.
+        let extended_thinking_active =
+            build_ctx.thinking_override.is_some() || build_ctx.model_override.is_some();
+        if let Some(thinking) = build_ctx.thinking_override {
+            solver = solver.with_global_thinking(thinking);
+        }
+        if let Some(ref override_model) = build_ctx.model_override {
+            let override_client = build_llm_client(
+                effective_vendor,
+                &api_key,
+                override_model,
+                effective_base_url,
+            );
+            solver = solver.with_client_override(override_client);
+        }
+        // `with_client_override` already sets `extended_thinking_active = true`
+        // when a model override is present.  Handle the case where only a
+        // thinking override is provided (no model override).
+        if extended_thinking_active && !solver.extended_thinking_active {
+            solver.extended_thinking_active = true;
         }
 
         if let Some(e) = engine {
@@ -1215,5 +1341,108 @@ tasks:
         assert_eq!(dbs, vec!["alpha", "beta"]);
 
         fs::remove_dir_all(&tmp).ok();
+    }
+
+    // ── extended_thinking config parsing ────────────────────────────────────
+
+    #[test]
+    fn extended_thinking_config_parses_anthropic() {
+        let yaml = r#"
+llm:
+  ref: claude-sonnet-4-6
+  thinking: adaptive
+  extended_thinking:
+    model: claude-opus-4-6
+    thinking: adaptive
+"#;
+        let config = AgentConfig::from_yaml(yaml).unwrap();
+        let et = config.llm.extended_thinking.unwrap();
+        assert_eq!(et.model.as_deref(), Some("claude-opus-4-6"));
+        assert!(matches!(
+            et.thinking.unwrap().to_thinking_config(),
+            ThinkingConfig::Adaptive
+        ));
+    }
+
+    #[test]
+    fn extended_thinking_config_parses_openai_effort() {
+        let yaml = r#"
+llm:
+  ref: openai
+  model: gpt-5.4
+  thinking: effort::low
+  extended_thinking:
+    model: gpt-5.4
+    thinking: effort::medium
+"#;
+        let config = AgentConfig::from_yaml(yaml).unwrap();
+        let et = config.llm.extended_thinking.unwrap();
+        assert!(matches!(
+            et.thinking.unwrap().to_thinking_config(),
+            ThinkingConfig::Effort(ReasoningEffort::Medium)
+        ));
+    }
+
+    #[test]
+    fn thinking_in_llm_takes_precedence_over_top_level() {
+        let yaml = r#"
+thinking: disabled
+llm:
+  thinking: adaptive
+"#;
+        let config = AgentConfig::from_yaml(yaml).unwrap();
+        // llm.thinking should take precedence over top-level thinking
+        let effective = config.llm.thinking.as_ref().or(config.thinking.as_ref());
+        assert!(matches!(
+            effective.unwrap().to_thinking_config(),
+            ThinkingConfig::Adaptive
+        ));
+    }
+
+    #[test]
+    fn top_level_thinking_used_when_llm_thinking_absent() {
+        let yaml = "thinking: adaptive\nllm:\n  model: test\n";
+        let config = AgentConfig::from_yaml(yaml).unwrap();
+        assert!(config.llm.thinking.is_none());
+        let effective = config.llm.thinking.as_ref().or(config.thinking.as_ref());
+        assert!(matches!(
+            effective.unwrap().to_thinking_config(),
+            ThinkingConfig::Adaptive
+        ));
+    }
+
+    #[test]
+    fn extended_thinking_absent_when_not_configured() {
+        let config = AgentConfig::from_yaml("{}").unwrap();
+        assert!(config.llm.extended_thinking.is_none());
+    }
+
+    #[test]
+    fn extended_thinking_with_only_model_override() {
+        let yaml = r#"
+llm:
+  extended_thinking:
+    model: claude-opus-4-6
+"#;
+        let config = AgentConfig::from_yaml(yaml).unwrap();
+        let et = config.llm.extended_thinking.unwrap();
+        assert_eq!(et.model.as_deref(), Some("claude-opus-4-6"));
+        assert!(et.thinking.is_none());
+    }
+
+    #[test]
+    fn extended_thinking_with_only_thinking_override() {
+        let yaml = r#"
+llm:
+  extended_thinking:
+    thinking: effort::high
+"#;
+        let config = AgentConfig::from_yaml(yaml).unwrap();
+        let et = config.llm.extended_thinking.unwrap();
+        assert!(et.model.is_none());
+        assert!(matches!(
+            et.thinking.unwrap().to_thinking_config(),
+            ThinkingConfig::Effort(ReasoningEffort::High)
+        ));
     }
 }

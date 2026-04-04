@@ -26,6 +26,7 @@ export const getObjectName = (file: FileTreeModel): string => {
   const fileName = file.name;
   return fileName
     .replace(/\.test\.(yml|yaml)$/, "")
+    .replace(/\.agentic\.(yml|yaml)$/, "")
     .replace(/\.(procedure|workflow|automation|agent|aw|app|view|topic)\.(yml|yaml)$/, "")
     .replace(/\.(yml|yaml)$/, "");
 };
@@ -38,6 +39,7 @@ export const getFileTypeIcon = (fileType: FileType, fileName?: string) => {
     case FileType.AUTOMATION:
       return Workflow;
     case FileType.AGENT:
+    case FileType.ANALYTICS_AGENT:
       return Bot;
     case FileType.AGENTIC_WORKFLOW:
       return Network;
@@ -92,6 +94,7 @@ export const groupObjectsByType = (files: FileTreeModel[]): GroupedObjects => {
         groups.procedures.push(file);
         break;
       case FileType.AGENT:
+      case FileType.ANALYTICS_AGENT:
         groups.agents.push(file);
         break;
       case FileType.APP:

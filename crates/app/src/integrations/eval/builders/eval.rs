@@ -171,19 +171,28 @@ impl ParamMapper<EvalInput, Vec<(usize, EvalConfig, EvalTarget)>> for EvalMapper
                         a2a_context_id: None,
                         sandbox_info: None,
                     })
+                } else if resolved_target.ends_with("agentic.yml")
+                    || resolved_target.ends_with("agentic.yaml")
+                {
+                    // Analytics agentic systems (.agentic.yml) accept a prompt via
+                    // the headless eval path.
+                    EvalTarget::Agentic(super::types::AgenticInput {
+                        config_path: resolved_target.clone(),
+                        prompt: String::new(),
+                    })
                 } else if resolved_target.ends_with("workflow.yml")
                     || resolved_target.ends_with("automation.yml")
                     || resolved_target.ends_with("procedure.yml")
                 {
                     return Err(OxyError::ConfigurationError(format!(
                         "Unsupported test target: {resolved_target}. \
-                         The testing framework only supports .agent.yml and .aw.yml targets. \
+                         The testing framework only supports .agent.yml, .aw.yml, and .agentic.yml targets. \
                          Workflow/automation/procedure files do not accept prompts and cannot be tested with .test.yml files."
                     )));
                 } else {
                     return Err(OxyError::ConfigurationError(format!(
                         "Unsupported test target: {resolved_target}. \
-                         Expected .agent.yml or .aw.yml"
+                         Expected .agent.yml, .aw.yml, or .agentic.yml"
                     )));
                 };
 

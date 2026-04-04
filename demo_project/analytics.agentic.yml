@@ -1,29 +1,18 @@
-# Database names from config.yml.  All Oxy-supported types work here
-# (DuckDB, Postgres, BigQuery, Snowflake, ClickHouse, …).
-# databases:
-#   - training
-
-# Fall back to the project default model from config.yml; override here if
-# you need a specific model for this analytics agent.
 llm:
-  ref: openai-4o-mini
-  model: gpt-5.4
-  max_tokens: 8000
-
-# Global thinking applied to every pipeline state.  Per-state overrides
-# in the `states:` section take precedence.
-thinking: effort::low
-
+  ref: claude
+  # model: claude-sonnet-4-6
+  # max_tokens: 8000
+  thinking: disabled
+  extended_thinking:
+    model: claude-opus-4-6
+    thinking: adaptive
 context:
-  - ./semantics/*.view.yml
-  - ./semantics/*.topic.yml
+  - ./semantics/**/*
+  - ./sales_semantics/**/*
   - ./workflows/**/*.procedure.yml
   - ./example_sql/*.sql
-
 states:
-  clarifying:
-    max_retries: 10
   specifying:
     max_retries: 10
-  solving:
-    max_retries: 10
+  interpreting:
+    thinking: disabled

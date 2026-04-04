@@ -10,6 +10,10 @@ models:
     name: claude-sonnet-4-6
     model_ref: claude-sonnet-4-6
     key_var: ANTHROPIC_API_KEY
+  - vendor: anthropic
+    name: claude
+    model_ref: claude-sonnet-4-6
+    key_var: ANTHROPIC_API_KEY
 
 databases:
   - name: local

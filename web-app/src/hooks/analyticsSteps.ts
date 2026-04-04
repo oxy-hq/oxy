@@ -12,10 +12,15 @@ export type ThinkingItem = {
 export type ArtifactItem = {
   kind: "artifact";
   id: string;
+  /** SSE sequence number of the tool_call event that produced this artifact. */
+  seq?: number;
   toolName: string;
   toolInput: string;
   toolOutput?: string;
+  /** Tool execution time in ms (time spent inside the tool, excluding LLM). */
   durationMs?: number;
+  /** LLM inference time for the round that produced this tool call (ms). */
+  llmDurationMs?: number;
   isStreaming: boolean;
 };
 
@@ -57,7 +62,12 @@ export type SelectableItem = ArtifactItem | SqlItem | ProcedureItem;
 export type StepLlmUsage = {
   inputTokens: number;
   outputTokens: number;
+  /** Total wall-clock time for the LLM invocation (includes tool execution). */
   durationMs: number;
+  /** Sum of all tool execution times within this step. */
+  toolDurationMs: number;
+  /** Model identifier from the last LLM call in this step. */
+  model?: string;
 };
 
 export type AnalyticsStep = {
@@ -166,6 +176,21 @@ function createScope() {
     return undefined;
   };
 
+  /** Search completed steps in `result` for the last ask_user artifact and set its answer. */
+  const updateAskUserAnswer = (answer: string) => {
+    for (let i = result.length - 1; i >= 0; i--) {
+      const step = result[i];
+      if (step.kind !== "step") continue;
+      for (let j = step.items.length - 1; j >= 0; j--) {
+        const item = step.items[j];
+        if (item.kind === "artifact" && item.toolName === "ask_user") {
+          item.toolOutput = JSON.stringify({ answer });
+          return;
+        }
+      }
+    }
+  };
+
   const completeStep = (
     outcome: string,
     metadata?: Record<string, unknown> | null,
@@ -203,6 +228,7 @@ function createScope() {
     pushItem,
     findLastStreaming,
     findLastStreamingArtifactByName,
+    updateAskUserAnswer,
 
     // ── Step lifecycle ───────────────────────────────────────────────────────
     openStep(label: string, summary?: string, subSpecIndex?: number | null) {
@@ -226,16 +252,27 @@ function createScope() {
       promptTokens: number,
       outputTokens: number,
       durationMs: number,
-      subSpecIndex?: number | null
+      subSpecIndex?: number | null,
+      model?: string
     ) {
       const step = currentStep(subSpecIndex);
       if (!step) return;
       if (!step.llmUsage) {
-        step.llmUsage = { inputTokens: 0, outputTokens: 0, durationMs: 0 };
+        step.llmUsage = { inputTokens: 0, outputTokens: 0, durationMs: 0, toolDurationMs: 0 };
       }
       step.llmUsage.inputTokens += promptTokens || 0;
       step.llmUsage.outputTokens += outputTokens || 0;
       step.llmUsage.durationMs += durationMs || 0;
+      if (model) step.llmUsage.model = model;
+    },
+
+    accumulateToolDuration(durationMs: number, subSpecIndex?: number | null) {
+      const step = currentStep(subSpecIndex);
+      if (!step) return;
+      if (!step.llmUsage) {
+        step.llmUsage = { inputTokens: 0, outputTokens: 0, durationMs: 0, toolDurationMs: 0 };
+      }
+      step.llmUsage.toolDurationMs += durationMs || 0;
     },
 
     // ── Text streaming ───────────────────────────────────────────────────────
@@ -358,6 +395,24 @@ function buildDomainItem(ev: UiBlock, nextId: (prefix: string) => string): Trace
         isStreaming: false
       };
     }
+
+    case "semantic_shortcut_attempted": {
+      const measures = ev.payload.measures ?? [];
+      const dimensions = ev.payload.dimensions ?? [];
+      const filters = ev.payload.filters ?? [];
+      const time_dimensions = ev.payload.time_dimensions ?? [];
+      return {
+        kind: "artifact",
+        id: nextId("sem-shortcut"),
+        toolName: "compile_semantic_query",
+        toolInput: JSON.stringify({ measures, dimensions, filters, time_dimensions }),
+        toolOutput: JSON.stringify({ success: true }),
+        isStreaming: true
+      };
+    }
+
+    // semantic_shortcut_resolved is handled in the main dispatcher
+    // so it can update the artifact's toolOutput with the compiled SQL.
 
     case "spec_resolved": {
       const metrics = ev.payload.resolved_metrics ?? [];
@@ -507,8 +562,10 @@ export function buildAnalyticsSteps(events: UiBlock[]): StepOrGroup[] {
           {
             kind: "artifact",
             id: scope.nextId("tool"),
+            seq: ev.seq,
             toolName: ev.payload.name,
             toolInput: JSON.stringify(ev.payload.input ?? ""),
+            llmDurationMs: ev.payload.llm_duration_ms,
             isStreaming: true
           },
           ssi
@@ -520,6 +577,28 @@ export function buildAnalyticsSteps(events: UiBlock[]): StepOrGroup[] {
           a.toolOutput = JSON.stringify(ev.payload.output ?? "");
           a.durationMs = ev.payload.duration_ms;
           a.isStreaming = false;
+        }
+        scope.accumulateToolDuration(ev.payload.duration_ms, ssi);
+        break;
+      }
+
+      // ── Human-in-the-loop ──────────────────────────────────────────────────
+      case "awaiting_input": {
+        // The ask_user tool_call never gets a tool_result because the
+        // pipeline suspends before one is emitted.  Mark it as done here
+        // so the spinner stops.
+        const askUser = scope.findLastStreamingArtifactByName("ask_user");
+        if (askUser) {
+          askUser.toolOutput = JSON.stringify({ status: "awaiting_response" });
+          askUser.isStreaming = false;
+        }
+        break;
+      }
+      case "human_input_resolved": {
+        // The ask_user artifact lives in a completed (suspended) step that
+        // has already been popped from stepStack into result.  Search there.
+        if (ev.payload.answer) {
+          scope.updateAskUserAnswer(ev.payload.answer);
         }
         break;
       }
@@ -593,9 +672,20 @@ export function buildAnalyticsSteps(events: UiBlock[]): StepOrGroup[] {
           ev.payload.prompt_tokens,
           ev.payload.output_tokens,
           ev.payload.duration_ms,
-          ssi
+          ssi,
+          ev.payload.model
         );
         break;
+
+      // ── Semantic shortcut resolved — update the artifact with compiled SQL ──
+      case "semantic_shortcut_resolved": {
+        const sem = scope.findLastStreaming<ArtifactItem>("artifact", ssi);
+        if (sem) {
+          sem.toolOutput = JSON.stringify({ success: true, sql: ev.payload.sql });
+          sem.isStreaming = false;
+        }
+        break;
+      }
 
       // ── Domain events (pure item construction) ─────────────────────────────
       default: {

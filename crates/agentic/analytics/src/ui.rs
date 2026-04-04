@@ -30,9 +30,8 @@ pub fn analytics_tool_summary(tool: &str) -> Option<String> {
     let s = match tool {
         "search_catalog" => "Searching catalog",
         "search_procedures" => "Searching procedures",
-        "get_metric_definition" => "Looking up metric",
         "get_join_path" => "Resolving join path",
-        "sample_column" => "Sampling column values",
+        "sample_columns" => "Sampling column values",
         "execute_preview" => "Previewing query",
         "render_chart" => "Rendering chart",
         _ => return None,

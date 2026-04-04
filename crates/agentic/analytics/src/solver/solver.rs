@@ -51,8 +51,17 @@ pub struct AnalyticsSolver {
     pub(crate) domain_docs: Vec<String>,
     /// Per-state config overrides (thinking config, max_retries, instructions).
     pub(crate) state_configs: HashMap<String, StateConfig>,
+    /// Per-state LLM clients built from `states.<name>.model` overrides.
+    ///
+    /// Only populated for states that specify an explicit `model:` in their
+    /// `StateConfig`.  Falls back to `self.client` for all other states.
+    pub(crate) state_clients: HashMap<String, LlmClient>,
     /// Global thinking config that overrides the per-state default when set.
     pub(crate) global_thinking: Option<ThinkingConfig>,
+    /// When true, `global_thinking` takes absolute precedence over per-state
+    /// thinking configs.  Set by extended thinking mode to ensure the runtime override
+    /// wins everywhere.
+    pub(crate) extended_thinking_active: bool,
     /// Human input provider for `ask_user` tool calls.
     ///
     /// Defaults to [`DeferredInputProvider`] (always suspends).
@@ -104,7 +113,9 @@ impl AnalyticsSolver {
             sql_examples: vec![],
             domain_docs: vec![],
             state_configs: HashMap::new(),
+            state_clients: HashMap::new(),
             global_thinking: None,
+            extended_thinking_active: false,
             human_input: Arc::new(DeferredInputProvider),
             suspension_data: None,
             resume_data: None,
@@ -133,7 +144,9 @@ impl AnalyticsSolver {
             sql_examples: vec![],
             domain_docs: vec![],
             state_configs: HashMap::new(),
+            state_clients: HashMap::new(),
             global_thinking: None,
+            extended_thinking_active: false,
             human_input: Arc::new(DeferredInputProvider),
             suspension_data: None,
             resume_data: None,
@@ -181,9 +194,33 @@ impl AnalyticsSolver {
         self
     }
 
+    /// Set per-state LLM client overrides built from `states.<name>.model`.
+    pub fn with_state_clients(mut self, clients: HashMap<String, LlmClient>) -> Self {
+        self.state_clients = clients;
+        self
+    }
+
+    /// Return the LLM client for `state`, falling back to the global client.
+    pub(crate) fn client_for_state(&self, state: &str) -> &LlmClient {
+        self.state_clients.get(state).unwrap_or(&self.client)
+    }
+
     /// Set a global thinking config applied to every pipeline state.
     pub fn with_global_thinking(mut self, thinking: ThinkingConfig) -> Self {
         self.global_thinking = Some(thinking);
+        self
+    }
+
+    /// Override the global LLM client and clear per-state model overrides.
+    ///
+    /// Used for runtime preset overrides (e.g. "extended thinking" mode from the UI).
+    /// Per-state **model** clients are cleared so all states use the
+    /// overridden client.  Sets `extended_thinking_active` so that the extended thinking
+    /// config also takes precedence over per-state overrides.
+    pub fn with_client_override(mut self, client: LlmClient) -> Self {
+        self.client = client;
+        self.state_clients.clear();
+        self.extended_thinking_active = true;
         self
     }
 
@@ -295,12 +332,20 @@ impl AnalyticsSolver {
 
     /// Return the [`ThinkingConfig`] for a state.
     ///
-    /// Priority: per-state config > global_thinking override > `default`.
+    /// When extended thinking mode is active the global thinking override wins
+    /// unconditionally.  Otherwise the priority is:
+    /// per-state config > global_thinking override > `default`.
     pub(crate) fn thinking_for_state(
         &self,
         state: &str,
         default: ThinkingConfig,
     ) -> ThinkingConfig {
+        // Extended thinking override takes absolute precedence.
+        if self.extended_thinking_active {
+            if let Some(global) = &self.global_thinking {
+                return global.clone();
+            }
+        }
         if let Some(t) = self
             .state_configs
             .get(state)
@@ -342,7 +387,9 @@ pub struct AnalyticsFanoutWorker {
     global_instructions: Option<String>,
     sql_examples: Vec<String>,
     state_configs: HashMap<String, StateConfig>,
+    state_clients: HashMap<String, LlmClient>,
     global_thinking: Option<ThinkingConfig>,
+    extended_thinking_active: bool,
     max_tokens: Option<u32>,
 }
 
@@ -358,9 +405,16 @@ impl AnalyticsFanoutWorker {
             global_instructions: solver.global_instructions.clone(),
             sql_examples: solver.sql_examples.clone(),
             state_configs: solver.state_configs.clone(),
+            state_clients: solver.state_clients.clone(),
             global_thinking: solver.global_thinking.clone(),
+            extended_thinking_active: solver.extended_thinking_active,
             max_tokens: solver.max_tokens,
         }
+    }
+
+    /// Return the LLM client for `state`, falling back to the global client.
+    fn client_for_state(&self, state: &str) -> &LlmClient {
+        self.state_clients.get(state).unwrap_or(&self.client)
     }
 
     /// Build a composite system prompt (mirrors `AnalyticsSolver::build_system_prompt`).
@@ -424,6 +478,12 @@ impl AnalyticsFanoutWorker {
 
     /// Return the [`ThinkingConfig`] for a state.
     fn thinking_for_state(&self, state: &str, default: ThinkingConfig) -> ThinkingConfig {
+        // Extended thinking override takes absolute precedence.
+        if self.extended_thinking_active {
+            if let Some(global) = &self.global_thinking {
+                return global.clone();
+            }
+        }
         if let Some(t) = self
             .state_configs
             .get(state)
@@ -546,7 +606,7 @@ impl<Ev: DomainEvents> FanoutWorker<AnalyticsDomain, Ev> for AnalyticsFanoutWork
         )
         .await;
 
-        let result = self.execute_solution(&solution).await;
+        let result = self.execute_solution(&solution, sub).await;
 
         let outcome = if result.is_ok() {
             Outcome::Advanced
@@ -599,7 +659,7 @@ impl AnalyticsFanoutWorker {
             .expect("connector for spec must be registered");
 
         let output = match self
-            .client
+            .client_for_state("solving")
             .run_with_tools(
                 &system_prompt,
                 initial,
@@ -642,7 +702,10 @@ impl AnalyticsFanoutWorker {
 
         super::emit_domain(
             &self.event_tx,
-            AnalyticsEvent::QueryGenerated { sql: sql.clone() },
+            AnalyticsEvent::QueryGenerated {
+                sql: sql.clone(),
+                sub_spec_index,
+            },
         )
         .await;
 
@@ -662,6 +725,7 @@ impl AnalyticsFanoutWorker {
     async fn execute_solution(
         &self,
         solution: &AnalyticsSolution,
+        sub_spec_index: Option<usize>,
     ) -> Result<AnalyticsResult, (AnalyticsError, BackTarget<AnalyticsDomain>)> {
         const DEFAULT_SAMPLE_LIMIT: u64 = 1_000;
         let start = std::time::Instant::now();
@@ -716,6 +780,7 @@ impl AnalyticsFanoutWorker {
                         error: None,
                         columns,
                         rows,
+                        sub_spec_index,
                     },
                 )
                 .await;
@@ -733,6 +798,7 @@ impl AnalyticsFanoutWorker {
                         error: Some(e.to_string()),
                         columns: vec![],
                         rows: vec![],
+                        sub_spec_index,
                     },
                 )
                 .await;

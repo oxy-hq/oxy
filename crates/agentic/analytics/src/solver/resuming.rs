@@ -107,6 +107,7 @@ pub(super) fn problem_state_from_resume(data: &SuspendedRunData) -> ProblemState
             // is set.
             ProblemState::Clarifying(AnalyticsIntent {
                 raw_question: data.original_input.clone(),
+                summary: String::new(),
                 question_type: QuestionType::SingleValue,
                 metrics: vec![],
                 dimensions: vec![],
@@ -114,6 +115,8 @@ pub(super) fn problem_state_from_resume(data: &SuspendedRunData) -> ProblemState
                 history: vec![],
                 spec_hint: None,
                 selected_procedure: None,
+                semantic_query: Default::default(),
+                semantic_confidence: 0.0,
             })
         }
         "specifying" => {
@@ -129,6 +132,7 @@ pub(super) fn problem_state_from_resume(data: &SuspendedRunData) -> ProblemState
             let intent: AnalyticsIntent =
                 serde_json::from_value(intent_value).unwrap_or_else(|_| AnalyticsIntent {
                     raw_question: data.original_input.clone(),
+                    summary: String::new(),
                     question_type: QuestionType::SingleValue,
                     metrics: vec![],
                     dimensions: vec![],
@@ -136,6 +140,8 @@ pub(super) fn problem_state_from_resume(data: &SuspendedRunData) -> ProblemState
                     history: vec![],
                     spec_hint: None,
                     selected_procedure: None,
+                    semantic_query: Default::default(),
+                    semantic_confidence: 0.0,
                 });
             // GeneralInquiry should never have entered Specifying, but if the
             // suspension data is corrupt/stale, re-triage via Clarifying rather
@@ -147,22 +153,23 @@ pub(super) fn problem_state_from_resume(data: &SuspendedRunData) -> ProblemState
             }
         }
         "solving" => {
-            // Re-enter solving with the stored QuerySpec.
-            // Falls back to Clarifying if the spec cannot be deserialized.
+            // Solving is absorbed into specifying.  Resume into specifying
+            // with the intent from the stored QuerySpec.
             let spec_value = if data.stage_data["spec"].is_object() {
                 data.stage_data["spec"].clone()
             } else {
                 data.stage_data.clone()
             };
             match serde_json::from_value::<QuerySpec>(spec_value) {
-                Ok(spec) => ProblemState::Solving(spec),
+                Ok(spec) => ProblemState::Specifying(spec.intent),
                 Err(_) => {
-                    eprintln!(
+                    tracing::info!(
                         "[agentic-analytics] warn: failed to deserialize QuerySpec for \
                          solving resume; falling back to Clarifying"
                     );
                     ProblemState::Clarifying(AnalyticsIntent {
                         raw_question: data.original_input.clone(),
+                        summary: String::new(),
                         question_type: QuestionType::SingleValue,
                         metrics: vec![],
                         dimensions: vec![],
@@ -170,6 +177,8 @@ pub(super) fn problem_state_from_resume(data: &SuspendedRunData) -> ProblemState
                         history: vec![],
                         spec_hint: None,
                         selected_procedure: None,
+                        semantic_query: Default::default(),
+                        semantic_confidence: 0.0,
                     })
                 }
             }
@@ -191,12 +200,13 @@ pub(super) fn problem_state_from_resume(data: &SuspendedRunData) -> ProblemState
         other => {
             // Warn instead of panic so stale/corrupt suspension data doesn't
             // crash the server.  Fall back to the safest re-entry point.
-            eprintln!(
+            tracing::info!(
                 "[agentic-analytics] warn: unsupported from_state for resume: '{other}'; \
                  falling back to Clarifying"
             );
             ProblemState::Clarifying(AnalyticsIntent {
                 raw_question: data.original_input.clone(),
+                summary: String::new(),
                 question_type: QuestionType::SingleValue,
                 metrics: vec![],
                 dimensions: vec![],
@@ -204,6 +214,8 @@ pub(super) fn problem_state_from_resume(data: &SuspendedRunData) -> ProblemState
                 history: vec![],
                 spec_hint: None,
                 selected_procedure: None,
+                semantic_query: Default::default(),
+                semantic_confidence: 0.0,
             })
         }
     }

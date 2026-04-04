@@ -7,12 +7,23 @@ entities:
   - name: climb
     type: primary
     key: date
+  - name: nutrition_day
+    type: foreign
+    key: date
 
 dimensions:
   - name: date
     type: date
     expr: date
     description: Climbing session date
+  - name: week
+    type: date
+    expr: "date_trunc('week', date)"
+    description: Week of climbing session (Monday-anchored)
+  - name: month
+    type: date
+    expr: "date_trunc('month', date)"
+    description: Month of climbing session
   - name: ascent_type
     type: string
     expr: ascent_type

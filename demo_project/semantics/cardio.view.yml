@@ -7,12 +7,23 @@ entities:
   - name: cardio_session
     type: primary
     key: date
+  - name: nutrition_day
+    type: foreign
+    key: date
 
 dimensions:
   - name: date
     type: date
     expr: "Date"
     description: Cardio session date
+  - name: week
+    type: date
+    expr: "date_trunc('week', \"Date\")"
+    description: Week of cardio session (Monday-anchored)
+  - name: month
+    type: date
+    expr: "date_trunc('month', \"Date\")"
+    description: Month of cardio session
   - name: notes
     type: string
     expr: "Notes"

@@ -1,10 +1,7 @@
 //! **Clarifying** pipeline stage.
 //!
 //! Owns:
-//! - Prompt builders for the Triage and Ground sub-phases
-//! - [`AnalyticsSolver::triage_impl`] — triage sub-phase (no tools)
-//! - [`AnalyticsSolver::ground_impl`] — ground sub-phase (tool loop)
-//! - [`AnalyticsSolver::clarify_impl`] — orchestrates triage + ground
+//! - [`AnalyticsSolver::clarify_impl`] — classifies the question, attempts semantic shortcut, or forwards to Specifying
 //! - [`AnalyticsSolver::general_inquiry_impl`] — GeneralInquiry short-circuit
 //! - [`build_clarifying_handler`] — `StateHandler` factory
 
@@ -22,12 +19,11 @@ use agentic_core::{
 
 use crate::catalog::Catalog;
 use crate::events::AnalyticsEvent;
-use crate::llm::{ThinkingConfig, ToolLoopConfig};
-use crate::schemas::{clarify_response_schema, triage_response_schema};
-use crate::semantic::SemanticCatalog;
-use crate::tools::{execute_clarifying_tool, execute_database_lookup_tool};
-use crate::types::{DomainHypothesis, QuestionType};
-use crate::{AnalyticsAnswer, AnalyticsDomain, AnalyticsError, AnalyticsIntent};
+use crate::llm::{LlmError, ThinkingConfig, ToolLoopConfig};
+use crate::schemas::triage_response_schema;
+use crate::tools::execute_clarifying_tool;
+use crate::types::{DomainHypothesis, QuestionType, SolutionPayload, SolutionSource};
+use crate::{AnalyticsAnswer, AnalyticsDomain, AnalyticsError, AnalyticsIntent, AnalyticsSolution};
 
 use super::{
     AnalyticsSolver, emit_domain,
@@ -45,58 +41,41 @@ use super::{
 
 pub(super) fn build_triage_user_prompt(
     intent: &AnalyticsIntent,
-    catalog: &SemanticCatalog,
     session_turns: &[CompletedTurn<AnalyticsDomain>],
+    topics_section: &str,
 ) -> String {
     let session_section = format_session_turns_section(session_turns);
     let history_section = format_history_section(&intent.history);
-    let table_names = Catalog::table_names(catalog);
-    let tables_line = if table_names.is_empty() {
-        "(no tables)".to_string()
+    let topics_hint = if topics_section.is_empty() {
+        String::new()
     } else {
-        table_names.join(", ")
+        format!(
+            "\n\nThe following topics are defined in the semantic layer. Use them to guide \
+your search_catalog queries — search for terms related to the matching topic's views:\n{topics_section}\n"
+        )
     };
     format!(
-        "{session_section}{history_section}Question: {raw_question}\n\nAvailable tables: {tables_line}\n\nIdentify the topic, question type, relevant tables, and your confidence.",
+        "{session_section}{history_section}Question: {raw_question}{topics_hint}\n\n\
+Call search_procedures first. If no procedure matches, call search_catalog to discover \
+available measures and dimensions. ALWAYS populate semantic_query with the best matching \
+view.member paths and set semantic_confidence to reflect coverage (>= 0.85 for full \
+coverage, lower for partial). The pipeline uses confidence to decide the path — even a \
+partial query is useful as a hint for the next stage.",
         raw_question = intent.raw_question,
     )
 }
 
-pub(super) fn build_ground_user_prompt(
-    intent: &AnalyticsIntent,
-    hypothesis: &DomainHypothesis,
-    catalog: &SemanticCatalog,
-    retry_ctx: Option<&RetryContext>,
-    session_turns: &[CompletedTurn<AnalyticsDomain>],
-) -> String {
-    let history_section = format_history_section(&intent.history);
-    let retry_section = format_retry_section(retry_ctx);
-    let session_section = format_session_turns_section(session_turns);
-    let reference_note = if !session_turns.is_empty() {
-        " If the current question references something from the conversation \
-(e.g. \"same metric\", \"break it down differently\", \"how about X instead\"), \
-resolve those references using the previous turns."
-    } else {
-        ""
-    };
-    let time_scope_line = hypothesis
-        .time_scope
-        .as_deref()
-        .map(|ts| format!("\nInferred time scope: {ts}"))
-        .unwrap_or_default();
-    format!(
-        "{session_section}{history_section}Question: {raw_question}\n\n\
-         Triage summary: {summary}\n\
-         Question type: {qt:?}\n\
-         Relevant tables: {tables}{time_scope_line}\n\n\
-         Available tables:\n{schema}\n\n\
-         Use the tools to explore metrics and dimensions, then return the structured intent.{reference_note}{retry_section}",
-        raw_question = intent.raw_question,
-        summary = hypothesis.summary,
-        qt = hypothesis.question_type,
-        tables = hypothesis.relevant_tables.join(", "),
-        schema = catalog.to_table_summary(),
-    )
+// ---------------------------------------------------------------------------
+// Outcome type
+// ---------------------------------------------------------------------------
+
+/// The outcome of the Clarifying stage — either a plain intent to pass forward,
+/// or a pre-compiled semantic solution that skips Specifying/Solving entirely.
+pub(crate) enum ClarifyOutcome {
+    /// Normal path: pass the intent to Specifying.
+    Intent(AnalyticsIntent),
+    /// Fast path: airlayer compiled SQL during Clarifying — go straight to Executing.
+    SemanticShortcut(AnalyticsSolution),
 }
 
 // ---------------------------------------------------------------------------
@@ -104,192 +83,78 @@ resolve those references using the previous turns."
 // ---------------------------------------------------------------------------
 
 impl AnalyticsSolver {
-    /// **Triage** sub-phase: identify topic, question type, and relevant tables.
-    pub(super) async fn triage_impl(
+    /// Core clarify logic — classifies the question type, detects ambiguities,
+    /// attempts a semantic shortcut, then forwards to Specifying.
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            otel.name = "analytics.clarify",
+            oxy.span_type = "analytics",
+            question_type = tracing::field::Empty,
+            semantic_confidence = tracing::field::Empty,
+        )
+    )]
+    pub(crate) async fn clarify_impl(
         &mut self,
-        intent: &AnalyticsIntent,
+        intent: AnalyticsIntent,
+        retry_ctx: Option<&RetryContext>,
         session_turns: &[CompletedTurn<AnalyticsDomain>],
-    ) -> Result<DomainHypothesis, (AnalyticsError, BackTarget<AnalyticsDomain>)> {
-        let user_prompt = build_triage_user_prompt(intent, &self.catalog, session_turns);
+    ) -> Result<ClarifyOutcome, (AnalyticsError, BackTarget<AnalyticsDomain>)> {
+        let topics_section = self.catalog.topics_summary();
+        let user_prompt = build_triage_user_prompt(&intent, session_turns, &topics_section);
         let system_prompt = self.build_system_prompt("clarifying", TRIAGE_SYSTEM_PROMPT, None);
         let thinking = self.thinking_for_state("clarifying", ThinkingConfig::Disabled);
 
-        let output = self
-            .client
-            .run_with_tools(
-                &system_prompt,
-                &user_prompt,
-                &[],
-                |_name: String, _params| {
-                    Box::pin(async { Err(ToolError::UnknownTool("no tools in triage".into())) })
-                },
-                &self.event_tx,
-                ToolLoopConfig {
-                    max_tool_rounds: 0,
-                    state: "clarifying".into(),
-                    thinking,
-                    response_schema: Some(triage_response_schema()),
-                    max_tokens_override: self.max_tokens,
-                    sub_spec_index: None,
-                },
-            )
-            .await
-            .map_err(|e| {
-                let msg = format!("LLM call failed during triage: {e}");
-                (
-                    AnalyticsError::NeedsUserInput { prompt: msg },
-                    BackTarget::Clarify(intent.clone(), Default::default()),
-                )
-            })?;
+        // Build tool list: catalog/procedure tools + ask_user for mid-loop suspension.
+        let mut tools = crate::tools::triage_tools();
+        tools.push(ask_user_tool_def());
 
-        let hypothesis: DomainHypothesis = if let Some(structured) = output.structured_response {
-            serde_json::from_value(structured).map_err(|e| {
-                let msg = format!("failed to deserialise triage response: {e}");
-                (
-                    AnalyticsError::NeedsUserInput { prompt: msg },
-                    BackTarget::Clarify(intent.clone(), Default::default()),
-                )
-            })?
-        } else {
-            if output.text.trim().is_empty() {
-                let msg = "triage: LLM returned empty text".to_string();
-                return Err((
-                    AnalyticsError::NeedsUserInput { prompt: msg },
-                    BackTarget::Clarify(intent.clone(), Default::default()),
-                ));
-            }
-            let raw = strip_json_fences(&output.text).to_owned();
-            serde_json::from_str(&raw).map_err(|e| {
-                let msg = format!(
-                    "failed to parse triage response: {e}\nRaw: {}",
-                    &output.text
-                );
-                (
-                    AnalyticsError::NeedsUserInput { prompt: msg },
-                    BackTarget::Clarify(intent.clone(), Default::default()),
-                )
-            })?
-        };
+        let procedure_runner = self.procedure_runner.clone();
+        let catalog = Arc::clone(&self.catalog);
+        let human_input = Arc::clone(&self.human_input);
 
-        emit_domain(
-            &self.event_tx,
-            AnalyticsEvent::TriageCompleted {
-                summary: hypothesis.summary.clone(),
-                relevant_tables: hypothesis.relevant_tables.clone(),
-                question_type: format!("{:?}", hypothesis.question_type),
-                confidence: hypothesis.confidence,
-                ambiguities: hypothesis.ambiguities.clone(),
-            },
-        )
-        .await;
-
-        Ok(hypothesis)
-    }
-
-    /// **Ground** sub-phase: explore the schema with tools and produce a
-    /// structured [`AnalyticsIntent`].
-    pub(super) async fn ground_impl(
-        &mut self,
-        intent: AnalyticsIntent,
-        hypothesis: &DomainHypothesis,
-        retry_ctx: Option<&RetryContext>,
-        session_turns: &[CompletedTurn<AnalyticsDomain>],
-    ) -> Result<AnalyticsIntent, (AnalyticsError, BackTarget<AnalyticsDomain>)> {
-        let user_prompt =
-            build_ground_user_prompt(&intent, hypothesis, &self.catalog, retry_ctx, session_turns);
-
-        // On resume there are two distinct suspension origins:
-        //
-        // 1. Pre-ground ambiguity suspension (from `clarify_impl`):
-        //    `stage_data` is `{}` (no conversation_history).  The user's
-        //    answer disambiguates the original question; ground should start
-        //    fresh with the answer appended as extra context.
-        //
-        // 2. In-ground `ask_user` suspension (from this function):
-        //    `stage_data["conversation_history"]` holds the full LLM message
-        //    history up to the `ask_user` call.  The user's answer must be
-        //    fed back as a tool result so the LLM can continue.
-        //
-        // Case 1 with an empty prior list would cause `build_resume_messages`
-        // to fall back to the synthetic `ask_user_0` id, producing a
-        // `tool_result` with no matching `tool_use` block — rejected by the
-        // Anthropic API.
-        let mut resume_max_tokens_override: Option<u32> = None;
-        let mut resume_extra_rounds: u32 = 0;
+        // On resume after ask_user suspension, rebuild messages from the
+        // persisted conversation snapshot so the LLM continues with full
+        // context (catalog results already present).
+        let had_user_answer = self.resume_data.is_some();
         let initial: crate::llm::InitialMessages = if let Some(resume) = self.resume_data.take() {
             let prior: Vec<serde_json::Value> = resume.data.stage_data["conversation_history"]
                 .as_array()
                 .cloned()
                 .unwrap_or_default();
-            match resume.data.stage_data["suspension_type"].as_str() {
-                Some("max_tokens") => {
-                    // Resume with doubled token budget; append "please continue".
-                    resume_max_tokens_override = resume.data.stage_data["max_tokens_override"]
-                        .as_u64()
-                        .map(|v| v as u32);
-                    crate::llm::InitialMessages::Messages(
-                        crate::llm::LlmClient::build_continue_messages(&prior),
-                    )
-                }
-                Some("max_tool_rounds") => {
-                    // Resume with extra tool rounds; append "please continue".
-                    resume_extra_rounds =
-                        resume.data.stage_data["extra_rounds"].as_u64().unwrap_or(0) as u32;
-                    crate::llm::InitialMessages::Messages(
-                        crate::llm::LlmClient::build_continue_messages(&prior),
-                    )
-                }
-                _ => {
-                    // ask_user or legacy pre-ground suspension.
-                    if !prior.is_empty() {
-                        // Case 2: continue the in-progress tool loop.
-                        let msgs = self.client.build_resume_messages(
-                            &prior,
-                            &resume.data.question,
-                            &resume.data.suggestions,
-                            &resume.answer,
-                        );
-                        crate::llm::InitialMessages::Messages(msgs)
-                    } else {
-                        // Case 1: fresh ground pass; embed the user's clarification.
-                        crate::llm::InitialMessages::User(format!(
-                            "{user_prompt}\n\nUser answered the clarifying question \"{q}\": {a}",
-                            q = resume.data.question,
-                            a = resume.answer,
-                        ))
-                    }
-                }
+            if !prior.is_empty() {
+                let msgs = self.client.build_resume_messages(
+                    &prior,
+                    &resume.data.question,
+                    &resume.data.suggestions,
+                    &resume.answer,
+                );
+                crate::llm::InitialMessages::Messages(msgs)
+            } else {
+                // No prior conversation — start fresh with the user's answer appended.
+                crate::llm::InitialMessages::User(format!(
+                    "{user_prompt}\n\nUser answered the clarifying question \"{q}\": {a}",
+                    q = resume.data.question,
+                    a = resume.answer,
+                ))
             }
+        } else if retry_ctx.is_some() {
+            crate::llm::InitialMessages::User(user_prompt.clone())
         } else {
-            crate::llm::InitialMessages::User(user_prompt)
+            crate::llm::InitialMessages::User(user_prompt.clone())
         };
 
-        let tools = self.tools_for_state_clarifying();
-        let system_prompt = self.build_system_prompt("clarifying", GROUND_SYSTEM_PROMPT, None);
-        let thinking = self.thinking_for_state("clarifying", ThinkingConfig::Disabled);
-        let max_rounds = self.max_tool_rounds_for_state("clarifying", 5) + resume_extra_rounds;
-        let catalog = Arc::clone(&self.catalog);
-        let human_input = Arc::clone(&self.human_input);
-        let procedure_runner = self.procedure_runner.clone();
-        let connectors = self.connectors.clone();
-        let default_connector = self.default_connector.clone();
-        let schema_cache = Arc::clone(&self.schema_cache);
-        let output = match self
-            .client
+        let output = self
+            .client_for_state("clarifying")
             .run_with_tools(
                 &system_prompt,
                 initial,
                 &tools,
                 |name: String, params| {
+                    let procedure_runner = procedure_runner.clone();
                     let catalog = Arc::clone(&catalog);
                     let human_input = Arc::clone(&human_input);
-                    let procedure_runner = procedure_runner.clone();
-                    let connectors = connectors.clone();
-                    let default_connector = default_connector.clone();
-                    let schema_cache = Arc::clone(&schema_cache);
                     Box::pin(async move {
-                        // `ask_user` is intercepted here before the generic tool dispatcher.
-                        // See resuming.rs module doc for why this asymmetry exists.
                         if name == "ask_user" {
                             handle_ask_user(&params, human_input.as_ref())
                         } else if name == "search_procedures" {
@@ -309,34 +174,29 @@ impl AnalyticsSolver {
                                 })
                                 .collect();
                             Ok(serde_json::json!({ "procedures": items }))
-                        } else if name == "list_tables" || name == "describe_table" {
-                            execute_database_lookup_tool(
-                                &name,
-                                params,
-                                &connectors,
-                                &default_connector,
-                                &schema_cache,
-                            )
-                            .await
-                        } else {
+                        } else if name == "search_catalog" {
                             execute_clarifying_tool(&name, params, &*catalog)
+                        } else {
+                            Err(ToolError::UnknownTool(name))
                         }
                     })
                 },
                 &self.event_tx,
                 ToolLoopConfig {
-                    max_tool_rounds: max_rounds,
+                    max_tool_rounds: 5,
                     state: "clarifying".into(),
                     thinking,
-                    response_schema: Some(clarify_response_schema()),
-                    max_tokens_override: resume_max_tokens_override.or(self.max_tokens),
+                    response_schema: Some(triage_response_schema()),
+                    max_tokens_override: self.max_tokens,
                     sub_spec_index: None,
                 },
             )
-            .await
-        {
-            Ok(v) => v,
-            Err(crate::llm::LlmError::Suspended {
+            .await;
+
+        // Handle ask_user suspension: store prior_messages so we can resume
+        // the LLM conversation with full context (catalog results etc.).
+        let output = match output {
+            Err(LlmError::Suspended {
                 prompt,
                 suggestions,
                 prior_messages,
@@ -345,110 +205,33 @@ impl AnalyticsSolver {
                     from_state: "clarifying".to_string(),
                     original_input: intent.raw_question.clone(),
                     trace_id: String::new(),
-                    stage_data: serde_json::json!({ "conversation_history": prior_messages }),
+                    stage_data: serde_json::json!({
+                        "conversation_history": prior_messages,
+                    }),
                     question: prompt.clone(),
                     suggestions: suggestions.clone(),
                 });
+                let questions = vec![HumanInputQuestion {
+                    prompt: prompt.clone(),
+                    suggestions,
+                }];
                 return Err((
-                    AnalyticsError::NeedsUserInput {
-                        prompt: prompt.clone(),
-                    },
-                    BackTarget::Suspend {
-                        questions: vec![HumanInputQuestion {
-                            prompt,
-                            suggestions,
-                        }],
-                    },
+                    AnalyticsError::NeedsUserInput { prompt },
+                    BackTarget::Suspend { questions },
                 ));
             }
-            Err(crate::llm::LlmError::MaxTokensReached {
-                current_max_tokens,
-                prior_messages,
-                ..
-            }) => {
-                let doubled = current_max_tokens.saturating_mul(2);
-                let prompt = format!(
-                    "The model ran out of token budget ({current_max_tokens} tokens). \
-                     Continue with double the budget ({doubled} tokens)?"
-                );
-                self.store_suspension_data(SuspendedRunData {
-                    from_state: "clarifying".to_string(),
-                    original_input: intent.raw_question.clone(),
-                    trace_id: String::new(),
-                    stage_data: serde_json::json!({
-                        "conversation_history": prior_messages,
-                        "suspension_type": "max_tokens",
-                        "max_tokens_override": doubled,
-                    }),
-                    question: prompt.clone(),
-                    suggestions: vec!["Continue with double budget".to_string()],
-                });
-                return Err((
-                    AnalyticsError::NeedsUserInput {
-                        prompt: prompt.clone(),
-                    },
-                    BackTarget::Suspend {
-                        questions: vec![HumanInputQuestion {
-                            prompt,
-                            suggestions: vec!["Continue with double budget".to_string()],
-                        }],
-                    },
-                ));
-            }
-            Err(crate::llm::LlmError::MaxToolRoundsReached {
-                rounds,
-                prior_messages,
-            }) => {
-                let prompt = format!(
-                    "The agent used all {rounds} allotted tool rounds. \
-                     Continue with more rounds?"
-                );
-                self.store_suspension_data(SuspendedRunData {
-                    from_state: "clarifying".to_string(),
-                    original_input: intent.raw_question.clone(),
-                    trace_id: String::new(),
-                    stage_data: serde_json::json!({
-                        "conversation_history": prior_messages,
-                        "suspension_type": "max_tool_rounds",
-                        "extra_rounds": rounds,
-                    }),
-                    question: prompt.clone(),
-                    suggestions: vec!["Continue".to_string()],
-                });
-                return Err((
-                    AnalyticsError::NeedsUserInput {
-                        prompt: prompt.clone(),
-                    },
-                    BackTarget::Suspend {
-                        questions: vec![HumanInputQuestion {
-                            prompt,
-                            suggestions: vec!["Continue".to_string()],
-                        }],
-                    },
-                ));
-            }
-            Err(e) => {
-                let msg = format!("LLM call failed during ground: {e}");
-                return Err((
+            other => other.map_err(|e| {
+                let msg = format!("LLM call failed during clarifying: {e}");
+                (
                     AnalyticsError::NeedsUserInput { prompt: msg },
                     BackTarget::Clarify(intent.clone(), Default::default()),
-                ));
-            }
+                )
+            })?,
         };
 
-        #[derive(serde::Deserialize)]
-        struct ClarifyResponse {
-            question_type: QuestionType,
-            metrics: Vec<String>,
-            dimensions: Vec<String>,
-            filters: Vec<String>,
-            #[serde(default)]
-            selected_procedure_path: Option<String>,
-        }
-
-        let resp: ClarifyResponse = if let Some(structured) = output.structured_response {
+        let hypothesis: DomainHypothesis = if let Some(structured) = output.structured_response {
             serde_json::from_value(structured).map_err(|e| {
-                let msg = format!("failed to deserialise ground response: {e}");
+                let msg = format!("failed to deserialise clarifying response: {e}");
                 (
                     AnalyticsError::NeedsUserInput { prompt: msg },
                     BackTarget::Clarify(intent.clone(), Default::default()),
@@ -456,122 +239,44 @@ impl AnalyticsSolver {
             })?
         } else {
             if output.text.trim().is_empty() {
-                let msg = "ground: LLM returned empty text (no structured response); retrying"
-                    .to_string();
+                let msg = "clarifying: LLM returned empty text".to_string();
                 return Err((
                     AnalyticsError::NeedsUserInput { prompt: msg },
                     BackTarget::Clarify(intent.clone(), Default::default()),
                 ));
             }
-            let raw = strip_json_fences(&output.text).to_owned();
-            serde_json::from_str(&raw).map_err(|e| {
-                let raw_full = &output.text;
-                let msg = format!("failed to parse ground response as JSON: {e}\nRaw: {raw_full}");
-                (
-                    AnalyticsError::NeedsUserInput { prompt: msg },
-                    BackTarget::Clarify(intent.clone(), Default::default()),
-                )
-            })?
-        };
-
-        let clarified = AnalyticsIntent {
-            raw_question: intent.raw_question,
-            question_type: resp.question_type,
-            metrics: resp.metrics,
-            dimensions: resp.dimensions,
-            filters: resp.filters,
-            history: intent.history,
-            spec_hint: None,
-            selected_procedure: resp.selected_procedure_path.map(std::path::PathBuf::from),
-        };
-        emit_domain(
-            &self.event_tx,
-            AnalyticsEvent::IntentClarified {
-                question_type: format!("{:?}", clarified.question_type),
-                metrics: clarified.metrics.clone(),
-                dimensions: clarified.dimensions.clone(),
-                filters: clarified.filters.clone(),
-                selected_procedure: clarified
-                    .selected_procedure
-                    .as_ref()
-                    .map(|p| p.display().to_string()),
-            },
-        )
-        .await;
-        Ok(clarified)
-    }
-
-    /// Core clarify logic — runs **Triage** then **Ground** sequentially.
-    pub(crate) async fn clarify_impl(
-        &mut self,
-        intent: AnalyticsIntent,
-        retry_ctx: Option<&RetryContext>,
-        session_turns: &[CompletedTurn<AnalyticsDomain>],
-    ) -> Result<AnalyticsIntent, (AnalyticsError, BackTarget<AnalyticsDomain>)> {
-        emit_domain(
-            &self.event_tx,
-            AnalyticsEvent::SchemaResolved {
-                tables: Catalog::table_names(&*self.catalog),
-            },
-        )
-        .await;
-
-        let hypothesis = if retry_ctx.is_some() || self.resume_data.is_some() {
             DomainHypothesis {
-                summary: format!("(retry) {}", intent.raw_question),
-                relevant_tables: Catalog::table_names(&*self.catalog),
-                question_type: intent.question_type.clone(),
-                time_scope: None,
-                confidence: 0.8,
+                summary: output.text.trim().to_string(),
+                question_type: QuestionType::GeneralInquiry, // default to general inquiry if no structured response
+                confidence: 0.0,
                 ambiguities: vec![],
+                time_scope: None,
                 ambiguity_questions: vec![],
+                semantic_query: None,
+                semantic_confidence: 0.0,
+                selected_procedure_path: None,
             }
-        } else {
-            self.triage_impl(&intent, session_turns).await?
         };
 
-        const AMBIGUITY_CONFIDENCE_THRESHOLD: f32 = 0.5;
-        if !hypothesis.ambiguities.is_empty()
-            && hypothesis.confidence < AMBIGUITY_CONFIDENCE_THRESHOLD
-        {
-            // Prefer structured per-question suggestions from the LLM; fall back
-            // to constructing questions from plain ambiguity strings.
-            let questions: Vec<HumanInputQuestion> = if !hypothesis.ambiguity_questions.is_empty() {
-                hypothesis.ambiguity_questions.clone()
-            } else {
-                hypothesis
-                    .ambiguities
-                    .iter()
-                    .map(|a| HumanInputQuestion {
-                        prompt: a.clone(),
-                        suggestions: vec![],
-                    })
-                    .collect()
-            };
-            let combined_prompt = questions
-                .iter()
-                .map(|q| q.prompt.as_str())
-                .collect::<Vec<_>>()
-                .join("\n");
-            self.store_suspension_data(SuspendedRunData {
-                from_state: "clarifying".to_string(),
-                original_input: intent.raw_question.clone(),
-                trace_id: String::new(),
-                stage_data: serde_json::json!({}),
-                question: combined_prompt.clone(),
-                suggestions: vec![],
-            });
-            return Err((
-                AnalyticsError::NeedsUserInput {
-                    prompt: combined_prompt,
-                },
-                BackTarget::Suspend { questions },
-            ));
-        }
+        emit_domain(
+            &self.event_tx,
+            AnalyticsEvent::TriageCompleted {
+                summary: hypothesis.summary.clone(),
+                question_type: format!("{:?}", hypothesis.question_type),
+                confidence: hypothesis.confidence,
+                ambiguities: hypothesis.ambiguities.clone(),
+            },
+        )
+        .await;
+
+        let span = tracing::Span::current();
+        span.record("question_type", format!("{:?}", hypothesis.question_type));
+        span.record("semantic_confidence", hypothesis.semantic_confidence);
 
         if hypothesis.question_type == QuestionType::GeneralInquiry {
-            return Ok(AnalyticsIntent {
+            return Ok(ClarifyOutcome::Intent(AnalyticsIntent {
                 raw_question: intent.raw_question,
+                summary: hypothesis.summary.clone(),
                 question_type: QuestionType::GeneralInquiry,
                 metrics: vec![],
                 dimensions: vec![],
@@ -579,14 +284,122 @@ impl AnalyticsSolver {
                 history: intent.history,
                 spec_hint: None,
                 selected_procedure: None,
-            });
+                semantic_query: hypothesis.semantic_query.clone().unwrap_or_default(),
+                semantic_confidence: hypothesis.semantic_confidence,
+            }));
         }
 
-        self.ground_impl(intent, &hypothesis, retry_ctx, session_turns)
-            .await
+        // Attempt semantic shortcut: if triage produced a high-confidence semantic
+        // query, try to compile it locally (fast, no LLM) and skip Specifying/Solving.
+        // The decision is based purely on confidence — semantic_query is always
+        // carried forward on the intent regardless of whether the shortcut fires.
+        const SEMANTIC_CONFIDENCE_THRESHOLD: f32 = 0.85;
+        let semantic_query = hypothesis.semantic_query.clone().unwrap_or_default();
+        let semantic_confidence = hypothesis.semantic_confidence;
+
+        if semantic_confidence >= SEMANTIC_CONFIDENCE_THRESHOLD
+            && !semantic_query.measures.is_empty()
+        {
+            let measures = semantic_query.measures.clone();
+            let dimensions = semantic_query.dimensions.clone();
+
+            emit_domain(
+                &self.event_tx,
+                AnalyticsEvent::SemanticShortcutAttempted {
+                    measures: measures.clone(),
+                    dimensions: dimensions.clone(),
+                    filters: semantic_query.filters.clone(),
+                    time_dimensions: semantic_query.time_dimensions.clone(),
+                    confidence: semantic_confidence,
+                },
+            )
+            .await;
+
+            let query_request = semantic_query.to_query_request();
+            match self.catalog.engine().compile_query(&query_request) {
+                Ok(result) => {
+                    let sql =
+                        crate::airlayer_compat::substitute_params(&result.sql, &result.params);
+
+                    emit_domain(
+                        &self.event_tx,
+                        AnalyticsEvent::SemanticShortcutResolved { sql: sql.clone() },
+                    )
+                    .await;
+
+                    emit_domain(
+                        &self.event_tx,
+                        AnalyticsEvent::QueryGenerated {
+                            sql: sql.clone(),
+                            sub_spec_index: None,
+                        },
+                    )
+                    .await;
+
+                    // Determine connector from resolved tables.
+                    let translation = self.catalog.translate_to_raw_context(&query_request, "");
+                    let connector_name = translation
+                        .resolved_tables
+                        .iter()
+                        .find_map(|t| self.catalog.connector_for_table(t).map(|s| s.to_string()))
+                        .unwrap_or_else(|| self.default_connector.clone());
+
+                    return Ok(ClarifyOutcome::SemanticShortcut(AnalyticsSolution {
+                        payload: SolutionPayload::Sql(sql),
+                        solution_source: SolutionSource::SemanticLayer,
+                        connector_name,
+                    }));
+                }
+                Err(e) => {
+                    // Silent fallback — log the error but proceed to Specifying.
+                    tracing::info!(
+                        "[clarifying] semantic shortcut compile failed, falling through to Specifying: {e}"
+                    );
+                }
+            }
+        }
+
+        // Ground is dropped: pass the raw question and triage-derived question_type
+        // directly to Specifying, which now owns catalog discovery + resolution in one loop.
+        // Propagate any procedure selected during triage.
+        //
+        // When the user answered a clarifying question, the hypothesis summary
+        // captures the disambiguated intent (e.g. "running performance" instead
+        // of just "performance").  Enrich raw_question so Specifying sees the
+        // full context — without this the user's answer is lost between stages.
+        let enriched_question = if had_user_answer {
+            format!(
+                "{}\n\nClarified intent: {}",
+                intent.raw_question, hypothesis.summary
+            )
+        } else {
+            intent.raw_question
+        };
+        Ok(ClarifyOutcome::Intent(AnalyticsIntent {
+            raw_question: enriched_question,
+            summary: hypothesis.summary,
+            question_type: hypothesis.question_type,
+            metrics: vec![],
+            dimensions: vec![],
+            filters: vec![],
+            history: intent.history,
+            spec_hint: None,
+            selected_procedure: hypothesis
+                .selected_procedure_path
+                .map(std::path::PathBuf::from),
+            semantic_query,
+            semantic_confidence,
+        }))
     }
 
     /// Answer a [`QuestionType::GeneralInquiry`] directly without SQL.
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            otel.name = "analytics.general_inquiry",
+            oxy.span_type = "analytics",
+        )
+    )]
     pub(crate) async fn general_inquiry_impl(
         &mut self,
         intent: &AnalyticsIntent,
@@ -614,7 +427,7 @@ impl AnalyticsSolver {
             self.build_system_prompt("clarifying", GENERAL_INQUIRY_SYSTEM_PROMPT, None);
         let thinking = self.thinking_for_state("clarifying", ThinkingConfig::Disabled);
         let output = self
-            .client
+            .client_for_state("clarifying")
             .run_with_tools(
                 &system_prompt,
                 &user_prompt,
@@ -646,19 +459,8 @@ impl AnalyticsSolver {
         Ok(AnalyticsAnswer {
             text: output.text,
             display_blocks: vec![],
+            spec_hint: None,
         })
-    }
-
-    /// Returns the tool list for the clarifying state.
-    ///
-    /// `ask_user` is listed so the LLM can invoke it, but it is intercepted
-    /// inside the tool loop in [`ground_impl`] before `execute_tool` is reached.
-    /// See `resuming.rs` module doc for details.
-    pub(super) fn tools_for_state_clarifying(&self) -> Vec<agentic_core::tools::ToolDef> {
-        let has_semantic = !self.catalog.is_empty();
-        let mut tools = crate::tools::clarifying_tools(has_semantic);
-        tools.push(ask_user_tool_def());
-        tools
     }
 }
 
@@ -687,7 +489,10 @@ pub(super) fn build_clarifying_handler()
                         .clarify_impl(intent, retry_ctx.as_ref(), memory.turns())
                         .await
                     {
-                        Ok(clarified)
+                        Ok(ClarifyOutcome::SemanticShortcut(solution)) => {
+                            TransitionResult::ok_to(ProblemState::Executing(solution), "executing")
+                        }
+                        Ok(ClarifyOutcome::Intent(clarified))
                             if clarified.question_type == QuestionType::GeneralInquiry =>
                         {
                             match solver
@@ -705,7 +510,9 @@ pub(super) fn build_clarifying_handler()
                                 }
                             }
                         }
-                        Ok(clarified) => TransitionResult::ok(ProblemState::Specifying(clarified)),
+                        Ok(ClarifyOutcome::Intent(clarified)) => {
+                            TransitionResult::ok(ProblemState::Specifying(clarified))
+                        }
                         Err((err, back)) => {
                             TransitionResult::diagnosing(ProblemState::Diagnosing {
                                 error: err,

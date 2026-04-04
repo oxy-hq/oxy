@@ -2,9 +2,12 @@ import SqlArtifactPanel from "@/components/ArtifactPanel/ArtifactsContent/sql";
 import { Panel, PanelContent, PanelHeader } from "@/components/ui/panel";
 import type { ArtifactItem, ProcedureItem, SqlItem } from "@/hooks/analyticsSteps";
 import type { AnalyticsDisplayBlock, SseEvent } from "@/hooks/useAnalyticsRun";
+import { extractDisplayBlockForSeq } from "@/hooks/useAnalyticsRun";
 import ProcedureRunDagPanel from "../agentic/ProcedureRunDagPanel";
 import {
+  AskUserView,
   ChartSection,
+  CompileSemanticQueryView,
   GetJoinPathView,
   GetMetricDefinitionView,
   ProcedureStepView,
@@ -88,8 +91,12 @@ const AnalyticsArtifactSidebar = ({
     );
   }
 
-  // ── render_chart → config + rendered charts ───────────────────────────────
+  // ── render_chart → config + rendered chart ───────────────────────────────
   if (item.toolName === "render_chart") {
+    const block =
+      item.seq != null
+        ? extractDisplayBlockForSeq(runEvents, item.seq)
+        : (displayBlocks[0] ?? null);
     return (
       <Panel>
         <PanelHeader
@@ -101,7 +108,23 @@ const AnalyticsArtifactSidebar = ({
           <div className='min-h-0 flex-1 overflow-auto'>
             <RenderChartView item={item} />
           </div>
-          <ChartSection displayBlocks={displayBlocks} />
+          <ChartSection displayBlocks={block ? [block] : []} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  // ── ask_user → question + user response ─────────────────────────────────
+  if (item.toolName === "ask_user") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Ask User'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <AskUserView item={item} />
         </PanelContent>
       </Panel>
     );
@@ -171,17 +194,33 @@ const AnalyticsArtifactSidebar = ({
     );
   }
 
-  // ── sample_column → column explorer ──────────────────────────────────────
-  if (item.toolName === "sample_column") {
+  // ── sample_columns → column explorer ─────────────────────────────────────
+  if (item.toolName === "sample_columns") {
     return (
       <Panel>
         <PanelHeader
-          title='Column Sample'
+          title='Column Samples'
           subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
           onClose={onClose}
         />
         <PanelContent scrollable={false} padding={false} className='min-h-0'>
           <SampleColumnView item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  // ── compile_semantic_query → airlayer compile result ─────────────────────
+  if (item.toolName === "compile_semantic_query") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Compile Semantic Query'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <CompileSemanticQueryView item={item} />
         </PanelContent>
       </Panel>
     );

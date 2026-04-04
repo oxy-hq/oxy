@@ -44,6 +44,8 @@ fn intent_for_recovery(
 /// | Error | Back carries | Recovery |
 /// |---|---|---|
 /// | `NeedsUserInput` | any | **Fatal** |
+/// | `AirlayerCompileError` | Clarify / Specify / Solve | `Specifying` |
+/// | `AirlayerCompileError` | Execute / Interpret | **Fatal** |
 /// | `AmbiguousColumn` | Clarify / Specify / Solve | `Clarifying` |
 /// | `AmbiguousColumn` | Execute / Interpret | **Fatal** |
 /// | `UnresolvedMetric` | Clarify / Specify / Solve | `Specifying` |
@@ -62,14 +64,32 @@ fn intent_for_recovery(
 /// | `ValueAnomaly` | other | **Fatal** |
 /// | `InvalidChartConfig` | Interpret | `Interpreting` (retry with error context) |
 /// | `InvalidChartConfig` | other | **Fatal** |
+#[tracing::instrument(
+    skip_all,
+    fields(
+        otel.name = "analytics.diagnose",
+        oxy.span_type = "analytics",
+        error_kind = tracing::field::Empty,
+    )
+)]
 pub(super) async fn diagnose_impl(
     error: AnalyticsError,
     back: BackTarget<AnalyticsDomain>,
     ctx: &RunContext<AnalyticsDomain>,
 ) -> Result<ProblemState<AnalyticsDomain>, AnalyticsError> {
+    tracing::Span::current().record(
+        "error_kind",
+        format!("{:?}", std::mem::discriminant(&error)),
+    );
     match &error {
         // ── Fatal: requires out-of-band user response ─────────────────
         AnalyticsError::NeedsUserInput { .. } => Err(error),
+
+        // ── AirlayerCompileError → re-specify with corrected members ──
+        AnalyticsError::AirlayerCompileError { .. } => match intent_for_recovery(&back, ctx) {
+            Some(intent) => Ok(ProblemState::Specifying(intent)),
+            None => Err(error),
+        },
 
         // ── AmbiguousColumn → ask the user to pick ────────────────────
         AnalyticsError::AmbiguousColumn { .. } => match intent_for_recovery(&back, ctx) {
@@ -89,15 +109,9 @@ pub(super) async fn diagnose_impl(
             None => Err(error),
         },
 
-        // ── SyntaxError → regenerate SQL or re-specify ────────────────
-        // NOTE: BackTarget::Execute should never reach here in normal
-        // operation — the custom executing handler in build_analytics_handlers
-        // and the fan-out path in the specifying handler both convert
-        // BackTarget::Execute into BackTarget::Solve / BackTarget::Specify
-        // before emitting ProblemState::Diagnosing.  The fatal arm below is
-        // a last-resort fallback for any code path that bypasses those handlers.
+        // ── SyntaxError → re-specify (solving is absorbed into specifying) ──
         AnalyticsError::SyntaxError { .. } => match back {
-            BackTarget::Solve(spec, _) => Ok(ProblemState::Solving(spec)),
+            BackTarget::Solve(spec, _) => Ok(ProblemState::Specifying(spec.intent)),
             BackTarget::Clarify(i, _) | BackTarget::Specify(i, _) => {
                 Ok(ProblemState::Specifying(i))
             }
@@ -111,10 +125,9 @@ pub(super) async fn diagnose_impl(
             None => Err(error),
         },
 
-        // ── ShapeMismatch → restructure query or re-specify ───────────
+        // ── ShapeMismatch → re-specify (solving is absorbed into specifying) ──
         AnalyticsError::ShapeMismatch { .. } => match back {
-            BackTarget::Solve(spec, _) => Ok(ProblemState::Solving(spec)),
-            // No spec available at Execute stage → fatal.
+            BackTarget::Solve(spec, _) => Ok(ProblemState::Specifying(spec.intent)),
             BackTarget::Execute(_, _) => Err(error),
             BackTarget::Clarify(i, _) | BackTarget::Specify(i, _) => {
                 Ok(ProblemState::Specifying(i))

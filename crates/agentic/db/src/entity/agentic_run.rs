@@ -13,6 +13,11 @@ pub struct Model {
     pub error_message: Option<String>,
     /// FK → threads(id); set when the run is initiated from a thread.
     pub thread_id: Option<Uuid>,
+    /// Serialized `QueryRequestItem` from the completed run's spec.
+    /// Used to seed `AnalyticsIntent.spec_hint` on follow-up questions.
+    pub spec_hint: Option<serde_json::Value>,
+    /// Thinking mode used for this run (`"auto"` or `"extended_thinking"`).
+    pub thinking_mode: Option<String>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
 }

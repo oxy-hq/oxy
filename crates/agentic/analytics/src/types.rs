@@ -46,22 +46,12 @@ pub struct ConversationTurn {
     pub answer: String,
 }
 
-/// Confirmed schema resolutions from a prior Specifying attempt.
+/// Confirmed query structure from a prior Specifying attempt.
 ///
-/// Populated on back-edges where a `QuerySpec` was produced successfully but
-/// the attempt failed in validation or execution.  Injected into the retry
-/// LLM prompt so the model reuses known-good resolutions rather than
-/// re-discovering them from scratch.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct SpecHint {
-    /// SQL-level metric expressions confirmed in the prior attempt.
-    /// e.g. `["SUM(fact_orders.gross_revenue)", "COUNT(fact_orders.id)"]`
-    pub resolved_metrics: Vec<String>,
-    /// Tables confirmed to be required by the prior attempt.
-    pub resolved_tables: Vec<String>,
-    /// Join triples: `(left_table, right_table, join_key)`.
-    pub join_path: Vec<(String, String, String)>,
-}
+/// Uses the airlayer `QueryRequestItem` grammar (measures, dimensions,
+/// filters, time_dimensions, order, limit) so the LLM can reuse the
+/// prior query structure on back-edge retries and cross-turn follow-ups.
+pub type SpecHint = QueryRequestItem;
 
 // ---------------------------------------------------------------------------
 // Airlayer-native query request types (LLM response deserialization)
@@ -80,7 +70,7 @@ pub struct QueryRequestEnvelope {
 ///
 /// Mirrors `airlayer::engine::query::QueryRequest` but includes an
 /// `assumptions` field for human review and uses owned deserialization types.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct QueryRequestItem {
     /// Measure members to aggregate (e.g. `["orders.total_revenue"]`).
     #[serde(default)]
@@ -230,8 +220,6 @@ pub struct DomainHypothesis {
     /// Natural-language summary of what the user is asking about.
     /// e.g. "The user wants to see their weight trend over recent weeks."
     pub summary: String,
-    /// Table names likely relevant to the question (subset of all tables).
-    pub relevant_tables: Vec<String>,
     /// Broad question category chosen *before* seeing column details.
     pub question_type: QuestionType,
     /// Inferred time scope, if any (e.g. "last 30 days", "this year").
@@ -252,6 +240,22 @@ pub struct DomainHypothesis {
     /// with empty suggestions when absent.
     #[serde(default)]
     pub ambiguity_questions: Vec<HumanInputQuestion>,
+    /// Path of a matching procedure selected by triage, if any.
+    /// When set, the pipeline executes the procedure instead of generating SQL.
+    #[serde(default)]
+    pub selected_procedure_path: Option<String>,
+
+    /// If the LLM found all required semantic members in the catalog, it
+    /// constructs a `QueryRequestItem` here to attempt a fast airlayer compile
+    /// in the Clarifying stage.  `None` when the LLM is not confident enough
+    /// or the catalog doesn't have the right members.
+    #[serde(default)]
+    pub semantic_query: Option<QueryRequestItem>,
+
+    /// How confident the LLM is that the `semantic_query` members are correct
+    /// (0.0–1.0).  Only meaningful when `semantic_query` is `Some`.
+    #[serde(default)]
+    pub semantic_confidence: f32,
 }
 
 fn default_confidence() -> f32 {
@@ -263,6 +267,14 @@ fn default_confidence() -> f32 {
 pub struct AnalyticsIntent {
     /// Original natural-language question.
     pub raw_question: String,
+    /// One-sentence summary of the user's intent produced by triage.
+    ///
+    /// Provides a clearer, disambiguated description of what the user is
+    /// asking — unlike `raw_question` which is the verbatim input.  Used by
+    /// downstream stages (Specifying, Interpreting) so the LLM has a
+    /// pre-digested understanding of the goal.
+    #[serde(default)]
+    pub summary: String,
     /// Classified question type.
     pub question_type: QuestionType,
     /// Metric names the user cares about (e.g. `["revenue", "orders"]`).
@@ -280,11 +292,11 @@ pub struct AnalyticsIntent {
     /// tone.
     #[serde(default)]
     pub history: Vec<ConversationTurn>,
-    /// Confirmed schema resolutions from a prior Specifying attempt, if any.
+    /// Prior query structure in airlayer grammar, if any.
     ///
-    /// Set on back-edges where a `QuerySpec` was produced but failed downstream
-    /// (validation or execution).  Injected into the retry Specify prompt so
-    /// the LLM reuses known-good resolutions rather than re-deriving them.
+    /// Set on back-edge retries (when a `QuerySpec` failed downstream) and on
+    /// cross-turn follow-ups (the most recent completed run's query).  Injected
+    /// into the Specify prompt so the LLM reuses the prior structure.
     #[serde(default)]
     pub spec_hint: Option<SpecHint>,
     /// Procedure file selected by the LLM during the Ground sub-phase.
@@ -296,6 +308,24 @@ pub struct AnalyticsIntent {
     /// so execution jumps straight to the Executing stage.
     #[serde(default)]
     pub selected_procedure: Option<std::path::PathBuf>,
+    /// Best-effort semantic query produced by triage.
+    ///
+    /// Always populated — even when triage is not fully confident about the
+    /// member paths.  The decision to take the semantic shortcut vs. fall
+    /// through to Specifying is governed by `semantic_confidence`, not by
+    /// whether this field is empty.  Carrying the query forward lets the
+    /// Specifying stage reuse triage's catalog discoveries instead of
+    /// re-searching from scratch.
+    #[serde(default)]
+    pub semantic_query: QueryRequestItem,
+    /// How confident triage is that `semantic_query` members are correct
+    /// (0.0–1.0).
+    ///
+    /// Values ≥ 0.85 trigger the semantic shortcut (compile locally, skip
+    /// Specifying/Solving).  Lower values cause fall-through to Specifying,
+    /// which still benefits from the `semantic_query` as a starting hint.
+    #[serde(default)]
+    pub semantic_confidence: f32,
 }
 
 // ---------------------------------------------------------------------------
@@ -398,6 +428,13 @@ pub struct QuerySpec {
     /// `AnalyticsSolution.connector_name` so the Executing handler can route
     /// without re-inspecting the catalog.
     pub connector_name: String,
+    /// The original airlayer-native query request item produced by the LLM.
+    ///
+    /// Preserved for cross-turn follow-ups and back-edge retry hints.
+    /// Unlike `query_request` (the compiled form), this retains the LLM's
+    /// original string-based operators and is serializable.
+    #[serde(default)]
+    pub query_request_item: Option<QueryRequestItem>,
     /// The airlayer-native query request produced by the LLM during Specifying.
     ///
     /// Populated on the airlayer-native path where the LLM produces a
@@ -453,6 +490,8 @@ pub enum AnalyticsError {
     },
     /// The pipeline cannot proceed without additional input from the user.
     NeedsUserInput { prompt: String },
+    /// The airlayer compiler returned an error when trying to compile the LLM-produced `QueryRequest`.
+    AirlayerCompileError { error_message: String },
     /// The chart config produced by the Interpret stage references columns
     /// that do not exist in the query result.
     InvalidChartConfig { errors: Vec<String> },
@@ -522,6 +561,9 @@ impl std::fmt::Display for AnalyticsError {
             }
             AnalyticsError::NeedsUserInput { prompt } => {
                 write!(f, "needs user input: {prompt}")
+            }
+            AnalyticsError::AirlayerCompileError { error_message } => {
+                write!(f, "airlayer compile error: {error_message}")
             }
             AnalyticsError::InvalidChartConfig { errors } => {
                 write!(
@@ -715,6 +757,11 @@ pub struct AnalyticsAnswer {
     /// immediately mid-stream; the collected configs are stored here so the
     /// orchestrator can inspect them after the run.
     pub display_blocks: Vec<DisplayBlock>,
+    /// The airlayer query structure from the Specifying stage, if any.
+    ///
+    /// Carried through to the HTTP layer so it can be persisted for cross-turn
+    /// follow-up continuity.
+    pub spec_hint: Option<QueryRequestItem>,
 }
 
 /// Type alias kept for backward compatibility.

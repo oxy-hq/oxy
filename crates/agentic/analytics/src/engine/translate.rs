@@ -287,6 +287,7 @@ mod tests {
     fn make_intent(metrics: &[&str], dimensions: &[&str], filters: &[&str]) -> AnalyticsIntent {
         AnalyticsIntent {
             raw_question: "test".into(),
+            summary: String::new(),
             question_type: QuestionType::Breakdown,
             metrics: metrics.iter().map(|s| s.to_string()).collect(),
             dimensions: dimensions.iter().map(|s| s.to_string()).collect(),
@@ -294,6 +295,8 @@ mod tests {
             history: vec![],
             spec_hint: None,
             selected_procedure: None,
+            semantic_query: Default::default(),
+            semantic_confidence: 0.0,
         }
     }
 

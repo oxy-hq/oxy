@@ -1,4 +1,14 @@
-import { AppWindow, BookOpen, Bot, Eye, FlaskConical, Layers2, Plus, Workflow } from "lucide-react";
+import {
+  AppWindow,
+  BookOpen,
+  Bot,
+  ChartBar,
+  Eye,
+  FlaskConical,
+  Layers2,
+  Plus,
+  Workflow
+} from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -30,7 +40,7 @@ import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
 import type { FileTreeModel } from "@/types/file";
 
-type ObjectType = "agent" | "workflow" | "view" | "topic" | "app" | "test";
+type ObjectType = "agent" | "agentic" | "workflow" | "view" | "topic" | "app" | "test";
 
 interface ObjectTypeConfig {
   type: ObjectType;
@@ -53,6 +63,20 @@ system_instructions: |
   You are a helpful assistant.
 
 tools: []
+`
+  },
+  {
+    type: "agentic",
+    label: "Analytics Agent",
+    icon: ChartBar,
+    extension: ".agentic.yml",
+    defaultContent: `llm:
+  ref: ""
+  model: ""
+  max_tokens: 8000
+  thinking: disabled
+
+context: []
 `
   },
   {

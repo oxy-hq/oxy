@@ -58,4 +58,7 @@ pub trait LlmProvider: Send + Sync {
     ///
     /// Each entry in `results` is `(tool_use_id, content, is_error)`.
     fn tool_result_messages(&self, results: &[(String, String, bool)]) -> Vec<Value>;
+
+    /// The model identifier used by this provider (e.g. `"claude-sonnet-4-6"`).
+    fn model_name(&self) -> &str;
 }

@@ -23,7 +23,6 @@ members = [
   "crates/infrastructure/llm/openai",
   "crates/infrastructure/llm/oxy-llm",
   "crates/agentic/analytics",
-  "crates/agentic/app-builder",
   "crates/agentic/core",
   "crates/agentic/llm",
   "crates/agentic/db",

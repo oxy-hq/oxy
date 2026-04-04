@@ -31,6 +31,7 @@ pub async fn insert_run(
     agent_id: &str,
     question: &str,
     thread_id: Option<Uuid>,
+    thinking_mode: Option<String>,
 ) -> Result<(), DbErr> {
     let ts = now();
     let run = agentic_run::ActiveModel {
@@ -41,6 +42,8 @@ pub async fn insert_run(
         answer: Set(None),
         error_message: Set(None),
         thread_id: Set(thread_id),
+        spec_hint: Set(None),
+        thinking_mode: Set(thinking_mode),
         created_at: Set(ts),
         updated_at: Set(ts),
     };
@@ -52,11 +55,13 @@ pub async fn update_run_done(
     db: &DatabaseConnection,
     run_id: &str,
     answer: &str,
+    spec_hint: Option<serde_json::Value>,
 ) -> Result<(), DbErr> {
     let run = agentic_run::ActiveModel {
         id: Set(run_id.to_string()),
         status: Set("done".to_string()),
         answer: Set(Some(answer.to_string())),
+        spec_hint: Set(spec_hint),
         updated_at: Set(now()),
         ..Default::default()
     };
@@ -84,6 +89,21 @@ pub async fn update_run_suspended(db: &DatabaseConnection, run_id: &str) -> Resu
     let run = agentic_run::ActiveModel {
         id: Set(run_id.to_string()),
         status: Set("suspended".to_string()),
+        updated_at: Set(now()),
+        ..Default::default()
+    };
+    agentic_run::Entity::update(run).exec(db).await?;
+    Ok(())
+}
+
+pub async fn update_run_thinking_mode(
+    db: &DatabaseConnection,
+    run_id: &str,
+    thinking_mode: Option<String>,
+) -> Result<(), DbErr> {
+    let run = agentic_run::ActiveModel {
+        id: Set(run_id.to_string()),
+        thinking_mode: Set(thinking_mode),
         updated_at: Set(now()),
         ..Default::default()
     };
@@ -330,6 +350,13 @@ pub async fn upsert_suspension(
     Ok(())
 }
 
+/// A single completed turn from thread history.
+pub struct ThreadHistoryTurn {
+    pub question: String,
+    pub answer: String,
+    pub spec_hint: Option<serde_json::Value>,
+}
+
 /// Return completed (status = "done") runs for a thread, oldest-first.
 ///
 /// Used to populate `AnalyticsIntent::history` so the clarifying stage has
@@ -340,7 +367,7 @@ pub async fn get_thread_history(
     db: &DatabaseConnection,
     thread_id: Uuid,
     limit: u64,
-) -> Result<Vec<(String, String)>, DbErr> {
+) -> Result<Vec<ThreadHistoryTurn>, DbErr> {
     use sea_orm::QuerySelect;
     let models = agentic_run::Entity::find()
         .filter(agentic_run::Column::ThreadId.eq(thread_id))
@@ -352,8 +379,16 @@ pub async fn get_thread_history(
     Ok(models
         .into_iter()
         .filter_map(|m| match (m.answer, m.error_message) {
-            (Some(ans), _) => Some((m.question, ans)),
-            (None, Some(err)) => Some((m.question, format!("Error: {}", err))),
+            (Some(ans), _) => Some(ThreadHistoryTurn {
+                question: m.question,
+                answer: ans,
+                spec_hint: m.spec_hint,
+            }),
+            (None, Some(err)) => Some(ThreadHistoryTurn {
+                question: m.question,
+                answer: format!("Error: {}", err),
+                spec_hint: m.spec_hint,
+            }),
             (None, None) => None,
         })
         .collect())

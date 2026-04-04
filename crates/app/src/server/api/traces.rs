@@ -143,9 +143,9 @@ pub async fn list_traces(
     let storage = get_clickhouse_storage();
 
     // Build WHERE clause for both count and data queries
-    // Collect only root traces (no parent span) for workflow.run_workflow or agent.run_agent
+    // Collect only root traces (no parent span) for workflow.run_workflow, agent.run_agent, or analytics.run
     let mut where_clause = String::from(
-        "WHERE (t.SpanName = 'workflow.run_workflow' OR t.SpanName = 'agent.run_agent') AND t.ParentSpanId = ''",
+        "WHERE (t.SpanName = 'workflow.run_workflow' OR t.SpanName = 'agent.run_agent' OR t.SpanName = 'analytics.run') AND t.ParentSpanId = ''",
     );
 
     if let Some(ref agent_ref) = params.agent_ref {
@@ -731,7 +731,7 @@ fn project_to_2d(embeddings: &[EmbeddingWithClassification]) -> Vec<(f32, f32)> 
         return vec![(0.0, 0.0); n];
     }
 
-    if n < 2 {
+    if n < 2 || dims < 2 {
         return vec![(0.0, 0.0); n];
     }
 
@@ -759,10 +759,15 @@ fn project_to_2d(embeddings: &[EmbeddingWithClassification]) -> Vec<(f32, f32)> 
     let projected = pca.transform(dataset);
 
     // Extract 2D coordinates and normalize to display range
+    let ncols = projected.records().ncols();
     let mut positions: Vec<(f64, f64)> = projected
         .records()
         .axis_iter(Axis(0))
-        .map(|row| (row[0], row[1]))
+        .map(|row| {
+            let x = if ncols > 0 { row[0] } else { 0.0 };
+            let y = if ncols > 1 { row[1] } else { 0.0 };
+            (x, y)
+        })
         .collect();
 
     // Normalize to display range [-400, 400] x [-300, 300]

@@ -10,7 +10,7 @@ authors.workspace = true
 
 [dependencies]
 agentic-analytics = { path = "../analytics" }
-agentic-app-builder = { path = "../app-builder" }
+
 agentic-connector = { path = "../connector", features = [
     "duckdb",
     "postgres",
@@ -22,6 +22,7 @@ agentic-core = { path = "../core" }
 agentic-db = { path = "../db" }
 agentic-workflow = { path = "../workflow" }
 oxy = { path = "../../core" }
+oxy-shared = { path = "../../shared" }
 oxy-workflow = { path = "../../workflow" }
 async-trait = "0.1"
 

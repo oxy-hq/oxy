@@ -48,6 +48,13 @@ export function formatSpanLabel(spanName: string): string {
     "agent.load_config": "Load Agent Config",
     "agent.execute": "Execute Agent",
 
+    // LLM calls
+    "llm.call": "LLM Call",
+    "llm.openai.call": "OpenAI Call",
+    "llm.oss.call": "OSS LLM Call",
+    "llm.openai_response.call": "OpenAI Response Call",
+    "llm.tool.call": "LLM Tool Call",
+
     // Tool operations
     "tool_call.execute": "Execute Tool Call",
     "sql.execute": "Execute SQL",
@@ -59,6 +66,16 @@ export function formatSpanLabel(spanName: string): string {
     "create_data_app.execute": "Create Data App",
     "tool_launcher.execute": "Launch Tool",
     "semantic_query.execute": "Execute Semantic Query",
+
+    // Analytics operations
+    "analytics.run": "Analytics",
+    "analytics.clarify": "Clarify Question",
+    "analytics.execute": "Execute Query",
+    "analytics.interpret": "Interpret Results",
+    "analytics.tool": "Analytics Tool",
+    "analytics.specify_query_request": "Specify Query",
+    "analytics.solve": "Solve",
+    "analytics.diagnose": "Diagnose",
 
     // Data operations
     load: "Load Data",

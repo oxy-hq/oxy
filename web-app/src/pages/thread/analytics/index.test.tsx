@@ -158,7 +158,7 @@ function runningWith(events: SseEvent[]): UseAnalyticsRunResult {
 beforeEach(() => {
   counter = 0;
   mockUseAnalyticsRun.mockReturnValue(makeResult());
-  mockUseQuery.mockReturnValue({ data: [], isLoading: false });
+  mockUseQuery.mockReturnValue({ data: [], isLoading: false, isFetching: false });
   // jsdom does not implement scrollIntoView
   window.HTMLElement.prototype.scrollIntoView = vi.fn();
 });
@@ -506,6 +506,68 @@ describe("AnalyticsThread — auto-start on first visit", () => {
     mockUseQuery.mockReturnValue({ data: [], isLoading: true });
     render(<AnalyticsThread thread={THREAD} />);
     expect(start).not.toHaveBeenCalled();
+  });
+});
+
+// ── Race condition: stale-cache duplicate auto-start ─────────────────────────
+//
+// Scenario (key={threadId} means full remount on every thread switch):
+//   1. Visit thread-1 → allRuns fetches, returns [], auto-start fires, run-1 begins.
+//   2. Navigate to thread-2 → full remount, allRuns fetches, returns [], auto-start fires.
+//   3. Switch back to thread-1 (run-1 still in-flight, never finished).
+//   4. Switch back to thread-2.
+//      → React Query has stale cache [] for thread-2 (run-2 was created AFTER the cache
+//        was last written, so it is not reflected).
+//      → The component remounts fresh (autoStartedRef = false).
+//      → isFetching=true (background refetch in progress), but isLoading=false.
+//      → Without the fix: isFirstVisit = !isLoading && [] && idle = true → DUPLICATE start.
+//      → With the fix: isFirstVisit must also require !isFetching → no start until
+//        the refetch resolves and allRuns is confirmed non-empty.
+
+describe("AnalyticsThread — stale-cache duplicate auto-start race condition", () => {
+  it("does not auto-start when allRuns cache is empty but a background fetch is in progress", () => {
+    // Simulate returning to a thread: stale cache is empty, but isFetching=true
+    // (the background refetch hasn't completed yet).
+    const start = vi.fn();
+    mockUseAnalyticsRun.mockReturnValue(makeResult({ start }));
+    mockUseQuery.mockReturnValue({ data: [], isLoading: false, isFetching: true });
+    render(<AnalyticsThread thread={THREAD} />);
+    // Must NOT auto-start while a fetch is still in progress — allRuns may return data.
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it("auto-starts only after the fetch completes and allRuns is confirmed empty", () => {
+    const start = vi.fn();
+    mockUseAnalyticsRun.mockReturnValue(makeResult({ start }));
+    // Fetch complete, truly empty → genuine first visit
+    mockUseQuery.mockReturnValue({ data: [], isLoading: false, isFetching: false });
+    render(<AnalyticsThread thread={THREAD} />);
+    expect(start).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not auto-start when fetch completes and allRuns has existing runs", () => {
+    const start = vi.fn();
+    mockUseAnalyticsRun.mockReturnValue(makeResult({ start }));
+    mockUseQuery.mockReturnValue({
+      data: [{ run_id: "r1", question: "Analyze sales data", status: "running", ui_events: [] }],
+      isLoading: false,
+      isFetching: false
+    });
+    render(<AnalyticsThread thread={THREAD} />);
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it("does not render duplicate questions when allRuns contains the original run", () => {
+    mockUseAnalyticsRun.mockReturnValue(makeResult());
+    mockUseQuery.mockReturnValue({
+      data: [{ run_id: "r1", question: "Analyze sales data", status: "done", answer: "Result", ui_events: [] }],
+      isLoading: false,
+      isFetching: false
+    });
+    render(<AnalyticsThread thread={THREAD} />);
+    const messages = screen.getAllByTestId("user-message");
+    expect(messages).toHaveLength(1);
+    expect(messages[0].textContent).toBe("Analyze sales data");
   });
 });
 

@@ -3,6 +3,7 @@ export function getTimelineSpanColor(spanName: string, statusCode: string): stri
   if (spanName.includes("llm")) return "bg-purple-500";
   if (spanName.includes("tool")) return "bg-amber-500";
   if (spanName.includes("agent")) return "bg-blue-500";
+  if (spanName.startsWith("analytics.")) return "bg-emerald-500";
   if (spanName.includes("context")) return "bg-green-500";
   return "bg-primary";
 }

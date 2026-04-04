@@ -80,6 +80,8 @@ pub enum UiBlock<D: DomainEvents = ()> {
     ToolCall {
         name: String,
         input: String,
+        /// LLM inference time for the round that produced this tool call (ms).
+        llm_duration_ms: u64,
         sub_spec_index: Option<usize>,
     },
 
@@ -101,7 +103,7 @@ pub enum UiBlock<D: DomainEvents = ()> {
     AwaitingInput { questions: Vec<HumanInputQuestion> },
 
     /// The user answered; the pipeline is resuming.
-    HumanInputResolved,
+    HumanInputResolved { answer: String },
 
     /// A fan-out group has started; the UI should prepare `total` cards for navigation.
     ///
@@ -134,6 +136,8 @@ pub enum UiBlock<D: DomainEvents = ()> {
         prompt_tokens: usize,
         output_tokens: usize,
         duration_ms: u64,
+        /// The model identifier used for this LLM call.
+        model: String,
         sub_spec_index: Option<usize>,
     },
 
@@ -300,6 +304,7 @@ impl<D: DomainEvents> UiTransformState<D> {
             CoreEvent::LlmEnd {
                 output_tokens,
                 duration_ms,
+                model,
                 sub_spec_index,
                 ..
             } => {
@@ -308,6 +313,7 @@ impl<D: DomainEvents> UiTransformState<D> {
                     prompt_tokens,
                     output_tokens,
                     duration_ms,
+                    model,
                     sub_spec_index,
                 }]
             }
@@ -339,11 +345,13 @@ impl<D: DomainEvents> UiTransformState<D> {
             CoreEvent::ToolCall {
                 name,
                 input,
+                llm_duration_ms,
                 sub_spec_index,
             } => {
                 let mut blocks = vec![UiBlock::ToolCall {
                     name: name.clone(),
                     input,
+                    llm_duration_ms,
                     sub_spec_index,
                 }];
                 if let Some(summary) = (self.tool_summary_fn)(&name) {
@@ -407,7 +415,9 @@ impl<D: DomainEvents> UiTransformState<D> {
             CoreEvent::AwaitingHumanInput { questions, .. } => {
                 vec![UiBlock::AwaitingInput { questions }]
             }
-            CoreEvent::HumanInputResolved { .. } => vec![UiBlock::HumanInputResolved],
+            CoreEvent::HumanInputResolved { answer, .. } => {
+                vec![UiBlock::HumanInputResolved { answer }]
+            }
         }
     }
 }
@@ -592,6 +602,7 @@ mod tests {
         let blocks = s.process(Event::Core(CoreEvent::ToolCall {
             name: "list_metrics".into(),
             input: "{}".into(),
+            llm_duration_ms: 0,
             sub_spec_index: None,
         }));
         assert_eq!(blocks.len(), 1);
@@ -610,6 +621,7 @@ mod tests {
         let blocks = s.process(Event::Core(CoreEvent::ToolCall {
             name: "list_metrics".into(),
             input: "{}".into(),
+            llm_duration_ms: 0,
             sub_spec_index: None,
         }));
         assert_eq!(blocks.len(), 2);
@@ -626,6 +638,7 @@ mod tests {
         let blocks = s.process(Event::Core(CoreEvent::ToolCall {
             name: "unknown_tool".into(),
             input: "{}".into(),
+            llm_duration_ms: 0,
             sub_spec_index: None,
         }));
         assert_eq!(blocks.len(), 1);
@@ -668,6 +681,7 @@ mod tests {
             state: "s".into(),
             output_tokens: 50,
             duration_ms: 1234,
+            model: "test-model".into(),
             sub_spec_index: None,
         }));
         assert_eq!(blocks.len(), 1);
@@ -678,6 +692,7 @@ mod tests {
                 output_tokens: 50,
                 duration_ms: 1234,
                 sub_spec_index: None,
+                ..
             }
         ));
     }
@@ -987,6 +1002,7 @@ mod tests {
         let blocks = s.process(Event::Core(CoreEvent::ToolCall {
             name: "some_tool".into(),
             input: "{}".into(),
+            llm_duration_ms: 0,
             sub_spec_index: None,
         }));
         assert_eq!(blocks.len(), 1);

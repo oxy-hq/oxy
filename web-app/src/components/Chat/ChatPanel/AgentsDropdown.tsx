@@ -1,14 +1,17 @@
-import { Bot, Loader2, Route } from "lucide-react";
+import { Bot, ChevronDown, Loader2, Route } from "lucide-react";
 import { useEffect, useMemo } from "react";
+import { Button } from "@/components/ui/shadcn/button";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue
-} from "@/components/ui/shadcn/select";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
+} from "@/components/ui/shadcn/dropdown-menu";
+import { Switch } from "@/components/ui/shadcn/switch";
 import useAgents from "@/hooks/api/agents/useAgents";
 import { getAgentNameFromPath } from "@/libs/utils/string";
+import type { ThinkingMode } from "@/services/api/analytics";
 
 export type Agent = {
   id: string;
@@ -20,10 +23,18 @@ export type Agent = {
 type Props = {
   onSelect: (agent: Agent) => void;
   agentSelected: Agent | null;
+  thinkingMode: ThinkingMode;
+  onThinkingModeChange: (mode: ThinkingMode) => void;
   disabled?: boolean;
 };
 
-const AgentsDropdown = ({ onSelect, agentSelected, disabled = false }: Props) => {
+const AgentsDropdown = ({
+  onSelect,
+  agentSelected,
+  thinkingMode,
+  onThinkingModeChange,
+  disabled = false
+}: Props) => {
   const { data: agents, isPending, isSuccess } = useAgents();
 
   const agentOptions = useMemo(
@@ -47,38 +58,67 @@ const AgentsDropdown = ({ onSelect, agentSelected, disabled = false }: Props) =>
   }, [isSuccess, agents, agentOptions, onSelect, agentSelected]);
 
   return (
-    <Select
-      value={agentSelected?.id ?? ""}
-      onValueChange={(id) => {
-        const agent = agentOptions.find((a) => a.id === id);
-        if (agent) onSelect(agent);
-      }}
-      disabled={isPending || disabled}
-    >
-      <SelectTrigger
-        size='sm'
-        className='w-auto border-none shadow-none'
-        data-testid='agent-selector-button'
-      >
-        {isPending ? (
-          <Loader2 className='size-4 animate-spin' />
-        ) : (
-          <SelectValue placeholder='Select agent' />
-        )}
-      </SelectTrigger>
-      <SelectContent>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant='ghost'
+          size='sm'
+          className='h-8 gap-1 border-none px-2 shadow-none'
+          disabled={isPending || disabled}
+          data-testid='agent-selector-button'
+        >
+          {isPending ? (
+            <Loader2 className='size-4 animate-spin' />
+          ) : (
+            <>
+              {agentSelected?.name.includes("routing") ? (
+                <Route className='size-4' />
+              ) : (
+                <Bot className='size-4' />
+              )}
+              <span>{agentSelected?.name ?? "Select agent"}</span>
+              {thinkingMode === "extended_thinking" && (
+                <span className='text-muted-foreground text-xs'>Extended</span>
+              )}
+              <ChevronDown className='size-3 opacity-50' />
+            </>
+          )}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align='end'>
         {agentOptions.map((item) => (
-          <SelectItem className='cursor-pointer' key={item.id} value={item.id}>
+          <DropdownMenuItem
+            key={item.id}
+            onClick={() => onSelect(item)}
+            data-highlighted={agentSelected?.id === item.id}
+          >
             {item.name.includes("routing") ? (
               <Route className='size-4' />
             ) : (
               <Bot className='size-4' />
             )}
             {item.name}
-          </SelectItem>
+          </DropdownMenuItem>
         ))}
-      </SelectContent>
-    </Select>
+        {agentSelected?.isAnalytics && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className='flex cursor-default items-center justify-between focus:bg-transparent'
+              onSelect={(e) => e.preventDefault()}
+            >
+              <span>Extended Thinking</span>
+              <Switch
+                checked={thinkingMode === "extended_thinking"}
+                onCheckedChange={(checked) =>
+                  onThinkingModeChange(checked ? "extended_thinking" : "auto")
+                }
+              />
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 };
 

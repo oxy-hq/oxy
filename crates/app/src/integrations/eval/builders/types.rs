@@ -19,9 +19,16 @@ pub struct EvalInput {
 }
 
 #[derive(Clone, Debug)]
+pub(super) struct AgenticInput {
+    pub config_path: String,
+    pub prompt: String,
+}
+
+#[derive(Clone, Debug)]
 pub(super) enum EvalTarget {
     Workflow(WorkflowInput),
     Agent(AgentInput),
+    Agentic(AgenticInput),
 }
 
 impl std::fmt::Display for EvalTarget {
@@ -29,6 +36,7 @@ impl std::fmt::Display for EvalTarget {
         match self {
             EvalTarget::Workflow(workflow_input) => write!(f, "{}", workflow_input.workflow_ref),
             EvalTarget::Agent(agent_input) => write!(f, "{}", agent_input.agent_ref),
+            EvalTarget::Agentic(agentic_input) => write!(f, "{}", agentic_input.config_path),
         }
     }
 }
@@ -79,6 +87,10 @@ impl EvalRecord {
                 a2a_thread_id: agent_input.a2a_thread_id.clone(),
                 a2a_context_id: agent_input.a2a_context_id.clone(),
                 sandbox_info: agent_input.sandbox_info.clone(),
+            }),
+            EvalTarget::Agentic(agentic_input) => EvalTarget::Agentic(AgenticInput {
+                config_path: agentic_input.config_path.clone(),
+                prompt: self.query.clone(),
             }),
         }
     }

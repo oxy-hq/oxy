@@ -153,6 +153,26 @@ export function SpanIcon({ spanName, className = "h-4 w-4" }: SpanIconProps) {
     return <Bot className={className} />;
   }
 
+  // Analytics operations
+  if (spanName === "analytics.run") {
+    return <Activity className={className} />;
+  }
+  if (spanName === "analytics.clarify") {
+    return <Search className={className} />;
+  }
+  if (spanName === "analytics.execute") {
+    return <Database className={className} />;
+  }
+  if (spanName === "analytics.interpret") {
+    return <FileText className={className} />;
+  }
+  if (spanName === "analytics.tool") {
+    return <Wrench className={className} />;
+  }
+  if (spanName.startsWith("analytics.")) {
+    return <Activity className={className} />;
+  }
+
   // Data operations
   if (spanName === "load") {
     return <Download className={className} />;

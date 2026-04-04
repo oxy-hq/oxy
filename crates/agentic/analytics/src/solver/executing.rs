@@ -72,20 +72,47 @@ impl AnalyticsSolver {
     ///
     /// Called by the `DomainSolver::execute` trait delegation and directly
     /// by the executing state handler.
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            otel.name = "analytics.execute",
+            oxy.span_type = "analytics",
+            connector = tracing::field::Empty,
+            solution_source = tracing::field::Empty,
+            row_count = tracing::field::Empty,
+            duration_ms = tracing::field::Empty,
+        )
+    )]
     pub(crate) async fn execute_solution(
         &mut self,
         solution: AnalyticsSolution,
     ) -> Result<AnalyticsResult, (AnalyticsError, BackTarget<AnalyticsDomain>)> {
         const DEFAULT_SAMPLE_LIMIT: u64 = 1_000;
 
+        let span = tracing::Span::current();
+        span.record("connector", &solution.connector_name);
+        span.record("solution_source", format!("{:?}", solution.solution_source));
+
         let start = std::time::Instant::now();
 
         match &solution.payload {
             SolutionPayload::Sql(sql) => {
-                eprintln!(
-                    "[executing] running SQL (source={:?}, connector={}):\n{}",
-                    solution.solution_source, solution.connector_name, sql
+                tracing::debug!(
+                    connector = %solution.connector_name,
+                    source = ?solution.solution_source,
+                    sql = %sql,
+                    "executing SQL"
                 );
+
+                // Record the SQL query as a visible event for trace inspection.
+                tracing::info!(
+                    name: "query.input",
+                    is_visible = true,
+                    sql = %sql,
+                    connector = %solution.connector_name,
+                    source = %format!("{:?}", solution.solution_source),
+                );
+
                 let connector = self
                     .connectors
                     .get(&solution.connector_name)
@@ -113,6 +140,22 @@ impl AnalyticsSolver {
                                     .collect()
                             })
                             .collect();
+
+                        // Record successful result as a visible event.
+                        let preview = if rows.len() > 5 {
+                            serde_json::to_string(&rows[..5]).unwrap_or_default()
+                        } else {
+                            serde_json::to_string(&rows).unwrap_or_default()
+                        };
+                        tracing::info!(
+                            name: "query.result",
+                            is_visible = true,
+                            row_count = exec.result.rows.len(),
+                            columns = %serde_json::to_string(&columns).unwrap_or_default(),
+                            rows_preview = %preview,
+                            duration_ms = duration_ms,
+                        );
+
                         emit_domain(
                             &self.event_tx,
                             AnalyticsEvent::QueryExecuted {
@@ -123,13 +166,26 @@ impl AnalyticsSolver {
                                 error: None,
                                 columns,
                                 rows,
+                                sub_spec_index: None,
                             },
                         )
                         .await;
+                        span.record("row_count", exec.result.rows.len());
+                        span.record("duration_ms", duration_ms);
                         Ok(AnalyticsResult::single(exec.result, Some(exec.summary)))
                     }
                     Err(e) => {
                         let duration_ms = start.elapsed().as_millis() as u64;
+
+                        // Record execution error as a visible event.
+                        tracing::info!(
+                            name: "query.error",
+                            is_visible = true,
+                            error = %e,
+                            sql = %sql,
+                            duration_ms = duration_ms,
+                        );
+
                         emit_domain(
                             &self.event_tx,
                             AnalyticsEvent::QueryExecuted {
@@ -140,6 +196,7 @@ impl AnalyticsSolver {
                                 error: Some(e.to_string()),
                                 columns: vec![],
                                 rows: vec![],
+                                sub_spec_index: None,
                             },
                         )
                         .await;
@@ -193,6 +250,7 @@ impl AnalyticsSolver {
                                 error: None,
                                 columns,
                                 rows,
+                                sub_spec_index: None,
                             },
                         )
                         .await;
@@ -211,6 +269,7 @@ impl AnalyticsSolver {
                                 error: Some(message.clone()),
                                 columns: vec![],
                                 rows: vec![],
+                                sub_spec_index: None,
                             },
                         )
                         .await;
@@ -272,7 +331,8 @@ pub(super) fn build_executing_handler()
                             .spec
                             .as_ref()
                             .map(|s| s.intent.clone())
-                            .expect("run_ctx.spec must be set before executing");
+                            .or_else(|| run_ctx.intent.clone())
+                            .expect("run_ctx.spec or run_ctx.intent must be set before executing");
                         return match solver.procedure_runner.as_ref() {
                             Some(runner) => match runner.run(file_path).await {
                                 Ok(output) => TransitionResult::ok(ProblemState::Interpreting(
@@ -313,7 +373,7 @@ pub(super) fn build_executing_handler()
 
                     match solver.execute_solution(solution).await {
                         Ok(result) => {
-                            eprintln!(
+                            tracing::info!(
                                 "[executing] query succeeded, source={:?}, rows={}",
                                 solution_source,
                                 result.primary().data.rows.len()
@@ -321,7 +381,7 @@ pub(super) fn build_executing_handler()
                             if let Some(spec) = &run_ctx.spec
                                 && let Err(err) = solver.validator.validate_solved(&result, spec)
                             {
-                                eprintln!(
+                                tracing::info!(
                                     "[executing] post-execution validation FAILED source={:?} error={err}",
                                     solution_source,
                                 );
@@ -380,7 +440,7 @@ pub(super) fn build_executing_handler()
                             TransitionResult::ok(ProblemState::Interpreting(result))
                         }
                         Err((err, _back)) => {
-                            eprintln!(
+                            tracing::info!(
                                 "[executing] FAILED source={:?} error={err}",
                                 solution_source,
                             );
@@ -411,18 +471,26 @@ pub(super) fn build_executing_handler()
                                 SolutionSource::SemanticLayer
                                 | SolutionSource::Procedure { .. }
                                 | SolutionSource::VendorEngine(_) => {
-                                    let intent = run_ctx
-                                        .spec
-                                        .as_ref()
-                                        .map(|s| s.intent.clone())
-                                        .expect("run_ctx.spec must be set before executing");
-                                    BackTarget::Specify(intent, hint)
+                                    // When spec is available (normal path), retry
+                                    // from Specify. When it's None (semantic
+                                    // shortcut skipped Specifying/Solving), fall
+                                    // back to Clarify via run_ctx.intent.
+                                    if let Some(intent) =
+                                        run_ctx.spec.as_ref().map(|s| s.intent.clone())
+                                    {
+                                        BackTarget::Specify(intent, hint)
+                                    } else {
+                                        let intent = run_ctx
+                                            .intent
+                                            .clone()
+                                            .expect("run_ctx.intent must be set before executing");
+                                        BackTarget::Clarify(intent, hint)
+                                    }
                                 }
                                 SolutionSource::LlmWithSemanticContext => {
-                                    let spec = run_ctx
-                                        .spec
-                                        .clone()
-                                        .expect("run_ctx.spec must be set before executing");
+                                    let spec = run_ctx.spec.clone().expect(
+                                        "run_ctx.spec must be set for LlmWithSemanticContext path",
+                                    );
                                     BackTarget::Solve(spec, hint)
                                 }
                             };

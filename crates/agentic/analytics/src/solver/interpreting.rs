@@ -43,16 +43,22 @@ fn cell_to_json(cell: &CellValue) -> serde_json::Value {
 // User-prompt builder
 // ---------------------------------------------------------------------------
 
+/// Maximum number of rows included in the LLM prompt for text interpretation.
+///
+/// The full result set (up to `DEFAULT_SAMPLE_LIMIT` rows in executing.rs) is
+/// still passed to the `render_chart` tool via `result_sets_for_tool`, so
+/// chart rendering is unaffected by this limit.
+const INTERPRET_DISPLAY_LIMIT: usize = 50;
+
 /// Format a single `QueryResultSet` as a markdown block for the LLM prompt.
 fn format_result_set(rs: &crate::types::QueryResultSet, label: Option<&str>) -> String {
     let columns = &rs.data.columns;
-    let sample_size = rs.data.rows.len();
     let total_row_count = rs.data.total_row_count;
+    let display_rows = &rs.data.rows[..rs.data.rows.len().min(INTERPRET_DISPLAY_LIMIT)];
+    let sample_size = display_rows.len();
     let is_tabular = columns.len() >= 2 && sample_size >= 2;
 
-    let rows: Vec<Vec<String>> = rs
-        .data
-        .rows
+    let rows: Vec<Vec<String>> = display_rows
         .iter()
         .map(|row| {
             row.0
@@ -66,7 +72,12 @@ fn format_result_set(rs: &crate::types::QueryResultSet, label: Option<&str>) -> 
         })
         .collect();
 
-    let row_context = if (sample_size as u64) < total_row_count {
+    let fetched_size = rs.data.rows.len();
+    let row_context = if sample_size < fetched_size {
+        format!(
+            "{total_row_count} rows total, showing first {sample_size} of {fetched_size} fetched."
+        )
+    } else if (fetched_size as u64) < total_row_count {
         format!("{total_row_count} rows total, showing {sample_size}.")
     } else {
         format!("{total_row_count} rows total.")
@@ -76,13 +87,32 @@ fn format_result_set(rs: &crate::types::QueryResultSet, label: Option<&str>) -> 
         let stats: Vec<String> = summary
             .columns
             .iter()
-            .filter_map(|c| {
-                let mean = c.mean.map(|m| format!("mean={m:.2}"))?;
-                let std_dev = c
-                    .std_dev
-                    .map(|s| format!("std_dev={s:.2}"))
-                    .unwrap_or_default();
-                Some(format!("  {}: {mean} {std_dev}", c.name))
+            .map(|c| {
+                let mut parts: Vec<String> = Vec::new();
+                let cell_str = |v: &CellValue| match v {
+                    CellValue::Text(s) => s.clone(),
+                    CellValue::Number(n) => n.to_string(),
+                    CellValue::Null => "NULL".to_string(),
+                };
+                if let Some(min) = &c.min {
+                    parts.push(format!("min={}", cell_str(min)));
+                }
+                if let Some(max) = &c.max {
+                    parts.push(format!("max={}", cell_str(max)));
+                }
+                if let Some(mean) = c.mean {
+                    parts.push(format!("mean={mean:.2}"));
+                }
+                if let Some(std_dev) = c.std_dev {
+                    parts.push(format!("std_dev={std_dev:.2}"));
+                }
+                if let Some(distinct) = c.distinct_count {
+                    parts.push(format!("distinct={distinct}"));
+                }
+                if c.null_count > 0 {
+                    parts.push(format!("nulls={}", c.null_count));
+                }
+                format!("  {}: {}", c.name, parts.join(" "))
             })
             .collect();
         if !stats.is_empty() {
@@ -227,6 +257,14 @@ impl AnalyticsSolver {
     /// the custom interpreting handler supplies real values from `run_ctx.spec`.
     /// `session_turns` carries prior completed turns for comparative framing.
     /// `question_type` drives the deterministic chart suggestion.
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            otel.name = "analytics.interpret",
+            oxy.span_type = "analytics",
+            result_count = tracing::field::Empty,
+        )
+    )]
     pub(crate) async fn interpret_impl(
         &mut self,
         raw_question: &str,
@@ -235,6 +273,7 @@ impl AnalyticsSolver {
         session_turns: &[CompletedTurn<AnalyticsDomain>],
         question_type: Option<&QuestionType>,
     ) -> Result<AnalyticsAnswer, (AnalyticsError, BackTarget<AnalyticsDomain>)> {
+        tracing::Span::current().record("result_count", result.results.len());
         // Pre-convert every result set's rows to JSON for the tool closure.
         let fresh_result_sets: Vec<(Vec<String>, Vec<Vec<serde_json::Value>>)> = result
             .results
@@ -347,7 +386,7 @@ impl AnalyticsSolver {
         let valid_charts_for_tool = Arc::clone(&valid_charts);
 
         let output = match self
-            .client
+            .client_for_state("interpreting")
             .run_with_tools(
                 &system_prompt,
                 initial,
@@ -430,6 +469,7 @@ impl AnalyticsSolver {
         Ok(AnalyticsAnswer {
             text: output.text,
             display_blocks,
+            spec_hint: None, // Set by the handler from run_ctx.spec
         })
     }
 
@@ -484,6 +524,13 @@ pub(super) fn build_interpreting_handler()
                             })
                         })
                         .unwrap_or_default();
+                    // Extract the query_request_item from the spec for
+                    // cross-turn continuity.
+                    let spec_hint = run_ctx
+                        .spec
+                        .as_ref()
+                        .and_then(|s| s.query_request_item.clone());
+
                     match solver
                         .interpret_impl(
                             &raw_question,
@@ -494,7 +541,10 @@ pub(super) fn build_interpreting_handler()
                         )
                         .await
                     {
-                        Ok(answer) => TransitionResult::ok(ProblemState::Done(answer)),
+                        Ok(mut answer) => {
+                            answer.spec_hint = spec_hint;
+                            TransitionResult::ok(ProblemState::Done(answer))
+                        }
                         Err((err, back)) => {
                             TransitionResult::diagnosing(ProblemState::Diagnosing {
                                 error: err,

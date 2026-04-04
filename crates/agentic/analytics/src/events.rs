@@ -34,8 +34,6 @@ pub enum AnalyticsEvent {
     TriageCompleted {
         /// Natural-language summary of the interpreted question.
         summary: String,
-        /// Tables deemed relevant by triage.
-        relevant_tables: Vec<String>,
         /// Question type chosen by triage.
         question_type: String,
         /// Confidence in the interpretation (0.0–1.0).
@@ -43,6 +41,27 @@ pub enum AnalyticsEvent {
         /// Language-level ambiguities identified during triage. Empty when
         /// the question is unambiguous.
         ambiguities: Vec<String>,
+    },
+
+    /// Clarify detected that the semantic catalog can answer this question directly
+    /// — attempting a fast airlayer compile before falling back to Specifying.
+    SemanticShortcutAttempted {
+        /// Semantic measure members the LLM selected (e.g. `["orders.revenue"]`).
+        measures: Vec<String>,
+        /// Semantic dimension members the LLM selected.
+        dimensions: Vec<String>,
+        /// Structured filter conditions from the LLM.
+        filters: Vec<crate::types::StructuredFilter>,
+        /// Time dimension entries from the LLM.
+        time_dimensions: Vec<crate::types::TimeDimensionItem>,
+        /// LLM's self-reported confidence (0.0–1.0) in the member selection.
+        confidence: f32,
+    },
+
+    /// The semantic shortcut compile succeeded — Specifying and Solving are skipped.
+    SemanticShortcutResolved {
+        /// The compiled SQL that will be executed.
+        sql: String,
     },
 
     /// The Clarify stage produced a structured intent.
@@ -80,7 +99,13 @@ pub enum AnalyticsEvent {
     },
 
     /// A SQL query was generated from the spec.
-    QueryGenerated { sql: String },
+    QueryGenerated {
+        sql: String,
+        /// When inside a concurrent fan-out, identifies which sub-spec emitted
+        /// this event.  `None` outside fan-out.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        sub_spec_index: Option<usize>,
+    },
 
     /// A query was executed (successfully or not).
     QueryExecuted {
@@ -98,6 +123,10 @@ pub enum AnalyticsEvent {
         columns: Vec<String>,
         /// Result rows as JSON values, capped to a preview limit (empty on failure).
         rows: Vec<Vec<serde_json::Value>>,
+        /// When inside a concurrent fan-out, identifies which sub-spec emitted
+        /// this event.  `None` outside fan-out.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        sub_spec_index: Option<usize>,
     },
 
     /// A validation check failed for a pipeline stage.
@@ -211,6 +240,8 @@ impl AnalyticsEvent {
         matches!(
             self,
             Self::IntentClarified { .. }
+                | Self::SemanticShortcutAttempted { .. }
+                | Self::SemanticShortcutResolved { .. }
                 | Self::SpecResolved { .. }
                 | Self::QueryGenerated { .. }
                 | Self::QueryExecuted { .. }

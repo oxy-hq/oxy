@@ -59,9 +59,7 @@ use utoipa_axum::routes;
 
 use crate::api::{app, message, task};
 
-use agentic_http::{
-    AgenticState, app_builder_router, cleanup_stale_runs, router as agentic_router,
-};
+use agentic_http::{AgenticState, cleanup_stale_runs, router as agentic_router};
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -228,8 +226,7 @@ fn build_project_routes(app_state: AppState, agentic_state: Arc<AgenticState>) -
             "/results/files/{file_id}",
             delete(result_files::delete_result_file),
         )
-        .nest("/analytics", agentic_router(agentic_state.clone()))
-        .nest("/app-builder", app_builder_router(agentic_state))
+        .nest("/analytics", agentic_router(agentic_state))
 }
 
 #[derive(Clone)]

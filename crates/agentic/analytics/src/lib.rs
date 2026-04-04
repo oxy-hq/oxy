@@ -88,7 +88,8 @@ pub use tools::{
 pub use types::{
     AnalyticsAnswer, AnalyticsCatalog, AnalyticsDomain, AnalyticsError, AnalyticsIntent,
     AnalyticsResult, AnalyticsSolution, ChartConfig, ConversationTurn, DomainHypothesis,
-    QueryResultSet, QuerySpec, QuestionType, ResultShape, SolutionPayload, SolutionSource,
+    QueryRequestItem, QueryResultSet, QuerySpec, QuestionType, ResultShape, SolutionPayload,
+    SolutionSource, SpecHint,
 };
 
 // ── Validation ────────────────────────────────────────────────────────────────

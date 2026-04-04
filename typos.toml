@@ -2,6 +2,7 @@
 
 [default.extend-words]
 consts = "consts"
+delt = "delt"
 
 [type.md]
 extend-ignore-re = [
@@ -9,8 +10,4 @@ extend-ignore-re = [
 ]
 
 [files]
-extend-exclude = [
-  "CHANGELOG.md",
-  "*/docker-entrypoints/*",
-  "crates/app/demo_project/**",
-]
+extend-exclude = ["CHANGELOG.md", "*/docker-entrypoints/*", "*/demo_project/**"]

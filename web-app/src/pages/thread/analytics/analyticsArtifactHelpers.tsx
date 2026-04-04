@@ -27,7 +27,11 @@ export function parseToolJson<T = unknown>(raw: string | undefined): T | null {
 
 export const AGENTIC_DATA_KEY = "__agentic_result__";
 
-export function toDisplayProps(block: AnalyticsDisplayBlock): {
+export function toDisplayProps(
+  block: AnalyticsDisplayBlock,
+  index: number,
+  runId: string
+): {
   display: Display;
   data: DataContainer;
 } {
@@ -35,8 +39,9 @@ export function toDisplayProps(block: AnalyticsDisplayBlock): {
   const json = JSON.stringify(
     rows.map((row) => Object.fromEntries(columns.map((col, i) => [col, row[i]])))
   );
+  const dataKey = `${AGENTIC_DATA_KEY}_${runId}_${index}`;
   const data: DataContainer = {
-    [AGENTIC_DATA_KEY]: { file_path: AGENTIC_DATA_KEY, json }
+    [dataKey]: { file_path: dataKey, json }
   };
 
   const ct = config.chart_type;
@@ -46,7 +51,7 @@ export function toDisplayProps(block: AnalyticsDisplayBlock): {
       type: "line_chart",
       x: config.x ?? columns[0] ?? "",
       y: config.y ?? columns[1] ?? "",
-      data: AGENTIC_DATA_KEY,
+      data: dataKey,
       series: config.series,
       title: config.title,
       xAxisTitle: config.x_axis_label,
@@ -57,7 +62,7 @@ export function toDisplayProps(block: AnalyticsDisplayBlock): {
       type: "bar_chart",
       x: config.x ?? columns[0] ?? "",
       y: config.y ?? columns[1] ?? "",
-      data: AGENTIC_DATA_KEY,
+      data: dataKey,
       series: config.series,
       title: config.title
     };
@@ -66,21 +71,23 @@ export function toDisplayProps(block: AnalyticsDisplayBlock): {
       type: "pie_chart",
       name: config.name ?? columns[0] ?? "",
       value: config.value ?? columns[1] ?? "",
-      data: AGENTIC_DATA_KEY,
+      data: dataKey,
       title: config.title
     };
   } else {
-    display = { type: "table", data: AGENTIC_DATA_KEY, title: config.title };
+    display = { type: "table", data: dataKey, title: config.title };
   }
 
   return { display, data };
 }
 
 /** Stable wrapper so parent re-renders don't recreate display/data objects. */
-export const AnalyticsDisplayBlockItem = memo(({ block }: { block: AnalyticsDisplayBlock }) => {
-  const { display, data } = toDisplayProps(block);
-  return <DisplayBlock display={display} data={data} />;
-});
+export const AnalyticsDisplayBlockItem = memo(
+  ({ block, index, runId }: { block: AnalyticsDisplayBlock; index: number; runId: string }) => {
+    const { display, data } = toDisplayProps(block, index, runId);
+    return <DisplayBlock display={display} data={data} />;
+  }
+);
 
 // ── SQL artifact helpers ──────────────────────────────────────────────────────
 
@@ -95,7 +102,8 @@ export function sqlArtifactFromSqlItem(item: SqlItem): SqlArtifact {
         database: item.database ?? "",
         sql_query: item.sql,
         result: item.result,
-        is_result_truncated: false
+        is_result_truncated: false,
+        error: item.error
       }
     }
   };

@@ -201,6 +201,10 @@ impl LlmProvider for AnthropicMockProvider {
             .collect();
         vec![json!({"role": "user", "content": result_blocks})]
     }
+
+    fn model_name(&self) -> &str {
+        "mock-anthropic"
+    }
 }
 
 // ── MockProvider ──────────────────────────────────────────────────────────
@@ -251,6 +255,10 @@ impl LlmProvider for MockProvider {
                 })
             })
             .collect()
+    }
+
+    fn model_name(&self) -> &str {
+        "mock-openai"
     }
 }
 
@@ -1899,6 +1907,64 @@ fn build_resume_messages_with_empty_prior_fails_anthropic_validation() {
     );
 }
 
+/// Validates that `build_resume_messages` with a well-formed prior
+/// (containing an assistant message with a `tool_use` block for `ask_user`)
+/// produces messages that pass Anthropic validation.
+///
+/// This is the positive counterpart to
+/// `build_resume_messages_with_empty_prior_fails_anthropic_validation`.
+#[test]
+fn build_resume_messages_with_valid_prior_passes_anthropic_validation() {
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let client =
+        LlmClient::with_provider(AnthropicMockProvider::new(vec![], Arc::clone(&captured)));
+
+    // Simulate a prior conversation where the LLM called ask_user:
+    //   [user(question), assistant(ask_user tool_use)]
+    let prior = vec![
+        json!({
+            "role": "user",
+            "content": "What is the revenue?"
+        }),
+        json!({
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "toolu_ask123",
+                    "name": "ask_user",
+                    "input": {
+                        "prompt": "Which metric?",
+                        "suggestions": ["Revenue", "Users"]
+                    }
+                }
+            ]
+        }),
+    ];
+
+    let msgs =
+        client.build_resume_messages(&prior, "Which metric?", &["Revenue".into()], "Revenue");
+
+    // Should produce 3 messages: [user, asst(ask_user), user(tool_result)]
+    assert_eq!(msgs.len(), 3, "expected 3 messages, got {}", msgs.len());
+    validate_anthropic_messages(&msgs).expect(
+        "build_resume_messages with a valid prior should produce messages that \
+         satisfy Anthropic tool-use constraints",
+    );
+}
+
+/// Verifies that `find_ask_user_id` returns `None` for an empty message list,
+/// confirming the caller MUST handle the empty-prior case separately rather
+/// than relying on the `"ask_user_0"` fallback in `build_resume_messages`.
+#[test]
+fn find_ask_user_id_returns_none_for_empty_messages() {
+    use super::client::find_ask_user_id;
+    assert!(
+        find_ask_user_id(&[]).is_none(),
+        "find_ask_user_id should return None for empty messages"
+    );
+}
+
 // ── OpenAI Responses API mock provider ────────────────────────────────────
 
 /// Mock provider that serialises messages in the **OpenAI Responses API**
@@ -1995,6 +2061,10 @@ impl LlmProvider for OpenAiMockProvider {
                 })
             })
             .collect()
+    }
+
+    fn model_name(&self) -> &str {
+        "mock-openai-responses"
     }
 }
 

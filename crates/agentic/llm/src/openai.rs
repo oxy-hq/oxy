@@ -513,4 +513,8 @@ impl LlmProvider for OpenAiProvider {
             })
             .collect()
     }
+
+    fn model_name(&self) -> &str {
+        &self.model
+    }
 }

@@ -18,7 +18,6 @@ use crate::tools::{
     execute_specifying_tool, interpreting_tools, solving_tools, specifying_tools,
 };
 use crate::types::DisplayBlock;
-use crate::types::{SolutionPayload, SolutionSource};
 use crate::{
     AnalyticsAnswer, AnalyticsDomain, AnalyticsError, AnalyticsIntent, AnalyticsResult,
     AnalyticsSolution, QuerySpec,
@@ -151,8 +150,18 @@ impl DomainSolver<AnalyticsDomain> for AnalyticsSolver {
         _ctx: &RunContext<AnalyticsDomain>,
         memory: &SessionMemory<AnalyticsDomain>,
     ) -> Result<AnalyticsIntent, (AnalyticsError, BackTarget<AnalyticsDomain>)> {
-        self.clarify_impl(intent, _ctx.retry_ctx.as_ref(), memory.turns())
-            .await
+        use crate::solver::clarifying::ClarifyOutcome;
+        match self
+            .clarify_impl(intent.clone(), _ctx.retry_ctx.as_ref(), memory.turns())
+            .await?
+        {
+            ClarifyOutcome::Intent(clarified) => Ok(clarified),
+            // The semantic shortcut produces a solution directly; the legacy
+            // DomainSolver trait path cannot express this, so fall back to
+            // forwarding the original intent to Specifying (which will
+            // re-compile via the normal path).
+            ClarifyOutcome::SemanticShortcut(_) => Ok(intent),
+        }
     }
 
     async fn specify(
@@ -228,54 +237,8 @@ impl DomainSolver<AnalyticsDomain> for AnalyticsSolver {
         .await
     }
 
-    /// Dynamically skip the `Solving` state when the Specifying stage already
-    /// produced a pre-computed payload (semantic layer or vendor engine).
-    ///
-    /// Returns `ProblemState::Executing(solution)` directly so the LLM-based
-    /// solving stage is bypassed entirely.
-    fn should_skip(
-        &mut self,
-        state: &str,
-        data: &ProblemState<AnalyticsDomain>,
-        _run_ctx: &RunContext<AnalyticsDomain>,
-    ) -> Option<ProblemState<AnalyticsDomain>> {
-        if state == "solving"
-            && let ProblemState::Solving(spec) = data
-        {
-            match &spec.solution_source {
-                SolutionSource::SemanticLayer => {
-                    if let Some(payload) = spec.precomputed.clone() {
-                        let connector_name = spec.connector_name.clone();
-                        return Some(ProblemState::Executing(AnalyticsSolution {
-                            payload,
-                            solution_source: SolutionSource::SemanticLayer,
-                            connector_name,
-                        }));
-                    }
-                }
-                SolutionSource::Procedure { file_path } => {
-                    return Some(ProblemState::Executing(AnalyticsSolution {
-                        payload: SolutionPayload::Sql(String::new()),
-                        solution_source: SolutionSource::Procedure {
-                            file_path: file_path.clone(),
-                        },
-                        connector_name: spec.connector_name.clone(),
-                    }));
-                }
-                SolutionSource::VendorEngine(_) => {
-                    if let Some(payload) = spec.precomputed.clone() {
-                        return Some(ProblemState::Executing(AnalyticsSolution {
-                            payload,
-                            solution_source: spec.solution_source.clone(),
-                            connector_name: spec.connector_name.clone(),
-                        }));
-                    }
-                }
-                SolutionSource::LlmWithSemanticContext => {}
-            }
-        }
-        None
-    }
+    /// Solving is absorbed into the specifying handler — no skip logic needed.
+    /// The specifying handler transitions directly to Executing.
 
     async fn diagnose(
         &mut self,

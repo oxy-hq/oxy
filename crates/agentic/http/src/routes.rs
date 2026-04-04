@@ -14,6 +14,7 @@ use axum::{
         sse::{Event as SseEvent, KeepAlive, Sse},
     },
 };
+use oxy_shared::OxyError;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
@@ -40,6 +41,32 @@ use sea_orm::DatabaseConnection;
 
 // ── Request / response types ──────────────────────────────────────────────────
 
+/// Thinking mode preset for a run.
+///
+/// `Auto` uses the agent's default config.  `ExtendedThinking` applies the
+/// `llm.extended_thinking` overrides from the agent YAML at runtime.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ThinkingMode {
+    Auto,
+    ExtendedThinking,
+}
+
+impl ThinkingMode {
+    /// Convert to the `Option<String>` stored in the database column.
+    /// `Auto` maps to `None` (the default), `ExtendedThinking` to `Some("extended_thinking")`.
+    fn to_db(self) -> Option<String> {
+        match self {
+            Self::Auto => None,
+            Self::ExtendedThinking => Some("extended_thinking".to_string()),
+        }
+    }
+
+    fn is_extended(self) -> bool {
+        matches!(self, Self::ExtendedThinking)
+    }
+}
+
 #[derive(Deserialize)]
 pub struct CreateRunRequest {
     /// Which agent config to load (`{agent_id}.agentic.yml` in project root).
@@ -47,6 +74,16 @@ pub struct CreateRunRequest {
     pub question: String,
     /// Optional thread FK — links this run to an existing thread.
     pub thread_id: Option<String>,
+    /// Thinking mode preset: `"auto"` (default) or `"extended_thinking"`.
+    ///
+    /// When `"extended_thinking"`, the `llm.extended_thinking` config from the agent YAML is
+    /// applied as runtime overrides for model and thinking config.
+    #[serde(default = "default_thinking_mode")]
+    pub thinking_mode: ThinkingMode,
+}
+
+fn default_thinking_mode() -> ThinkingMode {
+    ThinkingMode::Auto
 }
 
 #[derive(Serialize)]
@@ -79,6 +116,9 @@ pub struct RunSummary {
     pub question: String,
     pub answer: Option<String>,
     pub error_message: Option<String>,
+    /// Thinking mode used for this run (`"auto"` or `"extended_thinking"`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking_mode: Option<String>,
     /// UI events replayed through UiTransformState for frontend rendering.
     /// Present only on the list endpoint; `None` on the single-run endpoint.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -119,27 +159,43 @@ pub async fn create_run(
         .thread_id
         .as_deref()
         .and_then(|s| Uuid::parse_str(s).ok());
-    if let Err(e) =
-        db::insert_run(&db, &run_id, &body.agent_id, &body.question, thread_id_uuid).await
+    if let Err(e) = db::insert_run(
+        &db,
+        &run_id,
+        &body.agent_id,
+        &body.question,
+        thread_id_uuid,
+        body.thinking_mode.to_db(),
+    )
+    .await
     {
         return (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")).into_response();
     }
 
     // Load prior completed turns for this thread so the pipeline can resolve
     // cross-turn references (e.g. "same metric", "break it down differently").
-    let history: Vec<agentic_analytics::ConversationTurn> = if let Some(tid) = thread_id_uuid {
+    let thread_turns = if let Some(tid) = thread_id_uuid {
         db::get_thread_history(&db, tid, 10)
             .await
             .unwrap_or_default()
-            .into_iter()
-            .map(|(q, a)| agentic_analytics::ConversationTurn {
-                question: q,
-                answer: a,
-            })
-            .collect()
     } else {
         vec![]
     };
+
+    // Extract the most recent spec_hint for cross-turn query continuity.
+    let prior_spec_hint: Option<agentic_analytics::SpecHint> = thread_turns
+        .iter()
+        .rev()
+        .find_map(|t| t.spec_hint.as_ref())
+        .and_then(|v| serde_json::from_value(v.clone()).ok());
+
+    let history: Vec<agentic_analytics::ConversationTurn> = thread_turns
+        .into_iter()
+        .map(|t| agentic_analytics::ConversationTurn {
+            question: t.question,
+            answer: t.answer,
+        })
+        .collect();
 
     // Channel for delivering user answers to the orchestrator task on suspension.
     let (answer_tx, answer_rx) = mpsc::channel::<String>(1);
@@ -151,22 +207,26 @@ pub async fn create_run(
     let run_id2 = run_id.clone();
     let base_dir = project_manager.config_manager.project_path().to_path_buf();
     let question = body.question.clone();
-
-    tokio::spawn(async move {
-        run_pipeline(
-            state2,
-            config,
-            base_dir,
-            run_id2,
-            question,
-            history,
-            answer_rx,
-            cancel_rx,
-            db,
-            project_manager,
-        )
-        .await;
-    });
+    let thinking_mode = body.thinking_mode;
+    {
+        tokio::spawn(async move {
+            let _ = run_pipeline(
+                state2,
+                config,
+                base_dir,
+                run_id2,
+                question,
+                history,
+                prior_spec_hint,
+                answer_rx,
+                cancel_rx,
+                db,
+                project_manager,
+                thinking_mode,
+            )
+            .await;
+        });
+    }
 
     Json(CreateRunResponse {
         run_id,
@@ -323,12 +383,60 @@ pub async fn cancel_run(
     if state.cancel(&run_id) {
         Json(serde_json::json!({ "ok": true })).into_response()
     } else {
-        (StatusCode::NOT_FOUND, "run not found or already completed").into_response()
+        // The in-memory task is gone (server panic, already finished, etc.)
+        // but the DB row may still be in "running" status.  Mark it failed so
+        // a page refresh doesn't show a perpetual loading state.
+        if let Ok(conn) = establish_connection().await {
+            db::update_run_failed(&conn, &run_id, "cancelled by user")
+                .await
+                .ok();
+        }
+        state.statuses.insert(
+            run_id.clone(),
+            RunStatus::Failed("cancelled by user".into()),
+        );
+        Json(serde_json::json!({ "ok": true })).into_response()
+    }
+}
+
+// ── PATCH /runs/:id/thinking_mode ────────────────────────────────────────────
+//
+// Updates the persisted `thinking_mode` on a *completed or idle* run record.
+// This does **not** affect an in-flight pipeline — `thinking_mode` is read only
+// at pipeline startup.  The primary use-case is the UI toggle: when the user
+// changes the thinking mode *between* follow-up questions, the frontend patches
+// the latest run so the next question inherits the correct mode.
+
+#[derive(Deserialize)]
+pub struct UpdateThinkingModeRequest {
+    pub thinking_mode: Option<ThinkingMode>,
+}
+
+pub async fn update_thinking_mode(
+    Path(RunIdPath { id: run_id }): Path<RunIdPath>,
+    Json(body): Json<UpdateThinkingModeRequest>,
+) -> Response {
+    let db = match establish_connection().await {
+        Ok(db) => db,
+        Err(e) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")).into_response();
+        }
+    };
+    let thinking_mode = body.thinking_mode.unwrap_or(ThinkingMode::Auto);
+    match db::update_run_thinking_mode(&db, &run_id, thinking_mode.to_db()).await {
+        Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")).into_response(),
     }
 }
 
 // ── Background pipeline task ──────────────────────────────────────────────────
 
+#[tracing::instrument(skip_all, err, fields(
+    otel.name = "analytics.run",
+    oxy.span_type = "analytics",
+    run_id = %run_id,
+    question = %question,
+))]
 async fn run_pipeline(
     state: Arc<AgenticState>,
     config: AgentConfig,
@@ -336,16 +444,29 @@ async fn run_pipeline(
     run_id: String,
     question: String,
     history: Vec<agentic_analytics::ConversationTurn>,
+    prior_spec_hint: Option<agentic_analytics::SpecHint>,
     mut answer_rx: mpsc::Receiver<String>,
     mut cancel_rx: watch::Receiver<bool>,
     db: DatabaseConnection,
     project_manager: ProjectManager,
-) {
+    thinking_mode: ThinkingMode,
+) -> Result<(), OxyError> {
     tracing::info!(run_id = %run_id, "pipeline started");
-
     // Assemble project-level context from the oxy config.yml.
     let mut build_ctx = build_project_context_pub(&config, &project_manager, &base_dir).await;
     build_ctx.schema_cache = Some(Arc::clone(&state.schema_cache));
+
+    // Apply extended thinking mode overrides when requested by the UI toggle.
+    if thinking_mode.is_extended() {
+        if let Some(extended_thinking) = &config.llm.extended_thinking {
+            if let Some(thinking_cfg) = &extended_thinking.thinking {
+                build_ctx.thinking_override = Some(thinking_cfg.to_thinking_config());
+            }
+            if let Some(model) = &extended_thinking.model {
+                build_ctx.model_override = Some(model.clone());
+            }
+        }
+    }
 
     // Build solver from config (lazy, per request).
     let (solver, procedure_files) =
@@ -371,7 +492,7 @@ async fn run_pipeline(
                     .insert(run_id.clone(), RunStatus::Failed(msg.clone()));
                 db::update_run_failed(&db, &run_id, &msg).await.ok();
                 state.deregister(&run_id);
-                return;
+                return Ok(());
             }
         };
 
@@ -482,13 +603,16 @@ async fn run_pipeline(
 
     let initial_intent = AnalyticsIntent {
         raw_question: question,
+        summary: String::new(), // populated by Clarifying stage
         question_type: QuestionType::SingleValue, // refined by Clarifying stage
         metrics: vec![],
         dimensions: vec![],
         filters: vec![],
         history,
-        spec_hint: None,
+        spec_hint: prior_spec_hint.clone(),
         selected_procedure: None,
+        semantic_query: Default::default(), // populated by Clarifying stage
+        semantic_confidence: 0.0,
     };
 
     // Drive the pipeline; loop to handle multiple ask_user suspensions.
@@ -505,7 +629,13 @@ async fn run_pipeline(
             match result {
                 Ok(answer) => {
                     tracing::info!(run_id = %run_id, "pipeline done");
-                    db::update_run_done(&db, &run_id, &answer.text).await.ok();
+                    let hint_json = answer
+                        .spec_hint
+                        .as_ref()
+                        .and_then(|h| serde_json::to_value(h).ok());
+                    db::update_run_done(&db, &run_id, &answer.text, hint_json)
+                        .await
+                        .ok();
                     state.statuses.insert(run_id.clone(), RunStatus::Done);
                     break;
                 }
@@ -566,6 +696,7 @@ async fn run_pipeline(
                     let _ = resume_event_tx
                         .send(Event::Core(
                             agentic_core::events::CoreEvent::HumanInputResolved {
+                                answer: answer.clone(),
                                 trace_id: suspended_trace_id,
                             },
                         ))
@@ -642,12 +773,15 @@ async fn run_pipeline(
         );
     }
 
-    // Drop orchestrator explicitly so event_tx is dropped now, causing the
-    // bridge task to drain its queue and exit.  We must await the bridge
-    // before deregistering so the SSE final-sweep sees all events in the DB.
+    // Drop all event senders so the bridge task's receiver closes and the
+    // task can drain its queue and exit.  We must await the bridge before
+    // deregistering so the SSE final-sweep sees all events in the DB.
     drop(orchestrator);
+    drop(cancel_event_tx);
+    drop(resume_event_tx);
     bridge_handle.await.ok();
     state.deregister(&run_id);
+    Ok(())
 }
 
 // ── GET /threads/:thread_id/runs ──────────────────────────────────────────────
@@ -693,6 +827,7 @@ pub async fn list_runs_by_thread(Path(ThreadIdPath { thread_id }): Path<ThreadId
                     question: r.question,
                     answer: r.answer,
                     error_message: r.error_message,
+                    thinking_mode: r.thinking_mode,
                     ui_events: Some(sse::squash_deltas(ui_events)),
                 });
             }
@@ -725,6 +860,7 @@ pub async fn get_run_by_thread(Path(ThreadIdPath { thread_id }): Path<ThreadIdPa
             question: run.question,
             answer: run.answer,
             error_message: run.error_message,
+            thinking_mode: run.thinking_mode,
             ui_events: None,
         })
         .into_response(),
@@ -1114,4 +1250,94 @@ fn extract_project_id_from_key(key_path: &str) -> Option<String> {
     let contents = std::fs::read_to_string(key_path).ok()?;
     let v: serde_json::Value = serde_json::from_str(&contents).ok()?;
     v.get("project_id")?.as_str().map(|s| s.to_string())
+}
+
+// ── Headless eval entry-point ─────────────────────────────────────────────────
+
+/// Run an agentic analytics pipeline headlessly for evaluation purposes.
+///
+/// Loads the `.agentic.yml` config at `config_path`, builds the solver,
+/// drives the orchestrator with `prompt`, and returns the answer text.
+///
+/// Designed to be called from the test evaluation infrastructure.
+/// Returns an error if the pipeline suspends (asks a clarifying question),
+/// exceeds max iterations, or encounters a fatal domain error.
+pub async fn run_agentic_eval(
+    project_manager: ProjectManager,
+    config_path: &std::path::Path,
+    prompt: String,
+) -> Result<String, oxy_shared::errors::OxyError> {
+    let base_dir = project_manager.config_manager.project_path().to_path_buf();
+
+    let config = AgentConfig::from_file(config_path).map_err(|e| {
+        oxy_shared::errors::OxyError::ConfigurationError(format!(
+            "Failed to load agentic config at {}: {e}",
+            config_path.display()
+        ))
+    })?;
+
+    let build_ctx = build_project_context_pub(&config, &project_manager, &base_dir).await;
+
+    let (solver, procedure_files) = config
+        .build_solver_with_context(&base_dir, build_ctx)
+        .await
+        .map_err(|e| {
+            oxy_shared::errors::OxyError::RuntimeError(format!(
+                "Failed to build agentic solver: {e}"
+            ))
+        })?;
+
+    // Drain events into /dev/null — eval doesn't need SSE streaming.
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<Event<AnalyticsEvent>>(256);
+    let event_stream: EventStream<AnalyticsEvent> = event_tx;
+    tokio::spawn(async move { while event_rx.recv().await.is_some() {} });
+
+    let solver = solver.with_events(event_stream.clone());
+
+    // Always wire a procedure runner so search_procedures works.
+    let solver = {
+        let runner = agentic_workflow::OxyProcedureRunner::new(project_manager)
+            .with_procedure_files(procedure_files)
+            .with_events(event_stream);
+        solver.with_procedure_runner(std::sync::Arc::new(runner))
+    };
+
+    let mut orchestrator = Orchestrator::new(solver).with_handlers(build_analytics_handlers());
+
+    let intent = AnalyticsIntent {
+        raw_question: prompt,
+        summary: String::new(),
+        question_type: QuestionType::SingleValue,
+        metrics: vec![],
+        dimensions: vec![],
+        filters: vec![],
+        history: vec![],
+        spec_hint: None,
+        selected_procedure: None,
+        semantic_query: Default::default(),
+        semantic_confidence: 0.0,
+    };
+
+    orchestrator
+        .run(intent)
+        .await
+        .map(|answer| answer.text)
+        .map_err(|e| match e {
+            OrchestratorError::Suspended { questions, .. } => {
+                let prompts: Vec<_> = questions.iter().map(|q| q.prompt.as_str()).collect();
+                oxy_shared::errors::OxyError::RuntimeError(format!(
+                    "Agentic pipeline asked a clarifying question during eval (not supported): {}",
+                    prompts.join("; ")
+                ))
+            }
+            OrchestratorError::MaxIterationsExceeded => oxy_shared::errors::OxyError::RuntimeError(
+                "Agentic pipeline exceeded max iterations".to_string(),
+            ),
+            OrchestratorError::ResumeNotSupported => oxy_shared::errors::OxyError::RuntimeError(
+                "Agentic pipeline resume not supported".to_string(),
+            ),
+            OrchestratorError::Fatal(domain_err) => oxy_shared::errors::OxyError::RuntimeError(
+                format!("Agentic pipeline fatal error: {domain_err:?}"),
+            ),
+        })
 }

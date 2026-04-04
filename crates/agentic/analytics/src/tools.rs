@@ -7,13 +7,16 @@
 //!
 //! | State | Tools |
 //! |---|---|
-//! | `clarifying` | `search_catalog`, `get_metric_definition`, `list_tables`, `describe_table` |
-//! | `specifying` | `get_join_path`, `sample_column`, `list_tables`, `describe_table` |
+//! | `triage` | `search_procedures` |
+//! | `clarifying` | `search_catalog`, `list_tables`, `describe_table` |
+//! | `specifying` | `search_catalog`, `sample_columns`, `get_join_path`, `list_tables`, `describe_table` |
 //! | `solving` | `execute_preview` |
 //! | `interpreting` | `render_chart` |
 //!
 //! `list_metrics` and `list_dimensions` were removed — `search_catalog`
 //! returns both metrics and dimensions in a single call.
+//! `get_metric_definition` was removed — `search_catalog` now includes the
+//! formula/expression for each metric, making the separate lookup redundant.
 //! `get_valid_dimensions` was removed — redundant with catalog context already
 //! in the LLM prompt.  `get_column_range` was replaced by `sample_column` which
 //! runs a live query instead of returning stale pre-computed catalog data.
@@ -36,6 +39,52 @@ use crate::types::{ChartConfig, DisplayBlock, QuestionType};
 use crate::catalog::Catalog;
 
 // ── Tool definitions per state ────────────────────────────────────────────────
+
+/// Tools available during the **triage** sub-phase of Clarify.
+///
+/// Only `search_procedures` is exposed — triage must check for an existing
+/// procedure before doing any schema discovery.
+pub fn triage_tools() -> Vec<ToolDef> {
+    vec![
+        ToolDef {
+            name: "search_procedures",
+            description: "Search for existing procedure YAML files that match a query. \
+                          Returns a list of {name, path, description} entries. \
+                          Call this FIRST with key terms from the user's question. \
+                          If any procedure directly answers the question, select it.",
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search term matched against procedure names and descriptions"
+                    }
+                },
+                "required": ["query"],
+                "additionalProperties": false
+            }),
+        },
+        ToolDef {
+            name: "search_catalog",
+            description: "Batch-search the semantic catalog for measures AND dimensions in one call. \
+                          Use this to check whether the catalog has all the members needed to answer \
+                          the question before attempting a semantic shortcut. Returns \
+                          {metrics: [{name, description}], dimensions: [{name, description, type}]}.",
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "queries": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Search terms matched against measure/dimension names and descriptions."
+                    }
+                },
+                "required": ["queries"],
+                "additionalProperties": false
+            }),
+        },
+    ]
+}
 
 /// Tools available during the **clarifying** state.
 ///
@@ -60,21 +109,8 @@ pub fn clarifying_tools(has_semantic: bool) -> Vec<ToolDef> {
                         "description": "One or more search terms. Each term is matched against metric names and descriptions. Use [\"\"] to list everything."
                     }
                 },
-                "required": ["queries"]
-            }),
-        },
-        ToolDef {
-            name: "get_metric_definition",
-            description: "Get the formula, grain, and valid dimensions for a metric.",
-            parameters: json!({
-                "type": "object",
-                "properties": {
-                    "metric": {
-                        "type": "string",
-                        "description": "The metric name to look up"
-                    }
-                },
-                "required": ["metric"]
+                "required": ["queries"],
+                "additionalProperties": false
             }),
         },
         ToolDef {
@@ -91,7 +127,8 @@ pub fn clarifying_tools(has_semantic: bool) -> Vec<ToolDef> {
                         "description": "Search term matched against procedure names and descriptions"
                     }
                 },
-                "required": ["query"]
+                "required": ["query"],
+                "additionalProperties": false
             }),
         },
     ];
@@ -104,42 +141,74 @@ pub fn clarifying_tools(has_semantic: bool) -> Vec<ToolDef> {
 
 /// Tools available during the **specifying** state.
 ///
+/// Includes `search_catalog` so Specifying can discover metrics/dimensions
+/// directly from the raw question without a prior Ground phase.
+///
 /// When `has_semantic` is `true`, raw database tools (`list_tables`,
 /// `describe_table`) are excluded — same rationale as [`clarifying_tools`].
 pub fn specifying_tools(has_semantic: bool) -> Vec<ToolDef> {
-    let mut tools = vec![ToolDef {
-        name: "sample_column",
-        description: "Return up to 20 distinct non-null values for a column, plus total row \
-                          count. Accepts both semantic view names (e.g. 'orders_view') and raw \
-                          database table names, and both dimension names (e.g. 'status') and raw \
-                          column names. When a semantic view is used, the tool automatically \
-                          resolves to the underlying table and column expression, and may return \
-                          pre-defined sample values from the semantic layer without querying the \
-                          database. For date/time columns also returns date_min, date_max, and \
-                          date_distinct_count so you can choose the right GROUP BY granularity \
-                          (e.g. daily vs monthly vs yearly). Use this to verify filter values \
-                          exist and confirm their exact format (e.g. is it 'EU' or 'Europe'?). \
-                          Pass an optional search_term to filter values by substring match \
-                          (e.g. search_term='squat' finds 'Barbell Squat', 'Goblet Squat', etc.).",
-        parameters: json!({
-            "type": "object",
-            "properties": {
-                "table": {
-                    "type": "string",
-                    "description": "Semantic view name or database table name"
+    let mut tools = vec![
+        ToolDef {
+            name: "search_catalog",
+            description: "Batch-search the catalog for metrics AND their dimensions in one call. \
+                          Accepts multiple query terms and returns all matching metrics plus their \
+                          available dimensions, deduplicated. Use this to discover which metrics \
+                          and dimensions are relevant to the user's question before resolving them. \
+                          Returns {metrics: [{name, description}], dimensions: [{name, description, type}]}.",
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "queries": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "One or more search terms matched against metric names and descriptions. Use [\"\"] to list everything."
+                    }
                 },
-                "column": {
-                    "type": "string",
-                    "description": "Dimension/measure name or database column name"
+                "required": ["queries"],
+                "additionalProperties": false
+            }),
+        },
+        ToolDef {
+            name: "sample_columns",
+            description: "Batch-sample multiple columns in one call. For each column, returns up \
+                          to 20 distinct non-null values plus statistics (row_count, distinct_count, \
+                          min, max; also avg and stdev for numeric columns). Accepts semantic view \
+                          names and dimension names as well as raw database table/column names. \
+                          Use this to verify filter values, confirm exact formats, and choose \
+                          date granularity — all in a single round-trip instead of calling \
+                          sample_column multiple times.",
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "columns": {
+                        "type": "array",
+                        "description": "One or more columns to sample.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "table": {
+                                    "type": "string",
+                                    "description": "Semantic view name or database table name"
+                                },
+                                "column": {
+                                    "type": "string",
+                                    "description": "Dimension/measure name or database column name"
+                                },
+                                "search_term": {
+                                    "type": ["string", "null"],
+                                    "description": "Optional substring filter (LIKE '%term%'). Pass null when not searching."
+                                }
+                            },
+                            "required": ["table", "column", "search_term"],
+                            "additionalProperties": false
+                        }
+                    }
                 },
-                "search_term": {
-                    "type": "string",
-                    "description": "Search keyword to filter sample values using substring match (LIKE '%term%'). Use this when looking for a specific value that may not appear in the default top 20 samples. Pass empty string when not searching."
-                }
-            },
-            "required": ["table", "column", "search_term"]
-        }),
-    }];
+                "required": ["columns"],
+                "additionalProperties": false
+            }),
+        },
+    ];
     if !has_semantic {
         // Without a semantic layer, the LLM needs manual join discovery and
         // raw schema introspection tools.
@@ -159,7 +228,8 @@ pub fn specifying_tools(has_semantic: bool) -> Vec<ToolDef> {
                         "description": "Target table or entity name"
                     }
                 },
-                "required": ["from_entity", "to_entity"]
+                "required": ["from_entity", "to_entity"],
+                "additionalProperties": false
             }),
         });
         tools.push(list_tables_tool_def());
@@ -184,7 +254,8 @@ pub fn solving_tools() -> Vec<ToolDef> {
                     "description": "The SQL query to preview"
                 }
             },
-            "required": ["sql"]
+            "required": ["sql"],
+            "additionalProperties": false
         }),
     }]
 }
@@ -211,58 +282,37 @@ pub fn interpreting_tools() -> Vec<ToolDef> {
                     "enum": ["line_chart", "bar_chart", "pie_chart", "table"],
                     "description": "Chart variant to render"
                 },
-                "config": {
-                    "description": "Chart-type-specific column mappings. Choose the object that matches chart_type.",
-                    "anyOf": [
-                        {
-                            "type": "object",
-                            "description": "Config for line_chart or bar_chart",
-                            "properties": {
-                                "x": {
-                                    "type": "string",
-                                    "description": "Column name for the x-axis"
-                                },
-                                "y": {
-                                    "type": "string",
-                                    "description": "Column name for the y-axis / metric"
-                                },
-                                "series": {
-                                    "type": ["string", "null"],
-                                    "description": "Optional column to split into multiple series. Use null when not needed."
-                                },
-                                "x_axis_label": {
-                                    "type": "string",
-                                    "description": "Human-readable x-axis label (include units, e.g. 'Date', 'Revenue (USD)')"
-                                },
-                                "y_axis_label": {
-                                    "type": "string",
-                                    "description": "Human-readable y-axis label (include units, e.g. 'Sales ($)', 'Count')"
-                                }
-                            },
-                            "required": ["x", "y", "series", "x_axis_label", "y_axis_label"]
-                        },
-                        {
-                            "type": "object",
-                            "description": "Config for pie_chart",
-                            "properties": {
-                                "name": {
-                                    "type": "string",
-                                    "description": "Category column name"
-                                },
-                                "value": {
-                                    "type": "string",
-                                    "description": "Value column name"
-                                }
-                            },
-                            "required": ["name", "value"]
-                        },
-                        {
-                            "type": "object",
-                            "description": "Config for table — no extra fields required",
-                            "properties": {},
-                            "required": []
-                        }
-                    ]
+                "x": {
+                    "type": ["string", "null"],
+                    "description": "Column name for the x-axis. Required for line_chart and bar_chart. Use null for pie_chart and table."
+                },
+                "y": {
+                    "type": ["string", "null"],
+                    "description": "Column name for the y-axis / metric. Required for line_chart and bar_chart. Use null for pie_chart and table."
+                },
+                "series": {
+                    "type": ["string", "null"],
+                    "description": "Optional grouping column name to split data into multiple series \
+        (line_chart / bar_chart only). When set, the data is grouped by this column's \
+        distinct values and each group becomes a separate line or bar series in the chart. \
+        For example, if x='month', y='revenue', series='region', the chart renders one \
+        line/bar per region. Use null when there is no grouping column or for pie_chart/table."
+                },
+                "name": {
+                    "type": ["string", "null"],
+                    "description": "Category column name. Required for pie_chart. Use null for other chart types."
+                },
+                "value": {
+                    "type": ["string", "null"],
+                    "description": "Value column name. Required for pie_chart. Use null for other chart types."
+                },
+                "x_axis_label": {
+                    "type": ["string", "null"],
+                    "description": "Human-readable x-axis label (include units, e.g. 'Date', 'Revenue (USD)'). Use null to omit."
+                },
+                "y_axis_label": {
+                    "type": ["string", "null"],
+                    "description": "Human-readable y-axis label (include units, e.g. 'Sales ($)', 'Count'). Use null to omit."
                 },
                 "result_index": {
                     "type": ["integer", "null"],
@@ -273,7 +323,8 @@ pub fn interpreting_tools() -> Vec<ToolDef> {
                     "description": "Optional chart title. Use null to omit."
                 }
             },
-            "required": ["chart_type", "config", "result_index", "title"]
+            "required": ["chart_type", "x", "y", "series", "name", "value", "x_axis_label", "y_axis_label", "result_index", "title"],
+            "additionalProperties": false
         }),
     }]
 }
@@ -330,8 +381,67 @@ pub fn suggest_chart_config(
 
 // ── Tool executors (thin Catalog wrappers) ────────────────────────────────────
 
+/// Emit a visible `tool.input` event on the current span.
+fn emit_tool_input(name: &str, params: &Value) {
+    let input = serde_json::to_string(params).unwrap_or_default();
+    let truncated = truncate_str(&input, 2000);
+    tracing::info!(
+        name: "tool.input",
+        is_visible = true,
+        tool_name = %name,
+        input = %truncated,
+    );
+}
+
+/// Emit a visible `tool.output` event on the current span.
+fn emit_tool_output(output: &Value) {
+    let text = serde_json::to_string(output).unwrap_or_default();
+    let truncated = truncate_str(&text, 4000);
+    tracing::info!(
+        name: "tool.output",
+        is_visible = true,
+        output = %truncated,
+    );
+}
+
+/// Emit a visible `tool.error` event on the current span.
+fn emit_tool_error(err: &ToolError) {
+    tracing::info!(
+        name: "tool.output",
+        is_visible = true,
+        status = "error",
+        error = %err,
+    );
+}
+
+fn truncate_str(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        s.to_string()
+    } else {
+        format!("{}… ({} chars total)", &s[..max], s.len())
+    }
+}
+
 /// Execute a **clarifying** tool against `catalog`.
+#[tracing::instrument(
+    skip(catalog),
+    fields(otel.name = "analytics.tool", oxy.span_type = "analytics", tool = %name)
+)]
 pub fn execute_clarifying_tool(
+    name: &str,
+    params: Value,
+    catalog: &dyn Catalog,
+) -> Result<Value, ToolError> {
+    emit_tool_input(name, &params);
+    let result = execute_clarifying_tool_inner(name, params, catalog);
+    match &result {
+        Ok(v) => emit_tool_output(v),
+        Err(e) => emit_tool_error(e),
+    }
+    result
+}
+
+fn execute_clarifying_tool_inner(
     name: &str,
     params: Value,
     catalog: &dyn Catalog,
@@ -356,6 +466,9 @@ pub fn execute_clarifying_tool(
                     if !m.metric_type.is_empty() {
                         obj["aggregation"] = json!(m.metric_type);
                     }
+                    if let Some(expr) = &m.expr {
+                        obj["formula"] = json!(expr);
+                    }
                     obj
                 })
                 .collect();
@@ -376,37 +489,232 @@ pub fn execute_clarifying_tool(
             Ok(result)
         }
 
-        "get_metric_definition" => {
-            let metric = params["metric"]
-                .as_str()
-                .ok_or_else(|| ToolError::BadParams("missing 'metric'".into()))?;
-            match catalog.get_metric_definition(metric) {
-                Some(def) => {
-                    let dim_count = catalog.get_valid_dimensions(metric).len();
-                    Ok(json!({
-                        "formula": def.expr,
-                        "type": def.metric_type,
-                        "table": def.table,
-                        "description": def.description,
-                        "dimension_count": dim_count,
-                        "hint": "Call get_valid_dimensions to see the full dimension list."
-                    }))
-                }
-                None => Err(ToolError::Execution(format!(
-                    "metric '{metric}' not found in catalog"
-                ))),
-            }
-        }
-
         _ => Err(ToolError::UnknownTool(name.into())),
     }
+}
+
+/// Sample a single column: resolve via catalog, query the database for distinct
+/// values and statistics.  Used by `sample_columns` (batch) below.
+async fn sample_single_column(
+    table_param: &str,
+    column_param: &str,
+    search_term: Option<&str>,
+    catalog: &dyn Catalog,
+    connector: &dyn DatabaseConnector,
+) -> Result<Value, ToolError> {
+    // Resolve semantic view/dimension names to physical table/column.
+    let resolved = catalog.resolve_sample_target(table_param, column_param);
+
+    // If the semantic layer has static samples, return them directly.
+    // When a search_term is provided, filter the static samples.
+    if let Some(ref target) = resolved {
+        if !target.static_samples.is_empty() {
+            let values: Vec<Value> = target
+                .static_samples
+                .iter()
+                .filter(|s| {
+                    search_term
+                        .map(|term| s.to_lowercase().contains(&term.to_lowercase()))
+                        .unwrap_or(true)
+                })
+                .map(|s| Value::String(s.clone()))
+                .collect();
+            return Ok(json!({
+                "column": column_param,
+                "table": table_param,
+                "data_type": target.data_type.as_deref().unwrap_or("string"),
+                "sample_values": values,
+                "source": "semantic_layer",
+                "hint": "These are pre-defined sample values from the semantic layer definition."
+            }));
+        }
+    }
+
+    // When the semantic layer resolves the target, `column_expr` is
+    // already a SQL expression (e.g. `"Datetime (Local)"` with its own
+    // quoting).  Use it verbatim instead of wrapping in extra quotes.
+    let (table_sql, col_sql) = match &resolved {
+        Some(target) => {
+            let t = format!("\"{}\"", target.table.replace('"', "\"\""));
+            // column_expr from the semantic layer is a raw SQL
+            // expression — use it as-is.
+            (t, target.column_expr.clone())
+        }
+        None => (
+            format!("\"{}\"", table_param.replace('"', "\"\"")),
+            format!("\"{}\"", column_param.replace('"', "\"\"")),
+        ),
+    };
+
+    let sample_sql = if let Some(term) = search_term {
+        // Escape single quotes in the search term to prevent SQL injection.
+        let escaped = term.replace('\'', "''");
+        format!(
+            "SELECT DISTINCT {col_sql} FROM {table_sql} WHERE {col_sql} IS NOT NULL AND CAST({col_sql} AS TEXT) LIKE '%{escaped}%' LIMIT 20"
+        )
+    } else {
+        format!("SELECT DISTINCT {col_sql} FROM {table_sql} WHERE {col_sql} IS NOT NULL LIMIT 20")
+    };
+    let count_sql = format!("SELECT COUNT(*) FROM {table_sql}");
+
+    let sample_res = connector
+        .execute_query(&sample_sql, 20)
+        .await
+        .map_err(|e| ToolError::Execution(e.to_string()))?;
+
+    let values: Vec<Value> = sample_res
+        .result
+        .rows
+        .iter()
+        .filter_map(|row| row.0.first())
+        .map(cell_to_json)
+        .collect();
+
+    let data_type = sample_res
+        .summary
+        .columns
+        .first()
+        .map(|c| c.name.clone())
+        .unwrap_or_default();
+
+    // Detect column kind from sample values.
+    // A value looks like a date if it starts with four digits followed by '-'.
+    let is_date_col = values.iter().any(|v| {
+        v.as_str()
+            .map(|s| {
+                s.len() >= 5
+                    && s[..4].chars().all(|c| c.is_ascii_digit())
+                    && s.as_bytes()[4] == b'-'
+            })
+            .unwrap_or(false)
+    });
+    // Numeric: all sampled values are JSON numbers (not dates).
+    let is_numeric_col = !is_date_col && !values.is_empty() && values.iter().all(|v| v.is_number());
+
+    // Helper to extract a u64 from a cell.
+    let cell_u64 = |cell: &CellValue| -> Option<u64> {
+        match cell {
+            CellValue::Number(n) => Some(*n as u64),
+            CellValue::Text(s) => s.parse().ok(),
+            CellValue::Null => None,
+        }
+    };
+    // Helper to extract a f64 from a cell.
+    let cell_f64 = |cell: &CellValue| -> Option<f64> {
+        match cell {
+            CellValue::Number(n) => Some(*n),
+            CellValue::Text(s) => s.parse().ok(),
+            CellValue::Null => None,
+        }
+    };
+    // Helper to extract a string from a cell.
+    let cell_str = |cell: &CellValue| -> Option<String> {
+        match cell {
+            CellValue::Text(s) => Some(s.clone()),
+            CellValue::Number(n) => Some(n.to_string()),
+            CellValue::Null => None,
+        }
+    };
+
+    let base = json!({ "column": column_param, "table": table_param });
+
+    if is_numeric_col {
+        // Numeric columns: fetch count, distinct count, min, max, avg, stdev in one query.
+        let stats_sql = format!(
+            "SELECT COUNT(*), COUNT(DISTINCT {col_sql}), MIN({col_sql}), MAX({col_sql}), \
+             AVG({col_sql}), STDDEV_POP({col_sql}) FROM {table_sql}"
+        );
+        if let Ok(stats_res) = connector.execute_query(&stats_sql, 1).await {
+            if let Some(row) = stats_res.result.rows.first() {
+                let row_count = row.0.first().and_then(|c| cell_u64(c)).unwrap_or(0);
+                let distinct_count = row.0.get(1).and_then(|c| cell_u64(c));
+                let min_val = row.0.get(2).and_then(|c| cell_f64(c));
+                let max_val = row.0.get(3).and_then(|c| cell_f64(c));
+                let avg_val = row.0.get(4).and_then(|c| cell_f64(c));
+                let stdev_val = row.0.get(5).and_then(|c| cell_f64(c));
+                let mut r = base;
+                r["data_type"] = json!(data_type);
+                r["sample_values"] = json!(values);
+                r["row_count"] = json!(row_count);
+                r["distinct_count"] = json!(distinct_count);
+                r["min"] = json!(min_val);
+                r["max"] = json!(max_val);
+                r["avg"] = json!(avg_val);
+                r["stdev"] = json!(stdev_val);
+                return Ok(r);
+            }
+        }
+    } else {
+        // Date and text columns: fetch count, distinct count, min, max.
+        let stats_sql = format!(
+            "SELECT COUNT(*), COUNT(DISTINCT {col_sql}), MIN({col_sql}), MAX({col_sql}) \
+             FROM {table_sql}"
+        );
+        if let Ok(stats_res) = connector.execute_query(&stats_sql, 1).await {
+            if let Some(row) = stats_res.result.rows.first() {
+                let row_count = row.0.first().and_then(|c| cell_u64(c)).unwrap_or(0);
+                let distinct_count = row.0.get(1).and_then(|c| cell_u64(c));
+                let min_val = row.0.get(2).and_then(|c| cell_str(c));
+                let max_val = row.0.get(3).and_then(|c| cell_str(c));
+                let mut r = base;
+                r["data_type"] = json!(data_type);
+                r["sample_values"] = json!(values);
+                r["row_count"] = json!(row_count);
+                r["distinct_count"] = json!(distinct_count);
+                r["min"] = json!(min_val);
+                r["max"] = json!(max_val);
+                return Ok(r);
+            }
+        }
+    }
+
+    // Fallback: just return sample values with basic count.
+    let count_res = connector
+        .execute_query(&count_sql, 1)
+        .await
+        .map_err(|e| ToolError::Execution(e.to_string()))?;
+    let row_count: u64 = count_res
+        .result
+        .rows
+        .first()
+        .and_then(|row| row.0.first())
+        .and_then(|cell| match cell {
+            CellValue::Number(n) => Some(*n as u64),
+            CellValue::Text(s) => s.parse().ok(),
+            CellValue::Null => None,
+        })
+        .unwrap_or(0);
+    let mut r = base;
+    r["data_type"] = json!(data_type);
+    r["sample_values"] = json!(values);
+    r["row_count"] = json!(row_count);
+    Ok(r)
 }
 
 /// Execute a **specifying** tool.
 ///
 /// `catalog` is used for `get_join_path` lookups.
-/// `connector` is used by `sample_column` to run a live query.
+/// `connector` is used by `sample_columns` to run live queries.
+#[tracing::instrument(
+    skip(catalog, connector),
+    fields(otel.name = "analytics.tool", oxy.span_type = "analytics", tool = %name)
+)]
 pub async fn execute_specifying_tool(
+    name: &str,
+    params: Value,
+    catalog: &dyn Catalog,
+    connector: &dyn DatabaseConnector,
+) -> Result<Value, ToolError> {
+    emit_tool_input(name, &params);
+    let result = execute_specifying_tool_inner(name, params, catalog, connector).await;
+    match &result {
+        Ok(v) => emit_tool_output(v),
+        Err(e) => emit_tool_error(e),
+    }
+    result
+}
+
+async fn execute_specifying_tool_inner(
     name: &str,
     params: Value,
     catalog: &dyn Catalog,
@@ -437,164 +745,59 @@ pub async fn execute_specifying_tool(
             }
         }
 
-        "sample_column" => {
-            let table_param = params["table"]
-                .as_str()
-                .ok_or_else(|| ToolError::BadParams("missing 'table'".into()))?;
-            let column_param = params["column"]
-                .as_str()
-                .ok_or_else(|| ToolError::BadParams("missing 'column'".into()))?;
-            let search_term = params
-                .get("search_term")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty());
-
-            // Resolve semantic view/dimension names to physical table/column.
-            let resolved = catalog.resolve_sample_target(table_param, column_param);
-
-            // If the semantic layer has static samples, return them directly.
-            // When a search_term is provided, filter the static samples.
-            if let Some(ref target) = resolved
-                && !target.static_samples.is_empty()
-            {
-                let values: Vec<Value> = target
-                    .static_samples
-                    .iter()
-                    .filter(|s| {
-                        search_term
-                            .map(|term| s.to_lowercase().contains(&term.to_lowercase()))
-                            .unwrap_or(true)
-                    })
-                    .map(|s| Value::String(s.clone()))
-                    .collect();
-                return Ok(json!({
-                    "data_type": target.data_type.as_deref().unwrap_or("string"),
-                    "sample_values": values,
-                    "source": "semantic_layer",
-                    "hint": "These are pre-defined sample values from the semantic layer definition."
-                }));
+        "sample_columns" => {
+            let columns = params["columns"]
+                .as_array()
+                .ok_or_else(|| ToolError::BadParams("missing 'columns' array".into()))?;
+            if columns.is_empty() {
+                return Err(ToolError::BadParams(
+                    "'columns' array must not be empty".into(),
+                ));
             }
 
-            // When the semantic layer resolves the target, `column_expr` is
-            // already a SQL expression (e.g. `"Datetime (Local)"` with its own
-            // quoting).  Use it verbatim instead of wrapping in extra quotes.
-            let (table_sql, col_sql) = match &resolved {
-                Some(target) => {
-                    let t = format!("\"{}\"", target.table.replace('"', "\"\""));
-                    // column_expr from the semantic layer is a raw SQL
-                    // expression — use it as-is.
-                    (t, target.column_expr.clone())
-                }
-                None => (
-                    format!("\"{}\"", table_param.replace('"', "\"\"")),
-                    format!("\"{}\"", column_param.replace('"', "\"\"")),
-                ),
-            };
-
-            let sample_sql = if let Some(term) = search_term {
-                // Escape single quotes in the search term to prevent SQL injection.
-                let escaped = term.replace('\'', "''");
-                format!(
-                    "SELECT DISTINCT {col_sql} FROM {table_sql} WHERE {col_sql} IS NOT NULL AND CAST({col_sql} AS TEXT) LIKE '%{escaped}%' LIMIT 20"
-                )
-            } else {
-                format!(
-                    "SELECT DISTINCT {col_sql} FROM {table_sql} WHERE {col_sql} IS NOT NULL LIMIT 20"
-                )
-            };
-            let count_sql = format!("SELECT COUNT(*) FROM {table_sql}");
-
-            let sample_res = connector
-                .execute_query(&sample_sql, 20)
-                .await
-                .map_err(|e| ToolError::Execution(e.to_string()))?;
-
-            let count_res = connector
-                .execute_query(&count_sql, 1)
-                .await
-                .map_err(|e| ToolError::Execution(e.to_string()))?;
-
-            let values: Vec<Value> = sample_res
-                .result
-                .rows
+            // Collect validated column specs before spawning futures.
+            let specs: Vec<(&str, &str, Option<&str>)> = columns
                 .iter()
-                .filter_map(|row| row.0.first())
-                .map(cell_to_json)
+                .map(|entry| {
+                    let table = entry["table"].as_str().ok_or_else(|| {
+                        ToolError::BadParams("each column entry requires 'table'".into())
+                    })?;
+                    let column = entry["column"].as_str().ok_or_else(|| {
+                        ToolError::BadParams("each column entry requires 'column'".into())
+                    })?;
+                    let search_term = entry
+                        .get("search_term")
+                        .and_then(|v| v.as_str())
+                        .filter(|s| !s.is_empty());
+                    Ok((table, column, search_term))
+                })
+                .collect::<Result<Vec<_>, ToolError>>()?;
+
+            // Run all column samples concurrently.
+            let futures: Vec<_> = specs
+                .iter()
+                .map(|(table, column, search_term)| {
+                    sample_single_column(table, column, *search_term, catalog, connector)
+                })
+                .collect();
+            let results = futures::future::join_all(futures).await;
+
+            // Collect results — individual column errors become inline error objects
+            // rather than failing the whole batch.
+            let results_json: Vec<Value> = results
+                .into_iter()
+                .enumerate()
+                .map(|(i, r)| match r {
+                    Ok(v) => v,
+                    Err(e) => json!({
+                        "table": specs[i].0,
+                        "column": specs[i].1,
+                        "error": e.to_string()
+                    }),
+                })
                 .collect();
 
-            let row_count: u64 = count_res
-                .result
-                .rows
-                .first()
-                .and_then(|row| row.0.first())
-                .and_then(|cell| match cell {
-                    CellValue::Number(n) => Some(*n as u64),
-                    CellValue::Text(s) => s.parse().ok(),
-                    CellValue::Null => None,
-                })
-                .unwrap_or(0);
-
-            let data_type = sample_res
-                .summary
-                .columns
-                .first()
-                .map(|c| c.name.clone())
-                .unwrap_or_default();
-
-            // For date columns, also fetch min, max, and distinct count so the
-            // Specifying LLM can choose the right GROUP BY granularity.
-            // A value looks like a date if it starts with four digits followed by '-'.
-            let is_date_col = values.iter().any(|v| {
-                v.as_str()
-                    .map(|s| {
-                        s.len() >= 5
-                            && s[..4].chars().all(|c| c.is_ascii_digit())
-                            && s.as_bytes()[4] == b'-'
-                    })
-                    .unwrap_or(false)
-            });
-            if is_date_col {
-                let range_sql = format!(
-                    "SELECT MIN({col_sql}), MAX({col_sql}), COUNT(DISTINCT {col_sql}) FROM {table_sql}"
-                );
-                if let Ok(range_res) = connector.execute_query(&range_sql, 1).await
-                    && let Some(row) = range_res.result.rows.first()
-                {
-                    let date_min = row.0.first().and_then(|c| {
-                        if let CellValue::Text(s) = c {
-                            Some(s.clone())
-                        } else {
-                            None
-                        }
-                    });
-                    let date_max = row.0.get(1).and_then(|c| {
-                        if let CellValue::Text(s) = c {
-                            Some(s.clone())
-                        } else {
-                            None
-                        }
-                    });
-                    let date_distinct_count = row.0.get(2).and_then(|c| match c {
-                        CellValue::Number(n) => Some(*n as u64),
-                        CellValue::Text(s) => s.parse().ok(),
-                        CellValue::Null => None,
-                    });
-                    return Ok(json!({
-                        "data_type": data_type,
-                        "sample_values": values,
-                        "row_count": row_count,
-                        "date_min": date_min,
-                        "date_max": date_max,
-                        "date_distinct_count": date_distinct_count,
-                    }));
-                }
-            }
-
-            Ok(json!({
-                "data_type": data_type,
-                "sample_values": values,
-                "row_count": row_count
-            }))
+            Ok(json!({ "results": results_json }))
         }
 
         _ => Err(ToolError::UnknownTool(name.into())),
@@ -604,7 +807,25 @@ pub async fn execute_specifying_tool(
 /// Execute a **solving** tool.
 ///
 /// `connector` is used by `execute_preview` to run the SQL with LIMIT 5.
+#[tracing::instrument(
+    skip(connector),
+    fields(otel.name = "analytics.tool", oxy.span_type = "analytics", tool = %name)
+)]
 pub async fn execute_solving_tool(
+    name: &str,
+    params: Value,
+    connector: &dyn DatabaseConnector,
+) -> Result<Value, ToolError> {
+    emit_tool_input(name, &params);
+    let result = execute_solving_tool_inner(name, params, connector).await;
+    match &result {
+        Ok(v) => emit_tool_output(v),
+        Err(e) => emit_tool_error(e),
+    }
+    result
+}
+
+async fn execute_solving_tool_inner(
     name: &str,
     params: Value,
     connector: &dyn DatabaseConnector,
@@ -671,7 +892,8 @@ fn list_tables_tool_def() -> ToolDef {
                     "description": "Specific database/connector name. Use null to list from all databases."
                 }
             },
-            "required": ["database"]
+            "required": ["database"],
+            "additionalProperties": false
         }),
     }
 }
@@ -695,7 +917,8 @@ fn describe_table_tool_def() -> ToolDef {
                     "description": "Connector name if multiple databases are configured. Use null for the default database."
                 }
             },
-            "required": ["table", "database"]
+            "required": ["table", "database"],
+            "additionalProperties": false
         }),
     }
 }
@@ -750,7 +973,29 @@ fn cached_schema(
 ///
 /// These tools provide lazy, on-demand access to raw database schema when the
 /// semantic layer doesn't cover the user's question.
+#[tracing::instrument(
+    skip(connectors, cache),
+    fields(otel.name = "analytics.tool", oxy.span_type = "analytics", tool = %name)
+)]
 pub async fn execute_database_lookup_tool(
+    name: &str,
+    params: Value,
+    connectors: &HashMap<String, Arc<dyn DatabaseConnector>>,
+    default_connector: &str,
+    cache: &SchemaCache,
+) -> Result<Value, ToolError> {
+    emit_tool_input(name, &params);
+    let result =
+        execute_database_lookup_tool_inner(name, params, connectors, default_connector, cache)
+            .await;
+    match &result {
+        Ok(v) => emit_tool_output(v),
+        Err(e) => emit_tool_error(e),
+    }
+    result
+}
+
+async fn execute_database_lookup_tool_inner(
     name: &str,
     params: Value,
     connectors: &HashMap<String, Arc<dyn DatabaseConnector>>,
@@ -941,7 +1186,28 @@ pub fn validate_chart_config(config: &ChartConfig, columns: &[String]) -> Vec<St
 /// executed spec.  Single-result queries have exactly one entry.
 ///
 /// [`ChartRendered`]: crate::events::AnalyticsEvent::ChartRendered
+#[tracing::instrument(
+    skip(event_tx, result_sets, valid_charts),
+    fields(otel.name = "analytics.tool", oxy.span_type = "analytics", tool = %name)
+)]
 pub async fn execute_interpreting_tool(
+    name: &str,
+    params: Value,
+    event_tx: &Option<EventStream<AnalyticsEvent>>,
+    result_sets: &[(Vec<String>, Vec<Vec<serde_json::Value>>)],
+    valid_charts: &Arc<Mutex<Vec<DisplayBlock>>>,
+) -> Result<Value, ToolError> {
+    emit_tool_input(name, &params);
+    let result =
+        execute_interpreting_tool_inner(name, params, event_tx, result_sets, valid_charts).await;
+    match &result {
+        Ok(v) => emit_tool_output(v),
+        Err(e) => emit_tool_error(e),
+    }
+    result
+}
+
+async fn execute_interpreting_tool_inner(
     name: &str,
     params: Value,
     event_tx: &Option<EventStream<AnalyticsEvent>>,
@@ -965,17 +1231,16 @@ pub async fn execute_interpreting_tool(
                 ))
             })?;
 
-            let cfg = &params["config"];
             let config = ChartConfig {
                 chart_type,
-                x: cfg["x"].as_str().map(str::to_string),
-                y: cfg["y"].as_str().map(str::to_string),
-                series: cfg["series"].as_str().map(str::to_string),
-                name: cfg["name"].as_str().map(str::to_string),
-                value: cfg["value"].as_str().map(str::to_string),
+                x: params["x"].as_str().map(str::to_string),
+                y: params["y"].as_str().map(str::to_string),
+                series: params["series"].as_str().map(str::to_string),
+                name: params["name"].as_str().map(str::to_string),
+                value: params["value"].as_str().map(str::to_string),
                 title: params["title"].as_str().map(str::to_string),
-                x_axis_label: cfg["x_axis_label"].as_str().map(str::to_string),
-                y_axis_label: cfg["y_axis_label"].as_str().map(str::to_string),
+                x_axis_label: params["x_axis_label"].as_str().map(str::to_string),
+                y_axis_label: params["y_axis_label"].as_str().map(str::to_string),
             };
 
             // Validate column names first, then column types.
@@ -1079,17 +1344,12 @@ mod tests {
             !names.contains(&"search_catalog"),
             "search_catalog must not appear in solving"
         );
-        assert!(
-            !names.contains(&"get_metric_definition"),
-            "get_metric_definition must not appear in solving"
-        );
     }
 
     #[test]
-    fn specifying_does_not_include_clarifying_tools() {
+    fn specifying_does_not_include_solving_tools() {
         let tools = specifying_tools(false);
         let names: Vec<&str> = tools.iter().map(|t| t.name).collect();
-        assert!(!names.contains(&"search_catalog"));
         assert!(!names.contains(&"execute_preview"));
         assert!(!names.contains(&"update_chart_config"));
     }
@@ -1098,7 +1358,9 @@ mod tests {
     fn specifying_contains_expected_tools() {
         let names: Vec<&str> = specifying_tools(false).iter().map(|t| t.name).collect();
         assert!(names.contains(&"get_join_path"));
-        assert!(names.contains(&"sample_column"));
+        assert!(names.contains(&"sample_columns"));
+        // Catalog discovery tools moved from clarifying to specifying.
+        assert!(names.contains(&"search_catalog"));
     }
 
     #[test]
@@ -1144,35 +1406,6 @@ mod tests {
         let metrics = result["metrics"].as_array().unwrap();
         // orders has `revenue`; that's at least 1 metric
         assert!(!metrics.is_empty());
-    }
-
-    #[test]
-    fn get_metric_definition_returns_dimension_count() {
-        let cat = make_catalog();
-        // "orders.revenue" is the qualified metric name SchemaCatalog returns.
-        let result = execute_clarifying_tool(
-            "get_metric_definition",
-            serde_json::json!({ "metric": "orders.revenue" }),
-            &cat,
-        )
-        .unwrap();
-        let dim_count = result["dimension_count"].as_u64().unwrap();
-        // Non-metric columns in orders + customers
-        assert!(dim_count > 0);
-        // Must not contain the full list inline
-        assert!(result.get("valid_dimensions").is_none());
-    }
-
-    #[test]
-    fn get_metric_definition_unknown_metric_returns_error() {
-        let cat = make_catalog();
-        let err = execute_clarifying_tool(
-            "get_metric_definition",
-            serde_json::json!({ "metric": "nonexistent" }),
-            &cat,
-        )
-        .unwrap_err();
-        assert!(matches!(err, ToolError::Execution(_)));
     }
 
     // ── Specifying tool execution ─────────────────────────────────────────────
@@ -1239,13 +1472,13 @@ mod tests {
             "render_chart",
             serde_json::json!({
                 "chart_type": "bar_chart",
-                "config": {
-                    "x": "region",
-                    "y": "revenue",
-                    "series": null,
-                    "x_axis_label": "Region",
-                    "y_axis_label": "Revenue"
-                },
+                "x": "region",
+                "y": "revenue",
+                "series": null,
+                "name": null,
+                "value": null,
+                "x_axis_label": "Region",
+                "y_axis_label": "Revenue",
                 "result_index": null,
                 "title": "Revenue by Region"
             }),
@@ -1428,7 +1661,7 @@ mod tests {
         assert!(!spec_names.contains(&"describe_table"));
         // Core tools remain present.
         assert!(clar_names.contains(&"search_catalog"));
-        assert!(spec_names.contains(&"sample_column"));
+        assert!(spec_names.contains(&"sample_columns"));
     }
 
     /// Stub connector that returns a fixed schema for introspection.

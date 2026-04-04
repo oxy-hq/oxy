@@ -10,7 +10,7 @@ use std::sync::Arc;
 use agentic_core::{
     HumanInputQuestion,
     back_target::{BackTarget, RetryContext},
-    events::EventStream,
+    events::{CoreEvent, EventStream},
     human_input::SuspendedRunData,
     orchestrator::{RunContext, SessionMemory, StateHandler, TransitionResult},
     solver::DomainSolver,
@@ -21,15 +21,19 @@ use crate::catalog::{Catalog, JoinPath};
 use crate::engine::{EngineError, TranslationContext};
 use crate::events::AnalyticsEvent;
 use crate::llm::{LlmOutput, ThinkingConfig, ToolLoopConfig};
-use crate::schemas::specify_response_schema;
+use crate::schemas::{specify_response_schema, specify_response_schema_legacy};
 use crate::semantic::SemanticCatalog;
-use crate::tools::{execute_database_lookup_tool, execute_specifying_tool};
-use crate::types::SpecHint;
-use crate::types::{QueryRequestEnvelope, ResultShape, SolutionPayload, SolutionSource};
+use crate::tools::{
+    execute_clarifying_tool, execute_database_lookup_tool, execute_specifying_tool,
+};
+use crate::types::{
+    QueryRequestEnvelope, QueryRequestItem, ResultShape, SolutionPayload, SolutionSource,
+};
 use crate::{AnalyticsDomain, AnalyticsError, AnalyticsIntent, QuerySpec};
 
 use super::{
-    AnalyticsSolver, emit_domain, fmt_result_shape, infer_result_shape, is_retryable_compile_error,
+    AnalyticsSolver, emit_core, emit_domain, fmt_result_shape, infer_result_shape,
+    is_retryable_compile_error,
     prompts::{
         SPECIFY_BASE_PROMPT, SPECIFY_QUERY_REQUEST_PROMPT, format_retry_section,
         format_spec_hint_section, specify_query_request_type_addendum, specify_type_addendum,
@@ -62,6 +66,51 @@ struct SpecifyResponseEnvelope {
 // Prompt builder
 // ---------------------------------------------------------------------------
 
+/// Format the triage-produced semantic query as a hint for the Specifying LLM.
+///
+/// When triage found relevant measures/dimensions (even at low confidence),
+/// this injects them into the user prompt so Specifying doesn't have to
+/// re-discover them from scratch via `search_catalog`.
+fn format_semantic_query_hint(intent: &AnalyticsIntent) -> String {
+    let sq = &intent.semantic_query;
+    if sq.measures.is_empty() && sq.dimensions.is_empty() && sq.time_dimensions.is_empty() {
+        return String::new();
+    }
+    let mut parts = vec![format!(
+        "Triage semantic hint (confidence {:.2}):",
+        intent.semantic_confidence
+    )];
+    if !sq.measures.is_empty() {
+        parts.push(format!("  measures: {}", sq.measures.join(", ")));
+    }
+    if !sq.dimensions.is_empty() {
+        parts.push(format!("  dimensions: {}", sq.dimensions.join(", ")));
+    }
+    if !sq.time_dimensions.is_empty() {
+        let tds: Vec<String> = sq
+            .time_dimensions
+            .iter()
+            .map(|td| {
+                format!(
+                    "{} ({})",
+                    td.dimension,
+                    td.granularity.as_deref().unwrap_or("auto")
+                )
+            })
+            .collect();
+        parts.push(format!("  time_dimensions: {}", tds.join(", ")));
+    }
+    if !sq.filters.is_empty() {
+        let fs: Vec<String> = sq
+            .filters
+            .iter()
+            .map(|f| format!("{} {} {:?}", f.member, f.operator, f.values))
+            .collect();
+        parts.push(format!("  filters: {}", fs.join("; ")));
+    }
+    format!("\n{}\n", parts.join("\n"))
+}
+
 pub(super) fn build_specify_user_prompt(
     intent: &AnalyticsIntent,
     catalog: &SemanticCatalog,
@@ -69,18 +118,25 @@ pub(super) fn build_specify_user_prompt(
 ) -> String {
     let retry_section = format_retry_section(retry_ctx);
     let hint_section = format_spec_hint_section(intent.spec_hint.as_ref());
+    let semantic_hint = format_semantic_query_hint(intent);
     format!(
         "Analytics Intent:\n\
          - Question: {raw_question}\n\
+         - Summary: {summary}\n\
          - Question type: {question_type:?}\n\
          - Metrics: {metrics}\n\
          - Dimensions: {dimensions}\n\
-         - Filters: {filters}\n\n\
-         Schema:\n{schema}\n\n\
+         - Filters: {filters}\n\
+         {semantic_hint}\n\
          Resolve the metrics and dimensions to concrete schema columns and return the JSON spec.\
          {hint_section}\
          {retry_section}",
         raw_question = intent.raw_question,
+        summary = if intent.summary.is_empty() {
+            "(none)".to_string()
+        } else {
+            intent.summary.clone()
+        },
         question_type = intent.question_type,
         metrics = if intent.metrics.is_empty() {
             "(none)".to_string()
@@ -97,7 +153,6 @@ pub(super) fn build_specify_user_prompt(
         } else {
             intent.filters.join("; ")
         },
-        schema = catalog.to_prompt_string(),
     )
 }
 
@@ -109,18 +164,26 @@ fn build_specify_query_request_user_prompt(
 ) -> String {
     let retry_section = format_retry_section(retry_ctx);
     let hint_section = format_spec_hint_section(intent.spec_hint.as_ref());
+    let semantic_hint = format_semantic_query_hint(intent);
     format!(
         "Analytics Intent:\n\
          - Question: {raw_question}\n\
+         - Summary: {summary}\n\
          - Question type: {question_type:?}\n\
          - Metrics: {metrics}\n\
          - Dimensions: {dimensions}\n\
-         - Filters: {filters}\n\n\
+         - Filters: {filters}\n\
+         {semantic_hint}\n\
          Semantic Catalog:\n{schema}\n\n\
          Map the intent to a structured query request using view.member references.\
          {hint_section}\
          {retry_section}",
         raw_question = intent.raw_question,
+        summary = if intent.summary.is_empty() {
+            "(none)".to_string()
+        } else {
+            intent.summary.clone()
+        },
         question_type = intent.question_type,
         metrics = if intent.metrics.is_empty() {
             "(none)".to_string()
@@ -148,6 +211,15 @@ fn build_specify_query_request_user_prompt(
 impl AnalyticsSolver {
     /// Core specify logic; uses the LLM with specifying tools to resolve an
     /// [`AnalyticsIntent`] into one or more [`QuerySpec`]s.
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            otel.name = "analytics.specify",
+            oxy.span_type = "analytics",
+            solution_source = tracing::field::Empty,
+            spec_count = tracing::field::Empty,
+        )
+    )]
     pub(crate) async fn specify_impl(
         &mut self,
         intent: AnalyticsIntent,
@@ -170,6 +242,7 @@ impl AnalyticsSolver {
                 precomputed: None,
                 context: None,
                 connector_name: self.default_connector.clone(),
+                query_request_item: None,
                 query_request: None,
                 compile_error: None,
             }]);
@@ -203,14 +276,27 @@ impl AnalyticsSolver {
                     )
                 }
                 _ => {
-                    // ask_user suspension — append the user's answer as a tool result.
-                    let msgs = self.client.build_resume_messages(
-                        &prior,
-                        &resume.data.question,
-                        &resume.data.suggestions,
-                        &resume.answer,
-                    );
-                    crate::llm::InitialMessages::Messages(msgs)
+                    // ask_user or legacy pre-ground suspension.
+                    if !prior.is_empty() {
+                        // In-ground ask_user: continue the in-progress tool loop.
+                        let msgs = self.client.build_resume_messages(
+                            &prior,
+                            &resume.data.question,
+                            &resume.data.suggestions,
+                            &resume.answer,
+                        );
+                        crate::llm::InitialMessages::Messages(msgs)
+                    } else {
+                        // Pre-ground ambiguity: no conversation history yet.
+                        // Calling build_resume_messages with an empty prior would
+                        // produce a tool_result with no matching tool_use block,
+                        // which the Anthropic API rejects. Start fresh instead.
+                        crate::llm::InitialMessages::User(format!(
+                            "{user_prompt}\n\nUser answered the clarifying question \"{q}\": {a}",
+                            q = resume.data.question,
+                            a = resume.answer,
+                        ))
+                    }
                 }
             }
         } else {
@@ -240,7 +326,7 @@ impl AnalyticsSolver {
         let schema_cache = Arc::clone(&self.schema_cache);
         let intent_for_stage = intent.clone();
         let output = self
-            .client
+            .client_for_state("specifying")
             .run_with_tools(
                 &system_prompt,
                 initial,
@@ -256,6 +342,8 @@ impl AnalyticsSolver {
                         // ask_user intercepted before generic dispatcher — see resuming.rs.
                         if name == "ask_user" {
                             handle_ask_user(&params, human_input.as_ref())
+                        } else if name == "search_catalog" {
+                            execute_clarifying_tool(&name, params, &*catalog)
                         } else if name == "list_tables" || name == "describe_table" {
                             execute_database_lookup_tool(
                                 &name,
@@ -275,7 +363,7 @@ impl AnalyticsSolver {
                     max_tool_rounds: max_rounds,
                     state: "specifying".into(),
                     thinking,
-                    response_schema: Some(specify_response_schema()),
+                    response_schema: Some(specify_response_schema_legacy()),
                     max_tokens_override: resume_max_tokens_override.or(self.max_tokens),
                     sub_spec_index: None,
                 },
@@ -285,7 +373,7 @@ impl AnalyticsSolver {
 
         let envelope = parse_llm_response(output, &intent)?;
 
-        envelope
+        let specs: Result<Vec<QuerySpec>, _> = envelope
             .specs
             .into_iter()
             .map(|resp| {
@@ -308,15 +396,31 @@ impl AnalyticsSolver {
                     precomputed: None,
                     context: None,
                     connector_name,
+                    query_request_item: None,
                     query_request: None,
                     compile_error: None,
                 })
             })
-            .collect()
+            .collect();
+        if let Ok(ref s) = specs {
+            let span = tracing::Span::current();
+            span.record("spec_count", s.len());
+            if let Some(first) = s.first() {
+                span.record("solution_source", format!("{:?}", first.solution_source));
+            }
+        }
+        specs
     }
 
     /// Airlayer-native specify: runs the LLM with the query-request prompt and
     /// schema, producing a [`QueryRequestEnvelope`] instead of SQL fragments.
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            otel.name = "analytics.specify_query_request",
+            oxy.span_type = "analytics",
+        )
+    )]
     pub(crate) async fn specify_impl_query_request(
         &mut self,
         intent: AnalyticsIntent,
@@ -364,13 +468,27 @@ impl AnalyticsSolver {
                     )
                 }
                 _ => {
-                    let msgs = self.client.build_resume_messages(
-                        &prior,
-                        &resume.data.question,
-                        &resume.data.suggestions,
-                        &resume.answer,
-                    );
-                    crate::llm::InitialMessages::Messages(msgs)
+                    // ask_user or legacy pre-ground suspension.
+                    if !prior.is_empty() {
+                        // In-ground ask_user: continue the in-progress tool loop.
+                        let msgs = self.client.build_resume_messages(
+                            &prior,
+                            &resume.data.question,
+                            &resume.data.suggestions,
+                            &resume.answer,
+                        );
+                        crate::llm::InitialMessages::Messages(msgs)
+                    } else {
+                        // Pre-ground ambiguity: no conversation history yet.
+                        // Calling build_resume_messages with an empty prior would
+                        // produce a tool_result with no matching tool_use block,
+                        // which the Anthropic API rejects. Start fresh instead.
+                        crate::llm::InitialMessages::User(format!(
+                            "{user_prompt}\n\nUser answered the clarifying question \"{q}\": {a}",
+                            q = resume.data.question,
+                            a = resume.answer,
+                        ))
+                    }
                 }
             }
         } else {
@@ -400,7 +518,7 @@ impl AnalyticsSolver {
         let schema_cache = Arc::clone(&self.schema_cache);
         let intent_for_stage = intent.clone();
         let output = self
-            .client
+            .client_for_state("specifying")
             .run_with_tools(
                 &system_prompt,
                 initial,
@@ -415,6 +533,8 @@ impl AnalyticsSolver {
                     Box::pin(async move {
                         if name == "ask_user" {
                             handle_ask_user(&params, human_input.as_ref())
+                        } else if name == "search_catalog" {
+                            execute_clarifying_tool(&name, params, &*catalog)
                         } else if name == "list_tables" || name == "describe_table" {
                             execute_database_lookup_tool(
                                 &name,
@@ -632,6 +752,7 @@ impl AnalyticsSolver {
             precomputed: Some(SolutionPayload::Vendor(vq)),
             context: None,
             connector_name,
+            query_request_item: None,
             query_request: None,
             compile_error: None,
         };
@@ -641,7 +762,17 @@ impl AnalyticsSolver {
             &format!("VendorEngine({vendor_name})"),
         )
         .await;
-        Some(TransitionResult::ok(ProblemState::Solving(spec)))
+        // VendorEngine produces a precomputed payload — go straight to Executing.
+        Some(TransitionResult::ok(ProblemState::Executing(
+            crate::AnalyticsSolution {
+                payload: spec
+                    .precomputed
+                    .clone()
+                    .unwrap_or(SolutionPayload::Sql(String::new())),
+                solution_source: spec.solution_source.clone(),
+                connector_name: spec.connector_name.clone(),
+            },
+        )))
     }
 
     /// Primary semantic-layer path: LLM → QueryRequest → airlayer compile.
@@ -673,11 +804,44 @@ impl AnalyticsSolver {
             let query_request = item.to_query_request();
 
             // Try compiling via airlayer.
+            let compile_input = serde_json::to_string(&serde_json::json!({
+                "measures": item.measures,
+                "dimensions": item.dimensions,
+                "filters": item.filters,
+                "time_dimensions": item.time_dimensions,
+            }))
+            .unwrap_or_default();
+            emit_core(
+                &self.event_tx,
+                CoreEvent::ToolCall {
+                    name: "compile_semantic_query".to_string(),
+                    input: compile_input,
+                    llm_duration_ms: 0,
+                    sub_spec_index: None,
+                },
+            )
+            .await;
+            let compile_start = std::time::Instant::now();
             match self.catalog.engine().compile_query(&query_request) {
                 Ok(result) => {
                     let sql =
                         crate::airlayer_compat::substitute_params(&result.sql, &result.params);
-                    eprintln!(
+                    let compile_duration_ms = compile_start.elapsed().as_millis() as u64;
+                    emit_core(
+                        &self.event_tx,
+                        CoreEvent::ToolResult {
+                            name: "compile_semantic_query".to_string(),
+                            output: serde_json::to_string(&serde_json::json!({
+                                "success": true,
+                                "sql": sql,
+                            }))
+                            .unwrap_or_default(),
+                            duration_ms: compile_duration_ms,
+                            sub_spec_index: None,
+                        },
+                    )
+                    .await;
+                    tracing::info!(
                         "[specifying_primary] compile SUCCESS: {}",
                         &sql[..sql.len().min(200)]
                     );
@@ -708,25 +872,77 @@ impl AnalyticsSolver {
                         precomputed: Some(SolutionPayload::Sql(sql)),
                         context: None,
                         connector_name,
+                        query_request_item: Some(item.clone()),
                         query_request: Some(query_request),
                         compile_error: None,
                     });
                 }
                 Err(e) => {
+                    let compile_duration_ms = compile_start.elapsed().as_millis() as u64;
                     let retryable = is_retryable_compile_error(&e);
-                    eprintln!("[specifying_primary] compile FAILED: {e} (retryable={retryable})");
+                    tracing::info!(
+                        "[specifying_primary] compile FAILED: {e} (retryable={retryable})"
+                    );
+
+                    // "No valid join tree found" — the requested combination of
+                    // dimensions/measures cannot be joined in the semantic graph.
+                    // Route back to Specifying so the LLM can reformulate the query.
+                    if e.to_string().contains("No valid join tree") {
+                        emit_core(
+                            &self.event_tx,
+                            CoreEvent::ToolResult {
+                                name: "compile_semantic_query".to_string(),
+                                output: serde_json::to_string(&serde_json::json!({
+                                    "success": false,
+                                    "error": e.to_string(),
+                                }))
+                                .unwrap_or_default(),
+                                duration_ms: compile_duration_ms,
+                                sub_spec_index: None,
+                            },
+                        )
+                        .await;
+                        let hint = retry_ctx.cloned().unwrap_or_default().advance(format!(
+                            "airlayer compilation failed: {e}. \
+                             The join graph cannot connect the requested dimensions \
+                             and measures. Reformulate the query using members that \
+                             can be joined together (e.g. pick a single base view \
+                             or use only dimensions/measures from the same view)."
+                        ));
+                        return TransitionResult::diagnosing(ProblemState::Diagnosing {
+                            error: AnalyticsError::SyntaxError {
+                                query: String::new(),
+                                message: format!("Query compilation error: {e}"),
+                            },
+                            back: BackTarget::Specify(intent, hint),
+                        });
+                    }
 
                     if retryable {
                         // QueryError with "not found" — the LLM picked a wrong
                         // member name.  Route back to Specify with the error so
                         // the LLM can correct it.
+                        emit_core(
+                            &self.event_tx,
+                            CoreEvent::ToolResult {
+                                name: "compile_semantic_query".to_string(),
+                                output: serde_json::to_string(&serde_json::json!({
+                                    "success": false,
+                                    "error": e.to_string(),
+                                }))
+                                .unwrap_or_default(),
+                                duration_ms: compile_duration_ms,
+                                sub_spec_index: None,
+                            },
+                        )
+                        .await;
                         let hint = retry_ctx.cloned().unwrap_or_default().advance(format!(
                             "airlayer compilation failed: {e}. \
                                  Fix the member names in the query request and try again."
                         ));
                         return TransitionResult::diagnosing(ProblemState::Diagnosing {
-                            error: AnalyticsError::NeedsUserInput {
-                                prompt: format!("Query compilation error: {e}"),
+                            error: AnalyticsError::AirlayerCompileError {
+                                error_message: format!("Query compilation error: {e}"),
                             },
                             back: BackTarget::Specify(intent, hint),
                         });
@@ -736,6 +952,20 @@ impl AnalyticsSolver {
                     // cross-dialect) — forward to Solving with the QueryRequest
                     // and compile error.  Solving will call
                     // translate_to_raw_context and fall back to LLM SQL generation.
+                    emit_core(
+                        &self.event_tx,
+                        CoreEvent::ToolResult {
+                            name: "compile_semantic_query".to_string(),
+                            output: serde_json::to_string(&serde_json::json!({
+                                "success": false,
+                                "error": e.to_string(),
+                            }))
+                            .unwrap_or_default(),
+                            duration_ms: compile_duration_ms,
+                            sub_spec_index: None,
+                        },
+                    )
+                    .await;
                     let connector_name =
                         resolve_connector(&[], &self.catalog, &self.default_connector);
 
@@ -754,6 +984,7 @@ impl AnalyticsSolver {
                         precomputed: None,
                         context: None,
                         connector_name,
+                        query_request_item: Some(item.clone()),
                         query_request: Some(query_request),
                         compile_error: Some(e.to_string()),
                     });
@@ -773,7 +1004,9 @@ impl AnalyticsSolver {
             let spec = specs.into_iter().next().unwrap();
             let source_label = spec_source_label(&spec.solution_source);
             emit_spec_resolved(&self.event_tx, &spec, &source_label).await;
-            TransitionResult::ok(ProblemState::Solving(spec))
+            // Semantic compile success: precomputed SQL → Executing.
+            // Compile failure: call solve_impl inline (Mode 2 raw SQL) → Executing.
+            self.spec_to_executing(spec, retry_ctx).await
         } else {
             for spec in &specs {
                 emit_spec_resolved(
@@ -825,7 +1058,7 @@ impl AnalyticsSolver {
             let spec = specs.into_iter().next().unwrap();
             let source_label = spec_source_label(&spec.solution_source);
             emit_spec_resolved(&self.event_tx, &spec, &source_label).await;
-            TransitionResult::ok(ProblemState::Solving(spec))
+            self.spec_to_executing(spec, retry_ctx).await
         } else {
             for spec in &specs {
                 emit_spec_resolved(
@@ -836,6 +1069,89 @@ impl AnalyticsSolver {
                 .await;
             }
             TransitionResult::pending_fan_out(specs, ProblemState::Specifying(intent))
+        }
+    }
+
+    /// Convert a resolved [`QuerySpec`] into an [`Executing`] transition.
+    ///
+    /// - If the spec has precomputed SQL (semantic compile / vendor engine) →
+    ///   transition directly to Executing.
+    /// - If the spec needs LLM SQL generation (compile failed) → translate
+    ///   the semantic context to raw schema, call `solve_impl` inline (Mode 2),
+    ///   then transition to Executing.
+    async fn spec_to_executing(
+        &mut self,
+        mut spec: QuerySpec,
+        retry_ctx: Option<&RetryContext>,
+    ) -> TransitionResult<AnalyticsDomain> {
+        // Fast path: precomputed SQL available (semantic compile / vendor engine).
+        if let Some(payload) = spec.precomputed.clone() {
+            return TransitionResult::ok(ProblemState::Executing(crate::AnalyticsSolution {
+                payload,
+                solution_source: spec.solution_source.clone(),
+                connector_name: spec.connector_name.clone(),
+            }));
+        }
+
+        // Procedure path: delegate to Executing (procedure runner handles it).
+        if matches!(spec.solution_source, SolutionSource::Procedure { .. }) {
+            return TransitionResult::ok(ProblemState::Executing(crate::AnalyticsSolution {
+                payload: SolutionPayload::Sql(String::new()),
+                solution_source: spec.solution_source.clone(),
+                connector_name: spec.connector_name.clone(),
+            }));
+        }
+
+        // Mode 2: LLM SQL generation.
+        // If we have a QueryRequest from a failed semantic compile, translate it
+        // to raw schema context so the LLM sees table.column references, not
+        // view.member paths.
+        if let Some(ref qr) = spec.query_request {
+            // Try re-compile once more (may succeed now).
+            match self.catalog.engine().compile_query(qr) {
+                Ok(result) => {
+                    let sql =
+                        crate::airlayer_compat::substitute_params(&result.sql, &result.params);
+                    tracing::info!(
+                        "[spec_to_executing] re-compile SUCCESS: {}",
+                        &sql[..sql.len().min(200)]
+                    );
+                    emit_domain(
+                        &self.event_tx,
+                        AnalyticsEvent::QueryGenerated {
+                            sql: sql.clone(),
+                            sub_spec_index: None,
+                        },
+                    )
+                    .await;
+                    return TransitionResult::ok(ProblemState::Executing(
+                        crate::AnalyticsSolution {
+                            payload: SolutionPayload::Sql(sql),
+                            solution_source: SolutionSource::SemanticLayer,
+                            connector_name: spec.connector_name.clone(),
+                        },
+                    ));
+                }
+                Err(e) => {
+                    tracing::info!(
+                        "[spec_to_executing] re-compile FAILED: {e}, falling back to LLM"
+                    );
+                    let translation = self.catalog.translate_to_raw_context(qr, &e.to_string());
+                    spec.context = Some(translation.context);
+                    spec.resolved_metrics = translation.resolved_metrics;
+                    spec.resolved_tables = translation.resolved_tables;
+                    spec.resolved_filters = translation.resolved_filters;
+                    spec.join_path = translation.join_path;
+                }
+            }
+        }
+
+        // LLM SQL generation (Mode 2 raw SQL path).
+        match self.solve_impl(spec, retry_ctx).await {
+            Ok(solution) => TransitionResult::ok(ProblemState::Executing(solution)),
+            Err((err, back)) => {
+                TransitionResult::diagnosing(ProblemState::Diagnosing { error: err, back })
+            }
         }
     }
 }
@@ -976,11 +1292,7 @@ async fn diagnose_validation_error(
         .unwrap_or_default()
         .advance(err.to_string());
     let mut retry_intent = intent.clone();
-    retry_intent.spec_hint = Some(SpecHint {
-        resolved_metrics: spec.resolved_metrics.clone(),
-        resolved_tables: spec.resolved_tables.clone(),
-        join_path: spec.join_path.clone(),
-    });
+    retry_intent.spec_hint = spec.query_request_item.clone();
     TransitionResult::diagnosing(ProblemState::Diagnosing {
         error: err,
         back: BackTarget::Specify(retry_intent, hint),
@@ -1094,7 +1406,7 @@ fn parse_query_request_response(
 pub(super) fn build_specifying_handler()
 -> StateHandler<AnalyticsDomain, AnalyticsSolver, AnalyticsEvent> {
     StateHandler {
-        next: "solving",
+        next: "executing",
         execute: Arc::new(
             |solver: &mut AnalyticsSolver,
              state,
@@ -1112,23 +1424,15 @@ pub(super) fn build_specifying_handler()
                     if intent.selected_procedure.is_some() {
                         let file_path = intent.selected_procedure.clone().unwrap();
                         let default_conn = solver.default_connector.clone();
-                        return TransitionResult::ok(ProblemState::Solving(QuerySpec {
-                            intent,
-                            resolved_metrics: vec![],
-                            resolved_filters: vec![],
-                            resolved_tables: vec![],
-                            join_path: vec![],
-                            expected_result_shape: crate::ResultShape::Table { columns: vec![] },
-                            assumptions: vec![],
-                            solution_source: crate::SolutionSource::Procedure {
-                                file_path: file_path.clone(),
+                        return TransitionResult::ok(ProblemState::Executing(
+                            crate::AnalyticsSolution {
+                                payload: SolutionPayload::Sql(String::new()),
+                                solution_source: crate::SolutionSource::Procedure {
+                                    file_path: file_path.clone(),
+                                },
+                                connector_name: default_conn,
                             },
-                            precomputed: None,
-                            context: None,
-                            connector_name: default_conn,
-                            query_request: None,
-                            compile_error: None,
-                        }));
+                        ));
                     }
 
                     // ── 1. VendorEngine (first-pass only) ──────────────────────

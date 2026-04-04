@@ -1,6 +1,11 @@
 import { fetchEventSource } from "@microsoft/fetch-event-source";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChartConfig, HumanInputQuestion, UiBlock } from "@/services/api/analytics";
+import type {
+  ChartConfig,
+  HumanInputQuestion,
+  ThinkingMode,
+  UiBlock
+} from "@/services/api/analytics";
 import { AnalyticsService } from "@/services/api/analytics";
 
 /** A self-contained display block received from the analytics pipeline. */
@@ -158,6 +163,26 @@ export function extractDisplayBlocks(events: SseEvent[]): AnalyticsDisplayBlock[
     .map((ev) => ev.data as AnalyticsDisplayBlock);
 }
 
+/**
+ * Find the single chart_rendered block that corresponds to a specific render_chart
+ * tool_call identified by its SSE sequence number. Returns null if not found.
+ */
+export function extractDisplayBlockForSeq(
+  events: SseEvent[],
+  toolCallSeq: number
+): AnalyticsDisplayBlock | null {
+  const toolCallIdx = events.findIndex(
+    (ev) => ev.type === "tool_call" && ev.id === String(toolCallSeq)
+  );
+  if (toolCallIdx === -1) return null;
+  for (let i = toolCallIdx + 1; i < events.length; i++) {
+    if (events[i].type === "chart_rendered") {
+      return events[i].data as AnalyticsDisplayBlock;
+    }
+  }
+  return null;
+}
+
 // ── Run state machine ─────────────────────────────────────────────────────────
 
 export type AnalyticsRunState =
@@ -205,7 +230,7 @@ export interface UseAnalyticsRunOptions {
 export interface UseAnalyticsRunResult {
   state: AnalyticsRunState;
   /** Start a brand-new run (creates the DB record + opens SSE). */
-  start: (agentId: string, question: string, threadId?: string) => void;
+  start: (agentId: string, question: string, threadId?: string, thinkingMode?: ThinkingMode) => void;
   /** Resume from SSE using a run that already exists (page reload). */
   reconnect: (runId: string, existingState?: AnalyticsRunState["tag"]) => void;
   /** Restore a terminal run's state directly from pre-loaded events (no SSE). */
@@ -355,13 +380,14 @@ export function useAnalyticsRun({ projectId }: UseAnalyticsRunOptions): UseAnaly
   );
 
   const start = useCallback(
-    (agentId: string, question: string, threadId?: string) => {
+    (agentId: string, question: string, threadId?: string, thinkingMode?: ThinkingMode) => {
       setIsStarting(true);
       setState({ tag: "running", runId: "", events: [] });
       AnalyticsService.createRun(projectId, {
         agent_id: agentId,
         question,
-        thread_id: threadId
+        thread_id: threadId,
+        thinking_mode: thinkingMode
       })
         .then(({ run_id }) => {
           openStream(run_id);
@@ -415,14 +441,13 @@ export function useAnalyticsRun({ projectId }: UseAnalyticsRunOptions): UseAnaly
   }, []);
 
   const stop = useCallback(() => {
-    const runId = state.tag === "running" || state.tag === "suspended" ? state.runId : null;
+    if (state.tag !== "running" && state.tag !== "suspended") return;
+    const { runId, events } = state;
     abortRef.current?.abort();
-    setState({ tag: "idle" });
-    if (runId) {
-      AnalyticsService.cancelRun(projectId, runId).catch(() => {
-        // Best-effort — SSE is already closed; server will clean up on reconnect
-      });
-    }
+    setState({ tag: "failed", runId, message: "Cancelled", durationMs: 0, events });
+    AnalyticsService.cancelRun(projectId, runId).catch(() => {
+      // Best-effort — SSE is already closed; server will clean up on reconnect
+    });
   }, [state, projectId]);
 
   const hydrate = useCallback(

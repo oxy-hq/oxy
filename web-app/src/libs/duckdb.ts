@@ -55,8 +55,9 @@ const init = async () => {
         return;
       }
       const logger = new duckdb.ConsoleLogger();
-      duckDB = new duckdb.AsyncDuckDB(logger, worker);
-      await duckDB.instantiate(bundle.mainModule, bundle.pthreadWorker);
+      const localDb = new duckdb.AsyncDuckDB(logger, worker);
+      await localDb.instantiate(bundle.mainModule, bundle.pthreadWorker);
+      duckDB = localDb;
     })();
   }
   return initPromise;

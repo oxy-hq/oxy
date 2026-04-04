@@ -92,6 +92,7 @@ impl HybridCatalog {
                 let sem_desc = sem
                     .get_context(&AnalyticsIntent {
                         raw_question: String::new(),
+                        summary: String::new(),
                         question_type: crate::types::QuestionType::SingleValue,
                         metrics: vec![],
                         dimensions: vec![],
@@ -99,6 +100,8 @@ impl HybridCatalog {
                         history: vec![],
                         spec_hint: None,
                         selected_procedure: None,
+                        semantic_query: Default::default(),
+                        semantic_confidence: 0.0,
                     })
                     .schema_description;
 

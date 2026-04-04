@@ -27,6 +27,7 @@ export type SqlArtifact = {
       result?: string[][];
       result_file?: string;
       is_result_truncated: boolean;
+      error?: string;
     };
   };
 };

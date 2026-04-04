@@ -113,6 +113,8 @@ pub enum CoreEvent {
         state: String,
         output_tokens: usize,
         duration_ms: u64,
+        /// The model identifier used for this completion (e.g. `"claude-sonnet-4-6"`).
+        model: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         sub_spec_index: Option<usize>,
     },
@@ -142,6 +144,9 @@ pub enum CoreEvent {
     ToolCall {
         name: String,
         input: String,
+        /// LLM inference time for the round that produced this tool call (ms).
+        #[serde(default)]
+        llm_duration_ms: u64,
         #[serde(skip_serializing_if = "Option::is_none")]
         sub_spec_index: Option<usize>,
     },
@@ -209,6 +214,8 @@ pub enum CoreEvent {
     ///
     /// [`Orchestrator::resume`]: crate::orchestrator::Orchestrator::resume
     HumanInputResolved {
+        /// The user's answer text.
+        answer: String,
         /// Trace ID shared by all events in this run.
         trace_id: String,
     },

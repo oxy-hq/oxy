@@ -7,12 +7,23 @@ entities:
   - name: body_measurement
     type: primary
     key: date
+  - name: nutrition_day
+    type: foreign
+    key: date
 
 dimensions:
   - name: date
-    type: datetime
-    expr: "\"Datetime (Local)\""
-    description: Measurement datetime (YYYY-MM-DD HH:MM)
+    type: date
+    expr: "CAST(\"Datetime (Local)\" AS DATE)"
+    description: Measurement date (cast from local datetime)
+  - name: week
+    type: date
+    expr: "date_trunc('week', CAST(\"Datetime (Local)\" AS DATE))"
+    description: Week of measurement (Monday-anchored)
+  - name: month
+    type: date
+    expr: "date_trunc('month', CAST(\"Datetime (Local)\" AS DATE))"
+    description: Month of measurement
 
 measures:
   - name: weight_lbs

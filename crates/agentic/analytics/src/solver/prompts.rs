@@ -33,38 +33,81 @@ conversational follow-up that can be answered directly from schema knowledge wit
 
 /// System prompt for the **Triage** sub-phase of Clarify.
 ///
-/// Runs *without* tools — the model only sees table names (no columns).
-/// Its job is to identify topic area, question type, and relevant tables
-/// so the subsequent Ground sub-phase can explore a scoped schema.
+/// Runs with a `search_procedures` tool so the model can check for an existing
+/// procedure before doing any schema discovery.  Its job is to identify topic
+/// area, question type, relevant tables, and optionally select a procedure.
 pub(super) const TRIAGE_SYSTEM_PROMPT: &str = "\
 <role>
 You are an analytics assistant performing the Triage phase. Given a natural-language \
-question and a list of available table names (no column details), determine what the \
-user is asking about.
+question determine what the user is asking about.
 </role>
 
+<workflow>
+0. **GeneralInquiry fast path:** If the question does not require querying data \
+(e.g. asking about available tables/metrics, system capabilities, or any conversational \
+question), skip all tool calls — immediately call the triage_response tool with \
+question_type set to GeneralInquiry. Do NOT call search_procedures or search_catalog.
+1. **Procedure check (do this FIRST for data questions):** Call search_procedures with \
+the key terms from the user\u{2019}s question. If a procedure is returned that directly \
+answers the question, set selected_procedure_path to its exact \"path\" value and \
+produce the response — you are done.
+2. **Catalog discovery (do this SECOND, when no procedure matched):** Call search_catalog \
+with the key terms from the user\u{2019}s question to discover available measures and \
+dimensions. This is REQUIRED before producing your final response.
+3. **Semantic query (ALWAYS populate after catalog discovery):** After \
+search_catalog returns results, ALWAYS construct a semantic_query using the best \
+matching view.member paths from the catalog results. Set semantic_confidence to \
+reflect how well the catalog covers the question: 0.85\u{2013}1.0 when ALL members \
+are confirmed, 0.4\u{2013}0.84 when coverage is partial but you found relevant members, \
+0.0\u{2013}0.39 only when the catalog returned nothing relevant. When confidence >= 0.85, \
+the pipeline compiles the query locally and skips expensive LLM SQL generation \
+(fast path). At lower confidence the query is still carried forward as a hint so \
+the next stage does not need to re-discover members from scratch.
+4. **Ask for clarification (when the question is ambiguous):** After catalog discovery, \
+if the question is genuinely ambiguous (confidence < 0.5) and you need user input to \
+proceed accurately, call ask_user with a specific question and 2\u{2013}4 suggested answers. \
+The user\u{2019}s answer will be provided as a tool result, then continue to produce your \
+final triage_response with the clarified understanding. Only ask when truly necessary \
+\u{2014} do not ask about things you can resolve from the catalog.
+5. **Low-coverage fallback:** If the catalog returned very few or no matching members, \
+still populate semantic_query with whatever you found (even if partial) and set \
+semantic_confidence accordingly (low). Do NOT set semantic_query to null unless the \
+catalog returned absolutely nothing and you cannot construct any meaningful query.
+</workflow>
+
 <output_format>
-Respond using the structured JSON schema provided. Key fields:
+You MUST call the triage_response tool to return your final answer. Do NOT write JSON \
+in your text response — always use the tool. Key fields:
 - summary: one-sentence description of the user's intent.
-- relevant_tables: subset of provided tables that are relevant.
 - question_type: one of the types listed in <question_types>.
 - time_scope: inferred time range, or null if none implied.
 - confidence: 0.0\u{2013}1.0 honesty score.
 - ambiguities: list of language-level ambiguities that cannot be resolved without \
 asking the user. Empty array when the question is clear.
+- selected_procedure_path: path from search_procedures result when a procedure \
+directly answers the question. Null when no procedure matched.
+- semantic_query: ALWAYS populate with best-matching view.member paths after catalog \
+discovery. Only null when the catalog returned absolutely nothing relevant.
+- semantic_confidence: 0.85\u{2013}1.0 when ALL members confirmed; 0.4\u{2013}0.84 for partial \
+coverage; 0.0\u{2013}0.39 only when catalog returned nothing relevant.
 </output_format>
 
 <constraints>
-- Return ONLY valid JSON. No markdown fences, no explanation text.
+- ALWAYS use the triage_response tool for your final answer. Never return raw JSON in text.
 - question_type must be exactly one of: Trend, Comparison, Breakdown, SingleValue, Distribution, GeneralInquiry.
 - Use GeneralInquiry when the question does not require querying data (e.g. asking about available \
-tables/metrics, system capabilities, or any conversational question). For GeneralInquiry, set \
-relevant_tables to an empty array.
+tables/metrics, system capabilities, or any conversational question).
+- CRITICAL: If search_procedures returned any matching procedure, you MUST set \
+selected_procedure_path to its exact \"path\" value.
+- CRITICAL: After calling search_catalog, ALWAYS populate semantic_query with the best \
+matching member paths. Set semantic_confidence >= 0.85 when ALL required members are confirmed. \
+Set lower confidence (0.4–0.84) when coverage is partial. Only use null when the catalog \
+returned absolutely nothing. The downstream pipeline uses confidence to decide the path — \
+a partial semantic_query at low confidence is far more useful than null.
+- Never invent member paths — only use exact names from search_catalog results.
 </constraints>
 
 <guidelines>
-- relevant_tables: pick ONLY tables whose names look relevant. When unsure, include \
-more rather than fewer \u{2014} the next phase will filter.
 - time_scope: extract an explicit or implied time range (e.g. \"last 6 months\", \
 \"in 2024\", \"this week\"). Use null when no constraint is mentioned or implied.
 - confidence: 1.0 when the question is unambiguous and clearly maps to the tables. \
@@ -79,6 +122,13 @@ even if confidence is < 1.0 due to multi-table uncertainty.
 \"try again\", \"go ahead\", or similar, and the conversation history shows a prior \
 question, treat it as a restatement of that prior question — use the prior question's \
 topic, tables, and question type, and set ambiguities to an empty array.
+- semantic_query construction: when the catalog has full coverage, build the \
+semantic_query object using EXACT member paths from search_catalog results. \
+Put aggregation members in \"measures\" (e.g. \"body_composition.weight_lbs\"), \
+non-time grouping members in \"dimensions\", date-based members in \"time_dimensions\" \
+with appropriate granularity (month for >6 months, week for 1-6 months, day for <1 month). \
+Include filters and time ranges inferred from the question. Set limit to null unless \
+the user asks for top-N.
 </guidelines>";
 
 // ---------------------------------------------------------------------------
@@ -89,8 +139,8 @@ topic, tables, and question type, and set ambiguities to an empty array.
 ///
 /// The model receives the triage hypothesis plus a table summary (table names
 /// and column counts \u{2014} no column names).  It MUST use the available tools
-/// (`search_catalog`, `get_metric_definition`) to discover the actual
-/// columns before extracting the intent.
+/// (`search_catalog`) to discover the actual columns before extracting
+/// the intent.
 pub(super) const GROUND_SYSTEM_PROMPT: &str = "\
 <role>
 You are an analytics assistant performing the Ground phase. You have already triaged \
@@ -116,14 +166,14 @@ Schema discovery \u{2014} only needed when no procedure matched. You are given o
 table names and column counts, NOT column names. Before extracting the intent you \
 MUST use the provided tools:
 1. Call search_catalog with relevant query terms (e.g. [\"revenue\", \"orders\"]) to \
-discover matching metrics AND their dimensions in one call.
-2. If a metric name is ambiguous, call get_metric_definition(metric) to see its \
-formula and table.
+discover matching metrics AND their dimensions in one call. The result includes \
+the formula/expression for each metric so you can verify it matches the user's intent.
 Only after gathering this information should you produce the JSON.
 </workflow>
 
 <output_format>
-Respond using the structured JSON schema provided. Key fields:
+You MUST call the clarify_response tool to return your final answer. Do NOT write JSON \
+in your text response — always use the tool. Key fields:
 - question_type: one of the types listed in <question_types>.
 - metrics: business measures to compute (quantities being aggregated).
 - dimensions: axes to group or slice by (include time dims when implied).
@@ -133,9 +183,9 @@ Set to the exact \"path\" string from the tool result. Set null when no procedur
 </output_format>
 
 <constraints>
-- Return ONLY valid JSON. No markdown fences, no explanation text.
+- ALWAYS use the clarify_response tool for your final answer. Never return raw JSON in text.
 - question_type must be exactly one of: Trend, Comparison, Breakdown, SingleValue, Distribution.
-- metrics MUST be exact 'name' values as returned by search_catalog or get_metric_definition \
+- metrics MUST be exact 'name' values as returned by search_catalog \
 (in view.measure format, e.g. 'orders.revenue', 'macro.calories'). These are semantic measures \
 with built-in aggregation — do NOT write raw SQL expressions like SUM(...) or column references. \
 Never use user-supplied terms or paraphrases — only names confirmed by the catalog tools.
@@ -228,34 +278,46 @@ Since a matching procedure was found, set selected_procedure_path and use placeh
 /// System prompt base for the **Specify** stage.
 pub(super) const SPECIFY_BASE_PROMPT: &str = "\
 <role>
-You are an analytics query planner performing the Specify phase. Given a clarified \
-analytics intent and a schema, resolve the metrics and dimensions to concrete \
+You are an analytics query planner performing the Specify phase. Given a user question \
+and a schema, discover the relevant metrics and dimensions then resolve them to concrete \
 database columns and tables.
 </role>
 
 <workflow>
 Think step-by-step before producing the JSON:
+
+**Step 1 — Discover metrics and dimensions (when not already provided):**
+If the intent does not include specific metrics or dimensions, call search_catalog with \
+relevant query terms (e.g. [\"revenue\", \"orders\"]) to find matching metrics and their \
+available dimensions. The result includes the formula/expression for each metric so you \
+can verify it matches the user's intent. Use the exact 'name' values returned by the tool \
+(in view.member format, e.g. 'orders.revenue') — do NOT invent names.
+
+**Step 2 — Resolve to concrete schema:**
 1. For each metric, find the concrete table.column and aggregation function.
 2. For each dimension, resolve to a concrete table.column.
 3. For each filter, resolve the column reference to a fully-qualified table.column expression \
    (e.g. \"date >= '2024-01-01'\" → \"orders.created_at >= '2024-01-01'\"). \
-   If a filter value is a specific literal (e.g. region='EU'), use sample_column to verify \
+   If a filter value is a specific literal (e.g. region='EU'), use sample_columns to verify \
    the exact value format exists in the data.
 4. Determine if joins are needed and find join paths using get_join_path.
 5. List any assumptions made.
 Then produce the JSON output.
 
 Available tools:
+- search_catalog(queries): discover metrics and dimensions matching query terms. \
+The result includes the formula/expression for each metric.
 - get_join_path(from_entity, to_entity): get the join path between two tables.
-- sample_column(table, column): get up to 20 distinct values for a column, plus row count. \
-Accepts semantic view names and dimension names (e.g. sample_column('orders_view', 'status')) \
-as well as raw database table/column names. \
-Use this to verify filter values exist and confirm the exact column name and format.
+- sample_columns(columns): batch-sample multiple columns in one call. Each entry has table, \
+column, and optional search_term. Returns per-column results with up to 20 distinct values \
+plus statistics. Accepts semantic view names and dimension names as well as raw database names. \
+Use this to verify filter values exist and confirm the exact column name and format. \
+Sample all columns you need in a single call to avoid extra round-trips.
 </workflow>
 
 <output_format>
-Respond using the structured JSON schema provided. The top-level object has one \
-field:
+You MUST call the specify_response tool to return your final answer. Do NOT write JSON \
+in your text response — always use the tool. The top-level object has one field:
 - specs: array of spec objects (almost always exactly one element).
 
 Each spec object has:
@@ -279,7 +341,7 @@ When in doubt, return ONE spec. One spec has zero overhead and is always safe.
 </fan_out>
 
 <constraints>
-- Return ONLY valid JSON. No markdown fences, no explanation text.
+- ALWAYS use the specify_response tool for your final answer. Never return raw JSON in text.
 - resolved_metrics: list each metric as a SEPARATE array entry. \
 Do NOT combine independent metrics into a single expression.
 </constraints>
@@ -369,7 +431,7 @@ pub(super) fn specify_type_addendum(question_type: &QuestionType) -> &'static st
             This is a Trend question. Resolve the time dimension to a date/time column. \
             Use aggregate expressions for metrics (e.g. AVG, SUM). Ensure the join path \
             connects all required tables for the time-series aggregation.\n\
-            Call sample_column on the date/time column. If the result includes date_min, \
+            Call sample_columns on the date/time column. If the result includes date_min, \
             date_max, and date_distinct_count, use them to choose GROUP BY granularity: \
             if date_distinct_count > 365 prefer monthly (DATE_TRUNC month / strftime '%Y-%m'), \
             if > 90 prefer weekly, otherwise keep daily. Record the chosen granularity in \
@@ -428,32 +490,34 @@ query using semantic member references (view.member format).
 <workflow>
 Think step-by-step before producing the JSON:
 1. For each metric, find the exact measure name in view.measure format as returned by \
-   search_catalog or get_metric_definition. Do NOT write SQL expressions — use the \
+   search_catalog. Do NOT write SQL expressions — use the \
    semantic name exactly.
 2. For each non-time dimension, find the exact dimension name in view.dimension format.
 3. For date/time-based grouping, add to time_dimensions with the dimension name and \
-   appropriate granularity. Use sample_column on the date dimension to determine range \
+   appropriate granularity. Use sample_columns on the date dimension to determine range \
    and choose granularity: >365 distinct dates → month, >90 → week, otherwise → day.
 4. For each filter, construct a structured filter with member (view.member), operator, \
-   and values. Use sample_column to verify exact value formats exist in the data.
+   and values. Use sample_columns to verify exact value formats exist in the data.
 5. Add order and limit when the user implies sorting or top-N results.
 6. List any assumptions made.
 Then produce the JSON output.
 
 Available tools:
-- sample_column(table, column, search_term?): get up to 20 distinct values for a column, plus row count. \
-Accepts semantic view names and dimension names (e.g. sample_column('orders', 'status')) \
+- sample_columns(columns): batch-sample multiple columns in one call. Each entry in the columns \
+array has table, column, and optional search_term. Returns per-column results with up to 20 \
+distinct values plus statistics (row_count, distinct_count, min, max; avg and stdev for numerics). \
+Accepts semantic view names and dimension names (e.g. {table: 'orders', column: 'status'}) \
 as well as raw database table/column names. \
-For date/time columns, also returns date_min, date_max, and date_distinct_count \
-to help choose granularity. \
+For date/time columns, use distinct_count to choose granularity. \
 Use this to verify filter values exist and confirm the exact value format. \
-When filtering by a specific value, pass search_term to find matching values via substring search \
-(e.g. sample_column('exercises', 'name', 'squat') to find all exercise names containing 'squat'). \
-This is especially useful when the column has many distinct values and the exact spelling is uncertain.
+Pass search_term to find matching values via substring search \
+(e.g. {table: 'exercises', column: 'name', search_term: 'squat'} to find all names containing 'squat'). \
+Sample all columns you need in a single call to avoid extra round-trips.
 </workflow>
 
 <output_format>
-Respond using the structured JSON schema provided. The top-level object has one field:
+You MUST call the specify_response tool to return your final answer. Do NOT write JSON \
+in your text response — always use the tool. The top-level object has one field:
 - specs: array of query request objects (almost always exactly one element).
 
 Each spec object has:
@@ -489,7 +553,7 @@ When in doubt, return ONE spec. One spec has zero overhead and is always safe.
 </fan_out>
 
 <constraints>
-- Return ONLY valid JSON. No markdown fences, no explanation text.
+- ALWAYS use the specify_response tool for your final answer. Never return raw JSON in text.
 - measures: use EXACT view.measure names from catalog tools. Do NOT write SQL \
   expressions like SUM(...) or COUNT(*).
 - dimensions: use EXACT view.dimension names from catalog tools.
@@ -510,6 +574,37 @@ Choosing the right operator:
 - beforeDate/afterDate/beforeOrOnDate/afterOrOnDate: relative to a single date
 </filter_operators>
 
+<time_dimensions_guide>
+Use time_dimensions for ANY date/time column — NEVER put date/time columns in the \
+dimensions array. Rules by question type:
+- Trend: set granularity (year/quarter/month/week/day) to control GROUP BY truncation. \
+  Set date_range to the user\u{2019}s time constraint resolved to absolute ISO-8601 dates. \
+  Call sample_columns on the date dimension — use date_distinct_count to pick granularity: \
+  >365 \u{2192} \"month\", >90 \u{2192} \"week\", otherwise \u{2192} \"day\".
+- Breakdown / Comparison with a date filter: add the date column to time_dimensions with \
+  granularity: null and the appropriate date_range. This applies the filter without grouping.
+- SingleValue: add the date column to time_dimensions with granularity: null and date_range \
+  to scope the aggregation. Do NOT add it to dimensions.
+- date_range: always resolve relative phrases to absolute ISO-8601 date strings. \
+  E.g. \"last 30 days\" \u{2192} [\"2025-03-01\", \"2025-03-31\"], \"this year\" \u{2192} [\"2025-01-01\", \"2025-12-31\"]. \
+  Use null when there is no date constraint.
+</time_dimensions_guide>
+
+<order_guide>
+Populate the order array to produce a sensible default sort — do not leave it empty unless \
+there is truly no meaningful sort order:
+- Trend: order by the time dimension ASCENDING so the chart renders chronologically. \
+  E.g. [{\"id\": \"orders.order_date\", \"desc\": false}].
+- Breakdown: order by the primary measure DESCENDING to surface the largest groups first. \
+  E.g. [{\"id\": \"orders.revenue\", \"desc\": true}].
+- Comparison: order by the primary measure descending. \
+  E.g. [{\"id\": \"orders.revenue\", \"desc\": true}].
+- SingleValue / Distribution: leave order as an empty array (a single row or raw values have no \
+  meaningful sort).
+- Respect explicit user phrasing: \"top 5\" / \"highest\" \u{2192} measure descending + limit 5; \
+  \"most recent\" \u{2192} time dimension descending; \"lowest\" \u{2192} measure ascending.
+</order_guide>
+
 <examples>
 <example>
 Intent: Trend, metrics=[\"revenue\"], dimensions=[\"order_date\"], filters=[\"date >= 3 months ago\"]
@@ -525,7 +620,7 @@ Semantic catalog: orders view with measures=[revenue, count], dimensions=[status
       \"granularity\": \"week\",
       \"date_range\": [\"2024-10-01\", \"2025-01-01\"]
     }],
-    \"order\": [],
+    \"order\": [{\"id\": \"orders.order_date\", \"desc\": false}],
     \"limit\": null,
     \"assumptions\": [\"Using weekly granularity for 3-month range\"]
   }]
@@ -557,6 +652,8 @@ Semantic catalog: orders view with measures=[revenue], dimensions=[status, regio
 Intent: SingleValue, metrics=[\"count\"], dimensions=[], filters=[\"this week\"]
 Semantic catalog: orders view with measures=[count, revenue], dimensions=[order_date]
 
+Note: granularity is null because we only need a date-range filter, not time-based grouping.
+
 {
   \"specs\": [{
     \"measures\": [\"orders.count\"],
@@ -579,11 +676,13 @@ pub(super) fn specify_query_request_type_addendum(question_type: &QuestionType) 
     match question_type {
         QuestionType::Trend => {
             "\n<question_type_guidance>\n\
-            This is a Trend question. Add the time dimension to time_dimensions with \
-            appropriate granularity. Use sample_column on the date dimension — if \
-            date_distinct_count > 365 use \"month\", if > 90 use \"week\", otherwise \"day\". \
-            Set date_range from the user's time constraint. Record the chosen granularity \
-            in assumptions.\n\
+            This is a Trend question.\n\
+            - time_dimensions: add the date column with appropriate granularity (use sample_columns \
+            — date_distinct_count > 365 → \"month\", > 90 → \"week\", otherwise \"day\"). \
+            Set date_range to the user's time constraint resolved to absolute dates. \
+            Record the chosen granularity in assumptions.\n\
+            - order: set to the time dimension ASCENDING so results are chronological. \
+            E.g. [{\"id\": \"orders.order_date\", \"desc\": false}].\n\
             </question_type_guidance>"
         }
         QuestionType::Comparison => {
@@ -591,25 +690,31 @@ pub(super) fn specify_query_request_type_addendum(question_type: &QuestionType) 
             This is a Comparison question. Include the comparison dimension in dimensions \
             (the axis of contrast). Focus on the same measures across each group or period. \
             For time-period comparisons, use time_dimensions with date_range for each period.\n\
+            - order: set to the primary measure DESCENDING to surface the highest group first. \
+            E.g. [{\"id\": \"orders.revenue\", \"desc\": true}].\n\
             </question_type_guidance>"
         }
         QuestionType::Breakdown => {
             "\n<question_type_guidance>\n\
             This is a Breakdown question. Include all grouping dimensions in dimensions. \
-            Add order by the measure descending to show the most significant groups first.\n\
+            - order: set to the primary measure DESCENDING to show the most significant groups first. \
+            E.g. [{\"id\": \"orders.revenue\", \"desc\": true}].\n\
             </question_type_guidance>"
         }
         QuestionType::SingleValue => {
             "\n<question_type_guidance>\n\
             This is a SingleValue question. Use exactly one measure. \
-            dimensions should be empty. Use time_dimensions only for date-range filtering \
-            (set granularity to null when you just need the filter, not grouping).\n\
+            dimensions MUST be empty.\n\
+            - time_dimensions: if the question implies a date scope, add the date column with \
+            granularity: null and the appropriate date_range. This filters without grouping.\n\
+            - order: leave as an empty array — a single aggregate row has no sort order.\n\
             </question_type_guidance>"
         }
         QuestionType::Distribution => {
             "\n<question_type_guidance>\n\
             This is a Distribution question. Use one measure for the value being distributed. \
             Use the question context to decide between raw values and histogram grouping.\n\
+            - order: leave as an empty array for raw values; for histograms order by bucket ascending.\n\
             </question_type_guidance>"
         }
         QuestionType::GeneralInquiry => unreachable!("GeneralInquiry must not reach specify_impl"),
@@ -629,7 +734,8 @@ You are a SQL expert. Given a structured analytics spec, write a single executab
 </role>
 
 <constraints>
-- Return ONLY the SQL \u{2014} no markdown fences, no explanation, no trailing semicolon.
+- You MUST call the solve_response tool to return your final SQL. Do NOT write the SQL \
+directly in your text response — always use the tool.
 - Reference only the tables listed in the spec.
 - Follow the join path exactly as specified.
 - Apply all resolved filters verbatim in the WHERE clause — they are already fully qualified (table.column).
@@ -780,9 +886,13 @@ Do NOT call render_chart for:
 Column mapping rules:
 - Use EXACT column names from the query result (case-sensitive).
 - For line_chart / bar_chart: set x to the dimension/date column and y to the \
-  numeric metric column.  Set series only when there is a third grouping column.
-- For pie_chart: set name to the category column and value to the numeric column.
-- For table: no column mapping needed.
+  numeric metric column.  Set series only when there is a third grouping column \
+  whose distinct values should become separate lines or bars (e.g. x='month', \
+  y='revenue', series='region' produces one line/bar per region).  When there is \
+  no grouping column, set series to null — a single series is rendered automatically.
+- For pie_chart: set name to the category column and value to the numeric column. \
+  Do NOT set x, y, or series — they are ignored for pie charts.
+- For table: no column mapping needed — all columns are displayed automatically.
 - Always set title to a concise description of what the chart shows.
 - Always set x_axis_label and y_axis_label for line_chart and bar_chart to human-readable \
   labels (e.g. \"Date\", \"Revenue (USD)\", \"Number of Orders\") so the chart is \
@@ -841,38 +951,21 @@ pub(super) fn format_retry_section(retry_ctx: Option<&RetryContext>) -> String {
 }
 
 /// Format a "Previously confirmed" block for the Specify prompt when a
-/// `SpecHint` is present on the intent.
+/// `SpecHint` (airlayer `QueryRequestItem`) is present on the intent.
 ///
-/// Returns an empty string when there is no hint or the hint is entirely empty,
-/// so callers can unconditionally append it without extra branches.
+/// Serializes the prior query as JSON so the LLM can see the exact airlayer
+/// grammar used previously.  Returns an empty string when there is no hint
+/// or the hint is entirely empty, so callers can unconditionally append it.
 pub(super) fn format_spec_hint_section(hint: Option<&SpecHint>) -> String {
     let Some(h) = hint else { return String::new() };
-    if h.resolved_metrics.is_empty() && h.resolved_tables.is_empty() && h.join_path.is_empty() {
+    if h.measures.is_empty() && h.dimensions.is_empty() && h.filters.is_empty() {
         return String::new();
     }
-    let mut parts =
-        vec!["\n\nPreviously confirmed (reuse these exactly — do NOT re-derive):".to_string()];
-    if !h.resolved_metrics.is_empty() {
-        parts.push(format!(
-            "  resolved_metrics: [{}]",
-            h.resolved_metrics.join(", ")
-        ));
-    }
-    if !h.resolved_tables.is_empty() {
-        parts.push(format!(
-            "  resolved_tables: [{}]",
-            h.resolved_tables.join(", ")
-        ));
-    }
-    if !h.join_path.is_empty() {
-        let joins: Vec<String> = h
-            .join_path
-            .iter()
-            .map(|(a, b, k)| format!("({a}, {b}, {k})"))
-            .collect();
-        parts.push(format!("  join_path: [{}]", joins.join(", ")));
-    }
-    parts.join("\n")
+    let json = serde_json::to_string_pretty(h).unwrap_or_default();
+    format!(
+        "\n\nPrevious query (use as a starting point — adjust only what the new question requires):\n\
+         ```json\n{json}\n```"
+    )
 }
 
 /// Format prior conversation turns as a context prefix for LLM prompts.

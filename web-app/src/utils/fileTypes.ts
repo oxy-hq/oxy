@@ -6,6 +6,7 @@ export enum FileType {
   AUTOMATION = "automation",
   AGENT = "agent",
   AGENTIC_WORKFLOW = "agentic_workflow",
+  ANALYTICS_AGENT = "analytics_agent",
   APP = "app",
   SQL = "sql",
   VIEW = "view",
@@ -50,6 +51,11 @@ export const FILE_TYPE_CONFIGS: Record<FileType, FileTypeConfig> = {
     type: FileType.AGENTIC_WORKFLOW,
     extensions: [".aw.yml", ".aw.yaml"],
     editorComponent: "WorkflowEditor"
+  },
+  [FileType.ANALYTICS_AGENT]: {
+    type: FileType.ANALYTICS_AGENT,
+    extensions: [".agentic.yml", ".agentic.yaml"],
+    editorComponent: "AgenticAnalyticsEditor"
   },
   [FileType.APP]: {
     type: FileType.APP,

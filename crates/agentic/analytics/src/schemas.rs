@@ -22,11 +22,6 @@ pub fn triage_response_schema() -> ResponseSchema {
                     "type": "string",
                     "description": "One-sentence summary of what the user is asking about."
                 },
-                "relevant_tables": {
-                    "type": "array",
-                    "description": "Table names likely relevant to the question (subset of the provided table list).",
-                    "items": { "type": "string" }
-                },
                 "question_type": {
                     "type": "string",
                     "description": "Broad question category. Trend: metric over time. Comparison: contrasting items/periods. Breakdown: metric split by category. SingleValue: one aggregate number. Distribution: spread or histogram. GeneralInquiry: question that does not need SQL — e.g. what tables are available, what metrics exist, or any conversational follow-up.",
@@ -61,18 +56,93 @@ pub fn triage_response_schema() -> ResponseSchema {
                                 "items": { "type": "string" }
                             }
                         },
+                        "additionalProperties": false,
                         "required": ["prompt", "suggestions"]
                     }
+                },
+                "selected_procedure_path": {
+                    "type": ["string", "null"],
+                    "description": "If an available procedure directly answers the question, set this to its exact path string (e.g. 'workflows/sales/report.procedure.yml'). The pipeline will execute that procedure and skip SQL generation entirely. Set null when no procedure matches."
+                },
+                "semantic_query": {
+                    "type": ["object", "null"],
+                    "description": "ONLY populate this when: (1) search_catalog returned matching measures AND dimensions for everything the question needs, AND (2) you are certain about the view.member paths (no guessing). When set, the pipeline will attempt a fast semantic compile and skip SQL generation entirely. Null when unsure or catalog doesn't cover the full question.",
+                    "properties": {
+                        "measures": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Exact measure member paths in view.member format (e.g. 'orders.revenue'). Must match names from search_catalog results exactly."
+                        },
+                        "dimensions": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Exact dimension member paths in view.member format. Must match names from search_catalog results exactly."
+                        },
+                        "filters": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "member": { "type": "string" },
+                                    "operator": { "type": "string" },
+                                    "values": { "type": "array", "items": { "type": "string" } }
+                                },
+                                "required": ["member", "operator", "values"],
+                                "additionalProperties": false
+                            },
+                            "description": "Structured filter conditions using exact member paths."
+                        },
+                        "time_dimensions": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "dimension": { "type": "string" },
+                                    "granularity": { "type": ["string", "null"] },
+                                    "date_range": { "type": ["array", "null"], "items": { "type": "string" } }
+                                },
+                                "required": ["dimension", "granularity", "date_range"],
+                                "additionalProperties": false
+                            },
+                            "description": "Time dimension entries with granularity and optional date range."
+                        },
+                        "order": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "id": { "type": "string" },
+                                    "desc": { "type": "boolean" }
+                                },
+                                "required": ["id", "desc"],
+                                "additionalProperties": false
+                            },
+                            "description": "Sort order entries."
+                        },
+                        "limit": {
+                            "type": ["integer", "null"],
+                            "description": "Row limit, or null for no limit."
+                        }
+                    },
+                    "required": ["measures", "dimensions", "filters", "time_dimensions", "order", "limit"],
+                    "additionalProperties": false
+                },
+                "semantic_confidence": {
+                    "type": "number",
+                    "description": "How confident you are that the semantic_query members are correct (0.0–1.0). Set to 0.0 when semantic_query is null. Only set >= 0.85 when ALL measures and dimensions were confirmed by search_catalog results."
                 }
             },
+            "additionalProperties": false,
             "required": [
                 "summary",
-                "relevant_tables",
                 "question_type",
                 "time_scope",
                 "confidence",
                 "ambiguities",
-                "ambiguity_questions"
+                "ambiguity_questions",
+                "selected_procedure_path",
+                "semantic_query",
+                "semantic_confidence"
             ]
         }),
     }
@@ -96,7 +166,7 @@ pub fn clarify_response_schema() -> ResponseSchema {
                 },
                 "metrics": {
                     "type": "array",
-                    "description": "Exact metric names as returned by the search_catalog or get_metric_definition tools (the 'name' field). Do NOT use user-supplied terms or paraphrases — only names confirmed by the catalog tools.",
+                    "description": "Exact metric names as returned by the search_catalog tool (the 'name' field). Do NOT use user-supplied terms or paraphrases — only names confirmed by the catalog.",
                     "items": { "type": "string" }
                 },
                 "dimensions": {
@@ -114,6 +184,7 @@ pub fn clarify_response_schema() -> ResponseSchema {
                     "description": "MUST be set when search_procedures returned any matching procedure. Copy the exact 'path' string from the tool result (e.g. 'workflows/sales/report.procedure.yml'). The pipeline will execute that procedure and skip SQL generation entirely. Set null ONLY when search_procedures returned an empty list or was not called."
                 }
             },
+            "additionalProperties": false,
             "required": [
                 "question_type",
                 "metrics",
@@ -140,7 +211,7 @@ pub fn specify_response_schema_legacy() -> ResponseSchema {
             },
             "resolved_filters": {
                 "type": "array",
-                "description": "Filter expressions with fully-qualified table.column references, ready to embed in a WHERE clause. Resolve each raw filter from the intent to the exact column (e.g. \"orders.created_at >= '2024-01-01'\", \"orders.status = 'active'\"). Use sample_column to verify filter values when needed. Return an empty array if there are no filters.",
+                "description": "Filter expressions with fully-qualified table.column references, ready to embed in a WHERE clause. Resolve each raw filter from the intent to the exact column (e.g. \"orders.created_at >= '2024-01-01'\", \"orders.status = 'active'\"). Use sample_columns to verify filter values when needed. Return an empty array if there are no filters.",
                 "items": { "type": "string" }
             },
             "resolved_tables": {
@@ -164,6 +235,7 @@ pub fn specify_response_schema_legacy() -> ResponseSchema {
                 "items": { "type": "string" }
             }
         },
+        "additionalProperties": false,
         "required": [
             "resolved_metrics",
             "resolved_filters",
@@ -186,6 +258,7 @@ pub fn specify_response_schema_legacy() -> ResponseSchema {
                     "minItems": 1
                 }
             },
+            "additionalProperties": false,
             "required": ["specs"]
         }),
     }
@@ -227,6 +300,7 @@ pub fn specify_response_schema() -> ResponseSchema {
                 "items": { "type": "string" }
             }
         },
+        "additionalProperties": false,
         "required": ["member", "operator", "values"]
     });
 
@@ -239,9 +313,14 @@ pub fn specify_response_schema() -> ResponseSchema {
                 "description": "The time dimension member in view.member format (e.g. 'orders.order_date')."
             },
             "granularity": {
-                "type": ["string", "null"],
                 "description": "Time granularity for grouping. Use null to include the dimension without truncation.",
-                "enum": ["year", "quarter", "month", "week", "day", "hour", "minute", "second", null]
+                "anyOf": [
+                    {
+                        "type": "string",
+                        "enum": ["year", "quarter", "month", "week", "day", "hour", "minute", "second"]
+                    },
+                    { "type": "null" }
+                ]
             },
             "date_range": {
                 "type": ["array", "null"],
@@ -249,6 +328,7 @@ pub fn specify_response_schema() -> ResponseSchema {
                 "items": { "type": "string" }
             }
         },
+        "additionalProperties": false,
         "required": ["dimension", "granularity", "date_range"]
     });
 
@@ -264,6 +344,7 @@ pub fn specify_response_schema() -> ResponseSchema {
                 "description": "True for descending order, false for ascending."
             }
         },
+        "additionalProperties": false,
         "required": ["id", "desc"]
     });
 
@@ -272,7 +353,7 @@ pub fn specify_response_schema() -> ResponseSchema {
         "properties": {
             "measures": {
                 "type": "array",
-                "description": "Measure members to aggregate, in view.measure format as returned by search_catalog / get_metric_definition (e.g. ['orders.total_revenue', 'orders.count']). Do NOT write SQL expressions — use the exact semantic names.",
+                "description": "Measure members to aggregate, in view.measure format as returned by search_catalog (e.g. ['orders.total_revenue', 'orders.count']). Do NOT write SQL expressions — use the exact semantic names.",
                 "items": { "type": "string" }
             },
             "dimensions": {
@@ -282,12 +363,12 @@ pub fn specify_response_schema() -> ResponseSchema {
             },
             "filters": {
                 "type": "array",
-                "description": "Structured filter conditions. Each filter has a member (view.member), operator, and values. Use sample_column to verify exact value formats before specifying filter values.",
+                "description": "Structured filter conditions. Each filter has a member (view.member), operator, and values. Use sample_columns to verify exact value formats before specifying filter values.",
                 "items": filter_schema
             },
             "time_dimensions": {
                 "type": "array",
-                "description": "Time dimensions with granularity and optional date range. Use this for any date-based grouping or filtering. Use sample_column on the date dimension to choose appropriate granularity (>365 distinct dates → month, >90 → week, otherwise day).",
+                "description": "Time dimensions with granularity and optional date range. Use this for any date-based grouping or filtering. Use sample_columns on the date dimension to choose appropriate granularity (>365 distinct dates → month, >90 → week, otherwise day).",
                 "items": time_dimension_schema
             },
             "order": {
@@ -305,6 +386,7 @@ pub fn specify_response_schema() -> ResponseSchema {
                 "items": { "type": "string" }
             }
         },
+        "additionalProperties": false,
         "required": [
             "measures",
             "dimensions",
@@ -329,6 +411,7 @@ pub fn specify_response_schema() -> ResponseSchema {
                     "minItems": 1
                 }
             },
+            "additionalProperties": false,
             "required": ["specs"]
         }),
     }
@@ -346,6 +429,7 @@ pub fn solve_response_schema() -> ResponseSchema {
             "properties": {
                 "sql": { "type": "string" }
             },
+            "additionalProperties": false,
             "required": ["sql"]
         }),
     }
@@ -476,7 +560,6 @@ mod tests {
         let required = schema.schema["required"].as_array().unwrap();
         let fields: Vec<&str> = required.iter().map(|v| v.as_str().unwrap()).collect();
         assert!(fields.contains(&"summary"));
-        assert!(fields.contains(&"relevant_tables"));
         assert!(fields.contains(&"question_type"));
         assert!(fields.contains(&"confidence"));
         assert!(fields.contains(&"ambiguities"));

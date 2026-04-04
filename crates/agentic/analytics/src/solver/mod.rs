@@ -56,7 +56,7 @@ pub fn build_analytics_handlers()
     let mut map = HashMap::new();
     map.insert("clarifying", clarifying::build_clarifying_handler());
     map.insert("specifying", specifying::build_specifying_handler());
-    map.insert("solving", solving::build_solving_handler());
+    // Solving is absorbed into the specifying handler — no separate handler.
     map.insert("executing", executing::build_executing_handler());
     map.insert("interpreting", interpreting::build_interpreting_handler());
     map
@@ -68,7 +68,7 @@ pub fn build_analytics_handlers()
 
 #[cfg(test)]
 mod tests {
-    use super::clarifying::{build_ground_user_prompt, build_triage_user_prompt};
+    use super::clarifying::build_triage_user_prompt;
     use super::interpreting::build_interpret_user_prompt;
     use super::prompts::format_session_turns_section;
     use super::*;
@@ -154,6 +154,7 @@ dimensions:
     fn make_intent() -> AnalyticsIntent {
         AnalyticsIntent {
             raw_question: "What is total revenue by region?".into(),
+            summary: "Total revenue broken down by region".into(),
             question_type: QuestionType::Breakdown,
             metrics: vec!["revenue".into()],
             dimensions: vec!["region".into()],
@@ -161,6 +162,8 @@ dimensions:
             history: vec![],
             spec_hint: None,
             selected_procedure: None,
+            semantic_query: Default::default(),
+            semantic_confidence: 0.0,
         }
     }
 
@@ -179,6 +182,7 @@ dimensions:
             precomputed: None,
             context: None,
             connector_name: "default".to_string(),
+            query_request_item: None,
             query_request: None,
             compile_error: None,
         }
@@ -378,6 +382,7 @@ dimensions:
             query: "SELECT * FORM orders".into(),
             message: "unexpected token".into(),
         };
+        // Solving is absorbed into specifying — BackTarget::Solve routes to Specifying.
         assert!(matches!(
             s.diagnose(
                 err,
@@ -385,7 +390,7 @@ dimensions:
                 &make_run_ctx()
             )
             .await,
-            Ok(ProblemState::Solving(_))
+            Ok(ProblemState::Specifying(_))
         ));
     }
 
@@ -487,6 +492,7 @@ dimensions:
             expected: ResultShape::Scalar,
             actual: ResultShape::Series,
         };
+        // Solving is absorbed into specifying — BackTarget::Solve routes to Specifying.
         assert!(matches!(
             s.diagnose(
                 err,
@@ -494,7 +500,7 @@ dimensions:
                 &make_run_ctx()
             )
             .await,
-            Ok(ProblemState::Solving(_))
+            Ok(ProblemState::Specifying(_))
         ));
     }
 
@@ -593,76 +599,7 @@ dimensions:
         ));
     }
 
-    // ── should_skip — dynamic solving skip ───────────────────────────────────
-
-    #[test]
-    fn should_skip_returns_executing_for_semantic_layer_path() {
-        let mut s = make_solver();
-        let run_ctx = agentic_core::orchestrator::RunContext {
-            intent: None,
-            spec: None,
-            retry_ctx: None,
-        };
-
-        let spec = QuerySpec {
-            solution_source: SolutionSource::SemanticLayer,
-            precomputed: Some(SolutionPayload::Sql("SELECT 1 AS n".to_string())),
-            ..make_spec()
-        };
-        let state = ProblemState::Solving(spec);
-        let result = s.should_skip("solving", &state, &run_ctx);
-
-        assert!(
-            result.is_some(),
-            "should_skip must return Some for SemanticLayer path"
-        );
-        match result.unwrap() {
-            ProblemState::Executing(solution) => {
-                assert_eq!(solution.payload.expect_sql(), "SELECT 1 AS n");
-                assert_eq!(solution.solution_source, SolutionSource::SemanticLayer);
-            }
-            _ => panic!("expected ProblemState::Executing"),
-        }
-    }
-
-    #[test]
-    fn should_skip_returns_none_for_llm_with_semantic_context_path() {
-        let mut s = make_solver();
-        let run_ctx = agentic_core::orchestrator::RunContext {
-            intent: None,
-            spec: None,
-            retry_ctx: None,
-        };
-        let spec = QuerySpec {
-            solution_source: SolutionSource::LlmWithSemanticContext,
-            ..make_spec()
-        };
-        let state = ProblemState::Solving(spec);
-        assert!(
-            s.should_skip("solving", &state, &run_ctx).is_none(),
-            "should_skip must return None for LlmWithSemanticContext path",
-        );
-    }
-
-    #[test]
-    fn should_skip_returns_none_for_non_solving_states() {
-        let mut s = make_solver();
-        let run_ctx = agentic_core::orchestrator::RunContext {
-            intent: None,
-            spec: None,
-            retry_ctx: None,
-        };
-        for (state_name, state) in [
-            ("clarifying", ProblemState::Clarifying(make_intent())),
-            ("specifying", ProblemState::Specifying(make_intent())),
-            ("interpreting", ProblemState::Interpreting(make_result())),
-        ] {
-            assert!(
-                s.should_skip(state_name, &state, &run_ctx).is_none(),
-                "should_skip must return None for state '{state_name}'",
-            );
-        }
-    }
+    // should_skip tests removed — solving is absorbed into specifying.
 
     // ── Procedure path ───────────────────────────────────────────────────────
 
@@ -730,59 +667,23 @@ dimensions:
         )
         .await;
 
+        // Specifying handler now transitions directly to Executing for procedures.
         match result.state_data {
-            ProblemState::Solving(spec) => {
-                assert_eq!(
-                    spec.solution_source,
-                    SolutionSource::Procedure {
-                        file_path: file_path.clone()
-                    },
-                    "specifying handler must preserve SolutionSource::Procedure when \
-                     selected_procedure is set — got {:?} instead",
-                    spec.solution_source,
-                );
-            }
-            other => panic!(
-                "expected ProblemState::Solving, got: {:?}",
-                std::mem::discriminant(&other)
-            ),
-        }
-    }
-
-    #[test]
-    fn should_skip_returns_executing_for_procedure_path() {
-        let mut s = make_solver();
-        let file_path = std::path::PathBuf::from("workflows/monthly_sales.procedure.yml");
-        let run_ctx = agentic_core::orchestrator::RunContext {
-            intent: None,
-            spec: None,
-            retry_ctx: None,
-        };
-
-        let spec = QuerySpec {
-            solution_source: SolutionSource::Procedure {
-                file_path: file_path.clone(),
-            },
-            ..make_spec()
-        };
-        let state = ProblemState::Solving(spec);
-        let result = s.should_skip("solving", &state, &run_ctx);
-
-        assert!(
-            result.is_some(),
-            "should_skip must return Some for Procedure path — solving stage must be skipped",
-        );
-        match result.unwrap() {
             ProblemState::Executing(solution) => {
                 assert_eq!(
                     solution.solution_source,
                     SolutionSource::Procedure {
                         file_path: file_path.clone()
                     },
-                    "executing solution must preserve the procedure file path",
+                    "specifying handler must preserve SolutionSource::Procedure when \
+                     selected_procedure is set — got {:?} instead",
+                    solution.solution_source,
                 );
             }
-            _ => panic!("expected ProblemState::Executing"),
+            other => panic!(
+                "expected ProblemState::Executing, got: {:?}",
+                std::mem::discriminant(&other)
+            ),
         }
     }
 
@@ -795,6 +696,7 @@ dimensions:
         agentic_core::CompletedTurn {
             intent: AnalyticsIntent {
                 raw_question: question.into(),
+                summary: String::new(),
                 question_type: QuestionType::Breakdown,
                 metrics: vec![],
                 dimensions: vec![],
@@ -802,11 +704,14 @@ dimensions:
                 history: vec![],
                 spec_hint: None,
                 selected_procedure: None,
+                semantic_query: Default::default(),
+                semantic_confidence: 0.0,
             },
             spec: None,
             answer: crate::AnalyticsAnswer {
                 text: answer.into(),
                 display_blocks: vec![],
+                spec_hint: None,
             },
             trace_id: "t-test".into(),
         }
@@ -815,86 +720,32 @@ dimensions:
     fn make_hypothesis() -> crate::types::DomainHypothesis {
         crate::types::DomainHypothesis {
             summary: "The user wants revenue broken down by region.".into(),
-            relevant_tables: vec!["orders".into(), "customers".into()],
             question_type: QuestionType::Breakdown,
             time_scope: None,
             confidence: 0.9,
             ambiguities: vec![],
             ambiguity_questions: vec![],
+            selected_procedure_path: None,
+            semantic_query: None,
+            semantic_confidence: 0.0,
         }
     }
 
     #[test]
-    fn triage_prompt_includes_table_names() {
+    fn triage_prompt_includes_question() {
         let intent = make_intent();
-        let catalog = make_semantic_catalog_with_tables();
-        let prompt = build_triage_user_prompt(&intent, &catalog, &[]);
-        assert!(prompt.contains("orders"), "should list orders table");
-        assert!(prompt.contains("customers"), "should list customers table");
+        let prompt = build_triage_user_prompt(&intent, &[], "");
         assert!(
-            prompt.contains("Available tables:"),
-            "should have tables header"
+            prompt.contains("total revenue"),
+            "should contain the raw question"
         );
         assert!(
-            !prompt.contains("order_id"),
-            "triage prompt must not contain column names"
+            prompt.contains("search_procedures"),
+            "should instruct to call search_procedures"
         );
         assert!(
-            !prompt.contains("customer_id"),
-            "triage prompt must not contain column names"
-        );
-        assert!(
-            !prompt.contains("columns)"),
-            "triage prompt must not contain column count detail"
-        );
-    }
-
-    #[test]
-    fn ground_prompt_includes_session_history() {
-        let prior = vec![make_completed_turn(
-            "What is total revenue by region?",
-            "West leads with $2.3M.",
-        )];
-        let intent = make_intent();
-        let hypothesis = make_hypothesis();
-        let prompt = build_ground_user_prompt(
-            &intent,
-            &hypothesis,
-            &SemanticCatalog::empty(),
-            None,
-            &prior,
-        );
-        assert!(
-            prompt.contains("Previous conversation:"),
-            "should include conversation header"
-        );
-        assert!(
-            prompt.contains("What is total revenue by region?"),
-            "should include prior question"
-        );
-        assert!(
-            prompt.contains("West leads with $2.3M."),
-            "should include prior answer"
-        );
-        assert!(
-            prompt.contains("resolve those references"),
-            "should include reference note"
-        );
-    }
-
-    #[test]
-    fn ground_prompt_without_session_history_has_no_conversation_section() {
-        let intent = make_intent();
-        let hypothesis = make_hypothesis();
-        let prompt =
-            build_ground_user_prompt(&intent, &hypothesis, &SemanticCatalog::empty(), None, &[]);
-        assert!(
-            !prompt.contains("Previous conversation:"),
-            "no conversation section when no prior turns",
-        );
-        assert!(
-            !prompt.contains("resolve those references"),
-            "no reference note when no prior turns",
+            prompt.contains("search_catalog"),
+            "should instruct to use search_catalog for discovery"
         );
     }
 
@@ -1091,6 +942,10 @@ dimensions:
                 .collect();
             vec![serde_json::json!({"role": "user", "content": blocks})]
         }
+
+        fn model_name(&self) -> &str {
+            "scripted"
+        }
     }
 
     fn make_solver_with_provider(
@@ -1129,98 +984,6 @@ dimensions:
                 ..Default::default()
             }),
         ]
-    }
-
-    // -- Suspension: MaxTokens -------------------------------------------------
-
-    /// When the LLM returns text + MaxTokens, `ground_impl` must suspend with
-    /// `suspension_type = "max_tokens"` and a doubled `max_tokens_override`.
-    #[tokio::test]
-    async fn ground_impl_max_tokens_stores_suspension_data() {
-        let captured = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
-        let provider =
-            ScriptedProvider::new(vec![chunks_text_then_max_tokens("partial")], captured);
-        let mut solver = make_solver_with_provider(provider);
-
-        let intent = make_intent();
-        let hypothesis = make_hypothesis();
-        let result = solver.ground_impl(intent, &hypothesis, None, &[]).await;
-
-        assert!(
-            matches!(
-                result,
-                Err((
-                    AnalyticsError::NeedsUserInput { .. },
-                    BackTarget::Suspend { .. }
-                ))
-            ),
-            "ground_impl must suspend on MaxTokensReached"
-        );
-
-        let sd = solver
-            .suspension_data
-            .take()
-            .expect("suspension_data must be set");
-        assert_eq!(sd.from_state, "clarifying");
-        assert_eq!(
-            sd.stage_data["suspension_type"].as_str(),
-            Some("max_tokens"),
-            "stage_data must tag suspension_type"
-        );
-        // DEFAULT_MAX_TOKENS (4096) * 2 = 8192
-        assert_eq!(
-            sd.stage_data["max_tokens_override"].as_u64(),
-            Some(8192),
-            "max_tokens_override must be doubled"
-        );
-        assert!(
-            sd.stage_data["conversation_history"].is_array(),
-            "conversation_history must be stored"
-        );
-    }
-
-    /// When all tool rounds are consumed, `ground_impl` must suspend with
-    /// `suspension_type = "max_tool_rounds"`.
-    #[tokio::test]
-    async fn ground_impl_max_tool_rounds_stores_suspension_data() {
-        use crate::tools::clarifying_tools;
-        let captured = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
-        // max_rounds defaults to 5; provide 6 rounds of tool calls.
-        let rounds: Vec<Vec<crate::llm::Chunk>> = (0..=5)
-            .map(|i| chunks_tool_call(&format!("tc{i}"), "sample_column"))
-            .collect();
-        let provider = ScriptedProvider::new(rounds, captured);
-        let mut solver = make_solver_with_provider(provider);
-
-        let intent = make_intent();
-        let hypothesis = make_hypothesis();
-        let result = solver.ground_impl(intent, &hypothesis, None, &[]).await;
-
-        assert!(
-            matches!(
-                result,
-                Err((
-                    AnalyticsError::NeedsUserInput { .. },
-                    BackTarget::Suspend { .. }
-                ))
-            ),
-            "ground_impl must suspend on MaxToolRoundsReached"
-        );
-
-        let sd = solver
-            .suspension_data
-            .take()
-            .expect("suspension_data must be set");
-        assert_eq!(sd.from_state, "clarifying");
-        assert_eq!(
-            sd.stage_data["suspension_type"].as_str(),
-            Some("max_tool_rounds"),
-            "stage_data must tag suspension_type"
-        );
-        assert!(
-            sd.stage_data["extra_rounds"].as_u64().is_some(),
-            "extra_rounds must be stored"
-        );
     }
 
     // -- Suspension: interpret_impl MaxToolRounds -----------------------------
@@ -1354,103 +1117,12 @@ dimensions:
         );
     }
 
-    // -- Resume: conversation_history uses build_continue_messages ------------
-
-    /// On resume from a `max_tokens` suspension, the first message sent to the
-    /// LLM must be the stored conversation history with "Please continue."
-    /// appended — not the fresh user prompt.
-    #[tokio::test]
-    async fn ground_impl_resume_from_max_tokens_sends_continue_message() {
-        use agentic_core::human_input::{ResumeInput, SuspendedRunData};
-
-        let captured = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
-        // Round 1 (initial): text + MaxTokens → suspension.
-        // Round 2 (resume):  valid structured clarify response.
-        let clarify_json = serde_json::json!({
-            "question_type": "Breakdown",
-            "metrics": ["revenue"],
-            "dimensions": ["region"],
-            "filters": []
-        });
-        let provider = ScriptedProvider::new(
-            vec![
-                chunks_text_then_max_tokens("partial"),
-                vec![
-                    crate::llm::Chunk::ToolCall(crate::llm::ToolCallChunk {
-                        id: "resp".to_string(),
-                        name: "clarify_response".to_string(),
-                        input: clarify_json,
-                        provider_data: None,
-                    }),
-                    crate::llm::Chunk::Done(crate::llm::Usage::default()),
-                ],
-            ],
-            std::sync::Arc::clone(&captured),
-        );
-        let mut solver = make_solver_with_provider(provider);
-
-        // ── First run: should suspend ──────────────────────────────────────
-        let intent = make_intent();
-        let hypothesis = make_hypothesis();
-        let _ = solver
-            .ground_impl(intent.clone(), &hypothesis, None, &[])
-            .await;
-        let sd = solver.suspension_data.take().expect("must have suspension");
-        assert_eq!(
-            sd.stage_data["suspension_type"].as_str(),
-            Some("max_tokens")
-        );
-
-        // ── Simulate the solver's resume path: set resume_data ─────────────
-        let _conv_history: Vec<serde_json::Value> = sd.stage_data["conversation_history"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default();
-        solver.resume_data = Some(ResumeInput {
-            data: sd,
-            answer: "Continue with double budget".to_string(),
-        });
-
-        // ── Second run: should complete using build_continue_messages ───────
-        let _ = solver.ground_impl(intent, &hypothesis, None, &[]).await;
-
-        let calls = captured.lock().unwrap();
-        // Second call's messages: built from conv_history + "Please continue."
-        let second_call_msgs = calls.get(1).expect("should have a second LLM call");
-        let last_msg = second_call_msgs.last().expect("messages non-empty");
-        assert_eq!(
-            last_msg["role"].as_str(),
-            Some("user"),
-            "last message must be a user turn"
-        );
-        assert_eq!(
-            last_msg["content"].as_str(),
-            Some("Please continue."),
-            "resume must use build_continue_messages, not build_resume_messages"
-        );
-        // The second call has more messages than just [user] — it has the stored history.
-        assert!(
-            second_call_msgs.len() > 1,
-            "resume messages must include stored conversation history"
-        );
-        // The first message in the second call is NOT the fresh user prompt;
-        // it comes from the stored conversation_history.
-        let first_msg_content = second_call_msgs[0]["content"].as_str().unwrap_or("");
-        let fresh_prompt_start = "Analytics Intent";
-        assert!(
-            !first_msg_content.starts_with(fresh_prompt_start),
-            "resume must NOT re-send the fresh user prompt; \
-             first msg content: {first_msg_content:?}"
-        );
-        drop(calls);
-    }
-
     // -- Resume routing: problem_state_from_resume ----------------------------
 
-    /// Resuming from a "solving" suspension reconstructs `ProblemState::Solving`
-    /// with the stored QuerySpec.
+    /// Resuming from a "solving" suspension now routes to `ProblemState::Specifying`
+    /// (solving is absorbed into specifying).
     #[test]
-    fn problem_state_from_resume_solving_reconstructs_spec() {
+    fn problem_state_from_resume_solving_reconstructs_as_specifying() {
         use crate::solver::resuming::problem_state_from_resume;
         use agentic_core::human_input::SuspendedRunData;
 
@@ -1471,12 +1143,10 @@ dimensions:
 
         let state = problem_state_from_resume(&data);
         match state {
-            ProblemState::Solving(recovered) => {
-                assert_eq!(recovered.intent.raw_question, spec.intent.raw_question);
-                assert_eq!(recovered.resolved_metrics, spec.resolved_metrics);
-                assert_eq!(recovered.connector_name, spec.connector_name);
+            ProblemState::Specifying(recovered_intent) => {
+                assert_eq!(recovered_intent.raw_question, spec.intent.raw_question);
             }
-            other => panic!("expected ProblemState::Solving, got a different variant"),
+            other => panic!("expected ProblemState::Specifying, got a different variant"),
         }
     }
 
@@ -1759,46 +1429,8 @@ ORDER BY activity_date ASC
         }
     }
 
-    // Test 7: should_skip returns Executing with Vendor payload on VendorEngine path.
-    #[test]
-    fn should_skip_returns_executing_for_vendor_engine_path() {
-        let mut s = make_solver();
-        let vq = crate::engine::VendorQuery {
-            payload: serde_json::json!({ "measures": ["orders.revenue"] }),
-        };
-        let spec = QuerySpec {
-            solution_source: SolutionSource::VendorEngine("cube".to_string()),
-            precomputed: Some(SolutionPayload::Vendor(vq)),
-            ..make_spec()
-        };
-        let run_ctx = make_run_ctx();
-        let state = ProblemState::Solving(spec);
+    // should_skip tests for vendor engine removed — solving is absorbed into specifying.
 
-        let result = s.should_skip("solving", &state, &run_ctx);
-
-        assert!(
-            result.is_some(),
-            "should_skip must return Some for VendorEngine path"
-        );
-        match result.unwrap() {
-            ProblemState::Executing(solution) => {
-                assert!(
-                    matches!(solution.payload, SolutionPayload::Vendor(_)),
-                    "payload must be Vendor variant"
-                );
-                assert!(
-                    matches!(&solution.solution_source, SolutionSource::VendorEngine(n) if n == "cube"),
-                    "solution_source must be VendorEngine(\"cube\")"
-                );
-            }
-            _other => panic!("expected ProblemState::Executing"),
-        }
-    }
-
-    // Test 8: No engine on solver — should_skip returns None for LlmWithSemanticContext
-    // (falls through to Solving).  This test is already covered by
-    // `should_skip_returns_none_for_llm_with_semantic_context_path`; we add
-    // an explicit assertion that no engine field is set on the default solver.
     #[test]
     fn solver_with_no_engine_has_none_engine_field() {
         let s = make_solver();

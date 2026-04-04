@@ -2,6 +2,7 @@ import { ArrowUp, CircleX } from "lucide-react";
 import { useRef } from "react";
 import { Button } from "@/components/ui/shadcn/button";
 import { Textarea } from "@/components/ui/shadcn/textarea";
+import { cn } from "@/libs/shadcn/utils";
 
 interface MessageInputProps {
   value: string;
@@ -11,6 +12,8 @@ interface MessageInputProps {
   disabled: boolean;
   isLoading?: boolean;
   showWarning?: boolean;
+  inputClassName?: string;
+  noFocusRing?: boolean;
 }
 
 const MessageInput = ({
@@ -20,7 +23,9 @@ const MessageInput = ({
   onStop,
   disabled,
   isLoading = false,
-  showWarning = false
+  showWarning = false,
+  inputClassName = "",
+  noFocusRing = false
 }: MessageInputProps) => {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -57,9 +62,13 @@ const MessageInput = ({
             value={value}
             onChange={(e) => onChange(e.target.value)}
             placeholder='Ask a follow-up question...'
-            className='min-h-[60px] resize-none border-neutral-700 bg-secondary pr-12'
+            className={cn(
+              "min-h-[60px] resize-none border-neutral-700 bg-secondary pr-12",
+              inputClassName
+            )}
             disabled={disabled}
             onKeyDown={handleKeyDown}
+            noFocusRing={noFocusRing}
           />
           {isLoading ? (
             <Button

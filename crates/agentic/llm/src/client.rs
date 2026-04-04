@@ -98,6 +98,11 @@ impl LlmClient {
         //  1. Anthropic:           role:"assistant" → content[{type:"tool_use", name, id}]
         //  2. OpenAI Responses:    flat item {type:"function_call", name, call_id}
         //  3. OpenAI Chat Compl.:  role:"assistant" → tool_calls[{id, function:{name}}]
+        tracing::trace!(
+            prior_messages_count = prior_messages.len(),
+            "build_resume_messages called"
+        );
+
         let tool_use_id =
             find_ask_user_id(prior_messages).unwrap_or_else(|| "ask_user_0".to_string());
 
@@ -167,6 +172,14 @@ impl LlmClient {
     /// Like [`complete`] but also returns the [`Usage`] reported by the API.
     ///
     /// [`complete`]: LlmClient::complete
+    #[tracing::instrument(
+        skip_all,
+        fields(
+            otel.name = "llm.call",
+            oxy.span_type = "llm",
+            gen_ai.request.model = %self.provider.model_name(),
+        )
+    )]
     pub async fn complete_with_usage(
         &self,
         system: &str,
@@ -203,6 +216,17 @@ impl LlmClient {
         if text.is_empty() {
             return Err(LlmError::Parse("no text content in response".into()));
         }
+
+        tracing::info!(
+            name: "llm.usage",
+            is_visible = true,
+            prompt_tokens = usage.input_tokens as i64,
+            completion_tokens = usage.output_tokens as i64,
+            total_tokens = (usage.input_tokens + usage.output_tokens) as i64,
+            model = %self.provider.model_name(),
+            stop_reason = %format!("{:?}", usage.stop_reason),
+        );
+
         Ok((text, usage))
     }
 
@@ -290,6 +314,22 @@ impl LlmClient {
         let mut all_tool_calls: Vec<(String, serde_json::Value)> = Vec::new();
 
         loop {
+            let round_start = Instant::now();
+
+            // Create an OTel span for this LLM inference round.  The span
+            // covers only the API call + stream consumption; it is explicitly
+            // dropped before tool execution so its duration reflects pure
+            // inference time.
+            let llm_span = tracing::info_span!(
+                "llm_round",
+                otel.name = "llm.call",
+                oxy.span_type = "llm",
+                gen_ai.request.model = %self.provider.model_name(),
+                llm.state = %config.state,
+                llm.round = rounds,
+            );
+            let _llm_guard = llm_span.enter();
+
             let s = self
                 .provider
                 .stream(
@@ -412,6 +452,43 @@ impl LlmClient {
                 .await;
             }
 
+            // Capture the LLM inference time for this round (excludes tool execution).
+            let round_llm_ms = round_start.elapsed().as_millis() as u64;
+
+            // Record token usage as a visible span event on the LLM span so
+            // it appears in the ClickHouse trace detail view.
+            tracing::info!(
+                name: "llm.usage",
+                is_visible = true,
+                prompt_tokens = usage.input_tokens as i64,
+                completion_tokens = usage.output_tokens as i64,
+                total_tokens = (usage.input_tokens + usage.output_tokens) as i64,
+                model = %self.provider.model_name(),
+                duration_ms = round_llm_ms,
+                stop_reason = %format!("{:?}", usage.stop_reason),
+            );
+
+            // Record the LLM output (text + tool calls) as a visible event.
+            {
+                let tool_names: Vec<&str> = tool_calls.iter().map(|tc| tc.name.as_str()).collect();
+                let output_preview = if text.len() > 2000 {
+                    format!("{}… ({} chars)", &text[..2000], text.len())
+                } else {
+                    text.clone()
+                };
+                tracing::info!(
+                    name: "llm.output",
+                    is_visible = true,
+                    text = %output_preview,
+                    tool_calls = %serde_json::to_string(&tool_names).unwrap_or_default(),
+                );
+            }
+
+            // Close the LLM span before tool execution so its duration
+            // reflects only inference time, not tool latency.
+            drop(_llm_guard);
+            drop(llm_span);
+
             // Propagate stream errors — still emit LlmEnd so the consumer
             // always sees a balanced Start/End pair.
             if let Some(e) = stream_err {
@@ -421,6 +498,7 @@ impl LlmClient {
                         state: config.state.clone(),
                         output_tokens: usage.output_tokens,
                         duration_ms: start_time.elapsed().as_millis() as u64,
+                        model: self.provider.model_name().to_string(),
                         sub_spec_index: ssi,
                     },
                 )
@@ -442,6 +520,7 @@ impl LlmClient {
                         state: config.state.clone(),
                         output_tokens: usage.output_tokens,
                         duration_ms: start_time.elapsed().as_millis() as u64,
+                        model: self.provider.model_name().to_string(),
                         sub_spec_index: ssi,
                     },
                 )
@@ -473,13 +552,22 @@ impl LlmClient {
                 //    if that also fails, return EmptyResponse.
                 if text.trim().is_empty() && !thinking_summary.is_empty() {
                     if rounds < config.max_tool_rounds {
-                        // Do NOT append the partial assistant turn.
+                        // The model produced thinking but no text.  Instead of
+                        // discarding the thinking and retrying from scratch,
+                        // preserve it by appending the assistant turn + a
+                        // "Continue" user message.  This avoids wasting the
+                        // thinking budget and nudges the model to emit text.
+                        //
                         // Anthropic rejects assistant messages whose final
-                        // block is a `thinking` block ("The final block in
-                        // an assistant message cannot be `thinking`").
-                        // Since the thinking was incomplete or vacuous it
-                        // provides no useful continuity, so we simply retry
-                        // the original request with a larger budget.
+                        // block is a `thinking` block, so we append an empty
+                        // text block as a sentinel to satisfy the constraint.
+                        let mut assistant_blocks: Vec<ContentBlock> = Vec::new();
+                        assistant_blocks.extend(ordered_blocks);
+                        assistant_blocks.push(ContentBlock::Text {
+                            text: String::new(),
+                        });
+                        messages.push(self.provider.assistant_message(&assistant_blocks));
+                        messages.push(json!({"role": "user", "content": "Continue."}));
 
                         if usage.stop_reason == StopReason::MaxTokens {
                             let current = effective_max_tokens.unwrap_or(THINKING_MAX_TOKENS);
@@ -495,6 +583,7 @@ impl LlmClient {
                             state: config.state.clone(),
                             output_tokens: usage.output_tokens,
                             duration_ms: start_time.elapsed().as_millis() as u64,
+                            model: self.provider.model_name().to_string(),
                             sub_spec_index: ssi,
                         },
                     )
@@ -540,6 +629,7 @@ impl LlmClient {
                             state: config.state.clone(),
                             output_tokens: usage.output_tokens,
                             duration_ms: start_time.elapsed().as_millis() as u64,
+                            model: self.provider.model_name().to_string(),
                             sub_spec_index: ssi,
                         },
                     )
@@ -551,24 +641,27 @@ impl LlmClient {
                     });
                 }
 
-                // For OpenAI response_format path, the text is guaranteed JSON;
-                // parse it into structured_response when a schema was set.
-                let structured_response = if config.response_schema.is_some() && !text.is_empty() {
-                    serde_json::from_str(&text).ok()
-                } else {
-                    None
-                };
-
                 emit_core(
                     events,
                     CoreEvent::LlmEnd {
                         state: config.state.clone(),
                         output_tokens: usage.output_tokens,
                         duration_ms: start_time.elapsed().as_millis() as u64,
+                        model: self.provider.model_name().to_string(),
                         sub_spec_index: ssi,
                     },
                 )
                 .await;
+
+                // When a response_schema is configured and the model returned
+                // plain JSON text (OpenAI response_format path), parse it into
+                // structured_response so callers get the same shape as the
+                // tool-call path.
+                let structured_response = if config.response_schema.is_some() {
+                    serde_json::from_str::<Value>(&text).ok()
+                } else {
+                    None
+                };
 
                 return Ok(LlmOutput {
                     text,
@@ -591,6 +684,7 @@ impl LlmClient {
                         state: config.state.clone(),
                         output_tokens: usage.output_tokens,
                         duration_ms: start_time.elapsed().as_millis() as u64,
+                        model: self.provider.model_name().to_string(),
                         sub_spec_index: ssi,
                     },
                 )
@@ -636,6 +730,7 @@ impl LlmClient {
                     CoreEvent::ToolCall {
                         name: tc.name.clone(),
                         input: tc.input.to_string(),
+                        llm_duration_ms: round_llm_ms,
                         sub_spec_index: ssi,
                     },
                 )
@@ -671,6 +766,7 @@ impl LlmClient {
                             state: config.state.clone(),
                             output_tokens: 0,
                             duration_ms: start_time.elapsed().as_millis() as u64,
+                            model: self.provider.model_name().to_string(),
                             sub_spec_index: ssi,
                         },
                     )
@@ -778,4 +874,17 @@ pub(crate) fn find_ask_user_id(messages: &[Value]) -> Option<String> {
         }
     }
     None
+}
+
+/// Try to extract the first top-level JSON object from `text` that may be
+/// surrounded by prose or markdown fences.  Returns `None` if no valid
+/// object is found.
+fn extract_json_object(text: &str) -> Option<Value> {
+    let start = text.find('{')?;
+    // Walk from the end backwards to find the matching closing brace.
+    let end = text.rfind('}')?;
+    if end <= start {
+        return None;
+    }
+    serde_json::from_str(&text[start..=end]).ok()
 }

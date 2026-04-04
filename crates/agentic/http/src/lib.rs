@@ -21,7 +21,6 @@
 //! | POST   | `/analytics/runs/:id/answer`  | Deliver answer to a suspended run    |
 //! | POST   | `/analytics/runs/:id/cancel`  | Cancel a running or suspended run    |
 
-pub mod app_builder_routes;
 pub mod db;
 pub mod routes;
 pub mod sse;
@@ -46,7 +45,7 @@ pub async fn cleanup_stale_runs() -> Result<u64, Box<dyn std::error::Error + Sen
 
 use axum::{
     Router,
-    routing::{get, post},
+    routing::{get, patch, post},
 };
 use std::sync::Arc;
 
@@ -60,40 +59,14 @@ where
         .route("/runs/{id}/events", get(routes::stream_events))
         .route("/runs/{id}/answer", post(routes::answer_run))
         .route("/runs/{id}/cancel", post(routes::cancel_run))
+        .route(
+            "/runs/{id}/thinking_mode",
+            patch(routes::update_thinking_mode),
+        )
         .route("/threads/{thread_id}/run", get(routes::get_run_by_thread))
         .route(
             "/threads/{thread_id}/runs",
             get(routes::list_runs_by_thread),
-        )
-        .layer(axum::Extension(state))
-}
-
-/// Build the app-builder sub-router.  Mount with `.nest("/app-builder", app_builder_router(state))`.
-pub fn app_builder_router<S>(state: Arc<AgenticState>) -> Router<S>
-where
-    S: Clone + Send + Sync + 'static,
-{
-    Router::new()
-        .route("/app-runs", post(app_builder_routes::create_app_run))
-        .route(
-            "/app-runs/{id}/events",
-            get(app_builder_routes::stream_app_events),
-        )
-        .route(
-            "/app-runs/{id}/answer",
-            post(app_builder_routes::answer_app_run),
-        )
-        .route(
-            "/app-runs/{id}/cancel",
-            post(app_builder_routes::cancel_app_run),
-        )
-        .route(
-            "/app-runs/{id}/retry",
-            post(app_builder_routes::retry_app_run),
-        )
-        .route(
-            "/threads/{thread_id}/runs",
-            get(app_builder_routes::list_app_runs_by_thread),
         )
         .layer(axum::Extension(state))
 }

@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { FileType } from "@/utils/fileTypes";
 import AgentEditor from "./Agent";
+import AgenticAnalyticsEditor from "./AgenticAnalytics";
 import AppEditor from "./App";
 import { useEditorContext } from "./contexts/useEditorContext";
 import DefaultEditor from "./Default";
@@ -20,6 +21,8 @@ const EditorRouterComponent = () => {
       return <WorkflowEditor />;
     case FileType.AGENT:
       return <AgentEditor />;
+    case FileType.ANALYTICS_AGENT:
+      return <AgenticAnalyticsEditor />;
     case FileType.APP:
       return <AppEditor />;
     case FileType.SQL:

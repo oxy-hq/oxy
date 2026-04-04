@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronLeft, ChevronRight, Layers, Loader2 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   type AnalyticsStep,
   buildAnalyticsSteps,
@@ -116,14 +116,40 @@ function countSteps(items: StepOrGroup[]): { total: number; done: number } {
   return { total, done };
 }
 
+function aggregateLlmStats(events: UiBlock[]): { calls: number; totalMs: number } {
+  let calls = 0;
+  let totalMs = 0;
+  for (const ev of events) {
+    if (ev.event_type === "llm_usage") {
+      calls++;
+      totalMs += ev.payload.duration_ms || 0;
+    }
+  }
+  return { calls, totalMs };
+}
+
 interface HeaderProps {
   items: StepOrGroup[];
   isStreaming: boolean;
   collapsed: boolean;
   onToggle: () => void;
+  llmCalls: number;
+  llmTotalMs: number;
 }
 
-const TraceHeader = ({ items, isStreaming, collapsed, onToggle }: HeaderProps) => {
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+const TraceHeader = ({
+  items,
+  isStreaming,
+  collapsed,
+  onToggle,
+  llmCalls,
+  llmTotalMs
+}: HeaderProps) => {
   const { total, done } = countSteps(items);
   const isComplete = !isStreaming;
 
@@ -140,8 +166,13 @@ const TraceHeader = ({ items, isStreaming, collapsed, onToggle }: HeaderProps) =
         <Loader2 className='h-3 w-3 shrink-0 animate-spin text-primary' />
       )}
       <span className='font-medium text-muted-foreground text-sm'>Reasoning trace</span>
-      <span className='ml-auto font-mono text-muted-foreground text-xs'>
-        {isComplete ? `${total} steps` : total > 0 ? `${done}/${total}` : ""}
+      <span className='ml-auto flex items-center gap-2 font-mono text-muted-foreground text-xs'>
+        {llmCalls > 0 && (
+          <span>
+            {llmCalls} LLM {llmCalls === 1 ? "call" : "calls"} · {formatDuration(llmTotalMs)}
+          </span>
+        )}
+        <span>{isComplete ? `${total} steps` : total > 0 ? `${done}/${total}` : ""}</span>
       </span>
     </button>
   );
@@ -161,6 +192,10 @@ const AnalyticsReasoningTrace = ({
   onSelectArtifact
 }: AnalyticsReasoningTraceProps) => {
   const items = buildAnalyticsSteps(events);
+  const { calls: llmCalls, totalMs: llmTotalMs } = useMemo(
+    () => aggregateLlmStats(events),
+    [events]
+  );
 
   const hasContent = items.length > 0;
   const [collapsed, setCollapsed] = useAutoCollapse(isRunning, hasContent);
@@ -178,6 +213,8 @@ const AnalyticsReasoningTrace = ({
         isStreaming={isRunning}
         collapsed={collapsed}
         onToggle={toggleCollapse}
+        llmCalls={llmCalls}
+        llmTotalMs={llmTotalMs}
       />
 
       <div

@@ -78,6 +78,37 @@ export function useWorkflowRunsChartOptions(timeBuckets: TimeBucket[]): EChartsO
   );
 }
 
+export function useAnalyticsRunsChartOptions(timeBuckets: TimeBucket[]): EChartsOption {
+  return useMemo(
+    () => ({
+      tooltip: {
+        trigger: "axis",
+        formatter: createTooltipFormatter("Analytics Runs")
+      },
+      grid: CHART_GRID,
+      xAxis: {
+        type: "category",
+        data: timeBuckets.map((b) => b.time),
+        ...AXIS_STYLE,
+        axisLabel: AXIS_LABEL_STYLE
+      },
+      yAxis: {
+        type: "value",
+        ...AXIS_STYLE
+      },
+      series: [
+        {
+          type: "bar",
+          data: timeBuckets.map((b) => b.analyticsCount),
+          itemStyle: { color: CHART_COLORS.warning },
+          barMaxWidth: 20
+        }
+      ]
+    }),
+    [timeBuckets]
+  );
+}
+
 export function useDurationChartOptions(durationBuckets: DurationBucket[]): EChartsOption {
   return useMemo(
     () => ({

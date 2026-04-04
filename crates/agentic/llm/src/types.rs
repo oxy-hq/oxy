@@ -96,7 +96,7 @@ pub enum ThinkingConfig {
 ///
 /// When set on [`ToolLoopConfig`], the provider uses its native constrained
 /// decoding mechanism to guarantee the response matches this schema:
-/// - **Anthropic**: forced tool-use (synthetic tool + `tool_choice`).
+/// - **Anthropic**: native `output_config.format` (structured outputs API).
 /// - **OpenAI**: `response_format: {type: "json_schema", ...}` with `strict: true`.
 #[derive(Debug, Clone)]
 pub struct ResponseSchema {

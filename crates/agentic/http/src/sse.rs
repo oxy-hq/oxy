@@ -267,10 +267,11 @@ pub fn serialize_ui_block(block: &UiBlock<AnalyticsEvent>) -> (String, Value) {
         UiBlock::ToolCall {
             name,
             input,
+            llm_duration_ms,
             sub_spec_index,
         } => (
             "tool_call".into(),
-            json!({ "name": name, "input": input, "sub_spec_index": sub_spec_index }),
+            json!({ "name": name, "input": input, "llm_duration_ms": llm_duration_ms, "sub_spec_index": sub_spec_index }),
         ),
         UiBlock::ToolResult {
             name,
@@ -297,7 +298,9 @@ pub fn serialize_ui_block(block: &UiBlock<AnalyticsEvent>) -> (String, Value) {
                 })).collect::<Vec<_>>(),
             }),
         ),
-        UiBlock::HumanInputResolved => ("human_input_resolved".into(), json!({})),
+        UiBlock::HumanInputResolved { answer } => {
+            ("human_input_resolved".into(), json!({ "answer": answer }))
+        }
         UiBlock::FanOutStart { total } => ("fan_out_start".into(), json!({ "total": total })),
         UiBlock::SubSpecStart {
             index,
@@ -316,10 +319,11 @@ pub fn serialize_ui_block(block: &UiBlock<AnalyticsEvent>) -> (String, Value) {
             prompt_tokens,
             output_tokens,
             duration_ms,
+            model,
             sub_spec_index,
         } => (
             "llm_usage".into(),
-            json!({ "prompt_tokens": prompt_tokens, "output_tokens": output_tokens, "duration_ms": duration_ms, "sub_spec_index": sub_spec_index }),
+            json!({ "prompt_tokens": prompt_tokens, "output_tokens": output_tokens, "duration_ms": duration_ms, "model": model, "sub_spec_index": sub_spec_index }),
         ),
         UiBlock::Domain(e) => serialize_domain(e),
         UiBlock::Done => ("done".into(), json!({})),

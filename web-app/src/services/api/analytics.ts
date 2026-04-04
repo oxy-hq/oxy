@@ -1,10 +1,13 @@
 import { apiBaseURL } from "../env";
 import { apiClient } from "./axios";
 
+export type ThinkingMode = "auto" | "extended_thinking";
+
 export interface CreateAnalyticsRunRequest {
   agent_id: string;
   question: string;
   thread_id?: string;
+  thinking_mode?: ThinkingMode;
 }
 
 export interface CreateAnalyticsRunResponse {
@@ -66,7 +69,12 @@ export type ThinkingEndBlock = {
 export type ToolCallBlock = {
   seq: number;
   event_type: "tool_call";
-  payload: { name: string; input: unknown; sub_spec_index?: number | null };
+  payload: {
+    name: string;
+    input: unknown;
+    llm_duration_ms?: number;
+    sub_spec_index?: number | null;
+  };
 };
 
 export type ToolResultBlock = {
@@ -89,7 +97,7 @@ export type AwaitingInputBlock = {
 export type HumanInputResolvedBlock = {
   seq: number;
   event_type: "human_input_resolved";
-  payload: Record<string, never>;
+  payload: { answer?: string };
 };
 
 export type DoneBlock = {
@@ -176,7 +184,7 @@ export type SpecResolvedBlock = {
 export type QueryGeneratedBlock = {
   seq: number;
   event_type: "query_generated";
-  payload: { sql: string };
+  payload: { sql: string; sub_spec_index?: number | null };
 };
 
 export type QueryExecutedBlock = {
@@ -190,6 +198,7 @@ export type QueryExecutedBlock = {
     error?: string;
     columns: string[];
     rows: string[][];
+    sub_spec_index?: number | null;
   };
 };
 
@@ -209,6 +218,23 @@ export type ChartConfig = {
   title?: string;
   x_axis_label?: string;
   y_axis_label?: string;
+};
+
+export type SemanticShortcutAttemptedBlock = {
+  seq: number;
+  event_type: "semantic_shortcut_attempted";
+  payload: {
+    measures: string[];
+    dimensions: string[];
+    filters: string[];
+    time_dimensions: string[];
+  };
+};
+
+export type SemanticShortcutResolvedBlock = {
+  seq: number;
+  event_type: "semantic_shortcut_resolved";
+  payload: { sql: string };
 };
 
 export type ChartRenderedBlock = {
@@ -304,6 +330,7 @@ export type LlmUsageBlock = {
     prompt_tokens: number;
     output_tokens: number;
     duration_ms: number;
+    model?: string;
     sub_spec_index?: number | null;
   };
 };
@@ -344,6 +371,8 @@ export type UiBlock =
   | TaskSqlResolvedBlock
   | TaskExecutedBlock
   | AppYamlReadyBlock
+  | SemanticShortcutAttemptedBlock
+  | SemanticShortcutResolvedBlock
   | LlmUsageBlock;
 
 export interface AnalyticsRunSummary {
@@ -353,6 +382,7 @@ export interface AnalyticsRunSummary {
   question: string;
   answer?: string;
   error_message?: string;
+  thinking_mode?: ThinkingMode;
   ui_events?: UiBlock[];
 }
 
@@ -401,6 +431,16 @@ export class AnalyticsService {
 
   static async cancelRun(projectId: string, runId: string): Promise<void> {
     await apiClient.post(`/${projectId}/analytics/runs/${runId}/cancel`);
+  }
+
+  static async updateThinkingMode(
+    projectId: string,
+    runId: string,
+    thinkingMode: ThinkingMode
+  ): Promise<void> {
+    await apiClient.patch(`/${projectId}/analytics/runs/${runId}/thinking_mode`, {
+      thinking_mode: thinkingMode === "auto" ? null : thinkingMode
+    });
   }
 
   /** Returns the URL for the SSE event stream (callers open it with fetchEventSource). */

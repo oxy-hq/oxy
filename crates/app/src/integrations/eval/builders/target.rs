@@ -4,7 +4,10 @@ use itertools::Itertools;
 
 use oxy::execute::{
     Executable, ExecutionContext, execute_with_handler,
-    types::{Event, EventKind, OutputContainer, OutputGetter, RelevantContextGetter, TargetOutput},
+    types::{
+        Event, EventKind, Output, OutputContainer, OutputGetter, RelevantContextGetter,
+        TargetOutput,
+    },
     writer::EventHandler,
 };
 use oxy_agent::AgentLauncherExecutable;
@@ -56,6 +59,29 @@ impl Executable<EvalTarget> for EvalTargetWrapper {
         match input {
             EvalTarget::Workflow(w) => WorkflowLauncherExecutable.execute(ctx, w).await,
             EvalTarget::Agent(a) => AgentLauncherExecutable.execute(ctx, a).await,
+            EvalTarget::Agentic(agentic_input) => {
+                // Resolve the config path to absolute via the project manager so
+                // AgentConfig::from_file reads from the right location regardless
+                // of the process CWD.
+                let resolved = ctx
+                    .project
+                    .config_manager
+                    .resolve_file(&agentic_input.config_path)
+                    .await
+                    .map_err(|e| {
+                        OxyError::ConfigurationError(format!(
+                            "Failed to resolve agentic config path '{}': {e}",
+                            agentic_input.config_path
+                        ))
+                    })?;
+                let answer_text = agentic_http::routes::run_agentic_eval(
+                    ctx.project.clone(),
+                    std::path::Path::new(&resolved),
+                    agentic_input.prompt,
+                )
+                .await?;
+                Ok(OutputContainer::Single(Output::Text(answer_text)))
+            }
         }
     }
 }

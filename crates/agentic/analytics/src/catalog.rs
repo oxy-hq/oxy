@@ -50,6 +50,9 @@ pub struct MetricSummary {
     /// Aggregation kind: `"sum"`, `"count"`, `"avg"`, etc.
     /// Empty for raw-schema metrics that have no semantic definition.
     pub metric_type: String,
+    /// SQL expression or column reference (e.g. `"SUM(amount)"`, `"revenue"`).
+    /// Lets the LLM see the formula without a separate tool call.
+    pub expr: Option<String>,
 }
 
 /// Result of a batch catalog search across multiple queries.
@@ -888,6 +891,7 @@ impl Catalog for SchemaCatalog {
                         name: full.clone(),
                         description: format!("Numeric column `{col}` in table `{table}`"),
                         metric_type: String::new(),
+                        expr: None,
                     });
                 }
             }

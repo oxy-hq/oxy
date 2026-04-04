@@ -26,16 +26,28 @@ function isWorkflowTrace(trace: Trace): boolean {
   return trace.spanName.startsWith("workflow.");
 }
 
+// Helper to determine if trace is an analytics run
+function isAnalyticsTrace(trace: Trace): boolean {
+  return trace.spanName === "analytics.run";
+}
+
+// Helper to get question from analytics trace span attributes
+function getAnalyticsQuestion(trace: Trace): string | undefined {
+  const attrs = getSpanAttributesAsRecord(trace);
+  return attrs["question"];
+}
+
 export function TraceCard({ trace, onClick }: TraceCardProps) {
   const isError = trace.statusCode === "Error";
   const isWorkflow = isWorkflowTrace(trace);
+  const isAnalytics = isAnalyticsTrace(trace);
   const agentRef = getAgentRef(trace);
   const workflowRef = getWorkflowRef(trace);
-  const prompt = getPrompt(trace);
+  const prompt = isAnalytics ? getAnalyticsQuestion(trace) : getPrompt(trace);
   const durationMs = getDurationMs(trace);
   const tokensTotal = getTokensTotal(trace);
 
-  // For workflow traces, use workflow_ref; for agent traces, use prompt
+  // For workflow traces, use workflow_ref; for agent/analytics traces, use prompt
   const displayTitle = isWorkflow
     ? workflowRef || formatSpanLabel(trace.spanName)
     : prompt || formatSpanLabel(trace.spanName);

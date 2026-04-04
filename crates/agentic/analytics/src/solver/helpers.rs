@@ -55,15 +55,7 @@ pub fn fmt_result_shape(shape: &crate::types::ResultShape) -> String {
 pub fn is_retryable_compile_error(e: &airlayer::engine::EngineError) -> bool {
     use airlayer::engine::EngineError;
     match e {
-        // QueryError: "Measure 'X' not found", "Dimension 'X' not found",
-        // "Invalid member path", "Segment 'X' not found" — all fixable by
-        // the LLM choosing a different name.
-        //
-        // Exception: "spans multiple dialects" / "Cross-database" — structural,
-        // not fixable by renaming.
-        EngineError::QueryError(msg) => {
-            !msg.contains("multiple dialects") && !msg.contains("Cross-database")
-        }
+        EngineError::QueryError(_msg) => true,
         // JoinError, SchemaError, SqlGenerationError — structural, not retryable.
         EngineError::JoinError(_)
         | EngineError::SchemaError(_)

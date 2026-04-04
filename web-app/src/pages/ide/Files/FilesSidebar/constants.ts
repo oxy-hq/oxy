@@ -15,6 +15,7 @@ export const OBJECT_FILE_TYPES = [
   FileType.AUTOMATION,
   FileType.AGENT,
   FileType.AGENTIC_WORKFLOW,
+  FileType.ANALYTICS_AGENT,
   FileType.APP,
   FileType.VIEW,
   FileType.TOPIC,
