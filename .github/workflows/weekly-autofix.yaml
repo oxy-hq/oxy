@@ -19,20 +19,45 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: rui314/setup-mold@v1
+        with:
+          make-default: true
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
 
+      - name: Prep cargo cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - uses: pnpm/action-setup@v5
         with:
           run_install: false
+
       - name: Install Node.js
         uses: actions/setup-node@v6
         id: setup-node
         with:
           node-version: 24.x
           cache: "pnpm"
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm store cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile --prefer-offline
