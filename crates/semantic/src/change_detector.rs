@@ -329,15 +329,14 @@ impl ChangeDetector {
                 }
             } else if path.is_dir() {
                 // Skip hidden directories and common non-project directories
-                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    if name.starts_with('.')
+                if let Some(name) = path.file_name().and_then(|n| n.to_str())
+                    && (name.starts_with('.')
                         || name == "target"
                         || name == "node_modules"
                         || name == "dist"
-                        || name == "build"
-                    {
-                        continue;
-                    }
+                        || name == "build")
+                {
+                    continue;
                 }
                 // Recursively scan subdirectories
                 Self::scan_directory(&path, base_dir, extension, file_hashes)?;
