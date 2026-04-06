@@ -119,15 +119,14 @@ impl SemanticLayerParser {
                         continue;
                     }
                     // Skip hidden directories and common non-project directories
-                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                        if name.starts_with('.')
+                    if let Some(name) = path.file_name().and_then(|n| n.to_str())
+                        && (name.starts_with('.')
                             || name == "target"
                             || name == "node_modules"
                             || name == "dist"
-                            || name == "build"
-                        {
-                            continue;
-                        }
+                            || name == "build")
+                    {
+                        continue;
                     }
                     dirs_to_scan.push(path);
                 } else if path.is_file() {
