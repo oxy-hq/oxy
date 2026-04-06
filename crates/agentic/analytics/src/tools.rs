@@ -507,27 +507,27 @@ async fn sample_single_column(
 
     // If the semantic layer has static samples, return them directly.
     // When a search_term is provided, filter the static samples.
-    if let Some(ref target) = resolved {
-        if !target.static_samples.is_empty() {
-            let values: Vec<Value> = target
-                .static_samples
-                .iter()
-                .filter(|s| {
-                    search_term
-                        .map(|term| s.to_lowercase().contains(&term.to_lowercase()))
-                        .unwrap_or(true)
-                })
-                .map(|s| Value::String(s.clone()))
-                .collect();
-            return Ok(json!({
-                "column": column_param,
-                "table": table_param,
-                "data_type": target.data_type.as_deref().unwrap_or("string"),
-                "sample_values": values,
-                "source": "semantic_layer",
-                "hint": "These are pre-defined sample values from the semantic layer definition."
-            }));
-        }
+    if let Some(ref target) = resolved
+        && !target.static_samples.is_empty()
+    {
+        let values: Vec<Value> = target
+            .static_samples
+            .iter()
+            .filter(|s| {
+                search_term
+                    .map(|term| s.to_lowercase().contains(&term.to_lowercase()))
+                    .unwrap_or(true)
+            })
+            .map(|s| Value::String(s.clone()))
+            .collect();
+        return Ok(json!({
+            "column": column_param,
+            "table": table_param,
+            "data_type": target.data_type.as_deref().unwrap_or("string"),
+            "sample_values": values,
+            "source": "semantic_layer",
+            "hint": "These are pre-defined sample values from the semantic layer definition."
+        }));
     }
 
     // When the semantic layer resolves the target, `column_expr` is
@@ -624,25 +624,25 @@ async fn sample_single_column(
             "SELECT COUNT(*), COUNT(DISTINCT {col_sql}), MIN({col_sql}), MAX({col_sql}), \
              AVG({col_sql}), STDDEV_POP({col_sql}) FROM {table_sql}"
         );
-        if let Ok(stats_res) = connector.execute_query(&stats_sql, 1).await {
-            if let Some(row) = stats_res.result.rows.first() {
-                let row_count = row.0.first().and_then(|c| cell_u64(c)).unwrap_or(0);
-                let distinct_count = row.0.get(1).and_then(|c| cell_u64(c));
-                let min_val = row.0.get(2).and_then(|c| cell_f64(c));
-                let max_val = row.0.get(3).and_then(|c| cell_f64(c));
-                let avg_val = row.0.get(4).and_then(|c| cell_f64(c));
-                let stdev_val = row.0.get(5).and_then(|c| cell_f64(c));
-                let mut r = base;
-                r["data_type"] = json!(data_type);
-                r["sample_values"] = json!(values);
-                r["row_count"] = json!(row_count);
-                r["distinct_count"] = json!(distinct_count);
-                r["min"] = json!(min_val);
-                r["max"] = json!(max_val);
-                r["avg"] = json!(avg_val);
-                r["stdev"] = json!(stdev_val);
-                return Ok(r);
-            }
+        if let Ok(stats_res) = connector.execute_query(&stats_sql, 1).await
+            && let Some(row) = stats_res.result.rows.first()
+        {
+            let row_count = row.0.first().and_then(&cell_u64).unwrap_or(0);
+            let distinct_count = row.0.get(1).and_then(&cell_u64);
+            let min_val = row.0.get(2).and_then(&cell_f64);
+            let max_val = row.0.get(3).and_then(&cell_f64);
+            let avg_val = row.0.get(4).and_then(&cell_f64);
+            let stdev_val = row.0.get(5).and_then(cell_f64);
+            let mut r = base;
+            r["data_type"] = json!(data_type);
+            r["sample_values"] = json!(values);
+            r["row_count"] = json!(row_count);
+            r["distinct_count"] = json!(distinct_count);
+            r["min"] = json!(min_val);
+            r["max"] = json!(max_val);
+            r["avg"] = json!(avg_val);
+            r["stdev"] = json!(stdev_val);
+            return Ok(r);
         }
     } else {
         // Date and text columns: fetch count, distinct count, min, max.
@@ -650,21 +650,21 @@ async fn sample_single_column(
             "SELECT COUNT(*), COUNT(DISTINCT {col_sql}), MIN({col_sql}), MAX({col_sql}) \
              FROM {table_sql}"
         );
-        if let Ok(stats_res) = connector.execute_query(&stats_sql, 1).await {
-            if let Some(row) = stats_res.result.rows.first() {
-                let row_count = row.0.first().and_then(|c| cell_u64(c)).unwrap_or(0);
-                let distinct_count = row.0.get(1).and_then(|c| cell_u64(c));
-                let min_val = row.0.get(2).and_then(|c| cell_str(c));
-                let max_val = row.0.get(3).and_then(|c| cell_str(c));
-                let mut r = base;
-                r["data_type"] = json!(data_type);
-                r["sample_values"] = json!(values);
-                r["row_count"] = json!(row_count);
-                r["distinct_count"] = json!(distinct_count);
-                r["min"] = json!(min_val);
-                r["max"] = json!(max_val);
-                return Ok(r);
-            }
+        if let Ok(stats_res) = connector.execute_query(&stats_sql, 1).await
+            && let Some(row) = stats_res.result.rows.first()
+        {
+            let row_count = row.0.first().and_then(&cell_u64).unwrap_or(0);
+            let distinct_count = row.0.get(1).and_then(cell_u64);
+            let min_val = row.0.get(2).and_then(&cell_str);
+            let max_val = row.0.get(3).and_then(cell_str);
+            let mut r = base;
+            r["data_type"] = json!(data_type);
+            r["sample_values"] = json!(values);
+            r["row_count"] = json!(row_count);
+            r["distinct_count"] = json!(distinct_count);
+            r["min"] = json!(min_val);
+            r["max"] = json!(max_val);
+            return Ok(r);
         }
     }
 
