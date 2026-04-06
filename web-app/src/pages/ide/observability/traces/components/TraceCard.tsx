@@ -34,7 +34,7 @@ function isAnalyticsTrace(trace: Trace): boolean {
 // Helper to get question from analytics trace span attributes
 function getAnalyticsQuestion(trace: Trace): string | undefined {
   const attrs = getSpanAttributesAsRecord(trace);
-  return attrs["question"];
+  return attrs.question;
 }
 
 export function TraceCard({ trace, onClick }: TraceCardProps) {
