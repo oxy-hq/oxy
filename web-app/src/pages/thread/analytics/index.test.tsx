@@ -560,7 +560,15 @@ describe("AnalyticsThread — stale-cache duplicate auto-start race condition", 
   it("does not render duplicate questions when allRuns contains the original run", () => {
     mockUseAnalyticsRun.mockReturnValue(makeResult());
     mockUseQuery.mockReturnValue({
-      data: [{ run_id: "r1", question: "Analyze sales data", status: "done", answer: "Result", ui_events: [] }],
+      data: [
+        {
+          run_id: "r1",
+          question: "Analyze sales data",
+          status: "done",
+          answer: "Result",
+          ui_events: []
+        }
+      ],
       isLoading: false,
       isFetching: false
     });
