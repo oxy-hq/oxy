@@ -341,10 +341,10 @@ impl AnalyticsSolver {
         default: ThinkingConfig,
     ) -> ThinkingConfig {
         // Extended thinking override takes absolute precedence.
-        if self.extended_thinking_active {
-            if let Some(global) = &self.global_thinking {
-                return global.clone();
-            }
+        if self.extended_thinking_active
+            && let Some(global) = &self.global_thinking
+        {
+            return global.clone();
         }
         if let Some(t) = self
             .state_configs
@@ -479,10 +479,10 @@ impl AnalyticsFanoutWorker {
     /// Return the [`ThinkingConfig`] for a state.
     fn thinking_for_state(&self, state: &str, default: ThinkingConfig) -> ThinkingConfig {
         // Extended thinking override takes absolute precedence.
-        if self.extended_thinking_active {
-            if let Some(global) = &self.global_thinking {
-                return global.clone();
-            }
+        if self.extended_thinking_active
+            && let Some(global) = &self.global_thinking
+        {
+            return global.clone();
         }
         if let Some(t) = self
             .state_configs
