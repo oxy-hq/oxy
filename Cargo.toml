@@ -39,17 +39,17 @@ async-openai = {version = "0.33.0"}
 axum = {version = "0.8.8", features = ["macros", "http2"]}
 axum-server = {version = "0.8.0", features = ["tls-rustls"]}
 chrono = "*"
-indexmap = {version = "2.13.0", features = ["serde"]}
+indexmap = {version = "2.13.1", features = ["serde"]}
 log = {version = "0.4"}
-minijinja = {version = "2.17.1"}
+minijinja = {version = "2.19.0"}
 regex = {version = "1.12.3"}
-sea-orm = {version = "1.1.19", features = [
+sea-orm = {version = "1.1.20", features = [
   "sqlx-postgres",
   "runtime-tokio-rustls",
   "macros",
   "with-chrono",
 ]}
-sea-orm-migration = {version = "1.1.19", features = [
+sea-orm-migration = {version = "1.1.20", features = [
   "sqlx-postgres",
   "runtime-tokio-rustls",
   "with-uuid",
@@ -60,9 +60,9 @@ serde_json = {version = "1.0.149"}
 serde_yaml = {version = "0.9.34"}
 tempfile = {version = "3.27.0"}
 thiserror = {version = "2.0.18"}
-tokio = {version = "1.50", features = ["full"]}
+tokio = {version = "1.51", features = ["full"]}
 tracing = {version = "0.1.44"}
-uuid = { version = "1.22", features = ["serde", "v4"] }
+uuid = { version = "1.23", features = ["serde", "v4"] }
 
 [workspace.package]
 # TODO: turn this on when https://github.com/googleapis/release-please/issues number 2111 is fixed
