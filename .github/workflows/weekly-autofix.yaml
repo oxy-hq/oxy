@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   autofix:
-    if: ${{ github.repository == 'oxy-hq/oxy' }}
+    if: ${{ github.repository == 'oxy-hq/oxy' && github.event_name != 'workflow_run' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/create-github-app-token@v2
