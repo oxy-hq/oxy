@@ -93,21 +93,21 @@ rapidfuzz = "0.5.0"
 # CLI
 clap = { version = "4.5.60", features = ["derive"] }
 colored = "3.1.1"
-indicatif = "0.17"
+indicatif = "0.18"
 headless_chrome = { version = "1.0" }
 
 # Database
 sea-orm = { workspace = true }
-clickhouse = { version = "0.13.3", features = ["rustls-tls"] }
+clickhouse = { version = "0.14.3", features = ["rustls-tls"] }
 
 # Machine learning (for traces analytics)
 linfa = "0.8.1"
 linfa-reduction = "0.8.1"
-ndarray = { version = "0.16", features = ["rayon"] }
+ndarray = { version = "0.17", features = ["rayon"] }
 
 # Data processing
-arrow = { version = "=56.2.0", default-features = false, features = ["json"] }
-parquet = "=56.2.0"
+arrow = { version = "=58.1.0", default-features = false, features = ["json"] }
+parquet = "=58.1.0"
 duckdb = { version = "=1.4.4", features = ["bundled"] }
 
 # Utilities
@@ -123,10 +123,10 @@ include_dir = "0.7"
 tower-serve-static = "0.1.1"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 constant_time_eq = "0.4.2"
-hmac = "0.12.1"
-sha2 = "0.10.9"
+hmac = "0.13.0"
+sha2 = "0.11.0"
 hex = "0.4.3"
-rand = "0.8"
+rand = "0.9"
 aws-config = { version = "1", features = ["behavior-version-latest"] }
 aws-sdk-sesv2 = "1"
 governor = "0.10"
@@ -144,7 +144,7 @@ jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
 lazy_static = "1.5.0"
 email_address = "0.2.9"
 serde_urlencoded = "0.7"
-self_update = "0.42.0"
+self_update = "0.44.0"
 slugify = "0.1.0"
 syntect = "5.3"
 tabled = "0.20.0"
@@ -173,7 +173,7 @@ oxy-looker = { path = "../integration/looker" }
 migration = { path = "../migration" }
 
 # MCP
-rmcp = { version = "0.8.5", features = [
+rmcp = { version = "0.10.0", features = [
     "server",
     "transport-sse-server",
     "transport-io",

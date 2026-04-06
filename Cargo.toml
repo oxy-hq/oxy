@@ -35,7 +35,7 @@ default-members = ["crates/app"]
 resolver = "2"
 
 [workspace.dependencies]
-async-openai = {version = "0.33.0"}
+async-openai = {version = "0.34.0"}
 axum = {version = "0.8.8", features = ["macros", "http2"]}
 axum-server = {version = "0.8.0", features = ["tls-rustls"]}
 chrono = "*"
@@ -54,7 +54,7 @@ sea-orm-migration = {version = "1.1.19", features = [
   "runtime-tokio-rustls",
   "with-uuid",
 ]}
-sentry = {version = "0.46.2", features = ["tower-axum-matched-path", "rustls", "tracing"]}
+sentry = {version = "0.47.0", features = ["tower-axum-matched-path", "rustls", "tracing"]}
 serde = {version = "1.0", features = ["derive"]}
 serde_json = {version = "1.0.149"}
 serde_yaml = {version = "0.9.34"}
