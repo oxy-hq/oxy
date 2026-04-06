@@ -1,6 +1,6 @@
 import type { UseQueryResult } from "@tanstack/react-query";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import type { AppData } from "@/types/app";
-import { ErrorAlert, ErrorAlertMessage } from "./ErrorAlert";
 
 interface AppDataStateProps {
   appDataQueryResult: UseQueryResult<AppData, Error>;
@@ -9,11 +9,7 @@ interface AppDataStateProps {
 const AppDataState = ({ appDataQueryResult }: AppDataStateProps) => {
   const { isError, error, data } = appDataQueryResult;
 
-  const renderErrorAlert = (message: string) => (
-    <ErrorAlert className='mb-2'>
-      <ErrorAlertMessage>{message}</ErrorAlertMessage>
-    </ErrorAlert>
-  );
+  const renderErrorAlert = (message: string) => <ErrorAlert message={message} className='mb-2' />;
 
   if (isError && error) {
     return renderErrorAlert(error.message);

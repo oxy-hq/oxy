@@ -1,6 +1,7 @@
 import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/shadcn/button";
+import { FieldError } from "@/components/ui/shadcn/field";
 import { Input } from "@/components/ui/shadcn/input";
 import ROUTES from "@/libs/utils/routes";
 import Header from "../Header";
@@ -49,7 +50,7 @@ export default function WorkspaceNameStep({ initialData, onNext }: WorkspaceName
             })}
             autoFocus
           />
-          {errors.name && <p className='mt-1 text-destructive text-sm'>{errors.name.message}</p>}
+          {errors.name && <FieldError className='mt-1'>{errors.name.message}</FieldError>}
         </div>
       </div>
       <div className='mt-8'>

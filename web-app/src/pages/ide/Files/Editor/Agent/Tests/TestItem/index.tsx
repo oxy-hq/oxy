@@ -1,6 +1,7 @@
-import { LoaderCircle, Play } from "lucide-react";
+import { Play } from "lucide-react";
 import { Badge } from "@/components/ui/shadcn/badge";
 import { Button } from "@/components/ui/shadcn/button";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { cn } from "@/libs/shadcn/utils";
 import { capitalize } from "@/libs/utils/string";
@@ -46,11 +47,7 @@ const TestItem = ({
         </div>
         <div className='flex flex-col items-end gap-2'>
           <Button variant='outline' size='sm' onClick={handleRunTest} disabled={!!isRunning}>
-            {isRunning ? (
-              <LoaderCircle className='h-4 w-4 animate-spin' />
-            ) : (
-              <Play className='h-4 w-4' />
-            )}
+            {isRunning ? <Spinner /> : <Play className='h-4 w-4' />}
           </Button>
           {state && <State testState={testState} />}
         </div>

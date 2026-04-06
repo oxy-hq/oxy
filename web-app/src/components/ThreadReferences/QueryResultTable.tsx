@@ -55,7 +55,7 @@ export const QueryResultTable = ({ result, resultFile, isTruncated }: ResultTabl
 
   return (
     <div className='flex flex-col gap-4'>
-      <div className='customScrollbar max-h-80 overflow-auto'>
+      <div className='max-h-80 overflow-auto'>
         <Table className='w-full'>
           <TableHeader>
             <TableRow>

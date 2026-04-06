@@ -1,5 +1,6 @@
-import { AlertCircle, Loader2 } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import { Card } from "@/components/ui/shadcn/card";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import type { Trace } from "@/services/api/traces";
 import { TraceCard } from "./TraceCard";
 
@@ -14,7 +15,7 @@ export function TracesList({ isLoading, traces, searchQuery, onTraceClick }: Tra
   if (isLoading) {
     return (
       <div className='flex h-64 items-center justify-center'>
-        <Loader2 className='h-8 w-8 animate-spin text-muted-foreground' />
+        <Spinner className='size-8 text-muted-foreground' />
       </div>
     );
   }

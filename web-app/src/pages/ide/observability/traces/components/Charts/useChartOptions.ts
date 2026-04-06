@@ -1,6 +1,6 @@
 import type { EChartsOption } from "echarts";
 import { useMemo } from "react";
-import { AXIS_LABEL_STYLE, AXIS_STYLE, CHART_COLORS, CHART_GRID } from "./constants";
+import { AXIS_STYLE, CHART_GRID, getAxisLabelStyle, getChartColors } from "./constants";
 import type { DurationBucket, TimeBucket } from "./types";
 
 type TooltipFormatter = (params: unknown) => string;
@@ -28,7 +28,7 @@ export function useAgentRunsChartOptions(timeBuckets: TimeBucket[]): EChartsOpti
         type: "category",
         data: timeBuckets.map((b) => b.time),
         ...AXIS_STYLE,
-        axisLabel: AXIS_LABEL_STYLE
+        axisLabel: getAxisLabelStyle()
       },
       yAxis: {
         type: "value",
@@ -38,7 +38,7 @@ export function useAgentRunsChartOptions(timeBuckets: TimeBucket[]): EChartsOpti
         {
           type: "bar",
           data: timeBuckets.map((b) => b.agentCount),
-          itemStyle: { color: CHART_COLORS.success },
+          itemStyle: { color: getChartColors().success },
           barMaxWidth: 20
         }
       ]
@@ -59,7 +59,7 @@ export function useWorkflowRunsChartOptions(timeBuckets: TimeBucket[]): EChartsO
         type: "category",
         data: timeBuckets.map((b) => b.time),
         ...AXIS_STYLE,
-        axisLabel: AXIS_LABEL_STYLE
+        axisLabel: getAxisLabelStyle()
       },
       yAxis: {
         type: "value",
@@ -69,7 +69,7 @@ export function useWorkflowRunsChartOptions(timeBuckets: TimeBucket[]): EChartsO
         {
           type: "bar",
           data: timeBuckets.map((b) => b.workflowCount),
-          itemStyle: { color: CHART_COLORS.info },
+          itemStyle: { color: getChartColors().info },
           barMaxWidth: 20
         }
       ]
@@ -90,7 +90,7 @@ export function useAnalyticsRunsChartOptions(timeBuckets: TimeBucket[]): ECharts
         type: "category",
         data: timeBuckets.map((b) => b.time),
         ...AXIS_STYLE,
-        axisLabel: AXIS_LABEL_STYLE
+        axisLabel: getAxisLabelStyle()
       },
       yAxis: {
         type: "value",
@@ -100,7 +100,7 @@ export function useAnalyticsRunsChartOptions(timeBuckets: TimeBucket[]): ECharts
         {
           type: "bar",
           data: timeBuckets.map((b) => b.analyticsCount),
-          itemStyle: { color: CHART_COLORS.warning },
+          itemStyle: { color: getChartColors().warning },
           barMaxWidth: 20
         }
       ]
@@ -121,7 +121,7 @@ export function useDurationChartOptions(durationBuckets: DurationBucket[]): ECha
         type: "category",
         data: durationBuckets.map((b) => b.range),
         ...AXIS_STYLE,
-        axisLabel: { ...AXIS_LABEL_STYLE, rotate: 0 }
+        axisLabel: { ...getAxisLabelStyle(), rotate: 0 }
       },
       yAxis: {
         type: "value",
@@ -131,7 +131,7 @@ export function useDurationChartOptions(durationBuckets: DurationBucket[]): ECha
         {
           type: "bar",
           data: durationBuckets.map((b) => b.count),
-          itemStyle: { color: CHART_COLORS.info },
+          itemStyle: { color: getChartColors().info },
           barMaxWidth: 30
         }
       ]
@@ -152,7 +152,7 @@ export function useTokensChartOptions(timeBuckets: TimeBucket[]): EChartsOption 
         type: "category",
         data: timeBuckets.map((b) => b.time),
         ...AXIS_STYLE,
-        axisLabel: AXIS_LABEL_STYLE
+        axisLabel: getAxisLabelStyle()
       },
       yAxis: {
         type: "value",
@@ -162,7 +162,7 @@ export function useTokensChartOptions(timeBuckets: TimeBucket[]): EChartsOption 
         {
           type: "bar",
           data: timeBuckets.map((b) => b.tokens),
-          itemStyle: { color: CHART_COLORS.warning },
+          itemStyle: { color: getChartColors().warning },
           barMaxWidth: 20
         }
       ]

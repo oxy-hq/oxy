@@ -1,6 +1,5 @@
 import {
   AlertCircle,
-  AlertTriangle,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -25,6 +24,7 @@ import {
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import { Badge } from "@/components/ui/shadcn/badge";
 import { Button } from "@/components/ui/shadcn/button";
 import {
@@ -47,6 +47,7 @@ import {
   ResizablePanelGroup
 } from "@/components/ui/shadcn/resizable";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import useTestFile from "@/hooks/api/tests/useTestFile";
 import {
   useCreateTestRun,
@@ -156,10 +157,10 @@ const applyHumanOverride = (
 
 const scoreColorClass = (pct: number) =>
   pct >= 80
-    ? "border-green-600 text-green-400"
+    ? "border-success text-success"
     : pct >= 50
-      ? "border-amber-500 text-amber-400"
-      : "border-red-600 text-red-400";
+      ? "border-warning text-warning"
+      : "border-destructive text-destructive";
 
 /** Verdict sort weight for issues-first ordering */
 const verdictWeight = (v: CaseVerdict) => {
@@ -188,20 +189,13 @@ const VerdictIcon: React.FC<{ verdict: CaseVerdict; className?: string }> = ({
   const base = cn("shrink-0", className ?? "h-4 w-4");
   switch (verdict) {
     case "pass":
-      return <CheckCircle2 className={cn(base, "text-green-500")} />;
+      return <CheckCircle2 className={cn(base, "text-success")} />;
     case "fail":
       return <XCircle className={cn(base, "text-destructive")} />;
     case "flaky":
-      return <TriangleAlert className={cn(base, "text-yellow-500")} />;
+      return <TriangleAlert className={cn(base, "text-warning")} />;
     case "running":
-      return (
-        <div
-          className={cn(
-            base,
-            "animate-spin rounded-full border-2 border-primary border-t-transparent"
-          )}
-        />
-      );
+      return <Spinner className={cn("size-3", base, "text-primary")} />;
     default:
       return <div className={cn(base, "rounded-full border border-muted-foreground/30")} />;
   }
@@ -256,7 +250,7 @@ const CopyButton: React.FC<{ text: string }> = ({ text }) => {
       title='Copy to clipboard'
       className='shrink-0 rounded p-1 text-muted-foreground/60 hover:bg-muted hover:text-foreground'
     >
-      {copied ? <Check className='h-3 w-3 text-green-500' /> : <Copy className='h-3 w-3' />}
+      {copied ? <Check className='h-3 w-3 text-success' /> : <Copy className='h-3 w-3' />}
     </button>
   );
 };
@@ -294,7 +288,7 @@ const SummaryStrip: React.FC<{
       )}
       {/* Primary: flaky badge when present */}
       {stats && stats.flakyCases > 0 && (
-        <Badge variant='outline' className='border-yellow-500 text-yellow-400 tabular-nums'>
+        <Badge variant='outline' className='border-warning text-warning tabular-nums'>
           {stats.flakyCases} flaky
         </Badge>
       )}
@@ -337,7 +331,12 @@ interface CaseDetailPanelProps {
   /** 0-based position in the filtered case list (for nav counter and prev/next disable) */
   filteredPosition: number;
   totalCases: number;
-  testCase: { prompt: string; expected: string; tags: string[]; tool: string | null };
+  testCase: {
+    prompt: string;
+    expected: string;
+    tags: string[];
+    tool: string | null;
+  };
   caseState: TestCaseState;
   historicalCase: TestRunCaseResult | null;
   isViewingHistorical: boolean;
@@ -494,9 +493,9 @@ const CaseDetailPanel: React.FC<CaseDetailPanelProps> = ({
                   className={cn(
                     "text-xs",
                     humanVerdict === "pass"
-                      ? "border-green-600 text-green-400"
+                      ? "border-success text-success"
                       : humanVerdict === "fail"
-                        ? "border-red-600 text-red-400"
+                        ? "border-destructive text-destructive"
                         : ""
                   )}
                 >
@@ -504,7 +503,7 @@ const CaseDetailPanel: React.FC<CaseDetailPanelProps> = ({
                 </Badge>
               )}
               {judgeDisagreement && (
-                <span className='flex items-center gap-1 text-xs text-yellow-500'>
+                <span className='flex items-center gap-1 text-warning text-xs'>
                   <TriangleAlert className='h-3 w-3' />
                   Disagrees with judge
                 </span>
@@ -551,7 +550,7 @@ const CaseDetailPanel: React.FC<CaseDetailPanelProps> = ({
       </div>
 
       {/* Scrollable content */}
-      <div className='customScrollbar min-h-0 flex-1 space-y-5 overflow-y-auto p-4'>
+      <div className='min-h-0 flex-1 space-y-5 overflow-y-auto p-4'>
         {/* Progress bar */}
         {isRunning && (
           <div className='flex items-center gap-2'>
@@ -603,11 +602,11 @@ const CaseDetailPanel: React.FC<CaseDetailPanelProps> = ({
                         "min-w-[28px] rounded-sm px-2 py-0.5 font-medium text-xs tabular-nums transition-colors",
                         isActive
                           ? passed
-                            ? "bg-green-600 text-white shadow-sm dark:bg-green-500"
-                            : "bg-destructive text-white shadow-sm"
+                            ? "bg-success text-success-foreground shadow-sm"
+                            : "bg-destructive text-destructive-foreground shadow-sm"
                           : passed
-                            ? "text-green-600 hover:bg-green-500/10 dark:text-green-400"
-                            : "text-red-500 hover:bg-red-500/10 dark:text-red-400"
+                            ? "text-success hover:bg-success/10"
+                            : "text-destructive hover:bg-destructive/10"
                       )}
                     >
                       {rIdx + 1}
@@ -639,15 +638,10 @@ const CaseDetailPanel: React.FC<CaseDetailPanelProps> = ({
                 </div>
 
                 {isErrorRecord(activeRecord) ? (
-                  <div className='flex items-start gap-2 rounded border border-destructive/20 bg-destructive/5 px-2.5 py-2'>
-                    <AlertTriangle className='mt-0.5 h-3 w-3 shrink-0 text-destructive/70' />
-                    <div>
-                      <p className='font-medium text-destructive text-xs'>Evaluation failed</p>
-                      <p className='mt-0.5 whitespace-pre-wrap text-destructive/70 text-xs'>
-                        {activeRecord.actual_output ?? activeRecord.cot}
-                      </p>
-                    </div>
-                  </div>
+                  <ErrorAlert
+                    title='Evaluation failed'
+                    message={activeRecord.actual_output ?? activeRecord.cot}
+                  />
                 ) : (
                   <>
                     {activeRecord.actual_output && (
@@ -744,19 +738,10 @@ const CaseDetailPanel: React.FC<CaseDetailPanelProps> = ({
                 </p>
               )}
               {hasJudgeErrors && (
-                <div className='flex items-start gap-2 rounded border border-destructive/20 bg-destructive/5 px-2.5 py-2'>
-                  <AlertTriangle className='mt-0.5 h-3 w-3 shrink-0 text-destructive/60' />
-                  <div>
-                    <p className='font-medium text-[11px] text-destructive/80'>
-                      Judge failed to execute
-                    </p>
-                    {judgeErrors.map((err, i) => (
-                      <p key={i} className='mt-0.5 whitespace-pre-wrap text-destructive/60 text-xs'>
-                        {err}
-                      </p>
-                    ))}
-                  </div>
-                </div>
+                <ErrorAlert
+                  title='Judge failed to execute'
+                  message={judgeErrors.map((err, i) => <p key={i}>{err}</p>)}
+                ></ErrorAlert>
               )}
             </CollapsibleContent>
           </Collapsible>
@@ -770,7 +755,7 @@ const CaseDetailPanel: React.FC<CaseDetailPanelProps> = ({
                 Human review
               </span>
               {judgeDisagreement && (
-                <span className='flex items-center gap-1 text-xs text-yellow-500'>
+                <span className='flex items-center gap-1 text-warning text-xs'>
                   <TriangleAlert className='h-3 w-3' />
                   Disagrees with judge ({judgeVerdict})
                 </span>
@@ -935,7 +920,11 @@ const TestFileDetailPage: React.FC = () => {
   const filteredCases = useMemo(() => {
     if (!testFile) return [];
     return testFile.cases
-      .map((tc, i) => ({ ...tc, originalIndex: i, historicalCase: histMap.get(i) ?? null }))
+      .map((tc, i) => ({
+        ...tc,
+        originalIndex: i,
+        historicalCase: histMap.get(i) ?? null
+      }))
       .filter((tc) => {
         if (search) {
           const q = search.toLowerCase();
@@ -1216,9 +1205,9 @@ const TestFileDetailPage: React.FC = () => {
                       ) : (
                         <Badge
                           variant='outline'
-                          className='ml-1 shrink-0 gap-1 border-red-600/50 text-[10px] text-red-400'
+                          className='ml-1 shrink-0 gap-1 border-destructive/50 text-[10px] text-destructive'
                         >
-                          <AlertCircle className='h-3 w-3 text-red-400' />
+                          <AlertCircle className='h-3 w-3 text-destructive' />
                           Failed
                         </Badge>
                       )}
@@ -1229,7 +1218,10 @@ const TestFileDetailPage: React.FC = () => {
                         onClick={(e) => {
                           e.stopPropagation();
                           e.preventDefault();
-                          deleteRun.mutate({ pathb64, runIndex: run.run_index });
+                          deleteRun.mutate({
+                            pathb64,
+                            runIndex: run.run_index
+                          });
                           if (selectedRunIndex === run.run_index && runs.length > 1) {
                             const other = runs.find((r) => r.run_index !== run.run_index);
                             if (other) handleSelectRun(other.run_index);
@@ -1281,9 +1273,9 @@ const TestFileDetailPage: React.FC = () => {
         historicalRun &&
         historicalRun.cases.length === 0 &&
         !isFileRunning && (
-          <div className='flex items-center gap-2 border-red-600/30 border-b bg-red-500/5 px-4 py-2 text-sm'>
-            <AlertCircle className='h-3.5 w-3.5 shrink-0 text-red-400' />
-            <span className='font-medium text-red-400'>Run failed</span>
+          <div className='flex items-center gap-2 border-destructive/30 border-b bg-destructive/5 px-4 py-2 text-sm'>
+            <AlertCircle className='h-3.5 w-3.5 shrink-0 text-destructive' />
+            <span className='font-medium text-destructive'>Run failed</span>
             <span className='text-[11px] text-muted-foreground'>
               No results were recorded — something went wrong
             </span>
@@ -1333,7 +1325,7 @@ const TestFileDetailPage: React.FC = () => {
             </div>
 
             {/* Case rows */}
-            <div className='customScrollbar flex-1 overflow-y-auto'>
+            <div className='flex-1 overflow-y-auto'>
               {filteredCases.length === 0 && (
                 <p className='p-4 text-center text-muted-foreground text-xs'>
                   No cases match the current filter.
@@ -1389,7 +1381,7 @@ const TestFileDetailPage: React.FC = () => {
                       <span
                         className={cn(
                           "shrink-0 font-medium text-xs tabular-nums",
-                          score >= 50 ? "text-green-600 dark:text-green-400" : "text-destructive"
+                          score >= 50 ? "text-success" : "text-destructive"
                         )}
                       >
                         {score}%

@@ -24,7 +24,7 @@ const LogRow: React.FC<Props> = ({ log }) => {
       <TableRow
         key={log.id}
         onClick={() => setOpen(true)}
-        className='cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800'
+        className='cursor-pointer hover:bg-muted'
       >
         <TableCell className='whitespace-pre-wrap break-words'>
           <Link
@@ -32,7 +32,7 @@ const LogRow: React.FC<Props> = ({ log }) => {
             onClick={(e) => {
               e.stopPropagation();
             }}
-            className='text-blue-600 hover:underline dark:text-blue-400'
+            className='text-info hover:underline'
           >
             {log.thread?.title || "Untitled Thread"}
           </Link>

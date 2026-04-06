@@ -52,7 +52,7 @@ const SourceFilter = ({ onSelect, selectedSource }: Props) => {
       <SelectTrigger size='sm'>
         <SelectValue placeholder='All agents' />
       </SelectTrigger>
-      <SelectContent className='customScrollbar'>
+      <SelectContent>
         <SelectItem className='cursor-pointer' value='all'>
           {options.allOption.name}
         </SelectItem>

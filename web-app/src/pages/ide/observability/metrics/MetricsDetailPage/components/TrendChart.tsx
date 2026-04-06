@@ -85,8 +85,8 @@ export default function TrendChart({ detailData, daysFilter }: TrendChartProps) 
                       <div
                         className={cn(
                           "w-full cursor-pointer rounded-t transition-all duration-300",
-                          "bg-gradient-to-t from-primary to-primary/70",
-                          "hover:from-primary hover:to-primary/90",
+                          "bg-gradient-to-t from-special to-special/70",
+                          "hover:from-special hover:to-special/90",
                           "group relative"
                         )}
                         style={{

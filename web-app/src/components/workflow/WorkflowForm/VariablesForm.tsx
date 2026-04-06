@@ -1,5 +1,5 @@
 import { Editor } from "@monaco-editor/react";
-import { Info, Loader2 } from "lucide-react";
+import { Info } from "lucide-react";
 import type React from "react";
 import { useMemo, useState } from "react";
 import { useFormContext } from "react-hook-form";
@@ -11,7 +11,9 @@ import {
   DialogTitle,
   DialogTrigger
 } from "@/components/ui/shadcn/dialog";
+import { FieldError } from "@/components/ui/shadcn/field";
 import { Label } from "@/components/ui/shadcn/label";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import type { WorkflowFormData } from "./index";
 
 export const VariablesForm: React.FC = () => {
@@ -135,13 +137,13 @@ export const VariablesForm: React.FC = () => {
                   </div>
                 </div>
 
-                <div className='rounded-lg bg-blue-50 p-4'>
-                  <h5 className='mb-2 font-medium text-blue-800'>Example Schema:</h5>
-                  <pre className='overflow-x-auto text-blue-700 text-xs'>{defaultSchema}</pre>
+                <div className='rounded-lg bg-info/10 p-4'>
+                  <h5 className='mb-2 font-medium text-info'>Example Schema:</h5>
+                  <pre className='overflow-x-auto text-info text-xs'>{defaultSchema}</pre>
                 </div>
 
-                <div className='rounded-lg bg-amber-50 p-4'>
-                  <p className='text-amber-800 text-sm'>
+                <div className='rounded-lg bg-warning/10 p-4'>
+                  <p className='text-sm text-warning'>
                     <strong>Note:</strong> Variables define the schema for inputs that can be
                     provided when running the procedure. The JSON should be a valid JSON Schema
                     object where each key is a variable name and the value is its schema definition.
@@ -152,7 +154,7 @@ export const VariablesForm: React.FC = () => {
           </Dialog>
         </Label>
         <div
-          className={`overflow-hidden rounded-md border ${!isJsonValid ? "border-red-500" : "border-input"}`}
+          className={`overflow-hidden rounded-md border ${!isJsonValid ? "border-destructive" : "border-input"}`}
         >
           <Editor
             height='300px'
@@ -160,9 +162,7 @@ export const VariablesForm: React.FC = () => {
             theme='vs-dark'
             language='json'
             value={variableStr || ""}
-            loading={
-              <Loader2 className='h-4 w-4 animate-[spin_0.2s_linear_infinite] text-[white]' />
-            }
+            loading={<Spinner className='text-code-primary' />}
             options={{
               minimap: { enabled: false },
               scrollBeyondLastLine: false,
@@ -179,7 +179,7 @@ export const VariablesForm: React.FC = () => {
             onChange={(value) => validateAndSetVariables(value || "")}
           />
         </div>
-        {!isJsonValid && <p className='text-red-500 text-sm'>Invalid JSON: {jsonError}</p>}
+        {!isJsonValid && <FieldError>Invalid JSON: {jsonError}</FieldError>}
       </div>
     </div>
   );

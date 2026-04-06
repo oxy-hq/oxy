@@ -49,9 +49,9 @@ export default function SnowflakeForm({ index }: { index: number }) {
           </div>
         </RadioGroup>
         {authMode === "browser" && (
-          <div className='flex items-start gap-2 rounded-md border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-950'>
-            <Info className='mt-0.5 h-4 w-4 flex-shrink-0 text-blue-600 dark:text-blue-400' />
-            <p className='text-blue-700 text-xs dark:text-blue-300'>
+          <div className='flex items-start gap-2 rounded-md border border-info/30 bg-info/10 p-3'>
+            <Info className='mt-0.5 h-4 w-4 flex-shrink-0 text-info' />
+            <p className='text-info text-xs'>
               Browser authentication will open Snowflake SSO in your default browser. You only need
               to provide account, username, and warehouse details.
             </p>

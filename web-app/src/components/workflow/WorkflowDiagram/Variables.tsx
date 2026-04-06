@@ -126,7 +126,7 @@ export function Variables({ schema }: Props) {
           <DialogTitle>Run Procedure With Variables</DialogTitle>
         </DialogHeader>
         <div className='flex h-full overflow-hidden'>
-          <div className='customScrollbar scrollbar-gutter-auto flex-1 overflow-auto'>
+          <div className='scrollbar-gutter-auto flex-1 overflow-auto'>
             <form
               id='workflow-variables-form'
               onSubmit={handleSubmit(async (data) => {

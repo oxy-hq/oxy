@@ -8,6 +8,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger
 } from "@/components/ui/shadcn/collapsible";
+import { FieldError } from "@/components/ui/shadcn/field";
 import { Label } from "@/components/ui/shadcn/label";
 import {
   Select,
@@ -105,7 +106,7 @@ export const DisplayForm: React.FC<DisplayFormProps> = ({ index, onRemove }) => 
               <ChevronRight className='h-5 w-5 text-muted-foreground' />
             )}
             <div className='flex flex-1 items-center gap-3'>
-              <span className='flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 font-semibold text-primary text-sm'>
+              <span className='flex h-8 w-8 items-center justify-center rounded-full bg-muted font-semibold text-muted-foreground text-sm'>
                 {index + 1}
               </span>
               <div className='flex flex-1 items-center gap-2'>
@@ -161,7 +162,7 @@ export const DisplayForm: React.FC<DisplayFormProps> = ({ index, onRemove }) => 
                 )}
               />
               {displayErrors?.type && (
-                <p className='text-red-500 text-sm'>{String(displayErrors.type.message || "")}</p>
+                <FieldError>{String(displayErrors.type.message || "")}</FieldError>
               )}
             </div>
 

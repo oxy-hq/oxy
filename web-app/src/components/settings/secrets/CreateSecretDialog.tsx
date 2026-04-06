@@ -10,8 +10,10 @@ import {
   DialogHeader,
   DialogTitle
 } from "@/components/ui/shadcn/dialog";
+import { FieldError } from "@/components/ui/shadcn/field";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { Textarea } from "@/components/ui/shadcn/textarea";
 import { useCreateSecret } from "@/hooks/api/secrets/useSecretMutations";
 import { validateSecretName } from "@/libs/utils";
@@ -120,7 +122,7 @@ export const CreateSecretDialog: React.FC<CreateSecretDialogProps> = ({
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               className={errors.name ? "border-destructive" : ""}
             />
-            {errors.name && <p className='text-destructive text-sm'>{errors.name}</p>}
+            {errors.name && <FieldError>{errors.name}</FieldError>}
           </div>
 
           <div className='grid gap-2'>
@@ -132,7 +134,7 @@ export const CreateSecretDialog: React.FC<CreateSecretDialogProps> = ({
               onChange={(e) => setFormData({ ...formData, value: e.target.value })}
               className={errors.value ? "border-destructive" : ""}
             />
-            {errors.value && <p className='text-destructive text-sm'>{errors.value}</p>}
+            {errors.value && <FieldError>{errors.value}</FieldError>}
           </div>
 
           <div className='grid gap-2'>
@@ -152,7 +154,7 @@ export const CreateSecretDialog: React.FC<CreateSecretDialogProps> = ({
             Cancel
           </Button>
           <Button onClick={handleCreateSecret} disabled={createSecretMutation.isPending}>
-            {createSecretMutation.isPending ? "Creating..." : "Create Secret"}
+            {createSecretMutation.isPending ? <Spinner /> : "Create"}
           </Button>
         </DialogFooter>
       </DialogContent>

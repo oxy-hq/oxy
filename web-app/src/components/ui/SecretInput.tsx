@@ -50,7 +50,7 @@ const SecretInput = forwardRef<HTMLInputElement, SecretInputProps>(
               onClick={handleCopy}
               title={copied ? "Copied!" : "Copy to clipboard"}
             >
-              {copied ? <Check className='h-3 w-3 text-green-600' /> : <Copy className='h-3 w-3' />}
+              {copied ? <Check className='h-3 w-3 text-success' /> : <Copy className='h-3 w-3' />}
             </Button>
           )}
           <Button

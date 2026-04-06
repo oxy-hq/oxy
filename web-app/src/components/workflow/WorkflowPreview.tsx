@@ -1,28 +1,21 @@
 import { ReactFlowProvider } from "@xyflow/react";
 import { get } from "lodash";
-import {
-  ChevronDownIcon,
-  LoaderCircle,
-  LoaderCircleIcon,
-  LogsIcon,
-  PlayIcon,
-  RotateCcw,
-  StopCircle
-} from "lucide-react";
+import { ChevronDownIcon, LogsIcon, PlayIcon, RotateCcw, StopCircle } from "lucide-react";
 import React, { Suspense, useCallback, useEffect, useMemo } from "react";
 import { toast } from "sonner";
-import { ContentSkeleton } from "@/components/ui/ContentSkeleton";
+import ErrorAlert from "@/components/ui/ErrorAlert";
+import LoadingSkeleton from "@/components/ui/LoadingSkeleton";
 import { Button } from "@/components/ui/shadcn/button";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup
 } from "@/components/ui/shadcn/resizable";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import useWorkflowConfig from "@/hooks/api/workflows/useWorkflowConfig";
 import { decodeBase64 } from "@/libs/encoding";
 import { cn } from "@/libs/shadcn/utils";
 import { useBlockStore } from "@/stores/block";
-import { ErrorAlert, ErrorAlertMessage } from "../AppPreview/ErrorAlert";
 import { ButtonGroup } from "../ui/shadcn/button-group";
 import {
   DropdownMenu,
@@ -198,17 +191,14 @@ export const WorkflowPreview = ({
   };
 
   if (!workflowConfig && !error) {
-    return <ContentSkeleton />;
+    return <LoadingSkeleton />;
   }
 
   if (error) {
     const errorMessage = get(error, "response.data.error", error.message);
     return (
-      <div className='p-2'>
-        <ErrorAlert>
-          <ErrorAlertMessage>Error Loading Automation</ErrorAlertMessage>
-          <ErrorAlertMessage>{errorMessage}</ErrorAlertMessage>
-        </ErrorAlert>
+      <div className='mx-auto w-full max-w-page-content p-2'>
+        <ErrorAlert title='Error Loading Automation' message={errorMessage} />
       </div>
     );
   }
@@ -221,7 +211,7 @@ export const WorkflowPreview = ({
             <Suspense
               fallback={
                 <div className='flex h-full w-full items-center justify-center'>
-                  <LoaderCircleIcon className='animate-spin' />
+                  <Spinner className='size-6' />
                 </div>
               }
             >
@@ -295,30 +285,28 @@ export const WorkflowPreview = ({
               tooltip={run.isPending ? "Running..." : "Run Automation"}
               data-testid='run-workflow-button'
             >
-              {run.isPending ? (
-                <LoaderCircle className='animate-spin' />
-              ) : (
-                <PlayIcon className='h-4 w-4' />
-              )}
+              {run.isPending ? <Spinner /> : <PlayIcon className='h-4 w-4' />}
             </Button>
             {workflowConfig.variables ? <Variables schema={variablesSchema} /> : null}
           </div>
         </div>
       </ResizablePanel>
 
-      <ResizableHandle withHandle />
+      {showOutput && (
+        <>
+          <ResizableHandle withHandle />
 
-      <ResizablePanel defaultSize={50} minSize={20} className={cn(!showOutput && "flex-[unset]!")}>
-        {showOutput && (
-          <WorkflowOutput
-            workflowId={path}
-            logs={logs}
-            toggleOutput={toggleOutput}
-            isPending={isProcessing}
-            runId={runId}
-          />
-        )}
-      </ResizablePanel>
+          <ResizablePanel defaultSize={50} minSize={20}>
+            <WorkflowOutput
+              workflowId={path}
+              logs={logs}
+              toggleOutput={toggleOutput}
+              isPending={isProcessing}
+              runId={runId}
+            />
+          </ResizablePanel>
+        </>
+      )}
     </ResizablePanelGroup>
   );
 };

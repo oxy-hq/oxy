@@ -72,9 +72,11 @@ const OutputItem = ({
                 onClick={handleCopy}
                 title='Copy all results from this step'
               >
-                {copied ? <Check size={14} className='text-green-500' /> : <Copy size={14} />}
+                {copied ? <Check size={14} className='text-success' /> : <Copy size={14} />}
               </Button>
-              <span className='flex justify-end text-gray-400 text-xs'>{log.timestamp}</span>
+              <span className='flex justify-end text-muted-foreground text-xs'>
+                {log.timestamp}
+              </span>
             </div>
           </div>
         </div>
@@ -101,7 +103,7 @@ const OutputItem = ({
         onClick={handleCopy}
         title='Copy output'
       >
-        {copied ? <Check size={14} className='text-green-500' /> : <Copy size={14} />}
+        {copied ? <Check size={14} className='text-success' /> : <Copy size={14} />}
       </Button>
     </div>
   );

@@ -1,4 +1,5 @@
-import { ChevronDown, Loader2 } from "lucide-react";
+import { ChevronDown } from "lucide-react";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { cn } from "@/libs/shadcn/utils";
 import type { Step } from "@/pages/thread/agentic/ArtifactSidebar/ArtifactBlockRenderer/SubGroupReasoningPanel/Reasoning";
 
@@ -20,7 +21,7 @@ function formatProgress(steps: Step[], isComplete: boolean) {
 
 function TraceHeaderIcon({ isComplete, collapsed }: { isComplete: boolean; collapsed: boolean }) {
   if (!isComplete) {
-    return <Loader2 className='h-3 w-3 shrink-0 animate-spin text-primary' />;
+    return <Spinner className='size-3 text-primary' />;
   }
   return (
     <ChevronDown

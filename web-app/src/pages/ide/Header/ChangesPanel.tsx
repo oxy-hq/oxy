@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Columns2, GitMerge, Loader2, Play, RotateCcw, Upload, WrapText, X } from "lucide-react";
+import { Columns2, GitMerge, Play, RotateCcw, Upload, WrapText, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { getLanguageFromFileName } from "@/components/FileEditor/constants";
@@ -10,6 +10,7 @@ import {
   ResizablePanelGroup
 } from "@/components/ui/shadcn/resizable";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/shadcn/sheet";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import useRevertFile from "@/hooks/api/files/useRevertFile";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
@@ -22,11 +23,11 @@ const MIN_PANEL_WIDTH = 420;
 const SPLIT_VIEW_MIN_WIDTH = 720;
 
 const STATUS_STYLES: Record<string, { label: string; className: string }> = {
-  A: { label: "A", className: "text-emerald-400" },
-  M: { label: "M", className: "text-amber-400" },
-  D: { label: "D", className: "text-red-400" },
-  R: { label: "R", className: "text-blue-400" },
-  U: { label: "!", className: "text-rose-400" }
+  A: { label: "A", className: "text-success" },
+  M: { label: "M", className: "text-warning" },
+  D: { label: "D", className: "text-destructive" },
+  R: { label: "R", className: "text-info" },
+  U: { label: "!", className: "text-destructive" }
 };
 
 interface ChangesPanelProps {
@@ -177,7 +178,10 @@ export const ChangesPanel = ({
       } else {
         toast.error("Failed to resolve file", {
           action: result.message
-            ? { label: "Show details", onClick: () => toast.message(result.message) }
+            ? {
+                label: "Show details",
+                onClick: () => toast.message(result.message)
+              }
             : undefined
         });
       }
@@ -198,7 +202,10 @@ export const ChangesPanel = ({
       } else {
         toast.error("Failed to undo resolution", {
           action: result.message
-            ? { label: "Show details", onClick: () => toast.message(result.message) }
+            ? {
+                label: "Show details",
+                onClick: () => toast.message(result.message)
+              }
             : undefined
         });
       }
@@ -292,15 +299,15 @@ export const ChangesPanel = ({
           <SheetTitle className='flex items-center gap-2 font-mono text-sm'>
             {isConflict ? (
               <>
-                <GitMerge className='h-3.5 w-3.5 text-amber-400' />
+                <GitMerge className='h-3.5 w-3.5 text-warning' />
                 <span>Merge conflicts</span>
                 {unresolvedCount > 0 && (
-                  <span className='rounded bg-amber-500/10 px-1.5 py-0.5 font-mono text-[11px] text-amber-400'>
+                  <span className='rounded bg-warning/10 px-1.5 py-0.5 font-mono text-[11px] text-warning'>
                     {unresolvedCount} remaining
                   </span>
                 )}
                 {allResolved && (
-                  <span className='rounded bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[11px] text-emerald-400'>
+                  <span className='rounded bg-success/10 px-1.5 py-0.5 font-mono text-[11px] text-success'>
                     all resolved
                   </span>
                 )}
@@ -409,7 +416,7 @@ export const ChangesPanel = ({
                             className='invisible flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground/40 transition-colors hover:bg-destructive/15 hover:text-destructive disabled:opacity-40 group-hover:visible'
                           >
                             {isReverting ? (
-                              <Loader2 className='h-3 w-3 animate-spin' />
+                              <Spinner className='size-3' />
                             ) : (
                               <RotateCcw className='h-3 w-3' />
                             )}
@@ -427,10 +434,10 @@ export const ChangesPanel = ({
                               disabled={isUnresolving}
                               onClick={() => handleUnresolveFile(file.path)}
                               title='Restore conflict markers'
-                              className='flex h-5 items-center gap-1 rounded border border-border/50 px-2 font-mono text-[10px] text-muted-foreground transition-colors hover:border-amber-500/40 hover:bg-amber-500/8 hover:text-amber-400 disabled:opacity-40'
+                              className='flex h-5 items-center gap-1 rounded border border-border/50 px-2 font-mono text-[10px] text-muted-foreground transition-colors hover:border-warning/40 hover:bg-warning/8 hover:text-warning disabled:opacity-40'
                             >
                               {isUnresolving ? (
-                                <Loader2 className='h-2.5 w-2.5 animate-spin' />
+                                <Spinner className='size-2.5' />
                               ) : (
                                 <RotateCcw className='h-2.5 w-2.5' />
                               )}
@@ -449,7 +456,7 @@ export const ChangesPanel = ({
                             className='flex h-5 items-center gap-1 rounded border border-border/50 px-2 font-mono text-[10px] text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/8 hover:text-primary disabled:opacity-40'
                           >
                             {isResolving && resolvingFile?.side === "mine" ? (
-                              <Loader2 className='h-2.5 w-2.5 animate-spin' />
+                              <Spinner className='size-2.5' />
                             ) : null}
                             Use Mine
                           </button>
@@ -460,7 +467,7 @@ export const ChangesPanel = ({
                             className='flex h-5 items-center gap-1 rounded border border-border/50 px-2 font-mono text-[10px] text-muted-foreground transition-colors hover:border-border hover:bg-accent/40 hover:text-foreground disabled:opacity-40'
                           >
                             {isResolving && resolvingFile?.side === "theirs" ? (
-                              <Loader2 className='h-2.5 w-2.5 animate-spin' />
+                              <Spinner className='size-2.5' />
                             ) : null}
                             Use Theirs
                           </button>
@@ -504,13 +511,9 @@ export const ChangesPanel = ({
                   ? undefined
                   : `Resolve ${unresolvedCount} remaining file${unresolvedCount === 1 ? "" : "s"} first`
               }
-              className='flex items-center gap-1.5 rounded bg-gradient-to-b from-[#3550FF] to-[#2A40CC] px-3 py-1 font-medium text-white text-xs shadow-[#0B1033]/40 shadow-sm transition-all hover:from-[#5D73FF] hover:to-[#3550FF] disabled:opacity-40'
+              className='flex items-center gap-1.5 rounded bg-gradient-to-b from-[var(--blue-500)] to-[var(--blue-600)] px-3 py-1 font-medium text-white text-xs shadow-[var(--blue-900)]/40 shadow-sm transition-all hover:from-[var(--blue-400)] hover:to-[var(--blue-500)] disabled:opacity-40'
             >
-              {isContinuing ? (
-                <Loader2 className='h-3 w-3 animate-spin' />
-              ) : (
-                <Play className='h-3 w-3' />
-              )}
+              {isContinuing ? <Spinner className='size-3' /> : <Play className='h-3 w-3' />}
               {isContinuing ? "Saving…" : "Save resolution"}
             </button>
             <button
@@ -519,11 +522,7 @@ export const ChangesPanel = ({
               disabled={isAborting || !onAbortConflict}
               className='flex items-center gap-1.5 rounded border border-destructive/30 px-3 py-1 text-destructive text-xs transition-colors hover:bg-destructive/10 disabled:opacity-50'
             >
-              {isAborting ? (
-                <Loader2 className='h-3 w-3 animate-spin' />
-              ) : (
-                <X className='h-3 w-3' />
-              )}
+              {isAborting ? <Spinner className='size-3' /> : <X className='h-3 w-3' />}
               {isAborting ? "Aborting…" : "Abort"}
             </button>
             {unresolvedCount > 0 && (
@@ -558,13 +557,9 @@ export const ChangesPanel = ({
                 onClick={handleSubmit}
                 disabled={!message.trim() || isPushing}
                 data-testid='changes-panel-push-button'
-                className='flex items-center gap-1.5 rounded bg-gradient-to-b from-[#3550FF] to-[#2A40CC] px-3 py-1 font-medium text-white text-xs shadow-[#0B1033]/40 shadow-sm transition-all hover:from-[#5D73FF] hover:to-[#3550FF] disabled:opacity-50'
+                className='flex items-center gap-1.5 rounded bg-gradient-to-b from-[var(--blue-500)] to-[var(--blue-600)] px-3 py-1 font-medium text-white text-xs shadow-[var(--blue-900)]/40 shadow-sm transition-all hover:from-[var(--blue-400)] hover:to-[var(--blue-500)] disabled:opacity-50'
               >
-                {isPushing ? (
-                  <Loader2 className='h-3 w-3 animate-spin' />
-                ) : (
-                  <Upload className='h-3 w-3' />
-                )}
+                {isPushing ? <Spinner className='size-3' /> : <Upload className='h-3 w-3' />}
                 {pushLabel}
               </button>
             </div>

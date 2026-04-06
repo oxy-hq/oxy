@@ -1,9 +1,9 @@
-import { Database as DatabaseIcon, Loader2, Plus, RotateCw } from "lucide-react";
-
+import { Database as DatabaseIcon, Plus, RotateCw } from "lucide-react";
 import type React from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/shadcn/button";
 import { SidebarContent, SidebarGroup, SidebarMenu } from "@/components/ui/shadcn/sidebar";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import useDatabases from "@/hooks/api/databases/useDatabases";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import ROUTES from "@/libs/utils/routes";
@@ -48,11 +48,11 @@ export const DatabaseSidebar: React.FC<DatabaseSidebarProps> = ({
           </>
         }
       />
-      <SidebarContent className='customScrollbar h-full flex-1'>
+      <SidebarContent className='h-full flex-1'>
         <SidebarGroup className='px-1 pt-2'>
           {isLoading && (
             <div className='flex items-center justify-center p-4'>
-              <Loader2 className='h-4 w-4 animate-spin' />
+              <Spinner />
             </div>
           )}
 

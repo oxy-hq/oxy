@@ -1,10 +1,10 @@
 import { type ReactNode, useEffect, useMemo } from "react";
+import SqlView from "@/components/SemanticQueryPanel/SqlView";
 import { Tabs, TabsContent } from "@/components/ui/shadcn/tabs";
 import { useSemanticExplorerContext } from "../../contexts/SemanticExplorerContext";
 import FiltersSection from "./components/FiltersSection";
 import ResultsView from "./components/ResultsView";
 import SortsSection from "./components/SortsSection";
-import SqlView from "./components/SqlView";
 import TabsHeader from "./components/TabsHeader";
 import VariablesSection from "./components/VariablesSection";
 

@@ -31,7 +31,7 @@ const Similarity = ({ score, records }: SimilarityMetric) => {
           }`}
         />
         <p className='text-sidebar-foreground'>Accuracy score:</p>
-        <p className='text-green-500'>{score}</p>
+        <p className='text-success'>{score}</p>
       </div>
 
       {haveInconsistencies && (
@@ -51,7 +51,7 @@ const Similarity = ({ score, records }: SimilarityMetric) => {
                     const coloredText = text.replace(
                       /(\+\+\+|---)/g,
                       (match) =>
-                        `<span class="${match === "+++" ? "text-green-500" : "text-red-500"}">${match}</span>`
+                        `<span class="${match === "+++" ? "text-success" : "text-destructive"}">${match}</span>`
                     );
                     return (
                       <code
@@ -95,7 +95,7 @@ const Recall = ({ score, records }: RecallMetric) => {
           }`}
         />
         <p className='text-sidebar-foreground'>Recall score:</p>
-        <p className='text-green-500'>{score}</p>
+        <p className='text-success'>{score}</p>
       </div>
 
       {haveInconsistencies && (
@@ -110,7 +110,7 @@ const Recall = ({ score, records }: RecallMetric) => {
               className='py-2 font-mono text-muted-foreground text-sm'
             >
               <p className='py-2'>Recall Score: {record.score}</p>
-              <p className='text-green-500'>
+              <p className='text-success'>
                 Retrieved documents:
                 <ul className='list-inside list-disc'>
                   {record.retrieved_contexts.map((doc) => (
@@ -120,7 +120,7 @@ const Recall = ({ score, records }: RecallMetric) => {
                   ))}
                 </ul>
               </p>
-              <p className='text-red-500'>
+              <p className='text-destructive'>
                 Reference documents:
                 <ul className='list-inside list-disc'>
                   {record.reference_contexts.map((doc) => (

@@ -1,7 +1,9 @@
-import { AlertCircle, Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import { Button } from "@/components/ui/shadcn/button";
 import { Input } from "@/components/ui/shadcn/input";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 
 interface OpenAIKeyStepProps {
   initialData?: string;
@@ -45,12 +47,7 @@ export default function OpenAIKeyStep({
       </div>
 
       <div className='space-y-4'>
-        {error && (
-          <div className='flex items-start gap-2 rounded-md border border-destructive/20 bg-destructive/10 p-3'>
-            <AlertCircle className='mt-0.5 h-4 w-4 flex-shrink-0 text-destructive' />
-            <p className='text-destructive text-sm'>{error}</p>
-          </div>
-        )}
+        {error && <ErrorAlert message={error} />}
 
         <div>
           <label htmlFor='api-key' className='font-medium text-sm'>
@@ -95,7 +92,7 @@ export default function OpenAIKeyStep({
           Back
         </Button>
         <Button onClick={handleNext} disabled={isCreating || !apiKey.trim()}>
-          {isCreating ? "Creating..." : "Next"}
+          {isCreating ? <Spinner /> : "Next"}
         </Button>
       </div>
     </div>

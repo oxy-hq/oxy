@@ -1,5 +1,5 @@
-import { Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/shadcn/card";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { cn } from "@/libs/shadcn/utils";
 
 interface StatsCardProps {
@@ -24,11 +24,11 @@ export default function StatsCard({
   const getIconBgColor = () => {
     switch (variant) {
       case "success":
-        return "bg-emerald-500/10 text-emerald-500";
+        return "bg-success/10 text-success";
       case "warning":
-        return "bg-amber-500/10 text-amber-500";
+        return "bg-warning/10 text-warning";
       case "danger":
-        return "bg-rose-500/10 text-rose-500";
+        return "bg-destructive/10 text-destructive";
       default:
         return "bg-primary/10 text-primary";
     }
@@ -41,7 +41,7 @@ export default function StatsCard({
           <div className='min-w-0 space-y-1'>
             <div className='flex items-center gap-2'>
               <p className='font-medium text-muted-foreground text-xs'>{title}</p>
-              {isLoading && <Loader2 className='h-3 w-3 animate-spin text-muted-foreground' />}
+              {isLoading && <Spinner className='size-3 text-muted-foreground' />}
             </div>
             <div className='flex items-baseline gap-2'>
               <p className='truncate font-bold text-2xl tracking-tight'>{value}</p>
@@ -49,7 +49,7 @@ export default function StatsCard({
                 <span
                   className={cn(
                     "font-medium text-xs",
-                    trend.positive ? "text-green-400" : "text-red-400"
+                    trend.positive ? "text-success" : "text-destructive"
                   )}
                 >
                   {trend.positive ? "+" : ""}

@@ -57,4 +57,10 @@ function AlertDescription({ className, ...props }: React.ComponentProps<"div">) 
   );
 }
 
-export { Alert, AlertDescription, AlertTitle };
+function AlertAction({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div data-slot='alert-action' className={cn("absolute top-2 right-2", className)} {...props} />
+  );
+}
+
+export { Alert, AlertAction, AlertDescription, AlertTitle };

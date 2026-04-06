@@ -53,8 +53,8 @@ const ConflictPanel = ({ branch }: { remoteUrl?: string; branch: string }) => {
   };
 
   return (
-    <div className='rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm'>
-      <p className='font-medium text-amber-600 dark:text-amber-400'>Merge conflict detected</p>
+    <div className='rounded-md border border-warning/30 bg-warning/5 p-3 text-sm'>
+      <p className='font-medium text-warning'>Merge conflict detected</p>
       <p className='mt-1 text-muted-foreground text-xs'>
         Open the conflicted files below, resolve the conflict markers (
         <code className='font-mono'>{"<<<<<<< / ======= / >>>>>>>"}</code>), then click{" "}

@@ -116,7 +116,8 @@
       "!**/examples",
       "!**/target",
       "!**/.claude",
-      "!**/json-schemas"
+      "!**/json-schemas",
+      "!web-app/.agents"
     ]
   }
 }

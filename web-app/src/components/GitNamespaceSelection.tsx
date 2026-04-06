@@ -1,4 +1,4 @@
-import { Github, Loader2, Plus } from "lucide-react";
+import { Github, Plus } from "lucide-react";
 import { useEffect } from "react";
 import { Label } from "@/components/ui/shadcn/label";
 import {
@@ -8,6 +8,7 @@ import {
   SelectTrigger,
   SelectValue
 } from "@/components/ui/shadcn/select";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useGitHubInstallAppUrl, useGitHubNamespaces } from "@/hooks/api/github";
 import { INSTALL_GITHUB_APP_COMPLETED } from "@/pages/github/callback";
 import { openGitHubAppInstallation } from "@/utils/githubAppInstall";
@@ -72,8 +73,7 @@ export const GitNamespaceSelection = ({ value, onChange }: Props) => {
               return (
                 <SelectItem value='loading' disabled>
                   <div className='flex items-center gap-2'>
-                    <Loader2 className='h-4 w-4 animate-spin' />
-                    Loading...
+                    <Spinner />
                   </div>
                 </SelectItem>
               );

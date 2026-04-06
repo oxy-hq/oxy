@@ -1,4 +1,4 @@
-import { Calendar, Loader2, Plus, X } from "lucide-react";
+import { Calendar, Plus, X } from "lucide-react";
 import type React from "react";
 import type { Control } from "react-hook-form";
 import { Controller, useFieldArray } from "react-hook-form";
@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue
 } from "@/components/ui/shadcn/select";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import type { WorkflowFormData } from "../../..";
 import { getItemsWithUnknownValue } from "./utils";
 
@@ -92,7 +93,7 @@ export const TimeDimensionsField: React.FC<TimeDimensionsFieldProps> = ({
       )}
       {topicValue && fieldsLoading && (
         <div className='flex items-center gap-2 text-muted-foreground text-sm'>
-          <Loader2 className='h-4 w-4 animate-spin' />
+          <Spinner />
           Loading time dimensions...
         </div>
       )}
@@ -101,7 +102,7 @@ export const TimeDimensionsField: React.FC<TimeDimensionsFieldProps> = ({
           {timeDimensionFields.map((field, tdIndex) => (
             <div key={field.id} className='space-y-2 rounded-md border p-3'>
               <div className='flex items-start gap-2'>
-                <Calendar className='mt-2.5 h-4 w-4 text-blue-500' />
+                <Calendar className='mt-2.5 h-4 w-4 text-info' />
                 <div className='flex-1 space-y-2'>
                   {/* Dimension selector */}
                   <Controller

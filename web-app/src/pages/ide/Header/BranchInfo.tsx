@@ -1,5 +1,6 @@
-import { GitBranch, Loader2 } from "lucide-react";
+import { GitBranch } from "lucide-react";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import useRevisionInfo from "@/hooks/api/projects/useRevisionInfo";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
@@ -10,7 +11,7 @@ export const BranchInfo = () => {
   if (revisionLoading) {
     return (
       <div className='flex items-center gap-2'>
-        <Loader2 className='h-3.5 w-3.5 animate-spin text-muted-foreground' />
+        <Spinner className='size-3 text-muted-foreground' />
         <Skeleton className='h-4 w-20 rounded' />
       </div>
     );

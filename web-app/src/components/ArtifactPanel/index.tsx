@@ -1,10 +1,11 @@
 import { useQueries } from "@tanstack/react-query";
-import { Loader2, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useCallback } from "react";
+import ErrorAlert from "@/components/ui/ErrorAlert";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { ArtifactService } from "@/services/api";
 import type { Artifact } from "@/types/artifact";
-import { ErrorAlert, ErrorAlertMessage } from "../AppPreview/ErrorAlert";
 import { Panel } from "../ui/panel";
 import { Button } from "../ui/shadcn/button";
 import AgentArtifactPanel from "./ArtifactsContent/agent";
@@ -21,11 +22,13 @@ type Props = {
   artifactStreamingData: { [key: string]: Artifact };
   onClose: () => void;
   setSelectedArtifactIds: React.Dispatch<React.SetStateAction<string[]>>;
+  wrapperClassName?: string;
 };
 
 const ArtifactPanel = ({
   selectedArtifactIds,
   artifactStreamingData,
+  wrapperClassName,
   onClose,
   setSelectedArtifactIds
 }: Props) => {
@@ -78,8 +81,7 @@ const ArtifactPanel = ({
         </div>
 
         <div className='flex flex-1 flex-col items-center justify-center space-y-4 text-muted-foreground'>
-          <Loader2 className='animate-spin' />
-          <p>Loading artifact...</p>
+          <Spinner />
         </div>
       </Panel>
     );
@@ -95,11 +97,7 @@ const ArtifactPanel = ({
         </div>
 
         <div className='flex flex-1 flex-col items-center justify-center gap-4 p-4'>
-          <ErrorAlert>
-            <ErrorAlertMessage>
-              Unable to load the selected artifact. Please check your connection or try again later.
-            </ErrorAlertMessage>
-          </ErrorAlert>
+          <ErrorAlert message='Unable to load the selected artifact. Please check your connection or try again later.' />
           <Button
             variant='outline'
             onClick={() => artifactQueries.forEach((query) => query.refetch())}
@@ -134,7 +132,7 @@ const ArtifactPanel = ({
 
     if (currentArtifact.kind === "agent") {
       return (
-        <div className='customScrollbar h-full overflow-y-auto p-4'>
+        <div className='h-full overflow-y-auto p-4'>
           <AgentArtifactPanel artifact={currentArtifact} onArtifactClick={onArtifactClick} />
         </div>
       );
@@ -157,7 +155,7 @@ const ArtifactPanel = ({
   };
 
   return (
-    <Panel>
+    <Panel className={wrapperClassName}>
       <Header
         currentArtifact={currentArtifact}
         artifactData={artifactData}

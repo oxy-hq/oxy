@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ContentSkeleton } from "@/components/ui/ContentSkeleton";
+import LoadingSkeleton from "@/components/ui/LoadingSkeleton";
 import { Badge } from "@/components/ui/shadcn/badge";
 import { Button } from "@/components/ui/shadcn/button";
 import { Label } from "@/components/ui/shadcn/label";
@@ -21,7 +21,7 @@ const RepositoryInfoSection = () => {
   };
 
   if (revisionLoading) {
-    return <ContentSkeleton />;
+    return <LoadingSkeleton />;
   }
 
   return (

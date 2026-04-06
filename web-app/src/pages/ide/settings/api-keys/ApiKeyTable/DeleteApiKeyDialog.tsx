@@ -22,7 +22,7 @@ interface Props {
 const DeleteApiKeyDialog: React.FC<Props> = ({ open, onOpenChange, apiKey, onConfirm }) => {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent className='bg-neutral-900 sm:max-w-md'>
+      <AlertDialogContent className='bg-popover sm:max-w-md'>
         <AlertDialogHeader>
           <AlertDialogTitle>Revoke API Key</AlertDialogTitle>
           <AlertDialogDescription>

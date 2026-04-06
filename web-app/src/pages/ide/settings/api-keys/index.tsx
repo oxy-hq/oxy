@@ -40,7 +40,7 @@ const ApiKeyManagement: React.FC = () => {
     <div className='flex h-full flex-col'>
       <PageHeader icon={KeyRound} title='API Keys' actions={listViewActions} />
 
-      <div className='customScrollbar scrollbar-gutter-auto min-h-0 flex-1 space-y-2 overflow-auto p-4'>
+      <div className='scrollbar-gutter-auto min-h-0 flex-1 space-y-2 overflow-auto p-4'>
         <p className='mb-2 text-muted-foreground text-sm'>Current Project ID</p>
         <div className='flex items-center gap-2'>
           <div className='flex h-8 flex-1 items-center rounded-md border bg-background px-3 font-mono text-sm'>

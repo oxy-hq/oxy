@@ -1,10 +1,12 @@
-// Chart colors
-export const CHART_COLORS = {
-  success: "#22c55e", // green-500
-  error: "#ef4444", // red-500
-  info: "#3b82f6", // blue-500
-  warning: "#f97316" // orange-500
-} as const;
+import { resolveColor } from "@/components/Echarts/resolveColor";
+
+// Chart colors — resolved from CSS variables for ECharts canvas
+export const getChartColors = () => ({
+  success: resolveColor("--success"),
+  error: resolveColor("--error"),
+  info: resolveColor("--info"),
+  warning: resolveColor("--warning")
+});
 
 // Common axis styling for mini charts
 export const AXIS_STYLE = {
@@ -23,8 +25,9 @@ export const CHART_GRID = {
 } as const;
 
 // Axis label style
-export const AXIS_LABEL_STYLE = {
-  show: true,
-  fontSize: 9,
-  color: "#888"
-} as const;
+export const getAxisLabelStyle = () =>
+  ({
+    show: true,
+    fontSize: 9,
+    color: resolveColor("--muted-foreground")
+  }) as const;

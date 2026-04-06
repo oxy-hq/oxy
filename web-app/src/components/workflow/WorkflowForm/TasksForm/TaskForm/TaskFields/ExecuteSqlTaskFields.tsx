@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useFormContext } from "react-hook-form";
 import { FilePathAutocompleteInput } from "@/components/ui/FilePathAutocompleteInput";
 import { Button } from "@/components/ui/shadcn/button";
+import { FieldError } from "@/components/ui/shadcn/field";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import { Textarea } from "@/components/ui/shadcn/textarea";
@@ -92,9 +93,7 @@ export const ExecuteSqlTaskFields: React.FC<ExecuteSqlTaskFieldsProps> = ({
             required: "Database is required"
           })}
         />
-        {taskErrors?.database && (
-          <p className='text-red-500 text-sm'>{taskErrors.database.message}</p>
-        )}
+        {taskErrors?.database && <FieldError>{taskErrors.database.message}</FieldError>}
       </div>
       <div className='space-y-2'>
         <Label htmlFor={`${taskPath}.sql_query`}>SQL Query</Label>

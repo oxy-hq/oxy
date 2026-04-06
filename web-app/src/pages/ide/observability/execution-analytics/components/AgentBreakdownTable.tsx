@@ -38,24 +38,24 @@ function getExecutionTypeLabel(type: string): string {
 
 function getSuccessRateBadgeColor(successRate: number): string {
   if (successRate > 95) {
-    return "bg-green-100 text-green-800";
+    return "bg-success/10 text-success";
   }
   if (successRate > 80) {
-    return "bg-yellow-100 text-yellow-800";
+    return "bg-warning/10 text-warning";
   }
-  return "bg-red-100 text-red-800";
+  return "bg-destructive/10 text-destructive";
 }
 
 function DistributionBar({ verified, generated }: { verified: number; generated: number }) {
   return (
     <div className='flex h-2.5 w-28 overflow-hidden rounded-full bg-muted'>
       <div
-        className='bg-emerald-500 transition-all'
+        className='bg-success transition-all'
         style={{ width: `${verified}%` }}
         title={`Verified: ${verified.toFixed(1)}%`}
       />
       <div
-        className='bg-orange-500 transition-all'
+        className='bg-vis-orange transition-all'
         style={{ width: `${generated}%` }}
         title={`Generated: ${generated.toFixed(1)}%`}
       />
@@ -127,8 +127,8 @@ export default function AgentBreakdownTable({
             <TableRow>
               <TableHead>Agent</TableHead>
               <TableHead className='text-right'>Total</TableHead>
-              <TableHead className='text-right text-emerald-600'>Verified</TableHead>
-              <TableHead className='text-right text-orange-600'>Generated</TableHead>
+              <TableHead className='text-right text-success'>Verified</TableHead>
+              <TableHead className='text-right text-vis-orange'>Generated</TableHead>
               <TableHead>Distribution</TableHead>
               <TableHead>Most Executed</TableHead>
               <TableHead className='text-right'>Success Rate</TableHead>
@@ -150,10 +150,10 @@ export default function AgentBreakdownTable({
                   </button>
                 </TableCell>
                 <TableCell className='text-right font-medium'>{agent.totalExecutions}</TableCell>
-                <TableCell className='text-right font-medium text-emerald-600'>
+                <TableCell className='text-right font-medium text-success'>
                   {agent.verifiedCount}
                 </TableCell>
-                <TableCell className='text-right font-medium text-orange-600'>
+                <TableCell className='text-right font-medium text-vis-orange'>
                   {agent.generatedCount}
                 </TableCell>
                 <TableCell>

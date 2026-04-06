@@ -1,4 +1,4 @@
-import { AlertCircle, GitBranch, Loader2 } from "lucide-react";
+import { AlertCircle, GitBranch } from "lucide-react";
 import * as React from "react";
 import { Alert, AlertDescription } from "@/components/ui/shadcn/alert";
 import { Badge } from "@/components/ui/shadcn/badge";
@@ -12,6 +12,7 @@ import {
   CommandList
 } from "@/components/ui/shadcn/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/shadcn/popover";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useProjectBranches } from "@/hooks/api/projects/useProjects";
 import { cn } from "@/libs/shadcn/utils";
 import useCurrentProject from "@/stores/useCurrentProject";
@@ -33,8 +34,7 @@ const BranchSelector = ({ selectedBranch, setSelectedBranch }: Props) => {
   if (isLoading) {
     return (
       <div className='flex items-center gap-2 rounded-md border bg-muted/30 p-3'>
-        <Loader2 className='h-4 w-4 animate-spin text-muted-foreground' />
-        <span className='text-muted-foreground text-sm'>Loading branches...</span>
+        <Spinner className='text-muted-foreground' />
       </div>
     );
   }
@@ -104,7 +104,7 @@ const BranchSelector = ({ selectedBranch, setSelectedBranch }: Props) => {
                     {branch.name === selectedBranch && branch.name !== activeBranchName && (
                       <Badge
                         variant='outline'
-                        className='border-blue-200 bg-blue-50 px-1.5 py-0.5 text-blue-700 text-xs dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-400'
+                        className='border-info/30 bg-info/10 px-1.5 py-0.5 text-info text-xs'
                       >
                         current
                       </Badge>

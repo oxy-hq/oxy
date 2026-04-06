@@ -1,8 +1,9 @@
-import { Hammer, Loader2, Trash2 } from "lucide-react";
+import { Hammer, Trash2 } from "lucide-react";
 import type React from "react";
 import { useCallback } from "react";
 import { Button } from "@/components/ui/shadcn/button";
 import { Label } from "@/components/ui/shadcn/label";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useDataBuild } from "@/hooks/api/databases/useDataBuild";
 import { useDataClean } from "@/hooks/api/databases/useDataClean";
 import useDatabaseOperation from "@/stores/useDatabaseOperation";
@@ -38,10 +39,7 @@ export const EmbeddingsManagement: React.FC = () => {
           disabled={cleaningInProgress || buildingInProgress}
         >
           {cleaningInProgress ? (
-            <>
-              <Loader2 className='animate-spin' />
-              Cleaning...
-            </>
+            <Spinner />
           ) : (
             <>
               <Trash2 />
@@ -55,10 +53,7 @@ export const EmbeddingsManagement: React.FC = () => {
           disabled={buildingInProgress || cleaningInProgress}
         >
           {buildingInProgress ? (
-            <>
-              <Loader2 className='animate-spin' />
-              Building...
-            </>
+            <Spinner />
           ) : (
             <>
               <Hammer />

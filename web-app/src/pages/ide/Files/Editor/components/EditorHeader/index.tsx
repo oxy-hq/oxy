@@ -1,4 +1,4 @@
-import { FileDiff, GitBranch, Loader2 } from "lucide-react";
+import { FileDiff, GitBranch } from "lucide-react";
 import { useContext } from "react";
 import { Fragment } from "react/jsx-runtime";
 import { useFileEditorContext } from "@/components/FileEditor/useFileEditorContext";
@@ -11,6 +11,7 @@ import {
   BreadcrumbSeparator
 } from "@/components/ui/shadcn/breadcrumb";
 import { Button } from "@/components/ui/shadcn/button";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/tooltip";
 import { cn } from "@/libs/shadcn/utils";
 import { EditorContext } from "@/pages/ide/Files/Editor/contexts/EditorContextTypes";
@@ -79,7 +80,7 @@ const EditorHeader = ({ filePath, actions, prefixAction, readOnly = false }: Hea
 
       <div className='flex items-center gap-1.5'>
         {isMainEditMode && fileState === "modified" && (
-          <div className='flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2 py-1 text-amber-400 text-xs'>
+          <div className='flex items-center gap-1.5 rounded-md bg-warning/10 px-2 py-1 text-warning text-xs'>
             <GitBranch className='h-3 w-3 flex-shrink-0' />
             <span>Saving will create a new branch</span>
           </div>
@@ -97,9 +98,7 @@ const EditorHeader = ({ filePath, actions, prefixAction, readOnly = false }: Hea
         {fileState === "modified" && readOnly && (
           <span className='text-muted-foreground text-sm'>Read-only mode</span>
         )}
-        {fileState === "saving" && (
-          <Loader2 className='h-4 w-4 animate-[spin_0.2s_linear_infinite] text-yellow-500' />
-        )}
+        {fileState === "saving" && <Spinner className='text-warning' />}
         {git && (
           <Tooltip>
             <TooltipTrigger asChild>

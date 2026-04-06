@@ -1,4 +1,4 @@
-import { Calendar, ExternalLink, Github, Loader2, Search } from "lucide-react";
+import { Calendar, ExternalLink, Github, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/shadcn/button";
 import {
@@ -16,6 +16,7 @@ import {
   DialogTitle
 } from "@/components/ui/shadcn/dialog";
 import { Input } from "@/components/ui/shadcn/input";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useListRepositories, useSelectRepository } from "@/hooks/api/useGithubSettings";
 import type { GitHubRepository } from "@/types/github";
 
@@ -78,7 +79,7 @@ export function RepositorySelectionDialog({ open, onOpenChange }: RepositorySele
         <div className='space-y-4'>
           {/* Search */}
           <div className='relative'>
-            <Search className='absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 transform text-gray-400' />
+            <Search className='absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 transform text-muted-foreground' />
             <Input
               placeholder='Search repositories...'
               value={searchQuery}
@@ -91,8 +92,7 @@ export function RepositorySelectionDialog({ open, onOpenChange }: RepositorySele
           <div className='max-h-96 space-y-3 overflow-y-auto'>
             {isLoading ? (
               <div className='flex items-center justify-center py-8'>
-                <Loader2 className='h-6 w-6 animate-spin' />
-                <span className='ml-2'>Loading repositories...</span>
+                <Spinner className='size-6' />
               </div>
             ) : filteredRepos.length === 0 ? (
               <div className='py-8 text-center text-muted-foreground'>
@@ -148,8 +148,7 @@ export function RepositorySelectionDialog({ open, onOpenChange }: RepositorySele
 
           {selectRepositoryMutation.isPending && (
             <div className='flex items-center justify-center py-4'>
-              <Loader2 className='mr-2 h-4 w-4 animate-spin' />
-              <span>Selecting repository...</span>
+              <Spinner className='mr-2' />
             </div>
           )}
         </div>

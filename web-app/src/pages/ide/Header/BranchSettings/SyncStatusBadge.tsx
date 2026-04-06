@@ -1,5 +1,6 @@
-import { AlertCircle, CheckCircle, Clock, GitMerge, Loader2 } from "lucide-react";
+import { AlertCircle, CheckCircle, Clock, GitMerge } from "lucide-react";
 import { Badge } from "@/components/ui/shadcn/badge";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { cn } from "@/libs/shadcn/utils";
 
 interface SyncStatusBadgeProps {
@@ -15,32 +16,28 @@ export const SyncStatusBadge = ({ status, isInSync = false }: SyncStatusBadgePro
           variant: "secondary" as const,
           icon: <CheckCircle className='h-3 w-3' />,
           label: "Synced",
-          className:
-            "bg-green-100 text-green-800 border-green-200 hover:bg-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800"
+          className: "bg-success/10 text-success border-success hover:bg-success/20"
         };
       case "syncing":
         return {
           variant: "outline" as const,
-          icon: <Loader2 className='h-3 w-3 animate-spin' />,
+          icon: <Spinner className='size-3' />,
           label: "Syncing",
-          className:
-            "bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800"
+          className: "bg-info/10 text-info border-info/30 hover:bg-info/20"
         };
       case "behind":
         return {
           variant: "outline" as const,
           icon: <Clock className='h-3 w-3' />,
           label: "Behind",
-          className:
-            "bg-yellow-100 text-yellow-800 border-yellow-200 hover:bg-yellow-200 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-800"
+          className: "bg-warning/10 text-warning border-warning/30 hover:bg-warning/20"
         };
       case "conflict":
         return {
           variant: "outline" as const,
           icon: <GitMerge className='h-3 w-3' />,
           label: "Merge conflict",
-          className:
-            "bg-amber-100 text-amber-800 border-amber-200 hover:bg-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800"
+          className: "bg-warning/10 text-warning border-warning/30 hover:bg-warning/20"
         };
       case "error":
       case "failed":
@@ -49,7 +46,7 @@ export const SyncStatusBadge = ({ status, isInSync = false }: SyncStatusBadgePro
           icon: <AlertCircle className='h-3 w-3' />,
           label: "Error",
           className:
-            "bg-red-100 text-red-800 border-red-200 hover:bg-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800"
+            "bg-destructive/10 text-destructive border-destructive/30 hover:bg-destructive/20"
         };
       default:
         return {

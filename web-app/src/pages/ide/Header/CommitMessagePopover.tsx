@@ -1,6 +1,7 @@
-import { Loader2, Upload } from "lucide-react";
+import { Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/shadcn/popover";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 
 const DEFAULT_MESSAGE = "Auto-commit: Oxy changes";
 
@@ -85,13 +86,9 @@ export const CommitMessagePopover = ({
               type='button'
               onClick={handleSubmit}
               disabled={!message.trim() || isPushing}
-              className='flex items-center gap-1.5 rounded bg-gradient-to-b from-emerald-600 to-emerald-700 px-3 py-1 font-medium text-white text-xs shadow-emerald-900/30 shadow-sm transition-all hover:from-emerald-500 hover:to-emerald-600 disabled:opacity-50'
+              className='flex items-center gap-1.5 rounded bg-gradient-to-b from-[var(--blue-500)] to-[var(--blue-600)] px-3 py-1 font-medium text-white text-xs shadow-[var(--blue-900)]/30 shadow-sm transition-all hover:from-[var(--blue-400)] hover:to-[var(--blue-500)] disabled:opacity-50'
             >
-              {isPushing ? (
-                <Loader2 className='h-3 w-3 animate-spin' />
-              ) : (
-                <Upload className='h-3 w-3' />
-              )}
+              {isPushing ? <Spinner className='size-3' /> : <Upload className='h-3 w-3' />}
               {pushLabel}
             </button>
           </div>

@@ -1,4 +1,5 @@
-import { Check, LoaderCircle } from "lucide-react";
+import { Check } from "lucide-react";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { cn } from "@/libs/shadcn/utils";
 import type { TestState } from "@/stores/useTests";
 import { EVAL_METRICS_POSTFIX, EvalEventState } from "@/types/eval";
@@ -14,7 +15,7 @@ const State = ({ testState }: { testState: TestState }) => {
       case EvalEventState.Started:
         return (
           <>
-            <LoaderCircle className='h-4 w-4 animate-spin' /> Running test
+            <Spinner /> Running test
           </>
         );
       case EvalEventState.Progress:

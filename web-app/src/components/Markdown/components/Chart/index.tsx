@@ -53,6 +53,9 @@ const Chart = (props: ChartProps) => {
   }
 
   const isDarkMode = theme === "dark";
+  const mutedFg =
+    getComputedStyle(document.documentElement).getPropertyValue("--muted-foreground").trim() ||
+    (isDarkMode ? "oklch(0.708 0 0)" : "oklch(0.556 0 0)");
 
   const options: EChartsOption = {
     darkMode: isDarkMode,
@@ -62,7 +65,7 @@ const Chart = (props: ChartProps) => {
           type: (config.xAxis?.type as "category" | "value" | "time" | "log") || "category",
           name: config.xAxis?.name,
           nameTextStyle: {
-            color: isDarkMode ? "oklch(0.708 0 0)" : "oklch(0.556 0 0)",
+            color: mutedFg,
             padding: [15, 0, 0, 0]
           },
           nameLocation: "middle",
@@ -76,7 +79,7 @@ const Chart = (props: ChartProps) => {
           type: (config.yAxis?.type as "category" | "value" | "time" | "log") || "category",
           name: config.yAxis?.name,
           nameTextStyle: {
-            color: isDarkMode ? "oklch(0.708 0 0)" : "oklch(0.556 0 0)"
+            color: mutedFg
           },
           data: (config.yAxis?.data || []).map((d: string | number | Date) =>
             d instanceof Date ? d.toISOString() : d

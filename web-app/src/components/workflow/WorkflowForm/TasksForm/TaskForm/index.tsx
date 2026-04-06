@@ -9,6 +9,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger
 } from "@/components/ui/shadcn/collapsible";
+import { FieldError } from "@/components/ui/shadcn/field";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import {
@@ -191,9 +192,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({ index, onRemove, basePath = 
                     }
                   })}
                 />
-                {taskErrors?.name && (
-                  <p className='text-red-500 text-sm'>{taskErrors.name.message}</p>
-                )}
+                {taskErrors?.name && <FieldError>{taskErrors.name.message}</FieldError>}
               </div>
               <div className='space-y-2'>
                 <Label htmlFor={`${taskPath}.type`}>Task Type</Label>
@@ -227,9 +226,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({ index, onRemove, basePath = 
                     </Select>
                   )}
                 />
-                {taskErrors?.type && (
-                  <p className='text-red-500 text-sm'>{taskErrors.type.message}</p>
-                )}
+                {taskErrors?.type && <FieldError>{taskErrors.type.message}</FieldError>}
               </div>
             </div>
 

@@ -121,10 +121,7 @@ const TaskThread = ({
       <div className='flex flex-1 overflow-hidden'>
         <div className='flex h-full flex-1 flex-col overflow-hidden'>
           <div className='relative w-full flex-1 overflow-hidden'>
-            <div
-              ref={scrollContainerRef}
-              className='customScrollbar h-full w-full overflow-y-auto p-4'
-            >
+            <div ref={scrollContainerRef} className='h-full w-full overflow-y-auto p-4'>
               <Messages messages={messages} />
               <div ref={bottomRef} />
             </div>

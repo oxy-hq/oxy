@@ -1,5 +1,6 @@
-import { Check, Loader2, Workflow, Zap } from "lucide-react";
+import { Check, Workflow, Zap } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { cn } from "@/libs/shadcn/utils";
 import type { Step } from "@/pages/thread/agentic/ArtifactSidebar/ArtifactBlockRenderer/SubGroupReasoningPanel/Reasoning";
 
@@ -66,11 +67,7 @@ const AutomationIndicator = ({
         </div>
       </div>
       <Button size='sm' onClick={onGenerate} disabled={isLoading}>
-        {isLoading ? (
-          <Loader2 className='h-3 w-3 animate-spin' />
-        ) : (
-          <Workflow className='h-3 w-3' />
-        )}
+        {isLoading ? <Spinner className='size-3' /> : <Workflow className='h-3 w-3' />}
         <span>{isLoading ? "Saving…" : "Save as procedure"}</span>
       </Button>
     </div>

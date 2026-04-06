@@ -1,6 +1,7 @@
 import { Editor } from "@monaco-editor/react";
-import { AlertCircle, Loader2 } from "lucide-react";
 import SqlResultsTable from "@/components/sql/SqlResultsTable";
+import ErrorAlert from "@/components/ui/ErrorAlert";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import type { SqlArtifact } from "@/types/artifact";
 
 type Props = {
@@ -18,7 +19,7 @@ const SqlArtifactPanel = ({ artifact }: Props) => {
           defaultValue={artifact.content.value.sql_query}
           language='sql'
           value={artifact.content.value.sql_query}
-          loading={<Loader2 className='h-4 w-4 animate-[spin_0.2s_linear_infinite] text-[white]' />}
+          loading={<Spinner />}
           options={{
             readOnly: true,
             scrollBeyondLastLine: true,
@@ -30,10 +31,10 @@ const SqlArtifactPanel = ({ artifact }: Props) => {
       </div>
 
       {!!artifact.content.value.error && (
-        <div className='mx-3 my-2 flex max-h-32 flex-1 items-start gap-2 overflow-y-auto rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-red-400 text-sm'>
-          <AlertCircle className='mt-0.5 h-4 w-4 shrink-0' />
-          <span className='whitespace-pre-wrap'>{artifact.content.value.error}</span>
-        </div>
+        <ErrorAlert
+          className='mx-3 my-2 max-h-32 overflow-y-auto'
+          message={artifact.content.value.error}
+        />
       )}
 
       {(!artifact.content.value.error || artifact.content.value.result_file) && (

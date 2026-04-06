@@ -1,7 +1,9 @@
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import { Button } from "@/components/ui/shadcn/button";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useMetricDetail } from "@/hooks/api/metrics";
 import ROUTES from "@/libs/utils/routes";
 import useCurrentProject from "@/stores/useCurrentProject";
@@ -48,7 +50,7 @@ export default function MetricsDetailPage() {
           <h1 className='ml-4 font-semibold text-xl'>{decodedMetricName}</h1>
         </div>
         <div className='flex flex-1 items-center justify-center'>
-          <Loader2 className='h-8 w-8 animate-spin text-muted-foreground' />
+          <Spinner className='size-8 text-muted-foreground' />
         </div>
       </div>
     );
@@ -63,8 +65,8 @@ export default function MetricsDetailPage() {
           </Button>
           <h1 className='ml-4 font-semibold text-xl'>{decodedMetricName}</h1>
         </div>
-        <div className='flex flex-1 items-center justify-center text-destructive'>
-          Failed to load metric details
+        <div className='flex flex-1 items-center justify-center p-4'>
+          <ErrorAlert message='Failed to load metric details' />
         </div>
       </div>
     );
@@ -82,7 +84,7 @@ export default function MetricsDetailPage() {
         />
 
         {/* Content */}
-        <div className='customScrollbar min-h-0 flex-1 overflow-auto p-6'>
+        <div className='min-h-0 flex-1 overflow-auto p-6'>
           <div className='mx-auto max-w-6xl space-y-6'>
             <DetailStatsRow detailData={detailData} />
 

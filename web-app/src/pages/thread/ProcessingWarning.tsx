@@ -29,7 +29,7 @@ const ProcessingWarning = ({ threadId, isLoading, className, onRefresh }: Props)
   return (
     <div className={cn("mb-2 w-full rounded-lg border border-border bg-card px-3 py-2", className)}>
       <div className='flex items-center justify-between'>
-        <span className='font-medium text-blue-100 text-sm'>
+        <span className='font-medium text-info text-sm'>
           Thread is still processing. The last message may not be complete yet.
         </span>
         <Tooltip>

@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle
 } from "@/components/ui/shadcn/dialog";
+import { FieldError } from "@/components/ui/shadcn/field";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import { Textarea } from "@/components/ui/shadcn/textarea";
@@ -116,7 +117,7 @@ export const EditSecretDialog: React.FC<EditSecretDialogProps> = ({
               onChange={(e) => setFormData({ ...formData, value: e.target.value })}
               className={errors.value ? "border-destructive" : ""}
             />
-            {errors.value && <p className='text-destructive text-sm'>{errors.value}</p>}
+            {errors.value && <FieldError>{errors.value}</FieldError>}
           </div>
 
           <div className='grid gap-2'>
@@ -136,7 +137,7 @@ export const EditSecretDialog: React.FC<EditSecretDialogProps> = ({
             Cancel
           </Button>
           <Button onClick={handleUpdateSecret} disabled={updateSecretMutation.isPending}>
-            {updateSecretMutation.isPending ? "Updating..." : "Update Secret"}
+            Update Secret
           </Button>
         </DialogFooter>
       </DialogContent>

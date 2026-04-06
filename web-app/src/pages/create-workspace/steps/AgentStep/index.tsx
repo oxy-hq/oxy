@@ -1,6 +1,6 @@
-import { Loader2 } from "lucide-react";
 import { FormProvider, useForm } from "react-hook-form";
 import { Button } from "@/components/ui/shadcn/button";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import Header from "../Header";
 import type { ModelsFormData } from "../ModelStep";
 import type { WarehousesFormData } from "../WarehouseStep";
@@ -98,7 +98,7 @@ export default function AgentStep({
             Back
           </Button>
           <Button type='submit' disabled={!isValid || isCreating}>
-            {isCreating && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+            {isCreating && <Spinner className='mr-2' />}
             Create Workspace
           </Button>
         </div>

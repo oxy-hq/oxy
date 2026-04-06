@@ -1,4 +1,4 @@
-import { Bot, ChevronDown, Loader2, Route } from "lucide-react";
+import { Bot, ChevronDown, Route } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/shadcn/button";
 import {
@@ -8,6 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from "@/components/ui/shadcn/dropdown-menu";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { Switch } from "@/components/ui/shadcn/switch";
 import useAgents from "@/hooks/api/agents/useAgents";
 import { getAgentNameFromPath } from "@/libs/utils/string";
@@ -63,12 +64,12 @@ const AgentsDropdown = ({
         <Button
           variant='ghost'
           size='sm'
-          className='h-8 gap-1 border-none px-2 shadow-none'
+          className='h-8 gap-2 border-none bg-input/30 px-3 shadow-none'
           disabled={isPending || disabled}
           data-testid='agent-selector-button'
         >
           {isPending ? (
-            <Loader2 className='size-4 animate-spin' />
+            <Spinner />
           ) : (
             <>
               {agentSelected?.name.includes("routing") ? (
@@ -80,7 +81,7 @@ const AgentsDropdown = ({
               {thinkingMode === "extended_thinking" && (
                 <span className='text-muted-foreground text-xs'>Extended</span>
               )}
-              <ChevronDown className='size-3 opacity-50' />
+              <ChevronDown className='opacity-50' />
             </>
           )}
         </Button>
@@ -88,6 +89,7 @@ const AgentsDropdown = ({
       <DropdownMenuContent align='end'>
         {agentOptions.map((item) => (
           <DropdownMenuItem
+            className='cursor-pointer'
             key={item.id}
             onClick={() => onSelect(item)}
             data-highlighted={agentSelected?.id === item.id}

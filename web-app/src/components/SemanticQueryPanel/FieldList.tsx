@@ -38,8 +38,7 @@ const FieldList = ({
   return (
     <CollapsibleSection title={title} count={fields.length}>
       <div className='flex flex-col gap-2'>
-        {" "}
-        {/* Using index in key is necessary here since field values can be duplicated/reordered */}{" "}
+        {/* Using index in key is necessary here since field values can be duplicated/reordered */}
         {fields.map((field, i) => (
           <div key={`${title}-${field}-${i}`} className='flex items-center gap-1.5'>
             {editable && availableItems.length > 0 ? (
@@ -51,16 +50,10 @@ const FieldList = ({
                     onValueChange={(v) => onFieldChange?.(i, v)}
                     placeholder={placeholder}
                     searchPlaceholder={searchPlaceholder}
-                    className='h-8 text-xs'
                   />
                 </div>
-                <Button
-                  variant='ghost'
-                  size='icon'
-                  className='h-7 w-7 shrink-0'
-                  onClick={() => onFieldRemove?.(i)}
-                >
-                  <X className='h-3 w-3' />
+                <Button variant='ghost' size='icon' onClick={() => onFieldRemove?.(i)}>
+                  <X />
                 </Button>
               </>
             ) : (
@@ -71,13 +64,8 @@ const FieldList = ({
           </div>
         ))}
         {editable && onFieldAdd && (
-          <Button
-            variant='ghost'
-            size='sm'
-            className='h-7 w-fit text-muted-foreground text-xs'
-            onClick={onFieldAdd}
-          >
-            <Plus className='mr-1 h-3 w-3' />
+          <Button variant='ghost' size='sm' className='w-fit' onClick={onFieldAdd}>
+            <Plus />
             {addLabel}
           </Button>
         )}

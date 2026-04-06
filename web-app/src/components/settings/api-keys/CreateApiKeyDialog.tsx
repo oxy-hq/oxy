@@ -49,7 +49,7 @@ const CreateApiKeyDialog: React.FC<Props> = ({ open, onOpenChange, onApiKeyCreat
   };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className='bg-neutral-900 sm:max-w-md'>
+      <DialogContent className='bg-popover sm:max-w-md'>
         <DialogHeader>
           <DialogTitle>Create API Key</DialogTitle>
           <DialogDescription>

@@ -3,6 +3,7 @@ import type React from "react";
 import { useFieldArray, useFormContext } from "react-hook-form";
 import { Button } from "@/components/ui/shadcn/button";
 import { CardTitle } from "@/components/ui/shadcn/card";
+import { FieldError } from "@/components/ui/shadcn/field";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import { NestedTasksForm } from "@/components/workflow/WorkflowForm/TasksForm/NestedTasksForm";
@@ -88,9 +89,7 @@ export const ConditionalTaskFields: React.FC<ConditionalTaskFieldsProps> = ({
                 )}
               />
               {taskErrors?.conditions?.[conditionIndex]?.if && (
-                <p className='text-red-500 text-sm'>
-                  {taskErrors.conditions[conditionIndex].if.message}
-                </p>
+                <FieldError>{taskErrors.conditions[conditionIndex].if.message}</FieldError>
               )}
               <p className='text-muted-foreground text-xs'>
                 Use template syntax to reference task outputs (e.g., {`{{ task_name.field }}`})
@@ -110,7 +109,7 @@ export const ConditionalTaskFields: React.FC<ConditionalTaskFieldsProps> = ({
         ))}
 
         {taskErrors?.conditions && !Array.isArray(taskErrors.conditions) && (
-          <p className='text-red-500 text-sm'>{taskErrors.conditions.message}</p>
+          <FieldError>{taskErrors.conditions.message}</FieldError>
         )}
       </div>
 

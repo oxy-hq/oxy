@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, Loader2 } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/shadcn/alert";
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/shadcn/dialog";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import queryKeys from "@/hooks/api/queryKey";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
@@ -125,14 +126,7 @@ export default function SaveQueryDialog({ open, onOpenChange, tab }: SaveQueryDi
             Cancel
           </Button>
           <Button onClick={handleSave} disabled={isSaving || !fileName.trim()}>
-            {isSaving ? (
-              <>
-                <Loader2 className='mr-1 h-4 w-4 animate-spin' />
-                Saving...
-              </>
-            ) : (
-              "Save"
-            )}
+            {isSaving ? <Spinner className='mr-1' /> : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>

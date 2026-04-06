@@ -5,6 +5,7 @@ import { FormProvider, useFieldArray, useForm } from "react-hook-form";
 import { TestsForm } from "@/components/shared/TestsForm";
 import { Button } from "@/components/ui/shadcn/button";
 import { CardTitle } from "@/components/ui/shadcn/card";
+import { FieldError } from "@/components/ui/shadcn/field";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import { Textarea } from "@/components/ui/shadcn/textarea";
@@ -155,7 +156,7 @@ export const WorkflowForm: React.FC<WorkflowFormProps> = ({ data, onChange }) =>
   return (
     <FormProvider {...methods}>
       <div className='flex min-h-0 flex-1 flex-col'>
-        <div className='customScrollbar flex-1 overflow-auto p-4'>
+        <div className='flex-1 overflow-auto p-4'>
           <form id='workflow-form' className='space-y-8'>
             <div className='space-y-4'>
               <div className='space-y-2'>
@@ -165,7 +166,7 @@ export const WorkflowForm: React.FC<WorkflowFormProps> = ({ data, onChange }) =>
                   placeholder='Describe what this procedure does...'
                   {...register("name")}
                 />
-                {errors.name && <p className='text-red-500 text-sm'>{errors.name.message}</p>}
+                {errors.name && <FieldError>{errors.name.message}</FieldError>}
               </div>
               <div className='space-y-2'>
                 <Label htmlFor='description'>Description</Label>
@@ -175,9 +176,7 @@ export const WorkflowForm: React.FC<WorkflowFormProps> = ({ data, onChange }) =>
                   {...register("description")}
                   rows={4}
                 />
-                {errors.description && (
-                  <p className='text-red-500 text-sm'>{errors.description.message}</p>
-                )}
+                {errors.description && <FieldError>{errors.description.message}</FieldError>}
               </div>
             </div>
 

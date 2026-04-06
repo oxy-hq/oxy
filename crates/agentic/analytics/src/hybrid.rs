@@ -246,9 +246,7 @@ impl HybridCatalog {
         if metric.contains('(') {
             let refs = super::validation::extract_table_column_refs(metric);
             if !refs.is_empty() {
-                return refs
-                    .iter()
-                    .all(|(t, c)| self.semantic_field_exists(t, c));
+                return refs.iter().all(|(t, c)| self.semantic_field_exists(t, c));
             }
         }
         // Dotted "view.measure" format.
@@ -386,7 +384,9 @@ impl Catalog for HybridCatalog {
         match &self.semantic {
             None => {
                 eprintln!("[hybrid] no semantic catalog, returning TooComplex");
-                Err(CatalogError::TooComplex("no semantic catalog available".into()))
+                Err(CatalogError::TooComplex(
+                    "no semantic catalog available".into(),
+                ))
             }
             Some(sem) => match sem.try_compile(intent) {
                 Ok(sql) => Ok(sql),
@@ -397,7 +397,9 @@ impl Catalog for HybridCatalog {
                 Err(CatalogError::UnresolvableMetric(m)) => {
                     if self.schema.get_metric_definition(&m).is_some() {
                         // Schema covers it; LLM can generate SQL from schema context.
-                        Err(CatalogError::TooComplex("metric unresolvable in semantic layer but covered by schema".into()))
+                        Err(CatalogError::TooComplex(
+                            "metric unresolvable in semantic layer but covered by schema".into(),
+                        ))
                     } else {
                         // Neither catalog knows this metric.
                         Err(CatalogError::UnresolvableMetric(m))
@@ -406,7 +408,9 @@ impl Catalog for HybridCatalog {
                 // Semantic could not resolve a dimension — check schema fallback.
                 Err(CatalogError::UnresolvableDimension(d)) => {
                     if !self.schema.list_dimensions(&d).is_empty() {
-                        Err(CatalogError::TooComplex("dimension unresolvable in semantic layer but covered by schema".into()))
+                        Err(CatalogError::TooComplex(
+                            "dimension unresolvable in semantic layer but covered by schema".into(),
+                        ))
                     } else {
                         Err(CatalogError::UnresolvableDimension(d))
                     }

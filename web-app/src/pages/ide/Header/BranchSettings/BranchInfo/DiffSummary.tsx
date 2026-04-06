@@ -1,6 +1,7 @@
-import { File, FileDiff, FileMinus, FilePlus, Loader2, Minus, Plus } from "lucide-react";
+import { File, FileDiff, FileMinus, FilePlus, Minus, Plus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Label } from "@/components/ui/shadcn/label";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/tooltip";
 import useDiffSummary from "@/hooks/api/files/useDiffSummary";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
@@ -34,7 +35,7 @@ const DiffSummary = ({ onFileClick }: { onFileClick: () => void }) => {
       case "M":
         return <FileDiff className='h-4 w-4 flex-shrink-0 text-warning' />;
       case "A":
-        return <FilePlus className='h-4 w-4 flex-shrink-0 text-green-600' />;
+        return <FilePlus className='h-4 w-4 flex-shrink-0 text-success' />;
       case "D":
         return <FileMinus className='h-4 w-4 flex-shrink-0 text-destructive' />;
       default:
@@ -46,8 +47,7 @@ const DiffSummary = ({ onFileClick }: { onFileClick: () => void }) => {
     return (
       <DiffSummaryWrapper>
         <div className='flex items-center gap-2'>
-          <Loader2 className='h-4 w-4 animate-spin' />
-          <span className='text-muted-foreground text-sm'>Loading changes...</span>
+          <Spinner />
         </div>
       </DiffSummaryWrapper>
     );
@@ -85,13 +85,13 @@ const DiffSummary = ({ onFileClick }: { onFileClick: () => void }) => {
               {(file.insert > 0 || file.delete > 0) && (
                 <div className='flex items-center gap-2 text-muted-foreground text-xs'>
                   {file.insert > 0 && (
-                    <div className='flex items-center text-green-600'>
+                    <div className='flex items-center text-success'>
                       <Plus className='h-3 w-3' />
                       <span>{file.insert}</span>
                     </div>
                   )}
                   {file.delete > 0 && (
-                    <div className='flex items-center text-red-600'>
+                    <div className='flex items-center text-destructive'>
                       <Minus className='h-3 w-3' />
                       <span>{file.delete}</span>
                     </div>

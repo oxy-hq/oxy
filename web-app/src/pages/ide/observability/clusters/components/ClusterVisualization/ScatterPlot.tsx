@@ -1,6 +1,7 @@
 import { formatDistanceToNow } from "date-fns";
 import * as echarts from "echarts";
 import { useEffect, useMemo, useRef } from "react";
+import { resolveColor } from "@/components/Echarts/resolveColor";
 import type { ClusterMapPoint, ClusterSummary } from "@/services/api/traces";
 
 interface ScatterPlotProps {
@@ -126,7 +127,7 @@ function buildSeriesData(points: ClusterMapPoint[], clusters: ClusterSummary[]) 
 
   return Array.from(grouped.entries()).map(([clusterId, clusterPoints]) => {
     const cluster = clusterMap.get(clusterId);
-    const color = cluster?.color || "#9ca3af";
+    const color = cluster?.color || resolveColor("--muted-foreground");
     const name = cluster?.intentName || "Unknown";
 
     return {
@@ -141,13 +142,13 @@ function buildSeriesData(points: ClusterMapPoint[], clusters: ClusterSummary[]) 
       })),
       itemStyle: {
         color,
-        borderColor: "#fff",
+        borderColor: resolveColor("--background"),
         borderWidth: 1
         // Removed shadowBlur/shadowColor - expensive to render
       },
       emphasis: {
         itemStyle: {
-          borderColor: "#fff",
+          borderColor: resolveColor("--background"),
           borderWidth: 2
         },
         scale: 1.5
@@ -169,8 +170,8 @@ function buildChartOption(
         "Points represent user queries, positioned by semantic similarity using dimensionality reduction",
       left: "center",
       top: 8,
-      textStyle: { color: "#ccc", fontSize: 14, fontWeight: "normal" },
-      subtextStyle: { color: "#888", fontSize: 11 }
+      textStyle: { color: resolveColor("--muted-foreground"), fontSize: 14, fontWeight: "normal" },
+      subtextStyle: { color: resolveColor("--muted-foreground"), fontSize: 11 }
     },
     grid: {
       left: 60,
@@ -185,12 +186,12 @@ function buildChartOption(
       name: "Latent Dimension 1",
       nameLocation: "middle",
       nameGap: 30,
-      nameTextStyle: { color: "#888", fontSize: 12 },
-      axisLine: { lineStyle: { color: "#666" } },
+      nameTextStyle: { color: resolveColor("--muted-foreground"), fontSize: 12 },
+      axisLine: { lineStyle: { color: resolveColor("--muted-foreground") } },
       splitLine: {
-        lineStyle: { color: "rgba(128, 128, 128, 0.2)", type: "dashed" }
+        lineStyle: { color: resolveColor("--border"), type: "dashed" }
       },
-      axisLabel: { color: "#888" }
+      axisLabel: { color: resolveColor("--muted-foreground") }
     },
     yAxis: {
       type: "value",
@@ -198,20 +199,20 @@ function buildChartOption(
       name: "Latent Dimension 2",
       nameLocation: "middle",
       nameGap: 45,
-      nameTextStyle: { color: "#888", fontSize: 12 },
-      axisLine: { lineStyle: { color: "#666" } },
+      nameTextStyle: { color: resolveColor("--muted-foreground"), fontSize: 12 },
+      axisLine: { lineStyle: { color: resolveColor("--muted-foreground") } },
       splitLine: {
-        lineStyle: { color: "rgba(128, 128, 128, 0.2)", type: "dashed" }
+        lineStyle: { color: resolveColor("--border"), type: "dashed" }
       },
-      axisLabel: { color: "#888" }
+      axisLabel: { color: resolveColor("--muted-foreground") }
     },
     tooltip: {
       trigger: "item",
-      backgroundColor: "rgba(30, 30, 30, 0.95)",
-      borderColor: "rgba(128, 128, 128, 0.3)",
+      backgroundColor: resolveColor("--popover"),
+      borderColor: resolveColor("--border"),
       borderWidth: 1,
       padding: [12, 16],
-      textStyle: { color: "#fff", fontSize: 13 },
+      textStyle: { color: resolveColor("--popover-foreground"), fontSize: 13 },
       confine: true, // Keep tooltip within chart bounds
       appendToBody: true, // Render outside chart container for better perf
       formatter: (params: unknown) => {
@@ -224,8 +225,8 @@ function buildChartOption(
       orient: "horizontal",
       bottom: 8,
       left: "center",
-      textStyle: { color: "#888", fontSize: 11 },
-      pageTextStyle: { color: "#888" },
+      textStyle: { color: resolveColor("--muted-foreground"), fontSize: 11 },
+      pageTextStyle: { color: resolveColor("--muted-foreground") },
       itemWidth: 12,
       itemHeight: 12,
       itemGap: 20
@@ -254,12 +255,12 @@ function formatTooltip(params: unknown, getPointColor: (point: ClusterMapPoint) 
         <span style="background: ${getPointColor(point)}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px;">
           ${point.intentName}
         </span>
-        <span style="color: #888; font-size: 12px;">${confidence}%</span>
+        <span style="color: var(--muted-foreground); font-size: 12px;">${confidence}%</span>
       </div>
-      <div style="font-size: 13px; line-height: 1.4; color: #eee; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;">
+      <div style="font-size: 13px; line-height: 1.4; color: var(--popover-foreground); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;">
         ${point.question}
       </div>
-      ${timeAgo ? `<div style="color: #888; font-size: 11px; margin-top: 8px;">${timeAgo}</div>` : ""}
+      ${timeAgo ? `<div style="color: var(--muted-foreground); font-size: 11px; margin-top: 8px;">${timeAgo}</div>` : ""}
     </div>
   `;
 }

@@ -1,4 +1,3 @@
-import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -10,6 +9,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle
 } from "@/components/ui/shadcn/alert-dialog";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { usePullChanges } from "@/hooks/api/projects/useProjects";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
@@ -65,7 +65,7 @@ export const SyncDialog = ({ open, onOpenChange }: Props) => {
         <AlertDialogFooter>
           <AlertDialogCancel disabled={isDisabled}>Cancel</AlertDialogCancel>
           <AlertDialogAction onClick={onConfirm} disabled={isDisabled}>
-            {pullChangesMutation.isPending && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+            {pullChangesMutation.isPending && <Spinner className='mr-2' />}
             Sync
           </AlertDialogAction>
         </AlertDialogFooter>

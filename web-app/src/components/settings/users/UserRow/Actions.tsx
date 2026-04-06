@@ -1,4 +1,4 @@
-import { Loader2, MoreHorizontal, RotateCcw, Trash2 } from "lucide-react";
+import { MoreHorizontal, RotateCcw, Trash2 } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue
 } from "@/components/ui/shadcn/select";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { buttonVariants } from "@/components/ui/shadcn/utils/button-variants";
 import useCurrentUser from "@/hooks/api/users/useCurrentUser";
 import { useRemoveUser, useUpdateUserRole } from "@/hooks/api/users/useUserMutations";
@@ -92,7 +93,7 @@ const Actions: React.FC<Props> = ({ user, workspaceId }) => {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant='ghost' size='sm' disabled={isDeleting}>
-            {isDeleting ? <Loader2 className='animate-spin' /> : <MoreHorizontal />}
+            {isDeleting ? <Spinner /> : <MoreHorizontal />}
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align='end'>
@@ -107,7 +108,7 @@ const Actions: React.FC<Props> = ({ user, workspaceId }) => {
         </DropdownMenuContent>
       </DropdownMenu>
       <AlertDialog open={isRemoveUserAlertOpen} onOpenChange={setIsRemoveUserAlertOpen}>
-        <AlertDialogContent className='bg-neutral-900 sm:max-w-md'>
+        <AlertDialogContent className='bg-popover sm:max-w-md'>
           <AlertDialogHeader>
             <AlertDialogTitle>Remove User from Workspace</AlertDialogTitle>
             <AlertDialogDescription>
@@ -122,13 +123,13 @@ const Actions: React.FC<Props> = ({ user, workspaceId }) => {
               onClick={onConfirmDelete}
               className={buttonVariants({ variant: "destructive" })}
             >
-              {removeUserMutation.isPending ? <Loader2 className='animate-spin' /> : "Remove"}
+              {removeUserMutation.isPending ? <Spinner /> : "Remove"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
       <AlertDialog open={isRoleDialogOpen} onOpenChange={setIsRoleDialogOpen}>
-        <AlertDialogContent className='bg-neutral-900 sm:max-w-md'>
+        <AlertDialogContent className='bg-popover sm:max-w-md'>
           <AlertDialogHeader>
             <AlertDialogTitle>Change User Role</AlertDialogTitle>
             <AlertDialogDescription>
@@ -165,11 +166,7 @@ const Actions: React.FC<Props> = ({ user, workspaceId }) => {
               className={buttonVariants({ variant: "default" })}
               disabled={selectedRole === user.role || updateUserRoleMutation.isPending}
             >
-              {updateUserRoleMutation.isPending ? (
-                <Loader2 className='animate-spin' />
-              ) : (
-                "Update Role"
-              )}
+              {updateUserRoleMutation.isPending ? <Spinner /> : "Update Role"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -22,7 +22,7 @@ function getPointStatus(point: ClusterMapPoint): PointStatus {
 function getStatusBadgeClass(status: PointStatus): string {
   switch (status) {
     case "ok":
-      return "bg-emerald-500/10 text-emerald-600";
+      return "bg-success/10 text-success";
     case "error":
       return "bg-destructive/10 text-destructive";
     default:
@@ -51,7 +51,7 @@ export default function QuestionDetailPanel({ point, cluster, onClose }: Questio
           <div className='flex items-center gap-2'>
             <div
               className='h-3 w-3 rounded-full'
-              style={{ backgroundColor: cluster?.color || "#9ca3af" }}
+              style={{ backgroundColor: cluster?.color || "var(--muted-foreground)" }}
             />
             <span className='font-medium text-sm'>{cluster?.intentName || "Outlier"}</span>
           </div>

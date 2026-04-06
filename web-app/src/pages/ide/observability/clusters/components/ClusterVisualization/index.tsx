@@ -48,7 +48,7 @@ export default function ClusterVisualization({
   }, [points, hiddenClusters, selectedCluster]);
 
   const getPointColor = useCallback(
-    (point: ClusterMapPoint) => clusterColorMap.get(point.clusterId) || "#9ca3af",
+    (point: ClusterMapPoint) => clusterColorMap.get(point.clusterId) || "var(--muted-foreground)",
     [clusterColorMap]
   );
 
@@ -217,7 +217,7 @@ function ClusterList({
   onSelectCluster
 }: ClusterListProps) {
   return (
-    <div className='customScrollbar h-full space-y-1.5 overflow-y-auto bg-background p-3'>
+    <div className='h-full space-y-1.5 overflow-y-auto bg-background p-3'>
       <div className='mb-2 flex items-center justify-between'>
         <h3 className='font-medium text-sm'>Clusters</h3>
         {selectedCluster !== null && (

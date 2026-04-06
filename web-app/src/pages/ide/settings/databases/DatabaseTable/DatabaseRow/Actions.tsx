@@ -1,4 +1,4 @@
-import { Loader2, MoreHorizontal, RefreshCw, Table as TableIcon } from "lucide-react";
+import { MoreHorizontal, RefreshCw, Table as TableIcon } from "lucide-react";
 import type React from "react";
 import { Button } from "@/components/ui/shadcn/button";
 import {
@@ -7,6 +7,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger
 } from "@/components/ui/shadcn/dropdown-menu";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import type { DatabaseInfo } from "@/types/database";
 
 interface Props {
@@ -22,7 +23,7 @@ const Actions: React.FC<Props> = ({ database, isLoading, onSync }) => {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant='ghost' size='sm' disabled={isLoading}>
-          {isLoading ? <Loader2 className='animate-spin' /> : <MoreHorizontal />}
+          {isLoading ? <Spinner /> : <MoreHorizontal />}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align='end'>

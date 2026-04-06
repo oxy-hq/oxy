@@ -1,4 +1,4 @@
-import { LoaderCircle } from "lucide-react";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import type { Message } from "@/types/chat";
 import MessageItem from "./Item";
 
@@ -12,7 +12,7 @@ const Messages = ({ messages, onArtifactClick }: Props) => {
     <div className='mx-auto mb-6 w-full max-w-page-content'>
       {messages.length === 0 ? (
         <div className='flex h-full items-center justify-center'>
-          <LoaderCircle className='h-6 w-6 animate-spin text-muted-foreground' />
+          <Spinner className='size-6 text-muted-foreground' />
         </div>
       ) : (
         messages.map((msg) => (

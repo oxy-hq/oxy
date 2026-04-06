@@ -96,10 +96,13 @@ function buildRows(secrets: Secret[], envSecrets: EnvSecret[]): UnifiedRow[] {
 }
 
 const SOURCE_CONFIG = {
-  secret: { label: "Secret", className: "border-blue-500/30 bg-blue-500/10 text-blue-400" },
-  dot_env: { label: ".env", className: "border-amber-500/30 bg-amber-500/10 text-amber-400" },
-  environment: { label: "env", className: "border-green-500/30 bg-green-500/10 text-green-400" },
-  not_set: { label: "not set", className: "border-red-500/30 bg-red-500/10 text-red-400" }
+  secret: { label: "Secret", className: "border-info/30 bg-info/10 text-info" },
+  dot_env: { label: ".env", className: "border-warning/30 bg-warning/10 text-warning" },
+  environment: { label: "env", className: "border-success/30 bg-success/10 text-success" },
+  not_set: {
+    label: "not set",
+    className: "border-destructive/30 bg-destructive/10 text-destructive"
+  }
 } as const;
 
 const DOTS = "••••••••••••••";
@@ -250,7 +253,7 @@ export const UnifiedSecretsTable: React.FC = () => {
                       {isUnset ? (
                         <Badge
                           variant='outline'
-                          className='border-red-500/30 bg-red-500/10 font-medium text-[10px] text-red-400'
+                          className='border-destructive/30 bg-destructive/10 font-medium text-[10px] text-destructive'
                         >
                           Not set
                         </Badge>
@@ -338,7 +341,7 @@ export const UnifiedSecretsTable: React.FC = () => {
                             title='Copy value'
                           >
                             {copiedKey === row.key ? (
-                              <Check className='size-3.5 text-green-400' />
+                              <Check className='size-3.5 text-success' />
                             ) : (
                               <ClipboardCopy className='size-3.5' />
                             )}

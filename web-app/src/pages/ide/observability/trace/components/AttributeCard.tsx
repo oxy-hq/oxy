@@ -68,7 +68,7 @@ export function AttributeCard({ name, value }: AttributeCardProps) {
               title='Copy'
             >
               {copied ? (
-                <Check className='h-3.5 w-3.5 text-green-500' />
+                <Check className='h-3.5 w-3.5 text-success' />
               ) : (
                 <Copy className='h-3.5 w-3.5' />
               )}
@@ -85,20 +85,18 @@ export function AttributeCard({ name, value }: AttributeCardProps) {
           </div>
         </div>
         {/* Content */}
-        <div className='customScrollbar scrollbar-gutter-auto max-h-80 overflow-auto'>
+        <div className='scrollbar-gutter-auto max-h-80 overflow-auto'>
           {!showRaw && isJson ? (
             <SyntaxHighlighter
               language='json'
               style={oneDark}
-              className='m-0! bg-zinc-900! p-4! font-mono text-sm [&>code]:bg-transparent!'
+              className='m-0! bg-card! p-4! font-mono text-sm [&>code]:bg-transparent!'
               showLineNumbers
             >
               {displayValue}
             </SyntaxHighlighter>
           ) : (
-            <pre className='whitespace-pre-wrap break-all bg-zinc-900! p-3 text-sm'>
-              {displayValue}
-            </pre>
+            <pre className='whitespace-pre-wrap break-all bg-card! p-3 text-sm'>{displayValue}</pre>
           )}
         </div>
       </div>
@@ -131,7 +129,7 @@ export function AttributeCard({ name, value }: AttributeCardProps) {
                 )}
                 <Button variant='ghost' size='icon' className='h-8 w-8' onClick={handleCopy}>
                   {copied ? (
-                    <Check className='h-4 w-4 text-green-500' />
+                    <Check className='h-4 w-4 text-success' />
                   ) : (
                     <Copy className='h-4 w-4' />
                   )}
@@ -139,18 +137,18 @@ export function AttributeCard({ name, value }: AttributeCardProps) {
               </div>
             </DialogTitle>
           </DialogHeader>
-          <div className='customScrollbar scrollbar-gutter-auto max-h-80 overflow-auto'>
+          <div className='scrollbar-gutter-auto max-h-80 overflow-auto'>
             {!showRaw && isJson ? (
               <SyntaxHighlighter
                 language='json'
                 style={oneDark}
-                className='m-0! bg-zinc-900! p-4! font-mono text-sm [&>code]:bg-transparent!'
+                className='m-0! bg-card! p-4! font-mono text-sm [&>code]:bg-transparent!'
                 showLineNumbers
               >
                 {displayValue}
               </SyntaxHighlighter>
             ) : (
-              <pre className='whitespace-pre-wrap break-all bg-zinc-900! p-3 text-sm'>
+              <pre className='whitespace-pre-wrap break-all bg-card! p-3 text-sm'>
                 {displayValue}
               </pre>
             )}

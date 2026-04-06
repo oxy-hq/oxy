@@ -27,9 +27,9 @@ export default function MetricCard({ metric, rank, maxCount, onClick }: MetricCa
       <div
         className={cn(
           "absolute -top-2 -left-2 flex h-7 w-7 items-center justify-center rounded-full font-bold text-xs",
-          rank === 1 && "bg-yellow-500 text-yellow-950",
-          rank === 2 && "bg-slate-400 text-slate-950",
-          rank === 3 && "bg-amber-600 text-amber-950",
+          rank === 1 && "bg-rank-gold text-rank-gold-foreground",
+          rank === 2 && "bg-rank-silver text-rank-silver-foreground",
+          rank === 3 && "bg-rank-bronze text-rank-bronze-foreground",
           rank > 3 && "bg-muted text-muted-foreground"
         )}
       >

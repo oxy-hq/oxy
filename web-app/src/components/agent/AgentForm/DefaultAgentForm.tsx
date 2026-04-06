@@ -1,4 +1,5 @@
 import { useFormContext } from "react-hook-form";
+import { FieldError } from "@/components/ui/shadcn/field";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import { Textarea } from "@/components/ui/shadcn/textarea";
@@ -25,7 +26,7 @@ export const DefaultAgentForm: React.FC = () => {
           rows={6}
         />
         {errors.system_instructions && (
-          <p className='text-red-500 text-sm'>{errors.system_instructions.message}</p>
+          <FieldError>{errors.system_instructions.message}</FieldError>
         )}
       </div>
 

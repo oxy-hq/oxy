@@ -1,4 +1,5 @@
 import { useState } from "react";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import { useMetricsAnalytics } from "@/hooks/api/metrics";
 import MetricsGrid from "./components/MetricsGrid/MetricsGrid";
 import MetricsHeader from "./components/MetricsHeader";
@@ -19,8 +20,8 @@ export default function MetricsListPage() {
 
   if (error) {
     return (
-      <div className='flex h-full items-center justify-center text-destructive'>
-        Failed to load metrics data: {error.message}
+      <div className='flex h-full items-center justify-center p-4'>
+        <ErrorAlert message={`Failed to load metrics data: ${error.message}`} />
       </div>
     );
   }
@@ -36,7 +37,7 @@ export default function MetricsListPage() {
         />
 
         {/* Content */}
-        <div className='customScrollbar min-h-0 flex-1 overflow-auto p-6'>
+        <div className='min-h-0 flex-1 overflow-auto p-6'>
           <div className='mx-auto max-w-7xl space-y-6'>
             <StatsRow
               analyticsData={analyticsData}

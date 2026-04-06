@@ -3,6 +3,7 @@ import type React from "react";
 import { useFieldArray, useFormContext } from "react-hook-form";
 import { FilePathAutocompleteInput } from "@/components/ui/FilePathAutocompleteInput";
 import { Button } from "@/components/ui/shadcn/button";
+import { FieldError } from "@/components/ui/shadcn/field";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import type { WorkflowFormData } from "../..";
@@ -54,7 +55,7 @@ export const WorkflowTaskFields: React.FC<WorkflowTaskFieldsProps> = ({
             required: "Source path is required"
           })}
         />
-        {taskErrors?.src && <p className='text-red-500 text-sm'>{taskErrors.src.message}</p>}
+        {taskErrors?.src && <FieldError>{taskErrors.src.message}</FieldError>}
       </div>
 
       <div className='space-y-2'>

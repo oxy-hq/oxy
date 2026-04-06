@@ -1,6 +1,7 @@
 import { MessagesSquare, MoreHorizontal, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import LoadingSkeleton from "@/components/ui/LoadingSkeleton";
 import { Button } from "@/components/ui/shadcn/button";
 import {
   DropdownMenu,
@@ -17,7 +18,6 @@ import {
 import useThreads from "@/hooks/api/threads/useThreads";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import ROUTES from "@/libs/utils/routes";
-import ItemsSkeleton from "../ItemsSkeleton";
 import ClearAllThreadsDialog from "./ClearAllThreadsDialog";
 import ThreadItem from "./Item";
 
@@ -69,7 +69,7 @@ const Threads = () => {
           </DropdownMenuContent>
         </DropdownMenu>
         <SidebarMenuSub className='ml-[15px]'>
-          {isLoading && <ItemsSkeleton />}
+          {isLoading && <LoadingSkeleton variant='inline' />}
 
           {!isLoading &&
             visibleThreads?.map((thread) => <ThreadItem key={thread.id} thread={thread} />)}

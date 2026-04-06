@@ -125,8 +125,8 @@ function WaffleCell({ point, clusterColor, isSelected, onClick }: WaffleCellProp
     <button
       className={cn(
         "h-[10px] w-[10px] cursor-pointer rounded-sm transition-all",
-        "hover:z-10 hover:scale-125 hover:ring-2 hover:ring-white hover:ring-offset-1",
-        isSelected && "z-10 scale-125 ring-2 ring-white ring-offset-1"
+        "hover:z-10 hover:scale-125 hover:ring-2 hover:ring-foreground hover:ring-offset-1",
+        isSelected && "z-10 scale-125 ring-2 ring-foreground ring-offset-1"
       )}
       style={{ backgroundColor: clusterColor }}
       onClick={onClick}

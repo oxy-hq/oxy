@@ -85,7 +85,7 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
             </TabsList>
           </div>
 
-          <div className='customScrollbar scrollbar-gutter-auto flex-1 overflow-auto'>
+          <div className='scrollbar-gutter-auto flex-1 overflow-auto'>
             {visibleEvents.map((event, index) => (
               <TabsContent
                 key={index}

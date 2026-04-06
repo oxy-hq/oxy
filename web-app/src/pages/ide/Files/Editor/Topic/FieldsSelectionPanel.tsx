@@ -71,7 +71,7 @@ const FieldsSelectionPanel = () => {
         <span className='font-semibold text-sm'>{topicData.name}</span>
       </SidebarGroupLabel>
 
-      <SidebarContent className='customScrollbar h-full flex-1 overflow-y-auto'>
+      <SidebarContent className='h-full flex-1 overflow-y-auto'>
         <SidebarGroup className='px-1 pt-2'>
           {topicLoading && (
             <p className='px-3 py-2 text-muted-foreground text-xs'>Loading views...</p>

@@ -9,6 +9,7 @@ import {
   DialogTitle
 } from "@/components/ui/shadcn/dialog";
 import { Label } from "@/components/ui/shadcn/label";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 
 interface SwitchBranchConfirmProps {
   open: boolean;
@@ -59,7 +60,14 @@ const SwitchBranchConfirm: React.FC<SwitchBranchConfirmProps> = ({
             Cancel
           </Button>
           <Button onClick={onConfirm} disabled={isLoading}>
-            {isLoading ? "Switching..." : "Switch Branch"}
+            {isLoading ? (
+              <>
+                <Spinner />
+                Switching...
+              </>
+            ) : (
+              "Switch Branch"
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>

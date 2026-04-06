@@ -172,7 +172,7 @@ const TestFileForm: React.FC<TestFileFormProps> = ({ data, onChange }) => {
 
   return (
     <div className='flex min-h-0 flex-1 flex-col'>
-      <div className='customScrollbar flex-1 overflow-auto p-4'>
+      <div className='flex-1 overflow-auto p-4'>
         <form className='space-y-8'>
           <div className='space-y-4'>
             <div className='space-y-2'>

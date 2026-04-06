@@ -1,5 +1,6 @@
-import { ChevronLeft, Loader2 } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 
 interface Props {
   children: React.ReactNode;
@@ -29,7 +30,7 @@ const PageWrapper = ({ children, title, actions, loading, onBack }: Props) => {
           children
         ) : (
           <div className='flex h-30 items-center justify-center'>
-            <Loader2 className='h-6 w-6 animate-spin' />
+            <Spinner className='size-6' />
           </div>
         )}
       </div>

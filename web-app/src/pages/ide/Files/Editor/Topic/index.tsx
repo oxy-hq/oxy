@@ -1,3 +1,4 @@
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import EditorPreview from "../components/SemanticExplorer/EditorPreview";
 import SemanticQueryPanel from "../components/SemanticQueryPanel";
 import { useEditorContext } from "../contexts/useEditorContext";
@@ -10,10 +11,7 @@ const TopicExplorer = () => {
   if (loadingTopicError) {
     return (
       <div className='flex h-full flex-1 flex-col items-center justify-center p-4'>
-        <div className='max-w-2xl text-center text-destructive'>
-          <div className='mb-2 font-semibold'>Error loading topic</div>
-          <div className='text-sm'>{loadingTopicError}</div>
-        </div>
+        <ErrorAlert title='Error loading topic' message={loadingTopicError} className='max-w-2xl' />
       </div>
     );
   }

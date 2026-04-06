@@ -1,6 +1,8 @@
-import { Loader2, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import type React from "react";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import { Button } from "@/components/ui/shadcn/button";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { TableCell, TableRow } from "@/components/ui/shadcn/table";
 
 interface TableRowWrapperProps {
@@ -43,8 +45,7 @@ const TableContentWrapper: React.FC<React.PropsWithChildren<Props>> = ({
   if (loading) {
     return (
       <TableRowWrapper colSpan={colSpan}>
-        <Loader2 className='h-8 w-8 animate-spin text-muted-foreground' />
-        <p className='text-muted-foreground text-sm'>Loading...</p>
+        <Spinner className='size-8 text-muted-foreground' />
       </TableRowWrapper>
     );
   }
@@ -52,14 +53,17 @@ const TableContentWrapper: React.FC<React.PropsWithChildren<Props>> = ({
   if (error) {
     return (
       <TableRowWrapper colSpan={colSpan}>
-        <h3 className='font-medium text-destructive text-lg'>Error</h3>
-        <p className='max-w-md text-muted-foreground text-sm'>{error}</p>
-        {onRetry && (
-          <Button onClick={onRetry} variant='outline' size='sm' className='mt-2'>
-            <RefreshCw />
-            Try Again
-          </Button>
-        )}
+        <ErrorAlert
+          message={error}
+          actions={
+            onRetry && (
+              <Button onClick={onRetry} variant='outline' size='sm'>
+                <RefreshCw />
+                Try Again
+              </Button>
+            )
+          }
+        />
       </TableRowWrapper>
     );
   }

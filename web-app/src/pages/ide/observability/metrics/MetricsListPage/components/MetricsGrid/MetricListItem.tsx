@@ -22,9 +22,9 @@ export default function MetricListItem({ metric, rank, maxCount, onClick }: Metr
       <div
         className={cn(
           "flex h-8 w-8 items-center justify-center rounded-full font-bold text-sm",
-          rank === 1 && "bg-yellow-500 text-yellow-950",
-          rank === 2 && "bg-slate-400 text-slate-950",
-          rank === 3 && "bg-amber-600 text-amber-950",
+          rank === 1 && "bg-rank-gold text-rank-gold-foreground",
+          rank === 2 && "bg-rank-silver text-rank-silver-foreground",
+          rank === 3 && "bg-rank-bronze text-rank-bronze-foreground",
           rank > 3 && "bg-muted text-muted-foreground"
         )}
       >

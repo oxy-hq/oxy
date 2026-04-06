@@ -1,6 +1,7 @@
 import type React from "react";
 import { useFormContext } from "react-hook-form";
 import { FilePathAutocompleteInput } from "@/components/ui/FilePathAutocompleteInput";
+import { FieldError } from "@/components/ui/shadcn/field";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import { Textarea } from "@/components/ui/shadcn/textarea";
@@ -35,9 +36,7 @@ export const AgentTaskFields: React.FC<AgentTaskFieldsProps> = ({ index, basePat
             required: "Agent reference is required"
           })}
         />
-        {taskErrors?.agent_ref && (
-          <p className='text-red-500 text-sm'>{taskErrors.agent_ref.message}</p>
-        )}
+        {taskErrors?.agent_ref && <FieldError>{taskErrors.agent_ref.message}</FieldError>}
       </div>
       <div className='space-y-2'>
         <Label htmlFor={`${taskPath}.prompt`}>Prompt</Label>
@@ -50,7 +49,7 @@ export const AgentTaskFields: React.FC<AgentTaskFieldsProps> = ({ index, basePat
             required: "Prompt is required"
           })}
         />
-        {taskErrors?.prompt && <p className='text-red-500 text-sm'>{taskErrors.prompt.message}</p>}
+        {taskErrors?.prompt && <FieldError>{taskErrors.prompt.message}</FieldError>}
       </div>
       <div className='grid grid-cols-2 gap-4'>
         <div className='space-y-2'>

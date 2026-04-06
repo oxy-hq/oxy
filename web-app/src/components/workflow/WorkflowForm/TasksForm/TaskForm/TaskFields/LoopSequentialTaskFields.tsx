@@ -1,5 +1,6 @@
 import type React from "react";
 import { useFormContext } from "react-hook-form";
+import { FieldError } from "@/components/ui/shadcn/field";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import { Textarea } from "@/components/ui/shadcn/textarea";
@@ -37,7 +38,7 @@ export const LoopSequentialTaskFields: React.FC<LoopSequentialTaskFieldsProps> =
             required: "Values are required"
           })}
         />
-        {taskErrors?.values && <p className='text-red-500 text-sm'>{taskErrors.values.message}</p>}
+        {taskErrors?.values && <FieldError>{taskErrors.values.message}</FieldError>}
         <p className='text-muted-foreground text-xs'>
           Can be a JSON array or a template string referencing a task output
         </p>

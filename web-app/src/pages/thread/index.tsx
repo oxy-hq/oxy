@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
 import { useParams } from "react-router-dom";
-import PageSkeleton from "@/components/PageSkeleton";
+import LoadingSkeleton from "@/components/ui/LoadingSkeleton";
 import queryKeys from "@/hooks/api/queryKey";
 import useThread from "@/hooks/api/threads/useThread";
 import AgentThread from "./agent";
@@ -12,15 +12,15 @@ import WorkflowThread from "./workflow";
 
 const ThreadNotFound = () => (
   <div className='flex h-64 flex-col items-center justify-center p-8 text-center'>
-    <AlertTriangle className='mb-4 h-16 w-16 text-amber-500' />
-    <h2 className='mb-2 font-semibold text-2xl text-gray-700'>Thread Not Found</h2>
-    <p className='max-w-md text-gray-500'>
+    <AlertTriangle className='mb-4 h-16 w-16 text-warning' />
+    <h2 className='mb-2 font-semibold text-2xl text-muted-foreground'>Thread Not Found</h2>
+    <p className='max-w-md text-muted-foreground'>
       The thread you're looking for doesn't exist or may have been removed.
     </p>
     <button
       type='button'
       onClick={() => window.history.back()}
-      className='mt-6 rounded-md bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700'
+      className='mt-6 rounded-md bg-primary px-4 py-2 text-primary-foreground transition-colors hover:bg-primary/90'
     >
       Go Back
     </button>
@@ -33,7 +33,7 @@ const Thread = () => {
   const { data: thread, isPending, isSuccess, refetch } = useThread(threadId ?? "", true, false);
 
   if (isPending) {
-    return <PageSkeleton />;
+    return <LoadingSkeleton variant='page' />;
   }
 
   if (!thread) {

@@ -9,6 +9,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger
 } from "@/components/ui/shadcn/collapsible";
+import { FieldError } from "@/components/ui/shadcn/field";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import {
@@ -141,9 +142,7 @@ const ToolItemForm: React.FC<ToolItemFormProps> = ({ index, onRemove }) => {
                 placeholder='Tool name'
                 {...register(`tools.${index}.name`)}
               />
-              {toolErrors?.name && (
-                <p className='text-red-500 text-sm'>{String(toolErrors.name.message || "")}</p>
-              )}
+              {toolErrors?.name && <FieldError>{String(toolErrors.name.message || "")}</FieldError>}
             </div>
 
             <div className='space-y-2'>
@@ -167,9 +166,7 @@ const ToolItemForm: React.FC<ToolItemFormProps> = ({ index, onRemove }) => {
                   </Select>
                 )}
               />
-              {toolErrors?.type && (
-                <p className='text-red-500 text-sm'>{String(toolErrors.type.message || "")}</p>
-              )}
+              {toolErrors?.type && <FieldError>{String(toolErrors.type.message || "")}</FieldError>}
             </div>
 
             <div className='space-y-2'>

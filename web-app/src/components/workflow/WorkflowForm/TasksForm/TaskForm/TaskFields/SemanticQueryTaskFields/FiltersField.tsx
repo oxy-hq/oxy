@@ -1,6 +1,8 @@
 import { Plus, X } from "lucide-react";
 import type React from "react";
 import { Controller, useFieldArray, useWatch } from "react-hook-form";
+import DateRangeSelector from "@/components/SemanticQueryPanel/DateRangeSelector";
+import DateValueInput from "@/components/SemanticQueryPanel/DateValueInput";
 import { Button } from "@/components/ui/shadcn/button";
 import { Combobox } from "@/components/ui/shadcn/combobox";
 import { Input } from "@/components/ui/shadcn/input";
@@ -12,8 +14,6 @@ import {
   SelectTrigger,
   SelectValue
 } from "@/components/ui/shadcn/select";
-import DateRangeSelector from "@/pages/ide/Files/Editor/components/SemanticQueryPanel/components/DateRangeSelector";
-import DateValueInput from "@/pages/ide/Files/Editor/components/SemanticQueryPanel/components/DateValueInput";
 import type { SemanticQueryFilter } from "@/services/api/semantic";
 import { FILTER_OPERATORS } from "./constants";
 import type { FiltersFieldProps } from "./types";

@@ -1,4 +1,4 @@
-import { GitBranch, Loader2, Plus, Trash2 } from "lucide-react";
+import { GitBranch, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -12,6 +12,7 @@ import {
   CommandSeparator
 } from "@/components/ui/shadcn/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/shadcn/popover";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import {
   useDeleteBranch,
   useProjectBranches,
@@ -127,8 +128,7 @@ export const BranchQuickSwitcher = ({
           <CommandList>
             {isLoading ? (
               <div className='flex items-center gap-2 px-3 py-4 text-muted-foreground text-sm'>
-                <Loader2 className='h-3.5 w-3.5 animate-spin' />
-                Loading branches…
+                <Spinner className='size-3' />
               </div>
             ) : (
               <>

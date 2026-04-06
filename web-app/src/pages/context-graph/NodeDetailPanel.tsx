@@ -1,10 +1,11 @@
-import { Loader2, Pencil } from "lucide-react";
+import { Pencil } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { Panel, PanelContent, PanelHeader } from "@/components/ui/panel";
 import { Button } from "@/components/ui/shadcn/button";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
@@ -93,7 +94,7 @@ export function NodeDetailPanel({ node, onClose }: NodeDetailPanelProps) {
   };
 
   return (
-    <Panel className='fixed top-0 right-0 z-50 w-96 shadow-xl' animate>
+    <Panel className='fixed top-0 right-0 z-50 w-96 border-l shadow-xl' animate>
       <PanelHeader
         title={node.label}
         subtitle={typeLabels[node.type] || node.type}
@@ -153,7 +154,7 @@ export function NodeDetailPanel({ node, onClose }: NodeDetailPanelProps) {
             </div>
             {isLoading && (
               <div className='flex items-center justify-center py-8'>
-                <Loader2 className='h-6 w-6 animate-spin text-muted-foreground' />
+                <Spinner className='size-6 text-muted-foreground' />
               </div>
             )}
             {!isLoading && content && (

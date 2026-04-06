@@ -1,5 +1,5 @@
+import SortRow from "@/components/SemanticQueryPanel/SortRow";
 import type { Field, Order } from "../../../types";
-import SortRow from "./SortRow";
 
 interface SortsSectionProps {
   orders: Order[];

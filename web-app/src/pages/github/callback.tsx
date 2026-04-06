@@ -1,6 +1,8 @@
-import { Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import ErrorAlert from "@/components/ui/ErrorAlert";
+import { Button } from "@/components/ui/shadcn/button";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useCreateGitNamespace } from "@/hooks/api/github";
 import { getInstallationInfoFromUrl } from "@/utils/githubAppInstall";
 
@@ -54,19 +56,18 @@ export default function GitHubCallback() {
     <div className='flex min-h-screen min-w-screen items-center justify-center'>
       <div className='text-center'>
         {error ? (
-          <div className='max-w-md rounded-md border border-destructive bg-destructive/10 p-6'>
-            <h2 className='mb-2 font-bold text-xl'>Installation Error</h2>
-            <p className='mb-4 text-destructive'>{error}</p>
-            <button
-              className='rounded bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90'
-              onClick={() => navigate("/workspaces/new")}
-            >
-              Return to Workspace Creation
-            </button>
-          </div>
+          <ErrorAlert
+            title='Installation Error'
+            message={error}
+            actions={
+              <Button size='sm' onClick={() => navigate("/workspaces/new")}>
+                Return to Workspace Creation
+              </Button>
+            }
+          />
         ) : (
           <div className='flex flex-col items-center gap-4'>
-            <Loader2 className='h-12 w-12 animate-spin text-primary' />
+            <Spinner className='size-8 text-primary' />
             <h2 className='font-medium text-xl'>Processing GitHub Installation...</h2>
             <p className='text-muted-foreground'>
               Please wait while we configure your GitHub connection.

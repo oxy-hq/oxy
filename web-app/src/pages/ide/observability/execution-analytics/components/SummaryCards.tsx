@@ -1,5 +1,6 @@
-import { Activity, CheckCircle, Loader2, ShieldCheck, Sparkles, TrendingUp } from "lucide-react";
+import { Activity, CheckCircle, ShieldCheck, Sparkles, TrendingUp } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/shadcn/card";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { EXECUTION_TYPES, type ExecutionSummary, type ExecutionType } from "../types";
 
 interface SummaryCardsProps {
@@ -35,7 +36,7 @@ function StatsCard({ title, value, subtitle, icon, isLoading }: StatsCardProps) 
           <div className='min-w-0 space-y-1'>
             <div className='flex items-center gap-2'>
               <p className='font-medium text-muted-foreground text-xs'>{title}</p>
-              {isLoading && <Loader2 className='h-3 w-3 animate-spin text-muted-foreground' />}
+              {isLoading && <Spinner className='size-3 text-muted-foreground' />}
             </div>
             <p className='truncate font-bold text-2xl tracking-tight'>{value}</p>
             <p className='text-muted-foreground text-xs'>{subtitle}</p>

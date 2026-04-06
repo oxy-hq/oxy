@@ -1,5 +1,5 @@
-import { Loader2 } from "lucide-react";
 import type { FileState } from "@/components/FileEditor";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import {
   Tooltip,
   TooltipContent,
@@ -14,9 +14,7 @@ interface FileStatusProps {
 const FileStatus = ({ fileState }: FileStatusProps) => {
   return (
     <>
-      {fileState === "saving" && (
-        <Loader2 className='h-4 w-4 animate-[spin_0.2s_linear_infinite] text-yellow-500' />
-      )}
+      {fileState === "saving" && <Spinner className='text-warning' />}
       {fileState === "modified" && (
         <TooltipProvider>
           <Tooltip>

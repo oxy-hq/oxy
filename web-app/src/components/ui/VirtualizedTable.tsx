@@ -2,6 +2,7 @@ import { ChevronDown, ChevronsUpDown, ChevronUp, Download } from "lucide-react";
 import Papa from "papaparse";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getArrowFieldType, getArrowValueWithType } from "@/components/AppPreview/Displays/utils";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import { Button } from "@/components/ui/shadcn/button";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { getDuckDB, registerAuthenticatedParquetFile } from "@/libs/duckdb";
@@ -335,16 +336,13 @@ export const VirtualizedTable = ({
       : `60px repeat(${numColumns}, minmax(150px, 1fr))`;
 
   if (error) {
-    return <div className='rounded border border-red-300 p-4 text-red-600'>Error: {error}</div>;
+    return <ErrorAlert message={error} />;
   }
 
   return (
     <div className='flex h-full flex-1 flex-col'>
       {/* Table */}
-      <div
-        className='customScrollbar h-full min-h-0 overflow-auto font-mono text-xs'
-        style={{ maxHeight }}
-      >
+      <div className='h-full min-h-0 overflow-auto font-mono text-xs' style={{ maxHeight }}>
         {isLoading ? (
           <div className='flex items-center justify-center p-8'>
             <span className='text-muted-foreground'>Loading...</span>

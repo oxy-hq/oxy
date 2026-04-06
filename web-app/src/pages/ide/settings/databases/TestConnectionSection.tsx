@@ -1,8 +1,9 @@
-import { AlertCircle, CheckCircle, ExternalLink, Loader2, XCircle } from "lucide-react";
-import { ErrorAlert, ErrorAlertMessage } from "@/components/AppPreview/ErrorAlert";
+import { AlertCircle, CheckCircle2Icon, ExternalLink } from "lucide-react";
+import ErrorAlert from "@/components/ui/ErrorAlert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/shadcn/alert";
 import { Button } from "@/components/ui/shadcn/button";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import type { useTestDatabaseConnection } from "@/hooks/api/databases/useTestDatabaseConnection";
-import { cn } from "@/libs/utils/cn";
 
 interface TestConnectionSectionProps {
   isTesting: boolean;
@@ -29,14 +30,7 @@ export function TestConnectionSection({
         disabled={isTesting || disabled}
         className='w-full'
       >
-        {isTesting ? (
-          <>
-            <Loader2 className='h-4 w-4 animate-spin' />
-            Testing Connection...
-          </>
-        ) : (
-          "Test Connection"
-        )}
+        {isTesting ? <Spinner /> : "Test Connection"}
       </Button>
 
       {/* Show test progress */}
@@ -52,23 +46,19 @@ export function TestConnectionSection({
 
       {/* Browser Auth Required */}
       {showTestResult && testConnection.ssoUrl && (
-        <div className='space-y-2 rounded border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-950'>
+        <div className='space-y-2 rounded border border-info/30 bg-info/10 p-3'>
           <div className='flex items-start gap-2'>
-            <AlertCircle className='mt-0.5 h-4 w-4 flex-shrink-0 text-blue-600' />
+            <AlertCircle className='mt-0.5 h-4 w-4 flex-shrink-0 text-info' />
             <div className='flex-1 space-y-2'>
-              <p className='font-medium text-blue-900 text-sm dark:text-blue-100'>
-                {testConnection.ssoMessage}
-              </p>
+              <p className='font-medium text-info text-sm'>{testConnection.ssoMessage}</p>
               {testConnection.ssoTimeout && (
-                <p className='text-blue-700 text-xs dark:text-blue-300'>
-                  Timeout: {testConnection.ssoTimeout} seconds
-                </p>
+                <p className='text-info text-xs'>Timeout: {testConnection.ssoTimeout} seconds</p>
               )}
               <a
                 href={testConnection.ssoUrl}
                 target='_blank'
                 rel='noopener noreferrer'
-                className='inline-flex items-center gap-1 text-blue-600 text-sm hover:underline dark:text-blue-400'
+                className='inline-flex items-center gap-1 text-info text-sm hover:underline'
               >
                 Open authentication page
                 <ExternalLink className='h-3 w-3' />
@@ -79,59 +69,33 @@ export function TestConnectionSection({
       )}
 
       {/* Test Result */}
-      {showTestResult && testConnection.result && (
-        <div
-          className={cn(
-            "space-y-1 rounded p-3",
-            testConnection.result.success
-              ? "border border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950"
-              : "border border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950"
-          )}
-        >
-          <div className='flex items-start gap-2'>
-            {testConnection.result.success ? (
-              <CheckCircle className='mt-0.5 h-4 w-4 flex-shrink-0 text-green-600' />
-            ) : (
-              <XCircle className='mt-0.5 h-4 w-4 flex-shrink-0 text-red-600' />
-            )}
-            <div className='flex-1'>
-              <p
-                className={cn(
-                  "font-medium text-sm",
-                  testConnection.result.success
-                    ? "text-green-900 dark:text-green-100"
-                    : "text-red-900 dark:text-red-100"
+      {showTestResult &&
+        testConnection.result &&
+        (testConnection.result.success ? (
+          <Alert>
+            <CheckCircle2Icon />
+            <AlertTitle>{testConnection.result.message}</AlertTitle>
+            <AlertDescription>
+              Connection time: {testConnection.result.connection_time_ms}ms
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <ErrorAlert
+            title={testConnection.result.message}
+            message={
+              <div>
+                <p>Connection time: {testConnection.result.connection_time_ms}ms</p>
+                {testConnection.result.error_details && (
+                  <p>{testConnection.result.error_details}</p>
                 )}
-              >
-                {testConnection.result.message}
-              </p>
-              {testConnection.result.connection_time_ms && (
-                <p
-                  className={cn(
-                    "mt-1 text-xs",
-                    testConnection.result.success
-                      ? "text-green-700 dark:text-green-300"
-                      : "text-red-700 dark:text-red-300"
-                  )}
-                >
-                  Connection time: {testConnection.result.connection_time_ms}ms
-                </p>
-              )}
-              {testConnection.result.error_details && (
-                <pre className='mt-2 max-h-32 overflow-auto whitespace-pre-wrap rounded bg-red-100 p-2 text-xs dark:bg-red-900'>
-                  {testConnection.result.error_details}
-                </pre>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+              </div>
+            }
+          />
+        ))}
 
       {/* General Error */}
       {showTestResult && testConnection.error && !testConnection.result && (
-        <ErrorAlert>
-          <ErrorAlertMessage>{testConnection.error}</ErrorAlertMessage>
-        </ErrorAlert>
+        <ErrorAlert message={testConnection.error} />
       )}
     </div>
   );

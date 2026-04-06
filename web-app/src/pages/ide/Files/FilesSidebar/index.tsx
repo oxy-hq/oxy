@@ -1,8 +1,9 @@
-import { FilePlus, Folder, FolderPlus, Layers2, Loader2, RotateCw } from "lucide-react";
+import { FilePlus, Folder, FolderPlus, Layers2, RotateCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Button } from "@/components/ui/shadcn/button";
 import { SidebarContent, SidebarGroup, SidebarMenu } from "@/components/ui/shadcn/sidebar";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
 import useFileTree from "@/hooks/api/files/useFileTree";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
@@ -143,11 +144,11 @@ const FilesSidebar: React.FC<{
         </Tabs>
       </div>
 
-      <SidebarContent className='customScrollbar h-full flex-1 overflow-y-auto'>
+      <SidebarContent className='h-full flex-1 overflow-y-auto'>
         <SidebarGroup className='px-1 pt-2'>
           {isPending && (
             <div className='flex items-center justify-center p-4'>
-              <Loader2 className='h-4 w-4 animate-spin' />
+              <Spinner />
             </div>
           )}
 

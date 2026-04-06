@@ -1,4 +1,4 @@
-import { Database, Loader2, Plus, Trash2 } from "lucide-react";
+import { Database, Plus, Trash2 } from "lucide-react";
 import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/shadcn/button";
 import {
@@ -9,6 +9,7 @@ import {
   DialogTitle
 } from "@/components/ui/shadcn/dialog";
 import { Separator } from "@/components/ui/shadcn/separator";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useDataClean } from "@/hooks/api/databases/useDataClean";
 import PageHeader from "@/pages/ide/components/PageHeader";
 import useDatabaseOperation from "@/stores/useDatabaseOperation";
@@ -42,10 +43,7 @@ export default function DatabasesPage() {
       </Button>
       <Button size='sm' variant='outline' onClick={handleCleanAll} disabled={cleaningInProgress}>
         {cleaningInProgress ? (
-          <>
-            <Loader2 className='h-4 w-4 animate-spin' />
-            Resetting...
-          </>
+          <Spinner />
         ) : (
           <>
             <Trash2 />
@@ -60,7 +58,7 @@ export default function DatabasesPage() {
     <div className='flex h-full flex-col'>
       <PageHeader icon={Database} title='Databases' actions={listViewActions} />
 
-      <div className='customScrollbar scrollbar-gutter-auto min-h-0 flex-1 overflow-auto p-4'>
+      <div className='scrollbar-gutter-auto min-h-0 flex-1 overflow-auto p-4'>
         <DatabaseTable />
 
         <Separator className='my-6' />
@@ -74,7 +72,7 @@ export default function DatabasesPage() {
             <DialogTitle>Add Database Connection</DialogTitle>
             <DialogDescription>Configure a new database connection</DialogDescription>
           </DialogHeader>
-          <div className='customScrollbar min-h-0 flex-1 overflow-auto p-6 pt-0'>
+          <div className='min-h-0 flex-1 overflow-auto p-6 pt-0'>
             <AddDatabaseForm onSuccess={handleAddDatabaseSuccess} onCancel={handleCloseDialog} />
           </div>
         </DialogContent>

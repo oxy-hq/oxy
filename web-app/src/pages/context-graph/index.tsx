@@ -1,6 +1,6 @@
-import { Loader2 } from "lucide-react";
-import { ErrorAlert, ErrorAlertMessage } from "@/components/AppPreview/ErrorAlert";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/shadcn/alert";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import useContextGraph from "@/hooks/api/contextGraph/useContextGraph";
 import { ContextGraph } from "./ContextGraph";
 
@@ -11,8 +11,7 @@ export default function ContextGraphPage() {
     return (
       <div className='flex h-full items-center justify-center'>
         <div className='flex flex-col items-center gap-4'>
-          <Loader2 className='h-8 w-8 animate-spin text-primary' />
-          <p className='text-muted-foreground text-sm'>Loading context graph...</p>
+          <Spinner className='size-8 text-primary' />
         </div>
       </div>
     );
@@ -20,13 +19,11 @@ export default function ContextGraphPage() {
 
   if (error) {
     return (
-      <div className='p-2'>
-        <ErrorAlert>
-          <ErrorAlertMessage>Error loading context graph</ErrorAlertMessage>
-          <ErrorAlertMessage>
-            {error instanceof Error ? error.message : "An unexpected error occurred"}
-          </ErrorAlertMessage>
-        </ErrorAlert>
+      <div className='mx-auto w-full max-w-page-content p-2'>
+        <ErrorAlert
+          title='Error loading context graph'
+          message={error instanceof Error ? error.message : "An unexpected error occurred"}
+        />
       </div>
     );
   }

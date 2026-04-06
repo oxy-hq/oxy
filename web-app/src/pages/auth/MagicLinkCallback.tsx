@@ -1,5 +1,5 @@
 import type { AxiosError } from "axios";
-import { Loader2, XCircle } from "lucide-react";
+import { XCircle } from "lucide-react";
 import type React from "react";
 import { useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -11,6 +11,7 @@ import {
   CardHeader,
   CardTitle
 } from "@/components/ui/shadcn/card";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useVerifyMagicLink } from "@/hooks/auth/useMagicLink";
 import ROUTES from "@/libs/utils/routes";
 
@@ -43,7 +44,7 @@ const MagicLinkCallback: React.FC = () => {
         <Card className='w-full max-w-md'>
           <CardHeader className='text-center'>
             <div className='mb-4 flex justify-center'>
-              <XCircle className='h-12 w-12 text-red-500' />
+              <XCircle className='h-12 w-12 text-destructive' />
             </div>
             <CardTitle className='text-2xl'>Invalid link</CardTitle>
             <CardDescription>This sign-in link is missing or malformed.</CardDescription>
@@ -65,7 +66,7 @@ const MagicLinkCallback: React.FC = () => {
         <Card className='w-full max-w-md'>
           <CardHeader className='text-center'>
             <div className='mb-4 flex justify-center'>
-              <XCircle className='h-12 w-12 text-red-500' />
+              <XCircle className='h-12 w-12 text-destructive' />
             </div>
             <CardTitle className='text-2xl'>Link expired</CardTitle>
             <CardDescription>
@@ -87,8 +88,7 @@ const MagicLinkCallback: React.FC = () => {
   return (
     <div className='flex min-h-screen w-full items-center justify-center bg-background p-4'>
       <div className='flex flex-col items-center gap-4 text-center'>
-        <Loader2 className='h-10 w-10 animate-spin text-primary' />
-        <p className='text-muted-foreground text-sm'>Signing you in…</p>
+        <Spinner className='size-8 text-primary' />
       </div>
     </div>
   );

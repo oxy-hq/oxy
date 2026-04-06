@@ -29,7 +29,7 @@ const TableVirtualized = ({ table_id, tables }: Props) => {
   return (
     <div
       ref={parentRef}
-      className='customScrollbar scrollbar-gutter-auto overflow-auto rounded-lg border border-[#27272A]'
+      className='scrollbar-gutter-auto overflow-auto rounded-lg border border-border'
       style={{
         position: "relative",
         height: `${Math.min(rowVirtualizer.getTotalSize() + 40, 400)}px`
@@ -40,7 +40,7 @@ const TableVirtualized = ({ table_id, tables }: Props) => {
           {header.map((cell, i) => (
             <th
               key={i}
-              className='min-w-[140px] border-[#27272A] border-r border-b px-4 py-2 text-left font-medium last:border-r-0'
+              className='min-w-[140px] border-border border-r border-b px-4 py-2 text-left font-medium last:border-r-0'
               title={cell}
             >
               {cell}
@@ -70,7 +70,7 @@ const TableVirtualized = ({ table_id, tables }: Props) => {
                 {row.map((cell, i) => (
                   <td
                     key={i}
-                    className='w-full min-w-[140px] border-[#27272A] border-r px-4 py-2 text-left last:border-r-0 [tr:not(:last-child)>&]:border-b'
+                    className='w-full min-w-[140px] border-border border-r px-4 py-2 text-left last:border-r-0 [tr:not(:last-child)>&]:border-b'
                     title={cell}
                   >
                     {cell}

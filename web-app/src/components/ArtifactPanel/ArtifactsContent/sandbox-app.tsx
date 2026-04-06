@@ -1,7 +1,9 @@
-import { ExternalLink, Loader2, Maximize, Minimize, RotateCw, Terminal, X } from "lucide-react";
+import { ExternalLink, Maximize, Minimize, RotateCw, Terminal, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { ErrorAlert, ErrorAlertMessage } from "@/components/AppPreview/ErrorAlert";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/shadcn/alert";
+import { Button } from "@/components/ui/shadcn/button";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { apiBaseURL } from "@/services/env";
 import useCurrentProject from "@/stores/useCurrentProject";
 import type { SandboxAppArtifact } from "@/types/artifact";
@@ -194,7 +196,7 @@ const SandboxArtifactPanel = ({ artifact, apiKey }: Props) => {
   }, [preview_url]);
 
   // Auto-scroll console to bottom when new logs arrive
-  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on log changes
   useEffect(() => {
     if (showConsole && consoleEndRef.current) {
       consoleEndRef.current.scrollIntoView({ behavior: "smooth" });
@@ -221,8 +223,7 @@ const SandboxArtifactPanel = ({ artifact, apiKey }: Props) => {
           {/* Streaming state with loader */}
           <AlertTitle>
             <div className='mb-2 flex items-center gap-2'>
-              <Loader2 className='h-6 w-6 animate-spin text-muted-foreground' />
-              Generating Preview...
+              <Spinner className='size-6 text-muted-foreground' />
             </div>
           </AlertTitle>
           <AlertDescription>
@@ -245,19 +246,17 @@ const SandboxArtifactPanel = ({ artifact, apiKey }: Props) => {
       {/* Loading overlay */}
       {isLoading && (
         <div className='absolute inset-0 z-10 flex items-center justify-center bg-background/50'>
-          <Loader2 className='h-8 w-8 animate-spin text-muted-foreground' />
+          <Spinner className='size-8 text-muted-foreground' />
         </div>
       )}
 
       {/* Error state */}
       {hasError && (
         <div className='p-4'>
-          <ErrorAlert>
-            <ErrorAlertMessage>Failed to Load Preview</ErrorAlertMessage>
-            <ErrorAlertMessage>
-              Open in new tab <ExternalLink className='h-3 w-3' />
-            </ErrorAlertMessage>
-          </ErrorAlert>
+          <ErrorAlert
+            title='Failed to Load Preview'
+            actions={<Button size='sm'>Open in new tab</Button>}
+          />
         </div>
       )}
 
@@ -279,8 +278,7 @@ const SandboxArtifactPanel = ({ artifact, apiKey }: Props) => {
       <div className='absolute top-2 right-2 z-20 flex gap-1 rounded-md border border-base-border bg-background/80 p-1 backdrop-blur'>
         {artifact.is_streaming && (
           <div className='flex items-center gap-2 px-2 text-muted-foreground text-sm'>
-            <Loader2 className='h-4 w-4 animate-spin' />
-            <span>Generating...</span>
+            <Spinner />
           </div>
         )}
         <button
@@ -360,16 +358,16 @@ const SandboxArtifactPanel = ({ artifact, apiKey }: Props) => {
               consoleLogs.map((log) => {
                 const levelColors = {
                   log: "text-foreground",
-                  info: "text-blue-500",
-                  warn: "text-yellow-500",
-                  error: "text-red-500"
+                  info: "text-info",
+                  warn: "text-warning",
+                  error: "text-destructive"
                 };
 
                 const levelBgColors = {
                   log: "bg-muted/30",
-                  info: "bg-blue-500/10",
-                  warn: "bg-yellow-500/10",
-                  error: "bg-red-500/10"
+                  info: "bg-info/10",
+                  warn: "bg-warning/10",
+                  error: "bg-destructive/10"
                 };
 
                 return (

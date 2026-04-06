@@ -1,8 +1,8 @@
 import Editor, { DiffEditor, type Monaco } from "@monaco-editor/react";
-import { Loader2 } from "lucide-react";
 import type { editor } from "monaco-editor";
 import { useEffect, useRef } from "react";
 import { configureMonaco } from "@/components/FileEditor/monacoConfig";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { cn } from "@/libs/shadcn/utils";
 
 export interface BaseMonacoEditorOptions {
@@ -54,7 +54,7 @@ const defaultOptions: BaseMonacoEditorOptions = {
 
 const LoadingSpinner = () => (
   <div className='flex h-full items-center justify-center'>
-    <Loader2 className='h-4 w-4 animate-spin' />
+    <Spinner />
   </div>
 );
 
@@ -124,7 +124,9 @@ export default function BaseMonacoEditor({
                 // narrow during the animation; this overrides that once the
                 // container reaches its final width.
                 setTimeout(() => {
-                  diffEditorRef.current?.updateOptions({ renderSideBySide: splitView });
+                  diffEditorRef.current?.updateOptions({
+                    renderSideBySide: splitView
+                  });
                 }, 600);
               }}
               options={{

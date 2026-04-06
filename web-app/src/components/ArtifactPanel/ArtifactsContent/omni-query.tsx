@@ -1,6 +1,6 @@
 import { Editor } from "@monaco-editor/react";
-import { Loader2 } from "lucide-react";
 import SqlResultsTable from "@/components/sql/SqlResultsTable";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import type { OmniQueryArtifact } from "@/types/artifact";
 
 type Props = {
@@ -35,7 +35,7 @@ const OmniQueryArtifactPanel = ({ artifact }: Props) => {
           defaultValue={JSON.stringify(getCleanOmniObject(artifact.content.value), null, 2)}
           language='json'
           value={JSON.stringify(getCleanOmniObject(artifact.content.value), null, 2)}
-          loading={<Loader2 className='h-4 w-4 animate-[spin_0.2s_linear_infinite] text-[white]' />}
+          loading={<Spinner />}
           options={{
             readOnly: true,
             scrollBeyondLastLine: false,
@@ -58,7 +58,7 @@ const OmniQueryArtifactPanel = ({ artifact }: Props) => {
           defaultValue={artifact.content.value.sql}
           language='sql'
           value={artifact.content.value.sql}
-          loading={<Loader2 className='h-4 w-4 animate-[spin_0.2s_linear_infinite] text-[white]' />}
+          loading={<Spinner />}
           options={{
             readOnly: true,
             scrollBeyondLastLine: true,

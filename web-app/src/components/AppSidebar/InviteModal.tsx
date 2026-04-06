@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/shadcn/dialog";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useInvite } from "@/hooks/auth/useInvite";
 
 interface InviteModalProps {
@@ -71,7 +72,7 @@ export function InviteModal({ open, onOpenChange }: InviteModalProps) {
               Cancel
             </Button>
             <Button type='submit' disabled={isPending || !email}>
-              {isPending ? "Sending…" : "Send invitation"}
+              {isPending ? <Spinner /> : "Send invitation"}
             </Button>
           </DialogFooter>
         </form>

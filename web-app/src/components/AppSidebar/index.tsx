@@ -29,7 +29,7 @@ export function AppSidebar() {
         <div
           ref={scrollRef}
           onScroll={handleScroll}
-          className='customScrollbar scrollbar-gutter-auto flex h-full flex-col overflow-auto'
+          className='scrollbar-gutter-auto flex h-full flex-col overflow-auto'
         >
           <SidebarGroup className='mb-10 px-2 pt-0'>
             <SidebarGroupLabel>Workspace</SidebarGroupLabel>

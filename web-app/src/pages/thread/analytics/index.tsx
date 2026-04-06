@@ -6,11 +6,14 @@ import ThinkingModeMenu from "@/components/Chat/ChatPanel/ThinkingModeMenu";
 import Markdown from "@/components/Markdown";
 import MessageInput from "@/components/MessageInput";
 import UserMessage from "@/components/Messages/UserMessage";
+import ErrorAlert from "@/components/ui/ErrorAlert";
+import { Button } from "@/components/ui/shadcn/button";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup
 } from "@/components/ui/shadcn/resizable";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import type { SelectableItem } from "@/hooks/analyticsSteps";
 import queryKeys from "@/hooks/api/queryKey";
 import type { AnalyticsDisplayBlock, SseEvent } from "@/hooks/useAnalyticsRun";
@@ -210,10 +213,9 @@ const PastRunEntry = ({
         </>
       )}
       {run.status === "failed" && (
-        <div className='rounded-lg border border-destructive bg-destructive/10 p-4'>
-          <p className='font-medium text-destructive text-sm'>Run failed</p>
+        <ErrorAlert title='Run failed'>
           {run.error_message && <Markdown>{run.error_message}</Markdown>}
-        </div>
+        </ErrorAlert>
       )}
     </RunEntry>
   );
@@ -416,13 +418,12 @@ const AnalyticsThread = ({ thread }: Props) => {
           <div className='flex h-full w-full flex-1 flex-col py-4'>
             <div
               ref={containerRef}
-              className='customScrollbar flex w-full flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable_both-edges]'
+              className='flex w-full flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable_both-edges]'
             >
               <div className='mx-auto mb-6 w-full max-w-page-content px-4'>
                 {(isLookingUp || (isFetchingRuns && allRuns.length === 0)) && (
                   <div className='flex items-center gap-2 text-muted-foreground text-sm'>
-                    <span className='h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent' />
-                    Loading…
+                    <Spinner className='size-3' />
                   </div>
                 )}
 
@@ -474,22 +475,23 @@ const AnalyticsThread = ({ thread }: Props) => {
                     )}
 
                     {state.tag === "failed" && (
-                      <div className='rounded-lg border border-destructive bg-destructive/10 p-4'>
-                        <p className='font-medium text-destructive text-sm'>
-                          {state.message === "Cancelled" ? "Cancelled" : "Run failed"}
-                        </p>
+                      <ErrorAlert
+                        title={state.message === "Cancelled" ? "Cancelled" : "Run failed"}
+                        actions={
+                          <Button
+                            size='sm'
+                            variant='outline'
+                            onClick={() => {
+                              reset();
+                              handleStart(currentQuestion);
+                            }}
+                          >
+                            Retry
+                          </Button>
+                        }
+                      >
                         {state.message !== "Cancelled" && <Markdown>{state.message}</Markdown>}
-                        <button
-                          type='button'
-                          onClick={() => {
-                            reset();
-                            handleStart(currentQuestion);
-                          }}
-                          className='mt-3 text-sm underline'
-                        >
-                          Retry
-                        </button>
-                      </div>
+                      </ErrorAlert>
                     )}
                   </RunEntry>
                 )}

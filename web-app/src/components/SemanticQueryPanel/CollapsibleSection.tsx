@@ -34,7 +34,7 @@ const CollapsibleSection = ({
         className='overflow-hidden transition-[max-height] duration-200'
         style={{ maxHeight: open ? "2000px" : "0px" }}
       >
-        <div className='px-3 pb-3'>{children}</div>
+        <div className='p-3'>{children}</div>
       </div>
     </div>
   );

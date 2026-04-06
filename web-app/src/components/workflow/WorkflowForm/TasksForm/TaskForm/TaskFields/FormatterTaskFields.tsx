@@ -1,5 +1,6 @@
 import type React from "react";
 import { useFormContext } from "react-hook-form";
+import { FieldError } from "@/components/ui/shadcn/field";
 import { Label } from "@/components/ui/shadcn/label";
 import { Textarea } from "@/components/ui/shadcn/textarea";
 import type { WorkflowFormData } from "../..";
@@ -35,9 +36,7 @@ export const FormatterTaskFields: React.FC<FormatterTaskFieldsProps> = ({
             required: "Template is required"
           })}
         />
-        {taskErrors?.template && (
-          <p className='text-red-500 text-sm'>{taskErrors.template.message}</p>
-        )}
+        {taskErrors?.template && <FieldError>{taskErrors.template.message}</FieldError>}
       </div>
     </div>
   );

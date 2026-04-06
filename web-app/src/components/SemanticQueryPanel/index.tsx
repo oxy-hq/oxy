@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useState } from "react";
 import SqlResultsTable from "@/components/sql/SqlResultsTable";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import useTopicFieldOptions from "@/hooks/api/useTopicFieldOptions";
+import type { SemanticQueryFilter } from "@/services/api/semantic";
 import type { SemanticQueryArtifact } from "@/types/artifact";
-import ErrorsDisplay from "./ErrorsDisplay";
 import type { FieldItem } from "./FieldList";
 import FieldList from "./FieldList";
 import FiltersDisplay from "./FiltersDisplay";
@@ -10,17 +11,6 @@ import LimitOffset from "./LimitOffset";
 import OrdersDisplay from "./OrdersDisplay";
 import SqlDisplay from "./SqlDisplay";
 import TopicHeader from "./TopicHeader";
-
-// Re-export sub-components for external use
-export { default as CollapsibleSection } from "./CollapsibleSection";
-export { default as ErrorsDisplay, ErrorBlock } from "./ErrorsDisplay";
-export type { FieldItem } from "./FieldList";
-export { default as FieldList } from "./FieldList";
-export { default as FiltersDisplay } from "./FiltersDisplay";
-export { default as LimitOffset } from "./LimitOffset";
-export { default as OrdersDisplay } from "./OrdersDisplay";
-export { default as SqlDisplay } from "./SqlDisplay";
-export { default as TopicHeader } from "./TopicHeader";
 
 interface SemanticQueryPanelProps {
   artifact: SemanticQueryArtifact;
@@ -46,8 +36,8 @@ const SemanticQueryPanel = ({
     database,
     dimensions: originalDimensions,
     measures: originalMeasures,
-    filters,
-    orders,
+    filters: originalFilters,
+    orders: originalOrders,
     limit,
     offset,
     sql_query,
@@ -60,28 +50,57 @@ const SemanticQueryPanel = ({
 
   const [dimensions, setDimensions] = useState<string[]>(originalDimensions);
   const [measures, setMeasures] = useState<string[]>(originalMeasures);
-
-  const { dimensions: availableDimensions, measures: availableMeasures } = useTopicFieldOptions(
-    editable ? topic || undefined : undefined
+  const [filters, setFilters] = useState<SemanticQueryFilter[]>(
+    originalFilters as SemanticQueryFilter[]
+  );
+  const [orders, setOrders] = useState<{ field: string; direction: "asc" | "desc" }[]>(
+    originalOrders as { field: string; direction: "asc" | "desc" }[]
   );
 
-  const isModified = useMemo(
-    () =>
-      editable &&
-      (dimensions.length !== originalDimensions.length ||
-        measures.length !== originalMeasures.length ||
-        dimensions.some((d, i) => d !== originalDimensions[i]) ||
-        measures.some((m, i) => m !== originalMeasures[i])),
-    [editable, dimensions, measures, originalDimensions, originalMeasures]
-  );
+  const {
+    dimensions: availableDimensions,
+    measures: availableMeasures,
+    allFields
+  } = useTopicFieldOptions(editable ? topic || undefined : undefined);
+
+  const isModified = useMemo(() => {
+    if (!editable) return false;
+    const dimsChanged =
+      dimensions.length !== originalDimensions.length ||
+      dimensions.some((d, i) => d !== originalDimensions[i]);
+    const measChanged =
+      measures.length !== originalMeasures.length ||
+      measures.some((m, i) => m !== originalMeasures[i]);
+    const filtersChanged = JSON.stringify(filters) !== JSON.stringify(originalFilters);
+    const ordersChanged = JSON.stringify(orders) !== JSON.stringify(originalOrders);
+    return dimsChanged || measChanged || filtersChanged || ordersChanged;
+  }, [
+    editable,
+    dimensions,
+    measures,
+    filters,
+    orders,
+    originalDimensions,
+    originalMeasures,
+    originalFilters,
+    originalOrders
+  ]);
 
   const handleRerun = useCallback(() => {
-    const prompt =
-      `Re-run the analysis using a modified semantic query for topic "${topic}". ` +
-      `Use dimensions: [${dimensions.join(", ")}] and measures: [${measures.join(", ")}]. ` +
-      `Keep the same filters and other parameters.`;
-    onRerun?.(prompt);
-  }, [topic, dimensions, measures, onRerun]);
+    const parts = [`Re-run the analysis using a modified semantic query for topic "${topic}".`];
+    parts.push(
+      `Use dimensions: [${dimensions.join(", ")}] and measures: [${measures.join(", ")}].`
+    );
+    if (filters.length > 0) {
+      parts.push(`Use filters: ${JSON.stringify(filters)}.`);
+    } else {
+      parts.push("No filters.");
+    }
+    if (orders.length > 0) {
+      parts.push(`Use ordering: ${JSON.stringify(orders)}.`);
+    }
+    onRerun?.(parts.join(" "));
+  }, [topic, dimensions, measures, filters, orders, onRerun]);
 
   const dimensionItems: FieldItem[] = useMemo(
     () => availableDimensions.map((d) => ({ value: d.value, label: d.label })),
@@ -91,6 +110,21 @@ const SemanticQueryPanel = ({
   const measureItems: FieldItem[] = useMemo(
     () => availableMeasures.map((m) => ({ value: m.value, label: m.label })),
     [availableMeasures]
+  );
+
+  const filterDimensions = useMemo(
+    () =>
+      availableDimensions.map((d) => ({
+        name: d.label,
+        fullName: d.value,
+        type: d.dataType
+      })),
+    [availableDimensions]
+  );
+
+  const sortFields = useMemo(
+    () => allFields.map((f) => ({ name: f.label, fullName: f.value })),
+    [allFields]
   );
 
   const handleDimensionChange = useCallback(
@@ -125,8 +159,44 @@ const SemanticQueryPanel = ({
     if (unused) setMeasures((prev) => [...prev, unused.value]);
   }, [availableMeasures, measures]);
 
+  // Filter handlers
+  const handleAddFilter = useCallback(() => {
+    const firstDim = availableDimensions[0];
+    if (firstDim) {
+      setFilters((prev) => [...prev, { field: firstDim.value, op: "eq", value: "" }]);
+    }
+  }, [availableDimensions]);
+
+  const handleUpdateFilter = useCallback((index: number, updates: SemanticQueryFilter) => {
+    setFilters((prev) => prev.map((f, i) => (i === index ? updates : f)));
+  }, []);
+
+  const handleRemoveFilter = useCallback((index: number) => {
+    setFilters((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  // Order handlers
+  const handleAddOrder = useCallback(() => {
+    const selectedFields = [...dimensions, ...measures];
+    const firstField = selectedFields[0];
+    if (firstField) {
+      setOrders((prev) => [...prev, { field: firstField, direction: "asc" }]);
+    }
+  }, [dimensions, measures]);
+
+  const handleUpdateOrder = useCallback(
+    (index: number, updates: { field: string; direction: "asc" | "desc" }) => {
+      setOrders((prev) => prev.map((o, i) => (i === index ? updates : o)));
+    },
+    []
+  );
+
+  const handleRemoveOrder = useCallback((index: number) => {
+    setOrders((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
   return (
-    <div className='customScrollbar flex h-full flex-col overflow-y-auto'>
+    <div className='flex h-full flex-col overflow-y-auto'>
       <TopicHeader
         topic={topic}
         database={showDatabase ? database : undefined}
@@ -160,17 +230,35 @@ const SemanticQueryPanel = ({
         onFieldAdd={handleMeasureAdd}
       />
 
-      <FiltersDisplay filters={filters} />
-      <OrdersDisplay orders={orders} />
+      <FiltersDisplay
+        filters={editable ? filters : (originalFilters as SemanticQueryFilter[])}
+        editable={editable}
+        availableDimensions={filterDimensions}
+        onAddFilter={handleAddFilter}
+        onUpdateFilter={handleUpdateFilter}
+        onRemoveFilter={handleRemoveFilter}
+      />
+
+      <OrdersDisplay
+        orders={editable ? orders : originalOrders}
+        editable={editable}
+        availableFields={sortFields}
+        onAddOrder={handleAddOrder}
+        onUpdateOrder={handleUpdateOrder}
+        onRemoveOrder={handleRemoveOrder}
+      />
+
       <LimitOffset limit={limit} offset={offset} />
 
       {sql_query && <SqlDisplay sql={sql_query} defaultOpen={sqlDefaultOpen} />}
 
-      <ErrorsDisplay
-        validationError={validation_error}
-        sqlGenerationError={sql_generation_error}
-        executionError={error}
-      />
+      <div className='flex flex-col gap-2'>
+        {validation_error && <ErrorAlert title='Validation Error' message={validation_error} />}
+        {sql_generation_error && (
+          <ErrorAlert title='SQL Generation Error' message={sql_generation_error} />
+        )}
+        {error && <ErrorAlert title='Execution Error' message={error} />}
+      </div>
 
       {(result || result_file) && (
         <div className='min-h-[200px] flex-1'>

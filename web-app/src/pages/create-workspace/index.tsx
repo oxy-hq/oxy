@@ -1,4 +1,5 @@
 import { useState } from "react";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import { useCreateWorkspace } from "@/hooks/api/workspaces/useWorkspaces";
 import useTheme from "@/stores/useTheme";
 import StepHeader, { type Step } from "./components/StepHeader";
@@ -94,7 +95,7 @@ export default function CreateWorkspacePage() {
   };
 
   return (
-    <div className='customScrollbar flex w-full flex-col overflow-auto'>
+    <div className='flex w-full flex-col overflow-auto'>
       <div className='p-4'>
         <div className='flex items-center gap-2'>
           <img
@@ -109,11 +110,14 @@ export default function CreateWorkspacePage() {
 
       <div className='mx-auto w-full max-w-6xl max-w-[520px] flex-1 p-6'>
         {isError && (
-          <div className='mb-6 rounded-md border border-destructive/20 bg-destructive/10 p-3 text-destructive text-sm'>
-            {error instanceof Error
-              ? error.message
-              : "An error occurred while creating the workspace"}
-          </div>
+          <ErrorAlert
+            className='mb-6'
+            message={
+              error instanceof Error
+                ? error.message
+                : "An error occurred while creating the workspace"
+            }
+          />
         )}
 
         {currentStep === "workspace" && (

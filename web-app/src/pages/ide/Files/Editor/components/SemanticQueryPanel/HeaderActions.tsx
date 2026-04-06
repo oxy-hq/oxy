@@ -1,5 +1,6 @@
-import { Loader2, Play } from "lucide-react";
+import { Play } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/tooltip";
 
 interface HeaderActionsProps {
@@ -28,11 +29,7 @@ const HeaderActions = ({
               onClick={onExecuteQuery}
               title='Run query'
             >
-              {loading ? (
-                <Loader2 className='h-4 w-4 animate-[spin_0.3s_linear_infinite]' />
-              ) : (
-                <Play className='h-4 w-4' />
-              )}
+              {loading ? <Spinner /> : <Play className='h-4 w-4' />}
             </Button>
           </span>
         </TooltipTrigger>

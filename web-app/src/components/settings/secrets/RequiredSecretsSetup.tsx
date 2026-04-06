@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle, Loader2 } from "lucide-react";
+import { AlertTriangle, CheckCircle } from "lucide-react";
 import type React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/shadcn/button";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useBulkCreateSecrets } from "@/hooks/api/secrets/useSecretMutations";
 import { useProjectStatus } from "@/hooks/useProjectStatus";
 import ROUTES from "@/libs/utils/routes";
@@ -86,10 +87,10 @@ const RequiredSecretsSetup: React.FC = () => {
   };
 
   return (
-    <div className='flex min-h-screen w-full flex-col items-center overflow-y-auto bg-neutral-950'>
+    <div className='flex min-h-screen w-full flex-col items-center overflow-y-auto bg-background'>
       <div className='m-4 flex w-full max-w-md flex-1 flex-col gap-4'>
         <div className='text-center'>
-          <AlertTriangle className='mx-auto mb-4 h-12 w-12 text-orange-500' />
+          <AlertTriangle className='mx-auto mb-4 h-12 w-12 text-warning' />
           <h1 className='font-bold text-2xl text-foreground'>Required Secrets Setup</h1>
           <p className='mt-2 text-muted-foreground'>
             Your configuration requires the following secrets to be configured before you can
@@ -97,9 +98,9 @@ const RequiredSecretsSetup: React.FC = () => {
           </p>
         </div>
 
-        <div className='flex items-start gap-3 rounded-lg border border-orange-200 bg-orange-50 p-4 dark:border-orange-800 dark:bg-orange-950'>
-          <AlertTriangle className='mt-0.5 h-4 w-4 flex-shrink-0 text-orange-500' />
-          <p className='text-orange-800 text-sm dark:text-orange-200'>
+        <div className='flex items-start gap-3 rounded-lg border border-warning/20 bg-warning/5 p-4'>
+          <AlertTriangle className='mt-0.5 h-4 w-4 flex-shrink-0 text-warning' />
+          <p className='text-sm text-warning'>
             These secrets are required for your project to function properly. Please provide values
             for all required secrets.
           </p>
@@ -126,10 +127,7 @@ const RequiredSecretsSetup: React.FC = () => {
 
           <Button type='submit' className='w-full' disabled={isSubmitting}>
             {isSubmitting ? (
-              <>
-                <Loader2 className='mr-2 h-4 w-4 animate-spin' />
-                Configuring Secrets...
-              </>
+              <Spinner className='mr-2' />
             ) : (
               <>
                 <CheckCircle className='mr-2 h-4 w-4' />

@@ -13,15 +13,15 @@ import type { MetricDetailResponse } from "@/services/api/metrics";
 function TrendIcon({ isPositive, isNegative }: { isPositive?: boolean; isNegative?: boolean }) {
   if (isPositive) {
     return (
-      <div className='rounded-lg bg-green-500/10 p-2'>
-        <TrendingUp className='h-5 w-5 text-green-400' />
+      <div className='rounded-lg bg-success/10 p-2'>
+        <TrendingUp className='h-5 w-5 text-success' />
       </div>
     );
   }
   if (isNegative) {
     return (
-      <div className='rounded-lg bg-red-500/10 p-2'>
-        <TrendingDown className='h-5 w-5 text-red-400' />
+      <div className='rounded-lg bg-destructive/10 p-2'>
+        <TrendingDown className='h-5 w-5 text-destructive' />
       </div>
     );
   }
@@ -70,8 +70,8 @@ export default function DetailStatsRow({ detailData }: DetailStatsRowProps) {
               <p
                 className={cn(
                   "font-bold text-2xl",
-                  isPositive && "text-green-400",
-                  isNegative && "text-red-400"
+                  isPositive && "text-success",
+                  isNegative && "text-destructive"
                 )}
               >
                 {trend || "—"}
@@ -85,8 +85,8 @@ export default function DetailStatsRow({ detailData }: DetailStatsRowProps) {
       <Card className='overflow-hidden bg-transparent shadow-none'>
         <CardContent className='p-4'>
           <div className='flex items-center gap-3'>
-            <div className='rounded-lg bg-blue-500/10 p-2'>
-              <LucideBot className='h-5 w-5 text-blue-400' />
+            <div className='rounded-lg bg-info/10 p-2'>
+              <LucideBot className='h-5 w-5 text-info' />
             </div>
             <div>
               <p className='font-bold text-2xl'>{viaAgent}</p>
@@ -99,8 +99,8 @@ export default function DetailStatsRow({ detailData }: DetailStatsRowProps) {
       <Card className='overflow-hidden bg-transparent shadow-none'>
         <CardContent className='p-4'>
           <div className='flex items-center gap-3'>
-            <div className='rounded-lg bg-purple-500/10 p-2'>
-              <LucideWorkflow className='h-5 w-5 text-purple-400' />
+            <div className='rounded-lg bg-vis-purple/10 p-2'>
+              <LucideWorkflow className='h-5 w-5 text-vis-purple' />
             </div>
             <div>
               <p className='font-bold text-2xl'>{viaWorkflow}</p>

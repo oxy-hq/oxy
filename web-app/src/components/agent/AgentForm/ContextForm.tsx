@@ -8,6 +8,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger
 } from "@/components/ui/shadcn/collapsible";
+import { FieldError } from "@/components/ui/shadcn/field";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import {
@@ -55,7 +56,7 @@ const ContextItemForm: React.FC<ContextItemFormProps> = ({ index, onRemove }) =>
               <ChevronRight className='h-5 w-5 text-muted-foreground' />
             )}
             <div className='flex flex-1 items-center gap-3'>
-              <span className='flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 font-semibold text-primary text-sm'>
+              <span className='flex h-8 w-8 items-center justify-center rounded-full bg-card font-semibold text-primary text-sm'>
                 {index + 1}
               </span>
               <div className='flex flex-1 items-center gap-2'>
@@ -93,7 +94,7 @@ const ContextItemForm: React.FC<ContextItemFormProps> = ({ index, onRemove }) =>
                 })}
               />
               {contextErrors?.name && (
-                <p className='text-red-500 text-sm'>{String(contextErrors.name.message || "")}</p>
+                <FieldError>{String(contextErrors.name.message || "")}</FieldError>
               )}
             </div>
 
@@ -119,7 +120,7 @@ const ContextItemForm: React.FC<ContextItemFormProps> = ({ index, onRemove }) =>
                 )}
               />
               {contextErrors?.type && (
-                <p className='text-red-500 text-sm'>{String(contextErrors.type.message || "")}</p>
+                <FieldError>{String(contextErrors.type.message || "")}</FieldError>
               )}
             </div>
 

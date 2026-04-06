@@ -30,7 +30,7 @@ const ArtifactPanelContainer = ({ selectedIds, onSelect, messages }: Props) => {
       <DialogContent
         onOpenAutoFocus={(e) => e.preventDefault()}
         showCloseButton={false}
-        className='h-[80vh] w-full max-w-4xl! p-0'
+        className='h-[80vh] w-full max-w-4xl! border-none p-0'
       >
         <div className='h-[80vh]'>
           <ArtifactPanel
@@ -38,6 +38,7 @@ const ArtifactPanelContainer = ({ selectedIds, onSelect, messages }: Props) => {
             artifactStreamingData={artifactStreamingData}
             onClose={() => onSelect([])}
             setSelectedArtifactIds={onSelect}
+            wrapperClassName='rounded-lg'
           />
         </div>
       </DialogContent>

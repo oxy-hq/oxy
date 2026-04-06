@@ -1,5 +1,5 @@
 import { get } from "lodash";
-import { Code, Loader2, Play, Plus, Save, X } from "lucide-react";
+import { Code, Play, Plus, Save, X } from "lucide-react";
 import type { editor } from "monaco-editor";
 import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -17,6 +17,7 @@ import {
   AlertDialogTitle
 } from "@/components/ui/shadcn/alert-dialog";
 import { Button } from "@/components/ui/shadcn/button";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { buttonVariants } from "@/components/ui/shadcn/utils/button-variants";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { cn } from "@/libs/shadcn/utils";
@@ -180,11 +181,7 @@ export default function QueryEditor({ onSave }: QueryEditorProps) {
             disabled={!activeTab || activeTab.isExecuting || !activeTab?.selectedDatabase}
             className='h-7 px-2'
           >
-            {activeTab?.isExecuting ? (
-              <Loader2 className='h-4 w-4 animate-spin' />
-            ) : (
-              <Play className='h-4 w-4' />
-            )}
+            {activeTab?.isExecuting ? <Spinner /> : <Play className='h-4 w-4' />}
             <span>Run</span>
           </Button>
           <Button
@@ -209,13 +206,15 @@ export default function QueryEditor({ onSave }: QueryEditorProps) {
           </Button>
         </div>
 
-        <div className='text-muted-foreground text-xs'>
-          {activeTab?.isExecuting && "Executing..."}
-        </div>
+        {activeTab?.isExecuting && (
+          <div className='text-muted-foreground text-xs'>
+            <Spinner className='size-2.5' />
+          </div>
+        )}
       </div>
 
       {/* Tabs */}
-      <div className='customScrollbar scrollbar-gutter-auto flex items-center overflow-x-auto border-b'>
+      <div className='scrollbar-gutter-auto flex items-center overflow-x-auto border-b'>
         {tabs.map((tab) => (
           <div
             key={tab.id}

@@ -31,14 +31,14 @@ const LogInfo = ({ log, open, onOpenChange }: Props) => {
                 e.stopPropagation();
                 onOpenChange(false);
               }}
-              className='text-blue-600 hover:underline dark:text-blue-400'
+              className='text-info hover:underline'
             >
               {log.thread?.title || "Untitled Thread"}
             </Link>
           </DialogTitle>
           <DialogDescription>{formatDate(log.created_at)}</DialogDescription>
         </DialogHeader>
-        <div className='customScrollbar flex-1 space-y-4 overflow-y-auto p-4'>
+        <div className='flex-1 space-y-4 overflow-y-auto p-4'>
           <div>
             <Label className='font-medium text-sm'>Prompts</Label>
             <p className='text-muted-foreground text-sm'>{log.prompts || "No prompt provided"}</p>

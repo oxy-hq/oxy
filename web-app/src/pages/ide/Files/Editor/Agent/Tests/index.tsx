@@ -1,7 +1,7 @@
 import EmptyState from "@/components/ui/EmptyState";
+import LoadingSkeleton from "@/components/ui/LoadingSkeleton";
 import useAgent from "@/hooks/api/agents/useAgent";
 import TestItem from "./TestItem";
-import TestSkeleton from "./TestSkeleton";
 
 interface AgentTestsProps {
   agentPathb64: string;
@@ -14,9 +14,9 @@ const AgentTests = ({ agentPathb64 }: AgentTestsProps) => {
   const shouldShowTests = !isLoading && tests.length > 0;
 
   return (
-    <div className='customScrollbar flex h-full flex-col overflow-auto px-4 pb-4'>
+    <div className='flex h-full flex-col overflow-auto px-4 pb-4'>
       <div className='flex w-full flex-col gap-4'>
-        {isLoading && <TestSkeleton />}
+        {isLoading && <LoadingSkeleton />}
         {shouldShowTests && (
           <div className='flex flex-col gap-4'>
             {tests.map((test, index) => (

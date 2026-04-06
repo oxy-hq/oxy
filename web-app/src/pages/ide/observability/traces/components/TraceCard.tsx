@@ -34,7 +34,7 @@ function isAnalyticsTrace(trace: Trace): boolean {
 // Helper to get question from analytics trace span attributes
 function getAnalyticsQuestion(trace: Trace): string | undefined {
   const attrs = getSpanAttributesAsRecord(trace);
-  return attrs["question"];
+  return attrs.question;
 }
 
 export function TraceCard({ trace, onClick }: TraceCardProps) {
@@ -62,7 +62,7 @@ export function TraceCard({ trace, onClick }: TraceCardProps) {
           {isError ? (
             <AlertCircle className='h-4 w-4 flex-shrink-0 text-destructive' />
           ) : (
-            <CheckCircle2 className='h-4 w-4 flex-shrink-0 text-green-500' />
+            <CheckCircle2 className='h-4 w-4 flex-shrink-0 text-success' />
           )}
           <SpanIcon
             spanName={trace.spanName}

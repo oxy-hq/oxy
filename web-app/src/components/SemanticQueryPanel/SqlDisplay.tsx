@@ -12,7 +12,7 @@ const SqlDisplay = ({ sql, defaultOpen = false }: SqlDisplayProps) => {
 
   return (
     <CollapsibleSection title='Generated SQL' defaultOpen={defaultOpen}>
-      <div className='[&_pre]:!my-0 customScrollbar text-xs [&_pre]:max-h-[300px] [&_pre]:overflow-auto'>
+      <div className='[&_pre]:!my-0 text-xs [&_pre]:max-h-[300px] [&_pre]:overflow-auto'>
         <SyntaxHighlighter
           language='sql'
           style={oneDark}

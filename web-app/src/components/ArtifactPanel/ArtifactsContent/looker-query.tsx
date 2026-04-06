@@ -13,13 +13,13 @@ type Props = {
 
 type LookerFilter = {
   field: string;
-  op: string;
+  op: "eq" | "neq" | "gt" | "gte" | "lt" | "lte";
   value: string;
 };
 
 type LookerOrder = {
   field: string;
-  direction: string;
+  direction: "asc" | "desc";
 };
 
 const toLookerFilters = (filters: Record<string, string> | undefined): LookerFilter[] => {
@@ -27,7 +27,7 @@ const toLookerFilters = (filters: Record<string, string> | undefined): LookerFil
 
   return Object.entries(filters).map(([field, value]) => ({
     field,
-    op: "=",
+    op: "eq",
     value
   }));
 };

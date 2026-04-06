@@ -1,5 +1,5 @@
-import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 
 interface LoadingStateProps {
   error?: Error | null;
@@ -10,7 +10,7 @@ const LoadingState = ({ error, onRetry }: LoadingStateProps) => {
   if (error) {
     return (
       <div className='p-4'>
-        <div className='mb-4 text-red-600'>Error loading workspaces</div>
+        <div className='mb-4 text-destructive'>Error loading workspaces</div>
         {onRetry && <Button onClick={onRetry}>Try Again</Button>}
       </div>
     );
@@ -18,7 +18,7 @@ const LoadingState = ({ error, onRetry }: LoadingStateProps) => {
 
   return (
     <div className='flex h-64 w-full items-center justify-center'>
-      <Loader2 className='h-8 w-8 animate-spin' />
+      <Spinner className='size-8' />
     </div>
   );
 };

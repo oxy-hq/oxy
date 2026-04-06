@@ -1,3 +1,5 @@
+import ErrorAlert from "@/components/ui/ErrorAlert";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
 import type { ArtifactItem } from "@/hooks/analyticsSteps";
 import type { AnalyticsDisplayBlock } from "@/hooks/useAnalyticsRun";
@@ -146,9 +148,10 @@ export const SearchCatalogView = ({ item }: { item: ArtifactItem }) => {
   const input = parseToolJson<{ queries?: string[] }>(item.toolInput);
   const queries = input?.queries ?? [];
 
-  const output = parseToolJson<{ metrics?: CatalogMetric[]; dimensions?: CatalogDimension[] }>(
-    item.toolOutput
-  );
+  const output = parseToolJson<{
+    metrics?: CatalogMetric[];
+    dimensions?: CatalogDimension[];
+  }>(item.toolOutput);
   const metrics = output?.metrics ?? [];
   const dimensions = output?.dimensions ?? [];
 
@@ -567,12 +570,12 @@ export const RenderChartView = ({ item }: { item: ArtifactItem }) => {
               item.isStreaming
                 ? "border-border bg-muted/30 text-muted-foreground"
                 : ok
-                  ? "border-green-500/30 bg-green-500/5 text-green-700 dark:text-green-400"
+                  ? "border-success/30 bg-success/5 text-success"
                   : "border-destructive/30 bg-destructive/5 text-destructive"
             }`}
           >
             {item.isStreaming ? (
-              <span className='inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent' />
+              <Spinner className='size-3' />
             ) : ok ? (
               <span>✓</span>
             ) : (
@@ -668,18 +671,16 @@ export const ProcedureStepView = ({ item }: { item: ArtifactItem }) => {
       <div className='flex items-center gap-3 rounded-lg border bg-muted/30 p-4'>
         {isRunning && (
           <>
-            <span className='inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent text-muted-foreground' />
+            <Spinner className='text-muted-foreground' />
             <span className='text-muted-foreground text-sm'>Running…</span>
           </>
         )}
         {isSuccess && (
           <>
-            <span className='flex h-5 w-5 items-center justify-center rounded-full bg-green-500/15 text-green-600'>
+            <span className='flex h-5 w-5 items-center justify-center rounded-full bg-success/15 text-success'>
               ✓
             </span>
-            <span className='text-green-700 text-sm dark:text-green-400'>
-              Completed successfully
-            </span>
+            <span className='text-sm text-success'>Completed successfully</span>
           </>
         )}
         {error !== undefined && (
@@ -695,9 +696,9 @@ export const ProcedureStepView = ({ item }: { item: ArtifactItem }) => {
       {error && (
         <div>
           <p className='mb-1.5 font-medium text-muted-foreground text-xs'>Error</p>
-          <pre className='whitespace-pre-wrap rounded border border-destructive/30 bg-destructive/5 p-3 font-mono text-[11px] text-destructive'>
-            {error}
-          </pre>
+          <ErrorAlert
+            message={<pre className='whitespace-pre-wrap font-mono text-xs'>{error}</pre>}
+          />
         </div>
       )}
     </div>
@@ -727,11 +728,7 @@ export const ColumnValuesView = ({ item }: { item: ArtifactItem }) => {
             <p className='font-medium font-mono text-xs'>{column}</p>
           </div>
         </div>
-        {error && (
-          <p className='rounded border border-destructive/30 bg-destructive/5 px-2.5 py-1.5 text-[11px] text-destructive'>
-            {error}
-          </p>
-        )}
+        {error && <ErrorAlert message={error} />}
         {values.length > 0 && (
           <div>
             <p className='mb-1.5 font-medium text-muted-foreground text-xs'>
@@ -798,11 +795,7 @@ export const ColumnRangeView = ({ item }: { item: ArtifactItem }) => {
             </div>
           ))}
         </div>
-        {error && (
-          <p className='rounded border border-destructive/30 bg-destructive/5 px-2.5 py-1.5 text-[11px] text-destructive'>
-            {error}
-          </p>
-        )}
+        {error && <ErrorAlert message={error} />}
       </div>
     </div>
   );
@@ -939,11 +932,7 @@ export const CountRowsView = ({ item }: { item: ArtifactItem }) => {
             </pre>
           </div>
         )}
-        {error && (
-          <p className='rounded border border-destructive/30 bg-destructive/5 px-2.5 py-1.5 text-[11px] text-destructive'>
-            {error}
-          </p>
-        )}
+        {error && <ErrorAlert message={error} />}
       </div>
     </div>
   );

@@ -63,7 +63,7 @@ export function SettingsModal() {
         className='!max-w-6xl h-[85vh] w-full overflow-hidden p-0'
       >
         <div className='flex h-full overflow-hidden'>
-          <div className='customScrollbar flex w-64 flex-col gap-2 overflow-auto border-r bg-sidebar px-2 py-4'>
+          <div className='flex w-64 flex-col gap-2 overflow-auto border-r bg-sidebar px-2 py-4'>
             <div>
               <Button variant='ghost' onClick={() => setIsOpen(false)} className='w-auto'>
                 <X className='h-4 w-4' />
@@ -83,7 +83,7 @@ export function SettingsModal() {
             ))}
           </div>
 
-          <div className='customScrollbar scrollbar-gutter-auto flex-1 overflow-auto'>
+          <div className='scrollbar-gutter-auto flex-1 overflow-auto'>
             {visibleSections.find((section) => section.id === activeSection)?.page}
           </div>
         </div>

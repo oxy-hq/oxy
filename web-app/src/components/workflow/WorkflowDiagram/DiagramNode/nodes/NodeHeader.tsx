@@ -94,7 +94,7 @@ export const NodeHeader = ({
       <div className='flex min-w-0 flex-1 items-center'>
         <div className='flex min-w-0 flex-1 flex-col gap-1'>
           <div className='flex items-center'>
-            <span className='truncate text-gray-500 text-sm'>{taskName}</span>
+            <span className='truncate text-muted-foreground text-sm'>{taskName}</span>
           </div>
           <div className='flex min-w-0 items-center'>
             <TruncatedText className='min-w-0 text-sm'>{name}</TruncatedText>

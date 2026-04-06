@@ -1,4 +1,4 @@
-import { LoaderCircle, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ControlsBar } from "@/components/AppPreview/Controls";
@@ -9,6 +9,7 @@ import {
   runSqlInDuckDB
 } from "@/components/AppPreview/Displays/utils";
 import { Button } from "@/components/ui/shadcn/button";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import useAppData, { useAppDisplays } from "@/hooks/api/apps/useApp";
 import useRunAppMutation from "@/hooks/api/apps/useRunAppMutation";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
@@ -157,13 +158,19 @@ export default function AppPreview({ appPath64, runButton = true, autoRun = true
             const oldest = clientDataCache.keys().next().value;
             if (oldest !== undefined) clientDataCache.delete(oldest);
           }
-          clientDataCache.set(appPath64, { data: result, controlValues: values });
+          clientDataCache.set(appPath64, {
+            data: result,
+            controlValues: values
+          });
           setParamData(result);
         }
       } catch {
         if (gen === clientGenRef.current) {
           setForcedServerMode(true);
-          runApp({ pathb64: appPath64, params: values as Record<string, unknown> });
+          runApp({
+            pathb64: appPath64,
+            params: values as Record<string, unknown>
+          });
         }
       } finally {
         if (gen === clientGenRef.current) {
@@ -203,7 +210,10 @@ export default function AppPreview({ appPath64, runButton = true, autoRun = true
     if (allClientMode) {
       runClientTasks(controlValues);
     } else {
-      runApp({ pathb64: appPath64, params: controlValues as Record<string, unknown> });
+      runApp({
+        pathb64: appPath64,
+        params: controlValues as Record<string, unknown>
+      });
     }
   };
 
@@ -244,11 +254,11 @@ export default function AppPreview({ appPath64, runButton = true, autoRun = true
           content='icon'
           size='sm'
         >
-          {isRunning ? <LoaderCircle className='animate-spin' /> : <RefreshCw />}
+          {isRunning ? <Spinner /> : <RefreshCw />}
         </Button>
       )}
 
-      <div className='customScrollbar h-full w-full overflow-auto'>
+      <div className='h-full w-full overflow-auto'>
         {controls.length > 0 && (
           <div className='sticky top-0 z-10 border-border border-b bg-background/95 backdrop-blur-sm'>
             <div className='mx-auto w-full max-w-200 px-2'>
@@ -270,7 +280,7 @@ export default function AppPreview({ appPath64, runButton = true, autoRun = true
           >
             {isRunning && (
               <div className='absolute inset-0 z-10 flex flex-col items-center justify-center gap-3'>
-                <LoaderCircle className='h-8 w-8 animate-spin text-muted-foreground' />
+                <Spinner className='size-8' />
                 <RotatingStatus active={isRunning} />
               </div>
             )}

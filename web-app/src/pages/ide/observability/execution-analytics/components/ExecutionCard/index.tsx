@@ -2,13 +2,13 @@ import { formatDistanceToNow } from "date-fns";
 import { ChevronDown, ChevronRight, Clock, ExternalLink } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import { encodeBase64 } from "@/libs/encoding";
 import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
 import useCurrentProject from "@/stores/useCurrentProject";
 import type { ExecutionDetail } from "../../types";
 import DataDisplay from "./DataDisplay";
-import ErrorDisplay from "./ErrorDisplay";
 import ExecutionTypeBadge from "./ExecutionTypeBadge";
 import SqlDisplay from "./SqlDisplay";
 import StatusBadge from "./StatusBadge";
@@ -187,7 +187,7 @@ export default function ExecutionCard({ execution }: ExecutionCardProps) {
 
           {execution.toolInput && <DataDisplay value={execution.toolInput} label='Input' />}
 
-          {execution.error && <ErrorDisplay error={execution.error} />}
+          {execution.error && <ErrorAlert title='Execution Error' message={execution.error} />}
 
           {execution.output && <DataDisplay value={execution.output} label='Output' />}
         </div>

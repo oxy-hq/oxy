@@ -1,6 +1,6 @@
 import { ReactFlowProvider } from "@xyflow/react";
-import { ContentSkeleton } from "@/components/ui/ContentSkeleton";
 import EmptyState from "@/components/ui/EmptyState";
+import LoadingSkeleton from "@/components/ui/LoadingSkeleton";
 import OutputLogs from "@/components/workflow/output/Logs";
 import WorkflowDiagram from "@/components/workflow/WorkflowDiagram";
 import useWorkflowConfig from "@/hooks/api/workflows/useWorkflowConfig";
@@ -15,7 +15,7 @@ const WorkflowArtifactPanel = ({ artifact, onArtifactClick }: Props) => {
   const { data: workflowConfig } = useWorkflowConfig(artifact.content.value.ref);
 
   if (!workflowConfig) {
-    return <ContentSkeleton />;
+    return <LoadingSkeleton />;
   }
 
   return (

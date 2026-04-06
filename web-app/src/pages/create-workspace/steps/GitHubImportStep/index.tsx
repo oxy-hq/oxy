@@ -1,9 +1,10 @@
-import { Github, Loader2 } from "lucide-react";
+import { Github } from "lucide-react";
 import { useState } from "react";
 import { GitNamespaceSelection } from "@/components/GitNamespaceSelection";
 import { Button } from "@/components/ui/shadcn/button";
 import { Combobox } from "@/components/ui/shadcn/combobox";
 import { Label } from "@/components/ui/shadcn/label";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import {
   useGitHubBranchesWithApp,
   useGitHubNamespaces,
@@ -62,8 +63,7 @@ export default function GitHubImportStep({
     if (isLoadingRepos) {
       return (
         <div className='flex items-center gap-2 rounded border p-2'>
-          <Loader2 className='h-4 w-4 animate-spin' />
-          <span className='text-muted-foreground text-sm'>Loading repositories...</span>
+          <Spinner />
         </div>
       );
     }
@@ -121,8 +121,7 @@ export default function GitHubImportStep({
     if (isLoadingBranches) {
       return (
         <div className='flex items-center gap-2 rounded border p-2'>
-          <Loader2 className='h-4 w-4 animate-spin' />
-          <span className='text-muted-foreground text-sm'>Loading branches...</span>
+          <Spinner />
         </div>
       );
     }
@@ -205,7 +204,7 @@ export default function GitHubImportStep({
             }
             disabled={isNextDisabled}
           >
-            {isLoading && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+            {isLoading && <Spinner className='mr-2' />}
             Create Workspace
           </Button>
         </div>

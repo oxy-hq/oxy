@@ -1,4 +1,4 @@
-import { Database, FileText, Loader2 } from "lucide-react";
+import { Database, FileText } from "lucide-react";
 import { useMemo } from "react";
 import {
   Card,
@@ -7,6 +7,7 @@ import {
   CardHeader,
   CardTitle
 } from "@/components/ui/shadcn/card";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import type { MetricAnalyticsResponse } from "@/services/api/metrics";
 import { CONTEXT_TYPE_CONFIG, SOURCE_TYPE_CONFIG } from "../../constants";
 import InsightsCard from "./InsightsCard";
@@ -90,7 +91,7 @@ export default function Sidebar({ analyticsData, isLoading }: SidebarProps) {
           <CardTitle className='flex items-center gap-2 text-base'>
             <Database className='h-4 w-4' />
             By Source Type
-            {isLoading && <Loader2 className='h-3 w-3 animate-spin text-muted-foreground' />}
+            {isLoading && <Spinner className='size-3 text-muted-foreground' />}
           </CardTitle>
           <CardDescription>How metrics are accessed</CardDescription>
         </CardHeader>
@@ -105,7 +106,7 @@ export default function Sidebar({ analyticsData, isLoading }: SidebarProps) {
           <CardTitle className='flex items-center gap-2 text-base'>
             <FileText className='h-4 w-4' />
             By Context Type
-            {isLoading && <Loader2 className='h-3 w-3 animate-spin text-muted-foreground' />}
+            {isLoading && <Spinner className='size-3 text-muted-foreground' />}
           </CardTitle>
           <CardDescription>What context was captured</CardDescription>
         </CardHeader>

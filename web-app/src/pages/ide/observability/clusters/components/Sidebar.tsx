@@ -1,4 +1,4 @@
-import { Lightbulb, Loader2, Network } from "lucide-react";
+import { Lightbulb, Network } from "lucide-react";
 import { useMemo } from "react";
 import {
   Card,
@@ -7,6 +7,7 @@ import {
   CardHeader,
   CardTitle
 } from "@/components/ui/shadcn/card";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import type { ClusterMapPoint, ClusterSummary } from "@/services/api/traces";
 
 interface SidebarProps {
@@ -68,7 +69,7 @@ export default function Sidebar({ clusters, points, isLoading }: SidebarProps) {
           <div className='flex items-center gap-2'>
             <Network className='h-5 w-5 text-primary' />
             <CardTitle>Top Clusters</CardTitle>
-            {isLoading && <Loader2 className='h-4 w-4 animate-spin text-muted-foreground' />}
+            {isLoading && <Spinner className='text-muted-foreground' />}
           </div>
         </div>
         <CardDescription>Most frequent query patterns</CardDescription>
@@ -117,7 +118,7 @@ export default function Sidebar({ clusters, points, isLoading }: SidebarProps) {
         {insights.length > 0 && (
           <div className='mt-4 border-t pt-4'>
             <div className='mb-2 flex items-center gap-1.5'>
-              <Lightbulb className='h-3.5 w-3.5 text-amber-500' />
+              <Lightbulb className='h-3.5 w-3.5 text-warning' />
               <span className='font-medium text-xs'>Insights</span>
             </div>
             <div className='space-y-1.5'>

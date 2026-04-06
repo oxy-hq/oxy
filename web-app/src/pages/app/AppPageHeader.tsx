@@ -1,7 +1,8 @@
-import { LayoutDashboard, LoaderCircle } from "lucide-react";
+import { LayoutDashboard } from "lucide-react";
 import type React from "react";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/shadcn/button";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 
 type AppPageHeaderProps = {
   path: string;
@@ -21,7 +22,7 @@ const AppPageHeader: React.FC<AppPageHeaderProps> = ({ path, onRun, isRunning })
         </div>
         <div className='flex items-center gap-2'>
           <Button size='sm' onClick={onRun} disabled={isRunning} variant='default' content='icon'>
-            {isRunning ? <LoaderCircle className='animate-spin' /> : "Refresh"}
+            {isRunning ? <Spinner /> : "Refresh"}
           </Button>
         </div>
       </div>

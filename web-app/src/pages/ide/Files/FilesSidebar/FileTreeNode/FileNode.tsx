@@ -185,7 +185,7 @@ const FileNode = ({ fileTree, activePath }: { fileTree: FileTreeModel; activePat
                 <Pencil />
                 <span>Rename</span>
               </ContextMenuItem>
-              <ContextMenuItem className='cursor-pointer text-red-600' onClick={handleDelete}>
+              <ContextMenuItem className='cursor-pointer text-destructive' onClick={handleDelete}>
                 <Trash2 />
                 <span>Delete</span>
               </ContextMenuItem>

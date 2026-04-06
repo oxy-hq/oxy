@@ -1,5 +1,6 @@
-import { ChevronDown, ChevronLeft, ChevronRight, Layers, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Layers } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import {
   type AnalyticsStep,
   buildAnalyticsSteps,
@@ -30,7 +31,7 @@ const FanOutGroupRow = ({ group, onSelectArtifact }: FanOutGroupRowProps) => {
       <div className='flex items-center gap-2 border-border border-b px-3 py-1.5'>
         <Layers className='h-3 w-3 shrink-0 text-muted-foreground' />
         <span className='flex-1 text-muted-foreground text-sm'>{group.total} parallel queries</span>
-        {group.isStreaming && <Loader2 className='h-3 w-3 animate-spin text-primary' />}
+        {group.isStreaming && <Spinner className='size-3 text-primary' />}
 
         <div className='flex items-center gap-1'>
           <button
@@ -163,7 +164,7 @@ const TraceHeader = ({
           )}
         />
       ) : (
-        <Loader2 className='h-3 w-3 shrink-0 animate-spin text-primary' />
+        <Spinner className='size-3 text-primary' />
       )}
       <span className='font-medium text-muted-foreground text-sm'>Reasoning trace</span>
       <span className='ml-auto flex items-center gap-2 font-mono text-muted-foreground text-xs'>

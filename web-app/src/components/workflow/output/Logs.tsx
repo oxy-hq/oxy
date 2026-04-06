@@ -1,7 +1,7 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { LoaderIcon } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Markdown from "@/components/Markdown";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { cn } from "@/libs/shadcn/utils";
 import type { LogItem } from "@/services/types";
 import OutputItem from "./Item";
@@ -124,7 +124,7 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
     },
     [flattenedLogs]
   );
-  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
+  // biome-ignore lint/correctness/useExhaustiveDependencies: parentRef is stable
   const getScrollElement = useCallback(() => parentRef.current, [parentRef]);
 
   // eslint-disable-next-line react-hooks/incompatible-library
@@ -145,7 +145,7 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
     isUserScrolledUp.current = distanceFromBottom > 100;
   }, []);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
+  // biome-ignore lint/correctness/useExhaustiveDependencies: auto-scroll on pending state
   useEffect(() => {
     if (isPending && !isUserScrolledUp.current) {
       bottomRef.current?.scrollIntoView({
@@ -179,7 +179,7 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
     <div
       ref={parentRef}
       onScroll={handleScroll}
-      className='customScrollbar scrollbar-gutter-auto relative h-full overflow-y-auto break-all p-4 pt-0 contain-strict'
+      className='scrollbar-gutter-auto relative h-full overflow-y-auto break-all p-4 pt-0 contain-strict'
       data-testid='workflow-output-logs'
     >
       {!onlyShowResult && (
@@ -229,7 +229,7 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
 
       {isPending && (
         <div className='flex justify-center p-6'>
-          <LoaderIcon className='animate-spin' />
+          <Spinner />
         </div>
       )}
       <div ref={bottomRef} />

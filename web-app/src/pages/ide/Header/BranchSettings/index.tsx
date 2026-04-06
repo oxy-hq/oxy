@@ -30,13 +30,13 @@ export const BranchSettings = ({ isOpen, onClose }: BranchSettingsProps) => {
         </DialogHeader>
 
         {hasGit ? (
-          <div className='customScrollbar scrollbar-gutter-auto max-h-[70vh] min-w-0 space-y-6 overflow-y-auto p-6 pt-0'>
+          <div className='scrollbar-gutter-auto max-h-[70vh] min-w-0 space-y-6 overflow-y-auto p-6 pt-0'>
             <SwitchBranch />
             <Separator />
             <BranchInfo onFileClick={onClose} />
           </div>
         ) : (
-          <div className='customScrollbar scrollbar-gutter-auto max-h-[70vh] min-w-0 space-y-6 overflow-y-auto p-6 pt-0'>
+          <div className='scrollbar-gutter-auto max-h-[70vh] min-w-0 space-y-6 overflow-y-auto p-6 pt-0'>
             <CreateRepository onSuccess={onClose} />
           </div>
         )}

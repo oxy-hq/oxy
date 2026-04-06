@@ -53,12 +53,12 @@ export const DeleteSecretDialog: React.FC<DeleteSecretDialogProps> = ({
             )}
           </div>
 
-          <div className='mt-4 rounded-lg border border-orange-200 bg-orange-50 p-4 dark:border-orange-800/30 dark:bg-orange-950/20'>
+          <div className='mt-4 rounded-lg border border-warning/20 bg-warning/5 p-4'>
             <div className='flex items-start gap-2'>
-              <AlertTriangle className='mt-0.5 h-4 w-4 flex-shrink-0 text-orange-600 dark:text-orange-400' />
+              <AlertTriangle className='mt-0.5 h-4 w-4 flex-shrink-0 text-warning' />
               <div className='text-sm'>
-                <p className='font-medium text-orange-800 dark:text-orange-300'>Warning</p>
-                <p className='mt-1 text-orange-700 dark:text-orange-200'>
+                <p className='font-medium text-warning'>Warning</p>
+                <p className='mt-1 text-muted-foreground'>
                   Any configurations using this secret will lose access and may stop functioning
                   properly. Make sure to update all references before deleting.
                 </p>

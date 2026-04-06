@@ -32,16 +32,16 @@ const formatTokens = (n: number) => {
 
 const scoreClass = (pct: number) =>
   pct >= 80
-    ? "border-green-600 text-green-400"
+    ? "border-success text-success"
     : pct >= 50
-      ? "border-amber-500 text-amber-400"
-      : "border-red-600 text-red-400";
+      ? "border-warning text-warning"
+      : "border-destructive text-destructive";
 
 const ScoreBadge: React.FC<{ score: number | null; failed?: boolean }> = ({ score, failed }) => {
   if (failed) {
     return (
-      <Badge variant='outline' className='gap-1 border-red-600/50 text-red-400 text-xs'>
-        <AlertCircle className='h-3 w-3 text-red-400' />
+      <Badge variant='outline' className='gap-1 border-destructive/50 text-destructive text-xs'>
+        <AlertCircle className='h-3 w-3 text-destructive' />
         Failed
       </Badge>
     );
@@ -71,7 +71,7 @@ const TestsRunsPage: React.FC = () => {
   return (
     <div className='flex h-full flex-col'>
       <PageHeader icon={History} title='Runs' />
-      <div className='customScrollbar min-h-0 flex-1 overflow-auto p-4'>
+      <div className='min-h-0 flex-1 overflow-auto p-4'>
         {isLoading && (
           <div className='space-y-2'>
             {Array.from({ length: 5 }).map((_, i) => (

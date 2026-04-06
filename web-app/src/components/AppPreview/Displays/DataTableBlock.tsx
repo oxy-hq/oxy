@@ -78,14 +78,14 @@ export const DataTableBlock = ({
 
   let tableContent: React.ReactNode;
   if (!table) {
-    tableContent = <div className='p-2 text-center text-gray-500'>No data found</div>;
+    tableContent = <div className='p-2 text-center text-muted-foreground'>No data found</div>;
   } else {
     tableContent = (
       <DataTable className='border'>
         <TableHeader>
           <TableRow>
             {table.schema.fields.map((field) => (
-              <TableHead className='border text-gray-500' key={field.name}>
+              <TableHead className='border text-muted-foreground' key={field.name}>
                 {field.name}
               </TableHead>
             ))}

@@ -1,6 +1,6 @@
-import { Loader2 } from "lucide-react";
 import type { FileState } from "@/components/FileEditor";
 import { Button } from "@/components/ui/shadcn/button";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 
 interface PageHeaderProps {
   onSave: () => void;
@@ -21,9 +21,7 @@ const PageHeader = ({ onSave, filePath, fileState }: PageHeaderProps) => {
             Save changes
           </Button>
         )}
-        {fileState === "saving" && (
-          <Loader2 className='h-4 w-4 animate-[spin_0.2s_linear_infinite] text-yellow-500' />
-        )}
+        {fileState === "saving" && <Spinner className='text-warning' />}
       </div>
     </div>
   );

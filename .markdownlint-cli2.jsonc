@@ -33,6 +33,7 @@
     "**/node_modules/**",
     "**/dist/**",
     "**/CHANGELOG.md",
-    "**/target/**"
+    "**/target/**",
+    "web-app/.agents/**"
   ]
 }

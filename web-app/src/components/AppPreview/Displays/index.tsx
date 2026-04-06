@@ -1,8 +1,8 @@
 import { ErrorBoundary } from "react-error-boundary";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import type { DataContainer, Display } from "@/types/app";
 import { BarChart } from "./BarChart";
 import { DataTableBlock } from "./DataTableBlock";
-import ErrorDisplayBlock from "./ErrorDisplayBlock";
 import { LineChart } from "./LineChart";
 import { MarkdownDisplayBlock } from "./MarkdownDisplayBlock";
 import { PieChart } from "./PieChart";
@@ -20,7 +20,7 @@ export function DisplayBlock({
 }) {
   switch (display.type) {
     case "error":
-      return <ErrorDisplayBlock display={display} />;
+      return <ErrorAlert title={display.title} message={`Error: ${display.error}`} />;
     case "markdown":
       return <MarkdownDisplayBlock display={display} data={data} />;
     case "line_chart":
@@ -47,12 +47,9 @@ export function DisplayBlock({
               key={childIdx}
               resetKeys={[child, data]}
               fallback={
-                <ErrorDisplayBlock
-                  display={{
-                    type: "error",
-                    title: "Display Error",
-                    error: `Failed to render display of type ${child.type}`
-                  }}
+                <ErrorAlert
+                  title='Display Error'
+                  message={`Error: Failed to render display of type ${child.type}`}
                 />
               }
             >
@@ -75,12 +72,9 @@ export const Displays = ({ displays, data }: { displays: Display[]; data?: DataC
         key={idx}
         resetKeys={[display, data]}
         fallback={
-          <ErrorDisplayBlock
-            display={{
-              type: "error",
-              title: "Display Error",
-              error: `Failed to render display of type ${display.type}`
-            }}
+          <ErrorAlert
+            title='Display Error'
+            message={`Error: Failed to render display of type ${display.type}`}
           />
         }
       >

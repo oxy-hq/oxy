@@ -3,6 +3,7 @@ import { getInstanceByDom, init } from "echarts";
 import { TrendingUp } from "lucide-react";
 import { useCallback, useEffect, useRef } from "react";
 import { useResizeDetector } from "react-resize-detector";
+import { resolveColor } from "@/components/Echarts/resolveColor";
 import theme from "@/components/Echarts/theme.json";
 import {
   Card,
@@ -94,7 +95,7 @@ export default function TrendChart({ projectId, days }: TrendChartProps) {
               focus: "series"
             },
             data: timeSeries.map((item) => item.verifiedCount),
-            itemStyle: { color: "#10b981" } // emerald
+            itemStyle: { color: resolveColor("--success") }
           },
           {
             name: "Generated",
@@ -104,7 +105,7 @@ export default function TrendChart({ projectId, days }: TrendChartProps) {
               focus: "series"
             },
             data: timeSeries.map((item) => item.generatedCount),
-            itemStyle: { color: "#f97316" } // orange
+            itemStyle: { color: resolveColor("--warning") }
           }
         ]
       };

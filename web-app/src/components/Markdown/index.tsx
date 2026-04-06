@@ -67,7 +67,7 @@ const getExtendedComponents = (data?: MarkdownData): ExtendedComponents => ({
     </blockquote>
   ),
   table: ({ children, ...props }) => (
-    <div className='customScrollbar scrollbar-gutter-auto mt-2 max-h-96 overflow-auto rounded-lg border border-[#27272A]'>
+    <div className='scrollbar-gutter-auto mt-2 max-h-96 overflow-auto rounded-lg border border-border'>
       <table className='w-full border-collapse text-sm' {...props}>
         {children}
       </table>
@@ -80,7 +80,7 @@ const getExtendedComponents = (data?: MarkdownData): ExtendedComponents => ({
   ),
   th: ({ children, ...props }) => (
     <th
-      className='min-w-[140px] border-[#27272A] border-r border-b px-4 py-2 text-left font-medium last:border-r-0'
+      className='min-w-[140px] border-border border-r border-b px-4 py-2 text-left font-medium last:border-r-0'
       {...props}
     >
       {children}
@@ -88,7 +88,7 @@ const getExtendedComponents = (data?: MarkdownData): ExtendedComponents => ({
   ),
   td: ({ children, ...props }) => (
     <td
-      className='min-w-[140px] border-[#27272A] border-r px-4 py-2 text-left last:border-r-0 [tr:not(:last-child)>&]:border-b'
+      className='min-w-[140px] border-border border-r px-4 py-2 text-left last:border-r-0 [tr:not(:last-child)>&]:border-b'
       {...props}
     >
       {children}

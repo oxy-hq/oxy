@@ -1,9 +1,10 @@
-import { Loader2, Plus, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import type React from "react";
 import { Controller, useFieldArray } from "react-hook-form";
 import { Button } from "@/components/ui/shadcn/button";
 import { Combobox } from "@/components/ui/shadcn/combobox";
 import { Label } from "@/components/ui/shadcn/label";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import type { MeasuresFieldProps } from "./types";
 import { getItemsWithUnknownValue } from "./utils";
 
@@ -46,8 +47,7 @@ export const MeasuresField: React.FC<MeasuresFieldProps> = ({
       )}
       {topicValue && fieldsLoading && (
         <div className='flex items-center gap-2 text-muted-foreground text-sm'>
-          <Loader2 className='h-4 w-4 animate-spin' />
-          Loading measures...
+          <Spinner />
         </div>
       )}
       {topicValue && !fieldsLoading && measureFields.length > 0 && (

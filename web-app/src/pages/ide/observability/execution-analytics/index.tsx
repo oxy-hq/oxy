@@ -1,5 +1,6 @@
 import { Activity } from "lucide-react";
 import { useState } from "react";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import { Button } from "@/components/ui/shadcn/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
 import { useExecutionSummary } from "@/hooks/api/useExecutionAnalytics";
@@ -78,11 +79,11 @@ export default function ExecutionAnalytics() {
     <div className='flex h-full flex-col overflow-auto'>
       <PageHeader icon={Activity} title='Execution Analytics' actions={timeRangeActions} />
 
-      <div className='customScrollbar min-h-0 flex-1 overflow-auto p-6'>
+      <div className='min-h-0 flex-1 overflow-auto p-6'>
         {error ? (
-          <div className='flex h-64 flex-col items-center justify-center text-muted-foreground'>
-            <p className='text-destructive'>{error.message}</p>
-            <Button variant='outline' size='sm' className='mt-4' onClick={() => refetch()}>
+          <div className='flex h-64 flex-col items-center justify-center gap-4'>
+            <ErrorAlert message={error.message} />
+            <Button variant='outline' size='sm' onClick={() => refetch()}>
               Retry
             </Button>
           </div>

@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import type { EChartsOption } from "echarts";
+import { resolveColor } from "@/components/Echarts/resolveColor";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { getDuckDB } from "@/libs/duckdb";
 import useTheme from "@/stores/useTheme";
@@ -31,18 +32,18 @@ export const useChartBase = <T extends BaseChartDisplay>({
     queryKey: ["chart", display, data, isDarkMode, branchName, project.id],
     queryFn: async () => {
       if (!dataAvailable) {
-        return createNoDataOptions(display.title, isDarkMode);
+        return createNoDataOptions(display.title);
       }
 
       const tableData = getData(data, display.data) as TableData | null;
       if (!tableData) {
-        return createNoDataOptions(display.title, isDarkMode);
+        return createNoDataOptions(display.title);
       }
 
       // Empty JSON result (e.g. date filter returns 0 rows) — show "No data"
       // instead of trying to register an empty array in DuckDB, which fails.
       if (typeof tableData.json === "string" && tableData.json.trim() === "[]") {
-        return createNoDataOptions(display.title, isDarkMode);
+        return createNoDataOptions(display.title);
       }
 
       const fileName = await registerFromTableData(tableData, project.id, branchName);
@@ -60,18 +61,17 @@ export const useChartBase = <T extends BaseChartDisplay>({
 
   return {
     isLoading: isPending,
-    chartOptions: isError ? createErrorOptions(display.title, isDarkMode) : (chartOptions ?? {}),
+    chartOptions: isError ? createErrorOptions(display.title) : (chartOptions ?? {}),
     isDarkMode
   };
 };
 
-const createNoDataOptions = (title?: string, isDarkMode = false): EChartsOption => ({
-  darkMode: isDarkMode,
+const createNoDataOptions = (title?: string): EChartsOption => ({
   title: title
     ? {
         text: title,
         textStyle: {
-          color: isDarkMode ? "#f3f4f6" : "#111827",
+          color: resolveColor("--foreground"),
           fontSize: 16,
           fontWeight: "bold"
         }
@@ -85,7 +85,7 @@ const createNoDataOptions = (title?: string, isDarkMode = false): EChartsOption 
       style: {
         text: "No data found",
         fontSize: 14,
-        fill: isDarkMode ? "#6b7280" : "#9ca3af"
+        fill: resolveColor("--muted-foreground")
       }
     }
   ],
@@ -95,13 +95,12 @@ const createNoDataOptions = (title?: string, isDarkMode = false): EChartsOption 
   grid: { containLabel: true, show: false }
 });
 
-const createErrorOptions = (title?: string, isDarkMode = false): EChartsOption => ({
-  darkMode: isDarkMode,
+const createErrorOptions = (title?: string): EChartsOption => ({
   title: title
     ? {
         text: title,
         textStyle: {
-          color: isDarkMode ? "#f3f4f6" : "#111827",
+          color: resolveColor("--foreground"),
           fontSize: 16,
           fontWeight: "bold"
         }
@@ -115,7 +114,7 @@ const createErrorOptions = (title?: string, isDarkMode = false): EChartsOption =
       style: {
         text: "Error loading chart",
         fontSize: 14,
-        fill: "#f43f5e"
+        fill: resolveColor("--destructive")
       }
     }
   ],

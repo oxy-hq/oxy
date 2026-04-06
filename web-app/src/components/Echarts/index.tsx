@@ -108,10 +108,12 @@ export const Echarts = ({
           }
         }
 
+        const bgColor =
+          getComputedStyle(document.documentElement).getPropertyValue("--card").trim() || "#212121";
         const imageData = chart.getDataURL({
           type: "png",
           pixelRatio: 2,
-          backgroundColor: "#212121"
+          backgroundColor: bgColor
         });
 
         // Create individual DOM element for this chart with index

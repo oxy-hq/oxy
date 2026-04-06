@@ -1,12 +1,4 @@
-import {
-  Bot,
-  FileText,
-  FlaskConical,
-  History,
-  LayoutDashboard,
-  LoaderCircle,
-  Plus
-} from "lucide-react";
+import { Bot, FileText, FlaskConical, History, LayoutDashboard, Plus } from "lucide-react";
 import type React from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { Badge } from "@/components/ui/shadcn/badge";
@@ -18,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle
 } from "@/components/ui/shadcn/dialog";
+import { FieldError } from "@/components/ui/shadcn/field";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import {
@@ -29,6 +22,7 @@ import {
   SidebarMenuSubButton
 } from "@/components/ui/shadcn/sidebar";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import useTestFiles from "@/hooks/api/tests/useTestFiles";
 import { useCreateTestFile } from "@/hooks/useCreateTestFile";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
@@ -90,7 +84,7 @@ const TestsSidebar: React.FC<TestsSidebarProps> = ({ setSidebarOpen }) => {
           </Button>
         }
       />
-      <SidebarContent className='customScrollbar h-full flex-1 overflow-y-auto'>
+      <SidebarContent className='h-full flex-1 overflow-y-auto'>
         <SidebarGroup className='pt-2'>
           <SidebarMenu>
             <SidebarMenuItem>
@@ -133,7 +127,7 @@ const TestsSidebar: React.FC<TestsSidebarProps> = ({ setSidebarOpen }) => {
                   <SidebarMenuSubButton asChild isActive={activePathb64 === pathb64}>
                     <Link to={ROUTES.PROJECT(projectId).IDE.TESTS.TEST_FILE(pathb64)}>
                       {running ? (
-                        <LoaderCircle className='h-4 w-4 animate-spin text-primary' />
+                        <Spinner className='text-primary' />
                       ) : (
                         <Icon className='h-4 w-4' />
                       )}
@@ -181,9 +175,7 @@ const TestsSidebar: React.FC<TestsSidebarProps> = ({ setSidebarOpen }) => {
                 />
                 <span className='whitespace-nowrap text-muted-foreground text-sm'>.test.yml</span>
               </div>
-              {createTestFile.error && (
-                <p className='text-destructive text-sm'>{createTestFile.error}</p>
-              )}
+              {createTestFile.error && <FieldError>{createTestFile.error}</FieldError>}
             </div>
           </div>
           <DialogFooter>
@@ -198,7 +190,7 @@ const TestsSidebar: React.FC<TestsSidebarProps> = ({ setSidebarOpen }) => {
               onClick={createTestFile.handleCreate}
               disabled={createTestFile.isCreating || !createTestFile.fileName.trim()}
             >
-              {createTestFile.isCreating ? "Creating..." : "Create"}
+              {createTestFile.isCreating ? <Spinner /> : "Create"}
             </Button>
           </DialogFooter>
         </DialogContent>

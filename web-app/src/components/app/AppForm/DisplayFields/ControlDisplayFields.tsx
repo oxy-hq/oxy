@@ -3,6 +3,7 @@ import type React from "react";
 import { useRef } from "react";
 import type { FieldPath } from "react-hook-form";
 import { Controller, useFormContext } from "react-hook-form";
+import DateValueInput from "@/components/SemanticQueryPanel/DateValueInput";
 import { Button } from "@/components/ui/shadcn/button";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
@@ -14,7 +15,6 @@ import {
   SelectValue
 } from "@/components/ui/shadcn/select";
 import { Switch } from "@/components/ui/shadcn/switch";
-import DateValueInput from "@/pages/ide/Files/Editor/components/SemanticQueryPanel/components/DateValueInput";
 import type { AppFormData } from "../index";
 import { TaskRefSelect } from "./components";
 

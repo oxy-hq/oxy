@@ -28,7 +28,7 @@ export default function WorkspacesPage() {
   const handleClearSearch = () => setSearchQuery("");
 
   return (
-    <div className='customScrollbar flex w-full flex-col overflow-auto'>
+    <div className='flex w-full flex-col overflow-auto'>
       <Header />
 
       <div className='mx-auto w-full max-w-6xl max-w-[1200px] flex-1 p-6'>

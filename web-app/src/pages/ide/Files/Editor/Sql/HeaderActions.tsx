@@ -1,7 +1,8 @@
-import { Loader2, Play } from "lucide-react";
+import { Play } from "lucide-react";
 import { useState } from "react";
 import DatabaseSelector from "@/components/sql/DatabaseSelector";
 import { Button } from "@/components/ui/shadcn/button";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 
 interface HeaderActionsProps {
   onExecuteSql: (database: string) => void;
@@ -27,11 +28,7 @@ const HeaderActions = ({ onExecuteSql, loading }: HeaderActionsProps) => {
         onClick={handleExecuteSql}
         title='Run query'
       >
-        {loading ? (
-          <Loader2 className='h-4 w-4 animate-[spin_0.3s_linear_infinite]' />
-        ) : (
-          <Play className='h-4 w-4' />
-        )}
+        {loading ? <Spinner /> : <Play className='h-4 w-4' />}
       </Button>
     </div>
   );

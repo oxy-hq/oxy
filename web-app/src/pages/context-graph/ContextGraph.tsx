@@ -35,7 +35,6 @@ import {
 } from "@/components/ui/shadcn/select";
 import { SidebarTrigger } from "@/components/ui/shadcn/sidebar";
 import useSidebar from "@/components/ui/shadcn/sidebar-context";
-import useTheme from "@/stores/useTheme";
 import type {
   ContextGraphNode as ContextGraphNodeType,
   ContextGraph as ContextGraphType
@@ -90,29 +89,29 @@ const ContextGraphNode = ({ data }: NodeProps) => {
   };
 
   const bgColors = {
-    agent: "#fee2e2",
-    procedure: "#ffedd5",
-    workflow: "#ffedd5",
-    app: "#e0f2fe",
-    automation: "#f3e8ff",
-    topic: "#f3e8ff",
-    view: "#dcfce7",
-    sql_query: "#fef3c7",
-    table: "#dbeafe",
-    entity: "#fce7f3"
+    agent: "var(--graph-agent-bg)",
+    procedure: "var(--graph-procedure-bg)",
+    workflow: "var(--graph-procedure-bg)",
+    app: "var(--graph-app-bg)",
+    automation: "var(--graph-automation-bg)",
+    topic: "var(--graph-automation-bg)",
+    view: "var(--graph-view-bg)",
+    sql_query: "var(--graph-sql-query-bg)",
+    table: "var(--graph-table-bg)",
+    entity: "var(--graph-entity-bg)"
   };
 
   const borderColors = {
-    agent: "#fca5a5",
-    procedure: "#fdba74",
-    workflow: "#fdba74",
-    app: "#7dd3fc",
-    automation: "#d8b4fe",
-    topic: "#d8b4fe",
-    view: "#86efac",
-    sql_query: "#fcd34d",
-    table: "#93c5fd",
-    entity: "#f9a8d4"
+    agent: "var(--graph-agent-border)",
+    procedure: "var(--graph-procedure-border)",
+    workflow: "var(--graph-procedure-border)",
+    app: "var(--graph-app-border)",
+    automation: "var(--graph-automation-border)",
+    topic: "var(--graph-automation-border)",
+    view: "var(--graph-view-border)",
+    sql_query: "var(--graph-sql-query-border)",
+    table: "var(--graph-table-border)",
+    entity: "var(--graph-entity-border)"
   };
 
   const opacity = nodeData.opacity ?? 1;
@@ -168,14 +167,16 @@ const ContextGraphNode = ({ data }: NodeProps) => {
           display: "flex",
           alignItems: "center",
           gap: "8px",
-          color: "#000",
+          color: "var(--primary-foreground)",
           cursor: "pointer",
           position: "relative",
           zIndex: 1
         }}
       >
         {icons[nodeData.type as keyof typeof icons]}
-        <div style={{ fontWeight: 600, fontSize: "14px", color: "#000" }}>{nodeData.label}</div>
+        <div style={{ fontWeight: 600, fontSize: "14px", color: "var(--primary-foreground)" }}>
+          {nodeData.label}
+        </div>
         <span
           style={{
             fontSize: "11px",
@@ -183,7 +184,7 @@ const ContextGraphNode = ({ data }: NodeProps) => {
             borderRadius: "4px",
             border: `1px solid ${borderColors[nodeData.type as keyof typeof borderColors]}`,
             background: "white",
-            color: "#000"
+            color: "var(--primary-foreground)"
           }}
         >
           {typeLabels[nodeData.type] || nodeData.type}
@@ -202,7 +203,6 @@ interface ContextGraphProps {
 }
 
 function ContextGraphInner({ data }: ContextGraphProps) {
-  const { theme } = useTheme();
   // Focus state management
   const [focusType, setFocusType] = useState<FocusType>(() => {
     const saved = localStorage.getItem("context-graph-focus-type");
@@ -485,7 +485,7 @@ function ContextGraphInner({ data }: ContextGraphProps) {
         target: edge.target,
         type: "straight",
         style: {
-          stroke: "#9ca3af",
+          stroke: "var(--muted-foreground)",
           strokeWidth: 2,
           opacity: edgeVisible ? 1 : 0,
           transition: "opacity 0.3s ease"
@@ -644,8 +644,8 @@ function ContextGraphInner({ data }: ContextGraphProps) {
         style={{ width: "100%", height: "100%" }}
       >
         <Background
-          color={theme === "dark" ? "#a9a9b2" : "#ddd"}
-          bgColor={theme === "dark" ? "oklch(14.5% 0 0)" : "oklch(1 0 0)"}
+          color='var(--muted-foreground)'
+          bgColor='var(--background)'
           variant={BackgroundVariant.Dots}
         />
         <Panel
@@ -791,7 +791,7 @@ function ContextGraphInner({ data }: ContextGraphProps) {
                   checked={expandAll}
                   onChange={(e) => setExpandAll(e.target.checked)}
                   disabled={!focusedNodeId}
-                  className='h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary disabled:cursor-not-allowed'
+                  className='h-4 w-4 rounded border-border text-primary focus:ring-primary disabled:cursor-not-allowed'
                 />
                 <span className='text-sm'>Expand all connected</span>
               </label>

@@ -1,7 +1,8 @@
-import { Loader2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import EmptyState from "@/components/ui/EmptyState";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import { Button } from "@/components/ui/shadcn/button";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import useClusterMap from "@/hooks/api/traces/useClusterMap";
 import ClusterBreakdownTable from "./components/ClusterBreakdownTable";
 import ClusterDistributionChart from "./components/ClusterDistributionChart";
@@ -32,8 +33,8 @@ export default function ClustersV2Page() {
 
   if (error) {
     return (
-      <div className='flex h-full flex-col items-center justify-center text-muted-foreground'>
-        <p className='mb-4 text-destructive'>Failed to load cluster data: {error.message}</p>
+      <div className='flex h-full flex-col items-center justify-center gap-4 p-4'>
+        <ErrorAlert message={`Failed to load cluster data: ${error.message}`} />
         <Button variant='outline' size='sm' onClick={() => refetch()}>
           Retry
         </Button>
@@ -56,10 +57,10 @@ export default function ClustersV2Page() {
 
       <div className='flex flex-1 overflow-hidden'>
         {/* Main Content */}
-        <div className='customScrollbar min-h-0 flex-1 overflow-auto p-6'>
+        <div className='min-h-0 flex-1 overflow-auto p-6'>
           {isLoading && !hasData && (
             <div className='flex h-64 items-center justify-center'>
-              <Loader2 className='h-8 w-8 animate-spin text-muted-foreground' />
+              <Spinner className='size-8 text-muted-foreground' />
             </div>
           )}
           {!isLoading && !hasData && (

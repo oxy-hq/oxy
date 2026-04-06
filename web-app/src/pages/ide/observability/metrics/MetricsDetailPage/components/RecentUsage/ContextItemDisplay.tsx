@@ -41,13 +41,13 @@ export default function ContextItemDisplay({ item, metricName }: ContextItemDisp
             {copied ? <Check className='h-3 w-3' /> : <Copy className='h-3 w-3' />}
           </Button>
         </div>
-        <div className='space-y-2 rounded-lg border border-orange-500/20 bg-gradient-to-br from-orange-500/5 to-amber-500/5 p-3'>
+        <div className='space-y-2 rounded-lg border border-vis-orange/20 bg-gradient-to-br from-vis-orange/5 to-warning/5 p-3'>
           {semanticContent.map((semantic, idx) => (
             <div key={idx} className='space-y-1'>
               {semantic.topic && (
                 <div className='flex items-center gap-2'>
                   <span className='text-muted-foreground text-xs'>Topic:</span>
-                  <span className='font-mono text-orange-400 text-xs'>{semantic.topic}</span>
+                  <span className='font-mono text-vis-orange text-xs'>{semantic.topic}</span>
                 </div>
               )}
               {semantic.measures && semantic.measures.length > 0 && (
@@ -59,8 +59,8 @@ export default function ContextItemDisplay({ item, metricName }: ContextItemDisp
                       className={cn(
                         "rounded px-1.5 py-0.5 font-mono text-xs",
                         m.includes(metricName)
-                          ? "border border-yellow-500/30 bg-yellow-500/20 text-yellow-400"
-                          : "bg-blue-500/10 text-blue-400"
+                          ? "border border-highlight/30 bg-highlight/20 text-highlight"
+                          : "bg-info/10 text-info"
                       )}
                     >
                       {m}
@@ -77,8 +77,8 @@ export default function ContextItemDisplay({ item, metricName }: ContextItemDisp
                       className={cn(
                         "rounded px-1.5 py-0.5 font-mono text-xs",
                         d === metricName
-                          ? "border border-yellow-500/30 bg-yellow-500/20 text-yellow-400"
-                          : "bg-green-500/10 text-green-400"
+                          ? "border border-highlight/30 bg-highlight/20 text-highlight"
+                          : "bg-success/10 text-success"
                       )}
                     >
                       {d}

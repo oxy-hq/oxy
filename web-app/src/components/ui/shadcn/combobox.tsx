@@ -62,14 +62,14 @@ export function Combobox({
 }: ComboboxProps) {
   const [open, setOpen] = React.useState(false);
   const stylesMap: Record<string, string> = {
-    loading: "text-blue-700",
-    error: "text-red-400",
-    success: "text-emerald-600"
+    loading: "text-primary",
+    error: "text-destructive",
+    success: "text-success"
   };
   const borderStylesMap: Record<string, string> = {
-    loading: "border-blue-700/40",
-    error: "border-red-400",
-    success: "border-emerald-600"
+    loading: "border-primary/40",
+    error: "border-destructive",
+    success: "border-success"
   };
 
   const selectedItem = items.find((item) => item.value === value);
@@ -108,13 +108,13 @@ export function Combobox({
                     setOpen(false);
                   }}
                 >
+                  {renderItem ? renderItem(item) : item.label}
                   <Check
                     className={cn(
-                      "mr-2 h-4 w-4",
+                      "ml-2 h-4 w-4",
                       value === item.value ? "opacity-100" : "opacity-0"
                     )}
                   />
-                  {renderItem ? renderItem(item) : item.label}
                 </CommandItem>
               ))}
             </CommandGroup>

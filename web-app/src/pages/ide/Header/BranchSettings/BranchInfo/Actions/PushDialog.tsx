@@ -1,4 +1,3 @@
-import { Loader2 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -12,6 +11,7 @@ import {
 } from "@/components/ui/shadcn/dialog";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePushChanges } from "@/hooks/api/projects/useProjects";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
@@ -65,7 +65,10 @@ export const PushDialog = ({ open, onOpenChange }: PushDialogProps) => {
       } else {
         toast.error(`${actionLabel} failed`, {
           action: result.message
-            ? { label: "Show details", onClick: () => toast.message(result.message) }
+            ? {
+                label: "Show details",
+                onClick: () => toast.message(result.message)
+              }
             : undefined
         });
       }
@@ -109,7 +112,7 @@ export const PushDialog = ({ open, onOpenChange }: PushDialogProps) => {
             Cancel
           </Button>
           <Button onClick={onConfirm} disabled={isDisabled}>
-            {pushChangesMutation.isPending && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+            {pushChangesMutation.isPending && <Spinner className='mr-2' />}
             {actionLabel}
           </Button>
         </DialogFooter>

@@ -1,4 +1,5 @@
-import { Loader2, Zap } from "lucide-react";
+import { Zap } from "lucide-react";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { cn } from "@/libs/shadcn/utils";
 import type { Step } from "@/pages/thread/agentic/ArtifactSidebar/ArtifactBlockRenderer/SubGroupReasoningPanel/Reasoning";
 import { STEP_COLOR_DOT } from "./colors";
@@ -37,7 +38,7 @@ function CollapsedDotSummary({
           disabled={isLoading}
           className='flex items-center gap-1.5 font-medium text-primary text-xs transition-colors hover:text-primary/80 disabled:opacity-50'
         >
-          {isLoading ? <Loader2 className='h-3 w-3 animate-spin' /> : <Zap className='h-3 w-3' />}
+          {isLoading ? <Spinner className='size-3' /> : <Zap className='h-3 w-3' />}
           <span>{isLoading ? "Saving…" : "Automate this"}</span>
         </button>
       )}

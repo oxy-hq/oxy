@@ -2,6 +2,7 @@ import { Plus, X } from "lucide-react";
 import type React from "react";
 import { Controller, useFieldArray, useFormContext } from "react-hook-form";
 import { Button } from "@/components/ui/shadcn/button";
+import { FieldError } from "@/components/ui/shadcn/field";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import {
@@ -71,9 +72,7 @@ export const OmniQueryTaskFields: React.FC<OmniQueryTaskFieldsProps> = ({
             required: "Integration is required"
           })}
         />
-        {taskErrors?.integration && (
-          <p className='text-red-500 text-sm'>{taskErrors.integration.message}</p>
-        )}
+        {taskErrors?.integration && <FieldError>{taskErrors.integration.message}</FieldError>}
       </div>
       <div className='space-y-2'>
         <Label htmlFor={`${taskPath}.topic`}>Topic</Label>
@@ -85,7 +84,7 @@ export const OmniQueryTaskFields: React.FC<OmniQueryTaskFieldsProps> = ({
             required: "Topic is required"
           })}
         />
-        {taskErrors?.topic && <p className='text-red-500 text-sm'>{taskErrors.topic.message}</p>}
+        {taskErrors?.topic && <FieldError>{taskErrors.topic.message}</FieldError>}
       </div>
       <div className='space-y-2'>
         <div className='flex items-center justify-between'>

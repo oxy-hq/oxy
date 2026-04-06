@@ -2,6 +2,7 @@ import { Plus, X } from "lucide-react";
 import type React from "react";
 import { Controller, useFieldArray, useFormContext } from "react-hook-form";
 import { Button } from "@/components/ui/shadcn/button";
+import { FieldError } from "@/components/ui/shadcn/field";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import {
@@ -124,9 +125,7 @@ export const LookerQueryTaskFields: React.FC<LookerQueryTaskFieldsProps> = ({
             </Select>
           )}
         />
-        {taskErrors?.integration && (
-          <p className='text-red-500 text-sm'>{taskErrors.integration.message}</p>
-        )}
+        {taskErrors?.integration && <FieldError>{taskErrors.integration.message}</FieldError>}
       </div>
 
       <div className='grid grid-cols-2 gap-4'>
@@ -162,7 +161,7 @@ export const LookerQueryTaskFields: React.FC<LookerQueryTaskFieldsProps> = ({
               </Select>
             )}
           />
-          {taskErrors?.model && <p className='text-red-500 text-sm'>{taskErrors.model.message}</p>}
+          {taskErrors?.model && <FieldError>{taskErrors.model.message}</FieldError>}
         </div>
 
         <div className='space-y-2'>
@@ -201,9 +200,7 @@ export const LookerQueryTaskFields: React.FC<LookerQueryTaskFieldsProps> = ({
               </Select>
             )}
           />
-          {taskErrors?.explore && (
-            <p className='text-red-500 text-sm'>{taskErrors.explore.message}</p>
-          )}
+          {taskErrors?.explore && <FieldError>{taskErrors.explore.message}</FieldError>}
         </div>
       </div>
 

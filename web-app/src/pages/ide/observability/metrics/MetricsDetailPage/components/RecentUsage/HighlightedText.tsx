@@ -13,7 +13,10 @@ export default function HighlightedText({ text, highlight }: HighlightedTextProp
     <span>
       {parts.map((part, i) =>
         regex.test(part) ? (
-          <mark key={i} className='rounded bg-yellow-500/30 px-0.5 font-medium text-yellow-200'>
+          <mark
+            key={i}
+            className='rounded bg-highlight/30 px-0.5 font-medium text-highlight-foreground'
+          >
             {part}
           </mark>
         ) : (

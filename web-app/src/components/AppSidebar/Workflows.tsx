@@ -1,6 +1,7 @@
 import { Workflow } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import LoadingSkeleton from "@/components/ui/LoadingSkeleton";
 import { Button } from "@/components/ui/shadcn/button";
 import {
   SidebarMenuButton,
@@ -13,7 +14,6 @@ import useWorkflows from "@/hooks/api/workflows/useWorkflows";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
-import ItemsSkeleton from "./ItemsSkeleton";
 
 export function Workflows() {
   const [showAll, setShowAll] = useState(false);
@@ -33,7 +33,7 @@ export function Workflows() {
         </div>
       </SidebarMenuButton>
       <SidebarMenuSub className='ml-[15px]'>
-        {isPending && <ItemsSkeleton />}
+        {isPending && <LoadingSkeleton variant='inline' />}
 
         {!isPending &&
           visibleWorkflows?.map((workflow) => {

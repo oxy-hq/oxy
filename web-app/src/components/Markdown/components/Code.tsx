@@ -27,7 +27,7 @@ const getLangs = (name?: SupportedLanguages, codeContent?: string) => {
   return langs[name] || python;
 };
 
-const containerStyles = "p-4 rounded-lg border border-border bg-zinc-900 overflow-x-auto";
+const containerStyles = "p-4 rounded-lg border border-border bg-editor-background overflow-x-auto";
 
 const theme = createTheme({
   theme: "light",

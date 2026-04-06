@@ -1,0 +1,219 @@
+# Project Guidelines for Claude
+
+## Package Manager
+
+This project uses **pnpm**. Always use `pnpm` — never `npm` or `yarn`.
+
+```bash
+pnpm add <package>       # install a dependency
+pnpm add -D <package>    # install a dev dependency
+pnpm remove <package>    # remove a dependency
+pnpm install             # install all dependencies
+```
+
+## Tech Stack
+
+- **Framework:** React 19 + Vite + TypeScript
+- **Styling:** Tailwind CSS v4
+- **UI Components:** shadcn/ui
+- **Routing:** React Router Dom v7
+- **Data Fetching:** TanStack React Query v5
+- **API Client:** Axios (`./src/services/api/axios.ts`) with JWT access token interceptors
+- **Forms:** React Hook Form v7 + Zod v4
+- **Global State:** Zustand v5 (`web-app/src/stores`)
+- **Charts:** Echarts
+- **Icons:** Lucide React
+- **Toasts:** Sonner
+
+## Common Commands
+
+```bash
+pnpm dev                 # start dev server (Vite)
+pnpm build               # tsc + vite build
+pnpm lint                # ESLint
+pnpm preview             # preview production build
+```
+
+## Project Structure
+
+```
+src/
+├── assets/          # Static assets
+├── components/      # Shared cross-feature components
+│   ├── ui/          # Purely presentational; ui/shadcn/ is CLI-managed
+│   └── ...          # Feature-scoped shared components (Chat, Markdown, etc.)
+├── contexts/        # React context providers
+├── hooks/
+│   ├── api/         # TanStack Query hooks, one subfolder per domain
+│   │   └── queryKey.ts  # All query keys defined here
+│   ├── auth/
+│   ├── messaging/   # SSE streaming hooks
+│   └── workflow/
+├── lib/             # Utilities (cn, schemas, etc.)
+├── libs/            # Third-party integration helpers
+├── pages/           # Route-level page components
+│   ├── home/        # Home / Chat page
+│   ├── thread/      # Thread detail page
+│   ├── threads/     # Threads list
+│   ├── ide/         # Developer Portal (Monaco IDE + observability + settings)
+│   ├── workflow/    # Workflow page
+│   ├── app/         # Data App page
+│   ├── context-graph/
+│   ├── workspaces/
+│   └── ...
+├── services/
+│   └── api/         # Axios client + domain API functions (one file per domain)
+├── stores/          # Zustand global stores
+├── styles/          # Global CSS + shadcn theme tokens
+├── types/           # Shared TypeScript types
+├── utils/           # Pure utility functions
+└── App.tsx          # Router (createBrowserRouter)
+```
+
+## Naming Conventions
+
+- PascalCase for React components, hooks, and folders containing components (e.g., `ProjectsListPage`, `useProjects`, `Projects/`).
+- camelCase for functions, variables, and non-component exports (e.g., `fetchProjects`, `projectId`).
+- UPPER_SNAKE_CASE for constants (e.g., `API_BASE_URL`).
+- kebab-case for file names of simple pages without sub-components (e.g., `login/index.tsx`).
+
+## Folder Structure Best Practices
+
+- **Simple pages** (single file, no sub-components): flat kebab-case file under `src/pages/` (e.g., `login/index.tsx`).
+- **Complex features** (multiple pages sharing sub-components): dedicated PascalCase folder with a `components/` subfolder (e.g., `pages/projects/`). Sub-components shared across pages in the feature go here.
+- **Complex pages** (a single page with its own sub-components): the page becomes a PascalCase folder with `index.tsx` as the entry point and a `components/` subfolder for page-only sub-components.
+- **Shared components:** cross-feature reusables go in `src/components/`. If the component is purely presentational (no side effects, no data fetching, no business logic), place it in `src/components/ui/` instead.
+
+- **Colocation:** sub-components used only by one page live inside that page’s folder. Sub-components shared between pages in the same feature live in the feature’s `components/` folder.
+
+**Example — `ProjectsListPage` has private sub-components; `EditProjectDialog` is shared with `ProjectDetailPage`:**
+
+```
+pages/projects/
+├── ProjectsListPage/
+│   ├── index.tsx                  ← the page component
+│   └── components/
+│       ├── ProjectItem.tsx        ← only used by ProjectsListPage
+│       ├── ProjectsTableHeader.tsx
+│       ├── ProjectsPagination.tsx
+│       └── CreateProjectDialog.tsx
+├── ProjectDetailPage.tsx
+└── components/
+    └── EditProjectDialog.tsx      ← shared by ProjectsListPage + ProjectDetailPage
+```
+
+## React Conventions
+
+- **Functional components only.** Do not use class components.
+- **Single responsibility.** Keep components small and focused; extract sub-components when a component grows.
+- **Local state first.** Use `useState`/`useReducer` for component-local state.
+- **Global state (Zustand): requires approval.** The existing stores (`auth.store`, `theme.store`) cover auth tokens and theme. Before adding a new store or expanding an existing one, warn the user and get explicit approval. Prefer React Query cache or URL state for server/UI state.
+- **Custom hooks:** extract reusable logic into `src/hooks/' when it’s shared across components or represents a distinct concern (e.g., data fetching, form handling, permission checks).
+
+### When to extract a sub-component
+
+Extract when **any** of these are true:
+
+- The JSX block represents a distinct, named UI concept (e.g., a table row, a card, a dialog) — give it its own file.
+- The block is complex enough that you need to scroll past it to understand the parent component.
+- The same JSX structure appears in more than one place.
+- A component file exceeds ~150 lines — treat this as a signal to review responsibilities.
+
+Do **not** extract just to reduce line count. A 30-line block that only exists in one place and has no distinct identity should stay inline.
+
+### When to extract a custom hook
+
+Extract when **any** of these are true:
+
+- A component contains `useQuery` or `useMutation` alongside rendering logic — data fetching always goes into a hook.
+- A component has 3+ related `useState` calls that represent one concern (e.g., pagination state, filter state).
+- The same query or state logic is duplicated across two components.
+
+Keep in the component: dialog open/close state, form state, UI-only toggles that don’t involve data fetching.
+
+**Where to put the hook:**
+
+- Used by one page only → co-locate inside that page’s folder (e.g., `ProjectsListPage/useProjectsList.ts`)
+- Used by multiple components → `src/hooks/`
+
+## API Layer
+
+- All HTTP calls go through the shared `apiClient` from `src/services/api/axios.ts` — do not create additional Axios instances unless for a clearly separate service (e.g., `vibeCodingClient` for the vibe coding backend).
+- Group API functions by domain in `src/services/api/<domain>.ts` (e.g., `projects.ts`, `auth.ts`).
+- The `axios.ts` interceptor handles JWT attachment from `localStorage` and redirects to `/login` on 401 — do not duplicate this logic.
+- Use **TanStack React Query** for all server state (fetching, caching, mutations). Do not store server data in Zustand or component state.
+- All hooks that call the API (`useQuery`, `useMutation`, `useInfiniteQuery`) must live in `src/hooks/api/`. Do not place them in pages, components, or other hook folders.
+- Every `useQuery` / `useInfiniteQuery` hook must use a `queryKey` defined in `src/hooks/api/queryKey.ts` — never use ad-hoc inline arrays. Add new keys to that file before creating the hook.
+
+## Routing
+
+- All routes are defined in `src/App.tsx` using `createBrowserRouter`.
+- Access control: `<ProtectedRoute>` wraps all app routes when `authConfig.auth_enabled` is true. Enterprise-only routes (e.g. Observability) are gated via `authConfig.enterprise` conditionals in `MainLayout` — there is no `<AdminRoute>` component.
+- Do not lazy-load pages unless bundle size becomes a concern — current setup uses direct imports.
+
+## Forms
+
+- Use **React Hook Form** for all form state.
+- Define validation schemas with **Zod** in `src/lib/schemas.ts` (shared) or co-located with the form.
+- Connect via `@hookform/resolvers/zod`.
+
+## UI Components
+
+- **Always check shadcn/ui first** before creating any new component — do not build a custom component that shadcn already provides. Browse https://ui.shadcn.com/docs/components to verify availability. If shadcn has it, use it.
+- Add new shadcn components via CLI: `pnpm dlx shadcn@latest add <component>` — do not copy files manually.
+- Do not edit files under `src/components/ui/shadcn` manually; they are managed by the shadcn CLI.
+
+## Current Project & Branch
+
+Use `useCurrentProjectBranch()` from `src/hooks/useCurrentProjectBranch.ts` to get the active project and branch context. **Must be called inside the IDE route** (it depends on `useIDE()` context); it throws if no project is selected.
+
+```ts
+const { project, branchName, isReadOnly, isMainEditMode, gitEnabled } = useCurrentProjectBranch();
+```
+
+- `project` — the current `Project` object (from `useCurrentProject` store)
+- `branchName` — the active branch: IDE-local branch override when inside the IDE, otherwise `project.active_branch`
+- `isReadOnly` — true when `authConfig.readonly` is set, or on cloud with a linked repo on its active branch
+- `isMainEditMode` — true when local git + remote is configured and the user is on a protected branch (edits are allowed but saving auto-creates a new branch)
+- `gitEnabled` — true when local git or cloud GitHub integration is active
+
+If you only need the project (outside the IDE), use `useCurrentProject()` from `src/stores/useCurrentProject.ts` directly.
+
+## Authorization
+
+- Use `useCurrentUser()` from `src/hooks/api/users/useCurrentUser.ts` to get the authenticated user.
+- Check `currentUser?.is_admin` (boolean on `UserInfo`) to gate admin-only UI elements.
+- Feature flags from `authConfig` control broader access: `authConfig.enterprise` for enterprise-only features, `authConfig.cloud` for cloud-only features.
+
+## Code Style
+
+- TypeScript strict mode is enabled — avoid `any`; use proper types or `unknown`.
+- Prettier and ESLint are configured — run `pnpm lint` before committing.
+- Use `cn()` from `src/lib/utils.ts` for conditional Tailwind class merging.
+- **No raw color values:** Do not use colors that are not part of the shadcn/ui theme (e.g. `text-red-500`, `bg-[#4554]`, `border-blue-300`). Use semantic CSS variables via Tailwind theme ./src/styles/shadcn tokens (`text-destructive`, `bg-muted`, `border-border`, etc.) or the brand color tokens defined in the design system (`text-primary`, `bg-primary`).
+- **No hardcoded sizes:** Do not use arbitrary size values (e.g. `w-[4px]`, `h-[13px]`, `p-[6px]`). Use Tailwind's spacing/sizing scale (`w-1`, `h-3`, `p-1.5`) or design tokens. If a standard scale value truly does not fit, get explicit approval before using an arbitrary value.
+
+## Error Handling
+
+- **API errors:** Handle errors in the React Query layer. Use `onError` in `useMutation` or the `error` field from `useQuery` — do not wrap individual API calls in `try/catch` inside components.
+- **User-facing errors:** Surface errors via Sonner toasts (`toast.error(...)`) for transient failures (mutations, background fetches). For blocking failures (page-level load errors), render an inline error state in the component.
+- **No silent failures:** Never swallow errors with an empty `catch` block or `catch(() => {})`. At minimum, log with `console.error` in development; prefer surfacing something to the user.
+- **Error boundaries:** Before adding an `ErrorBoundary`, ask: "Can this component throw a render-time exception that React Query / normal error state cannot catch, AND would that crash be worse than showing a fallback?" Only add one if both answers are yes.
+
+  **Add an `ErrorBoundary` when all of these are true:**
+  - The component wraps a third-party renderer that can throw during render (e.g. ECharts, Monaco, a chart library) — React Query cannot catch render-phase throws.
+  - A crash here would silently break the rest of the page (e.g. a dashboard where one broken widget should not kill the others).
+  - There is a meaningful fallback UI to show (a proper error block, not a bare `<div>`).
+
+  **Do NOT add an `ErrorBoundary` when:**
+  - The failure is an API/network error — use React Query's `error` field and render an inline error state.
+  - The component is a normal React component with no third-party render risk — let the app-level Sentry boundary handle unexpected crashes.
+  - You would need a bare `<div>Something went wrong</div>` as the fallback — that adds no value over the app-level boundary.
+
+  **Implementation rules (when you do add one):**
+  - Use `ErrorBoundary` from `react-error-boundary` (not `@/sentry`) for component-level isolation.
+  - Always pass a proper fallback component (look for an existing `*Error` component in the same folder, or create one).
+  - Pass `resetKeys={[data]}` so the boundary resets automatically when its input data changes.
+- **Type-safe error handling:** When catching errors, type them as `unknown` and narrow with `instanceof Error` or a typed API error helper before accessing `.message`. Never cast caught errors as `any`.
+- **Async/await in event handlers:** Wrap `async` event handlers in `try/catch` only when the function is not already managed by React Query. If using `mutateAsync`, wrap the call site; if using `mutate`, rely on the `onError` callback instead.
+- **Validation errors:** Use Zod schema validation for form inputs. Surface field-level errors through React Hook Form's `formState.errors` — do not manually set error state alongside RHF.

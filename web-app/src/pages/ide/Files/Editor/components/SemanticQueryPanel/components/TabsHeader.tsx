@@ -80,7 +80,7 @@ const TabsHeader = ({
   return (
     <div
       ref={containerRef}
-      className='scrollbar-none customScrollbar flex items-center justify-between gap-4 overflow-x-auto border-b px-4 py-2'
+      className='scrollbar-none flex items-center justify-between gap-4 overflow-x-auto border-b px-4 py-2'
     >
       <TabsList className='shrink-0'>
         <TabsTrigger value='results'>Results</TabsTrigger>

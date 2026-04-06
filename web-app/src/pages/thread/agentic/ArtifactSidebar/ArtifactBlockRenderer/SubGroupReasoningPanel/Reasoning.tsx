@@ -74,7 +74,7 @@ const ReasoningItem = ({
                 if (step.error) {
                   return <span className='text-destructive'>Error</span>;
                 }
-                return <span className='text-emerald-600'>Success</span>;
+                return <span className='text-success'>Success</span>;
               })()}
             </span>
           </div>
@@ -96,7 +96,7 @@ const ReasoningItem = ({
 const Reasoning = ({ steps, onFullscreen, header }: ReasoningProps) => {
   return (
     <div className='relative h-full w-full overflow-hidden'>
-      <div className='customScrollbar absolute inset-0 flex h-full w-full flex-col overflow-auto p-4'>
+      <div className='absolute inset-0 flex h-full w-full flex-col overflow-auto p-4'>
         {header !== undefined ? (
           header
         ) : (

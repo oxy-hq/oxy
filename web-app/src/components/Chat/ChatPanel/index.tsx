@@ -1,8 +1,9 @@
-import { ArrowUp, Hammer, Loader2, MessageCircleQuestion, Play } from "lucide-react";
+import { ArrowUp, Hammer, MessageCircleQuestion, Play } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/shadcn/button";
 import { Select, SelectContent, SelectTrigger, SelectValue } from "@/components/ui/shadcn/select";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { Textarea } from "@/components/ui/shadcn/textarea";
 import useThreadMutation from "@/hooks/api/threads/useThreadMutation";
 import useBuilderAvailable from "@/hooks/api/useBuilderAvailable";
@@ -128,9 +129,9 @@ const ChatPanel = () => {
   const placeholder = (() => {
     switch (mode) {
       case "ask":
-        return "✧˖ Start your request, and let Oxygen handle everything.";
+        return "Start your request, and let Oxygen handle everything.";
       case "build":
-        return "✧˖ Enter anything you want to build, and Oxygen will figure out the rest.";
+        return "Enter anything you want to build, and Oxygen will figure out the rest.";
       case "workflow":
         return "Enter a title for this procedure run.";
     }
@@ -140,7 +141,7 @@ const ChatPanel = () => {
     <form
       ref={formRef}
       onSubmit={handleFormSubmit}
-      className='mx-auto flex w-full max-w-[672px] flex-col gap-1 rounded-md border bg-secondary p-2'
+      className='mx-auto flex w-full max-w-[672px] flex-col gap-1 rounded-md border bg-secondary p-3'
     >
       <Textarea
         disabled={isPending}
@@ -149,7 +150,7 @@ const ChatPanel = () => {
         onKeyDown={onKeyDown}
         value={message}
         onChange={(e) => setMessage(e.target.value)}
-        className='customScrollbar max-h-[200px] resize-none border-none bg-transparent px-0 shadow-none outline-none hover:border-none focus-visible:border-none focus-visible:shadow-none focus-visible:ring-0 focus-visible:ring-offset-0'
+        className='max-h-[200px] resize-none border-none bg-transparent px-0 pt-[4px] pb-2 shadow-none outline-none hover:border-none focus-visible:border-none focus-visible:shadow-none focus-visible:ring-0 focus-visible:ring-offset-0'
         placeholder={placeholder}
       />
 
@@ -220,7 +221,7 @@ const ChatPanel = () => {
             type='submit'
             data-testid='chat-panel-submit-button'
           >
-            {isPending ? <Loader2 className='animate-spin' /> : submitIcon}
+            {isPending ? <Spinner /> : submitIcon}
           </Button>
         </div>
       </div>

@@ -9,6 +9,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger
 } from "@/components/ui/shadcn/collapsible";
+import { FieldError } from "@/components/ui/shadcn/field";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import {
@@ -349,9 +350,7 @@ export const RowDisplayFields: React.FC<RowDisplayFieldsProps> = ({ index }) => 
             max: { value: 6, message: "Maximum 6 columns" }
           })}
         />
-        {columnsError && (
-          <p className='text-red-500 text-sm'>{String(columnsError.message || "")}</p>
-        )}
+        {columnsError && <FieldError>{String(columnsError.message || "")}</FieldError>}
         <p className='text-muted-foreground text-sm'>
           Number of equal-width columns; defaults to number of children
         </p>
@@ -374,9 +373,7 @@ export const RowDisplayFields: React.FC<RowDisplayFieldsProps> = ({ index }) => 
           }}
           render={() => <></>}
         />
-        {childrenError && (
-          <p className='text-red-500 text-sm'>{String(childrenError.message || "")}</p>
-        )}
+        {childrenError && <FieldError>{String(childrenError.message || "")}</FieldError>}
         <div className='space-y-2'>
           {fields.map((field, childIndex) => (
             <RowChildForm

@@ -29,7 +29,7 @@ const ObservabilitySidebar: React.FC<{
   return (
     <div className='flex h-full flex-col overflow-hidden bg-sidebar-background'>
       <SidebarHeader title='Observability' onCollapse={() => setSidebarOpen(false)} />
-      <SidebarContent className='customScrollbar h-full flex-1 overflow-y-auto'>
+      <SidebarContent className='h-full flex-1 overflow-y-auto'>
         <SidebarGroup className='px-1 pt-2'>
           <SidebarMenu>
             <SidebarMenuItem>

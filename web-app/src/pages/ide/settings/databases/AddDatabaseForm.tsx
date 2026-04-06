@@ -1,4 +1,4 @@
-import { Loader2, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { useState } from "react";
 import { FormProvider, useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -13,6 +13,7 @@ import {
 } from "@/components/icons";
 import { Button } from "@/components/ui/shadcn/button";
 import { Input } from "@/components/ui/shadcn/input";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useCreateDatabaseConfig } from "@/hooks/api/databases/useCreateDatabaseConfig";
 import { useTestDatabaseConnection } from "@/hooks/api/databases/useTestDatabaseConnection";
 import { cn } from "@/libs/utils/cn";
@@ -279,14 +280,7 @@ export function AddDatabaseForm({ onSuccess, onCancel }: AddDatabaseFormProps) {
                 Cancel
               </Button>
               <Button type='submit' disabled={createMutation.isPending}>
-                {createMutation.isPending ? (
-                  <>
-                    <Loader2 className='h-4 w-4 animate-spin' />
-                    Creating...
-                  </>
-                ) : (
-                  "Create"
-                )}
+                {createMutation.isPending ? <Spinner /> : "Create"}
               </Button>
             </div>
           </div>

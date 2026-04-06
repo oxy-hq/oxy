@@ -1,6 +1,7 @@
-import { ExternalLink, GitBranch, LoaderCircle } from "lucide-react";
+import { ExternalLink, GitBranch } from "lucide-react";
 import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
@@ -45,7 +46,7 @@ const SubGroupReasoningPanel = ({ groupId }: { groupId: string }) => {
   if (steps.length === 0 && isStreaming) {
     return (
       <div className='flex h-full items-center justify-center'>
-        <LoaderCircle className='h-6 w-6 animate-spin text-muted-foreground' />
+        <Spinner className='size-6 text-muted-foreground' />
       </div>
     );
   }

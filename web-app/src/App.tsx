@@ -9,6 +9,7 @@ import {
   useParams
 } from "react-router-dom";
 import { AppSidebar } from "@/components/AppSidebar";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import { SidebarProvider } from "@/components/ui/shadcn/sidebar";
 import { Toaster as ShadcnToaster } from "@/components/ui/shadcn/sonner";
 import Home from "@/pages/home";
@@ -21,9 +22,9 @@ import ThreadPage from "@/pages/thread";
 import Threads from "@/pages/threads";
 import WorkflowPage from "@/pages/workflow";
 import "@xyflow/react/dist/style.css";
-import { Loader2 } from "lucide-react";
 import React from "react";
 import { HotkeysProvider } from "react-hotkeys-hook";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import ROUTES from "@/libs/utils/routes";
 import ContextGraphPage from "@/pages/context-graph";
 import { ErrorBoundary } from "@/sentry";
@@ -74,7 +75,7 @@ const MainLayout = React.memo(function MainLayout() {
   const { isPending, isError, data } = useProject(projectId || "", !!authConfig.cloud);
   const { setProject, project } = useCurrentProject();
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
+  // biome-ignore lint/correctness/useExhaustiveDependencies: setProject reference is stable
   React.useEffect(() => {
     if (!isPending && !isError && data) {
       setProject(data);
@@ -84,23 +85,23 @@ const MainLayout = React.memo(function MainLayout() {
   if (isPending) {
     return (
       <div className='flex h-full w-full items-center justify-center'>
-        <Loader2 className='h-4 w-4 animate-spin' />
+        <Spinner />
       </div>
     );
   }
 
   if (isError) {
     return (
-      <div className='flex h-full w-full items-center justify-center'>
-        <p className='text-destructive'>Failed to load project.</p>
+      <div className='flex h-full w-full items-center justify-center p-4'>
+        <ErrorAlert message='Failed to load project.' />
       </div>
     );
   }
 
   if (!project) {
     return (
-      <div className='flex h-full w-full items-center justify-center'>
-        <p className='text-destructive'>Project not found.</p>
+      <div className='flex h-full w-full items-center justify-center p-4'>
+        <ErrorAlert message='Project not found.' />
       </div>
     );
   }
@@ -260,7 +261,7 @@ function App() {
   if (isPending || !authConfig) {
     return (
       <div className='flex h-full w-full items-center justify-center'>
-        <Loader2 className='h-4 w-4 animate-spin' />
+        <Spinner />
       </div>
     );
   }

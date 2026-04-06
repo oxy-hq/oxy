@@ -1,9 +1,9 @@
 import type { UseQueryResult } from "@tanstack/react-query";
+import LoadingSkeleton from "@/components/ui/LoadingSkeleton";
 import { cn } from "@/libs/shadcn/utils";
 import type { ThreadsResponse } from "@/types/chat";
 import EmptyThreads from "./Empty";
 import ErrorState from "./Error";
-import ThreadsSkeleton from "./Skeleton";
 import ThreadList from "./ThreadList";
 
 interface Props {
@@ -24,11 +24,11 @@ const ThreadsSection = ({
   const threads = threadsResponse?.threads;
 
   return (
-    <div className='customScrollbar flex flex-1 flex-col overflow-auto'>
+    <div className='flex flex-1 flex-col overflow-auto'>
       <div className='mx-auto w-full max-w-page-content px-2 pt-4'>
         {isError && <ErrorState error={error} />}
 
-        {isPending && <ThreadsSkeleton />}
+        {isPending && <LoadingSkeleton />}
 
         {isSuccess && (
           <div

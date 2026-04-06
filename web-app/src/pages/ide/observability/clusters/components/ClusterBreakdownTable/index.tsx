@@ -1,4 +1,4 @@
-import { CheckCircle, Hash, Layers, Loader2, MessageSquare, Quote, XCircle } from "lucide-react";
+import { CheckCircle, Hash, Layers, MessageSquare, Quote, XCircle } from "lucide-react";
 import { useMemo } from "react";
 import { Badge } from "@/components/ui/shadcn/badge";
 import {
@@ -8,6 +8,7 @@ import {
   CardHeader,
   CardTitle
 } from "@/components/ui/shadcn/card";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { cn } from "@/libs/shadcn/utils";
 import type { ClusterMapPoint, ClusterSummary } from "@/services/api/traces";
 
@@ -32,24 +33,24 @@ interface ClusterStats {
 
 function getSuccessRateBadgeColor(successRate: number): string {
   if (successRate >= 90) {
-    return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400";
+    return "bg-success/10 text-success";
   }
   if (successRate >= 70) {
-    return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400";
+    return "bg-warning/10 text-warning";
   }
-  return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400";
+  return "bg-destructive/10 text-destructive";
 }
 
 function DistributionBar({ success, error }: { success: number; error: number }) {
   return (
     <div className='flex h-2 w-full overflow-hidden rounded-full bg-muted'>
       <div
-        className='bg-emerald-500 transition-all'
+        className='bg-success transition-all'
         style={{ width: `${success}%` }}
         title={`Success: ${success.toFixed(1)}%`}
       />
       <div
-        className='bg-rose-500 transition-all'
+        className='bg-destructive transition-all'
         style={{ width: `${error}%` }}
         title={`Error: ${error.toFixed(1)}%`}
       />
@@ -115,7 +116,7 @@ export default function ClusterBreakdownTable({
           <div className='flex items-center gap-2'>
             <Layers className='h-5 w-5 text-primary' />
             <CardTitle>Cluster Breakdown</CardTitle>
-            <Loader2 className='h-4 w-4 animate-spin text-muted-foreground' />
+            <Spinner className='text-muted-foreground' />
           </div>
           <CardDescription>Performance metrics by cluster</CardDescription>
         </CardHeader>
@@ -205,17 +206,13 @@ export default function ClusterBreakdownTable({
               {/* Success/Error Stats */}
               <div className='mb-4 flex items-center gap-6 text-sm'>
                 <div className='flex items-center gap-1.5'>
-                  <CheckCircle className='h-4 w-4 text-emerald-500' />
-                  <span className='font-medium text-emerald-600 dark:text-emerald-400'>
-                    {cluster.answeredCount}
-                  </span>
+                  <CheckCircle className='h-4 w-4 text-success' />
+                  <span className='font-medium text-success'>{cluster.answeredCount}</span>
                   <span className='text-muted-foreground'>success</span>
                 </div>
                 <div className='flex items-center gap-1.5'>
-                  <XCircle className='h-4 w-4 text-rose-500' />
-                  <span className='font-medium text-rose-600 dark:text-rose-400'>
-                    {cluster.failedCount}
-                  </span>
+                  <XCircle className='h-4 w-4 text-destructive' />
+                  <span className='font-medium text-destructive'>{cluster.failedCount}</span>
                   <span className='text-muted-foreground'>error</span>
                 </div>
                 <div className='flex flex-1 items-center gap-3'>
@@ -270,9 +267,9 @@ export default function ClusterBreakdownTable({
                   <Badge
                     className={cn(
                       "font-bold text-xs",
-                      index === 0 && "bg-yellow-500 text-yellow-950",
-                      index === 1 && "bg-slate-400 text-slate-950",
-                      index === 2 && "bg-amber-600 text-amber-950"
+                      index === 0 && "bg-rank-gold text-rank-gold-foreground",
+                      index === 1 && "bg-rank-silver text-rank-silver-foreground",
+                      index === 2 && "bg-rank-bronze text-rank-bronze-foreground"
                     )}
                   >
                     #{index + 1}

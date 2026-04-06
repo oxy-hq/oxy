@@ -82,7 +82,9 @@ const AddMemberForm: React.FC<AddMemberFormProps> = ({ workspaceId }) => {
                 }
               })}
             />
-            {errors.email && <span className='text-red-500 text-xs'>{errors.email.message}</span>}
+            {errors.email && (
+              <span className='text-destructive text-xs'>{errors.email.message}</span>
+            )}
           </div>
           <div className='space-y-2'>
             <Label htmlFor='role'>Role</Label>
@@ -106,7 +108,7 @@ const AddMemberForm: React.FC<AddMemberFormProps> = ({ workspaceId }) => {
                 </Select>
               )}
             />
-            {errors.role && <span className='text-red-500 text-xs'>Role is required</span>}
+            {errors.role && <span className='text-destructive text-xs'>Role is required</span>}
           </div>
           <DialogFooter>
             <DialogClose asChild>

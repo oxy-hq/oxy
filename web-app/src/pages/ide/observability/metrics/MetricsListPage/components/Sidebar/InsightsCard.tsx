@@ -1,5 +1,6 @@
-import { Loader2, Sparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/shadcn/card";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 
 interface InsightsCardProps {
   mostPopular: string | null;
@@ -30,7 +31,7 @@ export default function InsightsCard({
       <CardContent className='space-y-2 text-sm'>
         {isLoading ? (
           <div className='flex items-center justify-center py-4'>
-            <Loader2 className='h-5 w-5 animate-spin text-muted-foreground' />
+            <Spinner className='size-6 text-muted-foreground' />
           </div>
         ) : (
           <>

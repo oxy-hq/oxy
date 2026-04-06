@@ -87,7 +87,7 @@ export const NestedTasksForm: React.FC<NestedTasksFormProps> = ({
       </div>
 
       {minTasks > 0 && taskFields.length < minTasks && (
-        <p className='text-amber-600 text-sm'>
+        <p className='text-sm text-warning'>
           At least {minTasks} task{minTasks > 1 ? "s are" : " is"} required.
         </p>
       )}

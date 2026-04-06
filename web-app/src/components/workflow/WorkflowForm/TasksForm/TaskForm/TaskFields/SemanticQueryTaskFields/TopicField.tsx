@@ -1,9 +1,10 @@
-import { Loader2 } from "lucide-react";
 import type React from "react";
 import { Controller } from "react-hook-form";
 import { Combobox } from "@/components/ui/shadcn/combobox";
+import { FieldError } from "@/components/ui/shadcn/field";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import type { TopicFieldProps } from "./types";
 import { getItemsWithUnknownValue } from "./utils";
 
@@ -20,8 +21,7 @@ export const TopicField: React.FC<TopicFieldProps> = ({
     if (topicsLoading) {
       return (
         <div className='flex h-10 items-center gap-2 rounded-md border bg-muted px-3'>
-          <Loader2 className='h-4 w-4 animate-spin' />
-          <span className='text-muted-foreground text-sm'>Loading topics...</span>
+          <Spinner />
         </div>
       );
     }
@@ -66,9 +66,7 @@ export const TopicField: React.FC<TopicFieldProps> = ({
     <div className='space-y-2'>
       <Label htmlFor={`${taskPath}.topic`}>Topic</Label>
       {renderTopicInput()}
-      {taskErrors?.topic && (
-        <p className='text-red-500 text-sm'>{taskErrors.topic.message as string}</p>
-      )}
+      {taskErrors?.topic && <FieldError>{taskErrors.topic.message as string}</FieldError>}
     </div>
   );
 };

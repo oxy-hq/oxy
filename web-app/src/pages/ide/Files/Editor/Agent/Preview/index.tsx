@@ -1,8 +1,9 @@
 import { cx } from "class-variance-authority";
-import { ArrowUp, Loader2 } from "lucide-react";
+import { ArrowUp } from "lucide-react";
 import { useState } from "react";
 import EmptyState from "@/components/ui/EmptyState";
 import { Button } from "@/components/ui/shadcn/button";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { Textarea } from "@/components/ui/shadcn/textarea";
 import useAgent from "@/hooks/api/agents/useAgent";
 import useAskAgent from "@/hooks/messaging/agent";
@@ -45,7 +46,7 @@ const AgentPreview = ({ agentPathb64 }: { agentPathb64: string }) => {
 
   return (
     <div className='flex h-full flex-col justify-between overflow-hidden'>
-      <div className='customScrollbar scrollbar-gutter-auto flex flex-1 flex-col overflow-auto'>
+      <div className='scrollbar-gutter-auto flex flex-1 flex-col overflow-auto'>
         <div className='flex flex-col gap-4 p-4'>
           {messages.length === 0 ? (
             <EmptyState
@@ -82,7 +83,7 @@ const AgentPreview = ({ agentPathb64 }: { agentPathb64: string }) => {
             placeholder={`Ask the ${agentName} agent a question`}
           />
           <Button className='h-8 w-8' disabled={!question} type='submit'>
-            {isLoading ? <Loader2 className='animate-spin' /> : <ArrowUp />}
+            {isLoading ? <Spinner /> : <ArrowUp />}
           </Button>
         </form>
       </div>

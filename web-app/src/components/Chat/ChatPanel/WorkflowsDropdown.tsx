@@ -1,4 +1,4 @@
-import { Loader2, Workflow } from "lucide-react";
+import { Workflow } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import {
   Select,
@@ -7,6 +7,7 @@ import {
   SelectTrigger,
   SelectValue
 } from "@/components/ui/shadcn/select";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import useWorkflows from "@/hooks/api/workflows/useWorkflows";
 
 export type WorkflowOption = {
@@ -54,13 +55,9 @@ const WorkflowsDropdown = ({ onSelect, workflow, disabled = false }: Props) => {
         className='w-auto border-none shadow-none'
         data-testid='workflow-selector-button'
       >
-        {isLoading ? (
-          <Loader2 className='size-4 animate-spin' />
-        ) : (
-          <SelectValue placeholder='Select procedure' />
-        )}
+        {isLoading ? <Spinner /> : <SelectValue placeholder='Select procedure' />}
       </SelectTrigger>
-      <SelectContent className='customScrollbar'>
+      <SelectContent>
         {workflowOptions.map((item) => (
           <SelectItem className='cursor-pointer' key={item.id} value={item.id}>
             <Workflow className='size-4' />

@@ -68,7 +68,7 @@ export default function TracesPage() {
       <div className='flex min-h-0 flex-1 flex-col'>
         <PageHeader icon={Activity} title='Traces' actions={durationActions} />
 
-        <div className='customScrollbar scrollbar-gutter-auto min-h-0 flex-1 overflow-auto p-4'>
+        <div className='scrollbar-gutter-auto min-h-0 flex-1 overflow-auto p-4'>
           <TraceCharts traces={chartResponse?.items} isLoading={isChartLoading} />
 
           <TracesList

@@ -3,8 +3,10 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/shadcn/button";
+import { FieldError } from "@/components/ui/shadcn/field";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRequestMagicLink } from "@/hooks/auth/useMagicLink";
 import { cn } from "@/libs/shadcn/utils";
@@ -83,7 +85,7 @@ const MagicLinkSection = () => {
             disabled={isPending}
             className='text-primary underline-offset-4 hover:underline disabled:opacity-50'
           >
-            {isPending ? "Resending…" : "Didn't receive it? Resend"}
+            {isPending ? <Spinner /> : "Didn't receive it? Resend"}
           </button>
           <button
             type='button'
@@ -114,7 +116,7 @@ const MagicLinkSection = () => {
           })}
           disabled={isPending}
         />
-        {errors.email && <p className='text-red-500 text-sm'>{errors.email.message}</p>}
+        {errors.email && <FieldError>{errors.email.message}</FieldError>}
       </div>
       <Button type='submit' className='w-full' disabled={isPending}>
         {isPending ? "Sending link…" : "Continue with email"}

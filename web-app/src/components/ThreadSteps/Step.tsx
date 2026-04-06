@@ -1,5 +1,5 @@
 import { Player } from "@lottiefiles/react-lottie-player";
-import { Loader2 } from "lucide-react";
+import { Spinner as SpinnerIcon } from "@/components/ui/shadcn/spinner";
 import animationData from "./lotties/success.json";
 
 type Props = {
@@ -33,5 +33,5 @@ export const SuccessIndicator = () => {
 };
 
 const Spinner = () => {
-  return <Loader2 className='h-[20px] w-[20px] animate-spin' />;
+  return <SpinnerIcon className='size-6' />;
 };

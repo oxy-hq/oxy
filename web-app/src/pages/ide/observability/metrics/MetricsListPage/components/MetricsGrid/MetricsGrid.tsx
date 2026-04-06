@@ -1,4 +1,4 @@
-import { Loader2, Sparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import EmptyState from "@/components/ui/EmptyState";
@@ -9,6 +9,7 @@ import {
   CardHeader,
   CardTitle
 } from "@/components/ui/shadcn/card";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import TablePagination from "@/components/ui/TablePagination";
 import { useMetricsList } from "@/hooks/api/metrics";
 import ROUTES from "@/libs/utils/routes";
@@ -54,7 +55,7 @@ export default function MetricsGrid({ viewMode, daysFilter }: MetricsGridProps) 
     if (isLoading || isFetching) {
       return (
         <div className='flex items-center justify-center py-12'>
-          <Loader2 className='h-8 w-8 animate-spin text-muted-foreground' />
+          <Spinner className='size-8 text-muted-foreground' />
         </div>
       );
     }

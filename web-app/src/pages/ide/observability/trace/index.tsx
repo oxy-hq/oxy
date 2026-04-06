@@ -60,7 +60,7 @@ export default function TraceDetailPage() {
             minSize={30}
             className='flex flex-col'
           >
-            <div className='customScrollbar scrollbar-gutter-auto flex-1 overflow-auto'>
+            <div className='scrollbar-gutter-auto flex-1 overflow-auto'>
               <Timeline
                 spans={trace.spans}
                 totalDuration={trace.totalDurationMs}

@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -182,9 +183,7 @@ const LookerFieldsPanel = () => {
   if (exploreError) {
     return (
       <div className='flex w-72 flex-col overflow-hidden border-r bg-sidebar-background p-4'>
-        <div className='text-destructive text-sm'>
-          Failed to load explore: {exploreError.message}
-        </div>
+        <ErrorAlert message={`Failed to load explore: ${exploreError.message}`} />
       </div>
     );
   }
@@ -213,7 +212,7 @@ const LookerFieldsPanel = () => {
           <span className='truncate text-foreground'>{model}</span>
         </div>
       </div>
-      <SidebarContent className='customScrollbar h-full flex-1 overflow-y-auto'>
+      <SidebarContent className='h-full flex-1 overflow-y-auto'>
         <SidebarGroup className='px-1 pt-2'>
           {groupedViews.length === 0 && (
             <p className='px-3 py-2 text-muted-foreground text-xs'>
@@ -246,10 +245,11 @@ const LookerExplorer = () => {
   if (exploreError) {
     return (
       <div className='flex h-full flex-1 flex-col items-center justify-center p-4'>
-        <div className='max-w-2xl text-center text-destructive'>
-          <div className='mb-2 font-semibold'>Error loading explore</div>
-          <div className='text-sm'>{exploreError.message}</div>
-        </div>
+        <ErrorAlert
+          title='Error loading explore'
+          message={exploreError.message}
+          className='max-w-2xl'
+        />
       </div>
     );
   }

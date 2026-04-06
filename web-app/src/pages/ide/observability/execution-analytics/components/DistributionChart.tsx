@@ -3,6 +3,7 @@ import { getInstanceByDom, init } from "echarts";
 import { PieChart } from "lucide-react";
 import { useCallback, useEffect, useRef } from "react";
 import { useResizeDetector } from "react-resize-detector";
+import { resolveColor } from "@/components/Echarts/resolveColor";
 import theme from "@/components/Echarts/theme.json";
 import {
   Card,
@@ -50,27 +51,27 @@ export default function DistributionChart({ summary, isLoading }: DistributionCh
         {
           value: summary.semanticQueryCount,
           name: EXECUTION_TYPES.semantic_query.label,
-          itemStyle: { color: EXECUTION_TYPES.semantic_query.chartColor }
+          itemStyle: { color: resolveColor(EXECUTION_TYPES.semantic_query.chartColor) }
         },
         {
           value: summary.omniQueryCount,
           name: EXECUTION_TYPES.omni_query.label,
-          itemStyle: { color: EXECUTION_TYPES.omni_query.chartColor }
+          itemStyle: { color: resolveColor(EXECUTION_TYPES.omni_query.chartColor) }
         },
         {
           value: summary.sqlGeneratedCount,
           name: EXECUTION_TYPES.sql_generated.label,
-          itemStyle: { color: EXECUTION_TYPES.sql_generated.chartColor }
+          itemStyle: { color: resolveColor(EXECUTION_TYPES.sql_generated.chartColor) }
         },
         {
           value: summary.workflowCount,
           name: EXECUTION_TYPES.workflow.label,
-          itemStyle: { color: EXECUTION_TYPES.workflow.chartColor }
+          itemStyle: { color: resolveColor(EXECUTION_TYPES.workflow.chartColor) }
         },
         {
           value: summary.agentToolCount,
           name: EXECUTION_TYPES.agent_tool.label,
-          itemStyle: { color: EXECUTION_TYPES.agent_tool.chartColor }
+          itemStyle: { color: resolveColor(EXECUTION_TYPES.agent_tool.chartColor) }
         }
       ].filter((d) => d.value > 0);
 
@@ -97,7 +98,7 @@ export default function DistributionChart({ summary, isLoading }: DistributionCh
             avoidLabelOverlap: false,
             itemStyle: {
               borderRadius: 4,
-              borderColor: "#fff",
+              borderColor: resolveColor("--background"),
               borderWidth: 2
             },
             label: {

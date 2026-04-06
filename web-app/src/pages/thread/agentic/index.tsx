@@ -1,5 +1,4 @@
 import { uniqBy } from "lodash";
-import { LoaderCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import MessageInput from "@/components/MessageInput";
@@ -9,6 +8,7 @@ import {
   ResizablePanel,
   ResizablePanelGroup
 } from "@/components/ui/shadcn/resizable";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 import {
@@ -127,12 +127,12 @@ const AgenticThread = ({ thread }: { thread: ThreadItem }) => {
           <div className='flex h-full w-full flex-1 flex-col py-4'>
             <div
               ref={messagesContainerRef}
-              className='customScrollbar flex w-full flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable_both-edges]'
+              className='flex w-full flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable_both-edges]'
             >
               <div className='mx-auto mb-6 w-full max-w-page-content px-4'>
                 {messages.length === 0 ? (
                   <div className='flex h-full items-center justify-center'>
-                    <LoaderCircle className='h-6 w-6 animate-spin text-muted-foreground' />
+                    <Spinner className='size-6 text-muted-foreground' />
                   </div>
                 ) : (
                   messages.map((msg) =>

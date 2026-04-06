@@ -1,6 +1,7 @@
 import React from "react";
 import { useFormContext } from "react-hook-form";
 import { FilePathAutocompleteInput } from "@/components/ui/FilePathAutocompleteInput";
+import { FieldError } from "@/components/ui/shadcn/field";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import { Textarea } from "@/components/ui/shadcn/textarea";
@@ -62,11 +63,11 @@ export const WorkflowToolForm: React.FC<WorkflowToolFormProps> = ({ index }) => 
           id={`tools.${index}.variables`}
           placeholder='{"param_name": {"type": "string", "description": "Parameter description"}}'
           rows={6}
-          className={variablesError ? "border-red-500" : ""}
+          className={variablesError ? "border-destructive" : ""}
           defaultValue={variablesValue ? JSON.stringify(variablesValue, null, 2) : ""}
           onChange={handleVariablesChange}
         />
-        {variablesError && <p className='text-red-500 text-sm'>{variablesError}</p>}
+        {variablesError && <FieldError>{variablesError}</FieldError>}
         <p className='text-muted-foreground text-sm'>
           Define workflow input parameters with JSON Schema (optional)
         </p>

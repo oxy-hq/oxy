@@ -1,5 +1,6 @@
 import { LayoutDashboard } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
+import LoadingSkeleton from "@/components/ui/LoadingSkeleton";
 import {
   SidebarMenuButton,
   SidebarMenuItem,
@@ -11,7 +12,6 @@ import useApps from "@/hooks/api/apps/useApps";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
-import ItemsSkeleton from "./ItemsSkeleton";
 
 export function Apps() {
   const location = useLocation();
@@ -28,7 +28,7 @@ export function Apps() {
         </div>
       </SidebarMenuButton>
       <SidebarMenuSub className='ml-[15px]'>
-        {isPending && <ItemsSkeleton />}
+        {isPending && <LoadingSkeleton variant='inline' />}
 
         {!isPending &&
           apps?.map((app) => {

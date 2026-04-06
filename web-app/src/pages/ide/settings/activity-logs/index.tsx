@@ -22,7 +22,7 @@ export default function ActivityLogsPage() {
     <div className='flex h-full flex-col'>
       <PageHeader icon={FileText} title='Activity Logs' />
 
-      <div className='customScrollbar scrollbar-gutter-auto min-h-0 flex-1 overflow-auto p-4'>
+      <div className='scrollbar-gutter-auto min-h-0 flex-1 overflow-auto p-4'>
         <TableWrapper>
           <Table>
             <TableHeader>

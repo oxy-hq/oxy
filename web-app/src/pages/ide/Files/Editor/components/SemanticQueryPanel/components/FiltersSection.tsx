@@ -1,5 +1,5 @@
+import FilterRow from "@/components/SemanticQueryPanel/FilterRow";
 import type { Filter } from "../../../types";
-import FilterRow from "./FilterRow";
 
 interface FiltersSectionProps {
   filters: Filter[];

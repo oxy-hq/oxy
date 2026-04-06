@@ -104,8 +104,8 @@ const RenameNode = React.forwardRef<HTMLInputElement, RenameNodeProps>(
             <input
               ref={ref}
               onBlur={onCancel}
-              className={`w-full border border-2 bg-transparent shadow-none outline-none ${
-                error ? "border-red-500" : "border-gray-600"
+              className={`w-full border-2 bg-transparent shadow-none outline-none ${
+                error ? "border-destructive" : "border-input"
               }`}
               value={editingName}
               onChange={(e) => {
@@ -115,7 +115,7 @@ const RenameNode = React.forwardRef<HTMLInputElement, RenameNodeProps>(
               onKeyDown={handleKeyDown}
             />
             {error && (
-              <div className='absolute top-full left-0 z-10 w-full bg-red-500 p-1 text-white text-xs'>
+              <div className='absolute top-full left-0 z-10 w-full border border-destructive/20 bg-error p-1 text-foreground text-xs'>
                 A {isDir ? "folder" : "file"} with this name already exists
               </div>
             )}

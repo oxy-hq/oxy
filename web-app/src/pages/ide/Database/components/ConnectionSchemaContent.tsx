@@ -1,6 +1,8 @@
 import { get } from "lodash";
 import type React from "react";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import { SidebarMenuSub } from "@/components/ui/shadcn/sidebar";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import type { DatabaseInfo } from "@/types/database";
 import { SchemaTreeItem } from "./SchemaTreeItem";
 
@@ -35,13 +37,13 @@ export const ConnectionSchemaContent: React.FC<ConnectionSchemaContentProps> = (
     return (
       <SidebarMenuSub className='ml-[15px]'>
         <div className='px-2 py-2 text-xs'>
-          <div className='mb-1 text-destructive'>Sync failed: {syncError}</div>
+          <ErrorAlert message={`Sync failed: ${syncError}`} className='mb-1' />
           <button
             onClick={(e) => handleSyncDatabase(e, database.name)}
             className='text-primary hover:underline'
             disabled={isSyncing}
           >
-            {isSyncing ? "Syncing..." : "Retry"}
+            {isSyncing ? <Spinner className='size-2.5' /> : "Retry"}
           </button>
         </div>
       </SidebarMenuSub>
@@ -58,7 +60,7 @@ export const ConnectionSchemaContent: React.FC<ConnectionSchemaContentProps> = (
             className='text-primary hover:underline'
             disabled={isSyncing}
           >
-            {isSyncing ? "Syncing..." : "Sync now"}
+            {isSyncing ? <Spinner className='size-2.5' /> : "Sync now"}
           </button>
         </div>
       </SidebarMenuSub>

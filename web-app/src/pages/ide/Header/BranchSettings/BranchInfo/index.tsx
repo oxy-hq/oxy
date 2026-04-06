@@ -1,4 +1,4 @@
-import { ContentSkeleton } from "@/components/ui/ContentSkeleton";
+import LoadingSkeleton from "@/components/ui/LoadingSkeleton";
 import { Label } from "@/components/ui/shadcn/label";
 import { useAuth } from "@/contexts/AuthContext";
 import useRevisionInfo from "@/hooks/api/projects/useRevisionInfo";
@@ -15,7 +15,7 @@ const BranchInfo = ({ onFileClick }: { onFileClick: () => void }) => {
   const { data: revisionInfo, isLoading: revisionLoading } = useRevisionInfo();
 
   if (revisionLoading) {
-    return <ContentSkeleton />;
+    return <LoadingSkeleton />;
   }
 
   // latest_revision is empty when there is no remote configured — hide the section.

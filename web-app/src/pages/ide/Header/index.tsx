@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/shadcn/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/shadcn/popover";
 import useSidebar from "@/components/ui/shadcn/sidebar-context";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useAuth } from "@/contexts/AuthContext";
 import useDiffSummary from "@/hooks/api/files/useDiffSummary";
 import { useForcePush, usePushChanges } from "@/hooks/api/projects/useProjects";
@@ -291,7 +292,7 @@ export const Header = () => {
       hasRemote && (ctaState === "commit" || ctaState === "push" || ctaState === "pr") && !isOnMain;
 
     const splitTriggerClass =
-      "border-l border-white/20 bg-gradient-to-b from-[#3550FF] to-[#2A40CC] text-white hover:from-[#5D73FF] hover:to-[#3550FF]";
+      "border-l border-white/20 bg-gradient-to-b from-[var(--blue-500)] to-[var(--blue-600)] text-white hover:from-[var(--blue-400)] hover:to-[var(--blue-500)]";
 
     return (
       <div className='flex items-center gap-1.5'>
@@ -338,7 +339,7 @@ export const Header = () => {
               <div className='max-h-72 overflow-y-auto'>
                 {commitsLoading ? (
                   <div className='flex items-center justify-center py-6 text-muted-foreground text-xs'>
-                    Loading…
+                    <Spinner className='size-3' />
                   </div>
                 ) : recentCommits.length === 0 ? (
                   <div className='flex items-center justify-center py-6 text-muted-foreground text-xs'>
@@ -361,7 +362,7 @@ export const Header = () => {
                         onClick={() => handleResetToCommit(c.hash)}
                         disabled={!!resettingHash}
                         title={`Restore to ${c.short_hash}`}
-                        className='mt-0.5 hidden shrink-0 items-center gap-1 rounded bg-primary px-1.5 py-0.5 text-[10px] text-white transition-colors hover:bg-primary/80 disabled:opacity-50 group-hover:flex'
+                        className='mt-0.5 hidden shrink-0 items-center gap-1 rounded bg-primary px-1.5 py-0.5 text-[10px] text-primary-foreground transition-colors hover:bg-primary/80 disabled:opacity-50 group-hover:flex'
                       >
                         <RotateCcw className='h-2.5 w-2.5' />
                         {resettingHash === c.hash ? "…" : "Restore"}
@@ -396,7 +397,7 @@ export const Header = () => {
               <button
                 type='button'
                 onClick={() => setChangesPanelOpen(true)}
-                className='flex items-center gap-1 rounded border border-amber-500/30 bg-amber-500/10 px-2.5 text-amber-400 text-xs transition-colors hover:border-amber-500/50 hover:bg-amber-500/20'
+                className='flex items-center gap-1 rounded border border-warning/30 bg-warning/10 px-2.5 text-warning text-xs transition-colors hover:border-warning/50 hover:bg-warning/20'
               >
                 <GitMerge className='h-3 w-3' />
                 Conflict
@@ -409,7 +410,7 @@ export const Header = () => {
                 onClick={() => setChangesPanelOpen(true)}
                 disabled={pushMutation.isPending}
                 data-testid='ide-commit-push-button'
-                className={`flex items-center gap-1 bg-gradient-to-b from-[#3550FF] to-[#2A40CC] px-2.5 font-medium text-white text-xs shadow-[#0B1033]/40 shadow-sm transition-all hover:from-[#5D73FF] hover:to-[#3550FF] disabled:opacity-50 ${showSplit ? "rounded-l" : "rounded"}`}
+                className={`flex items-center gap-1 bg-gradient-to-b from-[var(--blue-500)] to-[var(--blue-600)] px-2.5 font-medium text-white text-xs shadow-[var(--blue-900)]/40 shadow-sm transition-all hover:from-[var(--blue-400)] hover:to-[var(--blue-500)] disabled:opacity-50 ${showSplit ? "rounded-l" : "rounded"}`}
               >
                 <Upload className='h-3 w-3' />
                 {pushLabel}
@@ -422,7 +423,7 @@ export const Header = () => {
                 onClick={() => handlePush("")}
                 disabled={pushMutation.isPending}
                 data-testid='ide-push-button'
-                className={`flex items-center gap-1 bg-gradient-to-b from-[#3550FF] to-[#2A40CC] px-2.5 font-medium text-white text-xs shadow-[#0B1033]/40 shadow-sm transition-all hover:from-[#5D73FF] hover:to-[#3550FF] disabled:opacity-50 ${showSplit ? "rounded-l" : "rounded"}`}
+                className={`flex items-center gap-1 bg-gradient-to-b from-[var(--blue-500)] to-[var(--blue-600)] px-2.5 font-medium text-white text-xs shadow-[var(--blue-900)]/40 shadow-sm transition-all hover:from-[var(--blue-400)] hover:to-[var(--blue-500)] disabled:opacity-50 ${showSplit ? "rounded-l" : "rounded"}`}
               >
                 <Upload className='h-3 w-3' />
                 {pushMutation.isPending ? "Pushing…" : "Push"}
@@ -470,7 +471,7 @@ export const Header = () => {
                 target='_blank'
                 rel='noopener noreferrer'
                 title='Open pull request on GitHub'
-                className={`flex items-center gap-1 bg-gradient-to-b from-[#3550FF] to-[#2A40CC] px-2.5 font-medium text-white text-xs shadow-[#0B1033]/40 shadow-sm transition-all hover:from-[#5D73FF] hover:to-[#3550FF] ${showSplit ? "rounded-l" : "rounded"}`}
+                className={`flex items-center gap-1 bg-gradient-to-b from-[var(--blue-500)] to-[var(--blue-600)] px-2.5 font-medium text-white text-xs shadow-[var(--blue-900)]/40 shadow-sm transition-all hover:from-[var(--blue-400)] hover:to-[var(--blue-500)] ${showSplit ? "rounded-l" : "rounded"}`}
               >
                 <GitPullRequest className='h-3 w-3' />
                 Open PR

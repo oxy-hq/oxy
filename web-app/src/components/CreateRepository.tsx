@@ -1,9 +1,9 @@
-import { Loader2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/shadcn/button";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useCreateRepoFromProject } from "@/hooks/api/projects";
 import useCurrentProject from "@/stores/useCurrentProject";
 import { GitNamespaceSelection } from "./GitNamespaceSelection";
@@ -62,7 +62,7 @@ export const CreateRepository = ({ onSuccess }: CreateRepositoryProps) => {
   return (
     <div className='flex flex-col gap-6'>
       <p className='text-muted-foreground text-sm'>
-        Create a new <span className='font-medium text-blue-600'>private repository</span> to sync
+        Create a new <span className='font-medium text-info'>private repository</span> to sync
         changes to. Oxy will push changes to a branch on this repository each time you send a
         message.
       </p>
@@ -89,14 +89,7 @@ export const CreateRepository = ({ onSuccess }: CreateRepositoryProps) => {
         disabled={!selectedGitNamespace || !repoName.trim() || createRepoMutation.isPending}
         className='w-full'
       >
-        {createRepoMutation.isPending ? (
-          <>
-            <Loader2 className='mr-2 h-4 w-4 animate-spin' />
-            Creating Repository...
-          </>
-        ) : (
-          "Create Repository"
-        )}
+        {createRepoMutation.isPending ? <Spinner className='mr-2' /> : "Create Repository"}
       </Button>
     </div>
   );

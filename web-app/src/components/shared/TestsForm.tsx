@@ -10,6 +10,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger
 } from "@/components/ui/shadcn/collapsible";
+import { FieldError } from "@/components/ui/shadcn/field";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import {
@@ -108,7 +109,7 @@ export function TestsForm<T extends FieldValues>({ index, onRemove }: TestsFormP
                 })}
               />
               {testErrors?.dataset && (
-                <p className='text-red-500 text-sm'>{String(testErrors.dataset.message || "")}</p>
+                <FieldError>{String(testErrors.dataset.message || "")}</FieldError>
               )}
             </div>
             <div className='space-y-2'>
@@ -215,7 +216,7 @@ export function TestsForm<T extends FieldValues>({ index, onRemove }: TestsFormP
                   )}
                 />
                 {testErrors?.type && (
-                  <p className='text-red-500 text-sm'>{String(testErrors.type.message || "")}</p>
+                  <FieldError>{String(testErrors.type.message || "")}</FieldError>
                 )}
               </div>
               <div className='space-y-2'>

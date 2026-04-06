@@ -1,4 +1,4 @@
-import { ErrorAlert, ErrorAlertMessage } from "@/components/AppPreview/ErrorAlert";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import { useMessageContent, useSelectedMessageReasoning } from "@/stores/agentic";
 import type { Message } from "@/types/chat";
 import BlockContent from "./BlockContent";
@@ -46,9 +46,7 @@ const BlockMessage = ({
       />
 
       {error ? (
-        <ErrorAlert>
-          <ErrorAlertMessage>{error}</ErrorAlertMessage>
-        </ErrorAlert>
+        <ErrorAlert message={error} />
       ) : (
         content?.map((block) => (
           <BlockContent

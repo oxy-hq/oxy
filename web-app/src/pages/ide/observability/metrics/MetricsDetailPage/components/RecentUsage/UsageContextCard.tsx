@@ -100,7 +100,7 @@ export default function UsageContextCard({
             )}
           >
             {previewIsSQL ? (
-              <code className='line-clamp-2 font-mono text-cyan-400 text-xs'>
+              <code className='line-clamp-2 font-mono text-vis-cyan text-xs'>
                 <HighlightedText text={previewContent.slice(0, 100)} highlight={metricName} />
                 {previewContent.length > 100 && "..."}
               </code>

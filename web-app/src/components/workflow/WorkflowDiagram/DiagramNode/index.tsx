@@ -61,6 +61,7 @@ export function DiagramNode({
         }
       >
         <Button
+          variant='ghost'
           tooltip={"Replay this step"}
           size='icon'
           onClick={() => {

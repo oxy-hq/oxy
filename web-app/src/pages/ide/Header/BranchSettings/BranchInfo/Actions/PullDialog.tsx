@@ -1,4 +1,3 @@
-import { Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
@@ -11,6 +10,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle
 } from "@/components/ui/shadcn/alert-dialog";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import { usePullChanges } from "@/hooks/api/projects/useProjects";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import ROUTES from "@/libs/utils/routes";
@@ -46,7 +46,10 @@ export const PullDialog = ({ open, onOpenChange }: Props) => {
         if (!isConflict) {
           toast.error("Pull failed", {
             action: result.message
-              ? { label: "Show details", onClick: () => toast.message(result.message) }
+              ? {
+                  label: "Show details",
+                  onClick: () => toast.message(result.message)
+                }
               : undefined
           });
         }
@@ -80,7 +83,7 @@ export const PullDialog = ({ open, onOpenChange }: Props) => {
             disabled={isDisabled}
             className='bg-destructive hover:bg-destructive/90'
           >
-            {pullChangesMutation.isPending && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+            {pullChangesMutation.isPending && <Spinner className='mr-2' />}
             Pull Changes
           </AlertDialogAction>
         </AlertDialogFooter>

@@ -1,4 +1,3 @@
-import { Loader2 } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import {
   Select,
@@ -7,6 +6,7 @@ import {
   SelectTrigger,
   SelectValue
 } from "@/components/ui/shadcn/select";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import useDatabases from "@/hooks/api/databases/useDatabases";
 import type { DatabaseInfo } from "@/types/database";
 
@@ -45,11 +45,7 @@ const DatabaseSelector = ({
   return (
     <Select value={database ?? ""} onValueChange={(id) => onSelect(id)} disabled={isLoading}>
       <SelectTrigger size='sm' className={className}>
-        {isLoading ? (
-          <Loader2 className='size-4 animate-spin' />
-        ) : (
-          <SelectValue placeholder={placeholder} />
-        )}
+        {isLoading ? <Spinner /> : <SelectValue placeholder={placeholder} />}
       </SelectTrigger>
       <SelectContent>
         {databaseOptions.map((item) => (

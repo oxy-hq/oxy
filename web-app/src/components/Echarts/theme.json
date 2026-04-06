@@ -1,5 +1,5 @@
 {
-  "color": ["#6366f1", "#14b8a6", "#f59e0b", "#f43f5e", "#0ea5e9", "#10b981", "#a855f7", "#f97316"],
+  "color": ["#3550FF", "#14b8a6", "#f59e0b", "#f43f5e", "#0ea5e9", "#10b981", "#a855f7", "#f97316"],
   "backgroundColor": "rgba(0,0,0,0)",
   "textStyle": {},
   "title": {
@@ -97,7 +97,7 @@
     "symbol": "circle",
     "smooth": false,
     "color": [
-      "#6366f1",
+      "#3550FF",
       "#14b8a6",
       "#f59e0b",
       "#f43f5e",

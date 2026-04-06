@@ -1,9 +1,10 @@
-import { Code, Download, Loader2, Save, X } from "lucide-react";
+import { Code, Download, Save, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import CodeBlock from "@/components/Markdown/components/CodeBlock";
 import { Button } from "@/components/ui/shadcn/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/shadcn/dialog";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import useCreateWorkflowFromQueryMutation from "@/hooks/api/workflows/useCreateWorkflowFromQueryMutation";
 import type { SqlQueryReference } from "@/types/chat";
 import { QueryResultTable } from "./QueryResultTable";
@@ -75,11 +76,7 @@ export const QueryReference = ({ reference, prompt }: QueryReferenceProps) => {
                   onClick={handleSaveToWorkflow}
                   title='Save to Workflow'
                 >
-                  {isPending ? (
-                    <Loader2 className='animate-spin' size={16} color='currentColor' />
-                  ) : (
-                    <Save />
-                  )}
+                  {isPending ? <Spinner /> : <Save />}
                 </Button>
               )}
               <Button variant='ghost' onClick={() => setIsOpen(false)}>
@@ -88,7 +85,7 @@ export const QueryReference = ({ reference, prompt }: QueryReferenceProps) => {
             </div>
           </div>
           <div className='flex flex-col gap-4 p-4 pt-0'>
-            <div className='customScrollbar relative max-h-80 overflow-auto'>
+            <div className='relative max-h-80 overflow-auto'>
               <CodeBlock className='language-sql !m-0 pr-[54px]!'>{metadata.sql_query}</CodeBlock>
               <Button
                 title='Download SQL'

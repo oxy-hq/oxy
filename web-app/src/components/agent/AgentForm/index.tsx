@@ -5,6 +5,7 @@ import { TestsForm } from "@/components/shared/TestsForm";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/shadcn/button";
 import { CardTitle } from "@/components/ui/shadcn/card";
+import { FieldError } from "@/components/ui/shadcn/field";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import {
@@ -213,7 +214,7 @@ export const AgentForm: React.FC<AgentFormProps> = ({ data, onChange }) => {
   return (
     <FormProvider {...methods}>
       <div className='flex min-h-0 flex-1 flex-col'>
-        <div className='customScrollbar flex-1 overflow-auto p-4'>
+        <div className='flex-1 overflow-auto p-4'>
           <form id='agent-form' className='space-y-8'>
             {/* Basic fields */}
             <div className='space-y-4'>
@@ -224,7 +225,7 @@ export const AgentForm: React.FC<AgentFormProps> = ({ data, onChange }) => {
                   placeholder='Agent name (e.g., sql-generator, data-analyst)'
                   {...register("name")}
                 />
-                {errors.name && <p className='text-red-500 text-sm'>{errors.name.message}</p>}
+                {errors.name && <FieldError>{errors.name.message}</FieldError>}
               </div>
 
               <div className='space-y-2'>
@@ -249,7 +250,7 @@ export const AgentForm: React.FC<AgentFormProps> = ({ data, onChange }) => {
                     </Select>
                   )}
                 />
-                {errors.type && <p className='text-red-500 text-sm'>{errors.type.message}</p>}
+                {errors.type && <FieldError>{errors.type.message}</FieldError>}
                 <p className='text-muted-foreground text-sm'>
                   {agentType === "routing"
                     ? "Routing agent routes queries to other agents based on semantic similarity"
@@ -264,7 +265,7 @@ export const AgentForm: React.FC<AgentFormProps> = ({ data, onChange }) => {
                   placeholder='e.g., gpt-4o, claude-3-5-sonnet-20241022'
                   {...register("model", { required: "Model is required" })}
                 />
-                {errors.model && <p className='text-red-500 text-sm'>{errors.model.message}</p>}
+                {errors.model && <FieldError>{errors.model.message}</FieldError>}
               </div>
 
               <div className='space-y-2'>

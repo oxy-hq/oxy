@@ -23,7 +23,7 @@ const SecretsPage: React.FC = () => {
         }
       />
 
-      <div className='customScrollbar scrollbar-gutter-auto min-h-0 flex-1 overflow-auto p-4'>
+      <div className='scrollbar-gutter-auto min-h-0 flex-1 overflow-auto p-4'>
         <UnifiedSecretsTable />
       </div>
 

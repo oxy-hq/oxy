@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, ChevronsDown, Loader2, RotateCcw } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronsDown, RotateCcw } from "lucide-react";
 import type { editor } from "monaco-editor";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -10,6 +10,7 @@ import {
   ResizablePanel,
   ResizablePanelGroup
 } from "@/components/ui/shadcn/resizable";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import { FileService, ProjectService } from "@/services/api";
@@ -173,12 +174,12 @@ function injectStyles() {
   const s = document.createElement("style");
   s.id = STYLE_ID;
   s.textContent = `
-    .cmx-mine   { background: rgba(52,211,153,0.09) !important; border-left: 2px solid rgba(52,211,153,0.35) !important; }
-    .cmx-theirs { background: rgba(96,165,250,0.09) !important; border-left: 2px solid rgba(96,165,250,0.35) !important; }
-    .cmx-base   { background: rgba(156,163,175,0.05) !important; }
-    .cmx-marker { background: rgba(245,158,11,0.14) !important; }
-    .cmx-hl-mine   { background: rgba(52,211,153,0.11) !important; border-left: 2px solid rgba(52,211,153,0.5) !important; }
-    .cmx-hl-theirs { background: rgba(96,165,250,0.11) !important; border-left: 2px solid rgba(96,165,250,0.5) !important; }
+    .cmx-mine   { background: color-mix(in srgb, var(--conflict-mine) 9%, transparent) !important; border-left: 2px solid color-mix(in srgb, var(--conflict-mine) 35%, transparent) !important; }
+    .cmx-theirs { background: color-mix(in srgb, var(--conflict-theirs) 9%, transparent) !important; border-left: 2px solid color-mix(in srgb, var(--conflict-theirs) 35%, transparent) !important; }
+    .cmx-base   { background: color-mix(in srgb, var(--muted-foreground) 5%, transparent) !important; }
+    .cmx-marker { background: color-mix(in srgb, var(--warning) 14%, transparent) !important; }
+    .cmx-hl-mine   { background: color-mix(in srgb, var(--conflict-mine) 11%, transparent) !important; border-left: 2px solid color-mix(in srgb, var(--conflict-mine) 50%, transparent) !important; }
+    .cmx-hl-theirs { background: color-mix(in srgb, var(--conflict-theirs) 11%, transparent) !important; border-left: 2px solid color-mix(in srgb, var(--conflict-theirs) 50%, transparent) !important; }
     /* zone bars live inside Monaco's overflow-visible layer — need z-index */
     .cmx-zone { z-index: 1; }
   `;
@@ -195,7 +196,12 @@ function applyResultDecs(
   const decs: editor.IModelDeltaDecoration[] = [];
   const d = (s: number, e: number, cls: string) =>
     decs.push({
-      range: { startLineNumber: s, startColumn: 1, endLineNumber: e, endColumn: 9999 },
+      range: {
+        startLineNumber: s,
+        startColumn: 1,
+        endLineNumber: e,
+        endColumn: 9999
+      },
       options: { isWholeLine: true, className: cls }
     });
 
@@ -394,13 +400,19 @@ export function MergeConflictEditor({ file, onResolved }: MergeConflictEditorPro
     const d1 = inc.onDidScrollChange((e) => {
       if (syncing) return;
       syncing = true;
-      cur.setScrollPosition({ scrollTop: e.scrollTop, scrollLeft: e.scrollLeft });
+      cur.setScrollPosition({
+        scrollTop: e.scrollTop,
+        scrollLeft: e.scrollLeft
+      });
       syncing = false;
     });
     const d2 = cur.onDidScrollChange((e) => {
       if (syncing) return;
       syncing = true;
-      inc.setScrollPosition({ scrollTop: e.scrollTop, scrollLeft: e.scrollLeft });
+      inc.setScrollPosition({
+        scrollTop: e.scrollTop,
+        scrollLeft: e.scrollLeft
+      });
       syncing = false;
     });
     scrollSyncRef.current = {
@@ -518,7 +530,10 @@ export function MergeConflictEditor({ file, onResolved }: MergeConflictEditorPro
       } else {
         toast.error("Failed to resolve conflict", {
           action: res.message
-            ? { label: "Show details", onClick: () => toast.message(res.message) }
+            ? {
+                label: "Show details",
+                onClick: () => toast.message(res.message)
+              }
             : undefined
         });
       }
@@ -532,7 +547,7 @@ export function MergeConflictEditor({ file, onResolved }: MergeConflictEditorPro
   if (isLoading) {
     return (
       <div className='flex h-full items-center justify-center'>
-        <Loader2 className='h-4 w-4 animate-spin text-muted-foreground' />
+        <Spinner className='text-muted-foreground' />
       </div>
     );
   }
@@ -548,12 +563,12 @@ export function MergeConflictEditor({ file, onResolved }: MergeConflictEditorPro
         <div className='ml-auto flex items-center gap-1.5'>
           {/* Conflict status */}
           {stillHasMarkers ? (
-            <span className='flex items-center gap-1 font-mono text-[10px] text-amber-400/80'>
+            <span className='flex items-center gap-1 font-mono text-[10px] text-warning/80'>
               <AlertTriangle className='h-3 w-3' />
               {conflicts.length} remaining
             </span>
           ) : (
-            <span className='flex items-center gap-1 font-mono text-[10px] text-emerald-400/80'>
+            <span className='flex items-center gap-1 font-mono text-[10px] text-success/80'>
               <CheckCircle2 className='h-3 w-3' />
               all resolved
             </span>
@@ -593,21 +608,21 @@ export function MergeConflictEditor({ file, onResolved }: MergeConflictEditorPro
           <button
             type='button'
             onClick={() => setResult(resolveAll(rawContent, "mine"))}
-            className='flex h-5 items-center rounded border border-emerald-500/30 bg-emerald-500/8 px-2 font-mono text-[10px] text-emerald-400 transition-colors hover:border-emerald-500/50 hover:bg-emerald-500/15'
+            className='flex h-5 items-center rounded border border-success/30 bg-success/8 px-2 font-mono text-[10px] text-success transition-colors hover:border-success/50 hover:bg-success/15'
           >
             Accept Mine
           </button>
           <button
             type='button'
             onClick={() => setResult(resolveAll(rawContent, "both" as ConflictAction))}
-            className='flex h-5 items-center rounded border border-violet-500/30 bg-violet-500/8 px-2 font-mono text-[10px] text-violet-400 transition-colors hover:border-violet-500/50 hover:bg-violet-500/15'
+            className='flex h-5 items-center rounded border border-vis-violet/30 bg-vis-violet/8 px-2 font-mono text-[10px] text-vis-violet transition-colors hover:border-vis-violet/50 hover:bg-vis-violet/15'
           >
             Accept Both
           </button>
           <button
             type='button'
             onClick={() => setResult(resolveAll(rawContent, "theirs"))}
-            className='flex h-5 items-center rounded border border-blue-500/30 bg-blue-500/8 px-2 font-mono text-[10px] text-blue-400 transition-colors hover:border-blue-500/50 hover:bg-blue-500/15'
+            className='flex h-5 items-center rounded border border-info/30 bg-info/8 px-2 font-mono text-[10px] text-info transition-colors hover:border-info/50 hover:bg-info/15'
           >
             Accept Theirs
           </button>
@@ -624,9 +639,9 @@ export function MergeConflictEditor({ file, onResolved }: MergeConflictEditorPro
                 ? "Resolve all conflicts first"
                 : "Mark as resolved and continue rebase"
             }
-            className='flex h-5 items-center gap-1 rounded bg-gradient-to-b from-[#3550FF] to-[#2A40CC] px-2.5 font-medium font-mono text-[10px] text-white shadow-sm transition-all hover:from-[#5D73FF] hover:to-[#3550FF] disabled:opacity-40'
+            className='flex h-5 items-center gap-1 rounded bg-gradient-to-b from-[var(--blue-500)] to-[var(--blue-600)] px-2.5 font-medium font-mono text-[10px] text-white shadow-sm transition-all hover:from-[var(--blue-400)] hover:to-[var(--blue-500)] disabled:opacity-40'
           >
-            {isSaving && <Loader2 className='h-2.5 w-2.5 animate-spin' />}
+            {isSaving && <Spinner className='size-2.5' />}
             {isSaving ? "Resolving…" : "Resolve Conflict"}
           </button>
         </div>
@@ -639,9 +654,9 @@ export function MergeConflictEditor({ file, onResolved }: MergeConflictEditorPro
           <ResizablePanelGroup direction='horizontal' className='h-full'>
             {/* Incoming (theirs) */}
             <ResizablePanel defaultSize={50} className='flex min-h-0 flex-col'>
-              <div className='flex shrink-0 items-center gap-1.5 border-amber-500/15 border-b bg-amber-500/[0.03] px-3 py-1 font-mono text-[10px] text-amber-400/60'>
+              <div className='flex shrink-0 items-center gap-1.5 border-warning/15 border-b bg-warning/[0.03] px-3 py-1 font-mono text-[10px] text-warning/60'>
                 <span className='font-semibold'>Incoming</span>
-                <span className='rounded bg-amber-500/10 px-1 py-0.5 text-[9px] text-amber-400/50'>
+                <span className='rounded bg-warning/10 px-1 py-0.5 text-[9px] text-warning/50'>
                   theirs
                 </span>
               </div>
@@ -671,11 +686,9 @@ export function MergeConflictEditor({ file, onResolved }: MergeConflictEditorPro
 
             {/* Current (mine) */}
             <ResizablePanel defaultSize={50} className='flex min-h-0 flex-col'>
-              <div className='flex shrink-0 items-center gap-1.5 border-blue-500/15 border-b bg-blue-500/[0.03] px-3 py-1 font-mono text-[10px] text-blue-400/60'>
+              <div className='flex shrink-0 items-center gap-1.5 border-info/15 border-b bg-info/[0.03] px-3 py-1 font-mono text-[10px] text-info/60'>
                 <span className='font-semibold'>Current</span>
-                <span className='rounded bg-blue-500/10 px-1 py-0.5 text-[9px] text-blue-400/50'>
-                  mine
-                </span>
+                <span className='rounded bg-info/10 px-1 py-0.5 text-[9px] text-info/50'>mine</span>
               </div>
               <div className='min-h-0 flex-1'>
                 <BaseMonacoEditor
@@ -708,8 +721,8 @@ export function MergeConflictEditor({ file, onResolved }: MergeConflictEditorPro
           <div
             className={`flex shrink-0 items-center gap-1.5 border-b px-3 py-1 font-mono text-[10px] ${
               stillHasMarkers
-                ? "border-amber-500/15 bg-amber-500/[0.03] text-amber-400/60"
-                : "border-emerald-500/15 bg-emerald-500/[0.03] text-emerald-400/60"
+                ? "border-warning/15 bg-warning/[0.03] text-warning/60"
+                : "border-success/15 bg-success/[0.03] text-success/60"
             }`}
           >
             <span className='font-semibold'>Result</span>
@@ -747,8 +760,8 @@ export function MergeConflictEditor({ file, onResolved }: MergeConflictEditorPro
                   style={{
                     top,
                     height: 22,
-                    background: "rgba(10,10,14,0.72)",
-                    borderBottom: "1px solid rgba(255,255,255,0.07)",
+                    background: "color-mix(in srgb, var(--background) 72%, transparent)",
+                    borderBottom: "1px solid color-mix(in srgb, var(--border) 50%, transparent)",
                     backdropFilter: "blur(4px)",
                     fontFamily: "monospace",
                     fontSize: 10
@@ -759,30 +772,30 @@ export function MergeConflictEditor({ file, onResolved }: MergeConflictEditorPro
                       {
                         label: "Accept Mine",
                         action: "mine" as ConflictAction,
-                        bg: "rgba(52,211,153,0.15)",
-                        hbg: "rgba(52,211,153,0.28)",
-                        color: "rgb(110,231,183)"
+                        bg: "color-mix(in srgb, var(--conflict-mine) 15%, transparent)",
+                        hbg: "color-mix(in srgb, var(--conflict-mine) 28%, transparent)",
+                        color: "var(--conflict-mine)"
                       },
                       {
                         label: "Accept Both",
                         action: "both" as ConflictAction,
-                        bg: "rgba(167,139,250,0.15)",
-                        hbg: "rgba(167,139,250,0.28)",
-                        color: "rgb(196,181,253)"
+                        bg: "color-mix(in srgb, var(--conflict-both) 15%, transparent)",
+                        hbg: "color-mix(in srgb, var(--conflict-both) 28%, transparent)",
+                        color: "var(--conflict-both)"
                       },
                       {
                         label: "Accept Theirs",
                         action: "theirs" as ConflictAction,
-                        bg: "rgba(96,165,250,0.15)",
-                        hbg: "rgba(96,165,250,0.28)",
-                        color: "rgb(147,197,253)"
+                        bg: "color-mix(in srgb, var(--conflict-theirs) 15%, transparent)",
+                        hbg: "color-mix(in srgb, var(--conflict-theirs) 28%, transparent)",
+                        color: "var(--conflict-theirs)"
                       },
                       {
                         label: "Ignore",
                         action: "ignored" as ConflictAction,
-                        bg: "rgba(255,255,255,0.05)",
-                        hbg: "rgba(255,255,255,0.12)",
-                        color: "rgba(255,255,255,0.35)"
+                        bg: "color-mix(in srgb, var(--conflict-ignore) 15%, transparent)",
+                        hbg: "color-mix(in srgb, var(--conflict-ignore) 35%, transparent)",
+                        color: "var(--conflict-ignore)"
                       }
                     ] as const
                   ).map(({ label, action, bg, hbg, color }) => (

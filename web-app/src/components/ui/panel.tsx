@@ -17,7 +17,7 @@ function Panel({ className, animate, ...props }: PanelProps) {
     <div
       data-slot='panel'
       className={cn(
-        "flex h-full flex-col border-l bg-background",
+        "flex h-full flex-col bg-background",
         animate && "slide-in-from-right animate-in duration-200",
         className
       )}
@@ -99,12 +99,7 @@ function PanelContent({
   return (
     <div
       data-slot='panel-content'
-      className={cn(
-        "flex-1",
-        scrollable && "customScrollbar overflow-auto",
-        padding && "p-4",
-        className
-      )}
+      className={cn("flex-1", scrollable && "overflow-auto", padding && "p-4", className)}
       {...props}
     />
   );

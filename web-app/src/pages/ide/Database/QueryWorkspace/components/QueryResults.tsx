@@ -1,5 +1,6 @@
-import { AlertCircle, Loader2 } from "lucide-react";
 import SqlResultsTable from "@/components/sql/SqlResultsTable";
+import ErrorAlert from "@/components/ui/ErrorAlert";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import useDatabaseClient from "@/stores/useDatabaseClient";
 
 export default function QueryResults() {
@@ -17,17 +18,15 @@ export default function QueryResults() {
   if (activeTab.isExecuting) {
     return (
       <div className='flex h-full flex-col items-center justify-center text-muted-foreground'>
-        <Loader2 className='mb-2 h-8 w-8 animate-spin' />
-        <p className='text-sm'>Executing query...</p>
+        <Spinner className='mb-2 size-8' />
       </div>
     );
   }
 
   if (activeTab.error) {
     return (
-      <div className='flex h-full flex-col items-center justify-center text-destructive'>
-        <AlertCircle className='mb-2 h-8 w-8' />
-        <p className='max-w-lg text-center text-sm'>{activeTab.error}</p>
+      <div className='flex h-full flex-col items-center justify-center p-4'>
+        <ErrorAlert message={activeTab.error} className='max-w-lg' />
       </div>
     );
   }

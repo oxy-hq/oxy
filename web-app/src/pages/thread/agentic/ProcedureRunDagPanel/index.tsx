@@ -1,6 +1,7 @@
-import { CheckCircle2, Circle, Loader2, Repeat, XCircle } from "lucide-react";
+import { CheckCircle2, Circle, Repeat, XCircle } from "lucide-react";
 import { useMemo } from "react";
 import { Panel, PanelContent, PanelHeader } from "@/components/ui/panel";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import type { SseEvent } from "@/hooks/useAnalyticsRun";
 import { cn } from "@/libs/shadcn/utils";
 
@@ -67,8 +68,8 @@ function deriveStepStatuses(
 
 const STATUS_ICON: Record<ProcedureStepStatus, React.ReactNode> = {
   idle: <Circle className='h-3.5 w-3.5 text-muted-foreground' />,
-  running: <Loader2 className='h-3.5 w-3.5 animate-spin text-primary' />,
-  done: <CheckCircle2 className='h-3.5 w-3.5 text-green-500' />,
+  running: <Spinner className='size-3 text-primary' />,
+  done: <CheckCircle2 className='h-3.5 w-3.5 text-success' />,
   failed: <XCircle className='h-3.5 w-3.5 text-destructive' />
 };
 
@@ -82,14 +83,15 @@ const STATUS_LABEL: Record<ProcedureStepStatus, string | null> = {
 const ICON_BG: Record<ProcedureStepStatus, string> = {
   idle: "bg-secondary",
   running: "bg-primary/20",
-  done: "bg-green-500/20",
+  done: "bg-success/20",
   failed: "bg-destructive/20"
 };
 
 const NODE_BORDER: Record<ProcedureStepStatus, string> = {
   idle: "border-border bg-card opacity-60",
-  running: "border-primary bg-primary/10 shadow-[0_0_12px_rgba(58,113,214,0.15)]",
-  done: "border-green-500/40 bg-green-500/5",
+  running:
+    "border-primary bg-primary/10 shadow-[0_0_12px_color-mix(in_srgb,var(--blue-500)_15%,transparent)]",
+  done: "border-success/40 bg-success/5",
   failed: "border-destructive/40 bg-destructive/5"
 };
 

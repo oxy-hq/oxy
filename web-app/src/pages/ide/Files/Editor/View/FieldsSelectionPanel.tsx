@@ -72,7 +72,7 @@ const FieldsSelectionPanel = () => {
         </div>
       </div>
 
-      <SidebarContent className='customScrollbar h-full flex-1 overflow-y-auto'>
+      <SidebarContent className='h-full flex-1 overflow-y-auto'>
         <SidebarGroup className='px-1 pt-2'>
           <SidebarMenu>
             <CollapsibleFieldSection title='Dimensions' count={viewData.dimensions.length}>

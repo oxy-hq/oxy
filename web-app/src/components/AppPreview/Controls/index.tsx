@@ -1,5 +1,6 @@
-import { LoaderCircle, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import type { ControlConfig, DataContainer } from "@/types/app";
 import { DateControl } from "./DateControl";
 import { SelectControl } from "./SelectControl";
@@ -64,7 +65,7 @@ export function ControlsBar({ controls, values, data, onChange, onRun, isRunning
           disabled={isRunning}
           className='ml-auto shrink-0'
         >
-          {isRunning ? <LoaderCircle className='animate-spin' /> : <RefreshCw />}
+          {isRunning ? <Spinner /> : <RefreshCw />}
         </Button>
       )}
     </div>

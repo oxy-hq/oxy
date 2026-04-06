@@ -30,8 +30,10 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger
 } from "@/components/ui/shadcn/dropdown-menu";
+import { FieldError } from "@/components/ui/shadcn/field";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import useCreateFile from "@/hooks/api/files/useCreateFile";
 import useFileTree from "@/hooks/api/files/useFileTree";
 import useSaveFile from "@/hooks/api/files/useSaveFile";
@@ -336,7 +338,7 @@ const NewObjectButton: React.FC<NewObjectButtonProps> = ({ disabled }) => {
                   {selectedType?.extension}
                 </span>
               </div>
-              {error && <p className='text-destructive text-sm'>{error}</p>}
+              {error && <FieldError>{error}</FieldError>}
             </div>
           </div>
           <DialogFooter>
@@ -344,7 +346,7 @@ const NewObjectButton: React.FC<NewObjectButtonProps> = ({ disabled }) => {
               Cancel
             </Button>
             <Button onClick={handleCreate} disabled={isCreating || !fileName.trim()}>
-              {isCreating ? "Creating..." : "Create"}
+              {isCreating ? <Spinner /> : "Create"}
             </Button>
           </DialogFooter>
         </DialogContent>

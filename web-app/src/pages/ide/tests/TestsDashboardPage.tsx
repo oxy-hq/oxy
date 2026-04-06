@@ -9,7 +9,6 @@ import {
   FlaskConical,
   History,
   Layers,
-  LoaderCircle,
   Pencil,
   Play,
   Plus,
@@ -22,6 +21,7 @@ import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useResizeDetector } from "react-resize-detector";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { resolveColor, resolveColorWithAlpha } from "@/components/Echarts/resolveColor";
 import theme from "@/components/Echarts/theme.json";
 import { Badge } from "@/components/ui/shadcn/badge";
 import { Button } from "@/components/ui/shadcn/button";
@@ -46,9 +46,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from "@/components/ui/shadcn/dropdown-menu";
+import { FieldError } from "@/components/ui/shadcn/field";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import queryKeys from "@/hooks/api/queryKey";
 import useTestFile from "@/hooks/api/tests/useTestFile";
 import useTestFiles from "@/hooks/api/tests/useTestFiles";
@@ -99,10 +101,10 @@ interface HistoricalFileStatsEntry {
 
 const scoreClass = (pct: number) =>
   pct >= 80
-    ? "border-green-600 text-green-400"
+    ? "border-success text-success"
     : pct >= 50
-      ? "border-amber-500 text-amber-400"
-      : "border-red-600 text-red-400";
+      ? "border-warning text-warning"
+      : "border-destructive text-destructive";
 
 const formatDuration = (ms: number) => {
   if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`;
@@ -196,15 +198,15 @@ const VerdictIcon: React.FC<{ verdict: CaseVerdict; className?: string }> = ({
 }) => {
   switch (verdict) {
     case "pass":
-      return <CheckCircle2 className={cn("h-3.5 w-3.5 text-green-500", className)} />;
+      return <CheckCircle2 className={cn("h-3.5 w-3.5 text-success", className)} />;
     case "fail":
       return <XCircle className={cn("h-3.5 w-3.5 text-destructive", className)} />;
     case "flaky":
-      return <XCircle className={cn("h-3.5 w-3.5 text-yellow-500", className)} />;
+      return <XCircle className={cn("h-3.5 w-3.5 text-warning", className)} />;
     case "error":
       return <XCircle className={cn("h-3.5 w-3.5 text-destructive", className)} />;
     case "running":
-      return <LoaderCircle className={cn("h-3.5 w-3.5 animate-spin text-primary", className)} />;
+      return <Spinner className={cn("size-3", "text-primary", className)} />;
     default:
       return (
         <div
@@ -240,11 +242,11 @@ const getScoreVariant = (score: number): "success" | "warning" | "danger" => {
 const variantIconBg = (variant: "default" | "success" | "warning" | "danger") => {
   switch (variant) {
     case "success":
-      return "bg-emerald-500/10 text-emerald-500";
+      return "bg-success/10 text-success";
     case "warning":
-      return "bg-amber-500/10 text-amber-500";
+      return "bg-warning/10 text-warning";
     case "danger":
-      return "bg-rose-500/10 text-rose-500";
+      return "bg-destructive/10 text-destructive";
     default:
       return "bg-primary/10 text-primary";
   }
@@ -302,11 +304,17 @@ const VerdictDonutChart: React.FC<{
   const data =
     total > 0
       ? [
-          { value: pass, name: "Pass", color: "#22c55e" },
-          { value: fail, name: "Fail", color: "#ef4444" },
-          { value: flaky, name: "Flaky", color: "#eab308" }
+          { value: pass, name: "Pass", color: resolveColor("--success") },
+          { value: fail, name: "Fail", color: resolveColor("--destructive") },
+          { value: flaky, name: "Flaky", color: resolveColor("--warning") }
         ].filter((d) => d.value > 0)
-      : [{ value: 1, name: "Not run", color: "hsl(var(--muted-foreground) / 0.25)" }];
+      : [
+          {
+            value: 1,
+            name: "Not run",
+            color: resolveColor("--muted")
+          }
+        ];
 
   useEffect(() => {
     if (!chartRef.current) return;
@@ -319,11 +327,22 @@ const VerdictDonutChart: React.FC<{
           radius: ["48%", "80%"],
           center: ["50%", "50%"],
           avoidLabelOverlap: false,
-          itemStyle: { borderRadius: 2, borderColor: "transparent", borderWidth: 2 },
+          itemStyle: {
+            borderRadius: 2,
+            borderColor: "transparent",
+            borderWidth: 2
+          },
           label: { show: false },
-          emphasis: { label: { show: false } },
+          emphasis: {
+            label: { show: false },
+            itemStyle: { color: "inherit" }
+          },
           labelLine: { show: false },
-          data: data.map((d) => ({ value: d.value, name: d.name, itemStyle: { color: d.color } }))
+          data: data.map((d) => ({
+            value: d.value,
+            name: d.name,
+            itemStyle: { color: d.color }
+          }))
         }
       ]
     };
@@ -430,7 +449,7 @@ const TrendBarChart: React.FC<{
           if (point.failed) {
             return (
               header +
-              `<div style="font-size:12px;color:#f87171">Run failed — no results recorded</div>`
+              `<div style="font-size:12px;color:var(--destructive)">Run failed — no results recorded</div>`
             );
           }
           const overall = `<div style="font-size:13px;font-weight:bold">${Math.round(point.score * 100)}% pass rate</div>`;
@@ -474,26 +493,26 @@ const TrendBarChart: React.FC<{
             const isSelected = i === selectedIdx;
             const barColor = isFailed
               ? isSelected
-                ? "#991b1b"
-                : "#7f1d1d"
+                ? resolveColorWithAlpha("--destructive", 0.7)
+                : resolveColorWithAlpha("--destructive", 0.5)
               : isSelected
                 ? s >= 80
-                  ? "#16a34a"
+                  ? resolveColorWithAlpha("--success", 0.8)
                   : s >= 50
-                    ? "#ca8a04"
-                    : "#dc2626"
+                    ? resolveColorWithAlpha("--warning", 0.8)
+                    : resolveColorWithAlpha("--destructive", 0.8)
                 : s >= 80
-                  ? "#22c55e"
+                  ? resolveColor("--success")
                   : s >= 50
-                    ? "#eab308"
-                    : "#ef4444";
+                    ? resolveColor("--warning")
+                    : resolveColor("--destructive");
             return {
               value: isFailed ? FAILED_BAR_HEIGHT : s,
               itemStyle: {
                 color: barColor,
                 borderRadius: [3, 3, 0, 0],
                 opacity: selectedIdx !== undefined && i !== selectedIdx ? 0.4 : 1,
-                borderColor: isSelected ? "#e2e8f0" : "transparent",
+                borderColor: isSelected ? resolveColor("--border") : "transparent",
                 borderWidth: isSelected ? 1.5 : 0
               },
               emphasis: { itemStyle: { opacity: 0.85 } }
@@ -505,17 +524,17 @@ const TrendBarChart: React.FC<{
             position: "top",
             fontSize: 11,
             fontWeight: 600,
-            color: "#e2e8f0",
+            color: resolveColor("--border"),
             rich: {
               err: {
-                color: "#f87171",
+                color: resolveColor("--destructive"),
                 fontSize: 10,
                 fontWeight: 700,
                 align: "center",
                 width: 14,
                 height: 14,
                 lineHeight: 14,
-                borderColor: "#f87171",
+                borderColor: resolveColor("--destructive"),
                 borderWidth: 1.5,
                 borderRadius: 8,
                 padding: [0, 0, 0, 0]
@@ -540,11 +559,11 @@ const TrendBarChart: React.FC<{
 
 // --- Pie progress indicator ---
 
-const PieProgress: React.FC<{ completed: number; total: number; size?: number }> = ({
-  completed,
-  total,
-  size = 18
-}) => {
+const PieProgress: React.FC<{
+  completed: number;
+  total: number;
+  size?: number;
+}> = ({ completed, total, size = 18 }) => {
   const percent = total > 0 ? completed / total : 0;
   const r = size / 2 - 2;
   const circumference = 2 * Math.PI * r;
@@ -568,7 +587,10 @@ const PieProgress: React.FC<{ completed: number; total: number; size?: number }>
         strokeLinecap='round'
         strokeDasharray={circumference}
         strokeDashoffset={offset}
-        style={{ stroke: "hsl(var(--primary))", transition: "stroke-dashoffset 0.5s ease" }}
+        style={{
+          stroke: "hsl(var(--primary))",
+          transition: "stroke-dashoffset 0.5s ease"
+        }}
       />
     </svg>
   );
@@ -683,7 +705,11 @@ const TestsDashboardPage: React.FC = () => {
     for (const file of filesToRun) {
       const pathb64 = encodeBase64(file.path);
       try {
-        const run = await createRun.mutateAsync({ pathb64, name, projectRunId });
+        const run = await createRun.mutateAsync({
+          pathb64,
+          name,
+          projectRunId
+        });
         for (let i = 0; i < file.case_count; i++) {
           store.runCase(projectId, branchName, pathb64, i, run.run_index);
         }
@@ -805,7 +831,11 @@ const TestsDashboardPage: React.FC = () => {
       totalTokens: totalInputTokens + totalOutputTokens,
       totalInputTokens,
       totalOutputTokens,
-      verdictCounts: { pass: verdictPass, fail: verdictFail, flaky: verdictFlaky }
+      verdictCounts: {
+        pass: verdictPass,
+        fail: verdictFail,
+        flaky: verdictFlaky
+      }
     };
   }, [testFiles, projectId, branchName, store.caseMap]);
 
@@ -847,7 +877,11 @@ const TestsDashboardPage: React.FC = () => {
       totalTokens: totalInputTokens + totalOutputTokens,
       totalInputTokens,
       totalOutputTokens,
-      verdictCounts: { pass: verdictPass, fail: verdictFail, flaky: verdictFlaky }
+      verdictCounts: {
+        pass: verdictPass,
+        fail: verdictFail,
+        flaky: verdictFlaky
+      }
     };
   }, [testFiles, selectedProjectRun, historicalFileStats]);
 
@@ -878,7 +912,9 @@ const TestsDashboardPage: React.FC = () => {
   useEffect(() => {
     if (prevAnyRunning.current && !anyRunning) {
       setJustFinished(true);
-      queryClient.invalidateQueries({ queryKey: queryKeys.testProjectRun.list(projectId) });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.testProjectRun.list(projectId)
+      });
       testFiles?.forEach((f) => {
         queryClient.invalidateQueries({
           queryKey: queryKeys.testRun.list(projectId, encodeBase64(f.path))
@@ -989,9 +1025,9 @@ const TestsDashboardPage: React.FC = () => {
                       ) : pr.total_cases === null && pr.file_scores.length > 0 ? (
                         <Badge
                           variant='outline'
-                          className='ml-1 shrink-0 gap-1 border-red-600/50 text-[10px] text-red-400'
+                          className='ml-1 shrink-0 gap-1 border-destructive/50 text-[10px] text-destructive'
                         >
-                          <AlertCircle className='h-3 w-3 text-red-400' />
+                          <AlertCircle className='h-3 w-3 text-destructive' />
                           Failed
                         </Badge>
                       ) : null}
@@ -1096,12 +1132,12 @@ const TestsDashboardPage: React.FC = () => {
         </div>
       )}
 
-      <div className='customScrollbar scrollbar-gutter-auto min-h-0 flex-1 overflow-auto p-4'>
+      <div className='scrollbar-gutter-auto min-h-0 flex-1 overflow-auto p-4'>
         {/* Running test suite — above metrics so it's clear a run is in progress */}
         {anyRunning && suiteProgress && (
           <div className='mb-3 rounded-lg border bg-primary/5 px-3 py-2'>
             <div className='mb-1.5 flex items-center gap-2'>
-              <LoaderCircle className='h-3.5 w-3.5 animate-spin text-primary' />
+              <Spinner className='size-3 text-primary' />
               <div className='flex flex-col'>
                 <span className='font-medium text-sm'>Running test suite</span>
                 <span className='text-[11px] text-muted-foreground'>
@@ -1124,10 +1160,10 @@ const TestsDashboardPage: React.FC = () => {
 
         {/* Brief completion banner */}
         {justFinished && !anyRunning && (
-          <div className='mb-3 rounded-lg border border-green-600/30 bg-green-500/5 px-3 py-2 transition-opacity duration-500'>
+          <div className='mb-3 rounded-lg border border-success/30 bg-success/5 px-3 py-2 transition-opacity duration-500'>
             <div className='flex items-center gap-2'>
-              <CheckCircle2 className='h-3.5 w-3.5 text-green-500' />
-              <span className='font-medium text-green-400 text-sm'>Run complete</span>
+              <CheckCircle2 className='h-3.5 w-3.5 text-success' />
+              <span className='font-medium text-sm text-success'>Run complete</span>
               <span className='ml-auto text-[11px] text-muted-foreground'>Results updated</span>
             </div>
           </div>
@@ -1140,10 +1176,10 @@ const TestsDashboardPage: React.FC = () => {
           selectedProjectRun.score === null &&
           selectedProjectRun.total_cases === null &&
           selectedProjectRun.file_scores.length > 0 && (
-            <div className='mb-3 rounded-lg border border-red-600/30 bg-red-500/5 px-3 py-2'>
+            <div className='mb-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2'>
               <div className='flex items-center gap-2'>
-                <AlertCircle className='h-3.5 w-3.5 text-red-400' />
-                <span className='font-medium text-red-400 text-sm'>Run failed</span>
+                <AlertCircle className='h-3.5 w-3.5 text-destructive' />
+                <span className='font-medium text-destructive text-sm'>Run failed</span>
                 <span className='ml-auto text-[11px] text-muted-foreground'>
                   No results were recorded — something went wrong
                 </span>
@@ -1393,9 +1429,7 @@ const TestsDashboardPage: React.FC = () => {
                 />
                 <span className='whitespace-nowrap text-muted-foreground text-sm'>.test.yml</span>
               </div>
-              {createTestFile.error && (
-                <p className='text-destructive text-sm'>{createTestFile.error}</p>
-              )}
+              {createTestFile.error && <FieldError>{createTestFile.error}</FieldError>}
             </div>
           </div>
           <DialogFooter>
@@ -1410,7 +1444,7 @@ const TestsDashboardPage: React.FC = () => {
               onClick={createTestFile.handleCreate}
               disabled={createTestFile.isCreating || !createTestFile.fileName.trim()}
             >
-              {createTestFile.isCreating ? "Creating..." : "Create"}
+              {createTestFile.isCreating ? <Spinner /> : "Create"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1631,7 +1665,7 @@ const TestFileCard: React.FC<TestFileCardProps> = ({
       <div className={`rounded-lg border ${borderClass}`}>
         <CollapsibleTrigger className='flex w-full items-center justify-between px-4 py-3 hover:bg-muted/50'>
           <div className='flex items-center gap-3 text-left'>
-            {fileState.isRunning && <LoaderCircle className='h-4 w-4 animate-spin text-primary' />}
+            {fileState.isRunning && <Spinner className='text-primary' />}
             <div>
               <p className='font-medium text-sm'>{displayName}</p>
               {target && <p className='text-muted-foreground text-xs'>Target: {target}</p>}

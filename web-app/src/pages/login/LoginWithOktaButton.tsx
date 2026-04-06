@@ -13,13 +13,7 @@ const LoginWithOktaButton = ({ disabled, clientId, domain }: Props) => {
   };
 
   return (
-    <Button
-      type='button'
-      variant='outline'
-      className='w-full'
-      onClick={handleOktaAuth}
-      disabled={disabled}
-    >
+    <Button type='button' className='w-full' onClick={handleOktaAuth} disabled={disabled}>
       <svg
         xmlns='http://www.w3.org/2000/svg'
         viewBox='0 0 24 24'

@@ -2,6 +2,10 @@ import type { editor } from "monaco-editor";
 import { useEffect, useRef } from "react";
 
 // Monaco decoration class names (styled in shadcn/index.css)
+// TODO: The overviewRuler rgba colors below (green for added, orange for modified)
+// could be migrated to CSS variables with color-mix(), e.g.
+// `color-mix(in srgb, var(--success) 80%, transparent)`, but are left as-is since
+// Monaco's overviewRuler.color expects a direct color string, not a CSS variable.
 const ADDED_CLASS = "gutter-line-added";
 const MODIFIED_CLASS = "gutter-line-modified";
 const DELETED_CLASS = "gutter-line-deleted";
@@ -161,7 +165,7 @@ export function useGutterDecorations(
             className: `${ADDED_CLASS}-bg`,
             linesDecorationsClassName: ADDED_CLASS,
             overviewRuler: {
-              color: "rgba(40, 167, 69, 0.8)",
+              color: "color-mix(in srgb, var(--success) 80%, transparent)",
               position: 7 // OverviewRulerLane.Right
             }
           }
@@ -178,7 +182,7 @@ export function useGutterDecorations(
             className: `${MODIFIED_CLASS}-bg`,
             linesDecorationsClassName: MODIFIED_CLASS,
             overviewRuler: {
-              color: "rgba(253, 126, 20, 0.8)",
+              color: "color-mix(in srgb, var(--warning) 80%, transparent)",
               position: 7
             }
           }

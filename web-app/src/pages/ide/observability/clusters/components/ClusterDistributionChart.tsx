@@ -1,8 +1,9 @@
 import type { EChartsOption } from "echarts";
 import { getInstanceByDom, init } from "echarts";
-import { Loader2, PieChart as PieChartIcon } from "lucide-react";
+import { PieChart as PieChartIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useResizeDetector } from "react-resize-detector";
+import { resolveColor } from "@/components/Echarts/resolveColor";
 import theme from "@/components/Echarts/theme.json";
 import {
   Card,
@@ -11,6 +12,7 @@ import {
   CardHeader,
   CardTitle
 } from "@/components/ui/shadcn/card";
+import { Spinner } from "@/components/ui/shadcn/spinner";
 import type { ClusterSummary } from "@/services/api/traces";
 
 interface ClusterDistributionChartProps {
@@ -46,6 +48,8 @@ export default function ClusterDistributionChart({
   }, []);
 
   const chartData = useMemo(() => {
+    const mutedFg = resolveColor("--muted-foreground");
+
     // Get top clusters (limit to 5 for readability, combine rest into "Other")
     const sortedClusters = [...clusters]
       .filter((c) => c.clusterId !== -1)
@@ -67,7 +71,7 @@ export default function ClusterDistributionChart({
       data.push({
         value: outlierCluster.count,
         name: "Outliers",
-        itemStyle: { color: "#6b7280" }
+        itemStyle: { color: mutedFg }
       });
     }
 
@@ -75,7 +79,7 @@ export default function ClusterDistributionChart({
       data.push({
         value: otherCount,
         name: "Other",
-        itemStyle: { color: "#9ca3af" }
+        itemStyle: { color: mutedFg }
       });
     }
 
@@ -108,7 +112,7 @@ export default function ClusterDistributionChart({
             avoidLabelOverlap: false,
             itemStyle: {
               borderRadius: 4,
-              borderColor: "#fff",
+              borderColor: resolveColor("--background"),
               borderWidth: 2
             },
             label: {
@@ -151,7 +155,7 @@ export default function ClusterDistributionChart({
           <div className='flex items-center gap-2'>
             <PieChartIcon className='h-5 w-5 text-primary' />
             <CardTitle>Semantic distribution</CardTitle>
-            {isLoading && <Loader2 className='h-4 w-4 animate-spin text-muted-foreground' />}
+            {isLoading && <Spinner className='text-muted-foreground' />}
           </div>
         </div>
         <CardDescription>Distribution of questions by cluster</CardDescription>

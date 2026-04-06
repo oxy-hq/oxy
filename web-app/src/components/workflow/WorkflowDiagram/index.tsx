@@ -2,7 +2,7 @@ import type { ReactFlowInstance } from "@xyflow/react";
 import { Background, BackgroundVariant, type ColorMode, Controls, ReactFlow } from "@xyflow/react";
 import type React from "react";
 import { useRef } from "react";
-import { ContentSkeleton } from "@/components/ui/ContentSkeleton";
+import LoadingSkeleton from "@/components/ui/LoadingSkeleton";
 import useTheme from "@/stores/useTheme";
 import useWorkflow, { type NodeType, type WorkflowConfig } from "@/stores/useWorkflow";
 import { DiagramNode } from "./DiagramNode";
@@ -48,7 +48,7 @@ const WorkflowDiagram: React.FC<WorkflowDiagramProps> = ({ workflowId, runId, wo
   const { theme } = useTheme();
 
   if (nodes.length === 0) {
-    return <ContentSkeleton />;
+    return <LoadingSkeleton />;
   }
 
   return (
@@ -76,8 +76,8 @@ const WorkflowDiagram: React.FC<WorkflowDiagramProps> = ({ workflowId, runId, wo
       >
         <Controls showInteractive={false} />
         <Background
-          color={theme === "dark" ? "#a9a9b2" : "#ddd"}
-          bgColor={theme === "dark" ? "oklch(14.5% 0 0)" : "oklch(1 0 0)"}
+          color='var(--muted-foreground)'
+          bgColor='var(--background)'
           variant={BackgroundVariant.Dots}
         />
       </ReactFlow>
