@@ -230,7 +230,12 @@ export interface UseAnalyticsRunOptions {
 export interface UseAnalyticsRunResult {
   state: AnalyticsRunState;
   /** Start a brand-new run (creates the DB record + opens SSE). */
-  start: (agentId: string, question: string, threadId?: string, thinkingMode?: ThinkingMode) => void;
+  start: (
+    agentId: string,
+    question: string,
+    threadId?: string,
+    thinkingMode?: ThinkingMode
+  ) => void;
   /** Resume from SSE using a run that already exists (page reload). */
   reconnect: (runId: string, existingState?: AnalyticsRunState["tag"]) => void;
   /** Restore a terminal run's state directly from pre-loaded events (no SSE). */
