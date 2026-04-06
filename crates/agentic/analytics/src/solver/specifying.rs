@@ -26,9 +26,7 @@ use crate::semantic::SemanticCatalog;
 use crate::tools::{
     execute_clarifying_tool, execute_database_lookup_tool, execute_specifying_tool,
 };
-use crate::types::{
-    QueryRequestEnvelope, QueryRequestItem, ResultShape, SolutionPayload, SolutionSource,
-};
+use crate::types::{QueryRequestEnvelope, ResultShape, SolutionPayload, SolutionSource};
 use crate::{AnalyticsDomain, AnalyticsError, AnalyticsIntent, QuerySpec};
 
 use super::{
@@ -113,7 +111,7 @@ fn format_semantic_query_hint(intent: &AnalyticsIntent) -> String {
 
 pub(super) fn build_specify_user_prompt(
     intent: &AnalyticsIntent,
-    catalog: &SemanticCatalog,
+    _catalog: &SemanticCatalog,
     retry_ctx: Option<&RetryContext>,
 ) -> String {
     let retry_section = format_retry_section(retry_ctx);
