@@ -121,7 +121,7 @@ reqwest = { version = "0.12.28" }
 secrecy = "0.10.3"
 fxhash = "0.2.1"
 deser-incomplete = "0.1.2"
-snowflake-api = { git = "https://github.com/oxy-hq/snowflake-rs.git", tag = "v0.13.0-browser-auth" }
+snowflake-api = { git = "https://github.com/oxy-hq/snowflake-rs.git", tag = "v0.15.0" }
 rmcp = {version = "0.8.5", features = ["server", "transport-sse-server", "transport-io"]}
 serde_with = "3.17.0"
 # we use chrono::DateTimeWithTimeZone, which is not currently supported by utoipa
