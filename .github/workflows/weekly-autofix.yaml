@@ -4,9 +4,7 @@ on:
   schedule:
     - cron: "30 7 * * 0" # Every Sunday at 15:30 Vietnam time (07:30 UTC)
   workflow_dispatch:
-  workflow_run:
-    workflows: ["Open source oxy"]
-    types: [completed]
+
 
 permissions:
   contents: write
@@ -108,26 +106,3 @@ jobs:
             Review and merge if the changes look correct.
           delete-branch: true
           labels: "automated,chore"
-
-  close-synced-prs:
-    if: >
-      github.repository == 'oxy-hq/oxy' &&
-      github.event_name == 'workflow_run' &&
-      github.event.workflow_run.conclusion == 'success' &&
-      startsWith(github.event.workflow_run.head_branch, 'autofix/weekly-') &&
-      contains(github.event.workflow_run.triggering_actor.login, '[bot]')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Close autofix PRs after autosync to oxy-internal
-        run: |
-          gh pr list \
-            --repo oxy-hq/oxy \
-            --label "automated" \
-            --state open \
-            --json number,title \
-            --jq '.[] | select(.title | startswith("chore: weekly auto-fix")) | .number' \
-          | xargs -r -I{} gh pr close {} \
-              --repo oxy-hq/oxy \
-              --comment "Automatically closed: changes have been synced"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
