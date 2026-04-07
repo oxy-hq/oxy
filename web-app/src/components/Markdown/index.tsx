@@ -60,7 +60,11 @@ const getExtendedComponents = (data?: MarkdownData): ExtendedComponents => ({
     </ol>
   ),
   li: ({ children }) => <li>{children}</li>,
-  pre: ({ children }) => <pre className='overflow-auto text-sm'>{children}</pre>,
+  pre: ({ children }) => (
+    <div className='mt-2'>
+      <pre className='overflow-auto text-sm'>{children}</pre>
+    </div>
+  ),
   blockquote: ({ children }) => (
     <blockquote className='my-4 border-l-4 pl-4 text-muted-foreground italic'>
       {children}
@@ -94,11 +98,7 @@ const getExtendedComponents = (data?: MarkdownData): ExtendedComponents => ({
       {children}
     </td>
   ),
-  code: (props) => (
-    <div className='mt-2'>
-      <CodeBlock {...props} />
-    </div>
-  ),
+  code: (props) => <CodeBlock {...props} />,
   chart: (props) => <ChartContainer {...props} />,
   artifact: (props) => <ArtifactContainer {...props} onClick={data?.onArtifactClick} />,
   reasoning: (props: { children?: React.ReactNode }) => (

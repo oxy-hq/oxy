@@ -2,9 +2,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode, RefObject } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DisplayBlock } from "@/components/AppPreview/Displays";
+import BuilderMessageInput from "@/components/BuilderMessageInput";
 import ThinkingModeMenu from "@/components/Chat/ChatPanel/ThinkingModeMenu";
 import Markdown from "@/components/Markdown";
-import MentionMessageInput from "@/components/MentionMessageInput";
 import MessageInput from "@/components/MessageInput";
 import UserMessage from "@/components/Messages/UserMessage";
 import ErrorAlert from "@/components/ui/ErrorAlert";
@@ -730,7 +730,7 @@ const AnalyticsThread = ({ thread }: Props) => {
                   isAnswering={isAnswering}
                 />
               ) : isBuilder ? (
-                <MentionMessageInput
+                <BuilderMessageInput
                   onSend={handleStart}
                   onStop={stop}
                   disabled={state.tag === "running" || isStarting}
@@ -739,7 +739,7 @@ const AnalyticsThread = ({ thread }: Props) => {
                   onAutoApproveChange={handleAutoApproveChange}
                 />
               ) : (
-                <div className='flex-col items-end gap-2 rounded-md border border-neutral-700 bg-secondary'>
+                <div className='flex-col items-end gap-2 rounded-md border border-border bg-secondary'>
                   <div className='flex-1'>
                     <MessageInput
                       value={followUpQuestion}

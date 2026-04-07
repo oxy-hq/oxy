@@ -584,13 +584,15 @@ export function buildAnalyticsSteps(events: UiBlock[]): StepOrGroup[] {
 
       // ── Human-in-the-loop ──────────────────────────────────────────────────
       case "awaiting_input": {
-        // The ask_user tool_call never gets a tool_result because the
-        // pipeline suspends before one is emitted.  Mark it as done here
+        // Neither ask_user nor propose_change get a tool_result because the
+        // pipeline suspends before one is emitted.  Mark them as done here
         // so the spinner stops.
-        const askUser = scope.findLastStreamingArtifactByName("ask_user");
-        if (askUser) {
-          askUser.toolOutput = JSON.stringify({ status: "awaiting_response" });
-          askUser.isStreaming = false;
+        for (const toolName of ["ask_user", "propose_change"]) {
+          const artifact = scope.findLastStreamingArtifactByName(toolName);
+          if (artifact) {
+            artifact.toolOutput = JSON.stringify({ status: "awaiting_response" });
+            artifact.isStreaming = false;
+          }
         }
         break;
       }

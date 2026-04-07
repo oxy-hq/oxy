@@ -5,6 +5,10 @@ import {
   Check,
   ChevronRight,
   Database,
+  FilePen,
+  FileText,
+  FlaskConical,
+  FolderSearch,
   GitBranch,
   GitMerge,
   Info,
@@ -12,7 +16,9 @@ import {
   Loader2,
   MessageSquare,
   Search,
+  ShieldCheck,
   Table2,
+  TextSearch,
   Wrench
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -228,7 +234,7 @@ function getToolDisplay(item: ArtifactItem): ToolDisplay {
     }
     case "get_metric_definition": {
       const metric = typeof input?.metric === "string" ? input.metric : "—";
-      return { Icon: BookOpen, label: "Metric Definition", preview: metric };
+      return { Icon: Layers, label: "Metric Definition", preview: metric };
     }
     case "search_procedures": {
       const query = typeof input?.query === "string" ? input.query : "Search procedures";
@@ -277,6 +283,109 @@ function getToolDisplay(item: ArtifactItem): ToolDisplay {
       const title = typeof input?.title === "string" ? input.title : null;
       const preview = title ? `${title} · ${chartType}` : chartType;
       return { Icon: BarChart2, label: "Render Chart", preview: trunc(preview) };
+    }
+
+    // ── Builder tools ──────────────────────────────────────────────────────────
+    case "propose_change": {
+      const filePath = typeof input?.file_path === "string" ? input.file_path : "?";
+      const isDelete = input?.delete === true;
+      const hasOldContent = typeof input?.old_content === "string";
+      const action = isDelete ? "Delete" : hasOldContent ? "Update" : "Create";
+      const output = tryParseJson(item.toolOutput ?? "");
+      const status =
+        typeof output?.status === "string" && output.status !== "awaiting_response"
+          ? output.status
+          : null;
+      const preview = status
+        ? `${action} ${trunc(filePath, 30)} · ${status}`
+        : `${action} ${trunc(filePath, 40)}`;
+      return { Icon: FilePen, label: "Propose Change", preview };
+    }
+
+    case "read_file": {
+      const filePath =
+        typeof input?.file_path === "string"
+          ? input.file_path
+          : typeof input?.path === "string"
+            ? input.path
+            : "?";
+      const output = tryParseJson(item.toolOutput ?? "");
+      const totalLines = typeof output?.total_lines === "number" ? output.total_lines : null;
+      const preview =
+        totalLines !== null ? `${trunc(filePath, 35)} · ${totalLines} lines` : trunc(filePath);
+      return { Icon: FileText, label: "Read File", preview };
+    }
+
+    case "search_files": {
+      const pattern = typeof input?.pattern === "string" ? input.pattern : "?";
+      const output = tryParseJson(item.toolOutput ?? "");
+      const count =
+        typeof output?.count === "number"
+          ? output.count
+          : Array.isArray(output?.files)
+            ? output.files.length
+            : null;
+      const preview = count !== null ? `${trunc(pattern, 35)} · ${count} files` : trunc(pattern);
+      return { Icon: FolderSearch, label: "Search Files", preview };
+    }
+
+    case "lookup_schema": {
+      const objectName = typeof input?.object_name === "string" ? input.object_name : "?";
+      return { Icon: BookOpen, label: "Lookup Schema", preview: trunc(objectName) };
+    }
+
+    case "run_tests": {
+      const filePath = typeof input?.file_path === "string" ? input.file_path : null;
+      const scope = filePath ? trunc(filePath, 35) : "All tests";
+      const output = tryParseJson(item.toolOutput ?? "");
+      const testsRun = typeof output?.tests_run === "number" ? output.tests_run : null;
+      const preview = testsRun !== null ? `${scope} · ${testsRun} run` : scope;
+      return { Icon: FlaskConical, label: "Run Tests", preview };
+    }
+
+    case "validate_project": {
+      const filePath = typeof input?.file_path === "string" ? input.file_path : null;
+      const scope = filePath ? trunc(filePath, 35) : "Whole project";
+      const output = tryParseJson(item.toolOutput ?? "");
+      const isValid = output?.valid === true;
+      const errorCount =
+        typeof output?.error_count === "number"
+          ? output.error_count
+          : Array.isArray(output?.errors)
+            ? output.errors.length
+            : null;
+      const status =
+        output !== null
+          ? isValid
+            ? "Valid"
+            : errorCount !== null
+              ? `${errorCount} errors`
+              : "Errors found"
+          : null;
+      const preview = status ? `${scope} · ${status}` : scope;
+      return { Icon: ShieldCheck, label: "Validate Project", preview };
+    }
+
+    case "search_text": {
+      const pattern = typeof input?.pattern === "string" ? input.pattern : "?";
+      const fileGlob = typeof input?.file_glob === "string" ? input.file_glob : null;
+      const output = tryParseJson(item.toolOutput ?? "");
+      const count = typeof output?.count === "number" ? output.count : null;
+      const truncated = output?.truncated === true;
+      const scope = fileGlob ? ` in ${fileGlob}` : "";
+      const preview =
+        count !== null
+          ? `${trunc(pattern, 30)}${scope} · ${count}${truncated ? "+" : ""} matches`
+          : `${trunc(pattern, 40)}${scope}`;
+      return { Icon: TextSearch, label: "Search Text", preview };
+    }
+
+    case "execute_sql": {
+      const db = typeof input?.database === "string" ? input.database : null;
+      const output = tryParseJson(item.toolOutput ?? "");
+      const rowCount = typeof output?.row_count === "number" ? output.row_count : null;
+      const parts = [db ?? "SQL", rowCount !== null ? `${rowCount} rows` : null].filter(Boolean);
+      return { Icon: Database, label: "Execute SQL", preview: trunc(parts.join(" · ")) };
     }
 
     // ── Domain event ──────────────────────────────────────────────────────────
