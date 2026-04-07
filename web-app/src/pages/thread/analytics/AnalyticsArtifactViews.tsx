@@ -59,8 +59,6 @@ export const ChartSection = ({
   );
 };
 
-// ── RawArtifactView ───────────────────────────────────────────────────────────
-
 export const RawArtifactView = ({ item }: { item: ArtifactItem }) => (
   <div className='flex h-full flex-col'>
     <div className='flex-1 overflow-auto p-4'>

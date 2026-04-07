@@ -4,6 +4,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DisplayBlock } from "@/components/AppPreview/Displays";
 import ThinkingModeMenu from "@/components/Chat/ChatPanel/ThinkingModeMenu";
 import Markdown from "@/components/Markdown";
+import MentionMessageInput from "@/components/MentionMessageInput";
 import MessageInput from "@/components/MessageInput";
 import UserMessage from "@/components/Messages/UserMessage";
 import ErrorAlert from "@/components/ui/ErrorAlert";
@@ -18,25 +19,40 @@ import type { SelectableItem } from "@/hooks/analyticsSteps";
 import queryKeys from "@/hooks/api/queryKey";
 import type { AnalyticsDisplayBlock, SseEvent } from "@/hooks/useAnalyticsRun";
 import {
+  extractAnswer,
   extractDisplayBlocks,
   sseEventToUiBlock,
   uiBlockToSseEvent,
   useAnalyticsRun
 } from "@/hooks/useAnalyticsRun";
+import type { BuilderProposedChange } from "@/hooks/useBuilderActivity";
+import { extractProposedChangeMetadata, useBuilderActivity } from "@/hooks/useBuilderActivity";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
-import type { AnalyticsRunSummary, ThinkingMode, UiBlock } from "@/services/api/analytics";
+import type {
+  AnalyticsRunSummary,
+  ProposedChangeBlock,
+  ThinkingMode,
+  UiBlock
+} from "@/services/api/analytics";
 import { AnalyticsService } from "@/services/api/analytics";
 import { consumePendingThinkingMode } from "@/stores/analyticsThinkingMode";
 import type { DataContainer, Display } from "@/types/app";
 import type { ThreadItem } from "@/types/chat";
 import ProcedureRunDagPanel from "../agentic/ProcedureRunDagPanel";
+import AcceptedChangePills from "./AcceptedChangePills";
 import AnalyticsArtifactSidebar from "./AnalyticsArtifactSidebar";
 import AnalyticsReasoningTrace from "./AnalyticsReasoningTrace";
+import BuilderActivityPanel from "./BuilderActivityPanel";
+import FilePreviewPanel from "./FilePreviewPanel";
 import Header from "./Header";
+import { parseProposeChange } from "./ProposeChangeDiff";
 import SuspensionPrompt from "./SuspensionPrompt";
 
 /** The fixed key used as the data reference inside agentic Display configs. */
 const AGENTIC_DATA_KEY = "__agentic_result__";
+
+/** Answer text the backend interprets as an approval for proposed changes. */
+const ACCEPT_ANSWER = "Accept";
 
 /**
  * Convert an AnalyticsDisplayBlock into a (Display, DataContainer) pair
@@ -152,11 +168,25 @@ interface RunEntryProps {
   question: string;
   events: UiBlock[];
   isRunning: boolean;
+  isBuilder?: boolean;
   onSelectArtifact: (item: SelectableItem) => void;
+  acceptedChanges?: BuilderProposedChange[];
+  onSelectChange?: (change: BuilderProposedChange) => void;
+  selectedChangeId?: string;
   children?: ReactNode;
 }
 
-const RunEntry = ({ question, events, isRunning, onSelectArtifact, children }: RunEntryProps) => (
+const RunEntry = ({
+  question,
+  events,
+  isRunning,
+  isBuilder,
+  onSelectArtifact,
+  acceptedChanges,
+  onSelectChange,
+  selectedChangeId,
+  children
+}: RunEntryProps) => (
   <div className='mb-8'>
     <div className='mb-4 flex justify-end'>
       <UserMessage content={question} />
@@ -171,6 +201,13 @@ const RunEntry = ({ question, events, isRunning, onSelectArtifact, children }: R
       </div>
     )}
     {children}
+    {isBuilder && acceptedChanges && acceptedChanges.length > 0 && onSelectChange && (
+      <AcceptedChangePills
+        changes={acceptedChanges}
+        onSelect={onSelectChange}
+        selectedId={selectedChangeId}
+      />
+    )}
   </div>
 );
 
@@ -178,7 +215,10 @@ const RunEntry = ({ question, events, isRunning, onSelectArtifact, children }: R
 
 const PastRunEntry = ({
   run,
-  onSelectArtifact
+  onSelectArtifact,
+  onSelectChange,
+  selectedChangeId,
+  capturedChanges
 }: {
   run: AnalyticsRunSummary;
   onSelectArtifact: (
@@ -186,15 +226,51 @@ const PastRunEntry = ({
     blocks: AnalyticsDisplayBlock[],
     runEvents: SseEvent[]
   ) => void;
+  onSelectChange?: (change: BuilderProposedChange) => void;
+  selectedChangeId?: string;
+  capturedChanges?: BuilderProposedChange[];
 }) => {
-  const runSseEvents = (run.ui_events ?? []).map(uiBlockToSseEvent);
-  const runBlocks = extractDisplayBlocks(runSseEvents);
+  const isBuilder = run.agent_id === "__builder__";
+  const runSseEvents = useMemo(() => (run.ui_events ?? []).map(uiBlockToSseEvent), [run.ui_events]);
+  const runBlocks = useMemo(() => extractDisplayBlocks(runSseEvents), [runSseEvents]);
+  const runAnswer = useMemo(
+    () => run.answer ?? extractAnswer(runSseEvents),
+    [run.answer, runSseEvents]
+  );
+  // Use changes captured at run-end when available (current session); fall back
+  // to server ui_events so pills survive a page reload.
+  const acceptedChanges = useMemo((): BuilderProposedChange[] => {
+    if (capturedChanges) return capturedChanges;
+    if (!isBuilder || run.status !== "done") return [];
+    const events = run.ui_events ?? [];
+    let counter = 0;
+    return events
+      .filter((ev): ev is ProposedChangeBlock => ev.event_type === "proposed_change")
+      .map((ev) => {
+        const { oldContent, isDeletion } = extractProposedChangeMetadata(events, ev.seq);
+        return {
+          kind: "proposed_change" as const,
+          id: `past-${run.run_id}-change-${counter++}`,
+          filePath: ev.payload.file_path,
+          description: ev.payload.description,
+          newContent: ev.payload.new_content,
+          oldContent,
+          isDeletion: ev.payload.delete ?? isDeletion,
+          status: "accepted" as const
+        };
+      });
+  }, [capturedChanges, isBuilder, run.run_id, run.status, run.ui_events]);
+
   return (
     <RunEntry
       question={run.question}
       events={run.ui_events ?? []}
       isRunning={false}
+      isBuilder={isBuilder}
       onSelectArtifact={(item) => onSelectArtifact(item, runBlocks, runSseEvents)}
+      acceptedChanges={acceptedChanges}
+      onSelectChange={onSelectChange}
+      selectedChangeId={selectedChangeId}
     >
       {run.status === "done" && (
         <>
@@ -205,9 +281,9 @@ const PastRunEntry = ({
                 <AnalyticsDisplayBlockItem key={key} block={block} index={i} runId={run.run_id} />
               );
             })}
-          {run.answer && (
+          {runAnswer && (
             <div className='rounded-lg border border-border bg-card p-4'>
-              <Markdown>{run.answer}</Markdown>
+              <Markdown>{runAnswer}</Markdown>
             </div>
           )}
         </>
@@ -224,17 +300,36 @@ const PastRunEntry = ({
 // ── Thread ────────────────────────────────────────────────────────────────────
 
 const AnalyticsThread = ({ thread }: Props) => {
-  const { project } = useCurrentProjectBranch();
+  const { project, branchName } = useCurrentProjectBranch();
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [followUpQuestion, setFollowUpQuestion] = useState("");
   const [selectedArtifact, setSelectedArtifact] = useState<SelectableItem | null>(null);
   const [selectedRunEvents, setSelectedRunEvents] = useState<SseEvent[]>([]);
   const [activeQuestion, setActiveQuestion] = useState<string | null>(null);
+  const [builderPanelOpen, setBuilderPanelOpen] = useState(false);
+  const [changeDecisions, setChangeDecisions] = useState<Map<number, "accepted" | "rejected">>(
+    () => new Map()
+  );
+  const [selectedFileChange, setSelectedFileChange] = useState<BuilderProposedChange | null>(null);
+  const [selectedDisplayBlocks, setSelectedDisplayBlocks] = useState<AnalyticsDisplayBlock[]>([]);
+  // Accepted changes captured per-run when a run reaches terminal state, so they
+  // survive the live→PastRunEntry transition (streamingEvents clears on reset).
+  const [capturedRunChanges, setCapturedRunChanges] = useState<
+    Map<string, BuilderProposedChange[]>
+  >(() => new Map());
   const [showProcedurePanel, setShowProcedurePanel] = useState(false);
+  const [autoApprove, setAutoApprove] = useState(
+    () => localStorage.getItem("builder_auto_approve") === "true"
+  );
   const [thinkingMode, setThinkingMode] = useState<ThinkingMode>(
     () => consumePendingThinkingMode(thread.id) ?? "auto"
   );
+
+  const handleAutoApproveChange = useCallback((value: boolean) => {
+    setAutoApprove(value);
+    localStorage.setItem("builder_auto_approve", String(value));
+  }, []);
 
   const hasSyncedThinkingMode = useRef(false);
 
@@ -248,6 +343,9 @@ const AnalyticsThread = ({ thread }: Props) => {
   // current events without listing state as a reactive dependency.
   const stateRef = useRef(state);
   stateRef.current = state;
+  // Track latest accepted changes so the isTerminal effect can capture them
+  // before streamingEvents is cleared by reset().
+  const liveAcceptedChangesRef = useRef<BuilderProposedChange[]>([]);
 
   const {
     data: allRuns = [],
@@ -287,10 +385,57 @@ const AnalyticsThread = ({ thread }: Props) => {
     if (!isTerminal) return;
     const s = stateRef.current;
     if ("events" in s) setSelectedRunEvents(s.events);
+    // Capture accepted changes before streamingEvents clears on reset(), so
+    // PastRunEntry can still show pills after the live→history transition.
+    if ("runId" in s && s.runId) {
+      const accepted = liveAcceptedChangesRef.current;
+      if (accepted.length > 0) {
+        setCapturedRunChanges((prev) => new Map(prev).set(s.runId, accepted));
+      }
+    }
     queryClient.invalidateQueries({
       queryKey: queryKeys.analytics.runsByThread(project.id, thread.id)
     });
-  }, [isTerminal, queryClient, project.id, thread.id]);
+    // When the builder has accepted changes, selectively invalidate queries
+    // based on which file types were actually modified.
+    if (liveAcceptedChangesRef.current.length > 0) {
+      const paths = liveAcceptedChangesRef.current.map((c) => c.filePath);
+      const hasAgent = paths.some((p) => p.endsWith(".agent.yml"));
+      const hasWorkflow = paths.some(
+        (p) => p.endsWith(".workflow.yml") || p.endsWith(".procedure.yml")
+      );
+      const hasApp = paths.some((p) => p.endsWith(".app.yml"));
+
+      // Files are always invalidated — any accepted change writes to disk.
+      queryClient.invalidateQueries({ queryKey: queryKeys.file.all(project.id, branchName) });
+      if (hasAgent) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.agent.list(project.id, branchName) });
+      }
+      if (hasWorkflow) {
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.workflow.list(project.id, branchName)
+        });
+      }
+      if (hasApp) {
+        // Eagerly refetch display structure so the preview reflects layout changes
+        // immediately. Data queries are intentionally left alone — they're expensive
+        // and should only re-run on explicit refresh or window focus.
+        for (const sub of ["list", "getDisplays"] as const) {
+          queryClient.refetchQueries({
+            queryKey: [...queryKeys.app.all, sub, project.id, branchName],
+            type: "all"
+          });
+        }
+      }
+      // Auto-open the preview for the last accepted change (skip deletions — file no longer exists).
+      const lastChange = [...liveAcceptedChangesRef.current].reverse().find((c) => !c.isDeletion);
+      if (lastChange) {
+        setSelectedFileChange(lastChange);
+        setSelectedArtifact(null);
+        setBuilderPanelOpen(false);
+      }
+    }
+  }, [isTerminal, queryClient, project.id, branchName, thread.id]);
 
   // Once allRuns reflects the terminal run, reset state to idle so it transitions
   // to a PastRunEntry. Uses the runId string (stable) rather than the full state object.
@@ -332,10 +477,19 @@ const AnalyticsThread = ({ thread }: Props) => {
 
   const agentId = thread.source;
   const question = thread.input;
+  const isBuilder = agentId === "__builder__";
 
   const isStreaming = state.tag === "running" || state.tag === "suspended";
   const runExists = isStreaming || isTerminal;
 
+  // Auto-open the builder panel only when a change is proposed (agent suspended).
+  // Also dismiss any open file preview so the suspension prompt takes focus.
+  useEffect(() => {
+    if (isBuilder && state.tag === "suspended") {
+      setBuilderPanelOpen(true);
+      setSelectedFileChange(null);
+    }
+  }, [isBuilder, state.tag]);
   // Current SSE events: prefer live streaming events, fall back to frozen events from last run.
   const currentEvents = "events" in state ? state.events : selectedRunEvents;
 
@@ -381,8 +535,12 @@ const AnalyticsThread = ({ thread }: Props) => {
   // before allRuns has picked up the new run. Fall back to latestRun for reconnects.
   const currentQuestion = (runExists ? activeQuestion : null) ?? latestRun?.question ?? question;
 
+  // Builder activity derived from the live event stream.
+  const builderActivityItems = useBuilderActivity(streamingEvents, changeDecisions);
+
   const handleStart = (q: string) => {
     setActiveQuestion(q);
+    setChangeDecisions(new Map());
     scrollToBottom();
     start(agentId, q, thread.id, thinkingMode);
   };
@@ -394,13 +552,62 @@ const AnalyticsThread = ({ thread }: Props) => {
     handleStart(q);
   };
 
+  // Wrap answer to record accept/reject decisions for the builder activity panel.
+  const handleAnswer = useCallback(
+    (text: string) => {
+      if (isBuilder && state.tag === "suspended") {
+        // Find the proposed_change event paired with the current suspension.
+        // streamingEvents are UiBlock[] with event_type/seq fields.
+        const proposedChange = [...streamingEvents]
+          .reverse()
+          .find((ev) => ev.event_type === "proposed_change");
+        if (proposedChange) {
+          const decision = text.toLowerCase().includes("accept") ? "accepted" : "rejected";
+          setChangeDecisions((prev) => new Map(prev).set(proposedChange.seq, decision));
+          if (decision === "accepted") {
+            setBuilderPanelOpen(false);
+          }
+        }
+      }
+      answer(text);
+    },
+    [isBuilder, state.tag, streamingEvents, answer]
+  );
+
+  // Auto-approve proposed changes when the toggle is enabled.
+  useEffect(() => {
+    if (!autoApprove || state.tag !== "suspended") return;
+    if (state.questions.length === 1 && parseProposeChange(state.questions[0].prompt)) {
+      handleAnswer(ACCEPT_ANSWER);
+    }
+  }, [autoApprove, state, handleAnswer]);
+
+  const handleSelectFileChange = useCallback((change: BuilderProposedChange) => {
+    setSelectedFileChange((prev) => (prev?.id === change.id ? null : change));
+    setSelectedArtifact(null);
+    setBuilderPanelOpen(false);
+  }, []);
+
+  const liveAcceptedChanges = useMemo(
+    () =>
+      builderActivityItems.filter(
+        (i): i is BuilderProposedChange => i.kind === "proposed_change" && i.status === "accepted"
+      ),
+    [builderActivityItems]
+  );
+  // Keep ref in sync so the isTerminal effect can read current value without a dep.
+  liveAcceptedChangesRef.current = liveAcceptedChanges;
+
   const handleSelectArtifact = useCallback(
-    (item: SelectableItem, _blocks: AnalyticsDisplayBlock[] = [], runEvents: SseEvent[] = []) => {
+    (item: SelectableItem, blocks: AnalyticsDisplayBlock[] = [], runEvents: SseEvent[] = []) => {
       if (item.kind === "procedure") {
         setShowProcedurePanel((prev) => !prev);
         return;
       }
       setSelectedArtifact(item);
+      setSelectedDisplayBlocks(blocks);
+      setSelectedFileChange(null);
+      setBuilderPanelOpen(false);
       if (runEvents.length > 0) setSelectedRunEvents(runEvents);
     },
     []
@@ -412,7 +619,15 @@ const AnalyticsThread = ({ thread }: Props) => {
 
       <ResizablePanelGroup direction='horizontal' className='flex-1'>
         <ResizablePanel
-          defaultSize={selectedArtifact || (showProcedurePanel && procedureInfo) ? 55 : 100}
+          defaultSize={
+            isBuilder && builderPanelOpen
+              ? 50
+              : selectedFileChange
+                ? 50
+                : selectedArtifact || (showProcedurePanel && procedureInfo)
+                  ? 50
+                  : 100
+          }
           minSize={30}
         >
           <div className='flex h-full w-full flex-1 flex-col py-4'>
@@ -432,6 +647,9 @@ const AnalyticsThread = ({ thread }: Props) => {
                     key={run.run_id}
                     run={run}
                     onSelectArtifact={handleSelectArtifact}
+                    onSelectChange={handleSelectFileChange}
+                    selectedChangeId={selectedFileChange?.id}
+                    capturedChanges={capturedRunChanges.get(run.run_id)}
                   />
                 ))}
 
@@ -449,9 +667,13 @@ const AnalyticsThread = ({ thread }: Props) => {
                     question={currentQuestion}
                     events={streamingEvents}
                     isRunning={isStreaming}
+                    isBuilder={isBuilder}
                     onSelectArtifact={(item) =>
                       handleSelectArtifact(item, state.tag === "done" ? state.displayBlocks : [])
                     }
+                    acceptedChanges={liveAcceptedChanges}
+                    onSelectChange={handleSelectFileChange}
+                    selectedChangeId={selectedFileChange?.id}
                   >
                     {state.tag === "done" && (
                       <div className='flex flex-col gap-4'>
@@ -504,8 +726,17 @@ const AnalyticsThread = ({ thread }: Props) => {
               {state.tag === "suspended" ? (
                 <SuspensionPrompt
                   questions={state.questions}
-                  onAnswer={answer}
+                  onAnswer={handleAnswer}
                   isAnswering={isAnswering}
+                />
+              ) : isBuilder ? (
+                <MentionMessageInput
+                  onSend={handleStart}
+                  onStop={stop}
+                  disabled={state.tag === "running" || isStarting}
+                  isLoading={state.tag === "running" || isStarting}
+                  autoApprove={autoApprove}
+                  onAutoApproveChange={handleAutoApproveChange}
                 />
               ) : (
                 <div className='flex-col items-end gap-2 rounded-md border border-neutral-700 bg-secondary'>
@@ -534,19 +765,45 @@ const AnalyticsThread = ({ thread }: Props) => {
           </div>
         </ResizablePanel>
 
-        {selectedArtifact && (
+        {isBuilder && builderPanelOpen ? (
           <>
             <ResizableHandle withHandle />
-            <ResizablePanel defaultSize={40} minSize={20} maxSize={70}>
-              <AnalyticsArtifactSidebar
-                item={selectedArtifact}
-                displayBlocks={extractDisplayBlocks(currentEvents)}
-                runEvents={currentEvents}
+            <ResizablePanel defaultSize={50} minSize={20} maxSize={70}>
+              <BuilderActivityPanel
+                items={builderActivityItems}
                 isRunning={isStreaming}
-                onClose={() => setSelectedArtifact(null)}
+                isSuspended={state.tag === "suspended"}
+                onAnswer={handleAnswer}
+                isAnswering={isAnswering}
+                onClose={() => setBuilderPanelOpen(false)}
               />
             </ResizablePanel>
           </>
+        ) : selectedFileChange ? (
+          <>
+            <ResizableHandle withHandle />
+            <ResizablePanel defaultSize={50} minSize={20} maxSize={70}>
+              <FilePreviewPanel
+                change={selectedFileChange}
+                onClose={() => setSelectedFileChange(null)}
+              />
+            </ResizablePanel>
+          </>
+        ) : (
+          selectedArtifact && (
+            <>
+              <ResizableHandle withHandle />
+              <ResizablePanel defaultSize={50} minSize={20} maxSize={70}>
+                <AnalyticsArtifactSidebar
+                  item={selectedArtifact}
+                  displayBlocks={selectedDisplayBlocks}
+                  runEvents={"events" in state ? state.events : selectedRunEvents}
+                  isRunning={isStreaming}
+                  onClose={() => setSelectedArtifact(null)}
+                />
+              </ResizablePanel>
+            </>
+          )
         )}
 
         {showProcedurePanel && procedureInfo && (

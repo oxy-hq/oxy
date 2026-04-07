@@ -3,8 +3,8 @@ import { BuilderService } from "@/services/api";
 import useCurrentProjectBranch from "../useCurrentProjectBranch";
 
 /**
- * Hook to check if the builder agent is available
- * Checks if builder_agent is set in config.yml and if the value is a valid agent
+ * Hook to check if the builder agent is available.
+ * Supports both legacy path-based agents and the new built-in copilot.
  */
 export default function useBuilderAvailable() {
   const { project } = useCurrentProjectBranch();
@@ -13,6 +13,8 @@ export default function useBuilderAvailable() {
   const [isAvailable, setIsAvailable] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [builderPath, setBuilderPath] = useState<string>("");
+  const [isBuiltin, setIsBuiltin] = useState<boolean>(false);
+  const [builderModel, setBuilderModel] = useState<string | undefined>(undefined);
   const isAgentic = builderPath.endsWith(".aw.yaml") || builderPath.endsWith(".aw.yml");
 
   useEffect(() => {
@@ -22,6 +24,8 @@ export default function useBuilderAvailable() {
         const result = await BuilderService.checkBuilderAvailability(projectId);
         setIsAvailable(result.available);
         setBuilderPath(result.builder_path || "");
+        setIsBuiltin(result.builtin ?? false);
+        setBuilderModel(result.model ?? undefined);
       } catch (error) {
         // If there's an error checking availability, assume builder is not available
         setIsAvailable(false);
@@ -34,5 +38,5 @@ export default function useBuilderAvailable() {
     checkBuilderAvailability();
   }, [projectId]);
 
-  return { isAvailable, isAgentic, isLoading, builderPath };
+  return { isAvailable, isAgentic, isLoading, builderPath, isBuiltin, builderModel };
 }

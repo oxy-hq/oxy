@@ -291,6 +291,20 @@ export type ProcedureStepCompletedBlock = {
   };
 };
 
+// ── Builder copilot events ────────────────────────────────────────────────────
+
+export type ToolUsedBlock = {
+  seq: number;
+  event_type: "tool_used";
+  payload: { tool_name: string; summary: string };
+};
+
+export type ProposedChangeBlock = {
+  seq: number;
+  event_type: "proposed_change";
+  payload: { file_path: string; description: string; new_content: string; delete?: boolean };
+};
+
 // ── App-builder domain events ────────────────────────────────────────────────
 
 export type TaskPlanReadyBlock = {
@@ -373,7 +387,9 @@ export type UiBlock =
   | AppYamlReadyBlock
   | SemanticShortcutAttemptedBlock
   | SemanticShortcutResolvedBlock
-  | LlmUsageBlock;
+  | LlmUsageBlock
+  | ToolUsedBlock
+  | ProposedChangeBlock;
 
 export interface AnalyticsRunSummary {
   run_id: string;

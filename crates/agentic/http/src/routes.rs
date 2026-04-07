@@ -19,16 +19,23 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
 
+use agentic_analytics::LlmClient;
+use agentic_analytics::OpenAiProvider;
 use agentic_analytics::{
-    AnalyticsEvent, AnalyticsIntent, QuestionType, analytics_step_summary, analytics_tool_summary,
-    build_analytics_handlers,
+    AnalyticsEvent, AnalyticsIntent, QuestionType, build_analytics_handlers,
     config::{AgentConfig, BuildContext},
+};
+use agentic_builder::{
+    BuilderEvent, BuilderIntent, BuilderSolver, ConversationTurn as BuilderTurn,
+    build_builder_handlers, builder_step_summary, builder_tool_summary,
 };
 use agentic_core::{
     UiTransformState,
     events::{CoreEvent, Event, EventStream},
     orchestrator::{Orchestrator, OrchestratorError},
 };
+
+use oxy_auth::extractor::AuthenticatedUserExtractor;
 
 use crate::{
     db, sse,
@@ -74,6 +81,12 @@ pub struct CreateRunRequest {
     pub question: String,
     /// Optional thread FK — links this run to an existing thread.
     pub thread_id: Option<String>,
+    /// Domain to use: "analytics" (default) or "builder".
+    #[serde(default)]
+    pub domain: Option<String>,
+    /// Model override for the built-in builder domain.
+    #[serde(default)]
+    pub model: Option<String>,
     /// Thinking mode preset: `"auto"` (default) or `"extended_thinking"`.
     ///
     /// When `"extended_thinking"`, the `llm.extended_thinking` config from the agent YAML is
@@ -105,6 +118,72 @@ pub struct RunIdPath {
 #[derive(Deserialize)]
 pub struct ThreadIdPath {
     thread_id: String,
+}
+
+#[derive(Deserialize)]
+struct ProposeChangeSuspension {
+    #[serde(rename = "type")]
+    kind: String,
+    #[serde(default)]
+    file_path: String,
+}
+
+/// Returns `true` when `file_path` is relative and cannot escape `base_dir`
+/// via path-traversal components.  No I/O is performed.
+fn is_within_project(base_dir: &std::path::Path, file_path: &str) -> bool {
+    let p = std::path::Path::new(file_path);
+    if p.is_absolute() {
+        return false;
+    }
+    // Manually resolve the joined path without touching the filesystem so we
+    // can validate even files that don't exist yet.
+    let mut normalized = std::path::PathBuf::new();
+    for component in base_dir.join(p).components() {
+        match component {
+            std::path::Component::ParentDir => {
+                normalized.pop();
+            }
+            std::path::Component::CurDir => {}
+            c => normalized.push(c),
+        }
+    }
+    normalized.starts_with(base_dir)
+}
+
+fn resumed_builder_tool_result(
+    question: &str,
+    answer: &str,
+    base_dir: &std::path::Path,
+) -> Option<(String, String)> {
+    let suspension: ProposeChangeSuspension = serde_json::from_str(question).ok()?;
+    if suspension.kind != "propose_change" {
+        return None;
+    }
+
+    let file_path = suspension.file_path.trim();
+    if !file_path.is_empty() && !is_within_project(base_dir, file_path) {
+        tracing::warn!(
+            file_path,
+            "rejected propose_change with path outside project root"
+        );
+        return None;
+    }
+
+    let answer_lower = answer.to_lowercase();
+    let output = if answer_lower.contains("accept") {
+        if file_path.is_empty() {
+            "The user accepted the proposed change. The file has been updated.".to_string()
+        } else {
+            format!(
+                "The user accepted the proposed change to '{file_path}'. The file has been updated."
+            )
+        }
+    } else {
+        "The user rejected the proposed change. Please reconsider or propose an alternative approach."
+            .to_string()
+    };
+
+    Some(("propose_change".to_string(), output))
 }
 
 /// Lightweight summary returned by GET /analytics/threads/:thread_id/run
@@ -140,6 +219,103 @@ pub async fn create_run(
             return (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")).into_response();
         }
     };
+
+    // Dispatch to builder domain if requested.
+    if body.domain.as_deref() == Some("builder") {
+        let model = body
+            .model
+            .clone()
+            .unwrap_or_else(|| "claude-sonnet-4-6".to_string());
+        let base_dir = project_manager.config_manager.project_path().to_path_buf();
+        let question = body.question.clone();
+        let thread_id_uuid = body
+            .thread_id
+            .as_deref()
+            .and_then(|s| Uuid::parse_str(s).ok());
+
+        if let Err(e) =
+            db::insert_run(&db, &run_id, "__builder__", &question, thread_id_uuid, None).await
+        {
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")).into_response();
+        }
+
+        let history: Vec<agentic_builder::ConversationTurn> = if let Some(tid) = thread_id_uuid {
+            db::get_thread_history_with_events(&db, tid, 10)
+                .await
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(q, a, exchanges)| agentic_builder::ConversationTurn {
+                    question: q,
+                    answer: a,
+                    tool_exchanges: exchanges
+                        .into_iter()
+                        .map(|e| agentic_builder::ToolExchange {
+                            name: e.name,
+                            input: e.input,
+                            output: e.output,
+                        })
+                        .collect(),
+                })
+                .collect()
+        } else {
+            vec![]
+        };
+
+        // `model` is a config model name — look it up to get the right
+        // key_var and provider.
+        let resolved_model = project_manager.config_manager.resolve_model(&model).ok();
+        let api_key = {
+            let key_var = resolved_model
+                .and_then(|m| m.key_var().map(|s| s.to_string()))
+                .unwrap_or_else(|| "ANTHROPIC_API_KEY".to_string());
+            project_manager
+                .secrets_manager
+                .resolve_secret(&key_var)
+                .await
+                .ok()
+                .flatten()
+                .or_else(|| std::env::var(&key_var).ok())
+                .unwrap_or_default()
+        };
+
+        // Build the correct LlmClient based on vendor.
+        let client = if let Some(openai_cfg) = resolved_model.and_then(|m| m.as_openai()) {
+            let provider_model = openai_cfg.model_name().to_string();
+            let provider = if let Some(base_url) = openai_cfg.api_url.as_deref() {
+                OpenAiProvider::with_base_url(&api_key, &provider_model, base_url)
+            } else {
+                OpenAiProvider::new(&api_key, &provider_model)
+            };
+            LlmClient::with_provider(provider)
+        } else {
+            // Anthropic (default) or unresolved model name.
+            let provider_model = resolved_model
+                .map(|m| m.model_name().to_string())
+                .unwrap_or(model);
+            LlmClient::with_model(api_key, provider_model)
+        };
+
+        let (answer_tx, answer_rx) = mpsc::channel::<String>(1);
+        let (cancel_tx, cancel_rx) = watch::channel(false);
+        state.register(&run_id, answer_tx, cancel_tx);
+
+        let state2 = Arc::clone(&state);
+        let run_id2 = run_id.clone();
+        let sm = Some(project_manager.secrets_manager.clone());
+
+        tokio::spawn(async move {
+            run_builder_pipeline(
+                state2, client, base_dir, run_id2, question, history, answer_rx, cancel_rx, db, sm,
+            )
+            .await;
+        });
+
+        return Json(CreateRunResponse {
+            run_id,
+            thread_id: body.thread_id,
+        })
+        .into_response();
+    }
 
     // Load agent config lazily per request.
     let config_path = project_manager
@@ -267,8 +443,8 @@ pub async fn stream_events(
         // that replaying from seq=0 rebuilds current_label / fan-out state.
         let mut ui_state: UiTransformState<AnalyticsEvent> =
             UiTransformState::new()
-                .with_summary_fn(analytics_step_summary)
-                .with_tool_summary_fn(analytics_tool_summary);
+                .with_summary_fn(builder_step_summary)
+                .with_tool_summary_fn(builder_tool_summary);
         let mut ui_serializer = sse::UiBlockSerializer::new();
 
         loop {
@@ -300,6 +476,16 @@ pub async fn stream_events(
                             terminal = true;
                         }
                     }
+                } else if let Some(direct) = sse::deserialize_builder_ui(&row.event_type, &row.payload) {
+                    // Builder domain events (tool_used etc.) bypass UiTransformState
+                    // and are forwarded directly to the frontend.
+                    for (ui_event_type, ui_payload) in direct {
+                        let event = SseEvent::default()
+                            .id(row.seq.to_string())
+                            .event(&ui_event_type)
+                            .data(ui_payload.to_string());
+                        yield Ok::<_, std::convert::Infallible>(event);
+                    }
                 }
                 // else: unrecognised raw event type — skip silently
             }
@@ -315,6 +501,14 @@ pub async fn stream_events(
                         if let Some(raw_event) = sse::deserialize(&row.event_type, &row.payload) {
                             for block in ui_state.process(raw_event) {
                                 let (ui_event_type, ui_payload) = ui_serializer.serialize_block(&block);
+                                let event = SseEvent::default()
+                                    .id(row.seq.to_string())
+                                    .event(&ui_event_type)
+                                    .data(ui_payload.to_string());
+                                yield Ok(event);
+                            }
+                        } else if let Some(direct) = sse::deserialize_builder_ui(&row.event_type, &row.payload) {
+                            for (ui_event_type, ui_payload) in direct {
                                 let event = SseEvent::default()
                                     .id(row.seq.to_string())
                                     .event(&ui_event_type)
@@ -537,7 +731,11 @@ async fn run_pipeline(
         macro_rules! flush {
             () => {
                 if !buf.is_empty() {
-                    db::batch_insert_events(&db2, &run_id2, &buf).await.ok();
+                    if db::batch_insert_events(&db2, &run_id2, &buf).await.is_ok() {
+                        db::update_run_terminal_from_events(&db2, &run_id2, &buf)
+                            .await
+                            .ok();
+                    }
                     state2.notify(&run_id2);
                     buf.clear();
                 }
@@ -633,10 +831,14 @@ async fn run_pipeline(
                         .spec_hint
                         .as_ref()
                         .and_then(|h| serde_json::to_value(h).ok());
-                    db::update_run_done(&db, &run_id, &answer.text, hint_json)
-                        .await
-                        .ok();
-                    state.statuses.insert(run_id.clone(), RunStatus::Done);
+                    match db::update_run_done(&db, &run_id, &answer.text, hint_json).await {
+                        Ok(_) => {
+                            state.statuses.insert(run_id.clone(), RunStatus::Done);
+                        }
+                        Err(e) => {
+                            tracing::warn!(run_id = %run_id, error = %e, "failed to persist run done state");
+                        }
+                    }
                     break;
                 }
 
@@ -656,7 +858,7 @@ async fn run_pipeline(
                         .map(|q| q.suggestions.clone())
                         .unwrap_or_default();
                     tracing::info!(run_id = %run_id, prompt = %combined_prompt, "pipeline suspended — awaiting user input");
-                    db::upsert_suspension(
+                    let suspension_ok = match db::upsert_suspension(
                         &db,
                         &run_id,
                         &combined_prompt,
@@ -664,11 +866,26 @@ async fn run_pipeline(
                         &resume_data,
                     )
                     .await
-                    .ok();
-                    db::update_run_suspended(&db, &run_id).await.ok();
-                    state
-                        .statuses
-                        .insert(run_id.clone(), RunStatus::Suspended { questions });
+                    {
+                        Ok(_) => true,
+                        Err(e) => {
+                            tracing::warn!(run_id = %run_id, error = %e, "failed to persist suspension data");
+                            false
+                        }
+                    };
+                    let suspension_ok = suspension_ok
+                        && match db::update_run_suspended(&db, &run_id).await {
+                            Ok(_) => true,
+                            Err(e) => {
+                                tracing::warn!(run_id = %run_id, error = %e, "failed to persist run suspended state");
+                                false
+                            }
+                        };
+                    if suspension_ok {
+                        state
+                            .statuses
+                            .insert(run_id.clone(), RunStatus::Suspended { questions });
+                    }
 
                     // Wait for the user's answer or a cancellation signal.
                     let user_answer = tokio::select! {
@@ -682,15 +899,34 @@ async fn run_pipeline(
                             cancelled = true;
                         } else {
                             tracing::warn!(run_id = %run_id, "answer channel closed — abandoning run");
-                            db::update_run_failed(&db, &run_id, "abandoned").await.ok();
-                            state
-                                .statuses
-                                .insert(run_id.clone(), RunStatus::Failed("abandoned".into()));
+                            match db::update_run_failed(&db, &run_id, "abandoned").await {
+                                Ok(_) => {
+                                    state.statuses.insert(
+                                        run_id.clone(),
+                                        RunStatus::Failed("abandoned".into()),
+                                    );
+                                }
+                                Err(e) => {
+                                    tracing::warn!(run_id = %run_id, error = %e, "failed to persist run abandoned state");
+                                }
+                            }
                         }
                         break;
                     };
 
                     tracing::info!(run_id = %run_id, "resuming after user answer");
+                    if let Some((tool_name, output)) =
+                        resumed_builder_tool_result(&resume_data.question, &answer, &base_dir)
+                    {
+                        let _ = resume_event_tx
+                            .send(Event::Core(CoreEvent::ToolResult {
+                                name: tool_name,
+                                output,
+                                duration_ms: 0,
+                                sub_spec_index: None,
+                            }))
+                            .await;
+                    }
                     // Emit HumanInputResolved so SSE replays see the transition
                     // and don't show the suspended prompt on page refresh.
                     let _ = resume_event_tx
@@ -701,8 +937,14 @@ async fn run_pipeline(
                             },
                         ))
                         .await;
-                    db::update_run_running(&db, &run_id).await.ok();
-                    state.statuses.insert(run_id.clone(), RunStatus::Running);
+                    match db::update_run_running(&db, &run_id).await {
+                        Ok(_) => {
+                            state.statuses.insert(run_id.clone(), RunStatus::Running);
+                        }
+                        Err(e) => {
+                            tracing::warn!(run_id = %run_id, error = %e, "failed to persist run running state");
+                        }
+                    }
 
                     let resume_result = tokio::select! {
                         r = orchestrator.resume(resume_data, answer) => Some(r),
@@ -721,34 +963,48 @@ async fn run_pipeline(
                 Err(OrchestratorError::Fatal(e)) => {
                     let msg = format!("fatal: {e:?}");
                     tracing::error!(run_id = %run_id, "{msg}");
-                    db::update_run_failed(&db, &run_id, &msg).await.ok();
-                    state
-                        .statuses
-                        .insert(run_id.clone(), RunStatus::Failed(msg));
+                    match db::update_run_failed(&db, &run_id, &msg).await {
+                        Ok(_) => {
+                            state
+                                .statuses
+                                .insert(run_id.clone(), RunStatus::Failed(msg));
+                        }
+                        Err(e) => {
+                            tracing::warn!(run_id = %run_id, error = %e, "failed to persist run failed state");
+                        }
+                    }
                     break;
                 }
 
                 Err(OrchestratorError::MaxIterationsExceeded) => {
                     tracing::warn!(run_id = %run_id, "max iterations exceeded");
-                    db::update_run_failed(&db, &run_id, "max iterations exceeded")
-                        .await
-                        .ok();
-                    state.statuses.insert(
-                        run_id.clone(),
-                        RunStatus::Failed("max iterations exceeded".into()),
-                    );
+                    match db::update_run_failed(&db, &run_id, "max iterations exceeded").await {
+                        Ok(_) => {
+                            state.statuses.insert(
+                                run_id.clone(),
+                                RunStatus::Failed("max iterations exceeded".into()),
+                            );
+                        }
+                        Err(e) => {
+                            tracing::warn!(run_id = %run_id, error = %e, "failed to persist run failed state");
+                        }
+                    }
                     break;
                 }
 
                 Err(OrchestratorError::ResumeNotSupported) => {
                     tracing::error!(run_id = %run_id, "resume called on solver without HITL support");
-                    db::update_run_failed(&db, &run_id, "resume not supported")
-                        .await
-                        .ok();
-                    state.statuses.insert(
-                        run_id.clone(),
-                        RunStatus::Failed("resume not supported".into()),
-                    );
+                    match db::update_run_failed(&db, &run_id, "resume not supported").await {
+                        Ok(_) => {
+                            state.statuses.insert(
+                                run_id.clone(),
+                                RunStatus::Failed("resume not supported".into()),
+                            );
+                        }
+                        Err(e) => {
+                            tracing::warn!(run_id = %run_id, error = %e, "failed to persist run failed state");
+                        }
+                    }
                     break;
                 }
             }
@@ -761,16 +1017,20 @@ async fn run_pipeline(
         let _ = cancel_event_tx
             .send(Event::Core(agentic_core::events::CoreEvent::Error {
                 message: "cancelled by user".into(),
-                trace_id: "".into(),
+                trace_id: run_id.clone(),
             }))
             .await;
-        db::update_run_failed(&db, &run_id, "cancelled by user")
-            .await
-            .ok();
-        state.statuses.insert(
-            run_id.clone(),
-            RunStatus::Failed("cancelled by user".into()),
-        );
+        match db::update_run_failed(&db, &run_id, "cancelled by user").await {
+            Ok(_) => {
+                state.statuses.insert(
+                    run_id.clone(),
+                    RunStatus::Failed("cancelled by user".into()),
+                );
+            }
+            Err(e) => {
+                tracing::warn!(run_id = %run_id, error = %e, "failed to persist run cancelled state");
+            }
+        }
     }
 
     // Drop all event senders so the bridge task's receiver closes and the
@@ -786,7 +1046,10 @@ async fn run_pipeline(
 
 // ── GET /threads/:thread_id/runs ──────────────────────────────────────────────
 
-pub async fn list_runs_by_thread(Path(ThreadIdPath { thread_id }): Path<ThreadIdPath>) -> Response {
+pub async fn list_runs_by_thread(
+    Path(ThreadIdPath { thread_id }): Path<ThreadIdPath>,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+) -> Response {
     let thread_uuid = match Uuid::parse_str(&thread_id) {
         Ok(u) => u,
         Err(_) => return (StatusCode::BAD_REQUEST, "invalid thread_id").into_response(),
@@ -799,14 +1062,34 @@ pub async fn list_runs_by_thread(Path(ThreadIdPath { thread_id }): Path<ThreadId
         }
     };
 
+    match db::get_thread_owner(&db, thread_uuid).await {
+        Ok(None) => return (StatusCode::NOT_FOUND, "thread not found").into_response(),
+        Ok(Some(Some(owner_id))) if owner_id != user.id => {
+            return (StatusCode::FORBIDDEN, "access denied").into_response();
+        }
+        Ok(_) => {}
+        Err(e) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")).into_response();
+        }
+    }
+
     match db::get_runs_by_thread(&db, thread_uuid).await {
         Ok(runs) => {
             let mut summaries: Vec<RunSummary> = Vec::with_capacity(runs.len());
             for r in runs {
-                let raw_rows = db::get_all_events(&db, &r.id).await.unwrap_or_default();
+                let (status, error_message) = db::get_effective_run_state(&db, &r)
+                    .await
+                    .unwrap_or_else(|e| {
+                        tracing::warn!(run_id = %r.id, error = %e, "get_effective_run_state failed, falling back to stored state");
+                        (r.status.clone(), r.error_message.clone())
+                    });
+                let raw_rows = db::get_all_events(&db, &r.id).await.unwrap_or_else(|e| {
+                    tracing::warn!(run_id = %r.id, error = %e, "get_all_events failed, returning empty event list");
+                    vec![]
+                });
                 let mut ui_state: UiTransformState<AnalyticsEvent> = UiTransformState::new()
-                    .with_summary_fn(analytics_step_summary)
-                    .with_tool_summary_fn(analytics_tool_summary);
+                    .with_summary_fn(builder_step_summary)
+                    .with_tool_summary_fn(builder_tool_summary);
                 let mut ui_serializer = sse::UiBlockSerializer::new();
                 let mut ui_events: Vec<sse::UiEvent> = Vec::new();
                 for row in raw_rows {
@@ -818,11 +1101,21 @@ pub async fn list_runs_by_thread(Path(ThreadIdPath { thread_id }): Path<ThreadId
                                 &mut ui_serializer,
                             ));
                         }
+                    } else if let Some(direct) =
+                        sse::deserialize_builder_ui(&row.event_type, &row.payload)
+                    {
+                        for (event_type, payload) in direct {
+                            ui_events.push(sse::UiEvent {
+                                seq: row.seq,
+                                event_type,
+                                payload,
+                            });
+                        }
                     }
                 }
                 summaries.push(RunSummary {
                     run_id: r.id,
-                    status: r.status,
+                    status,
                     agent_id: r.agent_id,
                     question: r.question,
                     answer: r.answer,
@@ -839,7 +1132,10 @@ pub async fn list_runs_by_thread(Path(ThreadIdPath { thread_id }): Path<ThreadId
 
 // ── GET /threads/:thread_id/run ───────────────────────────────────────────────
 
-pub async fn get_run_by_thread(Path(ThreadIdPath { thread_id }): Path<ThreadIdPath>) -> Response {
+pub async fn get_run_by_thread(
+    Path(ThreadIdPath { thread_id }): Path<ThreadIdPath>,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+) -> Response {
     let thread_uuid = match Uuid::parse_str(&thread_id) {
         Ok(u) => u,
         Err(_) => return (StatusCode::BAD_REQUEST, "invalid thread_id").into_response(),
@@ -852,21 +1148,356 @@ pub async fn get_run_by_thread(Path(ThreadIdPath { thread_id }): Path<ThreadIdPa
         }
     };
 
+    match db::get_thread_owner(&db, thread_uuid).await {
+        Ok(None) => return (StatusCode::NOT_FOUND, "thread not found").into_response(),
+        Ok(Some(Some(owner_id))) if owner_id != user.id => {
+            return (StatusCode::FORBIDDEN, "access denied").into_response();
+        }
+        Ok(_) => {}
+        Err(e) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")).into_response();
+        }
+    }
+
     match db::get_run_by_thread(&db, thread_uuid).await {
-        Ok(Some(run)) => Json(RunSummary {
-            run_id: run.id,
-            status: run.status,
-            agent_id: run.agent_id,
-            question: run.question,
-            answer: run.answer,
-            error_message: run.error_message,
-            thinking_mode: run.thinking_mode,
-            ui_events: None,
-        })
-        .into_response(),
+        Ok(Some(run)) => {
+            let (status, error_message) = db::get_effective_run_state(&db, &run)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::warn!(run_id = %run.id, error = %e, "get_effective_run_state failed, falling back to stored state");
+                    (run.status.clone(), run.error_message.clone())
+                });
+            Json(RunSummary {
+                run_id: run.id,
+                status,
+                agent_id: run.agent_id,
+                question: run.question,
+                answer: run.answer,
+                error_message,
+                thinking_mode: run.thinking_mode,
+                ui_events: None,
+            })
+            .into_response()
+        }
         Ok(None) => (StatusCode::NOT_FOUND, "no run for this thread").into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")).into_response(),
     }
+}
+
+// ── Builder pipeline ──────────────────────────────────────────────────────────
+
+#[allow(clippy::too_many_arguments)]
+async fn run_builder_pipeline(
+    state: Arc<AgenticState>,
+    client: LlmClient,
+    project_root: std::path::PathBuf,
+    run_id: String,
+    question: String,
+    history: Vec<BuilderTurn>,
+    mut answer_rx: mpsc::Receiver<String>,
+    mut cancel_rx: watch::Receiver<bool>,
+    db: DatabaseConnection,
+    secrets_manager: Option<oxy::adapters::secrets::SecretsManager>,
+) {
+    tracing::info!(run_id = %run_id, "builder pipeline started");
+
+    let pipeline_start = std::time::Instant::now();
+
+    // Wire the event channel: mpsc → postgres + Notify.
+    let (event_tx, mut event_rx) = mpsc::channel::<Event<BuilderEvent>>(256);
+    let cancel_event_tx = event_tx.clone();
+    let resume_event_tx = event_tx.clone();
+
+    let project_root_ref = project_root.clone();
+    let mut solver = BuilderSolver::new(client, project_root).with_events(event_tx);
+    if let Some(sm) = secrets_manager {
+        solver = solver.with_secrets_manager(sm);
+    }
+    if let Some(runner) = state.builder_test_runner.clone() {
+        solver = solver.with_test_runner(runner);
+    }
+
+    // Bridge task: drain events → DB.
+    let db2 = db.clone();
+    let state2 = Arc::clone(&state);
+    let run_id2 = run_id.clone();
+    let bridge_handle = tokio::spawn(async move {
+        let mut seq: i64 = 0;
+        let mut buf: Vec<(i64, String, String)> = Vec::new();
+
+        macro_rules! flush {
+            () => {
+                if !buf.is_empty() {
+                    if db::batch_insert_events(&db2, &run_id2, &buf).await.is_ok() {
+                        db::update_run_terminal_from_events(&db2, &run_id2, &buf)
+                            .await
+                            .ok();
+                    }
+                    state2.notify(&run_id2);
+                    buf.clear();
+                }
+            };
+        }
+
+        let mut tick = tokio::time::interval(std::time::Duration::from_millis(20));
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        tick.tick().await;
+
+        loop {
+            tokio::select! {
+                maybe = event_rx.recv() => {
+                    let event = match maybe {
+                        Some(e) => e,
+                        None => { flush!(); break; }
+                    };
+
+                    // Update in-memory run status so the answer endpoint can
+                    // validate that the run is actually suspended.
+                    match &event {
+                        Event::Core(CoreEvent::AwaitingHumanInput { questions, .. }) => {
+                            state2.statuses.insert(
+                                run_id2.clone(),
+                                RunStatus::Suspended { questions: questions.clone() },
+                            );
+                        }
+                        Event::Core(CoreEvent::HumanInputResolved { .. }) => {
+                            state2.statuses.insert(run_id2.clone(), RunStatus::Running);
+                        }
+                        _ => {}
+                    }
+
+                    let (event_type, mut payload) = sse::serialize_builder(&event);
+
+                    if sse::is_terminal(&event_type)
+                        && let serde_json::Value::Object(ref mut map) = payload {
+                            map.insert(
+                                "duration_ms".into(),
+                                (pipeline_start.elapsed().as_millis() as u64).into(),
+                            );
+                        }
+
+                    let flush_now = sse::is_terminal(&event_type)
+                        || matches!(event_type.as_str(), "awaiting_input" | "human_input_resolved");
+                    buf.push((seq, event_type, payload.to_string()));
+                    seq += 1;
+
+                    if flush_now { flush!(); }
+                }
+                _ = tick.tick() => { flush!(); }
+            }
+        }
+
+        state2.notify(&run_id2);
+    });
+
+    let mut cancelled = false;
+    let mut orchestrator = Orchestrator::new(solver)
+        .with_handlers(build_builder_handlers())
+        .with_events(resume_event_tx.clone());
+
+    let initial_intent = BuilderIntent { question, history };
+
+    let initial_result = tokio::select! {
+        r = orchestrator.run(initial_intent) => Some(r),
+        _ = cancel_rx.wait_for(|v| *v) => { cancelled = true; None },
+    };
+
+    if let Some(mut result) = initial_result {
+        loop {
+            match result {
+                Ok(answer) => {
+                    tracing::info!(run_id = %run_id, "builder pipeline done");
+                    match db::update_run_done(&db, &run_id, &answer.text, None).await {
+                        Ok(_) => {
+                            state.statuses.insert(run_id.clone(), RunStatus::Done);
+                        }
+                        Err(e) => {
+                            tracing::warn!(run_id = %run_id, error = %e, "failed to persist run done state");
+                        }
+                    }
+                    break;
+                }
+                Err(OrchestratorError::Suspended {
+                    questions,
+                    resume_data,
+                    trace_id: suspended_trace_id,
+                    ..
+                }) => {
+                    let combined_prompt = questions
+                        .iter()
+                        .map(|q| q.prompt.as_str())
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    let first_suggestions = questions
+                        .first()
+                        .map(|q| q.suggestions.clone())
+                        .unwrap_or_default();
+                    let suspension_ok = match db::upsert_suspension(
+                        &db,
+                        &run_id,
+                        &combined_prompt,
+                        &first_suggestions,
+                        &resume_data,
+                    )
+                    .await
+                    {
+                        Ok(_) => true,
+                        Err(e) => {
+                            tracing::warn!(run_id = %run_id, error = %e, "failed to persist suspension data");
+                            false
+                        }
+                    };
+                    let suspension_ok = suspension_ok
+                        && match db::update_run_suspended(&db, &run_id).await {
+                            Ok(_) => true,
+                            Err(e) => {
+                                tracing::warn!(run_id = %run_id, error = %e, "failed to persist run suspended state");
+                                false
+                            }
+                        };
+                    if suspension_ok {
+                        state
+                            .statuses
+                            .insert(run_id.clone(), RunStatus::Suspended { questions });
+                    }
+
+                    let user_answer = tokio::select! {
+                        opt = answer_rx.recv() => opt,
+                        _ = cancel_rx.wait_for(|v| *v) => None,
+                    };
+
+                    let Some(answer) = user_answer else {
+                        if *cancel_rx.borrow() {
+                            cancelled = true;
+                        } else {
+                            match db::update_run_failed(&db, &run_id, "abandoned").await {
+                                Ok(_) => {
+                                    state.statuses.insert(
+                                        run_id.clone(),
+                                        RunStatus::Failed("abandoned".into()),
+                                    );
+                                }
+                                Err(e) => {
+                                    tracing::warn!(run_id = %run_id, error = %e, "failed to persist run abandoned state");
+                                }
+                            }
+                        }
+                        break;
+                    };
+
+                    if let Some((tool_name, output)) = resumed_builder_tool_result(
+                        &resume_data.question,
+                        &answer,
+                        &project_root_ref,
+                    ) {
+                        let _ = resume_event_tx
+                            .send(Event::Core(CoreEvent::ToolResult {
+                                name: tool_name,
+                                output,
+                                duration_ms: 0,
+                                sub_spec_index: None,
+                            }))
+                            .await;
+                    }
+                    let _ = resume_event_tx
+                        .send(Event::Core(CoreEvent::HumanInputResolved {
+                            trace_id: suspended_trace_id,
+                            answer: answer.clone(),
+                        }))
+                        .await;
+                    match db::update_run_running(&db, &run_id).await {
+                        Ok(_) => {
+                            state.statuses.insert(run_id.clone(), RunStatus::Running);
+                        }
+                        Err(e) => {
+                            tracing::warn!(run_id = %run_id, error = %e, "failed to persist run running state");
+                        }
+                    }
+
+                    let resume_result = tokio::select! {
+                        r = orchestrator.resume(resume_data, answer) => Some(r),
+                        _ = cancel_rx.wait_for(|v| *v) => None,
+                    };
+
+                    match resume_result {
+                        Some(r) => result = r,
+                        None => {
+                            cancelled = true;
+                            break;
+                        }
+                    }
+                }
+                Err(OrchestratorError::Fatal(e)) => {
+                    let msg = format!("fatal: {e:?}");
+                    tracing::error!(run_id = %run_id, "{msg}");
+                    match db::update_run_failed(&db, &run_id, &msg).await {
+                        Ok(_) => {
+                            state
+                                .statuses
+                                .insert(run_id.clone(), RunStatus::Failed(msg));
+                        }
+                        Err(e) => {
+                            tracing::warn!(run_id = %run_id, error = %e, "failed to persist run failed state");
+                        }
+                    }
+                    break;
+                }
+                Err(OrchestratorError::MaxIterationsExceeded) => {
+                    let msg = "max iterations exceeded";
+                    match db::update_run_failed(&db, &run_id, msg).await {
+                        Ok(_) => {
+                            state
+                                .statuses
+                                .insert(run_id.clone(), RunStatus::Failed(msg.into()));
+                        }
+                        Err(e) => {
+                            tracing::warn!(run_id = %run_id, error = %e, "failed to persist run failed state");
+                        }
+                    }
+                    break;
+                }
+                Err(OrchestratorError::ResumeNotSupported) => {
+                    let msg = "resume not supported";
+                    match db::update_run_failed(&db, &run_id, msg).await {
+                        Ok(_) => {
+                            state
+                                .statuses
+                                .insert(run_id.clone(), RunStatus::Failed(msg.into()));
+                        }
+                        Err(e) => {
+                            tracing::warn!(run_id = %run_id, error = %e, "failed to persist run failed state");
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    if cancelled {
+        tracing::info!(run_id = %run_id, "builder pipeline cancelled");
+        let _ = cancel_event_tx
+            .send(Event::Core(agentic_core::events::CoreEvent::Error {
+                message: "cancelled by user".into(),
+                trace_id: run_id.clone(),
+            }))
+            .await;
+        match db::update_run_failed(&db, &run_id, "cancelled by user").await {
+            Ok(_) => {
+                state.statuses.insert(
+                    run_id.clone(),
+                    RunStatus::Failed("cancelled by user".into()),
+                );
+            }
+            Err(e) => {
+                tracing::warn!(run_id = %run_id, error = %e, "failed to persist run cancelled state");
+            }
+        }
+    }
+
+    drop(orchestrator);
+    bridge_handle.await.ok();
+    state.deregister(&run_id);
 }
 
 // ── Project context builder ────────────────────────────────────────────────────

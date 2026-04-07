@@ -14,77 +14,27 @@
 //! therefore never sees `ask_user`; the listing in `tools_for_state` is purely
 //! for the LLM's function-call schema.
 
-use agentic_core::{
-    human_input::SuspendedRunData,
-    state::ProblemState,
-    tools::{ToolDef, ToolError},
-};
+use agentic_core::{human_input::SuspendedRunData, state::ProblemState, tools::ToolDef};
 
 use crate::types::QuestionType;
 use crate::{AnalyticsDomain, AnalyticsIntent, AnalyticsResult, QuerySpec};
 use agentic_core::result::QueryResult;
 
 // ---------------------------------------------------------------------------
-// ask_user tool
+// ask_user tool — thin wrappers over agentic_core shared implementation
 // ---------------------------------------------------------------------------
 
-/// Tool definition for `ask_user`.
-///
-/// The LLM invokes this when it needs additional input from the user to
-/// proceed accurately.  The tool executor checks the [`HumanInputProvider`]:
-/// - [`StdinInputProvider`] (CLI): blocks and returns the answer immediately.
-/// - [`DeferredInputProvider`] (default): returns `ToolError::Suspended`,
-///   causing the pipeline to suspend.
-///
-/// OpenAI strict mode requires all properties in `required`; `suggestions`
-/// uses `["array","null"]` so the LLM can pass `null` when no suggestions apply.
+/// Tool definition for `ask_user`, with OpenAI `additionalProperties: false`
+/// injected for strict-mode compatibility.
 pub(super) fn ask_user_tool_def() -> ToolDef {
     use crate::llm::inject_additional_properties_false;
-    let mut schema = serde_json::json!({
-        "type": "object",
-        "properties": {
-            "prompt": {
-                "type": "string",
-                "description": "The question to ask the user."
-            },
-            "suggestions": {
-                "type": "array",
-                "description": "2–4 concrete suggested answers to guide the user. Always provide suggestions — they appear as clickable buttons in the UI.",
-                "items": { "type": "string" }
-            }
-        },
-        "required": ["prompt", "suggestions"]
-    });
-    inject_additional_properties_false(&mut schema);
-    ToolDef {
-        name: "ask_user",
-        description: "Ask the user a clarifying question when you need more information to proceed accurately. Always provide 2–4 concrete suggestions that cover the most likely answers.",
-        parameters: schema,
-    }
+    let mut def = agentic_core::tools::ask_user_tool_def();
+    inject_additional_properties_false(&mut def.parameters);
+    def
 }
 
-/// Execute an `ask_user` tool call via the given [`HumanInputProvider`].
-pub(super) fn handle_ask_user(
-    params: &serde_json::Value,
-    provider: &dyn agentic_core::human_input::HumanInputProvider,
-) -> Result<serde_json::Value, ToolError> {
-    let prompt = params["prompt"].as_str().unwrap_or("").to_string();
-    let suggestions: Vec<String> = params["suggestions"]
-        .as_array()
-        .map(|a| {
-            a.iter()
-                .filter_map(|v| v.as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default();
-    match provider.request_sync(&prompt, &suggestions) {
-        Ok(answer) => Ok(serde_json::json!({ "answer": answer })),
-        Err(()) => Err(ToolError::Suspended {
-            prompt,
-            suggestions,
-        }),
-    }
-}
+/// Re-export the shared `handle_ask_user` from core.
+pub(super) use agentic_core::tools::handle_ask_user;
 
 // ---------------------------------------------------------------------------
 // Resume routing

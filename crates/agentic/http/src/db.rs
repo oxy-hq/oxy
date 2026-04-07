@@ -1,7 +1,7 @@
 //! Database helpers for the agentic HTTP module (SeaORM).
 
 use agentic_core::human_input::SuspendedRunData;
-use sea_orm::sea_query::{Expr, OnConflict};
+use sea_orm::sea_query::OnConflict;
 use sea_orm::{
     ActiveValue::*, ColumnTrait, Condition, DatabaseConnection, DbErr, EntityTrait, QueryFilter,
     QueryOrder, TransactionTrait,
@@ -10,6 +10,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use agentic_db::entity::{agentic_run, agentic_run_event, agentic_run_suspension};
+use entity::threads;
 
 fn now() -> chrono::DateTime<chrono::FixedOffset> {
     chrono::Utc::now().fixed_offset()
@@ -118,6 +119,47 @@ pub async fn update_run_running(db: &DatabaseConnection, run_id: &str) -> Result
         updated_at: Set(now()),
         ..Default::default()
     };
+    agentic_run::Entity::update(run).exec(db).await?;
+    Ok(())
+}
+
+pub async fn update_run_terminal_from_events(
+    db: &DatabaseConnection,
+    run_id: &str,
+    events: &[(i64, String, String)],
+) -> Result<(), DbErr> {
+    let Some((_, event_type, payload_str)) = events
+        .iter()
+        .rev()
+        .find(|(_, event_type, _)| matches!(event_type.as_str(), "done" | "error"))
+    else {
+        return Ok(());
+    };
+
+    let payload: Value = serde_json::from_str(payload_str).unwrap_or(Value::Null);
+    let run = match event_type.as_str() {
+        "done" => agentic_run::ActiveModel {
+            id: Set(run_id.to_string()),
+            status: Set("done".to_string()),
+            error_message: Set(None),
+            updated_at: Set(now()),
+            ..Default::default()
+        },
+        "error" => agentic_run::ActiveModel {
+            id: Set(run_id.to_string()),
+            status: Set("failed".to_string()),
+            error_message: Set(Some(
+                payload["message"]
+                    .as_str()
+                    .unwrap_or("unknown error")
+                    .to_string(),
+            )),
+            updated_at: Set(now()),
+            ..Default::default()
+        },
+        _ => return Ok(()),
+    };
+
     agentic_run::Entity::update(run).exec(db).await?;
     Ok(())
 }
@@ -291,6 +333,48 @@ pub async fn get_run(
         .await
 }
 
+async fn get_last_run_event(
+    db: &DatabaseConnection,
+    run_id: &str,
+) -> Result<Option<agentic_run_event::Model>, DbErr> {
+    agentic_run_event::Entity::find()
+        .filter(agentic_run_event::Column::RunId.eq(run_id))
+        .order_by_desc(agentic_run_event::Column::Seq)
+        .one(db)
+        .await
+}
+
+fn terminal_error_message(
+    event: Option<&agentic_run_event::Model>,
+    fallback: Option<&str>,
+) -> Option<String> {
+    event
+        .and_then(|row| row.payload["message"].as_str())
+        .map(ToOwned::to_owned)
+        .or_else(|| fallback.map(ToOwned::to_owned))
+}
+
+pub async fn get_effective_run_state(
+    db: &DatabaseConnection,
+    run: &agentic_run::Model,
+) -> Result<(String, Option<String>), DbErr> {
+    if run.answer.is_some() {
+        return Ok(("done".to_string(), None));
+    }
+
+    let last_event = get_last_run_event(db, &run.id).await?;
+    let effective = match last_event.as_ref().map(|event| event.event_type.as_str()) {
+        Some("done") => ("done".to_string(), None),
+        Some("error") => (
+            "failed".to_string(),
+            terminal_error_message(last_event.as_ref(), run.error_message.as_deref()),
+        ),
+        _ => (run.status.clone(), run.error_message.clone()),
+    };
+
+    Ok(effective)
+}
+
 // ── Lookup by thread ──────────────────────────────────────────────────────────
 
 /// Find the most recent run for a given thread_id, if any.
@@ -303,6 +387,22 @@ pub async fn get_run_by_thread(
         .order_by_desc(agentic_run::Column::CreatedAt)
         .one(db)
         .await
+}
+
+/// Fetch the owner (`user_id`) of a thread.
+///
+/// Returns `Ok(None)` when no thread with that id exists (caller should 404).
+/// Returns `Ok(Some(None))` when the thread exists but has no owner (legacy).
+/// Returns `Ok(Some(Some(uid)))` when the thread has an explicit owner.
+pub async fn get_thread_owner(
+    db: &DatabaseConnection,
+    thread_id: Uuid,
+) -> Result<Option<Option<Uuid>>, DbErr> {
+    use sea_orm::EntityTrait as _;
+    threads::Entity::find_by_id(thread_id)
+        .one(db)
+        .await
+        .map(|opt| opt.map(|t| t.user_id))
 }
 
 /// Find all runs for a given thread_id, ordered oldest-first.
@@ -405,19 +505,116 @@ pub async fn get_thread_history(
 ///
 /// Returns the number of rows updated.
 pub async fn cleanup_stale_runs(db: &DatabaseConnection) -> Result<u64, DbErr> {
-    let result = agentic_run::Entity::update_many()
-        .col_expr(agentic_run::Column::Status, Expr::value("failed"))
-        .col_expr(
-            agentic_run::Column::ErrorMessage,
-            Expr::value("server restarted: run was interrupted"),
-        )
-        .col_expr(agentic_run::Column::UpdatedAt, Expr::value(now()))
+    let stale_runs = agentic_run::Entity::find()
         .filter(
             Condition::any()
                 .add(agentic_run::Column::Status.eq("running"))
                 .add(agentic_run::Column::Status.eq("suspended")),
         )
-        .exec(db)
+        .all(db)
         .await?;
-    Ok(result.rows_affected)
+
+    let mut reconciled = 0;
+    for run in stale_runs {
+        let (status, error_message) = get_effective_run_state(db, &run).await?;
+        let update = match status.as_str() {
+            "done" => agentic_run::ActiveModel {
+                id: Set(run.id.clone()),
+                status: Set("done".to_string()),
+                error_message: Set(None),
+                updated_at: Set(now()),
+                ..Default::default()
+            },
+            "failed" => agentic_run::ActiveModel {
+                id: Set(run.id.clone()),
+                status: Set("failed".to_string()),
+                error_message: Set(error_message),
+                updated_at: Set(now()),
+                ..Default::default()
+            },
+            _ => agentic_run::ActiveModel {
+                id: Set(run.id.clone()),
+                status: Set("failed".to_string()),
+                error_message: Set(Some("server restarted: run was interrupted".to_string())),
+                updated_at: Set(now()),
+                ..Default::default()
+            },
+        };
+        agentic_run::Entity::update(update).exec(db).await?;
+        reconciled += 1;
+    }
+
+    Ok(reconciled)
+}
+
+/// A single tool call + result exchange from a prior run, used to reconstruct
+/// full message context for the builder agent.
+pub struct ToolExchangeRow {
+    pub name: String,
+    pub input: String,
+    pub output: String,
+}
+
+/// Return completed runs for a thread with their tool call/result events,
+/// oldest-first, capped at `limit` runs.
+///
+/// Used by the builder agent to replay full tool-use context across turns so
+/// the LLM sees what files were read and what searches were run.
+pub async fn get_thread_history_with_events(
+    db: &DatabaseConnection,
+    thread_id: Uuid,
+    limit: u64,
+) -> Result<Vec<(String, String, Vec<ToolExchangeRow>)>, DbErr> {
+    use sea_orm::QuerySelect;
+    let runs = agentic_run::Entity::find()
+        .filter(agentic_run::Column::ThreadId.eq(thread_id))
+        .filter(agentic_run::Column::Status.is_in(["done", "failed"]))
+        .order_by_asc(agentic_run::Column::CreatedAt)
+        .limit(limit)
+        .all(db)
+        .await?;
+
+    let mut result = Vec::new();
+    for run in runs {
+        let (status, error_message) = get_effective_run_state(db, &run).await?;
+        let answer = match (status.as_str(), run.answer, error_message) {
+            ("done", Some(answer), _) => answer,
+            ("failed", _, Some(error)) => format!("Error: {}", error),
+            _ => continue,
+        };
+
+        // Fetch all events for this run ordered by sequence.
+        let events = agentic_run_event::Entity::find()
+            .filter(agentic_run_event::Column::RunId.eq(&run.id))
+            .order_by_asc(agentic_run_event::Column::Seq)
+            .all(db)
+            .await?;
+
+        // Pair up tool_call + tool_result events in sequence order.
+        let mut exchanges: Vec<ToolExchangeRow> = Vec::new();
+        let mut pending_call: Option<(String, String)> = None; // (name, input)
+        for event in events {
+            match event.event_type.as_str() {
+                "tool_call" => {
+                    let name = event.payload["name"].as_str().unwrap_or("").to_string();
+                    let input = event.payload["input"].as_str().unwrap_or("{}").to_string();
+                    pending_call = Some((name, input));
+                }
+                "tool_result" => {
+                    if let Some((name, input)) = pending_call.take() {
+                        let output = event.payload["output"].as_str().unwrap_or("").to_string();
+                        exchanges.push(ToolExchangeRow {
+                            name,
+                            input,
+                            output,
+                        });
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        result.push((run.question, answer, exchanges));
+    }
+    Ok(result)
 }

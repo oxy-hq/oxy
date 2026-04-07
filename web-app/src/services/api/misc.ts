@@ -23,10 +23,20 @@ export class ArtifactService {
   }
 }
 
+export interface BuilderAvailability {
+  available: boolean;
+  /** Set for legacy path-based agents; absent for built-in. */
+  builder_path?: string;
+  /** True when the built-in copilot is configured. */
+  builtin?: boolean;
+  /** Model name for the built-in copilot. */
+  model?: string;
+}
+
 export class BuilderService {
   static async checkBuilderAvailability(
     projectId: string
-  ): Promise<{ available: boolean; builder_path?: string }> {
+  ): Promise<BuilderAvailability> {
     const response = await apiClient.get(`/${projectId}/builder-availability`);
     return response.data;
   }

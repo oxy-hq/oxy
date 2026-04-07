@@ -23,11 +23,13 @@ import Threads from "@/pages/threads";
 import WorkflowPage from "@/pages/workflow";
 import "@xyflow/react/dist/style.css";
 import React from "react";
-import { HotkeysProvider } from "react-hotkeys-hook";
+import { HotkeysProvider, useHotkeys } from "react-hotkeys-hook";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import ROUTES from "@/libs/utils/routes";
 import ContextGraphPage from "@/pages/context-graph";
 import { ErrorBoundary } from "@/sentry";
+import { BuilderDialog } from "./components/BuilderDialog";
+import { FileQuickOpen } from "./components/FileQuickOpen";
 import ProjectStatus from "./components/ProjectStatus";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { SettingsModal } from "./components/settings/SettingsModal";
@@ -56,7 +58,9 @@ import TestFileDetailPage from "./pages/ide/tests/TestFileDetailPage";
 import TestsDashboardPage from "./pages/ide/tests/TestsDashboardPage";
 import TestsRunsPage from "./pages/ide/tests/TestsRunsPage";
 import LoginPage from "./pages/login";
+import useBuilderDialog from "./stores/useBuilderDialog";
 import useCurrentProject from "./stores/useCurrentProject";
+import useFileQuickOpen from "./stores/useFileQuickOpen";
 import type { AuthConfigResponse } from "./types/auth";
 
 const MainPageWrapper = ({ children }: { children: React.ReactNode }) => {
@@ -75,7 +79,12 @@ const MainLayout = React.memo(function MainLayout() {
   const { isPending, isError, data } = useProject(projectId || "", !!authConfig.cloud);
   const { setProject, project } = useCurrentProject();
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: setProject reference is stable
+  const { setIsOpen: setBuilderDialogOpen } = useBuilderDialog();
+  const { setIsOpen: setFileQuickOpenOpen } = useFileQuickOpen();
+  useHotkeys("meta+i", () => setBuilderDialogOpen(true), { preventDefault: true });
+  useHotkeys("meta+p", () => setFileQuickOpenOpen(true), { preventDefault: true });
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: project hydration is intentionally gated by the fetched project payload
   React.useEffect(() => {
     if (!isPending && !isError && data) {
       setProject(data);
@@ -109,6 +118,8 @@ const MainLayout = React.memo(function MainLayout() {
   return (
     <HotkeysProvider>
       <SettingsModal />
+      <BuilderDialog />
+      <FileQuickOpen />
       <AppSidebar />
 
       <Routes>

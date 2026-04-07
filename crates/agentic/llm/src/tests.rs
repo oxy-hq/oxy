@@ -1953,15 +1953,15 @@ fn build_resume_messages_with_valid_prior_passes_anthropic_validation() {
     );
 }
 
-/// Verifies that `find_ask_user_id` returns `None` for an empty message list,
+/// Verifies that `find_suspended_tool_id` returns `None` for an empty message list,
 /// confirming the caller MUST handle the empty-prior case separately rather
 /// than relying on the `"ask_user_0"` fallback in `build_resume_messages`.
 #[test]
 fn find_ask_user_id_returns_none_for_empty_messages() {
-    use super::client::find_ask_user_id;
+    use super::client::find_suspended_tool_id;
     assert!(
-        find_ask_user_id(&[]).is_none(),
-        "find_ask_user_id should return None for empty messages"
+        find_suspended_tool_id(&[]).is_none(),
+        "find_suspended_tool_id should return None for empty messages"
     );
 }
 
@@ -1969,7 +1969,7 @@ fn find_ask_user_id_returns_none_for_empty_messages() {
 
 /// Mock provider that serialises messages in the **OpenAI Responses API**
 /// format (flat items with `type: "function_call"` / `"function_call_output"`).
-/// Used to test that `build_resume_messages` and `find_ask_user_id` correctly
+/// Used to test that `build_resume_messages` and `find_suspended_tool_id` correctly
 /// handle the Responses API message shape.
 struct OpenAiMockProvider {
     rounds: Mutex<VecDeque<Vec<Result<Chunk, LlmError>>>>,
@@ -2304,11 +2304,11 @@ async fn openai_ask_user_as_first_tool_call_has_matching_call_id() {
         .expect("resume messages should satisfy OpenAI function_call/output pairing");
 }
 
-/// Unit test for `find_ask_user_id` with OpenAI Responses API format
+/// Unit test for `find_suspended_tool_id` with OpenAI Responses API format
 /// (array-wrapped assistant message containing function_call items).
 #[test]
-fn find_ask_user_id_openai_responses_api_format() {
-    use super::client::find_ask_user_id;
+fn find_suspended_tool_id_openai_responses_api_format() {
+    use super::client::find_suspended_tool_id;
 
     let messages = vec![
         json!({"role": "user", "content": "test"}),
@@ -2321,13 +2321,16 @@ fn find_ask_user_id_openai_responses_api_format() {
             {"type": "function_call", "call_id": "call_ask123", "name": "ask_user", "arguments": "{}"},
         ]),
     ];
-    assert_eq!(find_ask_user_id(&messages), Some("call_ask123".to_string()),);
+    assert_eq!(
+        find_suspended_tool_id(&messages),
+        Some("call_ask123".to_string()),
+    );
 }
 
-/// Unit test for `find_ask_user_id` with OpenAI Chat Completions format.
+/// Unit test for `find_suspended_tool_id` with OpenAI Chat Completions format.
 #[test]
-fn find_ask_user_id_openai_chat_completions_format() {
-    use super::client::find_ask_user_id;
+fn find_suspended_tool_id_openai_chat_completions_format() {
+    use super::client::find_suspended_tool_id;
 
     let messages = vec![
         json!({"role": "user", "content": "test"}),
@@ -2342,15 +2345,15 @@ fn find_ask_user_id_openai_chat_completions_format() {
         }),
     ];
     assert_eq!(
-        find_ask_user_id(&messages),
+        find_suspended_tool_id(&messages),
         Some("call_chat_abc".to_string()),
     );
 }
 
-/// Unit test for `find_ask_user_id` with Anthropic format.
+/// Unit test for `find_suspended_tool_id` with Anthropic format.
 #[test]
-fn find_ask_user_id_anthropic_format() {
-    use super::client::find_ask_user_id;
+fn find_suspended_tool_id_anthropic_format() {
+    use super::client::find_suspended_tool_id;
 
     let messages = vec![
         json!({"role": "user", "content": "test"}),
@@ -2361,7 +2364,41 @@ fn find_ask_user_id_anthropic_format() {
             ]
         }),
     ];
-    assert_eq!(find_ask_user_id(&messages), Some("toolu_abc".to_string()),);
+    assert_eq!(
+        find_suspended_tool_id(&messages),
+        Some("toolu_abc".to_string()),
+    );
+}
+
+/// Unit test: `find_suspended_tool_id` finds `propose_change` (not just `ask_user`).
+/// This is the builder-pipeline regression — the suspended tool is `propose_change`,
+/// so the old name-based search returned None and fell back to "ask_user_0".
+#[test]
+fn find_suspended_tool_id_finds_propose_change() {
+    use super::client::find_suspended_tool_id;
+
+    // Simulate: one search_files call (matched) followed by a propose_change (unmatched).
+    let messages = vec![
+        json!({"role": "user", "content": "test"}),
+        json!({
+            "role": "assistant",
+            "content": [
+                {"type": "tool_use", "id": "toolu_search", "name": "search_files", "input": {}},
+                {"type": "tool_use", "id": "toolu_propose", "name": "propose_change", "input": {}}
+            ]
+        }),
+        json!({
+            "role": "user",
+            "content": [
+                {"type": "tool_result", "tool_use_id": "toolu_search", "content": "found 3 files"}
+            ]
+        }),
+    ];
+    assert_eq!(
+        find_suspended_tool_id(&messages),
+        Some("toolu_propose".to_string()),
+        "must return propose_change id, not None",
+    );
 }
 
 // ── Batched tool call + ask_user suspension test ─────────────────────────

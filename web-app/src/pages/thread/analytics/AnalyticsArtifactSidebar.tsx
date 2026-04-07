@@ -7,7 +7,10 @@ import ProcedureRunDagPanel from "../agentic/ProcedureRunDagPanel";
 import {
   AskUserView,
   ChartSection,
+  ColumnRangeView,
+  ColumnValuesView,
   CompileSemanticQueryView,
+  CountRowsView,
   GetJoinPathView,
   GetMetricDefinitionView,
   ProcedureStepView,
@@ -18,7 +21,23 @@ import {
   SearchCatalogView,
   SearchProceduresView
 } from "./AnalyticsArtifactViews";
-import { sqlArtifactFromExecutePreview, sqlArtifactFromSqlItem } from "./analyticsArtifactHelpers";
+import {
+  sqlArtifactFromExecutePreview,
+  sqlArtifactFromExecuteSql,
+  sqlArtifactFromPreviewData,
+  sqlArtifactFromSemanticQuery,
+  sqlArtifactFromSqlItem
+} from "./analyticsArtifactHelpers";
+import {
+  ExecuteSqlView,
+  LookupSchemaView,
+  ProposeChangeToolView,
+  ReadFileView,
+  RunTestsView,
+  SearchFilesView,
+  SemanticQueryView,
+  ValidateProjectView
+} from "./BuilderArtifactViews";
 
 interface Props {
   item: ArtifactItem | SqlItem | ProcedureItem;
@@ -91,7 +110,7 @@ const AnalyticsArtifactSidebar = ({
     );
   }
 
-  // ── render_chart → config + rendered chart ───────────────────────────────
+  // ── render_chart → config + rendered chart ────────────────────────────────
   if (item.toolName === "render_chart") {
     const block =
       item.seq != null
@@ -114,7 +133,7 @@ const AnalyticsArtifactSidebar = ({
     );
   }
 
-  // ── ask_user → question + user response ─────────────────────────────────
+  // ── ask_user → question + user response ──────────────────────────────────
   if (item.toolName === "ask_user") {
     return (
       <Panel>
@@ -146,6 +165,41 @@ const AnalyticsArtifactSidebar = ({
     );
   }
 
+  if (item.toolName === "search_files") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Search Files'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <SearchFilesView item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  if (item.toolName === "preview_data") {
+    const sqlArtifact = sqlArtifactFromPreviewData(item);
+    return (
+      <Panel>
+        <PanelHeader
+          title='Preview Table'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          {sqlArtifact ? (
+            <SqlArtifactPanel artifact={sqlArtifact} />
+          ) : (
+            <RawArtifactView item={item} />
+          )}
+        </PanelContent>
+      </Panel>
+    );
+  }
+
   // ── search_procedures → procedure list ───────────────────────────────────
   if (item.toolName === "search_procedures") {
     return (
@@ -157,6 +211,131 @@ const AnalyticsArtifactSidebar = ({
         />
         <PanelContent scrollable={false} padding={false} className='min-h-0'>
           <SearchProceduresView item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  if (item.toolName === "read_file") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Read File'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <ReadFileView item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  if (item.toolName === "execute_sql") {
+    const sqlArtifact = sqlArtifactFromExecuteSql(item);
+    return (
+      <Panel>
+        <PanelHeader
+          title='Execute SQL'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='flex min-h-0 flex-col'>
+          <div className='shrink-0'>
+            <ExecuteSqlView item={item} />
+          </div>
+          <div className='min-h-0 flex-1'>
+            {sqlArtifact ? (
+              <SqlArtifactPanel artifact={sqlArtifact} />
+            ) : (
+              <RawArtifactView item={item} />
+            )}
+          </div>
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  if (item.toolName === "propose_change") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Proposed Change'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <ProposeChangeToolView item={item} runEvents={runEvents} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  if (item.toolName === "lookup_schema") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Lookup Schema'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <LookupSchemaView item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  if (item.toolName === "semantic_query") {
+    const sqlArtifact = sqlArtifactFromSemanticQuery(item);
+    return (
+      <Panel>
+        <PanelHeader
+          title='Semantic Query'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='flex min-h-0 flex-col'>
+          <div className='shrink-0'>
+            <SemanticQueryView item={item} />
+          </div>
+          <div className='min-h-0 flex-1'>
+            {sqlArtifact ? (
+              <SqlArtifactPanel artifact={sqlArtifact} />
+            ) : (
+              <RawArtifactView item={item} />
+            )}
+          </div>
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  if (item.toolName === "validate_project") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Validate Project'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <ValidateProjectView item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  if (item.toolName === "run_tests") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Run Tests'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <RunTestsView item={item} />
         </PanelContent>
       </Panel>
     );
@@ -194,17 +373,62 @@ const AnalyticsArtifactSidebar = ({
     );
   }
 
-  // ── sample_columns → column explorer ─────────────────────────────────────
-  if (item.toolName === "sample_columns") {
+  // ── sample_column / sample_columns → column explorer ─────────────────────
+  if (item.toolName === "sample_column" || item.toolName === "sample_columns") {
     return (
       <Panel>
         <PanelHeader
-          title='Column Samples'
+          title='Column Sample'
           subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
           onClose={onClose}
         />
         <PanelContent scrollable={false} padding={false} className='min-h-0'>
           <SampleColumnView item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  if (item.toolName === "get_column_values") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Column Values'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <ColumnValuesView item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  if (item.toolName === "get_column_range") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Column Range'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <ColumnRangeView item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  if (item.toolName === "count_rows") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Count Rows'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <CountRowsView item={item} />
         </PanelContent>
       </Panel>
     );

@@ -13,7 +13,10 @@ use crate::{
 use oxy_shared::errors::OxyError;
 
 use super::{
-    model::{AgentConfig, AppConfig, Config, Database, Model, Workflow, WorkflowWithRawVariables},
+    model::{
+        AgentConfig, AppConfig, BuilderAgentConfig, Config, Database, Model, Workflow,
+        WorkflowWithRawVariables,
+    },
     storage::{ConfigSource, ConfigStorage},
     test_config::TestFileConfig,
 };
@@ -137,12 +140,11 @@ impl ConfigManager {
         let agents = self.storage.list_agents().await?;
         tracing::info!("Agents: {:?}", agents);
         tracing::debug!("Builder: {:?}", self.config.builder_agent);
-        if let Some(ref builder_agent) = self.config.builder_agent {
-            // hide the builder agent from the list
-            let builder_agent_full_path =
-                self.storage.fs_link(builder_agent).await.map_err(|_| {
-                    OxyError::ConfigurationError("Failed to resolve agent path".to_string())
-                })?;
+        if let Some(BuilderAgentConfig::Path(ref path)) = self.config.builder_agent {
+            // hide the legacy path-based builder agent from the list
+            let builder_agent_full_path = self.storage.fs_link(path).await.map_err(|_| {
+                OxyError::ConfigurationError("Failed to resolve agent path".to_string())
+            })?;
             Ok(agents
                 .iter()
                 .filter(|agent| agent.display().to_string() != builder_agent_full_path)
@@ -182,23 +184,41 @@ impl ConfigManager {
     }
 
     pub async fn get_build_agent(&self) -> Result<AgentConfig, OxyError> {
-        if let Some(ref agent) = self.config.builder_agent {
-            return self.resolve_agent(agent).await;
-        } else {
-            Err(OxyError::ConfigurationError(
+        match &self.config.builder_agent {
+            Some(BuilderAgentConfig::Path(path)) => self.resolve_agent(path).await,
+            Some(BuilderAgentConfig::Builtin { .. }) => Err(OxyError::ConfigurationError(
+                "Built-in builder agent does not use an agent file. Use get_builder_config() instead.".to_string(),
+            )),
+            None => Err(OxyError::ConfigurationError(
                 "No builder agent specified in config".to_string(),
-            ))
+            )),
         }
     }
 
     pub async fn get_builder_agent_path(&self) -> Result<PathBuf, OxyError> {
-        if let Some(ref agent) = self.config.builder_agent {
-            Ok(agent.to_owned())
-        } else {
-            Err(OxyError::ConfigurationError(
+        match &self.config.builder_agent {
+            Some(BuilderAgentConfig::Path(path)) => Ok(path.to_owned()),
+            Some(BuilderAgentConfig::Builtin { .. }) => Err(OxyError::ConfigurationError(
+                "Built-in builder agent does not have a file path".to_string(),
+            )),
+            None => Err(OxyError::ConfigurationError(
                 "No builder agent specified in config".to_string(),
-            ))
+            )),
         }
+    }
+
+    /// Returns the full builder agent config, if any.
+    pub fn get_builder_config(&self) -> Option<&BuilderAgentConfig> {
+        self.config.builder_agent.as_ref()
+    }
+
+    /// Returns true when the builder is configured as a built-in copilot
+    /// (i.e. `builder_agent: { model: "..." }`).
+    pub fn is_builder_builtin(&self) -> bool {
+        matches!(
+            self.config.builder_agent,
+            Some(BuilderAgentConfig::Builtin { .. })
+        )
     }
 
     pub fn get_config(&self) -> &Config {

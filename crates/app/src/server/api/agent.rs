@@ -40,24 +40,51 @@ use uuid::Uuid;
 #[derive(Serialize)]
 pub struct BuilderAvailabilityResponse {
     pub available: bool,
+    /// Set for legacy path-based builder agents; `None` for built-in.
     pub builder_path: Option<String>,
+    /// `true` when the builder is the new built-in copilot.
+    pub builtin: bool,
+    /// Model name for the built-in copilot; `None` for legacy agents.
+    pub model: Option<String>,
 }
 
 pub async fn check_builder_availability(
     ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
 ) -> Result<extract::Json<BuilderAvailabilityResponse>, StatusCode> {
-    let builder_path_res = project_manager
-        .config_manager
-        .get_builder_agent_path()
-        .await;
-    let is_available = builder_path_res.is_ok();
+    use oxy::config::model::BuilderAgentConfig;
 
-    Ok(extract::Json(BuilderAvailabilityResponse {
-        available: is_available,
-        builder_path: builder_path_res
-            .ok()
-            .map(|p| p.to_string_lossy().to_string()),
-    }))
+    match project_manager.config_manager.get_builder_config() {
+        Some(BuilderAgentConfig::Builtin { model }) => {
+            Ok(extract::Json(BuilderAvailabilityResponse {
+                available: true,
+                builder_path: None,
+                builtin: true,
+                model: Some(model.clone()),
+            }))
+        }
+        Some(BuilderAgentConfig::Path(_)) => {
+            // Legacy path-based builder: resolve the path.
+            let builder_path_res = project_manager
+                .config_manager
+                .get_builder_agent_path()
+                .await;
+            let is_available = builder_path_res.is_ok();
+            Ok(extract::Json(BuilderAvailabilityResponse {
+                available: is_available,
+                builder_path: builder_path_res
+                    .ok()
+                    .map(|p| p.to_string_lossy().to_string()),
+                builtin: false,
+                model: None,
+            }))
+        }
+        None => Ok(extract::Json(BuilderAvailabilityResponse {
+            available: false,
+            builder_path: None,
+            builtin: false,
+            model: None,
+        })),
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

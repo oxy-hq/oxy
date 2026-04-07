@@ -463,6 +463,13 @@ body {
   background: transparent;
 }
 
+.customScrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--sidebar-border) transparent;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: auto;
+}
+
 .scrollbar-gutter-auto {
   scrollbar-gutter: auto;
 }

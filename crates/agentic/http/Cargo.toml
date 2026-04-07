@@ -25,6 +25,9 @@ oxy = { path = "../../core" }
 oxy-shared = { path = "../../shared" }
 oxy-workflow = { path = "../../workflow" }
 async-trait = "0.1"
+agentic-builder = { path = "../builder" }
+entity = { path = "../../entity" }
+oxy-auth = { path = "../../auth" }
 
 # Web
 axum = { workspace = true }

@@ -4,20 +4,13 @@
 # It follows the same YAML structure as analytics.agentic.yml.
 #
 # Database names from config.yml.  All Oxy-supported connector types work here.
-# databases:
-#   - training
+databases:
+  - training
 
 llm:
-  ref: openai-4o-mini
-  model: gpt-5.4
-  max_tokens: 4096
-thinking: effort::medium
-
-context:
-  - ./semantics/*.view.yml
-  - ./semantics/*.topic.yml
-  - ./workflows/**/*.procedure.yml
-  - ./example_sql/*.sql
+  ref: claude-sonnet-4-6
+  max_tokens: 8192
+thinking: adaptive
 
 # App-builder pipeline state configuration.
 # states:

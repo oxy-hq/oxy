@@ -392,7 +392,8 @@ export function useAnalyticsRun({ projectId }: UseAnalyticsRunOptions): UseAnaly
         agent_id: agentId,
         question,
         thread_id: threadId,
-        thinking_mode: thinkingMode
+        thinking_mode: thinkingMode,
+        ...(agentId === "__builder__" && { domain: "builder" })
       })
         .then(({ run_id }) => {
           openStream(run_id);

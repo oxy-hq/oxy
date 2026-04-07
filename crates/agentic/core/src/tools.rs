@@ -79,3 +79,65 @@ impl std::fmt::Display for ToolError {
 }
 
 impl std::error::Error for ToolError {}
+
+// ── ask_user shared tool ─────────────────────────────────────────────────────
+
+/// Shared `ask_user` tool definition used across domains (analytics, builder).
+///
+/// The LLM invokes this when it needs additional input from the user.
+/// The tool executor checks the [`HumanInputProvider`]:
+/// - CLI providers block and return the answer immediately.
+/// - [`DeferredInputProvider`] returns `ToolError::Suspended`, suspending the pipeline.
+///
+/// [`HumanInputProvider`]: crate::human_input::HumanInputProvider
+/// [`DeferredInputProvider`]: crate::human_input::DeferredInputProvider
+pub fn ask_user_tool_def() -> ToolDef {
+    ToolDef {
+        name: "ask_user",
+        description: "Ask the user a clarifying question when you need more information to proceed accurately. Always provide 2–4 concrete suggestions that cover the most likely answers.",
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": "The question to ask the user."
+                },
+                "suggestions": {
+                    "type": "array",
+                    "description": "2–4 concrete suggested answers to guide the user. Always provide suggestions — they appear as clickable buttons in the UI.",
+                    "items": { "type": "string" }
+                }
+            },
+            "required": ["prompt", "suggestions"],
+            "additionalProperties": false
+        }),
+    }
+}
+
+/// Execute an `ask_user` tool call via the given [`HumanInputProvider`].
+///
+/// - `Ok(json!({"answer": ...}))` when the provider returns immediately (CLI).
+/// - `Err(ToolError::Suspended { .. })` when the provider defers (server).
+///
+/// [`HumanInputProvider`]: crate::human_input::HumanInputProvider
+pub fn handle_ask_user(
+    params: &serde_json::Value,
+    provider: &dyn crate::human_input::HumanInputProvider,
+) -> Result<serde_json::Value, ToolError> {
+    let prompt = params["prompt"].as_str().unwrap_or("").to_string();
+    let suggestions: Vec<String> = params["suggestions"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    match provider.request_sync(&prompt, &suggestions) {
+        Ok(answer) => Ok(serde_json::json!({ "answer": answer })),
+        Err(()) => Err(ToolError::Suspended {
+            prompt,
+            suggestions,
+        }),
+    }
+}

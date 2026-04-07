@@ -39,6 +39,22 @@ pub use semantics::{SemanticDimension, Semantics};
 mod variables;
 mod workflow;
 
+/// Configuration for the built-in builder copilot agent.
+///
+/// Supports two forms for backward compatibility:
+/// - **Path** (legacy): a string pointing to an `.agent.yml` file,
+///   e.g. `builder_agent: builder.agent.yml`
+/// - **Builtin** (new): just a model name,
+///   e.g. `builder_agent: { model: "claude-sonnet-4-6" }`
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema)]
+#[serde(untagged)]
+pub enum BuilderAgentConfig {
+    /// Legacy: path to an external agent YAML file.
+    Path(PathBuf),
+    /// New: built-in copilot configured only with a model name.
+    Builtin { model: String },
+}
+
 #[derive(Serialize, Deserialize, Validate, Debug, Clone, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[garde(context(ValidationContext))]
@@ -50,7 +66,7 @@ pub struct Config {
     #[garde(dive)]
     pub databases: Vec<Database>,
     #[garde(skip)]
-    pub builder_agent: Option<PathBuf>,
+    pub builder_agent: Option<BuilderAgentConfig>,
 
     #[serde(skip)]
     #[garde(skip)]

@@ -105,6 +105,7 @@ export default function BaseMonacoEditor({
         <div className='absolute inset-0'>
           {diffMode && original !== undefined ? (
             <DiffEditor
+              beforeMount={configureMonaco}
               theme={theme}
               height={height}
               width={width}
@@ -112,7 +113,6 @@ export default function BaseMonacoEditor({
               modified={value}
               language={language}
               loading={<LoadingSpinner />}
-              beforeMount={configureMonaco}
               onMount={(e) => {
                 diffEditorRef.current = e;
                 // Set renderSideBySide immediately on mount — the options prop
@@ -137,6 +137,7 @@ export default function BaseMonacoEditor({
             />
           ) : (
             <Editor
+              beforeMount={configureMonaco}
               path={path}
               theme={theme}
               height={height}
@@ -146,7 +147,6 @@ export default function BaseMonacoEditor({
               value={value}
               loading={<LoadingSpinner />}
               options={mergedOptions}
-              beforeMount={configureMonaco}
               onChange={(v) => onChange?.(v || "")}
               onMount={(ed, monaco) => onMount?.(ed, monaco)}
             />

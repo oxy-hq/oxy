@@ -33,7 +33,3 @@ databases:
   #   schema_name: ducklake
 
 builder_agent: app_builder.agentic.yml
-
-admins:
-  - hello@oxy.tech
-  - luong@oxy.tech

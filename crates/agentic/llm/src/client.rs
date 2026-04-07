@@ -102,9 +102,8 @@ impl LlmClient {
             prior_messages_count = prior_messages.len(),
             "build_resume_messages called"
         );
-
         let tool_use_id =
-            find_ask_user_id(prior_messages).unwrap_or_else(|| "ask_user_0".to_string());
+            find_suspended_tool_id(prior_messages).unwrap_or_else(|| "ask_user_0".to_string());
 
         let _ = (question, suggestions); // already encoded in prior_messages
         let mut msgs = prior_messages.to_vec();
@@ -824,53 +823,103 @@ pub(super) async fn emit_core<Ev: DomainEvents>(tx: &Option<EventStream<Ev>>, ev
     }
 }
 
-/// Extract the tool-call ID of the last `ask_user` invocation from a
-/// provider-native message history.  Supports all three provider formats:
+/// Extract the tool-call ID of the suspended tool from a provider-native
+/// message history.
 ///
-///  - **Anthropic**: `{role:"assistant", content:[{type:"tool_use", name:"ask_user", id}]}`
-///  - **OpenAI Responses API**: items stored as a `Value::Array` element
-///    containing `{type:"function_call", name:"ask_user", call_id}` items
-///  - **OpenAI Chat Completions**: `{role:"assistant", tool_calls:[{id, function:{name:"ask_user"}}]}`
-pub(crate) fn find_ask_user_id(messages: &[Value]) -> Option<String> {
+/// The suspended tool is the last tool_use (any name) in the history that
+/// does NOT yet have a corresponding tool_result.  This works for both
+/// `ask_user` (analytics pipeline) and `propose_change` (builder pipeline),
+/// or any future tool that returns [`ToolError::Suspended`].
+///
+/// Supports all three provider formats:
+///  - **Anthropic**: `{role:"assistant", content:[{type:"tool_use", id}]}`
+///    with results in `{role:"user", content:[{type:"tool_result", tool_use_id}]}`
+///  - **OpenAI Responses API**: `{type:"function_call", call_id}` items
+///    with results in `{type:"function_call_output", call_id}` items
+///  - **OpenAI Chat Completions**: `{role:"assistant", tool_calls:[{id}]}`
+///    with results in `{role:"tool", tool_call_id}` messages
+pub(crate) fn find_suspended_tool_id(messages: &[Value]) -> Option<String> {
+    // Step 1: collect all tool_use_ids that already have a matching tool_result.
+    let mut matched: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for m in messages.iter() {
+        // Anthropic: user message with tool_result blocks
+        if m["role"].as_str() == Some("user")
+            && let Some(content) = m["content"].as_array()
+        {
+            for b in content.iter() {
+                if b["type"].as_str() == Some("tool_result")
+                    && let Some(id) = b["tool_use_id"].as_str()
+                {
+                    matched.insert(id.to_string());
+                }
+            }
+        }
+        // OpenAI Chat: role:"tool" messages
+        if m["role"].as_str() == Some("tool")
+            && let Some(id) = m["tool_call_id"].as_str()
+        {
+            matched.insert(id.to_string());
+        }
+        // OpenAI Responses: flat function_call_output item
+        if m["type"].as_str() == Some("function_call_output")
+            && let Some(id) = m["call_id"].as_str()
+        {
+            matched.insert(id.to_string());
+        }
+        // OpenAI Responses: array of items (assistant_message returns Value::Array)
+        if let Some(items) = m.as_array() {
+            for item in items.iter() {
+                if item["type"].as_str() == Some("function_call_output")
+                    && let Some(id) = item["call_id"].as_str()
+                {
+                    matched.insert(id.to_string());
+                }
+            }
+        }
+    }
+
+    // Step 2: find the last tool_use whose id is not yet matched.
     for m in messages.iter().rev() {
-        // 1. Anthropic: role:"assistant", content array with tool_use blocks
+        // Anthropic: role:"assistant" with content blocks
         if m["role"].as_str() == Some("assistant") {
             if let Some(blocks) = m["content"].as_array() {
                 for b in blocks.iter().rev() {
                     if b["type"].as_str() == Some("tool_use")
-                        && b["name"].as_str() == Some("ask_user")
+                        && let Some(id) = b["id"].as_str()
+                        && !matched.contains(id)
                     {
-                        return b["id"].as_str().map(String::from);
+                        return Some(id.to_string());
                     }
                 }
             }
-            // 3. OpenAI Chat Completions: tool_calls array
+            // OpenAI Chat Completions: tool_calls array
             if let Some(tool_calls) = m["tool_calls"].as_array() {
                 for tc in tool_calls.iter().rev() {
-                    if tc["function"]["name"].as_str() == Some("ask_user") {
-                        return tc["id"].as_str().map(String::from);
+                    if let Some(id) = tc["id"].as_str()
+                        && !matched.contains(id)
+                    {
+                        return Some(id.to_string());
                     }
                 }
             }
         }
-
-        // 2a. OpenAI Responses API: assistant_message() returns
-        //     Value::Array([...items...]) which gets pushed as one element
-        //     in the messages vec.  Look inside for function_call items.
+        // OpenAI Responses: flat function_call item
+        if m["type"].as_str() == Some("function_call")
+            && let Some(id) = m["call_id"].as_str()
+            && !matched.contains(id)
+        {
+            return Some(id.to_string());
+        }
+        // OpenAI Responses: array of items
         if let Some(items) = m.as_array() {
             for item in items.iter().rev() {
                 if item["type"].as_str() == Some("function_call")
-                    && item["name"].as_str() == Some("ask_user")
+                    && let Some(id) = item["call_id"].as_str()
+                    && !matched.contains(id)
                 {
-                    return item["call_id"].as_str().map(String::from);
+                    return Some(id.to_string());
                 }
             }
-        }
-
-        // 2b. OpenAI Responses API: flat function_call item (in case
-        //     the array was already flattened into messages).
-        if m["type"].as_str() == Some("function_call") && m["name"].as_str() == Some("ask_user") {
-            return m["call_id"].as_str().map(String::from);
         }
     }
     None

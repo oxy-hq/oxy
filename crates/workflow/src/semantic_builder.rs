@@ -1142,6 +1142,41 @@ pub fn build_semantic_query_executable() -> impl Executable<SemanticQueryTask, R
         .executable(SemanticQueryExecutable::new())
 }
 
+/// Compile a [`ValidatedSemanticQuery`] to SQL without an `ExecutionContext`.
+///
+/// Used by the builder copilot to test semantic query definitions before
+/// proposing changes to `.view.yml` / `.topic.yml` files.
+pub fn compile_validated_to_sql(
+    validated: &crate::semantic_validator_builder::ValidatedSemanticQuery,
+    config_manager: &oxy::config::ConfigManager,
+) -> Result<String, oxy_shared::errors::OxyError> {
+    let date_fields = collect_date_fields(&validated.views);
+    compile_with_airlayer(
+        &validated.task,
+        &validated.topic.name,
+        validated.topic.base_view.as_ref(),
+        validated.topic.default_filters.as_ref(),
+        &validated.views,
+        config_manager,
+        &date_fields,
+    )
+}
+
+/// Get the database reference from a [`ValidatedSemanticQuery`] (inspects view datasources).
+pub fn get_database_from_validated(
+    validated: &crate::semantic_validator_builder::ValidatedSemanticQuery,
+) -> Result<String, oxy_shared::errors::OxyError> {
+    for view in &validated.views {
+        if let Some(datasource) = &view.datasource {
+            return Ok(datasource.clone());
+        }
+    }
+    Err(oxy_shared::errors::OxyError::ValidationError(format!(
+        "No datasource found for topic '{}'. At least one view must specify a datasource.",
+        validated.topic.name
+    )))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

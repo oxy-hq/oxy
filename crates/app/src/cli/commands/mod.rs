@@ -493,11 +493,53 @@ fn validate_single_file(file_path: &PathBuf, config: &Config) -> Result<(), Stri
             let app = config.load_app(file_path).map_err(|e| e.to_string())?;
             config.validate_app(&app).map_err(|e| e.to_string())
         }
+        _ if file_name.ends_with(".view.yml") || file_name.ends_with(".topic.yml") => {
+            let globals_path = config.project_path.join("globals");
+            let registry = oxy_globals::GlobalRegistry::new(globals_path);
+            let parser_config = oxy_semantic::ParserConfig::new(
+                file_path
+                    .parent()
+                    .and_then(|p| p.parent())
+                    .unwrap_or(&config.project_path),
+            );
+            let parser = oxy_semantic::SemanticLayerParser::new(parser_config, registry);
+            if file_name.ends_with(".view.yml") {
+                parser
+                    .parse_view_file(file_path)
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
+            } else {
+                parser
+                    .parse_topic_file(file_path)
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
+            }
+        }
         _ => Err(format!(
-            "Unknown file type: {}. Expected .workflow.yml, .automation.yml, .agent.yml, or .app.yml",
+            "Unknown file type: {}. Expected .workflow.yml, .automation.yml, .agent.yml, .app.yml, .view.yml, or .topic.yml",
             file_path.display()
         )),
     }
+}
+
+/// Collect all `.view.yml` and `.topic.yml` files under `semantics/`.
+fn list_semantic_files(project_path: &std::path::Path) -> Vec<PathBuf> {
+    let semantics_dir = project_path.join("semantics");
+    let mut files = Vec::new();
+    for sub in &["views", "topics"] {
+        let dir = semantics_dir.join(sub);
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if let Some(name) = path.file_name().and_then(|n| n.to_str())
+                    && (name.ends_with(".view.yml") || name.ends_with(".topic.yml"))
+                {
+                    files.push(path);
+                }
+            }
+        }
+    }
+    files
 }
 
 pub async fn cli() -> Result<(), Box<dyn Error>> {
@@ -751,6 +793,14 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                     match validate_single_file(&app_file, cfg) {
                         Ok(_) => valid_count += 1,
                         Err(e) => errors.push(format!("{}: {}", app_file.display(), e)),
+                    }
+                }
+
+                // Validate semantic layer files (.view.yml, .topic.yml)
+                for semantic_file in list_semantic_files(&cfg.project_path) {
+                    match validate_single_file(&semantic_file, cfg) {
+                        Ok(_) => valid_count += 1,
+                        Err(e) => errors.push(format!("{}: {}", semantic_file.display(), e)),
                     }
                 }
 

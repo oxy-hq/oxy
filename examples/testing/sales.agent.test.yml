@@ -4,35 +4,30 @@
 # Convention: <name>.agent.test.yml pairs with <name>.agent.yml
 # If `target` is omitted, inferred from filename (sales.agent.test.yml -> sales.agent.yml)
 
-target: agents/default.agent.yml
+target: agents/sales.agent.yml
 
 settings:
   concurrency: 5
-  runs: 3 # times to run each case (consistency = variance across runs)
-  judge_model:
-    gpt-5-mini-2025-08-07 # model used for LLM-as-judge evaluation
-    # recommendation: use a different model family than the agent
-    # to avoid self-preference bias
+  runs: 3                          # times to run each case (consistency = variance across runs)
+  judge_model: gpt-5-mini          # model used for LLM-as-judge evaluation
+                                   # recommendation: use a different model family than the agent
+                                   # to avoid self-preference bias
 
 cases:
-  - name: user-signups-last-month
-    prompt: "How many users signed up last month?"
+  - prompt: "How many users signed up last month?"
     expected: "1,247 new user signups"
     tags: [users, signups, critical]
 
-  - name: q4-revenue-trend
-    prompt: "What's the revenue trend for Q4?"
+  - prompt: "What's the revenue trend for Q4?"
     expected: "Q4 revenue showed a 15% increase compared to Q3"
     tags: [revenue, trends]
-    tool: execute_sql # optional: assert that this tool was used
+    tool: execute_sql               # optional: assert that this tool was used
 
-  - name: apple-ceo
-    prompt: "Who is the CEO of Apple?"
+  - prompt: "Who is the CEO of Apple?"
     expected: "Tim Cook"
     tags: [general-knowledge]
 
-  - name: top-customers-by-ltv
-    prompt: "Show me top 5 customers by lifetime value"
+  - prompt: "Show me top 5 customers by lifetime value"
     expected: |
       A ranked list of 5 customers ordered by total spend/lifetime value,
       including customer names and their LTV amounts.
@@ -55,10 +50,8 @@ cases:
 #      - consistency: fraction of cases that were fully consistent
 #
 # CLI usage:
-#   oxy test                                                  # run all *.test.yml in project
-#   oxy test sales.agent.test.yml                             # run specific test file
-#   oxy test sales.agent.test.yml --case 0                   # run case by 0-based index
-#   oxy test sales.agent.test.yml --case user-signups-last-month  # run case by name
-#   oxy test --tag critical                                   # filter by tag
-#   oxy test --min-accuracy 0.8                               # fail if score < 80%
-#   oxy test --output-json                                    # write results to JSON file
+#   oxy test                                    # run all *.test.yml in project
+#   oxy test sales.agent.test.yml               # run specific test file
+#   oxy test --tag critical                     # filter by tag
+#   oxy test --min-accuracy 0.8                  # fail if score < 80%
+#   oxy test --output-json                      # write results to JSON file

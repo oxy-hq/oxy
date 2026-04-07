@@ -3,7 +3,6 @@ settings:
   concurrency: 1
 
 cases:
-  - name: build-simple-report
-    prompt: "Build a simple report"
+  - prompt: "Build a simple report"
     expected: "A report with data analysis"
     tags: [smoke]

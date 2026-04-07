@@ -11,6 +11,7 @@
 //!   for the SSE handler to send to the frontend.
 
 use agentic_analytics::AnalyticsEvent;
+use agentic_builder::BuilderEvent;
 use agentic_core::UiBlock;
 use agentic_core::events::{CoreEvent, Event};
 use serde::{Deserialize, Serialize};
@@ -328,5 +329,51 @@ pub fn serialize_ui_block(block: &UiBlock<AnalyticsEvent>) -> (String, Value) {
         UiBlock::Domain(e) => serialize_domain(e),
         UiBlock::Done => ("done".into(), json!({})),
         UiBlock::Error { message } => ("error".into(), json!({ "message": message })),
+    }
+}
+
+/// Attempt to deserialize a raw DB row as a `BuilderEvent` and convert it
+/// directly to `(event_type, payload)` pairs ready for SSE emission.
+///
+/// This is a fallback called when [`deserialize`] returns `None`, which
+/// happens for builder domain events that are not part of the analytics schema.
+/// Returns `None` for unrecognised event types.
+pub fn deserialize_builder_ui(event_type: &str, payload: &Value) -> Option<Vec<(String, Value)>> {
+    let mut tagged = match payload {
+        Value::Object(m) => m.clone(),
+        _ => serde_json::Map::new(),
+    };
+    tagged.insert("event_type".into(), Value::String(event_type.to_string()));
+    let tagged_val = Value::Object(tagged);
+
+    match serde_json::from_value::<BuilderEvent>(tagged_val) {
+        Ok(BuilderEvent::ToolUsed { tool_name, summary }) => Some(vec![(
+            "tool_used".into(),
+            json!({ "tool_name": tool_name, "summary": summary }),
+        )]),
+        Ok(BuilderEvent::ProposedChange {
+            file_path,
+            description,
+            new_content,
+        }) => Some(vec![(
+            "proposed_change".into(),
+            json!({ "file_path": file_path, "description": description, "new_content": new_content }),
+        )]),
+        Err(_) => None,
+    }
+}
+
+// ── Builder domain serialization ───────────────────────────────────────────────
+
+/// Serialize a raw `Event<BuilderEvent>` for the bridge task to store in DB.
+///
+/// CoreEvents use the same format as analytics. BuilderEvent domain events
+/// use the same internally-tagged pattern.
+pub fn serialize_builder(event: &Event<BuilderEvent>) -> (String, Value) {
+    match event {
+        Event::Core(e) => serialize_core(e),
+        Event::Domain(e) => {
+            split_tagged(serde_json::to_value(e).expect("BuilderEvent serialization is infallible"))
+        }
     }
 }

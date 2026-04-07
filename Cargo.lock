@@ -246,6 +246,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "agentic-builder"
+version = "0.1.0"
+dependencies = [
+ "agentic-core",
+ "agentic-llm",
+ "arrow 56.2.0",
+ "async-trait",
+ "glob",
+ "oxy",
+ "oxy-semantic",
+ "oxy-workflow",
+ "oxy_globals",
+ "regex",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "agentic-connector"
 version = "0.5.31"
 dependencies = [
@@ -297,6 +319,7 @@ name = "agentic-http"
 version = "0.5.31"
 dependencies = [
  "agentic-analytics",
+ "agentic-builder",
  "agentic-connector",
  "agentic-core",
  "agentic-db",
@@ -306,7 +329,9 @@ dependencies = [
  "axum 0.8.8",
  "chrono",
  "dashmap 5.5.3",
+ "entity",
  "oxy",
+ "oxy-auth",
  "oxy-shared",
  "oxy-workflow",
  "sea-orm",
@@ -8701,6 +8726,7 @@ name = "oxy-app"
 version = "0.5.32"
 dependencies = [
  "a2a",
+ "agentic-builder",
  "agentic-db",
  "agentic-http",
  "anyhow",

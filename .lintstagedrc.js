@@ -7,8 +7,10 @@ export default {
   // TypeScript type checking
   "**/*.{ts,tsx}": ["bash -c 'pnpm turbo lint:ts'"],
   // Rust formatting (non-CI only)
+  // Use a function so lint-staged doesn't append individual file paths,
+  // which would bypass Cargo.toml edition detection (causing let-chain errors).
   // eslint-disable-next-line no-undef
-  ...(process.env.CI ? {} : { "**/*.rs": ["cargo fmt --all --check -- "] }),
+  ...(process.env.CI ? {} : { "**/*.rs": () => "cargo fmt --all" }),
   // CSS/JSON/HTML: Biome (with Tailwind v4 support)
   "**/*.{css,json,html}": [
     "biome check --write --no-errors-on-unmatched",

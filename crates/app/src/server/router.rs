@@ -62,6 +62,8 @@ use crate::api::{app, message, task};
 use agentic_http::{AgenticState, cleanup_stale_runs, router as agentic_router};
 use std::sync::Arc;
 
+use crate::server::builder_test_runner::OxyTestRunner;
+
 #[derive(Clone)]
 pub struct AppState {
     pub cloud: bool,
@@ -520,7 +522,8 @@ pub async fn api_router(cloud: bool, enterprise: bool, readonly: bool) -> Result
         backend: std::sync::Arc::new(build_backend(cloud)),
     };
     cleanup_stale_runs().await.ok();
-    let agentic_state = Arc::new(AgenticState::new());
+    let agentic_state =
+        Arc::new(AgenticState::new().with_builder_test_runner(Arc::new(OxyTestRunner)));
     let public_routes = build_public_routes();
     let protected_routes = build_protected_routes(app_state.clone(), agentic_state);
     let protected_routes = apply_middleware(protected_routes, cloud)?;
@@ -552,7 +555,8 @@ pub async fn internal_api_router(
         backend: std::sync::Arc::new(build_backend(cloud)),
     };
     cleanup_stale_runs().await.ok();
-    let agentic_state = Arc::new(AgenticState::new());
+    let agentic_state =
+        Arc::new(AgenticState::new().with_builder_test_runner(Arc::new(OxyTestRunner)));
     let public_routes = build_public_routes();
     let protected_routes = build_protected_routes(app_state.clone(), agentic_state);
 

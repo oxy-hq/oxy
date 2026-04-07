@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use agentic_builder::BuilderTestRunner;
 use dashmap::DashMap;
 use tokio::sync::{Notify, mpsc, watch};
 
@@ -28,6 +29,10 @@ pub struct AgenticState {
     /// Shared with [`BuildContext`] so that `build_solver_with_context` can
     /// skip re-introspecting a database whose schema hasn't changed.
     pub schema_cache: Arc<Mutex<HashMap<String, agentic_analytics::SchemaCatalog>>>,
+
+    /// Optional test runner injected by `oxy-app` so the builder copilot can
+    /// execute `.test.yml` files via the eval pipeline.
+    pub builder_test_runner: Option<Arc<dyn BuilderTestRunner>>,
 }
 
 impl Default for AgenticState {
@@ -44,7 +49,14 @@ impl AgenticState {
             cancel_txs: DashMap::new(),
             statuses: DashMap::new(),
             schema_cache: Arc::new(Mutex::new(HashMap::new())),
+            builder_test_runner: None,
         }
+    }
+
+    /// Attach a test runner to this state.  Call before mounting routes.
+    pub fn with_builder_test_runner(mut self, runner: Arc<dyn BuilderTestRunner>) -> Self {
+        self.builder_test_runner = Some(runner);
+        self
     }
 
     /// Register a new active run; called from `create_run` before spawning the task.

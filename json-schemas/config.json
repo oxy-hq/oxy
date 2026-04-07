@@ -27,9 +27,13 @@
       }
     },
     "builder_agent": {
-      "type": [
-        "string",
-        "null"
+      "anyOf": [
+        {
+          "$ref": "#/definitions/BuilderAgentConfig"
+        },
+        {
+          "type": "null"
+        }
       ]
     },
     "databases": {
@@ -127,6 +131,27 @@
           }
         }
       }
+    },
+    "BuilderAgentConfig": {
+      "description": "Configuration for the built-in builder copilot agent.\n\nSupports two forms for backward compatibility: - **Path** (legacy): a string pointing to an `.agent.yml` file, e.g. `builder_agent: builder.agent.yml` - **Builtin** (new): just a model name, e.g. `builder_agent: { model: \"claude-sonnet-4-6\" }`",
+      "anyOf": [
+        {
+          "description": "Legacy: path to an external agent YAML file.",
+          "type": "string"
+        },
+        {
+          "description": "New: built-in copilot configured only with a model name.",
+          "type": "object",
+          "required": [
+            "model"
+          ],
+          "properties": {
+            "model": {
+              "type": "string"
+            }
+          }
+        }
+      ]
     },
     "Database": {
       "type": "object",

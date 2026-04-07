@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/shadcn/button";
 import { Textarea } from "@/components/ui/shadcn/textarea";
 import { cn } from "@/libs/shadcn/utils";
 import type { HumanInputQuestion } from "@/services/api/analytics";
+import ProposeChangeDiff, { parseProposeChange } from "./ProposeChangeDiff";
 
 interface SuspensionPromptProps {
   questions: HumanInputQuestion[];
@@ -59,6 +60,23 @@ const SuspensionPrompt = ({ questions, onAnswer, isAnswering }: SuspensionPrompt
   const isNextOrSubmitDisabled = isAnswering || (!answers[safeIndex].trim() && !allFilled);
 
   const nextOrSubmitLabel = allFilled ? "Send" : "Next";
+
+  // Single propose_change question → render the diff UI instead of the card.
+  if (questions.length === 1) {
+    const payload = parseProposeChange(questions[0].prompt);
+    if (payload) {
+      return (
+        <div className='rounded-lg border border-border bg-muted/30 p-4'>
+          <ProposeChangeDiff
+            payload={payload}
+            suggestions={questions[0].suggestions}
+            onAnswer={onAnswer}
+            isAnswering={isAnswering}
+          />
+        </div>
+      );
+    }
+  }
 
   return (
     <div className='rounded-lg border border-border bg-muted/30'>

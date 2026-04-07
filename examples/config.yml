@@ -129,7 +129,8 @@ models:
 defaults:
   database: local
 
-builder_agent: agents/builder.agent.yml
+builder_agent:
+  model: claude-sonnet-4-6
 
 slack:
   default_agent: agents/default.agent.yml

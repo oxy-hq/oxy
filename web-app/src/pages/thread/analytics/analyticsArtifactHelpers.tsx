@@ -172,3 +172,72 @@ export function sqlArtifactFromExecutePreview(item: ArtifactItem): SqlArtifact |
     }
   };
 }
+
+function rowsToTable(
+  columns: string[] | undefined,
+  rows: unknown[] | undefined
+): string[][] | undefined {
+  if (!columns?.length) return undefined;
+
+  return [
+    columns,
+    ...(rows ?? []).map((row) =>
+      Array.isArray(row)
+        ? row.map((value) => String(value ?? ""))
+        : columns.map((column) => String((row as Record<string, unknown>)?.[column] ?? ""))
+    )
+  ];
+}
+
+export function sqlArtifactFromExecuteSql(item: ArtifactItem): SqlArtifact | null {
+  const input = parseToolJson<Record<string, unknown>>(item.toolInput);
+  const output = parseToolJson<Record<string, unknown>>(item.toolOutput ?? "");
+  const sql = input?.sql;
+
+  if (!sql || typeof sql !== "string") return null;
+
+  const columns = output?.columns as string[] | undefined;
+  const rows = output?.rows as unknown[] | undefined;
+  const database = typeof output?.database === "string" ? output.database : "";
+
+  return {
+    id: item.id,
+    name: "execute_sql",
+    kind: "execute_sql",
+    content: {
+      type: "execute_sql",
+      value: {
+        database,
+        sql_query: sql,
+        result: rowsToTable(columns, rows),
+        is_result_truncated: false
+      }
+    }
+  };
+}
+
+export function sqlArtifactFromSemanticQuery(item: ArtifactItem): SqlArtifact | null {
+  const output = parseToolJson<Record<string, unknown>>(item.toolOutput ?? "");
+  const sql = output?.sql_generated;
+
+  if (!sql || typeof sql !== "string") return null;
+
+  const columns = output?.columns as string[] | undefined;
+  const rows = output?.rows as unknown[] | undefined;
+  const database = typeof output?.database === "string" ? output.database : "";
+
+  return {
+    id: item.id,
+    name: "semantic_query",
+    kind: "execute_sql",
+    content: {
+      type: "execute_sql",
+      value: {
+        database,
+        sql_query: sql,
+        result: rowsToTable(columns, rows),
+        is_result_truncated: false
+      }
+    }
+  };
+}

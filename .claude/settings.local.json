@@ -56,7 +56,8 @@
       "Bash(rg '#[0-9a-fA-F]{3,8}' --glob '*.tsx' --glob '*.ts' --glob '!**/icons/**' --glob '!**/github-dark-theme*' --glob '!**/theme.json' --glob '!**/node_modules/**' web-app/src/)",
       "Bash(rg '\"#[0-9a-fA-F]{3,8}\"' --glob '*.tsx' --glob '*.ts' --glob '!**/icons/**' --glob '!**/github-dark-theme*' --glob '!**/LoginWithGoogleButton*' --glob '!**/node_modules/**' --glob '!**/theme.json' --glob '!**/Echarts/index.tsx' web-app/src/)",
       "Bash(rg \"'#[0-9a-fA-F]{3,8}'\" --glob '*.tsx' --glob '*.ts' --glob '!**/icons/**' --glob '!**/github-dark-theme*' --glob '!**/LoginWithGoogleButton*' --glob '!**/node_modules/**' --glob '!**/theme.json' --glob '!**/Echarts/index.tsx' web-app/src/)",
-      "Bash(node -e ':*)"
+      "Bash(node -e ':*)",
+      "Bash(git checkout:*)"
     ],
     "deny": [],
     "ask": []
