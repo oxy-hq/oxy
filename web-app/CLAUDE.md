@@ -84,22 +84,37 @@ src/
 - **Complex pages** (a single page with its own sub-components): the page becomes a PascalCase folder with `index.tsx` as the entry point and a `components/` subfolder for page-only sub-components.
 - **Shared components:** cross-feature reusables go in `src/components/`. If the component is purely presentational (no side effects, no data fetching, no business logic), place it in `src/components/ui/` instead.
 
-- **Colocation:** sub-components used only by one page live inside that page’s folder. Sub-components shared between pages in the same feature live in the feature’s `components/` folder.
+- **Colocation:** sub-components, hooks, constants, and utils live at the level of the component that uses them — not bubbled up. This applies **recursively** at every level, not just pages.
 
-**Example — `ProjectsListPage` has private sub-components; `EditProjectDialog` is shared with `ProjectDetailPage`:**
+- **When a component grows sub-components:** it becomes a PascalCase folder with `index.tsx` as the component itself and a `components/` subfolder for its children. If a child also grows sub-components, apply the same pattern recursively. Same for hooks, `constants.ts`, `utils.ts` — they live beside the component that owns them.
+
+- Sub-components shared between sibling pages in the same feature live in the feature’s `components/` folder.
+
+**Example — recursive colocation:**
 
 ```
 pages/projects/
 ├── ProjectsListPage/
-│   ├── index.tsx                  ← the page component
-│   └── components/
-│       ├── ProjectItem.tsx        ← only used by ProjectsListPage
-│       ├── ProjectsTableHeader.tsx
-│       ├── ProjectsPagination.tsx
-│       └── CreateProjectDialog.tsx
+│   ├── index.tsx                  ← the page component
+│   ├── constants.ts               ← constants only used by ProjectsListPage
+│   ├── useProjectsList.ts         ← hook only used by ProjectsListPage
+│   └── components/
+│       ├── ProjectItem/
+│       │   ├── index.tsx          ← ProjectItem component
+│       │   └── components/
+│       │       ├── Actions/
+│       │       │   ├── index.tsx  ← Actions component (grew large)
+│       │       │   └── components/
+│       │       │       ├── DeleteAction.tsx
+│       │       │       └── EditAction.tsx
+│       │       ├── ProjectBadge.tsx
+│       │       └── ProjectMeta.tsx
+│       ├── ProjectsTableHeader.tsx
+│       ├── ProjectsPagination.tsx
+│       └── CreateProjectDialog.tsx
 ├── ProjectDetailPage.tsx
 └── components/
-    └── EditProjectDialog.tsx      ← shared by ProjectsListPage + ProjectDetailPage
+    └── EditProjectDialog.tsx      ← shared by ProjectsListPage + ProjectDetailPage
 ```
 
 ## React Conventions

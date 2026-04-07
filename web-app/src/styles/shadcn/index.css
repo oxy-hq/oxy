@@ -104,8 +104,8 @@
   --graph-agent-border: #fca5a5;
   --graph-procedure-bg: #ffedd5;
   --graph-procedure-border: #fdba74;
-  --graph-app-bg: #e0f2fe;
-  --graph-app-border: #7dd3fc;
+  --graph-app-bg: #d1fae5;
+  --graph-app-border: #6ee7b7;
   --graph-automation-bg: #f3e8ff;
   --graph-automation-border: #d8b4fe;
   --graph-view-bg: #dcfce7;
@@ -219,8 +219,8 @@
   --graph-agent-border: rgba(239, 68, 68, 0.4);
   --graph-procedure-bg: rgba(249, 115, 22, 0.15);
   --graph-procedure-border: rgba(249, 115, 22, 0.4);
-  --graph-app-bg: rgba(14, 165, 233, 0.15);
-  --graph-app-border: rgba(14, 165, 233, 0.4);
+  --graph-app-bg: rgba(16, 185, 129, 0.15);
+  --graph-app-border: rgba(16, 185, 129, 0.4);
   --graph-automation-bg: rgba(168, 85, 247, 0.15);
   --graph-automation-border: rgba(168, 85, 247, 0.4);
   --graph-view-bg: rgba(34, 197, 94, 0.15);
