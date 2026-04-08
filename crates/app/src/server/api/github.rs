@@ -75,8 +75,6 @@ pub struct GitHubCallbackQuery {
 
 /// GET /github/app-installations — list all GitHub App installations using the App JWT.
 /// Returns an empty list when the GitHub App is not configured (env vars missing).
-/// Clients use this to auto-connect without requiring the operator to supply
-/// `GITHUB_APP_INSTALLATION_ID` manually.
 #[derive(Debug, Serialize)]
 pub struct AppInstallation {
     pub id: i64,
@@ -623,7 +621,7 @@ pub async fn gen_oauth_connect_url(
     let redirect_uri = urlencoding::encode(&format!("{base_url}/github/callback")).into_owned();
 
     Ok(ResponseJson(format!(
-        "https://github.com/login/oauth/authorize?client_id={client_id}&scope=read:user+read:org&state={state}&redirect_uri={redirect_uri}"
+        "https://github.com/login/oauth/authorize?client_id={client_id}&state={state}&redirect_uri={redirect_uri}"
     )))
 }
 
@@ -646,8 +644,16 @@ pub enum OAuthConnectResponse {
     NotInstalled,
 }
 
-/// POST /github/namespaces/oauth — exchange an OAuth code, intersect the user's
-/// installations with this app's installations, and auto-connect if unambiguous.
+/// POST /github/namespaces/oauth — exchange an OAuth code to verify GitHub identity,
+/// then list all app installations (via App JWT) and auto-connect if unambiguous.
+///
+/// We do NOT use `GET /user/installations` because that only returns installations
+/// where the user has GitHub admin/owner access — excluding regular org members.
+///
+/// Instead we resolve the user's GitHub identity (their login + org memberships)
+/// from the OAuth token and intersect that with the app's installations by slug.
+/// This naturally scopes each user to installations they actually belong to,
+/// without requiring any operator configuration.
 pub async fn connect_namespace_from_oauth(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     headers: HeaderMap,
@@ -665,22 +671,13 @@ pub async fn connect_namespace_from_oauth(
 
     let user_token =
         exchange_oauth_code(&payload.code, &client_id, &client_secret, &headers).await?;
-    let user_installation_ids = fetch_user_installation_ids(&user_token).await?;
 
-    // Intersect with this app's own installations (JWT-verified) — the result
-    // can only contain installations of this specific Oxy GitHub App.
-    let app_auth = GitHubAppAuth::from_env()?;
-    let app_installations = app_auth.list_installations().await.unwrap_or_default();
+    // GET /user/installations returns all installations of THIS GitHub App that the
+    // authenticated user can access. Requires the App to have "Organization > Members:
+    // Read" permission — with that set, org members (not just owners) are included.
+    let eligible = fetch_user_app_installations(&user_token).await?;
 
-    let eligible: Vec<OAuthInstallation> = app_installations
-        .into_iter()
-        .filter(|inst| user_installation_ids.contains(&inst.id))
-        .map(|inst| OAuthInstallation {
-            id: inst.id,
-            name: inst.name,
-            owner_type: inst.owner_type,
-        })
-        .collect();
+    tracing::debug!("GitHub OAuth: eligible installations={eligible:?}");
 
     let db = establish_connection().await.map_err(|e| {
         error!("DB connection failed: {}", e);
@@ -790,12 +787,22 @@ async fn exchange_oauth_code(
     })
 }
 
-async fn fetch_user_installation_ids(
+/// GET /user/installations — returns installations of THIS GitHub App that the
+/// authenticated user can access. Works correctly for org members (not just owners)
+/// when the GitHub App has "Organization > Members: Read" permission configured.
+async fn fetch_user_app_installations(
     user_token: &str,
-) -> Result<std::collections::HashSet<i64>, axum::http::StatusCode> {
+) -> Result<Vec<OAuthInstallation>, axum::http::StatusCode> {
     #[derive(Deserialize)]
     struct Item {
         id: i64,
+        account: Account,
+    }
+    #[derive(Deserialize)]
+    struct Account {
+        login: String,
+        #[serde(rename = "type")]
+        account_type: String,
     }
     #[derive(Deserialize)]
     struct Response {
@@ -807,12 +814,12 @@ async fn fetch_user_installation_ids(
         .build()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .get("https://api.github.com/user/installations")
-        .header("Authorization", format!("token {user_token}"))
+        .header("Authorization", format!("Bearer {user_token}"))
         .header("Accept", "application/vnd.github+json")
         .send()
         .await
         .map_err(|e| {
-            error!("GitHub /user/installations failed: {}", e);
+            error!("GitHub GET /user/installations failed: {}", e);
             StatusCode::BAD_GATEWAY
         })?
         .json::<Response>()
@@ -822,7 +829,15 @@ async fn fetch_user_installation_ids(
             StatusCode::BAD_GATEWAY
         })?;
 
-    Ok(resp.installations.into_iter().map(|i| i.id).collect())
+    Ok(resp
+        .installations
+        .into_iter()
+        .map(|i| OAuthInstallation {
+            id: i.id,
+            name: i.account.login,
+            owner_type: i.account.account_type,
+        })
+        .collect())
 }
 
 async fn upsert_app_namespace(

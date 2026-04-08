@@ -11,9 +11,8 @@
 //! (in priority order):
 //!
 //! 1. **GitHub App** — `GITHUB_APP_ID` + `GITHUB_APP_PRIVATE_KEY`.  The
-//!    installation ID is discovered automatically via `GET /app/installations`.
-//!    If you have multiple installations you can pin one with the optional
-//!    `GITHUB_APP_INSTALLATION_ID` override.
+//!    installation ID is auto-discovered via `GET /app/installations` (first
+//!    result used when multiple installations exist).
 //! 2. **Personal access token** — `GITHUB_TOKEN` (fallback).
 //!
 //! Tokens are **never persisted** to `.git/config`; they are passed via the
@@ -568,9 +567,8 @@ impl LocalGitService {
     ///
     /// Resolution order:
     /// 1. GitHub App — `GITHUB_APP_ID` + `GITHUB_APP_PRIVATE_KEY`.
-    ///    The installation ID is resolved by (a) reading the optional
-    ///    `GITHUB_APP_INSTALLATION_ID` override or (b) auto-discovering via
-    ///    `GET /app/installations` (takes the first result).
+    ///    The installation ID is auto-discovered via `GET /app/installations`
+    ///    (takes the first result when there are multiple).
     /// 2. Personal access token — `GITHUB_TOKEN`
     ///
     /// Returns `None` when no credentials are configured (local-only mode).
@@ -582,29 +580,23 @@ impl LocalGitService {
         ) {
             match GitHubAppAuth::new(app_id, private_key) {
                 Ok(auth) => {
-                    // Prefer an explicit override; otherwise auto-discover.
-                    let installation_id = if let Ok(id) = env::var("GITHUB_APP_INSTALLATION_ID") {
-                        Some(id)
-                    } else {
-                        match auth.list_installations().await {
-                            Ok(list) if !list.is_empty() => {
-                                if list.len() > 1 {
-                                    warn!(
-                                        "Multiple GitHub App installations found; using the first one ({}). \
-                                         Set GITHUB_APP_INSTALLATION_ID to pin a specific installation.",
-                                        list[0].id
-                                    );
-                                }
-                                Some(list[0].id.to_string())
+                    let installation_id = match auth.list_installations().await {
+                        Ok(list) if !list.is_empty() => {
+                            if list.len() > 1 {
+                                warn!(
+                                    "Multiple GitHub App installations found; using the first one ({}).",
+                                    list[0].id
+                                );
                             }
-                            Ok(_) => {
-                                warn!("GitHub App has no installations; cannot obtain token");
-                                None
-                            }
-                            Err(e) => {
-                                warn!("Failed to list GitHub App installations: {}", e);
-                                None
-                            }
+                            Some(list[0].id.to_string())
+                        }
+                        Ok(_) => {
+                            warn!("GitHub App has no installations; cannot obtain token");
+                            None
+                        }
+                        Err(e) => {
+                            warn!("Failed to list GitHub App installations: {}", e);
+                            None
                         }
                     };
 

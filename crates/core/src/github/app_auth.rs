@@ -172,7 +172,7 @@ impl GitHubAppAuth {
             .map(|r| GitHubInstallation {
                 id: r.id,
                 owner_type: r.account.account_type,
-                slug: r.app_slug,
+                slug: r.account.login.clone(),
                 name: r.account.login,
             })
             .collect())
@@ -209,7 +209,7 @@ impl GitHubAppAuth {
         let installation = GitHubInstallation {
             id: installation_response.id,
             owner_type: installation_response.account.account_type,
-            slug: installation_response.app_slug,
+            slug: installation_response.account.login.clone(),
             name: installation_response.account.login,
         };
 
