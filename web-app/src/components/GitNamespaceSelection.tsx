@@ -14,8 +14,10 @@ import { Label } from "@/components/ui/shadcn/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
 import {
   useConnectNamespaceFromOAuth,
+  useCreateInstallationNamespace,
   useCreatePATNamespace,
   useDeleteGitNamespace,
+  useGitHubInstallAppUrl,
   useGitHubNamespaces,
   usePickNamespaceInstallation
 } from "@/hooks/api/github";
@@ -40,63 +42,99 @@ function ConnectDialog({
   const [patToken, setPATToken] = useState("");
   const [patError, setPATError] = useState<string | null>(null);
   const [oauthPopupOpened, setOauthPopupOpened] = useState(false);
+  const [installPopupOpened, setInstallPopupOpened] = useState(false);
   const [oauthInstallations, setOauthInstallations] = useState<OAuthInstallation[] | null>(null);
   const [selectionToken, setSelectionToken] = useState<string>("");
   const [oauthError, setOauthError] = useState<string | null>(null);
-  // Shown when the OAuth flow finds no installations for the user
   const [notInstalled, setNotInstalled] = useState(false);
 
   const oauthPopupRef = useRef<Window | null>(null);
+  const installPopupRef = useRef<Window | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { mutate: createPAT, isPending: isPATLoading } = useCreatePATNamespace();
   const { mutate: connectFromOAuth, isPending: isOAuthConnecting } = useConnectNamespaceFromOAuth();
   const { mutate: pickInstallation, isPending: isPickingInstallation } =
     usePickNamespaceInstallation();
+  const { mutate: createInstallationNs, isPending: isInstallingNs } =
+    useCreateInstallationNamespace();
+  const { data: installAppUrl } = useGitHubInstallAppUrl();
 
+  // Listen for postMessages from either the OAuth popup or the install popup.
+  // The callback page relays two shapes:
+  //   OAuth:   { type, code, state }          → call connectFromOAuth
+  //   Install: { type, installation_id }       → call createInstallationNamespace
   useEffect(() => {
-    if (!oauthPopupOpened) return;
+    if (!open) return;
 
     const allowedOrigin = import.meta.env.VITE_GITHUB_CALLBACK_ORIGIN || window.location.origin;
+
     const handleMessage = (e: MessageEvent) => {
       if (e.origin !== window.location.origin && e.origin !== allowedOrigin) return;
       if (e.data?.type !== GITHUB_OAUTH_CALLBACK_MESSAGE) return;
-      const { code, state } = e.data as { type: string; code: string; state: string };
-      if (!code || !state) return;
 
-      setOauthPopupOpened(false);
-      oauthPopupRef.current = null;
-      setOauthError(null);
-      connectFromOAuth(
-        { code, state },
-        {
-          onSuccess: (result) => {
-            if (result.status === "connected") {
-              onConnected(result.namespace.id);
-            } else if (result.status === "choose") {
-              setOauthInstallations(result.installations);
-              setSelectionToken(result.selection_token);
-            } else {
-              setNotInstalled(true);
-            }
-          },
-          onError: (err) => setOauthError(err.message || "Authentication failed.")
-        }
-      );
+      const { code, state, installation_id } = e.data as {
+        type: string;
+        code?: string;
+        state?: string;
+        installation_id?: string;
+      };
+
+      // Install callback — GitHub redirected after app installation
+      if (installation_id && !code) {
+        setInstallPopupOpened(false);
+        installPopupRef.current = null;
+        setOauthError(null);
+        createInstallationNs(Number(installation_id), {
+          onSuccess: (ns) => onConnected(ns.id),
+          onError: (err) => setOauthError(err.message || "Failed to connect installation.")
+        });
+        return;
+      }
+
+      // OAuth callback — GitHub redirected after user authorization
+      if (code && state) {
+        setOauthPopupOpened(false);
+        oauthPopupRef.current = null;
+        setOauthError(null);
+        connectFromOAuth(
+          { code, state },
+          {
+            onSuccess: (result) => {
+              if (result.status === "connected") {
+                onConnected(result.namespace.id);
+              } else if (result.status === "choose") {
+                setOauthInstallations(result.installations);
+                setSelectionToken(result.selection_token);
+              } else {
+                setNotInstalled(true);
+              }
+            },
+            onError: (err) => setOauthError(err.message || "Authentication failed.")
+          }
+        );
+      }
     };
 
     window.addEventListener("message", handleMessage);
-    const closedCheck = setInterval(() => {
+    return () => window.removeEventListener("message", handleMessage);
+  }, [open, connectFromOAuth, onConnected, createInstallationNs]);
+
+  // Poll for closed popups
+  useEffect(() => {
+    if (!oauthPopupOpened && !installPopupOpened) return;
+    const timer = setInterval(() => {
       if (oauthPopupRef.current?.closed) {
         setOauthPopupOpened(false);
         oauthPopupRef.current = null;
       }
+      if (installPopupRef.current?.closed) {
+        setInstallPopupOpened(false);
+        installPopupRef.current = null;
+      }
     }, 500);
-    return () => {
-      window.removeEventListener("message", handleMessage);
-      clearInterval(closedCheck);
-    };
-  }, [oauthPopupOpened, connectFromOAuth, onConnected]);
+    return () => clearInterval(timer);
+  }, [oauthPopupOpened, installPopupOpened]);
 
   const handlePATSubmit = () => {
     if (!patToken.trim()) return;
@@ -127,6 +165,16 @@ function ConnectDialog({
     }
   };
 
+  const handleInstall = () => {
+    if (!installAppUrl) return;
+    setOauthError(null);
+    const popup = window.open(installAppUrl, "_blank", "width=600,height=700,noopener=no");
+    if (popup) {
+      installPopupRef.current = popup;
+      setInstallPopupOpened(true);
+    }
+  };
+
   const handlePickInstallation = (installationId: number) => {
     pickInstallation(
       { installation_id: installationId, selection_token: selectionToken },
@@ -145,6 +193,7 @@ function ConnectDialog({
     setPATToken("");
     setPATError(null);
     setOauthPopupOpened(false);
+    setInstallPopupOpened(false);
     setOauthInstallations(null);
     setSelectionToken("");
     setOauthError(null);
@@ -152,7 +201,12 @@ function ConnectDialog({
     onClose();
   };
 
-  const anyBusy = oauthPopupOpened || isOAuthConnecting || isPickingInstallation;
+  const anyBusy =
+    oauthPopupOpened ||
+    installPopupOpened ||
+    isOAuthConnecting ||
+    isPickingInstallation ||
+    isInstallingNs;
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
@@ -216,32 +270,70 @@ function ConnectDialog({
 
           {/* GitHub App tab */}
           <TabsContent value='app' className='mt-4 space-y-4'>
-            {/* Step 1: Sign in */}
+            {/* Default: sign in + install on new account */}
             {!notInstalled && !oauthInstallations && (
-              <Button className='w-full gap-2' onClick={handleSignIn} disabled={anyBusy}>
-                {oauthPopupOpened || isOAuthConnecting ? (
-                  <Loader2 className='h-4 w-4 animate-spin' />
-                ) : (
-                  <Github className='h-4 w-4' />
+              <div className='space-y-2'>
+                <Button className='w-full gap-2' onClick={handleSignIn} disabled={anyBusy}>
+                  {oauthPopupOpened || isOAuthConnecting ? (
+                    <Loader2 className='h-4 w-4 animate-spin' />
+                  ) : (
+                    <Github className='h-4 w-4' />
+                  )}
+                  {oauthPopupOpened
+                    ? "Waiting for GitHub…"
+                    : isOAuthConnecting
+                      ? "Connecting…"
+                      : "Sign in with GitHub"}
+                </Button>
+
+                {installAppUrl && (
+                  <Button
+                    variant='outline'
+                    className='w-full gap-2'
+                    onClick={handleInstall}
+                    disabled={anyBusy}
+                  >
+                    {installPopupOpened || isInstallingNs ? (
+                      <Loader2 className='h-4 w-4 animate-spin' />
+                    ) : (
+                      <Plus className='h-4 w-4' />
+                    )}
+                    {installPopupOpened
+                      ? "Waiting for install…"
+                      : isInstallingNs
+                        ? "Connecting…"
+                        : "Install on another account"}
+                  </Button>
                 )}
-                {oauthPopupOpened
-                  ? "Waiting for GitHub…"
-                  : isOAuthConnecting
-                    ? "Connecting…"
-                    : "Sign in with GitHub"}
-              </Button>
+              </div>
             )}
 
-            {/* App not installed on any of the user's accounts */}
+            {/* App not installed — offer install */}
             {notInstalled && (
               <div className='space-y-3'>
                 <div className='rounded-lg border border-border/60 bg-muted/30 px-3 py-3'>
                   <p className='font-medium text-sm'>GitHub App not installed</p>
                   <p className='mt-0.5 text-muted-foreground text-xs leading-relaxed'>
-                    The GitHub App is not installed on any account you belong to. Ask your admin to
-                    install it on the organization.
+                    The GitHub App is not installed on any account you can access. Install it on
+                    your personal account or organization, then come back and sign in.
                   </p>
                 </div>
+
+                {installAppUrl && (
+                  <Button
+                    className='w-full gap-2'
+                    onClick={handleInstall}
+                    disabled={installPopupOpened || isInstallingNs}
+                  >
+                    {installPopupOpened || isInstallingNs ? (
+                      <Loader2 className='h-4 w-4 animate-spin' />
+                    ) : (
+                      <Github className='h-4 w-4' />
+                    )}
+                    {installPopupOpened ? "Waiting for install…" : "Install GitHub App"}
+                  </Button>
+                )}
+
                 <button
                   type='button'
                   onClick={() => setNotInstalled(false)}

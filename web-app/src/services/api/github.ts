@@ -63,7 +63,9 @@ export class GitHubApiService {
   }
 
   static async getOAuthConnectUrl(): Promise<string> {
-    const response = await apiClient.get<string>("/github/oauth-connect-url");
+    const response = await apiClient.get<string>("/github/oauth-connect-url", {
+      params: { origin: window.location.origin }
+    });
     return response.data;
   }
 
@@ -73,7 +75,8 @@ export class GitHubApiService {
   ): Promise<OAuthConnectResponse> {
     const response = await apiClient.post<OAuthConnectResponse>("/github/namespaces/oauth", {
       code,
-      state
+      state,
+      origin: window.location.origin
     });
     return response.data;
   }

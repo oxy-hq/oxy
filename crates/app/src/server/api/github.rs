@@ -479,11 +479,32 @@ pub fn validate_github_state(state: &str, user_id: &Uuid) -> Result<bool, axum::
 //       user_id and a 10-minute timestamp.  The server verifies the token before
 //       connecting, so users cannot pick an installation outside their eligible set.
 
-/// GET /github/oauth-connect-url — signed GitHub OAuth URL for the
-/// already-installed fallback flow.
+/// GET /github/install-app-url — returns the public GitHub App installation URL.
+/// Used by the frontend to show an "Install GitHub App" link when no installation
+/// is found for the current user.
+pub async fn get_install_app_url(
+    _user: AuthenticatedUserExtractor,
+) -> Result<ResponseJson<String>, axum::http::StatusCode> {
+    let slug = std::env::var("GITHUB_APP_SLUG").map_err(|_| {
+        error!("GITHUB_APP_SLUG not configured");
+        StatusCode::NOT_FOUND
+    })?;
+    Ok(ResponseJson(format!("https://github.com/apps/{slug}")))
+}
+
+/// GET /github/oauth-connect-url?origin=https://app.example.com
+///
+/// Returns a signed GitHub OAuth URL. The `origin` query param is supplied by
+/// the frontend (`window.location.origin`) so the redirect_uri exactly matches
+/// the callback URL registered in the GitHub App — no env-var override needed.
+#[derive(Debug, Deserialize)]
+pub struct OAuthConnectUrlQuery {
+    pub origin: String,
+}
+
 pub async fn gen_oauth_connect_url(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    headers: HeaderMap,
+    Query(query): Query<OAuthConnectUrlQuery>,
 ) -> Result<ResponseJson<String>, axum::http::StatusCode> {
     let client_id =
         std::env::var("GITHUB_CLIENT_ID").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -498,8 +519,8 @@ pub async fn gen_oauth_connect_url(
     let signature = hex::encode(mac.finalize().into_bytes());
     let state = urlencoding::encode(&format!("{}:{}", state_data, signature)).into_owned();
 
-    let base_url = super::auth::extract_base_url_from_headers(&headers);
-    let redirect_uri = urlencoding::encode(&format!("{base_url}/github/callback")).into_owned();
+    let origin = query.origin.trim_end_matches('/');
+    let redirect_uri = urlencoding::encode(&format!("{origin}/github/callback")).into_owned();
 
     Ok(ResponseJson(format!(
         "https://github.com/login/oauth/authorize?client_id={client_id}&state={state}&redirect_uri={redirect_uri}"
@@ -608,7 +629,6 @@ fn verify_selection_token(
 /// without it, only org owners/admins see the installation.
 pub async fn connect_namespace_from_oauth(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    headers: HeaderMap,
     Json(payload): Json<OAuthNamespaceRequest>,
 ) -> Result<ResponseJson<OAuthConnectResponse>, axum::http::StatusCode> {
     if !validate_github_state(&payload.state, &user.id)? {
@@ -621,8 +641,10 @@ pub async fn connect_namespace_from_oauth(
     let client_secret =
         std::env::var("GITHUB_CLIENT_SECRET").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    let origin = payload.origin.trim_end_matches('/');
+    let redirect_uri = format!("{origin}/github/callback");
     let user_token =
-        exchange_oauth_code(&payload.code, &client_id, &client_secret, &headers).await?;
+        exchange_oauth_code(&payload.code, &client_id, &client_secret, &redirect_uri).await?;
 
     // GET /user/installations returns all installations of THIS GitHub App that the
     // authenticated user can access. Requires the App to have "Organization > Members:
@@ -660,6 +682,9 @@ pub async fn connect_namespace_from_oauth(
 pub struct OAuthNamespaceRequest {
     pub code: String,
     pub state: String,
+    /// The frontend's window.location.origin — used to reconstruct the exact
+    /// redirect_uri for the GitHub token exchange (must match what was registered).
+    pub origin: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -713,11 +738,8 @@ async fn exchange_oauth_code(
     code: &str,
     client_id: &str,
     client_secret: &str,
-    headers: &HeaderMap,
+    redirect_uri: &str,
 ) -> Result<String, axum::http::StatusCode> {
-    let base = super::auth::extract_base_url_from_headers(headers);
-    let redirect_uri = format!("{base}/github/callback");
-
     #[derive(Deserialize)]
     struct TokenResponse {
         access_token: Option<String>,
@@ -734,7 +756,7 @@ async fn exchange_oauth_code(
             ("client_id", client_id),
             ("client_secret", client_secret),
             ("code", code),
-            ("redirect_uri", redirect_uri.as_str()),
+            ("redirect_uri", redirect_uri),
         ])
         .send()
         .await
