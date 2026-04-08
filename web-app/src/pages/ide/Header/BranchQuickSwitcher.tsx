@@ -146,7 +146,7 @@ export const BranchQuickSwitcher = ({
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent
-        className='w-56 p-0 shadow-lg'
+        className='w-72 p-0 shadow-lg'
         align='start'
         sideOffset={6}
         onOpenAutoFocus={(e) => e.preventDefault()}
@@ -186,7 +186,9 @@ export const BranchQuickSwitcher = ({
                               : "bg-transparent group-aria-selected:bg-muted-foreground/25"
                           )}
                         />
-                        <span className='min-w-0 flex-1 truncate'>{name}</span>
+                        <span className='min-w-0 flex-1 truncate' title={name}>
+                          {name}
+                        </span>
                         {!isExternal && name === activeBranchName && name !== currentBranch && (
                           <span className='shrink-0 font-sans text-[10px] text-muted-foreground/60'>
                             active
