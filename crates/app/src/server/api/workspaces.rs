@@ -493,7 +493,7 @@ async fn build_workspace_details_response(
             id: Uuid::nil(),
             name: current_branch,
             revision: String::new(),
-            workspace_id: workspace_id,
+            workspace_id,
             branch_type: BranchType::Local,
             sync_status: "synced".to_string(),
             created_at: now.clone(),
@@ -614,7 +614,7 @@ pub async fn switch_workspace_active_branch(
             );
             Ok(ResponseJson(ProjectBranch {
                 id: branch.id,
-                workspace_id: workspace_id,
+                workspace_id,
                 branch_type: BranchType::Local,
                 name: branch.name,
                 revision: branch.revision,
@@ -640,9 +640,7 @@ pub struct ProjectStatus {
 pub async fn get_workspace_status(
     State(app_state): State<AppState>,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
-    Path(WorkspacePath {
-        workspace_id: workspace_id,
-    }): Path<WorkspacePath>,
+    Path(WorkspacePath { workspace_id }): Path<WorkspacePath>,
 ) -> Result<axum::response::Json<ProjectStatus>, StatusCode> {
     // Check if this workspace has a recorded clone error (not an Oxy project).
     if let Some(clone_err) = app_state
@@ -1181,15 +1179,14 @@ pub async fn delete_workspace(
     // Only remove files from disk when the caller explicitly opts in.
     // Without `?delete_files=true` we only remove the DB record, leaving
     // the directory intact so an accidental delete can be recovered.
-    if query.delete_files {
-        if let Some(path) = workspace_path
-            && path.exists()
-        {
-            if let Err(e) = std::fs::remove_dir_all(&path) {
-                tracing::warn!("Failed to delete workspace directory {:?}: {}", path, e);
-            } else {
-                info!("Deleted workspace directory {:?}", path);
-            }
+    if query.delete_files
+        && let Some(path) = workspace_path
+        && path.exists()
+    {
+        if let Err(e) = std::fs::remove_dir_all(&path) {
+            tracing::warn!("Failed to delete workspace directory {:?}: {}", path, e);
+        } else {
+            info!("Deleted workspace directory {:?}", path);
         }
     }
 

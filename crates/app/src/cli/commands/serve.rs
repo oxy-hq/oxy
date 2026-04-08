@@ -38,10 +38,10 @@ const ASSETS_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
 
 pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     // In local mode the CWD is already the workspace directory — log it for clarity.
-    if args.local {
-        if let Ok(cwd) = std::env::current_dir() {
-            tracing::info!("Local mode: serving workspace from {}", cwd.display());
-        }
+    if args.local
+        && let Ok(cwd) = std::env::current_dir()
+    {
+        tracing::info!("Local mode: serving workspace from {}", cwd.display());
     }
 
     // Require OXY_DATABASE_URL to be set
@@ -79,21 +79,21 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
 
     // Initialize local git when running in multi-workspace / cloud mode.
     // Skipped in local mode: files are already on disk and git is optional.
-    if !args.local {
-        if let Ok(workspace_root) = resolve_local_workspace_path() {
-            let repo_url = std::env::var("GIT_REPOSITORY_URL").ok();
-            let branch = std::env::var("GIT_BRANCH").unwrap_or_else(|_| "main".to_string());
-            let token = LocalGitService::get_remote_token().await;
-            if let Err(e) = LocalGitService::clone_or_init(
-                &workspace_root,
-                repo_url.as_deref(),
-                &branch,
-                token.as_deref(),
-            )
-            .await
-            {
-                tracing::warn!("Failed to initialize local git repository: {}", e);
-            }
+    if !args.local
+        && let Ok(workspace_root) = resolve_local_workspace_path()
+    {
+        let repo_url = std::env::var("GIT_REPOSITORY_URL").ok();
+        let branch = std::env::var("GIT_BRANCH").unwrap_or_else(|_| "main".to_string());
+        let token = LocalGitService::get_remote_token().await;
+        if let Err(e) = LocalGitService::clone_or_init(
+            &workspace_root,
+            repo_url.as_deref(),
+            &branch,
+            token.as_deref(),
+        )
+        .await
+        {
+            tracing::warn!("Failed to initialize local git repository: {}", e);
         }
     }
 
@@ -126,15 +126,16 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
         // that existing deployments continue to see their workspaces after upgrade.
         let legacy = state.join("projects");
         let root = state.join("workspaces");
-        if legacy.exists() && !root.exists() {
-            if let Err(e) = std::fs::rename(&legacy, &root) {
-                tracing::warn!(
-                    "Could not migrate workspaces directory {:?} → {:?}: {}",
-                    legacy,
-                    root,
-                    e
-                );
-            }
+        if legacy.exists()
+            && !root.exists()
+            && let Err(e) = std::fs::rename(&legacy, &root)
+        {
+            tracing::warn!(
+                "Could not migrate workspaces directory {:?} → {:?}: {}",
+                legacy,
+                root,
+                e
+            );
         }
         std::fs::create_dir_all(&root).ok();
         Some(root)

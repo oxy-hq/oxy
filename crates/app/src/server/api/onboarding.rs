@@ -301,7 +301,7 @@ pub async fn setup_demo(
 
     Ok(Json(OnboardingResult {
         workspace_type: "demo".to_string(),
-        workspace_id: workspace_id,
+        workspace_id,
     }))
 }
 
@@ -353,7 +353,7 @@ pub async fn setup_new(
 
     Ok(Json(OnboardingResult {
         workspace_type: "new".to_string(),
-        workspace_id: workspace_id,
+        workspace_id,
     }))
 }
 
@@ -489,13 +489,13 @@ pub async fn setup_github(
                 if let Ok(db) = oxy::database::client::establish_connection().await {
                     use entity::prelude::Workspaces;
                     use sea_orm::{EntityTrait, ModelTrait};
-                    if let Ok(Some(record)) = Workspaces::find_by_id(workspace_id).one(&db).await {
-                        if let Err(del_err) = record.delete(&db).await {
-                            error!(
-                                "Failed to delete workspace {} from DB after failed clone: {}",
-                                workspace_id, del_err
-                            );
-                        }
+                    if let Ok(Some(record)) = Workspaces::find_by_id(workspace_id).one(&db).await
+                        && let Err(del_err) = record.delete(&db).await
+                    {
+                        error!(
+                            "Failed to delete workspace {} from DB after failed clone: {}",
+                            workspace_id, del_err
+                        );
                     }
                 }
             }
@@ -506,7 +506,7 @@ pub async fn setup_github(
 
     Ok(Json(OnboardingResult {
         workspace_type: "github".to_string(),
-        workspace_id: workspace_id,
+        workspace_id,
     }))
 }
 
@@ -812,10 +812,10 @@ async fn load_key_vars_from_workspace(workspace_id: uuid::Uuid) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     let mut result = Vec::new();
     for m in config.models() {
-        if let Some(key) = m.key_var() {
-            if seen.insert(key.to_string()) {
-                result.push(key.to_string());
-            }
+        if let Some(key) = m.key_var()
+            && seen.insert(key.to_string())
+        {
+            result.push(key.to_string());
         }
     }
     result

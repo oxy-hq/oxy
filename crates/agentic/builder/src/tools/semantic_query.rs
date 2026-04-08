@@ -176,7 +176,7 @@ pub async fn execute_semantic_query(
     let connector = oxy::connector::Connector::from_database(
         &db_name,
         &config_manager,
-        &secrets_manager,
+        secrets_manager,
         Some(row_limit),
         None,
         None,
