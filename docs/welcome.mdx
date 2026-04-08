@@ -29,14 +29,40 @@ Specifically, this process is implemented as follows:
 
 You can interact with all components — agents, procedures, and data — through the web interface launched by `oxy start`. Oxygen is also CLI-native, so every operation can be run from the terminal, making it easy to integrate with coding tools like [Claude Code](https://github.com/oxy-hq/skills) and CI/CD pipelines.
 
-## Resources
+## Who should read what?
 
-### Get started
+The documentation is split into two audiences:
 
-If you’re new to Oxy start here to learn the essentials.
+**End users** — data analysts, business users, and developers who use Oxy to query data, build agents, and create workflows. Start here:
 
-<CardGroup cols={3}>
-  <Card title="Quickstart" icon="rocket" href="/quickstart" />
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Install Oxy and run your first query in minutes
+  </Card>
+  <Card title="Getting Started with Agents" icon="robot" href="/getting-started-agents/set-up-project">
+    Create and test your first AI data agent
+  </Card>
+  <Card title="Core Concepts" icon="book" href="/learn-about-oxy/agents">
+    Agents, workflows, semantic layer, data apps
+  </Card>
+  <Card title="Basic Oxy commands" icon="terminal" href="/reference/oxy-commands">
+    CLI reference for running and testing agents
+  </Card>
+</CardGroup>
 
-  <Card title="Basic Oxy commands" icon="command" href="/reference/oxy-commands" />
+**Operators** — DevOps engineers, platform teams, and self-hosters who deploy and configure the Oxy server. Start here:
+
+<CardGroup cols={2}>
+  <Card title="Deployment Overview" icon="server" href="/deployment/overview">
+    Deploy Oxy on cloud, Docker, or Kubernetes
+  </Card>
+  <Card title="Deployment Modes" icon="sliders" href="/deployment/cloud-mode">
+    Multi-workspace vs single-workspace mode
+  </Card>
+  <Card title="Authentication" icon="lock" href="/authentication/overview">
+    Magic link, Google OAuth, Okta SSO
+  </Card>
+  <Card title="GitHub App Setup" icon="github" href="/deployment/github-app">
+    Enable GitHub workspace import
+  </Card>
 </CardGroup>

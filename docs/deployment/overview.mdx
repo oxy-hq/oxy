@@ -6,6 +6,10 @@ sidebarTitle: "Overview"
 
 This guide walks you through deploying Oxy on a cloud environment, from provisioning infrastructure to configuring authentication.
 
+<Note>
+  **For operators.** The Deployment section is intended for the person (DevOps, platform engineer, or self-hoster) who installs and runs the Oxy server. If you are an end user looking to query data or build agents, start with the [Quickstart](/quickstart) or [Getting Started with Agents](/getting-started-agents/set-up-project) instead.
+</Note>
+
 <Info>
   **Looking for local development setup?** See the [quickstart
   guide](/quickstart) to get started with `oxy init` and `oxy start`.
@@ -29,7 +33,7 @@ There are several approaches to deploying Oxy:
    - **[oxy-start Helm Chart](/deployment/kubernetes-helm#oxy-start-self-contained-deployment)** - Self-contained deployment using `oxy start` with Docker-in-Docker. No external database required — ideal for single-tenant instances.
    - **[Raw YAML](/deployment/kubernetes-raw)** - For advanced users who need full control over Kubernetes resources.
    - **[GitOps with ArgoCD](/deployment/kubernetes-helm#gitops-deployment-with-argocd)** - Manage Helm deployments declaratively for automated sync and drift detection.
-4. **Cloud Mode** - Deploy Oxy as a [multi-tenant cloud platform](/deployment/cloud-mode) using `oxy serve --cloud --enterprise`. Projects are synced from GitHub repositories and managed through workspaces.
+4. **Multi-workspace Mode** - Deploy Oxy as a [multi-tenant platform](/deployment/cloud-mode) using `oxy serve` (the default). Workspaces are imported from GitHub or created via the UI and managed centrally. Use `--local` for single-workspace deployments where the server serves one fixed directory.
 5. **Hands-on Guides** - For practical, ready-to-use deployment recipes, check our [hands-on guides](/deployment/hands-on) section which includes:
    - **Google Cloud Platform (GCP)** - Deploy Oxy on Google Cloud using our dedicated [GCP deployment guide](/deployment/gcp).
 

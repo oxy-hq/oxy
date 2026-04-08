@@ -1,78 +1,171 @@
 ---
 title: "Configure Environment"
-description: "Setting up environment variables and secrets management"
+description: "Environment variables for Oxy deployments"
 sidebarTitle: "4. Environment"
 ---
 
-Properly configuring your environment variables and managing secrets is crucial for a secure Oxy deployment.
+Oxy is configured primarily through environment variables. This page covers the full set of variables for production deployments.
 
 <Steps>
   <Step title="Create Environment File">
-    Create a `.env` file in your workspace to store your environment variables:
+    Create a `.env` file to store your environment variables:
 
     ```bash
     touch .env
     chmod 600 .env  # Restrict permissions to owner only
     ```
 
-  </Step>
-
-  <Step title="Add Required Secrets">
-    Add your secrets to the `.env` file:
-
-    ```plaintext
-    OPENAI_API_KEY=your-api-key
-    DATABASE_URL=your-database-connection-string
-    # Add other environment variables as needed
-    ```
-
     <Warning>
-      Never commit your `.env` file to version control. Make sure it's included in your `.gitignore` file.
+      Never commit `.env` to version control. Add it to `.gitignore`.
     </Warning>
 
   </Step>
 
-  <Step title="Advanced: Using AWS SSM Parameter Store">
-    For cloud deployments, consider using a secure method to manage secrets, such as AWS SSM Parameter Store:
+  <Step title="Set Required Variables">
+
+    The variables you need depend on your deployment mode.
+
+    **Single-workspace mode (`oxy serve --local`)** — minimal setup:
 
     ```bash
-    # Install AWS CLI if not already installed
-    sudo apt-get install -y awscli
-
-    # Configure AWS credentials
-    aws configure
-
-    # Example: Fetching environment variables from AWS SSM
-    APP_ENV=$(aws ssm get-parameter --name "/your-app/env" --query "Parameter.Value" --output text --region your-region | sed 's/\\n/\n/g')
-    echo "${APP_ENV}" > .env
-
-    # Example: Fetching API keys or credentials
-    API_KEY=$(aws ssm get-parameter --name "/your-app/api_key" --query "Parameter.Value" --output text --region your-region)
-    echo "${API_KEY}" > api-key.json
+    OPENAI_API_KEY=sk-...
+    # or whichever model provider you use
     ```
 
-    <Tip>
-      You can automate this process by creating a script to fetch secrets during deployment or server startup.
-    </Tip>
+    **Multi-workspace mode (`oxy serve`)** — required:
+
+    ```bash
+    # PostgreSQL connection string
+    OXY_DATABASE_URL=postgresql://user:password@host:5432/oxy
+
+    # Directory where workspaces are stored
+    OXY_STATE_DIR=/data/oxy          # defaults to ~/.local/share/oxy
+
+    # LLM provider (at least one)
+    OPENAI_API_KEY=sk-...
+
+    # Authentication (at least one method, or leave all unset for no-auth)
+    MAGIC_LINK_SECRET=any-long-random-string
+    GOOGLE_CLIENT_ID=...
+    GOOGLE_CLIENT_SECRET=...
+
+    # Admin access (recommended for team deployments)
+    OXY_ADMINS=admin@example.com,other@example.com
+    ```
 
   </Step>
 
-  <Step title="Test Environment Configuration">
-    Verify that Oxy can access the environment variables:
+  <Step title="GitHub App (multi-workspace only)">
+
+    To enable importing repositories as workspaces, set up a GitHub App and configure these variables. See the [GitHub App Setup guide](/deployment/github-app) for step-by-step instructions.
 
     ```bash
-    # Test if Oxy can read the environment variables
-    oxy --version
+    GITHUB_APP_ID=123456
+    GITHUB_APP_SLUG=my-oxy-app
+    GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----
+    ...
+    -----END RSA PRIVATE KEY-----"
+    GITHUB_CLIENT_ID=Iv23liqo62PgXXXXXX
+    GITHUB_CLIENT_SECRET=abc123...
+    GITHUB_STATE_SECRET=$(openssl rand -hex 32)
+    ```
 
-    # Restart the Oxy service to apply changes
+  </Step>
+
+  <Step title="Enterprise Features (optional)">
+
+    Required only when using `oxy serve --enterprise` or `oxy start --enterprise`:
+
+    ```bash
+    OXY_CLICKHOUSE_URL=http://localhost:8123
+    OXY_CLICKHOUSE_USER=default        # optional
+    OXY_CLICKHOUSE_PASSWORD=...        # optional
+    OXY_CLICKHOUSE_DATABASE=otel       # optional
+    ```
+
+  </Step>
+
+  <Step title="Verify and Restart">
+
+    ```bash
+    # Check that the variables are loaded
+    printenv | grep OXY_
+
+    # Restart the Oxy service
     sudo systemctl restart oxy
-
-    # Check service status
     sudo systemctl status oxy
     ```
 
   </Step>
 </Steps>
+
+---
+
+## Full Variable Reference
+
+### Core
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `OXY_DATABASE_URL` | Required (multi-workspace) | — | PostgreSQL connection string |
+| `OXY_STATE_DIR` | No | `~/.local/share/oxy` | Directory for workspaces and runtime data |
+| `OXY_ADMINS` | No | — | Comma-separated list of emails granted Admin role on login |
+| `OXY_API_URL` | No | derived from request | Base URL of the API (set when frontend and backend are on different domains) |
+
+### Authentication
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `MAGIC_LINK_SECRET` | For magic-link auth | Secret used to sign magic-link tokens |
+| `GOOGLE_CLIENT_ID` | For Google OAuth | OAuth 2.0 client ID from Google Cloud Console |
+| `GOOGLE_CLIENT_SECRET` | For Google OAuth | OAuth 2.0 client secret |
+| `OKTA_CLIENT_ID` | For Okta OAuth | Okta application client ID |
+| `OKTA_CLIENT_SECRET` | For Okta OAuth | Okta application client secret |
+| `OKTA_DOMAIN` | For Okta OAuth | Your Okta domain (e.g. `company.okta.com`) |
+
+See [Authentication](/authentication/overview) for setup instructions.
+
+### GitHub App
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `GITHUB_APP_ID` | For GitHub import | Numeric App ID from the GitHub App settings page |
+| `GITHUB_APP_SLUG` | For GitHub import | App slug (appears in the app's GitHub URL) |
+| `GITHUB_APP_PRIVATE_KEY` | For GitHub import | Full RSA private key PEM block |
+| `GITHUB_CLIENT_ID` | For GitHub import | OAuth Client ID from the app settings |
+| `GITHUB_CLIENT_SECRET` | For GitHub import | OAuth Client Secret from the app settings |
+| `GITHUB_STATE_SECRET` | For GitHub import | Random secret for HMAC-signing OAuth state tokens |
+| `GITHUB_APP_INSTALLATION_ID` | No | Pre-configure a specific installation to skip the connect dialog |
+
+See [GitHub App Setup](/deployment/github-app) for a full walkthrough.
+
+### Enterprise
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `OXY_CLICKHOUSE_URL` | For `--enterprise` | ClickHouse connection URL |
+| `OXY_CLICKHOUSE_USER` | No | ClickHouse username (default: `default`) |
+| `OXY_CLICKHOUSE_PASSWORD` | No | ClickHouse password |
+| `OXY_CLICKHOUSE_DATABASE` | No | ClickHouse database name (default: `otel`) |
+
+---
+
+## Using AWS SSM Parameter Store
+
+For cloud deployments, fetch secrets from SSM at startup:
+
+```bash
+# Fetch a single parameter
+export OXY_DATABASE_URL=$(aws ssm get-parameter \
+  --name "/oxy/database-url" \
+  --with-decryption \
+  --query "Parameter.Value" \
+  --output text)
+
+# Fetch and source a full .env file stored in SSM
+aws ssm get-parameter --name "/oxy/env" --with-decryption \
+  --query "Parameter.Value" --output text > .env
+```
 
 <div className="mt-8">
   <Cards>
@@ -82,6 +175,13 @@ Properly configuring your environment variables and managing secrets is crucial 
       href="/deployment/workspace-setup"
     >
       Set up your Oxy workspace and configure your repository
+    </Card>
+    <Card
+      title="GitHub App Setup"
+      icon="github"
+      href="/deployment/github-app"
+    >
+      Configure GitHub App for workspace import
     </Card>
   </Cards>
 </div>

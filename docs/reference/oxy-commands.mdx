@@ -2,6 +2,42 @@
 title: Oxy commands
 ---
 
+### Starting the server
+
+#### `oxy serve` — web server only
+
+Starts the Oxy web interface. Requires an external PostgreSQL database configured via `OXY_DATABASE_URL`.
+
+```bash
+oxy serve                        # multi-workspace mode (default)
+oxy serve --local                # single-workspace mode: serve the current directory
+oxy serve --port 8080            # custom port (default: 3000)
+oxy serve --host 0.0.0.0         # bind to all interfaces (needed in containers)
+oxy serve --enterprise           # enable ClickHouse telemetry + OTel Collector
+oxy serve --readonly             # reject file writes via the API (IDE-alongside mode)
+```
+
+**Deployment modes:**
+
+| Flag | Behavior |
+|------|----------|
+| _(none)_ | **Multi-workspace mode** — default. Workspaces are stored in `$OXY_STATE_DIR/workspaces/` and managed via the UI. GitHub import available when `GITHUB_*` env vars are set. |
+| `--local` | **Single-workspace mode** — serves the current working directory as the only workspace. Git sync disabled; files already exist on disk. |
+
+For more details see the [Deployment Modes guide](/deployment/cloud-mode).
+
+#### `oxy start` — PostgreSQL + web server
+
+Starts a PostgreSQL container with Docker and then launches the web server. Recommended for local development and single-node deployments without a managed database.
+
+```bash
+oxy start                        # start PostgreSQL container + web server
+oxy start --enterprise           # also start ClickHouse + OTel Collector
+oxy start --clean                # remove existing containers/volumes first
+```
+
+For full details see the [`oxy start` reference](/reference/oxy-start).
+
 ### Agent interaction
 
 Once you have your agents, config, and data configured, you can ask this agent questions by running `oxy run path/to/agent.agent.yml "<prompt>"`, as shown below:

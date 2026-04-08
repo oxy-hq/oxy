@@ -62,6 +62,7 @@
       "pages": [
         "deployment/overview",
         "deployment/cloud-mode",
+        "deployment/github-app",
         "deployment/create-machine",
         "deployment/install-oxy",
         "deployment/workspace-setup",

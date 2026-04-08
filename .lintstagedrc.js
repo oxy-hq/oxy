@@ -15,7 +15,5 @@ export default {
   "**/*.{css,json,html}": [
     "biome check --write --no-errors-on-unmatched",
     "biome format --write --no-errors-on-unmatched"
-  ],
-  // MD/MDX: markdownlint (lint + auto-fix)
-  "**/*.{md,mdx}": ["markdownlint-cli2 --fix"]
+  ]
 };

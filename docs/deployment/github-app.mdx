@@ -1,0 +1,206 @@
+---
+title: "GitHub App Setup"
+description: "Configure a GitHub App to enable workspace import and Git integration in multi-workspace mode"
+sidebarTitle: "GitHub App Setup"
+---
+
+<Note>
+  **For operators.** This guide is for the person who installs and configures the Oxy server. End users who want to import a repository just click **Import from GitHub** in the Workspaces UI — they don't need to read this.
+</Note>
+
+## Overview
+
+In multi-workspace mode, Oxy uses a **GitHub App** (not a personal OAuth app) to:
+
+- Import repositories as workspaces ("Import from GitHub")
+- Clone repositories on the server when a workspace is created
+- Read and push commits through the built-in IDE Git panel
+
+This guide walks through creating a GitHub App, configuring it, and setting the required environment variables.
+
+<Note>
+  GitHub App integration is only needed for **multi-workspace mode** (the default `oxy serve`). If you run `oxy serve --local`, the workspace files already exist on disk and no GitHub integration is required.
+</Note>
+
+---
+
+## Step 1: Create the GitHub App
+
+1. Go to **GitHub → Settings → Developer settings → GitHub Apps → New GitHub App**  
+   _(For an organization app, go to **Organization Settings → Developer settings**)_
+
+2. Fill in the app details:
+
+   | Field | Value |
+   |-------|-------|
+   | **GitHub App name** | e.g. `my-company-oxy` |
+   | **Homepage URL** | Your Oxy instance URL (e.g. `https://app.example.com`) |
+   | **Callback URL** | `https://your-domain.com/github/callback` |
+   | **Webhook** | Uncheck "Active" — Oxy does not use GitHub webhooks |
+   | **Where can this GitHub App be installed?** | "Any account" (or "Only on this account" for org-only) |
+
+3. Under **Repository permissions**, grant:
+
+   | Permission | Level |
+   |------------|-------|
+   | **Contents** | Read & Write |
+   | **Metadata** | Read-only (required by GitHub) |
+   | **Administration** | Read & Write |
+
+4. Leave all other permissions at "No access".
+
+5. Click **Create GitHub App**.
+
+---
+
+## Step 2: Generate a Private Key
+
+After creating the app:
+
+1. Scroll to the **Private keys** section on the app settings page.
+2. Click **Generate a private key**.
+3. GitHub downloads a `.pem` file — keep this safe.
+
+The private key content is the value for `GITHUB_APP_PRIVATE_KEY`. It should start with `-----BEGIN RSA PRIVATE KEY-----`.
+
+---
+
+## Step 3: Note Your App Credentials
+
+From the app settings page, collect these values:
+
+| Value | Where to find it | Environment variable |
+|-------|-----------------|---------------------|
+| **App ID** | Top of the app settings page | `GITHUB_APP_ID` |
+| **App slug** | URL: `github.com/apps/{slug}` | `GITHUB_APP_SLUG` |
+| **Client ID** | "OAuth App" section | `GITHUB_CLIENT_ID` |
+| **Client secret** | Generate one in "OAuth App" section | `GITHUB_CLIENT_SECRET` |
+
+---
+
+## Step 4: Set Environment Variables
+
+Set the following on your Oxy server:
+
+```bash
+# GitHub App credentials
+GITHUB_APP_ID=123456
+GITHUB_APP_SLUG=my-company-oxy
+GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----
+MIIEpAIBAAKCAQEA...
+...your key content...
+-----END RSA PRIVATE KEY-----"
+
+# GitHub OAuth (for user login flow)
+GITHUB_CLIENT_ID=Iv23liqo62PgXXXXXX
+GITHUB_CLIENT_SECRET=abc123...
+
+# HMAC secret for OAuth state parameter — use any long random string
+GITHUB_STATE_SECRET=$(openssl rand -hex 32)
+```
+
+<Warning>
+  The `GITHUB_APP_PRIVATE_KEY` value must include the full PEM block with literal newlines, not `\n` escape sequences. In a `.env` file, wrap the value in double quotes and paste the key with actual line breaks.
+</Warning>
+
+### Formatting the private key in `.env`
+
+```bash
+# .env
+GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----
+MIIEpAIBAAKCAQEA0Z3VS5JJcds3xHn/ygWep4Xh3bzbFa/DJdTpPOBdLQmBFHDm
+...rest of key...
+-----END RSA PRIVATE KEY-----"
+```
+
+### Formatting the private key in Kubernetes secrets
+
+```bash
+# Encode the .pem file contents as base64
+cat your-app.private-key.pem | base64 -w 0
+```
+
+Then store the base64 value in your Kubernetes secret and reference it with `envFrom` or `externalSecrets`.
+
+---
+
+## Step 5: Verify Callback URL Routing
+
+Oxy derives the OAuth callback URL automatically from the `Origin` header of the browser request — no hardcoding is needed. However, you must ensure:
+
+1. **The callback URL you configured in GitHub** matches the domain your users access. For example, if your users go to `https://app.example.com`, your GitHub App callback must be `https://app.example.com/github/callback`.
+
+2. **Your reverse proxy forwards the `Origin` header** to the Oxy backend. Most proxies (nginx, Caddy, ALB) do this by default.
+
+3. **`OXY_API_URL`** is set if your backend is at a different URL than the frontend:
+   ```bash
+   OXY_API_URL=https://app.example.com/api
+   ```
+
+---
+
+## Step 6: Install the App
+
+Before users can import repositories, the GitHub App must be installed on the target GitHub organization or user account:
+
+1. Go to `https://github.com/apps/{your-app-slug}`
+2. Click **Install** and select the organization/account
+3. Choose "All repositories" or specific repositories
+4. Click **Install**
+
+Users can also trigger installation themselves by clicking **Sign in with GitHub** on the Workspaces page — this redirects them to GitHub to install the app on their account.
+
+---
+
+## Optional: Pre-configure Installation ID
+
+If you want Oxy to automatically connect to a specific installation without requiring the user to go through the OAuth flow:
+
+```bash
+GITHUB_APP_INSTALLATION_ID=12345678
+```
+
+This is useful for team deployments where the app is pre-installed on the organization.
+
+---
+
+## Full Environment Variable Reference
+
+```bash
+# ── Required for GitHub workspace import ──────────────────────────────
+GITHUB_APP_ID=123456                    # Numeric app ID from app settings page
+GITHUB_APP_SLUG=my-company-oxy          # App slug (from the app's URL on github.com)
+GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----
+...
+-----END RSA PRIVATE KEY-----"          # Full PEM block from the downloaded .pem file
+GITHUB_CLIENT_ID=Iv23liqo62PgXXXXXX    # OAuth Client ID from app settings
+GITHUB_CLIENT_SECRET=abc123...          # OAuth Client Secret from app settings
+GITHUB_STATE_SECRET=random-64-char-hex  # Any random secret for HMAC state signing
+
+# ── Optional ──────────────────────────────────────────────────────────
+GITHUB_APP_INSTALLATION_ID=12345678    # Skip OAuth connect dialog (pre-installed app)
+```
+
+---
+
+## Troubleshooting
+
+**"GitHub callback redirects to localhost"**
+
+The `redirect_uri` is derived from the `Origin` header. Check that your proxy is forwarding the `Origin` header and that the correct callback URL is registered in the GitHub App settings.
+
+**"GitHub App ID not configured in environment"**
+
+`GITHUB_APP_ID` is not set or not being loaded. Verify your `.env` file is loaded at server startup or the environment variable is injected by your deployment platform.
+
+**"Invalid state parameter"**
+
+The HMAC verification on the OAuth state failed. This usually means `GITHUB_STATE_SECRET` changed between when the user started the OAuth flow and when GitHub redirected back. Ensure the secret is consistent across restarts.
+
+**"No installations found"**
+
+The GitHub App is not installed on any account. Go to `https://github.com/apps/{slug}` and install it.
+
+**Users see "Sign in with GitHub" but nothing happens**
+
+Check that `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` are set correctly. Also verify the callback URL in the GitHub App settings matches your deployment domain exactly.
