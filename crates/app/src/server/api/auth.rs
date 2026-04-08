@@ -844,9 +844,20 @@ async fn finalize_login(
     Ok((token, user_info))
 }
 
-fn extract_base_url_from_headers(headers: &HeaderMap) -> String {
+pub(super) fn extract_base_url_from_headers(headers: &HeaderMap) -> String {
     if let Some(origin) = headers.get("origin").and_then(|h| h.to_str().ok()) {
-        return origin.to_string();
+        let origin = origin.trim_end_matches('/');
+        if origin.starts_with("http://") || origin.starts_with("https://") {
+            return origin.to_string();
+        }
+        // Some reverse proxies/CDNs may forward Origin without scheme.
+        // Default to https for non-localhost hosts.
+        let scheme = if origin.starts_with("localhost") || origin.starts_with("127.0.0.1") {
+            "http"
+        } else {
+            "https"
+        };
+        return format!("{scheme}://{origin}");
     }
 
     if let Some(referer) = headers.get("referer").and_then(|h| h.to_str().ok())

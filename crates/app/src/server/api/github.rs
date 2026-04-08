@@ -604,6 +604,7 @@ pub fn validate_github_state(state: &str, user_id: &Uuid) -> Result<bool, axum::
 /// already-installed fallback flow.
 pub async fn gen_oauth_connect_url(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    headers: HeaderMap,
 ) -> Result<ResponseJson<String>, axum::http::StatusCode> {
     let client_id =
         std::env::var("GITHUB_CLIENT_ID").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -618,8 +619,11 @@ pub async fn gen_oauth_connect_url(
     let signature = hex::encode(mac.finalize().into_bytes());
     let state = urlencoding::encode(&format!("{}:{}", state_data, signature)).into_owned();
 
+    let base_url = super::auth::extract_base_url_from_headers(&headers);
+    let redirect_uri = urlencoding::encode(&format!("{base_url}/github/callback")).into_owned();
+
     Ok(ResponseJson(format!(
-        "https://github.com/login/oauth/authorize?client_id={client_id}&scope=read:user+read:org&state={state}"
+        "https://github.com/login/oauth/authorize?client_id={client_id}&scope=read:user+read:org&state={state}&redirect_uri={redirect_uri}"
     )))
 }
 
@@ -744,10 +748,7 @@ async fn exchange_oauth_code(
     client_secret: &str,
     headers: &HeaderMap,
 ) -> Result<String, axum::http::StatusCode> {
-    let base = headers
-        .get("origin")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("http://localhost:3000");
+    let base = super::auth::extract_base_url_from_headers(headers);
     let redirect_uri = format!("{base}/github/callback");
 
     #[derive(Deserialize)]
