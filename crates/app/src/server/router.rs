@@ -140,7 +140,6 @@ fn build_global_routes() -> Router<AppState> {
             "/github/namespaces/{id}",
             axum::routing::delete(github::delete_git_namespace),
         )
-        .route("/github/install-app-url", get(github::gen_install_app_url))
         .route(
             "/github/oauth-connect-url",
             get(github::gen_oauth_connect_url),
@@ -153,11 +152,6 @@ fn build_global_routes() -> Router<AppState> {
             "/github/namespaces/pick",
             post(github::pick_namespace_installation),
         )
-        .route(
-            "/github/app-installations",
-            get(github::list_app_installations),
-        )
-        .route("/github/namespaces", post(github::create_git_namespace))
         .route("/github/namespaces/pat", post(github::create_pat_namespace))
         .route(
             "/github/namespaces/installation",

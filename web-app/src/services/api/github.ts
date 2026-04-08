@@ -78,9 +78,13 @@ export class GitHubApiService {
     return response.data;
   }
 
-  static async pickNamespaceInstallation(installation_id: number): Promise<GitHubNamespace> {
+  static async pickNamespaceInstallation(
+    installation_id: number,
+    selection_token: string
+  ): Promise<GitHubNamespace> {
     const response = await apiClient.post<GitHubNamespace>("/github/namespaces/pick", {
-      installation_id
+      installation_id,
+      selection_token
     });
     return response.data;
   }

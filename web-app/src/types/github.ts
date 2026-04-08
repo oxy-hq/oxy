@@ -76,7 +76,7 @@ export interface OAuthInstallation {
 
 export type OAuthConnectResponse =
   | { status: "connected"; namespace: GitHubNamespace }
-  | { status: "choose"; installations: OAuthInstallation[] }
+  | { status: "choose"; installations: OAuthInstallation[]; selection_token: string }
   | { status: "not_installed" };
 
 export interface GitHubAppInstallationRequest {

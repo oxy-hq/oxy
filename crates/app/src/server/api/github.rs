@@ -55,13 +55,6 @@ pub struct GitHubBranchesResponse {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct CreateGitNamespaceRequest {
-    pub installation_id: String,
-    pub code: String,
-    pub state: String,
-}
-
-#[derive(Debug, Deserialize)]
 pub struct CreatePATNamespaceRequest {
     pub token: String,
 }
@@ -71,136 +64,6 @@ pub struct GitHubCallbackQuery {
     pub installation_id: String,
     pub setup_action: Option<String>,
     pub state: String,
-}
-
-/// GET /github/app-installations — list all GitHub App installations using the App JWT.
-/// Returns an empty list when the GitHub App is not configured (env vars missing).
-#[derive(Debug, Serialize)]
-pub struct AppInstallation {
-    pub id: i64,
-    pub name: String,
-    pub owner_type: String,
-}
-
-pub async fn list_app_installations(
-    _user: AuthenticatedUserExtractor,
-) -> ResponseJson<Vec<AppInstallation>> {
-    let Ok(app_auth) = GitHubAppAuth::from_env() else {
-        return ResponseJson(vec![]);
-    };
-    match app_auth.list_installations().await {
-        Ok(installations) => ResponseJson(
-            installations
-                .into_iter()
-                .map(|i| AppInstallation {
-                    id: i.id,
-                    name: i.name,
-                    owner_type: i.owner_type,
-                })
-                .collect(),
-        ),
-        Err(_) => ResponseJson(vec![]),
-    }
-}
-
-pub async fn gen_install_app_url(
-    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-) -> Result<ResponseJson<String>, axum::http::StatusCode> {
-    let _app_id = std::env::var("GITHUB_APP_ID").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let timestamp = chrono::Utc::now().timestamp();
-    let state_data = format!("{}:{}", user.id, timestamp);
-
-    let secret_key =
-        std::env::var("GITHUB_STATE_SECRET").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let mut mac = Hmac::<Sha256>::new_from_slice(secret_key.as_bytes())
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    mac.update(state_data.as_bytes());
-
-    let signature = hex::encode(mac.finalize().into_bytes());
-
-    let state = format!("{}:{}", state_data, signature);
-
-    let encoded_state = urlencoding::encode(&state);
-    let app_slug =
-        std::env::var("GITHUB_APP_SLUG").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    let url = format!(
-        "https://github.com/apps/{}/installations/new?state={}",
-        app_slug, encoded_state
-    );
-
-    Ok(ResponseJson(url))
-}
-
-pub async fn create_git_namespace(
-    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    Json(payload): Json<CreateGitNamespaceRequest>,
-) -> Result<ResponseJson<GitHubNamespace>, axum::http::StatusCode> {
-    if !validate_github_state(&payload.state, &user.id)? {
-        error!("Invalid state parameter for user {}", user.id);
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    let app_auth = GitHubAppAuth::from_env()?;
-    let installation = app_auth
-        .get_installation_info(&payload.installation_id)
-        .await?;
-
-    let user_token = if installation.owner_type == "User" {
-        app_auth.get_user_oauth_token(&payload.code).await?
-    } else {
-        "".to_string()
-    };
-    let db = establish_connection().await.map_err(|e| {
-        error!("Failed to establish database connection: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    // Deduplicate by installation_id across the whole instance — the same org's
-    // app installation should only appear once regardless of which user connected it.
-    {
-        use entity::git_namespaces;
-        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
-        if let Some(existing) = entity::prelude::GitNamespaces::find()
-            .filter(git_namespaces::Column::InstallationId.eq(installation.id))
-            .one(&db)
-            .await
-            .map_err(|e| {
-                error!("DB error checking existing namespace: {}", e);
-                StatusCode::INTERNAL_SERVER_ERROR
-            })?
-        {
-            return Ok(ResponseJson(GitHubNamespace {
-                id: existing.id,
-                owner_type: existing.owner_type,
-                slug: existing.slug,
-                name: existing.name,
-            }));
-        }
-    }
-
-    let git_namespace = entity::git_namespaces::ActiveModel {
-        user_id: Set(user.id),
-        name: Set(installation.name),
-        slug: Set(installation.slug),
-        owner_type: Set(installation.owner_type),
-        installation_id: Set(installation.id),
-        id: Set(Uuid::new_v4()),
-        provider: Set("github".into()),
-        oauth_token: Set(user_token),
-    };
-    let git_namespace = git_namespace.insert(&db).await.map_err(|e| {
-        error!("Database error: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-    Ok(ResponseJson(GitHubNamespace {
-        id: git_namespace.id,
-        owner_type: git_namespace.owner_type,
-        slug: git_namespace.slug,
-        name: git_namespace.name,
-    }))
 }
 
 /// POST /github/namespaces/pat — register a Personal Access Token as a GitHub connection.
@@ -587,16 +450,34 @@ pub fn validate_github_state(state: &str, user_id: &Uuid) -> Result<bool, axum::
     ))
 }
 
-// ─── "Already installed" OAuth flow ─────────────────────────────────────────
+// ─── GitHub OAuth connect flow ────────────────────────────────────────────────
 //
-// When the app is already installed the GitHub install URL shows a Configure
-// page but does NOT fire the OAuth callback, so the postMessage relay has
-// nothing to relay.  This secondary flow lets the user authenticate via GitHub
-// OAuth (scoped to read:user + read:org), then the backend cross-references:
-//   • GET /user/installations  — installations visible to THIS user token
-//   • GET /app/installations   — installations of THIS Oxy GitHub App (JWT)
-// The intersection is always limited to this app's installations, so no
-// unrelated org/account is ever exposed.
+// The Workspaces UI shows a "Sign in with GitHub" button that triggers this flow:
+//
+//  1. GET /github/oauth-connect-url
+//       Server generates a signed OAuth URL with state = {user_id}:{ts}:{hmac}.
+//       State is HMAC-signed (GITHUB_STATE_SECRET), expires after 1 hour.
+//
+//  2. User completes GitHub OAuth in a popup.
+//       GitHub redirects to /github/callback with code + state.
+//       The callback page posts the code + state back via window.postMessage.
+//
+//  3. POST /github/namespaces/oauth { code, state }
+//       a. Verify the HMAC state (user_id match, < 1 hour old).
+//       b. Exchange the code for a short-lived user OAuth token.
+//       c. Call GET /user/installations with that token.
+//          GitHub returns only installations of THIS app the user can access.
+//          Requires the App to have "Organization → Members: Read" permission
+//          so regular org members (not just owners) are included.
+//       d. Return one of:
+//          • `connected`    — exactly one installation → auto-connect
+//          • `choose`       — multiple installations → return list + selection_token
+//          • `not_installed`— zero installations visible to this user
+//
+//  4. (choose case) POST /github/namespaces/pick { installation_id, selection_token }
+//       selection_token is an HMAC token encoding the eligible IDs, bound to
+//       user_id and a 10-minute timestamp.  The server verifies the token before
+//       connecting, so users cannot pick an installation outside their eligible set.
 
 /// GET /github/oauth-connect-url — signed GitHub OAuth URL for the
 /// already-installed fallback flow.
@@ -640,20 +521,91 @@ pub enum OAuthConnectResponse {
     },
     Choose {
         installations: Vec<OAuthInstallation>,
+        /// Short-lived HMAC token encoding the eligible installation IDs.
+        /// Must be echoed back in the pick request so the server can verify
+        /// the chosen ID was actually in the list shown to this user.
+        selection_token: String,
     },
     NotInstalled,
 }
 
-/// POST /github/namespaces/oauth — exchange an OAuth code to verify GitHub identity,
-/// then list all app installations (via App JWT) and auto-connect if unambiguous.
+/// Sign a list of eligible installation IDs into a short-lived token bound
+/// to `user_id`.  Format: `{ids_csv}:{user_id}:{timestamp}:{hmac}`.
+fn sign_selection_token(
+    ids: &[i64],
+    user_id: &uuid::Uuid,
+) -> Result<String, axum::http::StatusCode> {
+    let secret =
+        std::env::var("GITHUB_STATE_SECRET").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let timestamp = chrono::Utc::now().timestamp();
+    let ids_csv = ids
+        .iter()
+        .map(|id| id.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let payload = format!("{ids_csv}:{user_id}:{timestamp}");
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    mac.update(payload.as_bytes());
+    let sig = hex::encode(mac.finalize().into_bytes());
+    Ok(format!("{payload}:{sig}"))
+}
+
+/// Verify a `selection_token` and return the set of eligible installation IDs.
+/// Returns `Err(BAD_REQUEST)` if the token is invalid or expired (>10 min).
+fn verify_selection_token(
+    token: &str,
+    user_id: &uuid::Uuid,
+) -> Result<std::collections::HashSet<i64>, axum::http::StatusCode> {
+    let secret =
+        std::env::var("GITHUB_STATE_SECRET").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Format: {ids_csv}:{user_id}:{timestamp}:{hmac}
+    let parts: Vec<&str> = token.rsplitn(2, ':').collect();
+    if parts.len() != 2 {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let (sig, payload) = (parts[0], parts[1]);
+
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    mac.update(payload.as_bytes());
+    let expected = hex::encode(mac.finalize().into_bytes());
+    if sig != expected {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    // payload = {ids_csv}:{user_id}:{timestamp}
+    let segments: Vec<&str> = payload.rsplitn(3, ':').collect();
+    if segments.len() != 3 {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let (timestamp_str, uid_str, ids_csv) = (segments[0], segments[1], segments[2]);
+
+    if uid_str != user_id.to_string() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let timestamp: i64 = timestamp_str.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
+    let age = chrono::Utc::now().timestamp() - timestamp;
+    if age < 0 || age > 600 {
+        // Token older than 10 minutes
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    ids_csv
+        .split(',')
+        .map(|s| s.parse::<i64>().map_err(|_| StatusCode::BAD_REQUEST))
+        .collect()
+}
+
+/// POST /github/namespaces/oauth — exchange an OAuth code, discover app installations
+/// visible to the user, and auto-connect if unambiguous.
 ///
-/// We do NOT use `GET /user/installations` because that only returns installations
-/// where the user has GitHub admin/owner access — excluding regular org members.
-///
-/// Instead we resolve the user's GitHub identity (their login + org memberships)
-/// from the OAuth token and intersect that with the app's installations by slug.
-/// This naturally scopes each user to installations they actually belong to,
-/// without requiring any operator configuration.
+/// Uses `GET /user/installations` with the user's OAuth token to discover which
+/// installations of this GitHub App the user can access.  Requires the App to have
+/// "Organization → Members: Read" permission so regular org members are included —
+/// without it, only org owners/admins see the installation.
 pub async fn connect_namespace_from_oauth(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     headers: HeaderMap,
@@ -693,9 +645,14 @@ pub async fn connect_namespace_from_oauth(
                 namespace: ns,
             }))
         }
-        _ => Ok(ResponseJson(OAuthConnectResponse::Choose {
-            installations: eligible,
-        })),
+        _ => {
+            let ids: Vec<i64> = eligible.iter().map(|i| i.id).collect();
+            let selection_token = sign_selection_token(&ids, &user.id)?;
+            Ok(ResponseJson(OAuthConnectResponse::Choose {
+                installations: eligible,
+                selection_token,
+            }))
+        }
     }
 }
 
@@ -708,15 +665,28 @@ pub struct OAuthNamespaceRequest {
 #[derive(Debug, Deserialize)]
 pub struct PickInstallationRequest {
     pub installation_id: i64,
+    /// HMAC token returned by the `choose` response — proves this ID was in
+    /// the list the server generated for this user.
+    pub selection_token: String,
 }
 
-/// POST /github/namespaces/pick — connect a specific installation chosen from
-/// the OAuth picker.  The installation_id is verified against this app's
-/// installations (JWT) before creating the namespace.
+/// POST /github/namespaces/pick — connect one installation from a multi-install OAuth result.
+///
+/// The `selection_token` is verified to ensure the caller can only pick an
+/// installation ID that was explicitly returned to them in the `choose` response.
 pub async fn pick_namespace_installation(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Json(payload): Json<PickInstallationRequest>,
 ) -> Result<ResponseJson<GitHubNamespace>, axum::http::StatusCode> {
+    let eligible_ids = verify_selection_token(&payload.selection_token, &user.id)?;
+    if !eligible_ids.contains(&payload.installation_id) {
+        error!(
+            "User {} tried to pick installation {} not in their eligible set",
+            user.id, payload.installation_id
+        );
+        return Err(StatusCode::FORBIDDEN);
+    }
+
     let app_auth = GitHubAppAuth::from_env()?;
     let installation = app_auth
         .get_installation_info(&payload.installation_id.to_string())
