@@ -83,7 +83,7 @@ pub async fn execute_execute_sql(
     let connector = oxy::connector::Connector::from_database(
         &db_name,
         &config_manager,
-        &secrets_manager,
+        secrets_manager,
         Some(ROW_LIMIT),
         None,
         None,

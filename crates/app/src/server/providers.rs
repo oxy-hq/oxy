@@ -418,7 +418,7 @@ impl WorkspaceBackend {
                 id: Uuid::nil(),
                 name,
                 revision: String::new(),
-                workspace_id: workspace_id,
+                workspace_id,
                 branch_type: BranchType::Local,
                 sync_status,
                 created_at: now.clone(),
@@ -442,7 +442,7 @@ impl WorkspaceBackend {
         let now = Utc::now().to_string();
         Ok(ProjectBranch {
             id: Uuid::nil(),
-            workspace_id: workspace_id,
+            workspace_id,
             branch_type: BranchType::Local,
             name: branch.to_string(),
             revision: String::new(),

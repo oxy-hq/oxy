@@ -71,9 +71,7 @@ pub struct BranchQuery {
 
 pub async fn workspace_middleware(
     State(app_state): State<AppState>,
-    Path(WorkspacePath {
-        workspace_id: workspace_id,
-    }): Path<WorkspacePath>,
+    Path(WorkspacePath { workspace_id }): Path<WorkspacePath>,
     Query(query): Query<BranchQuery>,
     _user: AuthenticatedUserExtractor,
     mut request: Request<axum::body::Body>,

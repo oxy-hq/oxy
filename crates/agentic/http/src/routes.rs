@@ -657,14 +657,14 @@ async fn run_pipeline(
     build_ctx.schema_cache = Some(Arc::clone(&state.schema_cache));
 
     // Apply extended thinking mode overrides when requested by the UI toggle.
-    if thinking_mode.is_extended() {
-        if let Some(extended_thinking) = &config.llm.extended_thinking {
-            if let Some(thinking_cfg) = &extended_thinking.thinking {
-                build_ctx.thinking_override = Some(thinking_cfg.to_thinking_config());
-            }
-            if let Some(model) = &extended_thinking.model {
-                build_ctx.model_override = Some(model.clone());
-            }
+    if thinking_mode.is_extended()
+        && let Some(extended_thinking) = &config.llm.extended_thinking
+    {
+        if let Some(thinking_cfg) = &extended_thinking.thinking {
+            build_ctx.thinking_override = Some(thinking_cfg.to_thinking_config());
+        }
+        if let Some(model) = &extended_thinking.model {
+            build_ctx.model_override = Some(model.clone());
         }
     }
 
@@ -1083,7 +1083,7 @@ pub async fn list_runs_by_thread(
         Ok(runs) => {
             let mut summaries: Vec<RunSummary> = Vec::with_capacity(runs.len());
             for r in runs {
-                let (status, error_message) = db::get_effective_run_state(&db, &r)
+                let (status, _error_message) = db::get_effective_run_state(&db, &r)
                     .await
                     .unwrap_or_else(|e| {
                         tracing::warn!(run_id = %r.id, error = %e, "get_effective_run_state failed, falling back to stored state");
