@@ -67,7 +67,7 @@ Oxy is configured primarily through environment variables. This page covers the 
     -----END RSA PRIVATE KEY-----"
     GITHUB_CLIENT_ID=Iv23liqo62PgXXXXXX
     GITHUB_CLIENT_SECRET=abc123...
-    GITHUB_STATE_SECRET=$(openssl rand -hex 32)
+    GITHUB_STATE_SECRET=$(openssl rand -hex 32)  # keep stable across restarts
     ```
 
   </Step>
@@ -134,8 +134,7 @@ See [Authentication](/authentication/overview) for setup instructions.
 | `GITHUB_APP_PRIVATE_KEY` | For GitHub import | Full RSA private key PEM block |
 | `GITHUB_CLIENT_ID` | For GitHub import | OAuth Client ID from the app settings |
 | `GITHUB_CLIENT_SECRET` | For GitHub import | OAuth Client Secret from the app settings |
-| `GITHUB_STATE_SECRET` | For GitHub import | Random secret for HMAC-signing OAuth state tokens |
-| `GITHUB_APP_INSTALLATION_ID` | No | Pre-configure a specific installation to skip the connect dialog |
+| `GITHUB_STATE_SECRET` | For GitHub import | Random secret for HMAC-signing OAuth state and selection tokens |
 
 See [GitHub App Setup](/deployment/github-app) for a full walkthrough.
 
