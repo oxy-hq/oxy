@@ -9,4 +9,5 @@ export { useGitHubBranchesWithApp } from "./useGitHubBranchesWithApp";
 export { useGitHubInstallAppUrl } from "./useGitHubInstallAppUrl";
 export { useGitHubNamespaces } from "./useGitHubNamespaces";
 export { useGitHubRepositoriesWithApp } from "./useGitHubRepositoriesWithApp";
+export { useMyInstallations } from "./useMyInstallations";
 export { usePickNamespaceInstallation } from "./usePickNamespaceInstallation";

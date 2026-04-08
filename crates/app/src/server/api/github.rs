@@ -479,17 +479,29 @@ pub fn validate_github_state(state: &str, user_id: &Uuid) -> Result<bool, axum::
 //       user_id and a 10-minute timestamp.  The server verifies the token before
 //       connecting, so users cannot pick an installation outside their eligible set.
 
-/// GET /github/install-app-url — returns the public GitHub App installation URL.
-/// Used by the frontend to show an "Install GitHub App" link when no installation
-/// is found for the current user.
+/// GET /github/install-app-url?origin=https://app.example.com
+///
+/// Returns the GitHub App installation URL with a redirect_uri so GitHub sends
+/// the user back to /github/callback after they install. The callback page picks
+/// up installation_id from the query params and auto-connects the namespace.
+#[derive(Debug, Deserialize)]
+pub struct InstallAppUrlQuery {
+    pub origin: String,
+}
+
 pub async fn get_install_app_url(
     _user: AuthenticatedUserExtractor,
+    Query(query): Query<InstallAppUrlQuery>,
 ) -> Result<ResponseJson<String>, axum::http::StatusCode> {
     let slug = std::env::var("GITHUB_APP_SLUG").map_err(|_| {
         error!("GITHUB_APP_SLUG not configured");
         StatusCode::NOT_FOUND
     })?;
-    Ok(ResponseJson(format!("https://github.com/apps/{slug}")))
+    let origin = query.origin.trim_end_matches('/');
+    let redirect_uri = urlencoding::encode(&format!("{origin}/github/callback")).into_owned();
+    Ok(ResponseJson(format!(
+        "https://github.com/apps/{slug}/installations/new?redirect_uri={redirect_uri}"
+    )))
 }
 
 /// GET /github/oauth-connect-url?origin=https://app.example.com
@@ -661,13 +673,36 @@ pub async fn connect_namespace_from_oauth(
     match eligible.as_slice() {
         [] => Ok(ResponseJson(OAuthConnectResponse::NotInstalled)),
         [single] => {
-            let ns = upsert_app_namespace(&db, &user, single.id, &single.name, &single.owner_type)
-                .await?;
+            let ns = upsert_app_namespace(
+                &db,
+                &user,
+                single.id,
+                &single.name,
+                &single.owner_type,
+                &user_token,
+            )
+            .await?;
             Ok(ResponseJson(OAuthConnectResponse::Connected {
                 namespace: ns,
             }))
         }
         _ => {
+            // Store the token on the first existing namespace so future calls to
+            // GET /github/my-installations can skip re-auth even in the choose case.
+            if let Some(existing) = entity::prelude::GitNamespaces::find()
+                .filter(entity::git_namespaces::Column::UserId.eq(user.id))
+                .filter(entity::git_namespaces::Column::Slug.ne("pat"))
+                .one(&db)
+                .await
+                .ok()
+                .flatten()
+            {
+                use entity::git_namespaces;
+                use sea_orm::IntoActiveModel;
+                let mut active = existing.into_active_model();
+                active.oauth_token = Set(user_token.clone());
+                let _ = active.save(&db).await;
+            }
             let ids: Vec<i64> = eligible.iter().map(|i| i.id).collect();
             let selection_token = sign_selection_token(&ids, &user.id)?;
             Ok(ResponseJson(OAuthConnectResponse::Choose {
@@ -727,6 +762,7 @@ pub async fn pick_namespace_installation(
         installation.id,
         &installation.name,
         &installation.owner_type,
+        "", // no user token at pick-time; stored token from choose phase is preserved
     )
     .await?;
     Ok(ResponseJson(ns))
@@ -832,15 +868,63 @@ async fn fetch_user_app_installations(
         .collect())
 }
 
+/// GET /github/my-installations — list app installations the current user can access
+/// using their stored GitHub OAuth token, without requiring a new sign-in.
+/// Returns { installations, selection_token } — same shape as the `choose` response —
+/// so the frontend can feed it directly into the pick flow.
+/// Returns 404 if no token is stored yet (frontend falls back to the OAuth flow).
+#[derive(Serialize)]
+pub struct MyInstallationsResponse {
+    pub installations: Vec<OAuthInstallation>,
+    pub selection_token: String,
+}
+
+pub async fn get_my_installations(
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+) -> Result<ResponseJson<MyInstallationsResponse>, axum::http::StatusCode> {
+    let db = establish_connection().await.map_err(|e| {
+        error!("DB connection failed: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    use entity::git_namespaces;
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+    let ns = entity::prelude::GitNamespaces::find()
+        .filter(git_namespaces::Column::UserId.eq(user.id))
+        .filter(git_namespaces::Column::Slug.ne("pat"))
+        .all(&db)
+        .await
+        .map_err(|e| {
+            error!("DB query failed: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .into_iter()
+        .find(|n| !n.oauth_token.is_empty());
+
+    let Some(ns) = ns else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+
+    let installations = fetch_user_app_installations(&ns.oauth_token).await?;
+    let ids: Vec<i64> = installations.iter().map(|i| i.id).collect();
+    let selection_token = sign_selection_token(&ids, &user.id)?;
+    Ok(ResponseJson(MyInstallationsResponse {
+        installations,
+        selection_token,
+    }))
+}
+
 async fn upsert_app_namespace(
     db: &sea_orm::DatabaseConnection,
     user: &oxy_auth::types::AuthenticatedUser,
     installation_id: i64,
     name: &str,
     owner_type: &str,
+    user_token: &str,
 ) -> Result<GitHubNamespace, axum::http::StatusCode> {
     use entity::git_namespaces;
-    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+    use sea_orm::{ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter};
 
     if let Some(existing) = entity::prelude::GitNamespaces::find()
         .filter(git_namespaces::Column::InstallationId.eq(installation_id))
@@ -851,6 +935,15 @@ async fn upsert_app_namespace(
             StatusCode::INTERNAL_SERVER_ERROR
         })?
     {
+        // Update the stored token if a newer one is provided.
+        if !user_token.is_empty() {
+            let mut active = existing.clone().into_active_model();
+            active.oauth_token = Set(user_token.to_string());
+            active.save(db).await.map_err(|e| {
+                error!("DB token update failed: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        }
         return Ok(GitHubNamespace {
             id: existing.id,
             owner_type: existing.owner_type,
@@ -867,7 +960,7 @@ async fn upsert_app_namespace(
         owner_type: Set(owner_type.to_string()),
         installation_id: Set(installation_id),
         provider: Set("github".to_string()),
-        oauth_token: Set(String::new()),
+        oauth_token: Set(user_token.to_string()),
     }
     .insert(db)
     .await

@@ -1,5 +1,5 @@
 import { Building2, Github, Key, Loader2, Plus, User, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/shadcn/badge";
 import { Button } from "@/components/ui/shadcn/button";
 import {
@@ -14,11 +14,11 @@ import { Label } from "@/components/ui/shadcn/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
 import {
   useConnectNamespaceFromOAuth,
-  useCreateInstallationNamespace,
   useCreatePATNamespace,
   useDeleteGitNamespace,
   useGitHubInstallAppUrl,
   useGitHubNamespaces,
+  useMyInstallations,
   usePickNamespaceInstallation
 } from "@/hooks/api/github";
 import { GITHUB_OAUTH_CALLBACK_MESSAGE } from "@/pages/github/callback";
@@ -33,122 +33,51 @@ interface Props {
 function ConnectDialog({
   open,
   onClose,
-  onConnected
+  onConnected,
+  hasExistingConnections
 }: {
   open: boolean;
   onClose: () => void;
   onConnected: (namespaceId: string) => void;
+  hasExistingConnections: boolean;
 }) {
   const [patToken, setPATToken] = useState("");
   const [patError, setPATError] = useState<string | null>(null);
   const [oauthPopupOpened, setOauthPopupOpened] = useState(false);
-  const [installPopupOpened, setInstallPopupOpened] = useState(false);
   const [oauthInstallations, setOauthInstallations] = useState<OAuthInstallation[] | null>(null);
   const [selectionToken, setSelectionToken] = useState<string>("");
   const [oauthError, setOauthError] = useState<string | null>(null);
   const [notInstalled, setNotInstalled] = useState(false);
 
   const oauthPopupRef = useRef<Window | null>(null);
-  const installPopupRef = useRef<Window | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Tracks when the user explicitly dismisses the auto-loaded picker (← Back),
+  // so the useEffect below doesn't immediately re-populate it.
+  const pickerDismissedRef = useRef(false);
 
   const { mutate: createPAT, isPending: isPATLoading } = useCreatePATNamespace();
   const { mutate: connectFromOAuth, isPending: isOAuthConnecting } = useConnectNamespaceFromOAuth();
   const { mutate: pickInstallation, isPending: isPickingInstallation } =
     usePickNamespaceInstallation();
-  const { mutate: createInstallationNs, isPending: isInstallingNs } =
-    useCreateInstallationNamespace();
   const { data: installAppUrl } = useGitHubInstallAppUrl();
 
-  // Listen for postMessages from either the OAuth popup or the install popup.
-  // The callback page relays two shapes:
-  //   OAuth:   { type, code, state }          → call connectFromOAuth
-  //   Install: { type, installation_id }       → call createInstallationNamespace
+  // When the user already has a connection, try to reuse their stored OAuth token
+  // to discover installations without requiring a new sign-in.
+  const { data: savedInstallations, isFetching: isLoadingSaved } = useMyInstallations(
+    !open || !hasExistingConnections
+  );
+
+  // Pre-populate the installations list from the stored token when available.
+  // Skip if the user already dismissed the picker (clicked ← Back) this session.
   useEffect(() => {
-    if (!open) return;
+    if (!savedInstallations || pickerDismissedRef.current) return;
+    if (oauthInstallations !== null) return; // user already in a manual flow
+    setOauthInstallations(savedInstallations.installations);
+    setSelectionToken(savedInstallations.selection_token);
+  }, [savedInstallations, oauthInstallations]);
 
-    const allowedOrigin = import.meta.env.VITE_GITHUB_CALLBACK_ORIGIN || window.location.origin;
-
-    const handleMessage = (e: MessageEvent) => {
-      if (e.origin !== window.location.origin && e.origin !== allowedOrigin) return;
-      if (e.data?.type !== GITHUB_OAUTH_CALLBACK_MESSAGE) return;
-
-      const { code, state, installation_id } = e.data as {
-        type: string;
-        code?: string;
-        state?: string;
-        installation_id?: string;
-      };
-
-      // Install callback — GitHub redirected after app installation
-      if (installation_id && !code) {
-        setInstallPopupOpened(false);
-        installPopupRef.current = null;
-        setOauthError(null);
-        createInstallationNs(Number(installation_id), {
-          onSuccess: (ns) => onConnected(ns.id),
-          onError: (err) => setOauthError(err.message || "Failed to connect installation.")
-        });
-        return;
-      }
-
-      // OAuth callback — GitHub redirected after user authorization
-      if (code && state) {
-        setOauthPopupOpened(false);
-        oauthPopupRef.current = null;
-        setOauthError(null);
-        connectFromOAuth(
-          { code, state },
-          {
-            onSuccess: (result) => {
-              if (result.status === "connected") {
-                onConnected(result.namespace.id);
-              } else if (result.status === "choose") {
-                setOauthInstallations(result.installations);
-                setSelectionToken(result.selection_token);
-              } else {
-                setNotInstalled(true);
-              }
-            },
-            onError: (err) => setOauthError(err.message || "Authentication failed.")
-          }
-        );
-      }
-    };
-
-    window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
-  }, [open, connectFromOAuth, onConnected, createInstallationNs]);
-
-  // Poll for closed popups
-  useEffect(() => {
-    if (!oauthPopupOpened && !installPopupOpened) return;
-    const timer = setInterval(() => {
-      if (oauthPopupRef.current?.closed) {
-        setOauthPopupOpened(false);
-        oauthPopupRef.current = null;
-      }
-      if (installPopupRef.current?.closed) {
-        setInstallPopupOpened(false);
-        installPopupRef.current = null;
-      }
-    }, 500);
-    return () => clearInterval(timer);
-  }, [oauthPopupOpened, installPopupOpened]);
-
-  const handlePATSubmit = () => {
-    if (!patToken.trim()) return;
-    setPATError(null);
-    createPAT(patToken.trim(), {
-      onSuccess: (ns) => {
-        setPATToken("");
-        onConnected(ns.id);
-      },
-      onError: (e) => setPATError(e.message || "Invalid token — needs 'repo' scope.")
-    });
-  };
-
-  const handleSignIn = async () => {
+  const handleSignIn = useCallback(async () => {
+    pickerDismissedRef.current = false; // fresh sign-in flow, allow auto-populate again
     setOauthError(null);
     setOauthInstallations(null);
     setSelectionToken("");
@@ -163,16 +92,75 @@ function ConnectDialog({
     } catch {
       setOauthError("Couldn't open GitHub. Please try again.");
     }
+  }, []);
+
+  // Listen for OAuth postMessage from the sign-in popup.
+  useEffect(() => {
+    if (!open) return;
+
+    const allowedOrigin = import.meta.env.VITE_GITHUB_CALLBACK_ORIGIN || window.location.origin;
+
+    const handleMessage = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin && e.origin !== allowedOrigin) return;
+      if (e.data?.type !== GITHUB_OAUTH_CALLBACK_MESSAGE) return;
+
+      const { code, state } = e.data as { type: string; code?: string; state?: string };
+      if (!code || !state) return;
+
+      setOauthPopupOpened(false);
+      oauthPopupRef.current = null;
+      setOauthError(null);
+      connectFromOAuth(
+        { code, state },
+        {
+          onSuccess: (result) => {
+            if (result.status === "connected") {
+              onConnected(result.namespace.id);
+            } else if (result.status === "choose") {
+              setOauthInstallations(result.installations);
+              setSelectionToken(result.selection_token);
+            } else {
+              setNotInstalled(true);
+            }
+          },
+          onError: (err) => setOauthError(err.message || "Authentication failed.")
+        }
+      );
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [open, connectFromOAuth, onConnected]);
+
+  // Poll for OAuth popup closed without completing
+  useEffect(() => {
+    if (!oauthPopupOpened) return;
+    const timer = setInterval(() => {
+      if (oauthPopupRef.current?.closed) {
+        setOauthPopupOpened(false);
+        oauthPopupRef.current = null;
+      }
+    }, 500);
+    return () => clearInterval(timer);
+  }, [oauthPopupOpened]);
+
+  const handlePATSubmit = () => {
+    if (!patToken.trim()) return;
+    setPATError(null);
+    createPAT(patToken.trim(), {
+      onSuccess: (ns) => {
+        setPATToken("");
+        onConnected(ns.id);
+      },
+      onError: (e) => setPATError(e.message || "Invalid token — needs 'repo' scope.")
+    });
   };
 
+  // Opens GitHub App install page in a new tab. GitHub redirects back to
+  // /github/callback?installation_id=... which the callback page handles
+  // directly (no popup relay needed).
   const handleInstall = () => {
-    if (!installAppUrl) return;
-    setOauthError(null);
-    const popup = window.open(installAppUrl, "_blank", "width=600,height=700,noopener=no");
-    if (popup) {
-      installPopupRef.current = popup;
-      setInstallPopupOpened(true);
-    }
+    if (installAppUrl) window.open(installAppUrl, "_blank");
   };
 
   const handlePickInstallation = (installationId: number) => {
@@ -190,10 +178,10 @@ function ConnectDialog({
   };
 
   const handleClose = () => {
+    pickerDismissedRef.current = false;
     setPATToken("");
     setPATError(null);
     setOauthPopupOpened(false);
-    setInstallPopupOpened(false);
     setOauthInstallations(null);
     setSelectionToken("");
     setOauthError(null);
@@ -201,12 +189,7 @@ function ConnectDialog({
     onClose();
   };
 
-  const anyBusy =
-    oauthPopupOpened ||
-    installPopupOpened ||
-    isOAuthConnecting ||
-    isPickingInstallation ||
-    isInstallingNs;
+  const anyBusy = oauthPopupOpened || isOAuthConnecting || isPickingInstallation;
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
@@ -273,37 +256,38 @@ function ConnectDialog({
             {/* Default: sign in + install on new account */}
             {!notInstalled && !oauthInstallations && (
               <div className='space-y-2'>
-                <Button className='w-full gap-2' onClick={handleSignIn} disabled={anyBusy}>
-                  {oauthPopupOpened || isOAuthConnecting ? (
+                {isLoadingSaved ? (
+                  <div className='flex items-center justify-center gap-2 py-4 text-muted-foreground text-sm'>
                     <Loader2 className='h-4 w-4 animate-spin' />
-                  ) : (
-                    <Github className='h-4 w-4' />
-                  )}
-                  {oauthPopupOpened
-                    ? "Waiting for GitHub…"
-                    : isOAuthConnecting
-                      ? "Connecting…"
-                      : "Sign in with GitHub"}
-                </Button>
+                    Loading accounts…
+                  </div>
+                ) : (
+                  <>
+                    <Button className='w-full gap-2' onClick={handleSignIn} disabled={anyBusy}>
+                      {oauthPopupOpened || isOAuthConnecting ? (
+                        <Loader2 className='h-4 w-4 animate-spin' />
+                      ) : (
+                        <Github className='h-4 w-4' />
+                      )}
+                      {oauthPopupOpened
+                        ? "Waiting for GitHub…"
+                        : isOAuthConnecting
+                          ? "Connecting…"
+                          : "Sign in with GitHub"}
+                    </Button>
 
-                {installAppUrl && (
-                  <Button
-                    variant='outline'
-                    className='w-full gap-2'
-                    onClick={handleInstall}
-                    disabled={anyBusy}
-                  >
-                    {installPopupOpened || isInstallingNs ? (
-                      <Loader2 className='h-4 w-4 animate-spin' />
-                    ) : (
-                      <Plus className='h-4 w-4' />
+                    {installAppUrl && hasExistingConnections && (
+                      <Button
+                        variant='outline'
+                        className='w-full gap-2'
+                        onClick={handleInstall}
+                        disabled={anyBusy}
+                      >
+                        <Plus className='h-4 w-4' />
+                        Install on another account
+                      </Button>
                     )}
-                    {installPopupOpened
-                      ? "Waiting for install…"
-                      : isInstallingNs
-                        ? "Connecting…"
-                        : "Install on another account"}
-                  </Button>
+                  </>
                 )}
               </div>
             )}
@@ -320,17 +304,9 @@ function ConnectDialog({
                 </div>
 
                 {installAppUrl && (
-                  <Button
-                    className='w-full gap-2'
-                    onClick={handleInstall}
-                    disabled={installPopupOpened || isInstallingNs}
-                  >
-                    {installPopupOpened || isInstallingNs ? (
-                      <Loader2 className='h-4 w-4 animate-spin' />
-                    ) : (
-                      <Github className='h-4 w-4' />
-                    )}
-                    {installPopupOpened ? "Waiting for install…" : "Install GitHub App"}
+                  <Button className='w-full gap-2' onClick={handleInstall}>
+                    <Github className='h-4 w-4' />
+                    Install GitHub App
                   </Button>
                 )}
 
@@ -374,9 +350,23 @@ function ConnectDialog({
                     </button>
                   ))}
                 </div>
+                <p className='text-center text-muted-foreground text-xs'>
+                  Not the right account?{" "}
+                  <button
+                    type='button'
+                    onClick={handleSignIn}
+                    disabled={anyBusy}
+                    className='underline-offset-4 hover:text-foreground hover:underline disabled:opacity-50'
+                  >
+                    Sign in with a different GitHub account
+                  </button>
+                </p>
                 <button
                   type='button'
-                  onClick={() => setOauthInstallations(null)}
+                  onClick={() => {
+                    pickerDismissedRef.current = true;
+                    setOauthInstallations(null);
+                  }}
                   className='w-full text-center text-muted-foreground text-xs hover:text-foreground'
                 >
                   ← Back
@@ -502,6 +492,7 @@ export const GitNamespaceSelection = ({ value, onChange }: Props) => {
         open={connectOpen}
         onClose={() => setConnectOpen(false)}
         onConnected={handleConnected}
+        hasExistingConnections={gitNamespaces.length > 0}
       />
     </div>
   );

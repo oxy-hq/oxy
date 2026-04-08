@@ -134,6 +134,10 @@ fn build_global_routes() -> Router<AppState> {
             put(user::update_user).delete(user::delete_user),
         )
         .route("/github/install-app-url", get(github::get_install_app_url))
+        .route(
+            "/github/my-installations",
+            get(github::get_my_installations),
+        )
         .route("/github/repositories", get(github::list_repositories))
         .route("/github/branches", get(github::list_branches))
         .route("/github/namespaces", get(github::list_git_namespaces))

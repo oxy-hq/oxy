@@ -15,7 +15,9 @@ export class GitHubApiService {
   }
 
   static async getInstallAppUrl(): Promise<string> {
-    const response = await apiClient.get("/github/install-app-url");
+    const response = await apiClient.get("/github/install-app-url", {
+      params: { origin: window.location.origin }
+    });
     return response.data;
   }
 
