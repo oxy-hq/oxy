@@ -10,10 +10,9 @@ import Actions from "./Actions";
 interface Props {
   user: UserInfo;
   isAdmin: boolean;
-  workspaceId: string;
 }
 
-const UserRow: React.FC<Props> = ({ user, isAdmin, workspaceId }) => {
+const UserRow: React.FC<Props> = ({ user, isAdmin }) => {
   const { data: currentUser } = useCurrentUser();
   const getRoleBadgeVariant = (role: string) => {
     return role === "admin" ? "destructive" : "secondary";
@@ -34,7 +33,7 @@ const UserRow: React.FC<Props> = ({ user, isAdmin, workspaceId }) => {
       </TableCell>
       {isAdmin && user.id !== currentUser?.id && (
         <TableCell>
-          <Actions user={user} workspaceId={workspaceId} />
+          <Actions user={user} />
         </TableCell>
       )}
     </TableRow>

@@ -41,14 +41,14 @@ impl Executable<CreateDataAppInput> for CreateDataAppExecutable {
         events::tool::tool_call_input(&input);
         log::debug!("Creating data app with input: {:?}", &input);
         let CreateDataAppInput { param } = input;
-        let project_path = execution_context.project.config_manager.project_path();
+        let workspace_path = execution_context.workspace.config_manager.workspace_path();
         let mut full_file_name = format!("{}.app.yml", param.file_name);
-        let mut file_path = project_path.join(&full_file_name);
+        let mut file_path = workspace_path.join(&full_file_name);
 
         // check if the file already exists
         if file_path.exists() {
             full_file_name = format!("{}_{}.app.yml", param.file_name, ShortUuid::generate());
-            file_path = project_path.join(&full_file_name);
+            file_path = workspace_path.join(&full_file_name);
         }
 
         log::info!("Creating data app at: {}", file_path.display());

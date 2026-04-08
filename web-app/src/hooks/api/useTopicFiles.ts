@@ -33,8 +33,8 @@ export default function useTopicFiles() {
   const { data: fileTree, isLoading, error } = useFileTree();
 
   const topicFiles = useMemo(() => {
-    if (!fileTree) return [];
-    return flattenTopicFiles(fileTree);
+    if (!fileTree?.primary) return [];
+    return flattenTopicFiles(fileTree.primary);
   }, [fileTree]);
 
   // Helper to find path by topic name

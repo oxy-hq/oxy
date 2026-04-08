@@ -46,8 +46,8 @@ impl Executable<RetrievalInput> for RetrievalExecutable {
                 finished: true,
             })
             .await?;
-        let config_manager = &execution_context.project.config_manager;
-        let secrets_manager = &execution_context.project.secrets_manager;
+        let config_manager = &execution_context.workspace.config_manager;
+        let secrets_manager = &execution_context.workspace.secrets_manager;
         let store = VectorStore::from_retrieval(
             config_manager,
             secrets_manager,

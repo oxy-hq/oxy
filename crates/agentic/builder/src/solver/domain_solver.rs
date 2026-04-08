@@ -122,7 +122,7 @@ impl DomainSolver<BuilderDomain> for BuilderSolver {
                 super::solver::dispatch_tool(
                     name,
                     &params,
-                    &self.project_root,
+                    &self.workspace_root,
                     &self.event_tx,
                     self.test_runner.clone(),
                     self.human_input.clone(),

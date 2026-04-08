@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/shadcn/button";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useMetricDetail } from "@/hooks/api/metrics";
 import ROUTES from "@/libs/utils/routes";
-import useCurrentProject from "@/stores/useCurrentProject";
+import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 import DetailHeader from "./components/DetailHeader";
 import DetailStatsRow from "./components/DetailStatsRow";
 import RecentUsageSection from "./components/RecentUsage/RecentUsageSection";
@@ -17,7 +17,7 @@ import type { DaysValue } from "./constants";
 export default function MetricsDetailPage() {
   const { metricName } = useParams<{ metricName: string }>();
   const navigate = useNavigate();
-  const { project } = useCurrentProject();
+  const { workspace: project } = useCurrentWorkspace();
   const [daysFilter, setDaysFilter] = useState<DaysValue>(30);
 
   const decodedMetricName = metricName ? decodeURIComponent(metricName) : "";
@@ -29,15 +29,15 @@ export default function MetricsDetailPage() {
   } = useMetricDetail(decodedMetricName, daysFilter);
 
   const handleBack = () => {
-    navigate(ROUTES.PROJECT(project?.id || "").IDE.OBSERVABILITY.METRICS);
+    navigate(ROUTES.WORKSPACE(project?.id || "").IDE.OBSERVABILITY.METRICS);
   };
 
   const handleRelatedMetricClick = (relatedMetric: string) => {
-    navigate(ROUTES.PROJECT(project?.id || "").IDE.OBSERVABILITY.METRIC(relatedMetric));
+    navigate(ROUTES.WORKSPACE(project?.id || "").IDE.OBSERVABILITY.METRIC(relatedMetric));
   };
 
   const handleTraceClick = (traceId: string) => {
-    navigate(ROUTES.PROJECT(project?.id || "").IDE.OBSERVABILITY.TRACE(traceId));
+    navigate(ROUTES.WORKSPACE(project?.id || "").IDE.OBSERVABILITY.TRACE(traceId));
   };
 
   if (isLoading) {

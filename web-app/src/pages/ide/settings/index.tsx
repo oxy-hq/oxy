@@ -1,4 +1,4 @@
-import { ChevronsRight, Database, Key, KeyRound } from "lucide-react";
+import { ChevronsRight, Database, GitBranch, Key, KeyRound } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/shadcn/sidebar";
 import useCurrentUser from "@/hooks/api/users/useCurrentUser";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { FEATURES } from "@/libs/features";
 import ROUTES from "@/libs/utils/routes";
 import { SidebarHeader } from "@/pages/ide/components/SidebarHeader";
 import { VersionBadge } from "./VersionBadge";
@@ -39,20 +40,35 @@ const SettingsSidebar: React.FC<{
             <SidebarMenuItem>
               <SidebarMenuButton
                 asChild
-                isActive={location.pathname === ROUTES.PROJECT(projectId).IDE.SETTINGS.DATABASES}
+                isActive={location.pathname === ROUTES.WORKSPACE(projectId).IDE.SETTINGS.DATABASES}
               >
-                <Link to={ROUTES.PROJECT(projectId).IDE.SETTINGS.DATABASES}>
+                <Link to={ROUTES.WORKSPACE(projectId).IDE.SETTINGS.DATABASES}>
                   <Database className='h-4 w-4' />
                   <span>Databases</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
+            {FEATURES.LINKED_REPOS && (
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={
+                    location.pathname === ROUTES.WORKSPACE(projectId).IDE.SETTINGS.REPOSITORIES
+                  }
+                >
+                  <Link to={ROUTES.WORKSPACE(projectId).IDE.SETTINGS.REPOSITORIES}>
+                    <GitBranch className='h-4 w-4' />
+                    <span>Repositories</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
             <SidebarMenuItem>
               <SidebarMenuButton
                 asChild
-                isActive={location.pathname === ROUTES.PROJECT(projectId).IDE.SETTINGS.API_KEYS}
+                isActive={location.pathname === ROUTES.WORKSPACE(projectId).IDE.SETTINGS.API_KEYS}
               >
-                <Link to={ROUTES.PROJECT(projectId).IDE.SETTINGS.API_KEYS}>
+                <Link to={ROUTES.WORKSPACE(projectId).IDE.SETTINGS.API_KEYS}>
                   <Key className='h-4 w-4' />
                   <span>API Keys</span>
                 </Link>
@@ -62,9 +78,9 @@ const SettingsSidebar: React.FC<{
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
-                  isActive={location.pathname === ROUTES.PROJECT(projectId).IDE.SETTINGS.SECRETS}
+                  isActive={location.pathname === ROUTES.WORKSPACE(projectId).IDE.SETTINGS.SECRETS}
                 >
-                  <Link to={ROUTES.PROJECT(projectId).IDE.SETTINGS.SECRETS}>
+                  <Link to={ROUTES.WORKSPACE(projectId).IDE.SETTINGS.SECRETS}>
                     <KeyRound className='h-4 w-4' />
                     <span>Secrets</span>
                   </Link>

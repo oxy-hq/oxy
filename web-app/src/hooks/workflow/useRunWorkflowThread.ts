@@ -2,12 +2,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import throttle from "lodash/throttle";
 import { useCallback } from "react";
 import { toast } from "sonner";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { WorkflowService } from "@/services/api";
 import type { LogItem } from "@/services/types";
 import useWorkflowThreadStore from "@/stores/useWorkflowThread";
 import type { ThreadItem, ThreadsResponse } from "@/types/chat";
 import queryKeys from "../api/queryKey";
-import useCurrentProjectBranch from "../useCurrentProjectBranch";
 
 const useRunWorkflowThread = () => {
   const queryClient = useQueryClient();

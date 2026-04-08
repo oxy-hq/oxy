@@ -12,7 +12,7 @@ use std::path::Path;
 pub trait BuilderTestRunner: Send + Sync {
     async fn run_tests(
         &self,
-        project_root: &Path,
+        workspace_root: &Path,
         test_file: &str,
     ) -> Result<serde_json::Value, String>;
 }

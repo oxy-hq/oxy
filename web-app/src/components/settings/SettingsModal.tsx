@@ -1,11 +1,9 @@
-import { Github, Shield, Users, X } from "lucide-react";
+import { Shield, Users, X } from "lucide-react";
 import { useState } from "react";
-import { useAuth } from "@/contexts/AuthContext";
 import useCurrentUser from "@/hooks/api/users/useCurrentUser";
 import useSettingsPage from "@/stores/useSettingsPage";
 import { Button } from "../ui/shadcn/button";
 import { Dialog, DialogContent } from "../ui/shadcn/dialog";
-import GithubSettings from "./github";
 import SecretManagement from "./secrets";
 import UserManagement from "./users";
 
@@ -19,23 +17,13 @@ interface SettingsSection {
 }
 
 export function SettingsModal() {
-  const { authConfig } = useAuth();
   const { data: currentUser } = useCurrentUser();
   const { isOpen, setIsOpen } = useSettingsPage();
 
   const isAdmin = currentUser?.is_admin ?? false;
-  const defaultSection = authConfig.cloud ? "github-settings" : "secrets";
-  const [activeSection, setActiveSection] = useState<string>(defaultSection);
+  const [activeSection, setActiveSection] = useState<string>("secrets");
 
   const settingsSections: SettingsSection[] = [
-    {
-      id: "github-settings",
-      title: "Github Settings",
-      description: "Configure GitHub integration",
-      icon: <Github className='h-4 w-4' />,
-      show: authConfig.cloud,
-      page: <GithubSettings />
-    },
     {
       id: "secrets",
       title: "Secret Management",
@@ -49,7 +37,7 @@ export function SettingsModal() {
       title: "Users",
       description: "User management",
       icon: <Users className='h-4 w-4' />,
-      show: authConfig.cloud,
+      show: isAdmin,
       page: <UserManagement />
     }
   ];

@@ -93,7 +93,7 @@ impl Executable<CreateV0AppInput> for CreateV0App {
                     V0EnvVar::new("OXY_URL".to_string(), oxy_url),
                     V0EnvVar::new(
                         "OXY_PROJECT_ID".to_string(),
-                        execution_context.project.project_id.to_string(),
+                        execution_context.workspace.workspace_id.to_string(),
                     ),
                 ];
                 if let Some(oxy_api_key) = input.oxy_api_key {

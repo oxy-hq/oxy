@@ -8,7 +8,8 @@ use crate::{
 
 use oxy::{
     adapters::{
-        project::manager::ProjectManager, secrets::SecretsManager, session_filters::SessionFilters,
+        secrets::SecretsManager, session_filters::SessionFilters,
+        workspace::manager::WorkspaceManager,
     },
     config::{ConfigManager, constants::AGENT_SOURCE, model::ConnectionOverrides},
     execute::{
@@ -161,8 +162,8 @@ impl AgentLauncher {
         mut self,
         execution_context: &ExecutionContext,
     ) -> Result<Self, OxyError> {
-        let config_manager = execution_context.project.config_manager.clone();
-        let secrets_manager = execution_context.project.secrets_manager.clone();
+        let config_manager = execution_context.workspace.config_manager.clone();
+        let secrets_manager = execution_context.workspace.secrets_manager.clone();
         let tx = self.buf_writer.create_writer(None)?;
         let global_context = self
             .get_global_context(config_manager, secrets_manager)
@@ -176,14 +177,17 @@ impl AgentLauncher {
     }
 
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = "agent.launcher.with_project",
+        otel.name = "agent.launcher.with_workspace",
         oxy.span_type = "agent",
     ))]
-    pub async fn with_project(mut self, project_manager: ProjectManager) -> Result<Self, OxyError> {
+    pub async fn with_workspace(
+        mut self,
+        workspace_manager: WorkspaceManager,
+    ) -> Result<Self, OxyError> {
         let tx = self.buf_writer.create_writer(None)?;
 
         let mut execution_context = ExecutionContextBuilder::new()
-            .with_project_manager(project_manager)
+            .with_workspace_manager(workspace_manager)
             .with_global_context(Value::UNDEFINED)
             .with_writer(tx)
             .with_source(Source {
@@ -197,8 +201,8 @@ impl AgentLauncher {
             .with_data_app_file_path(self.data_app_file_path.clone())
             .build()?;
 
-        let config_manager = execution_context.project.config_manager.clone();
-        let secrets_manager = execution_context.project.secrets_manager.clone();
+        let config_manager = execution_context.workspace.config_manager.clone();
+        let secrets_manager = execution_context.workspace.secrets_manager.clone();
 
         let global_context = self
             .get_global_context(config_manager, secrets_manager)
@@ -342,7 +346,7 @@ impl AgentLauncher {
         };
         let agent_ref = agent_ref.to_string();
         let agent_config = execution_context
-            .project
+            .workspace
             .config_manager
             .resolve_agentic_workflow(&agent_ref)
             .await?;

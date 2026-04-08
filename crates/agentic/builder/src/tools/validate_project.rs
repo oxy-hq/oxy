@@ -26,11 +26,11 @@ pub fn validate_project_def() -> ToolDef {
 /// Validate project files using the oxy config validator.
 /// Mirrors the logic of `oxy validate [--file <path>]`.
 pub async fn execute_validate_project(
-    project_root: &Path,
+    workspace_root: &Path,
     params: &Value,
 ) -> Result<Value, ToolError> {
     let config = oxy::config::ConfigBuilder::new()
-        .with_project_path(project_root)
+        .with_workspace_path(workspace_root)
         .map_err(|e| ToolError::Execution(format!("failed to configure project path: {e}")))?
         .build()
         .await
@@ -40,7 +40,7 @@ pub async fn execute_validate_project(
 
     if let Some(rel_path) = params["file_path"].as_str() {
         // Validate a single file.
-        let abs = safe_path(project_root, rel_path)?;
+        let abs = safe_path(workspace_root, rel_path)?;
         let file_name = abs.file_name().and_then(|n| n.to_str()).unwrap_or("");
         let result = validate_single_file(&abs, file_name, cfg);
         match result {
@@ -52,9 +52,9 @@ pub async fn execute_validate_project(
         let mut errors: Vec<serde_json::Value> = Vec::new();
         let mut valid_count: usize = 0;
 
-        for path in cfg.list_workflows(&cfg.project_path) {
+        for path in cfg.list_workflows(&cfg.workspace_path) {
             let rel = path
-                .strip_prefix(project_root)
+                .strip_prefix(workspace_root)
                 .unwrap_or(&path)
                 .to_string_lossy()
                 .to_string();
@@ -67,9 +67,9 @@ pub async fn execute_validate_project(
             }
         }
 
-        for path in cfg.list_agents(&cfg.project_path) {
+        for path in cfg.list_agents(&cfg.workspace_path) {
             let rel = path
-                .strip_prefix(project_root)
+                .strip_prefix(workspace_root)
                 .unwrap_or(&path)
                 .to_string_lossy()
                 .to_string();
@@ -82,9 +82,9 @@ pub async fn execute_validate_project(
             }
         }
 
-        for path in cfg.list_apps(&cfg.project_path) {
+        for path in cfg.list_apps(&cfg.workspace_path) {
             let rel = path
-                .strip_prefix(project_root)
+                .strip_prefix(workspace_root)
                 .unwrap_or(&path)
                 .to_string_lossy()
                 .to_string();
@@ -97,13 +97,13 @@ pub async fn execute_validate_project(
             }
         }
 
-        for path in list_semantic_files(&cfg.project_path) {
+        for path in list_semantic_files(&cfg.workspace_path) {
             let rel = path
-                .strip_prefix(project_root)
+                .strip_prefix(workspace_root)
                 .unwrap_or(&path)
                 .to_string_lossy()
                 .to_string();
-            match validate_semantic_file(&path, &cfg.project_path) {
+            match validate_semantic_file(&path, &cfg.workspace_path) {
                 Ok(()) => valid_count += 1,
                 Err(e) => errors.push(json!({ "file": rel, "error": e })),
             }
@@ -142,7 +142,7 @@ fn validate_single_file(
             .map_err(|e| e.to_string())?;
         cfg.validate_app(&app).map_err(|e| e.to_string())
     } else if file_name.ends_with(".view.yml") || file_name.ends_with(".topic.yml") {
-        validate_semantic_file(abs, &cfg.project_path)
+        validate_semantic_file(abs, &cfg.workspace_path)
     } else {
         Err(format!(
             "unsupported file type: {file_name}. Expected .workflow.yml, .procedure.yml, .automation.yml, .agent.yml, .app.yml, .view.yml, or .topic.yml"

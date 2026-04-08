@@ -120,12 +120,12 @@ const GroupedObjectsView: React.FC<GroupedObjectsViewProps> = ({
 
   const handleFileClick = (file: FileTreeModel) => {
     const pathb64 = encodeBase64(file.path);
-    navigate(ROUTES.PROJECT(projectId).IDE.FILES.FILE(pathb64));
+    navigate(ROUTES.WORKSPACE(projectId).IDE.FILES.FILE(pathb64));
   };
 
   const handleExploreClick = (integrationName: string, model: string, exploreName: string) => {
     navigate(
-      ROUTES.PROJECT(projectId).IDE.FILES.LOOKER_EXPLORE(integrationName, model, exploreName)
+      ROUTES.WORKSPACE(projectId).IDE.FILES.LOOKER_EXPLORE(integrationName, model, exploreName)
     );
   };
 

@@ -41,7 +41,7 @@ const AlertDeleteDialog = ({ fileTree, visible, setVisible }: AlertDeleteDialogP
       }
       const currentPath = decodeBase64(pathname.split("/").pop() ?? "");
       if (currentPath.startsWith(fileTree.path)) {
-        const ideUri = ROUTES.PROJECT(projectId).IDE.ROOT;
+        const ideUri = ROUTES.WORKSPACE(projectId).IDE.ROOT;
         navigate(ideUri);
       }
     } catch (error) {

@@ -27,7 +27,7 @@ use crate::{
     server::service::agent::{Message as AgentMessage, run_agent, run_agentic_workflow},
 };
 use oxy::{
-    adapters::project::manager::ProjectManager,
+    adapters::workspace::manager::WorkspaceManager,
     execute::{
         types::{Event, EventKind},
         writer::EventHandler,
@@ -57,7 +57,7 @@ struct StreamingState {
 /// * `agent_name` - The name of the agent to execute
 /// * `agent_ref` - The path to the agent configuration file
 /// * `message` - The A2A message to send
-/// * `project_manager` - Project manager for agent execution
+/// * `workspace_manager` - Project manager for agent execution
 ///
 /// # Returns
 ///
@@ -66,7 +66,7 @@ pub async fn handle_send_streaming_message(
     agent_name: &str,
     agent_ref: String,
     message: Message,
-    project_manager: &ProjectManager,
+    workspace_manager: &WorkspaceManager,
     storage: Arc<OxyTaskStorage>,
     metadata: Option<HashMap<String, Value>>,
 ) -> Result<SseStream, A2aError> {
@@ -174,7 +174,7 @@ pub async fn handle_send_streaming_message(
     };
 
     // Spawn execution
-    let project_manager = project_manager.clone();
+    let workspace_manager = workspace_manager.clone();
     let prompt = super::super::mapper::a2a_message_to_prompt(&message)?;
     let task_id_clone = task_id.clone();
     let tx_clone = tx.clone();
@@ -186,7 +186,7 @@ pub async fn handle_send_streaming_message(
 
     tokio::spawn(async move {
         // Determine agent type and execute accordingly
-        let is_agentic = project_manager
+        let is_agentic = workspace_manager
             .config_manager
             .resolve_agentic_workflow(&agent_ref_clone)
             .await
@@ -194,7 +194,7 @@ pub async fn handle_send_streaming_message(
 
         let result = if is_agentic {
             run_agentic_workflow(
-                project_manager,
+                workspace_manager,
                 agent_ref_clone,
                 prompt,
                 event_handler,
@@ -203,7 +203,7 @@ pub async fn handle_send_streaming_message(
             .await
         } else {
             run_agent(
-                project_manager,
+                workspace_manager,
                 agent_ref_clone,
                 prompt,
                 event_handler,

@@ -1,7 +1,7 @@
 use uuid::Uuid;
 
 use crate::{
-    adapters::{project::manager::ProjectManager, runs::TopicRef},
+    adapters::{runs::TopicRef, workspace::manager::WorkspaceManager},
     checkpoint::types::RetryStrategy,
     execute::{types::OutputContainer, writer::Handler},
     service::{block::GroupBlockHandler, statics::BROADCASTER, task_manager::TASK_MANAGER},
@@ -10,14 +10,14 @@ use crate::{
 use oxy_shared::errors::OxyError;
 
 pub struct Dispatcher {
-    pm: ProjectManager,
+    pm: WorkspaceManager,
 }
 
 #[async_trait::async_trait]
 pub trait Dispatch {
     async fn run(
         &self,
-        project_manager: ProjectManager,
+        workspace_manager: WorkspaceManager,
         topic_ref: TopicRef<EventKind>,
         source_id: String,
         retry_strategy: RetryStrategy,
@@ -25,7 +25,7 @@ pub trait Dispatch {
 }
 
 impl Dispatcher {
-    pub fn new(pm: ProjectManager) -> Self {
+    pub fn new(pm: WorkspaceManager) -> Self {
         Self { pm }
     }
 
@@ -80,7 +80,7 @@ impl Dispatcher {
             }
             Ok(())
         };
-        let project_manager = self.pm.clone();
+        let workspace_manager = self.pm.clone();
         TASK_MANAGER
             .spawn(task_id.clone(), async move |cancellation_token| {
                 let run_fut = {
@@ -89,7 +89,7 @@ impl Dispatcher {
                         .map_err(|e| tracing::error!("Failed to convert run_index to u32: {}", e))
                         .unwrap_or(0); // Default to 0 if conversion fails
                     dispatch.run(
-                        project_manager,
+                        workspace_manager,
                         topic_ref,
                         source_id,
                         RetryStrategy::Retry {

@@ -42,7 +42,7 @@ const BuilderMessageInput = ({
 
   const allFiles = useMemo(() => {
     if (!fileTreeData) return [];
-    return flattenFiles(fileTreeData);
+    return flattenFiles(fileTreeData.primary);
   }, [fileTreeData]);
 
   const activeMention = getActiveMention(message, cursorPos);

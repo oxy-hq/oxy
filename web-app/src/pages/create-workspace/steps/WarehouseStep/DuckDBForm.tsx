@@ -1,33 +1,23 @@
 import { useFormContext } from "react-hook-form";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
-import type { WarehousesFormData } from ".";
+import type { WarehousesFormData } from "@/types/database";
 
-export default function DuckDBForm({ index }: { index: number }) {
-  const {
-    formState: { errors },
-    register
-  } = useFormContext<WarehousesFormData>();
+interface Props {
+  index: number;
+}
 
-  const fieldErrors = errors?.warehouses?.[index]?.config as
-    | Record<string, { message?: string }>
-    | undefined;
+export default function DuckDBForm({ index }: Props) {
+  const { register } = useFormContext<WarehousesFormData>();
 
   return (
     <div className='space-y-4'>
       <div className='space-y-2'>
-        <Label htmlFor={`dataset-${index}`}>Dataset</Label>
+        <Label>File Search Path</Label>
         <Input
-          id={`dataset-${index}`}
-          placeholder='/path/to/your/data'
-          {...register(`warehouses.${index}.config.dataset`, {
-            required: "Dataset is required"
-          })}
+          placeholder='/path/to/data'
+          {...register(`warehouses.${index}.config.file_search_path` as never)}
         />
-        {fieldErrors?.dataset && (
-          <p className='mt-1 text-destructive text-xs'>{fieldErrors.dataset.message?.toString()}</p>
-        )}
-        <p className='text-muted-foreground text-xs'>Enter the path to your DuckDB database file</p>
       </div>
     </div>
   );

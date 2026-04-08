@@ -1,7 +1,7 @@
 use crate::branch_service::BranchService;
 use crate::database_operations::{DatabaseOperations, ValidationUtils};
 use entity::prelude::*;
-use entity::{branches, projects};
+use entity::{branches, workspaces};
 use oxy::github::{GitHubAppAuth, GitHubClient, GitHubRepository, GitOperations};
 use oxy_shared::errors::OxyError;
 use sea_orm::EntityTrait;
@@ -13,14 +13,14 @@ pub struct GitService;
 
 impl GitService {
     pub async fn load_project_repo(
-        project: &projects::Model,
-    ) -> Result<entity::project_repos::Model, OxyError> {
+        project: &workspaces::Model,
+    ) -> Result<entity::workspace_repos::Model, OxyError> {
         let project_repo_id = project.project_repo_id.as_ref().ok_or_else(|| {
             OxyError::ConfigurationError("No repository configured for project".to_string())
         })?;
 
         DatabaseOperations::with_connection(|db| async move {
-            entity::project_repos::Entity::find_by_id(*project_repo_id)
+            entity::workspace_repos::Entity::find_by_id(*project_repo_id)
                 .one(&db)
                 .await
                 .map_err(|e| DatabaseOperations::wrap_db_error("Failed to find project repo", e))?
@@ -53,13 +53,13 @@ impl GitService {
             .await
     }
 
-    pub async fn require_token(project: &projects::Model) -> Result<String, OxyError> {
+    pub async fn require_token(project: &workspaces::Model) -> Result<String, OxyError> {
         let repo = Self::load_project_repo(project).await?;
         info!("Using GitHub namespace id {}", repo.git_namespace_id);
         Self::load_token_from_git_namespace(repo.git_namespace_id).await
     }
 
-    pub async fn get_project_repo_id(project: &projects::Model) -> Result<i64, OxyError> {
+    pub async fn get_project_repo_id(project: &workspaces::Model) -> Result<i64, OxyError> {
         let repo = Self::load_project_repo(project).await?;
         ValidationUtils::parse_repo_id(&repo.repo_id)
     }
@@ -282,9 +282,9 @@ impl GitService {
     }
 
     // Private helper methods
-    async fn load_project(project_id: Uuid) -> Result<projects::Model, OxyError> {
+    async fn load_project(project_id: Uuid) -> Result<workspaces::Model, OxyError> {
         DatabaseOperations::with_connection(|db| async move {
-            Projects::find_by_id(project_id)
+            Workspaces::find_by_id(project_id)
                 .one(&db)
                 .await
                 .map_err(|e| DatabaseOperations::wrap_db_error("Failed to find project", e))?

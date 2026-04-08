@@ -3,7 +3,7 @@ use oxy::config::constants::OPENAI_API_KEY_VAR;
 use oxy::config::model::{
     BigQuery, ClickHouse, Config, DatabaseType, DuckDB, DuckDBOptions, Mysql, Postgres, Redshift,
 };
-use oxy::config::resolve_local_project_path;
+use oxy::config::resolve_local_workspace_path;
 use oxy_shared::AzureModel;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -347,7 +347,7 @@ fn create_project_structure() -> Result<(), InitError> {
 }
 
 pub fn init() -> Result<(), InitError> {
-    let project_path = resolve_local_project_path().unwrap_or_else(|_| {
+    let workspace_path = resolve_local_workspace_path().unwrap_or_else(|_| {
         println!(
             "{}",
             "Initializing current directory as oxy project.".info()
@@ -356,7 +356,7 @@ pub fn init() -> Result<(), InitError> {
     });
 
     let config_path =
-        if project_path.as_os_str().is_empty() || !project_path.join("config.yml").exists() {
+        if workspace_path.as_os_str().is_empty() || !workspace_path.join("config.yml").exists() {
             std::env::current_dir()
                 .map_err(InitError::IoError)?
                 .join("config.yml")
@@ -365,11 +365,11 @@ pub fn init() -> Result<(), InitError> {
                 "{}",
                 format!(
                     "config.yml found in {}. Only initializing current directory.",
-                    project_path.display().to_string().secondary()
+                    workspace_path.display().to_string().secondary()
                 )
                 .text()
             );
-            project_path.join("config.yml")
+            workspace_path.join("config.yml")
         };
 
     if !config_path.exists() {
@@ -402,14 +402,14 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
         defaults: Some(Defaults {
             database: Some(default_database),
         }),
-        project_path: PathBuf::new(),
+        workspace_path: PathBuf::new(),
         builder_agent: None,
         integrations: vec![],
         slack: None,
         mcp: None,
         a2a: None,
         protected_branches: None,
-        admins: vec![],
+        repositories: vec![],
     };
 
     let yaml =

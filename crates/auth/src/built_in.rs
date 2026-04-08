@@ -13,19 +13,17 @@ struct Claims {
     iat: usize,
 }
 
-pub struct BuiltInAuthenticator {
-    pub cloud: bool,
-}
+pub struct BuiltInAuthenticator;
 
 impl Default for BuiltInAuthenticator {
     fn default() -> Self {
-        Self::new(false)
+        Self
     }
 }
 
 impl BuiltInAuthenticator {
-    pub fn new(cloud: bool) -> Self {
-        Self { cloud }
+    pub fn new() -> Self {
+        Self
     }
 }
 
@@ -33,28 +31,23 @@ impl Authenticator for BuiltInAuthenticator {
     type Error = OxyError;
 
     async fn authenticate(&self, header: &axum::http::HeaderMap) -> Result<Identity, Self::Error> {
-        // In non-cloud mode, check if any authentication methods are configured
-        // If YES: enforce authentication (same as cloud mode)
-        // If NO: use guest user (backward compatibility)
-        if !self.cloud {
-            let has_auth_configured = oxy::config::oxy::get_oxy_config()
-                .ok()
-                .and_then(|config| config.authentication)
-                .map(|auth| {
-                    auth.google.is_some() || auth.okta.is_some() || auth.magic_link.is_some()
-                })
-                .unwrap_or(false);
+        // Check if any authentication methods are configured.
+        // If YES: enforce authentication.
+        // If NO: use guest user (backward compatibility for zero-config local installs).
+        let has_auth_configured = oxy::config::oxy::get_oxy_config()
+            .ok()
+            .and_then(|config| config.authentication)
+            .map(|auth| auth.google.is_some() || auth.okta.is_some() || auth.magic_link.is_some())
+            .unwrap_or(false);
 
-            if !has_auth_configured {
-                return Ok(Identity {
-                    picture: None,
-                    name: Some("Local User".to_string()),
-                    email: crate::user::LOCAL_GUEST_EMAIL.to_string(),
-                });
-            }
+        if !has_auth_configured {
+            return Ok(Identity {
+                picture: None,
+                name: Some("Local User".to_string()),
+                email: crate::user::LOCAL_GUEST_EMAIL.to_string(),
+            });
         }
 
-        // Enforce authentication (for both cloud mode and non-cloud with auth configured)
         match self.extract_token(header) {
             Ok(token) => match self.validate(&token) {
                 Ok(identity) => return Ok(identity),

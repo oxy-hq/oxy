@@ -29,7 +29,7 @@ impl Cacheable<Task> for TaskCacheable {
                 .render_str(&cache_config.path)
                 .ok()?;
 
-            let config_manager = &execution_context.project.config_manager;
+            let config_manager = &execution_context.workspace.config_manager;
             let cache_key = config_manager.resolve_file(&rendered_path).await.ok()?;
             Some(cache_key)
         } else {

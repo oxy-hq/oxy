@@ -103,7 +103,7 @@ fn default_agent_limit() -> usize {
 /// Returns aggregated statistics about verified vs generated executions
 #[utoipa::path(
     get,
-    path = "/api/{project_id}/execution-analytics/summary",
+    path = "/api/{workspace_id}/execution-analytics/summary",
     params(SummaryQuery),
     responses(
         (status = 200, description = "Execution analytics summary", body = ExecutionSummary),
@@ -111,7 +111,7 @@ fn default_agent_limit() -> usize {
     )
 )]
 pub async fn get_summary(
-    Path(_project_id): Path<Uuid>,
+    Path(_workspace_id): Path<Uuid>,
     Query(params): Query<SummaryQuery>,
 ) -> Result<Json<ExecutionSummary>, ExecutionAnalyticsError> {
     let storage = ExecutionAnalyticsStorage::from_env();
@@ -129,7 +129,7 @@ pub async fn get_summary(
 /// Returns execution counts bucketed by day
 #[utoipa::path(
     get,
-    path = "/api/{project_id}/execution-analytics/time-series",
+    path = "/api/{workspace_id}/execution-analytics/time-series",
     params(TimeSeriesQuery),
     responses(
         (status = 200, description = "Execution time series data", body = Vec<ExecutionTimeBucket>),
@@ -137,7 +137,7 @@ pub async fn get_summary(
     )
 )]
 pub async fn get_time_series(
-    Path(_project_id): Path<Uuid>,
+    Path(_workspace_id): Path<Uuid>,
     Query(params): Query<TimeSeriesQuery>,
 ) -> Result<Json<Vec<ExecutionTimeBucket>>, ExecutionAnalyticsError> {
     let storage = ExecutionAnalyticsStorage::from_env();
@@ -155,7 +155,7 @@ pub async fn get_time_series(
 /// Returns execution statistics grouped by agent
 #[utoipa::path(
     get,
-    path = "/api/{project_id}/execution-analytics/agents",
+    path = "/api/{workspace_id}/execution-analytics/agents",
     params(AgentStatsQuery),
     responses(
         (status = 200, description = "Agent execution statistics", body = Vec<AgentExecutionStats>),
@@ -163,7 +163,7 @@ pub async fn get_time_series(
     )
 )]
 pub async fn get_agent_stats(
-    Path(_project_id): Path<Uuid>,
+    Path(_workspace_id): Path<Uuid>,
     Query(params): Query<AgentStatsQuery>,
 ) -> Result<Json<Vec<AgentExecutionStats>>, ExecutionAnalyticsError> {
     let storage = ExecutionAnalyticsStorage::from_env();
@@ -181,7 +181,7 @@ pub async fn get_agent_stats(
 /// Returns detailed execution records with filtering and pagination
 #[utoipa::path(
     get,
-    path = "/api/{project_id}/execution-analytics/executions",
+    path = "/api/{workspace_id}/execution-analytics/executions",
     params(ExecutionsQuery),
     responses(
         (status = 200, description = "Paginated execution details", body = ExecutionListResponse),
@@ -189,7 +189,7 @@ pub async fn get_agent_stats(
     )
 )]
 pub async fn get_executions(
-    Path(_project_id): Path<Uuid>,
+    Path(_workspace_id): Path<Uuid>,
     Query(params): Query<ExecutionsQuery>,
 ) -> Result<Json<ExecutionListResponse>, ExecutionAnalyticsError> {
     let storage = ExecutionAnalyticsStorage::from_env();

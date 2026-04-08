@@ -15,7 +15,7 @@ use axum::{
     routing::get,
 };
 use migration::{Migrator, MigratorTrait};
-use oxy::adapters::project::builder::ProjectBuilder;
+use oxy::adapters::workspace::builder::WorkspaceBuilder;
 use oxy::config::a2a_config::A2aConfig;
 use oxy::database::client::establish_connection;
 use oxy::theme::StyledText;
@@ -54,20 +54,20 @@ pub async fn start_a2a_server(args: A2aArgs) -> Result<(), OxyError> {
     run_database_migrations().await?;
 
     // Load configuration from current directory
-    let project_path = std::env::current_dir()
+    let workspace_path = std::env::current_dir()
         .map_err(|e| OxyError::RuntimeError(format!("Failed to get current directory: {}", e)))?;
 
     // Build project manager (which includes config manager)
-    let project_manager = Arc::new(
-        ProjectBuilder::new(Uuid::nil())
-            .with_project_path(&project_path)
+    let workspace_manager = Arc::new(
+        WorkspaceBuilder::new(Uuid::nil())
+            .with_workspace_path(&workspace_path)
             .await?
             .with_secrets_manager(oxy::adapters::secrets::SecretsManager::from_environment()?)
             .build()
             .await?,
     );
 
-    let config = project_manager.config_manager.get_config();
+    let config = workspace_manager.config_manager.get_config();
 
     // Check if A2A is configured
     let a2a_config = config
@@ -128,7 +128,7 @@ pub async fn start_a2a_server(args: A2aArgs) -> Result<(), OxyError> {
     // Create the application with all routes
     let app = create_a2a_application(
         a2a_config.clone(),
-        project_manager.clone(),
+        workspace_manager.clone(),
         base_url,
         metrics.clone(),
     )
@@ -192,7 +192,7 @@ async fn run_database_migrations() -> Result<(), OxyError> {
 /// Create the A2A application with all routes
 async fn create_a2a_application(
     a2a_config: A2aConfig,
-    project_manager: Arc<oxy::adapters::project::manager::ProjectManager>,
+    workspace_manager: Arc<oxy::adapters::workspace::manager::WorkspaceManager>,
     base_url: String,
     metrics: ServerMetrics,
 ) -> Result<Router, OxyError> {
@@ -205,12 +205,12 @@ async fn create_a2a_application(
         })?);
 
     // Get config from project manager
-    let config = Arc::new(project_manager.config_manager.get_config().clone());
+    let config = Arc::new(workspace_manager.config_manager.get_config().clone());
 
     // Create agent card service
     let agent_card_service = Arc::new(AgentCardService::new(
         config.clone(),
-        project_manager.clone(),
+        workspace_manager.clone(),
     ));
 
     // Iterate through configured agents and create routes
@@ -230,7 +230,7 @@ async fn create_a2a_application(
             config.clone(),
             storage,
             db.clone(),
-            project_manager.clone(),
+            workspace_manager.clone(),
             agent_card_service.clone(),
             base_url.clone(),
         ));

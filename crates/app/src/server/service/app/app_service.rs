@@ -1,7 +1,7 @@
 use super::cache::AppCache;
 use super::types::{AppResult, TASKS_KEY};
 use crate::server::service::workflow::WorkflowEventHandler;
-use oxy::adapters::project::manager::ProjectManager;
+use oxy::adapters::workspace::manager::WorkspaceManager;
 use oxy::config::model::{AppConfig, ControlConfig, Display, Task};
 use oxy::execute::renderer::Renderer;
 use oxy::execute::types::DataContainer;
@@ -43,21 +43,21 @@ pub fn render_control_default(val: JsonValue) -> JsonValue {
 }
 
 pub struct AppService {
-    project_manager: ProjectManager,
+    workspace_manager: WorkspaceManager,
     cache: AppCache,
 }
 
 impl AppService {
-    pub fn new(project_manager: ProjectManager) -> Self {
-        let config_manager = project_manager.config_manager.clone();
+    pub fn new(workspace_manager: WorkspaceManager) -> Self {
+        let config_manager = workspace_manager.config_manager.clone();
         Self {
-            project_manager,
+            workspace_manager,
             cache: AppCache::new(config_manager),
         }
     }
 
     pub async fn get_config(&self, app_path: &PathBuf) -> AppResult<AppConfig> {
-        let config_manager = &self.project_manager.config_manager;
+        let config_manager = &self.workspace_manager.config_manager;
         let app = config_manager.resolve_app(app_path).await?;
         Ok(app)
     }
@@ -128,7 +128,7 @@ impl AppService {
 
         let output_container = WorkflowLauncher::new()
             .with_controls(controls)
-            .with_project(self.project_manager.clone())
+            .with_workspace(self.workspace_manager.clone())
             .await?
             .launch_tasks(tasks.clone(), WorkflowEventHandler::new(NoopLogger {}))
             .await?;
@@ -158,7 +158,7 @@ impl AppService {
     }
 
     pub async fn read_yaml_file(&self, path: &PathBuf) -> AppResult<String> {
-        let config_manager = &self.project_manager.config_manager;
+        let config_manager = &self.workspace_manager.config_manager;
         let full_path = config_manager.resolve_file(path).await.map_err(|e| {
             tracing::debug!("Failed to resolve file: {:?} {}", path, e);
             OxyError::ConfigurationError(format!("Failed to resolve file: {e}"))

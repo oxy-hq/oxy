@@ -41,7 +41,7 @@ const Sidebar: React.FC = () => {
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
 
-  const filesRoot = ROUTES.PROJECT(projectId).IDE.FILES.ROOT;
+  const filesRoot = ROUTES.WORKSPACE(projectId).IDE.FILES.ROOT;
   const currentViewMode = getViewModeFromPath(location.pathname, filesRoot);
 
   const handleNavigate = (mode: SidebarViewMode) => {
@@ -50,16 +50,16 @@ const Sidebar: React.FC = () => {
         navigate(filesRoot);
         break;
       case SidebarViewMode.OBSERVABILITY:
-        navigate(ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.TRACES);
+        navigate(ROUTES.WORKSPACE(projectId).IDE.OBSERVABILITY.TRACES);
         break;
       case SidebarViewMode.DATABASE:
-        navigate(ROUTES.PROJECT(projectId).IDE.DATABASE.ROOT);
+        navigate(ROUTES.WORKSPACE(projectId).IDE.DATABASE.ROOT);
         break;
       case SidebarViewMode.TESTS:
-        navigate(ROUTES.PROJECT(projectId).IDE.TESTS.ROOT);
+        navigate(ROUTES.WORKSPACE(projectId).IDE.TESTS.ROOT);
         break;
       case SidebarViewMode.SETTINGS:
-        navigate(ROUTES.PROJECT(projectId).IDE.SETTINGS.DATABASES);
+        navigate(ROUTES.WORKSPACE(projectId).IDE.SETTINGS.DATABASES);
         break;
     }
   };

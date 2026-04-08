@@ -113,12 +113,12 @@ impl A2aConfig {
             models: Vec::new(),
             databases: Vec::new(),
             builder_agent: None,
-            project_path: project_path.cloned().unwrap_or_default(),
+            workspace_path: project_path.cloned().unwrap_or_default(),
             integrations: Vec::new(),
             mcp: None,
             a2a: None,
             protected_branches: None,
-            admins: Vec::new(),
+            repositories: vec![],
         };
         let context = ValidationContext {
             config: dummy_config,
@@ -295,13 +295,13 @@ mod tests {
             models: Vec::new(),
             databases: Vec::new(),
             builder_agent: None,
-            project_path: PathBuf::default(),
+            workspace_path: PathBuf::default(),
+            repositories: Vec::new(),
             integrations: Vec::new(),
             mcp: None,
             a2a: None,
             slack: None,
             protected_branches: None,
-            admins: Vec::new(),
         };
         let context = ValidationContext {
             config: dummy_config,
@@ -338,12 +338,12 @@ mod tests {
             models: Vec::new(),
             databases: Vec::new(),
             builder_agent: None,
-            project_path: PathBuf::default(),
+            workspace_path: PathBuf::default(),
+            repositories: Vec::new(),
             integrations: Vec::new(),
             mcp: None,
             a2a: None,
             protected_branches: None,
-            admins: Vec::new(),
         };
         let context = ValidationContext {
             config: dummy_config,

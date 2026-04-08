@@ -7,7 +7,7 @@ use utoipa::ToSchema;
 use super::eval::PBarsHandler;
 
 use oxy::{
-    adapters::{project::manager::ProjectManager, session_filters::SessionFilters},
+    adapters::{session_filters::SessionFilters, workspace::manager::WorkspaceManager},
     checkpoint::types::RetryStrategy,
     config::{
         ConfigManager,
@@ -44,7 +44,7 @@ pub struct WorkflowInfo {
 }
 
 pub async fn list_workflows(config_manager: ConfigManager) -> Result<Vec<WorkflowInfo>, OxyError> {
-    let project_path = config_manager.project_path();
+    let workspace_path = config_manager.workspace_path();
 
     let workflow_paths = config_manager.list_workflows().await?;
     let mut workflows = Vec::new();
@@ -56,7 +56,7 @@ pub async fn list_workflows(config_manager: ConfigManager) -> Result<Vec<Workflo
                 .or_else(|| s.strip_suffix(".automation"))
         }) {
             let relative_path_str = path
-                .strip_prefix(project_path)
+                .strip_prefix(workspace_path)
                 .unwrap_or(&path)
                 .to_string_lossy()
                 .to_string();
@@ -185,7 +185,7 @@ pub async fn run_workflow<P: AsRef<Path>, L: WorkflowLogger + 'static>(
     path: P,
     logger: L,
     retry_strategy: RetryStrategy,
-    project_manager: ProjectManager,
+    workspace_manager: WorkspaceManager,
     filters: Option<SessionFilters>,
     connections: Option<ConnectionOverrides>,
     globals: Option<indexmap::IndexMap<String, serde_json::Value>>,
@@ -240,7 +240,7 @@ pub async fn run_workflow<P: AsRef<Path>, L: WorkflowLogger + 'static>(
         .with_filters(filters)
         .with_connections(connections)
         .with_globals(globals)
-        .with_project(project_manager)
+        .with_workspace(workspace_manager)
         .await?
         .launch(
             WorkflowInput {
@@ -271,7 +271,7 @@ pub async fn run_workflow<P: AsRef<Path>, L: WorkflowLogger + 'static>(
     oxy.context.id = tracing::field::Empty,
 ))]
 pub async fn run_workflow_v2<P: AsRef<Path>, H: EventHandler + Send + Sync + 'static>(
-    project_manager: ProjectManager,
+    workspace_manager: WorkspaceManager,
     path: P,
     handler: H,
     retry_strategy: RetryStrategy,
@@ -329,7 +329,7 @@ pub async fn run_workflow_v2<P: AsRef<Path>, H: EventHandler + Send + Sync + 'st
         .with_filters(filters)
         .with_connections(connections)
         .with_globals(globals)
-        .with_project(project_manager)
+        .with_workspace(workspace_manager)
         .await?
         .launch(
             WorkflowInput {

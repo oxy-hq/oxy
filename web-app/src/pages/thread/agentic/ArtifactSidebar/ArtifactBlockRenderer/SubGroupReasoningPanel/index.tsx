@@ -66,7 +66,9 @@ const SubGroupReasoningPanel = ({ groupId }: { groupId: string }) => {
     <div className='mb-2 flex items-center justify-end'>
       <button
         type='button'
-        onClick={() => navigate(ROUTES.PROJECT(project.id).WORKFLOW(encodeBase64(sourcePath)).ROOT)}
+        onClick={() =>
+          navigate(ROUTES.WORKSPACE(project.id).WORKFLOW(encodeBase64(sourcePath)).ROOT)
+        }
         className='flex items-center gap-1 text-muted-foreground text-xs transition-colors hover:text-foreground'
       >
         <ExternalLink className='h-3 w-3' />

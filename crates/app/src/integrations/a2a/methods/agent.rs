@@ -8,7 +8,7 @@ use a2a::{
     types::{AgentCard, AgentInterface, AgentSkill, TransportProtocol},
 };
 
-use oxy::{adapters::project::manager::ProjectManager, config::model::AgentConfig};
+use oxy::{adapters::workspace::manager::WorkspaceManager, config::model::AgentConfig};
 
 /// Generate an A2A agent card from an Oxy agent configuration.
 ///
@@ -24,7 +24,7 @@ use oxy::{adapters::project::manager::ProjectManager, config::model::AgentConfig
 /// * `agent_name` - The A2A name of the agent (URL identifier)
 /// * `agent_ref` - The path to the agent configuration file
 /// * `base_url` - Base URL for constructing endpoint URLs
-/// * `project_manager` - Project manager for loading agent config
+/// * `workspace_manager` - Project manager for loading agent config
 ///
 /// # Returns
 ///
@@ -33,12 +33,12 @@ pub async fn generate_agent_card(
     agent_name: &str,
     agent_ref: &str,
     base_url: &str,
-    project_manager: &ProjectManager,
+    workspace_manager: &WorkspaceManager,
 ) -> Result<AgentCard, A2aError> {
     tracing::debug!("Generating agent card for agent: {}", agent_name);
 
     // Load Oxy agent configuration
-    let agent_config = load_agent_config(agent_ref, project_manager).await?;
+    let agent_config = load_agent_config(agent_ref, workspace_manager).await?;
 
     // Extract description from agent config
     let description = extract_description(&agent_config);
@@ -75,9 +75,9 @@ pub async fn generate_agent_card(
 /// Load the Oxy agent configuration.
 async fn load_agent_config(
     agent_ref: &str,
-    project_manager: &ProjectManager,
+    workspace_manager: &WorkspaceManager,
 ) -> Result<AgentConfig, A2aError> {
-    let config_manager = &project_manager.config_manager;
+    let config_manager = &workspace_manager.config_manager;
 
     config_manager
         .resolve_agent(agent_ref)

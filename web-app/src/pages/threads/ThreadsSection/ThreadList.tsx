@@ -42,7 +42,7 @@ const ThreadListItem = ({
       handleCheckboxChange(!isSelected);
       return;
     }
-    const threadUri = ROUTES.PROJECT(project.id).THREAD(thread.id);
+    const threadUri = ROUTES.WORKSPACE(project.id).THREAD(thread.id);
     navigate(threadUri);
   };
 

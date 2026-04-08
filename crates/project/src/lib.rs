@@ -2,14 +2,15 @@
 
 pub mod branch_service;
 pub mod config_builder;
+pub mod data_repo_service;
 pub mod database_config;
 pub mod database_operations;
 pub mod git_service;
 pub mod local_git_service;
 pub mod model_config;
 pub mod models;
-pub mod project_operations;
 pub mod workspace_creator;
+pub mod workspace_operations;
 
 pub use branch_service::BranchService;
 pub use config_builder::ConfigBuilder;
@@ -18,5 +19,5 @@ pub use database_operations::{DatabaseOperations, ValidationUtils};
 pub use git_service::GitService;
 pub use local_git_service::LocalGitService;
 pub use model_config::ModelConfigBuilder;
-pub use project_operations::ProjectService;
-pub use workspace_creator::WorkspaceCreator;
+pub use workspace_creator::copy_demo_files_to;
+pub use workspace_operations::WorkspaceService;

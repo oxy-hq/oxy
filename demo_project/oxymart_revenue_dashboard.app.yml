@@ -5,7 +5,7 @@ tasks:
 - name: monthly_revenue_trend
   type: execute_sql
   database: local
-  sql_query: SELECT DATE_TRUNC('month', Date)::VARCHAR AS month, ROUND(SUM(Weekly_Sales), 2) AS monthly_revenue FROM 'oxymart_csv' GROUP BY 1 ORDER BY 1
+  sql_query: SELECT DATE_TRUNC('month', Date)::VARCHAR AS month, ROUND(SUM(Weekly_Sales), 2) AS monthly_revenue FROM 'oxymart' GROUP BY 1 ORDER BY 1
   variables: null
   export: null
   dry_run_limit: null
@@ -14,7 +14,7 @@ tasks:
 - name: yearly_revenue
   type: execute_sql
   database: local
-  sql_query: SELECT YEAR(Date)::VARCHAR AS year, ROUND(SUM(Weekly_Sales), 2) AS yearly_revenue FROM 'oxymart_csv' GROUP BY 1 ORDER BY 1
+  sql_query: SELECT YEAR(Date)::VARCHAR AS year, ROUND(SUM(Weekly_Sales), 2) AS yearly_revenue FROM 'oxymart' GROUP BY 1 ORDER BY 1
   variables: null
   export: null
   dry_run_limit: null
@@ -23,7 +23,7 @@ tasks:
 - name: revenue_by_store
   type: execute_sql
   database: local
-  sql_query: SELECT 'Store ' || Store::VARCHAR AS store, ROUND(SUM(Weekly_Sales), 2) AS total_revenue FROM 'oxymart_csv' GROUP BY Store ORDER BY total_revenue DESC LIMIT 15
+  sql_query: SELECT 'Store ' || Store::VARCHAR AS store, ROUND(SUM(Weekly_Sales), 2) AS total_revenue FROM 'oxymart' GROUP BY Store ORDER BY total_revenue DESC LIMIT 15
   variables: null
   export: null
   dry_run_limit: null
@@ -32,7 +32,7 @@ tasks:
 - name: holiday_vs_non_holiday
   type: execute_sql
   database: local
-  sql_query: SELECT CASE WHEN Holiday_Flag = 1 THEN 'Holiday' ELSE 'Non-Holiday' END AS period_type, ROUND(SUM(Weekly_Sales), 2) AS total_revenue FROM 'oxymart_csv' GROUP BY Holiday_Flag
+  sql_query: SELECT CASE WHEN Holiday_Flag = 1 THEN 'Holiday' ELSE 'Non-Holiday' END AS period_type, ROUND(SUM(Weekly_Sales), 2) AS total_revenue FROM 'oxymart' GROUP BY Holiday_Flag
   variables: null
   export: null
   dry_run_limit: null
@@ -41,7 +41,7 @@ tasks:
 - name: total_revenue_kpi
   type: execute_sql
   database: local
-  sql_query: SELECT ROUND(SUM(Weekly_Sales), 2) AS total_revenue, COUNT(DISTINCT Store) AS total_stores, COUNT(DISTINCT Date) AS total_weeks FROM 'oxymart_csv'
+  sql_query: SELECT ROUND(SUM(Weekly_Sales), 2) AS total_revenue, COUNT(DISTINCT Store) AS total_stores, COUNT(DISTINCT Date) AS total_weeks FROM 'oxymart'
   variables: null
   export: null
   dry_run_limit: null
@@ -50,7 +50,7 @@ tasks:
 - name: sales_by_temperature
   type: execute_sql
   database: local
-  sql_query: SELECT CASE WHEN Temperature < 32 THEN '1. < 32°F (Freezing)' WHEN Temperature < 50 THEN '2. 32–50°F (Cold)' WHEN Temperature < 68 THEN '3. 50–68°F (Cool)' WHEN Temperature < 86 THEN '4. 68–86°F (Warm)' ELSE '5. > 86°F (Hot)' END AS temp_range, ROUND(AVG(Weekly_Sales), 2) AS avg_weekly_sales FROM 'oxymart_csv' GROUP BY 1 ORDER BY 1
+  sql_query: SELECT CASE WHEN Temperature < 32 THEN '1. < 32°F (Freezing)' WHEN Temperature < 50 THEN '2. 32–50°F (Cold)' WHEN Temperature < 68 THEN '3. 50–68°F (Cool)' WHEN Temperature < 86 THEN '4. 68–86°F (Warm)' ELSE '5. > 86°F (Hot)' END AS temp_range, ROUND(AVG(Weekly_Sales), 2) AS avg_weekly_sales FROM 'oxymart' GROUP BY 1 ORDER BY 1
   variables: null
   export: null
   dry_run_limit: null
@@ -59,7 +59,7 @@ tasks:
 - name: sales_by_fuel_price
   type: execute_sql
   database: local
-  sql_query: SELECT CASE WHEN Fuel_Price < 2.5 THEN '1. < $2.5' WHEN Fuel_Price < 3.0 THEN '2. $2.5–$3.0' WHEN Fuel_Price < 3.5 THEN '3. $3.0–$3.5' WHEN Fuel_Price < 4.0 THEN '4. $3.5–$4.0' ELSE '5. > $4.0' END AS fuel_price_range, ROUND(AVG(Weekly_Sales), 2) AS avg_weekly_sales FROM 'oxymart_csv' GROUP BY 1 ORDER BY 1
+  sql_query: SELECT CASE WHEN Fuel_Price < 2.5 THEN '1. < $2.5' WHEN Fuel_Price < 3.0 THEN '2. $2.5–$3.0' WHEN Fuel_Price < 3.5 THEN '3. $3.0–$3.5' WHEN Fuel_Price < 4.0 THEN '4. $3.5–$4.0' ELSE '5. > $4.0' END AS fuel_price_range, ROUND(AVG(Weekly_Sales), 2) AS avg_weekly_sales FROM 'oxymart' GROUP BY 1 ORDER BY 1
   variables: null
   export: null
   dry_run_limit: null
@@ -68,7 +68,7 @@ tasks:
 - name: sales_by_unemployment
   type: execute_sql
   database: local
-  sql_query: SELECT CASE WHEN Unemployment < 6 THEN '1. < 6%' WHEN Unemployment < 8 THEN '2. 6–8%' WHEN Unemployment < 10 THEN '3. 8–10%' ELSE '4. > 10%' END AS unemployment_range, ROUND(AVG(Weekly_Sales), 2) AS avg_weekly_sales FROM 'oxymart_csv' GROUP BY 1 ORDER BY 1
+  sql_query: SELECT CASE WHEN Unemployment < 6 THEN '1. < 6%' WHEN Unemployment < 8 THEN '2. 6–8%' WHEN Unemployment < 10 THEN '3. 8–10%' ELSE '4. > 10%' END AS unemployment_range, ROUND(AVG(Weekly_Sales), 2) AS avg_weekly_sales FROM 'oxymart' GROUP BY 1 ORDER BY 1
   variables: null
   export: null
   dry_run_limit: null
@@ -77,7 +77,7 @@ tasks:
 - name: sales_by_cpi
   type: execute_sql
   database: local
-  sql_query: SELECT CASE WHEN CPI < 130 THEN '1. < 130' WHEN CPI < 160 THEN '2. 130–160' WHEN CPI < 190 THEN '3. 160–190' WHEN CPI < 220 THEN '4. 190–220' ELSE '5. > 220' END AS cpi_range, ROUND(AVG(Weekly_Sales), 2) AS avg_weekly_sales FROM 'oxymart_csv' GROUP BY 1 ORDER BY 1
+  sql_query: SELECT CASE WHEN CPI < 130 THEN '1. < 130' WHEN CPI < 160 THEN '2. 130–160' WHEN CPI < 190 THEN '3. 160–190' WHEN CPI < 220 THEN '4. 190–220' ELSE '5. > 220' END AS cpi_range, ROUND(AVG(Weekly_Sales), 2) AS avg_weekly_sales FROM 'oxymart' GROUP BY 1 ORDER BY 1
   variables: null
   export: null
   dry_run_limit: null

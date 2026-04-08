@@ -55,7 +55,7 @@ impl<S> AutoLookerQuery<S> {
         let looker_tool = self.build_looker_tool();
         let looker_description = match get_looker_query_description(
             &looker_tool,
-            &execution_context.project.config_manager,
+            &execution_context.workspace.config_manager,
         )
         .await
         {

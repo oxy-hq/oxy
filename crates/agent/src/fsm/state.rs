@@ -26,7 +26,7 @@ use crate::fsm::{
     trigger::StepTrigger,
     types::{Artifact, Message, TableSource, ToolReq, ToolRes},
 };
-use oxy::adapters::{openai::OpenAIAdapter, project::manager::ProjectManager};
+use oxy::adapters::{openai::OpenAIAdapter, workspace::manager::WorkspaceManager};
 use oxy::config::constants::{
     AGENT_CONTINUE_PLAN_TRANSITION, AGENT_END_TRANSITION, AGENT_FIX_ERROR_TRANSITION,
     AGENT_REVISE_PLAN_TRANSITION,
@@ -59,7 +59,7 @@ pub struct MachineContext {
 
 impl MachineContext {
     pub async fn from_conversation(
-        project: ProjectManager,
+        workspace: WorkspaceManager,
         context_id: String,
         user_query: String,
         history: Vec<ChatCompletionRequestMessage>,
@@ -67,7 +67,7 @@ impl MachineContext {
         max_iterations: usize,
     ) -> Result<Self, OxyError> {
         Ok(Self {
-            state_dir: project.config_manager.resolve_state_dir().await?,
+            state_dir: workspace.config_manager.resolve_state_dir().await?,
             context_state_path: format!("contexts/{}", context_id),
             messages: history.into_iter().map(|m| m.into()).collect(),
             artifacts: vec![],
@@ -534,7 +534,7 @@ impl TriggerBuilder for MachineContext {
             .as_deref()
             .unwrap_or(&agentic_config.model);
         let openai_adapter =
-            OpenAIAdapter::from_config(execution_context.project.clone(), model_ref).await?;
+            OpenAIAdapter::from_config(execution_context.workspace.clone(), model_ref).await?;
         Ok(Box::new(AutoSQL::<MachineContext>::new(
             openai_adapter,
             query_config.clone(),
@@ -554,7 +554,7 @@ impl TriggerBuilder for MachineContext {
             .as_deref()
             .unwrap_or(&agentic_config.model);
         let openai_adapter =
-            OpenAIAdapter::from_config(execution_context.project.clone(), model_ref).await?;
+            OpenAIAdapter::from_config(execution_context.workspace.clone(), model_ref).await?;
         Ok(Box::new(AutoSemanticQuery::<MachineContext>::new(
             openai_adapter,
             semantic_query_config.clone(),
@@ -574,7 +574,7 @@ impl TriggerBuilder for MachineContext {
             .as_deref()
             .unwrap_or(&agentic_config.model);
         let openai_adapter =
-            OpenAIAdapter::from_config(execution_context.project.clone(), model_ref).await?;
+            OpenAIAdapter::from_config(execution_context.workspace.clone(), model_ref).await?;
         Ok(Box::new(AutoLookerQuery::<MachineContext>::new(
             openai_adapter,
             looker_query_config.clone(),
@@ -591,7 +591,7 @@ impl TriggerBuilder for MachineContext {
     ) -> Result<Box<dyn Trigger<State = Self>>, OxyError> {
         let model_ref = viz_config.model.as_deref().unwrap_or(&agentic_config.model);
         let openai_adapter =
-            OpenAIAdapter::from_config(execution_context.project.clone(), model_ref).await?;
+            OpenAIAdapter::from_config(execution_context.workspace.clone(), model_ref).await?;
         Ok(Box::new(
             crate::fsm::viz::GenerateViz::<MachineContext>::new(
                 objective,
@@ -613,7 +613,7 @@ impl TriggerBuilder for MachineContext {
             .as_deref()
             .unwrap_or(&agentic_config.model);
         let openai_adapter =
-            OpenAIAdapter::from_config(execution_context.project.clone(), model_ref).await?;
+            OpenAIAdapter::from_config(execution_context.workspace.clone(), model_ref).await?;
         Ok(Box::new(GenerateInsight::<MachineContext>::new(
             openai_adapter,
             objective,
@@ -670,7 +670,7 @@ impl TriggerBuilder for MachineContext {
                     example,
                 } => {
                     let openai_adapter = OpenAIAdapter::from_config(
-                        execution_context.project.clone(),
+                        execution_context.workspace.clone(),
                         model.as_deref().unwrap_or(&agentic_config.model),
                     )
                     .await?;
@@ -704,7 +704,7 @@ impl TriggerBuilder for MachineContext {
                     EndMode::Synthesize { model, instruction } => {
                         let model_ref = model.as_deref().unwrap_or(&agentic_config.model);
                         let openai_adapter = OpenAIAdapter::from_config(
-                            execution_context.project.clone(),
+                            execution_context.workspace.clone(),
                             model_ref,
                         )
                         .await?;

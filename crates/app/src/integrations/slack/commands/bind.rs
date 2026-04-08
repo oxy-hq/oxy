@@ -1,8 +1,8 @@
 //! /oxy bind command handler
 
 use crate::integrations::slack::services::ChannelBindingService;
-use oxy::adapters::project::builder::ProjectBuilder;
-use oxy::adapters::project::resolve_project_path;
+use oxy::adapters::workspace::builder::WorkspaceBuilder;
+use oxy::adapters::workspace::resolve_workspace_path;
 use oxy_shared::errors::OxyError;
 use uuid::Uuid;
 
@@ -35,15 +35,15 @@ pub async fn handle_bind_command(
     // Use nil UUID for local/default project.  TODO: This only works for local deployments
     // that effectively have one project. For cloud deployments, we may need to add support
     // for workspace / project bindings.
-    let project_id = Uuid::nil();
+    let workspace_id = Uuid::nil();
 
     // Validate that the agent exists in the project
-    let project_path = resolve_project_path(project_id)
+    let workspace_path = resolve_workspace_path(workspace_id)
         .await
         .map_err(|e| OxyError::ValidationError(format!("Failed to load project: {}", e)))?;
 
-    let project_manager = ProjectBuilder::new(project_id)
-        .with_project_path_and_fallback_config(&project_path)
+    let workspace_manager = WorkspaceBuilder::new(workspace_id)
+        .with_workspace_path_and_fallback_config(&workspace_path)
         .await
         .map_err(|e| OxyError::ValidationError(format!("Failed to load project config: {}", e)))?
         .try_with_intent_classifier()
@@ -52,7 +52,7 @@ pub async fn handle_bind_command(
         .await
         .map_err(|e| OxyError::ValidationError(format!("Failed to build project: {}", e)))?;
 
-    project_manager
+    workspace_manager
         .config_manager
         .resolve_agent(agent_id)
         .await
@@ -64,7 +64,7 @@ pub async fn handle_bind_command(
     ChannelBindingService::bind_channel(
         team_id.to_string(),
         channel_id.to_string(),
-        project_id,
+        workspace_id,
         agent_id.to_string(),
         user_id.to_string(),
     )

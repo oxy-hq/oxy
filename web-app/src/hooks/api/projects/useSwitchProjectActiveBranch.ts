@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ProjectService } from "@/services/api";
+import { WorkspaceService as ProjectService } from "@/services/api/workspaces";
 import queryKeys from "../queryKey";
 
 export const useSwitchProjectActiveBranch = () => {
@@ -7,14 +7,14 @@ export const useSwitchProjectActiveBranch = () => {
 
   return useMutation({
     mutationFn: ({ projectId, branchName }: { projectId: string; branchName: string }) =>
-      ProjectService.switchProjectActiveBranch(projectId, branchName),
+      ProjectService.switchWorkspaceActiveBranch(projectId, branchName),
     onSuccess: (_, variables) => {
-      // Invalidate project details and branches to refetch
+      // Invalidate workspace details and branches to refetch
       queryClient.invalidateQueries({
-        queryKey: queryKeys.projects.item(variables.projectId)
+        queryKey: queryKeys.workspaces.item(variables.projectId)
       });
       queryClient.invalidateQueries({
-        queryKey: queryKeys.projects.branches(variables.projectId)
+        queryKey: queryKeys.workspaces.branches(variables.projectId)
       });
     }
   });

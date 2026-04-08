@@ -222,7 +222,7 @@ impl ConfigStorage for LocalSource {
                 self.project_path.display()
             ))
         })?;
-        config.project_path = self.project_path.clone();
+        config.workspace_path = self.project_path.clone();
         Ok(config)
     }
 
@@ -231,7 +231,7 @@ impl ConfigStorage for LocalSource {
         let config_yml = std::fs::read_to_string(resolved_path).unwrap_or_default();
         let mut config: Config = serde_yaml::from_str(&config_yml).unwrap_or_else(|_| Config {
             defaults: None,
-            project_path: self.project_path.clone(),
+            workspace_path: self.project_path.clone(),
             models: [].to_vec(),
             databases: [].to_vec(),
             builder_agent: None,
@@ -240,9 +240,9 @@ impl ConfigStorage for LocalSource {
             mcp: None,
             a2a: None,
             protected_branches: None,
-            admins: vec![],
+            repositories: vec![],
         });
-        config.project_path = self.project_path.clone();
+        config.workspace_path = self.project_path.clone();
         config
     }
 

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/shadcn/button";
 import PageHeader from "@/pages/ide/components/PageHeader";
-import useCurrentProject from "@/stores/useCurrentProject";
+import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 import type { CreateApiKeyResponse } from "@/types/apiKey";
 import ApiKeyTable from "./ApiKeyTable";
 import CreateApiKeyDialog from "./CreateApiKeyDialog";
@@ -13,7 +13,7 @@ import NewApiKeyBanner from "./NewApiKeyBanner";
 const ApiKeyManagement: React.FC = () => {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [newApiKey, setNewApiKey] = useState<CreateApiKeyResponse | null>(null);
-  const { project } = useCurrentProject();
+  const { workspace: project } = useCurrentWorkspace();
 
   const handleApiKeyCreated = (apiKey: CreateApiKeyResponse) => {
     setNewApiKey(apiKey);

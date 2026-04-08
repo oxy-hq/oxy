@@ -1,10 +1,12 @@
-use crate::server::api::middlewares::project::{ProjectManagerExtractor, ProjectPath};
+use crate::server::api::middlewares::workspace_context::{
+    WorkspaceManagerExtractor, WorkspacePath,
+};
 use crate::server::api::result_files::store_result_file;
 use crate::server::api::semantic::{ErrorResponse, ResultFormat, SemanticQueryResponse};
 use crate::server::service::retrieval::{ReindexInput, reindex};
 use axum::extract::{self, Path};
 use axum::http::StatusCode;
-use oxy::adapters::{project::manager::ProjectManager, session_filters::SessionFilters};
+use oxy::adapters::{session_filters::SessionFilters, workspace::manager::WorkspaceManager};
 use oxy::config::model::ConnectionOverrides;
 use oxy::connector::{Connector, load_result};
 use oxy::execute::types::utils::record_batches_to_2d_array;
@@ -36,14 +38,14 @@ pub struct EmbeddingsBuildResponse {
 }
 
 pub async fn execute_sql(
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path(ProjectPath {
-        project_id: _project_id,
-    }): Path<ProjectPath>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path(WorkspacePath {
+        workspace_id: _workspace_id,
+    }): Path<WorkspacePath>,
     extract::Json(payload): extract::Json<SQLParams>,
 ) -> Result<extract::Json<SemanticQueryResponse>, (StatusCode, extract::Json<ErrorResponse>)> {
-    let config_manager = project_manager.config_manager.clone();
-    let secrets_manager = project_manager.secrets_manager.clone();
+    let config_manager = workspace_manager.config_manager.clone();
+    let secrets_manager = workspace_manager.secrets_manager.clone();
     let connector = Connector::from_database(
         &payload.database,
         &config_manager,
@@ -82,7 +84,7 @@ pub async fn execute_sql(
 
     match result_format {
         ResultFormat::Parquet => {
-            let file_name = store_result_file(&project_manager, &file_path)
+            let file_name = store_result_file(&workspace_manager, &file_path)
                 .await
                 .map_err(|e| {
                     tracing::error!("Failed to store result file: {}", e);
@@ -122,14 +124,14 @@ pub async fn execute_sql(
 }
 
 pub async fn execute_sql_query(
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path(ProjectPath {
-        project_id: _project_id,
-    }): Path<ProjectPath>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path(WorkspacePath {
+        workspace_id: _workspace_id,
+    }): Path<WorkspacePath>,
     extract::Json(payload): extract::Json<SQLParams>,
 ) -> Result<extract::Json<SemanticQueryResponse>, (StatusCode, extract::Json<ErrorResponse>)> {
-    let config_manager = project_manager.config_manager.clone();
-    let secrets_manager = project_manager.secrets_manager.clone();
+    let config_manager = workspace_manager.config_manager.clone();
+    let secrets_manager = workspace_manager.secrets_manager.clone();
     let connector = Connector::from_database(
         &payload.database,
         &config_manager,
@@ -168,7 +170,7 @@ pub async fn execute_sql_query(
 
     match result_format {
         ResultFormat::Parquet => {
-            let file_name = store_result_file(&project_manager, &file_path)
+            let file_name = store_result_file(&workspace_manager, &file_path)
                 .await
                 .map_err(|e| {
                     tracing::error!("Failed to store result file: {}", e);
@@ -213,14 +215,14 @@ pub async fn execute_sql_query(
 //         - calculating inclusion radius for each retrieval item
 //         - caching enum values for each variable so they can be detected at query time
 pub async fn build_embeddings(
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path(ProjectPath {
-        project_id: _project_id,
-    }): Path<ProjectPath>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path(WorkspacePath {
+        workspace_id: _workspace_id,
+    }): Path<WorkspacePath>,
 ) -> Result<extract::Json<EmbeddingsBuildResponse>, StatusCode> {
-    handle_omni_sync(&project_manager).await?;
-    let config_manager = project_manager.config_manager;
-    let secret_manager = project_manager.secrets_manager;
+    handle_omni_sync(&workspace_manager).await?;
+    let config_manager = workspace_manager.config_manager;
+    let secret_manager = workspace_manager.secrets_manager;
     let drop_all_tables = false;
 
     match reindex(ReindexInput {
@@ -244,13 +246,13 @@ pub async fn build_embeddings(
     }
 }
 
-async fn handle_omni_sync(project: &ProjectManager) -> Result<(), OxyError> {
+async fn handle_omni_sync(workspace: &WorkspaceManager) -> Result<(), OxyError> {
     use crate::server::service::omni_sync::OmniSyncService;
     use omni::{OmniApiClient, OmniError as AdapterOmniError};
 
-    let project_path = project.config_manager.project_path();
+    let workspace_path = workspace.config_manager.workspace_path();
 
-    let config = project.config_manager.clone();
+    let config = workspace.config_manager.clone();
 
     // Get all Omni integration configurations - if none found, skip silently
     let omni_integrations: Vec<_> = config
@@ -270,8 +272,8 @@ async fn handle_omni_sync(project: &ProjectManager) -> Result<(), OxyError> {
         return Ok(());
     }
 
-    println!(
-        "🔗 Synchronizing {} Omni integration(s)...",
+    tracing::info!(
+        "Synchronizing {} Omni integration(s)",
         omni_integrations.len()
     );
 
@@ -279,10 +281,10 @@ async fn handle_omni_sync(project: &ProjectManager) -> Result<(), OxyError> {
     let mut total_successful_topics = Vec::new();
 
     for (integration_name, omni_integration) in omni_integrations {
-        println!("\n🔗 Processing integration: {}", integration_name);
+        tracing::info!(integration = %integration_name, "Processing Omni integration");
 
         // Resolve API key from environment variable
-        let api_key = project
+        let api_key = workspace
             .secrets_manager
             .resolve_secret(&omni_integration.api_key_var)
             .await?
@@ -291,7 +293,7 @@ async fn handle_omni_sync(project: &ProjectManager) -> Result<(), OxyError> {
         let topics = omni_integration.topics.clone();
 
         // Sync all configured topics for this integration
-        println!("🔄 Synchronizing Omni metadata for {} topics", topics.len());
+        tracing::debug!(integration = %integration_name, topic_count = topics.len(), "Synchronizing Omni metadata");
         let topics_to_sync: Vec<_> = topics.iter().collect();
 
         // Create API client
@@ -304,17 +306,14 @@ async fn handle_omni_sync(project: &ProjectManager) -> Result<(), OxyError> {
             })?;
 
         // Create sync service
-        let sync_service = OmniSyncService::new(api_client, project_path, integration_name.clone());
+        let sync_service =
+            OmniSyncService::new(api_client, workspace_path, integration_name.clone());
 
-        // Perform synchronization for each topic in this integration
-        println!("📥 Fetching metadata from Omni API...");
+        tracing::debug!("Fetching metadata from Omni API");
 
         let mut integration_results = Vec::new();
         for topic in &topics_to_sync {
-            println!(
-                "  📋 Syncing topic: {} (model: {})",
-                topic.name, topic.model_id
-            );
+            tracing::debug!(topic = %topic.name, model = %topic.model_id, "Syncing Omni topic");
             let sync_result = sync_service
                 .sync_metadata(&topic.model_id, &topic.name)
                 .await
@@ -334,36 +333,26 @@ async fn handle_omni_sync(project: &ProjectManager) -> Result<(), OxyError> {
         }
     }
 
-    // Display overall results
-    println!("\n{}", "🎉 Omni synchronization completed!".success());
+    tracing::info!("Omni synchronization completed");
 
     if !all_sync_results.is_empty() {
         let overall_success = all_sync_results.iter().all(|r| r.is_success());
         let partial_success = all_sync_results.iter().any(|r| r.is_partial_success());
 
         if overall_success {
-            println!(
-                "{}",
-                "All integrations synchronized successfully.".success()
-            );
+            tracing::info!("All integrations synchronized successfully");
         } else if partial_success {
-            println!(
-                "{}",
-                "Partial synchronization completed with some errors.".warning()
-            );
-            // Show error summaries from failed integrations
+            tracing::warn!("Partial synchronization completed with some errors");
             for sync_result in &all_sync_results {
                 if let Some(error_summary) = sync_result.error_summary() {
-                    println!("\n{}", "Errors encountered:".warning());
-                    println!("{}", error_summary.error());
+                    tracing::warn!(error = %error_summary, "Omni sync errors encountered");
                 }
             }
         } else {
-            println!("{}", "Some integrations failed to synchronize.".error());
+            tracing::error!("Some integrations failed to synchronize");
             for sync_result in &all_sync_results {
                 if let Some(error_summary) = sync_result.error_summary() {
-                    println!("\n{}", "Errors encountered:".error());
-                    println!("{}", error_summary.error());
+                    tracing::error!(error = %error_summary, "Omni sync errors encountered");
                 }
             }
             return Err(OxyError::RuntimeError(
@@ -371,12 +360,8 @@ async fn handle_omni_sync(project: &ProjectManager) -> Result<(), OxyError> {
             ));
         }
 
-        // Show all successful topics across all integrations
         if !total_successful_topics.is_empty() {
-            println!("\n{}", "Successfully synchronized topics:".success());
-            for topic in &total_successful_topics {
-                println!("  ✅ {}", topic);
-            }
+            tracing::info!(topics = ?total_successful_topics, "Successfully synchronized topics");
         }
     }
 

@@ -29,7 +29,7 @@ const ClearAllThreadsDialog = ({ open, onOpenChange }: ClearAllThreadsDialogProp
     clearAllThreads(undefined, {
       onSuccess: () => {
         if (projectId) {
-          navigate(ROUTES.PROJECT(projectId).THREADS);
+          navigate(ROUTES.WORKSPACE(projectId).THREADS);
         }
       }
     });

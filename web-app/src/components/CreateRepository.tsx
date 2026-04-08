@@ -4,8 +4,8 @@ import { Button } from "@/components/ui/shadcn/button";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import { Spinner } from "@/components/ui/shadcn/spinner";
-import { useCreateRepoFromProject } from "@/hooks/api/projects";
-import useCurrentProject from "@/stores/useCurrentProject";
+import { useCreateRepoFromWorkspace } from "@/hooks/api/workspaces/useCreateRepoFromWorkspace";
+import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 import { GitNamespaceSelection } from "./GitNamespaceSelection";
 
 interface CreateRepositoryProps {
@@ -13,21 +13,21 @@ interface CreateRepositoryProps {
 }
 
 export const CreateRepository = ({ onSuccess }: CreateRepositoryProps) => {
-  const { project } = useCurrentProject();
+  const { workspace } = useCurrentWorkspace();
   const [selectedGitNamespace, setSelectedGitNamespace] = useState<string>("");
   const [repoName, setRepoName] = useState<string>("");
 
-  const createRepoMutation = useCreateRepoFromProject();
+  const createRepoMutation = useCreateRepoFromWorkspace();
 
   const handleCreateRepo = async () => {
-    if (!project?.id || !selectedGitNamespace || !repoName.trim()) {
+    if (!workspace?.id || !selectedGitNamespace || !repoName.trim()) {
       toast.error("Please fill in all required fields");
       return;
     }
 
     createRepoMutation.mutate(
       {
-        projectId: project.id,
+        workspaceId: workspace.id,
         gitNamespaceId: selectedGitNamespace,
         repoName: repoName.trim()
       },
@@ -49,8 +49,8 @@ export const CreateRepository = ({ onSuccess }: CreateRepositoryProps) => {
   };
 
   const generateDefaultRepoName = () => {
-    if (project?.name && !repoName) {
-      const sanitized = project.name
+    if (workspace?.name && !repoName) {
+      const sanitized = workspace.name
         .toLowerCase()
         .replace(/[^a-z0-9]/g, "-")
         .replace(/-{2,}/g, "-");
@@ -76,8 +76,8 @@ export const CreateRepository = ({ onSuccess }: CreateRepositoryProps) => {
           onChange={(e) => setRepoName(e.target.value)}
           onFocus={generateDefaultRepoName}
           placeholder={
-            project?.name
-              ? `${project.name.toLowerCase().replace(/[^a-z0-9]/g, "-")}`
+            workspace?.name
+              ? `${workspace.name.toLowerCase().replace(/[^a-z0-9]/g, "-")}`
               : "repository-name"
           }
           className='font-mono'

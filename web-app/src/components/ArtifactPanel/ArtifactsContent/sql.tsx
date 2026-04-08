@@ -1,4 +1,4 @@
-import { Editor } from "@monaco-editor/react";
+import Editor from "@monaco-editor/react";
 import SqlResultsTable from "@/components/sql/SqlResultsTable";
 import ErrorAlert from "@/components/ui/ErrorAlert";
 import { Spinner } from "@/components/ui/shadcn/spinner";

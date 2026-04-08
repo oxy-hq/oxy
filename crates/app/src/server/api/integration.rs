@@ -1,7 +1,7 @@
-use crate::server::api::middlewares::project::ProjectManagerExtractor;
+use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
 use crate::server::api::result_files::store_result_file;
 use axum::{extract, http::StatusCode, response::Json};
-use oxy::adapters::project::manager::ProjectManager;
+use oxy::adapters::workspace::manager::WorkspaceManager;
 use oxy::config::model::{IntegrationType, LookerQueryParams, LookerSortField};
 use oxy::execute::ExecutionContext;
 use oxy::execute::renderer::Renderer;
@@ -29,15 +29,15 @@ pub struct LookerIntegrationInfo {
 }
 
 pub async fn list_looker_integrations(
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
 ) -> Result<Json<Vec<LookerIntegrationInfo>>, StatusCode> {
-    let config_manager = &project_manager.config_manager;
+    let config_manager = &workspace_manager.config_manager;
     let state_dir = config_manager.resolve_state_dir().await.map_err(|error| {
         tracing::error!(error = %error, "Failed to resolve state directory for Looker metadata");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    let project_path = config_manager.project_path();
+    let workspace_path = config_manager.workspace_path();
 
     let integrations = config_manager
         .list_looker_integrations()
@@ -46,7 +46,7 @@ pub async fn list_looker_integrations(
             if let IntegrationType::Looker(looker) = &integration.integration_type {
                 let storage = MetadataStorage::new(
                     state_dir.join(".looker"),
-                    project_path.join("looker"),
+                    workspace_path.join("looker"),
                     integration.name.clone(),
                 );
 
@@ -120,7 +120,7 @@ pub struct LookerQueryRequest {
     pub limit: Option<i64>,
 }
 
-fn build_execution_context(project_manager: ProjectManager) -> ExecutionContext {
+fn build_execution_context(workspace_manager: WorkspaceManager) -> ExecutionContext {
     let (tx, _rx) = mpsc::channel(100);
     let renderer = Renderer::new(minijinja::Value::default());
     ExecutionContext {
@@ -131,7 +131,7 @@ fn build_execution_context(project_manager: ProjectManager) -> ExecutionContext 
         },
         writer: tx,
         renderer,
-        project: project_manager,
+        workspace: workspace_manager,
         checkpoint: None,
         filters: None,
         connections: None,
@@ -143,11 +143,11 @@ fn build_execution_context(project_manager: ProjectManager) -> ExecutionContext 
 }
 
 pub async fn compile_looker_query(
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     extract::Json(payload): extract::Json<LookerQueryRequest>,
 ) -> Result<Json<String>, (StatusCode, String)> {
-    let execution_context = build_execution_context(project_manager);
+    let execution_context = build_execution_context(workspace_manager);
 
     let params = LookerQueryParams {
         fields: payload.fields,
@@ -181,11 +181,11 @@ pub struct LookerQueryResponse {
 }
 
 pub async fn execute_looker_query(
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     extract::Json(payload): extract::Json<LookerQueryRequest>,
 ) -> Result<Json<LookerQueryResponse>, (StatusCode, String)> {
-    let execution_context = build_execution_context(project_manager.clone());
+    let execution_context = build_execution_context(workspace_manager.clone());
 
     let params = LookerQueryParams {
         fields: payload.fields,
@@ -211,7 +211,7 @@ pub async fn execute_looker_query(
 
     match output {
         Output::Table(table) => {
-            let file_name = store_result_file(&project_manager, &table.file_path)
+            let file_name = store_result_file(&workspace_manager, &table.file_path)
                 .await
                 .map_err(|e| {
                     tracing::error!("Failed to store Looker query result: {}", e);

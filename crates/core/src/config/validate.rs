@@ -24,7 +24,7 @@ pub fn validate_file_path(path: &PathBuf, context: &ValidationContext) -> garde:
         ));
     }
 
-    let file_path = context.config.project_path.join(path);
+    let file_path = context.config.workspace_path.join(path);
 
     if !file_path.exists() {
         return Err(format_error_message(
@@ -110,7 +110,7 @@ pub fn validate_database_exists(database_name: &str, context: &ValidationContext
 }
 
 pub fn validate_sql_file(sql_file: &str, context: &ValidationContext) -> garde::Result {
-    let path = &context.config.project_path.join(sql_file);
+    let path = &context.config.workspace_path.join(sql_file);
     if !path.exists() {
         return Err(format_error_message(
             SQL_FILE_NOT_FOUND_ERROR,
@@ -121,7 +121,7 @@ pub fn validate_sql_file(sql_file: &str, context: &ValidationContext) -> garde::
 }
 
 pub fn validate_agent_exists(agent: &str, context: &ValidationContext) -> garde::Result {
-    let path = &context.config.project_path.join(agent);
+    let path = &context.config.workspace_path.join(agent);
     if !path.exists() {
         return Err(format_error_message(
             AGENT_NOT_FOUND_ERROR,
@@ -322,13 +322,13 @@ mod tests {
                 models: vec![],
                 databases: vec![],
                 builder_agent: None,
-                project_path,
+                workspace_path: project_path,
+                repositories: vec![],
                 integrations: vec![],
                 slack: None,
                 mcp: None,
                 a2a: None,
                 protected_branches: None,
-                admins: vec![],
             },
             metadata: None,
         }

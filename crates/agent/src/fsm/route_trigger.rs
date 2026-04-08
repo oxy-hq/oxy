@@ -87,7 +87,7 @@ impl Trigger for RouteTrigger {
         }
 
         // Step 2: Render tools into ChatCompletionTools (concurrently)
-        let config_manager = &execution_context.project.config_manager;
+        let config_manager = &execution_context.workspace.config_manager;
         let rendered_tools = futures::future::try_join_all(
             tool_configs
                 .iter()

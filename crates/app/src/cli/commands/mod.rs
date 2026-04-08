@@ -22,9 +22,9 @@ use crate::server::service::eval::EvalEventsHandler;
 use crate::server::service::eval::run_eval_with_tag;
 use crate::server::service::retrieval::{ReindexInput, SearchInput, reindex, search};
 use crate::server::service::sync::sync_databases;
-use ::oxy::adapters::project::builder::ProjectBuilder;
 use ::oxy::adapters::runs::RunsManager;
 use ::oxy::adapters::secrets::SecretsManager;
+use ::oxy::adapters::workspace::builder::WorkspaceBuilder;
 use ::oxy::config::model::AppConfig;
 use ::oxy::config::test_config::TestFileConfig;
 use ::oxy::config::*;
@@ -125,7 +125,7 @@ enum McpTransport {
         ///
         /// Specify the root directory of your Oxy project where
         /// config.yml and other project files are located.
-        project_path: PathBuf,
+        workspace_path: PathBuf,
     },
     /// Start MCP server with Server-Sent Events transport
     ///
@@ -136,7 +136,7 @@ enum McpTransport {
         ///
         /// Specify the root directory of your Oxy project where
         /// config.yml and other project files are located.
-        project_path: Option<PathBuf>,
+        workspace_path: Option<PathBuf>,
         /// Port number for the MCP Server-Sent Events server
         ///
         /// Specify which port to bind the MCP SSE server for
@@ -494,13 +494,13 @@ fn validate_single_file(file_path: &PathBuf, config: &Config) -> Result<(), Stri
             config.validate_app(&app).map_err(|e| e.to_string())
         }
         _ if file_name.ends_with(".view.yml") || file_name.ends_with(".topic.yml") => {
-            let globals_path = config.project_path.join("globals");
+            let globals_path = config.workspace_path.join("globals");
             let registry = oxy_globals::GlobalRegistry::new(globals_path);
             let parser_config = oxy_semantic::ParserConfig::new(
                 file_path
                     .parent()
                     .and_then(|p| p.parent())
-                    .unwrap_or(&config.project_path),
+                    .unwrap_or(&config.workspace_path),
             );
             let parser = oxy_semantic::SemanticLayerParser::new(parser_config, registry);
             if file_name.ends_with(".view.yml") {
@@ -686,9 +686,11 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             handle_looker_auto_sync().await?;
 
             // Setup
-            let project_path = resolve_local_project_path()?.to_string_lossy().to_string();
+            let workspace_path = resolve_local_workspace_path()?
+                .to_string_lossy()
+                .to_string();
             let config_manager = ConfigBuilder::new()
-                .with_project_path(project_path)?
+                .with_workspace_path(workspace_path)?
                 .build()
                 .await?;
             let secrets_manager = SecretsManager::from_environment()?;
@@ -705,10 +707,12 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         }
         Some(SubCommand::VecSearch(search_args)) => {
             sentry_config::add_agent_context(&search_args.agent, Some(&search_args.question));
-            let project_path = resolve_local_project_path()?.to_string_lossy().to_string();
+            let workspace_path = resolve_local_workspace_path()?
+                .to_string_lossy()
+                .to_string();
 
             let config_manager = ConfigBuilder::new()
-                .with_project_path(project_path)?
+                .with_workspace_path(workspace_path)?
                 .build()
                 .await?;
 
@@ -728,7 +732,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 sentry_config::add_database_context(db, None);
             }
             let config = ConfigBuilder::new()
-                .with_project_path(&resolve_local_project_path()?)?
+                .with_workspace_path(&resolve_local_workspace_path()?)?
                 .build()
                 .await?;
 
@@ -753,7 +757,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         }
         Some(SubCommand::Validate(args)) => {
             let config = ConfigBuilder::new()
-                .with_project_path(&resolve_local_project_path()?)?
+                .with_workspace_path(&resolve_local_workspace_path()?)?
                 .build()
                 .await?;
 
@@ -773,7 +777,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 let mut valid_count = 0;
 
                 // Validate workflows
-                for workflow_file in cfg.list_workflows(&cfg.project_path) {
+                for workflow_file in cfg.list_workflows(&cfg.workspace_path) {
                     match validate_single_file(&workflow_file, cfg) {
                         Ok(_) => valid_count += 1,
                         Err(e) => errors.push(format!("{}: {}", workflow_file.display(), e)),
@@ -781,7 +785,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 }
 
                 // Validate agents
-                for agent_file in cfg.list_agents(&cfg.project_path) {
+                for agent_file in cfg.list_agents(&cfg.workspace_path) {
                     match validate_single_file(&agent_file, cfg) {
                         Ok(_) => valid_count += 1,
                         Err(e) => errors.push(format!("{}: {}", agent_file.display(), e)),
@@ -789,7 +793,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 }
 
                 // Validate apps
-                for app_file in cfg.list_apps(&cfg.project_path) {
+                for app_file in cfg.list_apps(&cfg.workspace_path) {
                     match validate_single_file(&app_file, cfg) {
                         Ok(_) => valid_count += 1,
                         Err(e) => errors.push(format!("{}: {}", app_file.display(), e)),
@@ -797,7 +801,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 }
 
                 // Validate semantic layer files (.view.yml, .topic.yml)
-                for semantic_file in list_semantic_files(&cfg.project_path) {
+                for semantic_file in list_semantic_files(&cfg.workspace_path) {
                     match validate_single_file(&semantic_file, cfg) {
                         Ok(_) => valid_count += 1,
                         Err(e) => errors.push(format!("{}: {}", semantic_file.display(), e)),
@@ -858,21 +862,21 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             }
         }
         Some(SubCommand::Mcp(mcp_args)) => match mcp_args.transport {
-            McpTransport::Stdio { project_path } => {
-                let env_path = project_path.join(".env");
+            McpTransport::Stdio { workspace_path } => {
+                let env_path = workspace_path.join(".env");
                 dotenv::from_path(env_path).ok();
-                let _ = start_mcp_stdio(project_path).await;
+                let _ = start_mcp_stdio(workspace_path).await;
             }
             McpTransport::Sse {
-                project_path,
+                workspace_path,
                 port,
                 host,
             } => {
-                let project_path = match project_path {
+                let workspace_path = match workspace_path {
                     Some(path) => path,
-                    None => resolve_local_project_path()?,
+                    None => resolve_local_workspace_path()?,
                 };
-                let cancellation_token = start_mcp_sse_server(port, host, project_path)
+                let cancellation_token = start_mcp_sse_server(port, host, workspace_path)
                     .await
                     .expect("Failed to start MCP SSE server");
 
@@ -905,9 +909,9 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
         }
 
         Some(SubCommand::Ask(ask_args)) => {
-            let project_path = resolve_local_project_path()?;
-            let project = ProjectBuilder::new(Uuid::nil())
-                .with_project_path(&project_path)
+            let workspace_path = resolve_local_workspace_path()?;
+            let project = WorkspaceBuilder::new(Uuid::nil())
+                .with_workspace_path(&workspace_path)
                 .await?
                 .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
                 .build()
@@ -963,10 +967,10 @@ async fn handle_omni_sync() -> Result<(), OxyError> {
     use omni::{OmniApiClient, OmniError as AdapterOmniError};
 
     // Load configuration to get Omni integration settings
-    let project_path = resolve_local_project_path()?;
+    let workspace_path = resolve_local_workspace_path()?;
 
-    let project = ProjectBuilder::new(Uuid::nil())
-        .with_project_path(&project_path)
+    let project = WorkspaceBuilder::new(Uuid::nil())
+        .with_workspace_path(&workspace_path)
         .await?
         .build()
         .await
@@ -1027,7 +1031,7 @@ async fn handle_omni_sync() -> Result<(), OxyError> {
 
         // Create sync service
         let sync_service =
-            OmniSyncService::new(api_client, &project_path, integration_name.clone());
+            OmniSyncService::new(api_client, &workspace_path, integration_name.clone());
 
         // Perform synchronization for each topic in this integration
         println!("📥 Fetching metadata from Omni API...");
@@ -1107,10 +1111,10 @@ async fn handle_omni_sync() -> Result<(), OxyError> {
 }
 
 async fn handle_looker_auto_sync() -> Result<(), OxyError> {
-    let project_path = resolve_local_project_path()?;
+    let workspace_path = resolve_local_workspace_path()?;
 
-    let project = ProjectBuilder::new(Uuid::nil())
-        .with_project_path(&project_path)
+    let project = WorkspaceBuilder::new(Uuid::nil())
+        .with_workspace_path(&workspace_path)
         .await?
         .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
         .build()
@@ -1151,10 +1155,10 @@ pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
         )));
     }
 
-    let project_path = resolve_local_project_path()?;
+    let workspace_path = resolve_local_workspace_path()?;
 
-    let project_manager = ProjectBuilder::new(Uuid::nil())
-        .with_project_path(&project_path)
+    let workspace_manager = WorkspaceBuilder::new(Uuid::nil())
+        .with_workspace_path(&workspace_path)
         .await?
         .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
         .build()
@@ -1175,7 +1179,7 @@ pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
         }
         None => {
             // Discover all *.test.yml files
-            let test_files = project_manager.config_manager.list_tests().await?;
+            let test_files = workspace_manager.config_manager.list_tests().await?;
             if test_files.is_empty() {
                 return Err(OxyError::ConfigurationError(
                     "No .test.yml files found in the project".to_string(),
@@ -1204,7 +1208,7 @@ pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
         if let Ok(idx) = case_str.parse::<usize>() {
             // For .test.yml files, validate the index is in bounds.
             if path_str.ends_with(".test.yml") {
-                let test_config = project_manager
+                let test_config = workspace_manager
                     .config_manager
                     .resolve_test(file_path)
                     .await?;
@@ -1224,7 +1228,7 @@ pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
                     "--case <name|prompt> is only supported for .test.yml files; use a 0-based integer index for agent/workflow files".to_string(),
                 ));
             }
-            let test_config = project_manager
+            let test_config = workspace_manager
                 .config_manager
                 .resolve_test(file_path)
                 .await?;
@@ -1269,7 +1273,11 @@ pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
         // For .test.yml files, load case labels and runs count so the progress bar can
         // show which case is currently being worked on.
         let (case_labels, runs_per_case) = if file_path.to_string_lossy().ends_with(".test.yml") {
-            match project_manager.config_manager.resolve_test(file_path).await {
+            match workspace_manager
+                .config_manager
+                .resolve_test(file_path)
+                .await
+            {
                 Ok(test_config) => {
                     let labels = test_config
                         .cases
@@ -1301,7 +1309,7 @@ pub async fn handle_test_command(test_args: TestArgs) -> Result<(), OxyError> {
             .with_test_label(file_name.clone())
             .with_case_info(case_labels, runs_per_case);
         let mut results = run_eval_with_tag(
-            project_manager.clone(),
+            workspace_manager.clone(),
             file_path,
             case_index,
             test_args.tag.clone(),
@@ -1469,7 +1477,7 @@ async fn handle_clean_command(clean_args: CleanArgs) -> Result<(), OxyError> {
     use clean::*;
 
     let config_manager = ConfigBuilder::new()
-        .with_project_path(&resolve_local_project_path()?)?
+        .with_workspace_path(&resolve_local_workspace_path()?)?
         .build()
         .await?;
 

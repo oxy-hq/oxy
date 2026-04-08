@@ -1,5 +1,5 @@
-use crate::server::api::middlewares::project::ProjectManagerExtractor;
-use crate::server::router::ProjectExtractor;
+use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
+use crate::server::router::WorkspaceExtractor;
 use crate::server::service::task_manager::TASK_MANAGER;
 use axum::{
     extract::{self, Path, Query},
@@ -69,9 +69,9 @@ pub struct CreateThreadRequest {
 /// Get paginated list of threads for the authenticated user
 #[utoipa::path(
     get,
-    path = "/{project_id}/threads",
+    path = "/{workspace_id}/threads",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID"),
         ("page" = Option<u64>, Query, description = "Page number (default: 1)"),
         ("limit" = Option<u64>, Query, description = "Items per page (default: 100, max: 100)")
     ),
@@ -86,7 +86,7 @@ pub struct CreateThreadRequest {
     tag = "Threads"
 )]
 pub async fn get_threads(
-    ProjectExtractor(project): ProjectExtractor,
+    WorkspaceExtractor(project): WorkspaceExtractor,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Query(pagination): Query<PaginationQuery>,
 ) -> Result<extract::Json<ThreadsResponse>, StatusCode> {
@@ -178,9 +178,9 @@ pub async fn get_threads(
 /// references, and processing status. The thread must belong to the authenticated user.
 #[utoipa::path(
     get,
-    path = "/{project_id}/threads/{id}",
+    path = "/{workspace_id}/threads/{id}",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID"),
         ("id" = String, Path, description = "Thread ID (UUID)")
     ),
     responses(
@@ -196,7 +196,7 @@ pub async fn get_threads(
     tag = "Threads"
 )]
 pub async fn get_thread(
-    Path((_project_id, id)): Path<(Uuid, String)>,
+    Path((_workspace_id, id)): Path<(Uuid, String)>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
 ) -> Result<extract::Json<ThreadItem>, StatusCode> {
     let connection = establish_connection().await.map_err(|e| {
@@ -236,9 +236,9 @@ pub async fn get_thread(
 /// Create a new thread
 #[utoipa::path(
     post,
-    path = "/{project_id}/threads",
+    path = "/{workspace_id}/threads",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID")
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID")
     ),
     request_body = CreateThreadRequest,
     responses(
@@ -253,7 +253,7 @@ pub async fn get_thread(
     tag = "Threads"
 )]
 pub async fn create_thread(
-    ProjectExtractor(project): ProjectExtractor,
+    WorkspaceExtractor(project): WorkspaceExtractor,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     extract::Json(thread_request): extract::Json<CreateThreadRequest>,
 ) -> Result<extract::Json<ThreadItem>, StatusCode> {
@@ -302,9 +302,9 @@ pub async fn create_thread(
 /// Delete a specific thread
 #[utoipa::path(
     delete,
-    path = "/{project_id}/threads/{id}",
+    path = "/{workspace_id}/threads/{id}",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID"),
         ("id" = String, Path, description = "Thread ID (UUID)")
     ),
     responses(
@@ -320,7 +320,7 @@ pub async fn create_thread(
     tag = "Threads"
 )]
 pub async fn delete_thread(
-    Path((_project_id, id)): Path<(Uuid, String)>,
+    Path((_workspace_id, id)): Path<(Uuid, String)>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
 ) -> Result<StatusCode, StatusCode> {
     let connection = establish_connection().await.map_err(|e| {
@@ -400,9 +400,9 @@ fn remove_all_files_in_dir<P: AsRef<std::path::Path>>(dir: P) {
 /// Delete all threads for the authenticated user
 #[utoipa::path(
     delete,
-    path = "/{project_id}/threads",
+    path = "/{workspace_id}/threads",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID")
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID")
     ),
     responses(
         (status = 200, description = "All threads deleted successfully"),
@@ -415,8 +415,8 @@ fn remove_all_files_in_dir<P: AsRef<std::path::Path>>(dir: P) {
     tag = "Threads"
 )]
 pub async fn delete_all_threads(
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    ProjectExtractor(project): ProjectExtractor,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    WorkspaceExtractor(project): WorkspaceExtractor,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
 ) -> Result<StatusCode, StatusCode> {
     let connection = establish_connection().await.map_err(|e| {
@@ -436,7 +436,7 @@ pub async fn delete_all_threads(
     // Note: Only removing charts for this user would require more complex logic
     // For now, we'll keep the current behavior but you may want to change this
     {
-        let charts_dir = project_manager.config_manager.get_charts_dir().await?;
+        let charts_dir = workspace_manager.config_manager.get_charts_dir().await?;
         remove_all_files_in_dir(charts_dir);
     }
 
@@ -446,9 +446,9 @@ pub async fn delete_all_threads(
 /// Stop a running thread
 #[utoipa::path(
     post,
-    path = "/{project_id}/threads/{id}/stop",
+    path = "/{workspace_id}/threads/{id}/stop",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID"),
         ("id" = String, Path, description = "Thread ID (UUID)")
     ),
     responses(
@@ -464,7 +464,7 @@ pub async fn delete_all_threads(
     tag = "Threads"
 )]
 pub async fn stop_thread(
-    Path((_project_id, id)): Path<(Uuid, String)>,
+    Path((_workspace_id, id)): Path<(Uuid, String)>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
 ) -> Result<StatusCode, StatusCode> {
     let thread_id = Uuid::parse_str(&id).map_err(|_| StatusCode::BAD_REQUEST)?;
@@ -529,9 +529,9 @@ pub struct BulkDeleteThreadsRequest {
 /// Empty thread_ids array will also return 400 Bad Request.
 #[utoipa::path(
     post,
-    path = "/{project_id}/threads/bulk-delete",
+    path = "/{workspace_id}/threads/bulk-delete",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID")
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID")
     ),
     request_body = BulkDeleteThreadsRequest,
     responses(
@@ -546,7 +546,7 @@ pub struct BulkDeleteThreadsRequest {
     tag = "Threads"
 )]
 pub async fn bulk_delete_threads(
-    ProjectExtractor(project): ProjectExtractor,
+    WorkspaceExtractor(project): WorkspaceExtractor,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     extract::Json(request): extract::Json<BulkDeleteThreadsRequest>,
 ) -> Result<StatusCode, StatusCode> {

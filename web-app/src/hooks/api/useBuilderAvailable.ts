@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { BuilderService } from "@/services/api";
-import useCurrentProjectBranch from "../useCurrentProjectBranch";
 
 /**
  * Hook to check if the builder agent is available.

@@ -36,6 +36,9 @@ pub enum UserRole {
     Member,
     #[sea_orm(string_value = "admin")]
     Admin,
+    /// Top-level role. Can grant/revoke admin. Only set via bootstrap (first user).
+    #[sea_orm(string_value = "owner")]
+    Owner,
 }
 
 impl UserRole {
@@ -43,6 +46,7 @@ impl UserRole {
         match self {
             UserRole::Member => "member",
             UserRole::Admin => "admin",
+            UserRole::Owner => "owner",
         }
     }
 
@@ -50,8 +54,14 @@ impl UserRole {
         match s {
             "member" => Ok(UserRole::Member),
             "admin" => Ok(UserRole::Admin),
+            "owner" => Ok(UserRole::Owner),
             _ => Err(format!("Invalid role: {s}")),
         }
+    }
+
+    /// Returns true if this role has at least admin-level access.
+    pub fn is_admin_or_above(&self) -> bool {
+        matches!(self, UserRole::Admin | UserRole::Owner)
     }
 }
 
@@ -79,8 +89,6 @@ pub enum Relation {
     ApiKeys,
     #[sea_orm(has_many = "super::logs::Entity")]
     Logs,
-    #[sea_orm(has_many = "super::workspace_users::Entity")]
-    WorkspaceUsers,
     #[sea_orm(has_many = "super::secrets::Entity")]
     Secrets,
     #[sea_orm(has_many = "super::threads::Entity")]
@@ -99,12 +107,6 @@ impl Related<super::logs::Entity> for Entity {
     }
 }
 
-impl Related<super::workspace_users::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::WorkspaceUsers.def()
-    }
-}
-
 impl Related<super::secrets::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Secrets.def()
@@ -114,15 +116,6 @@ impl Related<super::secrets::Entity> for Entity {
 impl Related<super::threads::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Threads.def()
-    }
-}
-
-impl Related<super::workspaces::Entity> for Entity {
-    fn to() -> RelationDef {
-        super::workspace_users::Relation::Workspaces.def()
-    }
-    fn via() -> Option<RelationDef> {
-        Some(super::workspace_users::Relation::Users.def().rev())
     }
 }
 

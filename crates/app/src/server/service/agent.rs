@@ -5,7 +5,9 @@ use async_openai::types::chat::{
 };
 use oxy::types::event::EventKind as DispatchEventKind;
 use oxy::{
-    adapters::{project::manager::ProjectManager, runs::TopicRef, session_filters::SessionFilters},
+    adapters::{
+        runs::TopicRef, session_filters::SessionFilters, workspace::manager::WorkspaceManager,
+    },
     checkpoint::types::RetryStrategy,
     config::{
         ConfigManager,
@@ -72,20 +74,20 @@ pub struct AskRequest {
     pub question: String,
     pub agent: String,
     pub title: String,
-    pub project_path: String,
+    pub workspace_path: String,
     pub memory: Vec<Memory>,
 }
 
 pub async fn ask_adhoc(
     question: String,
-    project: ProjectManager,
+    workspace: WorkspaceManager,
     agent: String,
 ) -> Result<String, OxyError> {
-    let config_manager = project.config_manager.clone();
+    let config_manager = workspace.config_manager.clone();
 
     let agent_path = get_path_by_name(config_manager, agent).await?;
     let result = match run_agent(
-        project,
+        workspace,
         &agent_path,
         question,
         NoopHandler,
@@ -107,13 +109,13 @@ pub async fn ask_adhoc(
 }
 
 pub async fn list_agents(config_manager: ConfigManager) -> Result<Vec<String>, OxyError> {
-    let project_path = config_manager.project_path();
+    let workspace_path = config_manager.workspace_path();
     let agents = config_manager.list_agents().await?;
     Ok(agents
         .iter()
         .map(|absolute_path| {
             absolute_path
-                .strip_prefix(project_path)
+                .strip_prefix(workspace_path)
                 .unwrap()
                 .to_string_lossy()
                 .to_string()
@@ -247,7 +249,7 @@ impl EventHandler for AgentCLIHandler {
         oxy.context.id = tracing::field::Empty,
     ))]
 pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
-    project: ProjectManager,
+    workspace: WorkspaceManager,
     agent_ref: P,
     prompt: String,
     event_handler: H,
@@ -261,7 +263,11 @@ pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
     data_app_file_path: Option<String>,
 ) -> Result<OutputContainer, OxyError> {
     let agent_ref_str = agent_ref.as_ref().to_string_lossy().to_string();
-    let project_path_str = project.config_manager.project_path().display().to_string();
+    let project_path_str = workspace
+        .config_manager
+        .workspace_path()
+        .display()
+        .to_string();
 
     // Record execution source context in the trace span
     let span = tracing::Span::current();
@@ -303,7 +309,7 @@ pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
     }
 
     events::agent::run_agent::input(
-        &project,
+        &workspace,
         &agent_ref_str,
         &project_path_str,
         &prompt,
@@ -328,7 +334,7 @@ pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
         .with_globals(globals)
         .with_sandbox_info(sandbox_info.clone())
         .with_data_app_file_path(data_app_file_path.clone())
-        .with_project(project)
+        .with_workspace(workspace)
         .await?
         .launch(
             AgentInput {
@@ -351,14 +357,14 @@ pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
 }
 
 pub async fn run_agentic_workflow<P: AsRef<Path>, H: EventHandler + Send + 'static>(
-    project_manager: ProjectManager,
+    workspace_manager: WorkspaceManager,
     agent_ref: P,
     prompt: String,
     event_handler: H,
     memory: Vec<Message>,
 ) -> Result<OutputContainer, OxyError> {
     AgentLauncher::new()
-        .with_project(project_manager)
+        .with_workspace(workspace_manager)
         .await?
         .launch_agentic_workflow(
             agent_ref.as_ref().to_string_lossy().as_ref(),
@@ -430,13 +436,13 @@ impl AgenticRunner {
 impl Dispatch for AgenticRunner {
     async fn run(
         &self,
-        project_manager: ProjectManager,
+        workspace_manager: WorkspaceManager,
         topic_ref: TopicRef<DispatchEventKind>,
         source_id: String,
         retry_strategy: RetryStrategy,
     ) -> Result<OutputContainer, OxyError> {
         AgentLauncher::new()
-            .with_project(project_manager)
+            .with_workspace(workspace_manager)
             .await?
             .launch_agentic_workflow(
                 &source_id,

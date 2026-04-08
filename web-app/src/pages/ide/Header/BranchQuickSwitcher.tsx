@@ -15,9 +15,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/shadcn/
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import {
   useDeleteBranch,
-  useProjectBranches,
-  useSwitchProjectBranch
-} from "@/hooks/api/projects/useProjects";
+  useWorkspaceBranches as useProjectBranches,
+  useSwitchWorkspaceBranch as useSwitchProjectBranch
+} from "@/hooks/api/workspaces/useWorkspaces";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
@@ -28,19 +28,34 @@ interface BranchQuickSwitcherProps {
   // Controlled open state — lets an external button also open this popover
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  // --- Optional overrides for linked / external repos ---
+  // When provided the internal workspace hooks are bypassed entirely.
+  externalBranches?: string[];
+  externalCurrentBranch?: string;
+  isExternalLoading?: boolean;
+  /** Called instead of the default workspace-switch when a branch is selected/created. */
+  onExternalSelect?: (branch: string) => void;
 }
 
 export const BranchQuickSwitcher = ({
   trigger,
   open: controlledOpen,
-  onOpenChange: controlledOnOpenChange
+  onOpenChange: controlledOnOpenChange,
+  externalBranches,
+  externalCurrentBranch,
+  isExternalLoading,
+  onExternalSelect
 }: BranchQuickSwitcherProps) => {
+  const isExternal = !!onExternalSelect;
+
   const [internalOpen, setInternalOpen] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const navigate = useNavigate();
   const { project, branchName: currentBranch } = useCurrentProjectBranch();
   const { setCurrentBranch } = useIdeBranch();
-  const { data: branchResponse, isLoading } = useProjectBranches(project?.id || "");
+  const { data: branchResponse, isLoading: isBranchesLoading } = useProjectBranches(
+    isExternal ? "" : project?.id || ""
+  );
   const switchBranch = useSwitchProjectBranch();
 
   const isControlled = controlledOpen !== undefined;
@@ -49,8 +64,18 @@ export const BranchQuickSwitcher = ({
 
   const projectId = project?.id || "";
   const deleteBranch = useDeleteBranch(projectId);
-  const branches = branchResponse?.branches || [];
-  const activeBranchName = project?.active_branch?.name;
+
+  // Resolve which data to display
+  const branches = isExternal ? (externalBranches ?? []) : branchResponse?.branches || [];
+  const activeBranch = isExternal ? externalCurrentBranch : (currentBranch ?? "");
+  const activeBranchName = isExternal ? undefined : project?.active_branch?.name;
+  const isLoading = isExternal ? !!isExternalLoading : isBranchesLoading;
+
+  // Normalise to strings early — internal API returns {name, …}, external just strings
+  const branchNames: string[] = branches.map((b) =>
+    typeof b === "string" ? b : (b as { name: string }).name
+  );
+
   const trimmed = inputValue.trim();
   // Sanitize to a valid git branch name: spaces → hyphens, strip invalid chars
   const sanitized = trimmed
@@ -60,7 +85,7 @@ export const BranchQuickSwitcher = ({
     .replace(/^[.-]+/, "")
     .replace(/\.+$/, "")
     .replace(/-+/g, "-");
-  const showCreate = sanitized.length > 0 && !branches.some((b) => b.name === sanitized);
+  const showCreate = sanitized.length > 0 && !branchNames.includes(sanitized);
 
   const handleDelete = async (e: React.MouseEvent, branchName: string) => {
     e.stopPropagation();
@@ -70,11 +95,13 @@ export const BranchQuickSwitcher = ({
       if (result.success) {
         toast.success(`Branch "${branchName}" deleted`);
         if (branchName === currentBranch) {
-          const fallback = branches.find((b) => b.name !== branchName)?.name ?? activeBranchName;
+          const fallback =
+            (branchResponse?.branches || []).find((b) => b.name !== branchName)?.name ??
+            activeBranchName;
           if (fallback) {
-            await switchBranch.mutateAsync({ projectId, branchName: fallback });
+            await switchBranch.mutateAsync({ workspaceId: projectId, branchName: fallback });
             setCurrentBranch(projectId, fallback);
-            navigate(ROUTES.PROJECT(projectId).IDE.ROOT);
+            navigate(ROUTES.WORKSPACE(projectId).IDE.ROOT);
           }
         }
       } else {
@@ -86,6 +113,13 @@ export const BranchQuickSwitcher = ({
   };
 
   const handleSelect = async (branchName: string) => {
+    if (isExternal) {
+      setOpen(false);
+      setInputValue("");
+      onExternalSelect(branchName);
+      return;
+    }
+
     if (branchName === currentBranch) {
       setOpen(false);
       setInputValue("");
@@ -94,10 +128,10 @@ export const BranchQuickSwitcher = ({
     setOpen(false);
     setInputValue("");
     try {
-      await switchBranch.mutateAsync({ projectId, branchName });
+      await switchBranch.mutateAsync({ workspaceId: projectId, branchName });
       setCurrentBranch(projectId, branchName);
       toast.success(`Switched to "${branchName}"`);
-      navigate(ROUTES.PROJECT(projectId).IDE.ROOT);
+      navigate(ROUTES.WORKSPACE(projectId).IDE.ROOT);
     } catch {
       toast.error("Failed to switch branch.");
     }
@@ -132,40 +166,40 @@ export const BranchQuickSwitcher = ({
               </div>
             ) : (
               <>
-                {!showCreate && branches.length === 0 && (
+                {!showCreate && branchNames.length === 0 && (
                   <CommandEmpty>No branches found.</CommandEmpty>
                 )}
-                {branches.length > 0 && (
+                {branchNames.length > 0 && (
                   <CommandGroup heading='Branches'>
-                    {branches.map((branch) => (
+                    {branchNames.map((name) => (
                       <CommandItem
-                        key={branch.name}
-                        value={branch.name}
-                        onSelect={() => handleSelect(branch.name)}
+                        key={name}
+                        value={name}
+                        onSelect={() => handleSelect(name)}
                         className='group flex cursor-pointer items-center gap-2.5 font-mono text-sm'
                       >
                         <span
                           className={cn(
                             "h-1.5 w-1.5 shrink-0 rounded-full transition-colors",
-                            branch.name === currentBranch
+                            name === activeBranch
                               ? "bg-primary"
                               : "bg-transparent group-aria-selected:bg-muted-foreground/25"
                           )}
                         />
-                        <span className='min-w-0 flex-1 truncate'>{branch.name}</span>
-                        {branch.name === activeBranchName && branch.name !== currentBranch && (
+                        <span className='min-w-0 flex-1 truncate'>{name}</span>
+                        {!isExternal && name === activeBranchName && name !== currentBranch && (
                           <span className='shrink-0 font-sans text-[10px] text-muted-foreground/60'>
                             active
                           </span>
                         )}
-                        {branch.name === currentBranch && (
+                        {name === activeBranch && (
                           <GitBranch className='h-3 w-3 shrink-0 text-primary' />
                         )}
-                        {branch.name !== currentBranch && branch.name !== activeBranchName && (
+                        {!isExternal && name !== currentBranch && name !== activeBranchName && (
                           <button
                             type='button'
                             className='ml-auto hidden items-center text-muted-foreground hover:text-destructive group-hover:flex'
-                            onClick={(e) => handleDelete(e, branch.name)}
+                            onClick={(e) => handleDelete(e, name)}
                             title='Delete branch'
                           >
                             <Trash2 className='h-3 w-3' />

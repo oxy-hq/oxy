@@ -6,11 +6,11 @@ use clap::builder::ValueParser;
 use minijinja::{Environment, Value};
 use uuid::Uuid;
 
-use ::oxy::adapters::project::builder::ProjectBuilder;
 use ::oxy::adapters::runs::RunsManager;
 use ::oxy::adapters::secrets::SecretsManager;
+use ::oxy::adapters::workspace::builder::WorkspaceBuilder;
 use ::oxy::checkpoint::types::RetryStrategy;
-use ::oxy::config::{ConfigBuilder, ConfigManager, resolve_local_project_path};
+use ::oxy::config::{ConfigBuilder, ConfigManager, resolve_local_workspace_path};
 use ::oxy::connector::Connector;
 use ::oxy::execute::types::utils::record_batches_to_table;
 use ::oxy::sentry_config;
@@ -159,7 +159,7 @@ pub async fn handle_run_command(run_args: RunArgs) -> Result<RunResult, OxyError
         )),
         (Some("sql"), _) => {
             let config = ConfigBuilder::new()
-                .with_project_path(&resolve_local_project_path()?)?
+                .with_workspace_path(&resolve_local_workspace_path()?)?
                 .build()
                 .await?;
             let database = run_args
@@ -193,7 +193,7 @@ async fn handle_workflow_file(
     retry: bool,
     retry_from: Option<String>,
 ) -> Result<(), OxyError> {
-    let project_path = resolve_local_project_path()?;
+    let workspace_path = resolve_local_workspace_path()?;
     // `oxy run` intentionally uses noop storage for normal (non-retry) runs: the CLI
     // is a lightweight execution path that does not require a database. Run history
     // persistence for API-triggered runs is handled by the server. Using noop here
@@ -208,8 +208,8 @@ async fn handle_workflow_file(
     } else {
         RunsManager::noop()
     };
-    let project = ProjectBuilder::new(Uuid::nil())
-        .with_project_path(&project_path)
+    let project = WorkspaceBuilder::new(Uuid::nil())
+        .with_workspace_path(&workspace_path)
         .await?
         .with_runs_manager(runs_manager)
         .build()
@@ -304,7 +304,13 @@ async fn setup_agent_run(
     file_path: &PathBuf,
     question: Option<String>,
     question_required_msg: &str,
-) -> Result<(String, ::oxy::adapters::project::manager::ProjectManager), OxyError> {
+) -> Result<
+    (
+        String,
+        ::oxy::adapters::workspace::manager::WorkspaceManager,
+    ),
+    OxyError,
+> {
     let agent_name = file_path
         .file_name()
         .and_then(|n| n.to_str())
@@ -313,25 +319,25 @@ async fn setup_agent_run(
 
     let question =
         question.ok_or_else(|| OxyError::ArgumentError(question_required_msg.to_string()))?;
-    let project_path = resolve_local_project_path()?;
+    let workspace_path = resolve_local_workspace_path()?;
 
-    let project_manager = ProjectBuilder::new(Uuid::nil())
-        .with_project_path(&project_path)
+    let workspace_manager = WorkspaceBuilder::new(Uuid::nil())
+        .with_workspace_path(&workspace_path)
         .await?
         .with_runs_manager(RunsManager::noop())
         .build()
         .await
         .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create project: {e}")))?;
 
-    Ok((question, project_manager))
+    Ok((question, workspace_manager))
 }
 
 async fn handle_agent_file(file_path: &PathBuf, question: Option<String>) -> Result<(), OxyError> {
-    let (question, project_manager) =
+    let (question, workspace_manager) =
         setup_agent_run(file_path, question, "Question is required for agent files").await?;
 
     let _ = run_agent(
-        project_manager,
+        workspace_manager,
         file_path,
         question,
         AgentCLIHandler::default(),
@@ -352,7 +358,7 @@ async fn handle_agentic_workflow_file(
     file_path: &PathBuf,
     question: Option<String>,
 ) -> Result<(), OxyError> {
-    let (question, project_manager) = setup_agent_run(
+    let (question, workspace_manager) = setup_agent_run(
         file_path,
         question,
         "Question is required for agentic workflow files",
@@ -360,7 +366,7 @@ async fn handle_agentic_workflow_file(
     .await?;
 
     run_agentic_workflow(
-        project_manager,
+        workspace_manager,
         file_path,
         question,
         AgentCLIHandler::default(),

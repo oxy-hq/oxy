@@ -1,7 +1,7 @@
 import { GitBranch } from "lucide-react";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import { Spinner } from "@/components/ui/shadcn/spinner";
-import useRevisionInfo from "@/hooks/api/projects/useRevisionInfo";
+import useRevisionInfo from "@/hooks/api/workspaces/useRevisionInfo";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 export const BranchInfo = () => {

@@ -77,7 +77,7 @@ export function BuilderDialog() {
 
   const allFiles = useMemo(() => {
     if (!fileTreeData) return [];
-    return flattenFiles(fileTreeData);
+    return flattenFiles(fileTreeData.primary);
   }, [fileTreeData]);
 
   const fileContext = useMemo(() => extractFileContext(location.pathname), [location.pathname]);
@@ -198,7 +198,7 @@ export function BuilderDialog() {
     }
     setIsOpen(false);
     setMessage("");
-    const threadUri = ROUTES.PROJECT(projectId).THREAD(data.id);
+    const threadUri = ROUTES.WORKSPACE(projectId).THREAD(data.id);
     navigate(threadUri);
   });
 

@@ -3,7 +3,7 @@ use tracing::Instrument;
 
 use eval::build_eval_executable;
 use oxy::{
-    adapters::project::manager::ProjectManager,
+    adapters::workspace::manager::WorkspaceManager,
     config::constants::EVAL_SOURCE_ROOT,
     execute::{
         Executable, ExecutionContext, ExecutionContextBuilder,
@@ -40,10 +40,10 @@ impl EvalLauncher {
         }
     }
 
-    pub async fn with_project(mut self, project: ProjectManager) -> Result<Self, OxyError> {
+    pub async fn with_workspace(mut self, workspace: WorkspaceManager) -> Result<Self, OxyError> {
         self.execution_context = Some(
             ExecutionContextBuilder::new()
-                .with_project_manager(project)
+                .with_workspace_manager(workspace)
                 .with_writer(self.buf_writer.create_writer(None)?)
                 .with_global_context(Value::UNDEFINED)
                 .with_source(Source {

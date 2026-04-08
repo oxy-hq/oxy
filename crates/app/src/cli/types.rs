@@ -43,7 +43,7 @@ pub struct ServeArgs {
     /// Prevent file modifications via the API (IDE mode)
     ///
     /// When enabled, the server will reject requests that create, modify,
-    /// rename, or delete project files via the API. Use this when running
+    /// rename, or delete workspace files via the API. Use this when running
     /// the server alongside an IDE that owns the files.
     #[clap(long, default_value_t = false)]
     pub readonly: bool,
@@ -75,9 +75,6 @@ pub struct ServeArgs {
     #[clap(long, default_value = "127.0.0.1")]
     pub internal_host: String,
 
-    #[clap(long, default_value_t = false)]
-    pub cloud: bool,
-
     /// Enable enterprise features (ClickHouse observability, analytics)
     ///
     /// When enabled, requires ClickHouse environment variables to be set:
@@ -87,6 +84,12 @@ pub struct ServeArgs {
     /// - OXY_CLICKHOUSE_DATABASE (optional, default: otel)
     #[clap(long, default_value_t = false)]
     pub enterprise: bool,
+
+    /// Local single-workspace mode: serve the current directory as the only workspace
+    ///
+    /// Git sync is disabled — the workspace files are assumed to already exist on disk.
+    #[clap(long, default_value_t = false)]
+    pub local: bool,
 }
 
 /// Arguments for the `oxy start` command (Docker containers + web server)

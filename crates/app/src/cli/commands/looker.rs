@@ -1,10 +1,10 @@
 //! Looker CLI commands for synchronizing and managing Looker integration metadata
 
 use clap::Parser;
-use oxy::adapters::project::builder::ProjectBuilder;
 use oxy::adapters::runs::RunsManager;
+use oxy::adapters::workspace::builder::WorkspaceBuilder;
 use oxy::config::model::IntegrationType;
-use oxy::config::resolve_local_project_path;
+use oxy::config::resolve_local_workspace_path;
 use oxy::service::looker_sync::{LookerSyncService, SyncResult};
 use oxy::theme::StyledText;
 use oxy_looker::{LookerApiClient, LookerAuthConfig};
@@ -79,10 +79,10 @@ pub async fn handle_looker_command(args: LookerArgs) -> Result<(), OxyError> {
 
 /// Handle the `oxy looker sync` command
 pub async fn handle_looker_sync(args: LookerSyncArgs) -> Result<(), OxyError> {
-    let project_path = resolve_local_project_path()?;
+    let workspace_path = resolve_local_workspace_path()?;
 
-    let project = ProjectBuilder::new(Uuid::nil())
-        .with_project_path(&project_path)
+    let project = WorkspaceBuilder::new(Uuid::nil())
+        .with_workspace_path(&workspace_path)
         .await?
         .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
         .build()
@@ -179,7 +179,7 @@ pub async fn handle_looker_sync(args: LookerSyncArgs) -> Result<(), OxyError> {
         let mut sync_service = LookerSyncService::new(
             api_client,
             state_dir.join(".looker"),
-            project_path.join("looker"),
+            workspace_path.join("looker"),
             integration_name.clone(),
         );
 
@@ -313,10 +313,10 @@ pub async fn handle_looker_sync(args: LookerSyncArgs) -> Result<(), OxyError> {
 
 /// Handle the `oxy looker list` command
 async fn handle_looker_list(args: LookerListArgs) -> Result<(), OxyError> {
-    let project_path = resolve_local_project_path()?;
+    let workspace_path = resolve_local_workspace_path()?;
 
-    let project = ProjectBuilder::new(Uuid::nil())
-        .with_project_path(&project_path)
+    let project = WorkspaceBuilder::new(Uuid::nil())
+        .with_workspace_path(&workspace_path)
         .await?
         .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
         .build()
@@ -365,7 +365,7 @@ async fn handle_looker_list(args: LookerListArgs) -> Result<(), OxyError> {
         // Create a minimal storage to list explores
         let storage = oxy_looker::MetadataStorage::new(
             state_dir.join(".looker"),
-            project_path.join("looker"),
+            workspace_path.join("looker"),
             integration_name.clone(),
         );
 
@@ -407,10 +407,10 @@ async fn handle_looker_list(args: LookerListArgs) -> Result<(), OxyError> {
 
 /// Handle the `oxy looker test` command
 async fn handle_looker_test(args: LookerTestArgs) -> Result<(), OxyError> {
-    let project_path = resolve_local_project_path()?;
+    let workspace_path = resolve_local_workspace_path()?;
 
-    let project = ProjectBuilder::new(Uuid::nil())
-        .with_project_path(&project_path)
+    let project = WorkspaceBuilder::new(Uuid::nil())
+        .with_workspace_path(&workspace_path)
         .await?
         .with_runs_manager(RunsManager::default(Uuid::nil(), Uuid::nil()).await?)
         .build()

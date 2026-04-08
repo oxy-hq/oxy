@@ -1,89 +1,51 @@
 import { useFormContext } from "react-hook-form";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
-import type { WarehousesFormData } from ".";
+import type { WarehousesFormData } from "@/types/database";
 
-export default function ClickHouseForm({ index }: { index: number }) {
-  const {
-    formState: { errors },
-    register
-  } = useFormContext<WarehousesFormData>();
+interface Props {
+  index: number;
+}
 
-  const configErrors = errors?.warehouses?.[index]?.config as
-    | Record<string, { message?: string }>
-    | undefined;
+export default function ClickHouseForm({ index }: Props) {
+  const { register } = useFormContext<WarehousesFormData>();
 
   return (
     <div className='space-y-4'>
       <div className='space-y-2'>
-        <Label htmlFor={`host-${index}`}>Host</Label>
+        <Label>Host</Label>
         <Input
-          id={`host-${index}`}
-          placeholder='http://localhost:8123'
-          {...register(`warehouses.${index}.config.host`, {
-            required: "Host is required",
-            pattern: {
-              value: /^(https?:\/\/)?([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(\/.*)?$/,
-              message: "Enter a valid URL or host"
-            }
-          })}
+          placeholder='localhost:8123'
+          {...register(`warehouses.${index}.config.host` as never)}
         />
-        {configErrors?.host && (
-          <p className='mt-1 text-destructive text-xs'>{configErrors.host.message?.toString()}</p>
-        )}
       </div>
-
       <div className='space-y-2'>
-        <Label htmlFor={`username-${index}`}>User</Label>
+        <Label>Database</Label>
         <Input
-          id={`username-${index}`}
           placeholder='default'
-          {...register(`warehouses.${index}.config.username`, {
-            required: "User is required",
-            pattern: {
-              value: /^\w+$/,
-              message: "Enter a valid username"
-            }
-          })}
+          {...register(`warehouses.${index}.config.database` as never)}
         />
-        {configErrors?.username && (
-          <p className='mt-1 text-destructive text-xs'>
-            {configErrors.username.message?.toString()}
-          </p>
-        )}
       </div>
-
-      <div className='space-y-2'>
-        <Label htmlFor={`password-${index}`}>Password</Label>
-        <Input
-          id={`password-${index}`}
-          type='password'
-          placeholder='••••••••'
-          {...register(`warehouses.${index}.config.password`, {
-            required: "Password is required"
-          })}
-        />
-        {configErrors?.password && (
-          <p className='mt-1 text-destructive text-xs'>
-            {configErrors.password.message?.toString()}
-          </p>
-        )}
+      <div className='grid grid-cols-2 gap-4'>
+        <div className='space-y-2'>
+          <Label>User</Label>
+          <Input placeholder='default' {...register(`warehouses.${index}.config.user` as never)} />
+        </div>
+        <div className='space-y-2'>
+          <Label>Password</Label>
+          <Input
+            type='password'
+            placeholder='password'
+            {...register(`warehouses.${index}.config.password` as never)}
+          />
+        </div>
       </div>
-
       <div className='space-y-2'>
-        <Label htmlFor={`database-${index}`}>Database</Label>
+        <Label>Password Secret Variable</Label>
         <Input
-          id={`database-${index}`}
-          placeholder='default'
-          {...register(`warehouses.${index}.config.database`, {
-            required: "Database is required"
-          })}
+          placeholder='MY_CLICKHOUSE_PASSWORD'
+          {...register(`warehouses.${index}.config.password_var` as never)}
         />
-        {configErrors?.database && (
-          <p className='mt-1 text-destructive text-xs'>
-            {configErrors.database.message?.toString()}
-          </p>
-        )}
       </div>
     </div>
   );

@@ -95,7 +95,7 @@ impl LookerQueryExecutable {
 
         // Resolve client credentials from environment variables
         let client_id = execution_context
-            .project
+            .workspace
             .secrets_manager
             .resolve_secret(&looker_config.client_id_var)
             .await?
@@ -110,7 +110,7 @@ impl LookerQueryExecutable {
             })?;
 
         let client_secret = execution_context
-            .project
+            .workspace
             .secrets_manager
             .resolve_secret(&looker_config.client_secret_var)
             .await?
@@ -220,7 +220,7 @@ impl LookerQueryExecutable {
         let looker_config = self.get_looker_config(execution_context, integration)?;
 
         let client_id = execution_context
-            .project
+            .workspace
             .secrets_manager
             .resolve_secret(&looker_config.client_id_var)
             .await?
@@ -235,7 +235,7 @@ impl LookerQueryExecutable {
             })?;
 
         let client_secret = execution_context
-            .project
+            .workspace
             .secrets_manager
             .resolve_secret(&looker_config.client_secret_var)
             .await?
@@ -373,7 +373,7 @@ impl LookerQueryExecutable {
         model: &str,
         explore: &str,
     ) -> String {
-        let config_manager = &execution_context.project.config_manager;
+        let config_manager = &execution_context.workspace.config_manager;
 
         let state_dir = match config_manager.resolve_state_dir().await {
             Ok(state_dir) => state_dir,
@@ -391,7 +391,7 @@ impl LookerQueryExecutable {
 
         let storage = MetadataStorage::new(
             state_dir.join(".looker"),
-            config_manager.project_path().join("looker"),
+            config_manager.workspace_path().join("looker"),
             integration.to_string(),
         );
 
@@ -433,7 +433,7 @@ impl LookerQueryExecutable {
         execution_context: &ExecutionContext,
         integration_name: &str,
     ) -> Result<LookerIntegration, OxyError> {
-        let config = execution_context.project.config_manager.clone();
+        let config = execution_context.workspace.config_manager.clone();
         let looker_config = config
             .get_config()
             .integrations

@@ -65,7 +65,7 @@ const TestsRunsPage: React.FC = () => {
   const navigate = useNavigate();
 
   const handleView = (runId: string) => {
-    navigate(`${ROUTES.PROJECT(projectId).IDE.TESTS.ROOT}?run_id=${runId}`);
+    navigate(`${ROUTES.WORKSPACE(projectId).IDE.TESTS.ROOT}?run_id=${runId}`);
   };
 
   return (

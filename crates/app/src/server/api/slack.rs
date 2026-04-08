@@ -304,7 +304,7 @@ pub async fn handle_commands(headers: HeaderMap, body: Bytes) -> impl IntoRespon
         .await
     } else {
         Ok("❌ Usage:\n\
-            • `/oxy bind <project_id> <agent_id>` - Bind this channel to an Oxy project\n\
+            • `/oxy bind <workspace_id> <agent_id>` - Bind this channel to an Oxy project\n\
             • `/oxy unbind` - Unbind this channel\n\
             • `/oxy <your question>` - Ask Oxy a question"
             .to_string())

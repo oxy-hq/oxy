@@ -268,7 +268,7 @@ pub async fn list_traces(
     )
 )]
 pub async fn get_trace_detail(
-    Path((_project_id, trace_id)): Path<(Uuid, String)>,
+    Path((_workspace_id, trace_id)): Path<(Uuid, String)>,
 ) -> Result<extract::Json<Vec<TraceDetailSpan>>, TracesError> {
     let storage = get_clickhouse_storage();
 

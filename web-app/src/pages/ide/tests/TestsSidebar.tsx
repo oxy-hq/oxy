@@ -65,8 +65,8 @@ const TestsSidebar: React.FC<TestsSidebarProps> = ({ setSidebarOpen }) => {
   };
 
   const isDashboardActive =
-    location.pathname === ROUTES.PROJECT(projectId).IDE.TESTS.ROOT && !activePathb64;
-  const isRunsActive = location.pathname === ROUTES.PROJECT(projectId).IDE.TESTS.RUNS;
+    location.pathname === ROUTES.WORKSPACE(projectId).IDE.TESTS.ROOT && !activePathb64;
+  const isRunsActive = location.pathname === ROUTES.WORKSPACE(projectId).IDE.TESTS.RUNS;
 
   return (
     <div className='flex h-full flex-col overflow-hidden bg-sidebar-background'>
@@ -89,7 +89,7 @@ const TestsSidebar: React.FC<TestsSidebarProps> = ({ setSidebarOpen }) => {
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuSubButton asChild isActive={isDashboardActive}>
-                <Link to={ROUTES.PROJECT(projectId).IDE.TESTS.ROOT}>
+                <Link to={ROUTES.WORKSPACE(projectId).IDE.TESTS.ROOT}>
                   <LayoutDashboard className='h-4 w-4' />
                   <span>Dashboard</span>
                 </Link>
@@ -97,7 +97,7 @@ const TestsSidebar: React.FC<TestsSidebarProps> = ({ setSidebarOpen }) => {
             </SidebarMenuItem>
             <SidebarMenuItem>
               <SidebarMenuSubButton asChild isActive={isRunsActive}>
-                <Link to={ROUTES.PROJECT(projectId).IDE.TESTS.RUNS}>
+                <Link to={ROUTES.WORKSPACE(projectId).IDE.TESTS.RUNS}>
                   <History className='h-4 w-4' />
                   <span>Runs</span>
                 </Link>
@@ -125,7 +125,7 @@ const TestsSidebar: React.FC<TestsSidebarProps> = ({ setSidebarOpen }) => {
               return (
                 <SidebarMenuItem key={file.path}>
                   <SidebarMenuSubButton asChild isActive={activePathb64 === pathb64}>
-                    <Link to={ROUTES.PROJECT(projectId).IDE.TESTS.TEST_FILE(pathb64)}>
+                    <Link to={ROUTES.WORKSPACE(projectId).IDE.TESTS.TEST_FILE(pathb64)}>
                       {running ? (
                         <Spinner className='text-primary' />
                       ) : (

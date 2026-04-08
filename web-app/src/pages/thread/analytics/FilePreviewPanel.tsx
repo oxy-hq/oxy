@@ -89,7 +89,7 @@ const FilePreviewPanel = ({ change, onClose }: FilePreviewPanelProps) => {
   const filename = change.filePath.split("/").pop() ?? change.filePath;
   const { project } = useCurrentProjectBranch();
   const pathb64 = encodeBase64(change.filePath);
-  const ideHref = project ? ROUTES.PROJECT(project.id).IDE.FILES.FILE(pathb64) : null;
+  const ideHref = project ? ROUTES.WORKSPACE(project.id).IDE.FILES.FILE(pathb64) : null;
 
   const actions = ideHref ? (
     <Button

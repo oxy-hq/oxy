@@ -8,7 +8,7 @@ const ContextGraph = () => {
   const location = useLocation();
   const { project } = useCurrentProjectBranch();
 
-  const contextGraphUri = ROUTES.PROJECT(project.id).CONTEXT_GRAPH;
+  const contextGraphUri = ROUTES.WORKSPACE(project.id).CONTEXT_GRAPH;
   const isContextGraphPage = location.pathname === contextGraphUri;
 
   return (

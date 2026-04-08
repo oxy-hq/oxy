@@ -33,7 +33,7 @@ export function Apps() {
         {!isPending &&
           apps?.map((app) => {
             const pathb64 = encodeBase64(app.path);
-            const appUri = ROUTES.PROJECT(projectId).APP(pathb64);
+            const appUri = ROUTES.WORKSPACE(projectId).APP(pathb64);
             return (
               <SidebarMenuSubItem key={pathb64}>
                 <SidebarMenuSubButton asChild isActive={location.pathname === appUri}>

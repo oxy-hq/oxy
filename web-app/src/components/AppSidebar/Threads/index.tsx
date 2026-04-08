@@ -31,7 +31,7 @@ const Threads = () => {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [showAll, setShowAll] = useState(false);
 
-  const threadsUri = ROUTES.PROJECT(projectId).THREADS;
+  const threadsUri = ROUTES.WORKSPACE(projectId).THREADS;
   const isThreadsPage = location.pathname === threadsUri;
 
   const threads = threadsResponse?.threads ?? [];

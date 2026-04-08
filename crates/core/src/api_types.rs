@@ -13,9 +13,9 @@ pub enum BranchType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct ProjectBranch {
+pub struct WorkspaceBranch {
     pub id: Uuid,
-    pub project_id: Uuid,
+    pub workspace_id: Uuid,
     pub branch_type: BranchType,
     pub name: String,
     pub revision: String,
@@ -23,6 +23,9 @@ pub struct ProjectBranch {
     pub created_at: String,
     pub updated_at: String,
 }
+
+/// Kept for internal backward compatibility — all external code should use [`WorkspaceBranch`].
+pub type ProjectBranch = WorkspaceBranch;
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct RevisionInfoResponse {
@@ -59,14 +62,17 @@ pub struct WorkspaceResponse {
     pub role: Option<String>,
     pub created_at: String,
     pub updated_at: String,
-    pub project: Option<ProjectInfo>,
+    pub workspace_info: Option<WorkspaceInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct ProjectInfo {
+pub struct WorkspaceInfo {
     pub id: Uuid,
     pub name: String,
     pub workspace_id: Uuid,
     pub created_at: String,
     pub updated_at: String,
 }
+
+/// Kept for internal backward compatibility — all external code should use [`WorkspaceInfo`].
+pub type ProjectInfo = WorkspaceInfo;

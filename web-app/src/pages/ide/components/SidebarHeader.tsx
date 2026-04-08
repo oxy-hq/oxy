@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/shadcn/button";
 import { SidebarGroupLabel } from "@/components/ui/shadcn/sidebar";
 
 interface SidebarHeaderProps {
-  title: string;
+  title: React.ReactNode;
   onCollapse: () => void;
   actions?: React.ReactNode;
 }

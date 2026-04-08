@@ -16,7 +16,7 @@ use uuid::Uuid;
 #[derive(Debug, Serialize, Clone)]
 pub struct TestProjectRunInfo {
     pub id: Uuid,
-    pub project_id: Uuid,
+    pub workspace_id: Uuid,
     pub name: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     /// Aggregate score (0.0–1.0) across all files in this project run.
@@ -52,7 +52,7 @@ impl TestProjectRunInfo {
     ) -> Self {
         TestProjectRunInfo {
             id: m.id,
-            project_id: m.project_id,
+            workspace_id: m.project_id,
             name: m.name,
             created_at: m.created_at.with_timezone(&Utc),
             score,
@@ -72,7 +72,7 @@ pub struct TestRunInfo {
     pub id: Uuid,
     pub source_id: String,
     pub run_index: i32,
-    pub project_id: Uuid,
+    pub workspace_id: Uuid,
     pub name: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub project_run_id: Option<Uuid>,
@@ -86,7 +86,7 @@ impl TestRunInfo {
             id: m.id,
             source_id: m.source_id,
             run_index: m.run_index,
-            project_id: m.project_id,
+            workspace_id: m.project_id,
             name: m.name,
             created_at: m.created_at.with_timezone(&Utc),
             project_run_id: m.project_run_id,
@@ -187,15 +187,15 @@ struct RunMetrics {
 
 pub struct TestRunsManager {
     db: DatabaseConnection,
-    project_id: Uuid,
+    workspace_id: Uuid,
 }
 
 impl TestRunsManager {
-    pub async fn new(project_id: Uuid) -> Result<Self, OxyError> {
+    pub async fn new(workspace_id: Uuid) -> Result<Self, OxyError> {
         let db = establish_connection().await.map_err(|e| {
             OxyError::DBError(format!("Failed to establish database connection: {e}"))
         })?;
-        Ok(TestRunsManager { db, project_id })
+        Ok(TestRunsManager { db, workspace_id })
     }
 
     // --- Project Run methods ---
@@ -207,7 +207,7 @@ impl TestRunsManager {
         let now = Utc::now().into();
         let model = test_project_runs::ActiveModel {
             id: Set(Uuid::new_v4()),
-            project_id: Set(self.project_id),
+            project_id: Set(self.workspace_id),
             name: Set(name),
             created_at: Set(now),
             updated_at: Set(now),
@@ -229,7 +229,7 @@ impl TestRunsManager {
 
     pub async fn list_project_runs(&self) -> Result<Vec<TestProjectRunInfo>, OxyError> {
         let project_runs = test_project_runs::Entity::find()
-            .filter(test_project_runs::Column::ProjectId.eq(self.project_id))
+            .filter(test_project_runs::Column::ProjectId.eq(self.workspace_id))
             .order_by_desc(test_project_runs::Column::CreatedAt)
             .all(&self.db)
             .await
@@ -244,7 +244,7 @@ impl TestRunsManager {
         // Get all test_runs for these project runs
         let file_runs = test_runs::Entity::find()
             .filter(test_runs::Column::ProjectRunId.is_in(project_run_ids.clone()))
-            .filter(test_runs::Column::ProjectId.eq(self.project_id))
+            .filter(test_runs::Column::ProjectId.eq(self.workspace_id))
             .all(&self.db)
             .await
             .map_err(|e| OxyError::DBError(format!("Failed to list file runs: {e}")))?;
@@ -379,16 +379,16 @@ impl TestRunsManager {
         // Only consider runs that belong to this project (prevents IDOR on child rows).
         let runs = test_runs::Entity::find()
             .filter(test_runs::Column::ProjectRunId.eq(project_run_id))
-            .filter(test_runs::Column::ProjectId.eq(self.project_id))
+            .filter(test_runs::Column::ProjectId.eq(self.workspace_id))
             .all(&self.db)
             .await
             .map_err(|e| OxyError::DBError(format!("Failed to find runs for project run: {e}")))?;
 
         for run in &runs {
-            // Human verdicts are keyed by (project_id, source_id, run_index), not by
+            // Human verdicts are keyed by (workspace_id, source_id, run_index), not by
             // test_run_id, so they are not cascade-deleted when test_runs rows are removed.
             test_case_human_verdicts::Entity::delete_many()
-                .filter(test_case_human_verdicts::Column::ProjectId.eq(self.project_id))
+                .filter(test_case_human_verdicts::Column::ProjectId.eq(self.workspace_id))
                 .filter(test_case_human_verdicts::Column::SourceId.eq(run.source_id.clone()))
                 .filter(test_case_human_verdicts::Column::RunIndex.eq(run.run_index))
                 .exec(&self.db)
@@ -402,11 +402,11 @@ impl TestRunsManager {
                 .map_err(|e| OxyError::DBError(format!("Failed to delete file run: {e}")))?;
         }
 
-        // Filter by project_id as well to prevent IDOR: a user from project A cannot
+        // Filter by workspace_id as well to prevent IDOR: a user from project A cannot
         // delete a project run that belongs to project B by guessing its UUID.
         test_project_runs::Entity::delete_many()
             .filter(test_project_runs::Column::Id.eq(project_run_id))
-            .filter(test_project_runs::Column::ProjectId.eq(self.project_id))
+            .filter(test_project_runs::Column::ProjectId.eq(self.workspace_id))
             .exec(&self.db)
             .await
             .map_err(|e| OxyError::DBError(format!("Failed to delete project run: {e}")))?;
@@ -428,7 +428,7 @@ impl TestRunsManager {
             id: Set(Uuid::new_v4()),
             source_id: Set(source_id.to_string()),
             run_index: Set(run_index),
-            project_id: Set(self.project_id),
+            project_id: Set(self.workspace_id),
             name: Set(name),
             created_at: Set(now),
             updated_at: Set(now),
@@ -444,7 +444,7 @@ impl TestRunsManager {
     pub async fn list_runs(&self, source_id: &str) -> Result<Vec<TestRunInfo>, OxyError> {
         let runs = test_runs::Entity::find()
             .filter(test_runs::Column::SourceId.eq(source_id))
-            .filter(test_runs::Column::ProjectId.eq(self.project_id))
+            .filter(test_runs::Column::ProjectId.eq(self.workspace_id))
             .order_by_desc(test_runs::Column::RunIndex)
             .all(&self.db)
             .await
@@ -482,7 +482,7 @@ impl TestRunsManager {
         let run = test_runs::Entity::find()
             .filter(test_runs::Column::SourceId.eq(source_id))
             .filter(test_runs::Column::RunIndex.eq(run_index))
-            .filter(test_runs::Column::ProjectId.eq(self.project_id))
+            .filter(test_runs::Column::ProjectId.eq(self.workspace_id))
             .one(&self.db)
             .await
             .map_err(|e| OxyError::DBError(format!("Failed to get test run: {e}")))?;
@@ -533,16 +533,16 @@ impl TestRunsManager {
         let run = test_runs::Entity::find()
             .filter(test_runs::Column::SourceId.eq(source_id))
             .filter(test_runs::Column::RunIndex.eq(run_index))
-            .filter(test_runs::Column::ProjectId.eq(self.project_id))
+            .filter(test_runs::Column::ProjectId.eq(self.workspace_id))
             .one(&self.db)
             .await
             .map_err(|e| OxyError::DBError(format!("Failed to find test run: {e}")))?;
 
         if let Some(run) = run {
-            // Human verdicts are keyed by (project_id, source_id, run_index) and are not
+            // Human verdicts are keyed by (workspace_id, source_id, run_index) and are not
             // cascade-deleted when the test_run row is removed via its FK on test_run_cases.
             test_case_human_verdicts::Entity::delete_many()
-                .filter(test_case_human_verdicts::Column::ProjectId.eq(self.project_id))
+                .filter(test_case_human_verdicts::Column::ProjectId.eq(self.workspace_id))
                 .filter(test_case_human_verdicts::Column::SourceId.eq(source_id))
                 .filter(test_case_human_verdicts::Column::RunIndex.eq(run_index))
                 .exec(&self.db)
@@ -749,7 +749,7 @@ impl TestRunsManager {
         run_index: i32,
     ) -> Result<Vec<HumanVerdictInfo>, OxyError> {
         let rows = test_case_human_verdicts::Entity::find()
-            .filter(test_case_human_verdicts::Column::ProjectId.eq(self.project_id))
+            .filter(test_case_human_verdicts::Column::ProjectId.eq(self.workspace_id))
             .filter(test_case_human_verdicts::Column::SourceId.eq(source_id))
             .filter(test_case_human_verdicts::Column::RunIndex.eq(run_index))
             .all(&self.db)
@@ -770,7 +770,7 @@ impl TestRunsManager {
 
         if let Some(verdict) = verdict {
             let existing = test_case_human_verdicts::Entity::find()
-                .filter(test_case_human_verdicts::Column::ProjectId.eq(self.project_id))
+                .filter(test_case_human_verdicts::Column::ProjectId.eq(self.workspace_id))
                 .filter(test_case_human_verdicts::Column::SourceId.eq(source_id))
                 .filter(test_case_human_verdicts::Column::RunIndex.eq(run_index))
                 .filter(test_case_human_verdicts::Column::CaseIndex.eq(case_index))
@@ -791,7 +791,7 @@ impl TestRunsManager {
             } else {
                 let model = test_case_human_verdicts::ActiveModel {
                     id: ActiveValue::Set(Uuid::new_v4()),
-                    project_id: Set(self.project_id),
+                    project_id: Set(self.workspace_id),
                     source_id: Set(source_id.to_string()),
                     run_index: Set(run_index),
                     case_index: Set(case_index),
@@ -807,7 +807,7 @@ impl TestRunsManager {
         } else {
             // Clear the verdict
             let existing = test_case_human_verdicts::Entity::find()
-                .filter(test_case_human_verdicts::Column::ProjectId.eq(self.project_id))
+                .filter(test_case_human_verdicts::Column::ProjectId.eq(self.workspace_id))
                 .filter(test_case_human_verdicts::Column::SourceId.eq(source_id))
                 .filter(test_case_human_verdicts::Column::RunIndex.eq(run_index))
                 .filter(test_case_human_verdicts::Column::CaseIndex.eq(case_index))
@@ -862,7 +862,7 @@ impl TestRunsManager {
         // Load human verdicts scoped to the exact (source_id, run_index) pairs being
         // processed rather than all history for those sources.
         let all_hvs = test_case_human_verdicts::Entity::find()
-            .filter(test_case_human_verdicts::Column::ProjectId.eq(self.project_id))
+            .filter(test_case_human_verdicts::Column::ProjectId.eq(self.workspace_id))
             .filter(test_case_human_verdicts::Column::SourceId.is_in(source_ids))
             .filter(test_case_human_verdicts::Column::RunIndex.is_in(run_indices))
             .all(&self.db)
@@ -946,7 +946,7 @@ impl TestRunsManager {
     async fn next_run_index(&self, source_id: &str) -> Result<i32, OxyError> {
         let row =
             entity::test_run_sequences::Entity::insert(entity::test_run_sequences::ActiveModel {
-                project_id: ActiveValue::Set(self.project_id),
+                project_id: ActiveValue::Set(self.workspace_id),
                 source_id: ActiveValue::Set(source_id.to_string()),
                 last_value: ActiveValue::Set(1),
             })

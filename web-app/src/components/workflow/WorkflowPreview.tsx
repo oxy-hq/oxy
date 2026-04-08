@@ -39,11 +39,13 @@ const WorkflowDiagram = React.lazy(() => import("./WorkflowDiagram"));
 export const WorkflowPreview = ({
   pathb64,
   runId,
-  direction = "horizontal"
+  direction = "horizontal",
+  projectIdOverride
 }: {
   pathb64: string;
   runId?: string;
   direction?: "horizontal" | "vertical";
+  projectIdOverride?: string;
 }) => {
   const path = useMemo(() => decodeBase64(pathb64), [pathb64]);
   const relativePath = path;
@@ -57,7 +59,7 @@ export const WorkflowPreview = ({
     }
   }, [runId]);
 
-  const { data: workflowConfig, error } = useWorkflowConfig(path);
+  const { data: workflowConfig, error } = useWorkflowConfig(path, projectIdOverride);
   const run = useWorkflowRun();
   const cancelRun = useCancelWorkflowRun();
   const logs = useWorkflowLogs(path, runId || "");
@@ -72,7 +74,12 @@ export const WorkflowPreview = ({
   }, [workflowConfig]);
   const { setIsOpen } = useVariables();
 
-  const groups = useGetBlocks(path, runId ? +runId : undefined, !!runId && !isProcessing).data;
+  const groups = useGetBlocks(
+    path,
+    runId ? +runId : undefined,
+    !!runId && !isProcessing,
+    projectIdOverride
+  ).data;
 
   const streamCall = useCallback(
     async (relativePath: string, runId: string, abortRef: AbortController) => {

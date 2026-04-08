@@ -114,7 +114,7 @@ async fn get_tools(
     patterns: &[String],
 ) -> Result<HashMap<String, OxyTool>, OxyError> {
     let config = config_manager.get_config();
-    let base_path = &config.project_path;
+    let base_path = &config.workspace_path;
     let mut tools_map = HashMap::new();
 
     let resolver = McpToolResolver::new(config_manager.clone());

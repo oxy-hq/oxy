@@ -20,7 +20,7 @@ import { useExecutionAgentStats } from "@/hooks/api/useExecutionAnalytics";
 import { encodeBase64 } from "@/libs/encoding";
 import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
-import useCurrentProject from "@/stores/useCurrentProject";
+import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 import { EXECUTION_TYPES, type ExecutionType } from "../types";
 
 interface AgentBreakdownTableProps {
@@ -69,7 +69,7 @@ export default function AgentBreakdownTable({
   limit = 10
 }: AgentBreakdownTableProps) {
   const navigate = useNavigate();
-  const { project } = useCurrentProject();
+  const { workspace: project } = useCurrentWorkspace();
   const { data: agents = [], isLoading } = useExecutionAgentStats(projectId, {
     days,
     limit
@@ -141,7 +141,7 @@ export default function AgentBreakdownTable({
                   <button
                     onClick={() => {
                       const pathb64 = encodeBase64(agent.agentRef);
-                      navigate(ROUTES.PROJECT(project?.id || "").IDE.FILES.FILE(pathb64));
+                      navigate(ROUTES.WORKSPACE(project?.id || "").IDE.FILES.FILE(pathb64));
                     }}
                     className='text-left underline-offset-4 transition-colors hover:text-primary hover:underline'
                     title={agent.agentRef}

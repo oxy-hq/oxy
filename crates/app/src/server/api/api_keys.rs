@@ -131,7 +131,7 @@ impl From<ApiKeyModel> for ApiKeyResponse {
 /// Create a new API key
 #[utoipa::path(
     post,
-    path = "/{project_id}/api-keys",
+    path = "/{workspace_id}/api-keys",
     request_body = CreateApiKeyRequest,
     responses(
         (status = 201, description = "API key created successfully", body = CreateApiKeyResponseDto),
@@ -145,12 +145,12 @@ impl From<ApiKeyModel> for ApiKeyResponse {
     ),
     tag = "API Keys",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID")
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID")
     ),
 )]
 pub async fn create_api_key(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    Path(project_id): Path<Uuid>,
+    Path(workspace_id): Path<Uuid>,
     extract::Json(request): extract::Json<CreateApiKeyRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
     // Validate the request using garde
@@ -173,7 +173,7 @@ pub async fn create_api_key(
         user_id: user.id,
         name: request.name,
         expires_at: request.expires_at,
-        project_id,
+        project_id: workspace_id,
     };
 
     match ApiKeyService::create_api_key(&db, create_request, &config).await {
@@ -207,7 +207,7 @@ pub async fn create_api_key(
 /// List user's API keys
 #[utoipa::path(
     get,
-    path = "/{project_id}/api-keys",
+    path = "/{workspace_id}/api-keys",
     responses(
         (status = 200, description = "List of API keys", body = ApiKeyListResponse),
         (status = 401, description = "Unauthorized"),
@@ -218,7 +218,7 @@ pub async fn create_api_key(
     ),
     tag = "API Keys",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID")
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID")
     ),
 )]
 pub async fn list_api_keys(
@@ -250,7 +250,7 @@ pub async fn list_api_keys(
 /// Get specific API key info
 #[utoipa::path(
     get,
-    path = "/{project_id}/api-keys/{id}",
+    path = "/{workspace_id}/api-keys/{id}",
     responses(
         (status = 200, description = "API key details", body = ApiKeyResponse),
         (status = 401, description = "Unauthorized"),
@@ -262,7 +262,7 @@ pub async fn list_api_keys(
     ),
     tag = "API Keys",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID"),
         ("id" = String, Path, description = "API key ID")
     ),
 )]
@@ -293,7 +293,7 @@ pub async fn get_api_key(
 /// Revoke (delete) an API key
 #[utoipa::path(
     delete,
-    path = "/{project_id}/api-keys/{id}",
+    path = "/{workspace_id}/api-keys/{id}",
     responses(
         (status = 204, description = "API key revoked successfully"),
         (status = 401, description = "Unauthorized"),
@@ -305,7 +305,7 @@ pub async fn get_api_key(
     ),
     tag = "API Keys",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID"),
         ("id" = String, Path, description = "API key ID")
     ),
 )]

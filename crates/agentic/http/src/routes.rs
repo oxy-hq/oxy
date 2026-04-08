@@ -42,7 +42,7 @@ use crate::{
     state::{AgenticState, RunStatus},
 };
 
-use oxy::adapters::project::manager::ProjectManager;
+use oxy::adapters::workspace::manager::WorkspaceManager;
 use oxy::database::client::establish_connection;
 use sea_orm::DatabaseConnection;
 
@@ -76,7 +76,7 @@ impl ThinkingMode {
 
 #[derive(Deserialize)]
 pub struct CreateRunRequest {
-    /// Which agent config to load (`{agent_id}.agentic.yml` in project root).
+    /// Which agent config to load (`{agent_id}.agentic.yml` in workspace root).
     pub agent_id: String,
     pub question: String,
     /// Optional thread FK — links this run to an existing thread.
@@ -208,7 +208,7 @@ pub struct RunSummary {
 
 pub async fn create_run(
     Extension(state): Extension<Arc<AgenticState>>,
-    Extension(project_manager): Extension<ProjectManager>,
+    Extension(workspace_manager): Extension<WorkspaceManager>,
     Json(body): Json<CreateRunRequest>,
 ) -> Response {
     let run_id = Uuid::new_v4().to_string();
@@ -226,7 +226,10 @@ pub async fn create_run(
             .model
             .clone()
             .unwrap_or_else(|| "claude-sonnet-4-6".to_string());
-        let base_dir = project_manager.config_manager.project_path().to_path_buf();
+        let base_dir = workspace_manager
+            .config_manager
+            .workspace_path()
+            .to_path_buf();
         let question = body.question.clone();
         let thread_id_uuid = body
             .thread_id
@@ -263,12 +266,12 @@ pub async fn create_run(
 
         // `model` is a config model name — look it up to get the right
         // key_var and provider.
-        let resolved_model = project_manager.config_manager.resolve_model(&model).ok();
+        let resolved_model = workspace_manager.config_manager.resolve_model(&model).ok();
         let api_key = {
             let key_var = resolved_model
                 .and_then(|m| m.key_var().map(|s| s.to_string()))
                 .unwrap_or_else(|| "ANTHROPIC_API_KEY".to_string());
-            project_manager
+            workspace_manager
                 .secrets_manager
                 .resolve_secret(&key_var)
                 .await
@@ -301,7 +304,7 @@ pub async fn create_run(
 
         let state2 = Arc::clone(&state);
         let run_id2 = run_id.clone();
-        let sm = Some(project_manager.secrets_manager.clone());
+        let sm = Some(workspace_manager.secrets_manager.clone());
 
         tokio::spawn(async move {
             run_builder_pipeline(
@@ -318,9 +321,9 @@ pub async fn create_run(
     }
 
     // Load agent config lazily per request.
-    let config_path = project_manager
+    let config_path = workspace_manager
         .config_manager
-        .project_path()
+        .workspace_path()
         .join(&body.agent_id);
     let config = match AgentConfig::from_file(&config_path) {
         Ok(c) => c,
@@ -381,7 +384,10 @@ pub async fn create_run(
 
     let state2 = Arc::clone(&state);
     let run_id2 = run_id.clone();
-    let base_dir = project_manager.config_manager.project_path().to_path_buf();
+    let base_dir = workspace_manager
+        .config_manager
+        .workspace_path()
+        .to_path_buf();
     let question = body.question.clone();
     let thinking_mode = body.thinking_mode;
     {
@@ -397,7 +403,7 @@ pub async fn create_run(
                 answer_rx,
                 cancel_rx,
                 db,
-                project_manager,
+                workspace_manager,
                 thinking_mode,
             )
             .await;
@@ -642,12 +648,12 @@ async fn run_pipeline(
     mut answer_rx: mpsc::Receiver<String>,
     mut cancel_rx: watch::Receiver<bool>,
     db: DatabaseConnection,
-    project_manager: ProjectManager,
+    workspace_manager: WorkspaceManager,
     thinking_mode: ThinkingMode,
 ) -> Result<(), OxyError> {
     tracing::info!(run_id = %run_id, "pipeline started");
     // Assemble project-level context from the oxy config.yml.
-    let mut build_ctx = build_project_context_pub(&config, &project_manager, &base_dir).await;
+    let mut build_ctx = build_project_context_pub(&config, &workspace_manager, &base_dir).await;
     build_ctx.schema_cache = Some(Arc::clone(&state.schema_cache));
 
     // Apply extended thinking mode overrides when requested by the UI toggle.
@@ -713,7 +719,7 @@ async fn run_pipeline(
     // the runner searches those paths directly; otherwise it falls back to a
     // project-wide scan via list_workflows().
     let solver = {
-        let runner = agentic_workflow::OxyProcedureRunner::new(project_manager)
+        let runner = agentic_workflow::OxyProcedureRunner::new(workspace_manager)
             .with_procedure_files(procedure_files)
             .with_events(event_stream.clone());
         solver.with_procedure_runner(std::sync::Arc::new(runner))
@@ -1190,7 +1196,7 @@ pub async fn get_run_by_thread(
 async fn run_builder_pipeline(
     state: Arc<AgenticState>,
     client: LlmClient,
-    project_root: std::path::PathBuf,
+    workspace_root: std::path::PathBuf,
     run_id: String,
     question: String,
     history: Vec<BuilderTurn>,
@@ -1208,8 +1214,8 @@ async fn run_builder_pipeline(
     let cancel_event_tx = event_tx.clone();
     let resume_event_tx = event_tx.clone();
 
-    let project_root_ref = project_root.clone();
-    let mut solver = BuilderSolver::new(client, project_root).with_events(event_tx);
+    let project_root_ref = workspace_root.clone();
+    let mut solver = BuilderSolver::new(client, workspace_root).with_events(event_tx);
     if let Some(sm) = secrets_manager {
         solver = solver.with_secrets_manager(sm);
     }
@@ -1500,9 +1506,9 @@ async fn run_builder_pipeline(
     state.deregister(&run_id);
 }
 
-// ── Project context builder ────────────────────────────────────────────────────
+// ── Workspace context builder ─────────────────────────────────────────────────
 
-/// Assemble a [`BuildContext`] from the project `config.yml` via `ProjectManager`.
+/// Assemble a [`BuildContext`] from the workspace `config.yml` via `WorkspaceManager`.
 ///
 /// - Resolves each name in `config.databases` to a live connector via the oxy
 ///   [`Connector`] infrastructure (supports all database types).
@@ -1510,7 +1516,7 @@ async fn run_builder_pipeline(
 ///   `config.yml` when `config.llm.model` is absent in the agent YAML.
 pub(crate) async fn build_project_context_pub(
     config: &AgentConfig,
-    project_manager: &ProjectManager,
+    workspace_manager: &WorkspaceManager,
     base_dir: &std::path::Path,
 ) -> BuildContext {
     use std::sync::Arc;
@@ -1524,7 +1530,7 @@ pub(crate) async fn build_project_context_pub(
 
     let mut ctx = BuildContext::default();
 
-    // Resolve the project model config.
+    // Resolve the workspace model config.
     //
     // Priority:
     //   1. `llm.ref: <name>` — explicit named model from config.yml; always
@@ -1536,7 +1542,7 @@ pub(crate) async fn build_project_context_pub(
     {
         Some((ref_name, true))
     } else if config.llm.model.is_none() {
-        project_manager
+        workspace_manager
             .config_manager
             .default_model()
             .map(|n| (n, false))
@@ -1545,7 +1551,7 @@ pub(crate) async fn build_project_context_pub(
     };
 
     if let Some((name, is_explicit_ref)) = resolve_name {
-        match project_manager.config_manager.resolve_model(name) {
+        match workspace_manager.config_manager.resolve_model(name) {
             Ok(model) => {
                 ctx.project_model = Some(model.model_name().to_string());
                 ctx.has_explicit_ref = is_explicit_ref;
@@ -1598,7 +1604,7 @@ pub(crate) async fn build_project_context_pub(
 
     // Build a native connector for each name in the effective database list.
     for db_name in &effective_databases {
-        let db = match project_manager.config_manager.resolve_database(db_name) {
+        let db = match workspace_manager.config_manager.resolve_database(db_name) {
             Ok(d) => d,
             Err(e) => {
                 tracing::warn!(db = %db_name, "databases: '{}' not found in config.yml: {}", db_name, e);
@@ -1610,7 +1616,7 @@ pub(crate) async fn build_project_context_pub(
             // ── DuckDB ──────────────────────────────────────────────────────
             DatabaseType::DuckDB(duck) => match &duck.options {
                 DuckDBOptions::Local { file_search_path } => {
-                    let path = match project_manager
+                    let path = match workspace_manager
                         .config_manager
                         .resolve_file(file_search_path)
                         .await
@@ -1631,7 +1637,7 @@ pub(crate) async fn build_project_context_pub(
                 }
                 DuckDBOptions::DuckLake(ducklake_config) => {
                     let stmts = match ducklake_config
-                        .to_duckdb_attach_stmt(&project_manager.secrets_manager)
+                        .to_duckdb_attach_stmt(&workspace_manager.secrets_manager)
                         .await
                     {
                         Ok(s) => s,
@@ -1671,25 +1677,25 @@ pub(crate) async fn build_project_context_pub(
             // ── Postgres ─────────────────────────────────────────────────────
             DatabaseType::Postgres(pg) => {
                 let host = pg
-                    .get_host(&project_manager.secrets_manager)
+                    .get_host(&workspace_manager.secrets_manager)
                     .await
                     .unwrap_or_else(|_| "localhost".into());
                 let port: u16 = pg
-                    .get_port(&project_manager.secrets_manager)
+                    .get_port(&workspace_manager.secrets_manager)
                     .await
                     .unwrap_or_else(|_| "5432".into())
                     .parse()
                     .unwrap_or(5432);
                 let user = pg
-                    .get_user(&project_manager.secrets_manager)
+                    .get_user(&workspace_manager.secrets_manager)
                     .await
                     .unwrap_or_default();
                 let password = pg
-                    .get_password(&project_manager.secrets_manager)
+                    .get_password(&workspace_manager.secrets_manager)
                     .await
                     .unwrap_or_default();
                 let database = pg
-                    .get_database(&project_manager.secrets_manager)
+                    .get_database(&workspace_manager.secrets_manager)
                     .await
                     .unwrap_or_default();
                 match PostgresConnector::new(&host, port, &user, &password, &database).await {
@@ -1704,25 +1710,25 @@ pub(crate) async fn build_project_context_pub(
             // ── Redshift (Postgres-compatible) ───────────────────────────────
             DatabaseType::Redshift(rds) => {
                 let host = rds
-                    .get_host(&project_manager.secrets_manager)
+                    .get_host(&workspace_manager.secrets_manager)
                     .await
                     .unwrap_or_else(|_| "localhost".into());
                 let port: u16 = rds
-                    .get_port(&project_manager.secrets_manager)
+                    .get_port(&workspace_manager.secrets_manager)
                     .await
                     .unwrap_or_else(|_| "5439".into())
                     .parse()
                     .unwrap_or(5439);
                 let user = rds
-                    .get_user(&project_manager.secrets_manager)
+                    .get_user(&workspace_manager.secrets_manager)
                     .await
                     .unwrap_or_default();
                 let password = rds
-                    .get_password(&project_manager.secrets_manager)
+                    .get_password(&workspace_manager.secrets_manager)
                     .await
                     .unwrap_or_default();
                 let database = rds
-                    .get_database(&project_manager.secrets_manager)
+                    .get_database(&workspace_manager.secrets_manager)
                     .await
                     .unwrap_or_default();
                 match PostgresConnector::new(&host, port, &user, &password, &database).await {
@@ -1737,19 +1743,19 @@ pub(crate) async fn build_project_context_pub(
             // ── ClickHouse ───────────────────────────────────────────────────
             DatabaseType::ClickHouse(ch) => {
                 let host = ch
-                    .get_host(&project_manager.secrets_manager)
+                    .get_host(&workspace_manager.secrets_manager)
                     .await
                     .unwrap_or_else(|_| "localhost".into());
                 let user = ch
-                    .get_user(&project_manager.secrets_manager)
+                    .get_user(&workspace_manager.secrets_manager)
                     .await
                     .unwrap_or_default();
                 let password = ch
-                    .get_password(&project_manager.secrets_manager)
+                    .get_password(&workspace_manager.secrets_manager)
                     .await
                     .unwrap_or_default();
                 let database = ch
-                    .get_database(&project_manager.secrets_manager)
+                    .get_database(&workspace_manager.secrets_manager)
                     .await
                     .unwrap_or_default();
                 let url = format!("http://{}:8123", host);
@@ -1764,7 +1770,7 @@ pub(crate) async fn build_project_context_pub(
 
             // ── Snowflake ────────────────────────────────────────────────────
             DatabaseType::Snowflake(sf) => {
-                let password = match sf.get_password(&project_manager.secrets_manager).await {
+                let password = match sf.get_password(&workspace_manager.secrets_manager).await {
                     Ok(p) => p,
                     Err(e) => {
                         // Only password auth is supported; skip key-pair / browser auth
@@ -1801,7 +1807,7 @@ pub(crate) async fn build_project_context_pub(
 
             // ── BigQuery ─────────────────────────────────────────────────────
             DatabaseType::Bigquery(bq) => {
-                let key_path = match bq.get_key_path(&project_manager.secrets_manager).await {
+                let key_path = match bq.get_key_path(&workspace_manager.secrets_manager).await {
                     Ok(p) => p,
                     Err(e) => {
                         tracing::warn!(db = %db_name, "BigQuery: {e}");
@@ -1809,7 +1815,7 @@ pub(crate) async fn build_project_context_pub(
                     }
                 };
                 // Resolve relative paths through config manager
-                let key_path = project_manager
+                let key_path = workspace_manager
                     .config_manager
                     .resolve_file(&key_path)
                     .await
@@ -1832,7 +1838,7 @@ pub(crate) async fn build_project_context_pub(
             }
             // ── MotherDuck ───────────────────────────────────────────────────
             DatabaseType::MotherDuck(md) => {
-                let token = match md.get_token(&project_manager.secrets_manager).await {
+                let token = match md.get_token(&workspace_manager.secrets_manager).await {
                     Ok(t) => t,
                     Err(e) => {
                         tracing::warn!(db = %db_name, "MotherDuck token: {e}");
@@ -1894,11 +1900,14 @@ fn extract_project_id_from_key(key_path: &str) -> Option<String> {
 /// Returns an error if the pipeline suspends (asks a clarifying question),
 /// exceeds max iterations, or encounters a fatal domain error.
 pub async fn run_agentic_eval(
-    project_manager: ProjectManager,
+    workspace_manager: WorkspaceManager,
     config_path: &std::path::Path,
     prompt: String,
 ) -> Result<String, oxy_shared::errors::OxyError> {
-    let base_dir = project_manager.config_manager.project_path().to_path_buf();
+    let base_dir = workspace_manager
+        .config_manager
+        .workspace_path()
+        .to_path_buf();
 
     let config = AgentConfig::from_file(config_path).map_err(|e| {
         oxy_shared::errors::OxyError::ConfigurationError(format!(
@@ -1907,7 +1916,7 @@ pub async fn run_agentic_eval(
         ))
     })?;
 
-    let build_ctx = build_project_context_pub(&config, &project_manager, &base_dir).await;
+    let build_ctx = build_project_context_pub(&config, &workspace_manager, &base_dir).await;
 
     let (solver, procedure_files) = config
         .build_solver_with_context(&base_dir, build_ctx)
@@ -1927,7 +1936,7 @@ pub async fn run_agentic_eval(
 
     // Always wire a procedure runner so search_procedures works.
     let solver = {
-        let runner = agentic_workflow::OxyProcedureRunner::new(project_manager)
+        let runner = agentic_workflow::OxyProcedureRunner::new(workspace_manager)
             .with_procedure_files(procedure_files)
             .with_events(event_stream);
         solver.with_procedure_runner(std::sync::Arc::new(runner))

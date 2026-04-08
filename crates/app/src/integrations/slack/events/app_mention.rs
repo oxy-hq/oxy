@@ -32,7 +32,7 @@ pub async fn handle_app_mention(
     // Check for channel binding (overrides defaults)
     let binding = ChannelBindingService::find_binding(team_id, channel_id).await?;
 
-    let (project_id, agent_id) = if let Some(b) = binding {
+    let (workspace_id, agent_id) = if let Some(b) = binding {
         // Channel is explicitly bound - use the binding
         tracing::info!(
             "Channel binding found: project={}, agent={}",
@@ -59,7 +59,7 @@ pub async fn handle_app_mention(
         text: cleaned_text,
         thread_ts: thread_ts.map(|s| s.to_string()),
         event_ts: event_ts.to_string(),
-        project_id,
+        workspace_id,
         agent_id,
         slack_settings,
         is_dm: false,

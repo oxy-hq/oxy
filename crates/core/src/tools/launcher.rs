@@ -2,7 +2,7 @@ use minijinja::Value;
 use tracing::Instrument;
 
 use crate::{
-    adapters::project::manager::ProjectManager,
+    adapters::workspace::manager::WorkspaceManager,
     config::{constants::TOOL_SOURCE, model::ToolType},
     execute::{
         Executable, ExecutionContext, ExecutionContextBuilder,
@@ -40,9 +40,9 @@ impl ToolLauncher {
         }
     }
 
-    pub fn with_project(
+    pub fn with_workspace(
         mut self,
-        project_manager: ProjectManager,
+        workspace_manager: WorkspaceManager,
         source: Option<Source>,
     ) -> Result<Self, OxyError> {
         let source = source.unwrap_or(Source {
@@ -52,7 +52,7 @@ impl ToolLauncher {
         });
         self.execution_context = Some(
             ExecutionContextBuilder::new()
-                .with_project_manager(project_manager)
+                .with_workspace_manager(workspace_manager)
                 .with_source(source)
                 .with_writer(self.buf_writer.create_writer(None)?)
                 .with_global_context(Value::UNDEFINED)

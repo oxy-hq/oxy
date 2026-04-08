@@ -13,7 +13,7 @@ import { Spinner } from "@/components/ui/shadcn/spinner";
 import TablePagination from "@/components/ui/TablePagination";
 import { useMetricsList } from "@/hooks/api/metrics";
 import ROUTES from "@/libs/utils/routes";
-import useCurrentProject from "@/stores/useCurrentProject";
+import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 import type { DaysValue, ViewMode } from "../../constants";
 import { METRICS_PAGE_SIZE } from "../../constants";
 import MetricCard from "./MetricCard";
@@ -26,7 +26,7 @@ interface MetricsGridProps {
 
 export default function MetricsGrid({ viewMode, daysFilter }: MetricsGridProps) {
   const navigate = useNavigate();
-  const { project } = useCurrentProject();
+  const { workspace: project } = useCurrentWorkspace();
   const [currentPage, setCurrentPage] = useState(1);
   const offset = (currentPage - 1) * METRICS_PAGE_SIZE;
 
@@ -46,7 +46,7 @@ export default function MetricsGrid({ viewMode, daysFilter }: MetricsGridProps) 
 
   const handleMetricClick = useCallback(
     (metricName: string) => {
-      navigate(ROUTES.PROJECT(project?.id || "").IDE.OBSERVABILITY.METRIC(metricName));
+      navigate(ROUTES.WORKSPACE(project?.id || "").IDE.OBSERVABILITY.METRIC(metricName));
     },
     [navigate, project?.id]
   );

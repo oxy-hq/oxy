@@ -213,9 +213,11 @@ impl ParamMapper<SemanticQueryTask, ValidatedSemanticQuery> for SemanticQueryTas
         let rendered_task = render_semantic_query(&execution_context.renderer, &input)?;
 
         // Task 3.2: Metadata Validation
-        let validated_query =
-            validate_semantic_query_task(&execution_context.project.config_manager, &rendered_task)
-                .await?;
+        let validated_query = validate_semantic_query_task(
+            &execution_context.workspace.config_manager,
+            &rendered_task,
+        )
+        .await?;
 
         workflow_events::task::semantic_query::map_output(
             &validated_query.topic.name,
@@ -254,7 +256,7 @@ impl SemanticQueryExecutable {
         // Record explicit metrics and emit tracing event
         tool_events::semantic_query_compile_input(&input.topic.name, &input.task.query);
 
-        let config_manager = &execution_context.project.config_manager;
+        let config_manager = &execution_context.workspace.config_manager;
         let date_fields = collect_date_fields(&input.views);
 
         let mut sql_query = compile_with_airlayer(
@@ -420,7 +422,7 @@ impl SemanticQueryExecutable {
             })
             .await?;
 
-        let config_manager = &execution_context.project.config_manager;
+        let config_manager = &execution_context.workspace.config_manager;
         let date_fields = collect_date_fields(&input.views);
 
         // Compile semantic query to SQL using airlayer engine
@@ -626,8 +628,8 @@ impl SemanticQueryExecutable {
         use oxy::connector::write_to_ipc;
         use uuid::Uuid;
 
-        let config_manager = &execution_context.project.config_manager;
-        let secret_manager = &execution_context.project.secrets_manager;
+        let config_manager = &execution_context.workspace.config_manager;
+        let secret_manager = &execution_context.workspace.secrets_manager;
 
         // Create database connector
         let connector = Connector::from_database(

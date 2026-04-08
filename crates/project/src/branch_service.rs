@@ -1,6 +1,6 @@
 use crate::database_operations::DatabaseOperations;
 use entity::prelude::*;
-use entity::{branches, projects};
+use entity::{branches, workspaces};
 use oxy::api_types::{BranchType, ProjectBranch, RevisionInfoResponse};
 use oxy::github::GitHubClient;
 use oxy::github::{GitHubAppAuth, GitOperations};
@@ -13,7 +13,7 @@ pub struct BranchService;
 
 impl BranchService {
     pub async fn find_branch_by_name_or_active(
-        project: &projects::Model,
+        project: &workspaces::Model,
         query_branch: Option<String>,
     ) -> Result<branches::Model, OxyError> {
         DatabaseOperations::with_connection(|db| async move {
@@ -69,7 +69,7 @@ impl BranchService {
             .into_iter()
             .map(|b| ProjectBranch {
                 id: b.id,
-                project_id: b.project_id,
+                workspace_id: b.project_id,
                 branch_type: BranchType::Local,
                 name: b.name,
                 revision: b.revision,
@@ -96,7 +96,7 @@ impl BranchService {
         }
 
         info!(
-            "Branch '{}' not found for project '{}', creating new branch",
+            "Branch '{}' not found for workspace '{}', creating new branch",
             branch_name, project_id
         );
 
@@ -108,11 +108,11 @@ impl BranchService {
         branch_name: String,
     ) -> Result<branches::Model, OxyError> {
         DatabaseOperations::with_connection(|db| async move {
-            let project = Projects::find_by_id(project_id)
+            let project = Workspaces::find_by_id(project_id)
                 .one(&db)
                 .await
-                .map_err(|e| DatabaseOperations::wrap_db_error("Failed to find project", e))?
-                .ok_or_else(|| OxyError::RuntimeError("Project not found".to_string()))?;
+                .map_err(|e| DatabaseOperations::wrap_db_error("Failed to find workspace", e))?
+                .ok_or_else(|| OxyError::RuntimeError("Workspace not found".to_string()))?;
 
             if let Some(active) = Branches::find_by_id(project.active_branch_id)
                 .one(&db)
@@ -125,19 +125,19 @@ impl BranchService {
 
             let branch = Self::switch_project_branch(project_id, branch_name).await?;
 
-            let mut pm: projects::ActiveModel = project.into();
+            let mut pm: workspaces::ActiveModel = project.into();
             pm.active_branch_id = Set(branch.id);
             pm.updated_at = Set(DatabaseOperations::now().into());
             pm.update(&db)
                 .await
-                .map_err(|e| DatabaseOperations::wrap_db_error("Failed to update project", e))?;
+                .map_err(|e| DatabaseOperations::wrap_db_error("Failed to update workspace", e))?;
             Ok(branch)
         })
         .await
     }
 
     pub async fn get_revision_info(
-        project: &projects::Model,
+        project: &workspaces::Model,
         client: &GitHubClient,
         repo_id: i64,
         query_branch: Option<String>,
@@ -183,15 +183,15 @@ impl BranchService {
 
         // Load project repo
         let project_repo_id = project.project_repo_id.as_ref().ok_or_else(|| {
-            OxyError::ConfigurationError("No repository configured for project".to_string())
+            OxyError::ConfigurationError("No repository configured for workspace".to_string())
         })?;
 
         let project_repo = DatabaseOperations::with_connection(|db| async move {
-            entity::project_repos::Entity::find_by_id(*project_repo_id)
+            entity::workspace_repos::Entity::find_by_id(*project_repo_id)
                 .one(&db)
                 .await
-                .map_err(|e| DatabaseOperations::wrap_db_error("Failed to find project repo", e))?
-                .ok_or_else(|| OxyError::RuntimeError("Project repo not found".to_string()))
+                .map_err(|e| DatabaseOperations::wrap_db_error("Failed to find workspace repo", e))?
+                .ok_or_else(|| OxyError::RuntimeError("Workspace repo not found".to_string()))
         })
         .await?;
 
@@ -224,7 +224,7 @@ impl BranchService {
             if let Ok(rev) = client.get_branch_commit_hash(repo_id, &gh.name).await {
                 out.push(ProjectBranch {
                     id: Uuid::new_v4(),
-                    project_id,
+                    workspace_id: project_id,
                     branch_type: BranchType::Remote,
                     name: gh.name.clone(),
                     revision: rev,
@@ -285,13 +285,13 @@ impl BranchService {
         Ok(new_b)
     }
 
-    async fn load_project(project_id: Uuid) -> Result<projects::Model, OxyError> {
+    async fn load_project(project_id: Uuid) -> Result<workspaces::Model, OxyError> {
         DatabaseOperations::with_connection(|db| async move {
-            Projects::find_by_id(project_id)
+            Workspaces::find_by_id(project_id)
                 .one(&db)
                 .await
-                .map_err(|e| DatabaseOperations::wrap_db_error("Failed to find project", e))?
-                .ok_or_else(|| OxyError::RuntimeError("Project not found".to_string()))
+                .map_err(|e| DatabaseOperations::wrap_db_error("Failed to find workspace", e))?
+                .ok_or_else(|| OxyError::RuntimeError("Workspace not found".to_string()))
         })
         .await
     }

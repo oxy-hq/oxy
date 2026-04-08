@@ -140,6 +140,44 @@ impl GitHubAppAuth {
         Ok(token_response.access_token)
     }
 
+    pub async fn list_installations(&self) -> Result<Vec<GitHubInstallation>, OxyError> {
+        let jwt = self.generate_jwt()?;
+
+        let url = format!("{}/app/installations", self.base_url);
+        let response = self
+            .client
+            .get(&url)
+            .header(AUTHORIZATION, format!("Bearer {}", jwt))
+            .send()
+            .await
+            .map_err(|e| {
+                OxyError::RuntimeError(format!("Failed to list app installations: {e}"))
+            })?;
+
+        if !response.status().is_success() {
+            return Err(OxyError::RuntimeError(format!(
+                "GitHub API error: {} - {}",
+                response.status(),
+                response.text().await.unwrap_or_default()
+            )));
+        }
+
+        let installations: Vec<GitHubInstallationResponse> =
+            response.json().await.map_err(|e| {
+                OxyError::RuntimeError(format!("Failed to parse installations list: {e}"))
+            })?;
+
+        Ok(installations
+            .into_iter()
+            .map(|r| GitHubInstallation {
+                id: r.id,
+                owner_type: r.account.account_type,
+                slug: r.app_slug,
+                name: r.account.login,
+            })
+            .collect())
+    }
+
     pub async fn get_installation_info(
         &self,
         installation_id: &str,

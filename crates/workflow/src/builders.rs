@@ -7,8 +7,8 @@ use crate::{task_builder::create_runtime_input, workflow_builder::build_workflow
 
 use oxy::{
     adapters::{
-        project::manager::ProjectManager, runs::RunsManager, secrets::SecretsManager,
-        session_filters::SessionFilters,
+        runs::RunsManager, secrets::SecretsManager, session_filters::SessionFilters,
+        workspace::manager::WorkspaceManager,
     },
     checkpoint::{RunInfo, types::RetryStrategy},
     config::{
@@ -137,8 +137,8 @@ impl WorkflowLauncher {
         mut self,
         execution_context: &ExecutionContext,
     ) -> Result<Self, OxyError> {
-        let config_manager = execution_context.project.config_manager.clone();
-        let secrets_manager = execution_context.project.secrets_manager.clone();
+        let config_manager = execution_context.workspace.config_manager.clone();
+        let secrets_manager = execution_context.workspace.secrets_manager.clone();
         let tx = self.buf_writer.create_writer(None)?;
         let global_context = self
             .get_global_context(config_manager, secrets_manager)
@@ -152,21 +152,24 @@ impl WorkflowLauncher {
     }
 
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = workflow_events::launcher::with_project::NAME,
-        oxy.span_type = workflow_events::launcher::with_project::TYPE,
+        otel.name = workflow_events::launcher::with_workspace::NAME,
+        oxy.span_type = workflow_events::launcher::with_workspace::TYPE,
     ))]
-    pub async fn with_project(mut self, project_manager: ProjectManager) -> Result<Self, OxyError> {
-        workflow_events::launcher::with_project::input(
-            project_manager
+    pub async fn with_workspace(
+        mut self,
+        workspace_manager: WorkspaceManager,
+    ) -> Result<Self, OxyError> {
+        workflow_events::launcher::with_workspace::input(
+            workspace_manager
                 .config_manager
-                .project_path()
+                .workspace_path()
                 .to_str()
                 .unwrap_or("unknown"),
         );
 
         let tx = self.buf_writer.create_writer(None)?;
         let mut execution_context = ExecutionContextBuilder::new()
-            .with_project_manager(project_manager)
+            .with_workspace_manager(workspace_manager)
             .with_global_context(minijinja::Value::UNDEFINED)
             .with_writer(tx)
             .with_source(Source {
@@ -178,8 +181,8 @@ impl WorkflowLauncher {
             .with_connections(self.connections.clone())
             .build()?;
 
-        let config_manager = execution_context.project.config_manager.clone();
-        let secrets_manager = execution_context.project.secrets_manager.clone();
+        let config_manager = execution_context.workspace.config_manager.clone();
+        let secrets_manager = execution_context.workspace.secrets_manager.clone();
 
         let global_context = self
             .get_global_context(config_manager, secrets_manager)
@@ -187,7 +190,7 @@ impl WorkflowLauncher {
         execution_context = execution_context.wrap_global_context(global_context);
         self.execution_context = Some(execution_context);
 
-        workflow_events::launcher::with_project::output();
+        workflow_events::launcher::with_workspace::output();
         Ok(self)
     }
 
@@ -318,7 +321,7 @@ impl WorkflowLauncher {
 
         let runs_manager =
             execution_context
-                .project
+                .workspace
                 .runs_manager
                 .clone()
                 .ok_or(OxyError::RuntimeError(
@@ -344,7 +347,7 @@ impl WorkflowLauncher {
         )
         .await?;
         let workflow_config = execution_context
-            .project
+            .workspace
             .config_manager
             .resolve_workflow(&workflow_input.workflow_ref)
             .await?;

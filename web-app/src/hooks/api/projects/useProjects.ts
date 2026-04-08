@@ -1,57 +1,25 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ProjectService } from "@/services/api";
+import { WorkspaceService, type WorkspaceSummary } from "@/services/api/workspaces";
 import type { Project, ProjectBranchesResponse } from "@/types/project";
 import queryKeys from "../queryKey";
 
-const getLocalProject = (): Project => ({
-  id: "00000000-0000-0000-0000-000000000000",
-  name: "Oxygen",
-  workspace_id: "00000000-0000-0000-0000-000000000000",
-  project_repo_id: "00000000-0000-0000-0000-000000000000",
-  active_branch: {
-    name: "main",
-    sync_status: "synced",
-    revision: "00000000-0000-0000-0000-000000000000",
-    id: "00000000-0000-0000-0000-000000000000",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    branch_type: "local"
-  },
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString()
-});
-
 // Hook to fetch a single project
-export const useProject = (projectId: string, cloud: boolean) => {
+export const useProject = (projectId: string) => {
   return useQuery<Project>({
-    queryKey: queryKeys.projects.item(projectId),
-    queryFn: () => (cloud ? ProjectService.getProject(projectId) : getLocalProject()),
-    enabled: !cloud || !!projectId
+    queryKey: queryKeys.workspaces.item(projectId),
+    queryFn: () => WorkspaceService.getWorkspace(projectId) as unknown as Promise<Project>
   });
 };
 
 // Hook to fetch project branches
 export const useProjectBranches = (projectId: string) => {
   return useQuery<ProjectBranchesResponse>({
-    queryKey: queryKeys.projects.branches(projectId),
-    queryFn: () => ProjectService.getProjectBranches(projectId),
+    queryKey: queryKeys.workspaces.branches(projectId),
+    queryFn: () =>
+      WorkspaceService.getWorkspaceBranches(
+        projectId
+      ) as unknown as Promise<ProjectBranchesResponse>,
     enabled: !!projectId
-  });
-};
-
-// Hook to delete a project
-export const useDeleteProject = (workspaceId: string) => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (projectId: string): Promise<void> =>
-      ProjectService.deleteProject(workspaceId, projectId),
-    onSuccess: () => {
-      // Invalidate projects list to refetch
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.projects.list(workspaceId)
-      });
-    }
   });
 };
 
@@ -61,14 +29,14 @@ export const useSwitchProjectBranch = () => {
 
   return useMutation({
     mutationFn: ({ projectId, branchName }: { projectId: string; branchName: string }) =>
-      ProjectService.switchProjectBranch(projectId, branchName),
+      WorkspaceService.switchWorkspaceBranch(projectId, branchName),
     onSuccess: (_, variables) => {
-      // Invalidate project details and branches to refetch
+      // Invalidate workspace details and branches to refetch
       queryClient.invalidateQueries({
-        queryKey: queryKeys.projects.item(variables.projectId)
+        queryKey: queryKeys.workspaces.item(variables.projectId)
       });
       queryClient.invalidateQueries({
-        queryKey: queryKeys.projects.branches(variables.projectId)
+        queryKey: queryKeys.workspaces.branches(variables.projectId)
       });
     }
   });
@@ -80,12 +48,12 @@ export const usePullChanges = () => {
 
   return useMutation({
     mutationFn: ({ projectId, branchName }: { projectId: string; branchName: string }) =>
-      ProjectService.pullChanges(projectId, branchName),
+      WorkspaceService.pullChanges(projectId, branchName),
     onSuccess: (_, variables) => {
       // Refetch revision info immediately after pull, including inactive observers
       // so the status updates even if BranchInfo unmounts during navigation.
       queryClient.invalidateQueries({
-        queryKey: queryKeys.projects.revisionInfo(variables.projectId, variables.branchName),
+        queryKey: queryKeys.workspaces.revisionInfo(variables.projectId, variables.branchName),
         refetchType: "all"
       });
       queryClient.invalidateQueries({
@@ -100,10 +68,10 @@ export const usePullChanges = () => {
 export const useDeleteBranch = (projectId: string) => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (branchName: string) => ProjectService.deleteBranch(projectId, branchName),
+    mutationFn: (branchName: string) => WorkspaceService.deleteBranch(projectId, branchName),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: queryKeys.projects.branches(projectId)
+        queryKey: queryKeys.workspaces.branches(projectId)
       });
     }
   });
@@ -115,10 +83,10 @@ export const useForcePush = () => {
 
   return useMutation({
     mutationFn: ({ projectId, branchName }: { projectId: string; branchName: string }) =>
-      ProjectService.forcePushBranch(projectId, branchName),
+      WorkspaceService.forcePushBranch(projectId, branchName),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: queryKeys.projects.revisionInfo(variables.projectId, variables.branchName)
+        queryKey: queryKeys.workspaces.revisionInfo(variables.projectId, variables.branchName)
       });
     }
   });
@@ -137,15 +105,60 @@ export const usePushChanges = () => {
       projectId: string;
       branchName: string;
       commitMessage?: string;
-    }) => ProjectService.pushChanges(projectId, branchName, commitMessage),
+    }) => WorkspaceService.pushChanges(projectId, branchName, commitMessage),
     onSuccess: (_, variables) => {
       // Invalidate revision info to refetch after push
       queryClient.invalidateQueries({
-        queryKey: queryKeys.projects.revisionInfo(variables.projectId, variables.branchName)
+        queryKey: queryKeys.workspaces.revisionInfo(variables.projectId, variables.branchName)
       });
       queryClient.invalidateQueries({
         queryKey: queryKeys.file.all(variables.projectId, variables.branchName)
       });
+    }
+  });
+};
+
+export const useAllProjects = () => {
+  return useQuery<WorkspaceSummary[]>({
+    queryKey: queryKeys.workspaces.list(),
+    queryFn: () => WorkspaceService.listAllWorkspaces(),
+    // Poll every 3 s while any workspace is still cloning so the UI updates
+    // automatically once the background git clone finishes.
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      return data?.some((p) => p.is_cloning) ? 3000 : false;
+    }
+  });
+};
+
+export const useDeleteProject = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, deleteFiles }: { id: string; deleteFiles?: boolean }) =>
+      WorkspaceService.deleteWorkspace(id, deleteFiles),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.list() });
+    }
+  });
+};
+
+export const useActivateProject = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (projectId: string) => WorkspaceService.activateWorkspace(projectId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.list() });
+      queryClient.invalidateQueries({ queryKey: ["authConfig"] });
+      // Re-bootstrap the active workspace so MainLayout loads the new workspace's details.
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.workspaces.item("00000000-0000-0000-0000-000000000000")
+      });
+      // Flush all workspace-scoped data so the new workspace's content loads fresh.
+      queryClient.invalidateQueries({ queryKey: queryKeys.thread.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agent.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.workflow.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.app.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.database.all });
     }
   });
 };

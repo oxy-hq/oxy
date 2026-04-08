@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use agentic_builder::BuilderTestRunner;
-use oxy::adapters::project::builder::ProjectBuilder;
+use oxy::adapters::workspace::builder::WorkspaceBuilder;
 use oxy::execute::types::Event;
 use oxy::execute::writer::EventHandler;
 use oxy_shared::errors::OxyError;
@@ -30,18 +30,18 @@ pub struct OxyTestRunner;
 
 #[async_trait::async_trait]
 impl BuilderTestRunner for OxyTestRunner {
-    async fn run_tests(&self, project_root: &Path, test_file: &str) -> Result<Value, String> {
-        let abs_path = project_root.join(test_file);
+    async fn run_tests(&self, workspace_root: &Path, test_file: &str) -> Result<Value, String> {
+        let abs_path = workspace_root.join(test_file);
 
-        let project_manager = ProjectBuilder::new(uuid::Uuid::new_v4())
-            .with_project_path(project_root)
+        let workspace_manager = WorkspaceBuilder::new(uuid::Uuid::new_v4())
+            .with_workspace_path(workspace_root)
             .await
             .map_err(|e| e.to_string())?
             .build()
             .await
             .map_err(|e| e.to_string())?;
 
-        let results = run_eval_with_tag(project_manager, abs_path, None, None, NoopEventHandler)
+        let results = run_eval_with_tag(workspace_manager, abs_path, None, None, NoopEventHandler)
             .await
             .map_err(|e| e.to_string())?;
 

@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { DatabaseService } from "@/services/api";
-import useCurrentProjectBranch from "../useCurrentProjectBranch";
 
 export default function useExecuteSql() {
   const { project, branchName } = useCurrentProjectBranch();

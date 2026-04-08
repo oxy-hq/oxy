@@ -27,8 +27,9 @@ use tokio_stream::StreamExt;
 use crate::{
     adapters::{
         create_app_schema, edit_app_schema, looker_tool_description::get_looker_query_description,
-        project::manager::ProjectManager, read_app_schema, secrets::SecretsManager,
+        read_app_schema, secrets::SecretsManager,
         semantic_tool_description::get_semantic_query_description, viz_schema,
+        workspace::manager::WorkspaceManager,
     },
     config::{
         ConfigManager,
@@ -486,7 +487,7 @@ fn get_omni_description(
     model_id: &str,
     config: &ConfigManager,
 ) -> Result<String, OxyError> {
-    let storage = MetadataStorage::new(config.project_path(), integration.to_string());
+    let storage = MetadataStorage::new(config.workspace_path(), integration.to_string());
 
     // Get all available topics for the model
     let topics = storage
@@ -668,9 +669,12 @@ pub struct OpenAIAdapter {
 }
 
 impl OpenAIAdapter {
-    pub async fn from_config(project: ProjectManager, model_ref: &str) -> Result<Self, OxyError> {
-        let model = project.config_manager.resolve_model(model_ref)?;
-        let config_type = model.into_openai_config(&project.secrets_manager).await?;
+    pub async fn from_config(
+        workspace: WorkspaceManager,
+        model_ref: &str,
+    ) -> Result<Self, OxyError> {
+        let model = workspace.config_manager.resolve_model(model_ref)?;
+        let config_type = model.into_openai_config(&workspace.secrets_manager).await?;
         let client = Client::with_config(config_type);
         Ok(Self {
             client,

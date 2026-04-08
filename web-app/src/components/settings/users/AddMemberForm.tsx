@@ -1,6 +1,6 @@
 import type React from "react";
 import { useState } from "react";
-import { Controller, useForm } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/shadcn/button";
 import {
@@ -14,59 +14,39 @@ import {
 } from "@/components/ui/shadcn/dialog";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue
-} from "@/components/ui/shadcn/select";
-import { useAddUserToWorkspace } from "@/hooks/api/users/useUserMutations";
+import { useInviteUser } from "@/hooks/api/users/useUserMutations";
 
-interface AddMemberFormProps {
-  workspaceId: string;
-}
-
-const AddMemberForm: React.FC<AddMemberFormProps> = ({ workspaceId }) => {
+const AddMemberForm: React.FC = () => {
   const [open, setOpen] = useState(false);
-  const addUserMutation = useAddUserToWorkspace();
+  const inviteUserMutation = useInviteUser();
   const {
     register,
     handleSubmit,
     formState: { errors },
-    reset,
-    control
-  } = useForm<{ email: string; role: string }>({
-    defaultValues: { email: "", role: "member" }
+    reset
+  } = useForm<{ email: string }>({
+    defaultValues: { email: "" }
   });
 
-  const onSubmit = async (data: { email: string; role: string }) => {
+  const onSubmit = async (data: { email: string }) => {
     try {
-      await addUserMutation.mutateAsync({
-        workspaceId,
-        email: data.email,
-        role: data.role
-      });
+      await inviteUserMutation.mutateAsync({ email: data.email });
       reset();
-      toast.success("User added successfully");
+      toast.success("Invitation sent successfully");
       setOpen(false);
-    } catch (err) {
-      if (err instanceof Error && err.message.includes("404")) {
-        toast.error("User not found");
-      } else {
-        toast.error("Failed to add user");
-      }
+    } catch {
+      toast.error("Failed to send invitation");
     }
   };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size='sm'>Add Member</Button>
+        <Button size='sm'>Invite Member</Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add New Member</DialogTitle>
+          <DialogTitle>Invite New Member</DialogTitle>
         </DialogHeader>
         <form className='space-y-4' onSubmit={handleSubmit(onSubmit)}>
           <div className='space-y-2'>
@@ -86,38 +66,18 @@ const AddMemberForm: React.FC<AddMemberFormProps> = ({ workspaceId }) => {
               <span className='text-destructive text-xs'>{errors.email.message}</span>
             )}
           </div>
-          <div className='space-y-2'>
-            <Label htmlFor='role'>Role</Label>
-            <Controller
-              name='role'
-              control={control}
-              rules={{ required: true }}
-              render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger id='role'>
-                    <SelectValue placeholder='Select role' />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem className='cursor-pointer' value='member'>
-                      Member
-                    </SelectItem>
-                    <SelectItem className='cursor-pointer' value='admin'>
-                      Admin
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              )}
-            />
-            {errors.role && <span className='text-destructive text-xs'>Role is required</span>}
-          </div>
           <DialogFooter>
             <DialogClose asChild>
               <Button type='button' variant='outline'>
                 Cancel
               </Button>
             </DialogClose>
-            <Button type='submit' variant='default' disabled={addUserMutation.status === "pending"}>
-              {addUserMutation.status === "pending" ? "Adding..." : "Add"}
+            <Button
+              type='submit'
+              variant='default'
+              disabled={inviteUserMutation.status === "pending"}
+            >
+              {inviteUserMutation.status === "pending" ? "Sending..." : "Send Invite"}
             </Button>
           </DialogFooter>
         </form>

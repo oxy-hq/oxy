@@ -19,13 +19,13 @@ pub struct Model {
 pub enum Relation {
     // Logical relation only — no FK in DB (mirrors the runs table pattern)
     #[sea_orm(
-        belongs_to = "super::projects::Entity",
+        belongs_to = "super::workspaces::Entity",
         from = "Column::ProjectId",
-        to = "super::projects::Column::Id",
+        to = "super::workspaces::Column::Id",
         on_update = "NoAction",
         on_delete = "NoAction"
     )]
-    Projects,
+    Workspaces,
     #[sea_orm(has_many = "super::test_run_cases::Entity")]
     TestRunCases,
     #[sea_orm(
@@ -38,9 +38,9 @@ pub enum Relation {
     TestProjectRuns,
 }
 
-impl Related<super::projects::Entity> for Entity {
+impl Related<super::workspaces::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::Projects.def()
+        Relation::Workspaces.def()
     }
 }
 

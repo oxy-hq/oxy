@@ -1,16 +1,16 @@
 use super::app_service::AppService;
 use super::types::{AppResult, DISPLAY_KEY, DisplayWithError, ErrorDisplay, TASKS_KEY};
-use oxy::adapters::project::manager::ProjectManager;
+use oxy::adapters::workspace::manager::WorkspaceManager;
 use oxy::config::model::{ControlConfig, Display, Task, TaskType};
 use std::path::PathBuf;
 
 const CONTROLS_KEY: &str = "controls";
 
 pub async fn get_app_displays(
-    project_manager: ProjectManager,
+    workspace_manager: WorkspaceManager,
     path: &PathBuf,
 ) -> AppResult<(Vec<DisplayWithError>, Vec<ControlConfig>)> {
-    let app_service = AppService::new(project_manager);
+    let app_service = AppService::new(workspace_manager);
     let mut displays = Vec::new();
 
     let yaml_content = match app_service.read_yaml_file(path).await {

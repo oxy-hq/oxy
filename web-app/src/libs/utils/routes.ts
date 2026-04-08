@@ -5,82 +5,80 @@ const ROUTES = {
     LOGIN: "/login",
     GOOGLE_CALLBACK: "/auth/google/callback",
     OKTA_CALLBACK: "/auth/okta/callback",
-    MAGIC_LINK_CALLBACK: "/auth/magic-link/callback"
+    MAGIC_LINK_CALLBACK: "/auth/magic-link/callback",
+    GITHUB_AUTH_CALLBACK: "/auth/github/callback"
   },
   GITHUB: {
     CALLBACK: "/github/callback"
   },
-  SETTINGS: {
-    GITHUB: "/github-settings",
-    SECRETS_SETUP: "/secrets/setup"
-  },
+  SETUP: "/setup",
+  WORKSPACES: "/workspaces",
+  MEMBERS: "/members",
 
-  WORKSPACE: {
-    ROOT: "/workspaces",
-    CREATE_WORKSPACE: "/create-workspace"
-  },
-
-  PROJECT: (projectId: string) => {
-    let base = `/projects/${projectId}`;
-    if (projectId === "00000000-0000-0000-0000-000000000000") {
-      base = ``;
-    }
+  WORKSPACE: (_workspaceId: string) => {
+    // Navigation routes are flat (no workspace-ID prefix) — workspace context is held
+    // in the Zustand store. API calls use the ID from useCurrentWorkspace().
+    // Exception: IDE and shareable resource URLs include the workspace ID so they
+    // are workspace-locked and can be bookmarked / shared as deep links.
+    const base = ``;
+    const ideBase = `/workspaces/${_workspaceId}`;
 
     return {
-      ROOT: base,
+      ROOT: base || "/",
       HOME: `${base}/home`,
       NEW: `${base}/new`,
-      REQUIRED_SECRETS: `${base}/settings/secrets`,
+      REQUIRED_SECRETS: `${ideBase}/ide/settings/secrets`,
 
       THREADS: `${base}/threads`,
-      THREAD: (threadId: string) => `${base}/threads/${threadId}`,
+      // Thread and workflow URLs include the workspace ID so they can be shared as deep links.
+      THREAD: (threadId: string) => `/workspaces/${_workspaceId}/threads/${threadId}`,
 
       WORKFLOW: (pathb64: string) => {
-        const wfBase = `${base}/workflows/${pathb64}`;
         return {
-          ROOT: wfBase
+          ROOT: `/workspaces/${_workspaceId}/workflows/${pathb64}`
         };
       },
 
-      APP: (pathb64: string) => `${base}/apps/${pathb64}`,
+      APP: (pathb64: string) => `/workspaces/${_workspaceId}/apps/${pathb64}`,
 
       IDE: {
-        ROOT: `${base}/ide`,
+        ROOT: `${ideBase}/ide`,
         FILES: {
-          ROOT: `${base}/ide/files`,
-          FILE: (pathb64: string) => `${base}/ide/files/${pathb64}`,
+          ROOT: `${ideBase}/ide/files`,
+          FILE: (pathb64: string) => `${ideBase}/ide/files/${pathb64}`,
           LOOKER_EXPLORE: (integrationName: string, model: string, exploreName: string) =>
-            `${base}/ide/files/looker/${encodeURIComponent(integrationName)}/${encodeURIComponent(model)}/${encodeURIComponent(exploreName)}`
+            `${ideBase}/ide/files/looker/${encodeURIComponent(integrationName)}/${encodeURIComponent(model)}/${encodeURIComponent(exploreName)}`
         },
         DATABASE: {
-          ROOT: `${base}/ide/database`
+          ROOT: `${ideBase}/ide/database`
         },
         SETTINGS: {
-          ROOT: `${base}/ide/settings`,
-          DATABASES: `${base}/ide/settings/databases`,
-          ACTIVITY_LOGS: `${base}/ide/settings/activity-logs`,
-          API_KEYS: `${base}/ide/settings/api-keys`,
-          SECRETS: `${base}/ide/settings/secrets`
+          ROOT: `${ideBase}/ide/settings`,
+          DATABASES: `${ideBase}/ide/settings/databases`,
+          REPOSITORIES: `${ideBase}/ide/settings/repositories`,
+          ACTIVITY_LOGS: `${ideBase}/ide/settings/activity-logs`,
+          API_KEYS: `${ideBase}/ide/settings/api-keys`,
+          SECRETS: `${ideBase}/ide/settings/secrets`
         },
         TESTS: {
-          ROOT: `${base}/ide/tests`,
-          RUNS: `${base}/ide/tests/runs`,
-          TEST_FILE: (pathb64: string) => `${base}/ide/tests/${pathb64}`
+          ROOT: `${ideBase}/ide/tests`,
+          RUNS: `${ideBase}/ide/tests/runs`,
+          TEST_FILE: (pathb64: string) => `${ideBase}/ide/tests/${pathb64}`
         },
         OBSERVABILITY: {
-          ROOT: `${base}/ide/observability`,
-          TRACES: `${base}/ide/observability/traces`,
-          TRACE: (traceId: string) => `${base}/ide/observability/traces/${traceId}`,
-          CLUSTERS: `${base}/ide/observability/clusters`,
-          CLUSTERS_V2: `${base}/ide/observability/clusters-v2`,
-          METRICS: `${base}/ide/observability/metrics`,
+          ROOT: `${ideBase}/ide/observability`,
+          TRACES: `${ideBase}/ide/observability/traces`,
+          TRACE: (traceId: string) => `${ideBase}/ide/observability/traces/${traceId}`,
+          CLUSTERS: `${ideBase}/ide/observability/clusters`,
+          CLUSTERS_V2: `${ideBase}/ide/observability/clusters-v2`,
+          METRICS: `${ideBase}/ide/observability/metrics`,
           METRIC: (metricName: string) =>
-            `${base}/ide/observability/metrics/${encodeURIComponent(metricName)}`,
-          EXECUTION_ANALYTICS: `${base}/ide/observability/execution-analytics`
+            `${ideBase}/ide/observability/metrics/${encodeURIComponent(metricName)}`,
+          EXECUTION_ANALYTICS: `${ideBase}/ide/observability/execution-analytics`
         }
       },
 
-      CONTEXT_GRAPH: `${base}/context-graph`
+      CONTEXT_GRAPH: `${ideBase}/context-graph`
     };
   }
 } as const;

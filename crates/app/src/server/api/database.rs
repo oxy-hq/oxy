@@ -1,4 +1,6 @@
-use crate::server::api::middlewares::project::{ProjectManagerExtractor, ProjectPath};
+use crate::server::api::middlewares::workspace_context::{
+    WorkspaceManagerExtractor, WorkspacePath,
+};
 use crate::{
     cli::commands::clean::{clean_all, clean_cache, clean_database_folder, clean_vectors},
     server::service::{
@@ -72,10 +74,10 @@ pub struct SyncDatabaseQuery {
 }
 
 pub async fn sync_database(
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path(ProjectPath {
-        project_id: _project_id,
-    }): Path<ProjectPath>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path(WorkspacePath {
+        workspace_id: _workspace_id,
+    }): Path<WorkspacePath>,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Query(params): Query<SyncDatabaseQuery>,
 ) -> Result<Json<DatabaseSyncResponse>, StatusCode> {
@@ -86,8 +88,8 @@ pub async fn sync_database(
 
     let overwrite = true; // Always overwrite
 
-    let config = project_manager.config_manager;
-    let secrets_manager = project_manager.secrets_manager;
+    let config = workspace_manager.config_manager;
+    let secrets_manager = workspace_manager.secrets_manager;
 
     match sync_databases(config.clone(), secrets_manager.clone(), filter, overwrite).await {
         Ok(results) => {
@@ -151,11 +153,11 @@ pub async fn sync_database(
 }
 
 pub async fn list_databases(
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
 ) -> Result<Json<Vec<DatabaseInfo>>, StatusCode> {
-    let config_manager = &project_manager.config_manager;
-    let secrets_manager = &project_manager.secrets_manager;
+    let config_manager = &workspace_manager.config_manager;
+    let secrets_manager = &workspace_manager.secrets_manager;
 
     let semantic_manager =
         SemanticManager::from_config(config_manager.clone(), secrets_manager.clone(), false)
@@ -255,7 +257,7 @@ pub struct CleanResponse {
 }
 
 pub async fn clean_data(
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Query(params): Query<CleanRequest>,
 ) -> Result<Json<CleanResponse>, StatusCode> {
     let target = params.target.unwrap_or(CleanTarget::All);
@@ -265,7 +267,7 @@ pub async fn clean_data(
     let mut error_message = String::new();
 
     match target {
-        CleanTarget::All => match clean_all(false, &project_manager.config_manager).await {
+        CleanTarget::All => match clean_all(false, &workspace_manager.config_manager).await {
             Ok(_) => {
                 cleaned_items.extend(vec![
                     "Databases folder".to_string(),
@@ -279,7 +281,7 @@ pub async fn clean_data(
             }
         },
         CleanTarget::DatabasesFolder => {
-            match clean_database_folder(false, &project_manager.config_manager).await {
+            match clean_database_folder(false, &workspace_manager.config_manager).await {
                 Ok(_) => cleaned_items.push("Databases folder".to_string()),
                 Err(e) => {
                     success = false;
@@ -287,14 +289,15 @@ pub async fn clean_data(
                 }
             }
         }
-        CleanTarget::Vectors => match clean_vectors(false, &project_manager.config_manager).await {
+        CleanTarget::Vectors => match clean_vectors(false, &workspace_manager.config_manager).await
+        {
             Ok(_) => cleaned_items.push("Vector store".to_string()),
             Err(e) => {
                 success = false;
                 error_message = format!("Failed to clean vectors: {e}");
             }
         },
-        CleanTarget::Cache => match clean_cache(false, &project_manager.config_manager).await {
+        CleanTarget::Cache => match clean_cache(false, &workspace_manager.config_manager).await {
             Ok(_) => cleaned_items.push("Cache".to_string()),
             Err(e) => {
                 success = false;
@@ -325,10 +328,10 @@ pub struct CreateDatabaseConfigResponse {
 /// Creates database configurations and updates the config.yml file
 #[utoipa::path(
     post,
-    path = "/projects/{project_id}/databases",
+    path = "/workspaces/{workspace_id}/databases",
     request_body = WarehousesFormData,
     params(
-        ("project_id" = Uuid, Path, description = "Project ID")
+        ("workspace_id" = Uuid, Path, description = "Workspace ID")
     ),
     responses(
         (status = 201, description = "Database configurations created successfully", body = CreateDatabaseConfigResponse),
@@ -342,13 +345,13 @@ pub struct CreateDatabaseConfigResponse {
     tag = "Databases"
 )]
 pub async fn create_database_config(
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path(ProjectPath { project_id: _ }): Path<ProjectPath>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path(WorkspacePath { workspace_id: _ }): Path<WorkspacePath>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Json(warehouses_form): Json<WarehousesFormData>,
 ) -> Result<Response, StatusCode> {
-    // Get the project path from the config manager
-    let repo_path = project_manager.config_manager.project_path();
+    // Get the workspace path from the config manager
+    let repo_path = workspace_manager.config_manager.workspace_path();
 
     tracing::info!(
         "Creating database configurations {:?}",
@@ -359,7 +362,7 @@ pub async fn create_database_config(
         &warehouses_form,
         repo_path,
         user.id,
-        &project_manager.secrets_manager,
+        &workspace_manager.secrets_manager,
     )
     .await?;
 
@@ -367,7 +370,7 @@ pub async fn create_database_config(
     let database_names: Vec<String> = databases.iter().map(|db| db.name.clone()).collect();
 
     // Add databases to the config and write to config.yml
-    match project_manager
+    match workspace_manager
         .config_manager
         .add_databases(databases)
         .await
@@ -444,10 +447,10 @@ pub enum ConnectionTestEvent {
 /// Test a database connection with real-time progress via SSE
 #[utoipa::path(
     post,
-    path = "/projects/{project_id}/databases/test-connection",
+    path = "/workspaces/{workspace_id}/databases/test-connection",
     request_body = TestDatabaseConnectionRequest,
     params(
-        ("project_id" = uuid::Uuid, Path, description = "Project ID")
+        ("workspace_id" = uuid::Uuid, Path, description = "Workspace ID")
     ),
     responses(
         (status = 200, description = "Connection test stream", content_type = "text/event-stream"),
@@ -458,15 +461,15 @@ pub enum ConnectionTestEvent {
     tag = "Databases"
 )]
 pub async fn test_database_connection(
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path(ProjectPath { project_id: _ }): Path<ProjectPath>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path(WorkspacePath { workspace_id: _ }): Path<WorkspacePath>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Json(request): Json<TestDatabaseConnectionRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let (tx, rx) = mpsc::channel::<ConnectionTestEvent>(100);
     // Build temp database config
     let temp_db_name = format!("test_conn_{}", uuid::Uuid::new_v4());
-    let repo_path = project_manager.config_manager.project_path();
+    let repo_path = workspace_manager.config_manager.workspace_path();
 
     let database_config = match DatabaseConfigBuilder::build_configs(
         &WarehousesFormData {
@@ -478,7 +481,7 @@ pub async fn test_database_connection(
         },
         repo_path,
         user.id,
-        &project_manager.secrets_manager,
+        &workspace_manager.secrets_manager,
     )
     .await
     {
@@ -504,7 +507,7 @@ pub async fn test_database_connection(
 
         // Set up scope guard to clean up secrets after testing
         let secret_name = format!("{}_PASSWORD", temp_db_name.to_uppercase());
-        let secrets_manager = project_manager.secrets_manager.clone();
+        let secrets_manager = workspace_manager.secrets_manager.clone();
         let _cleanup_guard = guard((), move |_| {
             let secret_name = secret_name.clone();
             tokio::task::block_in_place(|| {
@@ -577,8 +580,8 @@ pub async fn test_database_connection(
         // Create connector with SSO sender
         let connector = match Connector::from_db(
             db_config,
-            &project_manager.config_manager,
-            &project_manager.secrets_manager,
+            &workspace_manager.config_manager,
+            &workspace_manager.secrets_manager,
             None,
             None,
             None,

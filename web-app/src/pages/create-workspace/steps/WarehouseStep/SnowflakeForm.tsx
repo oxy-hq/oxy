@@ -1,171 +1,113 @@
-import { Info } from "lucide-react";
 import { useFormContext } from "react-hook-form";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/shadcn/radio-group";
-import type { WarehousesFormData } from ".";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/shadcn/select";
+import type { WarehousesFormData } from "@/types/database";
 
-export default function SnowflakeForm({ index }: { index: number }) {
-  const {
-    formState: { errors },
-    register,
-    watch,
-    setValue
-  } = useFormContext<WarehousesFormData>();
+interface Props {
+  index: number;
+}
 
-  const configErrors = errors?.warehouses?.[index]?.config as
-    | Record<string, { message?: string }>
-    | undefined;
+export default function SnowflakeForm({ index }: Props) {
+  const { register, watch, setValue } = useFormContext<WarehousesFormData>();
 
-  const authMode = (watch(`warehouses.${index}.config.auth_mode`) as string) || "password";
+  const authMode =
+    (watch(`warehouses.${index}.config.auth_mode` as never) as unknown as string) || "password";
 
   return (
     <div className='space-y-4'>
-      {/* Auth Mode Selection */}
       <div className='space-y-2'>
-        <Label>Authentication Method</Label>
-        <RadioGroup
-          value={authMode as string}
-          onValueChange={(value) => {
-            setValue(`warehouses.${index}.config.auth_mode`, value);
-            // Clear password when switching to browser auth
-            if (value === "browser") {
-              setValue(`warehouses.${index}.config.password`, undefined);
-            }
-          }}
-          className='flex flex-col space-y-2'
-        >
-          <div className='flex items-center space-x-2'>
-            <RadioGroupItem value='password' id={`password-auth-${index}`} />
-            <Label htmlFor={`password-auth-${index}`} className='cursor-pointer font-normal'>
-              Password Authentication
-            </Label>
-          </div>
-          <div className='flex items-center space-x-2'>
-            <RadioGroupItem value='browser' id={`browser-auth-${index}`} />
-            <Label htmlFor={`browser-auth-${index}`} className='cursor-pointer font-normal'>
-              Browser Authentication (SSO)
-            </Label>
-          </div>
-        </RadioGroup>
-        {authMode === "browser" && (
-          <div className='flex items-start gap-2 rounded-md border border-info/30 bg-info/10 p-3'>
-            <Info className='mt-0.5 h-4 w-4 flex-shrink-0 text-info' />
-            <p className='text-info text-xs'>
-              Browser authentication will open Snowflake SSO in your default browser. You only need
-              to provide account, username, and warehouse details.
-            </p>
-          </div>
-        )}
-      </div>
-
-      <div className='space-y-2'>
-        <Label htmlFor={`account-${index}`}>Account</Label>
+        <Label>Account</Label>
         <Input
-          id={`account-${index}`}
-          placeholder='your_account'
-          {...register(`warehouses.${index}.config.account`, {
-            required: "Account is required",
-            pattern: {
-              value: /^[a-zA-Z0-9_-]+$/,
-              message: "Enter a valid account identifier"
-            }
-          })}
+          placeholder='myorg-myaccount'
+          {...register(`warehouses.${index}.config.account` as never)}
         />
-        {configErrors?.account && (
-          <p className='mt-1 text-destructive text-xs'>
-            {configErrors.account.message?.toString()}
-          </p>
-        )}
       </div>
-
-      <div className='space-y-2'>
-        <Label htmlFor={`username-${index}`}>Username</Label>
-        <Input
-          id={`username-${index}`}
-          placeholder='username'
-          {...register(`warehouses.${index}.config.username`, {
-            required: "Username is required",
-            pattern: {
-              value: /^\w+$/,
-              message: "Enter a valid username"
-            }
-          })}
-        />
-        {configErrors?.username && (
-          <p className='mt-1 text-destructive text-xs'>
-            {configErrors.username.message?.toString()}
-          </p>
-        )}
-      </div>
-
-      {/* Password field - only show for password auth */}
-      {authMode === "password" && (
+      <div className='grid grid-cols-2 gap-4'>
         <div className='space-y-2'>
-          <Label htmlFor={`password-${index}`}>Password</Label>
+          <Label>Database</Label>
           <Input
-            id={`password-${index}`}
-            type='password'
-            placeholder='••••••••'
-            {...register(`warehouses.${index}.config.password`, {
-              required: authMode === "password" ? "Password is required" : false
-            })}
+            placeholder='MY_DATABASE'
+            {...register(`warehouses.${index}.config.database` as never)}
           />
-          {configErrors?.password && (
-            <p className='mt-1 text-destructive text-xs'>
-              {configErrors.password.message?.toString()}
-            </p>
-          )}
+        </div>
+        <div className='space-y-2'>
+          <Label>Schema</Label>
+          <Input placeholder='PUBLIC' {...register(`warehouses.${index}.config.schema` as never)} />
+        </div>
+      </div>
+      <div className='grid grid-cols-2 gap-4'>
+        <div className='space-y-2'>
+          <Label>Warehouse</Label>
+          <Input
+            placeholder='COMPUTE_WH'
+            {...register(`warehouses.${index}.config.warehouse` as never)}
+          />
+        </div>
+        <div className='space-y-2'>
+          <Label>Role</Label>
+          <Input
+            placeholder='ACCOUNTADMIN'
+            {...register(`warehouses.${index}.config.role` as never)}
+          />
+        </div>
+      </div>
+      <div className='space-y-2'>
+        <Label>Auth Mode</Label>
+        <Select
+          value={authMode}
+          onValueChange={(value) =>
+            setValue(`warehouses.${index}.config.auth_mode` as never, value as never)
+          }
+        >
+          <SelectTrigger>
+            <SelectValue placeholder='Select auth mode' />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value='password'>Password</SelectItem>
+            <SelectItem value='browser'>Browser SSO</SelectItem>
+            <SelectItem value='private_key'>Private Key</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div className='space-y-2'>
+        <Label>Username</Label>
+        <Input placeholder='myuser' {...register(`warehouses.${index}.config.username` as never)} />
+      </div>
+      {authMode === "password" && (
+        <>
+          <div className='space-y-2'>
+            <Label>Password</Label>
+            <Input
+              type='password'
+              placeholder='password'
+              {...register(`warehouses.${index}.config.password` as never)}
+            />
+          </div>
+          <div className='space-y-2'>
+            <Label>Password Secret Variable</Label>
+            <Input
+              placeholder='MY_SNOWFLAKE_PASSWORD'
+              {...register(`warehouses.${index}.config.password_var` as never)}
+            />
+          </div>
+        </>
+      )}
+      {authMode === "private_key" && (
+        <div className='space-y-2'>
+          <Label>Private Key Path</Label>
+          <Input
+            placeholder='/path/to/rsa_key.p8'
+            {...register(`warehouses.${index}.config.private_key_path` as never)}
+          />
         </div>
       )}
-
-      <div className='space-y-2'>
-        <Label htmlFor={`warehouse-${index}`}>Warehouse</Label>
-        <Input
-          id={`warehouse-${index}`}
-          placeholder='your_warehouse'
-          {...register(`warehouses.${index}.config.warehouse`, {
-            required: "Warehouse is required"
-          })}
-        />
-        {configErrors?.warehouse && (
-          <p className='mt-1 text-destructive text-xs'>
-            {configErrors.warehouse.message?.toString()}
-          </p>
-        )}
-      </div>
-
-      <div className='space-y-2'>
-        <Label htmlFor={`database-${index}`}>Database</Label>
-        <Input
-          id={`database-${index}`}
-          placeholder='your_database'
-          {...register(`warehouses.${index}.config.database`, {
-            required: "Database is required",
-            pattern: {
-              value: /^\w+$/,
-              message: "Enter a valid database name"
-            }
-          })}
-        />
-        {configErrors?.database && (
-          <p className='mt-1 text-destructive text-xs'>
-            {configErrors.database.message?.toString()}
-          </p>
-        )}
-      </div>
-
-      <div className='space-y-2'>
-        <Label htmlFor={`role-${index}`}>Role (Optional)</Label>
-        <Input
-          id={`role-${index}`}
-          placeholder='your_role'
-          {...register(`warehouses.${index}.config.role`)}
-        />
-        {configErrors?.role && (
-          <p className='mt-1 text-destructive text-xs'>{configErrors.role.message?.toString()}</p>
-        )}
-      </div>
     </div>
   );
 }

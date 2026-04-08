@@ -23,12 +23,12 @@ pub fn search_files_def() -> ToolDef {
     }
 }
 
-pub fn execute_search_files(project_root: &Path, params: &Value) -> Result<Value, ToolError> {
+pub fn execute_search_files(workspace_root: &Path, params: &Value) -> Result<Value, ToolError> {
     let pattern = params["pattern"]
         .as_str()
         .ok_or_else(|| ToolError::BadParams("missing 'pattern'".into()))?;
 
-    let glob_pattern = project_root.join(pattern);
+    let glob_pattern = workspace_root.join(pattern);
     let glob_str = glob_pattern
         .to_str()
         .ok_or_else(|| ToolError::BadParams("invalid pattern encoding".into()))?;
@@ -40,7 +40,7 @@ pub fn execute_search_files(project_root: &Path, params: &Value) -> Result<Value
     for entry in paths.flatten().take(MAX_FILE_RESULTS) {
         if entry.is_file() {
             let rel = entry
-                .strip_prefix(project_root)
+                .strip_prefix(workspace_root)
                 .unwrap_or(&entry)
                 .to_string_lossy()
                 .to_string();

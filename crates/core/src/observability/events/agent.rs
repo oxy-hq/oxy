@@ -1,4 +1,4 @@
-use crate::adapters::project::manager::ProjectManager;
+use crate::adapters::workspace::manager::WorkspaceManager;
 // Note: Agent types are not imported here to avoid circular dependencies
 // Functions use generic serialization via serde::Serialize trait
 use opentelemetry::trace::TraceContextExt as _;
@@ -18,7 +18,7 @@ pub mod run_agent {
 
     /// Record agent input event (service layer - no metrics, just tracing and intent classification)
     pub fn input(
-        project: &ProjectManager,
+        workspace: &WorkspaceManager,
         agent_ref_str: &str,
         project_path: &str,
         prompt: &str,
@@ -35,7 +35,7 @@ pub mod run_agent {
             .to_string();
 
         // Trigger intent classification if classifier is available
-        if let Some(classifier) = &project.intent_classifier {
+        if let Some(classifier) = &workspace.intent_classifier {
             println!("Triggering intent classification...");
             let classifier = classifier.clone();
             let trace_id = trace_id.clone();

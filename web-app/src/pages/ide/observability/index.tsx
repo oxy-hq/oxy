@@ -35,9 +35,11 @@ const ObservabilitySidebar: React.FC<{
             <SidebarMenuItem>
               <SidebarMenuButton
                 asChild
-                isActive={location.pathname === ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.TRACES}
+                isActive={
+                  location.pathname === ROUTES.WORKSPACE(projectId).IDE.OBSERVABILITY.TRACES
+                }
               >
-                <Link to={ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.TRACES}>
+                <Link to={ROUTES.WORKSPACE(projectId).IDE.OBSERVABILITY.TRACES}>
                   <Zap className='h-4 w-4' />
                   <span>Traces</span>
                 </Link>
@@ -47,10 +49,10 @@ const ObservabilitySidebar: React.FC<{
               <SidebarMenuButton
                 asChild
                 isActive={
-                  location.pathname === ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.CLUSTERS
+                  location.pathname === ROUTES.WORKSPACE(projectId).IDE.OBSERVABILITY.CLUSTERS
                 }
               >
-                <Link to={ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.CLUSTERS}>
+                <Link to={ROUTES.WORKSPACE(projectId).IDE.OBSERVABILITY.CLUSTERS}>
                   <Server className='h-4 w-4' />
                   <span>Clusters</span>
                 </Link>
@@ -59,9 +61,11 @@ const ObservabilitySidebar: React.FC<{
             <SidebarMenuItem>
               <SidebarMenuButton
                 asChild
-                isActive={location.pathname === ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.METRICS}
+                isActive={
+                  location.pathname === ROUTES.WORKSPACE(projectId).IDE.OBSERVABILITY.METRICS
+                }
               >
-                <Link to={ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.METRICS}>
+                <Link to={ROUTES.WORKSPACE(projectId).IDE.OBSERVABILITY.METRICS}>
                   <BarChart3 className='h-4 w-4' />
                   <span>Metrics</span>
                 </Link>
@@ -72,10 +76,10 @@ const ObservabilitySidebar: React.FC<{
                 asChild
                 isActive={
                   location.pathname ===
-                  ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.EXECUTION_ANALYTICS
+                  ROUTES.WORKSPACE(projectId).IDE.OBSERVABILITY.EXECUTION_ANALYTICS
                 }
               >
-                <Link to={ROUTES.PROJECT(projectId).IDE.OBSERVABILITY.EXECUTION_ANALYTICS}>
+                <Link to={ROUTES.WORKSPACE(projectId).IDE.OBSERVABILITY.EXECUTION_ANALYTICS}>
                   <LucideActivity className='h-4 w-4' />
                   <span>Execution Analytics</span>
                 </Link>

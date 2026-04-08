@@ -4,7 +4,7 @@ use std::path::Path;
 use crate::integrations::eval::EvalResult;
 use crate::server::service::test_runs::{InsertCaseData, TestRunsManager};
 use futures::Stream;
-use oxy::adapters::project::manager::ProjectManager;
+use oxy::adapters::workspace::manager::WorkspaceManager;
 use oxy::config::constants::EVAL_SOURCE;
 use oxy::execute::types::{Event, EventKind, ProgressType};
 use oxy::execute::writer::EventHandler;
@@ -96,7 +96,7 @@ impl EventHandler for EvalEventsHandler {
 }
 
 pub struct TestCasePersistContext {
-    pub project_id: Uuid,
+    pub workspace_id: Uuid,
     pub test_run_id: Uuid,
     pub case_index: usize,
     pub prompt: String,
@@ -104,7 +104,7 @@ pub struct TestCasePersistContext {
 }
 
 pub async fn run_test<P: AsRef<Path> + Send + 'static>(
-    project_manager: ProjectManager,
+    workspace_manager: WorkspaceManager,
     target_ref: P,
     index: usize,
     persist: Option<TestCasePersistContext>,
@@ -117,7 +117,7 @@ pub async fn run_test<P: AsRef<Path> + Send + 'static>(
         total: HashMap::new(),
     };
     let _: JoinHandle<()> = tokio::spawn(async move {
-        match run_eval(project_manager, target_ref, Some(index), event_handler).await {
+        match run_eval(workspace_manager, target_ref, Some(index), event_handler).await {
             Ok(response) => {
                 for metric in response.iter() {
                     // Persist case result if a run context was provided
@@ -167,7 +167,7 @@ async fn persist_case_result(
     // passing_runs / total_runs consistency counters, not the displayed score.
     const PASS_THRESHOLD: f32 = 0.5;
 
-    let manager = TestRunsManager::new(ctx.project_id).await?;
+    let manager = TestRunsManager::new(ctx.workspace_id).await?;
 
     // Extract metrics from the first metric entry (Correctness or Similarity)
     let (

@@ -27,7 +27,10 @@ pub fn search_text_def() -> ToolDef {
     }
 }
 
-pub async fn execute_search_text(project_root: &Path, params: &Value) -> Result<Value, ToolError> {
+pub async fn execute_search_text(
+    workspace_root: &Path,
+    params: &Value,
+) -> Result<Value, ToolError> {
     let pattern_str = params["pattern"]
         .as_str()
         .ok_or_else(|| ToolError::BadParams("missing 'pattern'".into()))?;
@@ -44,7 +47,7 @@ pub async fn execute_search_text(project_root: &Path, params: &Value) -> Result<
         .build()
         .map_err(|e| ToolError::BadParams(format!("invalid regex pattern: {e}")))?;
 
-    let glob_pattern = project_root.join(file_glob);
+    let glob_pattern = workspace_root.join(file_glob);
     let glob_str = glob_pattern
         .to_str()
         .ok_or_else(|| ToolError::BadParams("invalid file_glob encoding".into()))?;
@@ -62,7 +65,7 @@ pub async fn execute_search_text(project_root: &Path, params: &Value) -> Result<
             continue;
         };
         let rel = entry
-            .strip_prefix(project_root)
+            .strip_prefix(workspace_root)
             .unwrap_or(&entry)
             .to_string_lossy()
             .to_string();

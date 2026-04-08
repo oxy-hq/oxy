@@ -1,4 +1,6 @@
-use crate::server::api::middlewares::project::{ProjectManagerExtractor, ProjectPath};
+use crate::server::api::middlewares::workspace_context::{
+    WorkspaceManagerExtractor, WorkspacePath,
+};
 use crate::server::api::result_files::store_result_file;
 use crate::server::service::types::SemanticQueryParams;
 use axum::{
@@ -61,10 +63,10 @@ pub struct SemanticQueryCompileResponse {
 }
 
 pub async fn execute_semantic_query(
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path(ProjectPath {
-        project_id: _project_id,
-    }): Path<ProjectPath>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path(WorkspacePath {
+        workspace_id: _workspace_id,
+    }): Path<WorkspacePath>,
     extract::Json(payload): extract::Json<SemanticQueryRequest>,
 ) -> Result<extract::Json<SemanticQueryResponse>, (StatusCode, extract::Json<ErrorResponse>)> {
     // Create a dummy execution context
@@ -79,7 +81,7 @@ pub async fn execute_semantic_query(
         },
         writer: tx,
         renderer: renderer.clone(),
-        project: project_manager.clone(),
+        workspace: workspace_manager.clone(),
         checkpoint: None,
         filters: payload.session_filters,
         connections: payload.connections,
@@ -109,7 +111,7 @@ pub async fn execute_semantic_query(
 
     // Validate the query
     let validated_query =
-        validate_semantic_query_task(&project_manager.config_manager, &rendered_task)
+        validate_semantic_query_task(&workspace_manager.config_manager, &rendered_task)
             .await
             .map_err(|e| {
                 tracing::error!("Failed to validate semantic query: {}", e);
@@ -145,7 +147,7 @@ pub async fn execute_semantic_query(
 
             match result_format {
                 ResultFormat::Parquet => {
-                    let file_name = store_result_file(&project_manager, &table.file_path)
+                    let file_name = store_result_file(&workspace_manager, &table.file_path)
                         .await
                         .map_err(|e| {
                             (
@@ -198,10 +200,10 @@ pub struct ErrorResponse {
 }
 
 pub async fn compile_semantic_query(
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path(ProjectPath {
-        project_id: _project_id,
-    }): Path<ProjectPath>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path(WorkspacePath {
+        workspace_id: _workspace_id,
+    }): Path<WorkspacePath>,
     extract::Json(payload): extract::Json<SemanticQueryRequest>,
 ) -> Result<extract::Json<SemanticQueryCompileResponse>, (StatusCode, extract::Json<ErrorResponse>)>
 {
@@ -217,7 +219,7 @@ pub async fn compile_semantic_query(
         },
         writer: tx,
         renderer: renderer.clone(),
-        project: project_manager.clone(),
+        workspace: workspace_manager.clone(),
         checkpoint: None,
         filters: payload.session_filters,
         connections: payload.connections,
@@ -247,7 +249,7 @@ pub async fn compile_semantic_query(
 
     // Validate the query
     let validated_query =
-        validate_semantic_query_task(&project_manager.config_manager, &rendered_task)
+        validate_semantic_query_task(&workspace_manager.config_manager, &rendered_task)
             .await
             .map_err(|e| {
                 tracing::error!("Failed to validate semantic query: {}", e);
@@ -279,13 +281,13 @@ pub async fn compile_semantic_query(
 
 #[derive(Deserialize)]
 pub struct ViewPath {
-    pub project_id: Uuid,
+    pub workspace_id: Uuid,
     pub file_path_b64: String,
 }
 
 #[derive(Deserialize)]
 pub struct TopicPath {
-    pub project_id: Uuid,
+    pub workspace_id: Uuid,
     pub file_path_b64: String,
 }
 
@@ -317,16 +319,16 @@ pub struct TopicDetailsResponse {
 }
 
 pub async fn get_view_details(
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Path(ViewPath {
-        project_id: _project_id,
+        workspace_id: _,
         file_path_b64,
     }): Path<ViewPath>,
 ) -> Result<extract::Json<ViewResponse>, (StatusCode, extract::Json<ErrorResponse>)> {
     use oxy_semantic::parser::ParserConfig;
     use oxy_semantic::parser::SemanticLayerParser;
 
-    let global_registry = project_manager.config_manager.get_globals_registry();
+    let global_registry = workspace_manager.config_manager.get_globals_registry();
 
     // Decode base64 file path
     let decoded_path = BASE64_STANDARD.decode(&file_path_b64).map_err(|e| {
@@ -348,7 +350,7 @@ pub async fn get_view_details(
     })?;
 
     // Resolve the file path using the config manager
-    let full_path_str = project_manager
+    let full_path_str = workspace_manager
         .config_manager
         .resolve_file(&file_path_str)
         .await
@@ -374,7 +376,7 @@ pub async fn get_view_details(
     }
 
     // Parse the specific view file
-    let parser_config = ParserConfig::new(project_manager.config_manager.semantics_scan_path());
+    let parser_config = ParserConfig::new(workspace_manager.config_manager.semantics_scan_path());
     let parser = SemanticLayerParser::new(parser_config, global_registry);
 
     let view = parser.parse_view_file(&full_path).map_err(|e| {
@@ -411,17 +413,17 @@ pub async fn get_view_details(
 }
 
 pub async fn get_topic_details(
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Path(TopicPath {
-        project_id: _project_id,
+        workspace_id: _,
         file_path_b64,
     }): Path<TopicPath>,
 ) -> Result<extract::Json<TopicDetailsResponse>, (StatusCode, extract::Json<ErrorResponse>)> {
     use oxy_semantic::parser::ParserConfig;
     use oxy_semantic::parser::SemanticLayerParser;
 
-    let global_registry = project_manager.config_manager.get_globals_registry();
-    let semantics_path = project_manager.config_manager.semantics_scan_path();
+    let global_registry = workspace_manager.config_manager.get_globals_registry();
+    let semantics_path = workspace_manager.config_manager.semantics_scan_path();
 
     // Decode base64 file path
     let decoded_path = BASE64_STANDARD.decode(&file_path_b64).map_err(|e| {
@@ -443,7 +445,7 @@ pub async fn get_topic_details(
     })?;
 
     // Resolve the file path using the config manager
-    let full_path_str = project_manager
+    let full_path_str = workspace_manager
         .config_manager
         .resolve_file(&file_path_str)
         .await

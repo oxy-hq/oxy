@@ -5,7 +5,7 @@ use itertools::Itertools;
 use tokio::sync::Mutex;
 
 use oxy::{
-    adapters::project::manager::ProjectManager,
+    adapters::workspace::manager::WorkspaceManager,
     config::constants::EVAL_SOURCE,
     execute::{
         types::{Event, EventKind, ProgressType},
@@ -265,23 +265,23 @@ impl EventHandler for EvalEventsHandler {
 }
 
 pub async fn run_eval<P: AsRef<Path>, H: EventHandler + Send + 'static>(
-    project_manager: ProjectManager,
+    workspace_manager: WorkspaceManager,
     path: P,
     index: Option<usize>,
     event_handler: H,
 ) -> Result<Vec<EvalResult>, OxyError> {
-    run_eval_with_tag(project_manager, path, index, None, event_handler).await
+    run_eval_with_tag(workspace_manager, path, index, None, event_handler).await
 }
 
 pub async fn run_eval_with_tag<P: AsRef<Path>, H: EventHandler + Send + 'static>(
-    project_manager: ProjectManager,
+    workspace_manager: WorkspaceManager,
     path: P,
     index: Option<usize>,
     tag: Option<String>,
     event_handler: H,
 ) -> Result<Vec<EvalResult>, OxyError> {
     let result = EvalLauncher::new()
-        .with_project(project_manager)
+        .with_workspace(workspace_manager)
         .await?
         .launch(
             EvalInput {

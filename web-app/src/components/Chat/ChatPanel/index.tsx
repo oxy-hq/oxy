@@ -74,8 +74,7 @@ const ChatPanel = () => {
         runWorkflow(data.id);
         break;
     }
-    const threadUrl = ROUTES.PROJECT(projectId).THREAD(data.id);
-    navigate(threadUrl);
+    navigate(ROUTES.WORKSPACE(projectId).THREAD(data.id));
   });
 
   const [autoApprove, setAutoApprove] = useState(
@@ -95,7 +94,7 @@ const ChatPanel = () => {
   const { data: fileTreeData } = useFileTree(isBuildMode);
   const allFiles = useMemo(() => {
     if (!fileTreeData) return [];
-    return flattenFiles(fileTreeData);
+    return flattenFiles(fileTreeData.primary);
   }, [fileTreeData]);
 
   const activeMention = isBuildMode ? getActiveMention(message, cursorPos) : null;

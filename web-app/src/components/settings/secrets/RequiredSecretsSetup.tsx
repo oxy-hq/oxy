@@ -77,7 +77,7 @@ const RequiredSecretsSetup: React.FC = () => {
       await refetch();
 
       // Navigate back to home
-      navigate(ROUTES.PROJECT(projectId!).ROOT, { replace: true });
+      navigate(ROUTES.WORKSPACE(projectId!).ROOT, { replace: true });
     } catch (error) {
       console.error("Error creating secrets:", error);
       toast.error("Failed to create some secrets. Please try again.");
@@ -101,8 +101,8 @@ const RequiredSecretsSetup: React.FC = () => {
         <div className='flex items-start gap-3 rounded-lg border border-warning/20 bg-warning/5 p-4'>
           <AlertTriangle className='mt-0.5 h-4 w-4 flex-shrink-0 text-warning' />
           <p className='text-sm text-warning'>
-            These secrets are required for your project to function properly. Please provide values
-            for all required secrets.
+            These secrets are required for your workspace to function properly. Please provide
+            values for all required secrets.
           </p>
         </div>
 
@@ -139,7 +139,7 @@ const RequiredSecretsSetup: React.FC = () => {
           <Button
             type='button'
             variant='outline'
-            onClick={() => navigate(ROUTES.PROJECT(projectId!).ROOT, { replace: true })}
+            onClick={() => navigate(ROUTES.WORKSPACE(projectId!).ROOT, { replace: true })}
           >
             Skip for now
           </Button>

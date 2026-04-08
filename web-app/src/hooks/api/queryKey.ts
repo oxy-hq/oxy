@@ -116,7 +116,14 @@ const settingsKeys = {
 };
 
 const repositoryKeys = {
-  all: ["repositories"] as const
+  all: ["repositories"] as const,
+  list: (projectId: string) => [...repositoryKeys.all, "list", projectId] as const,
+  branch: (projectId: string, name: string) =>
+    [...repositoryKeys.all, "branch", projectId, name] as const,
+  diff: (projectId: string, name: string) =>
+    [...repositoryKeys.all, "diff", projectId, name] as const,
+  branches: (projectId: string, name: string) =>
+    [...repositoryKeys.all, "branches", projectId, name] as const
 };
 
 const configKeys = {
@@ -127,27 +134,21 @@ const configKeys = {
 
 const userKeys = {
   all: ["user"] as const,
-  list: (workspaceId: string) => [...userKeys.all, "list", workspaceId] as const,
+  list: () => [...userKeys.all, "list"] as const,
   current: () => [...userKeys.all, "current"] as const
 };
 
 const workspaceKeys = {
   all: ["workspace"] as const,
   list: () => [...workspaceKeys.all, "list"] as const,
-  item: (id: string) => [...workspaceKeys.all, { id }] as const
-};
+  item: (workspaceId: string) => [...workspaceKeys.all, "item", workspaceId] as const,
+  branches: (workspaceId: string) => [...workspaceKeys.all, "branches", workspaceId] as const,
 
-const projectKeys = {
-  all: ["project"] as const,
-  list: (workspaceId: string) => [...projectKeys.all, "list", workspaceId] as const,
-  item: (projectId: string) => [...projectKeys.all, "item", projectId] as const,
-  branches: (projectId: string) => [...projectKeys.all, "branches", projectId] as const,
+  revisionInfo: (workspaceId: string, branchName: string) =>
+    [...workspaceKeys.all, "revisionInfo", workspaceId, branchName] as const,
 
-  revisionInfo: (projectId: string, branchName: string) =>
-    [...projectKeys.all, "revisionInfo", projectId, branchName] as const,
-
-  status: (projectId: string, branchName: string) =>
-    [...projectKeys.all, "status", projectId, branchName] as const
+  status: (workspaceId: string, branchName: string) =>
+    [...workspaceKeys.all, "status", workspaceId, branchName] as const
 };
 
 const artifactKeys = {
@@ -204,7 +205,6 @@ const queryKeys = {
   logs: logsKeys,
   user: userKeys,
   workspaces: workspaceKeys,
-  projects: projectKeys,
   workflow: workflowKeys,
   chart: chartKeys,
   file: fileKeys,

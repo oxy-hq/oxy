@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/shadcn/button";
 import queryKeys from "@/hooks/api/queryKey";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
-import { ProjectService } from "@/services/api";
+import { WorkspaceService as ProjectService } from "@/services/api/workspaces";
 
 const ConflictPanel = ({ branch }: { remoteUrl?: string; branch: string }) => {
   const { project } = useCurrentProjectBranch();
@@ -15,7 +15,7 @@ const ConflictPanel = ({ branch }: { remoteUrl?: string; branch: string }) => {
 
   const invalidate = () =>
     queryClient.invalidateQueries({
-      queryKey: queryKeys.projects.revisionInfo(project.id, branch)
+      queryKey: queryKeys.workspaces.revisionInfo(project.id, branch)
     });
 
   const handleContinue = async () => {

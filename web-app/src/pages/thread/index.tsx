@@ -27,10 +27,15 @@ const ThreadNotFound = () => (
   </div>
 );
 
-const Thread = () => {
+const Thread = ({ projectId }: { projectId?: string }) => {
   const { threadId } = useParams();
   const queryClient = useQueryClient();
-  const { data: thread, isPending, isSuccess, refetch } = useThread(threadId ?? "", true, false);
+  const {
+    data: thread,
+    isPending,
+    isSuccess,
+    refetch
+  } = useThread(threadId ?? "", true, false, false, projectId);
 
   if (isPending) {
     return <LoadingSkeleton variant='page' />;
@@ -68,8 +73,8 @@ const Thread = () => {
 };
 
 const ThreadPage = () => {
-  const { threadId } = useParams();
-  return <Thread key={threadId} />;
+  const { threadId, projectId } = useParams();
+  return <Thread key={`${projectId}-${threadId}`} projectId={projectId} />;
 };
 
 export default ThreadPage;

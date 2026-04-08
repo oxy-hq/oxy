@@ -10,7 +10,7 @@ use serde::Deserialize;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::server::api::middlewares::project::ProjectManagerExtractor;
+use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
 use crate::server::service::block::GroupBlockHandler;
 use crate::server::service::statics::BROADCASTER;
 use crate::server::service::task_manager::TASK_MANAGER;
@@ -37,9 +37,9 @@ pub struct PaginationQuery {
 /// if the workflow is currently active in the broadcaster.
 #[utoipa::path(
     get,
-    path = "/{project_id}/workflows/{pathb64}/runs",
+    path = "/{workspace_id}/workflows/{pathb64}/runs",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID"),
         ("pathb64" = String, Path, description = "Base64 encoded path to the workflow"),
     ),
     params(
@@ -57,8 +57,8 @@ pub struct PaginationQuery {
     tag = "Runs"
 )]
 pub async fn get_workflow_runs(
-    Path((_project_id, pathb64)): Path<(Uuid, String)>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Query(pagination): Query<PaginationQuery>,
 ) -> Result<extract::Json<Paginated<RunInfo>>, StatusCode> {
@@ -68,7 +68,7 @@ pub async fn get_workflow_runs(
     let path: PathBuf =
         PathBuf::from(String::from_utf8(decoded_path).map_err(|_| StatusCode::BAD_REQUEST)?);
 
-    let mut result = project_manager
+    let mut result = workspace_manager
         .runs_manager
         .ok_or_else(|| {
             tracing::error!("Failed to initialize RunsManager");
@@ -131,9 +131,9 @@ pub struct CreateRunResponse {
 /// a unique task_id for tracking.
 #[utoipa::path(
     post,
-    path = "/{project_id}/workflows/{pathb64}/runs",
+    path = "/{workspace_id}/workflows/{pathb64}/runs",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID"),
         ("pathb64" = String, Path, description = "Base64 encoded path to the workflow"),
     ),
     request_body = CreateRunRequest,
@@ -149,9 +149,9 @@ pub struct CreateRunResponse {
     tag = "Runs"
 )]
 pub async fn create_workflow_run(
-    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     extract::Json(payload): extract::Json<CreateRunRequest>,
 ) -> Result<extract::Json<CreateRunResponse>, StatusCode> {
     let decoded_path = BASE64_STANDARD
@@ -159,7 +159,7 @@ pub async fn create_workflow_run(
         .map_err(|_| StatusCode::BAD_REQUEST)?;
     let path = PathBuf::from(String::from_utf8(decoded_path).map_err(|_| StatusCode::BAD_REQUEST)?);
 
-    let workflow_config = project_manager
+    let workflow_config = workspace_manager
         .config_manager
         .resolve_workflow(&path)
         .await
@@ -168,7 +168,7 @@ pub async fn create_workflow_run(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    let runs_manager = project_manager.runs_manager.clone().ok_or_else(|| {
+    let runs_manager = workspace_manager.runs_manager.clone().ok_or_else(|| {
         tracing::error!("Failed to initialize RunsManager");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
@@ -246,7 +246,7 @@ pub async fn create_workflow_run(
                     .map_err(|e| tracing::error!("Failed to convert run_index to u32: {}", e))
                     .unwrap_or(0); // Default to 0 if conversion fails
                 run_workflow_v2(
-                    project_manager.clone(),
+                    workspace_manager.clone(),
                     source_id,
                     topic_ref,
                     RetryStrategy::Retry {
@@ -302,7 +302,7 @@ pub struct CancelRunRequest {
 /// or 500 if the task is not found or cancellation fails.
 #[utoipa::path(
     delete,
-    path = "/{project_id}/runs/{source_id}/{run_index}",
+    path = "/{workspace_id}/runs/{source_id}/{run_index}",
     params(
         ("source_id" = String, Path, description = "SourceID for workflow is the path to the workflow file"),
         ("run_index" = i32, Path, description = "Run index")
@@ -320,7 +320,7 @@ pub struct CancelRunRequest {
 )]
 pub async fn cancel_workflow_run(
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
-    ProjectManagerExtractor(_project_manager): ProjectManagerExtractor,
+    WorkspaceManagerExtractor(_project_manager): WorkspaceManagerExtractor,
     payload: Path<CancelRunRequest>,
 ) -> Result<impl axum::response::IntoResponse, StatusCode> {
     let decoded_path = BASE64_STANDARD
@@ -363,9 +363,9 @@ impl From<WorkflowEventsRequest> for RunInfo {
 /// attempts to get the latest run for the workflow.
 #[utoipa::path(
     method(get),
-    path = "/{project_id}/events",
+    path = "/{workspace_id}/events",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID"),
         ("source_id" = String, Query, description = "SourceID for workflow is the path to the workflow file"),
         ("run_index" = Option<i32>, Query, description = "Run index (defaults to latest run if not specified)")
     ),
@@ -377,12 +377,12 @@ impl From<WorkflowEventsRequest> for RunInfo {
     )
 )]
 pub async fn workflow_events(
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Query(request): Query<WorkflowEventsRequest>,
 ) -> Result<impl axum::response::IntoResponse, StatusCode> {
     let run_info: RunInfo = request.into();
-    let runs_manager = project_manager.runs_manager.as_ref().ok_or_else(|| {
+    let runs_manager = workspace_manager.runs_manager.as_ref().ok_or_else(|| {
         tracing::error!("Failed to initialize RunsManager");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
@@ -444,9 +444,9 @@ pub struct WorkflowEventsResponse {
 /// and plain source_id formats. If run_index is not specified, attempts to get the latest run.
 #[utoipa::path(
     method(get),
-    path = "/{project_id}/events/sync",
+    path = "/{workspace_id}/events/sync",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID"),
         ("source_id" = String, Query, description = "SourceID for workflow (file path or base64-encoded path)"),
         ("run_index" = Option<i32>, Query, description = "Run index (defaults to latest run if not specified)")
     ),
@@ -462,7 +462,7 @@ pub struct WorkflowEventsResponse {
     tag = "Runs"
 )]
 pub async fn workflow_events_sync(
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Query(request): Query<WorkflowEventsRequest>,
 ) -> Result<axum::extract::Json<WorkflowEventsResponse>, StatusCode> {
@@ -472,7 +472,7 @@ pub async fn workflow_events_sync(
         .and_then(|bytes| String::from_utf8(bytes).ok())
         .unwrap_or_else(|| request.source_id.clone());
 
-    let runs_manager = project_manager.runs_manager.as_ref().ok_or_else(|| {
+    let runs_manager = workspace_manager.runs_manager.as_ref().ok_or_else(|| {
         tracing::error!("Failed to initialize RunsManager");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
@@ -587,9 +587,9 @@ pub struct BlocksRequest {
 /// to avoid incomplete data. If run_index is not specified, attempts to get the latest run.
 #[utoipa::path(
     method(get),
-    path = "/{project_id}/blocks",
+    path = "/{workspace_id}/blocks",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID"),
         ("sourceId" = Option<String>, Path, description = "Combination of SourceID and RunIndex in RunInfo"),
         ("runIndex" = Option<String>, Query, description = "Run index to filter blocks (defaults to latest run if not specified)")
     ),
@@ -605,11 +605,11 @@ pub struct BlocksRequest {
     )
 )]
 pub async fn get_blocks(
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Query(block_request): Query<BlocksRequest>,
 ) -> Result<extract::Json<RunDetails>, StatusCode> {
-    let runs_manager = project_manager.runs_manager.as_ref().ok_or_else(|| {
+    let runs_manager = workspace_manager.runs_manager.as_ref().ok_or_else(|| {
         tracing::error!("Failed to initialize RunsManager");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
@@ -666,9 +666,9 @@ pub async fn get_blocks(
 /// The run is identified by the workflow path (base64 encoded) and run index.
 #[utoipa::path(
     delete,
-    path = "/{project_id}/workflows/{pathb64}/runs/{run_id}",
+    path = "/{workspace_id}/workflows/{pathb64}/runs/{run_id}",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID"),
         ("pathb64" = String, Path, description = "Base64 encoded path to the workflow"),
         ("run_id" = i32, Path, description = "Run index to delete")
     ),
@@ -684,8 +684,8 @@ pub async fn get_blocks(
     tag = "Runs"
 )]
 pub async fn delete_workflow_run(
-    Path((_project_id, pathb64, run_id)): Path<(Uuid, String, i32)>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path((_workspace_id, pathb64, run_id)): Path<(Uuid, String, i32)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
 ) -> Result<impl axum::response::IntoResponse, StatusCode> {
     let decoded_path = BASE64_STANDARD.decode(pathb64).map_err(|e| {
         tracing::error!("Failed to decode path: {:?}", e);
@@ -696,7 +696,7 @@ pub async fn delete_workflow_run(
         StatusCode::BAD_REQUEST
     })?);
 
-    let runs_manager = project_manager.runs_manager.ok_or_else(|| {
+    let runs_manager = workspace_manager.runs_manager.ok_or_else(|| {
         tracing::error!("Failed to initialize RunsManager");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
@@ -735,9 +735,9 @@ pub struct BulkDeleteRunsResponse {
 /// and run index.
 #[utoipa::path(
     post,
-    path = "/{project_id}/workflows/runs/bulk-delete",
+    path = "/{workspace_id}/workflows/runs/bulk-delete",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID"),
     ),
     request_body = BulkDeleteRunsRequest,
     responses(
@@ -751,11 +751,11 @@ pub struct BulkDeleteRunsResponse {
     tag = "Runs"
 )]
 pub async fn bulk_delete_workflow_runs(
-    Path(_project_id): Path<Uuid>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path(_workspace_id): Path<Uuid>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     extract::Json(payload): extract::Json<BulkDeleteRunsRequest>,
 ) -> Result<extract::Json<BulkDeleteRunsResponse>, StatusCode> {
-    let runs_manager = project_manager.runs_manager.ok_or_else(|| {
+    let runs_manager = workspace_manager.runs_manager.ok_or_else(|| {
         tracing::error!("Failed to initialize RunsManager");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;

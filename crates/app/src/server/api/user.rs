@@ -57,7 +57,7 @@ pub struct BatchUsersRequest {
 
 impl From<AuthenticatedUser> for UserInfo {
     fn from(user: AuthenticatedUser) -> Self {
-        let is_admin = user.role == UserRole::Admin;
+        let is_admin = user.role.is_admin_or_above();
         Self {
             id: user.id.to_string(),
             email: user.email,
@@ -70,45 +70,18 @@ impl From<AuthenticatedUser> for UserInfo {
     }
 }
 
-/// Checks whether a user is admin in local (non-cloud) mode based on `config.admins`.
+/// Returns true if `email` should be treated as admin in local (non-cloud) mode.
 ///
-/// Falls back to `true` (permissive) when the config cannot be read.
-fn is_local_admin_from_config(email: &str) -> bool {
-    let admins = read_admins_from_config();
+/// Reads the admin list from the `OXY_ADMINS` env var (comma-separated emails).
+/// When `OXY_ADMINS` is unset or empty, all users are admin (permissive default).
+fn is_local_admin_from_env(email: &str) -> bool {
+    let admins: Vec<String> = std::env::var("OXY_ADMINS")
+        .unwrap_or_default()
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
     oxy_auth::is_admin_email(&admins, email)
-}
-
-/// Reads only the `admins` list from config.yml, returning an empty vec on any error.
-fn read_admins_from_config() -> Vec<String> {
-    let Ok(project_path) = oxy::config::resolve_local_project_path() else {
-        tracing::warn!(
-            "read_admins_from_config: could not resolve project path — treating all users as admin"
-        );
-        return vec![];
-    };
-
-    let config_path = project_path.join("config.yml");
-    let Ok(yaml) = std::fs::read_to_string(&config_path) else {
-        tracing::warn!(
-            "read_admins_from_config: could not read {:?} — treating all users as admin",
-            config_path
-        );
-        return vec![];
-    };
-
-    #[derive(serde::Deserialize, Default)]
-    struct AdminsOnly {
-        #[serde(default)]
-        admins: Vec<String>,
-    }
-
-    match serde_yaml::from_str::<AdminsOnly>(&yaml) {
-        Ok(ac) => ac.admins,
-        Err(e) => {
-            tracing::warn!("Failed to parse config.yml for admin check: {}", e);
-            vec![] // Parse error → permissive (empty = all admin)
-        }
-    }
 }
 
 pub async fn list_users(
@@ -210,7 +183,70 @@ pub async fn update_user(
 ) -> Result<Json<MessageResponse>, StatusCode> {
     let user_uuid = Uuid::parse_str(&user_id).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-    // Validate status if provided
+    // ── Role change ─────────────────────────────────────────────────────────
+    if let Some(ref role_str) = payload.role {
+        let new_role = UserRole::from_str(role_str).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+        // Owner role cannot be granted via API — it is only set by bootstrap.
+        if new_role == UserRole::Owner {
+            return Err(StatusCode::FORBIDDEN);
+        }
+
+        // Cannot change own role.
+        if current_user.id == user_uuid {
+            return Err(StatusCode::FORBIDDEN);
+        }
+
+        let connection = establish_connection().await.map_err(|e| {
+            tracing::error!("DB connection failed: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+        let target_user = entity::prelude::Users::find_by_id(user_uuid)
+            .one(&connection)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to get target user: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?
+            .ok_or(StatusCode::NOT_FOUND)?;
+
+        // Owner's role cannot be changed by anyone.
+        if target_user.role == UserRole::Owner {
+            return Err(StatusCode::FORBIDDEN);
+        }
+
+        // Permission rules:
+        //   Owner → can promote to Admin or demote to Member.
+        //   Admin → can only demote to Member (cannot grant Admin).
+        //   Member → no permission.
+        match current_user.role {
+            // Owner may promote to Admin or demote to Member — no role is off-limits
+            // for an Owner (except changing another Owner, which is blocked above).
+            UserRole::Owner => {}
+            UserRole::Admin => {
+                if new_role != UserRole::Member {
+                    tracing::warn!(
+                        "Admin {} attempted to grant role {:?} (requires Owner)",
+                        current_user.email,
+                        new_role
+                    );
+                    return Err(StatusCode::FORBIDDEN);
+                }
+            }
+            UserRole::Member => {
+                return Err(StatusCode::FORBIDDEN);
+            }
+        }
+
+        UserService::update_user_role(user_uuid, new_role)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to update user role: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+    }
+
+    // ── Status change ────────────────────────────────────────────────────────
     if let Some(ref status_str) = payload.status {
         if ![UserStatus::Active.as_str(), UserStatus::Deleted.as_str()]
             .contains(&status_str.as_str())
@@ -220,7 +256,7 @@ pub async fn update_user(
 
         let status = UserStatus::from_str(status_str).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-        // Prevent users from setting their own status to "deleted"
+        // Prevent users from setting their own status to "deleted".
         if current_user.id == user_uuid && status == UserStatus::Deleted {
             tracing::warn!(
                 "User {} attempted to delete their own account via status update",
@@ -229,10 +265,12 @@ pub async fn update_user(
             return Err(StatusCode::FORBIDDEN);
         }
 
-        // Prevent admins from being deactivated
+        // Prevent admins and owners from being deactivated.
         if status == UserStatus::Deleted && current_user.id != user_uuid {
-            // Get the target user to check their role
-            let connection = establish_connection().await?;
+            let connection = establish_connection().await.map_err(|e| {
+                tracing::error!("DB connection failed: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
             let target_user = entity::prelude::Users::find_by_id(user_uuid)
                 .one(&connection)
                 .await
@@ -242,10 +280,10 @@ pub async fn update_user(
                 })?;
 
             if let Some(target_user) = target_user
-                && target_user.role == UserRole::Admin
+                && target_user.role.is_admin_or_above()
             {
                 tracing::warn!(
-                    "User {} attempted to deactivate admin {}",
+                    "User {} attempted to deactivate privileged user {}",
                     current_user.email,
                     target_user.email
                 );
@@ -283,7 +321,7 @@ pub async fn get_current_user(
 /// Public endpoint that returns current user if authenticated, null if not
 /// This prevents redirect loops when auth is enabled
 pub async fn get_current_user_public(
-    axum::extract::State(app_state): axum::extract::State<crate::server::router::AppState>,
+    axum::extract::State(_app_state): axum::extract::State<crate::server::router::AppState>,
     headers: axum::http::HeaderMap,
 ) -> Result<Json<Option<UserInfo>>, StatusCode> {
     // Try to authenticate using the same logic as the middleware
@@ -291,7 +329,7 @@ pub async fn get_current_user_public(
     use oxy_auth::authenticator::Authenticator;
     use oxy_auth::built_in::BuiltInAuthenticator;
 
-    let authenticator = BuiltInAuthenticator::new(app_state.cloud);
+    let authenticator = BuiltInAuthenticator::new();
 
     match authenticator.authenticate(&headers).await {
         Ok(identity) => {
@@ -299,10 +337,11 @@ pub async fn get_current_user_public(
             match UserService::get_or_create_user(&identity).await {
                 Ok(user) => {
                     let mut user_info = UserInfo::from(user);
-                    // In local (non-cloud) mode override is_admin based on config.admins
-                    // so the frontend can correctly gate the admin UI.
-                    if !app_state.cloud {
-                        user_info.is_admin = is_local_admin_from_config(&user_info.email);
+                    // DB role is authoritative: if the user already has Admin in the DB
+                    // (e.g. first-user bootstrap), keep it. config.admins can only
+                    // grant admin to additional users — it cannot revoke it.
+                    if !user_info.is_admin {
+                        user_info.is_admin = is_local_admin_from_env(&user_info.email);
                     }
                     Ok(Json(Some(user_info)))
                 }

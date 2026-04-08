@@ -9,8 +9,8 @@ use tokio_util::sync::CancellationToken;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::error;
 
-pub async fn start_mcp_stdio(project_path: PathBuf) -> anyhow::Result<()> {
-    let service = OxyMcpServer::new(project_path)
+pub async fn start_mcp_stdio(workspace_path: PathBuf) -> anyhow::Result<()> {
+    let service = OxyMcpServer::new(workspace_path)
         .await?
         .serve(stdio())
         .await
@@ -25,7 +25,7 @@ pub async fn start_mcp_stdio(project_path: PathBuf) -> anyhow::Result<()> {
 pub async fn start_mcp_sse_server(
     mut port: u16,
     host: String,
-    project_path: PathBuf,
+    workspace_path: PathBuf,
 ) -> anyhow::Result<CancellationToken> {
     let original_port = port;
     let mut port_increment_count: u16 = 0;
@@ -59,7 +59,7 @@ pub async fn start_mcp_sse_server(
         }
     }
 
-    let service = OxyMcpServer::new(project_path.clone()).await?;
+    let service = OxyMcpServer::new(workspace_path.clone()).await?;
     let bind = format!("{host}:{port}")
         .parse::<SocketAddr>()
         .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], port)));

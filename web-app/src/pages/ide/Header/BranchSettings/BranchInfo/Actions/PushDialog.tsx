@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useAuth } from "@/contexts/AuthContext";
-import { usePushChanges } from "@/hooks/api/projects/useProjects";
+import { usePushChanges } from "@/hooks/api/workspaces/useWorkspaces";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import ROUTES from "@/libs/utils/routes";
 
@@ -29,7 +29,7 @@ export const PushDialog = ({ open, onOpenChange }: PushDialogProps) => {
   const [commitMessage, setCommitMessage] = useState("Auto-commit: Oxy changes");
   const navigate = useNavigate();
 
-  const isLocalOnly = !!authConfig.local_git && !authConfig.cloud;
+  const isLocalOnly = !!authConfig.local_git;
   const hasRemote = authConfig.git_remote;
 
   const actionLabel = isLocalOnly
@@ -47,20 +47,20 @@ export const PushDialog = ({ open, onOpenChange }: PushDialogProps) => {
   const onConfirm = async (e: { preventDefault: () => void }) => {
     e.preventDefault();
     if (!project?.id || !branchName) {
-      toast.error("Project or branch information is missing");
+      toast.error("Workspace or branch information is missing");
       return;
     }
 
     try {
       const result = await pushChangesMutation.mutateAsync({
-        projectId: project.id,
+        workspaceId: project.id,
         branchName,
         commitMessage: commitMessage.trim() || "Auto-commit: Oxy changes"
       });
 
       if (result.success) {
         toast.success(result.message || `${actionLabel} succeeded`);
-        const ideUri = ROUTES.PROJECT(project.id).IDE.ROOT;
+        const ideUri = ROUTES.WORKSPACE(project.id).IDE.ROOT;
         navigate(ideUri);
       } else {
         toast.error(`${actionLabel} failed`, {

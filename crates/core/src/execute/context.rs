@@ -5,7 +5,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::mpsc::Sender;
 
 use crate::{
-    adapters::{project::manager::ProjectManager, session_filters::SessionFilters},
+    adapters::{session_filters::SessionFilters, workspace::manager::WorkspaceManager},
     checkpoint::{CheckpointContext, CheckpointData},
     config::model::ConnectionOverrides,
     execute::{
@@ -42,7 +42,7 @@ pub struct ExecutionContext {
     pub source: Source,
     pub writer: Sender<Event>,
     pub renderer: Renderer,
-    pub project: ProjectManager,
+    pub workspace: WorkspaceManager,
     pub checkpoint: Option<CheckpointContext>,
     /// Filters to apply to all SQL queries in this execution context
     /// Set by API request, transparent to workflows/agents
@@ -66,7 +66,7 @@ impl ExecutionContext {
     pub fn new(
         source: Source,
         renderer: Renderer,
-        project: ProjectManager,
+        workspace: WorkspaceManager,
         writer: Sender<Event>,
         checkpoint: Option<CheckpointContext>,
         user_id: Option<uuid::Uuid>,
@@ -75,7 +75,7 @@ impl ExecutionContext {
             source,
             writer,
             renderer,
-            project,
+            workspace,
             checkpoint,
             filters: None,
             connections: None,
@@ -95,7 +95,7 @@ impl ExecutionContext {
             },
             writer: self.writer.clone(),
             renderer: self.renderer.clone(),
-            project: self.project.clone(),
+            workspace: self.workspace.clone(),
             checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
@@ -111,7 +111,7 @@ impl ExecutionContext {
             source: self.source.clone(),
             writer: self.writer.clone(),
             renderer: self.renderer.clone(),
-            project: self.project.clone(),
+            workspace: self.workspace.clone(),
             checkpoint: Some(checkpoint),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
@@ -128,7 +128,7 @@ impl ExecutionContext {
                 source: self.source.clone(),
                 writer: self.writer.clone(),
                 renderer: self.renderer.clone(),
-                project: self.project.clone(),
+                workspace: self.workspace.clone(),
                 checkpoint: Some(checkpoint_context.with_current_ref(child_ref)),
                 filters: self.filters.clone(),
                 connections: self.connections.clone(),
@@ -142,7 +142,7 @@ impl ExecutionContext {
                 source: self.source.clone(),
                 writer: self.writer.clone(),
                 renderer: self.renderer.clone(),
-                project: self.project.clone(),
+                workspace: self.workspace.clone(),
                 checkpoint: None,
                 filters: self.filters.clone(),
                 connections: self.connections.clone(),
@@ -159,7 +159,7 @@ impl ExecutionContext {
             source: self.source.clone(),
             writer,
             renderer: self.renderer.clone(),
-            project: self.project.clone(),
+            workspace: self.workspace.clone(),
             checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
@@ -175,7 +175,7 @@ impl ExecutionContext {
             source: self.source.clone(),
             writer: self.writer.clone(),
             renderer,
-            project: self.project.clone(),
+            workspace: self.workspace.clone(),
             checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
@@ -193,7 +193,7 @@ impl ExecutionContext {
             renderer: self
                 .renderer
                 .switch_context(global_context, Value::UNDEFINED),
-            project: self.project.clone(),
+            workspace: self.workspace.clone(),
             checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
@@ -209,7 +209,7 @@ impl ExecutionContext {
             source: self.source.clone(),
             writer: self.writer.clone(),
             renderer: self.renderer.wrap(context),
-            project: self.project.clone(),
+            workspace: self.workspace.clone(),
             checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
@@ -225,7 +225,7 @@ impl ExecutionContext {
             source: self.source.clone(),
             writer: self.writer.clone(),
             renderer: self.renderer.clone(),
-            project: self.project.clone(),
+            workspace: self.workspace.clone(),
             checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
@@ -242,7 +242,7 @@ impl ExecutionContext {
             source: self.source.clone(),
             writer: self.writer.clone(),
             renderer: self.renderer.clone(),
-            project: self.project.clone(),
+            workspace: self.workspace.clone(),
             checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
@@ -272,7 +272,7 @@ impl ExecutionContext {
             source: self.source.clone(),
             writer: self.writer.clone(),
             renderer: self.renderer.clone(),
-            project: self.project.clone(),
+            workspace: self.workspace.clone(),
             checkpoint: self.checkpoint.clone(),
             filters: self.filters.clone(),
             connections: self.connections.clone(),
@@ -445,7 +445,7 @@ impl Writer for ExecutionContext {
 pub struct ExecutionContextBuilder {
     source: Option<Source>,
     renderer: Option<Renderer>,
-    project: Option<ProjectManager>,
+    workspace: Option<WorkspaceManager>,
     writer: Option<Sender<Event>>,
     checkpoint: Option<CheckpointContext>,
     filters: Option<SessionFilters>,
@@ -467,7 +467,7 @@ impl ExecutionContextBuilder {
         ExecutionContextBuilder {
             source: None,
             renderer: None,
-            project: None,
+            workspace: None,
             writer: None,
             checkpoint: None,
             filters: None,
@@ -493,8 +493,8 @@ impl ExecutionContextBuilder {
         self
     }
 
-    pub fn with_project_manager(mut self, project: ProjectManager) -> Self {
-        self.project = Some(project);
+    pub fn with_workspace_manager(mut self, workspace: WorkspaceManager) -> Self {
+        self.workspace = Some(workspace);
         self
     }
 
@@ -556,15 +556,15 @@ impl ExecutionContextBuilder {
         let renderer = self
             .renderer
             .ok_or(OxyError::RuntimeError("Renderer is required".to_string()))?;
-        let project: ProjectManager = self.project.ok_or(OxyError::RuntimeError(
-            "ProjectManager is required".to_string(),
+        let workspace: WorkspaceManager = self.workspace.ok_or(OxyError::RuntimeError(
+            "WorkspaceManager is required".to_string(),
         ))?;
 
         Ok(ExecutionContext {
             source,
             writer,
             renderer,
-            project,
+            workspace,
             checkpoint: self.checkpoint,
             filters: self.filters,
             connections: self.connections,

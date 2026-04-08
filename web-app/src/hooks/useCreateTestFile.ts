@@ -7,6 +7,7 @@ import useSaveFile from "@/hooks/api/files/useSaveFile";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
+import type { FileTreeModel } from "@/types/file";
 
 const DEFAULT_TEST_CONTENT = `target: ""
 
@@ -47,14 +48,14 @@ export const useCreateTestFile = () => {
       return false;
     }
     const fullPath = `${name}.test.yml`;
-    const exists = (items: typeof fileTree): boolean => {
+    const exists = (items: FileTreeModel[] | undefined): boolean => {
       for (const item of items ?? []) {
         if (item.path === fullPath || item.name === fullPath) return true;
         if (item.children?.length && exists(item.children)) return true;
       }
       return false;
     };
-    if (exists(fileTree)) {
+    if (exists(fileTree?.primary)) {
       setError("A file with this name already exists");
       return false;
     }
@@ -73,7 +74,7 @@ export const useCreateTestFile = () => {
       await refetch();
       setDialogOpen(false);
       setFileName("");
-      navigate(ROUTES.PROJECT(project.id).IDE.FILES.FILE(pathb64));
+      navigate(ROUTES.WORKSPACE(project.id).IDE.FILES.FILE(pathb64));
     } catch (err) {
       toast.error("Failed to create test file", {
         description: err instanceof Error ? err.message : "There was a problem creating the file."

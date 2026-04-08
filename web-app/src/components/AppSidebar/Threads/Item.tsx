@@ -30,7 +30,7 @@ const Item = ({ thread }: ItemProps) => {
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
 
-  const threadUri = ROUTES.PROJECT(projectId).THREAD(thread.id);
+  const threadUri = ROUTES.WORKSPACE(projectId).THREAD(thread.id);
   const isActive = location.pathname === threadUri;
 
   const handleDeleteThread = useCallback(() => {
@@ -38,7 +38,7 @@ const Item = ({ thread }: ItemProps) => {
     deleteThread(threadId, {
       onSuccess: () => {
         if (isActive) {
-          navigate(ROUTES.PROJECT(projectId).THREADS);
+          navigate(ROUTES.WORKSPACE(projectId).THREADS);
         }
       }
     });

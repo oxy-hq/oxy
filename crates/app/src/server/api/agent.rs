@@ -1,7 +1,7 @@
 use std::{path::PathBuf, pin::Pin};
 
 use crate::{
-    api::middlewares::project::ProjectManagerExtractor,
+    api::middlewares::workspace_context::WorkspaceManagerExtractor,
     service::{
         agent::run_agent,
         chat::{ChatExecutionContext, ChatExecutionRequest, ChatHandler, ChatService},
@@ -24,7 +24,7 @@ use base64::{Engine, prelude::BASE64_STANDARD};
 use futures::Stream;
 use oxy::config::agent_config::AgenticConfig;
 use oxy::{
-    adapters::{project::manager::ProjectManager, session_filters::SessionFilters},
+    adapters::{session_filters::SessionFilters, workspace::manager::WorkspaceManager},
     config::model::{AgentConfig, ConnectionOverrides},
     execute::types::{ReferenceKind, Usage},
     utils::{create_sse_stream, create_sse_stream_from_stream},
@@ -49,11 +49,11 @@ pub struct BuilderAvailabilityResponse {
 }
 
 pub async fn check_builder_availability(
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
 ) -> Result<extract::Json<BuilderAvailabilityResponse>, StatusCode> {
     use oxy::config::model::BuilderAgentConfig;
 
-    match project_manager.config_manager.get_builder_config() {
+    match workspace_manager.config_manager.get_builder_config() {
         Some(BuilderAgentConfig::Builtin { model }) => {
             Ok(extract::Json(BuilderAvailabilityResponse {
                 available: true,
@@ -64,7 +64,7 @@ pub async fn check_builder_availability(
         }
         Some(BuilderAgentConfig::Path(_)) => {
             // Legacy path-based builder: resolve the path.
-            let builder_path_res = project_manager
+            let builder_path_res = workspace_manager
                 .config_manager
                 .get_builder_agent_path()
                 .await;
@@ -114,9 +114,9 @@ impl AgentConfigResponse {
 /// Returns a list of agent configs with their relative paths, prompts, models, and test definitions.
 #[utoipa::path(
     method(get),
-    path = "/{project_id}/agents",
+    path = "/{workspace_id}/agents",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID")
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID")
     ),
     responses(
         (status = OK, description = "Success", body = Vec<String>, content_type = "application/json")
@@ -126,10 +126,10 @@ impl AgentConfigResponse {
     )
 )]
 pub async fn get_agents(
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
 ) -> Result<extract::Json<Vec<AgentConfigResponse>>, StatusCode> {
-    let config_manager = &project_manager.config_manager;
-    let project_path = config_manager.project_path();
+    let config_manager = &workspace_manager.config_manager;
+    let workspace_path = config_manager.workspace_path();
 
     let agent_paths = config_manager.list_agents().await.map_err(|e| {
         tracing::error!("Failed to list agents: {}", e);
@@ -150,7 +150,7 @@ pub async fn get_agents(
         .chain(analytics_paths.iter())
         .filter_map(|agent| {
             agent
-                .strip_prefix(project_path)
+                .strip_prefix(workspace_path)
                 .ok()
                 .map(|path| path.to_string_lossy().to_string())
         })
@@ -204,9 +204,9 @@ pub async fn get_agents(
 /// Returns agent definition including prompts, tools, model settings, and test cases.
 #[utoipa::path(
     method(get),
-    path = "/{project_id}/agents/{pathb64}",
+    path = "/{workspace_id}/agents/{pathb64}",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID"),
         ("pathb64" = String, Path, description = "Base64 encoded path to the agent")
     ),
     responses(
@@ -217,8 +217,8 @@ pub async fn get_agents(
     )
 )]
 pub async fn get_agent(
-    Path((_project_id, pathb64)): Path<(Uuid, String)>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
 ) -> Result<extract::Json<AgentConfig>, StatusCode> {
     let decoded_path: Vec<u8> = BASE64_STANDARD.decode(pathb64).map_err(|e| {
         tracing::info!("{:?}", e);
@@ -229,7 +229,7 @@ pub async fn get_agent(
         StatusCode::BAD_REQUEST
     })?;
 
-    let agent = project_manager
+    let agent = workspace_manager
         .config_manager
         .resolve_agent(&path)
         .await
@@ -265,15 +265,16 @@ fn decode_path_from_base64(pathb64: String) -> Result<String, String> {
 }
 
 pub async fn run_test(
-    Path((_project_id, pathb64, test_index)): Path<(Uuid, String, usize)>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path((_workspace_id, pathb64, test_index)): Path<(Uuid, String, usize)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
 ) -> Result<impl IntoResponse, StatusCode> {
     let path = match decode_path_from_base64(pathb64) {
         Ok(path) => path,
         Err(error) => return Ok(Sse::new(create_error_stream(error))),
     };
 
-    let test_stream = match run_agent_test(project_manager.clone(), path, test_index, None).await {
+    let test_stream = match run_agent_test(workspace_manager.clone(), path, test_index, None).await
+    {
         Ok(stream) => stream,
         Err(e) => {
             let error = format!("Failed to run agent test: {e}");
@@ -322,9 +323,9 @@ pub struct AskAgentRequest {
 /// usage statistics, and generated artifacts. Suitable for non-streaming clients.
 #[utoipa::path(
     method(post),
-    path = "/{project_id}/agents/{pathb64}/ask",
+    path = "/{workspace_id}/agents/{pathb64}/ask",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID"),
         ("pathb64" = String, Path, description = "Base64 encoded path to the agent")
     ),
     request_body = AskAgentRequest,
@@ -336,9 +337,9 @@ pub struct AskAgentRequest {
     )
 )]
 pub async fn ask_agent_preview(
-    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     extract::Json(payload): extract::Json<AskAgentRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let decoded_path = BASE64_STANDARD.decode(pathb64).map_err(|e| {
@@ -353,7 +354,7 @@ pub async fn ask_agent_preview(
 
     // Load agent config to validate variables against schema
     if let Some(ref runtime_vars) = payload.variables {
-        let agent_config = project_manager
+        let agent_config = workspace_manager
             .config_manager
             .resolve_agent(&path)
             .await
@@ -392,7 +393,7 @@ pub async fn ask_agent_preview(
         let block_handler = BlockHandler::new(tx);
         let block_handler_reader = block_handler.get_reader();
         let result = run_agent(
-            project_manager,
+            workspace_manager,
             &PathBuf::from(path),
             payload.question,
             block_handler,
@@ -509,9 +510,9 @@ impl ChatExecutionRequest for AskAgentNonStreamingRequest {
 /// usage statistics, and generated artifacts. Suitable for non-streaming clients.
 #[utoipa::path(
     method(post),
-    path = "/{project_id}/agents/{pathb64}/ask-sync",
+    path = "/{workspace_id}/agents/{pathb64}/ask-sync",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID"),
         ("pathb64" = String, Path, description = "Base64 encoded path to the agent")
     ),
     request_body = AskAgentNonStreamingRequest,
@@ -523,9 +524,9 @@ impl ChatExecutionRequest for AskAgentNonStreamingRequest {
     )
 )]
 pub async fn ask_agent_sync(
-    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     extract::Json(payload): extract::Json<AskAgentNonStreamingRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
     // Mirror ask_agent_preview behavior but return a single aggregated response
@@ -541,7 +542,7 @@ pub async fn ask_agent_sync(
 
     // Load agent config to validate variables against schema
     if let Some(ref runtime_vars) = payload.variables {
-        let agent_config = project_manager
+        let agent_config = workspace_manager
             .config_manager
             .resolve_agent(&path)
             .await
@@ -570,7 +571,7 @@ pub async fn ask_agent_sync(
 
     let (tx, mut rx) = mpsc::channel(100);
 
-    let project_manager_clone = project_manager.clone();
+    let workspace_manager_clone = workspace_manager.clone();
     let question = payload.question.clone();
     let filters = payload.filters;
     let connections = payload.connections;
@@ -583,7 +584,7 @@ pub async fn ask_agent_sync(
         let block_handler = BlockHandler::new(tx.clone());
         let block_handler_reader = block_handler.get_reader();
         let result = run_agent(
-            project_manager_clone,
+            workspace_manager_clone,
             &PathBuf::from(path),
             question,
             block_handler,
@@ -749,12 +750,12 @@ impl ChatExecutionRequest for AskThreadRequest {
 }
 
 struct AgentExecutor {
-    project_manager: ProjectManager,
+    workspace_manager: WorkspaceManager,
 }
 
 impl AgentExecutor {
-    pub fn new(project_manager: ProjectManager) -> Self {
-        Self { project_manager }
+    pub fn new(workspace_manager: WorkspaceManager) -> Self {
+        Self { workspace_manager }
     }
 }
 
@@ -775,7 +776,7 @@ impl ChatHandler for AgentExecutor {
         let block_handler_reader = block_handler.get_reader();
 
         let result: Result<oxy::execute::types::OutputContainer, OxyError> = run_agent(
-            self.project_manager.clone(),
+            self.workspace_manager.clone(),
             &agent_path,
             context.user_question.clone(),
             block_handler,
@@ -855,15 +856,15 @@ impl ChatHandler for AgentExecutor {
 }
 
 pub async fn ask_agent(
-    Path((project_id, id)): Path<(Uuid, String)>,
+    Path((workspace_id, id)): Path<(Uuid, String)>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     extract::Json(payload): extract::Json<AskThreadRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let execution_manager = ChatService::new().await?;
-    let executor = AgentExecutor::new(project_manager);
+    let executor = AgentExecutor::new(workspace_manager);
 
     execution_manager
-        .execute_request(id, payload, executor, user.id, project_id)
+        .execute_request(id, payload, executor, user.id, workspace_id)
         .await
 }

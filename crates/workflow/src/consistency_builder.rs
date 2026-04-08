@@ -168,12 +168,12 @@ impl ConsistencyPicker<OutputContainer> for AgentPicker {
             })
             .unzip();
 
-        let config_manager = execution_context.project.config_manager.clone();
+        let config_manager = execution_context.workspace.config_manager.clone();
         let agent_config = config_manager.resolve_agent(self.agent_ref.clone()).await?;
         let model = config_manager.resolve_model(&agent_config.model)?;
         let client = OpenAIClient::with_config(
             model
-                .into_openai_config(&execution_context.project.secrets_manager)
+                .into_openai_config(&execution_context.workspace.secrets_manager)
                 .await?,
         );
         let agent = build_openai_executable(

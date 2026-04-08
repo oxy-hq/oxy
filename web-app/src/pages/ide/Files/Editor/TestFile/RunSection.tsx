@@ -61,7 +61,7 @@ const RunSection: React.FC<RunSectionProps> = ({ pathb64 }) => {
         <span className='font-medium text-sm'>Results</span>
         <div className='flex items-center gap-2'>
           <Link
-            to={ROUTES.PROJECT(project.id).IDE.TESTS.TEST_FILE(pathb64)}
+            to={ROUTES.WORKSPACE(project.id).IDE.TESTS.TEST_FILE(pathb64)}
             className='text-muted-foreground text-xs hover:text-foreground'
           >
             View in Dashboard

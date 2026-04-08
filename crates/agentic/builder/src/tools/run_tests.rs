@@ -27,7 +27,7 @@ pub fn run_tests_def() -> ToolDef {
 }
 
 pub async fn execute_run_tests(
-    project_root: &Path,
+    workspace_root: &Path,
     params: &Value,
     test_runner: Arc<dyn BuilderTestRunner>,
 ) -> Result<Value, ToolError> {
@@ -38,17 +38,17 @@ pub async fn execute_run_tests(
                 "expected a .test.yml file, got: {file_path}"
             )));
         }
-        let _abs = safe_path(project_root, file_path)?;
+        let _abs = safe_path(workspace_root, file_path)?;
 
         let result = test_runner
-            .run_tests(project_root, file_path)
+            .run_tests(workspace_root, file_path)
             .await
             .map_err(|e| ToolError::Execution(format!("test run failed: {e}")))?;
 
         Ok(json!({ "test_file": file_path, "result": result }))
     } else {
         // Discover and run all .test.yml files in the project.
-        let glob_pattern = project_root.join("**/*.test.yml");
+        let glob_pattern = workspace_root.join("**/*.test.yml");
         let glob_str = glob_pattern
             .to_str()
             .ok_or_else(|| ToolError::BadParams("invalid project root encoding".into()))?;
@@ -60,7 +60,7 @@ pub async fn execute_run_tests(
         {
             if entry.is_file() {
                 let rel = entry
-                    .strip_prefix(project_root)
+                    .strip_prefix(workspace_root)
                     .unwrap_or(&entry)
                     .to_string_lossy()
                     .to_string();
@@ -75,7 +75,7 @@ pub async fn execute_run_tests(
         let mut results = Vec::new();
         for file in &test_files {
             let result = test_runner
-                .run_tests(project_root, file)
+                .run_tests(workspace_root, file)
                 .await
                 .map_err(|e| ToolError::Execution(format!("test run failed for '{file}': {e}")))?;
             results.push(json!({ "test_file": file, "result": result }));

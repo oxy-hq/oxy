@@ -11,7 +11,7 @@ import {
   AlertDialogTitle
 } from "@/components/ui/shadcn/alert-dialog";
 import { Spinner } from "@/components/ui/shadcn/spinner";
-import { usePullChanges } from "@/hooks/api/projects/useProjects";
+import { usePullChanges } from "@/hooks/api/workspaces/useWorkspaces";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import ROUTES from "@/libs/utils/routes";
 
@@ -29,13 +29,13 @@ export const PullDialog = ({ open, onOpenChange }: Props) => {
     e.preventDefault();
 
     if (!project?.id || !branchName) {
-      toast.error("Project or branch information is missing");
+      toast.error("Workspace or branch information is missing");
       return;
     }
 
     try {
       const result = await pullChangesMutation.mutateAsync({
-        projectId: project.id,
+        workspaceId: project.id,
         branchName
       });
 
@@ -54,7 +54,7 @@ export const PullDialog = ({ open, onOpenChange }: Props) => {
           });
         }
       }
-      const ideUri = ROUTES.PROJECT(project.id).IDE.ROOT;
+      const ideUri = ROUTES.WORKSPACE(project.id).IDE.ROOT;
       navigate(ideUri);
     } catch (error) {
       toast.error("Failed to pull changes");

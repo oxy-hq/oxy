@@ -22,8 +22,11 @@ impl ConfigBuilder {
         Self { storage: None }
     }
 
-    pub fn with_project_path<P: AsRef<Path>>(mut self, project_path: P) -> Result<Self, OxyError> {
-        self.storage = Some(ConfigSource::local(project_path)?);
+    pub fn with_workspace_path<P: AsRef<Path>>(
+        mut self,
+        workspace_path: P,
+    ) -> Result<Self, OxyError> {
+        self.storage = Some(ConfigSource::local(workspace_path)?);
         Ok(self)
     }
 

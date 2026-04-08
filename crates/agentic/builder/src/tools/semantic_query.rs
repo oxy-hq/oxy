@@ -121,13 +121,13 @@ pub fn semantic_query_def() -> ToolDef {
 }
 
 pub async fn execute_semantic_query(
-    project_root: &Path,
+    workspace_root: &Path,
     params: &Value,
     secrets_manager: Option<&oxy::adapters::secrets::SecretsManager>,
 ) -> Result<Value, ToolError> {
     // Build ConfigManager from project root.
     let config_manager = oxy::config::ConfigBuilder::new()
-        .with_project_path(project_root)
+        .with_workspace_path(workspace_root)
         .map_err(|e| ToolError::Execution(format!("config error: {e}")))?
         .build()
         .await

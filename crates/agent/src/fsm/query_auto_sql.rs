@@ -41,8 +41,8 @@ impl<S> AutoSQL<S> {
     ) -> Result<Vec<ChatCompletionRequestMessage>, OxyError> {
         tracing::info!("Query Objective: {}", self.objective);
         let semantic_manager = SemanticManager::from_config(
-            execution_context.project.config_manager.clone(),
-            execution_context.project.secrets_manager.clone(),
+            execution_context.workspace.config_manager.clone(),
+            execution_context.workspace.secrets_manager.clone(),
             false,
         )
         .await?;

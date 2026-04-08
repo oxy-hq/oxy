@@ -30,10 +30,8 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger
 } from "@/components/ui/shadcn/dropdown-menu";
-import { FieldError } from "@/components/ui/shadcn/field";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
-import { Spinner } from "@/components/ui/shadcn/spinner";
 import useCreateFile from "@/hooks/api/files/useCreateFile";
 import useFileTree from "@/hooks/api/files/useFileTree";
 import useSaveFile from "@/hooks/api/files/useSaveFile";
@@ -211,7 +209,7 @@ const NewObjectButton: React.FC<NewObjectButtonProps> = ({ disabled }) => {
       return false;
     };
 
-    if (pathExistsInTree(fileTree || [])) {
+    if (pathExistsInTree(fileTree?.primary || [])) {
       setError("A file with this name already exists");
       return false;
     }
@@ -246,7 +244,7 @@ const NewObjectButton: React.FC<NewObjectButtonProps> = ({ disabled }) => {
       setFileName("");
 
       // Navigate to the file
-      navigate(ROUTES.PROJECT(project.id).IDE.FILES.FILE(pathb64));
+      navigate(ROUTES.WORKSPACE(project.id).IDE.FILES.FILE(pathb64));
     } catch (err) {
       toast.error("Failed to create file", {
         description: err instanceof Error ? err.message : "There was a problem creating the file."
@@ -338,7 +336,7 @@ const NewObjectButton: React.FC<NewObjectButtonProps> = ({ disabled }) => {
                   {selectedType?.extension}
                 </span>
               </div>
-              {error && <FieldError>{error}</FieldError>}
+              {error && <p className='text-destructive text-sm'>{error}</p>}
             </div>
           </div>
           <DialogFooter>
@@ -346,7 +344,7 @@ const NewObjectButton: React.FC<NewObjectButtonProps> = ({ disabled }) => {
               Cancel
             </Button>
             <Button onClick={handleCreate} disabled={isCreating || !fileName.trim()}>
-              {isCreating ? <Spinner /> : "Create"}
+              {isCreating ? "Creating..." : "Create"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -13,7 +13,8 @@ import {
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
-import { FileService, ProjectService } from "@/services/api";
+import { FileService } from "@/services/api";
+import { WorkspaceService as ProjectService } from "@/services/api/workspaces";
 import type { FileStatus } from "@/types/file";
 
 // ─── Types ────────────────────────────────────────────────────────────────────

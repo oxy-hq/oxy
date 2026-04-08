@@ -234,6 +234,9 @@ export const UnifiedSecretsTable: React.FC = () => {
                 const sourceConfig = SOURCE_CONFIG[row.source];
                 const date = row.secretInfo?.updated_at;
                 const isUnset = !row.secretInfo && !row.envInfo?.is_set;
+                // Reveal/copy is only available for DB-stored secrets.
+                // Env-sourced values are never returned as plaintext by the API.
+                const canReveal = !isUnset && !!row.secretInfo;
 
                 return (
                   <TableRow key={row.key} className='group'>
@@ -313,8 +316,8 @@ export const UnifiedSecretsTable: React.FC = () => {
 
                     <TableCell className='w-px whitespace-nowrap'>
                       <div className='flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100'>
-                        {/* Reveal toggle — hidden for unset env vars */}
-                        {!isUnset && (
+                        {/* Reveal toggle — DB secrets only; env values are never returned as plaintext */}
+                        {canReveal && (
                           <Button
                             variant='ghost'
                             size='sm'
@@ -331,8 +334,8 @@ export const UnifiedSecretsTable: React.FC = () => {
                           </Button>
                         )}
 
-                        {/* Copy value — hidden for unset env vars */}
-                        {!isUnset && (
+                        {/* Copy value — DB secrets only */}
+                        {canReveal && (
                           <Button
                             variant='ghost'
                             size='sm'

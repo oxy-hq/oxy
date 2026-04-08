@@ -4,6 +4,7 @@ use crate::api::artifacts;
 use crate::api::auth;
 use crate::api::chart;
 use crate::api::data;
+use crate::api::data_repo;
 use crate::api::database;
 use crate::api::execution_analytics;
 use crate::api::exported_chart;
@@ -12,9 +13,9 @@ use crate::api::github;
 use crate::api::healthcheck;
 use crate::api::integration;
 use crate::api::metrics;
-use crate::api::middlewares::project::project_middleware;
 use crate::api::middlewares::timeout::timeout_middleware;
-use crate::api::project;
+use crate::api::middlewares::workspace_context::workspace_middleware;
+use crate::api::onboarding;
 use crate::api::result_files;
 use crate::api::run;
 use crate::api::secrets;
@@ -27,7 +28,7 @@ use crate::api::thread;
 use crate::api::traces;
 use crate::api::user;
 use crate::api::workflow;
-use crate::api::workspace;
+use crate::api::workspaces;
 use crate::server::providers;
 use axum::Router;
 use axum::body::Body;
@@ -42,9 +43,7 @@ use axum::response::Response;
 use axum::routing::delete;
 use axum::routing::put;
 use axum::routing::{get, post};
-use entity::projects;
-use entity::users::UserRole;
-use oxy::adapters::project::manager::ProjectManager;
+use entity::workspaces as workspace_entity;
 use oxy_auth::middleware::{AuthState, auth_middleware, internal_auth_middleware};
 use oxy_auth::types::AuthenticatedUser;
 use oxy_shared::errors::OxyError;
@@ -66,11 +65,25 @@ use crate::server::builder_test_runner::OxyTestRunner;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub cloud: bool,
     pub enterprise: bool,
     pub internal: bool,
     pub readonly: bool,
-    pub backend: std::sync::Arc<providers::ProjectBackend>,
+    pub backend: std::sync::Arc<providers::WorkspaceBackend>,
+    /// Root directory where all Oxy workspaces are stored.
+    /// Defaults to `$OXY_STATE_DIR/workspaces/`.
+    /// Set to `None` when running in single-workspace mode (explicit PROJECT_DIR arg).
+    pub workspaces_root: Option<std::path::PathBuf>,
+    /// The filesystem path of the currently active workspace.
+    /// Shared across all request handlers via Arc<RwLock<...>>.
+    /// Updated after each successful onboarding operation.
+    pub active_workspace_path: std::sync::Arc<tokio::sync::RwLock<Option<std::path::PathBuf>>>,
+    /// IDs of workspaces whose background git clone is still in progress.
+    /// Used by the workspaces list API to surface cloning status to the frontend.
+    pub cloning_workspaces: std::sync::Arc<std::sync::Mutex<std::collections::HashSet<uuid::Uuid>>>,
+    /// Workspaces whose clone finished but the directory is not a valid Oxy workspace (no config.yml).
+    /// Maps workspace ID → human-readable error message.
+    pub errored_workspaces:
+        std::sync::Arc<std::sync::Mutex<std::collections::HashMap<uuid::Uuid, String>>>,
 }
 
 fn build_cors_layer() -> CorsLayer {
@@ -89,6 +102,7 @@ fn build_public_routes() -> Router<AppState> {
         .route("/version", get(healthcheck::version_info))
         .route("/auth/config", get(auth::get_config))
         .route("/auth/google", post(auth::google_auth))
+        .route("/auth/github", post(auth::github_auth))
         .route("/auth/okta", post(auth::okta_auth))
         .route("/auth/magic-link/request", post(auth::request_magic_link))
         .route("/auth/magic-link/verify", post(auth::verify_magic_link))
@@ -97,10 +111,10 @@ fn build_public_routes() -> Router<AppState> {
         .merge(build_slack_routes())
 }
 
-// TODO: Right now, all incoming Slack requests default to the empty UUID project_id,
-//       but we can bind a project to a Slack channel via `/oxy bind <project_id> <agent_id>`.
+// TODO: Right now, all incoming Slack requests default to the empty UUID workspace_id,
+//       but we can bind a workspace to a Slack channel via `/oxy bind <workspace_id> <agent_id>`.
 //       In the future, to support Slack integration for cloud deployments, we may need to scope
-//       Slack routes to a specific workspace and/or project.
+//       Slack routes to a specific workspace.
 fn build_slack_routes() -> Router<AppState> {
     // Slack routes are always registered. Configuration (signing secret, bot token)
     // is loaded from config.yml per-request in the handlers.
@@ -113,65 +127,97 @@ fn build_global_routes() -> Router<AppState> {
     Router::new()
         .route("/logout", get(user::logout))
         .route("/auth/invite", post(auth::invite_user))
+        .route("/users", get(user::list_users))
         .route("/users/batch", post(user::batch_get_users))
+        .route(
+            "/users/{id}",
+            put(user::update_user).delete(user::delete_user),
+        )
         .route("/github/repositories", get(github::list_repositories))
         .route("/github/branches", get(github::list_branches))
         .route("/github/namespaces", get(github::list_git_namespaces))
+        .route(
+            "/github/namespaces/{id}",
+            axum::routing::delete(github::delete_git_namespace),
+        )
         .route("/github/install-app-url", get(github::gen_install_app_url))
+        .route(
+            "/github/oauth-connect-url",
+            get(github::gen_oauth_connect_url),
+        )
+        .route(
+            "/github/namespaces/oauth",
+            post(github::connect_namespace_from_oauth),
+        )
+        .route(
+            "/github/namespaces/pick",
+            post(github::pick_namespace_installation),
+        )
+        .route(
+            "/github/app-installations",
+            get(github::list_app_installations),
+        )
         .route("/github/namespaces", post(github::create_git_namespace))
+        .route("/github/namespaces/pat", post(github::create_pat_namespace))
+        .route(
+            "/github/namespaces/installation",
+            post(github::create_installation_namespace),
+        )
+        .route("/onboarding/demo", post(onboarding::setup_demo))
+        .route("/onboarding/new", post(onboarding::setup_new))
+        .route("/onboarding/github", post(onboarding::setup_github))
+        .route("/onboarding/github-url", post(onboarding::setup_github_url))
+        .route(
+            "/onboarding/readiness",
+            get(onboarding::onboarding_readiness),
+        )
+        .route("/workspaces", get(workspaces::list_workspaces))
+        .route("/workspaces/{id}", delete(workspaces::delete_workspace))
+        .route(
+            "/workspaces/{id}/activate",
+            post(workspaces::activate_workspace),
+        )
+        .route(
+            "/workspaces/{id}/rename",
+            axum::routing::patch(workspaces::rename_workspace),
+        )
 }
 
-fn build_workspace_routes() -> Router<AppState> {
+fn build_workspace_routes(
+    app_state: AppState,
+    agentic_state: Arc<AgenticState>,
+) -> Router<AppState> {
     Router::new()
-        .route("/", get(workspace::list_workspaces))
-        .route("/", post(workspace::create_workspace))
-        .route("/{workspace_id}/users", get(workspace::list_users))
-        .route(
-            "/{workspace_id}/users",
-            post(workspace::add_user_to_workspace),
-        )
-        .route(
-            "/{workspace_id}/users",
-            put(workspace::update_user_role_in_workspace),
-        )
-        .route(
-            "/{workspace_id}/users/{user_id}",
-            delete(workspace::remove_user_from_workspace),
-        )
-}
-
-fn build_project_routes(app_state: AppState, agentic_state: Arc<AgenticState>) -> Router<AppState> {
-    Router::new()
-        .route("/details", get(project::get_project))
-        .route("/status", get(project::get_project_status))
-        .route("/revision-info", get(project::get_revision_info))
-        .route("/branches", get(project::get_project_branches))
-        .route("/branches/{branch_name}", delete(project::delete_branch))
-        .route("/switch-branch", post(project::switch_project_branch))
+        .route("/details", get(workspaces::get_workspace))
+        .route("/status", get(workspaces::get_workspace_status))
+        .route("/revision-info", get(workspaces::get_revision_info))
+        .route("/branches", get(workspaces::get_workspace_branches))
+        .route("/branches/{branch_name}", delete(workspaces::delete_branch))
+        .route("/switch-branch", post(workspaces::switch_workspace_branch))
         .route(
             "/switch-active-branch",
-            post(project::switch_project_active_branch),
+            post(workspaces::switch_workspace_active_branch),
         )
-        .route("/pull-changes", post(project::pull_changes))
-        .route("/push-changes", post(project::push_changes))
-        .route("/abort-rebase", post(project::abort_rebase))
-        .route("/continue-rebase", post(project::continue_rebase))
+        .route("/pull-changes", post(workspaces::pull_changes))
+        .route("/push-changes", post(workspaces::push_changes))
+        .route("/abort-rebase", post(workspaces::abort_rebase))
+        .route("/continue-rebase", post(workspaces::continue_rebase))
         .route(
             "/resolve-conflict-file",
-            post(project::resolve_conflict_file),
+            post(workspaces::resolve_conflict_file),
         )
         .route(
             "/unresolve-conflict-file",
-            post(project::unresolve_conflict_file),
+            post(workspaces::unresolve_conflict_file),
         )
         .route(
             "/resolve-conflict-with-content",
-            post(project::resolve_conflict_with_content),
+            post(workspaces::resolve_conflict_with_content),
         )
-        .route("/force-push", post(project::force_push_branch))
-        .route("/recent-commits", get(project::get_recent_commits))
-        .route("/reset-to-commit", post(project::reset_to_commit))
-        .route("/create-repo", post(project::create_repo_from_project))
+        .route("/force-push", post(workspaces::force_push_branch))
+        .route("/recent-commits", get(workspaces::get_recent_commits))
+        .route("/reset-to-commit", post(workspaces::reset_to_commit))
+        .route("/create-repo", post(workspaces::create_repo_from_workspace))
         .nest("/workflows", build_workflow_routes())
         .nest("/automations", build_automation_routes())
         .nest("/threads", build_thread_routes())
@@ -179,6 +225,7 @@ fn build_project_routes(app_state: AppState, agentic_state: Arc<AgenticState>) -
         .nest("/api-keys", build_api_key_routes())
         .nest("/files", build_file_routes())
         .nest("/databases", build_database_routes())
+        .nest("/repositories", build_data_repo_routes())
         .nest("/integrations", build_integration_routes())
         .nest("/secrets", build_secret_routes(app_state))
         .nest("/tests", build_test_file_routes())
@@ -232,9 +279,9 @@ fn build_project_routes(app_state: AppState, agentic_state: Arc<AgenticState>) -
 }
 
 #[derive(Clone)]
-pub struct ProjectExtractor(pub projects::Model);
+pub struct WorkspaceExtractor(pub workspace_entity::Model);
 
-impl<S> FromRequestParts<S> for ProjectExtractor
+impl<S> FromRequestParts<S> for WorkspaceExtractor
 where
     S: Send + Sync,
 {
@@ -246,9 +293,9 @@ where
     ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
         let result = parts
             .extensions
-            .get::<projects::Model>()
+            .get::<workspace_entity::Model>()
             .cloned()
-            .map(ProjectExtractor)
+            .map(WorkspaceExtractor)
             .ok_or(StatusCode::UNAUTHORIZED);
 
         async move { result }
@@ -339,6 +386,20 @@ fn build_database_routes() -> Router<AppState> {
         .route("/clean", post(database::clean_data))
 }
 
+fn build_data_repo_routes() -> Router<AppState> {
+    Router::new()
+        .route("/", get(data_repo::list_repositories))
+        .route("/", post(data_repo::add_repository))
+        .route("/{name}", delete(data_repo::remove_repository))
+        .route("/{name}/branch", get(data_repo::get_repo_branch))
+        .route("/{name}/branches", get(data_repo::list_repo_branches))
+        .route("/{name}/checkout", post(data_repo::checkout_repo_branch))
+        .route("/{name}/diff", get(data_repo::get_repo_diff))
+        .route("/{name}/commit", post(data_repo::commit_repo))
+        .route("/{name}/files", get(data_repo::get_repo_file_tree))
+        .route("/github", post(data_repo::add_repo_from_github))
+}
+
 fn build_integration_routes() -> Router<AppState> {
     Router::new()
         .route("/looker", get(integration::list_looker_integrations))
@@ -348,38 +409,32 @@ fn build_integration_routes() -> Router<AppState> {
 
 /// Middleware that gates secrets routes to admin users only.
 ///
-/// - Cloud mode: requires `UserRole::Admin` DB role.
-/// - Local mode: checks `config.admins` list; auto-grants access when the list is empty
-///   (permissive default for single-user local installs). The built-in local guest
-///   (`<local-user@example.com>`) always passes.
+/// Checks `config.admins` list; auto-grants access when the list is empty
+/// (permissive default for single-user local installs). The built-in local guest
+/// (`<local-user@example.com>`) always passes.
+/// In single-workspace mode (`workspaces_root` is `None`), all users are granted access.
 async fn secrets_access_middleware(
     State(app_state): State<AppState>,
     request: Request<Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
+    // Single-workspace mode: no multi-tenancy, treat all users as admin.
+    if app_state.workspaces_root.is_none() {
+        return Ok(next.run(request).await);
+    }
+
     let user = request
         .extensions()
         .get::<AuthenticatedUser>()
         .cloned()
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
-    if app_state.cloud {
-        if user.role != UserRole::Admin {
-            tracing::warn!(
-                "Non-admin user {} attempted to access secrets (cloud mode)",
-                user.email
-            );
-            return Err(StatusCode::FORBIDDEN);
-        }
-    } else {
-        let is_admin = is_local_admin(&user.email, &request);
-        if !is_admin {
-            tracing::warn!(
-                "Non-admin user {} attempted to access secrets (local mode)",
-                user.email
-            );
-            return Err(StatusCode::FORBIDDEN);
-        }
+    // DB role is authoritative: first-user bootstrap grants Admin in the DB.
+    // config.admins can extend admin access but cannot revoke a DB-granted role.
+    let is_admin = user.role.is_admin_or_above() || is_local_admin(&user.email);
+    if !is_admin {
+        tracing::warn!("Non-admin user {} attempted to access secrets", user.email);
+        return Err(StatusCode::FORBIDDEN);
     }
 
     Ok(next.run(request).await)
@@ -389,19 +444,16 @@ async fn secrets_access_middleware(
 ///
 /// Logic:
 /// 1. The built-in local guest (`<local-user@example.com>`) is always admin.
-/// 2. If the ProjectManager is loaded, consult `config.admins`:
-///    - Non-empty list: email must be listed.
-///    - Empty list: all users are admin (permissive default for single-user installs).
-/// 3. If the ProjectManager could not be loaded (error path), only the local guest passes.
-fn is_local_admin(email: &str, request: &Request<Body>) -> bool {
-    match request.extensions().get::<ProjectManager>() {
-        Some(pm) => {
-            let admins = &pm.config_manager.get_config().admins;
-            oxy_auth::is_admin_email(admins, email)
-        }
-        // Config unavailable — restrict to built-in local guest only
-        None => email == oxy_auth::LOCAL_GUEST_EMAIL,
-    }
+/// 2. If `OXY_ADMINS` env var is set (comma-separated emails), the email must be listed.
+/// 3. Otherwise all users are admin (permissive default for single-user installs).
+fn is_local_admin(email: &str) -> bool {
+    let admins: Vec<String> = std::env::var("OXY_ADMINS")
+        .unwrap_or_default()
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    oxy_auth::is_admin_email(&admins, email)
 }
 
 fn build_secret_routes(app_state: AppState) -> Router<AppState> {
@@ -471,62 +523,70 @@ fn build_protected_routes(
     app_state: AppState,
     agentic_state: Arc<AgenticState>,
 ) -> Router<AppState> {
-    Router::new()
-        .merge(build_global_routes())
-        .nest("/workspaces", build_workspace_routes())
-        .nest(
-            "/{project_id}",
-            build_project_routes(app_state.clone(), agentic_state).layer(
-                middleware::from_fn_with_state(app_state, project_middleware),
-            ),
-        )
+    Router::new().merge(build_global_routes()).nest(
+        "/{workspace_id}",
+        build_workspace_routes(app_state.clone(), agentic_state).layer(
+            middleware::from_fn_with_state(app_state, workspace_middleware),
+        ),
+    )
 }
 
-fn apply_middleware(
-    protected_routes: Router<AppState>,
-    cloud: bool,
-) -> Result<Router<AppState>, OxyError> {
+fn apply_middleware(protected_routes: Router<AppState>) -> Result<Router<AppState>, OxyError> {
     let protected_regular_routes = protected_routes
         .layer(middleware::from_fn(timeout_middleware))
         .layer(middleware::from_fn_with_state(
-            AuthState::built_in(cloud),
+            AuthState::built_in(),
             auth_middleware,
         ));
 
     Ok(protected_regular_routes)
 }
-fn build_backend(cloud: bool) -> providers::ProjectBackend {
-    if cloud {
-        providers::ProjectBackend::Cloud
-    } else {
-        let root = match oxy::config::resolve_local_project_path() {
-            Ok(p) => p,
-            Err(e) => {
-                tracing::warn!(
-                    "Could not resolve project root ({}); falling back to current directory",
-                    e
-                );
-                std::path::PathBuf::from(".")
-            }
-        };
-        providers::ProjectBackend::Local(providers::LocalBackend { root })
+
+fn build_backend(
+    active_workspace_path: std::sync::Arc<tokio::sync::RwLock<Option<std::path::PathBuf>>>,
+) -> providers::WorkspaceBackend {
+    let root = match oxy::config::resolve_local_workspace_path() {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!(
+                "Could not resolve workspace root ({}); falling back to current directory",
+                e
+            );
+            std::path::PathBuf::from(".")
+        }
+    };
+    providers::WorkspaceBackend {
+        local: providers::LocalBackend { root },
+        active_workspace_path,
     }
 }
 
-pub async fn api_router(cloud: bool, enterprise: bool, readonly: bool) -> Result<Router, OxyError> {
+pub async fn api_router(
+    enterprise: bool,
+    readonly: bool,
+    workspaces_root: Option<std::path::PathBuf>,
+    active_workspace_path: std::sync::Arc<tokio::sync::RwLock<Option<std::path::PathBuf>>>,
+    cloning_workspaces: std::sync::Arc<std::sync::Mutex<std::collections::HashSet<uuid::Uuid>>>,
+    errored_workspaces: std::sync::Arc<
+        std::sync::Mutex<std::collections::HashMap<uuid::Uuid, String>>,
+    >,
+) -> Result<Router, OxyError> {
     let app_state = AppState {
-        cloud,
         enterprise,
         internal: false,
         readonly,
-        backend: std::sync::Arc::new(build_backend(cloud)),
+        backend: std::sync::Arc::new(build_backend(active_workspace_path.clone())),
+        workspaces_root,
+        active_workspace_path,
+        cloning_workspaces,
+        errored_workspaces,
     };
     cleanup_stale_runs().await.ok();
     let agentic_state =
         Arc::new(AgenticState::new().with_builder_test_runner(Arc::new(OxyTestRunner)));
     let public_routes = build_public_routes();
     let protected_routes = build_protected_routes(app_state.clone(), agentic_state);
-    let protected_routes = apply_middleware(protected_routes, cloud)?;
+    let protected_routes = apply_middleware(protected_routes)?;
     let app_routes = public_routes.merge(protected_routes);
     let cors = build_cors_layer();
 
@@ -543,16 +603,24 @@ pub async fn api_router(cloud: bool, enterprise: bool, readonly: bool) -> Result
 }
 
 pub async fn internal_api_router(
-    cloud: bool,
     enterprise: bool,
     readonly: bool,
+    workspaces_root: Option<std::path::PathBuf>,
+    active_workspace_path: std::sync::Arc<tokio::sync::RwLock<Option<std::path::PathBuf>>>,
+    cloning_workspaces: std::sync::Arc<std::sync::Mutex<std::collections::HashSet<uuid::Uuid>>>,
+    errored_workspaces: std::sync::Arc<
+        std::sync::Mutex<std::collections::HashMap<uuid::Uuid, String>>,
+    >,
 ) -> Result<Router, OxyError> {
     let app_state = AppState {
-        cloud,
         enterprise,
         internal: true,
         readonly,
-        backend: std::sync::Arc::new(build_backend(cloud)),
+        backend: std::sync::Arc::new(build_backend(active_workspace_path.clone())),
+        workspaces_root,
+        active_workspace_path,
+        cloning_workspaces,
+        errored_workspaces,
     };
     cleanup_stale_runs().await.ok();
     let agentic_state =
@@ -600,13 +668,9 @@ pub async fn openapi_router() -> OpenApiRouter<AppState> {
         .routes(routes!(app::get_app_result))
         .routes(routes!(app::get_chart_image))
         // Workspace routes
-        .routes(routes!(workspace::list_workspaces))
-        .routes(routes!(workspace::create_workspace))
-        // Project routes
-        .routes(routes!(project::get_project))
-        .routes(routes!(project::delete_project))
-        .routes(routes!(project::get_project_branches))
-        .routes(routes!(project::create_repo_from_project))
+        .routes(routes!(workspaces::get_workspace))
+        .routes(routes!(workspaces::get_workspace_branches))
+        .routes(routes!(workspaces::create_repo_from_workspace))
         // Run routes
         .routes(routes!(run::get_workflow_runs))
         .routes(routes!(run::create_workflow_run))

@@ -15,11 +15,11 @@ use crate::server::service::formatters::BlockHandler;
 use crate::server::service::formatters::block_reader::BlockHandlerReader;
 use crate::server::service::types::AnswerStream;
 use entity::threads;
-use oxy::adapters::project::builder::ProjectBuilder;
-use oxy::adapters::project::resolve_project_path;
 use oxy::adapters::secrets::SecretsManager;
+use oxy::adapters::workspace::builder::WorkspaceBuilder;
+use oxy::adapters::workspace::resolve_workspace_path;
 use oxy::config::model::SlackSettings;
-use oxy::config::{ConfigBuilder, resolve_local_project_path};
+use oxy::config::{ConfigBuilder, resolve_local_workspace_path};
 use oxy::database::client::establish_connection;
 use oxy_shared::errors::OxyError;
 use sea_orm::{
@@ -51,7 +51,7 @@ pub struct SlackChatRequest {
     /// Event timestamp
     pub event_ts: String,
     /// Oxy project ID (nil UUID for local projects)
-    pub project_id: Uuid,
+    pub workspace_id: Uuid,
     /// Agent config path
     pub agent_id: String,
     /// Slack settings from config.yml
@@ -68,7 +68,7 @@ pub struct SlackChatRequest {
 ///
 /// Returns the SlackSettings or an error with helpful instructions.
 pub async fn load_slack_settings() -> Result<SlackSettings, OxyError> {
-    let project_path = resolve_local_project_path().map_err(|e| {
+    let workspace_path = resolve_local_workspace_path().map_err(|e| {
         OxyError::ConfigurationError(format!(
             "Failed to find project config.yml: {}. \
              Make sure to run Oxy from a directory with a config.yml file.",
@@ -77,7 +77,7 @@ pub async fn load_slack_settings() -> Result<SlackSettings, OxyError> {
     })?;
 
     let config_manager = ConfigBuilder::new()
-        .with_project_path(project_path)?
+        .with_workspace_path(workspace_path)?
         .build()
         .await
         .map_err(|e| {
@@ -110,7 +110,7 @@ pub async fn execute_oxy_chat_for_slack(request: SlackChatRequest) -> Result<(),
         request.team_id,
         request.channel_id,
         request.user_id,
-        request.project_id,
+        request.workspace_id,
         request.agent_id
     );
 
@@ -146,7 +146,7 @@ pub async fn execute_oxy_chat_for_slack(request: SlackChatRequest) -> Result<(),
         // Create new thread/session
         tracing::info!("Creating new Oxy session");
         let thread_id = create_oxy_thread(
-            request.project_id,
+            request.workspace_id,
             oxy_user_id,
             &request.text,
             &request.agent_id,
@@ -194,7 +194,7 @@ pub async fn execute_oxy_chat_for_slack(request: SlackChatRequest) -> Result<(),
     let result = execute_and_deliver_to_slack(
         thread_id,
         &request.text,
-        request.project_id,
+        request.workspace_id,
         &request.agent_id,
         &bot_token,
         oxy_app_url,
@@ -283,7 +283,7 @@ async fn determine_delivery_method(
 async fn execute_and_deliver_to_slack(
     thread_id: Uuid,
     question: &str,
-    project_id: Uuid,
+    workspace_id: Uuid,
     agent_path: &str,
     bot_token: &str,
     oxy_app_url: Option<&str>,
@@ -299,7 +299,7 @@ async fn execute_and_deliver_to_slack(
     );
 
     // Execute agent
-    let result = execute_agent(thread_id, question, project_id, agent_path).await;
+    let result = execute_agent(thread_id, question, workspace_id, agent_path).await;
 
     match result {
         Ok((final_markdown, block_handler_reader)) => {
@@ -319,7 +319,7 @@ async fn execute_and_deliver_to_slack(
             // deployments, there is de facto a single Oxy user and this is not a concern.
             let mrkdwn_content = markdown_to_mrkdwn(&final_markdown);
             let slack_text = if let Some(url) = oxy_app_url {
-                let deep_link = build_thread_deep_link(url, project_id, thread_id);
+                let deep_link = build_thread_deep_link(url, workspace_id, thread_id);
                 format!("{}\n\n<{}|View in Oxy>", mrkdwn_content, deep_link)
             } else {
                 mrkdwn_content
@@ -384,12 +384,12 @@ async fn deliver_message(
 async fn execute_agent(
     thread_id: Uuid,
     question: &str,
-    project_id: Uuid,
+    workspace_id: Uuid,
     agent_path: &str,
 ) -> Result<(String, BlockHandlerReader), OxyError> {
-    let repo_path = resolve_project_path(project_id).await?;
-    let project_manager = ProjectBuilder::new(project_id)
-        .with_project_path_and_fallback_config(&repo_path)
+    let repo_path = resolve_workspace_path(workspace_id).await?;
+    let workspace_manager = WorkspaceBuilder::new(workspace_id)
+        .with_workspace_path_and_fallback_config(&repo_path)
         .await?
         .try_with_intent_classifier()
         .await
@@ -402,7 +402,7 @@ async fn execute_agent(
     let (block_handler, block_handler_reader) = create_block_handler();
 
     let result = run_agent(
-        project_manager,
+        workspace_manager,
         std::path::Path::new(agent_path),
         question.to_string(),
         block_handler,
@@ -453,7 +453,7 @@ fn create_block_handler() -> (BlockHandler, BlockHandlerReader) {
 
 /// Create a new Oxy thread for the Slack conversation
 async fn create_oxy_thread(
-    project_id: Uuid,
+    workspace_id: Uuid,
     user_id: Uuid,
     input: &str,
     agent_id: &str,
@@ -471,7 +471,7 @@ async fn create_oxy_thread(
         source: ActiveValue::Set(agent_id.to_string()),
         references: ActiveValue::Set("[]".to_string()),
         is_processing: ActiveValue::Set(true),
-        project_id: ActiveValue::Set(project_id),
+        project_id: ActiveValue::Set(workspace_id),
         sandbox_info: ActiveValue::Set(None),
     };
 
@@ -612,11 +612,14 @@ async fn update_thread_with_output(thread_id: Uuid, output: &str) -> Result<(), 
 // ============================================================================
 
 /// Build a deep link to the thread in the Oxy web app
-fn build_thread_deep_link(base_url: &str, project_id: Uuid, thread_id: Uuid) -> String {
-    if project_id.is_nil() {
+fn build_thread_deep_link(base_url: &str, workspace_id: Uuid, thread_id: Uuid) -> String {
+    if workspace_id.is_nil() {
         format!("{}/threads/{}", base_url, thread_id)
     } else {
-        format!("{}/projects/{}/threads/{}", base_url, project_id, thread_id)
+        format!(
+            "{}/projects/{}/threads/{}",
+            base_url, workspace_id, thread_id
+        )
     }
 }
 

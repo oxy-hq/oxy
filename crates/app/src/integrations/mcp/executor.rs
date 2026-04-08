@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use rmcp::model::CallToolResult;
 use serde_json::{Map, Value};
 
-use oxy::adapters::project::manager::ProjectManager;
+use oxy::adapters::workspace::manager::WorkspaceManager;
 
 use super::context::ToolExecutionContext;
 
@@ -22,7 +22,7 @@ pub trait ToolExecutor: Send + Sync {
     ///
     /// # Arguments
     ///
-    /// * `project_manager` - Project manager for accessing configuration and resources
+    /// * `workspace_manager` - Project manager for accessing configuration and resources
     /// * `tool_name` - Name of the tool (without prefix)
     /// * `arguments` - Tool-specific arguments from the MCP request
     /// * `context` - Execution context containing filters, overrides, and variables
@@ -33,7 +33,7 @@ pub trait ToolExecutor: Send + Sync {
     /// * `Err(rmcp::ErrorData)` - Tool execution error
     async fn execute(
         &self,
-        project_manager: &ProjectManager,
+        workspace_manager: &WorkspaceManager,
         tool_name: String,
         arguments: Option<Map<String, Value>>,
         context: ToolExecutionContext,
@@ -47,13 +47,13 @@ pub struct AgentExecutor;
 impl ToolExecutor for AgentExecutor {
     async fn execute(
         &self,
-        project_manager: &ProjectManager,
+        workspace_manager: &WorkspaceManager,
         tool_name: String,
         arguments: Option<Map<String, Value>>,
         context: ToolExecutionContext,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         super::tools::run_agent_tool(
-            project_manager,
+            workspace_manager,
             tool_name,
             arguments,
             context.session_filters,
@@ -71,13 +71,13 @@ pub struct WorkflowExecutor;
 impl ToolExecutor for WorkflowExecutor {
     async fn execute(
         &self,
-        project_manager: &ProjectManager,
+        workspace_manager: &WorkspaceManager,
         tool_name: String,
         arguments: Option<Map<String, Value>>,
         context: ToolExecutionContext,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         super::tools::run_workflow_tool(
-            project_manager,
+            workspace_manager,
             tool_name,
             arguments,
             context.session_filters,
@@ -95,13 +95,13 @@ pub struct SemanticExecutor;
 impl ToolExecutor for SemanticExecutor {
     async fn execute(
         &self,
-        project_manager: &ProjectManager,
+        workspace_manager: &WorkspaceManager,
         tool_name: String,
         arguments: Option<Map<String, Value>>,
         context: ToolExecutionContext,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         super::tools::run_semantic_topic_tool(
-            project_manager,
+            workspace_manager,
             tool_name,
             arguments,
             context.session_filters,
@@ -119,14 +119,14 @@ pub struct SqlExecutor;
 impl ToolExecutor for SqlExecutor {
     async fn execute(
         &self,
-        project_manager: &ProjectManager,
+        workspace_manager: &WorkspaceManager,
         tool_name: String,
         arguments: Option<Map<String, Value>>,
         context: ToolExecutionContext,
     ) -> Result<CallToolResult, rmcp::ErrorData> {
         // Note: SQL file tools don't currently support meta_variables
         super::tools::run_sql_file_tool(
-            project_manager,
+            workspace_manager,
             tool_name,
             arguments,
             context.session_filters,

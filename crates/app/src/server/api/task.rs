@@ -1,5 +1,5 @@
 use crate::{
-    api::middlewares::project::ProjectManagerExtractor,
+    api::middlewares::workspace_context::WorkspaceManagerExtractor,
     service::{
         agent::{AgenticRunner, run_agentic_workflow},
         statics::BROADCASTER,
@@ -26,7 +26,7 @@ use axum::{
     response::IntoResponse,
 };
 use oxy::{
-    adapters::project::manager::ProjectManager,
+    adapters::workspace::manager::WorkspaceManager,
     execute::{
         types::{DataAppReference, Event, EventKind, Output, ReferenceKind, Usage},
         writer::EventHandler,
@@ -166,7 +166,7 @@ impl EventHandler for TaskStream {
 }
 
 struct TaskExecutor {
-    project_manager: ProjectManager,
+    workspace_manager: WorkspaceManager,
 }
 
 #[async_trait]
@@ -179,14 +179,14 @@ impl ChatHandler for TaskExecutor {
         let connection = context.streaming_persister.get_connection();
         let thread = context.thread.clone();
 
-        let project_manager = self.project_manager.clone();
+        let workspace_manager = self.workspace_manager.clone();
         let data_app_file_path = if thread.source.trim().is_empty() {
             None
         } else {
             Some(thread.source.clone())
         };
 
-        let config_manager = project_manager.config_manager.clone();
+        let config_manager = workspace_manager.config_manager.clone();
 
         let agent_ref = config_manager.get_builder_agent_path().await.map_err(|e| {
             OxyError::RuntimeError(format!("Failed to get builder agent path: {e}"))
@@ -199,7 +199,7 @@ impl ChatHandler for TaskExecutor {
         let result = match agent_ref.to_string_lossy().ends_with(".aw.yml") {
             true => {
                 run_agentic_workflow(
-                    project_manager,
+                    workspace_manager,
                     &agent_ref,
                     context.user_question.clone(),
                     task_stream,
@@ -209,7 +209,7 @@ impl ChatHandler for TaskExecutor {
             }
             false => {
                 run_agent(
-                    project_manager,
+                    workspace_manager,
                     &agent_ref,
                     context.user_question.clone(),
                     task_stream,
@@ -266,16 +266,16 @@ impl ChatHandler for TaskExecutor {
 }
 
 pub async fn ask_task(
-    Path((project_id, id)): Path<(Uuid, String)>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path((workspace_id, id)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     extract::Json(payload): extract::Json<AskTaskRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let execution_manager = ChatService::new().await?;
-    let executor = TaskExecutor { project_manager };
+    let executor = TaskExecutor { workspace_manager };
 
     execution_manager
-        .execute_request(id, payload, executor, user.id, project_id)
+        .execute_request(id, payload, executor, user.id, workspace_id)
         .await
 }
 
@@ -292,8 +292,8 @@ pub struct AskAgenticResponse {
 }
 
 pub async fn ask_agentic(
-    Path((_project_id, id)): Path<(Uuid, String)>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path((_workspace_id, id)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     extract::Json(payload): extract::Json<AskAgenticRequest>,
 ) -> Result<extract::Json<AskAgenticResponse>, StatusCode> {
@@ -303,13 +303,13 @@ pub async fn ask_agentic(
         .new_user_question(thread_id, &payload.question)
         .await?;
     let memory = chat_service.build_conversation_memory(thread_id).await?;
-    let _config_manager = project_manager.config_manager.clone();
+    let _config_manager = workspace_manager.config_manager.clone();
     let agent_ref = &payload.agent_ref;
     let source_id = agent_ref.to_string();
     let message_id = chat_service.new_agentic_message(thread_id).await?;
     let lookup_id = message_id;
 
-    let run_info = Dispatcher::new(project_manager)
+    let run_info = Dispatcher::new(workspace_manager)
         .dispatch(
             source_id.to_string(),
             RetryStrategy::NoRetry { variables: None },
@@ -333,11 +333,11 @@ pub struct AgenticEventsRequest {
 }
 
 pub async fn agentic_events(
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Query(request): Query<AgenticEventsRequest>,
 ) -> Result<impl axum::response::IntoResponse, StatusCode> {
-    let runs_manager = project_manager.runs_manager.as_ref().ok_or_else(|| {
+    let runs_manager = workspace_manager.runs_manager.as_ref().ok_or_else(|| {
         tracing::error!("Failed to initialize RunsManager");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;

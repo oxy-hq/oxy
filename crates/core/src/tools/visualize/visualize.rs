@@ -58,7 +58,7 @@ impl Executable<VisualizeParams> for VisualizeExecutable {
         });
 
         let tmp_chart_dir = execution_context
-            .project
+            .workspace
             .config_manager
             .get_charts_dir()
             .await?;

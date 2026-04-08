@@ -6,7 +6,7 @@ import TablePagination from "@/components/ui/TablePagination";
 import useTraces from "@/hooks/api/traces/useTraces";
 import ROUTES from "@/libs/utils/routes";
 import PageHeader from "@/pages/ide/components/PageHeader";
-import useCurrentProject from "@/stores/useCurrentProject";
+import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 import TraceCharts from "./components/Charts";
 import TracesList from "./components/TracesList";
 
@@ -23,7 +23,7 @@ const CHART_LIMIT = 500;
 
 export default function TracesPage() {
   const navigate = useNavigate();
-  const { project } = useCurrentProject();
+  const { workspace: project } = useCurrentWorkspace();
   const [durationFilter, setDurationFilter] = useState<DurationValue>("30d");
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -43,7 +43,7 @@ export default function TracesPage() {
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
   const handleTraceClick = (traceId: string) => {
-    navigate(ROUTES.PROJECT(project?.id || "").IDE.OBSERVABILITY.TRACE(traceId));
+    navigate(ROUTES.WORKSPACE(project?.id || "").IDE.OBSERVABILITY.TRACE(traceId));
   };
 
   const handleDurationChange = (value: DurationValue) => {

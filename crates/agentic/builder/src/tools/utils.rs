@@ -10,8 +10,8 @@ pub const MAX_FILE_RESULTS: usize = 100;
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
-/// Validate that `path` is within `project_root`. Returns the resolved absolute path.
-pub fn safe_path(project_root: &Path, path: &str) -> Result<PathBuf, ToolError> {
+/// Validate that `path` is within `workspace_root`. Returns the resolved absolute path.
+pub fn safe_path(workspace_root: &Path, path: &str) -> Result<PathBuf, ToolError> {
     // Reject obviously dangerous paths before canonicalize (which requires file to exist).
     if path.contains("..") {
         return Err(ToolError::BadParams(format!(
@@ -22,11 +22,11 @@ pub fn safe_path(project_root: &Path, path: &str) -> Result<PathBuf, ToolError> 
     let joined = if Path::new(path).is_absolute() {
         PathBuf::from(path)
     } else {
-        project_root.join(path)
+        workspace_root.join(path)
     };
 
     // Check prefix before canonicalize so we can give a clear error.
-    let canonical_root = project_root
+    let canonical_root = workspace_root
         .canonicalize()
         .map_err(|e| ToolError::Execution(format!("failed to resolve project root: {e}")))?;
 

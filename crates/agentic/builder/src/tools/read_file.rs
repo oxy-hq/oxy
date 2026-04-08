@@ -31,12 +31,12 @@ pub fn read_file_def() -> ToolDef {
     }
 }
 
-pub async fn execute_read_file(project_root: &Path, params: &Value) -> Result<Value, ToolError> {
+pub async fn execute_read_file(workspace_root: &Path, params: &Value) -> Result<Value, ToolError> {
     let path_str = params["path"]
         .as_str()
         .ok_or_else(|| ToolError::BadParams("missing 'path'".into()))?;
 
-    let abs = safe_path(project_root, path_str)?;
+    let abs = safe_path(workspace_root, path_str)?;
 
     let content = tokio::fs::read_to_string(&abs)
         .await

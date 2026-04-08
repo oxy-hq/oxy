@@ -1,6 +1,7 @@
 import type {
   AuthConfigResponse,
   AuthResponse,
+  GitHubAuthRequest,
   GoogleAuthRequest,
   InviteRequest,
   MagicLinkRequest,
@@ -18,6 +19,11 @@ export class AuthService {
 
   static async oktaAuth(request: OktaAuthRequest): Promise<AuthResponse> {
     const response = await apiClient.post("/auth/okta", request);
+    return response.data;
+  }
+
+  static async githubAuth(request: GitHubAuthRequest): Promise<AuthResponse> {
+    const response = await apiClient.post("/auth/github", request);
     return response.data;
   }
 

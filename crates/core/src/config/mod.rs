@@ -42,7 +42,7 @@ impl Config {
 
         // Validate A2A configuration with additional checks
         if let Some(a2a_config) = &self.a2a {
-            a2a_config.validate_config(Some(&self.project_path))?;
+            a2a_config.validate_config(Some(&self.workspace_path))?;
         }
 
         Ok(())
@@ -94,7 +94,7 @@ impl Config {
     }
 
     pub fn validate_workflows(&self) -> anyhow::Result<()> {
-        for workflow_file in self.list_workflows(&self.project_path) {
+        for workflow_file in self.list_workflows(&self.workspace_path) {
             let workflow = self.load_workflow(&workflow_file)?;
             self.validate_workflow(&workflow)?;
         }
@@ -102,7 +102,7 @@ impl Config {
     }
 
     pub fn validate_agents(&self) -> anyhow::Result<()> {
-        for agent in self.list_agents(&self.project_path) {
+        for agent in self.list_agents(&self.workspace_path) {
             let agent = self.load_agent_config(Some(&agent))?;
             self.validate_agent(&agent.0, agent.1)?;
         }
@@ -110,7 +110,7 @@ impl Config {
     }
 
     pub fn validate_apps(&self) -> anyhow::Result<()> {
-        for app_file in self.list_apps(&self.project_path) {
+        for app_file in self.list_apps(&self.workspace_path) {
             let app = self.load_app(&app_file)?;
             self.validate_app(&app)?;
         }
@@ -273,7 +273,7 @@ pub fn parse_config(config_path: &PathBuf, project_path: PathBuf) -> Result<Conf
     let result = serde_yaml::from_str::<Config>(&config_str);
     match result {
         Ok(mut config) => {
-            config.project_path = project_path;
+            config.workspace_path = project_path;
             let context = ValidationContext {
                 config: config.clone(),
                 metadata: None,
@@ -296,7 +296,7 @@ pub fn parse_config(config_path: &PathBuf, project_path: PathBuf) -> Result<Conf
     }
 }
 
-pub fn resolve_local_project_path() -> Result<PathBuf, OxyError> {
+pub fn resolve_local_workspace_path() -> Result<PathBuf, OxyError> {
     let mut current_dir = std::env::current_dir().expect("Could not get current directory");
 
     for _ in 0..10 {
@@ -317,5 +317,5 @@ pub fn resolve_local_project_path() -> Result<PathBuf, OxyError> {
 
 /// Resolve the path to the semantics directory within the local project
 pub fn resolve_semantics_dir() -> Result<PathBuf, OxyError> {
-    Ok(resolve_local_project_path()?.join("semantics"))
+    Ok(resolve_local_workspace_path()?.join("semantics"))
 }

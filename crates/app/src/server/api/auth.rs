@@ -14,29 +14,21 @@ use handlebars::Handlebars;
 use jsonwebtoken::{EncodingKey, Header, encode};
 use once_cell::sync::Lazy;
 use oxy::config::auth::MagicLinkAuth;
-use oxy::config::{ConfigBuilder, resolve_local_project_path};
+use oxy::config::{ConfigBuilder, resolve_local_workspace_path};
 use oxy_project::LocalGitService;
-use sea_orm::{ActiveModelTrait, DatabaseConnection, DbErr, EntityTrait, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, PaginatorTrait,
+    QueryFilter, Set,
+};
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
-use tokio::sync::OnceCell;
 use url::Url;
 use uuid::Uuid;
 
-// ─── Git remote cache ────────────────────────────────────────────────────────
-//
-// `git remote` is forked to detect whether the local repo has a configured
-// remote.  Remote configuration almost never changes at runtime, so we cache
-// the result for the lifetime of the process instead of forking on every
-// /auth/config request.
-static GIT_HAS_REMOTE: OnceCell<bool> = OnceCell::const_new();
-
-// ─── Protected-branches config cache ─────────────────────────────────────────
-//
-// The `protected_branches` list from config.yml is read once and cached for
-// the lifetime of the process.  A server restart is required to pick up
-// changes, consistent with other config.yml mutations.
-static PROTECTED_BRANCHES_FROM_CONFIG: OnceCell<Option<Vec<String>>> = OnceCell::const_new();
+// GIT_HAS_REMOTE and PROTECTED_BRANCHES_FROM_CONFIG were previously process-wide
+// OnceCells, but that caused stale values in multi-project mode when
+// activate_project switched to a different project after the first init.
+// Both values are now computed per-request from resolved_project_path.
 
 // ─── Magic Link Rate Limiter ────────────────────────────────────────────────
 //
@@ -102,6 +94,7 @@ pub struct UserInfo {
     pub name: String,
     pub picture: Option<String>,
     pub role: String,
+    pub is_admin: bool,
 }
 
 #[derive(Serialize)]
@@ -123,12 +116,17 @@ pub struct AuthConfigResponse {
     pub google: Option<GoogleConfig>,
     pub okta: Option<OktaConfig>,
     pub magic_link: Option<bool>,
-    pub cloud: bool,
     pub enterprise: bool,
     pub readonly: bool,
-    /// True when the project directory contains a local git repository.
-    /// Enables the branch UI (create branch, commit, diff) without requiring
-    /// `--cloud` mode or a connected GitHub repository.
+    /// True when no `config.yml` is found — the frontend should redirect to
+    /// the onboarding wizard so the user can set up their first workspace.
+    pub needs_onboarding: bool,
+    /// True when running in single-workspace mode (i.e. `oxy serve --project <dir>`
+    /// was used). Workspace management UI (switcher, /workspaces page) should be
+    /// hidden or disabled when this is true.
+    pub single_workspace: bool,
+    /// True when the workspace directory contains a local git repository.
+    /// Enables the branch UI (create branch, commit, diff).
     pub local_git: bool,
     /// True when a remote repository is configured (`GIT_REPOSITORY_URL` is set).
     /// Shows the Pull button and changes the Push label to "Commit & Push".
@@ -142,6 +140,13 @@ pub struct AuthConfigResponse {
     /// defaults to `[default_branch]` when not set.
     /// Only meaningful when `local_git` is true.
     pub protected_branches: Vec<String>,
+    /// Present when `GITHUB_CLIENT_ID` is set — enables "Login with GitHub".
+    pub github: Option<GitHubAuthConfig>,
+    /// Set when `needs_onboarding` is forced true due to an unexpected error (e.g. the
+    /// previously active workspace directory no longer exists on disk). The frontend should
+    /// display this as a toast before showing the setup wizard.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_error: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -153,6 +158,11 @@ pub struct GoogleConfig {
 pub struct OktaConfig {
     pub client_id: String,
     pub domain: String,
+}
+
+#[derive(Serialize)]
+pub struct GitHubAuthConfig {
+    pub client_id: String,
 }
 
 pub async fn get_config(
@@ -177,65 +187,107 @@ pub async fn get_config(
 
     let auth_enabled = has_google || has_okta || has_magic_link;
 
+    // Resolve the active workspace path: prefer the CWD-based lookup (single-workspace
+    // mode), falling back to active_workspace_path (multi-workspace mode).
+    let resolved_project_path: Option<std::path::PathBuf> = match resolve_local_workspace_path() {
+        Ok(p) => Some(p),
+        Err(_) => {
+            let active = app_state.active_workspace_path.read().await;
+            active.clone()
+        }
+    };
+
     // local_git is only meaningful in local (non-cloud) mode.
     // In cloud mode the git lifecycle is managed via project_repo_id.
-    let local_git = resolve_local_project_path()
-        .map(|p| app_state.backend.is_git_enabled(&p))
+    let local_git = resolved_project_path
+        .as_deref()
+        .map(|p| app_state.backend.is_git_enabled(p))
         .unwrap_or(false);
 
     // Resolve the default branch (e.g. "main", "master") for the local repo.
     // Used by the frontend to gate isMainEditMode and the diff-badge guard.
     let default_branch = if local_git {
-        match resolve_local_project_path() {
-            Ok(p) => LocalGitService::get_default_branch(&p).await,
-            Err(_) => "main".to_string(),
+        match resolved_project_path.as_deref() {
+            Some(p) => LocalGitService::get_default_branch(p).await,
+            None => "main".to_string(),
         }
     } else {
         "main".to_string()
     };
 
-    // Resolve protected_branches from config.yml, falling back to [default_branch].
-    // Cached for the process lifetime — requires restart to pick up config changes.
+    // Resolve protected_branches from config.yml for the active project, falling
+    // back to [default_branch].  Computed per-request so switching projects via
+    // activate_project is reflected immediately.
     let protected_branches: Vec<String> = if local_git {
-        let config_branches = PROTECTED_BRANCHES_FROM_CONFIG
-            .get_or_init(|| async {
-                match resolve_local_project_path() {
-                    Ok(p) => match ConfigBuilder::new().with_project_path(&p) {
-                        Ok(builder) => match builder.build_with_fallback_config().await {
-                            Ok(manager) => manager.protected_branches().map(|b| b.to_vec()),
-                            Err(_) => None,
-                        },
-                        Err(_) => None,
-                    },
+        let config_branches = match resolved_project_path.as_deref() {
+            Some(p) => match ConfigBuilder::new().with_workspace_path(p) {
+                Ok(builder) => match builder.build_with_fallback_config().await {
+                    Ok(manager) => manager.protected_branches().map(|b| b.to_vec()),
                     Err(_) => None,
-                }
-            })
-            .await;
-        config_branches
-            .clone()
-            .unwrap_or_else(|| vec![default_branch.clone()])
+                },
+                Err(_) => None,
+            },
+            None => None,
+        };
+        config_branches.unwrap_or_else(|| vec![default_branch.clone()])
     } else {
         vec![default_branch.clone()]
     };
 
     // git_remote: true when GIT_REPOSITORY_URL is set OR the repo already has
-    // a configured remote (e.g. cloned manually). Only checked in local mode.
-    let git_remote = app_state.backend.is_local() && {
+    // a configured remote (e.g. cloned manually).
+    let git_remote = {
         if std::env::var("GIT_REPOSITORY_URL").is_ok() {
             true
         } else if local_git {
-            match resolve_local_project_path() {
-                Ok(p) => {
-                    *GIT_HAS_REMOTE
-                        .get_or_init(|| async { LocalGitService::has_remote(&p).await })
-                        .await
-                }
-                Err(_) => false,
+            match resolved_project_path.as_deref() {
+                Some(p) => LocalGitService::has_remote(p).await,
+                None => false,
             }
         } else {
             false
         }
     };
+
+    // needs_onboarding: use active_workspace_path as the authoritative source.
+    // If no active workspace is set (e.g. after deletion or first run), check the
+    // filesystem as a fallback for single-workspace mode.
+    let (needs_onboarding, workspace_error) = {
+        let active = app_state.active_workspace_path.read().await;
+        match active.as_deref() {
+            // An active workspace directory on disk is enough: the workspace is registered
+            // and may still be cloning (no config.yml yet). Checking config.yml would
+            // incorrectly send users back to /setup while a GitHub clone is in progress.
+            Some(path) => {
+                if path.exists() {
+                    (false, None)
+                } else {
+                    // The previously active workspace directory is gone — surface this as an
+                    // error so the frontend can show a toast before redirecting to setup.
+                    let msg = format!(
+                        "Workspace directory '{}' no longer exists. Please set up a new workspace.",
+                        path.display()
+                    );
+                    (true, Some(msg))
+                }
+            }
+            None => match &app_state.workspaces_root {
+                // Single-workspace mode: still require config.yml (no clone in flight here)
+                None => {
+                    let missing = std::env::current_dir()
+                        .map(|cwd| !cwd.join("config.yml").exists())
+                        .unwrap_or(true);
+                    (missing, None)
+                }
+                // Multi-workspace mode with no active workspace: onboarding needed
+                Some(_) => (true, None),
+            },
+        }
+    };
+
+    let single_workspace = app_state.workspaces_root.is_none();
+
+    let github_client_id = std::env::var("GITHUB_CLIENT_ID").ok();
 
     if !auth_enabled || app_state.internal {
         return Ok(Json(AuthConfigResponse {
@@ -243,13 +295,16 @@ pub async fn get_config(
             google: None,
             okta: None,
             magic_link: None,
-            cloud: app_state.cloud,
             enterprise: app_state.enterprise,
             readonly: app_state.readonly,
+            needs_onboarding,
+            single_workspace,
             local_git,
             git_remote,
             default_branch,
             protected_branches,
+            github: github_client_id.map(|client_id| GitHubAuthConfig { client_id }),
+            workspace_error,
         }));
     }
 
@@ -270,13 +325,16 @@ pub async fn get_config(
         google: google_client_id.map(|client_id| GoogleConfig { client_id }),
         okta: okta_config,
         magic_link: if has_magic_link { Some(true) } else { None },
-        cloud: app_state.cloud,
         enterprise: app_state.enterprise,
         readonly: app_state.readonly,
+        needs_onboarding,
+        single_workspace,
         local_git,
         git_remote,
         default_branch,
         protected_branches,
+        github: github_client_id.map(|client_id| GitHubAuthConfig { client_id }),
+        workspace_error,
     };
 
     Ok(Json(config))
@@ -377,6 +435,18 @@ pub async fn google_auth(
             })?
         }
         None => {
+            let existing_count = Users::find()
+                .filter(users::Column::Email.ne(oxy_auth::LOCAL_GUEST_EMAIL))
+                .count(&connection)
+                .await
+                .unwrap_or(1);
+            let initial_role = if existing_count == 0 {
+                users::UserRole::Owner
+            } else if oxy_auth::should_be_admin(&user_info.email) {
+                users::UserRole::Admin
+            } else {
+                users::UserRole::Member
+            };
             let new_user = users::ActiveModel {
                 id: Set(Uuid::new_v4()),
                 email: Set(user_info.email.clone()),
@@ -385,7 +455,7 @@ pub async fn google_auth(
                 email_verified: Set(true),
                 magic_link_token: sea_orm::ActiveValue::NotSet,
                 magic_link_token_expires_at: sea_orm::ActiveValue::NotSet,
-                role: Set(users::UserRole::Member),
+                role: Set(initial_role),
                 status: Set(UserStatus::Active),
                 created_at: sea_orm::ActiveValue::NotSet,
                 last_login_at: sea_orm::ActiveValue::NotSet,
@@ -395,23 +465,11 @@ pub async fn google_auth(
         }
     };
 
-    let token = create_auth_token(user.clone()).await.map_err(|e| {
-        tracing::error!("Failed to create auth token: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    let auth_response = AuthResponse {
+    let (token, user_info_payload) = finalize_login(user, &connection).await?;
+    Ok(Json(AuthResponse {
         token,
-        user: UserInfo {
-            id: user.id.to_string(),
-            email: user.email,
-            name: user.name,
-            picture: user.picture,
-            role: user.role.as_str().to_string(),
-        },
-    };
-
-    Ok(Json(auth_response))
+        user: user_info_payload,
+    }))
 }
 
 pub async fn okta_auth(
@@ -460,6 +518,18 @@ pub async fn okta_auth(
             })?
         }
         None => {
+            let existing_count = Users::find()
+                .filter(users::Column::Email.ne(oxy_auth::LOCAL_GUEST_EMAIL))
+                .count(&connection)
+                .await
+                .unwrap_or(1);
+            let initial_role = if existing_count == 0 {
+                users::UserRole::Owner
+            } else if oxy_auth::should_be_admin(&user_info.email) {
+                users::UserRole::Admin
+            } else {
+                users::UserRole::Member
+            };
             let new_user = users::ActiveModel {
                 id: Set(Uuid::new_v4()),
                 email: Set(user_info.email.clone()),
@@ -468,7 +538,7 @@ pub async fn okta_auth(
                 email_verified: Set(true),
                 magic_link_token: sea_orm::ActiveValue::NotSet,
                 magic_link_token_expires_at: sea_orm::ActiveValue::NotSet,
-                role: Set(users::UserRole::Member),
+                role: Set(initial_role),
                 status: Set(UserStatus::Active),
                 created_at: sea_orm::ActiveValue::NotSet,
                 last_login_at: sea_orm::ActiveValue::NotSet,
@@ -478,23 +548,216 @@ pub async fn okta_auth(
         }
     };
 
-    let token = create_auth_token(user.clone()).await.map_err(|e| {
-        tracing::error!("Failed to create auth token: {}", e);
+    let (token, user_info_payload) = finalize_login(user, &connection).await?;
+    Ok(Json(AuthResponse {
+        token,
+        user: user_info_payload,
+    }))
+}
+
+#[derive(Deserialize)]
+pub struct GitHubAuthRequest {
+    pub code: String,
+}
+
+pub async fn github_auth(
+    headers: HeaderMap,
+    extract::Json(payload): extract::Json<GitHubAuthRequest>,
+) -> Result<Json<AuthResponse>, StatusCode> {
+    let base_url = extract_base_url_from_headers(&headers);
+    let user_info = exchange_github_code_for_user_info(&payload.code, &base_url)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to exchange GitHub code: {}", e);
+            StatusCode::UNAUTHORIZED
+        })?;
+
+    let connection = establish_connection().await.map_err(|e| {
+        tracing::error!("Failed to establish database connection: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let auth_response = AuthResponse {
-        token,
-        user: UserInfo {
-            id: user.id.to_string(),
-            email: user.email,
-            name: user.name,
-            picture: user.picture,
-            role: user.role.as_str().to_string(),
-        },
+    let user = match Users::find()
+        .filter_by_email(&user_info.email)
+        .one(&connection)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to query user: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })? {
+        Some(existing_user) if existing_user.status == UserStatus::Deleted => {
+            tracing::warn!(
+                "Deleted user {} attempted to authenticate via GitHub",
+                user_info.email
+            );
+            return Err(StatusCode::UNAUTHORIZED);
+        }
+        Some(existing_user) => {
+            let mut user_update: users::ActiveModel = existing_user.clone().into();
+            user_update.name = Set(user_info.name.clone());
+            user_update.picture = Set(user_info.picture.clone());
+            user_update.email_verified = Set(true);
+            user_update.last_login_at = Set(chrono::Utc::now().into());
+            user_update.update(&connection).await.map_err(|e| {
+                tracing::error!("Failed to update user: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?
+        }
+        None => {
+            let existing_count = Users::find()
+                .filter(users::Column::Email.ne(oxy_auth::LOCAL_GUEST_EMAIL))
+                .count(&connection)
+                .await
+                .unwrap_or(1);
+            let initial_role = if existing_count == 0 {
+                users::UserRole::Owner
+            } else if oxy_auth::should_be_admin(&user_info.email) {
+                users::UserRole::Admin
+            } else {
+                users::UserRole::Member
+            };
+            let new_user = users::ActiveModel {
+                id: Set(Uuid::new_v4()),
+                email: Set(user_info.email.clone()),
+                name: Set(user_info.name.clone()),
+                picture: Set(user_info.picture.clone()),
+                email_verified: Set(true),
+                magic_link_token: sea_orm::ActiveValue::NotSet,
+                magic_link_token_expires_at: sea_orm::ActiveValue::NotSet,
+                role: Set(initial_role),
+                status: Set(UserStatus::Active),
+                created_at: sea_orm::ActiveValue::NotSet,
+                last_login_at: sea_orm::ActiveValue::NotSet,
+            };
+            insert_user_or_fetch_existing(new_user, &user_info.email, &connection).await?
+        }
     };
 
-    Ok(Json(auth_response))
+    let (token, user_info_payload) = finalize_login(user, &connection).await?;
+    Ok(Json(AuthResponse {
+        token,
+        user: user_info_payload,
+    }))
+}
+
+#[derive(Deserialize)]
+struct GitHubUserInfo {
+    name: Option<String>,
+    login: String,
+    avatar_url: Option<String>,
+    email: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct GitHubEmailEntry {
+    email: String,
+    primary: bool,
+    verified: bool,
+}
+
+async fn exchange_github_code_for_user_info(
+    code: &str,
+    base_url: &str,
+) -> Result<GoogleUserInfo, OxyError> {
+    let client_id = std::env::var("GITHUB_CLIENT_ID")
+        .map_err(|_| OxyError::ConfigurationError("GITHUB_CLIENT_ID not configured".to_string()))?;
+    let client_secret = std::env::var("GITHUB_CLIENT_SECRET").map_err(|_| {
+        OxyError::ConfigurationError("GITHUB_CLIENT_SECRET not configured".to_string())
+    })?;
+
+    let redirect_uri = format!("{base_url}/github/callback");
+
+    let client = reqwest::Client::builder()
+        .user_agent("Oxy/1.0")
+        .build()
+        .map_err(|e| OxyError::RuntimeError(e.to_string()))?;
+
+    // Exchange the authorization code for an access token.
+    let token_response = client
+        .post("https://github.com/login/oauth/access_token")
+        .header("Accept", "application/json")
+        .form(&[
+            ("client_id", client_id.as_str()),
+            ("client_secret", client_secret.as_str()),
+            ("code", code),
+            ("redirect_uri", redirect_uri.as_str()),
+        ])
+        .send()
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("GitHub token request failed: {e}")))?;
+
+    if !token_response.status().is_success() {
+        return Err(OxyError::RuntimeError(format!(
+            "GitHub token exchange error: {}",
+            token_response.status()
+        )));
+    }
+
+    #[derive(Deserialize)]
+    struct TokenResponse {
+        access_token: Option<String>,
+        error: Option<String>,
+    }
+
+    let token_data: TokenResponse = token_response.json().await.map_err(|e| {
+        OxyError::RuntimeError(format!("Failed to parse GitHub token response: {e}"))
+    })?;
+
+    if let Some(err) = token_data.error {
+        return Err(OxyError::RuntimeError(format!("GitHub OAuth error: {err}")));
+    }
+
+    let access_token = token_data.access_token.ok_or_else(|| {
+        OxyError::RuntimeError("GitHub token response missing access_token".to_string())
+    })?;
+
+    // Fetch user profile.
+    let user_resp: GitHubUserInfo = client
+        .get("https://api.github.com/user")
+        .bearer_auth(&access_token)
+        .header("Accept", "application/vnd.github.v3+json")
+        .send()
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("GitHub /user request failed: {e}")))?
+        .json()
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("Failed to parse GitHub user: {e}")))?;
+
+    // Use the profile email if set; otherwise fetch the primary verified email.
+    let email = if let Some(e) = user_resp.email.filter(|e| !e.is_empty()) {
+        e
+    } else {
+        let emails: Vec<GitHubEmailEntry> = client
+            .get("https://api.github.com/user/emails")
+            .bearer_auth(&access_token)
+            .header("Accept", "application/vnd.github.v3+json")
+            .send()
+            .await
+            .map_err(|e| {
+                OxyError::RuntimeError(format!("GitHub /user/emails request failed: {e}"))
+            })?
+            .json()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to parse GitHub emails: {e}")))?;
+
+        emails
+            .into_iter()
+            .find(|e| e.primary && e.verified)
+            .map(|e| e.email)
+            .ok_or_else(|| {
+                OxyError::RuntimeError(
+                    "No verified primary email found on GitHub account".to_string(),
+                )
+            })?
+    };
+
+    let name = user_resp.name.unwrap_or_else(|| user_resp.login.clone());
+
+    Ok(GoogleUserInfo {
+        email,
+        name,
+        picture: user_resp.avatar_url,
+    })
 }
 
 /// Check if a database error is a unique constraint violation.
@@ -536,6 +799,49 @@ async fn insert_user_or_fetch_existing(
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
+}
+
+/// Ensure the user has Admin role if `should_be_admin` returns true,
+/// then build the `UserInfo` payload with the correct `is_admin` flag.
+///
+/// Call this after every login (Google, Okta, magic link verify) so that:
+/// - Setting `OXY_ADMINS` and re-logging in immediately grants admin.
+/// - The first real user always gets Admin regardless of which auth provider they use.
+async fn finalize_login(
+    user: users::Model,
+    connection: &DatabaseConnection,
+) -> Result<(String, UserInfo), StatusCode> {
+    // Promote to Admin if warranted (OXY_ADMINS env var or LOCAL_GUEST).
+    // Never demote an existing Owner or Admin — only Members are eligible for
+    // promotion.  Note: an Admin demoted to Member (via update_user) will be
+    // re-promoted to Admin on their next login if they still appear in
+    // OXY_ADMINS.  This is intentional — OXY_ADMINS is the authoritative
+    // source for admin status.
+    let user = if user.role == users::UserRole::Member && oxy_auth::should_be_admin(&user.email) {
+        let mut active: users::ActiveModel = user.into();
+        active.role = Set(users::UserRole::Admin);
+        active.update(connection).await.map_err(|e| {
+            tracing::error!("Failed to promote user to admin: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+    } else {
+        user
+    };
+
+    let is_admin = user.role.is_admin_or_above();
+    let token = create_auth_token(user.clone()).await.map_err(|e| {
+        tracing::error!("Failed to create auth token: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    let user_info = UserInfo {
+        id: user.id.to_string(),
+        email: user.email,
+        name: user.name,
+        picture: user.picture,
+        role: user.role.as_str().to_string(),
+        is_admin,
+    };
+    Ok((token, user_info))
 }
 
 fn extract_base_url_from_headers(headers: &HeaderMap) -> String {
@@ -904,6 +1210,18 @@ async fn request_magic_link_inner(
         Some(u) => u, // existing active user — reuse model directly
         None => {
             // Auto-create new user
+            let existing_count = Users::find()
+                .filter(users::Column::Email.ne(oxy_auth::LOCAL_GUEST_EMAIL))
+                .count(&connection)
+                .await
+                .unwrap_or(1);
+            let initial_role = if existing_count == 0 {
+                users::UserRole::Owner
+            } else if oxy_auth::should_be_admin(&req.email) {
+                users::UserRole::Admin
+            } else {
+                users::UserRole::Member
+            };
             let name = req.email.split('@').next().unwrap_or("User").to_string();
             let new_user = users::ActiveModel {
                 id: Set(Uuid::new_v4()),
@@ -913,7 +1231,7 @@ async fn request_magic_link_inner(
                 email_verified: Set(false),
                 magic_link_token: Set(None),
                 magic_link_token_expires_at: Set(None),
-                role: Set(users::UserRole::Member),
+                role: Set(initial_role),
                 status: Set(UserStatus::Active),
                 created_at: sea_orm::ActiveValue::NotSet,
                 last_login_at: sea_orm::ActiveValue::NotSet,
@@ -1009,30 +1327,19 @@ pub async fn verify_magic_link(
     }
 
     // Clear token, mark email verified
-    let user_clone = user.clone();
     let mut user_update: users::ActiveModel = user.into();
     user_update.magic_link_token = Set(None);
     user_update.magic_link_token_expires_at = Set(None);
     user_update.email_verified = Set(true);
-    user_update.update(&connection).await.map_err(|e| {
+    let user = user_update.update(&connection).await.map_err(|e| {
         tracing::error!("Failed to clear magic link token: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let token = create_auth_token(user_clone.clone()).await.map_err(|e| {
-        tracing::error!("Failed to create auth token: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
+    let (token, user_info) = finalize_login(user, &connection).await?;
     Ok(Json(AuthResponse {
         token,
-        user: UserInfo {
-            id: user_clone.id.to_string(),
-            email: user_clone.email,
-            name: user_clone.name,
-            picture: user_clone.picture,
-            role: user_clone.role.as_str().to_string(),
-        },
+        user: user_info,
     }))
 }
 

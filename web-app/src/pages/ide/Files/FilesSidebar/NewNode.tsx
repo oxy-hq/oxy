@@ -44,7 +44,7 @@ const NewNode = React.forwardRef<HTMLInputElement, NewNodeProps>(
         return false;
       };
 
-      return !pathExistsInTree(data || []);
+      return !pathExistsInTree(data?.primary || []);
     };
 
     const handleCreate = async () => {
@@ -60,7 +60,7 @@ const NewNode = React.forwardRef<HTMLInputElement, NewNodeProps>(
 
         if (creationType === "file") {
           await createFile.mutateAsync(encodeBase64(newPath));
-          const ideUri = ROUTES.PROJECT(projectId).IDE.FILES.FILE(encodeBase64(newPath));
+          const ideUri = ROUTES.WORKSPACE(projectId).IDE.FILES.FILE(encodeBase64(newPath));
           navigate(ideUri);
         } else {
           await createFolder.mutateAsync(encodeBase64(newPath));

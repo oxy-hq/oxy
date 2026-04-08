@@ -38,7 +38,6 @@ export function FileEditorProvider({
   }, [content, onChanged]);
 
   useEffect(() => {
-    console.log("File content loaded:", { fileContent, isSuccess });
     if (isSuccess && fileContent) {
       setContent(fileContent || "");
     }

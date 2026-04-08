@@ -38,7 +38,7 @@ export function Workflows() {
         {!isPending &&
           visibleWorkflows?.map((workflow) => {
             const pathb64 = encodeBase64(workflow.path || "");
-            const workflowUri = ROUTES.PROJECT(projectId).WORKFLOW(pathb64).ROOT;
+            const workflowUri = ROUTES.WORKSPACE(projectId).WORKFLOW(pathb64).ROOT;
             return (
               <SidebarMenuSubItem key={pathb64}>
                 <SidebarMenuSubButton asChild isActive={location.pathname === workflowUri}>

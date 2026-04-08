@@ -4,19 +4,17 @@ import type { UserListResponse } from "@/types/auth";
 import queryKeys from "../queryKey";
 
 const useUsers = (
-  workspaceId: string,
   enabled = true,
   refetchOnWindowFocus = true,
   refetchOnMount: boolean | "always" = false
 ) =>
   useQuery<UserListResponse, Error>({
-    queryKey: queryKeys.user.list(workspaceId),
-    queryFn: () => UserService.getUsers(workspaceId),
+    queryKey: queryKeys.user.list(),
+    queryFn: () => UserService.getAllUsers(),
     enabled,
     refetchOnWindowFocus,
     refetchOnMount,
     retry: (failureCount, error) => {
-      // Don't retry for unauthorized errors
       if (
         error.message.includes("401") ||
         error.message.includes("403") ||

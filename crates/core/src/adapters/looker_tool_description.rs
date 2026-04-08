@@ -10,7 +10,7 @@ pub async fn get_looker_query_description(
 
     let storage = oxy_looker::MetadataStorage::new(
         state_dir.join(".looker"),
-        config.project_path().join("looker"),
+        config.workspace_path().join("looker"),
         looker_tool.integration.clone(),
     );
 

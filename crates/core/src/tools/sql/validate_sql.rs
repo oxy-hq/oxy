@@ -35,8 +35,8 @@ impl Executable<SQLInput> for ValidateSQLExecutable {
         input: SQLInput,
     ) -> Result<Self::Response, OxyError> {
         events::tool::tool_call_input(&input);
-        let config_manager = &execution_context.project.config_manager;
-        let secrets_manager = &execution_context.project.secrets_manager;
+        let config_manager = &execution_context.workspace.config_manager;
+        let secrets_manager = &execution_context.workspace.secrets_manager;
         let connector = Connector::from_database(
             &input.database,
             config_manager,

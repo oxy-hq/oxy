@@ -34,9 +34,7 @@ export interface BuilderAvailability {
 }
 
 export class BuilderService {
-  static async checkBuilderAvailability(
-    projectId: string
-  ): Promise<BuilderAvailability> {
+  static async checkBuilderAvailability(projectId: string): Promise<BuilderAvailability> {
     const response = await apiClient.get(`/${projectId}/builder-availability`);
     return response.data;
   }

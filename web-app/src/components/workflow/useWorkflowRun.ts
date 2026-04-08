@@ -581,13 +581,19 @@ export const useStreamEvents = () => {
   };
 };
 
-export const useGetBlocks = (sourceId: string, runIndex?: number, enabled?: boolean) => {
+export const useGetBlocks = (
+  sourceId: string,
+  runIndex?: number,
+  enabled?: boolean,
+  projectIdOverride?: string
+) => {
   const { project, branchName } = useCurrentProjectBranch();
+  const projectId = projectIdOverride ?? project.id;
 
   return useQuery({
-    queryKey: queryKeys.workflow.getBlocks(project.id, sourceId, branchName, runIndex),
+    queryKey: queryKeys.workflow.getBlocks(projectId, sourceId, branchName, runIndex),
     queryFn: async () => {
-      return await RunService.getBlocks(project.id, branchName, {
+      return await RunService.getBlocks(projectId, branchName, {
         source_id: sourceId,
         run_index: runIndex
       });

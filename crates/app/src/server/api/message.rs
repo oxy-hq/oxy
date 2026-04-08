@@ -63,7 +63,7 @@ impl MappedRunDetails {
 }
 
 pub async fn get_messages_by_thread(
-    Path((_project_id, thread_id)): Path<(Uuid, String)>,
+    Path((_workspace_id, thread_id)): Path<(Uuid, String)>,
 ) -> Result<extract::Json<Vec<MessageItem>>, StatusCode> {
     let connection = establish_connection().await.map_err(|e| {
         tracing::error!("Failed to establish database connection: {}", e);

@@ -3,7 +3,7 @@ import { CreateRepository } from "@/components/CreateRepository";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/shadcn/dialog";
 import { Separator } from "@/components/ui/shadcn/separator";
 import { useAuth } from "@/contexts/AuthContext";
-import useCurrentProject from "@/stores/useCurrentProject";
+import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 import BranchInfo from "./BranchInfo";
 import SwitchBranch from "./SwitchBranch";
 
@@ -13,7 +13,7 @@ interface BranchSettingsProps {
 }
 
 export const BranchSettings = ({ isOpen, onClose }: BranchSettingsProps) => {
-  const { project } = useCurrentProject();
+  const { workspace: project } = useCurrentWorkspace();
   const { authConfig } = useAuth();
 
   // Show branch UI when local git is enabled OR when a GitHub repo is linked.

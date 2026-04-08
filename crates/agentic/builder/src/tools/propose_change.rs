@@ -44,7 +44,7 @@ pub fn propose_change_def() -> ToolDef {
 /// suspend the pipeline (`ToolError::Suspended`) for the HTTP layer to handle.
 /// The prompt encodes the change metadata as JSON so the frontend can render a diff.
 pub async fn execute_propose_change(
-    project_root: &Path,
+    workspace_root: &Path,
     params: &Value,
     provider: &dyn HumanInputProvider,
 ) -> Result<Value, ToolError> {
@@ -63,7 +63,7 @@ pub async fn execute_propose_change(
     }
 
     // Validate path is safe (even for new files).
-    let abs = safe_path(project_root, file_path)?;
+    let abs = safe_path(workspace_root, file_path)?;
 
     if delete {
         // For deletion, the file must exist.
@@ -125,11 +125,11 @@ pub async fn execute_propose_change(
 
 /// Apply a previously-proposed change (called after user accepts).
 pub async fn apply_change(
-    project_root: &Path,
+    workspace_root: &Path,
     file_path: &str,
     new_content: &str,
 ) -> Result<(), String> {
-    let abs = safe_path(project_root, file_path).map_err(|e| format!("path error: {e}"))?;
+    let abs = safe_path(workspace_root, file_path).map_err(|e| format!("path error: {e}"))?;
 
     // Create parent directories if needed.
     if let Some(parent) = abs.parent() {
@@ -144,8 +144,8 @@ pub async fn apply_change(
 }
 
 /// Delete a file (called after user accepts a deletion proposal).
-pub async fn delete_file(project_root: &Path, file_path: &str) -> Result<(), String> {
-    let abs = safe_path(project_root, file_path).map_err(|e| format!("path error: {e}"))?;
+pub async fn delete_file(workspace_root: &Path, file_path: &str) -> Result<(), String> {
+    let abs = safe_path(workspace_root, file_path).map_err(|e| format!("path error: {e}"))?;
     tokio::fs::remove_file(&abs)
         .await
         .map_err(|e| format!("failed to delete file '{file_path}': {e}"))

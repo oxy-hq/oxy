@@ -1,11 +1,10 @@
-//! Provider abstraction for project backend operations.
+//! Provider abstraction for workspace backend operations.
 //!
-//! [`ProjectBackend`] encapsulates all branching logic that was previously
-//! scattered across handlers as `if !app_state.cloud { ... } else { ... }`
-//! checks.  Handlers call methods on the backend and receive typed results;
-//! they no longer need to know which mode they are running in.
+//! [`WorkspaceBackend`] wraps [`LocalBackend`] and provides all git/file
+//! operations needed by the API handlers.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use chrono::Utc;
 use oxy::api_types::{
@@ -13,119 +12,132 @@ use oxy::api_types::{
 };
 use oxy_project::LocalGitService;
 use oxy_shared::errors::OxyError;
+use tokio::sync::RwLock;
 use tracing::info;
 use uuid::Uuid;
 
-use crate::server::service::project::ProjectService as CloudProjectService;
-
 // ─── Backend types ────────────────────────────────────────────────────────────
 
-/// Filesystem-based backend (local mode).
+/// Filesystem-based backend.
 #[derive(Clone, Debug)]
 pub struct LocalBackend {
     /// Root directory of the main git repository (contains `.git`).
     pub root: PathBuf,
 }
 
-/// Selects between local-git and cloud-API behaviour.
+/// Workspace backend — always local-filesystem mode.
+///
+/// In multi-workspace mode the active workspace root can change after construction
+/// (when the user switches workspaces via `activate_workspace`).  All git operations
+/// read `active_workspace_path` at call time so they always operate on the correct
+/// directory.  In single-workspace mode `active_workspace_path` is never set and we
+/// fall back to `local.root`.
 #[derive(Clone, Debug)]
-pub enum ProjectBackend {
-    Local(LocalBackend),
-    Cloud,
+pub struct WorkspaceBackend {
+    pub local: LocalBackend,
+    /// Shared active-workspace path updated by `activate_workspace`.
+    pub active_workspace_path: Arc<RwLock<Option<PathBuf>>>,
 }
 
-// ─── ProjectBackend implementation ───────────────────────────────────────────
+impl WorkspaceBackend {
+    pub fn new(root: PathBuf) -> Self {
+        Self {
+            local: LocalBackend { root },
+            active_workspace_path: Default::default(),
+        }
+    }
+}
 
-impl ProjectBackend {
+// Keep a `Local(LocalBackend)` constructor used by router.rs
+impl WorkspaceBackend {
+    pub fn from_local(local: LocalBackend) -> Self {
+        Self {
+            local,
+            active_workspace_path: Default::default(),
+        }
+    }
+}
+
+// ─── WorkspaceBackend implementation ───────────────────────────────────────────
+
+impl WorkspaceBackend {
     // ── Utility ──────────────────────────────────────────────────────────────
 
     pub fn is_local(&self) -> bool {
-        matches!(self, ProjectBackend::Local(_))
+        true
     }
 
-    pub fn is_cloud(&self) -> bool {
-        matches!(self, ProjectBackend::Cloud)
+    /// Return the currently-active workspace root.
+    ///
+    /// Reads `active_workspace_path` (updated by `activate_workspace`) so that
+    /// multi-workspace mode always operates on the correct directory.  Falls back
+    /// to `local.root` when no workspace has been explicitly activated (i.e.
+    /// single-workspace mode).
+    async fn workspace_root(&self) -> PathBuf {
+        self.active_workspace_path
+            .read()
+            .await
+            .clone()
+            .unwrap_or_else(|| self.local.root.clone())
     }
 
     /// Returns `true` when a remote git repository is configured.
-    /// Always `false` in cloud mode (remote is managed by the platform).
-    pub async fn has_remote(&self, project_root: &Path) -> bool {
-        match self {
-            ProjectBackend::Local(_) => LocalGitService::has_remote(project_root).await,
-            ProjectBackend::Cloud => false,
-        }
+    pub async fn has_remote(&self, workspace_root: &Path) -> bool {
+        LocalGitService::has_remote(workspace_root).await
     }
 
-    /// Returns `true` when `project_root` contains a local git repository.
-    /// Always `false` in cloud mode.
-    pub fn is_git_enabled(&self, project_root: &Path) -> bool {
-        match self {
-            ProjectBackend::Local(_) => LocalGitService::is_git_repo(project_root),
-            ProjectBackend::Cloud => false,
-        }
+    /// Returns `true` when `workspace_root` contains a local git repository.
+    pub fn is_git_enabled(&self, workspace_root: &Path) -> bool {
+        LocalGitService::is_git_repo(workspace_root)
     }
 
     // ── VCS operations ───────────────────────────────────────────────────────
 
     /// Pull the latest changes for `branch` from the remote.
-    pub async fn pull(&self, project_id: Uuid, branch: Option<String>) -> Result<String, OxyError> {
-        match self {
-            ProjectBackend::Local(local) => {
-                let default_branch = LocalGitService::get_default_branch(&local.root).await;
-                let requested_branch = branch.clone().unwrap_or_else(|| default_branch.clone());
+    pub async fn pull(
+        &self,
+        _workspace_id: Uuid,
+        branch: Option<String>,
+    ) -> Result<String, OxyError> {
+        let root = self.workspace_root().await;
+        let default_branch = LocalGitService::get_default_branch(&root).await;
+        let requested_branch = branch.clone().unwrap_or_else(|| default_branch.clone());
 
-                if requested_branch != default_branch {
-                    LocalGitService::validate_branch_name(&requested_branch)?;
-                }
-
-                let worktree_root = if requested_branch != default_branch {
-                    LocalGitService::get_worktree_path(&local.root, &requested_branch)
-                        .unwrap_or_else(|| local.root.clone())
-                } else {
-                    local.root.clone()
-                };
-
-                if !self.has_remote(&local.root).await {
-                    return Err(OxyError::RuntimeError(
-                        "No remote configured. Set GIT_REPOSITORY_URL to enable pull.".to_string(),
-                    ));
-                }
-
-                let token = LocalGitService::get_remote_token().await;
-
-                let current_branch = LocalGitService::get_current_branch(&worktree_root)
-                    .await
-                    .unwrap_or_default();
-
-                if current_branch == requested_branch {
-                    LocalGitService::pull_from_remote(
-                        &worktree_root,
-                        &requested_branch,
-                        token.as_deref(),
-                    )
-                    .await?;
-                } else {
-                    info!(
-                        "project_root is on '{}', fast-forwarding '{}' via fetch",
-                        current_branch, requested_branch
-                    );
-                    LocalGitService::fetch_branch_ref(
-                        &local.root,
-                        &requested_branch,
-                        token.as_deref(),
-                    )
-                    .await?;
-                }
-
-                Ok("Pulled latest changes from remote".to_string())
-            }
-            ProjectBackend::Cloud => {
-                CloudProjectService::pull_changes(project_id, branch)
-                    .await
-                    .map_err(|e| OxyError::RuntimeError(format!("{e}")))?;
-                Ok("Changes pulled successfully".to_string())
-            }
+        if requested_branch != default_branch {
+            LocalGitService::validate_branch_name(&requested_branch)?;
         }
+
+        let worktree_root = if requested_branch != default_branch {
+            LocalGitService::get_worktree_path(&root, &requested_branch)
+                .unwrap_or_else(|| root.clone())
+        } else {
+            root.clone()
+        };
+
+        if !self.has_remote(&root).await {
+            return Err(OxyError::RuntimeError(
+                "No remote configured. Set GIT_REPOSITORY_URL to enable pull.".to_string(),
+            ));
+        }
+
+        let token = LocalGitService::get_remote_token().await;
+
+        let current_branch = LocalGitService::get_current_branch(&worktree_root)
+            .await
+            .unwrap_or_default();
+
+        if current_branch == requested_branch {
+            LocalGitService::pull_from_remote(&worktree_root, &requested_branch, token.as_deref())
+                .await?;
+        } else {
+            info!(
+                "workspace_root is on '{}', fast-forwarding '{}' via fetch",
+                current_branch, requested_branch
+            );
+            LocalGitService::fetch_branch_ref(&root, &requested_branch, token.as_deref()).await?;
+        }
+
+        Ok("Pulled latest changes from remote".to_string())
     }
 
     /// Commit (and optionally push) changes for `branch`.
@@ -136,63 +148,47 @@ impl ProjectBackend {
     /// unpushed commits), and avoids `git commit -m ""` being rejected by git.
     pub async fn push(
         &self,
-        project_id: Uuid,
+        _workspace_id: Uuid,
         branch: Option<String>,
         message: String,
     ) -> Result<String, OxyError> {
-        match self {
-            ProjectBackend::Local(local) => {
-                let default_branch = LocalGitService::get_default_branch(&local.root).await;
-                let commit_root = branch
-                    .as_deref()
-                    .filter(|b| !b.is_empty() && *b != default_branch.as_str())
-                    .and_then(|b| LocalGitService::get_worktree_path(&local.root, b))
-                    .unwrap_or_else(|| local.root.clone());
+        let root = self.workspace_root().await;
+        let default_branch = LocalGitService::get_default_branch(&root).await;
+        let commit_root = branch
+            .as_deref()
+            .filter(|b| !b.is_empty() && *b != default_branch.as_str())
+            .and_then(|b| LocalGitService::get_worktree_path(&root, b))
+            .unwrap_or_else(|| root.clone());
 
-                if !message.is_empty() {
-                    LocalGitService::commit_changes(&commit_root, &message).await?;
-                }
+        if !message.is_empty() {
+            LocalGitService::commit_changes(&commit_root, &message).await?;
+        }
 
-                if self.has_remote(&commit_root).await {
-                    let token = LocalGitService::get_remote_token().await;
-                    LocalGitService::push_to_remote(&commit_root, token.as_deref()).await?;
-                    Ok("Changes pushed to remote".to_string())
-                } else {
-                    Ok("Changes committed successfully".to_string())
-                }
-            }
-            ProjectBackend::Cloud => {
-                CloudProjectService::push_changes(project_id, branch, message)
-                    .await
-                    .map_err(|e| OxyError::RuntimeError(format!("{e}")))?;
-                Ok("Changes pushed successfully".to_string())
-            }
+        if self.has_remote(&commit_root).await {
+            let token = LocalGitService::get_remote_token().await;
+            LocalGitService::push_to_remote(&commit_root, token.as_deref()).await?;
+            Ok("Changes pushed to remote".to_string())
+        } else {
+            Ok("Changes committed successfully".to_string())
         }
     }
 
     /// Force-push the current local state of `branch` to remote.
     pub async fn force_push(&self, branch: Option<&str>) -> Result<String, OxyError> {
-        match self {
-            ProjectBackend::Local(local) => {
-                let default_branch = LocalGitService::get_default_branch(&local.root).await;
-                let branch = branch.unwrap_or(&default_branch);
-                if branch != default_branch {
-                    LocalGitService::validate_branch_name(branch)?;
-                }
-                let root = if branch != default_branch {
-                    LocalGitService::get_worktree_path(&local.root, branch)
-                        .unwrap_or_else(|| local.root.clone())
-                } else {
-                    local.root.clone()
-                };
-                let token = LocalGitService::get_remote_token().await;
-                LocalGitService::force_push_to_remote(&root, token.as_deref()).await?;
-                Ok("Force push successful".to_string())
-            }
-            ProjectBackend::Cloud => Err(OxyError::RuntimeError(
-                "Force push is only supported in local git mode".to_string(),
-            )),
+        let root = self.workspace_root().await;
+        let default_branch = LocalGitService::get_default_branch(&root).await;
+        let branch = branch.unwrap_or(&default_branch);
+        if branch != default_branch {
+            LocalGitService::validate_branch_name(branch)?;
         }
+        let branch_root = if branch != default_branch {
+            LocalGitService::get_worktree_path(&root, branch).unwrap_or_else(|| root.clone())
+        } else {
+            root.clone()
+        };
+        let token = LocalGitService::get_remote_token().await;
+        LocalGitService::force_push_to_remote(&branch_root, token.as_deref()).await?;
+        Ok("Force push successful".to_string())
     }
 
     /// Write manually-merged content to a conflict file and stage it.
@@ -202,25 +198,18 @@ impl ProjectBackend {
         file_path: &str,
         content: &str,
     ) -> Result<(), OxyError> {
-        match self {
-            ProjectBackend::Local(local) => {
-                let default_branch = LocalGitService::get_default_branch(&local.root).await;
-                let branch = branch.unwrap_or(&default_branch);
-                if branch != default_branch {
-                    LocalGitService::validate_branch_name(branch)?;
-                }
-                let root = if branch != default_branch {
-                    LocalGitService::get_worktree_path(&local.root, branch)
-                        .unwrap_or_else(|| local.root.clone())
-                } else {
-                    local.root.clone()
-                };
-                LocalGitService::write_and_stage_file(&root, file_path, content).await
-            }
-            ProjectBackend::Cloud => Err(OxyError::RuntimeError(
-                "Conflict resolution is only supported in local git mode".to_string(),
-            )),
+        let root = self.workspace_root().await;
+        let default_branch = LocalGitService::get_default_branch(&root).await;
+        let branch = branch.unwrap_or(&default_branch);
+        if branch != default_branch {
+            LocalGitService::validate_branch_name(branch)?;
         }
+        let branch_root = if branch != default_branch {
+            LocalGitService::get_worktree_path(&root, branch).unwrap_or_else(|| root.clone())
+        } else {
+            root.clone()
+        };
+        LocalGitService::write_and_stage_file(&branch_root, file_path, content).await
     }
 
     /// Resolve a single conflicted file on `branch` by choosing one side.
@@ -232,25 +221,18 @@ impl ProjectBackend {
         file_path: &str,
         use_mine: bool,
     ) -> Result<(), OxyError> {
-        match self {
-            ProjectBackend::Local(local) => {
-                let default_branch = LocalGitService::get_default_branch(&local.root).await;
-                let branch = branch.unwrap_or(&default_branch);
-                if branch != default_branch {
-                    LocalGitService::validate_branch_name(branch)?;
-                }
-                let root = if branch != default_branch {
-                    LocalGitService::get_worktree_path(&local.root, branch)
-                        .unwrap_or_else(|| local.root.clone())
-                } else {
-                    local.root.clone()
-                };
-                LocalGitService::resolve_conflict_file(&root, file_path, use_mine).await
-            }
-            ProjectBackend::Cloud => Err(OxyError::RuntimeError(
-                "Conflict resolution is only supported in local git mode".to_string(),
-            )),
+        let root = self.workspace_root().await;
+        let default_branch = LocalGitService::get_default_branch(&root).await;
+        let branch = branch.unwrap_or(&default_branch);
+        if branch != default_branch {
+            LocalGitService::validate_branch_name(branch)?;
         }
+        let branch_root = if branch != default_branch {
+            LocalGitService::get_worktree_path(&root, branch).unwrap_or_else(|| root.clone())
+        } else {
+            root.clone()
+        };
+        LocalGitService::resolve_conflict_file(&branch_root, file_path, use_mine).await
     }
 
     /// Restore conflict markers for a previously-resolved file on `branch`.
@@ -259,25 +241,18 @@ impl ProjectBackend {
         branch: Option<&str>,
         file_path: &str,
     ) -> Result<(), OxyError> {
-        match self {
-            ProjectBackend::Local(local) => {
-                let default_branch = LocalGitService::get_default_branch(&local.root).await;
-                let branch = branch.unwrap_or(&default_branch);
-                if branch != default_branch {
-                    LocalGitService::validate_branch_name(branch)?;
-                }
-                let root = if branch != default_branch {
-                    LocalGitService::get_worktree_path(&local.root, branch)
-                        .unwrap_or_else(|| local.root.clone())
-                } else {
-                    local.root.clone()
-                };
-                LocalGitService::unresolve_conflict_file(&root, file_path).await
-            }
-            ProjectBackend::Cloud => Err(OxyError::RuntimeError(
-                "Conflict resolution is only supported in local git mode".to_string(),
-            )),
+        let root = self.workspace_root().await;
+        let default_branch = LocalGitService::get_default_branch(&root).await;
+        let branch = branch.unwrap_or(&default_branch);
+        if branch != default_branch {
+            LocalGitService::validate_branch_name(branch)?;
         }
+        let branch_root = if branch != default_branch {
+            LocalGitService::get_worktree_path(&root, branch).unwrap_or_else(|| root.clone())
+        } else {
+            root.clone()
+        };
+        LocalGitService::unresolve_conflict_file(&branch_root, file_path).await
     }
 
     /// Hard-reset the working tree for `branch` to `commit`.
@@ -286,25 +261,18 @@ impl ProjectBackend {
         branch: Option<&str>,
         commit: &str,
     ) -> Result<(), OxyError> {
-        match self {
-            ProjectBackend::Local(local) => {
-                let default_branch = LocalGitService::get_default_branch(&local.root).await;
-                let branch = branch.unwrap_or(&default_branch);
-                if branch != default_branch {
-                    LocalGitService::validate_branch_name(branch)?;
-                }
-                let root = if branch != default_branch {
-                    LocalGitService::get_worktree_path(&local.root, branch)
-                        .unwrap_or_else(|| local.root.clone())
-                } else {
-                    local.root.clone()
-                };
-                LocalGitService::reset_to_commit(&root, commit).await
-            }
-            ProjectBackend::Cloud => Err(OxyError::RuntimeError(
-                "Reset is only supported in local git mode".to_string(),
-            )),
+        let root = self.workspace_root().await;
+        let default_branch = LocalGitService::get_default_branch(&root).await;
+        let branch = branch.unwrap_or(&default_branch);
+        if branch != default_branch {
+            LocalGitService::validate_branch_name(branch)?;
         }
+        let branch_root = if branch != default_branch {
+            LocalGitService::get_worktree_path(&root, branch).unwrap_or_else(|| root.clone())
+        } else {
+            root.clone()
+        };
+        LocalGitService::reset_to_commit(&branch_root, commit).await
     }
 
     /// Returns the N most recent commits on `branch`.
@@ -313,20 +281,15 @@ impl ProjectBackend {
         branch: Option<&str>,
         n: usize,
     ) -> RecentCommitsResponse {
-        let raw = match self {
-            ProjectBackend::Local(local) => {
-                let default_branch = LocalGitService::get_default_branch(&local.root).await;
-                let branch = branch.unwrap_or(&default_branch);
-                let root = if branch != default_branch {
-                    LocalGitService::get_worktree_path(&local.root, branch)
-                        .unwrap_or_else(|| local.root.clone())
-                } else {
-                    local.root.clone()
-                };
-                LocalGitService::get_recent_commits(&root, n).await
-            }
-            ProjectBackend::Cloud => vec![],
+        let root = self.workspace_root().await;
+        let default_branch = LocalGitService::get_default_branch(&root).await;
+        let branch = branch.unwrap_or(&default_branch);
+        let branch_root = if branch != default_branch {
+            LocalGitService::get_worktree_path(&root, branch).unwrap_or_else(|| root.clone())
+        } else {
+            root.clone()
         };
+        let raw = LocalGitService::get_recent_commits(&branch_root, n).await;
         RecentCommitsResponse {
             commits: raw
                 .into_iter()
@@ -343,273 +306,199 @@ impl ProjectBackend {
 
     /// Abort an in-progress rebase on `branch`.
     pub async fn abort_rebase(&self, branch: Option<&str>) -> Result<(), OxyError> {
-        match self {
-            ProjectBackend::Local(local) => {
-                let default_branch = LocalGitService::get_default_branch(&local.root).await;
-                let branch = branch.unwrap_or(&default_branch);
-                if branch != default_branch {
-                    LocalGitService::validate_branch_name(branch)?;
-                }
-                let root = if branch != default_branch {
-                    LocalGitService::get_worktree_path(&local.root, branch)
-                        .unwrap_or_else(|| local.root.clone())
-                } else {
-                    local.root.clone()
-                };
-                LocalGitService::abort_rebase(&root).await
-            }
-            ProjectBackend::Cloud => Err(OxyError::RuntimeError(
-                "Abort rebase is only supported in local git mode".to_string(),
-            )),
+        let root = self.workspace_root().await;
+        let default_branch = LocalGitService::get_default_branch(&root).await;
+        let branch = branch.unwrap_or(&default_branch);
+        if branch != default_branch {
+            LocalGitService::validate_branch_name(branch)?;
         }
+        let branch_root = if branch != default_branch {
+            LocalGitService::get_worktree_path(&root, branch).unwrap_or_else(|| root.clone())
+        } else {
+            root.clone()
+        };
+        LocalGitService::abort_rebase(&branch_root).await
     }
 
     /// Continue an in-progress rebase on `branch`.
     pub async fn continue_rebase(&self, branch: Option<&str>) -> Result<(), OxyError> {
-        match self {
-            ProjectBackend::Local(local) => {
-                let default_branch = LocalGitService::get_default_branch(&local.root).await;
-                let branch = branch.unwrap_or(&default_branch);
-                if branch != default_branch {
-                    LocalGitService::validate_branch_name(branch)?;
-                }
-                let root = if branch != default_branch {
-                    LocalGitService::get_worktree_path(&local.root, branch)
-                        .unwrap_or_else(|| local.root.clone())
-                } else {
-                    local.root.clone()
-                };
-                LocalGitService::continue_rebase(&root).await
-            }
-            ProjectBackend::Cloud => Err(OxyError::RuntimeError(
-                "Continue rebase is only supported in local git mode".to_string(),
-            )),
+        let root = self.workspace_root().await;
+        let default_branch = LocalGitService::get_default_branch(&root).await;
+        let branch = branch.unwrap_or(&default_branch);
+        if branch != default_branch {
+            LocalGitService::validate_branch_name(branch)?;
         }
+        let branch_root = if branch != default_branch {
+            LocalGitService::get_worktree_path(&root, branch).unwrap_or_else(|| root.clone())
+        } else {
+            root.clone()
+        };
+        LocalGitService::continue_rebase(&branch_root).await
     }
 
     /// Return revision/sync info for `branch`.
     pub async fn revision_info(
         &self,
-        project_id: Uuid,
+        _workspace_id: Uuid,
         branch: Option<&str>,
     ) -> Result<RevisionInfoResponse, OxyError> {
-        match self {
-            ProjectBackend::Local(local) => {
-                let default_branch = LocalGitService::get_default_branch(&local.root).await;
-                let branch_name = branch.unwrap_or(&default_branch);
+        let root = self.workspace_root().await;
+        let default_branch = LocalGitService::get_default_branch(&root).await;
+        let branch_name = branch.unwrap_or(&default_branch);
 
-                if branch_name != default_branch {
-                    LocalGitService::validate_branch_name(branch_name)?;
-                }
-
-                let serve_root = if branch_name != default_branch {
-                    LocalGitService::get_worktree_path(&local.root, branch_name)
-                        .unwrap_or_else(|| local.root.clone())
-                } else {
-                    local.root.clone()
-                };
-
-                let (sha, message) =
-                    LocalGitService::get_branch_commit(&local.root, branch_name).await;
-                let current_commit = if sha.is_empty() {
-                    String::new()
-                } else {
-                    format!("{} - {}", &sha[..sha.len().min(7)], message)
-                };
-
-                let (latest_sha, remote_url) = tokio::join!(
-                    async {
-                        LocalGitService::get_tracking_ref_sha(&local.root, branch_name)
-                            .await
-                            .unwrap_or_else(|| sha.clone())
-                    },
-                    LocalGitService::get_remote_url(&local.root)
-                );
-
-                let latest_commit = if latest_sha == sha {
-                    current_commit.clone()
-                } else {
-                    let (lsha, lmsg) =
-                        LocalGitService::get_commit_by_sha(&local.root, &latest_sha).await;
-                    if lsha.is_empty() {
-                        String::new()
-                    } else {
-                        format!("{} - {}", &lsha[..lsha.len().min(7)], lmsg)
-                    }
-                };
-
-                let sync_status = if LocalGitService::is_in_conflict(&serve_root) {
-                    "conflict".to_string()
-                } else if sha.is_empty() || latest_sha == sha {
-                    "synced".to_string()
-                } else if LocalGitService::is_behind_remote(&local.root, &sha, &latest_sha).await {
-                    "behind".to_string()
-                } else {
-                    // local SHA differs from remote tracking ref and is not behind
-                    // → local has commits not yet pushed to the remote
-                    "ahead".to_string()
-                };
-
-                Ok(RevisionInfoResponse {
-                    base_sha: sha.clone(),
-                    head_sha: sha.clone(),
-                    current_revision: sha.clone(),
-                    latest_revision: latest_sha,
-                    current_commit,
-                    latest_commit,
-                    sync_status,
-                    last_sync_time: None,
-                    remote_url,
-                })
-            }
-            ProjectBackend::Cloud => {
-                CloudProjectService::get_revision_info(project_id, branch.map(String::from))
-                    .await
-                    .map_err(|e| OxyError::RuntimeError(format!("{e}")))
-            }
+        if branch_name != default_branch {
+            LocalGitService::validate_branch_name(branch_name)?;
         }
+
+        let serve_root = if branch_name != default_branch {
+            LocalGitService::get_worktree_path(&root, branch_name).unwrap_or_else(|| root.clone())
+        } else {
+            root.clone()
+        };
+
+        let (sha, message) = LocalGitService::get_branch_commit(&root, branch_name).await;
+        let current_commit = if sha.is_empty() {
+            String::new()
+        } else {
+            format!("{} - {}", &sha[..sha.len().min(7)], message)
+        };
+
+        let root_clone = root.clone();
+        let (latest_sha, remote_url) = tokio::join!(
+            async {
+                LocalGitService::get_tracking_ref_sha(&root_clone, branch_name)
+                    .await
+                    .unwrap_or_else(|| sha.clone())
+            },
+            LocalGitService::get_remote_url(&root)
+        );
+
+        let latest_commit = if latest_sha == sha {
+            current_commit.clone()
+        } else {
+            let (lsha, lmsg) = LocalGitService::get_commit_by_sha(&root_clone, &latest_sha).await;
+            if lsha.is_empty() {
+                String::new()
+            } else {
+                format!("{} - {}", &lsha[..lsha.len().min(7)], lmsg)
+            }
+        };
+
+        let sync_status = if LocalGitService::is_in_conflict(&serve_root) {
+            "conflict".to_string()
+        } else if sha.is_empty() || latest_sha == sha {
+            "synced".to_string()
+        } else if LocalGitService::is_behind_remote(&root_clone, &sha, &latest_sha).await {
+            "behind".to_string()
+        } else {
+            "ahead".to_string()
+        };
+
+        Ok(RevisionInfoResponse {
+            base_sha: sha.clone(),
+            head_sha: sha.clone(),
+            current_revision: sha.clone(),
+            latest_revision: latest_sha,
+            current_commit,
+            latest_commit,
+            sync_status,
+            last_sync_time: None,
+            remote_url,
+        })
     }
 
     /// List all branches for the project.
-    pub async fn list_branches(&self, project_id: Uuid) -> Result<Vec<ProjectBranch>, OxyError> {
-        match self {
-            ProjectBackend::Local(local) => {
-                let branch_pairs = LocalGitService::list_branches_with_status(&local.root).await;
-                let now = Utc::now().to_string();
-                let branches = branch_pairs
-                    .into_iter()
-                    .map(|(name, sync_status)| ProjectBranch {
-                        id: Uuid::nil(),
-                        name,
-                        revision: String::new(),
-                        project_id,
-                        branch_type: BranchType::Local,
-                        sync_status,
-                        created_at: now.clone(),
-                        updated_at: now.clone(),
-                    })
-                    .collect();
-                Ok(branches)
-            }
-            ProjectBackend::Cloud => CloudProjectService::get_project_branches(project_id)
-                .await
-                .map_err(|e| OxyError::RuntimeError(format!("{e}"))),
-        }
+    pub async fn list_branches(&self, workspace_id: Uuid) -> Result<Vec<ProjectBranch>, OxyError> {
+        let root = self.workspace_root().await;
+        let branch_pairs = LocalGitService::list_branches_with_status(&root).await;
+        let now = Utc::now().to_string();
+        let branches = branch_pairs
+            .into_iter()
+            .map(|(name, sync_status)| ProjectBranch {
+                id: Uuid::nil(),
+                name,
+                revision: String::new(),
+                workspace_id: workspace_id,
+                branch_type: BranchType::Local,
+                sync_status,
+                created_at: now.clone(),
+                updated_at: now.clone(),
+            })
+            .collect();
+        Ok(branches)
     }
 
     /// Switch to (or create) `branch`, returning its metadata.
     pub async fn switch_branch(
         &self,
-        project_id: Uuid,
+        workspace_id: Uuid,
         branch: &str,
     ) -> Result<ProjectBranch, OxyError> {
-        match self {
-            ProjectBackend::Local(local) => {
-                LocalGitService::get_or_create_worktree(&local.root, branch).await?;
-                let now = Utc::now().to_string();
-                Ok(ProjectBranch {
-                    id: Uuid::nil(),
-                    project_id,
-                    branch_type: BranchType::Local,
-                    name: branch.to_string(),
-                    revision: String::new(),
-                    sync_status: "synced".to_string(),
-                    created_at: now.clone(),
-                    updated_at: now,
-                })
-            }
-            ProjectBackend::Cloud => {
-                let branch_model =
-                    CloudProjectService::switch_project_branch(project_id, branch.to_string())
-                        .await
-                        .map_err(|e| OxyError::RuntimeError(format!("{e}")))?;
-                Ok(ProjectBranch {
-                    id: branch_model.id,
-                    project_id,
-                    branch_type: BranchType::Remote,
-                    name: branch_model.name,
-                    revision: branch_model.revision,
-                    sync_status: branch_model.sync_status,
-                    created_at: branch_model.created_at.to_string(),
-                    updated_at: branch_model.updated_at.to_string(),
-                })
-            }
-        }
+        let root = self.workspace_root().await;
+        // Lazily initialize a git repo when the workspace was created without one
+        // (demo / blank workspaces). This is a no-op when .git already exists.
+        LocalGitService::ensure_initialized(&root).await?;
+        LocalGitService::get_or_create_worktree(&root, branch).await?;
+        let now = Utc::now().to_string();
+        Ok(ProjectBranch {
+            id: Uuid::nil(),
+            workspace_id: workspace_id,
+            branch_type: BranchType::Local,
+            name: branch.to_string(),
+            revision: String::new(),
+            sync_status: "synced".to_string(),
+            created_at: now.clone(),
+            updated_at: now,
+        })
     }
 
     /// Delete `branch` from the local repository.
-    /// Returns an error if called in cloud mode or if `branch` is the default.
-    pub async fn delete_branch(&self, _project_id: Uuid, branch: &str) -> Result<(), OxyError> {
-        match self {
-            ProjectBackend::Local(local) => {
-                let default_branch = LocalGitService::get_default_branch(&local.root).await;
-                if branch == default_branch {
-                    return Err(OxyError::RuntimeError(format!(
-                        "Cannot delete the default branch '{default_branch}'"
-                    )));
-                }
-                LocalGitService::validate_branch_name(branch)?;
-                LocalGitService::delete_branch(&local.root, branch).await
-            }
-            ProjectBackend::Cloud => Err(OxyError::RuntimeError(
-                "Branch deletion is only supported in local git mode".to_string(),
-            )),
+    pub async fn delete_branch(&self, _workspace_id: Uuid, branch: &str) -> Result<(), OxyError> {
+        let root = self.workspace_root().await;
+        let default_branch = LocalGitService::get_default_branch(&root).await;
+        if branch == default_branch {
+            return Err(OxyError::RuntimeError(format!(
+                "Cannot delete the default branch '{default_branch}'"
+            )));
         }
+        LocalGitService::validate_branch_name(branch)?;
+        LocalGitService::delete_branch(&root, branch).await
     }
 
     // ── Storage operations ───────────────────────────────────────────────────
 
     /// Remap `file_path` (resolved against the main project root) to the
     /// corresponding path inside the git worktree for `branch`, when applicable.
-    ///
-    /// Returns `file_path` unchanged in cloud mode, when no branch is specified,
-    /// when the branch equals the default branch, or when no worktree exists yet.
     pub async fn resolve_path(
         &self,
         branch: Option<&str>,
         file_path: PathBuf,
-        project_root: &Path,
+        workspace_root: &Path,
     ) -> PathBuf {
-        match self {
-            ProjectBackend::Cloud => file_path,
-            ProjectBackend::Local(_) => {
-                let branch = match branch {
-                    Some(b) if !b.is_empty() => b,
-                    _ => return file_path,
-                };
-                if LocalGitService::validate_branch_name(branch).is_err() {
-                    return file_path;
-                }
-                let default_branch = LocalGitService::get_default_branch(project_root).await;
-                if branch == default_branch {
-                    return file_path;
-                }
-                match LocalGitService::get_worktree_path(project_root, branch) {
-                    Some(wt) => {
-                        LocalGitService::remap_path_to_worktree(project_root, &wt, &file_path)
-                    }
-                    None => file_path,
-                }
-            }
+        let branch = match branch {
+            Some(b) if !b.is_empty() => b,
+            _ => return file_path,
+        };
+        if LocalGitService::validate_branch_name(branch).is_err() {
+            return file_path;
+        }
+        let default_branch = LocalGitService::get_default_branch(workspace_root).await;
+        if branch == default_branch {
+            return file_path;
+        }
+        match LocalGitService::get_worktree_path(workspace_root, branch) {
+            Some(wt) => LocalGitService::remap_path_to_worktree(workspace_root, &wt, &file_path),
+            None => file_path,
         }
     }
 
     /// Return the filesystem root to use for file-tree listing and diff operations.
-    ///
-    /// In local mode this is the worktree directory when a non-default branch is
-    /// requested; otherwise it is `project_root`.  In cloud mode it is always
-    /// `project_root`.
-    pub async fn worktree_root(&self, branch: Option<&str>, project_root: &Path) -> PathBuf {
-        match self {
-            ProjectBackend::Cloud => project_root.to_path_buf(),
-            ProjectBackend::Local(_) => {
-                let default_branch = LocalGitService::get_default_branch(project_root).await;
-                branch
-                    .filter(|b| !b.is_empty() && *b != default_branch.as_str())
-                    .filter(|b| LocalGitService::validate_branch_name(b).is_ok())
-                    .and_then(|b| LocalGitService::get_worktree_path(project_root, b))
-                    .unwrap_or_else(|| project_root.to_path_buf())
-            }
-        }
+    pub async fn worktree_root(&self, branch: Option<&str>, workspace_root: &Path) -> PathBuf {
+        let default_branch = LocalGitService::get_default_branch(workspace_root).await;
+        branch
+            .filter(|b| !b.is_empty() && *b != default_branch.as_str())
+            .filter(|b| LocalGitService::validate_branch_name(b).is_ok())
+            .and_then(|b| LocalGitService::get_worktree_path(workspace_root, b))
+            .unwrap_or_else(|| workspace_root.to_path_buf())
     }
 }

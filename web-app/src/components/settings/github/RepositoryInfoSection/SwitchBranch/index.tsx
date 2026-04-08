@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import BranchSelector from "@/components/BranchSelector";
-import { useSwitchProjectActiveBranch } from "@/hooks/api/projects/useSwitchProjectActiveBranch";
+import { useSwitchWorkspaceActiveBranch as useSwitchProjectActiveBranch } from "@/hooks/api/workspaces/useSwitchWorkspaceActiveBranch";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import useIdeBranch from "@/stores/useIdeBranch";
 import SwitchBranchConfirm from "./SwitchBranchConfirm";
@@ -30,7 +30,7 @@ const SwitchBranch = () => {
 
     try {
       await switchBranchMutation.mutateAsync({
-        projectId: projectId,
+        workspaceId: projectId,
         branchName: pendingBranch
       });
 

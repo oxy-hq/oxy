@@ -1,5 +1,4 @@
 import type {
-  CurrentProject,
   GitHubRepository,
   ListRepositoriesResponse,
   SelectRepositoryRequest,
@@ -10,79 +9,42 @@ import type {
 import type { GitHubSettings, RevisionInfo } from "@/types/settings";
 import { apiClient } from "./api/axios";
 
-export class GitHubService {
-  /**
-   * Store and validate GitHub token
-   */
-  static async storeToken(token: string): Promise<TokenResponse> {
+export const GitHubService = {
+  async storeToken(token: string): Promise<TokenResponse> {
     const response = await apiClient.post<TokenResponse>("/github/token", {
       token
     } as StoreTokenRequest);
     return response.data;
-  }
+  },
 
-  /**
-   * List accessible GitHub repositories
-   */
-  static async listRepositories(): Promise<GitHubRepository[]> {
+  async listRepositories(): Promise<GitHubRepository[]> {
     const response = await apiClient.get<ListRepositoriesResponse>("/github/repositories");
     return response.data.repositories;
-  }
+  },
 
-  /**
-   * Select a repository
-   */
-  static async selectRepository(repositoryId: number): Promise<SelectRepositoryResponse> {
+  async selectRepository(repositoryId: number): Promise<SelectRepositoryResponse> {
     const response = await apiClient.post<SelectRepositoryResponse>("/github/repositories/select", {
       repository_id: repositoryId
     } as SelectRepositoryRequest);
     return response.data;
-  }
+  },
 
-  /**
-   * Get current project information
-   */
-  static async getCurrentProject(): Promise<CurrentProject> {
-    const response = await apiClient.get<CurrentProject>("/projects/current");
-    return response.data;
-  }
-
-  /**
-   * Pull latest changes for current repository
-   */
-  static async pullRepository(): Promise<TokenResponse> {
-    const response = await apiClient.post<TokenResponse>("/git/pull");
-    return response.data;
-  }
-
-  /**
-   * Get GitHub settings
-   */
-  static async getGithubSettings(): Promise<GitHubSettings> {
+  async getGithubSettings(): Promise<GitHubSettings> {
     const response = await apiClient.get("/github/settings");
     return response.data;
-  }
+  },
 
-  /**
-   * Get GitHub revision information
-   */
-  static async getGithubRevisionInfo(): Promise<RevisionInfo> {
+  async getGithubRevisionInfo(): Promise<RevisionInfo> {
     const response = await apiClient.get("/github/revision");
     return response.data;
-  }
+  },
 
-  /**
-   * Update GitHub token
-   */
-  static async updateGitHubToken(token: string): Promise<{ success: boolean }> {
+  async updateGitHubToken(token: string): Promise<{ success: boolean }> {
     const response = await apiClient.put("/github/settings", { token });
     return response.data;
-  }
+  },
 
-  /**
-   * Update GitHub App installation for a project
-   */
-  static async updateProjectGithubApp(
+  async updateProjectGithubApp(
     projectId: string,
     installationId: string,
     appId?: string
@@ -92,41 +54,10 @@ export class GitHubService {
       app_id: appId
     });
     return response.data;
-  }
+  },
 
-  /**
-   * Create a project with GitHub App installation
-   */
-  static async createProjectWithGithubApp(
-    workspaceId: string,
-    installationId: string,
-    repoId: number,
-    branchName: string
-  ): Promise<{ success: boolean; message: string }> {
-    const response = await apiClient.post(`/github/app/project/${workspaceId}`, {
-      installation_id: installationId,
-      repo_id: repoId,
-      branch_name: branchName
-    });
-    return response.data;
-  }
-
-  /**
-   * Sync GitHub repository
-   */
-  static async syncGitHubRepository(): Promise<{
-    success: boolean;
-    message: string;
-  }> {
+  async syncGitHubRepository(): Promise<{ success: boolean; message: string }> {
     const response = await apiClient.post("/github/sync");
     return response.data;
   }
-
-  /**
-   * Set onboarded status
-   */
-  static async setOnboarded(onboarded: boolean): Promise<{ success: boolean; message: string }> {
-    const response = await apiClient.put("/github/onboarded", { onboarded });
-    return response.data;
-  }
-}
+};

@@ -38,8 +38,8 @@ export const FilePathAutocompleteInput = React.forwardRef<
   const { data: fileTree } = useFileTree();
 
   const filePaths = React.useMemo(() => {
-    if (!fileTree) return [];
-    return flattenFileTree(fileTree, fileExtension);
+    if (!fileTree?.primary) return [];
+    return flattenFileTree(fileTree.primary, fileExtension);
   }, [fileTree, fileExtension]);
 
   return (

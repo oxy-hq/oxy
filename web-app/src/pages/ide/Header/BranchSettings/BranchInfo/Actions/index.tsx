@@ -9,9 +9,9 @@ const Actions = () => {
   const [pullDialogOpen, setPullDialogOpen] = useState(false);
   const [pushDialogOpen, setPushDialogOpen] = useState(false);
 
-  const isLocalOnly = !!authConfig.local_git && !authConfig.cloud;
-  // Show Pull when using cloud GitHub integration OR when a remote is configured locally.
-  const showPull = authConfig.cloud || authConfig.git_remote;
+  const isLocalOnly = !!authConfig.local_git;
+  // Show Pull when a remote is configured locally.
+  const showPull = authConfig.git_remote;
   const pushLabel = isLocalOnly
     ? authConfig.git_remote
       ? "Commit & Push"

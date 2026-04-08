@@ -71,7 +71,7 @@ impl Executable<(EvalKind, EvalTarget, Option<String>)> for GeneratorExecutable 
             }
 
             EvalKind::Custom(custom) => {
-                let config_manager = &execution_context.project.config_manager;
+                let config_manager = &execution_context.workspace.config_manager;
                 let dataset_path = config_manager.resolve_file(&custom.dataset).await?;
 
                 let records = asyncify(move || {

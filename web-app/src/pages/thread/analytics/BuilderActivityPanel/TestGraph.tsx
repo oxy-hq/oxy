@@ -24,8 +24,8 @@ export const TestGraph = ({
   return (
     <GenericGraph
       change={change}
-      graphLabel="Test Graph"
-      rootLabel="Test"
+      graphLabel='Test Graph'
+      rootLabel='Test'
       rootTitle={newTest.name ?? target ?? "untitled"}
       rootSubtitle={`${caseCount} cases${target ? ` · ${target}` : ""}`}
       changedItems={displayItems}

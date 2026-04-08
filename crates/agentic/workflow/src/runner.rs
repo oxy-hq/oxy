@@ -7,7 +7,7 @@ use agentic_analytics::procedure::{
     ProcedureError, ProcedureOutput, ProcedureRef, ProcedureRunner, ProcedureStepResult,
 };
 use agentic_core::events::{Event, EventStream};
-use oxy::adapters::project::manager::ProjectManager;
+use oxy::adapters::workspace::manager::WorkspaceManager;
 use oxy::checkpoint::types::RetryStrategy;
 use oxy::execute::writer::NoopHandler;
 use oxy_workflow::{WorkflowInput, WorkflowLauncher};
@@ -27,7 +27,7 @@ use crate::event_bridge::WorkflowEventBridge;
 /// `search()` uses these paths directly instead of scanning the project
 /// directory via `list_workflows()`.
 pub struct OxyProcedureRunner {
-    project_manager: ProjectManager,
+    workspace_manager: WorkspaceManager,
     /// Procedure file paths resolved from `context` globs at config load time.
     /// When non-empty, `search()` uses these instead of `list_workflows()`.
     procedure_files: Vec<PathBuf>,
@@ -37,9 +37,9 @@ pub struct OxyProcedureRunner {
 }
 
 impl OxyProcedureRunner {
-    pub fn new(project_manager: ProjectManager) -> Self {
+    pub fn new(workspace_manager: WorkspaceManager) -> Self {
         Self {
-            project_manager,
+            workspace_manager,
             procedure_files: Vec::new(),
             event_tx: None,
         }
@@ -102,7 +102,7 @@ impl ProcedureRunner for OxyProcedureRunner {
         }
 
         let launcher = WorkflowLauncher::new()
-            .with_project(self.project_manager.clone())
+            .with_workspace(self.workspace_manager.clone())
             .await
             .map_err(|e| ProcedureError(e.to_string()))?;
 
@@ -136,8 +136,8 @@ impl ProcedureRunner for OxyProcedureRunner {
     }
 
     async fn search(&self, query: &str) -> Vec<ProcedureRef> {
-        let config = &self.project_manager.config_manager;
-        let project_path = config.project_path().to_path_buf();
+        let config = &self.workspace_manager.config_manager;
+        let workspace_path = config.workspace_path().to_path_buf();
 
         // Use context-resolved paths when available; fall back to full project scan.
         let paths = if !self.procedure_files.is_empty() {
@@ -149,7 +149,7 @@ impl ProcedureRunner for OxyProcedureRunner {
             }
         };
 
-        filter_procedure_paths(&paths, &project_path, query)
+        filter_procedure_paths(&paths, &workspace_path, query)
     }
 }
 
@@ -285,7 +285,7 @@ fn phrase_fuzzy_matches(phrase_lower: &str, query_tokens: &[&str]) -> bool {
 
 fn filter_procedure_paths(
     paths: &[PathBuf],
-    project_path: &Path,
+    workspace_path: &Path,
     query: &str,
 ) -> Vec<ProcedureRef> {
     let query_lower = query.to_lowercase();
@@ -376,7 +376,7 @@ fn filter_procedure_paths(
             let abs_path = if path.is_absolute() {
                 path.clone()
             } else {
-                project_path.join(path)
+                workspace_path.join(path)
             };
 
             Some((

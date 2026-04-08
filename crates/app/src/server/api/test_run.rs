@@ -7,7 +7,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::{
-    api::middlewares::project::ProjectManagerExtractor,
+    api::middlewares::workspace_context::WorkspaceManagerExtractor,
     server::service::test_runs::{
         HumanVerdictInfo, TestRunInfo, TestRunWithCases, TestRunsManager,
     },
@@ -31,12 +31,12 @@ pub struct CreateRunBody {
 }
 
 pub async fn create_run(
-    Path((project_id, pathb64)): Path<(Uuid, String)>,
-    ProjectManagerExtractor(_pm): ProjectManagerExtractor,
+    Path((workspace_id, pathb64)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(_pm): WorkspaceManagerExtractor,
     extract::Json(body): extract::Json<CreateRunBody>,
 ) -> Result<extract::Json<TestRunInfo>, StatusCode> {
     let source_id = decode_path_from_base64(pathb64)?;
-    let manager = TestRunsManager::new(project_id).await.map_err(|e| {
+    let manager = TestRunsManager::new(workspace_id).await.map_err(|e| {
         tracing::error!("Failed to create TestRunsManager: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
@@ -51,11 +51,11 @@ pub async fn create_run(
 }
 
 pub async fn list_runs(
-    Path((project_id, pathb64)): Path<(Uuid, String)>,
-    ProjectManagerExtractor(_pm): ProjectManagerExtractor,
+    Path((workspace_id, pathb64)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(_pm): WorkspaceManagerExtractor,
 ) -> Result<extract::Json<Vec<TestRunInfo>>, StatusCode> {
     let source_id = decode_path_from_base64(pathb64)?;
-    let manager = TestRunsManager::new(project_id).await.map_err(|e| {
+    let manager = TestRunsManager::new(workspace_id).await.map_err(|e| {
         tracing::error!("Failed to create TestRunsManager: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
@@ -67,11 +67,11 @@ pub async fn list_runs(
 }
 
 pub async fn get_run(
-    Path((project_id, pathb64, run_index)): Path<(Uuid, String, i32)>,
-    ProjectManagerExtractor(_pm): ProjectManagerExtractor,
+    Path((workspace_id, pathb64, run_index)): Path<(Uuid, String, i32)>,
+    WorkspaceManagerExtractor(_pm): WorkspaceManagerExtractor,
 ) -> Result<extract::Json<TestRunWithCases>, StatusCode> {
     let source_id = decode_path_from_base64(pathb64)?;
-    let manager = TestRunsManager::new(project_id).await.map_err(|e| {
+    let manager = TestRunsManager::new(workspace_id).await.map_err(|e| {
         tracing::error!("Failed to create TestRunsManager: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
@@ -87,11 +87,11 @@ pub async fn get_run(
 }
 
 pub async fn delete_run(
-    Path((project_id, pathb64, run_index)): Path<(Uuid, String, i32)>,
-    ProjectManagerExtractor(_pm): ProjectManagerExtractor,
+    Path((workspace_id, pathb64, run_index)): Path<(Uuid, String, i32)>,
+    WorkspaceManagerExtractor(_pm): WorkspaceManagerExtractor,
 ) -> Result<StatusCode, StatusCode> {
     let source_id = decode_path_from_base64(pathb64)?;
-    let manager = TestRunsManager::new(project_id).await.map_err(|e| {
+    let manager = TestRunsManager::new(workspace_id).await.map_err(|e| {
         tracing::error!("Failed to create TestRunsManager: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
@@ -111,8 +111,8 @@ pub struct SetHumanVerdictBody {
 }
 
 pub async fn set_human_verdict(
-    Path((project_id, pathb64, run_index, case_index)): Path<(Uuid, String, i32, i32)>,
-    ProjectManagerExtractor(_pm): ProjectManagerExtractor,
+    Path((workspace_id, pathb64, run_index, case_index)): Path<(Uuid, String, i32, i32)>,
+    WorkspaceManagerExtractor(_pm): WorkspaceManagerExtractor,
     extract::Json(body): extract::Json<SetHumanVerdictBody>,
 ) -> Result<extract::Json<Option<HumanVerdictInfo>>, StatusCode> {
     if let Some(ref v) = body.verdict
@@ -122,7 +122,7 @@ pub async fn set_human_verdict(
         return Err(StatusCode::UNPROCESSABLE_ENTITY);
     }
     let source_id = decode_path_from_base64(pathb64)?;
-    let manager = TestRunsManager::new(project_id).await.map_err(|e| {
+    let manager = TestRunsManager::new(workspace_id).await.map_err(|e| {
         tracing::error!("Failed to create TestRunsManager: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
@@ -137,11 +137,11 @@ pub async fn set_human_verdict(
 }
 
 pub async fn list_human_verdicts(
-    Path((project_id, pathb64, run_index)): Path<(Uuid, String, i32)>,
-    ProjectManagerExtractor(_pm): ProjectManagerExtractor,
+    Path((workspace_id, pathb64, run_index)): Path<(Uuid, String, i32)>,
+    WorkspaceManagerExtractor(_pm): WorkspaceManagerExtractor,
 ) -> Result<extract::Json<Vec<HumanVerdictInfo>>, StatusCode> {
     let source_id = decode_path_from_base64(pathb64)?;
-    let manager = TestRunsManager::new(project_id).await.map_err(|e| {
+    let manager = TestRunsManager::new(workspace_id).await.map_err(|e| {
         tracing::error!("Failed to create TestRunsManager: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;

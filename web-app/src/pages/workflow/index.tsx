@@ -5,7 +5,11 @@ import { WorkflowPreview } from "@/components/workflow/WorkflowPreview";
 import { decodeBase64 } from "@/libs/encoding";
 import WorkflowPageHeader from "./Header";
 
-export const Workflow: React.FC<{ pathb64: string; runId?: string }> = ({ pathb64, runId }) => {
+export const Workflow: React.FC<{
+  pathb64: string;
+  runId?: string;
+  projectIdOverride?: string;
+}> = ({ pathb64, runId, projectIdOverride }) => {
   const path = useMemo(() => decodeBase64(pathb64), [pathb64]);
   const location = useLocation();
   const hashValue = location.hash;
@@ -13,16 +17,28 @@ export const Workflow: React.FC<{ pathb64: string; runId?: string }> = ({ pathb6
   return (
     <div className='flex h-full w-full flex-col'>
       <WorkflowPageHeader path={path} runId={runId} />
-      <WorkflowPreview key={`${pathb64}-${runId}-${hashValue}`} pathb64={pathb64} runId={runId} />
+      <WorkflowPreview
+        key={`${pathb64}-${runId}-${hashValue}`}
+        pathb64={pathb64}
+        runId={runId}
+        projectIdOverride={projectIdOverride}
+      />
     </div>
   );
 };
 
 const WorkflowPage = () => {
-  const { pathb64 } = useParams();
+  const { pathb64, projectId } = useParams();
   const [searchParams] = useSearchParams();
   const runId = searchParams.get("run") || undefined;
-  return <Workflow key={`${pathb64}-${runId}`} pathb64={pathb64 ?? ""} runId={runId} />;
+  return (
+    <Workflow
+      key={`${pathb64}-${runId}`}
+      pathb64={pathb64 ?? ""}
+      runId={runId}
+      projectIdOverride={projectId}
+    />
+  );
 };
 
 export default WorkflowPage;

@@ -6,6 +6,10 @@ export interface OktaAuthRequest {
   code: string;
 }
 
+export interface GitHubAuthRequest {
+  code: string;
+}
+
 export interface MagicLinkRequest {
   email: string;
 }
@@ -42,7 +46,10 @@ export interface AuthConfigResponse {
     domain: string;
   };
   magic_link?: boolean;
-  cloud?: boolean;
+  github?: { client_id: string };
+  needs_onboarding?: boolean;
+  /** True when the server was started with a single fixed workspace directory. */
+  single_workspace?: boolean;
   enterprise?: boolean;
   readonly: boolean;
   local_git?: boolean;
@@ -55,6 +62,8 @@ export interface AuthConfigResponse {
    * Only set in local_git mode.
    */
   protected_branches?: string[];
+  /** Set when needs_onboarding is true due to an unexpected error (e.g. workspace directory deleted). */
+  workspace_error?: string;
 }
 
 export interface UserListResponse {

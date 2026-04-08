@@ -6,7 +6,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
 import { useExecutionSummary } from "@/hooks/api/useExecutionAnalytics";
 import PageHeader from "@/pages/ide/components/PageHeader";
 import { timeRangeToDays } from "@/services/api/executionAnalytics";
-import useCurrentProject from "@/stores/useCurrentProject";
+import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 import AgentBreakdownTable from "./components/AgentBreakdownTable";
 import DistributionChart from "./components/DistributionChart";
 import ExecutionList from "./components/ExecutionList";
@@ -42,7 +42,7 @@ const emptySummary: ExecutionSummary = {
 };
 
 export default function ExecutionAnalytics() {
-  const { project } = useCurrentProject();
+  const { workspace: project } = useCurrentWorkspace();
   const projectId = project?.id;
 
   const [timeRange, setTimeRange] = useState<TimeRange>("7d");

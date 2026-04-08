@@ -24,13 +24,15 @@ export const AppWrapper = () => {
       data-theme-variant='new'
       data-theme={theme}
     >
-      <StrictMode>
-        <QueryClientProvider client={queryClient}>
-          <App />
-        </QueryClientProvider>
-      </StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>
     </div>
   );
 };
 
-createRoot(document.getElementById("root")!).render(<AppWrapper />); // Render AppWrapper
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <AppWrapper />
+  </StrictMode>
+);

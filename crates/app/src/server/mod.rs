@@ -6,4 +6,4 @@ pub mod providers;
 pub mod router;
 pub mod service;
 
-pub use router::{AppState, ProjectExtractor, api_router, openapi_router};
+pub use router::{AppState, WorkspaceExtractor, api_router, openapi_router};

@@ -1,9 +1,9 @@
 import { CircleX } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/tooltip";
-import { useProjectStatus } from "@/hooks/api/projects/useProjectStatus";
+import { useWorkspaceStatus } from "@/hooks/api/workspaces/useWorkspaceStatus";
 
 const ProjectStatus = () => {
-  const { data, isPending, error } = useProjectStatus();
+  const { data, isPending, error } = useWorkspaceStatus();
 
   if (isPending) {
     return null;
@@ -13,7 +13,7 @@ const ProjectStatus = () => {
     return (
       <div className='flex items-center gap-2 border border-border bg-sidebar p-2'>
         <CircleX className='h-4 w-4 text-destructive' />
-        <span className='text-destructive text-sm'>Failed to load project status.</span>
+        <span className='text-destructive text-sm'>Failed to load workspace status.</span>
       </div>
     );
   }
@@ -30,7 +30,7 @@ const ProjectStatus = () => {
             <div className='flex items-center gap-2'>
               <CircleX className='h-4 w-4 text-destructive' />
               <span className='text-destructive text-sm'>
-                Unable to load project configuration.
+                Unable to load workspace configuration.
               </span>
             </div>
           </TooltipTrigger>

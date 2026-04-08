@@ -79,7 +79,7 @@ pub async fn resolve_semantic_tool(
 
 /// Runs a semantic topic tool with the given arguments
 pub async fn run_semantic_topic_tool(
-    project_manager: &oxy::adapters::project::manager::ProjectManager,
+    workspace_manager: &oxy::adapters::workspace::manager::WorkspaceManager,
     topic_name: String,
     arguments: Option<Map<String, Value>>,
     filters: Option<SessionFilters>,
@@ -147,7 +147,7 @@ pub async fn run_semantic_topic_tool(
     };
 
     let (mut execution_context, mut rx) =
-        create_execution_context(project_manager, "mcp_semantic_query");
+        create_execution_context(workspace_manager, "mcp_semantic_query");
 
     // Apply session filters if provided
     if let Some(session_filters) = filters {
@@ -165,7 +165,7 @@ pub async fn run_semantic_topic_tool(
     // Validate and execute the semantic query
     let validated_query =
         match oxy_workflow::semantic_validator_builder::validate_semantic_query_task(
-            &project_manager.config_manager,
+            &workspace_manager.config_manager,
             &task,
         )
         .await
@@ -197,7 +197,7 @@ pub async fn run_semantic_topic_tool(
 
 /// Creates an execution context for tool execution
 fn create_execution_context(
-    project_manager: &oxy::adapters::project::manager::ProjectManager,
+    workspace_manager: &oxy::adapters::workspace::manager::WorkspaceManager,
     kind: &str,
 ) -> (
     oxy::execute::ExecutionContext,
@@ -218,7 +218,7 @@ fn create_execution_context(
 
     let renderer = Renderer::new(minijinja::context! {});
     let execution_context =
-        ExecutionContext::new(source, renderer, project_manager.clone(), tx, None, None);
+        ExecutionContext::new(source, renderer, workspace_manager.clone(), tx, None, None);
 
     (execution_context, rx)
 }

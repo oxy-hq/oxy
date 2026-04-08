@@ -139,7 +139,14 @@ export type FieldDiff = {
   changes?: string[];
 };
 
-export type AppItemKind = "task" | "display" | "tool" | "context" | "view" | "transition" | "test_case";
+export type AppItemKind =
+  | "task"
+  | "display"
+  | "tool"
+  | "context"
+  | "view"
+  | "transition"
+  | "test_case";
 
 export type AppItemDiff = {
   key: string;

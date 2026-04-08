@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::cli::commands::export_chart::export_charts_to_dir;
-use crate::server::api::middlewares::project::ProjectManagerExtractor;
+use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
 use crate::server::service::app::{
     AppResultChartDisplay, AppResultData, AppResultDisplay, AppResultMarkdownDisplay,
     AppResultTableDisplay, AppService, DisplayWithError, GetAppResultResponse, TaskKind,
@@ -95,9 +95,9 @@ fn create_error_response(error_msg: String) -> GetAppDataResponse {
 /// data visualization and dashboard components.
 #[utoipa::path(
     method(get),
-    path = "/{project_id}/apps",
+    path = "/{workspace_id}/apps",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID")
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID")
     ),
     responses(
         (status = OK, description = "Success", body = Vec<AppItem>, content_type = "application/json")
@@ -107,10 +107,10 @@ fn create_error_response(error_msg: String) -> GetAppDataResponse {
     )
 )]
 pub async fn list_apps(
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
 ) -> Result<extract::Json<Vec<AppItem>>, StatusCode> {
-    let config_manager = &project_manager.config_manager;
-    let project_path = config_manager.project_path();
+    let config_manager = &workspace_manager.config_manager;
+    let workspace_path = config_manager.workspace_path();
 
     let apps = config_manager.list_apps().await.map_err(|e| {
         tracing::error!("Failed to list apps: {}", e);
@@ -121,7 +121,7 @@ pub async fn list_apps(
         .iter()
         .filter_map(|app_path| {
             app_path
-                .strip_prefix(project_path)
+                .strip_prefix(workspace_path)
                 .ok()
                 .map(|relative_path| {
                     let name = relative_path
@@ -172,12 +172,12 @@ fn extract_sql_source_files(sql: &str) -> Vec<String> {
 }
 
 pub async fn get_displays(
-    Path((_project_id, pathb64)): Path<(Uuid, String)>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
 ) -> Result<extract::Json<GetDisplaysResponse>, StatusCode> {
     let path = decode_path(&pathb64)?;
 
-    let (displays, controls) = match get_app_displays(project_manager.clone(), &path).await {
+    let (displays, controls) = match get_app_displays(workspace_manager.clone(), &path).await {
         Ok(result) => result,
         Err(e) => {
             tracing::debug!("Failed to get app displays: {:?}", e);
@@ -187,8 +187,8 @@ pub async fn get_displays(
 
     // Collect SQL templates for execute_sql tasks so the frontend can run them
     // client-side in DuckDB WASM without a server round-trip on control changes.
-    let databases = project_manager.config_manager.list_databases();
-    let app_service = AppService::new(project_manager.clone());
+    let databases = workspace_manager.config_manager.list_databases();
+    let app_service = AppService::new(workspace_manager.clone());
     let tasks: HashMap<String, TaskClientInfo> = app_service
         .get_config(&path)
         .await
@@ -260,12 +260,12 @@ pub async fn get_displays(
 }
 
 pub async fn get_app_data(
-    Path((_project_id, pathb64)): Path<(Uuid, String)>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
 ) -> Result<extract::Json<GetAppDataResponse>, StatusCode> {
     let path = decode_path(&pathb64)?;
 
-    let mut app_service = AppService::new(project_manager.clone());
+    let mut app_service = AppService::new(workspace_manager.clone());
 
     let app_tasks = match app_service.get_tasks(&path).await {
         Ok(tasks) => tasks,
@@ -298,15 +298,15 @@ pub async fn get_app_data(
 }
 
 pub async fn get_data(
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
 ) -> impl IntoResponse {
     let path_string = match decode_path(&pathb64) {
         Ok(path) => path.to_string_lossy().to_string(),
         Err(status) => return Err((status, "Invalid path".to_string())),
     };
 
-    let state_path = project_manager
+    let state_path = workspace_manager
         .config_manager
         .resolve_state_dir()
         .await
@@ -348,23 +348,26 @@ pub async fn get_data(
 ///
 /// Search order: (1) project root, (2) each local DuckDB database's file_search_path.
 pub async fn get_source_file(
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
 ) -> impl IntoResponse {
     let path_string = match decode_path(&pathb64) {
         Ok(path) => path.to_string_lossy().to_string(),
         Err(status) => return Err((status, "Invalid path".to_string())),
     };
 
-    let project_path = project_manager.config_manager.project_path().to_path_buf();
+    let workspace_path = workspace_manager
+        .config_manager
+        .workspace_path()
+        .to_path_buf();
 
     // Build candidate search directories.
-    let mut search_dirs: Vec<PathBuf> = vec![project_path.clone()];
-    for db in project_manager.config_manager.list_databases() {
+    let mut search_dirs: Vec<PathBuf> = vec![workspace_path.clone()];
+    for db in workspace_manager.config_manager.list_databases() {
         if let DatabaseType::DuckDB(duckdb) = &db.database_type
             && let DuckDBOptions::Local { file_search_path } = &duckdb.options
         {
-            search_dirs.push(project_path.join(file_search_path));
+            search_dirs.push(workspace_path.join(file_search_path));
         }
     }
 
@@ -378,7 +381,7 @@ pub async fn get_source_file(
             candidate
                 .canonicalize()
                 .ok()
-                .filter(|p| p.starts_with(&project_path))
+                .filter(|p| p.starts_with(&workspace_path))
         })
         .ok_or_else(|| {
             (
@@ -438,14 +441,14 @@ pub struct RunAppBody {
 }
 
 pub async fn run_app(
-    Path((_project_id, pathb64)): Path<(Uuid, String)>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     body: Option<extract::Json<RunAppBody>>,
 ) -> Result<extract::Json<GetAppDataResponse>, StatusCode> {
     let path = decode_path(&pathb64)?;
     let params = body.map(|b| b.0.params).unwrap_or_default();
 
-    let mut app_service = AppService::new(project_manager.clone());
+    let mut app_service = AppService::new(workspace_manager.clone());
     let data = match app_service.run(&path, params).await {
         Ok(data) => data,
         Err(e) => {
@@ -480,9 +483,9 @@ fn get_result_cache_filename(app_path: &PathBuf) -> String {
 
 #[utoipa::path(
     method(post),
-    path = "/{project_id}/apps/{pathb64}/result",
+    path = "/{workspace_id}/apps/{pathb64}/result",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID"),
         ("pathb64" = String, Path, description = "Base64-encoded path to data app file"),
         ("refresh" = Option<bool>, Query, description = "Re-execute app instead of returning cached result (defaults to false)")
     ),
@@ -498,9 +501,9 @@ fn get_result_cache_filename(app_path: &PathBuf) -> String {
     )
 )]
 pub async fn get_app_result(
-    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     extract::Query(query): extract::Query<AppResultQuery>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
 ) -> (StatusCode, extract::Json<GetAppResultResponse>) {
     let path = match decode_path(&pathb64) {
         Ok(p) => p,
@@ -518,13 +521,13 @@ pub async fn get_app_result(
 
     // Try to load cached result if not refreshing
     if !query.refresh
-        && let Some(cached) = load_cached_result(&project_manager, &path).await
+        && let Some(cached) = load_cached_result(&workspace_manager, &path).await
     {
         return (StatusCode::OK, extract::Json(cached));
     }
 
     // Execute the app to get task results
-    let mut app_service = AppService::new(project_manager.clone());
+    let mut app_service = AppService::new(workspace_manager.clone());
 
     // Get task names first (needed for response even if execution fails)
     let task_configs = match app_service.get_tasks(&path).await {
@@ -602,7 +605,7 @@ pub async fn get_app_result(
         .collect();
 
     // Get typed displays
-    let typed_displays = match get_app_displays(project_manager.clone(), &path).await {
+    let typed_displays = match get_app_displays(workspace_manager.clone(), &path).await {
         Ok((displays, _controls)) => displays,
         Err(e) => {
             tracing::debug!("Failed to get app displays: {:?}", e);
@@ -623,7 +626,7 @@ pub async fn get_app_result(
     // Export charts to PNG if needed
     let mut chart_export_error: Option<String> = None;
     let chart_file_map: HashMap<i64, String> = if has_charts {
-        let charts_dir = project_manager
+        let charts_dir = workspace_manager
             .config_manager
             .get_charts_dir()
             .await
@@ -709,7 +712,7 @@ pub async fn get_app_result(
 
     // Only cache successful results to avoid permanently caching errors
     if execution_succeeded {
-        save_cached_result(&project_manager, &path, &response).await;
+        save_cached_result(&workspace_manager, &path, &response).await;
     }
 
     (StatusCode::OK, extract::Json(response))
@@ -756,11 +759,11 @@ fn data_container_to_output(data: &DataContainer) -> Option<TaskOutput> {
 }
 
 async fn load_cached_result(
-    project_manager: &oxy::adapters::project::manager::ProjectManager,
+    workspace_manager: &oxy::adapters::workspace::manager::WorkspaceManager,
     app_path: &PathBuf,
 ) -> Option<GetAppResultResponse> {
     let cache_name = get_result_cache_filename(app_path);
-    let results_dir = project_manager
+    let results_dir = workspace_manager
         .config_manager
         .get_app_results_dir()
         .await
@@ -786,12 +789,12 @@ async fn load_cached_result(
 }
 
 async fn save_cached_result(
-    project_manager: &oxy::adapters::project::manager::ProjectManager,
+    workspace_manager: &oxy::adapters::workspace::manager::WorkspaceManager,
     app_path: &PathBuf,
     response: &GetAppResultResponse,
 ) {
     let cache_name = get_result_cache_filename(app_path);
-    let Ok(results_dir) = project_manager.config_manager.get_app_results_dir().await else {
+    let Ok(results_dir) = workspace_manager.config_manager.get_app_results_dir().await else {
         return;
     };
     let cache_path = results_dir.join(cache_name);
@@ -826,9 +829,9 @@ async fn save_cached_result(
 /// This endpoint serves the pre-rendered chart images for visualization.
 #[utoipa::path(
     method(get),
-    path = "/{project_id}/apps/{pathb64}/charts/{chart_path}",
+    path = "/{workspace_id}/apps/{pathb64}/charts/{chart_path}",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID"),
         ("pathb64" = String, Path, description = "Base64-encoded path to data app file"),
         ("chart_path" = String, Path, description = "File path of the chart image (from display item)")
     ),
@@ -843,13 +846,13 @@ async fn save_cached_result(
     )
 )]
 pub async fn get_chart_image(
-    Path((_project_id, pathb64, chart_path)): Path<(Uuid, String, String)>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path((_workspace_id, pathb64, chart_path)): Path<(Uuid, String, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
 ) -> Result<impl IntoResponse, StatusCode> {
     let _app_path = decode_path(&pathb64)?;
 
     // Get charts directory
-    let charts_dir = project_manager
+    let charts_dir = workspace_manager
         .config_manager
         .get_charts_dir()
         .await
@@ -901,8 +904,8 @@ pub struct SaveAppBuilderRunResponse {
 ///
 /// The file is written to `generated/{run_id}.app.yml` within the project root.
 pub async fn save_app_builder_run(
-    Path((_project_id, run_id)): Path<(Uuid, String)>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path((_workspace_id, run_id)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
 ) -> Result<extract::Json<SaveAppBuilderRunResponse>, StatusCode> {
     use agentic_db::entity::agentic_run;
     use sea_orm::EntityTrait;
@@ -925,9 +928,9 @@ pub async fn save_app_builder_run(
 
     let yaml = run.answer.ok_or(StatusCode::CONFLICT)?;
 
-    // Write to {project_path}/generated/{run_id}.app.yml
-    let project_path = project_manager.config_manager.project_path();
-    let generated_dir = project_path.join("generated");
+    // Write to {workspace_path}/generated/{run_id}.app.yml
+    let workspace_path = workspace_manager.config_manager.workspace_path();
+    let generated_dir = workspace_path.join("generated");
     tokio::fs::create_dir_all(&generated_dir)
         .await
         .map_err(|e| {

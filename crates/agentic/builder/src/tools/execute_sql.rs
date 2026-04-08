@@ -39,7 +39,7 @@ pub fn execute_sql_def() -> ToolDef {
 }
 
 pub async fn execute_execute_sql(
-    project_root: &Path,
+    workspace_root: &Path,
     params: &Value,
     secrets_manager: Option<&oxy::adapters::secrets::SecretsManager>,
 ) -> Result<Value, ToolError> {
@@ -49,7 +49,7 @@ pub async fn execute_execute_sql(
 
     // Build ConfigManager from project root (same pattern as validate_project).
     let config_manager = oxy::config::ConfigBuilder::new()
-        .with_project_path(project_root)
+        .with_workspace_path(workspace_root)
         .map_err(|e| ToolError::Execution(format!("config error: {e}")))?
         .build()
         .await

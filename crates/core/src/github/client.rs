@@ -57,6 +57,76 @@ impl GitHubClient {
         Ok(())
     }
 
+    /// Returns the GitHub login (username) of the authenticated user.
+    /// Works with both PATs and installation tokens.
+    pub async fn get_current_user(&self) -> Result<String, OxyError> {
+        let url = format!("{}/user", self.base_url);
+        let response =
+            self.client.get(&url).send().await.map_err(|e| {
+                OxyError::RuntimeError(format!("Failed to fetch current user: {e}"))
+            })?;
+
+        if !response.status().is_success() {
+            return Err(OxyError::RuntimeError(format!(
+                "GitHub API error fetching user: {} - {}",
+                response.status(),
+                response.text().await.unwrap_or_default()
+            )));
+        }
+
+        let user: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to parse user response: {e}")))?;
+
+        let login = user["login"]
+            .as_str()
+            .ok_or_else(|| OxyError::RuntimeError("No login field in user response".to_string()))?
+            .to_string();
+
+        Ok(login)
+    }
+
+    /// List repositories accessible to the authenticated user via a PAT.
+    /// Uses `/user/repos` instead of the installation endpoint.
+    pub async fn list_user_repositories(&self) -> Result<Vec<GitHubRepository>, OxyError> {
+        let mut all_repos = Vec::new();
+        let mut page = 1u32;
+        let per_page = 100u32;
+
+        loop {
+            let url = format!(
+                "{}/user/repos?sort=updated&per_page={}&page={}",
+                self.base_url, per_page, page
+            );
+            let response = self.client.get(&url).send().await.map_err(|e| {
+                OxyError::RuntimeError(format!("Failed to fetch user repositories: {e}"))
+            })?;
+
+            if !response.status().is_success() {
+                return Err(OxyError::RuntimeError(format!(
+                    "GitHub API error: {} - {}",
+                    response.status(),
+                    response.text().await.unwrap_or_default()
+                )));
+            }
+
+            let repos: Vec<GitHubRepository> = response.json().await.map_err(|e| {
+                OxyError::RuntimeError(format!("Failed to parse repositories response: {e}"))
+            })?;
+
+            let is_last_page = repos.len() < per_page as usize;
+            all_repos.extend(repos);
+
+            if is_last_page {
+                break;
+            }
+            page += 1;
+        }
+
+        Ok(all_repos)
+    }
+
     pub async fn list_repositories(&self) -> Result<Vec<GitHubRepository>, OxyError> {
         let mut all_repos = Vec::new();
         let mut page = 1;

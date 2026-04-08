@@ -2,7 +2,7 @@ use entity::prelude::Users;
 use entity::users;
 use oxy::database::{client::establish_connection, filters::UserQueryFilterExt};
 use oxy_shared::errors::OxyError;
-use sea_orm::{ActiveValue, DbErr, EntityTrait, Set, prelude::*};
+use sea_orm::{ActiveValue, DbErr, EntityTrait, PaginatorTrait, Set, prelude::*};
 use uuid::Uuid;
 
 use crate::types::{AuthenticatedUser, Identity};
@@ -22,6 +22,24 @@ pub fn is_admin_email(admins: &[String], email: &str) -> bool {
     email == LOCAL_GUEST_EMAIL || admins.is_empty() || admins.iter().any(|a| a == email)
 }
 
+/// Returns true if this email should unconditionally have Admin role.
+///
+/// Covers:
+/// - The built-in local guest (always admin in no-auth mode).
+/// - Any email listed in the `OXY_ADMINS` env var (comma-separated).
+///   Setting `OXY_ADMINS` and re-logging in is the bootstrap path for
+///   granting admin access when no admin exists yet.
+pub fn should_be_admin(email: &str) -> bool {
+    if email == LOCAL_GUEST_EMAIL {
+        return true;
+    }
+    let oxy_admins = std::env::var("OXY_ADMINS").unwrap_or_default();
+    oxy_admins
+        .split(',')
+        .map(|s| s.trim())
+        .any(|a| !a.is_empty() && a == email)
+}
+
 pub struct UserService;
 
 impl UserService {
@@ -35,23 +53,40 @@ impl UserService {
             .await
             .map_err(|e| OxyError::DBError(format!("Failed to query user: {e}")))?
         {
-            // Ensure the local guest user always has Admin role so the admin
-            // middleware and UI correctly identify them as administrator.
-            if existing_user.email == LOCAL_GUEST_EMAIL && existing_user.role != UserRole::Admin {
+            // Ensure users that should be admin (local guest or listed in OXY_ADMINS)
+            // always have at least Admin role in the DB. This runs on every login so that
+            // setting OXY_ADMINS and re-logging in is enough to bootstrap an admin.
+            // Never demote an existing Owner.
+            if existing_user.role == UserRole::Member && should_be_admin(&existing_user.email) {
                 let mut active: users::ActiveModel = existing_user.into();
                 active.role = Set(UserRole::Admin);
-                let updated = active
-                    .update(&connection)
-                    .await
-                    .map_err(|e| OxyError::DBError(format!("Failed to promote local user: {e}")))?;
+                let updated = active.update(&connection).await.map_err(|e| {
+                    OxyError::DBError(format!("Failed to promote user to admin: {e}"))
+                })?;
                 return Ok(updated.into());
             }
             return Ok(existing_user.into());
         }
 
-        // User not found, try to create
-        // The local guest user is always created with Admin role.
-        let initial_role = if identity.email == LOCAL_GUEST_EMAIL {
+        // User not found, try to create.
+        // The local guest is always Admin. The very first real user to register
+        // becomes Owner so there is always a bootstrap owner without needing
+        // to pre-configure one in config.yml.
+        //
+        // We exclude the built-in LOCAL_GUEST_EMAIL from the count so that
+        // transitioning from no-auth → auth mode still produces an owner:
+        // the guest user pre-exists in the DB, but it is synthetic and should
+        // not prevent the first real user from getting the Owner role.
+        let existing_count = Users::find()
+            .filter(users::Column::Email.ne(LOCAL_GUEST_EMAIL))
+            .count(&connection)
+            .await
+            .unwrap_or(1); // fail-safe: don't grant owner if the count query errors
+        // The very first real user becomes Owner (top-level, can grant admin).
+        // OXY_ADMINS users get Admin (recovery path, not ownership).
+        let initial_role = if existing_count == 0 {
+            UserRole::Owner
+        } else if should_be_admin(&identity.email) {
             UserRole::Admin
         } else {
             UserRole::Member

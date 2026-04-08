@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useSwitchProjectBranch } from "@/hooks/api/projects/useProjects";
-import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { useSwitchWorkspaceBranch } from "@/hooks/api/workspaces/useWorkspaces";
+import useCurrentWorkspaceBranch from "@/hooks/useCurrentWorkspaceBranch";
 import { FileService } from "@/services/api";
 import useIdeBranch from "@/stores/useIdeBranch";
 import queryKeys from "../queryKey";
@@ -14,10 +14,10 @@ import queryKeys from "../queryKey";
  * seamlessly.
  */
 export function useSaveToNewBranch() {
-  const { project, branchName: originalBranch } = useCurrentProjectBranch();
+  const { workspace, branchName: originalBranch } = useCurrentWorkspaceBranch();
   const queryClient = useQueryClient();
   const { setCurrentBranch } = useIdeBranch();
-  const switchBranch = useSwitchProjectBranch();
+  const switchBranch = useSwitchWorkspaceBranch();
 
   const saveToNewBranch = async (
     pathb64: string,
@@ -30,23 +30,23 @@ export function useSaveToNewBranch() {
     const newBranch = `edit/${timestamp}`;
 
     // 1. Create the git worktree for the new branch
-    await switchBranch.mutateAsync({ projectId: project.id, branchName: newBranch });
+    await switchBranch.mutateAsync({ workspaceId: workspace.id, branchName: newBranch });
 
     // 2. Save file — if this fails, roll back the IDE to the original branch
     try {
-      await FileService.saveFile(project.id, pathb64, content, newBranch);
+      await FileService.saveFile(workspace.id, pathb64, content, newBranch);
     } catch (err) {
-      setCurrentBranch(project.id, originalBranch);
+      setCurrentBranch(workspace.id, originalBranch);
       throw err;
     }
 
     // 3. Invalidate the file cache for the new branch so it reloads cleanly
     queryClient.removeQueries({
-      queryKey: queryKeys.file.get(project.id, newBranch, pathb64)
+      queryKey: queryKeys.file.get(workspace.id, newBranch, pathb64)
     });
 
     // 4. Switch the IDE to the new branch — triggers a re-render everywhere
-    setCurrentBranch(project.id, newBranch);
+    setCurrentBranch(workspace.id, newBranch);
 
     toast.success(`Saved to "${newBranch}"`);
     onSuccess?.();

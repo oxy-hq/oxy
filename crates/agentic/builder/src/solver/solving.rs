@@ -70,7 +70,7 @@ impl BuilderSolver {
         let exchanges = Arc::new(Mutex::new(prior_tool_exchanges));
 
         let test_runner = self.test_runner.clone();
-        let project_root = self.project_root.clone();
+        let workspace_root = self.workspace_root.clone();
         let event_tx = self.event_tx.clone();
         let human_input = self.human_input.clone();
         let secrets_manager = self.secrets_manager.clone();
@@ -83,7 +83,7 @@ impl BuilderSolver {
                 current_initial,
                 &tools,
                 move |name, params| {
-                    let project_root = project_root.clone();
+                    let workspace_root = workspace_root.clone();
                     let event_tx = event_tx.clone();
                     let test_runner = test_runner.clone();
                     let human_input = human_input.clone();
@@ -93,7 +93,7 @@ impl BuilderSolver {
                         let result = dispatch_tool(
                             &name,
                             &params,
-                            &project_root,
+                            &workspace_root,
                             &event_tx,
                             test_runner,
                             human_input,
@@ -344,10 +344,10 @@ impl BuilderSolver {
                         if answer_lower.contains("accept") {
                             if let Some(change) = change.as_ref() {
                                 let apply_result = if change.delete {
-                                    delete_file(&self.project_root, &change.file_path).await
+                                    delete_file(&self.workspace_root, &change.file_path).await
                                 } else {
                                     apply_change(
-                                        &self.project_root,
+                                        &self.workspace_root,
                                         &change.file_path,
                                         &change.new_content,
                                     )

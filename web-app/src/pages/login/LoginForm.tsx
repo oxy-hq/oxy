@@ -10,6 +10,7 @@ import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRequestMagicLink } from "@/hooks/auth/useMagicLink";
 import { cn } from "@/libs/shadcn/utils";
+import LoginWithGitHubButton from "./LoginWithGitHubButton";
 import LoginWithGoogleButton from "./LoginWithGoogleButton";
 import LoginWithOktaButton from "./LoginWithOktaButton";
 
@@ -134,7 +135,7 @@ const Divider = ({ label }: { label: string }) => (
 const LoginForm = () => {
   const { authConfig } = useAuth();
 
-  const hasOAuth = authConfig.google || authConfig.okta;
+  const hasOAuth = authConfig.google || authConfig.okta || authConfig.github;
   const hasMagicLink = authConfig.magic_link;
 
   return (
@@ -149,6 +150,9 @@ const LoginForm = () => {
 
         {hasOAuth && hasMagicLink && <Divider label='or' />}
 
+        {authConfig.github && (
+          <LoginWithGitHubButton disabled={false} clientId={authConfig.github.client_id} />
+        )}
         {authConfig.google && (
           <LoginWithGoogleButton disabled={false} clientId={authConfig.google.client_id} />
         )}

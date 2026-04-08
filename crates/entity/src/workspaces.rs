@@ -3,42 +3,70 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, EnumIter, DeriveActiveEnum)]
+#[sea_orm(rs_type = "String", db_type = "String(StringLen::N(20))")]
+pub enum WorkspaceProvider {
+    #[sea_orm(string_value = "github")]
+    Github,
+    #[sea_orm(string_value = "gitlab")]
+    Gitlab,
+    #[sea_orm(string_value = "bitbucket")]
+    Bitbucket,
+}
+
+impl WorkspaceProvider {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            WorkspaceProvider::Github => "github",
+            WorkspaceProvider::Gitlab => "gitlab",
+            WorkspaceProvider::Bitbucket => "bitbucket",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Result<Self, String> {
+        match s {
+            "github" => Ok(WorkspaceProvider::Github),
+            "gitlab" => Ok(WorkspaceProvider::Gitlab),
+            "bitbucket" => Ok(WorkspaceProvider::Bitbucket),
+            _ => Err(format!("Invalid workspace provider: {s}")),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "workspaces")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
     pub name: String,
+    pub workspace_id: Uuid,
+    pub project_repo_id: Option<Uuid>,
+    pub active_branch_id: Uuid,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
+    /// Filesystem path to the workspace directory (contains config.yml).
+    pub path: Option<String>,
+    /// Last time this workspace was opened in the UI.
+    pub last_opened_at: Option<DateTimeWithTimeZone>,
+    /// User who created this workspace. Null for workspaces created before this field was added.
+    pub created_by: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(has_many = "super::workspace_users::Entity")]
-    WorkspaceUsers,
-    #[sea_orm(has_many = "super::projects::Entity")]
-    Projects,
+    #[sea_orm(
+        belongs_to = "super::workspace_repos::Entity",
+        from = "Column::ProjectRepoId",
+        to = "super::workspace_repos::Column::Id",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    WorkspaceRepos,
 }
 
-impl Related<super::workspace_users::Entity> for Entity {
+impl Related<super::workspace_repos::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::WorkspaceUsers.def()
-    }
-}
-
-impl Related<super::projects::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Projects.def()
-    }
-}
-
-impl Related<super::users::Entity> for Entity {
-    fn to() -> RelationDef {
-        super::workspace_users::Relation::Users.def()
-    }
-    fn via() -> Option<RelationDef> {
-        Some(super::workspace_users::Relation::Workspaces.def().rev())
+        Relation::WorkspaceRepos.def()
     }
 }
 

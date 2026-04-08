@@ -85,7 +85,7 @@ pub struct MetricDetailQuery {
 /// - Usage breakdown by context type (SQL, semantic query, question, response)
 #[utoipa::path(
     get,
-    path = "/api/{project_id}/metrics/analytics",
+    path = "/api/{workspace_id}/metrics/analytics",
     params(MetricsAnalyticsQuery),
     responses(
         (status = 200, description = "Metric analytics data", body = MetricAnalyticsResponse),
@@ -93,7 +93,7 @@ pub struct MetricDetailQuery {
     )
 )]
 pub async fn get_analytics(
-    Path(_project_id): Path<Uuid>,
+    Path(_workspace_id): Path<Uuid>,
     Query(params): Query<MetricsAnalyticsQuery>,
 ) -> Result<Json<MetricAnalyticsResponse>, MetricsError> {
     let storage = MetricStorage::from_env();
@@ -111,7 +111,7 @@ pub async fn get_analytics(
 /// Returns a paginated list of metrics sorted by usage count
 #[utoipa::path(
     get,
-    path = "/api/{project_id}/metrics/list",
+    path = "/api/{workspace_id}/metrics/list",
     params(MetricsListQuery),
     responses(
         (status = 200, description = "Paginated metrics list", body = MetricsListResponse),
@@ -119,7 +119,7 @@ pub async fn get_analytics(
     )
 )]
 pub async fn get_metrics_list(
-    Path(_project_id): Path<Uuid>,
+    Path(_workspace_id): Path<Uuid>,
     Query(params): Query<MetricsListQuery>,
 ) -> Result<Json<MetricsListResponse>, MetricsError> {
     let storage = MetricStorage::from_env();
@@ -141,7 +141,7 @@ pub async fn get_metrics_list(
 /// - Usage trend over time
 #[utoipa::path(
     get,
-    path = "/api/{project_id}/metrics/{metric_name}",
+    path = "/api/{workspace_id}/metrics/{metric_name}",
     params(MetricDetailQuery),
     responses(
         (status = 200, description = "Metric detail data", body = MetricDetailResponse),
@@ -150,7 +150,7 @@ pub async fn get_metrics_list(
     )
 )]
 pub async fn get_metric_detail(
-    Path((_project_id, metric_name)): Path<(Uuid, String)>,
+    Path((_workspace_id, metric_name)): Path<(Uuid, String)>,
     Query(params): Query<MetricDetailQuery>,
 ) -> Result<Json<MetricDetailResponse>, MetricsError> {
     let storage = MetricStorage::from_env();

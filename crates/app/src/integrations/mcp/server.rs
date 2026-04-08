@@ -13,7 +13,9 @@ use rmcp::{
 use uuid::Uuid;
 
 // Internal crate imports
-use oxy::adapters::{project::builder::ProjectBuilder, runs::RunsManager, secrets::SecretsManager};
+use oxy::adapters::{
+    runs::RunsManager, secrets::SecretsManager, workspace::builder::WorkspaceBuilder,
+};
 use oxy_shared::errors::OxyError;
 
 use super::connections::extract_connection_overrides;
@@ -72,11 +74,11 @@ impl ServerHandler for OxyMcpServer {
         let context = ToolExecutionContext::new()
             .with_session_filters(extract_session_filters(
                 Some(&ctx.meta.0),
-                &self.project_manager.config_manager,
+                &self.workspace_manager.config_manager,
             )?)
             .with_connection_overrides(extract_connection_overrides(
                 Some(&ctx.meta.0),
-                &self.project_manager.config_manager,
+                &self.workspace_manager.config_manager,
             )?)
             .with_meta_variables(extract_meta_variables(Some(&ctx.meta.0))?);
 
@@ -84,7 +86,7 @@ impl ServerHandler for OxyMcpServer {
         let executor = oxy_tool.tool_type.executor();
         executor
             .execute(
-                &self.project_manager,
+                &self.workspace_manager,
                 oxy_tool.name.clone(),
                 params.arguments,
                 context,
@@ -99,9 +101,9 @@ impl ServerHandler for OxyMcpServer {
 
 impl OxyMcpServer {
     /// Creates a new OxyMcpServer instance
-    pub async fn new(project_path: PathBuf) -> Result<Self, OxyError> {
-        let project_manager = ProjectBuilder::new(Uuid::nil())
-            .with_project_path(&project_path)
+    pub async fn new(workspace_path: PathBuf) -> Result<Self, OxyError> {
+        let workspace_manager = WorkspaceBuilder::new(Uuid::nil())
+            .with_workspace_path(&workspace_path)
             .await
             .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create config manager: {e}")))?
             .with_secrets_manager(SecretsManager::from_environment().map_err(|e| {
@@ -120,20 +122,20 @@ impl OxyMcpServer {
             .await
             .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create config manager: {e}")))?;
 
-        let config_manager = project_manager.config_manager.clone();
+        let config_manager = workspace_manager.config_manager.clone();
 
         let tools = get_mcp_tools(config_manager).await?;
 
         Ok(Self {
             tools,
-            project_manager,
+            workspace_manager,
         })
     }
 
     /// Sets up the working directory for tool execution
     pub fn setup_working_directory(&self) -> Result<(), rmcp::ErrorData> {
-        let config = self.project_manager.config_manager.get_config();
-        std::env::set_current_dir(&config.project_path).map_err(|e| {
+        let config = self.workspace_manager.config_manager.get_config();
+        std::env::set_current_dir(&config.workspace_path).map_err(|e| {
             rmcp::ErrorData::internal_error(format!("Failed to set current directory: {e}"), None)
         })
     }

@@ -1,11 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { FileService } from "@/services/api";
-import useCurrentProject from "@/stores/useCurrentProject";
+import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 import useIdeBranch from "@/stores/useIdeBranch";
 import queryKeys from "../queryKey";
 
 export default function useDiffSummary(enabled = true) {
-  const { project } = useCurrentProject();
+  const { workspace: project } = useCurrentWorkspace();
   const { getCurrentBranch } = useIdeBranch();
 
   const activeBranch = project?.active_branch?.name ?? "";

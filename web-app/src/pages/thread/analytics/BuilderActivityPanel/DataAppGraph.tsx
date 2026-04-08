@@ -15,7 +15,10 @@ export const DataAppGraph = ({
 }) => {
   const taskDiffs = useMemo(() => diffAppTasks(oldApp, newApp), [oldApp, newApp]);
   const displayDiffs = useMemo(() => diffAppDisplays(oldApp, newApp), [oldApp, newApp]);
-  const changedTasks = useMemo(() => taskDiffs.filter((d) => d.status !== "unchanged"), [taskDiffs]);
+  const changedTasks = useMemo(
+    () => taskDiffs.filter((d) => d.status !== "unchanged"),
+    [taskDiffs]
+  );
   const changedDisplays = useMemo(
     () => displayDiffs.filter((d) => d.status !== "unchanged"),
     [displayDiffs]

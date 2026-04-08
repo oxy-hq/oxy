@@ -103,8 +103,8 @@ impl A2aConfig {
     ///
     /// This performs additional validation beyond what garde provides:
     /// - Ensures agent names are unique
-    /// - Validates agent file paths exist (when project_path is provided)
-    pub fn validate_config(&self, project_path: Option<&PathBuf>) -> Result<(), OxyError> {
+    /// - Validates agent file paths exist (when workspace_path is provided)
+    pub fn validate_config(&self, workspace_path: Option<&PathBuf>) -> Result<(), OxyError> {
         // Create a dummy ValidationContext for garde validation
         // A2A config doesn't need the full Oxy config for basic validation
         let dummy_config = oxy::config::model::Config {
@@ -113,12 +113,12 @@ impl A2aConfig {
             models: Vec::new(),
             databases: Vec::new(),
             builder_agent: None,
-            project_path: project_path.cloned().unwrap_or_default(),
+            workspace_path: workspace_path.cloned().unwrap_or_default(),
             integrations: Vec::new(),
             mcp: None,
             a2a: None,
             protected_branches: None,
-            admins: Vec::new(),
+            repositories: vec![],
         };
         let context = ValidationContext {
             config: dummy_config,
@@ -141,8 +141,8 @@ impl A2aConfig {
             }
         }
 
-        // Validate agent file paths exist (if project_path provided)
-        if let Some(base_path) = project_path {
+        // Validate agent file paths exist (if workspace_path provided)
+        if let Some(base_path) = workspace_path {
             for agent in &self.agents {
                 let agent_path = base_path.join(&agent.r#ref);
                 if !agent_path.exists() {
@@ -161,13 +161,13 @@ impl A2aConfig {
 
 impl A2aAgentConfig {
     /// Get the full path to the agent config file
-    pub fn resolve_path(&self, project_path: &PathBuf) -> PathBuf {
-        project_path.join(&self.r#ref)
+    pub fn resolve_path(&self, workspace_path: &PathBuf) -> PathBuf {
+        workspace_path.join(&self.r#ref)
     }
 
     /// Check if the agent config file exists
-    pub fn exists(&self, project_path: &PathBuf) -> bool {
-        self.resolve_path(project_path).exists()
+    pub fn exists(&self, workspace_path: &PathBuf) -> bool {
+        self.resolve_path(workspace_path).exists()
     }
 }
 

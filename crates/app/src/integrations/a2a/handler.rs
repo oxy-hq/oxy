@@ -23,7 +23,7 @@
 //!     "sales-assistant".to_string(),
 //!     config.clone(),
 //!     storage.clone(),
-//!     project_manager.clone(),
+//!     workspace_manager.clone(),
 //! );
 //!
 //! // Handler will automatically load and execute sales-assistant agent
@@ -45,7 +45,7 @@ use uuid::Uuid;
 
 use crate::server::service::api_key::ApiKeyConfig;
 use oxy::config::constants::DEFAULT_API_KEY_HEADER;
-use oxy::{adapters::project::manager::ProjectManager, config::model::Config};
+use oxy::{adapters::workspace::manager::WorkspaceManager, config::model::Config};
 use oxy_auth::authenticate_header_with_config;
 
 use super::agent_card::AgentCardService;
@@ -63,7 +63,7 @@ use oxy::config::a2a_config::A2aConfig;
 /// - `agent_name`: The name of the Oxy agent this handler executes
 /// - `config`: Global Oxy configuration (includes A2A config)
 /// - `storage`: Agent-scoped task storage for persistence
-/// - `project_manager`: Project manager for accessing agent configs and execution context
+/// - `workspace_manager`: Project manager for accessing agent configs and execution context
 /// - `agent_card_service`: Service for generating and caching agent cards
 pub struct OxyA2aHandler {
     /// The name of the agent this handler is scoped to
@@ -75,7 +75,7 @@ pub struct OxyA2aHandler {
     /// Database connection for auth and auditing
     db: Arc<DatabaseConnection>,
     /// Project manager for agent execution
-    project_manager: Arc<ProjectManager>,
+    workspace_manager: Arc<WorkspaceManager>,
     /// Agent card service for generating agent cards
     agent_card_service: Arc<AgentCardService>,
     /// Base URL for constructing endpoint URLs in agent cards
@@ -91,7 +91,7 @@ impl OxyA2aHandler {
     /// * `config` - Global Oxy configuration
     /// * `storage` - Agent-scoped task storage
     /// * `db` - Database connection for auth and auditing
-    /// * `project_manager` - Project manager for agent execution
+    /// * `workspace_manager` - Project manager for agent execution
     /// * `agent_card_service` - Service for generating agent cards
     /// * `base_url` - Base URL for constructing endpoint URLs (e.g., "https://api.example.com")
     ///
@@ -103,7 +103,7 @@ impl OxyA2aHandler {
         config: Arc<Config>,
         storage: Arc<OxyTaskStorage>,
         db: Arc<DatabaseConnection>,
-        project_manager: Arc<ProjectManager>,
+        workspace_manager: Arc<WorkspaceManager>,
         agent_card_service: Arc<AgentCardService>,
         base_url: String,
     ) -> Self {
@@ -112,7 +112,7 @@ impl OxyA2aHandler {
             config,
             storage,
             db,
-            project_manager,
+            workspace_manager,
             agent_card_service,
             base_url,
         }
@@ -303,7 +303,7 @@ impl A2aHandler for OxyA2aHandler {
             &self.agent_name,
             agent_ref,
             message,
-            &self.project_manager,
+            &self.workspace_manager,
         )
         .await?;
 
@@ -337,7 +337,7 @@ impl A2aHandler for OxyA2aHandler {
             &self.agent_name,
             agent_ref,
             message,
-            &self.project_manager,
+            &self.workspace_manager,
             self.storage.clone(),
             metadata,
         )

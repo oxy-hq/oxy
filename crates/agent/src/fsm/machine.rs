@@ -7,7 +7,7 @@ use crate::fsm::{
     config::{AgenticConfig, AgenticInput},
     state::MachineContext,
 };
-use oxy::adapters::{openai::OpenAIAdapter, project::manager::ProjectManager};
+use oxy::adapters::{openai::OpenAIAdapter, workspace::manager::WorkspaceManager};
 use oxy::execute::{
     Executable, ExecutionContext,
     builders::fsm::{FSM, Machine},
@@ -25,10 +25,10 @@ pub struct Agent<S> {
 
 impl<S> Agent<S> {
     pub async fn new(
-        project_manager: ProjectManager,
+        workspace_manager: WorkspaceManager,
         config: AgenticConfig,
     ) -> Result<Self, OxyError> {
-        let adapter = OpenAIAdapter::from_config(project_manager, &config.model).await?;
+        let adapter = OpenAIAdapter::from_config(workspace_manager, &config.model).await?;
         Ok(Self {
             config,
             adapter,
@@ -66,7 +66,7 @@ impl Machine<AgenticInput> for Agent<MachineContext> {
         input: AgenticInput,
     ) -> Result<Self::State, OxyError> {
         Ok(Self::State::from_conversation(
-            execution_context.project.clone(),
+            execution_context.workspace.clone(),
             input.context_id.to_string(),
             input.prompt.to_string(),
             input.trace.into_iter().collect(),
@@ -91,7 +91,7 @@ pub async fn launch_agentic_workflow<P: AsRef<Path>>(
     input: AgenticInput,
 ) -> Result<OutputContainer, OxyError> {
     let core_agentic_config = execution_context
-        .project
+        .workspace
         .config_manager
         .resolve_agentic_workflow(agent_ref)
         .await?;
@@ -106,7 +106,7 @@ pub async fn launch_agentic_workflow<P: AsRef<Path>>(
     agentic_config.name = core_agentic_config.name;
 
     let machine =
-        Agent::<MachineContext>::new(execution_context.project.clone(), agentic_config).await?;
+        Agent::<MachineContext>::new(execution_context.workspace.clone(), agentic_config).await?;
     let output = FSM::new(machine).execute(execution_context, input).await?;
     Ok(output.into())
 }
@@ -114,8 +114,8 @@ pub async fn launch_agentic_workflow<P: AsRef<Path>>(
 async fn build_global_context(
     execution_context: &ExecutionContext,
 ) -> Result<minijinja::Value, OxyError> {
-    let config = execution_context.project.config_manager.clone();
-    let secrets_manager = execution_context.project.secrets_manager.clone();
+    let config = execution_context.workspace.config_manager.clone();
+    let secrets_manager = execution_context.workspace.secrets_manager.clone();
     let databases = DatabasesContext::new(config.clone(), secrets_manager.clone());
     let semantic_manager = SemanticManager::from_config(config, secrets_manager, false).await?;
     let semantic_contexts = semantic_manager.get_semantic_variables_contexts().await?;

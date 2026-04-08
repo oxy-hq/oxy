@@ -1,7 +1,7 @@
 import LoadingSkeleton from "@/components/ui/LoadingSkeleton";
 import { Label } from "@/components/ui/shadcn/label";
 import { useAuth } from "@/contexts/AuthContext";
-import useRevisionInfo from "@/hooks/api/projects/useRevisionInfo";
+import useRevisionInfo from "@/hooks/api/workspaces/useRevisionInfo";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import DiffSummary from "@/pages/ide/Header/BranchSettings/BranchInfo/DiffSummary";
 import { SyncStatusBadge } from "@/pages/ide/Header/BranchSettings/SyncStatusBadge";

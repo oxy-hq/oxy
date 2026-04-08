@@ -76,7 +76,7 @@ impl ParamMapper<EvalInput, Vec<(usize, EvalConfig, EvalTarget)>> for EvalMapper
                     || workflow_ref.ends_with("workflow.yml")
                     || workflow_ref.ends_with("automation.yml") =>
             {
-                let config_manager = &execution_context.project.config_manager;
+                let config_manager = &execution_context.workspace.config_manager;
                 let workflow = config_manager.resolve_workflow(&target_ref).await?;
                 Ok(workflow
                     .tests
@@ -103,7 +103,7 @@ impl ParamMapper<EvalInput, Vec<(usize, EvalConfig, EvalTarget)>> for EvalMapper
                     .collect())
             }
             agent_ref if agent_ref.ends_with("agent.yml") => {
-                let config_manager = &execution_context.project.config_manager;
+                let config_manager = &execution_context.workspace.config_manager;
                 let agent = config_manager.resolve_agent(&target_ref).await?;
                 agent
                     .tests
@@ -139,7 +139,7 @@ impl ParamMapper<EvalInput, Vec<(usize, EvalConfig, EvalTarget)>> for EvalMapper
                     .try_collect()
             }
             test_ref if test_ref.ends_with("test.yml") => {
-                let config_manager = &execution_context.project.config_manager;
+                let config_manager = &execution_context.workspace.config_manager;
                 let test_config = config_manager.resolve_test(&target_ref).await?;
                 let resolved_target = test_config.target.ok_or_else(|| {
                     OxyError::ConfigurationError(format!(

@@ -71,7 +71,7 @@ pub struct Config {
     #[serde(skip)]
     #[garde(skip)]
     #[schemars(skip)]
-    pub project_path: PathBuf,
+    pub workspace_path: PathBuf,
 
     #[serde(default)]
     #[garde(skip)]
@@ -105,12 +105,39 @@ pub struct Config {
     #[garde(skip)]
     pub protected_branches: Option<Vec<String>>,
 
-    /// List of email addresses that are granted admin access in local (non-cloud) mode.
-    /// If empty or not set, all users are treated as admin (permissive default for single-user local installs).
-    /// The built-in local guest user (<local-user@example.com>) is always admin regardless of this list.
-    #[serde(default)]
+    /// External repositories (dbt, LookML, data models, etc.) to surface in the IDE.
+    ///
+    /// Example config.yml:
+    ///   repositories:
+    ///     - name: dbt-models
+    ///       path: ../my-dbt-project
+    ///     - name: lookml
+    ///       git_url: https://github.com/acme/lookml-repo
+    ///       branch: main
+    #[serde(default, skip_serializing_if = "Vec::is_empty", alias = "data_repos")]
     #[garde(skip)]
-    pub admins: Vec<String>,
+    pub repositories: Vec<Repository>,
+}
+
+/// An external repository (dbt, LookML, data models, etc.) linked to an Oxy project.
+/// Either `path` or `git_url` must be set.
+#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Default)]
+pub struct Repository {
+    /// Display name used as the path prefix `@{name}/` in the IDE.
+    pub name: String,
+    /// Local filesystem path, relative to the project root or absolute.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// Remote git URL to clone. Repo is cloned to `.repositories/{name}/`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git_url: Option<String>,
+    /// Branch to check out when cloning from `git_url`. Defaults to HEAD.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    /// GitHub namespace UUID used to get a fresh installation token for push.
+    /// Set when the repo was linked via the GitHub App.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git_namespace_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]

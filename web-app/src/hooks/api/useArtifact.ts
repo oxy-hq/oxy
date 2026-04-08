@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { ArtifactService } from "@/services/api";
-import useCurrentProjectBranch from "../useCurrentProjectBranch";
 import queryKeys from "./queryKey";
 
 export const useArtifact = (id: string) => {

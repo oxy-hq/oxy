@@ -69,8 +69,8 @@ impl Executable<SQLInput> for SQLExecutable {
                 finished: true,
             })
             .await?;
-        let config_manager = &execution_context.project.config_manager;
-        let secrets_manager = &execution_context.project.secrets_manager;
+        let config_manager = &execution_context.workspace.config_manager;
+        let secrets_manager = &execution_context.workspace.secrets_manager;
         let mut result: Result<Table, OxyError> = async {
             let connector = Connector::from_database(
                 &input.database,
@@ -108,7 +108,7 @@ impl Executable<SQLInput> for SQLExecutable {
                         .join("tables")
                         .join(format!("{}.parquet", file_name));
                     let state_dir = execution_context
-                        .project
+                        .workspace
                         .config_manager
                         .resolve_state_dir()
                         .await?;

@@ -22,7 +22,7 @@ use crate::{
 
 pub struct BuilderSolver {
     pub(crate) client: LlmClient,
-    pub(crate) project_root: PathBuf,
+    pub(crate) workspace_root: PathBuf,
     pub(crate) event_tx: Option<EventStream<BuilderEvent>>,
     pub(crate) test_runner: Option<Arc<dyn BuilderTestRunner>>,
     pub(crate) human_input: HumanInputHandle,
@@ -32,10 +32,10 @@ pub struct BuilderSolver {
 }
 
 impl BuilderSolver {
-    pub fn new(client: LlmClient, project_root: PathBuf) -> Self {
+    pub fn new(client: LlmClient, workspace_root: PathBuf) -> Self {
         Self {
             client,
-            project_root,
+            workspace_root,
             event_tx: None,
             test_runner: None,
             human_input: Arc::new(DeferredInputProvider),
@@ -66,7 +66,7 @@ impl BuilderSolver {
     }
 
     pub(crate) fn build_solving_system_prompt(&self) -> String {
-        let root = self.project_root.to_string_lossy();
+        let root = self.workspace_root.to_string_lossy();
         format!(
             r#"You are a copilot for an Oxy data project located at: {root}
 
@@ -205,7 +205,7 @@ pub(crate) async fn emit_domain(tx: &Option<EventStream<BuilderEvent>>, event: B
 pub(crate) async fn dispatch_tool(
     name: &str,
     params: &serde_json::Value,
-    project_root: &Path,
+    workspace_root: &Path,
     event_tx: &Option<EventStream<BuilderEvent>>,
     test_runner: Option<Arc<dyn BuilderTestRunner>>,
     human_input: HumanInputHandle,
@@ -213,7 +213,7 @@ pub(crate) async fn dispatch_tool(
 ) -> Result<serde_json::Value, ToolError> {
     match name {
         "search_files" => {
-            let r = execute_search_files(project_root, params);
+            let r = execute_search_files(workspace_root, params);
             if let Ok(ref v) = r {
                 let count = v["count"].as_u64().unwrap_or(0);
                 emit_domain(
@@ -231,7 +231,7 @@ pub(crate) async fn dispatch_tool(
             r
         }
         "read_file" => {
-            let r = execute_read_file(project_root, params).await;
+            let r = execute_read_file(workspace_root, params).await;
             if let Ok(ref v) = r {
                 let lines = v["total_lines"].as_u64().unwrap_or(0);
                 emit_domain(
@@ -249,7 +249,7 @@ pub(crate) async fn dispatch_tool(
             r
         }
         "search_text" => {
-            let r = execute_search_text(project_root, params).await;
+            let r = execute_search_text(workspace_root, params).await;
             if let Ok(ref v) = r {
                 let count = v["count"].as_u64().unwrap_or(0);
                 emit_domain(
@@ -267,7 +267,7 @@ pub(crate) async fn dispatch_tool(
             r
         }
         "validate_project" => {
-            let r = execute_validate_project(project_root, params).await;
+            let r = execute_validate_project(workspace_root, params).await;
             if let Ok(ref v) = r {
                 let summary = if v["valid"].as_bool().unwrap_or(false) {
                     format!(
@@ -302,7 +302,7 @@ pub(crate) async fn dispatch_tool(
                 },
             )
             .await;
-            execute_propose_change(project_root, params, human_input.as_ref()).await
+            execute_propose_change(workspace_root, params, human_input.as_ref()).await
         }
         "ask_user" => agentic_core::tools::handle_ask_user(params, human_input.as_ref()),
         "lookup_schema" => {
@@ -326,7 +326,7 @@ pub(crate) async fn dispatch_tool(
                     .as_str()
                     .unwrap_or("<all tests>")
                     .to_string();
-                let r = execute_run_tests(project_root, params, runner).await;
+                let r = execute_run_tests(workspace_root, params, runner).await;
                 if let Ok(ref v) = r {
                     let summary = if let Some(n) = v["tests_run"].as_u64() {
                         format!("Ran {n} test file(s)")
@@ -349,7 +349,7 @@ pub(crate) async fn dispatch_tool(
             )),
         },
         "execute_sql" => {
-            let r = execute_execute_sql(project_root, params, secrets_manager).await;
+            let r = execute_execute_sql(workspace_root, params, secrets_manager).await;
             if let Ok(ref v) = r {
                 let db = v["database"].as_str().unwrap_or("");
                 let rows = v["row_count"].as_u64().unwrap_or(0);
@@ -365,7 +365,7 @@ pub(crate) async fn dispatch_tool(
             r
         }
         "semantic_query" => {
-            let r = execute_semantic_query(project_root, params, secrets_manager).await;
+            let r = execute_semantic_query(workspace_root, params, secrets_manager).await;
             if let Ok(ref v) = r {
                 let topic = params["topic"].as_str().unwrap_or("");
                 let rows = v["row_count"].as_u64().unwrap_or(0);

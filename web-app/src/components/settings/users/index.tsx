@@ -1,9 +1,9 @@
 import type React from "react";
 import { useCallback } from "react";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/shadcn/table";
+import { useAuth } from "@/contexts/AuthContext";
 import useCurrentUser from "@/hooks/api/users/useCurrentUser";
 import useUsers from "@/hooks/api/users/useUsers";
-import useCurrentProject from "@/stores/useCurrentProject";
 import PageWrapper from "../components/PageWrapper";
 import TableContentWrapper from "../components/TableContentWrapper";
 import TableWrapper from "../components/TableWrapper";
@@ -11,25 +11,19 @@ import AddMemberForm from "./AddMemberForm";
 import UserRow from "./UserRow";
 
 const UserManagement: React.FC = () => {
-  const { project } = useCurrentProject();
-
-  if (!project) {
-    throw new Error("No project selected");
-  }
-
-  const { workspace_id } = project;
-  const { data: usersData, isLoading: loading, error } = useUsers(workspace_id);
+  const { data: usersData, isLoading: loading, error } = useUsers();
   const users = usersData?.users || [];
 
   const { data: currentUser } = useCurrentUser();
+  const { authConfig } = useAuth();
+
+  // In local/single-workspace mode auth-based user management doesn't apply —
+  // invitations and role changes are hidden.
+  const isLocal = !authConfig.auth_enabled || !!authConfig.single_workspace;
 
   const isAdmin = useCallback((): boolean => {
-    if (!currentUser) {
-      return false;
-    }
-    if (!usersData) {
-      return false;
-    }
+    if (!currentUser) return false;
+    if (!usersData) return false;
     for (const user of usersData.users) {
       if (user.id === currentUser?.id && (user.role === "admin" || user.role === "owner")) {
         return true;
@@ -38,10 +32,11 @@ const UserManagement: React.FC = () => {
     return false;
   }, [currentUser, usersData]);
 
-  const adminUser = isAdmin();
+  // Actions column requires admin privileges AND a multi-user auth setup.
+  const adminUser = !isLocal && isAdmin();
 
   return (
-    <PageWrapper title='Users' actions={<AddMemberForm workspaceId={workspace_id} />}>
+    <PageWrapper title='Users' actions={!isLocal && <AddMemberForm />}>
       <TableWrapper>
         <Table>
           <TableHeader>
@@ -62,7 +57,7 @@ const UserManagement: React.FC = () => {
               noFoundDescription='There are currently no users in the system.'
             >
               {users.map((user) => (
-                <UserRow key={user.id} user={user} workspaceId={workspace_id} isAdmin={adminUser} />
+                <UserRow key={user.id} user={user} isAdmin={adminUser} />
               ))}
             </TableContentWrapper>
           </TableBody>

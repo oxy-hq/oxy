@@ -33,13 +33,13 @@ impl ConfigBuilder {
             models: config_models,
             databases: config_databases,
             builder_agent: None,
-            project_path: repo_path.to_path_buf(),
+            workspace_path: repo_path.to_path_buf(),
             integrations: Vec::new(),
             slack: None,
             mcp: None,
             a2a: None,
             protected_branches: None,
-            admins: Vec::new(),
+            repositories: vec![],
         };
 
         Self::write_config_file(&config, repo_path)

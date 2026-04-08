@@ -55,7 +55,7 @@ impl<S> AutoSemanticQuery<S> {
 
         let semantic_description = get_semantic_query_description(
             &semantic_tool,
-            &execution_context.project.config_manager,
+            &execution_context.workspace.config_manager,
         )?;
 
         let instruction = execution_context

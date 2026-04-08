@@ -12,7 +12,7 @@ export default function useSaveFile() {
       FileService.saveFile(project.id, data.pathb64, data.data, branchName),
     onSuccess: (_, variables) => {
       queryClient.removeQueries({
-        queryKey: queryKeys.file.get(project.id, variables.pathb64, branchName)
+        queryKey: queryKeys.file.get(project.id, branchName, variables.pathb64)
       });
       queryClient.setQueryData(
         queryKeys.file.get(project.id, branchName, variables.pathb64),

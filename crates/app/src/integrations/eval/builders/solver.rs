@@ -102,8 +102,8 @@ impl
             EVAL_SOURCE.to_string(),
         );
 
-        let config_manager = &execution_context.project.config_manager;
-        let secret_manager = &execution_context.project.secrets_manager;
+        let config_manager = &execution_context.workspace.config_manager;
+        let secret_manager = &execution_context.workspace.secrets_manager;
 
         match solver_kind {
             SolverKind::Similarity(llm_solver) => {

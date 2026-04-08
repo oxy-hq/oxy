@@ -40,7 +40,7 @@ const RenameNode = React.forwardRef<HTMLInputElement, RenameNodeProps>(
         return false;
       };
 
-      return !pathExistsInTree(data || []);
+      return !pathExistsInTree(data?.primary || []);
     };
 
     const isDir = fileTree.is_dir;
@@ -70,7 +70,7 @@ const RenameNode = React.forwardRef<HTMLInputElement, RenameNodeProps>(
           const currentPath = decodeBase64(pathname.split("/").pop() ?? "");
           if (currentPath.startsWith(fileTree.path)) {
             const newUrl = currentPath.replace(fileTree.path, newPath);
-            const ideUri = ROUTES.PROJECT(projectId).IDE.FILES.FILE(encodeBase64(newUrl));
+            const ideUri = ROUTES.WORKSPACE(projectId).IDE.FILES.FILE(encodeBase64(newUrl));
             navigate(ideUri);
           }
           setError(false);

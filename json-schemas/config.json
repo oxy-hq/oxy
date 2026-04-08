@@ -18,14 +18,6 @@
         }
       ]
     },
-    "admins": {
-      "description": "List of email addresses that are granted admin access in local (non-cloud) mode. If empty or not set, all users are treated as admin (permissive default for single-user local installs). The built-in local guest user (<local-user@example.com>) is always admin regardless of this list.",
-      "default": [],
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
     "builder_agent": {
       "anyOf": [
         {
@@ -84,6 +76,13 @@
       ],
       "items": {
         "type": "string"
+      }
+    },
+    "repositories": {
+      "description": "External repositories (dbt, LookML, data models, etc.) to surface in the IDE.\n\nExample config.yml: repositories: - name: dbt-models path: ../my-dbt-project - name: lookml git_url: https://github.com/acme/lookml-repo branch: main",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Repository"
       }
     },
     "slack": {
@@ -1182,6 +1181,47 @@
         },
         "name": {
           "type": "string"
+        }
+      }
+    },
+    "Repository": {
+      "description": "An external repository (dbt, LookML, data models, etc.) linked to an Oxy project. Either `path` or `git_url` must be set.",
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "branch": {
+          "description": "Branch to check out when cloning from `git_url`. Defaults to HEAD.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "git_namespace_id": {
+          "description": "GitHub namespace UUID used to get a fresh installation token for push. Set when the repo was linked via the GitHub App.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "git_url": {
+          "description": "Remote git URL to clone. Repo is cloned to `.repositories/{name}/`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Display name used as the path prefix `@{name}/` in the IDE.",
+          "type": "string"
+        },
+        "path": {
+          "description": "Local filesystem path, relative to the project root or absolute.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },

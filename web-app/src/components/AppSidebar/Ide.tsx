@@ -8,7 +8,7 @@ const Ide = () => {
   const location = useLocation();
   const { project } = useCurrentProjectBranch();
 
-  const ideUri = ROUTES.PROJECT(project.id).IDE.ROOT;
+  const ideUri = ROUTES.WORKSPACE(project.id).IDE.ROOT;
   const isIdePage = location.pathname.startsWith(ideUri);
 
   return (

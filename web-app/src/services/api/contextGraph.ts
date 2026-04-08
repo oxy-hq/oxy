@@ -24,7 +24,7 @@ export class ContextGraphService {
 
     // Parse semantic models, agents, queries, workflows, and apps from file tree
     const { views, topics, agents, sqlQueries, workflows } =
-      await ContextGraphService.parseProjectFiles(projectId, branchName, fileTree);
+      await ContextGraphService.parseProjectFiles(projectId, branchName, fileTree.primary);
 
     // Build nodes
     const nodes: ContextGraphNode[] = [];

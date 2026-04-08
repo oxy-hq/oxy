@@ -15,58 +15,45 @@ export interface RecentCommitsResponse {
   commits: CommitEntry[];
 }
 
-export class ProjectService {
-  static async getGithubRevisionInfo(projectId: string, branchName: string): Promise<RevisionInfo> {
+export const ProjectService = {
+  async getGithubRevisionInfo(projectId: string, branchName: string): Promise<RevisionInfo> {
     const response = await apiClient.get(`/${projectId}/revision-info`, {
       params: { branch: branchName }
     });
     return response.data;
-  }
+  },
 
-  static async getProject(projectId: string): Promise<Project> {
+  async getProject(projectId: string): Promise<Project> {
     const response = await apiClient.get(`/${projectId}/details`);
     return response.data;
-  }
+  },
 
-  static async deleteProject(workspaceId: string, projectId: string): Promise<void> {
-    await apiClient.delete(`/workspaces/${workspaceId}/projects/${projectId}`);
-  }
-
-  static async getProjectBranches(projectId: string): Promise<ProjectBranchesResponse> {
+  async getProjectBranches(projectId: string): Promise<ProjectBranchesResponse> {
     const response = await apiClient.get(`/${projectId}/branches`);
     return response.data;
-  }
+  },
 
-  static async getProjectStatus(project_id: string, branch_name?: string): Promise<ProjectStatus> {
+  async getProjectStatus(project_id: string, branch_name?: string): Promise<ProjectStatus> {
     const response = await apiClient.get<ProjectStatus>(
       `/${project_id}/status`,
-      branch_name
-        ? {
-            params: { branch: branch_name }
-          }
-        : undefined
+      branch_name ? { params: { branch: branch_name } } : undefined
     );
     return response.data;
-  }
+  },
 
-  static async switchProjectBranch(projectId: string, branchName: string): Promise<ProjectBranch> {
-    const response = await apiClient.post(`/${projectId}/switch-branch`, {
-      branch: branchName
-    });
+  async switchProjectBranch(projectId: string, branchName: string): Promise<ProjectBranch> {
+    const response = await apiClient.post(`/${projectId}/switch-branch`, { branch: branchName });
     return response.data;
-  }
+  },
 
-  static async switchProjectActiveBranch(
-    projectId: string,
-    branchName: string
-  ): Promise<ProjectBranch> {
+  async switchProjectActiveBranch(projectId: string, branchName: string): Promise<ProjectBranch> {
     const response = await apiClient.post(`/${projectId}/switch-active-branch`, {
       branch: branchName
     });
     return response.data;
-  }
+  },
 
-  static async pullChanges(
+  async pullChanges(
     projectId: string,
     branchName: string
   ): Promise<{ success: boolean; message: string }> {
@@ -74,9 +61,9 @@ export class ProjectService {
       params: { branch: branchName }
     });
     return response.data;
-  }
+  },
 
-  static async continueRebase(
+  async continueRebase(
     projectId: string,
     branchName: string
   ): Promise<{ success: boolean; message: string }> {
@@ -84,9 +71,9 @@ export class ProjectService {
       params: { branch: branchName }
     });
     return response.data;
-  }
+  },
 
-  static async resolveConflictWithContent(
+  async resolveConflictWithContent(
     projectId: string,
     branchName: string,
     filePath: string,
@@ -98,9 +85,9 @@ export class ProjectService {
       { params: { branch: branchName, file: filePath } }
     );
     return response.data;
-  }
+  },
 
-  static async unresolveConflictFile(
+  async unresolveConflictFile(
     projectId: string,
     branchName: string,
     filePath: string
@@ -109,9 +96,9 @@ export class ProjectService {
       params: { branch: branchName, file: filePath }
     });
     return response.data;
-  }
+  },
 
-  static async resolveConflictFile(
+  async resolveConflictFile(
     projectId: string,
     branchName: string,
     filePath: string,
@@ -121,9 +108,9 @@ export class ProjectService {
       params: { branch: branchName, file: filePath, side }
     });
     return response.data;
-  }
+  },
 
-  static async abortRebase(
+  async abortRebase(
     projectId: string,
     branchName: string
   ): Promise<{ success: boolean; message: string }> {
@@ -131,34 +118,30 @@ export class ProjectService {
       params: { branch: branchName }
     });
     return response.data;
-  }
+  },
 
-  static async pushChanges(
+  async pushChanges(
     projectId: string,
     branchName: string,
     commitMessage?: string
   ): Promise<{ success: boolean; message: string }> {
     const response = await apiClient.post(
       `/${projectId}/push-changes`,
-      {
-        commit_message: commitMessage
-      },
-      {
-        params: { branch: branchName }
-      }
+      { commit_message: commitMessage },
+      { params: { branch: branchName } }
     );
     return response.data;
-  }
+  },
 
-  static async updateGitHubToken(
+  async updateGitHubToken(
     token: string,
     projectId: string
   ): Promise<{ success: boolean; message: string }> {
     const response = await apiClient.post(`/${projectId}/git-token`, { token });
     return response.data;
-  }
+  },
 
-  static async deleteBranch(
+  async deleteBranch(
     projectId: string,
     branchName: string
   ): Promise<{ success: boolean; message: string }> {
@@ -166,9 +149,9 @@ export class ProjectService {
       `/${projectId}/branches/${encodeURIComponent(branchName)}`
     );
     return response.data;
-  }
+  },
 
-  static async forcePushBranch(
+  async forcePushBranch(
     projectId: string,
     branchName: string
   ): Promise<{ success: boolean; message: string }> {
@@ -176,19 +159,16 @@ export class ProjectService {
       params: { branch: branchName }
     });
     return response.data;
-  }
+  },
 
-  static async getRecentCommits(
-    projectId: string,
-    branchName: string
-  ): Promise<RecentCommitsResponse> {
+  async getRecentCommits(projectId: string, branchName: string): Promise<RecentCommitsResponse> {
     const response = await apiClient.get(`/${projectId}/recent-commits`, {
       params: { branch: branchName }
     });
     return response.data;
-  }
+  },
 
-  static async resetToCommit(
+  async resetToCommit(
     projectId: string,
     branchName: string,
     commit: string
@@ -197,9 +177,9 @@ export class ProjectService {
       params: { branch: branchName, commit }
     });
     return response.data;
-  }
+  },
 
-  static async createRepoFromProject(
+  async createRepoFromProject(
     projectId: string,
     gitNamespaceId: string,
     repoName: string
@@ -209,5 +189,37 @@ export class ProjectService {
       repo_name: repoName
     });
     return response.data;
+  },
+
+  async listAllProjects(): Promise<ProjectSummary[]> {
+    const response = await apiClient.get("/projects");
+    return response.data;
+  },
+
+  async deleteProject(projectId: string, deleteFiles = false): Promise<void> {
+    await apiClient.delete(`/projects/${projectId}`, {
+      params: { delete_files: deleteFiles }
+    });
+  },
+
+  async activateProject(projectId: string): Promise<void> {
+    await apiClient.post(`/projects/${projectId}/activate`);
   }
+};
+
+export interface ProjectSummary {
+  id: string;
+  name: string;
+  path: string | null;
+  created_at: string;
+  last_opened_at: string | null;
+  active: boolean;
+  created_by_name: string | null;
+  is_cloning: boolean;
+  agent_count: number;
+  workflow_count: number;
+  app_count: number;
+  git_remote: string | null;
+  git_commit: string | null;
+  git_updated_at: string | null;
 }

@@ -5,6 +5,17 @@ export interface FileTreeModel {
   children: FileTreeModel[];
 }
 
+export interface RepoSection {
+  name: string;
+  sync_status: "ready" | "cloning";
+  git_url?: string;
+}
+
+export interface FileTreeResponse {
+  primary: FileTreeModel[];
+  repositories: RepoSection[];
+}
+
 export interface FileStatus {
   path: string;
   status: "M" | "A" | "D" | "U";

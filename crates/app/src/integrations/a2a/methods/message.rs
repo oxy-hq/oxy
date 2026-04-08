@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::server::service::agent::{run_agent, run_agentic_workflow};
 use oxy::{
-    adapters::project::manager::ProjectManager,
+    adapters::workspace::manager::WorkspaceManager,
     execute::{
         types::{Event, EventKind, Output, Usage},
         writer::EventHandler,
@@ -37,7 +37,7 @@ use super::super::chat_integration;
 /// * `agent_name` - The name of the agent to execute
 /// * `agent_ref` - The path to the agent configuration file
 /// * `message` - The A2A message to send
-/// * `project_manager` - Project manager for agent execution
+/// * `workspace_manager` - Project manager for agent execution
 ///
 /// # Returns
 ///
@@ -46,7 +46,7 @@ pub async fn handle_send_message(
     agent_name: &str,
     agent_ref: String,
     message: Message,
-    project_manager: &ProjectManager,
+    workspace_manager: &WorkspaceManager,
 ) -> Result<Task, A2aError> {
     tracing::info!(
         "Handling message for agent '{}' via ChatService",
@@ -69,7 +69,7 @@ pub async fn handle_send_message(
     let response = execute_via_chat_service(
         chat_request,
         agent_ref,
-        project_manager,
+        workspace_manager,
         task_id.clone(),
         context_id.clone(),
     )
@@ -88,7 +88,7 @@ pub async fn handle_send_message(
 async fn execute_via_chat_service(
     chat_request: chat_integration::A2aMessageRequest,
     agent_ref: String,
-    project_manager: &ProjectManager,
+    workspace_manager: &WorkspaceManager,
     task_id: String,
     context_id: String,
 ) -> Result<crate::api::agent::AskAgentResponse, A2aError> {
@@ -99,7 +99,7 @@ async fn execute_via_chat_service(
     };
 
     // Determine whether this is an agentic workflow
-    let is_agentic = project_manager
+    let is_agentic = workspace_manager
         .config_manager
         .resolve_agentic_workflow(&agent_ref)
         .await
@@ -108,7 +108,7 @@ async fn execute_via_chat_service(
     // Execute the agent synchronously, letting the handler collect output
     let execution_result = if is_agentic {
         run_agentic_workflow(
-            project_manager.clone(),
+            workspace_manager.clone(),
             agent_ref,
             chat_request.question,
             handler,
@@ -117,7 +117,7 @@ async fn execute_via_chat_service(
         .await
     } else {
         run_agent(
-            project_manager.clone(),
+            workspace_manager.clone(),
             agent_ref,
             chat_request.question,
             handler,

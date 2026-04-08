@@ -6,10 +6,10 @@ import {
   Route,
   RouterProvider,
   Routes,
+  useNavigate,
   useParams
 } from "react-router-dom";
 import { AppSidebar } from "@/components/AppSidebar";
-import ErrorAlert from "@/components/ui/ErrorAlert";
 import { SidebarProvider } from "@/components/ui/shadcn/sidebar";
 import { Toaster as ShadcnToaster } from "@/components/ui/shadcn/sonner";
 import Home from "@/pages/home";
@@ -22,24 +22,26 @@ import ThreadPage from "@/pages/thread";
 import Threads from "@/pages/threads";
 import WorkflowPage from "@/pages/workflow";
 import "@xyflow/react/dist/style.css";
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { HotkeysProvider, useHotkeys } from "react-hotkeys-hook";
+import { toast } from "sonner";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import ROUTES from "@/libs/utils/routes";
 import ContextGraphPage from "@/pages/context-graph";
 import { ErrorBoundary } from "@/sentry";
 import { BuilderDialog } from "./components/BuilderDialog";
 import { FileQuickOpen } from "./components/FileQuickOpen";
-import ProjectStatus from "./components/ProjectStatus";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { SettingsModal } from "./components/settings/SettingsModal";
+import WorkspaceStatus from "./components/WorkspaceStatus";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
-import { useProject } from "./hooks/api/projects/useProjects";
+import { useWorkspace } from "./hooks/api/workspaces/useWorkspaces";
 import useAuthConfig from "./hooks/auth/useAuthConfig";
 import AppPage from "./pages/app";
 import GoogleCallback from "./pages/auth/GoogleCallback";
 import MagicLinkCallback from "./pages/auth/MagicLinkCallback";
 import OktaCallback from "./pages/auth/OktaCallback";
+import GitHubCallback from "./pages/github/callback";
 import IdePage from "./pages/ide";
 import DatabaseLayout from "./pages/ide/Database";
 import QueryWorkspacePage from "./pages/ide/Database/QueryWorkspace";
@@ -52,21 +54,25 @@ import SettingsLayout from "./pages/ide/settings";
 import ActivityLogsPage from "./pages/ide/settings/activity-logs";
 import ApiKeysPage from "./pages/ide/settings/api-keys";
 import DatabasesPage from "./pages/ide/settings/databases";
+import RepositoriesPage from "./pages/ide/settings/repositories";
 import SecretsPage from "./pages/ide/settings/secrets";
 import TestsLayout from "./pages/ide/tests";
 import TestFileDetailPage from "./pages/ide/tests/TestFileDetailPage";
 import TestsDashboardPage from "./pages/ide/tests/TestsDashboardPage";
 import TestsRunsPage from "./pages/ide/tests/TestsRunsPage";
 import LoginPage from "./pages/login";
+import MembersPage from "./pages/members";
+import OnboardingPage from "./pages/onboarding";
+import WorkspacesPage from "./pages/workspaces";
 import useBuilderDialog from "./stores/useBuilderDialog";
-import useCurrentProject from "./stores/useCurrentProject";
+import useCurrentWorkspace from "./stores/useCurrentWorkspace";
 import useFileQuickOpen from "./stores/useFileQuickOpen";
 import type { AuthConfigResponse } from "./types/auth";
 
 const MainPageWrapper = ({ children }: { children: React.ReactNode }) => {
   return (
     <main className='flex h-full w-full min-w-0 flex-col bg-background'>
-      <ProjectStatus />
+      <WorkspaceStatus />
       <div className='w-full min-w-0 flex-1 overflow-hidden'>{children}</div>
     </main>
   );
@@ -74,22 +80,34 @@ const MainPageWrapper = ({ children }: { children: React.ReactNode }) => {
 
 const MainLayout = React.memo(function MainLayout() {
   const { authConfig } = useAuth();
-  const { projectId } = useParams();
+  const { workspaceId } = useParams();
+  const navigate = useNavigate();
 
-  const { isPending, isError, data } = useProject(projectId || "", !!authConfig.cloud);
-  const { setProject, project } = useCurrentProject();
+  const { isPending, isError, error, data } = useWorkspace(
+    workspaceId || "00000000-0000-0000-0000-000000000000"
+  );
+  const { setWorkspace, workspace } = useCurrentWorkspace();
 
   const { setIsOpen: setBuilderDialogOpen } = useBuilderDialog();
   const { setIsOpen: setFileQuickOpenOpen } = useFileQuickOpen();
   useHotkeys("meta+i", () => setBuilderDialogOpen(true), { preventDefault: true });
   useHotkeys("meta+p", () => setFileQuickOpenOpen(true), { preventDefault: true });
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: project hydration is intentionally gated by the fetched project payload
   React.useEffect(() => {
     if (!isPending && !isError && data) {
-      setProject(data);
+      setWorkspace(data);
     }
-  }, [isPending, isError, projectId, setProject, data]);
+  }, [isPending, isError, setWorkspace, data]);
+
+  useEffect(() => {
+    if (isError) {
+      const msg =
+        (error as { response?: { data?: { error?: string } } })?.response?.data?.error ??
+        "Failed to load workspace.";
+      toast.error(msg);
+      navigate(ROUTES.WORKSPACES, { replace: true });
+    }
+  }, [isError, error, navigate]);
 
   if (isPending) {
     return (
@@ -99,20 +117,8 @@ const MainLayout = React.memo(function MainLayout() {
     );
   }
 
-  if (isError) {
-    return (
-      <div className='flex h-full w-full items-center justify-center p-4'>
-        <ErrorAlert message='Failed to load project.' />
-      </div>
-    );
-  }
-
-  if (!project) {
-    return (
-      <div className='flex h-full w-full items-center justify-center p-4'>
-        <ErrorAlert message='Project not found.' />
-      </div>
-    );
+  if (isError || !workspace) {
+    return null;
   }
 
   return (
@@ -156,6 +162,15 @@ const MainLayout = React.memo(function MainLayout() {
             </MainPageWrapper>
           }
         />
+        {/* Workspace-scoped deep-link routes — used for shareable thread/workflow URLs */}
+        <Route
+          path='/workspaces/:workspaceId/threads/:threadId'
+          element={
+            <MainPageWrapper>
+              <ThreadPage />
+            </MainPageWrapper>
+          }
+        />
         <Route
           path='/workflows/:pathb64'
           element={
@@ -165,14 +180,23 @@ const MainLayout = React.memo(function MainLayout() {
           }
         />
         <Route
-          path='/apps/:pathb64'
+          path='/workspaces/:workspaceId/workflows/:pathb64'
+          element={
+            <MainPageWrapper>
+              <WorkflowPage />
+            </MainPageWrapper>
+          }
+        />
+        <Route
+          path='/workspaces/:workspaceId/apps/:pathb64'
           element={
             <MainPageWrapper>
               <AppPage />
             </MainPageWrapper>
           }
         />
-        <Route path='/ide' element={<IdePage />}>
+        {/* IDE is workspace-scoped — URL encodes the workspace so bookmarks/links always open the right workspace */}
+        <Route path='/workspaces/:workspaceId/ide' element={<IdePage />}>
           {/* Files routes */}
           <Route path='files' element={<FilesLayout />}>
             <Route path=':pathb64' element={<EditorPage />} />
@@ -190,6 +214,7 @@ const MainLayout = React.memo(function MainLayout() {
           {/* Settings routes */}
           <Route path='settings' element={<SettingsLayout />}>
             <Route path='databases' element={<DatabasesPage />} />
+            <Route path='repositories' element={<RepositoriesPage />} />
             <Route path='activity-logs' element={<ActivityLogsPage />} />
             <Route path='api-keys' element={<ApiKeysPage />} />
             <Route path='secrets' element={<SecretsPage />} />
@@ -218,11 +243,32 @@ const MainLayout = React.memo(function MainLayout() {
           <Route index element={<Navigate to='files' replace />} />
         </Route>
         <Route
-          path='/context-graph'
+          path='/workspaces/:workspaceId/context-graph'
           element={
             <MainPageWrapper>
               <ContextGraphPage />
             </MainPageWrapper>
+          }
+        />
+        <Route
+          path='/workspaces'
+          element={
+            <MainPageWrapper>
+              <WorkspacesPage />
+            </MainPageWrapper>
+          }
+        />
+
+        <Route
+          path='/members'
+          element={
+            !authConfig.auth_enabled || authConfig.single_workspace ? (
+              <Navigate to='/' replace />
+            ) : (
+              <MainPageWrapper>
+                <MembersPage />
+              </MainPageWrapper>
+            )
           }
         />
 
@@ -246,22 +292,32 @@ const getRouter = (authConfig: AuthConfigResponse) =>
           </>
         )}
 
-        <Route
-          path='/*'
-          element={
-            authConfig.auth_enabled ? (
-              <ProtectedRoute>
+        {/* GitHub callback must always be accessible (used during onboarding popup flow) */}
+        <Route path='/github/callback' element={<GitHubCallback />} />
+
+        {/* Setup page — always accessible as a standalone full-screen page (no sidebar) */}
+        <Route path='/setup' element={<OnboardingPage />} />
+
+        {authConfig.needs_onboarding ? (
+          <Route path='*' element={<Navigate to='/setup' replace />} />
+        ) : (
+          <Route
+            path='/*'
+            element={
+              authConfig.auth_enabled ? (
+                <ProtectedRoute>
+                  <SidebarProvider>
+                    <MainLayout />
+                  </SidebarProvider>
+                </ProtectedRoute>
+              ) : (
                 <SidebarProvider>
                   <MainLayout />
                 </SidebarProvider>
-              </ProtectedRoute>
-            ) : (
-              <SidebarProvider>
-                <MainLayout />
-              </SidebarProvider>
-            )
-          }
-        />
+              )
+            }
+          />
+        )}
       </Route>
     )
   );
@@ -269,7 +325,31 @@ const getRouter = (authConfig: AuthConfigResponse) =>
 function App() {
   const { data: authConfig, isPending } = useAuthConfig();
 
-  if (isPending || !authConfig) {
+  // Show a one-time toast when the server reports a workspace error (e.g. the
+  // previously active workspace directory was deleted since last run).
+  const shownWorkspaceError = useRef(false);
+  useEffect(() => {
+    if (authConfig?.workspace_error && !shownWorkspaceError.current) {
+      shownWorkspaceError.current = true;
+      toast.error(authConfig.workspace_error);
+    }
+  }, [authConfig?.workspace_error]);
+
+  // Only recreate the router when routing-relevant fields change — prevents the
+  // router from being torn down on every authConfig refetch (e.g. when a GitHub
+  // popup closes and the window regains focus), which would reset page state.
+  const routerRef = useRef<ReturnType<typeof getRouter> | null>(null);
+  const prevRouterKey = useRef<string | null>(null);
+  const routerKey = authConfig
+    ? `${authConfig.needs_onboarding}:${authConfig.auth_enabled}:${authConfig.single_workspace}`
+    : null;
+  if (authConfig && routerKey !== prevRouterKey.current) {
+    routerRef.current = getRouter(authConfig);
+    prevRouterKey.current = routerKey;
+  }
+  const router = routerRef.current;
+
+  if (isPending || !authConfig || !router) {
     return (
       <div className='flex h-full w-full items-center justify-center'>
         <Spinner />
@@ -280,7 +360,7 @@ function App() {
   return (
     <ErrorBoundary fallback={<div>Something went wrong. Please refresh.</div>} showDialog>
       <AuthProvider authConfig={authConfig}>
-        <RouterProvider router={getRouter(authConfig)} />
+        <RouterProvider router={router} />
         <ShadcnToaster />
       </AuthProvider>
     </ErrorBoundary>

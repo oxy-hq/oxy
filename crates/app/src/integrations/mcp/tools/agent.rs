@@ -50,12 +50,12 @@ pub async fn resolve_agent_tool(
     // Convert absolute path to relative path from project root
     let config = config_manager.get_config();
     let relative_path = agent_path
-        .strip_prefix(&config.project_path)
+        .strip_prefix(&config.workspace_path)
         .map_err(|_| {
             OxyError::ConfigurationError(format!(
                 "Agent path {} is not within project path {}",
                 agent_path.display(),
-                config.project_path.display()
+                config.workspace_path.display()
             ))
         })?
         .to_str()
@@ -97,7 +97,7 @@ pub async fn resolve_agent_tool(
 
 /// Runs an agent tool with the given arguments
 pub async fn run_agent_tool(
-    project_manager: &oxy::adapters::project::manager::ProjectManager,
+    workspace_manager: &oxy::adapters::workspace::manager::WorkspaceManager,
     agent_name: String,
     arguments: Option<Map<String, Value>>,
     filters: Option<SessionFilters>,
@@ -127,7 +127,7 @@ pub async fn run_agent_tool(
                 })
                 .unwrap_or_default();
 
-            let config_manager = project_manager.config_manager.clone();
+            let config_manager = workspace_manager.config_manager.clone();
             let agent_path =
                 crate::service::agent::get_path_by_name(config_manager, agent_name.clone())
                     .await
@@ -150,7 +150,7 @@ pub async fn run_agent_tool(
 
             // Run the agent with filters, connection overrides, and merged variables
             let output = crate::service::agent::run_agent(
-                project_manager.clone(),
+                workspace_manager.clone(),
                 &agent_path,
                 question.to_string(),
                 oxy::execute::writer::NoopHandler,

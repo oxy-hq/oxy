@@ -56,7 +56,7 @@ const AutomationDagPanel = ({
             className='h-7 w-7'
             onClick={() => {
               navigate(
-                ROUTES.PROJECT(project.id).IDE.FILES.FILE(encodeBase64(automationGenerated.path))
+                ROUTES.WORKSPACE(project.id).IDE.FILES.FILE(encodeBase64(automationGenerated.path))
               );
             }}
           >

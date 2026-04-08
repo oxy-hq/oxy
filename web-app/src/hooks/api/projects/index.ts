@@ -1,6 +1,7 @@
 export { useCreateRepoFromProject } from "./useCreateRepoFromProject";
 export { useProjectStatus } from "./useProjectStatus";
 export {
+  useAllProjects,
   useDeleteProject,
   useForcePush,
   useProject,

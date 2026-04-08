@@ -66,12 +66,12 @@ pub async fn resolve_workflow_tool(
     // Convert absolute path to relative path from project root
     let config = config_manager.get_config();
     let relative_path = workflow_path
-        .strip_prefix(&config.project_path)
+        .strip_prefix(&config.workspace_path)
         .map_err(|_| {
             OxyError::ConfigurationError(format!(
                 "Workflow path {} is not within project path {}",
                 workflow_path.display(),
-                config.project_path.display()
+                config.workspace_path.display()
             ))
         })?
         .to_path_buf();
@@ -114,7 +114,7 @@ pub async fn resolve_workflow_tool(
 
 /// Runs a workflow tool with the given arguments
 pub async fn run_workflow_tool(
-    project_manager: &oxy::adapters::project::manager::ProjectManager,
+    workspace_manager: &oxy::adapters::workspace::manager::WorkspaceManager,
     workflow_name: String,
     arguments: Option<Map<String, Value>>,
     filters: Option<SessionFilters>,
@@ -132,7 +132,7 @@ pub async fn run_workflow_tool(
         .unwrap_or_default();
 
     // Get workflow info to extract default variables (if any)
-    let workflows = list_workflows(project_manager.config_manager.clone())
+    let workflows = list_workflows(workspace_manager.config_manager.clone())
         .await
         .map_err(|e| {
             rmcp::ErrorData::internal_error(format!("Failed to list workflows: {e}"), None)
@@ -161,7 +161,7 @@ pub async fn run_workflow_tool(
         RetryStrategy::NoRetry {
             variables: Some(merged_variables.into_iter().collect()),
         },
-        project_manager.clone(),
+        workspace_manager.clone(),
         filters,
         connections,
         None, // No globals override from MCP

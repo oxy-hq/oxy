@@ -5,7 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/shadcn/aler
 import { Button } from "@/components/ui/shadcn/button";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { apiBaseURL } from "@/services/env";
-import useCurrentProject from "@/stores/useCurrentProject";
+import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 import type { SandboxAppArtifact } from "@/types/artifact";
 
 type Props = {
@@ -68,7 +68,7 @@ const SandboxArtifactPanel = ({ artifact, apiKey }: Props) => {
   const consoleEndRef = useRef<HTMLDivElement>(null);
 
   const { preview_url } = artifact.content.value;
-  const projectId = useCurrentProject((state) => state.project?.id);
+  const projectId = useCurrentWorkspace((state) => state.workspace?.id);
 
   const handleLoad = () => setIsLoading(false);
   const handleError = () => {

@@ -8,10 +8,11 @@ const useThread = (
   threadId: string,
   enabled = true,
   refetchOnWindowFocus = true,
-  refetchOnMount: boolean | "always" = false
+  refetchOnMount: boolean | "always" = false,
+  projectIdOverride?: string
 ) => {
   const { project } = useCurrentProjectBranch();
-  const projectId = project.id;
+  const projectId = projectIdOverride ?? project?.id ?? "00000000-0000-0000-0000-000000000000";
   return useQuery<ThreadItem, Error>({
     queryKey: queryKeys.thread.item(projectId, threadId),
     queryFn: () => ThreadService.getThread(projectId, threadId),

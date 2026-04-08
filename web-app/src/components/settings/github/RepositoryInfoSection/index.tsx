@@ -3,14 +3,14 @@ import LoadingSkeleton from "@/components/ui/LoadingSkeleton";
 import { Badge } from "@/components/ui/shadcn/badge";
 import { Button } from "@/components/ui/shadcn/button";
 import { Label } from "@/components/ui/shadcn/label";
-import useRevisionInfo from "@/hooks/api/projects/useRevisionInfo";
-import useCurrentProject from "@/stores/useCurrentProject";
+import useRevisionInfo from "@/hooks/api/workspaces/useRevisionInfo";
+import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 import { CommitDisplay } from "./CommitDisplay";
 import SwitchBranch from "./SwitchBranch";
 import { SyncDialog } from "./SyncDialog";
 
 const RepositoryInfoSection = () => {
-  const { project } = useCurrentProject();
+  const { workspace: project } = useCurrentWorkspace();
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
   const { data: revisionInfo, isLoading: revisionLoading } = useRevisionInfo();
 

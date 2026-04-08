@@ -64,7 +64,7 @@ impl Executable<EvalTarget> for EvalTargetWrapper {
                 // AgentConfig::from_file reads from the right location regardless
                 // of the process CWD.
                 let resolved = ctx
-                    .project
+                    .workspace
                     .config_manager
                     .resolve_file(&agentic_input.config_path)
                     .await
@@ -75,7 +75,7 @@ impl Executable<EvalTarget> for EvalTargetWrapper {
                         ))
                     })?;
                 let answer_text = agentic_http::routes::run_agentic_eval(
-                    ctx.project.clone(),
+                    ctx.workspace.clone(),
                     std::path::Path::new(&resolved),
                     agentic_input.prompt,
                 )

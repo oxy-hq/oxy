@@ -1,4 +1,4 @@
-use crate::server::api::middlewares::project::ProjectManagerExtractor;
+use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
 use crate::server::service::secret_manager::{
     CreateSecretParams, SecretInfo, SecretManagerService, UpdateSecretParams,
 };
@@ -115,7 +115,7 @@ pub struct UpdateSecretRequest {
 /// Create a new secret
 pub async fn create_secret(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    Path(project_id): Path<Uuid>,
+    Path(workspace_id): Path<Uuid>,
     extract::Json(request): extract::Json<CreateSecretRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
     // Validate the request using garde
@@ -131,12 +131,33 @@ pub async fn create_secret(
             .into_response());
     }
 
+    // Reject secrets whose names collide with infrastructure / auth env vars.
+    // These vars are owned by the server operator and must not be overridable
+    // through the per-workspace secrets panel.
+    if is_auth_env_var(&request.name) {
+        tracing::warn!(
+            "Rejected secret creation: name '{}' is reserved for infrastructure config",
+            request.name
+        );
+        return Ok((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            axum::Json(json!({
+                "error": format!(
+                    "'{}' is a reserved environment variable name used by Oxy's infrastructure. \
+                     Choose a different name for your secret.",
+                    request.name
+                )
+            })),
+        )
+            .into_response());
+    }
+
     let db = establish_connection().await.map_err(|e| {
         tracing::error!("Failed to establish database connection: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let secret_manager = SecretManagerService::new(project_id);
+    let secret_manager = SecretManagerService::new(workspace_id);
 
     let create_params = CreateSecretParams {
         name: request.name,
@@ -170,7 +191,7 @@ pub async fn create_secret(
 /// Create multiple secrets in bulk
 pub async fn bulk_create_secrets(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    Path(project_id): Path<Uuid>,
+    Path(workspace_id): Path<Uuid>,
     extract::Json(request): extract::Json<BulkCreateSecretsRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
     // Validate the request using garde
@@ -194,7 +215,7 @@ pub async fn bulk_create_secrets(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let secret_manager = SecretManagerService::new(project_id);
+    let secret_manager = SecretManagerService::new(workspace_id);
     let mut created_secrets = Vec::new();
     let mut failed_secrets = Vec::new();
 
@@ -245,14 +266,14 @@ pub async fn bulk_create_secrets(
 /// List all secrets (without values)
 pub async fn list_secrets(
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
-    Path(project_id): Path<Uuid>,
+    Path(workspace_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let db = establish_connection().await.map_err(|e| {
         tracing::error!("Failed to establish database connection: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let secret_manager = SecretManagerService::new(project_id);
+    let secret_manager = SecretManagerService::new(workspace_id);
     match secret_manager.list_secrets(&db).await {
         Ok(secrets) => {
             // Resolve created_by and updated_by UUIDs → emails in one batch query
@@ -298,7 +319,7 @@ pub async fn list_secrets(
 /// Get secret metadata by ID (without value)
 pub async fn get_secret(
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
-    Path((project_id, id)): Path<(Uuid, String)>,
+    Path((workspace_id, id)): Path<(Uuid, String)>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let secret_id = match Uuid::parse_str(&id) {
         Ok(uuid) => uuid,
@@ -311,7 +332,7 @@ pub async fn get_secret(
         }
     };
 
-    let secret_manager = SecretManagerService::new(project_id);
+    let secret_manager = SecretManagerService::new(workspace_id);
 
     match secret_manager.get_secret_by_id(secret_id).await {
         Some(secret) => {
@@ -328,7 +349,7 @@ pub async fn get_secret(
 /// Update a secret by ID
 pub async fn update_secret(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    Path((project_id, id)): Path<(Uuid, String)>,
+    Path((workspace_id, id)): Path<(Uuid, String)>,
     extract::Json(request): extract::Json<UpdateSecretRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
     if request.value.is_none() && request.description.is_none() {
@@ -370,7 +391,7 @@ pub async fn update_secret(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let secret_manager = SecretManagerService::new(project_id);
+    let secret_manager = SecretManagerService::new(workspace_id);
 
     let Some(secret) = secret_manager.get_secret_by_id(secret_id).await else {
         return Ok((
@@ -458,6 +479,25 @@ fn parse_dotenv_file(path: &std::path::Path) -> Vec<(String, String)> {
         .collect()
 }
 
+/// Environment variable name prefixes that belong to the authentication layer
+/// (Okta, Google OAuth, magic-link) or Oxy's own infrastructure config.
+/// These are server-side secrets that have no business appearing in the
+/// per-workspace secrets panel — users should never need to view or override them there.
+const AUTH_ENV_VAR_PREFIXES: &[&str] = &[
+    "GOOGLE_CLIENT_",  // GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+    "OKTA_",           // OKTA_CLIENT_ID, OKTA_CLIENT_SECRET, OKTA_DOMAIN
+    "MAGIC_LINK_",     // all magic-link config vars
+    "OXY_",            // internal Oxy infrastructure vars (OXY_DATABASE_URL, OXY_ADMINS, …)
+    "GIT_REPOSITORY_", // GIT_REPOSITORY_URL
+    "GITHUB_",         // all GitHub vars: app config, OAuth login, webhooks, CI env vars
+];
+
+fn is_auth_env_var(name: &str) -> bool {
+    AUTH_ENV_VAR_PREFIXES
+        .iter()
+        .any(|prefix| name.starts_with(prefix))
+}
+
 /// Env vars that Oxy reads internally by default (not via config.yml *_var fields).
 /// Always shown in the secrets panel so users know what the app needs, even when they
 /// haven't yet referenced these vars in config.yml or .env.
@@ -508,16 +548,19 @@ pub struct EnvSecretInfo {
 /// and potentially override them with database-stored secrets.
 pub async fn list_env_secrets(
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path(_project_id): Path<Uuid>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path(_workspace_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    let config = project_manager.config_manager.get_config();
+    let config = workspace_manager.config_manager.get_config();
     let mut env_secrets: Vec<EnvSecretInfo> = Vec::new();
 
     let mut seen_vars: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     // Parse .env upfront so source resolution works for all vars, including config-referenced ones.
-    let dotenv_path = project_manager.config_manager.project_path().join(".env");
+    let dotenv_path = workspace_manager
+        .config_manager
+        .workspace_path()
+        .join(".env");
     let dotenv_entries = parse_dotenv_file(&dotenv_path);
     let dotenv_keys: std::collections::HashSet<String> =
         dotenv_entries.iter().map(|(k, _)| k.clone()).collect();
@@ -541,7 +584,10 @@ pub async fn list_env_secrets(
             referenced_by,
             is_set: value.is_some(),
             masked_value: value.as_deref().map(mask_secret_value),
-            full_value: value,
+            // Never return the plaintext value for env-sourced secrets.
+            // Env vars are resolved by the server at runtime; clients have no
+            // business seeing the raw value. Use the masked_value for display.
+            full_value: None,
             env_var,
         }
     };
@@ -706,7 +752,12 @@ pub async fn list_env_secrets(
     }
 
     // Add .env-only vars not already covered by config references.
+    // Skip authentication / infrastructure vars — those belong to the server
+    // config, not to the per-workspace secrets panel.
     for (key, _) in &dotenv_entries {
+        if is_auth_env_var(key) {
+            continue;
+        }
         if !seen_vars.insert(key.clone()) {
             continue;
         }
@@ -726,7 +777,7 @@ pub async fn list_env_secrets(
 /// Delete a secret by ID
 pub async fn delete_secret(
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
-    Path((project_id, id)): Path<(Uuid, String)>,
+    Path((workspace_id, id)): Path<(Uuid, String)>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let secret_id = match Uuid::parse_str(&id) {
         Ok(uuid) => uuid,
@@ -744,7 +795,7 @@ pub async fn delete_secret(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let secret_manager = SecretManagerService::new(project_id);
+    let secret_manager = SecretManagerService::new(workspace_id);
 
     let Some(secret) = secret_manager.get_secret_by_id(secret_id).await else {
         return Ok((
@@ -773,7 +824,7 @@ pub async fn delete_secret(
 /// Reveal the plaintext value of a DB secret by ID (admin-only via middleware).
 pub async fn reveal_secret(
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
-    Path((project_id, id)): Path<(Uuid, String)>,
+    Path((workspace_id, id)): Path<(Uuid, String)>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let secret_id = match Uuid::parse_str(&id) {
         Ok(uuid) => uuid,
@@ -786,7 +837,7 @@ pub async fn reveal_secret(
         }
     };
 
-    let secret_manager = SecretManagerService::new(project_id);
+    let secret_manager = SecretManagerService::new(workspace_id);
 
     match secret_manager.get_secret_value_by_id(secret_id).await {
         Some(value) => Ok((StatusCode::OK, axum::Json(json!({ "value": value }))).into_response()),

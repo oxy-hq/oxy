@@ -56,10 +56,7 @@ impl BlockHandlerReader {
             acc.push('\n');
             acc
         });
-        println!(
-            "Usage - input: {}, output: {}",
-            usage.input_tokens, usage.output_tokens
-        );
+
         let message = entity::messages::ActiveModel {
             id: Set(Uuid::new_v4()),
             content: Set(content),

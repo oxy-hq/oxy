@@ -42,7 +42,7 @@ impl Executable<EditDataAppInput> for EditDataAppExecutable {
         events::tool::tool_call_input(&input);
         log::debug!("Editing data app with input: {:?}", &input);
         let EditDataAppInput { param } = input;
-        let project_path = execution_context.project.config_manager.project_path();
+        let workspace_path = execution_context.workspace.config_manager.workspace_path();
 
         // Resolve file_path: use param if provided, otherwise fall back to context
         let relative_path = param
@@ -65,7 +65,7 @@ impl Executable<EditDataAppInput> for EditDataAppExecutable {
                 "Invalid file_path: path traversal attempt detected. Paths must be relative and must not contain '..'".to_string(),
             ));
         }
-        let file_path = project_path.join(&relative_path);
+        let file_path = workspace_path.join(&relative_path);
 
         // Read and validate existing app config
         let existing_content = fs::read_to_string(&file_path).map_err(|e| {
@@ -109,7 +109,7 @@ mod tests {
     use super::*;
     use crate::execute::types::Event;
     use crate::{
-        adapters::project::builder::ProjectBuilder,
+        adapters::workspace::builder::WorkspaceBuilder,
         execute::{ExecutionContextBuilder, types::event::Source},
     };
     use minijinja::Value;
@@ -140,8 +140,8 @@ display:
         fixture: &TestFixture,
         data_app_file_path: Option<String>,
     ) -> (ExecutionContext, mpsc::Receiver<Event>) {
-        let project = ProjectBuilder::new(uuid::Uuid::new_v4())
-            .with_project_path_and_fallback_config(fixture.path())
+        let project = WorkspaceBuilder::new(uuid::Uuid::new_v4())
+            .with_workspace_path_and_fallback_config(fixture.path())
             .await
             .unwrap()
             .build()
@@ -155,7 +155,7 @@ display:
                 parent_id: None,
             })
             .with_global_context(Value::UNDEFINED)
-            .with_project_manager(project)
+            .with_workspace_manager(project)
             .with_writer(tx)
             .with_data_app_file_path(data_app_file_path)
             .build()

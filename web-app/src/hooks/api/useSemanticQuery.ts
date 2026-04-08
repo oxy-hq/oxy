@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { type SemanticQueryRequest, SemanticService } from "@/services/api/semantic";
-import useCurrentProjectBranch from "../useCurrentProjectBranch";
 
 export function useExecuteSemanticQuery() {
   const { project } = useCurrentProjectBranch();

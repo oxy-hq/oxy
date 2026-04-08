@@ -73,7 +73,7 @@ impl RouteResolver {
             .to_string();
 
         let integration = execution_context
-            .project
+            .workspace
             .config_manager
             .get_integration_by_name(&integration_name)
             .ok_or_else(|| {
@@ -192,7 +192,7 @@ impl RouteResolver {
         is_verified: bool,
     ) -> Result<ToolType, OxyError> {
         let workflow = execution_context
-            .project
+            .workspace
             .config_manager
             .resolve_workflow(workflow_path)
             .await?;
@@ -203,9 +203,9 @@ impl RouteResolver {
             name: to_openai_function_name(
                 &PathBuf::from(workflow_path),
                 &execution_context
-                    .project
+                    .workspace
                     .config_manager
-                    .project_path()
+                    .workspace_path()
                     .to_path_buf(),
             )?,
             workflow_ref: workflow_path.to_string(),
@@ -223,7 +223,7 @@ impl RouteResolver {
         is_verified: bool,
     ) -> Result<ToolType, OxyError> {
         let agent = execution_context
-            .project
+            .workspace
             .config_manager
             .resolve_agent(agent_path)
             .await?;
@@ -233,9 +233,9 @@ impl RouteResolver {
             name: to_openai_function_name(
                 &PathBuf::from(agent_path),
                 &execution_context
-                    .project
+                    .workspace
                     .config_manager
-                    .project_path()
+                    .workspace_path()
                     .to_path_buf(),
             )?,
             agent_ref: agent_path.to_string(),
@@ -252,7 +252,7 @@ impl RouteResolver {
         is_verified: bool,
     ) -> Result<ToolType, OxyError> {
         let aw = execution_context
-            .project
+            .workspace
             .config_manager
             .resolve_agentic_workflow(aw_path)
             .await?;
@@ -262,9 +262,9 @@ impl RouteResolver {
             name: to_openai_function_name(
                 &PathBuf::from(aw_path),
                 &execution_context
-                    .project
+                    .workspace
                     .config_manager
-                    .project_path()
+                    .workspace_path()
                     .to_path_buf(),
             )?,
             agent_ref: aw_path.to_string(),
@@ -308,9 +308,9 @@ impl RouteResolver {
             name: to_openai_function_name(
                 &PathBuf::from(topic_path),
                 &execution_context
-                    .project
+                    .workspace
                     .config_manager
-                    .project_path()
+                    .workspace_path()
                     .to_path_buf(),
             )?,
             topic: Some(topic.name.clone()),
@@ -339,8 +339,8 @@ impl RouteResolver {
             )
             .await
         } else {
-            let config_manager = &execution_context.project.config_manager;
-            let project_path = config_manager.project_path();
+            let config_manager = &execution_context.workspace.config_manager;
+            let workspace_path = config_manager.workspace_path();
             match document.id.as_str() {
                 sql_path if sql_path.ends_with(".sql") => {
                     if let Some(database_ref) = parse_sql_source_type(document.kind.as_str()) {
@@ -351,7 +351,7 @@ impl RouteResolver {
                             dry_run_limit: None,
                             name: to_openai_function_name(
                                 &PathBuf::from(sql_path),
-                                &PathBuf::from(project_path),
+                                &PathBuf::from(workspace_path),
                             )?,
                             variables: None,
                             sql: Some(tokio::fs::read_to_string(sql_path).await?),

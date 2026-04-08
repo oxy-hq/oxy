@@ -21,7 +21,7 @@ pub struct ArtifactItem {
 }
 
 pub async fn get_artifact(
-    Path((_project_id, id)): Path<(Uuid, String)>,
+    Path((_workspace_id, id)): Path<(Uuid, String)>,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
 ) -> Result<extract::Json<ArtifactItem>, StatusCode> {
     let connection = establish_connection().await?;

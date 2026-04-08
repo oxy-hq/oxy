@@ -1235,7 +1235,7 @@ const TestFileDetailPage: React.FC = () => {
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-            <Link to={ROUTES.PROJECT(projectId).IDE.FILES.FILE(pathb64)}>
+            <Link to={ROUTES.WORKSPACE(projectId).IDE.FILES.FILE(pathb64)}>
               <Button variant='outline' size='sm' className='gap-1'>
                 <Pencil className='h-3 w-3' />
                 Edit

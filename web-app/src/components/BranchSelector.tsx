@@ -13,9 +13,9 @@ import {
 } from "@/components/ui/shadcn/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/shadcn/popover";
 import { Spinner } from "@/components/ui/shadcn/spinner";
-import { useProjectBranches } from "@/hooks/api/projects/useProjects";
+import { useWorkspaceBranches as useProjectBranches } from "@/hooks/api/workspaces/useWorkspaces";
 import { cn } from "@/libs/shadcn/utils";
-import useCurrentProject from "@/stores/useCurrentProject";
+import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 
 interface Props {
   selectedBranch: string;
@@ -23,7 +23,7 @@ interface Props {
 }
 
 const BranchSelector = ({ selectedBranch, setSelectedBranch }: Props) => {
-  const { project } = useCurrentProject();
+  const { workspace: project } = useCurrentWorkspace();
   const { data: branchResponse, isLoading, error } = useProjectBranches(project?.id || "");
   const [open, setOpen] = React.useState(false);
   const [inputValue, setInputValue] = React.useState("");

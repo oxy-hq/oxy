@@ -1,6 +1,6 @@
-use crate::server::api::middlewares::project::{BranchQuery, ProjectManagerExtractor};
+use crate::server::api::middlewares::workspace_context::{BranchQuery, WorkspaceManagerExtractor};
 use crate::server::router::AppState;
-use crate::server::service::project::ProjectService;
+use crate::server::service::project::WorkspaceService;
 use axum::Json;
 use axum::extract::{self, Path, Query, State};
 use axum::http::StatusCode;
@@ -9,6 +9,7 @@ use base64::prelude::BASE64_STANDARD;
 use futures::TryFutureExt;
 use oxy::github::{FileStatus, GitOperations};
 use oxy_project::LocalGitService;
+use oxy_project::data_repo_service::{parse_data_repo_path, resolve_data_repo_path};
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display, Formatter};
 use std::fs as sync_fs;
@@ -24,8 +25,8 @@ pub struct SaveFileRequest {
 
 pub async fn create_file(
     State(app_state): State<AppState>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     Query(branch_query): Query<BranchQuery>,
 ) -> Result<extract::Json<String>, StatusCode> {
     if app_state.readonly {
@@ -35,18 +36,21 @@ pub async fn create_file(
         .decode(pathb64)
         .map_err(|_| StatusCode::BAD_REQUEST)?;
     let path = String::from_utf8(decoded_path).map_err(|_| StatusCode::BAD_REQUEST)?;
-    let resolved = project_manager
+    let resolved = workspace_manager
         .config_manager
         .resolve_file(path)
         .map_err(|_| StatusCode::BAD_REQUEST)
         .await?;
-    let project_root = project_manager.config_manager.project_path().to_path_buf();
+    let workspace_root = workspace_manager
+        .config_manager
+        .workspace_path()
+        .to_path_buf();
     let file_path = app_state
         .backend
         .resolve_path(
             branch_query.branch.as_deref(),
             PathBuf::from(&resolved),
-            &project_root,
+            &workspace_root,
         )
         .await;
 
@@ -66,8 +70,8 @@ pub async fn create_file(
 
 pub async fn create_folder(
     State(app_state): State<AppState>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     Query(branch_query): Query<BranchQuery>,
 ) -> Result<extract::Json<String>, StatusCode> {
     if app_state.readonly {
@@ -77,18 +81,21 @@ pub async fn create_folder(
         .decode(pathb64)
         .map_err(|_| StatusCode::BAD_REQUEST)?;
     let path = String::from_utf8(decoded_path).map_err(|_| StatusCode::BAD_REQUEST)?;
-    let resolved = project_manager
+    let resolved = workspace_manager
         .config_manager
         .resolve_file(path)
         .map_err(|_| StatusCode::BAD_REQUEST)
         .await?;
-    let project_root = project_manager.config_manager.project_path().to_path_buf();
+    let workspace_root = workspace_manager
+        .config_manager
+        .workspace_path()
+        .to_path_buf();
     let file_path = app_state
         .backend
         .resolve_path(
             branch_query.branch.as_deref(),
             PathBuf::from(&resolved),
-            &project_root,
+            &workspace_root,
         )
         .await;
     fs::create_dir_all(&file_path).await.map_err(|e| {
@@ -100,8 +107,8 @@ pub async fn create_folder(
 
 pub async fn delete_file(
     State(app_state): State<AppState>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     Query(branch_query): Query<BranchQuery>,
 ) -> Result<extract::Json<String>, StatusCode> {
     if app_state.readonly {
@@ -111,18 +118,21 @@ pub async fn delete_file(
         .decode(pathb64)
         .map_err(|_| StatusCode::BAD_REQUEST)?;
     let path = String::from_utf8(decoded_path).map_err(|_| StatusCode::BAD_REQUEST)?;
-    let resolved = project_manager
+    let resolved = workspace_manager
         .config_manager
         .resolve_file(path)
         .map_err(|_| StatusCode::BAD_REQUEST)
         .await?;
-    let project_root = project_manager.config_manager.project_path().to_path_buf();
+    let workspace_root = workspace_manager
+        .config_manager
+        .workspace_path()
+        .to_path_buf();
     let file_path = app_state
         .backend
         .resolve_path(
             branch_query.branch.as_deref(),
             PathBuf::from(&resolved),
-            &project_root,
+            &workspace_root,
         )
         .await;
     fs::remove_file(&file_path).await.map_err(|e| {
@@ -134,8 +144,8 @@ pub async fn delete_file(
 
 pub async fn delete_folder(
     State(app_state): State<AppState>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     Query(branch_query): Query<BranchQuery>,
 ) -> Result<extract::Json<String>, StatusCode> {
     if app_state.readonly {
@@ -145,18 +155,21 @@ pub async fn delete_folder(
         .decode(pathb64)
         .map_err(|_| StatusCode::BAD_REQUEST)?;
     let path = String::from_utf8(decoded_path).map_err(|_| StatusCode::BAD_REQUEST)?;
-    let resolved = project_manager
+    let resolved = workspace_manager
         .config_manager
         .resolve_file(path)
         .map_err(|_| StatusCode::BAD_REQUEST)
         .await?;
-    let project_root = project_manager.config_manager.project_path().to_path_buf();
+    let workspace_root = workspace_manager
+        .config_manager
+        .workspace_path()
+        .to_path_buf();
     let file_path = app_state
         .backend
         .resolve_path(
             branch_query.branch.as_deref(),
             PathBuf::from(&resolved),
-            &project_root,
+            &workspace_root,
         )
         .await;
     fs::remove_dir_all(&file_path).await.map_err(|e| {
@@ -173,8 +186,8 @@ pub struct RenameFileRequest {
 
 pub async fn rename_file(
     State(app_state): State<AppState>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     Query(branch_query): Query<BranchQuery>,
     extract::Json(payload): extract::Json<RenameFileRequest>,
 ) -> Result<extract::Json<String>, StatusCode> {
@@ -185,8 +198,11 @@ pub async fn rename_file(
         .decode(pathb64)
         .map_err(|_| StatusCode::BAD_REQUEST)?;
     let path = String::from_utf8(decoded_path).map_err(|_| StatusCode::BAD_REQUEST)?;
-    let project_root = project_manager.config_manager.project_path().to_path_buf();
-    let resolved = project_manager
+    let workspace_root = workspace_manager
+        .config_manager
+        .workspace_path()
+        .to_path_buf();
+    let resolved = workspace_manager
         .config_manager
         .resolve_file(path)
         .map_err(|_| StatusCode::BAD_REQUEST)
@@ -196,10 +212,10 @@ pub async fn rename_file(
         .resolve_path(
             branch_query.branch.as_deref(),
             PathBuf::from(&resolved),
-            &project_root,
+            &workspace_root,
         )
         .await;
-    let resolved_new = project_manager
+    let resolved_new = workspace_manager
         .config_manager
         .resolve_file(payload.new_name)
         .map_err(|_| StatusCode::BAD_REQUEST)
@@ -209,7 +225,7 @@ pub async fn rename_file(
         .resolve_path(
             branch_query.branch.as_deref(),
             PathBuf::from(&resolved_new),
-            &project_root,
+            &workspace_root,
         )
         .await;
 
@@ -222,8 +238,8 @@ pub async fn rename_file(
 
 pub async fn rename_folder(
     State(app_state): State<AppState>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     Query(branch_query): Query<BranchQuery>,
     extract::Json(payload): extract::Json<RenameFileRequest>,
 ) -> Result<extract::Json<String>, StatusCode> {
@@ -234,8 +250,11 @@ pub async fn rename_folder(
         .decode(pathb64)
         .map_err(|_| StatusCode::BAD_REQUEST)?;
     let path = String::from_utf8(decoded_path).map_err(|_| StatusCode::BAD_REQUEST)?;
-    let project_root = project_manager.config_manager.project_path().to_path_buf();
-    let resolved = project_manager
+    let workspace_root = workspace_manager
+        .config_manager
+        .workspace_path()
+        .to_path_buf();
+    let resolved = workspace_manager
         .config_manager
         .resolve_file(path)
         .map_err(|_| StatusCode::BAD_REQUEST)
@@ -245,10 +264,10 @@ pub async fn rename_folder(
         .resolve_path(
             branch_query.branch.as_deref(),
             PathBuf::from(&resolved),
-            &project_root,
+            &workspace_root,
         )
         .await;
-    let resolved_new = project_manager
+    let resolved_new = workspace_manager
         .config_manager
         .resolve_file(payload.new_name)
         .map_err(|_| StatusCode::BAD_REQUEST)
@@ -258,7 +277,7 @@ pub async fn rename_folder(
         .resolve_path(
             branch_query.branch.as_deref(),
             PathBuf::from(&resolved_new),
-            &project_root,
+            &workspace_root,
         )
         .await;
 
@@ -272,8 +291,8 @@ pub async fn rename_folder(
 #[axum::debug_handler]
 pub async fn save_file(
     State(app_state): State<AppState>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     Query(branch_query): Query<BranchQuery>,
     extract::Json(payload): extract::Json<SaveFileRequest>,
 ) -> Result<extract::Json<String>, StatusCode> {
@@ -284,18 +303,39 @@ pub async fn save_file(
         .decode(pathb64)
         .map_err(|_| StatusCode::BAD_REQUEST)?;
     let path = String::from_utf8(decoded_path).map_err(|_| StatusCode::BAD_REQUEST)?;
-    let resolved = project_manager
+    let workspace_root = workspace_manager
+        .config_manager
+        .workspace_path()
+        .to_path_buf();
+
+    // Data repo files bypass branch/worktree resolution.
+    if parse_data_repo_path(&path).is_some() {
+        let file_path =
+            resolve_file_path(&workspace_manager.config_manager, &workspace_root, &path).await?;
+        if let Some(parent) = file_path.parent() {
+            fs::create_dir_all(parent).await.map_err(|e| {
+                tracing::error!("Failed to create parent dir {:?}: {}", parent, e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        }
+        fs::write(&file_path, payload.data).await.map_err(|e| {
+            tracing::error!("Failed to save data repo file {:?}: {}", file_path, e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+        return Ok(extract::Json("success".to_string()));
+    }
+
+    let resolved = workspace_manager
         .config_manager
         .resolve_file(path)
         .map_err(|_| StatusCode::BAD_REQUEST)
         .await?;
-    let project_root = project_manager.config_manager.project_path().to_path_buf();
     let file_path = app_state
         .backend
         .resolve_path(
             branch_query.branch.as_deref(),
             PathBuf::from(&resolved),
-            &project_root,
+            &workspace_root,
         )
         .await;
 
@@ -317,13 +357,13 @@ pub async fn save_file(
 
 pub async fn get_diff_summary(
     State(app_state): State<AppState>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Query(branch_query): Query<BranchQuery>,
 ) -> Result<Json<Vec<FileStatus>>, StatusCode> {
-    let project_root = project_manager.config_manager.project_path();
+    let workspace_root = workspace_manager.config_manager.workspace_path();
     let repo_path = app_state
         .backend
-        .worktree_root(branch_query.branch.as_deref(), project_root)
+        .worktree_root(branch_query.branch.as_deref(), workspace_root)
         .await;
 
     // In local mode, uncommitted working-tree changes take priority so the
@@ -361,26 +401,41 @@ pub async fn get_diff_summary(
 
 pub async fn get_file(
     State(app_state): State<AppState>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     Query(branch_query): Query<BranchQuery>,
 ) -> Result<extract::Json<String>, StatusCode> {
     let decoded_path: Vec<u8> = BASE64_STANDARD
         .decode(pathb64)
         .map_err(|_| StatusCode::BAD_REQUEST)?;
     let path = String::from_utf8(decoded_path).map_err(|_| StatusCode::BAD_REQUEST)?;
-    let resolved = project_manager
+    let workspace_root = workspace_manager
+        .config_manager
+        .workspace_path()
+        .to_path_buf();
+
+    // Data repo paths skip worktree resolution — they have their own root.
+    if parse_data_repo_path(&path).is_some() {
+        let file_path =
+            resolve_file_path(&workspace_manager.config_manager, &workspace_root, &path).await?;
+        let content = fs::read_to_string(&file_path).await.map_err(|e| {
+            tracing::error!("Failed to read data repo file {:?}: {}", file_path, e);
+            StatusCode::NOT_FOUND
+        })?;
+        return Ok(extract::Json(content));
+    }
+
+    let resolved = workspace_manager
         .config_manager
         .resolve_file(path)
         .map_err(|_| StatusCode::BAD_REQUEST)
         .await?;
-    let project_root = project_manager.config_manager.project_path().to_path_buf();
     let file_path = app_state
         .backend
         .resolve_path(
             branch_query.branch.as_deref(),
             PathBuf::from(&resolved),
-            &project_root,
+            &workspace_root,
         )
         .await;
     let file_content = fs::read_to_string(&file_path).await.map_err(|e| {
@@ -396,30 +451,30 @@ pub async fn get_file(
 
 pub async fn get_file_from_git(
     State(app_state): State<AppState>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     Query(branch_query): Query<BranchQuery>,
 ) -> Result<extract::Json<String>, StatusCode> {
     let decoded_path: Vec<u8> = BASE64_STANDARD
         .decode(pathb64)
         .map_err(|_| StatusCode::BAD_REQUEST)?;
     let path = String::from_utf8(decoded_path).map_err(|_| StatusCode::BAD_REQUEST)?;
-    let project_root = project_manager.config_manager.project_path();
+    let workspace_root = workspace_manager.config_manager.workspace_path();
     let repo_path = app_state
         .backend
-        .worktree_root(branch_query.branch.as_deref(), project_root)
+        .worktree_root(branch_query.branch.as_deref(), workspace_root)
         .await;
-    let file_path = project_manager
+    let file_path = workspace_manager
         .config_manager
         .resolve_file(path)
         .map_err(|_| StatusCode::BAD_REQUEST)
         .await?;
     let relative_file_path = PathBuf::from(&file_path)
-        .strip_prefix(project_root)
+        .strip_prefix(workspace_root)
         .map_err(|_| StatusCode::BAD_REQUEST)?
         .to_string_lossy()
         .to_string();
-    let file_content = ProjectService::get_file_from_git(&repo_path, &relative_file_path).await?;
+    let file_content = WorkspaceService::get_file_from_git(&repo_path, &relative_file_path).await?;
     Ok(extract::Json(file_content))
 }
 
@@ -429,8 +484,8 @@ pub async fn get_file_from_git(
 /// - Newly added (untracked) files: `git clean -f -- <path>` (removes the file)
 pub async fn revert_file(
     State(app_state): State<AppState>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     Query(branch_query): Query<BranchQuery>,
 ) -> Result<extract::Json<String>, StatusCode> {
     if app_state.readonly {
@@ -440,18 +495,18 @@ pub async fn revert_file(
         .decode(pathb64)
         .map_err(|_| StatusCode::BAD_REQUEST)?;
     let path = String::from_utf8(decoded_path).map_err(|_| StatusCode::BAD_REQUEST)?;
-    let project_root = project_manager.config_manager.project_path();
+    let workspace_root = workspace_manager.config_manager.workspace_path();
     let repo_path = app_state
         .backend
-        .worktree_root(branch_query.branch.as_deref(), project_root)
+        .worktree_root(branch_query.branch.as_deref(), workspace_root)
         .await;
-    let file_path = project_manager
+    let file_path = workspace_manager
         .config_manager
         .resolve_file(path)
         .map_err(|_| StatusCode::BAD_REQUEST)
         .await?;
     let relative_file_path = PathBuf::from(&file_path)
-        .strip_prefix(project_root)
+        .strip_prefix(workspace_root)
         .map_err(|_| StatusCode::BAD_REQUEST)?
         .to_string_lossy()
         .to_string();
@@ -505,34 +560,130 @@ impl Display for FileTree {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, ToSchema, Debug)]
+pub struct RepoTree {
+    pub name: String,
+    /// "ready" once the clone directory contains a .git folder; "cloning" while the background
+    /// clone is still in progress; "error" if the path is unresolvable.
+    pub sync_status: String,
+    /// The git remote URL for the repository, if configured. Used by the IDE to build a GitHub link.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub git_url: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, ToSchema, Debug)]
+pub struct FileTreeResponse {
+    pub primary: Vec<FileTree>,
+    pub repositories: Vec<RepoTree>,
+}
+
 /// Directory names that are always hidden from the file tree.
-const HIDDEN_DIRS: &[&str] = &[".git", ".worktrees"];
+const HIDDEN_DIRS: &[&str] = &[".git", ".worktrees", ".repositories"];
 
 pub async fn get_file_tree(
     State(app_state): State<AppState>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Query(branch_query): Query<BranchQuery>,
-) -> Result<extract::Json<Vec<FileTree>>, StatusCode> {
-    let project_root = project_manager.config_manager.project_path();
-    let project_root = PathBuf::from(project_root);
+) -> Result<extract::Json<FileTreeResponse>, StatusCode> {
+    let workspace_root = workspace_manager.config_manager.workspace_path();
+    let workspace_root = PathBuf::from(workspace_root);
 
     // Serve the worktree directory when a non-default branch is requested.
     let serve_root = app_state
         .backend
-        .worktree_root(branch_query.branch.as_deref(), &project_root)
+        .worktree_root(branch_query.branch.as_deref(), &workspace_root)
         .await;
 
-    let file_tree =
+    let primary_tree =
         tokio::task::spawn_blocking(move || get_file_tree_recursive(&serve_root, &serve_root))
             .await
             .map_err(|e| {
                 tracing::error!("File tree task panicked: {}", e);
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
-    Ok(extract::Json(file_tree.children))
+
+    // Return only repo stubs (name + sync_status); files are fetched lazily per repo.
+    // Use async stat() so we don't block the executor thread for N repos.
+    let config = workspace_manager.config_manager.get_config();
+    let repo_trees: Vec<RepoTree> = {
+        let futs: Vec<_> = config
+            .repositories
+            .iter()
+            .map(|r| {
+                let name = r.name.clone();
+                let git_url = r.git_url.clone();
+                let git_dot = if r.git_url.is_some() {
+                    Some(
+                        workspace_root
+                            .join(".repositories")
+                            .join(&r.name)
+                            .join(".git"),
+                    )
+                } else {
+                    None
+                };
+                async move {
+                    let sync_status = match git_dot {
+                        Some(p) => {
+                            if tokio::fs::try_exists(&p).await.unwrap_or(false) {
+                                "ready"
+                            } else {
+                                "cloning"
+                            }
+                        }
+                        None => "ready",
+                    };
+                    RepoTree {
+                        name,
+                        sync_status: sync_status.to_string(),
+                        git_url,
+                    }
+                }
+            })
+            .collect();
+        futures::future::join_all(futs).await
+    };
+
+    Ok(extract::Json(FileTreeResponse {
+        primary: primary_tree.children,
+        repositories: repo_trees,
+    }))
 }
 
-fn get_file_tree_recursive(path: &PathBuf, root: &PathBuf) -> FileTree {
+/// Resolves a decoded file path to an absolute filesystem path.
+/// Handles both regular project paths and `@repo-name/relative/path` repository paths.
+async fn resolve_file_path(
+    workspace_manager: &oxy::config::ConfigManager,
+    workspace_root: &PathBuf,
+    decoded_path: &str,
+) -> Result<PathBuf, StatusCode> {
+    if let Some((repo_name, file_path)) = parse_data_repo_path(decoded_path) {
+        let config = workspace_manager.get_config();
+        let repo = config
+            .repositories
+            .iter()
+            .find(|r| r.name == repo_name)
+            .ok_or(StatusCode::NOT_FOUND)?;
+        let repo_root = resolve_data_repo_path(workspace_root, repo).map_err(|e| {
+            tracing::error!("Repository '{}' unavailable: {}", repo_name, e);
+            StatusCode::NOT_FOUND
+        })?;
+        // Prevent path traversal
+        let joined = repo_root.join(file_path);
+        if !joined.starts_with(&repo_root) {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+        Ok(joined)
+    } else {
+        let resolved = workspace_manager
+            .resolve_file(decoded_path)
+            .map_err(|_| StatusCode::BAD_REQUEST)
+            .await?;
+        Ok(PathBuf::from(resolved))
+    }
+}
+
+pub(crate) fn get_file_tree_recursive(path: &PathBuf, root: &PathBuf) -> FileTree {
     let mut file_tree = FileTree {
         name: path.file_name().unwrap().to_string_lossy().to_string(),
         path: path

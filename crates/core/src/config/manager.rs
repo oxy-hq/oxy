@@ -35,6 +35,10 @@ impl ConfigManager {
         }
     }
 
+    pub fn models(&self) -> &[Model] {
+        &self.config.models
+    }
+
     pub fn resolve_model(&self, model_name: &str) -> Result<&Model, OxyError> {
         let model = self
             .config
@@ -264,33 +268,33 @@ impl ConfigManager {
         self.storage.get_app_results_dir().await
     }
 
-    /// Gets the project path from the configuration
-    pub fn project_path(&self) -> &std::path::Path {
-        &self.config.project_path
+    /// Gets the workspace path from the configuration
+    pub fn workspace_path(&self) -> &std::path::Path {
+        &self.config.workspace_path
     }
 
-    /// Gets the semantics directory path (project_path/semantics).
+    /// Gets the semantics directory path (workspace_path/semantics).
     /// Used for writing semantic files.
     pub fn semantics_path(&self) -> PathBuf {
-        self.config.project_path.join("semantics")
+        self.config.workspace_path.join("semantics")
     }
 
     /// Gets the base path for scanning semantic layer files.
     /// Scans the entire project so .view.yml/.topic.yml files can live anywhere.
     pub fn semantics_scan_path(&self) -> PathBuf {
-        self.config.project_path.clone()
+        self.config.workspace_path.clone()
     }
 
     pub fn global_semantic_path(&self) -> PathBuf {
-        self.config.project_path.join(GLOBAL_SEMANTIC_PATH)
+        self.config.workspace_path.join(GLOBAL_SEMANTIC_PATH)
     }
 
     pub fn database_semantic_path(&self) -> PathBuf {
-        self.config.project_path.join(DATABASE_SEMANTIC_PATH)
+        self.config.workspace_path.join(DATABASE_SEMANTIC_PATH)
     }
 
     pub fn globals_path(&self) -> PathBuf {
-        self.config.project_path.join("globals")
+        self.config.workspace_path.join("globals")
     }
 
     pub fn get_globals_registry(&self) -> oxy_globals::GlobalRegistry {
@@ -380,6 +384,52 @@ impl ConfigManager {
             return Err(OxyError::ConfigurationError(format!(
                 "Database with name '{}' not found",
                 database_name
+            )));
+        }
+
+        self.storage.write_config(&updated_config).await?;
+        Ok(())
+    }
+
+    /// Returns the current data repos
+    pub fn list_repositories(&self) -> &[crate::config::model::Repository] {
+        &self.config.repositories
+    }
+
+    /// Adds a repository to the configuration
+    pub async fn add_repository(
+        &self,
+        repo: crate::config::model::Repository,
+    ) -> Result<(), OxyError> {
+        let mut updated_config = (*self.config).clone();
+
+        if updated_config
+            .repositories
+            .iter()
+            .any(|r| r.name == repo.name)
+        {
+            return Err(OxyError::ConfigurationError(format!(
+                "Repository with name '{}' already exists",
+                repo.name
+            )));
+        }
+
+        updated_config.repositories.push(repo);
+        self.storage.write_config(&updated_config).await?;
+        Ok(())
+    }
+
+    /// Removes a repository from the configuration by name
+    pub async fn remove_repository(&self, name: &str) -> Result<(), OxyError> {
+        let mut updated_config = (*self.config).clone();
+
+        let initial_len = updated_config.repositories.len();
+        updated_config.repositories.retain(|r| r.name != name);
+
+        if updated_config.repositories.len() == initial_len {
+            return Err(OxyError::ConfigurationError(format!(
+                "Repository with name '{}' not found",
+                name
             )));
         }
 

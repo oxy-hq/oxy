@@ -52,13 +52,13 @@ pub mod run_workflow {
 pub mod launcher {
     use super::*;
 
-    pub mod with_project {
+    pub mod with_workspace {
         use super::*;
 
-        pub static NAME: &str = "workflow.launcher.with_project";
+        pub static NAME: &str = "workflow.launcher.with_workspace";
         pub static TYPE: &str = "workflow";
-        pub static INPUT: &str = "workflow.launcher.with_project.input";
-        pub static OUTPUT: &str = "workflow.launcher.with_project.output";
+        pub static INPUT: &str = "workflow.launcher.with_workspace.input";
+        pub static OUTPUT: &str = "workflow.launcher.with_workspace.output";
 
         pub fn input(project_path: &str) {
             event!(

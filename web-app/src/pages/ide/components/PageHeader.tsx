@@ -3,7 +3,7 @@ import { cn } from "@/libs/shadcn/utils";
 
 interface PageHeaderProps {
   icon: LucideIcon;
-  title: string;
+  title: React.ReactNode;
   actions?: React.ReactNode;
   className?: string;
 }

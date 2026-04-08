@@ -59,8 +59,13 @@ mod m20260317_000001_create_agentic_tables;
 mod m20260317_000002_rename_legacy_agentic_tables;
 mod m20260318_000001_add_thread_id_to_agentic_runs;
 mod m20260324_000001_add_updated_by_to_secrets;
+mod m20260328_000001_drop_workspace_tables;
+mod m20260329_000001_add_path_to_projects;
+mod m20260330_000001_add_created_by_to_projects;
+mod m20260401_000001_add_owner_role;
 mod m20260401_000001_add_spec_hint_to_agentic_runs;
 mod m20260402_000001_add_thinking_mode_to_agentic_runs;
+mod m20260402_000001_rename_projects_to_workspaces;
 
 pub struct Migrator;
 
@@ -126,8 +131,13 @@ impl MigratorTrait for Migrator {
             Box::new(m20260317_000002_rename_legacy_agentic_tables::Migration),
             Box::new(m20260318_000001_add_thread_id_to_agentic_runs::Migration),
             Box::new(m20260324_000001_add_updated_by_to_secrets::Migration),
+            Box::new(m20260328_000001_drop_workspace_tables::Migration),
+            Box::new(m20260329_000001_add_path_to_projects::Migration),
+            Box::new(m20260330_000001_add_created_by_to_projects::Migration),
+            Box::new(m20260401_000001_add_owner_role::Migration),
             Box::new(m20260401_000001_add_spec_hint_to_agentic_runs::Migration),
             Box::new(m20260402_000001_add_thinking_mode_to_agentic_runs::Migration),
+            Box::new(m20260402_000001_rename_projects_to_workspaces::Migration),
         ]
     }
 }

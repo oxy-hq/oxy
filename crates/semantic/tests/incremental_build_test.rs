@@ -27,16 +27,16 @@ fn create_globals_file(dir: &std::path::Path, content: &str) {
 #[test]
 fn test_incremental_build_no_changes() {
     let temp_dir = TempDir::new().unwrap();
-    let project_root = temp_dir.path();
-    let semantic_dir = project_root.join("semantics");
-    let target_dir = project_root.join(".semantics");
+    let workspace_root = temp_dir.path();
+    let semantic_dir = workspace_root.join("semantics");
+    let target_dir = workspace_root.join(".semantics");
 
     fs::create_dir_all(&semantic_dir).unwrap();
     fs::create_dir_all(&target_dir).unwrap();
 
     // Create initial view
     create_view_file(
-        project_root,
+        workspace_root,
         "orders",
         r#"
 name: orders
@@ -49,7 +49,7 @@ table: orders.csv
     let mut manifest = BuildManifest::new();
     manifest.add_file_hash(
         "semantics/views/orders.view.yml",
-        oxy_semantic::hash_file(&project_root.join("semantics/views/orders.view.yml")).unwrap(),
+        oxy_semantic::hash_file(&workspace_root.join("semantics/views/orders.view.yml")).unwrap(),
     );
     manifest.set_config_hash("config_hash".to_string());
     manifest.set_globals_hash("globals_hash".to_string());
@@ -72,16 +72,16 @@ table: orders.csv
 #[test]
 fn test_incremental_build_view_modified() {
     let temp_dir = TempDir::new().unwrap();
-    let project_root = temp_dir.path();
-    let semantic_dir = project_root.join("semantics");
-    let target_dir = project_root.join(".semantics");
+    let workspace_root = temp_dir.path();
+    let semantic_dir = workspace_root.join("semantics");
+    let target_dir = workspace_root.join(".semantics");
 
     fs::create_dir_all(&semantic_dir).unwrap();
     fs::create_dir_all(&target_dir).unwrap();
 
     // Create initial view
     create_view_file(
-        project_root,
+        workspace_root,
         "orders",
         r#"
 name: orders
@@ -101,7 +101,7 @@ table: orders.csv
 
     // Modify the view
     create_view_file(
-        project_root,
+        workspace_root,
         "orders",
         r#"
 name: orders
@@ -127,16 +127,16 @@ table: orders_v2.csv  # Modified
 #[test]
 fn test_incremental_build_view_added() {
     let temp_dir = TempDir::new().unwrap();
-    let project_root = temp_dir.path();
-    let semantic_dir = project_root.join("semantics");
-    let target_dir = project_root.join(".semantics");
+    let workspace_root = temp_dir.path();
+    let semantic_dir = workspace_root.join("semantics");
+    let target_dir = workspace_root.join(".semantics");
 
     fs::create_dir_all(&semantic_dir).unwrap();
     fs::create_dir_all(&target_dir).unwrap();
 
     // Create initial view
     create_view_file(
-        project_root,
+        workspace_root,
         "orders",
         r#"
 name: orders
@@ -149,7 +149,7 @@ table: orders.csv
     let mut manifest = BuildManifest::new();
     manifest.add_file_hash(
         "semantics/views/orders.view.yml",
-        oxy_semantic::hash_file(&project_root.join("semantics/views/orders.view.yml")).unwrap(),
+        oxy_semantic::hash_file(&workspace_root.join("semantics/views/orders.view.yml")).unwrap(),
     );
     manifest.set_config_hash("config_hash".to_string());
     manifest.set_globals_hash("globals_hash".to_string());
@@ -159,7 +159,7 @@ table: orders.csv
 
     // Add new view
     create_view_file(
-        project_root,
+        workspace_root,
         "customers",
         r#"
 name: customers
@@ -185,9 +185,9 @@ table: customers.csv
 #[test]
 fn test_incremental_build_view_deleted() {
     let temp_dir = TempDir::new().unwrap();
-    let project_root = temp_dir.path();
-    let semantic_dir = project_root.join("semantics");
-    let target_dir = project_root.join(".semantics");
+    let workspace_root = temp_dir.path();
+    let semantic_dir = workspace_root.join("semantics");
+    let target_dir = workspace_root.join(".semantics");
 
     fs::create_dir_all(&semantic_dir).unwrap();
     fs::create_dir_all(&target_dir).unwrap();
@@ -208,7 +208,7 @@ fn test_incremental_build_view_deleted() {
 
     // Create only orders view (customers deleted)
     create_view_file(
-        project_root,
+        workspace_root,
         "orders",
         r#"
 name: orders
@@ -234,16 +234,16 @@ table: orders.csv
 #[test]
 fn test_incremental_build_with_dependencies() {
     let temp_dir = TempDir::new().unwrap();
-    let project_root = temp_dir.path();
-    let semantic_dir = project_root.join("semantics");
-    let target_dir = project_root.join(".semantics");
+    let workspace_root = temp_dir.path();
+    let semantic_dir = workspace_root.join("semantics");
+    let target_dir = workspace_root.join(".semantics");
 
     fs::create_dir_all(&semantic_dir).unwrap();
     fs::create_dir_all(&target_dir).unwrap();
 
     // Create views
     create_view_file(
-        project_root,
+        workspace_root,
         "customers",
         r#"
 name: customers
@@ -253,7 +253,7 @@ table: customers.csv
     );
 
     create_view_file(
-        project_root,
+        workspace_root,
         "orders",
         r#"
 name: orders
@@ -267,7 +267,7 @@ table: orders.csv
     manifest.add_file_hash("semantics/views/customers.view.yml", "old_hash".to_string());
     manifest.add_file_hash(
         "semantics/views/orders.view.yml",
-        oxy_semantic::hash_file(&project_root.join("semantics/views/orders.view.yml")).unwrap(),
+        oxy_semantic::hash_file(&workspace_root.join("semantics/views/orders.view.yml")).unwrap(),
     );
 
     let mut dep_graph = BTreeMap::new();
@@ -282,7 +282,7 @@ table: orders.csv
 
     // Modify customers view
     create_view_file(
-        project_root,
+        workspace_root,
         "customers",
         r#"
 name: customers
@@ -308,16 +308,16 @@ table: customers_v2.csv  # Modified
 #[test]
 fn test_full_rebuild_on_globals_change() {
     let temp_dir = TempDir::new().unwrap();
-    let project_root = temp_dir.path();
-    let semantic_dir = project_root.join("semantics");
-    let target_dir = project_root.join(".semantics");
+    let workspace_root = temp_dir.path();
+    let semantic_dir = workspace_root.join("semantics");
+    let target_dir = workspace_root.join(".semantics");
 
     fs::create_dir_all(&semantic_dir).unwrap();
     fs::create_dir_all(&target_dir).unwrap();
 
     // Create view
     create_view_file(
-        project_root,
+        workspace_root,
         "orders",
         r#"
 name: orders
@@ -327,14 +327,14 @@ table: orders.csv
     );
 
     // Create initial globals
-    create_globals_file(project_root, "version: 1");
+    create_globals_file(workspace_root, "version: 1");
 
     // Create manifest with old globals hash
-    let old_globals_hash = hash_globals_registry(&project_root.join(".oxy/globals")).unwrap();
+    let old_globals_hash = hash_globals_registry(&workspace_root.join(".oxy/globals")).unwrap();
     let mut manifest = BuildManifest::new();
     manifest.add_file_hash(
         "semantics/views/orders.view.yml",
-        oxy_semantic::hash_file(&project_root.join("semantics/views/orders.view.yml")).unwrap(),
+        oxy_semantic::hash_file(&workspace_root.join("semantics/views/orders.view.yml")).unwrap(),
     );
     manifest.set_config_hash("config_hash".to_string());
     manifest.set_globals_hash(old_globals_hash);
@@ -343,10 +343,10 @@ table: orders.csv
         .unwrap();
 
     // Modify globals
-    create_globals_file(project_root, "version: 2");
+    create_globals_file(workspace_root, "version: 2");
 
     // Run change detection
-    let new_globals_hash = hash_globals_registry(&project_root.join(".oxy/globals")).unwrap();
+    let new_globals_hash = hash_globals_registry(&workspace_root.join(".oxy/globals")).unwrap();
     let detector = ChangeDetector::new(&semantic_dir, &target_dir);
     let result = detector
         .detect_changes("config_hash".to_string(), new_globals_hash, false)
@@ -363,16 +363,16 @@ table: orders.csv
 #[test]
 fn test_full_rebuild_on_config_change() {
     let temp_dir = TempDir::new().unwrap();
-    let project_root = temp_dir.path();
-    let semantic_dir = project_root.join("semantics");
-    let target_dir = project_root.join(".semantics");
+    let workspace_root = temp_dir.path();
+    let semantic_dir = workspace_root.join("semantics");
+    let target_dir = workspace_root.join(".semantics");
 
     fs::create_dir_all(&semantic_dir).unwrap();
     fs::create_dir_all(&target_dir).unwrap();
 
     // Create view
     create_view_file(
-        project_root,
+        workspace_root,
         "orders",
         r#"
 name: orders
@@ -385,7 +385,7 @@ table: orders.csv
     let mut manifest = BuildManifest::new();
     manifest.add_file_hash(
         "semantics/views/orders.view.yml",
-        oxy_semantic::hash_file(&project_root.join("semantics/views/orders.view.yml")).unwrap(),
+        oxy_semantic::hash_file(&workspace_root.join("semantics/views/orders.view.yml")).unwrap(),
     );
     manifest.set_config_hash("old_config".to_string());
     manifest.set_globals_hash("globals_hash".to_string());
@@ -410,16 +410,16 @@ table: orders.csv
 #[test]
 fn test_topics_incremental_build() {
     let temp_dir = TempDir::new().unwrap();
-    let project_root = temp_dir.path();
-    let semantic_dir = project_root.join("semantics");
-    let target_dir = project_root.join(".semantics");
+    let workspace_root = temp_dir.path();
+    let semantic_dir = workspace_root.join("semantics");
+    let target_dir = workspace_root.join(".semantics");
 
     fs::create_dir_all(&semantic_dir).unwrap();
     fs::create_dir_all(&target_dir).unwrap();
 
     // Create initial topic
     create_topic_file(
-        project_root,
+        workspace_root,
         "sales",
         r#"
 name: sales
@@ -438,7 +438,7 @@ base_view: orders
 
     // Modify topic
     create_topic_file(
-        project_root,
+        workspace_root,
         "sales",
         r#"
 name: sales

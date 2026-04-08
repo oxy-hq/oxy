@@ -31,11 +31,12 @@ const fetchWorkflow = async (projectId: string, branchName: string, relative_pat
   return workflowConfig;
 };
 
-const useWorkflowConfig = (relative_path: string) => {
+const useWorkflowConfig = (relative_path: string, projectIdOverride?: string) => {
   const { project, branchName } = useCurrentProjectBranch();
+  const projectId = projectIdOverride ?? project.id;
   return useQuery({
-    queryKey: queryKeys.workflow.get(project.id, branchName, relative_path),
-    queryFn: () => fetchWorkflow(project.id, branchName, relative_path),
+    queryKey: queryKeys.workflow.get(projectId, branchName, relative_path),
+    queryFn: () => fetchWorkflow(projectId, branchName, relative_path),
     enabled: true,
     retry: false
   });

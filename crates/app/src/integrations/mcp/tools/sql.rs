@@ -24,12 +24,12 @@ pub async fn resolve_execute_sql_tool(
     // Convert absolute path to relative path from project root
     let config = config_manager.get_config();
     let relative_path = sql_path
-        .strip_prefix(&config.project_path)
+        .strip_prefix(&config.workspace_path)
         .map_err(|_| {
             OxyError::ConfigurationError(format!(
                 "SQL file path {} is not within project path {}",
                 sql_path.display(),
-                config.project_path.display()
+                config.workspace_path.display()
             ))
         })?
         .to_str()
@@ -92,7 +92,7 @@ pub async fn resolve_execute_sql_tool(
 
 /// Runs a SQL file tool with the given arguments
 pub async fn run_sql_file_tool(
-    project_manager: &oxy::adapters::project::manager::ProjectManager,
+    workspace_manager: &oxy::adapters::workspace::manager::WorkspaceManager,
     sql_file_path: String,
     arguments: Option<Map<String, Value>>,
     filters: Option<SessionFilters>,
@@ -112,8 +112,8 @@ pub async fn run_sql_file_tool(
         })?;
 
     // Resolve relative path to absolute path based on project path
-    let config = project_manager.config_manager.get_config();
-    let absolute_sql_path = config.project_path.join(&sql_file_path);
+    let config = workspace_manager.config_manager.get_config();
+    let absolute_sql_path = config.workspace_path.join(&sql_file_path);
 
     let sql_content = tokio::fs::read_to_string(&absolute_sql_path)
         .await
@@ -124,7 +124,8 @@ pub async fn run_sql_file_tool(
             )
         })?;
 
-    let (mut execution_context, mut rx) = create_execution_context(project_manager, "mcp_sql_file");
+    let (mut execution_context, mut rx) =
+        create_execution_context(workspace_manager, "mcp_sql_file");
 
     // Apply session filters if provided
     if let Some(session_filters) = filters {
@@ -167,7 +168,7 @@ pub async fn run_sql_file_tool(
 }
 /// Creates an execution context for tool execution
 fn create_execution_context(
-    project_manager: &oxy::adapters::project::manager::ProjectManager,
+    workspace_manager: &oxy::adapters::workspace::manager::WorkspaceManager,
     kind: &str,
 ) -> (
     oxy::execute::ExecutionContext,
@@ -188,7 +189,7 @@ fn create_execution_context(
 
     let renderer = Renderer::new(minijinja::context! {});
     let execution_context =
-        ExecutionContext::new(source, renderer, project_manager.clone(), tx, None, None);
+        ExecutionContext::new(source, renderer, workspace_manager.clone(), tx, None, None);
 
     (execution_context, rx)
 }

@@ -236,14 +236,14 @@ impl ChangeDetector {
     fn scan_semantic_files(&self) -> Result<BTreeMap<String, String>, SemanticLayerError> {
         let mut file_hashes = BTreeMap::new();
 
-        let project_root = self
+        let workspace_root = self
             .target_dir
             .parent()
             .ok_or_else(|| SemanticLayerError::IOError("Invalid target directory".to_string()))?;
 
         // Scan for both .yml and .yaml extensions to match parser behavior
         for ext in &[".view.yml", ".view.yaml", ".topic.yml", ".topic.yaml"] {
-            Self::scan_directory(project_root, project_root, ext, &mut file_hashes)?;
+            Self::scan_directory(workspace_root, workspace_root, ext, &mut file_hashes)?;
         }
 
         Ok(file_hashes)
@@ -254,38 +254,38 @@ impl ChangeDetector {
         let mut file_hashes = BTreeMap::new();
 
         // Get project root (parent of .semantics directory)
-        let project_root = self
+        let workspace_root = self
             .target_dir
             .parent()
             .ok_or_else(|| SemanticLayerError::IOError("Invalid target directory".to_string()))?;
 
         // Scan for agent files (*.agent.yml) - typically in project root or subdirs
         Self::scan_directory_all_extensions(
-            project_root,
-            project_root,
+            workspace_root,
+            workspace_root,
             &[".agent.yml"],
             &mut file_hashes,
         )?;
 
         // Scan for workflow files (*.workflow.yml)
         Self::scan_directory_all_extensions(
-            project_root,
-            project_root,
+            workspace_root,
+            workspace_root,
             &[".workflow.yml"],
             &mut file_hashes,
         )?;
 
         // Scan for SQL files (*.sql)
         Self::scan_directory_all_extensions(
-            project_root,
-            project_root,
+            workspace_root,
+            workspace_root,
             &[".sql"],
             &mut file_hashes,
         )?;
 
         // Topics are scanned here too for embeddings (separate from semantic layer)
         for ext in &[".topic.yml", ".topic.yaml"] {
-            Self::scan_directory(project_root, project_root, ext, &mut file_hashes)?;
+            Self::scan_directory(workspace_root, workspace_root, ext, &mut file_hashes)?;
         }
 
         Ok(file_hashes)

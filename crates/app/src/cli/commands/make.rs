@@ -259,14 +259,14 @@ pub async fn handle_make_command(make_args: &MakeArgs) -> anyhow::Result<()> {
             database: Some("local".to_string()),
         }),
         models: vec![model.clone()],
-        project_path: PathBuf::from("."),
+        workspace_path: PathBuf::from("."),
         builder_agent: None,
         integrations: vec![],
         slack: None,
         mcp: None,
         a2a: None,
         protected_branches: None,
-        admins: vec![],
+        repositories: vec![],
     };
     serde_yaml::to_writer(
         std::fs::File::create(setup.output_dir.join("config.yml"))?,

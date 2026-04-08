@@ -34,17 +34,16 @@ import type { UserInfo } from "@/types/auth";
 
 interface Props {
   user: UserInfo;
-  workspaceId: string;
 }
 
-const Actions: React.FC<Props> = ({ user, workspaceId }) => {
+const Actions: React.FC<Props> = ({ user }) => {
   const { data: currentUser } = useCurrentUser();
 
   const [isDeleting, setIsDeleting] = useState(false);
   const [isRoleDialogOpen, setIsRoleDialogOpen] = useState(false);
   const [selectedRole, setSelectedRole] = useState(user.role);
-  const removeUserMutation = useRemoveUser(workspaceId);
-  const updateUserRoleMutation = useUpdateUserRole(workspaceId);
+  const removeUserMutation = useRemoveUser();
+  const updateUserRoleMutation = useUpdateUserRole();
   const [isRemoveUserAlertOpen, setIsRemoveUserAlertOpen] = useState(false);
   const roleOptions = ["owner", "admin", "member"];
 

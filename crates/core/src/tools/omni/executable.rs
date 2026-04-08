@@ -108,7 +108,7 @@ impl OmniQueryExecutable {
 
         // Resolve API key from environment variable
         let api_key = execution_context
-            .project
+            .workspace
             .secrets_manager
             .resolve_secret(&omni_config.api_key_var)
             .await?
@@ -281,7 +281,7 @@ impl OmniQueryExecutable {
         execution_context: &ExecutionContext,
         integration_name: &str,
     ) -> Result<OmniIntegration, OxyError> {
-        let config = execution_context.project.config_manager.clone();
+        let config = execution_context.workspace.config_manager.clone();
         let omni_config = config
             .get_config()
             .integrations

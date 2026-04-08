@@ -10,10 +10,10 @@
 //! Remote operations are authenticated via the following environment variables
 //! (in priority order):
 //!
-//! 1. **GitHub App** — `GITHUB_APP_ID` + `GITHUB_APP_PRIVATE_KEY` +
-//!    `GITHUB_APP_INSTALLATION_ID`.  These are the same credentials that the
-//!    Kubernetes `git-sync` sidecar uses; mapping them to env vars via
-//!    `externalSecrets` replaces the `gitSync` Helm block entirely.
+//! 1. **GitHub App** — `GITHUB_APP_ID` + `GITHUB_APP_PRIVATE_KEY`.  The
+//!    installation ID is discovered automatically via `GET /app/installations`.
+//!    If you have multiple installations you can pin one with the optional
+//!    `GITHUB_APP_INSTALLATION_ID` override.
 //! 2. **Personal access token** — `GITHUB_TOKEN` (fallback).
 //!
 //! Tokens are **never persisted** to `.git/config`; they are passed via the
@@ -56,53 +56,56 @@ pub struct LocalGitService;
 impl LocalGitService {
     // ─── Repository helpers ────────────────────────────────────────────────
 
-    /// Returns `true` if `project_root` contains a `.git` directory.
-    pub fn is_git_repo(project_root: &Path) -> bool {
-        project_root.join(".git").exists()
+    /// Returns `true` if `workspace_root` contains a `.git` directory.
+    pub fn is_git_repo(workspace_root: &Path) -> bool {
+        workspace_root.join(".git").exists()
     }
 
-    /// Initialises a git repository at `project_root` if one does not already
+    /// Initialises a git repository at `workspace_root` if one does not already
     /// exist, then creates an initial commit so the repo has at least one
     /// reachable commit on `main`.
     ///
     /// This is a **no-op** when `.git` already exists, making it safe to call
     /// even when git-sync has already cloned the repo.
-    pub async fn ensure_initialized(project_root: &Path) -> Result<(), OxyError> {
-        if Self::is_git_repo(project_root) {
+    pub async fn ensure_initialized(workspace_root: &Path) -> Result<(), OxyError> {
+        if Self::is_git_repo(workspace_root) {
             info!(
                 "Local git repo already exists at {}, skipping init",
-                project_root.display()
+                workspace_root.display()
             );
             return Ok(());
         }
 
-        info!("Initialising local git repo at {}", project_root.display());
+        info!(
+            "Initialising local git repo at {}",
+            workspace_root.display()
+        );
 
-        Self::run_git(project_root, &["init", "-b", "main"]).await?;
+        Self::run_git(workspace_root, &["init", "-b", "main"]).await?;
         GitOperations::ensure_git_config().await?;
-        Self::run_git(project_root, &["add", "-A"]).await?;
+        Self::run_git(workspace_root, &["add", "-A"]).await?;
 
         // Allow the initial commit to fail if there is nothing to commit
         // (empty project directory).
         let _ = Self::run_git(
-            project_root,
+            workspace_root,
             &["commit", "-m", "Initial commit: Oxy project"],
         )
         .await;
 
-        info!("Local git repo initialised at {}", project_root.display());
+        info!("Local git repo initialised at {}", workspace_root.display());
         Ok(())
     }
 
     // ─── Branch inspection ─────────────────────────────────────────────────
 
-    /// Returns the name of the currently checked-out branch in `project_root`.
-    pub async fn get_current_branch(project_root: &Path) -> Result<String, OxyError> {
-        let out = Self::run_git(project_root, &["branch", "--show-current"]).await?;
+    /// Returns the name of the currently checked-out branch in `workspace_root`.
+    pub async fn get_current_branch(workspace_root: &Path) -> Result<String, OxyError> {
+        let out = Self::run_git(workspace_root, &["branch", "--show-current"]).await?;
         let branch = out.trim().to_string();
         if branch.is_empty() {
             // Detached HEAD — fall back to rev-parse
-            let sha = Self::run_git(project_root, &["rev-parse", "--short", "HEAD"]).await?;
+            let sha = Self::run_git(workspace_root, &["rev-parse", "--short", "HEAD"]).await?;
             return Ok(format!("HEAD@{}", sha.trim()));
         }
         Ok(branch)
@@ -124,6 +127,18 @@ impl LocalGitService {
                 (sha, msg)
             }
             Err(_) => (String::new(), String::new()),
+        }
+    }
+
+    /// Returns the human-readable relative date of the HEAD commit (e.g. "3 hours ago").
+    /// Returns `None` when the repo has no commits or is not a git repo.
+    pub async fn get_head_commit_relative_date(root: &Path) -> Option<String> {
+        match Self::run_git(root, &["log", "-1", "--format=%ar"]).await {
+            Ok(out) => {
+                let s = out.trim().to_string();
+                if s.is_empty() { None } else { Some(s) }
+            }
+            Err(_) => None,
         }
     }
 
@@ -192,7 +207,7 @@ impl LocalGitService {
     /// `refs/heads/{branch}` directly.
     ///
     /// Unlike `get_head_commit`, this works even when `root` is checked out
-    /// on a *different* branch — e.g. `project_root` is on "test" but the
+    /// on a *different* branch — e.g. `workspace_root` is on "test" but the
     /// caller wants info about the "main" branch.
     ///
     /// Returns `("", "")` when the branch does not exist locally.
@@ -229,9 +244,9 @@ impl LocalGitService {
         Ok(())
     }
 
-    /// Lists all local branch names in `project_root`.
-    pub async fn list_local_branches(project_root: &Path) -> Result<Vec<String>, OxyError> {
-        let out = Self::run_git(project_root, &["branch", "--format=%(refname:short)"]).await?;
+    /// Lists all local branch names in `workspace_root`.
+    pub async fn list_local_branches(workspace_root: &Path) -> Result<Vec<String>, OxyError> {
+        let out = Self::run_git(workspace_root, &["branch", "--format=%(refname:short)"]).await?;
         Ok(out
             .lines()
             .map(str::trim)
@@ -248,11 +263,11 @@ impl LocalGitService {
     /// Returns `(branch_name, sync_status)` pairs where `sync_status` is one of:
     /// - `"behind"` — upstream has commits the local branch hasn't pulled
     /// - `"synced"` — up to date, ahead, or no upstream configured
-    pub async fn list_branches_with_status(project_root: &Path) -> Vec<(String, String)> {
-        let default_branch = Self::get_default_branch(project_root).await;
+    pub async fn list_branches_with_status(workspace_root: &Path) -> Vec<(String, String)> {
+        let default_branch = Self::get_default_branch(workspace_root).await;
 
         let output = Self::run_git(
-            project_root,
+            workspace_root,
             &[
                 "for-each-ref",
                 "--format=%(refname:short)|%(upstream:trackshort)",
@@ -275,7 +290,7 @@ impl LocalGitService {
                 // active worktree on disk.  This hides refs that were fetched
                 // from the remote but never checked out locally.
                 if name != default_branch {
-                    let has_worktree = Self::get_worktree_path(project_root, &name)
+                    let has_worktree = Self::get_worktree_path(workspace_root, &name)
                         .map(|p| p.exists())
                         .unwrap_or(false);
                     if !has_worktree {
@@ -339,12 +354,12 @@ impl LocalGitService {
     }
 
     /// Returns the worktree path for `branch` if it exists on disk.
-    pub fn get_worktree_path(project_root: &Path, branch: &str) -> Option<PathBuf> {
+    pub fn get_worktree_path(workspace_root: &Path, branch: &str) -> Option<PathBuf> {
         if branch.is_empty() {
             return None;
         }
         let dir = Self::branch_to_dir_name(branch);
-        let path = project_root.join(WORKTREES_DIR).join(&dir);
+        let path = workspace_root.join(WORKTREES_DIR).join(&dir);
         if path.exists() { Some(path) } else { None }
     }
 
@@ -354,44 +369,44 @@ impl LocalGitService {
     /// The branch is always forked from `HEAD` of the main project directory,
     /// so the new branch starts with a clean copy of the current project state.
     pub async fn get_or_create_worktree(
-        project_root: &Path,
+        workspace_root: &Path,
         branch: &str,
     ) -> Result<PathBuf, OxyError> {
-        let default_branch = Self::get_default_branch(project_root).await;
+        let default_branch = Self::get_default_branch(workspace_root).await;
         if branch.is_empty() || branch == default_branch {
-            return Ok(project_root.to_path_buf());
+            return Ok(workspace_root.to_path_buf());
         }
 
         Self::validate_branch_name(branch)?;
 
         let dir_name = Self::branch_to_dir_name(branch);
-        let worktree_path = project_root.join(WORKTREES_DIR).join(&dir_name);
+        let worktree_path = workspace_root.join(WORKTREES_DIR).join(&dir_name);
 
         if worktree_path.exists() {
             return Ok(worktree_path);
         }
 
         // Ensure .worktrees/ directory exists
-        tokio::fs::create_dir_all(project_root.join(WORKTREES_DIR))
+        tokio::fs::create_dir_all(workspace_root.join(WORKTREES_DIR))
             .await
             .map_err(|e| OxyError::IOError(format!("Failed to create .worktrees dir: {e}")))?;
 
         GitOperations::ensure_git_config().await?;
 
         // Determine whether the branch already exists locally
-        let branch_exists = Self::branch_exists(project_root, branch).await?;
+        let branch_exists = Self::branch_exists(workspace_root, branch).await?;
 
         let result = if branch_exists {
             // Attach existing branch to a new worktree
             Self::run_git(
-                project_root,
+                workspace_root,
                 &["worktree", "add", &worktree_path.to_string_lossy(), branch],
             )
             .await
         } else {
             // Create a new branch and worktree in one step
             Self::run_git(
-                project_root,
+                workspace_root,
                 &[
                     "worktree",
                     "add",
@@ -427,16 +442,16 @@ impl LocalGitService {
         Ok(worktree_path)
     }
 
-    /// Remaps `path` from `project_root` to `worktree_root` by replacing the
+    /// Remaps `path` from `workspace_root` to `worktree_root` by replacing the
     /// path prefix.
     ///
-    /// If `path` is not under `project_root`, it is returned unchanged.
+    /// If `path` is not under `workspace_root`, it is returned unchanged.
     pub fn remap_path_to_worktree(
-        project_root: &Path,
+        workspace_root: &Path,
         worktree_root: &Path,
         path: &Path,
     ) -> PathBuf {
-        if let Ok(relative) = path.strip_prefix(project_root) {
+        if let Ok(relative) = path.strip_prefix(workspace_root) {
             worktree_root.join(relative)
         } else {
             path.to_path_buf()
@@ -552,28 +567,59 @@ impl LocalGitService {
     /// Try to obtain an access token for remote git operations.
     ///
     /// Resolution order:
-    /// 1. GitHub App — `GITHUB_APP_ID` + `GITHUB_APP_PRIVATE_KEY` +
-    ///    `GITHUB_APP_INSTALLATION_ID`
+    /// 1. GitHub App — `GITHUB_APP_ID` + `GITHUB_APP_PRIVATE_KEY`.
+    ///    The installation ID is resolved by (a) reading the optional
+    ///    `GITHUB_APP_INSTALLATION_ID` override or (b) auto-discovering via
+    ///    `GET /app/installations` (takes the first result).
     /// 2. Personal access token — `GITHUB_TOKEN`
     ///
     /// Returns `None` when no credentials are configured (local-only mode).
     pub async fn get_remote_token() -> Option<String> {
         // Try GitHub App first
-        if let (Ok(app_id), Ok(private_key), Ok(installation_id)) = (
+        if let (Ok(app_id), Ok(private_key)) = (
             env::var("GITHUB_APP_ID"),
             env::var("GITHUB_APP_PRIVATE_KEY"),
-            env::var("GITHUB_APP_INSTALLATION_ID"),
         ) {
             match GitHubAppAuth::new(app_id, private_key) {
-                Ok(auth) => match auth.get_installation_token(&installation_id).await {
-                    Ok(token) => {
-                        info!("Obtained GitHub App installation token for git operations");
-                        return Some(token);
+                Ok(auth) => {
+                    // Prefer an explicit override; otherwise auto-discover.
+                    let installation_id = if let Ok(id) = env::var("GITHUB_APP_INSTALLATION_ID") {
+                        Some(id)
+                    } else {
+                        match auth.list_installations().await {
+                            Ok(list) if !list.is_empty() => {
+                                if list.len() > 1 {
+                                    warn!(
+                                        "Multiple GitHub App installations found; using the first one ({}). \
+                                         Set GITHUB_APP_INSTALLATION_ID to pin a specific installation.",
+                                        list[0].id
+                                    );
+                                }
+                                Some(list[0].id.to_string())
+                            }
+                            Ok(_) => {
+                                warn!("GitHub App has no installations; cannot obtain token");
+                                None
+                            }
+                            Err(e) => {
+                                warn!("Failed to list GitHub App installations: {}", e);
+                                None
+                            }
+                        }
+                    };
+
+                    if let Some(id) = installation_id {
+                        match auth.get_installation_token(&id).await {
+                            Ok(token) => {
+                                info!("Obtained GitHub App installation token for git operations");
+                                return Some(token);
+                            }
+                            Err(e) => {
+                                warn!("Failed to get GitHub App installation token: {}", e);
+                            }
+                        }
                     }
-                    Err(e) => {
-                        warn!("Failed to get GitHub App installation token: {}", e);
-                    }
-                },
+                }
                 Err(e) => {
                     warn!("Failed to create GitHubAppAuth: {}", e);
                 }
@@ -657,8 +703,8 @@ impl LocalGitService {
     }
 
     /// Returns the URL of the `origin` remote, or `None` if not configured.
-    pub async fn get_remote_url(project_root: &Path) -> Option<String> {
-        Self::run_git(project_root, &["remote", "get-url", "origin"])
+    pub async fn get_remote_url(workspace_root: &Path) -> Option<String> {
+        Self::run_git(workspace_root, &["remote", "get-url", "origin"])
             .await
             .ok()
             .map(|s| s.trim().to_string())
@@ -980,7 +1026,7 @@ impl LocalGitService {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
 
-    /// Returns the default branch name for `project_root`.
+    /// Returns the default branch name for `workspace_root`.
     ///
     /// Resolution order:
     /// 1. `GIT_DEFAULT_BRANCH` environment variable (if set and non-empty)
@@ -989,7 +1035,7 @@ impl LocalGitService {
     ///
     /// The result is cached for the process lifetime; git remote HEAD almost never
     /// changes at runtime.
-    pub async fn get_default_branch(project_root: &Path) -> String {
+    pub async fn get_default_branch(workspace_root: &Path) -> String {
         DEFAULT_BRANCH
             .get_or_init(|| async {
                 if let Ok(b) = std::env::var("GIT_DEFAULT_BRANCH")
@@ -998,7 +1044,7 @@ impl LocalGitService {
                     return b;
                 }
                 match Self::run_git(
-                    project_root,
+                    workspace_root,
                     &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
                 )
                 .await
@@ -1019,45 +1065,129 @@ impl LocalGitService {
     /// This is safe to call on branches that have no worktree — it will only
     /// delete the local branch ref in that case.  Refuses to delete the
     /// default branch.
-    pub async fn delete_branch(project_root: &Path, branch: &str) -> Result<(), OxyError> {
+    pub async fn delete_branch(workspace_root: &Path, branch: &str) -> Result<(), OxyError> {
         // Remove the worktree first — git won't delete a branch that is checked
         // out in a worktree unless we remove the worktree first.
-        if let Some(wt_path) = Self::get_worktree_path(project_root, branch) {
+        if let Some(wt_path) = Self::get_worktree_path(workspace_root, branch) {
             Self::run_git(
-                project_root,
+                workspace_root,
                 &["worktree", "remove", "--force", &wt_path.to_string_lossy()],
             )
             .await?;
         }
         // Delete the local branch ref (force — the caller is responsible for
         // ensuring the branch is safe to delete).
-        Self::run_git(project_root, &["branch", "-D", branch]).await?;
+        Self::run_git(workspace_root, &["branch", "-D", branch]).await?;
         Ok(())
     }
 
-    /// Returns `true` if `project_root` has at least one configured git remote.
-    pub async fn has_remote(project_root: &Path) -> bool {
-        Self::run_git(project_root, &["remote"])
+    /// Returns `true` if `workspace_root` has at least one configured git remote.
+    pub async fn has_remote(workspace_root: &Path) -> bool {
+        Self::run_git(workspace_root, &["remote"])
             .await
             .map(|out| !out.trim().is_empty())
             .unwrap_or(false)
     }
 
-    /// Clone `repo_url` into `project_root` if no `.git` exists yet; otherwise
+    /// Fetches from origin (if a remote exists) and returns all branch names
+    /// the user can check out — both local branches and remote-only branches
+    /// (stripped of the `origin/` prefix, deduplicated).
+    pub async fn list_all_branches(
+        workspace_root: &Path,
+        token: Option<&str>,
+    ) -> Result<Vec<String>, OxyError> {
+        // Best-effort fetch so remote branches are up to date.
+        if Self::has_remote(workspace_root).await {
+            let _ =
+                Self::run_git_authed(workspace_root, &["fetch", "--prune", "origin"], token).await;
+        }
+
+        // Local branches
+        let local_out = Self::run_git(workspace_root, &["branch", "--format=%(refname:short)"])
+            .await
+            .unwrap_or_default();
+        let mut branches: Vec<String> = local_out
+            .lines()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect();
+
+        // Remote branches (strip "origin/" prefix, skip HEAD)
+        let remote_out = Self::run_git(
+            workspace_root,
+            &["branch", "-r", "--format=%(refname:short)"],
+        )
+        .await
+        .unwrap_or_default();
+        for line in remote_out.lines() {
+            let b = line.trim();
+            if b.is_empty() {
+                continue;
+            }
+            let name = b.strip_prefix("origin/").unwrap_or(b);
+            if name == "HEAD" {
+                continue;
+            }
+            if !branches.iter().any(|local| local == name) {
+                branches.push(name.to_string());
+            }
+        }
+
+        branches.sort();
+        Ok(branches)
+    }
+
+    /// Checks out `branch` in `workspace_root`.  If the branch only exists on
+    /// the remote, creates a local tracking branch first.
+    pub async fn checkout_branch(
+        workspace_root: &Path,
+        branch: &str,
+        token: Option<&str>,
+    ) -> Result<(), OxyError> {
+        // Best-effort fetch so remote refs are available.
+        if Self::has_remote(workspace_root).await {
+            let _ =
+                Self::run_git_authed(workspace_root, &["fetch", "--prune", "origin"], token).await;
+        }
+
+        let local_exists = Self::branch_exists(workspace_root, branch).await?;
+        if local_exists {
+            Self::run_git(workspace_root, &["checkout", branch]).await?;
+        } else {
+            // Check whether the remote has this branch so we can set up tracking.
+            let remote_ref = format!("origin/{}", branch);
+            let remote_exists =
+                Self::run_git(workspace_root, &["rev-parse", "--verify", &remote_ref])
+                    .await
+                    .is_ok();
+
+            if remote_exists {
+                // Create a local tracking branch from the remote.
+                Self::run_git(workspace_root, &["checkout", "-b", branch, &remote_ref]).await?;
+            } else {
+                // New branch with no remote counterpart — create from HEAD.
+                Self::run_git(workspace_root, &["checkout", "-b", branch]).await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Clone `repo_url` into `workspace_root` if no `.git` exists yet; otherwise
     /// call [`ensure_initialized`] (git init for a fresh directory, no-op for
     /// an existing repo).
     ///
     /// This replaces the git-sync sidecar for initial repository setup.
     pub async fn clone_or_init(
-        project_root: &Path,
+        workspace_root: &Path,
         repo_url: Option<&str>,
         branch: &str,
         token: Option<&str>,
     ) -> Result<(), OxyError> {
-        if Self::is_git_repo(project_root) {
+        if Self::is_git_repo(workspace_root) {
             info!(
                 "Git repo already exists at {}, skipping clone/init",
-                project_root.display()
+                workspace_root.display()
             );
             return Ok(());
         }
@@ -1067,17 +1197,17 @@ impl LocalGitService {
                 "Cloning {} (branch: {}) into {}",
                 url,
                 branch,
-                project_root.display()
+                workspace_root.display()
             );
             // clone_repository expects the destination to not exist yet, but the
             // project root directory may already exist.  We clone into a temp
             // sibling and then move the contents.
-            let parent = project_root
+            let parent = workspace_root
                 .parent()
                 .ok_or_else(|| OxyError::IOError("Project root has no parent".to_string()))?;
             let tmp_name = format!(
                 ".oxy-clone-tmp-{}",
-                project_root
+                workspace_root
                     .file_name()
                     .unwrap_or_default()
                     .to_string_lossy()
@@ -1086,7 +1216,7 @@ impl LocalGitService {
 
             GitOperations::clone_repository(url, &tmp_dest, Some(branch), token).await?;
 
-            // Move files from tmp_dest into project_root.
+            // Move files from tmp_dest into workspace_root.
             // Falls back to copy+delete when rename fails (e.g. cross-device in Docker).
             let mut read_dir = tokio::fs::read_dir(&tmp_dest)
                 .await
@@ -1095,7 +1225,7 @@ impl LocalGitService {
                 OxyError::IOError(format!("Failed to iterate cloned directory: {e}"))
             })? {
                 let src = entry.path();
-                let dst = project_root.join(entry.file_name());
+                let dst = workspace_root.join(entry.file_name());
                 if let Err(_rename_err) = tokio::fs::rename(&src, &dst).await {
                     // rename can fail cross-device (e.g. Docker volume mounts);
                     // fall back to recursive copy + delete.
@@ -1113,10 +1243,10 @@ impl LocalGitService {
 
             info!(
                 "Successfully cloned repository into {}",
-                project_root.display()
+                workspace_root.display()
             );
         } else {
-            Self::ensure_initialized(project_root).await?;
+            Self::ensure_initialized(workspace_root).await?;
         }
 
         Ok(())
@@ -1198,10 +1328,10 @@ impl LocalGitService {
 
     // ─── Private helpers ───────────────────────────────────────────────────
 
-    /// Returns `true` if `branch` exists as a local branch in `project_root`.
-    async fn branch_exists(project_root: &Path, branch: &str) -> Result<bool, OxyError> {
+    /// Returns `true` if `branch` exists as a local branch in `workspace_root`.
+    async fn branch_exists(workspace_root: &Path, branch: &str) -> Result<bool, OxyError> {
         let out = Self::run_git(
-            project_root,
+            workspace_root,
             &["branch", "--list", branch, "--format=%(refname:short)"],
         )
         .await?;

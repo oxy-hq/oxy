@@ -1,4 +1,4 @@
-use crate::server::api::middlewares::project::ProjectManagerExtractor;
+use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
 use axum::body::Body;
 use axum::extract::Path;
 use axum::http::{StatusCode, header};
@@ -13,9 +13,9 @@ use uuid::Uuid;
 /// Files are named with the format: {name}-{index}-{uuid}.png
 #[utoipa::path(
     method(get),
-    path = "/{project_id}/exported-charts/{file_name}",
+    path = "/{workspace_id}/exported-charts/{file_name}",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID"),
         ("file_name" = String, Path, description = "Exported chart PNG file name")
     ),
     responses(
@@ -29,8 +29,8 @@ use uuid::Uuid;
     )
 )]
 pub async fn get_exported_chart(
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path((_project_id, file_name)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path((_workspace_id, file_name)): Path<(Uuid, String)>,
 ) -> Result<Response, StatusCode> {
     // Validate file format - must be a PNG file
     if !file_name.ends_with(".png") {
@@ -47,7 +47,7 @@ pub async fn get_exported_chart(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    let exported_chart_dir = project_manager
+    let exported_chart_dir = workspace_manager
         .config_manager
         .get_exported_chart_dir()
         .await

@@ -1,8 +1,8 @@
-import type { FileStatus, FileTreeModel } from "@/types/file";
+import type { FileStatus, FileTreeResponse } from "@/types/file";
 import { apiClient } from "./axios";
 
 export class FileService {
-  static async getFileTree(projectId: string, branchId: string): Promise<FileTreeModel[]> {
+  static async getFileTree(projectId: string, branchId: string): Promise<FileTreeResponse> {
     const response = await apiClient.get(`/${projectId}/files?branch=${branchId}`);
     return response.data;
   }

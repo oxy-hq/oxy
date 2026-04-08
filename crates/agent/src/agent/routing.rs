@@ -68,8 +68,8 @@ impl Executable<RoutingAgentInput> for RoutingAgentExecutable {
             reasoning_config,
         } = input;
 
-        let config_manager = &execution_context.project.config_manager;
-        let secrets_manager = &execution_context.project.secrets_manager;
+        let config_manager = &execution_context.workspace.config_manager;
+        let secrets_manager = &execution_context.workspace.secrets_manager;
         let model_config = config_manager.resolve_model(&model)?;
 
         events::agent::routing_agent::model_config(model_config);
@@ -122,8 +122,8 @@ impl Executable<RoutingAgentInput> for RoutingAgentExecutable {
                 let fallback_tool =
                     RouteResolver::resolve_tool(execution_context, fallback, None, false).await?;
 
-                let config_manager = &execution_context.project.config_manager;
-                let secrets_manager = &execution_context.project.secrets_manager;
+                let config_manager = &execution_context.workspace.config_manager;
+                let secrets_manager = &execution_context.workspace.secrets_manager;
                 let fallback_route = FallbackAgent::new(
                     &agent_name,
                     model_config,

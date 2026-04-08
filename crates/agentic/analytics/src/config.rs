@@ -630,7 +630,7 @@ fn push_unique(list: &mut Vec<String>, name: String) {
 
 /// Project-level context passed to [`AgentConfig::build_solver_with_context`].
 ///
-/// Constructed by the HTTP layer from `ProjectManager` so that
+/// Constructed by the HTTP layer from `WorkspaceManager` so that
 /// `agentic-analytics` itself does not need a hard dependency on the `oxy`
 /// crate.
 #[derive(Default)]

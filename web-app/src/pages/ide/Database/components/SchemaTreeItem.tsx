@@ -81,7 +81,7 @@ export const SchemaTreeItem: React.FC<SchemaTreeItemProps> = ({
     if (!result.success) {
       toast.error(result.error);
     }
-    navigate(ROUTES.PROJECT(projectId).IDE.DATABASE.ROOT);
+    navigate(ROUTES.WORKSPACE(projectId).IDE.DATABASE.ROOT);
   };
 
   return (

@@ -51,7 +51,7 @@ pub async fn handle_message_im(
         text: text.to_string(),
         thread_ts: thread_ts.map(|s| s.to_string()),
         event_ts: event_ts.to_string(),
-        project_id: Uuid::nil(),
+        workspace_id: Uuid::nil(),
         agent_id: slack_settings.default_agent.clone(),
         slack_settings,
         is_dm: true,

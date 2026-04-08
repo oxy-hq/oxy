@@ -16,7 +16,7 @@ use std::{
 };
 
 use crate::{
-    api::middlewares::{project::ProjectManagerExtractor, timeout::TimeoutConfig},
+    api::middlewares::{timeout::TimeoutConfig, workspace_context::WorkspaceManagerExtractor},
     service::{
         statics::BROADCASTER,
         types::run::RunStatus,
@@ -76,9 +76,9 @@ pub struct ErrorResponse {
 /// Returns workflow metadata including paths, names, and configuration details.
 #[utoipa::path(
     method(get),
-    path = "/{project_id}/workflows",
+    path = "/{workspace_id}/workflows",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID")
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID")
     ),
     responses(
         (status = 200, description = "Success", body = Vec<WorkflowInfo>, content_type = "application/json")
@@ -89,9 +89,9 @@ pub struct ErrorResponse {
     tag = "Automations"
 )]
 pub async fn list(
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
 ) -> Result<impl IntoResponse, StatusCode> {
-    let config_manager = project_manager.config_manager;
+    let config_manager = workspace_manager.config_manager;
     match crate::service::workflow::list_workflows(config_manager.clone()).await {
         Ok(workflows) => Ok(extract::Json(workflows)),
         Err(e) => {
@@ -107,9 +107,9 @@ pub async fn list(
 /// Returns workflow definition including steps, transforms, outputs, and execution settings.
 #[utoipa::path(
     method(get),
-    path = "/{project_id}/workflows/{pathb64}",
+    path = "/{workspace_id}/workflows/{pathb64}",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID"),
         ("pathb64" = String, Path, description = "Base64 encoded path to the workflow")
     ),
     responses(
@@ -124,8 +124,8 @@ pub async fn list(
     tag = "Automations"
 )]
 pub async fn get(
-    Path((_project_id, pathb64)): Path<(Uuid, String)>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
 ) -> Result<extract::Json<GetWorkflowResponse>, (StatusCode, extract::Json<ErrorResponse>)> {
     let decoded_path = BASE64_STANDARD.decode(pathb64).map_err(|e| {
         tracing::warn!("Failed to decode base64 path: {:?}", e);
@@ -146,7 +146,7 @@ pub async fn get(
         )
     })?;
 
-    let config_manager = project_manager.config_manager;
+    let config_manager = workspace_manager.config_manager;
 
     match get_workflow(PathBuf::from(path), config_manager.clone()).await {
         Ok(workflow) => Ok(extract::Json(GetWorkflowResponse { workflow })),
@@ -173,9 +173,9 @@ pub struct GetLogsResponse {
 /// including timestamps, content, and log types for debugging and monitoring workflow runs.
 #[utoipa::path(
     method(get),
-    path = "/{project_id}/workflows/{pathb64}/logs",
+    path = "/{workspace_id}/workflows/{pathb64}/logs",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID"),
         ("pathb64" = String, Path, description = "Base64 encoded path to the workflow")
     ),
     responses(
@@ -189,8 +189,8 @@ pub struct GetLogsResponse {
     tag = "Automations"
 )]
 pub async fn get_logs(
-    Path((_project_id, pathb64)): Path<(Uuid, String)>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
 ) -> Result<extract::Json<GetLogsResponse>, StatusCode> {
     let path = PathBuf::from(
         String::from_utf8(
@@ -200,7 +200,7 @@ pub async fn get_logs(
         )
         .map_err(|_| StatusCode::BAD_REQUEST)?,
     );
-    let logs = service::get_workflow_logs(&path, project_manager.config_manager).await?;
+    let logs = service::get_workflow_logs(&path, workspace_manager.config_manager).await?;
     Ok(extract::Json(GetLogsResponse { logs }))
 }
 
@@ -263,9 +263,9 @@ pub struct RunWorkflowRequest {
 /// being persisted to disk. Supports retry functionality via retry_param.
 #[utoipa::path(
     method(post),
-    path = "/{project_id}/workflows/{pathb64}/run",
+    path = "/{workspace_id}/workflows/{pathb64}/run",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID"),
         ("pathb64" = String, Path, description = "Base64 encoded path to the workflow")
     ),
     request_body = RunWorkflowRequest,
@@ -280,9 +280,9 @@ pub struct RunWorkflowRequest {
     tag = "Automations"
 )]
 pub async fn run_workflow(
-    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     extract::Json(request): extract::Json<RunWorkflowRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let decoded_path = BASE64_STANDARD
@@ -290,7 +290,7 @@ pub async fn run_workflow(
         .map_err(|_| StatusCode::BAD_REQUEST)?;
     let path = PathBuf::from(String::from_utf8(decoded_path).map_err(|_| StatusCode::BAD_REQUEST)?);
 
-    let full_workflow_path = project_manager
+    let full_workflow_path = workspace_manager
         .config_manager
         .resolve_file(path.clone())
         .map_err(|_| StatusCode::BAD_REQUEST)
@@ -310,7 +310,7 @@ pub async fn run_workflow(
             path,
             logger.clone(),
             RetryStrategy::NoRetry { variables: None },
-            project_manager.clone(),
+            workspace_manager.clone(),
             filters,
             connections,
             globals,
@@ -361,9 +361,9 @@ async fn ensure_workflow_thread_unlocked(
 /// by ensuring thread unlock even on failure.
 #[utoipa::path(
     method(post),
-    path = "/{project_id}/workflows/{pathb64}/run-thread",
+    path = "/{workspace_id}/workflows/{pathb64}/run-thread",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID"),
         ("pathb64" = String, Path, description = "Thread ID or encoded id")
     ),
     request_body = RunWorkflowRequest,
@@ -380,10 +380,10 @@ async fn ensure_workflow_thread_unlocked(
     tag = "Automations"
 )]
 pub async fn run_workflow_thread(
-    Path((_project_id, id)): Path<(Uuid, String)>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path((_workspace_id, id)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
 ) -> Result<impl IntoResponse, StatusCode> {
-    let config_manager = project_manager.config_manager.clone();
+    let config_manager = workspace_manager.config_manager.clone();
 
     let connection = establish_connection().await.map_err(|e| {
         tracing::error!("Failed to establish database connection: {}", e);
@@ -458,7 +458,7 @@ pub async fn run_workflow_thread(
             &workflow_ref,
             logger,
             RetryStrategy::NoRetry { variables: None },
-            project_manager.clone(),
+            workspace_manager.clone(),
             None,
             None,
             None, // No globals for thread execution (not in request)
@@ -544,9 +544,9 @@ pub struct RunWorkflowThreadRequest {
 /// or error.
 #[utoipa::path(
     method(post),
-    path = "/{project_id}/workflows/{pathb64}/run-thread-sync",
+    path = "/{workspace_id}/workflows/{pathb64}/run-thread-sync",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID"),
         ("pathb64" = String, Path, description = "Thread ID or encoded id")
     ),
     request_body = RunWorkflowThreadRequest,
@@ -563,12 +563,12 @@ pub struct RunWorkflowThreadRequest {
     tag = "Automations"
 )]
 pub async fn run_workflow_thread_sync(
-    Path((_project_id, id)): Path<(Uuid, String)>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path((_workspace_id, id)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     timeout_config: TimeoutConfig,
     extract::Json(request): extract::Json<RunWorkflowThreadRequest>,
 ) -> Result<extract::Json<RunWorkflowThreadSyncResponse>, StatusCode> {
-    let config_manager = project_manager.config_manager.clone();
+    let config_manager = workspace_manager.config_manager.clone();
 
     let connection = establish_connection().await.map_err(|e| {
         tracing::error!("Failed to establish database connection: {}", e);
@@ -653,7 +653,7 @@ pub async fn run_workflow_thread_sync(
             &workflow_ref_clone,
             logger,
             RetryStrategy::NoRetry { variables: None },
-            project_manager.clone(),
+            workspace_manager.clone(),
             filters,
             connections,
             None, // No globals for thread sync execution (not in request)
@@ -829,9 +829,9 @@ pub struct SaveAutomationResponse {
 /// `procedures/saved` directory.
 #[utoipa::path(
     method(post),
-    path = "/{project_id}/automations/save",
+    path = "/{workspace_id}/automations/save",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID")
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID")
     ),
     request_body = SaveAutomationRequest,
     responses(
@@ -846,10 +846,10 @@ pub struct SaveAutomationResponse {
 )]
 pub async fn save_automation(
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     extract::Json(request): extract::Json<SaveAutomationRequest>,
 ) -> Result<extract::Json<SaveAutomationResponse>, StatusCode> {
-    let config_manager = project_manager.config_manager;
+    let config_manager = workspace_manager.config_manager;
     let (automation, automation_path) = service::create_automation(
         &request.name,
         &request.description,
@@ -894,9 +894,9 @@ pub struct RunWorkflowSyncResponse {
 /// in workflow tracker for status monitoring.
 #[utoipa::path(
     method(post),
-    path = "/{project_id}/workflows/{pathb64}/run-sync",
+    path = "/{workspace_id}/workflows/{pathb64}/run-sync",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID"),
         ("pathb64" = String, Path, description = "Base64 encoded path to the workflow")
     ),
     request_body = RunWorkflowRequest,
@@ -912,9 +912,9 @@ pub struct RunWorkflowSyncResponse {
     tag = "Automations"
 )]
 pub async fn run_workflow_sync(
-    Path((_project_id, pathb64)): Path<(Uuid, String)>,
+    Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     timeout_config: TimeoutConfig,
     extract::Json(request): extract::Json<RunWorkflowRequest>,
 ) -> Result<extract::Json<RunWorkflowSyncResponse>, StatusCode> {
@@ -926,7 +926,7 @@ pub async fn run_workflow_sync(
 
     let path = PathBuf::from(&source_id);
 
-    let full_workflow_path = project_manager
+    let full_workflow_path = workspace_manager
         .config_manager
         .resolve_file(path.clone())
         .map_err(|_| StatusCode::BAD_REQUEST)
@@ -948,7 +948,7 @@ pub async fn run_workflow_sync(
     };
 
     // Generate a run_id and create broadcast topic
-    let runs_manager = project_manager.runs_manager.as_ref().ok_or_else(|| {
+    let runs_manager = workspace_manager.runs_manager.as_ref().ok_or_else(|| {
         tracing::error!("RunsManager not initialized");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
@@ -990,13 +990,13 @@ pub async fn run_workflow_sync(
     let user_id = user.id.to_string();
 
     let mut workflow_task = tokio::spawn({
-        let project_manager = project_manager.clone();
+        let workspace_manager = workspace_manager.clone();
         let path = path.clone();
         let task_id_clone = task_id.clone();
         async move {
             // Use run_workflow_v2 with TopicRef as event handler
             let result = service::run_workflow_v2(
-                project_manager.clone(),
+                workspace_manager.clone(),
                 path.clone(),
                 topic_ref,
                 retry_strategy,
@@ -1153,9 +1153,9 @@ pub struct CreateFromQueryResponse {
 /// steps, transformations, and outputs based on the specified database context.
 #[utoipa::path(
     method(post),
-    path = "/{project_id}/workflows/from-query",
+    path = "/{workspace_id}/workflows/from-query",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID")
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID")
     ),
     request_body = CreateFromQueryRequest,
     responses(
@@ -1169,10 +1169,10 @@ pub struct CreateFromQueryResponse {
     tag = "Automations"
 )]
 pub async fn create_from_query(
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     extract::Json(request): extract::Json<CreateFromQueryRequest>,
 ) -> Result<extract::Json<CreateFromQueryResponse>, StatusCode> {
-    let config_manager = project_manager.config_manager;
+    let config_manager = workspace_manager.config_manager;
     let workflow = service::create_workflow_from_query(
         &request.query,
         &request.prompt,
@@ -1305,9 +1305,9 @@ pub struct WorkflowRunResponse {
 /// to subscribe to workflow events and return the final result.
 #[utoipa::path(
     method(get),
-    path = "/{project_id}/workflows/{pathb64}/runs/{run_id}",
+    path = "/{workspace_id}/workflows/{pathb64}/runs/{run_id}",
     params(
-        ("project_id" = Uuid, Path, description = "Project UUID"),
+        ("workspace_id" = Uuid, Path, description = "Workspace UUID"),
         ("pathb64" = String, Path, description = "Base64 encoded path to the workflow"),
         ("run_id" = String, Path, description = "Run identifier"),
         ("wait_for_completion" = Option<bool>, Query, description = "Wait for workflow to complete")
@@ -1323,8 +1323,8 @@ pub struct WorkflowRunResponse {
     tag = "Runs"
 )]
 pub async fn get_workflow_run(
-    Path((_project_id, pathb64, run_id)): Path<(Uuid, String, i32)>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path((_workspace_id, pathb64, run_id)): Path<(Uuid, String, i32)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     extract::Query(params): extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<extract::Json<WorkflowRunResponse>, StatusCode> {
@@ -1374,7 +1374,7 @@ pub async fn get_workflow_run(
         }
         Err(_) => {
             // Not found in broadcast, try database for historical runs
-            let runs_manager = project_manager
+            let runs_manager = workspace_manager
                 .runs_manager
                 .as_ref()
                 .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -1413,7 +1413,7 @@ pub async fn get_workflow_run(
         .filter_map(event_kind_to_workflow_event)
         .collect();
 
-    let runs_manager = project_manager
+    let runs_manager = workspace_manager
         .runs_manager
         .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 

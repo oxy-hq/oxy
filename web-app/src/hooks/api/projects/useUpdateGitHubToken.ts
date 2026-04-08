@@ -1,7 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
-import { ProjectService } from "@/services/api";
+import { WorkspaceService as ProjectService } from "@/services/api/workspaces";
 
 const useUpdateGitHubToken = () => {
   const { project } = useCurrentProjectBranch();

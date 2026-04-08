@@ -1,98 +1,117 @@
-import { ChevronsUpDown, LogOut, Settings, UserPlus } from "lucide-react";
-import { useState } from "react";
-import { SidebarMenu, SidebarMenuItem } from "@/components/ui/shadcn/sidebar";
+import { LogOut, Users } from "lucide-react";
+import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import useSettingsPage from "@/stores/useSettingsPage";
-import { Avatar, AvatarFallback, AvatarImage } from "../ui/shadcn/avatar";
+import ROUTES from "@/libs/utils/routes";
+import type { UserInfo } from "@/types/auth";
+import { UserAvatar } from "../UserAvatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from "../ui/shadcn/dropdown-menu";
-import { InviteModal } from "./InviteModal";
+
+function useCurrentUser(): { user: UserInfo | null; isAdmin: boolean; isLocal: boolean } {
+  const { getUser, authConfig } = useAuth();
+  const isLocal = !authConfig.auth_enabled || !!authConfig.single_workspace;
+  try {
+    const user: UserInfo | null = JSON.parse(getUser() || "null");
+    const isAdmin = isLocal || user?.is_admin === true;
+    return { user, isAdmin, isLocal };
+  } catch {
+    return { user: null, isAdmin: isLocal, isLocal };
+  }
+}
+
+function UserRow({
+  name,
+  email,
+  picture,
+  interactive
+}: {
+  name: string;
+  email: string;
+  picture?: string | null;
+  interactive: boolean;
+}) {
+  return (
+    <div
+      className={`flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left ${interactive ? "cursor-pointer transition-colors hover:bg-sidebar-accent" : ""}`}
+      title={email}
+    >
+      <UserAvatar
+        name={name}
+        email={email}
+        picture={picture}
+        className='h-8 w-8 shrink-0 rounded-lg'
+      />
+      <div className='grid min-w-0 flex-1 text-left leading-tight'>
+        <span className='truncate font-medium text-[13px] text-sidebar-foreground'>
+          {name || email.split("@")[0]}
+        </span>
+        <span className='truncate text-[11px] text-sidebar-foreground/50'>{email}</span>
+      </div>
+    </div>
+  );
+}
 
 export function Footer() {
-  const { logout, getUser, authConfig } = useAuth();
-  const { setIsOpen: setIsSettingsOpen } = useSettingsPage();
-  const showSettings = authConfig.cloud;
-  const [isInviteOpen, setIsInviteOpen] = useState(false);
+  const { logout } = useAuth();
+  const { user: currentUser, isAdmin, isLocal } = useCurrentUser();
 
-  let parsedUser: ReturnType<typeof JSON.parse> = null;
-  try {
-    parsedUser = JSON.parse(getUser() || "null");
-  } catch {
-    // Malformed JSON in localStorage — treat as unauthenticated
-  }
+  const email = currentUser?.email ?? "guest@oxy.local";
+  const name = currentUser?.name ?? "";
+  const picture = currentUser?.picture;
+  const isGuest = !currentUser;
 
-  let user = parsedUser;
-
-  if (!user) {
-    user = {
-      email: "guest@oxy.local",
-      picture: undefined,
-      isGuest: true
-    };
-  }
+  const showManageMembers = isAdmin && !isLocal;
+  const showLogout = !isGuest;
+  const hasActions = showManageMembers || showLogout;
 
   return (
-    <>
-      {authConfig.magic_link && <InviteModal open={isInviteOpen} onOpenChange={setIsInviteOpen} />}
-      <div className='mt-auto px-2 pb-4'>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <div
-                  className='flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-3 pt-4 text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
-                  title={user.email || "User Options"}
-                >
-                  <Avatar className='h-8 w-8 rounded-lg'>
-                    <AvatarImage src={user.picture} alt={user.email} />
-                    <AvatarFallback className='rounded-lg'>{user.email.charAt(0)}</AvatarFallback>
-                  </Avatar>
-                  <span className='truncate'>{user.email}</span>
-                  <ChevronsUpDown className='ml-auto size-4' />
-                </div>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align='end' className='w-56'>
-                {showSettings && (
-                  <DropdownMenuItem
-                    className='cursor-pointer'
-                    onClick={() => setIsSettingsOpen(true)}
-                  >
-                    <Settings className='mr-2 h-4 w-4' />
-                    <span>Settings</span>
-                  </DropdownMenuItem>
-                )}
+    <div className='border-sidebar-border/50 border-t p-2'>
+      {hasActions ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button type='button' className='w-full'>
+              <UserRow name={name} email={email} picture={picture} interactive={true} />
+            </button>
+          </DropdownMenuTrigger>
 
-                {!user.isGuest && (
-                  <>
-                    {showSettings && <DropdownMenuSeparator />}
-                    {authConfig.magic_link && (
-                      <DropdownMenuItem
-                        className='cursor-pointer'
-                        onClick={() => setIsInviteOpen(true)}
-                      >
-                        <UserPlus className='mr-2 h-4 w-4' />
-                        <span>Invite</span>
-                      </DropdownMenuItem>
-                    )}
-                    <DropdownMenuItem
-                      className='cursor-pointer text-destructive focus:text-destructive'
-                      onClick={logout}
-                    >
-                      <LogOut className='mr-2 h-4 w-4' />
-                      <span>Logout</span>
-                    </DropdownMenuItem>
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </div>
-    </>
+          <DropdownMenuContent
+            align='end'
+            sideOffset={4}
+            className='w-[var(--radix-dropdown-menu-trigger-width)] min-w-56 rounded-lg'
+          >
+            {showManageMembers && (
+              <DropdownMenuGroup>
+                <DropdownMenuItem asChild className='cursor-pointer'>
+                  <Link to={ROUTES.MEMBERS}>
+                    <Users />
+                    <span>Manage members</span>
+                  </Link>
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            )}
+
+            {showManageMembers && showLogout && <DropdownMenuSeparator />}
+
+            {showLogout && (
+              <DropdownMenuItem
+                className='cursor-pointer text-destructive focus:text-destructive'
+                onClick={logout}
+              >
+                <LogOut />
+                <span>Log out</span>
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : (
+        <UserRow name={name} email={email} picture={picture} interactive={false} />
+      )}
+    </div>
   );
 }

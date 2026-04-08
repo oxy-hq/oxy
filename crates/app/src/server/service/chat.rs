@@ -160,7 +160,7 @@ impl ChatService {
         payload: T,
         executor: E,
         user_id: Uuid,
-        _project_id: Uuid,
+        _workspace_id: Uuid,
     ) -> Result<impl IntoResponse, StatusCode> {
         // Validate input parameters first
         self.validate_request_parameters(&id, &payload, &user_id)?;

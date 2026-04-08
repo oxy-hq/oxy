@@ -82,7 +82,7 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
         tracing::debug!("Default agent input: {:?}", &memory);
 
         let model_config = execution_context
-            .project
+            .workspace
             .config_manager
             .resolve_model(&model)
             .map_err(|e| {
@@ -118,7 +118,7 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
         events::agent::default_agent::tools(rendered_tools.clone());
 
         let config = model_config
-            .into_openai_config(&execution_context.project.secrets_manager)
+            .into_openai_config(&execution_context.workspace.secrets_manager)
             .await?;
 
         let client = OpenAIClient::with_config(config);
@@ -179,7 +179,7 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
             .await?;
 
         // Build the ReAct loop executable
-        let config = execution_context.project.config_manager.clone();
+        let config = execution_context.workspace.config_manager.clone();
         let mut react_executable = build_react_loop(
             agent_name,
             rendered_tools,
@@ -286,8 +286,8 @@ pub async fn build_global_context(
     contexts: Vec<AgentContext>,
     prompt: &str,
 ) -> Result<Value, OxyError> {
-    let config = execution_context.project.config_manager.clone();
-    let secrets_manager = execution_context.project.secrets_manager.clone();
+    let config = execution_context.workspace.config_manager.clone();
+    let secrets_manager = execution_context.workspace.secrets_manager.clone();
 
     let contexts = Contexts::new(contexts, config.clone());
     let databases = DatabasesContext::new(config.clone(), secrets_manager.clone());

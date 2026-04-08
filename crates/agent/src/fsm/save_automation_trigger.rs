@@ -147,7 +147,7 @@ impl Trigger for AutoSaveAutomation<MachineContext> {
 
         // Write procedure to file
         let procedure_dir = execution_context
-            .project
+            .workspace
             .config_manager
             .resolve_file(PROCEDURE_SAVED_DIR)
             .await?;

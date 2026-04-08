@@ -26,7 +26,7 @@ const DiffSummary = ({ onFileClick }: { onFileClick: () => void }) => {
   const handleFileClick = (filePath: string) => {
     if (!project) return;
     const pathb64 = encodeBase64(filePath);
-    navigate(ROUTES.PROJECT(project.id).IDE.FILES.FILE(pathb64));
+    navigate(ROUTES.WORKSPACE(project.id).IDE.FILES.FILE(pathb64));
     onFileClick();
   };
 

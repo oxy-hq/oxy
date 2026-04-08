@@ -68,6 +68,17 @@ export interface ListRepositoriesResponse {
   repositories: GitHubRepository[];
 }
 
+export interface OAuthInstallation {
+  id: number;
+  name: string;
+  owner_type: string;
+}
+
+export type OAuthConnectResponse =
+  | { status: "connected"; namespace: GitHubNamespace }
+  | { status: "choose"; installations: OAuthInstallation[] }
+  | { status: "not_installed" };
+
 export interface GitHubAppInstallationRequest {
   installation_id: string;
   // app_id field removed: we now use environment variables for app_id

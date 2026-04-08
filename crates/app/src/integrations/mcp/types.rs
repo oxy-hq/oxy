@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 // Internal crate imports
-use oxy::{adapters::project::manager::ProjectManager, config::model::SemanticFilter};
+use oxy::{adapters::workspace::manager::WorkspaceManager, config::model::SemanticFilter};
 
 use super::executor::ToolExecutor;
 
@@ -57,7 +57,7 @@ pub struct OxyTool {
 
 #[derive(Debug, Clone)]
 pub struct OxyMcpServer {
-    pub project_manager: ProjectManager,
+    pub workspace_manager: WorkspaceManager,
     pub tools: HashMap<String, OxyTool>,
 }
 

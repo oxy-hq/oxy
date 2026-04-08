@@ -1,13 +1,13 @@
-use crate::server::api::middlewares::project::ProjectManagerExtractor;
+use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
 use axum::extract::{self, Path};
 use axum::http::StatusCode;
 use uuid::Uuid;
 
 pub async fn get_chart(
-    Path((_project_id, file_path)): Path<(Uuid, String)>,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
+    Path((_workspace_id, file_path)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
 ) -> Result<extract::Json<String>, StatusCode> {
-    let charts_dir = project_manager
+    let charts_dir = workspace_manager
         .config_manager
         .get_charts_dir()
         .await

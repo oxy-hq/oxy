@@ -29,7 +29,7 @@
 //! ```rust,ignore
 //! use oxy_core::a2a::agent_card::AgentCardService;
 //!
-//! let service = AgentCardService::new(config, project_manager);
+//! let service = AgentCardService::new(config, workspace_manager);
 //!
 //! // Generate card for configured agent
 //! let card = service.get_agent_card("sales-assistant", "https://api.example.com").await?;
@@ -47,7 +47,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use oxy::{
-    adapters::project::manager::ProjectManager,
+    adapters::workspace::manager::WorkspaceManager,
     config::{a2a_config::A2aConfig, constants::DEFAULT_API_KEY_HEADER, model::AgentConfig},
 };
 
@@ -59,7 +59,7 @@ pub struct AgentCardService {
     /// Global Oxy configuration
     config: Arc<oxy::config::model::Config>,
     /// Project manager for loading agent configs
-    project_manager: Arc<ProjectManager>,
+    workspace_manager: Arc<WorkspaceManager>,
     /// In-memory cache of generated agent cards
     /// TODO: Replace with database cache (a2a_agent_cards table)
     cache: Arc<tokio::sync::RwLock<HashMap<String, AgentCard>>>,
@@ -69,11 +69,11 @@ impl AgentCardService {
     /// Create a new Agent Card service.
     pub fn new(
         config: Arc<oxy::config::model::Config>,
-        project_manager: Arc<ProjectManager>,
+        workspace_manager: Arc<WorkspaceManager>,
     ) -> Self {
         Self {
             config,
-            project_manager,
+            workspace_manager,
             cache: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
         }
     }
@@ -107,7 +107,7 @@ impl AgentCardService {
 
     /// Load Oxy agent configuration from file.
     async fn load_agent_config(&self, agent_ref: &str) -> Result<AgentConfig, A2aError> {
-        self.project_manager
+        self.workspace_manager
             .config_manager
             .resolve_agent(agent_ref)
             .await
@@ -418,7 +418,7 @@ impl AgentCardService {
 
 #[cfg(test)]
 mod tests {
-    // Note: Comprehensive tests would require mocking ProjectManager and database
+    // Note: Comprehensive tests would require mocking WorkspaceManager and database
     // Integration tests should be added in the future to test the full flow:
     // 1. AgentCardService::get_agent_card() with real agent configs
     // 2. Caching behavior

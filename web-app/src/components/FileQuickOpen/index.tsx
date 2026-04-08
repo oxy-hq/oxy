@@ -41,7 +41,7 @@ export function FileQuickOpen() {
 
   const allFiles = useMemo(() => {
     if (!fileTreeData) return [];
-    return flattenFiles(fileTreeData);
+    return flattenFiles(fileTreeData.primary);
   }, [fileTreeData]);
 
   const filtered = useMemo(() => {
@@ -55,7 +55,7 @@ export function FileQuickOpen() {
   const handleSelect = (file: FileTreeModel) => {
     setIsOpen(false);
     setQuery("");
-    navigate(ROUTES.PROJECT(project.id).IDE.FILES.FILE(encodeBase64(file.path)));
+    navigate(ROUTES.WORKSPACE(project.id).IDE.FILES.FILE(encodeBase64(file.path)));
   };
 
   const handleOpenChange = (open: boolean) => {

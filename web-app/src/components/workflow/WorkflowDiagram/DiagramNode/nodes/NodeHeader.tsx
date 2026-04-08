@@ -131,11 +131,11 @@ const SubWorkflowNavigateButton = ({ task, taskRun }: SubWorkflowNavigateButtonP
 
     const pathb64 = encodeBase64(task.src);
 
-    let workflowPath = ROUTES.PROJECT(projectId).WORKFLOW(pathb64).ROOT;
+    let workflowPath = ROUTES.WORKSPACE(projectId).WORKFLOW(pathb64).ROOT;
 
-    const ideRoute = ROUTES.PROJECT(projectId).IDE.ROOT;
+    const ideRoute = ROUTES.WORKSPACE(projectId).IDE.ROOT;
     if (location.pathname.startsWith(ideRoute)) {
-      workflowPath = ROUTES.PROJECT(projectId).IDE.FILES.FILE(pathb64);
+      workflowPath = ROUTES.WORKSPACE(projectId).IDE.FILES.FILE(pathb64);
     }
     navigate({
       pathname: workflowPath,

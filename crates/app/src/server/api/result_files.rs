@@ -1,11 +1,11 @@
-use crate::server::api::middlewares::project::ProjectManagerExtractor;
+use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
 use arrow::datatypes::SchemaRef;
 use arrow::record_batch::RecordBatch;
 use axum::body::Body;
 use axum::extract::Path;
 use axum::http::{StatusCode, header};
 use axum::response::Response;
-use oxy::adapters::project::manager::ProjectManager;
+use oxy::adapters::workspace::manager::WorkspaceManager;
 use oxy::connector::load_result;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use parquet::arrow::ArrowWriter;
@@ -26,14 +26,14 @@ use uuid::Uuid;
 /// 6. Returns the filename
 ///
 /// # Arguments
-/// * `project_manager` - The project manager containing config
+/// * `workspace_manager` - The project manager containing config
 /// * `temp_file_path` - Path to the temporary Arrow result file
 ///
 /// # Returns
 /// * `Ok(String)` - The filename of the Parquet result file
 /// * `Err(String)` - Error message if any step fails
 pub async fn store_result_file(
-    project_manager: &ProjectManager,
+    workspace_manager: &WorkspaceManager,
     temp_file_path: &str,
 ) -> Result<String, String> {
     // Load the Arrow result
@@ -41,7 +41,7 @@ pub async fn store_result_file(
         load_result(temp_file_path).map_err(|e| format!("Failed to load Arrow result: {}", e))?;
 
     // Get the results directory
-    let results_dir = project_manager
+    let results_dir = workspace_manager
         .config_manager
         .get_results_dir()
         .await
@@ -96,8 +96,8 @@ fn write_parquet(
 /// Files are named with UUIDs and stored in the state directory
 pub async fn get_result_file(
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path((_project_id, file_name)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path((_workspace_id, file_name)): Path<(Uuid, String)>,
 ) -> Result<Response, StatusCode> {
     // Validate file format
     if !file_name.ends_with(".parquet") {
@@ -116,7 +116,7 @@ pub async fn get_result_file(
     }
 
     // Get the results directory from the project manager
-    let results_dir = project_manager
+    let results_dir = workspace_manager
         .config_manager
         .get_results_dir()
         .await
@@ -173,8 +173,8 @@ pub async fn get_result_file(
 /// This endpoint allows cleanup of temporary result files
 pub async fn delete_result_file(
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
-    ProjectManagerExtractor(project_manager): ProjectManagerExtractor,
-    Path((_project_id, file_id)): Path<(Uuid, String)>,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path((_workspace_id, file_id)): Path<(Uuid, String)>,
 ) -> Result<StatusCode, StatusCode> {
     // Validate file_id format
     if !file_id.ends_with(".parquet") {
@@ -194,7 +194,7 @@ pub async fn delete_result_file(
     }
 
     // Get the results directory
-    let results_dir = project_manager
+    let results_dir = workspace_manager
         .config_manager
         .get_results_dir()
         .await

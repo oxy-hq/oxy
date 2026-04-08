@@ -1060,7 +1060,7 @@ const TestsDashboardPage: React.FC = () => {
                   ))}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem asChild className='text-muted-foreground text-xs'>
-                    <Link to={ROUTES.PROJECT(projectId).IDE.TESTS.RUNS}>View all runs →</Link>
+                    <Link to={ROUTES.WORKSPACE(projectId).IDE.TESTS.RUNS}>View all runs →</Link>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -1350,7 +1350,7 @@ const TestsDashboardPage: React.FC = () => {
                 onRunFile={() => openRunDialog(pathb64)}
                 onStopFile={() => store.stopFile(projectId, branchName, pathb64)}
                 onNavigateToDetail={(caseIndex, runIndex) => {
-                  const url = ROUTES.PROJECT(projectId).IDE.TESTS.TEST_FILE(pathb64);
+                  const url = ROUTES.WORKSPACE(projectId).IDE.TESTS.TEST_FILE(pathb64);
                   const params = new URLSearchParams();
                   if (runIndex !== undefined) params.set("run_index", String(runIndex));
                   navigate(
@@ -1713,7 +1713,7 @@ const TestFileCard: React.FC<TestFileCardProps> = ({
               )}
             </Button>
             <Link
-              to={ROUTES.PROJECT(projectId).IDE.FILES.FILE(pathb64)}
+              to={ROUTES.WORKSPACE(projectId).IDE.FILES.FILE(pathb64)}
               onClick={(e) => e.stopPropagation()}
             >
               <Button variant='ghost' size='icon' className='h-7 w-7'>

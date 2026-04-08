@@ -10,7 +10,7 @@ import {
   AlertDialogTitle
 } from "@/components/ui/shadcn/alert-dialog";
 import { Spinner } from "@/components/ui/shadcn/spinner";
-import { usePullChanges } from "@/hooks/api/projects/useProjects";
+import { usePullChanges } from "@/hooks/api/workspaces/useWorkspaces";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 interface Props {
@@ -32,7 +32,7 @@ export const SyncDialog = ({ open, onOpenChange }: Props) => {
 
     try {
       const result = await pullChangesMutation.mutateAsync({
-        projectId: project.id,
+        workspaceId: project.id,
         branchName
       });
 
