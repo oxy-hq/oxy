@@ -5,7 +5,6 @@ on:
     - cron: "30 7 * * 0" # Every Sunday at 15:30 Vietnam time (07:30 UTC)
   workflow_dispatch:
 
-
 permissions:
   contents: write
   pull-requests: write
@@ -82,7 +81,7 @@ jobs:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          show_full_output: true
+          show_full_output: false
           prompt: |
             You are a Rust workspace dependency consolidation bot working on the Oxy monorepo.
 

@@ -49,7 +49,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          show_full_output: true
+          show_full_output: false
           prompt: |
             You are an automated code reviewer for the Oxy monorepo (Rust workspace + React/TypeScript frontend).
 
