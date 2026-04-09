@@ -52,7 +52,7 @@ connectorx = { version = "0.4.5", features = ["dst_arrow", "src_bigquery", "src_
 csv = "1.4.0"
 dirs = "6.0.0"
 dotenv = "0.15.0"
-duckdb = { version = "=1.4.4", features = ["bundled"] }
+duckdb = { workspace = true }
 email_address = "0.2.9"
 entity = { path = "../entity" }
 omni = { path = "../omni" }
@@ -86,7 +86,7 @@ lancedb = "0.23.1"
 lazy_static = "1.5.0"
 libc = "0.2"
 lettre = "0.11.21"
-libduckdb-sys = "=1.4.4" # lock version to avoid breaking changes, such as https://github.com/duckdb/duckdb-rs/issues number 436
+libduckdb-sys = { workspace = true } # lock version to avoid breaking changes, such as https://github.com/duckdb/duckdb-rs/issues number 436
 log = { workspace = true }
 migration = { path = "../migration" }
 minijinja = { workspace = true, features = ["loader"] }

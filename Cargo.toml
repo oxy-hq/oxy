@@ -36,6 +36,8 @@ resolver = "2"
 
 [workspace.dependencies]
 async-openai = {version = "0.33.1"}
+duckdb = { version = "=1.4.4", features = ["bundled"] }
+libduckdb-sys = { version = "=1.4.4" }
 axum = {version = "0.8.8", features = ["macros", "http2"]}
 axum-server = {version = "0.8.0", features = ["tls-rustls"]}
 chrono = "*"

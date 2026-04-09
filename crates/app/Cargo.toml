@@ -109,7 +109,7 @@ ndarray = { version = "0.16", features = ["rayon"] }
 # Data processing
 arrow = { version = "=56.2.0", default-features = false, features = ["json"] }
 parquet = "=56.2.0"
-duckdb = { version = "=1.4.4", features = ["bundled"] }
+duckdb = { workspace = true }
 
 # Utilities
 uuid = { workspace = true }
