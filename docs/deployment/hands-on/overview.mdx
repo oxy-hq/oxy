@@ -1,14 +1,33 @@
 ---
-title: "Hands-on Deployment Guides"
-description: "Practical step-by-step tutorials for deploying Oxy in different environments"
+title: "Deployment Options"
+description: "Choose the right deployment path for your Oxy instance"
 sidebarTitle: "Overview"
 ---
 
-This section provides practical, step-by-step tutorials for deploying Oxy in various environments. These hands-on guides are designed to help you quickly get Oxy up and running with specific deployment configurations.
+Oxy ships as a single binary. Two commands cover every deployment scenario:
 
-<Note>
-  These guides are practical complements to our [general deployment
-  documentation](/deployment/overview). While the general docs explain concepts
-  and approaches, these hands-on guides provide concrete steps for specific
-  deployment scenarios.
-</Note>
+| | `oxy start` | `oxy serve` |
+|---|---|---|
+| **What it does** | Starts Oxy and manages PostgreSQL in Docker | Starts Oxy and connects to your PostgreSQL |
+| **Database** | Automatic — Docker container, no setup | You provide `OXY_DATABASE_URL` |
+| **Best for** | Local machine, quick VM deployment | Production with a managed database |
+| **Requires** | Docker | External PostgreSQL |
+
+---
+
+## Pick your path
+
+<CardGroup cols={2}>
+  <Card title="Local machine" icon="laptop" href="/deployment/hands-on/local">
+    Run Oxy on your laptop with `oxy start`. No database setup.
+  </Card>
+  <Card title="GCP Compute Engine" icon="cloud" href="/deployment/hands-on/gcp">
+    Deploy to a Google Cloud VM in minutes.
+  </Card>
+  <Card title="AWS EC2" icon="aws" href="/deployment/hands-on/aws">
+    Deploy to an Amazon EC2 instance.
+  </Card>
+  <Card title="Production" icon="server" href="/deployment/cloud-mode">
+    Multi-workspace cloud mode with external PostgreSQL and GitHub integration.
+  </Card>
+</CardGroup>

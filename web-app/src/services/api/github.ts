@@ -21,13 +21,6 @@ export class GitHubApiService {
     return response.data;
   }
 
-  static async listAppInstallations(): Promise<{ id: number; name: string; owner_type: string }[]> {
-    const response = await apiClient.get<{ id: number; name: string; owner_type: string }[]>(
-      "/github/app-installations"
-    );
-    return response.data;
-  }
-
   static async createGitNamespace(data: CreateGitNamespaceRequest): Promise<GitHubNamespace> {
     const response = await apiClient.post("/github/namespaces", data);
     return response.data;

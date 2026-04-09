@@ -9,35 +9,40 @@ use crate::types::{AuthenticatedUser, Identity};
 use entity::users::{UserRole, UserStatus};
 
 /// Email address for the built-in local guest user (no-auth local mode).
-/// This user is always granted Admin role so local installs work out of the box.
+/// This user is always granted Owner role so local installs work out of the box.
 pub const LOCAL_GUEST_EMAIL: &str = "<local-user@example.com>";
 
 /// Returns `true` if `email` should be treated as admin in local (non-cloud) mode.
 ///
 /// Logic:
 /// 1. The built-in local guest is always admin.
-/// 2. If `admins` is non-empty, the email must be listed.
-/// 3. If `admins` is empty, everyone is admin (permissive default for single-user installs).
-pub fn is_admin_email(admins: &[String], email: &str) -> bool {
-    email == LOCAL_GUEST_EMAIL || admins.is_empty() || admins.iter().any(|a| a == email)
+/// 2. If `OXY_OWNER` is set, only that email is admin (plus the local guest).
+/// 3. If `OXY_OWNER` is unset, everyone is admin (permissive default for single-user installs).
+pub fn is_local_admin(owner_email: Option<&str>, email: &str) -> bool {
+    email == LOCAL_GUEST_EMAIL || owner_email.map_or(true, |owner| owner == email)
 }
 
-/// Returns true if this email should unconditionally have Admin role.
+/// Convenience wrapper that reads `OXY_OWNER` from the environment.
+pub fn is_local_admin_from_env(email: &str) -> bool {
+    let owner = std::env::var("OXY_OWNER").ok();
+    is_local_admin(owner.as_deref(), email)
+}
+
+/// Returns true if this email should be promoted to Owner on login.
 ///
 /// Covers:
 /// - The built-in local guest (always admin in no-auth mode).
-/// - Any email listed in the `OXY_ADMINS` env var (comma-separated).
-///   Setting `OXY_ADMINS` and re-logging in is the bootstrap path for
-///   granting admin access when no admin exists yet.
-pub fn should_be_admin(email: &str) -> bool {
+/// - The email set in `OXY_OWNER` — a single address that receives the Owner
+///   role unconditionally. Setting `OXY_OWNER` and re-logging in is the
+///   bootstrap path for assigning ownership without touching the database.
+pub fn should_be_owner(email: &str) -> bool {
     if email == LOCAL_GUEST_EMAIL {
         return true;
     }
-    let oxy_admins = std::env::var("OXY_ADMINS").unwrap_or_default();
-    oxy_admins
-        .split(',')
-        .map(|s| s.trim())
-        .any(|a| !a.is_empty() && a == email)
+    match std::env::var("OXY_OWNER") {
+        Ok(owner) => owner.trim() == email,
+        Err(_) => false,
+    }
 }
 
 pub struct UserService;
@@ -53,13 +58,12 @@ impl UserService {
             .await
             .map_err(|e| OxyError::DBError(format!("Failed to query user: {e}")))?
         {
-            // Ensure users that should be admin (local guest or listed in OXY_ADMINS)
-            // always have at least Admin role in the DB. This runs on every login so that
-            // setting OXY_ADMINS and re-logging in is enough to bootstrap an admin.
-            // Never demote an existing Owner.
-            if existing_user.role == UserRole::Member && should_be_admin(&existing_user.email) {
+            // Ensure the OXY_OWNER email always has Owner role in the DB.
+            // This runs on every login so that setting OXY_OWNER and re-logging
+            // in is enough to bootstrap ownership. Never demote an existing Owner.
+            if existing_user.role != UserRole::Owner && should_be_owner(&existing_user.email) {
                 let mut active: users::ActiveModel = existing_user.into();
-                active.role = Set(UserRole::Admin);
+                active.role = Set(UserRole::Owner);
                 let updated = active.update(&connection).await.map_err(|e| {
                     OxyError::DBError(format!("Failed to promote user to admin: {e}"))
                 })?;
@@ -69,7 +73,7 @@ impl UserService {
         }
 
         // User not found, try to create.
-        // The local guest is always Admin. The very first real user to register
+        // The local guest is always Owner. The very first real user to register
         // becomes Owner so there is always a bootstrap owner without needing
         // to pre-configure one in config.yml.
         //
@@ -82,12 +86,9 @@ impl UserService {
             .count(&connection)
             .await
             .unwrap_or(1); // fail-safe: don't grant owner if the count query errors
-        // The very first real user becomes Owner (top-level, can grant admin).
-        // OXY_ADMINS users get Admin (recovery path, not ownership).
-        let initial_role = if existing_count == 0 {
+        // The very first real user becomes Owner, as does any email matching OXY_OWNER.
+        let initial_role = if existing_count == 0 || should_be_owner(&identity.email) {
             UserRole::Owner
-        } else if should_be_admin(&identity.email) {
-            UserRole::Admin
         } else {
             UserRole::Member
         };

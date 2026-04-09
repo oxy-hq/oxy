@@ -3,6 +3,7 @@
 [default.extend-words]
 consts = "consts"
 delt = "delt"
+AKS = "AKS"
 
 [type.md]
 extend-ignore-re = [

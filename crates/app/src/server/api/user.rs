@@ -70,20 +70,6 @@ impl From<AuthenticatedUser> for UserInfo {
     }
 }
 
-/// Returns true if `email` should be treated as admin in local (non-cloud) mode.
-///
-/// Reads the admin list from the `OXY_ADMINS` env var (comma-separated emails).
-/// When `OXY_ADMINS` is unset or empty, all users are admin (permissive default).
-fn is_local_admin_from_env(email: &str) -> bool {
-    let admins: Vec<String> = std::env::var("OXY_ADMINS")
-        .unwrap_or_default()
-        .split(',')
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
-    oxy_auth::is_admin_email(&admins, email)
-}
-
 pub async fn list_users(
     _user: AuthenticatedUserExtractor,
 ) -> Result<Json<UserListResponse>, StatusCode> {
@@ -341,7 +327,7 @@ pub async fn get_current_user_public(
                     // (e.g. first-user bootstrap), keep it. config.admins can only
                     // grant admin to additional users — it cannot revoke it.
                     if !user_info.is_admin {
-                        user_info.is_admin = is_local_admin_from_env(&user_info.email);
+                        user_info.is_admin = oxy_auth::is_local_admin_from_env(&user_info.email);
                     }
                     Ok(Json(Some(user_info)))
                 }

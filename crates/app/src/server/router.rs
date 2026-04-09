@@ -107,7 +107,6 @@ fn build_public_routes() -> Router<AppState> {
         .route("/auth/magic-link/request", post(auth::request_magic_link))
         .route("/auth/magic-link/verify", post(auth::verify_magic_link))
         .route("/user", get(user::get_current_user_public))
-        .route("/webhooks/github", post(github::github_webhook))
         .merge(build_slack_routes())
 }
 
@@ -408,7 +407,7 @@ fn build_integration_routes() -> Router<AppState> {
 
 /// Middleware that gates secrets routes to admin users only.
 ///
-/// Checks `config.admins` list; auto-grants access when the list is empty
+/// Checks `OXY_OWNER`; auto-grants access when unset
 /// (permissive default for single-user local installs). The built-in local guest
 /// (`<local-user@example.com>`) always passes.
 /// In single-workspace mode (`workspaces_root` is `None`), all users are granted access.
@@ -428,31 +427,15 @@ async fn secrets_access_middleware(
         .cloned()
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
-    // DB role is authoritative: first-user bootstrap grants Admin in the DB.
-    // config.admins can extend admin access but cannot revoke a DB-granted role.
-    let is_admin = user.role.is_admin_or_above() || is_local_admin(&user.email);
+    // DB role is authoritative: first-user bootstrap grants Owner in the DB.
+    // OXY_OWNER can extend admin access but cannot revoke a DB-granted role.
+    let is_admin = user.role.is_admin_or_above() || oxy_auth::is_local_admin_from_env(&user.email);
     if !is_admin {
         tracing::warn!("Non-admin user {} attempted to access secrets", user.email);
         return Err(StatusCode::FORBIDDEN);
     }
 
     Ok(next.run(request).await)
-}
-
-/// Checks whether a user email is considered admin in local (non-cloud) mode.
-///
-/// Logic:
-/// 1. The built-in local guest (`<local-user@example.com>`) is always admin.
-/// 2. If `OXY_ADMINS` env var is set (comma-separated emails), the email must be listed.
-/// 3. Otherwise all users are admin (permissive default for single-user installs).
-fn is_local_admin(email: &str) -> bool {
-    let admins: Vec<String> = std::env::var("OXY_ADMINS")
-        .unwrap_or_default()
-        .split(',')
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
-    oxy_auth::is_admin_email(&admins, email)
 }
 
 fn build_secret_routes(app_state: AppState) -> Router<AppState> {

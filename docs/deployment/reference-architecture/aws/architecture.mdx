@@ -1,120 +1,113 @@
 ---
-title: "AWS Infrastructure Architecture Overview"
-description: "Architectural overview of Oxy deployment options using AWS infrastructure including EC2 and ECS patterns"
-sidebarTitle: "Architecture Overview"
+title: "Kubernetes Deployment"
+description: "Deploy Oxy on Kubernetes using the official Helm chart"
+sidebarTitle: "Kubernetes (Helm)"
 ---
 
-This document provides an architectural overview of the Oxy deployment options using AWS infrastructure. We support two primary deployment patterns: EC2-based and ECS-based deployments.
+The recommended way to run Oxy in production on Kubernetes is via the official Helm chart, available at [github.com/oxy-hq/charts](https://github.com/oxy-hq/charts).
 
-## High-Level Architecture
+## Prerequisites
 
-```mermaid
-graph TB
-    subgraph "AWS Cloud"
-        subgraph "VPC"
-            subgraph "Public Subnets"
-                ALB[Application Load Balancer]
-                EC2[EC2 Instance]
-                ECS_Tasks[ECS Fargate Tasks]
-            end
+- A Kubernetes cluster (EKS, GKE, AKS, or any CNCF-conformant cluster)
+- `kubectl` configured against your cluster
+- `helm` v3+
+- A PostgreSQL database (RDS, Cloud SQL, Supabase, or self-hosted)
 
-            subgraph "Storage Layer"
-                EBS[EBS Volume<br/>EC2 Data Persistence]
-                EFS[EFS File System<br/>ECS Data Persistence]
-            end
-        end
+## Install
 
-        subgraph "Built-in Auth"
-            EmailAuth[Email/Password Auth<br/>SMTP Integration]
-            GoogleAuth[Google OAuth<br/>Optional]
-        end
-
-        subgraph "Configuration"
-            ConfigFile[config.yml<br/>Application Config]
-            EnvVars[Environment Variables<br/>API Keys & Secrets]
-        end
-    end
-
-    ALB --> EC2
-    ALB --> ECS_Tasks
-    EC2 --> EBS
-    ECS_Tasks --> EFS
-    EC2 --> ConfigFile
-    ECS_Tasks --> ConfigFile
-    EC2 --> EnvVars
-    ECS_Tasks --> EnvVars
-    EC2 --> EmailAuth
-    ECS_Tasks --> EmailAuth
-    EC2 --> GoogleAuth
-    ECS_Tasks --> GoogleAuth
-
-    classDef builtinStyle fill:#00cc66,stroke:#009944,stroke-width:2px
-    class EmailAuth,GoogleAuth,ConfigFile builtinStyle
+```bash
+helm repo add oxy https://oxy-hq.github.io/charts
+helm repo update
 ```
 
-## Deployment Architecture Options
+Create a `values.yaml` with your configuration:
 
-Oxy supports two primary AWS deployment patterns, each optimized for different use cases:
+```yaml
+env:
+  OXY_DATABASE_URL: "postgresql://user:password@your-db-host:5432/oxy"
+  OPENAI_API_KEY: "sk-..."
 
-### [EC2 Deployment](./ec2-architecture)
-
-Direct virtual machine deployment offering simplicity and full control.
-
-- **Best for**: Development, small teams, direct server control
-- **Key benefits**: Simple setup, SSH access, cost-effective for steady workloads
-- **Architecture**: Single instance with EBS storage
-
-### [ECS Deployment](./ecs-architecture)
-
-Container-based deployment with automatic scaling and high availability.
-
-- **Best for**: Production environments, scalable applications, enterprise deployments
-- **Key benefits**: Auto-scaling, multi-AZ availability, managed infrastructure
-- **Architecture**: Fargate containers with EFS shared storage
-
-## Common Components
-
-```mermaid
-graph LR
-    subgraph "Data Sources"
-        BigQuery[BigQuery]
-        LocalFiles[Local Files]
-    end
-
-    subgraph "Oxy Platform"
-        OxyServer[Oxy Server<br/>Port 3000]
-        McpServer[MCP SSE Server<br/>Port 8000]
-    end
-
-    subgraph "Storage"
-        PersistentData[Persistent Storage<br/>EBS/EFS]
-    end
-
-    BigQuery --> OxyServer
-    LocalFiles --> OxyServer
-    OxyServer <--> McpServer
-    OxyServer --> PersistentData
-    McpServer --> PersistentData
+# Optional: expose via LoadBalancer or configure an Ingress below
+service:
+  type: ClusterIP
 ```
 
-## Deployment Comparison
+Install the chart:
 
-| Feature          | EC2 Deployment           | ECS Deployment          |
-| ---------------- | ------------------------ | ----------------------- |
-| **Complexity**   | Low                      | Medium                  |
-| **Scalability**  | Manual                   | Automatic               |
-| **Availability** | Single AZ                | Multi-AZ                |
-| **Storage**      | EBS (10GB)               | EFS (Shared)            |
-| **Cost**         | Fixed instance cost      | Pay per use             |
-| **Maintenance**  | Manual updates           | Managed by AWS          |
-| **Debugging**    | SSH access               | CloudWatch logs         |
-| **Ideal for**    | Development, Small teams | Production, Large teams |
+```bash
+helm install oxy oxy/oxy -f values.yaml
+```
 
-## Next Steps
+## Access Oxy
 
-Choose your deployment architecture:
+Port-forward to access the UI locally while you set up ingress:
 
-### ECS Deployment
+```bash
+kubectl port-forward svc/oxy 3000:3000
+```
 
-- [ECS Architecture Details](./ecs-architecture) - Detailed ECS deployment architecture
-- [ECS Setup Guide](./step-by-step/ecs) - Step-by-step container deployment guide
+Open `http://localhost:3000`.
+
+## Ingress
+
+Add an ingress block to your `values.yaml` to expose Oxy publicly:
+
+```yaml
+ingress:
+  enabled: true
+  className: nginx          # or alb, traefik, etc.
+  hosts:
+    - host: oxy.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: oxy-tls
+      hosts:
+        - oxy.example.com
+```
+
+Then upgrade:
+
+```bash
+helm upgrade oxy oxy/oxy -f values.yaml
+```
+
+## Configuration
+
+All Oxy environment variables can be set under `env:` in `values.yaml`. See the [Environment reference](/deployment/environment) for the full list.
+
+For secrets, use a Kubernetes Secret and reference it:
+
+```yaml
+envFrom:
+  - secretRef:
+      name: oxy-secrets
+```
+
+Create the secret:
+
+```bash
+kubectl create secret generic oxy-secrets \
+  --from-literal=OXY_DATABASE_URL="postgresql://..." \
+  --from-literal=OPENAI_API_KEY="sk-..."
+```
+
+## Upgrade
+
+```bash
+helm repo update
+helm upgrade oxy oxy/oxy -f values.yaml
+```
+
+## Uninstall
+
+```bash
+helm uninstall oxy
+```
+
+## Next steps
+
+- [Configure authentication](/deployment/environment#authentication)
+- [Set up the GitHub App](/deployment/github-app) for multi-workspace mode
+- Browse all chart options at [github.com/oxy-hq/charts](https://github.com/oxy-hq/charts)

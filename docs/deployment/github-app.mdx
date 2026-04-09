@@ -16,7 +16,7 @@ In multi-workspace mode, Oxy uses a **GitHub App** (not a personal OAuth app) to
 - Clone repositories on the server when a workspace is created
 - Read and push commits through the built-in IDE Git panel
 
-The same GitHub App is used both to identify users (via OAuth) and to access repositories (via installation tokens). This guide walks through creating the app, configuring permissions, and setting the required environment variables.
+The same GitHub App handles both user authentication and repository access. This guide walks through creating the app, configuring permissions, and setting the required environment variables.
 
 <Note>
   GitHub App integration is only needed for **multi-workspace mode** (the default `oxy serve`). If you run `oxy serve --local`, the workspace files already exist on disk and no GitHub integration is required.
@@ -109,8 +109,13 @@ GITHUB_CLIENT_ID=Iv23liqo62PgXXXXXX
 GITHUB_CLIENT_SECRET=abc123...
 
 # HMAC secret for signing OAuth state and selection tokens
+# Generate once and store permanently — changing this invalidates all in-flight OAuth flows
 GITHUB_STATE_SECRET=$(openssl rand -hex 32)
 ```
+
+<Warning>
+  `GITHUB_STATE_SECRET` must stay the same across server restarts and deploys. If it changes, users in the middle of an OAuth flow will see "Invalid state parameter" and have to start over. Generate it once, store it in your secrets manager, and never rotate it unless you intentionally want to invalidate active sessions.
+</Warning>
 
 <Warning>
   The `GITHUB_APP_PRIVATE_KEY` value must include the full PEM block with literal newlines, not `\n` escape sequences. In a `.env` file, wrap the value in double quotes and paste the key with actual line breaks.
@@ -165,47 +170,45 @@ Oxy derives the OAuth callback URL automatically from the `Origin` header of the
 
 ---
 
-## How the OAuth Connect Flow Works
+## How the Connect Flow Works for Users
 
-Understanding this flow helps diagnose issues. When a user clicks **Sign in with GitHub**:
+When a user clicks **Import from GitHub** in the Workspaces UI, Oxy walks them through connecting their GitHub account and selecting a repository.
 
-```
-User browser                 Oxy server                  GitHub API
-──────────────               ──────────────              ──────────────
-Sign in →
-                             GET /github/oauth-connect-url
-                               Sign state: {user_id}:{ts}:{hmac}
-                             ← OAuth URL
-Open popup →
-  └─ github.com/login/oauth/authorize?client_id=...&state=...
-     User grants access →
-     Redirect to /github/callback?code=...&state=...
-     postMessage(code, state) to parent window
-                             POST /github/namespaces/oauth {code, state}
-                               1. Verify HMAC state (user_id, timestamp, sig)
-                               2. Exchange code → user OAuth token
-                               3. GET /user/installations (user token)
-                                  → installations of THIS app the user can see
-                             ← { status: "connected"|"choose"|"not_installed" }
-```
+### Step 1 — Connect a GitHub account
 
-**Three possible outcomes:**
+Oxy opens a GitHub OAuth popup. The user authorizes the app, and GitHub redirects back with a short-lived code that Oxy exchanges for an access token. This token is used to discover which GitHub App installations are visible to that user.
 
-| Status | Meaning | UI response |
-|--------|---------|-------------|
-| `connected` | Exactly one installation found → auto-connected | Namespace added, dialog closes |
-| `choose` | Multiple installations found | User picks one from a list |
-| `not_installed` | No installations visible to this user | "Ask your admin to install the app" |
+There are three possible outcomes:
 
-**Picking from multiple installations (security):**
+| Outcome | What the user sees |
+|---------|-------------------|
+| **One installation found** | Oxy auto-connects it — the user skips straight to repository selection |
+| **Multiple installations found** | A picker lists the available GitHub accounts/organizations; the user chooses one |
+| **No installation found** | A message tells the user to ask their admin to install the GitHub App first |
 
-When `choose` is returned, the server also returns a `selection_token` — a short-lived HMAC token encoding the eligible installation IDs, bound to the user's ID and a 10-minute timestamp. When the user picks one:
+### Step 2 — Select a repository
 
-1. The frontend sends `{ installation_id, selection_token }` to `POST /github/namespaces/pick`
-2. The server verifies the HMAC, checks the user ID matches, checks the token is < 10 minutes old, and confirms the chosen ID is in the token's ID list
+Once an installation (GitHub account or organization) is connected, the user sees the repositories that the GitHub App has access to. They pick one and Oxy clones it as a new workspace.
+
+### Connecting a different account
+
+If a user wants to import from a different GitHub account or organization, they can click **Use a different GitHub account** in the connect dialog. This opens a fresh OAuth popup and lets them authorize a different account — the newly authorized account replaces the previous one for future imports.
+
+<Note>
+  The GitHub App must be installed on any account or organization before its repositories appear in the picker. See [Step 6: Install the App](#step-6-install-the-app) above, or ask the org owner to install it.
+</Note>
+
+---
+
+## Security: How Installation Selection Is Protected
+
+When multiple installations are shown, Oxy issues a short-lived **selection token** — an HMAC-signed value encoding the eligible installation IDs, bound to the user's ID and valid for 10 minutes. When the user picks one:
+
+1. The client sends `{ installation_id, selection_token }` back to the server
+2. The server verifies the signature, confirms the user ID matches, checks the token is not expired, and validates that the chosen ID is in the token's list
 3. Only then is the namespace created
 
-This prevents a user from connecting an installation they were never shown — cross-tenant installation IDs cannot be enumerated.
+This ensures a user can only connect an installation they were explicitly shown — installation IDs from other tenants cannot be guessed or injected.
 
 ---
 
@@ -258,3 +261,7 @@ The user took more than 10 minutes to pick an installation, or the server restar
 **Users see "Sign in with GitHub" but nothing happens**
 
 Check that `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` are set correctly. Also verify the callback URL in the GitHub App settings matches your deployment domain exactly.
+
+**"Use a different GitHub account" connects the wrong account**
+
+The connect popup opens in a new browser window. If the user is already signed into GitHub as a different account in that window, they may need to sign out of GitHub first before authorizing. After a successful authorization, Oxy always uses the most recently connected account.

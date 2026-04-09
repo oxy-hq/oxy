@@ -49,8 +49,8 @@ Oxy is configured primarily through environment variables. This page covers the 
     GOOGLE_CLIENT_ID=...
     GOOGLE_CLIENT_SECRET=...
 
-    # Admin access (recommended for team deployments)
-    OXY_ADMINS=admin@example.com,other@example.com
+    # Instance owner (recommended for team deployments)
+    OXY_OWNER=admin@example.com
     ```
 
   </Step>
@@ -109,7 +109,7 @@ Oxy is configured primarily through environment variables. This page covers the 
 |----------|----------|---------|-------------|
 | `OXY_DATABASE_URL` | Required (multi-workspace) | — | PostgreSQL connection string |
 | `OXY_STATE_DIR` | No | `~/.local/share/oxy` | Directory for workspaces and runtime data |
-| `OXY_ADMINS` | No | — | Comma-separated list of emails granted Admin role on login |
+| `OXY_OWNER` | No | — | Email address granted Owner role on login. Owners can promote other users to Admin. When unset, all users are admin (single-user default). |
 | `OXY_API_URL` | No | derived from request | Base URL of the API (set when frontend and backend are on different domains) |
 
 ### Authentication

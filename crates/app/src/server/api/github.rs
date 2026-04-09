@@ -1,7 +1,5 @@
 use axum::{
-    body::Bytes,
     extract::{Json, Query},
-    http::HeaderMap,
     response::Json as ResponseJson,
 };
 use chrono::{DateTime, Duration, Utc};
@@ -17,7 +15,6 @@ use oxy::database::client::establish_connection;
 use oxy::github::app_auth::GitHubAppAuth;
 use oxy::github::client::GitHubClient;
 use oxy::github::types::{GitHubBranch, GitHubRepository};
-use oxy::github::webhook;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 
 #[derive(Debug, Serialize)]
@@ -250,18 +247,22 @@ pub async fn delete_git_namespace(
 }
 
 pub async fn list_git_namespaces(
-    _user: AuthenticatedUserExtractor,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
 ) -> Result<ResponseJson<GitHubNamespacesResponse>, axum::http::StatusCode> {
     let db = establish_connection().await.map_err(|e| {
         error!("Failed to establish database connection: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
-    // GitHub App installations are instance-wide — the app is installed once on
-    // the org by an admin, and all users of this Oxy instance share it.
-    // PAT namespaces (slug="pat") are per-user tokens but are also listed here
-    // so the UI can show them. Deduplication by installation_id is enforced at
-    // creation time, so no duplicates appear here.
+    use sea_orm::{ColumnTrait, QueryFilter};
+    // GitHub App installations (slug != "pat") are instance-wide — shared by all
+    // users of this Oxy instance. PAT namespaces (slug = "pat") are per-user and
+    // must only be visible to the user who created them.
     let git_namespaces = entity::git_namespaces::Entity::find()
+        .filter(
+            sea_orm::Condition::any()
+                .add(entity::git_namespaces::Column::Slug.ne("pat"))
+                .add(entity::git_namespaces::Column::UserId.eq(user.id)),
+        )
         .all(&db)
         .await
         .map_err(|e| {
@@ -300,11 +301,10 @@ pub async fn list_repositories(
             error!("Database error: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-    if git_namespace.is_none() {
+    let Some(git_namespace) = git_namespace else {
         error!("Git namespace not found for id {}", query.git_namespace_id);
         return Err(StatusCode::BAD_REQUEST);
-    }
-    let git_namespace = git_namespace.unwrap();
+    };
 
     // Use the stored token directly (PAT) if available; otherwise fetch an installation token.
     let is_pat = !git_namespace.oauth_token.is_empty();
@@ -370,11 +370,10 @@ pub async fn list_branches(
             error!("Database error: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-    if git_namespace.is_none() {
+    let Some(git_namespace) = git_namespace else {
         error!("Git namespace not found for id {}", query.git_namespace_id);
         return Err(StatusCode::BAD_REQUEST);
-    }
-    let git_namespace = git_namespace.unwrap();
+    };
 
     let token = if !git_namespace.oauth_token.is_empty() {
         git_namespace.oauth_token.clone()
@@ -604,7 +603,7 @@ fn verify_selection_token(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     mac.update(payload.as_bytes());
     let expected = hex::encode(mac.finalize().into_bytes());
-    if sig != expected {
+    if !constant_time_eq::constant_time_eq(sig.as_bytes(), expected.as_bytes()) {
         return Err(StatusCode::BAD_REQUEST);
     }
 
@@ -1014,17 +1013,4 @@ async fn upsert_app_namespace(
         slug: ns.slug,
         name: ns.name,
     })
-}
-
-pub async fn github_webhook(
-    headers: HeaderMap,
-    payload: Bytes,
-) -> Result<StatusCode, axum::http::StatusCode> {
-    let signature = headers
-        .get("X-Hub-Signature-256")
-        .and_then(|v| v.to_str().ok())
-        .ok_or(StatusCode::BAD_REQUEST)?
-        .to_string();
-
-    webhook::handle_webhook(signature, payload).await
 }

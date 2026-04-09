@@ -92,50 +92,60 @@ flowchart TD
     OxyServer -->|Data Access| Data
 ```
 
+## `oxy start` vs `oxy serve`
+
+These are the two commands you'll use to run Oxy. Choosing the right one depends on where you're running it.
+
+| | `oxy start` | `oxy serve --local` | `oxy serve` |
+|---|---|---|---|
+| **Use when** | Running on your local machine | Deploying to a remote server (single workspace) | Running a multi-workspace cloud deployment |
+| **PostgreSQL** | Auto-started in Docker — no setup needed | Auto-managed embedded instance | You provide `OXY_DATABASE_URL` |
+| **Workspaces** | One project (current directory) | One project (current directory) | Multiple — imported from GitHub via UI |
+| **GitHub App** | Not required | Not required | Required for workspace import |
+| **Requires Docker** | Yes | No | No |
+
+### `oxy start` — for local machines
+
+`oxy start` is the easiest way to run Oxy on your laptop or workstation. It spins up PostgreSQL in Docker automatically so you never have to configure a database:
+
+```bash
+cd my-oxy-project
+oxy start
+```
+
+Oxy starts and opens in your browser. Stop it with `Ctrl+C`. Requires a [Docker-compatible container engine](/deployment/container-runtimes).
+
+### `oxy serve --local` — for remote servers (single workspace)
+
+When deploying to a VM or container on a remote server, use `oxy serve --local`. It serves one fixed workspace directory and manages an embedded PostgreSQL instance on disk — no Docker required:
+
+```bash
+cd /path/to/my-oxy-project
+oxy serve --local --port 3000
+```
+
+This is what the [hands-on deployment guides](/deployment/hands-on) use.
+
+### `oxy serve` — for multi-workspace cloud mode
+
+`oxy serve` (without `--local`) runs Oxy as a multi-tenant platform where users import repositories from GitHub and manage multiple workspaces through the UI. Requires an external PostgreSQL database and a GitHub App:
+
+```bash
+export OXY_DATABASE_URL="postgresql://user:pass@host:5432/oxy"
+oxy serve
+```
+
+See the [Cloud Mode guide](/deployment/cloud-mode) for full setup instructions.
+
+---
+
 ## Data Persistence
-
-When deploying Oxy in production, it's important to understand how data is stored and persisted:
-
-Oxy uses **PostgreSQL** for data storage and provides two ways to run:
-
-<Tabs>
-  <Tab title="oxy start">
-    **Automatic PostgreSQL Management (Recommended for Development)**
-
-    ```bash
-    oxy start
-    ```
-
-    - ✅ Automatically starts PostgreSQL in Docker
-    - ✅ All environment variables configured automatically
-    - ✅ Perfect for local development and testing
-    - Requires: [Docker-compatible container engine](/deployment/container-runtimes)
-
-  </Tab>
-
-  <Tab title="oxy serve">
-    **External PostgreSQL Connection (Production)**
-
-    ```bash
-    export OXY_DATABASE_URL="postgresql://user:pass@host:port/database"
-    oxy serve
-    ```
-
-    - Connects to your external PostgreSQL instance
-    - You manage the PostgreSQL server
-    - Use for: Production, managed databases (RDS, Cloud SQL), existing PostgreSQL
-
-  </Tab>
-</Tabs>
-
-### Persistence Strategies
 
 For production deployments, ensure your data persistence strategy matches your reliability requirements:
 
-- **Development**: Use `oxy start` which manages PostgreSQL in Docker automatically
-- **Docker deployments**: Use `oxy start` or include PostgreSQL in docker-compose.yml with proper volume mounting
-- **Production deployments**: Use `oxy serve` with managed PostgreSQL services (AWS RDS, Cloud SQL, Supabase, etc.)
-- **Self-hosted production**: Use `oxy serve` with self-managed PostgreSQL with regular backups and replication
+- **Local machine (`oxy start`)**: PostgreSQL runs in Docker, data stored in the `oxy-postgres-data` Docker volume
+- **Remote server (`oxy serve --local`)**: Embedded PostgreSQL stored in `OXY_STATE_DIR` (default: `~/.local/share/oxy/`)
+- **Cloud mode (`oxy serve`)**: You manage an external PostgreSQL — use a managed service (RDS, Cloud SQL, Supabase) with automated backups
 
 <Warning>
   Data loss can occur if proper database configuration and backups are not in
@@ -267,7 +277,7 @@ After=network.target
 [Service]
 User=$(whoami)
 WorkingDirectory=${WORKSPACE_DIR}
-ExecStart=/bin/bash -c "/usr/local/bin/oxy serve & /usr/local/bin/oxy mcp-sse"
+ExecStart=/bin/bash -c "/usr/local/bin/oxy serve --local & /usr/local/bin/oxy mcp-sse"
 Restart=always
 Environment="OXY_STATE_DIR=${HOME}/oxy_data"
 

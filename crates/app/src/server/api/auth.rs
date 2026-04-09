@@ -442,8 +442,8 @@ pub async fn google_auth(
                 .unwrap_or(1);
             let initial_role = if existing_count == 0 {
                 users::UserRole::Owner
-            } else if oxy_auth::should_be_admin(&user_info.email) {
-                users::UserRole::Admin
+            } else if oxy_auth::should_be_owner(&user_info.email) {
+                users::UserRole::Owner
             } else {
                 users::UserRole::Member
             };
@@ -526,8 +526,8 @@ pub async fn okta_auth(
                 .unwrap_or(1);
             let initial_role = if existing_count == 0 {
                 users::UserRole::Owner
-            } else if oxy_auth::should_be_admin(&user_info.email) {
-                users::UserRole::Admin
+            } else if oxy_auth::should_be_owner(&user_info.email) {
+                users::UserRole::Owner
             } else {
                 users::UserRole::Member
             };
@@ -614,8 +614,8 @@ pub async fn github_auth(
                 .unwrap_or(1);
             let initial_role = if existing_count == 0 {
                 users::UserRole::Owner
-            } else if oxy_auth::should_be_admin(&user_info.email) {
-                users::UserRole::Admin
+            } else if oxy_auth::should_be_owner(&user_info.email) {
+                users::UserRole::Owner
             } else {
                 users::UserRole::Member
             };
@@ -638,9 +638,10 @@ pub async fn github_auth(
     };
 
     // Persist the GitHub access token so the repo-connect flow can reuse it
-    // without requiring a second sign-in. Best-effort: login still succeeds
+    // without requiring a second sign-in. Skipped for newly-created users since
+    // the token is already set during INSERT. Best-effort: login still succeeds
     // even if this update fails.
-    {
+    if user.github_access_token.is_none() {
         let mut active: users::ActiveModel = user.clone().into();
         active.github_access_token = Set(Some(github_access_token));
         if let Err(e) = active.update(&connection).await {
@@ -680,7 +681,7 @@ struct GitHubEmailEntry {
 async fn exchange_github_code_for_user_info(
     code: &str,
     base_url: &str,
-) -> Result<(GoogleUserInfo, String), OxyError> {
+) -> Result<(OAuthUserInfo, String), OxyError> {
     let client_id = std::env::var("GITHUB_CLIENT_ID")
         .map_err(|_| OxyError::ConfigurationError("GITHUB_CLIENT_ID not configured".to_string()))?;
     let client_secret = std::env::var("GITHUB_CLIENT_SECRET").map_err(|_| {
@@ -776,7 +777,7 @@ async fn exchange_github_code_for_user_info(
     let name = user_resp.name.unwrap_or_else(|| user_resp.login.clone());
 
     Ok((
-        GoogleUserInfo {
+        OAuthUserInfo {
             email,
             name,
             picture: user_resp.avatar_url,
@@ -826,25 +827,22 @@ async fn insert_user_or_fetch_existing(
     }
 }
 
-/// Ensure the user has Admin role if `should_be_admin` returns true,
+/// Ensure the user has Owner role if `should_be_owner` returns true,
 /// then build the `UserInfo` payload with the correct `is_admin` flag.
 ///
 /// Call this after every login (Google, Okta, magic link verify) so that:
-/// - Setting `OXY_ADMINS` and re-logging in immediately grants admin.
-/// - The first real user always gets Admin regardless of which auth provider they use.
+/// - Setting `OXY_OWNER` and re-logging in immediately grants Owner role.
+/// - The first real user always gets Owner regardless of which auth provider they use.
 async fn finalize_login(
     user: users::Model,
     connection: &DatabaseConnection,
 ) -> Result<(String, UserInfo), StatusCode> {
-    // Promote to Admin if warranted (OXY_ADMINS env var or LOCAL_GUEST).
-    // Never demote an existing Owner or Admin — only Members are eligible for
-    // promotion.  Note: an Admin demoted to Member (via update_user) will be
-    // re-promoted to Admin on their next login if they still appear in
-    // OXY_ADMINS.  This is intentional — OXY_ADMINS is the authoritative
-    // source for admin status.
-    let user = if user.role == users::UserRole::Member && oxy_auth::should_be_admin(&user.email) {
+    // Promote to Owner if warranted (OXY_OWNER env var or LOCAL_GUEST).
+    // Never demote an existing Owner. Re-login after setting OXY_OWNER is the
+    // bootstrap path to assign ownership without touching the database directly.
+    let user = if user.role != users::UserRole::Owner && oxy_auth::should_be_owner(&user.email) {
         let mut active: users::ActiveModel = user.into();
-        active.role = Set(users::UserRole::Admin);
+        active.role = Set(users::UserRole::Owner);
         active.update(connection).await.map_err(|e| {
             tracing::error!("Failed to promote user to admin: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
@@ -896,7 +894,7 @@ pub(super) fn extract_base_url_from_headers(headers: &HeaderMap) -> String {
 }
 
 #[derive(Deserialize)]
-struct GoogleUserInfo {
+struct OAuthUserInfo {
     email: String,
     name: String,
     picture: Option<String>,
@@ -905,7 +903,7 @@ struct GoogleUserInfo {
 async fn exchange_google_code_for_user_info(
     code: &str,
     base_url: &str,
-) -> Result<GoogleUserInfo, OxyError> {
+) -> Result<OAuthUserInfo, OxyError> {
     let auth_config = oxy::config::oxy::get_oxy_config()
         .ok()
         .and_then(|config| config.authentication);
@@ -990,7 +988,7 @@ async fn exchange_google_code_for_user_info(
         )));
     }
 
-    let user_info: GoogleUserInfo = user_info_response.json().await.map_err(|e| {
+    let user_info: OAuthUserInfo = user_info_response.json().await.map_err(|e| {
         tracing::error!("Failed to parse Google userinfo response: {}", e);
         OxyError::ConfigurationError(format!("Failed to parse user info: {e}"))
     })?;
@@ -1253,8 +1251,8 @@ async fn request_magic_link_inner(
                 .unwrap_or(1);
             let initial_role = if existing_count == 0 {
                 users::UserRole::Owner
-            } else if oxy_auth::should_be_admin(&req.email) {
-                users::UserRole::Admin
+            } else if oxy_auth::should_be_owner(&req.email) {
+                users::UserRole::Owner
             } else {
                 users::UserRole::Member
             };

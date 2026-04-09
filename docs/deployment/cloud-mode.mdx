@@ -73,14 +73,15 @@ MAGIC_LINK_SECRET=...             # for magic-link email auth
 GOOGLE_CLIENT_ID=...              # for Google OAuth
 OKTA_CLIENT_ID=...                # for Okta OAuth
 
-# Admin access control
-OXY_ADMINS=admin@example.com,other@example.com  # comma-separated
+# Instance owner — this user gets Owner role on login and can promote others to Admin
+OXY_OWNER=admin@example.com
 ```
 
 <Note>
-  If `OXY_ADMINS` is not set and authentication is enabled, every authenticated
+  If `OXY_OWNER` is not set and authentication is enabled, every authenticated
   user is treated as an admin. This is fine for single-user installs but
-  should be set explicitly for team deployments.
+  should be set explicitly for team deployments. The owner can then grant Admin
+  access to other users through the UI.
 </Note>
 
 ### GitHub App setup
@@ -207,7 +208,7 @@ env:
   OXY_API_URL: https://app.your-domain.com/api
   MAGIC_LINK_FROM_EMAIL: "noreply@your-domain.com"
   MAGIC_LINK_AWS_REGION: "us-west-2"
-  OXY_ADMINS: "admin@your-domain.com"
+  OXY_OWNER: "admin@your-domain.com"
 
 externalSecrets:
   envSecretNames: ["oxy-env-secret"]   # inject OXY_DATABASE_URL, GITHUB_*, etc.

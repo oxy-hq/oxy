@@ -97,19 +97,19 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
         }
     }
 
-    // Warn when authentication is enabled but OXY_ADMINS is not set.
+    // Warn when authentication is enabled but OXY_OWNER is not set.
     // In that case every authenticated user is treated as admin, which is
-    // the correct behaviour for single-user installs but is almost certainly
-    // unintentional for multi-user deployments.
+    // correct for single-user installs but almost certainly unintentional
+    // for multi-user deployments.
     let auth_configured = std::env::var("GOOGLE_CLIENT_ID").is_ok()
         || std::env::var("OKTA_CLIENT_ID").is_ok()
         || std::env::var("MAGIC_LINK_SECRET").is_ok();
-    let oxy_admins = std::env::var("OXY_ADMINS").unwrap_or_default();
-    if auth_configured && oxy_admins.trim().is_empty() {
+    let oxy_owner = std::env::var("OXY_OWNER").unwrap_or_default();
+    if auth_configured && oxy_owner.trim().is_empty() {
         tracing::warn!(
-            "Authentication is enabled but OXY_ADMINS is not set — \
+            "Authentication is enabled but OXY_OWNER is not set — \
              every authenticated user will be treated as an admin. \
-             Set OXY_ADMINS to a comma-separated list of admin email addresses \
+             Set OXY_OWNER to the email address of the instance owner \
              to restrict admin access."
         );
     }

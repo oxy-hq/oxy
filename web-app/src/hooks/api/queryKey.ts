@@ -200,7 +200,6 @@ const githubKeys = {
   all: ["github"] as const,
   namespaces: ["github", "namespaces"] as const,
   myInstallations: ["github", "my-installations"] as const,
-  appInstallations: ["github", "app-installations"] as const,
   installAppUrl: ["github", "install-app-url"] as const
 };
 

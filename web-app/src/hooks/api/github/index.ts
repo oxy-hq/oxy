@@ -3,8 +3,6 @@ export { useCreateGitNamespace } from "./useCreateGitNamespace";
 export { useCreateInstallationNamespace } from "./useCreateInstallationNamespace";
 export { useCreatePATNamespace } from "./useCreatePATNamespace";
 export { useDeleteGitNamespace } from "./useDeleteGitNamespace";
-export type { AppInstallation } from "./useGitHubAppInstallations";
-export { useGitHubAppInstallations } from "./useGitHubAppInstallations";
 export { useGitHubBranchesWithApp } from "./useGitHubBranchesWithApp";
 export { useGitHubInstallAppUrl } from "./useGitHubInstallAppUrl";
 export { useGitHubNamespaces } from "./useGitHubNamespaces";

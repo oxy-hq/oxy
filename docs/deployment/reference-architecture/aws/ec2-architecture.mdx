@@ -1,75 +1,80 @@
 ---
-title: "EC2 Deployment Architecture"
-description: "Detailed architecture overview for deploying Oxy on AWS EC2 instances"
-sidebarTitle: "EC2 Architecture"
+title: "EKS Deployment"
+description: "Deploy Oxy on Amazon Elastic Kubernetes Service"
+sidebarTitle: "AWS EKS"
 ---
 
-## EC2 Deployment Architecture
+Deploy Oxy on EKS using the official Helm chart. This pairs well with RDS for PostgreSQL as the managed database.
 
-```mermaid
-graph TB
-    subgraph "EC2 Deployment"
-        ALB[Application Load Balancer] --> EC2[EC2 Instance<br/>t4g.small ARM64]
+## Prerequisites
 
-        subgraph "Applications"
-            EC2 --> OxyApp[Oxy Server<br/>Port 3000]
-            EC2 --> McpSse[MCP SSE Server<br/>Port 8000]
-        end
+- An EKS cluster ([eksctl quickstart](https://eksctl.io/getting-started/))
+- `kubectl` configured for the cluster
+- `helm` v3+
+- An RDS PostgreSQL instance
 
-        subgraph "Storage"
-            EC2 --> EBS[EBS Volume<br/>10GB Persistent Storage]
-        end
+## Create an RDS database
 
-        subgraph "Configuration"
-            EC2 --> ConfigFiles[Config Files<br/>config.yml & .env]
-        end
-    end
+In the AWS Console → **RDS** → **Create database**:
+
+- Engine: PostgreSQL
+- Template: Production (or Dev/Test for smaller deployments)
+- Instance class: `db.t4g.medium` is a good starting point
+- Place in the **same VPC** as your EKS cluster
+
+Note the endpoint, username, and password.
+
+## Install Oxy
+
+```bash
+helm repo add oxy https://oxy-hq.github.io/charts
+helm repo update
 ```
 
-## Architecture Components
+Store your credentials as a Kubernetes Secret:
 
-### Core Infrastructure
+```bash
+kubectl create secret generic oxy-secrets \
+  --from-literal=OXY_DATABASE_URL="postgresql://user:password@your-rds-endpoint:5432/oxy" \
+  --from-literal=OPENAI_API_KEY="sk-..."
+```
 
-- **EC2 Instance**: ARM64 instance (t4g.small recommended)
-- **Application Load Balancer**: Traffic routing and SSL termination
-- **EBS Volume**: 10GB persistent storage
-- **Security Groups**: Network access control
+Create `values.yaml`:
 
-### Application Stack
+```yaml
+envFrom:
+  - secretRef:
+      name: oxy-secrets
 
-- **Oxy Server**: Main application (port 3000)
-- **MCP SSE Server**: Model Context Protocol server (port 8000)
-- **Configuration**: Files via `config.yml` and environment variables
+ingress:
+  enabled: true
+  className: alb
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+  hosts:
+    - host: oxy.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+```
 
-## Infrastructure Specifications
+Install:
 
-| Workload Size | Instance Type | vCPU | Memory | Storage  | Monthly Cost\* |
-| ------------- | ------------- | ---- | ------ | -------- | -------------- |
-| **Small**     | t4g.small     | 2    | 2 GB   | 10GB EBS | ~$15           |
-| **Medium**    | t4g.medium    | 2    | 4 GB   | 20GB EBS | ~$30           |
-| **Large**     | t4g.large     | 2    | 8 GB   | 50GB EBS | ~$60           |
+```bash
+helm install oxy oxy/oxy -f values.yaml
+```
 
-\*Approximate costs in us-east-1 region
+## Upgrade
 
-## Key Benefits & Considerations
+```bash
+helm repo update
+helm upgrade oxy oxy/oxy -f values.yaml
+```
 
-### ✅ Advantages
+## Next steps
 
-- **Simple setup**: Direct VM deployment with full control
-- **Cost-effective**: Fixed instance cost for predictable workloads
-- **SSH access**: Direct access for debugging and maintenance
-- **Flexible scaling**: Easy vertical scaling by changing instance type
-
-### ⚠️ Considerations
-
-- **Single point of failure**: No built-in high availability
-- **Manual scaling**: Requires intervention for capacity changes
-- **Maintenance overhead**: OS updates and security patching required
-
-## Next Steps
-
-Ready to deploy? Follow the step-by-step guide:
-
-- [EC2 Deployment Guide](./step-by-step/ec2) - Complete setup instructions for EC2 deployment
-
-The guide provides detailed instructions for setting up the complete EC2 infrastructure.
+- [Configure authentication](/deployment/environment#authentication)
+- [Set up the GitHub App](/deployment/github-app) for multi-workspace mode
+- Browse all chart options at [github.com/oxy-hq/charts](https://github.com/oxy-hq/charts)

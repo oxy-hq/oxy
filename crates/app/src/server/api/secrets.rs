@@ -487,7 +487,7 @@ const AUTH_ENV_VAR_PREFIXES: &[&str] = &[
     "GOOGLE_CLIENT_",  // GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
     "OKTA_",           // OKTA_CLIENT_ID, OKTA_CLIENT_SECRET, OKTA_DOMAIN
     "MAGIC_LINK_",     // all magic-link config vars
-    "OXY_",            // internal Oxy infrastructure vars (OXY_DATABASE_URL, OXY_ADMINS, …)
+    "OXY_",            // internal Oxy infrastructure vars (OXY_DATABASE_URL, OXY_OWNER, …)
     "GIT_REPOSITORY_", // GIT_REPOSITORY_URL
     "GITHUB_",         // all GitHub vars: app config, OAuth login, webhooks, CI env vars
 ];
