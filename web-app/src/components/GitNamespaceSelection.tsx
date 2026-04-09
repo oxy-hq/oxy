@@ -1,6 +1,5 @@
-import { Building2, Key, Loader2, Plus, User, X } from "lucide-react";
+import { Building2, Github, Key, Loader2, Plus, User, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import GithubIcon from "@/components/ui/GithubIcon";
 import { Badge } from "@/components/ui/shadcn/badge";
 import { Button } from "@/components/ui/shadcn/button";
 import {
@@ -203,7 +202,7 @@ function ConnectDialog({
         <Tabs defaultValue='app'>
           <TabsList className='w-full'>
             <TabsTrigger value='app' className='flex-1 gap-1.5'>
-              <GithubIcon className='h-3.5 w-3.5' />
+              <Github className='h-3.5 w-3.5' />
               GitHub App
             </TabsTrigger>
             <TabsTrigger value='pat' className='flex-1 gap-1.5'>
@@ -268,7 +267,7 @@ function ConnectDialog({
                       {oauthPopupOpened || isOAuthConnecting ? (
                         <Loader2 className='h-4 w-4 animate-spin' />
                       ) : (
-                        <GithubIcon className='h-4 w-4' />
+                        <Github className='h-4 w-4' />
                       )}
                       {oauthPopupOpened
                         ? "Waiting for GitHub…"
@@ -306,7 +305,7 @@ function ConnectDialog({
 
                 {installAppUrl && (
                   <Button className='w-full gap-2' onClick={handleInstall}>
-                    <GithubIcon className='h-4 w-4' />
+                    <Github className='h-4 w-4' />
                     Install GitHub App
                   </Button>
                 )}
@@ -434,7 +433,7 @@ export const GitNamespaceSelection = ({ value, onChange }: Props) => {
                   onClick={() => onChange?.(ns.id)}
                   className='flex flex-1 items-center gap-3 text-left'
                 >
-                  <GithubIcon className='h-4 w-4 shrink-0 text-muted-foreground' />
+                  <Github className='h-4 w-4 shrink-0 text-muted-foreground' />
                   <span className='flex-1 truncate font-medium text-sm'>{ns.name}</span>
                   <Badge variant='outline' className='shrink-0 gap-1 text-xs'>
                     {isPAT ? (
@@ -444,7 +443,7 @@ export const GitNamespaceSelection = ({ value, onChange }: Props) => {
                       </>
                     ) : (
                       <>
-                        <GithubIcon className='h-3 w-3' />
+                        <Github className='h-3 w-3' />
                         App
                       </>
                     )}

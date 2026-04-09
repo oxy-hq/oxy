@@ -4,12 +4,12 @@ import {
   BookOpen,
   CheckCircle2,
   Database,
+  Github,
   Key,
   Loader2,
   Plus
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import GithubIcon from "@/components/ui/GithubIcon";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import { useAllWorkspaces } from "@/hooks/api/workspaces/useWorkspaces";
@@ -615,7 +615,7 @@ export default function OnboardingPage() {
 
             <div className='flex flex-col gap-2'>
               <CreateOption
-                icon={<GithubIcon className='h-4 w-4' />}
+                icon={<Github className='h-4 w-4' />}
                 title='Import from GitHub'
                 description='Clone an existing repository.'
                 recommended
@@ -678,7 +678,7 @@ export default function OnboardingPage() {
 
           <div className='flex flex-col gap-2'>
             <CreateOption
-              icon={<GithubIcon className='h-4 w-4' />}
+              icon={<Github className='h-4 w-4' />}
               title='Import from GitHub'
               description='Connect an existing repository and start working immediately.'
               recommended

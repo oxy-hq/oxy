@@ -1,7 +1,15 @@
-import { GitBranch, Globe, HardDrive, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
+import {
+  GitBranch,
+  Github,
+  Globe,
+  HardDrive,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Trash2
+} from "lucide-react";
 import { useState } from "react";
 import { GitNamespaceSelection } from "@/components/GitNamespaceSelection";
-import GithubIcon from "@/components/ui/GithubIcon";
 import { Badge } from "@/components/ui/shadcn/badge";
 import { Button } from "@/components/ui/shadcn/button";
 import { Combobox } from "@/components/ui/shadcn/combobox";
@@ -197,7 +205,7 @@ function RepositoryRow({ repo }: { repo: Repository }) {
       <div className='flex items-center gap-3 rounded-md border border-border/40 px-4 py-3 transition-colors hover:border-border/70 hover:bg-accent/20'>
         <div className='flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10'>
           {repo.git_namespace_id ? (
-            <GithubIcon className='h-4 w-4 text-primary' />
+            <Github className='h-4 w-4 text-primary' />
           ) : repo.git_url ? (
             <Globe className='h-4 w-4 text-primary' />
           ) : (

@@ -1,5 +1,9 @@
 import { DialogTitle } from "@radix-ui/react-dialog";
-import { createHeadlessForm, type FormErrors } from "@remoteoss/json-schema-form";
+import {
+  buildCompleteYupSchema,
+  createHeadlessForm,
+  type JSONSchemaObjectType
+} from "@remoteoss/json-schema-form";
 import { useCallback, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { create } from "zustand";
@@ -32,57 +36,76 @@ export const useVariables = create<VariablesState>()((set) => ({
 }));
 
 type Props = {
-  schema: Parameters<typeof createHeadlessForm>[0];
+  schema: JSONSchemaObjectType;
 };
 
-const flattenFormErrors = (
-  errors: FormErrors,
-  prefix = ""
-): Record<string, { type: string; message: string }> => {
-  const result: Record<string, { type: string; message: string }> = {};
-  for (const [key, value] of Object.entries(errors)) {
-    const path = prefix ? `${prefix}.${key}` : key;
-    if (typeof value === "string") {
-      result[path] = { type: "validation", message: value };
-    } else if (Array.isArray(value)) {
-      value.forEach((item, i) => {
-        if (item && typeof item === "object") {
-          Object.assign(result, flattenFormErrors(item as FormErrors, `${path}.${i}`));
-        }
-      });
-    } else if (value && typeof value === "object") {
-      Object.assign(result, flattenFormErrors(value as FormErrors, path));
-    }
-  }
-  return result;
+type YupValidationSchema = {
+  validate: (data: TData, options: { abortEarly: boolean }) => Promise<TData>;
 };
+
+type YupErrors = {
+  inner: {
+    path: string;
+    type: string;
+    message: string;
+  }[];
+};
+
+const useYupValidationResolver = (validationSchema: YupValidationSchema) =>
+  useCallback(
+    async (data: TData) => {
+      try {
+        const values = await validationSchema.validate(data, {
+          abortEarly: false
+        });
+
+        return {
+          values,
+          errors: {}
+        };
+      } catch (errors) {
+        return {
+          values: {},
+          errors: (errors as YupErrors).inner.reduce(
+            (allErrors: Record<string, { type: string; message: string }>, currentError) => ({
+              ...allErrors,
+              [currentError.path]: {
+                type: currentError.type ?? "validation",
+                message: currentError.message
+              }
+            }),
+            {}
+          )
+        };
+      }
+    },
+    [validationSchema]
+  );
 
 export function Variables({ schema }: Props) {
   const { isOpen, onSubmit, setIsOpen } = useVariables();
-  const { fields, handleValidation } = useMemo(
+  const { fields } = useMemo(
     () =>
       createHeadlessForm(schema, {
         strictInputType: false
       }),
     [schema]
   );
-  const resolver = useCallback(
-    async (data: TData) => {
-      const result = handleValidation(data as Parameters<typeof handleValidation>[0]);
-      if (!result.formErrors) {
-        return { values: data, errors: {} };
-      }
-      return { values: {}, errors: flattenFormErrors(result.formErrors) };
-    },
-    [handleValidation]
+  const yupSchema = useMemo(
+    () =>
+      buildCompleteYupSchema(fields, {
+        strictInputType: false
+      }),
+    [fields]
   );
+  const yupResolver = useYupValidationResolver(yupSchema);
   const {
     handleSubmit,
     register,
     formState: { errors },
     reset,
     setError
-  } = useForm({ resolver });
+  } = useForm({ resolver: yupResolver });
   const onClose = useCallback(() => {
     reset();
     setIsOpen(false, undefined);
@@ -103,7 +126,7 @@ export function Variables({ schema }: Props) {
           <DialogTitle>Run Procedure With Variables</DialogTitle>
         </DialogHeader>
         <div className='flex h-full overflow-hidden'>
-          <div className='customScrollbar scrollbar-gutter-auto flex-1 overflow-auto'>
+          <div className='scrollbar-gutter-auto flex-1 overflow-auto'>
             <form
               id='workflow-variables-form'
               onSubmit={handleSubmit(async (data) => {

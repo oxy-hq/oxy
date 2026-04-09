@@ -1,5 +1,5 @@
+import { Github } from "lucide-react";
 import { CreateRepository } from "@/components/CreateRepository";
-import GithubIcon from "@/components/ui/GithubIcon";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/shadcn/dialog";
 import { Separator } from "@/components/ui/shadcn/separator";
 import { useAuth } from "@/contexts/AuthContext";
@@ -24,7 +24,7 @@ export const BranchSettings = ({ isOpen, onClose }: BranchSettingsProps) => {
       <DialogContent className='max-w-3xl gap-0 p-0'>
         <DialogHeader className='p-6'>
           <DialogTitle className='flex items-center gap-2 text-lg'>
-            <GithubIcon className='h-5 w-5' />
+            <Github className='h-5 w-5' />
             {hasGit ? "Branch Settings" : "Connect Repository"}
           </DialogTitle>
         </DialogHeader>

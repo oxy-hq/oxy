@@ -1,6 +1,5 @@
-import { FolderOpen, KeyRound, Loader2 } from "lucide-react";
+import { FolderOpen, Github, KeyRound, Loader2 } from "lucide-react";
 import { useState } from "react";
-import GithubIcon from "@/components/ui/GithubIcon";
 import { Button } from "@/components/ui/shadcn/button";
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
@@ -68,7 +67,7 @@ export const GitHubUrlOnboardingStep = ({ onBack, onDone, workspaceName }: Props
       {/* URL */}
       <div className='space-y-2'>
         <Label htmlFor='git-url' className='flex items-center gap-1.5'>
-          <GithubIcon className='h-3.5 w-3.5 text-muted-foreground' />
+          <Github className='h-3.5 w-3.5 text-muted-foreground' />
           Repository URL
         </Label>
         <Input
