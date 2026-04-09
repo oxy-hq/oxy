@@ -7,6 +7,11 @@ use agentic_core::events::{CoreEvent, DomainEvents, Event, EventStream};
 use agentic_core::tools::ToolDef;
 
 use super::constants::{DEFAULT_MAX_TOKENS, DEFAULT_MODEL, THINKING_MAX_TOKENS};
+
+/// Maximum number of characters included in the `llm.output` tracing preview.
+/// Text beyond this limit is truncated with a count suffix to keep log lines
+/// readable without losing all context for long outputs.
+const LLM_OUTPUT_PREVIEW_MAX_CHARS: usize = 2000;
 use super::{
     AnthropicProvider, Chunk, ContentBlock, InitialMessages, LlmError, LlmOutput, LlmProvider,
     OpenAiCompatProvider, StopReason, ThinkingConfig, ToolCallChunk, ToolLoopConfig, Usage,
@@ -420,17 +425,33 @@ impl LlmClient {
                             }
                         }
                         Chunk::ToolCall(tc) => {
+                            // Destructure tc to move its fields.  One clone
+                            // per field is still required because both
+                            // ordered_blocks and tool_calls need owned copies.
+                            let ToolCallChunk {
+                                id,
+                                name,
+                                input,
+                                provider_data,
+                            } = tc;
                             ordered_blocks.push(ContentBlock::ToolUse {
-                                id: tc.id.clone(),
-                                name: tc.name.clone(),
-                                input: tc.input.clone(),
-                                provider_data: tc.provider_data.clone(),
+                                id: id.clone(),
+                                name: name.clone(),
+                                input: input.clone(),
+                                provider_data: provider_data.clone(),
                             });
-                            tool_calls.push(tc);
+                            tool_calls.push(ToolCallChunk {
+                                id,
+                                name,
+                                input,
+                                provider_data,
+                            });
                         }
                         Chunk::RawBlock(block) => {
-                            ordered_blocks.push(block.clone());
+                            // Push to raw_blocks first (move), then clone into
+                            // ordered_blocks to preserve stream ordering.
                             raw_blocks.push(block);
+                            ordered_blocks.push(raw_blocks.last().unwrap().clone());
                         }
                         Chunk::Done(u) => {
                             usage = u;
@@ -470,10 +491,22 @@ impl LlmClient {
             // Record the LLM output (text + tool calls) as a visible event.
             {
                 let tool_names: Vec<&str> = tool_calls.iter().map(|tc| tc.name.as_str()).collect();
-                let output_preview = if text.len() > 2000 {
-                    format!("{}… ({} chars)", &text[..2000], text.len())
+                let output_preview_buf;
+                let output_preview: &str = if text.len() > LLM_OUTPUT_PREVIEW_MAX_CHARS {
+                    // Truncate at a char boundary to avoid panicking on
+                    // multi-byte UTF-8 characters (e.g. CJK, emoji) that may
+                    // straddle the byte offset.
+                    let truncate_at = text
+                        .char_indices()
+                        .map(|(i, _)| i)
+                        .take_while(|&i| i < LLM_OUTPUT_PREVIEW_MAX_CHARS)
+                        .last()
+                        .unwrap_or(0);
+                    output_preview_buf =
+                        format!("{}… ({} chars)", &text[..truncate_at], text.len());
+                    &output_preview_buf
                 } else {
-                    text.clone()
+                    &text
                 };
                 tracing::info!(
                     name: "llm.output",

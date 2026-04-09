@@ -38,6 +38,29 @@ use crate::types::{ChartConfig, DisplayBlock, QuestionType};
 
 use crate::catalog::Catalog;
 
+// ── Shared tool description strings ──────────────────────────────────────────
+//
+// Kept as constants so that triage, clarifying, and specifying stages stay in
+// sync without copy-paste drift.
+
+const SEARCH_CATALOG_DESC: &str = "Batch-search the semantic catalog for measures AND dimensions in one call. \
+     Use this to check whether the catalog has all the members needed to answer \
+     the question before attempting a semantic shortcut. Returns \
+     {metrics: [{name, description}], dimensions: [{name, description, type}]}.";
+
+const SEARCH_PROCEDURES_DESC: &str = "Search for existing procedure YAML files that match a query. \
+     Returns a list of {name, path, description} entries. \
+     Call this FIRST with key terms from the user's question. \
+     If any procedure directly answers the question, select it.";
+
+const SAMPLE_COLUMNS_DESC: &str = "Batch-sample multiple columns in one call. For each column, returns up \
+     to 20 distinct non-null values plus statistics (row_count, distinct_count, \
+     min, max; also avg and stdev for numeric columns). Accepts semantic view \
+     names and dimension names as well as raw database table/column names. \
+     Use this to verify filter values, confirm exact formats, and choose \
+     date granularity — all in a single round-trip instead of calling \
+     sample_column multiple times.";
+
 // ── Tool definitions per state ────────────────────────────────────────────────
 
 /// Tools available during the **triage** sub-phase of Clarify.
@@ -48,10 +71,7 @@ pub fn triage_tools() -> Vec<ToolDef> {
     vec![
         ToolDef {
             name: "search_procedures",
-            description: "Search for existing procedure YAML files that match a query. \
-                          Returns a list of {name, path, description} entries. \
-                          Call this FIRST with key terms from the user's question. \
-                          If any procedure directly answers the question, select it.",
+            description: SEARCH_PROCEDURES_DESC,
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -66,10 +86,7 @@ pub fn triage_tools() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "search_catalog",
-            description: "Batch-search the semantic catalog for measures AND dimensions in one call. \
-                          Use this to check whether the catalog has all the members needed to answer \
-                          the question before attempting a semantic shortcut. Returns \
-                          {metrics: [{name, description}], dimensions: [{name, description, type}]}.",
+            description: SEARCH_CATALOG_DESC,
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -95,11 +112,7 @@ pub fn clarifying_tools(has_semantic: bool) -> Vec<ToolDef> {
     let mut tools = vec![
         ToolDef {
             name: "search_catalog",
-            description: "Batch-search the catalog for metrics AND their dimensions in one call. \
-                          Accepts multiple query terms and returns all matching metrics plus their \
-                          available dimensions, deduplicated. This is the preferred way to discover \
-                          metrics — use it instead of calling list_metrics multiple times. \
-                          Returns {metrics: [{name, description}], dimensions: [{name, description, type}]}.",
+            description: SEARCH_CATALOG_DESC,
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -115,10 +128,7 @@ pub fn clarifying_tools(has_semantic: bool) -> Vec<ToolDef> {
         },
         ToolDef {
             name: "search_procedures",
-            description: "Search for existing procedure YAML files that match a query. \
-                          Returns a list of {name, path, description} entries. \
-                          Use this to find and reuse an existing procedure instead of \
-                          generating a new one from scratch.",
+            description: SEARCH_PROCEDURES_DESC,
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -150,11 +160,7 @@ pub fn specifying_tools(has_semantic: bool) -> Vec<ToolDef> {
     let mut tools = vec![
         ToolDef {
             name: "search_catalog",
-            description: "Batch-search the catalog for metrics AND their dimensions in one call. \
-                          Accepts multiple query terms and returns all matching metrics plus their \
-                          available dimensions, deduplicated. Use this to discover which metrics \
-                          and dimensions are relevant to the user's question before resolving them. \
-                          Returns {metrics: [{name, description}], dimensions: [{name, description, type}]}.",
+            description: SEARCH_CATALOG_DESC,
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -170,13 +176,7 @@ pub fn specifying_tools(has_semantic: bool) -> Vec<ToolDef> {
         },
         ToolDef {
             name: "sample_columns",
-            description: "Batch-sample multiple columns in one call. For each column, returns up \
-                          to 20 distinct non-null values plus statistics (row_count, distinct_count, \
-                          min, max; also avg and stdev for numeric columns). Accepts semantic view \
-                          names and dimension names as well as raw database table/column names. \
-                          Use this to verify filter values, confirm exact formats, and choose \
-                          date granularity — all in a single round-trip instead of calling \
-                          sample_column multiple times.",
+            description: SAMPLE_COLUMNS_DESC,
             parameters: json!({
                 "type": "object",
                 "properties": {

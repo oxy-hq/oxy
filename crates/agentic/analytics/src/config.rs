@@ -110,6 +110,9 @@ pub enum ConfigError {
     ///
     /// Hard failure — the solver is never constructed when this fires.
     EngineConnectionError(String),
+    /// A `${VAR}` placeholder in the config references an environment variable
+    /// that is not set.  Fail fast rather than sending an empty credential.
+    MissingEnvVar(String),
 }
 
 impl std::fmt::Display for ConfigError {
@@ -131,6 +134,13 @@ impl std::fmt::Display for ConfigError {
             }
             ConfigError::EngineConnectionError(e) => {
                 write!(f, "semantic engine connection error: {e}")
+            }
+            ConfigError::MissingEnvVar(name) => {
+                write!(
+                    f,
+                    "environment variable '${{{name}}}' referenced in config is not set; \
+                     set it before starting the server"
+                )
             }
         }
     }
@@ -200,30 +210,40 @@ pub struct SemanticEngineConfig {
 
 impl SemanticEngineConfig {
     /// Resolve `api_token`, interpolating `${VAR}` from the environment.
+    ///
+    /// When the field is absent from the YAML (`None`), returns `Ok("")`.
+    /// `interpolate_env` only errors when a `${VAR}` placeholder is present
+    /// *and* the referenced variable is unset — an absent or empty field is
+    /// accepted here and validated downstream by the engine client (e.g. Cube
+    /// returns a 401 on first request if the token is wrong).
     fn resolved_api_token(&self) -> Result<String, ConfigError> {
         let raw = self.api_token.as_deref().unwrap_or("");
-        Ok(interpolate_env(raw))
+        interpolate_env(raw)
     }
 
     fn resolved_client_id(&self) -> Result<String, ConfigError> {
         let raw = self.client_id.as_deref().unwrap_or("");
-        Ok(interpolate_env(raw))
+        interpolate_env(raw)
     }
 
     fn resolved_client_secret(&self) -> Result<String, ConfigError> {
         let raw = self.client_secret.as_deref().unwrap_or("");
-        Ok(interpolate_env(raw))
+        interpolate_env(raw)
     }
 }
 
 /// Interpolate `${VAR_NAME}` placeholders with environment variable values.
-fn interpolate_env(s: &str) -> String {
-    // Simple pattern: replace all ${FOO} with the env var FOO, or leave as-is.
+///
+/// Returns [`ConfigError::MissingEnvVar`] when a referenced variable is absent,
+/// so misconfigured deployments fail at startup rather than silently sending
+/// empty credentials.
+fn interpolate_env(s: &str) -> Result<String, ConfigError> {
     let mut result = s.to_string();
     while let Some(start) = result.find("${") {
         if let Some(end) = result[start..].find('}') {
-            let var_name = &result[start + 2..start + end];
-            let value = std::env::var(var_name).unwrap_or_default();
+            let var_name = result[start + 2..start + end].to_string();
+            let value = std::env::var(&var_name)
+                .map_err(|_| ConfigError::MissingEnvVar(var_name.clone()))?;
             result = format!(
                 "{}{}{}",
                 &result[..start],
@@ -234,7 +254,7 @@ fn interpolate_env(s: &str) -> String {
             break;
         }
     }
-    result
+    Ok(result)
 }
 
 /// Top-level agent configuration.

@@ -216,7 +216,17 @@ pub async fn batch_insert_events(
     let ts = now();
     let txn = db.begin().await?;
     for (seq, event_type, payload_str) in events {
-        let payload: Value = serde_json::from_str(payload_str).unwrap_or(Value::Null);
+        // Explicit rollback for consistency with the insert-failure path below;
+        // SeaORM rolls back on drop anyway, but being explicit is clearer.
+        let payload: Value = match serde_json::from_str(payload_str) {
+            Ok(v) => v,
+            Err(e) => {
+                txn.rollback().await.ok();
+                return Err(DbErr::Custom(format!(
+                    "invalid event payload JSON for seq={seq}, type={event_type}: {e}"
+                )));
+            }
+        };
         let event = agentic_run_event::ActiveModel {
             id: NotSet,
             run_id: Set(run_id.to_string()),

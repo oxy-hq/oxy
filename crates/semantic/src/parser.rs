@@ -9,6 +9,7 @@ use serde_yaml;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use tracing::warn;
 
 /// Configuration for the semantic layer parser
 #[derive(Debug, Clone)]
@@ -93,8 +94,17 @@ impl SemanticLayerParser {
         // Recursively discover all view and topic files under the base path
         let mut dirs_to_scan = vec![self.config.base_path.clone()];
         while let Some(dir) = dirs_to_scan.pop() {
-            // Resolve canonical path to detect cycles
-            let canonical = dir.canonicalize().unwrap_or_else(|_| dir.clone());
+            // Resolve canonical path to detect cycles.
+            // If canonicalization fails (e.g. permission error), fall back to
+            // the unresolved path.  Cycle detection is best-effort in that case.
+            let canonical = dir.canonicalize().unwrap_or_else(|e| {
+                warn!(
+                    path = %dir.display(),
+                    error = %e,
+                    "canonicalize failed; symlink cycle detection may be incomplete"
+                );
+                dir.clone()
+            });
             if !visited.insert(canonical) {
                 continue;
             }
@@ -145,7 +155,8 @@ impl SemanticLayerParser {
 
         if views.is_empty() && self.config.validate {
             return Err(SemanticLayerError::IOError(format!(
-                "No view files (*.view.yml or *.view.yaml) found under: {}",
+                "At least one .view.yml file is required; .topic.yml files alone are not \
+                 sufficient. No view files (*.view.yml or *.view.yaml) found under: {}",
                 self.config.base_path.display()
             )));
         }
