@@ -6,18 +6,41 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  issues: write
-  pull-requests: write
+  contents: read
+  pull-requests: read
   id-token: write
 
 jobs:
-  suggest-enhancements:
-    if: ${{ github.repository == 'oxy-hq/oxy-internal' }}
+  analyze:
+    if: ${{ github.repository == 'oxy-hq/oxy' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - category: refactoring
+            focus: >-
+              duplicated logic, overly complex functions, poor separation of
+              concerns, large functions that should be split
+          - category: performance
+            focus: >-
+              inefficient queries, unnecessary clones or allocations, blocking
+              calls in async contexts, N+1 patterns
+          - category: security
+            focus: >-
+              unsafe unwraps on external input, potential injection vectors,
+              overly broad permissions, unvalidated user data reaching SQL
+          - category: test-coverage
+            focus: >-
+              untested public APIs, missing edge-case tests, flaky test patterns,
+              code paths with no coverage
+          - category: code-quality
+            focus: >-
+              missing error handling, inconsistent patterns vs established
+              conventions, TODO/FIXME/HACK comments in recently changed files
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -27,62 +50,104 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: |
-            REPO: ${{ github.repository }}
+            You are an automated code reviewer for the Oxy monorepo (Rust workspace + React/TypeScript frontend).
 
-            You are reviewing the Oxy codebase — a Rust workspace with a React/TypeScript frontend.
+            Repository: oxy-hq/oxy-internal
+            Branch: main
+
+            Your task: analyze ONLY the category **${{ matrix.category }}** — ${{ matrix.focus }}.
 
             Workspace layout:
-            - crates/app                      — (oxy-app / oxy binary) CLI + HTTP server, default workspace member
-            - crates/core                     — (oxy) Core platform library, published as "oxy"
-            - crates/agent                    — (oxy-agent) Agent execution engine
-            - crates/auth                     — (oxy-auth) Authentication and authorization
-            - crates/entity                   — (entity) Sea-ORM database entity models
-            - crates/migration                — (migration) Sea-ORM database migrations
-            - crates/semantic                 — (oxy-semantic) Semantic query layer powered by airlayer
-            - crates/shared                   — (oxy-shared) Shared types, errors, and infrastructure
-            - crates/workflow                 — (oxy-workflow) Workflow orchestration
-            - crates/thread                   — (oxy-thread) Thread and conversation management
-            - crates/project                  — (oxy-project) Project and workspace management
-            - crates/globals                  — (oxy_globals) Global semantics registry and inheritance support
-            - crates/omni                     — (omni) Omni integration
-            - crates/a2a                      — (a2a) A2A protocol server
-            - crates/test-utils               — (oxy-test-utils) Test utilities, fixtures, and mocks
-            - crates/agentic/core             — (agentic-core) Generic agentic workflow orchestration framework
-            - crates/agentic/analytics        — (agentic-analytics) Analytics domain for the agentic framework
-            - crates/agentic/app-builder      — (agentic-app-builder) Data app builder domain for the agentic framework
-            - crates/agentic/connector        — (agentic-connector) Database connector trait and backend implementations
-            - crates/agentic/db               — (agentic-db) Shared SeaORM entities and migrations for agentic pipeline
-            - crates/agentic/http             — (agentic-http) Axum HTTP routes for the agentic analytics pipeline
-            - crates/agentic/llm              — (agentic-llm) Shared LLM provider abstraction for agentic domains
-            - crates/agentic/workflow         — (agentic-workflow) Procedure runner backed by oxy-workflow
-            - crates/infrastructure/llm/anthropic — (oxy-anthropic) Anthropic LLM provider
-            - crates/infrastructure/llm/gemini    — (oxy-gemini) Google Gemini provider
-            - crates/infrastructure/llm/ollama    — (oxy-ollama) Ollama provider
-            - crates/infrastructure/llm/openai    — (oxy-openai) OpenAI provider
-            - crates/infrastructure/llm/oxy-llm   — (oxy-llm) Unified LLM abstraction over all providers
-            - crates/integration/looker       — (oxy-looker) Looker integration
-            - web-app/                        — Frontend (Vite + React + TypeScript)
-
-            Your task is to identify the most impactful improvement opportunities across the codebase from the past week. Focus on:
-
-            1. **Refactoring opportunities** — duplicated logic, overly complex functions, poor separation of concerns
-            2. **Performance improvements** — inefficient queries, unnecessary clones/allocations, blocking calls in async contexts
-            3. **Code quality** — missing error handling, clippy warnings, inconsistent patterns vs. established conventions
-            4. **Security** — unsafe unwraps on external input, potential injection vectors, overly broad permissions
-            5. **Test coverage gaps** — untested public APIs, missing edge-case tests, flaky test patterns
+            - crates/app                          — CLI + HTTP server
+            - crates/core                         — Core platform library
+            - crates/agent                        — Agent execution engine
+            - crates/auth                         — Authentication and authorization
+            - crates/semantic                     — Semantic query layer
+            - crates/shared                       — Shared types, errors, infrastructure
+            - crates/workflow                     — Workflow orchestration
+            - crates/thread                       — Thread and conversation management
+            - crates/agentic/{core,analytics,connector,llm,http,workflow}
+            - crates/infrastructure/llm/{anthropic,gemini,ollama,openai,oxy-llm}
+            - web-app/                            — Vite + React + TypeScript
 
             Steps:
-            - Review recent commits: `git log --oneline --since="7 days ago"`
-            - Inspect the changed files in those commits for the issues above
-            - Look at open TODO/FIXME/HACK comments in recently changed files
-            - Do NOT check for clippy-style issues (a separate automated job handles that)
+            1. Run `git log --oneline --since="7 days ago"` to identify recently changed files
+            2. For each changed file, check specifically for **${{ matrix.category }}** issues
+            3. Write your findings to `findings-${{ matrix.category }}.md` in the repo root
 
-            Output:
-            - Create a single GitHub issue titled "Weekly Enhancement Suggestions — <date>" using `gh issue create`
-            - The issue body should use markdown with one section per category above
-            - Only include categories where you found real issues (skip empty sections)
-            - For each finding include: file path + line reference, a one-sentence description, and a concrete suggestion
-            - Cap the issue at 10 findings total — prioritize by impact
+            Format each finding exactly like this:
+
+            **N. Short title** — `path/to/file:line`
+
+            One sentence describing the problem.
+
+            ```lang
+            // ❌ problematic code
+            // ✅ fix
+            ```
+
+            [Fix this →](https://claude.ai/code?q=ENCODED_TASK&repo=oxy-hq/oxy-internal)
+
+            Where ENCODED_TASK is a URL-encoded string like:
+            "In path/to/file on branch main, line N has <problem>. <what to fix and how>."
+
+            To URL-encode it, run:
+            python3 -c 'import urllib.parse, sys; print(urllib.parse.quote(sys.stdin.read().strip()))' <<< "your task description"
+
+            Include at most 3 findings, ranked by impact. If nothing noteworthy, write:
+            _No ${{ matrix.category }} issues found this week._
+
+            Do NOT create GitHub issues, PRs, or comments — only write the findings file.
 
           claude_args: |
-            --allowedTools "Read,Glob,Grep,Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash(gh issue create:*),Bash(gh issue list:*)"
+            --allowedTools "Read,Glob,Grep,Write,Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash(python3:*)"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: findings-${{ matrix.category }}
+          path: findings-${{ matrix.category }}.md
+          if-no-files-found: warn
+
+  create-issue:
+    needs: analyze
+    if: ${{ github.repository == 'oxy-hq/oxy' && !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/create-github-app-token@v3
+        name: Create GitHub App Token
+        id: app-token
+        with:
+          app-id: ${{ vars.ARGO_APP_ID }}
+          private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            oxy-internal
+            oxy
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: findings/
+          merge-multiple: false
+
+      - name: Create consolidated GitHub issue
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          DATE=$(date -u +'%Y-%m-%d')
+
+          {
+            echo "Automated weekly enhancement suggestions from parallel Claude analysis of commits from the past 7 days."
+            echo ""
+            for dir in findings/findings-*/; do
+              f=$(ls "$dir"*.md 2>/dev/null | head -1)
+              [ -n "$f" ] && cat "$f" && echo ""
+            done
+          } > body.md
+
+          gh issue create \
+            --repo oxy-hq/oxy-internal \
+            --title "Weekly Enhancement Suggestions — ${DATE}" \
+            --body-file body.md \
+            --label "automated"

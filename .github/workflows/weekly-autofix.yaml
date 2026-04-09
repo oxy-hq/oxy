@@ -9,6 +9,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  id-token: write
 
 jobs:
   autofix:
@@ -75,6 +76,37 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile --prefer-offline
 
+      - name: Consolidate Cargo workspace dependencies
+        uses: anthropics/claude-code-action@v1
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            You are a Rust workspace dependency consolidation bot working on the Oxy monorepo.
+
+            Goal: find dependencies that are repeated across multiple crates and move them into
+            [workspace.dependencies] in the root Cargo.toml so each crate uses `{ workspace = true }`.
+
+            Rules:
+            - Only touch [dependencies] sections, never [dev-dependencies] or [build-dependencies]
+            - A dep is a candidate if it appears in 3 or more crates with the same (or compatible) version
+            - If feature sets differ across crates, use the union of all features in [workspace.dependencies]
+            - Never move git-sourced deps (those with `git = ...`) — leave them as-is
+            - Never change versions — only consolidate existing pinned versions
+            - Preserve `optional = true` on the per-crate entry when moving to workspace
+            - After all edits, run `cargo fetch` to verify resolution; if it errors, revert just that dep
+
+            Steps:
+            1. Read Cargo.toml (root) to see what is already in [workspace.dependencies] — skip those
+            2. Glob all crates/**/Cargo.toml, read each, collect [dependencies] entries with explicit versions
+            3. For each candidate dep: add to [workspace.dependencies], replace per-crate entries with `{ workspace = true }` (keeping any `optional = true`)
+            4. Run `cargo fetch` — on error, revert that dep only and continue
+            5. Output a one-line summary listing which deps were consolidated
+
+          claude_args: |
+            --allowedTools "Read,Edit,Glob,Grep,Bash(cargo fetch:*)"
+
       - name: Cargo clippy --fix
         run: cargo clippy --fix --allow-dirty --allow-staged --broken-code --workspace --lib
 
@@ -94,11 +126,12 @@ jobs:
         with:
           token: ${{ steps.app-token.outputs.token }}
           branch: autofix/weekly-${{ github.run_id }}
-          commit-message: "chore(${{ steps.date.outputs.value }}): weekly clippy fix, rustfmt, and frontend format"
+          commit-message: "chore(${{ steps.date.outputs.value }}): weekly clippy fix, rustfmt, frontend format, workspace dep consolidation"
           title: "chore: weekly auto-fix ${{ steps.date.outputs.value }}"
           body: |
             Automated weekly auto-fix run.
 
+            - Cargo workspace dependency consolidation (via Claude Code Action)
             - `cargo clippy --fix --allow-dirty --allow-staged --broken-code --workspace --lib`
             - `cargo fmt --all`
             - `pnpm format` (Biome)
