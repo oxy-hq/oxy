@@ -97,6 +97,11 @@ jobs:
             - Never change versions — only consolidate existing pinned versions
             - Preserve `optional = true` on the per-crate entry when moving to workspace
             - Do NOT run any cargo commands — CI on the resulting PR will catch resolution errors
+            - CRITICAL: If ANY crate uses `default-features = false` for a dep, the workspace entry
+              MUST also have `default-features = false`. Cargo does not allow a crate to set
+              `default-features = false` when inheriting a workspace dep that omits it.
+              In that case, crates that previously relied on default features must have those
+              features added explicitly to their per-crate `features = [...]` list.
 
             Steps:
             1. Read Cargo.toml (root) to see what is already in [workspace.dependencies] — skip those
