@@ -448,10 +448,8 @@ impl LlmClient {
                             });
                         }
                         Chunk::RawBlock(block) => {
-                            // Push to raw_blocks first (move), then clone into
-                            // ordered_blocks to preserve stream ordering.
+                            ordered_blocks.push(block.clone());
                             raw_blocks.push(block);
-                            ordered_blocks.push(raw_blocks.last().unwrap().clone());
                         }
                         Chunk::Done(u) => {
                             usage = u;
@@ -498,9 +496,9 @@ impl LlmClient {
                     // straddle the byte offset.
                     let truncate_at = text
                         .char_indices()
-                        .map(|(i, _)| i)
-                        .take_while(|&i| i < LLM_OUTPUT_PREVIEW_MAX_CHARS)
+                        .take_while(|(i, _)| *i < LLM_OUTPUT_PREVIEW_MAX_CHARS)
                         .last()
+                        .map(|(i, c)| i + c.len_utf8())
                         .unwrap_or(0);
                     output_preview_buf =
                         format!("{}… ({} chars)", &text[..truncate_at], text.len());

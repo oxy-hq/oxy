@@ -10,54 +10,70 @@ const isLocalhost = () => {
   return window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 };
 
+enum InitState {
+  Uninitialized,
+  Initializing,
+  Initialized
+}
+
 let duckDB: duckdb.AsyncDuckDB = null!;
 let initPromise: Promise<void> | null = null;
+let initState = InitState.Uninitialized;
 
 const init = async () => {
-  if (duckDB) return;
+  if (initState === InitState.Initialized) return;
   if (!initPromise) {
+    initState = InitState.Initializing;
     initPromise = (async () => {
-      console.debug("Initializing DuckDB");
-      let bundle: duckdb.DuckDBBundle;
-      let worker: Worker;
-      if (isLocalhost()) {
-        // Use manual bundles for localhost
-        bundle = await duckdb.selectBundle({
-          mvp: {
-            mainModule: duckdb_wasm,
-            mainWorker: mvp_worker
-          },
-          eh: {
-            mainModule: duckdb_wasm_eh,
-            mainWorker: eh_worker
-          }
-        });
-        worker = new Worker(bundle.mainWorker!);
-      } else {
-        // Use CDN bundles for cloud
-        const JSDELIVR_BUNDLES = duckdb.getJsDelivrBundles();
-        bundle = await duckdb.selectBundle(JSDELIVR_BUNDLES);
-        const worker_url = URL.createObjectURL(
-          new Blob([`importScripts("${bundle.mainWorker!}");`], {
-            type: "text/javascript"
-          })
-        );
-        worker = new Worker(worker_url);
-        // Use a local variable so `duckDB` is only assigned after instantiation
-        // completes. Assigning it earlier (as a side-effect inside the call
-        // arguments) caused a race: a concurrent getDuckDB() would see a truthy
-        // `duckDB`, skip `await init()`, and try to connect to an uninstantiated
-        // instance, triggering "DuckDB not initialized" errors.
-        const cdnDb = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(), worker);
-        await cdnDb.instantiate(bundle.mainModule, bundle.pthreadWorker);
-        duckDB = cdnDb;
-        URL.revokeObjectURL(worker_url);
-        return;
+      try {
+        console.debug("Initializing DuckDB");
+        let bundle: duckdb.DuckDBBundle;
+        let worker: Worker;
+        if (isLocalhost()) {
+          // Use manual bundles for localhost
+          bundle = await duckdb.selectBundle({
+            mvp: {
+              mainModule: duckdb_wasm,
+              mainWorker: mvp_worker
+            },
+            eh: {
+              mainModule: duckdb_wasm_eh,
+              mainWorker: eh_worker
+            }
+          });
+          worker = new Worker(bundle.mainWorker!);
+        } else {
+          // Use CDN bundles for cloud
+          const JSDELIVR_BUNDLES = duckdb.getJsDelivrBundles();
+          bundle = await duckdb.selectBundle(JSDELIVR_BUNDLES);
+          const worker_url = URL.createObjectURL(
+            new Blob([`importScripts("${bundle.mainWorker!}");`], {
+              type: "text/javascript"
+            })
+          );
+          worker = new Worker(worker_url);
+          // Use a local variable so `duckDB` is only assigned after instantiation
+          // completes. Assigning it earlier (as a side-effect inside the call
+          // arguments) caused a race: a concurrent getDuckDB() would see a truthy
+          // `duckDB`, skip `await init()`, and try to connect to an uninstantiated
+          // instance, triggering "DuckDB not initialized" errors.
+          const cdnDb = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(), worker);
+          await cdnDb.instantiate(bundle.mainModule, bundle.pthreadWorker);
+          duckDB = cdnDb;
+          URL.revokeObjectURL(worker_url);
+          initState = InitState.Initialized;
+          return;
+        }
+        const logger = new duckdb.ConsoleLogger();
+        const localDb = new duckdb.AsyncDuckDB(logger, worker);
+        await localDb.instantiate(bundle.mainModule, bundle.pthreadWorker);
+        duckDB = localDb;
+        initState = InitState.Initialized;
+      } catch (e) {
+        initState = InitState.Uninitialized;
+        initPromise = null;
+        throw e;
       }
-      const logger = new duckdb.ConsoleLogger();
-      const localDb = new duckdb.AsyncDuckDB(logger, worker);
-      await localDb.instantiate(bundle.mainModule, bundle.pthreadWorker);
-      duckDB = localDb;
     })();
   }
   return initPromise;
