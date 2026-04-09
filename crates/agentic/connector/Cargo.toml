@@ -22,7 +22,7 @@ tokio = { version = "1", features = ["sync", "rt"] }
 tracing = { version = "0.1" }
 
 # DuckDB
-duckdb = { version = "1.2", features = ["bundled"], optional = true }
+duckdb = { version = "1.10501", features = ["bundled"], optional = true }
 
 # Postgres
 tokio-postgres = { version = "0.7", features = [
@@ -48,6 +48,6 @@ arrow = { version = "=56.2.0", default-features = false, features = [
 gcp-bigquery-client = { version = "0.25.1", optional = true }
 
 [dev-dependencies]
-duckdb = { version = "1.2", features = ["bundled"] }
+duckdb = { version = "1.10501", features = ["bundled"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tempfile = "3"
