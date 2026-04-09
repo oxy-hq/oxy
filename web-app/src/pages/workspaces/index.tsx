@@ -5,7 +5,6 @@ import {
   Check,
   Database,
   GitCommitHorizontal,
-  Github,
   GitMerge,
   KeyRound,
   LayoutDashboard,
@@ -19,6 +18,7 @@ import {
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import GithubIcon from "@/components/ui/GithubIcon";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -258,7 +258,7 @@ function CreateWorkspaceDialog({
             <div className='flex flex-col gap-2'>
               <OptionCard
                 label='01'
-                icon={<Github className='h-3.5 w-3.5' />}
+                icon={<GithubIcon className='h-3.5 w-3.5' />}
                 title='Import from GitHub'
                 description='Clone an existing repository and start working immediately.'
                 badge='Recommended'
@@ -587,7 +587,7 @@ function WorkspaceCard({
             {/* Git remote */}
             {workspace.git_remote && !isDisabled && (
               <div className='flex min-w-0 items-center gap-1.5'>
-                <Github className='h-3 w-3 shrink-0 text-muted-foreground/40' />
+                <GithubIcon className='h-3 w-3 shrink-0 text-muted-foreground/40' />
                 <span className='truncate font-mono text-[11px] text-muted-foreground/50'>
                   {workspace.git_remote
                     .replace(/\.git$/, "")

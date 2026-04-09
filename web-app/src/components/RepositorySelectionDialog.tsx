@@ -1,5 +1,6 @@
-import { Calendar, ExternalLink, Github, Search } from "lucide-react";
+import { Calendar, ExternalLink, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import GithubIcon from "@/components/ui/GithubIcon";
 import { Button } from "@/components/ui/shadcn/button";
 import {
   Card,
@@ -67,7 +68,7 @@ export function RepositorySelectionDialog({ open, onOpenChange }: RepositorySele
       <DialogContent className='max-h-[80vh] max-w-4xl overflow-hidden'>
         <DialogHeader>
           <DialogTitle className='flex items-center gap-2'>
-            <Github className='h-5 w-5' />
+            <GithubIcon className='h-5 w-5' />
             Select Repository
           </DialogTitle>
           <DialogDescription>
