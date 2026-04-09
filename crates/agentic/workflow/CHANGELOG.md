@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.32](https://github.com/oxy-hq/oxy-internal/compare/0.5.31...0.5.32) (2026-04-09)
+
+
+### <!-- 0 -->🚀 Features
+
+* new fsm agentic workflow ([#1781](https://github.com/oxy-hq/oxy-internal/issues/1781)) ([a602850](https://github.com/oxy-hq/oxy-internal/commit/a60285010d97eae83d22bc7c0e0b243fcbaab02f))
+* workspace management and onboarding process ([#1821](https://github.com/oxy-hq/oxy-internal/issues/1821)) ([373bb7a](https://github.com/oxy-hq/oxy-internal/commit/373bb7ac917764673bb07aa76516ef8c628907cd))
+
 ## [0.5.31](https://github.com/oxy-hq/oxy-internal/compare/0.5.31...0.5.31) (2026-04-01)
 
 

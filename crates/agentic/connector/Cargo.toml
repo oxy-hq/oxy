@@ -1,7 +1,7 @@
 [package]
 name = "agentic-connector"
 description = "Database connector trait, configuration, and backend implementations"
-version = "0.5.31"
+version = "0.5.32"
 documentation.workspace = true
 publish.workspace = true
 edition.workspace = true

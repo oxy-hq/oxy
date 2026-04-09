@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.5.33](https://github.com/oxy-hq/oxy-internal/compare/0.5.32...0.5.33) (2026-04-09)
+
+
+### <!-- 0 -->🚀 Features
+
+* add GitHub access token handling for user authentication and installation management ([75211aa](https://github.com/oxy-hq/oxy-internal/commit/75211aa196b6a8c8bd6093f86f27a6fe474aade6))
+* handle multi installations and multi accounts ([1fe537f](https://github.com/oxy-hq/oxy-internal/commit/1fe537f6aa1f49e087f5020433db2a2bf0d7d9e9))
+* new builder agent ([#1815](https://github.com/oxy-hq/oxy-internal/issues/1815)) ([3ce3e00](https://github.com/oxy-hq/oxy-internal/commit/3ce3e00e24d6aa1a8f92a7c05fcb30bcb1300c92))
+* thinking budget toggle ([#1847](https://github.com/oxy-hq/oxy-internal/issues/1847)) ([7474b5b](https://github.com/oxy-hq/oxy-internal/commit/7474b5b439537428f7981f2a6b066ec10f31b176))
+* workspace management and onboarding process ([#1821](https://github.com/oxy-hq/oxy-internal/issues/1821)) ([373bb7a](https://github.com/oxy-hq/oxy-internal/commit/373bb7ac917764673bb07aa76516ef8c628907cd))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* enhance base URL extraction for GitHub OAuth flow ([d5f8be5](https://github.com/oxy-hq/oxy-internal/commit/d5f8be5c0a002ade8ea754fe395d1aad58f4a817))
+* github multi account installation ([e2798b2](https://github.com/oxy-hq/oxy-internal/commit/e2798b2c55231b7cbce6ec8534ba19fd6dd156d8))
+* implement selection token for GitHub OAuth installation picking flow ([362426d](https://github.com/oxy-hq/oxy-internal/commit/362426d7eba778e45198817433a7c0b456f95c60))
+* improve GitHub OAuth flow and installation handling ([a253c69](https://github.com/oxy-hq/oxy-internal/commit/a253c69c512ebb1fd4ce68ee080b0bbdc812f3ea))
+
 ## [0.5.32](https://github.com/oxy-hq/oxy-internal/compare/0.5.31...0.5.32) (2026-04-01)
 
 

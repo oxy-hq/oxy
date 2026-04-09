@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.5.33](https://github.com/oxy-hq/oxy-internal/compare/0.5.32...0.5.33) (2026-04-09)
+
+
+### <!-- 0 -->🚀 Features
+
+* add GitHub access token handling for user authentication and installation management ([75211aa](https://github.com/oxy-hq/oxy-internal/commit/75211aa196b6a8c8bd6093f86f27a6fe474aade6))
+* handle multi installations and multi accounts ([1fe537f](https://github.com/oxy-hq/oxy-internal/commit/1fe537f6aa1f49e087f5020433db2a2bf0d7d9e9))
+* new builder agent ([#1815](https://github.com/oxy-hq/oxy-internal/issues/1815)) ([3ce3e00](https://github.com/oxy-hq/oxy-internal/commit/3ce3e00e24d6aa1a8f92a7c05fcb30bcb1300c92))
+* thinking budget toggle ([#1847](https://github.com/oxy-hq/oxy-internal/issues/1847)) ([7474b5b](https://github.com/oxy-hq/oxy-internal/commit/7474b5b439537428f7981f2a6b066ec10f31b176))
+* workspace management and onboarding process ([#1821](https://github.com/oxy-hq/oxy-internal/issues/1821)) ([373bb7a](https://github.com/oxy-hq/oxy-internal/commit/373bb7ac917764673bb07aa76516ef8c628907cd))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* bring back DuckDB initialization logic and state management ([d9a5ff4](https://github.com/oxy-hq/oxy-internal/commit/d9a5ff49cbbd1006af842b6bf26cae13ee796007))
+* builder bugs ([#2036](https://github.com/oxy-hq/oxy-internal/issues/2036)) ([071c2b5](https://github.com/oxy-hq/oxy-internal/commit/071c2b50ac7533bd41d12515f3b68bbfef59f72b))
+* context graph UI ([#2037](https://github.com/oxy-hq/oxy-internal/issues/2037)) ([82037dc](https://github.com/oxy-hq/oxy-internal/commit/82037dc3312b964fd4247e52ee3a646d30460a73))
+* enhance branch naming and UI adjustments in BranchQuickSwitcher ([ee25921](https://github.com/oxy-hq/oxy-internal/commit/ee25921bbe6d2a844aa25f57e92181fe53616c0d))
+* github multi account installation ([e2798b2](https://github.com/oxy-hq/oxy-internal/commit/e2798b2c55231b7cbce6ec8534ba19fd6dd156d8))
+* implement selection token for GitHub OAuth installation picking flow ([362426d](https://github.com/oxy-hq/oxy-internal/commit/362426d7eba778e45198817433a7c0b456f95c60))
+* ui ux semantic inconsistent ([#1770](https://github.com/oxy-hq/oxy-internal/issues/1770)) ([81b959c](https://github.com/oxy-hq/oxy-internal/commit/81b959caf27955721e95e3ff7eff73c50d1c51eb))
+* update dependencies to latest versions for improved stability and performance ([b839476](https://github.com/oxy-hq/oxy-internal/commit/b8394764d99510135a3b94d614dae4cb8722bc78))
+* upgrade major versions for frontend packages ([#1839](https://github.com/oxy-hq/oxy-internal/issues/1839)) ([c038d3a](https://github.com/oxy-hq/oxy-internal/commit/c038d3a3973d74840bf339b5096f30bea4ba1876))
+
 ## [0.5.32](https://github.com/oxy-hq/oxy-internal/compare/0.5.31...0.5.32) (2026-04-01)
 
 

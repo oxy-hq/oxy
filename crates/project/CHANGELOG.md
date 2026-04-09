@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.33](https://github.com/oxy-hq/oxy-internal/compare/0.5.32...0.5.33) (2026-04-09)
+
+
+### <!-- 0 -->🚀 Features
+
+* workspace management and onboarding process ([#1821](https://github.com/oxy-hq/oxy-internal/issues/1821)) ([373bb7a](https://github.com/oxy-hq/oxy-internal/commit/373bb7ac917764673bb07aa76516ef8c628907cd))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* improve GitHub OAuth flow and installation handling ([a253c69](https://github.com/oxy-hq/oxy-internal/commit/a253c69c512ebb1fd4ce68ee080b0bbdc812f3ea))
+
 ## [0.5.32](https://github.com/oxy-hq/oxy-internal/compare/0.5.31...0.5.32) (2026-04-01)
 
 ## [0.5.31](https://github.com/oxy-hq/oxy-internal/compare/0.5.30...0.5.31) (2026-03-26)

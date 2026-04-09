@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.32](https://github.com/oxy-hq/oxy-internal/compare/0.5.31...0.5.32) (2026-04-09)
+
+
+### <!-- 0 -->🚀 Features
+
+* new builder agent ([#1815](https://github.com/oxy-hq/oxy-internal/issues/1815)) ([3ce3e00](https://github.com/oxy-hq/oxy-internal/commit/3ce3e00e24d6aa1a8f92a7c05fcb30bcb1300c92))
+* new fsm agentic workflow ([#1781](https://github.com/oxy-hq/oxy-internal/issues/1781)) ([a602850](https://github.com/oxy-hq/oxy-internal/commit/a60285010d97eae83d22bc7c0e0b243fcbaab02f))
+* thinking budget toggle ([#1847](https://github.com/oxy-hq/oxy-internal/issues/1847)) ([7474b5b](https://github.com/oxy-hq/oxy-internal/commit/7474b5b439537428f7981f2a6b066ec10f31b176))
+
+
+### <!-- 1 -->🐛 Bug Fixes
+
+* bring back DuckDB initialization logic and state management ([d9a5ff4](https://github.com/oxy-hq/oxy-internal/commit/d9a5ff49cbbd1006af842b6bf26cae13ee796007))
+
 ## [0.5.31](https://github.com/oxy-hq/oxy-internal/compare/0.5.31...0.5.31) (2026-04-01)
 
 

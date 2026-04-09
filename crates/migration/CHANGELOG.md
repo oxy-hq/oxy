@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.5.33](https://github.com/oxy-hq/oxy-internal/compare/0.5.32...0.5.33) (2026-04-09)
+
+
+### <!-- 0 -->🚀 Features
+
+* add GitHub access token handling for user authentication and installation management ([75211aa](https://github.com/oxy-hq/oxy-internal/commit/75211aa196b6a8c8bd6093f86f27a6fe474aade6))
+* thinking budget toggle ([#1847](https://github.com/oxy-hq/oxy-internal/issues/1847)) ([7474b5b](https://github.com/oxy-hq/oxy-internal/commit/7474b5b439537428f7981f2a6b066ec10f31b176))
+* workspace management and onboarding process ([#1821](https://github.com/oxy-hq/oxy-internal/issues/1821)) ([373bb7a](https://github.com/oxy-hq/oxy-internal/commit/373bb7ac917764673bb07aa76516ef8c628907cd))
+
 ## [0.5.32](https://github.com/oxy-hq/oxy-internal/compare/0.5.31...0.5.32) (2026-04-01)
 
 

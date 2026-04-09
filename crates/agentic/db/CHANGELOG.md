@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.32](https://github.com/oxy-hq/oxy-internal/compare/0.5.31...0.5.32) (2026-04-09)
+
+
+### <!-- 0 -->🚀 Features
+
+* new fsm agentic workflow ([#1781](https://github.com/oxy-hq/oxy-internal/issues/1781)) ([a602850](https://github.com/oxy-hq/oxy-internal/commit/a60285010d97eae83d22bc7c0e0b243fcbaab02f))
+* thinking budget toggle ([#1847](https://github.com/oxy-hq/oxy-internal/issues/1847)) ([7474b5b](https://github.com/oxy-hq/oxy-internal/commit/7474b5b439537428f7981f2a6b066ec10f31b176))
+
 ## [0.5.31](https://github.com/oxy-hq/oxy-internal/compare/0.5.31...0.5.31) (2026-04-01)
 
 
