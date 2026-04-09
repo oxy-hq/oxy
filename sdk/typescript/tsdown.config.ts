@@ -16,5 +16,10 @@ export default defineConfig({
   banner: {
     js: "// @oxy/sdk - TypeScript SDK for Oxy data platform"
   },
-  target: false
+  target: false,
+  transform: {
+    define: {
+      "import.meta": "{}"
+    }
+  }
 });
