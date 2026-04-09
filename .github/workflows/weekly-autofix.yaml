@@ -82,6 +82,7 @@ jobs:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          show_full_output: true
           prompt: |
             You are a Rust workspace dependency consolidation bot working on the Oxy monorepo.
 
