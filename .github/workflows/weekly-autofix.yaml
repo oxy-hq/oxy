@@ -95,17 +95,16 @@ jobs:
             - Never move git-sourced deps (those with `git = ...`) — leave them as-is
             - Never change versions — only consolidate existing pinned versions
             - Preserve `optional = true` on the per-crate entry when moving to workspace
-            - After all edits, run `cargo fetch` to verify resolution; if it errors, revert just that dep
+            - Do NOT run any cargo commands — CI on the resulting PR will catch resolution errors
 
             Steps:
             1. Read Cargo.toml (root) to see what is already in [workspace.dependencies] — skip those
             2. Glob all crates/**/Cargo.toml, read each, collect [dependencies] entries with explicit versions
             3. For each candidate dep: add to [workspace.dependencies], replace per-crate entries with `{ workspace = true }` (keeping any `optional = true`)
-            4. Run `cargo fetch` — on error, revert that dep only and continue
-            5. Output a one-line summary listing which deps were consolidated
+            4. Output a one-line summary listing which deps were consolidated
 
           claude_args: |
-            --allowedTools "Read,Edit,Glob,Grep,Bash(cargo fetch:*)"
+            --allowedTools "Read,Edit,Glob,Grep"
 
       - name: Cargo clippy --fix
         run: cargo clippy --fix --allow-dirty --allow-staged --broken-code --workspace --lib
