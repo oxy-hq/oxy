@@ -81,6 +81,10 @@ pub struct Model {
     pub status: UserStatus,
     pub created_at: DateTimeWithTimeZone,
     pub last_login_at: DateTimeWithTimeZone,
+    /// GitHub OAuth access token stored at login time when the user authenticates
+    /// via "Login with GitHub". Reused by the repo-connect flow so users who log
+    /// in with GitHub never need a second sign-in to import repositories.
+    pub github_access_token: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

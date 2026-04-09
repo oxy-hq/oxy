@@ -107,6 +107,7 @@ impl UserService {
             status: Set(UserStatus::Active),
             created_at: ActiveValue::not_set(), // Will use database default
             last_login_at: ActiveValue::not_set(), // Will use database default
+            github_access_token: ActiveValue::not_set(),
         };
 
         match new_user.insert(&connection).await {

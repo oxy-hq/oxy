@@ -459,6 +459,7 @@ pub async fn google_auth(
                 status: Set(UserStatus::Active),
                 created_at: sea_orm::ActiveValue::NotSet,
                 last_login_at: sea_orm::ActiveValue::NotSet,
+                github_access_token: sea_orm::ActiveValue::NotSet,
             };
 
             insert_user_or_fetch_existing(new_user, &user_info.email, &connection).await?
@@ -542,6 +543,7 @@ pub async fn okta_auth(
                 status: Set(UserStatus::Active),
                 created_at: sea_orm::ActiveValue::NotSet,
                 last_login_at: sea_orm::ActiveValue::NotSet,
+                github_access_token: sea_orm::ActiveValue::NotSet,
             };
 
             insert_user_or_fetch_existing(new_user, &user_info.email, &connection).await?
@@ -565,12 +567,13 @@ pub async fn github_auth(
     extract::Json(payload): extract::Json<GitHubAuthRequest>,
 ) -> Result<Json<AuthResponse>, StatusCode> {
     let base_url = extract_base_url_from_headers(&headers);
-    let user_info = exchange_github_code_for_user_info(&payload.code, &base_url)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to exchange GitHub code: {}", e);
-            StatusCode::UNAUTHORIZED
-        })?;
+    let (user_info, github_access_token) =
+        exchange_github_code_for_user_info(&payload.code, &base_url)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to exchange GitHub code: {}", e);
+                StatusCode::UNAUTHORIZED
+            })?;
 
     let connection = establish_connection().await.map_err(|e| {
         tracing::error!("Failed to establish database connection: {}", e);
@@ -628,10 +631,26 @@ pub async fn github_auth(
                 status: Set(UserStatus::Active),
                 created_at: sea_orm::ActiveValue::NotSet,
                 last_login_at: sea_orm::ActiveValue::NotSet,
+                github_access_token: Set(Some(github_access_token.clone())),
             };
             insert_user_or_fetch_existing(new_user, &user_info.email, &connection).await?
         }
     };
+
+    // Persist the GitHub access token so the repo-connect flow can reuse it
+    // without requiring a second sign-in. Best-effort: login still succeeds
+    // even if this update fails.
+    {
+        let mut active: users::ActiveModel = user.clone().into();
+        active.github_access_token = Set(Some(github_access_token));
+        if let Err(e) = active.update(&connection).await {
+            tracing::warn!(
+                "Failed to store GitHub access token for user {}: {}",
+                user.id,
+                e
+            );
+        }
+    }
 
     let (token, user_info_payload) = finalize_login(user, &connection).await?;
     Ok(Json(AuthResponse {
@@ -655,10 +674,13 @@ struct GitHubEmailEntry {
     verified: bool,
 }
 
+/// Exchange a GitHub OAuth authorization code for user profile info and the raw
+/// GitHub access token. The token is returned so callers can store it for later
+/// use (e.g. listing GitHub App installations without a second sign-in).
 async fn exchange_github_code_for_user_info(
     code: &str,
     base_url: &str,
-) -> Result<GoogleUserInfo, OxyError> {
+) -> Result<(GoogleUserInfo, String), OxyError> {
     let client_id = std::env::var("GITHUB_CLIENT_ID")
         .map_err(|_| OxyError::ConfigurationError("GITHUB_CLIENT_ID not configured".to_string()))?;
     let client_secret = std::env::var("GITHUB_CLIENT_SECRET").map_err(|_| {
@@ -753,11 +775,14 @@ async fn exchange_github_code_for_user_info(
 
     let name = user_resp.name.unwrap_or_else(|| user_resp.login.clone());
 
-    Ok(GoogleUserInfo {
-        email,
-        name,
-        picture: user_resp.avatar_url,
-    })
+    Ok((
+        GoogleUserInfo {
+            email,
+            name,
+            picture: user_resp.avatar_url,
+        },
+        access_token,
+    ))
 }
 
 /// Check if a database error is a unique constraint violation.
@@ -1246,6 +1271,7 @@ async fn request_magic_link_inner(
                 status: Set(UserStatus::Active),
                 created_at: sea_orm::ActiveValue::NotSet,
                 last_login_at: sea_orm::ActiveValue::NotSet,
+                github_access_token: sea_orm::ActiveValue::NotSet,
             };
             match new_user.insert(&connection).await {
                 Ok(inserted) => inserted,
@@ -1538,6 +1564,7 @@ async fn invite_user_inner(
                 status: Set(UserStatus::Active),
                 created_at: sea_orm::ActiveValue::NotSet,
                 last_login_at: sea_orm::ActiveValue::NotSet,
+                github_access_token: sea_orm::ActiveValue::NotSet,
             };
             match new_user.insert(&connection).await {
                 Ok(inserted) => inserted,

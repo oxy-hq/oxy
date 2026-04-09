@@ -196,6 +196,14 @@ const humanVerdictKeys = {
     [...humanVerdictKeys.all, "list", projectId, pathb64, runIndex] as const
 };
 
+const githubKeys = {
+  all: ["github"] as const,
+  namespaces: ["github", "namespaces"] as const,
+  myInstallations: ["github", "my-installations"] as const,
+  appInstallations: ["github", "app-installations"] as const,
+  installAppUrl: ["github", "install-app-url"] as const
+};
+
 const queryKeys = {
   agent: agentKeys,
   analytics: analyticsKeys,
@@ -220,7 +228,8 @@ const queryKeys = {
   testFile: testFileKeys,
   testProjectRun: testProjectRunKeys,
   testRun: testRunKeys,
-  humanVerdict: humanVerdictKeys
+  humanVerdict: humanVerdictKeys,
+  github: githubKeys
 };
 
 export default queryKeys;

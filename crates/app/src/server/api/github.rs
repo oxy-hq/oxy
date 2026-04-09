@@ -670,6 +670,19 @@ pub async fn connect_namespace_from_oauth(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
+    // Persist the token at the user level so GET /github/my-installations can reuse
+    // it on future dialog opens, even before any namespace record carries the token.
+    // This is also the backfill path for users who log in via email/Google/Okta but
+    // connect GitHub repos via the OAuth popup.
+    {
+        use sea_orm::EntityTrait;
+        if let Ok(Some(db_user)) = entity::prelude::Users::find_by_id(user.id).one(&db).await {
+            let mut active: entity::users::ActiveModel = db_user.into();
+            active.github_access_token = Set(Some(user_token.clone()));
+            let _ = active.save(&db).await; // best-effort
+        }
+    }
+
     match eligible.as_slice() {
         [] => Ok(ResponseJson(OAuthConnectResponse::NotInstalled)),
         [single] => {
@@ -887,26 +900,52 @@ pub async fn get_my_installations(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    use entity::git_namespaces;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
-    let ns = entity::prelude::GitNamespaces::find()
-        .filter(git_namespaces::Column::UserId.eq(user.id))
-        .filter(git_namespaces::Column::Slug.ne("pat"))
-        .all(&db)
-        .await
-        .map_err(|e| {
-            error!("DB query failed: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?
-        .into_iter()
-        .find(|n| !n.oauth_token.is_empty());
+    // Resolve the best available GitHub user token for this user.
+    // Priority:
+    //   1. Token stored when the user logged in via "Login with GitHub"
+    //      (users.github_access_token) — always present for GitHub-login users,
+    //      never requires a second OAuth round-trip.
+    //   2. Token stored when a namespace was connected via the OAuth popup
+    //      (git_namespaces.oauth_token) — fallback for users who logged in via
+    //      another method (email/password, Google, Okta) but previously connected
+    //      a GitHub account through the repo-connect flow.
+    let github_token = {
+        let db_user = entity::prelude::Users::find_by_id(user.id)
+            .one(&db)
+            .await
+            .map_err(|e| {
+                error!("DB query failed: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
 
-    let Some(ns) = ns else {
-        return Err(StatusCode::NOT_FOUND);
+        let login_token = db_user
+            .and_then(|u| u.github_access_token)
+            .filter(|t| !t.is_empty());
+
+        if let Some(token) = login_token {
+            token
+        } else {
+            // Fall back: token stored on a namespace via the OAuth popup flow.
+            use entity::git_namespaces;
+            entity::prelude::GitNamespaces::find()
+                .filter(git_namespaces::Column::UserId.eq(user.id))
+                .filter(git_namespaces::Column::Slug.ne("pat"))
+                .all(&db)
+                .await
+                .map_err(|e| {
+                    error!("DB query failed: {}", e);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?
+                .into_iter()
+                .find(|n| !n.oauth_token.is_empty())
+                .map(|n| n.oauth_token)
+                .ok_or(StatusCode::NOT_FOUND)?
+        }
     };
 
-    let installations = fetch_user_app_installations(&ns.oauth_token).await?;
+    let installations = fetch_user_app_installations(&github_token).await?;
     let ids: Vec<i64> = installations.iter().map(|i| i.id).collect();
     let selection_token = sign_selection_token(&ids, &user.id)?;
     Ok(ResponseJson(MyInstallationsResponse {

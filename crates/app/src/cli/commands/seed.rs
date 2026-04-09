@@ -74,6 +74,7 @@ pub async fn seed_test_users() -> Result<Vec<users::Model>, OxyError> {
             last_login_at: ActiveValue::not_set(), // Will use database default
             role: ActiveValue::Set(UserRole::Member),
             status: ActiveValue::Set(UserStatus::Active),
+            github_access_token: ActiveValue::not_set(),
         };
 
         let user = new_user

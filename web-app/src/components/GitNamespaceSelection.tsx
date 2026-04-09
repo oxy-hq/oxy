@@ -61,11 +61,11 @@ function ConnectDialog({
     usePickNamespaceInstallation();
   const { data: installAppUrl } = useGitHubInstallAppUrl();
 
-  // When the user already has a connection, try to reuse their stored OAuth token
-  // to discover installations without requiring a new sign-in.
-  const { data: savedInstallations, isFetching: isLoadingSaved } = useMyInstallations(
-    !open || !hasExistingConnections
-  );
+  // Fetch installations using the stored GitHub OAuth token (set at login or on first connect).
+  // Fires whenever the dialog is open — works for GitHub-login users even on first connect,
+  // and for returning users who previously authenticated via the OAuth popup.
+  // Returns null (not an error) when no token is stored yet; caller shows the sign-in button.
+  const { data: savedInstallations, isFetching: isLoadingSaved } = useMyInstallations(!open);
 
   // Pre-populate the installations list from the stored token when available.
   // Skip if the user already dismissed the picker (clicked ← Back) this session.

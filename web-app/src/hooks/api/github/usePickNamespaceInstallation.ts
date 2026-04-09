@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import queryKeys from "@/hooks/api/queryKey";
 import { GitHubApiService } from "@/services/api";
 import type { GitHubNamespace } from "@/types/github";
 
@@ -8,7 +9,8 @@ export const usePickNamespaceInstallation = () => {
     mutationFn: ({ installation_id, selection_token }) =>
       GitHubApiService.pickNamespaceInstallation(installation_id, selection_token),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["github", "namespaces"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.github.namespaces });
+      queryClient.invalidateQueries({ queryKey: queryKeys.github.myInstallations });
     }
   });
 };
