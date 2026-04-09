@@ -1,9 +1,5 @@
 import { DialogTitle } from "@radix-ui/react-dialog";
-import {
-  buildCompleteYupSchema,
-  createHeadlessForm,
-  type JSONSchemaObjectType
-} from "@remoteoss/json-schema-form";
+import { createHeadlessForm, type JSONSchemaObjectType } from "@remoteoss/json-schema-form";
 import { useCallback, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { create } from "zustand";
@@ -39,73 +35,36 @@ type Props = {
   schema: JSONSchemaObjectType;
 };
 
-type YupValidationSchema = {
-  validate: (data: TData, options: { abortEarly: boolean }) => Promise<TData>;
-};
-
-type YupErrors = {
-  inner: {
-    path: string;
-    type: string;
-    message: string;
-  }[];
-};
-
-const useYupValidationResolver = (validationSchema: YupValidationSchema) =>
-  useCallback(
-    async (data: TData) => {
-      try {
-        const values = await validationSchema.validate(data, {
-          abortEarly: false
-        });
-
-        return {
-          values,
-          errors: {}
-        };
-      } catch (errors) {
-        return {
-          values: {},
-          errors: (errors as YupErrors).inner.reduce(
-            (allErrors: Record<string, { type: string; message: string }>, currentError) => ({
-              ...allErrors,
-              [currentError.path]: {
-                type: currentError.type ?? "validation",
-                message: currentError.message
-              }
-            }),
-            {}
-          )
-        };
-      }
-    },
-    [validationSchema]
-  );
-
 export function Variables({ schema }: Props) {
   const { isOpen, onSubmit, setIsOpen } = useVariables();
-  const { fields } = useMemo(
+  const { fields, handleValidation } = useMemo(
     () =>
       createHeadlessForm(schema, {
         strictInputType: false
       }),
     [schema]
   );
-  const yupSchema = useMemo(
-    () =>
-      buildCompleteYupSchema(fields, {
-        strictInputType: false
-      }),
-    [fields]
+  const resolver = useCallback(
+    async (data: TData) => {
+      const result = handleValidation(data);
+      if (result.formErrors) {
+        const errors: Record<string, { type: string; message: string }> = {};
+        for (const [key, message] of Object.entries(result.formErrors as Record<string, string>)) {
+          errors[key] = { type: "validation", message };
+        }
+        return { values: {}, errors };
+      }
+      return { values: data, errors: {} };
+    },
+    [handleValidation]
   );
-  const yupResolver = useYupValidationResolver(yupSchema);
   const {
     handleSubmit,
     register,
     formState: { errors },
     reset,
     setError
-  } = useForm({ resolver: yupResolver });
+  } = useForm({ resolver });
   const onClose = useCallback(() => {
     reset();
     setIsOpen(false, undefined);
