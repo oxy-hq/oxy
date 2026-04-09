@@ -621,7 +621,7 @@ fn verify_selection_token(
 
     let timestamp: i64 = timestamp_str.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
     let age = chrono::Utc::now().timestamp() - timestamp;
-    if age < 0 || age > 600 {
+    if !(0..=600).contains(&age) {
         // Token older than 10 minutes
         return Err(StatusCode::BAD_REQUEST);
     }
@@ -710,7 +710,6 @@ pub async fn connect_namespace_from_oauth(
                 .ok()
                 .flatten()
             {
-                use entity::git_namespaces;
                 use sea_orm::IntoActiveModel;
                 let mut active = existing.into_active_model();
                 active.oauth_token = Set(user_token.clone());
