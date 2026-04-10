@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use agentic_core::tools::{ToolDef, ToolError};
 use arrow::json::ArrayWriter;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 const ROW_LIMIT: u64 = 100;
 const QUERY_TIMEOUT: Duration = Duration::from_secs(30);

@@ -1,9 +1,9 @@
 use std::path::Path;
 
 use agentic_core::tools::{ToolDef, ToolError};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use super::utils::{safe_path, MAX_FILE_LINES};
+use super::utils::{MAX_FILE_LINES, safe_path};
 
 pub fn read_file_def() -> ToolDef {
     ToolDef {

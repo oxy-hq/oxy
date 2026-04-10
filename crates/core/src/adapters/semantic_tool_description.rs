@@ -23,14 +23,29 @@ pub fn get_semantic_query_description(
     Ok(description)
 }
 
-/// Build semantic layer description for a specific topic
-/// Used by MCP tools and other contexts where we have a Topic directly
+/// Build semantic layer description for a specific topic.
+/// Used by MCP tools and other contexts where we have a Topic directly.
+///
+/// Output order:
+///   {topic.description}\n\n**Semantic layer:**\n{topic name/views/measures/dimensions}
+///
+/// The description leads so it reads naturally as the MCP tool's primary description.
+/// `build_topic_metadata` (used for multi-topic listings) keeps the description inside
+/// the `# Topic:` block for a different, list-oriented layout.
 pub fn build_semantic_topic_description(topic: &Topic, semantic_layer: &SemanticLayer) -> String {
-    let mut description = String::new();
-    description.push_str(&topic.description);
-    description.push_str("\n\n**Semantic layer:**\n");
-    build_topic_metadata(&mut description, topic, semantic_layer);
-    description
+    let mut out = String::new();
+    if let Some(ref desc) = topic.description {
+        out.push_str(desc);
+        out.push_str("\n\n");
+    }
+    out.push_str("**Semantic layer:**\n");
+    // Push topic header + views without re-including description (already at the top).
+    out.push_str(&format!("\n# Topic: {}\n", topic.name));
+    if let Some(base_view) = &topic.base_view {
+        out.push_str(&format!("\nBase view: {}\n", base_view));
+    }
+    build_topic_views(&mut out, topic, semantic_layer);
+    out
 }
 
 fn load_semantic_layer(config_manager: &config::ConfigManager) -> Result<SemanticLayer, OxyError> {
@@ -106,10 +121,17 @@ fn build_topic_metadata(description: &mut String, topic: &Topic, semantic_layer:
     if let Some(base_view) = &topic.base_view {
         description.push_str(&format!("\nBase view: {}\n", base_view));
     }
-    description.push_str(&format!("{}\n", topic.description));
+    if let Some(ref desc) = topic.description {
+        description.push_str(&format!("{}\n", desc));
+    }
+    build_topic_views(description, topic, semantic_layer);
+}
 
+/// Append the view/measure/dimension blocks for a topic, without the topic header or description.
+/// Used by both `build_topic_metadata` (multi-topic listing) and `build_semantic_topic_description`
+/// (single-topic MCP context where description leads the output).
+fn build_topic_views(description: &mut String, topic: &Topic, semantic_layer: &SemanticLayer) {
     let topic_views = get_topic_views(topic, semantic_layer);
-
     for view in &topic_views {
         build_view_metadata(description, view);
     }

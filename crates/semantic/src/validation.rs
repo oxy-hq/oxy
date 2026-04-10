@@ -110,9 +110,11 @@ impl SemanticValidator for Entity {
             ));
         }
 
-        // Validate description
-        if self.description.is_empty() {
-            result.add_error("Entity description cannot be empty".to_string());
+        // Validate description (optional)
+        if let Some(ref desc) = self.description {
+            if desc.is_empty() {
+                result.add_error("Entity description cannot be empty".to_string());
+            }
         }
 
         // Validate key or keys
@@ -327,9 +329,11 @@ impl SemanticValidator for View {
             ));
         }
 
-        // Validate description
-        if self.description.is_empty() {
-            result.add_error("View description cannot be empty".to_string());
+        // Validate description (optional)
+        if let Some(ref desc) = self.description {
+            if desc.is_empty() {
+                result.add_error("View description cannot be empty".to_string());
+            }
         }
 
         // Validate data source configuration
@@ -458,9 +462,11 @@ impl SemanticValidator for Topic {
             ));
         }
 
-        // Validate description
-        if self.description.is_empty() {
-            result.add_error("Topic description cannot be empty".to_string());
+        // Validate description (optional)
+        if let Some(ref desc) = self.description {
+            if desc.is_empty() {
+                result.add_error("Topic description cannot be empty".to_string());
+            }
         }
 
         // Validate views
@@ -624,7 +630,7 @@ mod tests {
         let entity = Entity {
             name: "customer".to_string(),
             entity_type: EntityType::Primary,
-            description: "Customer entity".to_string(),
+            description: Some("Customer entity".to_string()),
             key: Some("customer_id".to_string()),
             keys: None,
         };
@@ -639,7 +645,7 @@ mod tests {
         let entity = Entity {
             name: "order_item".to_string(),
             entity_type: EntityType::Primary,
-            description: "Order item entity".to_string(),
+            description: Some("Order item entity".to_string()),
             key: None,
             keys: Some(vec!["order_id".to_string(), "line_item_id".to_string()]),
         };
@@ -654,7 +660,7 @@ mod tests {
         let entity = Entity {
             name: "test_entity".to_string(),
             entity_type: EntityType::Primary,
-            description: "Test entity".to_string(),
+            description: Some("Test entity".to_string()),
             key: Some("id".to_string()),
             keys: Some(vec!["id".to_string(), "tenant_id".to_string()]),
         };
@@ -671,7 +677,7 @@ mod tests {
         let entity = Entity {
             name: "test_entity".to_string(),
             entity_type: EntityType::Primary,
-            description: "Test entity".to_string(),
+            description: Some("Test entity".to_string()),
             key: None,
             keys: None,
         };
@@ -691,7 +697,7 @@ mod tests {
         let entity = Entity {
             name: "test_entity".to_string(),
             entity_type: EntityType::Primary,
-            description: "Test entity".to_string(),
+            description: Some("Test entity".to_string()),
             key: Some("".to_string()),
             keys: None,
         };
@@ -711,7 +717,7 @@ mod tests {
         let entity = Entity {
             name: "test_entity".to_string(),
             entity_type: EntityType::Primary,
-            description: "Test entity".to_string(),
+            description: Some("Test entity".to_string()),
             key: None,
             keys: Some(vec![]),
         };
@@ -731,7 +737,7 @@ mod tests {
         let entity = Entity {
             name: "test_entity".to_string(),
             entity_type: EntityType::Primary,
-            description: "Test entity".to_string(),
+            description: Some("Test entity".to_string()),
             key: None,
             keys: Some(vec!["key1".to_string(), "".to_string(), "key3".to_string()]),
         };
@@ -751,7 +757,7 @@ mod tests {
         let entity = Entity {
             name: "test".to_string(),
             entity_type: EntityType::Primary,
-            description: "Test".to_string(),
+            description: Some("Test".to_string()),
             key: Some("id".to_string()),
             keys: None,
         };
@@ -765,7 +771,7 @@ mod tests {
         let entity = Entity {
             name: "test".to_string(),
             entity_type: EntityType::Primary,
-            description: "Test".to_string(),
+            description: Some("Test".to_string()),
             key: None,
             keys: Some(vec!["key1".to_string(), "key2".to_string()]),
         };
@@ -779,7 +785,7 @@ mod tests {
         let entity = Entity {
             name: "test".to_string(),
             entity_type: EntityType::Primary,
-            description: "Test".to_string(),
+            description: Some("Test".to_string()),
             key: Some("single_key".to_string()),
             keys: Some(vec!["key1".to_string(), "key2".to_string()]),
         };
@@ -794,7 +800,7 @@ mod tests {
         let single_key = Entity {
             name: "test".to_string(),
             entity_type: EntityType::Primary,
-            description: "Test".to_string(),
+            description: Some("Test".to_string()),
             key: Some("id".to_string()),
             keys: None,
         };
@@ -803,7 +809,7 @@ mod tests {
         let composite_key = Entity {
             name: "test".to_string(),
             entity_type: EntityType::Primary,
-            description: "Test".to_string(),
+            description: Some("Test".to_string()),
             key: None,
             keys: Some(vec!["key1".to_string(), "key2".to_string()]),
         };
@@ -812,7 +818,7 @@ mod tests {
         let single_element_keys = Entity {
             name: "test".to_string(),
             entity_type: EntityType::Primary,
-            description: "Test".to_string(),
+            description: Some("Test".to_string()),
             key: None,
             keys: Some(vec!["id".to_string()]),
         };
@@ -826,7 +832,7 @@ mod tests {
         // Test valid topic with base_view
         let valid_topic = Topic {
             name: "sales".to_string(),
-            description: "Sales data".to_string(),
+            description: Some("Sales data".to_string()),
             views: vec!["orders".to_string(), "customers".to_string()],
             base_view: Some("orders".to_string()),
             retrieval: None,
@@ -838,7 +844,7 @@ mod tests {
         // Test topic with base_view not in views list
         let invalid_topic = Topic {
             name: "sales".to_string(),
-            description: "Sales data".to_string(),
+            description: Some("Sales data".to_string()),
             views: vec!["orders".to_string(), "customers".to_string()],
             base_view: Some("products".to_string()),
             retrieval: None,
@@ -860,7 +866,7 @@ mod tests {
         // Test topic with empty base_view
         let empty_base_view_topic = Topic {
             name: "sales".to_string(),
-            description: "Sales data".to_string(),
+            description: Some("Sales data".to_string()),
             views: vec!["orders".to_string(), "customers".to_string()],
             base_view: Some("".to_string()),
             retrieval: None,
@@ -884,7 +890,7 @@ mod tests {
         // Test valid topic with default_filters
         let valid_topic = Topic {
             name: "sales".to_string(),
-            description: "Sales data".to_string(),
+            description: Some("Sales data".to_string()),
             views: vec!["orders".to_string()],
             base_view: None,
             retrieval: None,
@@ -912,7 +918,7 @@ mod tests {
         // Test topic with empty filter field
         let invalid_topic = Topic {
             name: "sales".to_string(),
-            description: "Sales data".to_string(),
+            description: Some("Sales data".to_string()),
             views: vec!["orders".to_string()],
             base_view: None,
             retrieval: None,
@@ -936,7 +942,7 @@ mod tests {
         // Test topic with whitespace-only filter field
         let whitespace_topic = Topic {
             name: "sales".to_string(),
-            description: "Sales data".to_string(),
+            description: Some("Sales data".to_string()),
             views: vec!["orders".to_string()],
             base_view: None,
             retrieval: None,
@@ -961,7 +967,7 @@ mod tests {
         // Create views with proper entity relationships
         let orders_view = View {
             name: "orders".to_string(),
-            description: "Orders".to_string(),
+            description: Some("Orders".to_string()),
             table: Some("orders".to_string()),
             sql: None,
             datasource: Some("test_db".to_string()),
@@ -970,14 +976,14 @@ mod tests {
                 Entity {
                     name: "order".to_string(),
                     entity_type: EntityType::Primary,
-                    description: "Order entity".to_string(),
+                    description: Some("Order entity".to_string()),
                     key: Some("order_id".to_string()),
                     keys: None,
                 },
                 Entity {
                     name: "customer".to_string(),
                     entity_type: EntityType::Foreign,
-                    description: "Customer who placed order".to_string(),
+                    description: Some("Customer who placed order".to_string()),
                     key: Some("customer_id".to_string()),
                     keys: None,
                 },
@@ -996,7 +1002,7 @@ mod tests {
 
         let customers_view = View {
             name: "customers".to_string(),
-            description: "Customers".to_string(),
+            description: Some("Customers".to_string()),
             table: Some("customers".to_string()),
             sql: None,
             datasource: Some("test_db".to_string()),
@@ -1004,7 +1010,7 @@ mod tests {
             entities: vec![Entity {
                 name: "customer".to_string(),
                 entity_type: EntityType::Primary,
-                description: "Customer entity".to_string(),
+                description: Some("Customer entity".to_string()),
                 key: Some("customer_id".to_string()),
                 keys: None,
             }],
@@ -1023,7 +1029,7 @@ mod tests {
         // Create an unreachable view (no entity connection)
         let products_view = View {
             name: "products".to_string(),
-            description: "Products".to_string(),
+            description: Some("Products".to_string()),
             table: Some("products".to_string()),
             sql: None,
             datasource: Some("test_db".to_string()),
@@ -1031,7 +1037,7 @@ mod tests {
             entities: vec![Entity {
                 name: "product".to_string(),
                 entity_type: EntityType::Primary,
-                description: "Product entity".to_string(),
+                description: Some("Product entity".to_string()),
                 key: Some("product_id".to_string()),
                 keys: None,
             }],
@@ -1050,7 +1056,7 @@ mod tests {
         // Topic with reachable views
         let valid_topic = Topic {
             name: "sales".to_string(),
-            description: "Sales data".to_string(),
+            description: Some("Sales data".to_string()),
             views: vec!["orders".to_string(), "customers".to_string()],
             base_view: Some("orders".to_string()),
             retrieval: None,
@@ -1073,7 +1079,7 @@ mod tests {
         // Topic with unreachable view
         let invalid_topic = Topic {
             name: "sales_with_products".to_string(),
-            description: "Sales with products".to_string(),
+            description: Some("Sales with products".to_string()),
             views: vec![
                 "orders".to_string(),
                 "customers".to_string(),
@@ -1103,5 +1109,33 @@ mod tests {
             "Should have error about unreachable views: {:?}",
             result.errors
         );
+    }
+
+    // Regression test: serde must not require `description` on Entity, View, or Topic.
+    // Before the fix these would panic with `missing field 'description'`.
+    #[test]
+    fn test_entity_deserializes_without_description() {
+        let yaml = "name: customer\ntype: primary\nkey: customer_id";
+        let entity: Entity = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(entity.name, "customer");
+        assert!(entity.description.is_none());
+    }
+
+    #[test]
+    fn test_view_deserializes_without_description() {
+        use crate::View;
+        let yaml = "name: orders\ntable: orders\nentities: []\ndimensions: []";
+        let view: View = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(view.name, "orders");
+        assert!(view.description.is_none());
+    }
+
+    #[test]
+    fn test_topic_deserializes_without_description() {
+        use crate::Topic;
+        let yaml = "name: sales\nviews:\n  - orders";
+        let topic: Topic = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(topic.name, "sales");
+        assert!(topic.description.is_none());
     }
 }

@@ -72,7 +72,7 @@ impl From<&AgenticConfig> for RetrievalMetadata {
 impl From<&Topic> for RetrievalMetadata {
     fn from(t: &Topic) -> Self {
         RetrievalMetadata {
-            description: Some(t.description.clone()),
+            description: t.description.clone(),
             retrieval: t.retrieval.as_ref().map(|r| RouteRetrievalConfig {
                 include: r.include.clone(),
                 exclude: r.exclude.clone(),

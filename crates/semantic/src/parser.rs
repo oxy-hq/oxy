@@ -1095,7 +1095,7 @@ dimensions:
             SemanticLayer {
                 views: vec![View {
                     name: "test_view".to_string(),
-                    description: "Test description".to_string(),
+                    description: Some("Test description".to_string()),
                     label: None,
                     datasource: None,
                     table: Some("test_table".to_string()),

@@ -29,7 +29,8 @@ pub struct Entity {
     #[serde(rename = "type")]
     pub entity_type: EntityType,
     /// Human-readable description of what this entity represents
-    pub description: String,
+    #[serde(default)]
+    pub description: Option<String>,
     /// The dimension(s) that should be used as the key for the entity
     /// Can be a single key or multiple keys for composite primary keys
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -244,7 +245,8 @@ pub struct View {
     /// Unique identifier for the view within the semantic layer
     pub name: String,
     /// Human-readable description of what this view represents
-    pub description: String,
+    #[serde(default)]
+    pub description: Option<String>,
     /// Display name for the view (defaults to name if not specified)
     pub label: Option<String>,
     /// Name of the datasource to use for this view
@@ -288,7 +290,8 @@ pub struct Topic {
     /// Unique identifier for the topic
     pub name: String,
     /// Human-readable description of the business domain
-    pub description: String,
+    #[serde(default)]
+    pub description: Option<String>,
     /// List of view names included in this topic
     pub views: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use agentic_core::tools::{ToolDef, ToolError};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::test_runner::BuilderTestRunner;
 

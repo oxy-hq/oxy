@@ -741,7 +741,7 @@ fn substitute_params(sql: &str, params: &[String]) -> String {
 fn convert_view_to_airlayer(view: &oxy_semantic::View) -> airlayer::View {
     airlayer::View {
         name: view.name.clone(),
-        description: view.description.clone(),
+        description: view.description.clone().unwrap_or_default(),
         label: view.label.clone(),
         datasource: view.datasource.clone(),
         dialect: None, // Dialect comes from datasource mapping
@@ -774,7 +774,7 @@ fn convert_entity_to_airlayer(entity: &oxy_semantic::Entity) -> airlayer::Entity
             oxy_semantic::EntityType::Primary => airlayer::schema::models::EntityType::Primary,
             oxy_semantic::EntityType::Foreign => airlayer::schema::models::EntityType::Foreign,
         },
-        description: Some(entity.description.clone()),
+        description: entity.description.clone(),
         key: entity.key.clone(),
         keys: entity.keys.clone(),
         inherits_from: None,

@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use agentic_core::tools::{ToolDef, ToolError};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::utils::MAX_FILE_RESULTS;
 

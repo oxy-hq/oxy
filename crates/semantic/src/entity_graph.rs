@@ -319,7 +319,7 @@ mod tests {
     fn test_composite_key_join_generation() {
         let order_items_view = View {
             name: "order_items".to_string(),
-            description: "Order line items".to_string(),
+            description: Some("Order line items".to_string()),
             table: Some("order_items".to_string()),
             sql: None,
             datasource: Some("test_db".to_string()),
@@ -327,7 +327,7 @@ mod tests {
             entities: vec![Entity {
                 name: "order_item".to_string(),
                 entity_type: EntityType::Primary,
-                description: "Order item entity".to_string(),
+                description: Some("Order item entity".to_string()),
                 key: None,
                 keys: Some(vec!["order_id".to_string(), "line_item_id".to_string()]),
             }],
@@ -337,7 +337,7 @@ mod tests {
 
         let shipments_view = View {
             name: "shipments".to_string(),
-            description: "Order shipments".to_string(),
+            description: Some("Order shipments".to_string()),
             table: Some("shipments".to_string()),
             sql: None,
             datasource: Some("test_db".to_string()),
@@ -346,14 +346,14 @@ mod tests {
                 Entity {
                     name: "shipment".to_string(),
                     entity_type: EntityType::Primary,
-                    description: "Shipment entity".to_string(),
+                    description: Some("Shipment entity".to_string()),
                     key: Some("shipment_id".to_string()),
                     keys: None,
                 },
                 Entity {
                     name: "order_item".to_string(),
                     entity_type: EntityType::Foreign,
-                    description: "Order item being shipped".to_string(),
+                    description: Some("Order item being shipped".to_string()),
                     key: None,
                     keys: Some(vec!["order_id".to_string(), "line_item_id".to_string()]),
                 },
@@ -390,7 +390,7 @@ mod tests {
     fn test_mismatched_composite_key_counts() {
         let view1 = View {
             name: "view1".to_string(),
-            description: "View 1".to_string(),
+            description: Some("View 1".to_string()),
             table: Some("view1".to_string()),
             sql: None,
             datasource: Some("test_db".to_string()),
@@ -398,7 +398,7 @@ mod tests {
             entities: vec![Entity {
                 name: "entity1".to_string(),
                 entity_type: EntityType::Primary,
-                description: "Entity with 2 keys".to_string(),
+                description: Some("Entity with 2 keys".to_string()),
                 key: None,
                 keys: Some(vec!["key1".to_string(), "key2".to_string()]),
             }],
@@ -408,7 +408,7 @@ mod tests {
 
         let view2 = View {
             name: "view2".to_string(),
-            description: "View 2".to_string(),
+            description: Some("View 2".to_string()),
             table: Some("view2".to_string()),
             sql: None,
             datasource: Some("test_db".to_string()),
@@ -416,7 +416,7 @@ mod tests {
             entities: vec![Entity {
                 name: "entity1".to_string(),
                 entity_type: EntityType::Foreign,
-                description: "Entity with 3 keys".to_string(),
+                description: Some("Entity with 3 keys".to_string()),
                 key: None,
                 keys: Some(vec![
                     "key1".to_string(),
@@ -447,7 +447,7 @@ mod tests {
     fn test_single_key_still_works() {
         let customers_view = View {
             name: "customers".to_string(),
-            description: "Customers".to_string(),
+            description: Some("Customers".to_string()),
             table: Some("customers".to_string()),
             sql: None,
             datasource: Some("test_db".to_string()),
@@ -455,7 +455,7 @@ mod tests {
             entities: vec![Entity {
                 name: "customer".to_string(),
                 entity_type: EntityType::Primary,
-                description: "Customer entity".to_string(),
+                description: Some("Customer entity".to_string()),
                 key: Some("customer_id".to_string()),
                 keys: None,
             }],
@@ -465,7 +465,7 @@ mod tests {
 
         let orders_view = View {
             name: "orders".to_string(),
-            description: "Orders".to_string(),
+            description: Some("Orders".to_string()),
             table: Some("orders".to_string()),
             sql: None,
             datasource: Some("test_db".to_string()),
@@ -473,7 +473,7 @@ mod tests {
             entities: vec![Entity {
                 name: "customer".to_string(),
                 entity_type: EntityType::Foreign,
-                description: "Customer who placed order".to_string(),
+                description: Some("Customer who placed order".to_string()),
                 key: Some("customer_id".to_string()),
                 keys: None,
             }],

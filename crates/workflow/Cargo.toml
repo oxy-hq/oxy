@@ -54,7 +54,7 @@ sea-orm = { workspace = true }
 
 # Semantic engine
 oxy-semantic = { workspace = true }
-airlayer = { git = "https://github.com/oxy-hq/airlayer.git", rev = "4b92e5f" }
+airlayer = { git = "https://github.com/oxy-hq/airlayer.git", tag = "v0.0.9" }
 
 # Shared infrastructure
 oxy-agent = { workspace = true }

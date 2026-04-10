@@ -1,5 +1,5 @@
 use agentic_core::tools::{ToolDef, ToolError};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 pub fn lookup_schema_def() -> ToolDef {
     ToolDef {

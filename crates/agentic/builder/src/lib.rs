@@ -11,7 +11,7 @@ pub mod types;
 pub mod ui;
 
 pub use events::BuilderEvent;
-pub use solver::{build_builder_handlers, BuilderSolver};
+pub use solver::{BuilderSolver, build_builder_handlers};
 pub use test_runner::BuilderTestRunner;
 pub use types::{
     BuilderAnswer, BuilderDomain, BuilderError, BuilderIntent, BuilderResult, BuilderSolution,

@@ -33,7 +33,7 @@ statrs = "0.17"
 tokio = { version = "1", features = ["sync"] }
 tokio-stream = "0.1"
 tracing = { workspace = true }
-airlayer = { git = "https://github.com/oxy-hq/airlayer.git", rev = "4b92e5f" }
+airlayer = { git = "https://github.com/oxy-hq/airlayer.git", tag = "v0.0.9" }
 strsim = "0.11"
 
 [dev-dependencies]

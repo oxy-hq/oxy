@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use agentic_core::{back_target::BackTarget, human_input::SuspendedRunData, HumanInputQuestion};
+use agentic_core::{HumanInputQuestion, back_target::BackTarget, human_input::SuspendedRunData};
 use agentic_llm::{InitialMessages, LlmError, LlmOutput};
 
 use agentic_core::orchestrator::RunContext;
@@ -10,7 +10,7 @@ use crate::{
     types::{BuilderDomain, BuilderError, BuilderSolution, BuilderSpec, ToolExchange},
 };
 
-use super::solver::{dispatch_tool, make_resume_stage_data, record_tool_exchange, BuilderSolver};
+use super::solver::{BuilderSolver, dispatch_tool, make_resume_stage_data, record_tool_exchange};
 use agentic_core::solver::DomainSolver;
 
 #[derive(Clone, Debug, serde::Deserialize)]

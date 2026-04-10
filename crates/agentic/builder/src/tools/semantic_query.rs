@@ -11,7 +11,7 @@ use agentic_core::tools::{ToolDef, ToolError};
 use arrow::json::ArrayWriter;
 use oxy::config::model::SemanticQueryTask;
 use oxy::types::SemanticQueryParams;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 const QUERY_TIMEOUT: Duration = Duration::from_secs(30);
 

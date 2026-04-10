@@ -302,7 +302,14 @@ impl RouteResolver {
             OxyError::AgentError(format!("Failed to parse topic file {}: {}", topic_path, e))
         })?;
 
-        let tool_description = Self::resolve_description(description, &topic.description);
+        let fallback = topic.description.as_deref().unwrap_or("");
+        if description.is_none() && fallback.is_empty() {
+            tracing::warn!(
+                topic = %topic.name,
+                "Semantic topic has no description and no override — tool description will be empty, which may degrade routing quality"
+            );
+        }
+        let tool_description = Self::resolve_description(description, fallback);
 
         Ok(ToolType::SemanticQuery(SemanticQueryTool {
             name: to_openai_function_name(

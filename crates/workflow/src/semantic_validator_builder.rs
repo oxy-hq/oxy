@@ -289,7 +289,7 @@ fn validate_task_against_metadata(
 
         Topic {
             name: "adhoc_query".to_string(),
-            description: "Ad-hoc query topic inferred from views".to_string(),
+            description: Some("Ad-hoc query topic inferred from views".to_string()),
             views: view_names.into_iter().collect(),
             base_view: None,
             retrieval: None,
@@ -720,7 +720,7 @@ mod tests {
 
         vec![View {
             name: "orders".to_string(),
-            description: "Orders view".to_string(),
+            description: Some("Orders view".to_string()),
             label: None,
             datasource: Some("test_db".to_string()),
             table: Some("orders".to_string()),
@@ -728,7 +728,7 @@ mod tests {
             entities: vec![Entity {
                 name: "order".to_string(),
                 entity_type: EntityType::Primary,
-                description: "Order entity".to_string(),
+                description: Some("Order entity".to_string()),
                 key: Some("id".to_string()),
                 keys: None,
             }],

@@ -391,7 +391,7 @@ pub async fn get_view_details(
     Ok(extract::Json(ViewResponse {
         view_name: view.name.clone(),
         name: view.name,
-        description: Some(view.description),
+        description: view.description,
         datasource: view.datasource,
         table: view.table,
         dimensions: serde_json::to_value(view.dimensions)
@@ -506,7 +506,7 @@ pub async fn get_topic_details(
             views_with_data.push(ViewResponse {
                 view_name: view_name.clone(),
                 name: view.name.clone(),
-                description: Some(view.description.clone()),
+                description: view.description.clone(),
                 datasource: view.datasource.clone(),
                 table: view.table.clone(),
                 dimensions: serde_json::to_value(&view.dimensions)
@@ -540,7 +540,7 @@ pub async fn get_topic_details(
     Ok(extract::Json(TopicDetailsResponse {
         topic: TopicResponse {
             name: topic.name,
-            description: Some(topic.description),
+            description: topic.description,
             views: topic.views,
             base_view: topic.base_view,
         },

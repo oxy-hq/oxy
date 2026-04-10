@@ -77,7 +77,7 @@ impl EntityBuilder {
         let entity = Entity {
             name: self.name.ok_or("Entity name is required")?,
             entity_type: self.entity_type.ok_or("Entity type is required")?,
-            description: self.description.ok_or("Entity description is required")?,
+            description: self.description,
             key: self.key,
             keys: self.keys,
         };
@@ -501,7 +501,7 @@ impl ViewBuilder {
     pub fn build(self) -> Result<View, String> {
         let view = View {
             name: self.name.ok_or("View name is required")?,
-            description: self.description.ok_or("View description is required")?,
+            description: self.description,
             label: self.label,
             datasource: self.datasource,
             table: self.table,
@@ -601,7 +601,7 @@ impl TopicBuilder {
     pub fn build(self) -> Result<Topic, String> {
         let topic = Topic {
             name: self.name.ok_or("Topic name is required")?,
-            description: self.description.ok_or("Topic description is required")?,
+            description: self.description,
             views: self.views,
             base_view: self.base_view,
             retrieval: self.retrieval,

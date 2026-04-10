@@ -11,11 +11,11 @@ pub use solver::BuilderSolver;
 
 use std::collections::HashMap;
 
-use agentic_core::orchestrator::{build_default_handlers, StateHandler};
+use agentic_core::orchestrator::{StateHandler, build_default_handlers};
 
 use crate::{events::BuilderEvent, types::BuilderDomain};
 
-pub fn build_builder_handlers(
-) -> HashMap<&'static str, StateHandler<BuilderDomain, BuilderSolver, BuilderEvent>> {
+pub fn build_builder_handlers()
+-> HashMap<&'static str, StateHandler<BuilderDomain, BuilderSolver, BuilderEvent>> {
     build_default_handlers::<BuilderDomain, BuilderSolver, BuilderEvent>()
 }
