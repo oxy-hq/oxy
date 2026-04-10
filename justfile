@@ -15,8 +15,6 @@ install:
     cargo fetch
     @echo "==> Installing cargo-nextest..."
     @cargo nextest --version >/dev/null 2>&1 || cargo install cargo-nextest --locked
-    @echo "==> Installing release-plz (>= 0.3.151 required for git_only support)..."
-    @just _ensure-release-plz
     @echo "==> Installing Node dependencies..."
     pnpm install
     @echo "Done. Run 'just dev' to start the development servers."
@@ -99,12 +97,14 @@ migrate:
 
 # ── Release ────────────────────────────────────────────────────────────────────
 
-# Preview the next release: bumps Cargo.toml versions and updates CHANGELOG.md locally.
-# No GitHub interaction — safe to run and inspect, then revert with: git checkout .
-release-preview: _ensure-release-plz
-    release-plz update --config release-plz.toml
+# Preview the next release version and unreleased changelog (no side effects).
+release-preview:
+    @echo "==> Next version:"
+    @python3 scripts/release/bump-version.py --dry-run
+    @echo ""
+    @echo "==> Unreleased changelog:"
+    @git cliff --unreleased
 
-# Install or upgrade release-plz to a version that supports git_only (>= 0.3.151).
-_ensure-release-plz:
-    @release-plz --version 2>/dev/null | grep -qE "0\.[0-9]+\.(15[1-9]|1[6-9][0-9]|[2-9][0-9]{2})" \
-        || { echo "==> Upgrading release-plz (need >= 0.3.151)..."; cargo install release-plz --locked; }
+# Manually trigger the release PR workflow on GitHub (requires gh CLI + auth).
+release-trigger:
+    gh workflow run prepare-release.yaml --ref main
