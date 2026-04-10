@@ -100,10 +100,16 @@ migrate:
 # Preview the next release version and unreleased changelog (no side effects).
 release-preview:
     @echo "==> Next version:"
-    @python3 scripts/release/bump-version.py --dry-run
+    @uv run scripts/release/bump-version.py --dry-run
     @echo ""
     @echo "==> Unreleased changelog:"
     @git cliff --unreleased
+
+# Dry-run: generate a combined changelog draft for one or more past releases.
+# Example: just release-changelog-preview 0.5.34
+# Example: just release-changelog-preview 0.5.33 0.5.34 0.5.35
+release-changelog-preview +VERSIONS:
+    uv run scripts/release/update-content-changelog.py --dry-run {{VERSIONS}}
 
 # Manually trigger the release PR workflow on GitHub (requires gh CLI + auth).
 release-trigger:

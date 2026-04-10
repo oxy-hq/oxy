@@ -37,10 +37,12 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: git-cliff
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
       - name: Bump version in Cargo.toml
         id: bump
         run: |
-          NEW_VERSION=$(python3 scripts/release/bump-version.py)
+          NEW_VERSION=$(uv run scripts/release/bump-version.py)
           echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
       - name: Generate full CHANGELOG.md
         run: git cliff --tag ${{ steps.bump.outputs.version }} -o CHANGELOG.md
@@ -109,6 +111,60 @@ jobs:
           tag_name: ${{ steps.version.outputs.version }}
           name: ${{ steps.version.outputs.version }}
           body_path: /tmp/release-notes.md
+
+  # Generate a user-facing changelog draft in oxy-hq/oxy-content.
+  # Creates a new pending PR, or appends to the existing one if it hasn't been merged yet.
+  # Requires: ANTHROPIC_API_KEY secret in this repo, and oxy-content in the GitHub App's repo list.
+  content-changelog:
+    name: Draft Content Changelog
+    needs: [release]
+    if: needs.release.outputs.releases_created == 'true'
+    runs-on: ${{ github.repository == 'oxy-hq/oxy-internal' && 'ubuntu-slim' || 'ubuntu-latest' }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/create-github-app-token@v3
+        name: Create GitHub App Token
+        id: app-token
+        with:
+          app-id: ${{ vars.ARGO_APP_ID }}
+          private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
+          repositories: |
+            oxy-internal
+            oxy-content
+      - name: Checkout oxy-internal
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+      - name: Install git-cliff
+        uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff
+      - name: Generate release notes
+        run: git cliff --tag ${{ needs.release.outputs.release_version }} --latest -o /tmp/release-notes.md
+      - name: Checkout oxy-content
+        uses: actions/checkout@v6
+        with:
+          repository: oxy-hq/oxy-content
+          token: ${{ steps.app-token.outputs.token }}
+          path: oxy-content
+          fetch-depth: 0
+      - name: Configure git for oxy-content
+        run: |
+          USER_ID=$(gh api "/users/${{ steps.app-token.outputs.app-slug }}[bot]" --jq .id)
+          git -C oxy-content config user.name "${{ steps.app-token.outputs.app-slug }}[bot]"
+          git -C oxy-content config user.email "${USER_ID}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com"
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Create or update pending changelog PR
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          RELEASE_VERSION: ${{ needs.release.outputs.release_version }}
+        run: uv run scripts/release/update-content-changelog.py
 
   # Tag the public oxy-hq/oxy repo when a release is created.
   release-public:
