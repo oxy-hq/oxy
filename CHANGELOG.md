@@ -16,6 +16,8 @@ All notable changes to this project will be documented in this file.
 
 - Refactor release process and remove release-plz configuration
 - Release 0.5.34 (#2058)
+- Release 0.5.34 (#2059)
+- Extract version from commit message using regex pattern
 
 ## [0.5.33] - 2026-04-09
 
