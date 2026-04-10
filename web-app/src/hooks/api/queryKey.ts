@@ -126,6 +126,11 @@ const repositoryKeys = {
     [...repositoryKeys.all, "branches", projectId, name] as const
 };
 
+const builderKeys = {
+  all: ["builder"] as const,
+  availability: (projectId: string) => [...builderKeys.all, "availability", projectId] as const
+};
+
 const configKeys = {
   all: ["config"] as const,
   validation: () => [...configKeys.all, "validation"] as const,
@@ -205,6 +210,7 @@ const githubKeys = {
 
 const queryKeys = {
   agent: agentKeys,
+  builder: builderKeys,
   analytics: analyticsKeys,
   thread: threadKeys,
   apiKey: apiKeyKeys,

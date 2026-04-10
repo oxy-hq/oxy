@@ -234,7 +234,8 @@ export interface UseAnalyticsRunResult {
     agentId: string,
     question: string,
     threadId?: string,
-    thinkingMode?: ThinkingMode
+    thinkingMode?: ThinkingMode,
+    model?: string
   ) => void;
   /** Resume from SSE using a run that already exists (page reload). */
   reconnect: (runId: string, existingState?: AnalyticsRunState["tag"]) => void;
@@ -385,7 +386,13 @@ export function useAnalyticsRun({ projectId }: UseAnalyticsRunOptions): UseAnaly
   );
 
   const start = useCallback(
-    (agentId: string, question: string, threadId?: string, thinkingMode?: ThinkingMode) => {
+    (
+      agentId: string,
+      question: string,
+      threadId?: string,
+      thinkingMode?: ThinkingMode,
+      model?: string
+    ) => {
       setIsStarting(true);
       setState({ tag: "running", runId: "", events: [] });
       AnalyticsService.createRun(projectId, {
@@ -393,7 +400,7 @@ export function useAnalyticsRun({ projectId }: UseAnalyticsRunOptions): UseAnaly
         question,
         thread_id: threadId,
         thinking_mode: thinkingMode,
-        ...(agentId === "__builder__" && { domain: "builder" })
+        ...(agentId === "__builder__" && { domain: "builder", model })
       })
         .then(({ run_id }) => {
           openStream(run_id);

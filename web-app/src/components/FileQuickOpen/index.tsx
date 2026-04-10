@@ -69,6 +69,7 @@ export function FileQuickOpen() {
       onOpenChange={handleOpenChange}
       title='Go to file'
       description='Search for a file to open'
+      className='border-white/10 bg-background/50 shadow-[0_8px_60px_rgba(0,0,0,0.5),0_0_0_1px_rgba(255,255,255,0.08),0_0_30px_-4px_color-mix(in_srgb,var(--primary)_15%,transparent)] backdrop-blur-2xl'
     >
       <CommandInput placeholder='Go to file…' value={query} onValueChange={setQuery} />
       <CommandList>

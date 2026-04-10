@@ -17,6 +17,7 @@ import {
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import type { SelectableItem } from "@/hooks/analyticsSteps";
 import queryKeys from "@/hooks/api/queryKey";
+import useBuilderAvailable from "@/hooks/api/useBuilderAvailable";
 import type { AnalyticsDisplayBlock, SseEvent } from "@/hooks/useAnalyticsRun";
 import {
   extractAnswer,
@@ -479,6 +480,8 @@ const AnalyticsThread = ({ thread }: Props) => {
   const question = thread.input;
   const isBuilder = agentId === "__builder__";
 
+  const { builderModel, isLoading: isCheckingBuilder } = useBuilderAvailable();
+
   const isStreaming = state.tag === "running" || state.tag === "suspended";
   const runExists = isStreaming || isTerminal;
 
@@ -521,15 +524,20 @@ const AnalyticsThread = ({ thread }: Props) => {
   // Without this, navigating back to a thread whose run hasn't finished yet would
   // see allRuns=[] + isLoading=false and fire a second auto-start run.
   const isFirstVisit =
-    !isLookingUp && !isFetchingRuns && allRuns.length === 0 && state.tag === "idle";
+    !isLookingUp &&
+    !isFetchingRuns &&
+    allRuns.length === 0 &&
+    state.tag === "idle" &&
+    // For builder threads, wait until the model is resolved (covers both in-flight and error cases).
+    !(isBuilder && (isCheckingBuilder || !builderModel));
 
   // Auto-start the run on first visit so the user doesn't need to click a button
   // after already submitting their question from ChatPanel.
   useEffect(() => {
     if (isFirstVisit) {
-      start(agentId, question, thread.id, thinkingMode);
+      start(agentId, question, thread.id, thinkingMode, builderModel);
     }
-  }, [isFirstVisit, agentId, question, thread.id, start, thinkingMode]);
+  }, [isFirstVisit, agentId, question, thread.id, start, thinkingMode, builderModel]);
 
   // For new starts / follow-ups use the locally-tracked question so the UI is responsive
   // before allRuns has picked up the new run. Fall back to latestRun for reconnects.
@@ -542,7 +550,7 @@ const AnalyticsThread = ({ thread }: Props) => {
     setActiveQuestion(q);
     setChangeDecisions(new Map());
     scrollToBottom();
-    start(agentId, q, thread.id, thinkingMode);
+    start(agentId, q, thread.id, thinkingMode, builderModel);
   };
 
   const handleSend = () => {

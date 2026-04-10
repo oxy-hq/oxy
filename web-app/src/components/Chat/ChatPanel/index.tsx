@@ -386,7 +386,7 @@ const ChatPanel = () => {
             />
           )}
           {mode === "workflow" && <WorkflowsDropdown onSelect={setWorkflow} workflow={workflow} />}
-          {mode === "build" && (
+          {isBuildMode && (
             <button
               type='button'
               onClick={() => {

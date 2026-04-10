@@ -222,10 +222,16 @@ pub async fn create_run(
 
     // Dispatch to builder domain if requested.
     if body.domain.as_deref() == Some("builder") {
-        let model = body
-            .model
-            .clone()
-            .unwrap_or_else(|| "claude-sonnet-4-6".to_string());
+        let model = match body.model.clone() {
+            Some(m) => m,
+            None => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    "model is required for builder domain",
+                )
+                    .into_response();
+            }
+        };
         let base_dir = workspace_manager
             .config_manager
             .workspace_path()

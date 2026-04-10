@@ -73,7 +73,13 @@ export function BuilderDialog() {
     builderPath
   } = useBuilderAvailable();
 
-  const { data: fileTreeData } = useFileTree(isOpen);
+  useEffect(() => {
+    if (isOpen && !isCheckingBuilder && !isBuiltin) {
+      setIsOpen(false);
+    }
+  }, [isOpen, isCheckingBuilder, isBuiltin, setIsOpen]);
+
+  const { data: fileTreeData } = useFileTree(isOpen && isBuiltin);
 
   const allFiles = useMemo(() => {
     if (!fileTreeData) return [];
@@ -306,7 +312,7 @@ export function BuilderDialog() {
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className='top-[30%] max-w-150 translate-y-0 gap-0 overflow-hidden p-0'
+        className='top-[30%] max-w-150 translate-y-0 gap-0 overflow-hidden border-white/10 bg-popover/50 p-0 shadow-[0_8px_60px_rgba(0,0,0,0.5),0_0_0_1px_rgba(255,255,255,0.08),0_0_30px_-4px_color-mix(in_srgb,var(--primary)_15%,transparent)] backdrop-blur-2xl'
       >
         {!isAvailable && !isCheckingBuilder ? (
           <div className='p-6 text-center text-muted-foreground text-sm'>
@@ -320,10 +326,12 @@ export function BuilderDialog() {
                 <Hammer className='size-3' />
                 Build
               </span>
-              <span className='text-muted-foreground text-xs'>
-                <kbd className='rounded border bg-muted px-1 py-0.5 font-mono text-[10px]'>@</kbd>{" "}
-                to mention
-              </span>
+              {isBuiltin && (
+                <span className='text-muted-foreground text-xs'>
+                  <kbd className='rounded border bg-muted px-1 py-0.5 font-mono text-[10px]'>@</kbd>{" "}
+                  to mention
+                </span>
+              )}
               <span className='ml-auto text-muted-foreground text-xs'>
                 <kbd className='rounded border bg-muted px-1 py-0.5 font-mono text-[10px]'>
                   Enter
@@ -348,7 +356,7 @@ export function BuilderDialog() {
             />
 
             {/* Mention autocomplete dropdown */}
-            {showMentionPopup && (
+            {isBuiltin && showMentionPopup && (
               <div className='max-h-52 overflow-y-auto border-t bg-popover p-1'>
                 {mentionResults.map((file, index) => {
                   const fileType = detectFileType(file.path);
@@ -389,21 +397,23 @@ export function BuilderDialog() {
                   to cancel.
                 </span>
               </div>
-              <button
-                type='button'
-                onClick={() => {
-                  const next = !autoApprove;
-                  setAutoApprove(next);
-                  localStorage.setItem("builder_auto_approve", String(next));
-                }}
-                className={cn(
-                  "flex items-center gap-1 rounded px-1.5 py-0.5 text-xs transition-colors hover:bg-accent",
-                  autoApprove ? "text-primary" : "text-muted-foreground"
-                )}
-              >
-                <Zap className='h-3 w-3' />
-                Auto-approve
-              </button>
+              {isBuiltin && (
+                <button
+                  type='button'
+                  onClick={() => {
+                    const next = !autoApprove;
+                    setAutoApprove(next);
+                    localStorage.setItem("builder_auto_approve", String(next));
+                  }}
+                  className={cn(
+                    "flex items-center gap-1 rounded px-1.5 py-0.5 text-xs transition-colors hover:bg-accent",
+                    autoApprove ? "text-primary" : "text-muted-foreground"
+                  )}
+                >
+                  <Zap className='h-3 w-3' />
+                  Auto-approve
+                </button>
+              )}
             </div>
           </form>
         )}
