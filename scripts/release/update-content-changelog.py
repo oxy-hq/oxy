@@ -8,8 +8,8 @@
 """Local dry-run tool for previewing changelog drafts against past releases.
 
 In CI, changelog generation is handled by anthropics/claude-code-action@v1 in
-.github/workflows/prepare-release.yaml (content-changelog job), which gives
-Claude MCP access (DeepWiki, gh, file tools) without needing this script.
+.github/workflows/content-changelog.yaml, triggered when a release PR is merged.
+That workflow gives Claude full MCP access (DeepWiki, gh, file tools).
 
 This script is for LOCAL use only — preview what a changelog would look like
 for any past release(s) before merging or publishing.
@@ -86,7 +86,7 @@ def git(*args):
     return run(["git"] + list(args), cwd=CONTENT_DIR)
 
 
-# ── Writing guide ─────────────────────────────────────────────────────────────
+# ── Writing guide + example ───────────────────────────────────────────────────
 
 
 def get_writing_guide() -> str:
@@ -118,6 +118,16 @@ Rules:
 - No image markdown — omit screenshots (human reviewer adds them).
 - Write for data analysts and business users, not engineers.
 """
+
+
+def get_example_changelog() -> str:
+    """Return 1 recent published MDX from oxy-content as a concrete format example."""
+    files = sorted(CHANGELOG_DIR.glob("*.mdx"), reverse=True)
+    for f in files[:5]:
+        content = f.read_text().strip()
+        if len(content) > 300:  # skip near-empty stubs
+            return content
+    return ""
 
 
 # ── Claude ────────────────────────────────────────────────────────────────────
@@ -152,6 +162,14 @@ def build_prompt(
         else ""
     )
 
+    example = get_example_changelog()
+    example_block = (
+        f"\nHere is a recent published changelog entry from this repo — match its style exactly:\n"
+        f"<example_changelog>\n{example}\n</example_changelog>\n"
+        if example
+        else ""
+    )
+
     deepwiki_block = (
         "\nIf you need deeper context on how a specific feature works, call the DeepWiki MCP tool:\n"
         '  mcp__deepwiki__ask_question(repo="oxy-hq/oxy", question="...")\n'
@@ -167,7 +185,7 @@ Follow this writing guide exactly:
 <writing_guide>
 {writing_guide}
 </writing_guide>
-{product_block}{deepwiki_block}
+{product_block}{example_block}{deepwiki_block}
 ## Your task
 
 An existing draft changelog entry already covers earlier releases this cycle.
@@ -203,7 +221,7 @@ Follow this writing guide exactly:
 <writing_guide>
 {writing_guide}
 </writing_guide>
-{product_block}{deepwiki_block}
+{product_block}{example_block}{deepwiki_block}
 ## Your task
 
 Convert the release notes below (covering {versions_str}) into a single user-friendly MDX changelog entry.
@@ -245,18 +263,30 @@ def call_claude(
         prompt = build_prompt(
             release_notes, versions, existing_content, include_deepwiki_hint=False
         )
-        client = anthropic.Anthropic()
+        client = anthropic.Anthropic(timeout=120.0)  # 2-minute hard cap
         message = client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=8192,
-            system=(
-                "You are a technical writer producing user-facing release changelogs for Oxy, "
-                "an AI-powered data analytics platform. Write clearly for data analysts and "
-                "business users, not engineers. Output raw MDX only — no explanation, no markdown fences."
-            ),
-            messages=[{"role": "user", "content": prompt}],
+            system=[
+                {
+                    "type": "text",
+                    "text": (
+                        "You are a technical writer producing user-facing release changelogs for Oxy, "
+                        "an AI-powered data analytics platform. Write clearly for data analysts and "
+                        "business users, not engineers. Output raw MDX only — no explanation, no markdown fences."
+                    ),
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+            messages=[
+                {"role": "user", "content": prompt},
+                # Prefill forces Claude to begin with the MDX frontmatter delimiter
+                # immediately — no risk of preamble text before the `---`.
+                {"role": "assistant", "content": "---"},
+            ],
         )
-        return message.content[0].text.strip()
+        # The prefilled `---` is consumed by the model; prepend it to the response.
+        return ("---\n" + message.content[0].text).strip()
     # No API key — use local Claude Code CLI which has MCP (including DeepWiki) available
     print(
         "[dry-run] ANTHROPIC_API_KEY not set, using local claude CLI...",
@@ -367,24 +397,138 @@ def get_cliff_notes(version: str) -> str:
     return versioned_path.read_text()
 
 
+MAX_PRS = 20           # bound gh round-trips and prompt size
+PR_BODY_LIMIT = 1500  # chars per PR after cleaning
+
+# Section headers that are pure template noise
+_NOISE_SECTION = re.compile(
+    r"^#{1,4}\s*(testing|test plan|how to test|screenshots?|checklist|"
+    r"reviewer notes?|related issues?|linked issues?|breaking changes?|"
+    r"deployment notes?|rollback plan)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def clean_pr_body(body: str) -> str:
+    """Strip GitHub PR template boilerplate, keep the meaningful description."""
+    # Remove from each noise header to the next header or end of string
+    while True:
+        m = _NOISE_SECTION.search(body)
+        if not m:
+            break
+        next_header = re.search(r"\n#{1,4}\s", body[m.end() :])
+        end = m.end() + next_header.start() if next_header else len(body)
+        body = body[: m.start()] + body[end:]
+    # Remove checkbox lines (- [ ] or - [x])
+    body = re.sub(r"^\s*- \[[ xX]\].*$", "", body, flags=re.MULTILINE)
+    # Collapse excessive blank lines
+    body = re.sub(r"\n{3,}", "\n\n", body)
+    return body.strip()
+
+
+SPARSE_BODY_THRESHOLD = 150  # chars; below this we try to enrich from issues/commits
+
+
+def enrich_pr_body(pr_number: str, pr_body: str) -> str:
+    """Augment a sparse PR body with linked issue descriptions and commit messages.
+
+    Enrichment chain (each layer is appended only if the body is still thin):
+      1. Closing issues referenced in the PR (GitHub `closingIssuesReferences`)
+      2. Issue numbers mentioned inline (Closes #N / Fixes #N) in the body
+      3. Commit messages from the PR (gives the "why" when the description is missing)
+    """
+    enriched = pr_body
+
+    if len(enriched) < SPARSE_BODY_THRESHOLD:
+        # Layer 1 + 2: linked issues
+        issue_bodies: list[str] = []
+        try:
+            raw = run([
+                "gh", "pr", "view", pr_number,
+                "--repo", "oxy-hq/oxy-internal",
+                "--json", "closingIssuesReferences",
+            ])
+            refs = json.loads(raw).get("closingIssuesReferences", [])
+            issue_numbers = [str(r["number"]) for r in refs if r.get("number")]
+        except (subprocess.CalledProcessError, json.JSONDecodeError):
+            issue_numbers = []
+
+        # Also pick up Closes/Fixes #NNN from the body text
+        inline = re.findall(
+            r"(?:closes?|fixes?|resolves?)\s+#(\d+)", pr_body, re.IGNORECASE
+        )
+        for n in inline:
+            if n not in issue_numbers:
+                issue_numbers.append(n)
+
+        for issue_num in issue_numbers[:3]:  # cap at 3 issues
+            try:
+                raw = run([
+                    "gh", "issue", "view", issue_num,
+                    "--repo", "oxy-hq/oxy-internal",
+                    "--json", "title,body",
+                ])
+                issue = json.loads(raw)
+                issue_body = clean_pr_body(issue.get("body") or "")
+                if issue_body:
+                    issue_bodies.append(
+                        f"[Issue #{issue_num}: {issue.get('title', '')}]\n{issue_body[:800]}"
+                    )
+            except (subprocess.CalledProcessError, json.JSONDecodeError):
+                continue
+
+        if issue_bodies:
+            enriched = enriched + "\n\n" + "\n\n".join(issue_bodies)
+
+    if len(enriched) < SPARSE_BODY_THRESHOLD:
+        # Layer 3: commit messages from the PR
+        try:
+            raw = run([
+                "gh", "pr", "view", pr_number,
+                "--repo", "oxy-hq/oxy-internal",
+                "--json", "commits",
+            ])
+            commits = json.loads(raw).get("commits", [])
+            messages = [
+                c["messageHeadline"]
+                for c in commits
+                if c.get("messageHeadline") and not c["messageHeadline"].startswith("Merge")
+            ]
+            if messages:
+                enriched = enriched + "\n\nCommits:\n" + "\n".join(f"- {m}" for m in messages[:10])
+        except (subprocess.CalledProcessError, json.JSONDecodeError):
+            pass
+
+    return enriched.strip()
+
+
 def fetch_pr_context(cliff_notes: str) -> str:
     """Fetch PR titles + bodies for every (#NNN) reference in cliff_notes.
 
     Returns a formatted block of PR descriptions to supplement the commit-level
     notes that git-cliff produces. Skips release PRs and PRs with empty bodies.
     Silently ignores fetch errors (gh not authed, PR not found, etc.).
+    Capped at MAX_PRS to bound prompt size and CI runtime.
     """
     pr_numbers = re.findall(r"\(#(\d+)\)", cliff_notes)
     if not pr_numbers:
         return ""
 
+    unique = list(dict.fromkeys(pr_numbers))  # deduplicate, preserve order
+    if len(unique) > MAX_PRS:
+        print(
+            f"Capping PR fetch at {MAX_PRS} (found {len(unique)}); oldest omitted.",
+            file=sys.stderr,
+        )
+        unique = unique[:MAX_PRS]
+
     print(
-        f"Fetching PR context for: {', '.join('#' + n for n in pr_numbers)}",
+        f"Fetching PR context for: {', '.join('#' + n for n in unique)}",
         file=sys.stderr,
     )
 
     sections: list[str] = []
-    for num in dict.fromkeys(pr_numbers):  # deduplicate, preserve order
+    for num in unique:
         try:
             raw = run(
                 [
@@ -403,15 +547,22 @@ def fetch_pr_context(cliff_notes: str) -> str:
             continue
 
         title: str = pr.get("title", "")
-        body: str = (pr.get("body") or "").strip()
+        body: str = clean_pr_body(pr.get("body") or "")
 
-        # Skip release PRs and PRs with no useful body
-        if title.startswith("chore: release") or not body:
+        # Skip release PRs
+        if title.startswith("chore: release"):
             continue
 
-        # Truncate very long bodies to keep the prompt manageable
-        if len(body) > 2000:
-            body = body[:2000] + "\n…(truncated)"
+        # Enrich sparse bodies with linked issues and commit messages
+        if len(body) < SPARSE_BODY_THRESHOLD:
+            body = enrich_pr_body(num, body)
+
+        if not body:
+            continue
+
+        # Truncate long bodies to keep the prompt manageable
+        if len(body) > PR_BODY_LIMIT:
+            body = body[:PR_BODY_LIMIT] + "\n…(truncated)"
 
         sections.append(f"### PR #{num}: {title}\n\n{body}")
 

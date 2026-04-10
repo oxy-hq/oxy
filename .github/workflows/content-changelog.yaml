@@ -1,0 +1,159 @@
+name: Draft Content Changelog
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+
+jobs:
+  content-changelog:
+    name: Draft Content Changelog
+    # Only run when a release PR (release/X.Y.Z → main) is merged
+    if: >-
+      github.event.pull_request.merged == true &&
+      startsWith(github.head_ref, 'release/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Extract release version
+        id: version
+        run: |
+          VERSION=$(echo "${{ github.head_ref }}" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/create-github-app-token@v3
+        name: Create GitHub App Token
+        id: app-token
+        with:
+          app-id: ${{ vars.ARGO_APP_ID }}
+          private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
+          repositories: |
+            oxy-internal
+            oxy-content
+
+      - name: Checkout oxy-internal
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Checkout oxy-content
+        uses: actions/checkout@v6
+        with:
+          repository: oxy-hq/oxy-content
+          token: ${{ steps.app-token.outputs.token }}
+          path: oxy-content
+          fetch-depth: 0
+
+      - name: Configure git for oxy-content
+        run: |
+          USER_ID=$(gh api "/users/${{ steps.app-token.outputs.app-slug }}[bot]" --jq .id)
+          git -C oxy-content config user.name "${{ steps.app-token.outputs.app-slug }}[bot]"
+          git -C oxy-content config user.email "${USER_ID}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com"
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      - name: Generate and publish changelog draft
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          timeout_minutes: "12"
+          claude_args: >-
+            --allowedTools
+            "mcp__deepwiki__ask_question,mcp__deepwiki__read_wiki_contents,
+            Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh pr create:*),Bash(gh pr edit:*),
+            Bash(gh issue view:*),Bash(gh label create:*),
+            Bash(git -C oxy-content:*),Bash(cat:*),Bash(date:*),
+            Read,Write,Glob,Grep"
+          prompt: |
+            Create a user-facing changelog draft in oxy-hq/oxy-content for Oxy release ${{ steps.version.outputs.version }}.
+
+            The release PR is #${{ github.event.pull_request.number }} in oxy-hq/oxy-internal.
+
+            ## Step 1 — Gather context (do all of this before writing)
+
+            1. Read the release PR body — it contains the structured release notes:
+               `gh pr view ${{ github.event.pull_request.number }} --repo oxy-hq/oxy-internal --json body --jq .body`
+
+            2. For every PR #NNN referenced in those notes, fetch its full description:
+               `gh pr view NNN --repo oxy-hq/oxy-internal --json number,title,body,closingIssuesReferences`
+               - Skip PRs titled "chore: release"
+               - If the body is sparse (< 150 chars of real content after stripping template
+                 boilerplate like checkboxes, Testing:, Screenshots: N/A sections), also fetch
+                 linked issues for richer context:
+                 `gh issue view ISSUE_NUM --repo oxy-hq/oxy-internal --json title,body`
+               - PR + issue bodies are your PRIMARY source of user-facing context.
+                 Commit subjects are only pointers — do not base descriptions on them.
+
+            3. For any feature whose user impact is still unclear after reading the PR/issue bodies,
+               use DeepWiki to understand the feature in the context of the full codebase:
+               `mcp__deepwiki__ask_question(repo="oxy-hq/oxy", question="...")`
+
+            4. Read `product-context.md` — it explains Oxy's product terminology, features, and
+               which components exist. Use it to write descriptions that match how we talk about
+               the product to users.
+
+            5. Read `oxy-content/CLAUDE.md` — follow its format and tone rules exactly.
+
+            6. Read the most recent existing MDX in `oxy-content/changelog/` as a concrete
+               format example to match precisely.
+
+            ## Step 2 — Write the MDX
+
+            Write a single cohesive entry covering ${{ steps.version.outputs.version }}.
+            - Use `date +%Y-%m-%d` for today's date in the filename and `date` frontmatter field
+            - Author: "Luong Vo (luong@oxy.tech)"
+            - Immediately after the closing `---` of the frontmatter, add:
+              `<!-- versions: ${{ steps.version.outputs.version }} -->`
+            - Skip: internal refactors, CI/build changes, dependency bumps, test-only changes,
+              anything a data analyst or business user would not notice or care about
+            - No image markdown — screenshots are added by the human reviewer
+
+            ## Step 3 — Write to oxy-content
+
+            1. Write the MDX to `oxy-content/changelog/$(date +%Y-%m-%d).mdx`
+            2. In `oxy-content/docs.json`, prepend `"changelog/$(date +%Y-%m-%d)"` to the top
+               of the "Recent Updates" `pages` array inside the "Changelog" tab.
+
+            ## Step 4 — Create or update the pending PR in oxy-content
+
+            Ensure the label exists:
+            `gh label create --repo oxy-hq/oxy-content pending-release --color 0075ca --description "Pending changelog draft" 2>/dev/null || true`
+
+            Check for an open PR with that label:
+            `gh pr list --repo oxy-hq/oxy-content --label pending-release --state open --json number,headRefName --jq '.[0]'`
+
+            **If a PR already exists:**
+            - Fetch and checkout its branch
+            - Read the existing .mdx; merge the new content in (synthesize — no duplicate sections)
+            - Update the `<!-- versions: ... -->` comment to include ${{ steps.version.outputs.version }}
+            - Commit and push
+            - Update the PR body to append ${{ steps.version.outputs.version }} to included versions
+
+            **If no open PR:**
+            - Delete stale remote branch if present:
+              `git -C oxy-content push origin --delete pending-changelog 2>/dev/null || true`
+            - Checkout main, pull, create branch `pending-changelog`
+            - Commit and push
+            - Create the PR:
+              ```
+              gh pr create --repo oxy-hq/oxy-content \
+                --title "chore: pending changelog ($(date +%Y-%m-%d))" \
+                --label pending-release \
+                --head pending-changelog \
+                --base main \
+                --body "Changelog draft auto-generated from release notes.
+
+              **Included releases:** ${{ steps.version.outputs.version }}
+
+              > Review and curate before merging.
+              > Add screenshots to \`changelog/images/$(date +%Y-%m-%d)/\` where helpful.
+              > Claude may have missed details or over-included internal changes."
+              ```
