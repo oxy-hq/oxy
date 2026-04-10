@@ -383,11 +383,6 @@ jobs:
         run: shasum --algorithm 256 --binary oxy-${{ matrix.job.target }} | tee SHA256SUM-oxy-${{ matrix.job.target }}.txt
         working-directory: artifacts
 
-      # Stable-only: Copy changelog for release
-      - name: Copy changelog (stable only)
-        if: needs.determine-build-type.outputs.is_stable == 'true' && matrix.job.target == 'aarch64-apple-darwin'
-        run: cp CHANGELOG.md artifacts/CHANGELOG.md
-
       - name: Upload release artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -466,6 +461,16 @@ jobs:
           } >> $GITHUB_OUTPUT
 
       # Stable release
+      - name: Install git-cliff (stable only)
+        if: needs.determine-build-type.outputs.is_stable == 'true'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff
+
+      - name: Generate release notes (stable only)
+        if: needs.determine-build-type.outputs.is_stable == 'true'
+        run: git cliff --tag ${{ needs.determine-build-type.outputs.version }} --latest -o /tmp/release-notes.md
+
       - name: Create stable release
         if: needs.determine-build-type.outputs.is_stable == 'true'
         uses: softprops/action-gh-release@v2
@@ -473,13 +478,12 @@ jobs:
           draft: false
           prerelease: true
           tag_name: ${{ needs.determine-build-type.outputs.version }}
-          body_path: artifacts/CHANGELOG.md
+          body_path: /tmp/release-notes.md
           files: |
             artifacts/oxy-*
             artifacts/SHA256SUM-*.txt
             artifacts/SHA256SUMS.txt
             artifacts/*.json
-            artifacts/*.md
             artifacts/*.whl
           fail_on_unmatched_files: false
 
