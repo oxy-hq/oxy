@@ -1,19 +1,22 @@
 [package]
 name = "agentic-builder"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.75"
 description = "Built-in copilot builder agent for reading and modifying project files"
+version.workspace = true
+authors.workspace = true
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
-agentic-core = { path = "../core" }
-agentic-llm = { path = "../llm" }
+agentic-core = { workspace = true }
+agentic-llm = { workspace = true }
 async-trait = "0.1"
-oxy = { path = "../../core" }
+oxy = { workspace = true }
 glob = "0.3"
-oxy_globals = { path = "../../globals" }
-oxy-semantic = { path = "../../semantic" }
-oxy-workflow = { path = "../../workflow" }
+oxy_globals = { workspace = true }
+oxy-semantic = { workspace = true }
+oxy-workflow = { workspace = true }
 arrow = { version = "=56.2.0", default-features = false, features = ["json"] }
 regex = "1"
 schemars = { version = "0.8.22", features = ["derive", "impl_json_schema"] }

@@ -1,6 +1,6 @@
 [package]
 name = "oxy-llm"
-version = "0.5.33"
+version.workspace = true
 authors.workspace = true
 description.workspace = true
 documentation.workspace = true
@@ -9,11 +9,11 @@ publish.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-oxy-anthropic = { path = "../anthropic" }
-oxy-gemini = { path = "../gemini" }
-oxy-ollama = { path = "../ollama" }
-oxy-openai = { path = "../openai" }
-oxy-shared = { path = "../../../shared" }
+oxy-anthropic = { workspace = true }
+oxy-gemini = { workspace = true }
+oxy-ollama = { workspace = true }
+oxy-openai = { workspace = true }
+oxy-shared = { workspace = true }
 schemars = { version = "0.8.22", features = ["derive"] }
 serde = { workspace = true }
 serde_with = "3.18.0"

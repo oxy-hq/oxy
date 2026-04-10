@@ -1,6 +1,6 @@
 [package]
 name = "oxy-thread"
-version = "0.5.33"
+version.workspace = true
 authors.workspace = true
 description = "Thread and conversation management for Oxy"
 documentation.workspace = true
@@ -32,11 +32,11 @@ log = { workspace = true }
 
 # Database
 sea-orm = { workspace = true }
-entity = { path = "../entity" }
+entity = { workspace = true }
 
 # Shared infrastructure
-oxy-shared = { path = "../shared" }
-oxy = { path = "../core" }
+oxy-shared = { workspace = true }
+oxy = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

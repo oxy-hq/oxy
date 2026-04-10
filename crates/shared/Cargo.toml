@@ -1,6 +1,6 @@
 [package]
 name = "oxy-shared"
-version = "0.5.33"
+version.workspace = true
 authors.workspace = true
 description = "Shared infrastructure and types for Oxy"
 documentation.workspace = true
@@ -15,7 +15,7 @@ async-trait = "0.1.89"
 
 # Database
 sea-orm = { workspace = true }
-entity = { path = "../entity" }
+entity = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
@@ -54,7 +54,7 @@ lancedb = "0.23.1"
 serde_arrow = { version = "0.13.7", features = ["arrow-56"] }
 
 # Semantic layer
-oxy-semantic = { path = "../semantic" }
+oxy-semantic = { workspace = true }
 
 # Docker support
 futures = "0.3"

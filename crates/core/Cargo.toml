@@ -1,7 +1,6 @@
 [package]
 name = "oxy"
-version = "0.5.33" # TODO: remove this when https://github.com/googleapis/release-please/issues number 2111 is fixed
-# version.workspace = true
+version.workspace = true
 authors.workspace = true
 description.workspace = true
 documentation.workspace = true
@@ -54,22 +53,22 @@ dirs = "6.0.0"
 dotenv = "0.15.0"
 duckdb = { workspace = true }
 email_address = "0.2.9"
-entity = { path = "../entity" }
-omni = { path = "../omni" }
-oxy-looker = { path = "../integration/looker" }
+entity = { workspace = true }
+omni = { workspace = true }
+oxy-looker = { workspace = true }
 # oxy-config moved back into core/src/config to avoid circular dependency
-oxy-anthropic = { path = "../infrastructure/llm/anthropic" }
-oxy-gemini = { path = "../infrastructure/llm/gemini" }
-oxy-llm = { path = "../infrastructure/llm/oxy-llm" }
-oxy-ollama = { path = "../infrastructure/llm/ollama" }
-oxy-openai = { path = "../infrastructure/llm/openai" }
-oxy-semantic = { path = "../semantic" }
-oxy-shared = { path = "../shared" }
-oxy_globals = { path = "../globals" }
+oxy-anthropic = { workspace = true }
+oxy-gemini = { workspace = true }
+oxy-llm = { workspace = true }
+oxy-ollama = { workspace = true }
+oxy-openai = { workspace = true }
+oxy-semantic = { workspace = true }
+oxy-shared = { workspace = true }
+oxy_globals = { workspace = true }
 # Cannot add oxy-agent, oxy-workflow, etc. here due to circular dependency
 # They depend on oxy, so oxy cannot depend on them
 # Use them via CLI crate instead
-a2a = { path = "../a2a" }
+a2a = { workspace = true }
 enum_dispatch = "0.3.13"
 futures = "0.3.32"
 garde = { version = "0.22.1", features = ["full"] }
@@ -88,7 +87,7 @@ libc = "0.2"
 lettre = "0.11.21"
 libduckdb-sys = { workspace = true } # lock version to avoid breaking changes, such as https://github.com/duckdb/duckdb-rs/issues number 436
 log = { workspace = true }
-migration = { path = "../migration" }
+migration = { workspace = true }
 minijinja = { workspace = true, features = ["loader"] }
 once_cell = "1.21.4"
 predicates = "3.1.4"
@@ -173,7 +172,7 @@ df-interchange = { version = "0.3.3", features = ["arrow_54", "arrow_56"] }
 [dev-dependencies]
 tempfile = { workspace = true }
 serial_test = "3.4.0"
-oxy-test-utils = { path = "../test-utils" }
+oxy-test-utils = { workspace = true }
 
 [lib]
 name = "oxy"

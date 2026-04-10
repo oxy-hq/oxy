@@ -1,6 +1,6 @@
 [package]
 name = "oxy-agent"
-version = "0.5.33"
+version.workspace = true
 authors.workspace = true
 description = "Agent execution engine for Oxy"
 documentation.workspace = true
@@ -51,14 +51,14 @@ short-uuid = "0.2.1"
 
 # Database
 sea-orm = { workspace = true }
-entity = { path = "../entity" }
+entity = { workspace = true }
 
 # Shared infrastructure
-oxy-shared = { path = "../shared" }
-oxy-semantic = { path = "../semantic" }
-oxy-openai = { path = "../infrastructure/llm/openai" }
+oxy-shared = { workspace = true }
+oxy-semantic = { workspace = true }
+oxy-openai = { workspace = true }
 # oxy-config = { path = "../config" }  # Access via oxy::config instead
-oxy = { path = "../core" }
+oxy = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

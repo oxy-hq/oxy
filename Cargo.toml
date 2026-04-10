@@ -1,5 +1,4 @@
 [workspace]
-# TODO: switch back to default-members = ["crates/*"] once we migrated from release-please
 members = [
   "crates/a2a",
   "crates/agent",
@@ -23,18 +22,53 @@ members = [
   "crates/infrastructure/llm/openai",
   "crates/infrastructure/llm/oxy-llm",
   "crates/agentic/analytics",
+  "crates/agentic/builder",
   "crates/agentic/core",
   "crates/agentic/llm",
   "crates/agentic/db",
   "crates/agentic/connector",
   "crates/agentic/http",
   "crates/agentic/workflow",
+  "web-app",
 ]
 
 default-members = ["crates/app"]
 resolver = "2"
 
 [workspace.dependencies]
+# Internal workspace crates — path + version so `cargo package` validates correctly.
+# release-plz updates these version specs when bumping the workspace version.
+a2a = { path = "crates/a2a", version = "0.5.34" }
+agentic-analytics = { path = "crates/agentic/analytics", version = "0.5.34" }
+agentic-builder = { path = "crates/agentic/builder", version = "0.5.34" }
+agentic-connector = { path = "crates/agentic/connector", version = "0.5.34" }
+agentic-core = { path = "crates/agentic/core", version = "0.5.34" }
+agentic-db = { path = "crates/agentic/db", version = "0.5.34" }
+agentic-http = { path = "crates/agentic/http", version = "0.5.34" }
+agentic-llm = { path = "crates/agentic/llm", version = "0.5.34" }
+agentic-workflow = { path = "crates/agentic/workflow", version = "0.5.34" }
+entity = { path = "crates/entity", version = "0.5.34" }
+migration = { path = "crates/migration", version = "0.5.34" }
+omni = { path = "crates/omni", version = "0.5.34" }
+oxy = { path = "crates/core", version = "0.5.34" }
+oxy-agent = { path = "crates/agent", version = "0.5.34" }
+oxy-anthropic = { path = "crates/infrastructure/llm/anthropic", version = "0.5.34" }
+oxy-auth = { path = "crates/auth", version = "0.5.34" }
+oxy-gemini = { path = "crates/infrastructure/llm/gemini", version = "0.5.34" }
+oxy-llm = { path = "crates/infrastructure/llm/oxy-llm", version = "0.5.34" }
+oxy-looker = { path = "crates/integration/looker", version = "0.5.34" }
+oxy-ollama = { path = "crates/infrastructure/llm/ollama", version = "0.5.34" }
+oxy-openai = { path = "crates/infrastructure/llm/openai", version = "0.5.34" }
+oxy-project = { path = "crates/project", version = "0.5.34" }
+oxy-semantic = { path = "crates/semantic", version = "0.5.34" }
+oxy-shared = { path = "crates/shared", version = "0.5.34" }
+oxy-test-utils = { path = "crates/test-utils", version = "0.5.34" }
+oxy-thread = { path = "crates/thread", version = "0.5.34" }
+oxy-web = { path = "web-app", version = "0.5.34" }
+oxy-workflow = { path = "crates/workflow", version = "0.5.34" }
+oxy_globals = { path = "crates/globals", version = "0.5.34" }
+
+# External dependencies
 async-openai = {version = "0.33.1"}
 duckdb = { version = "=1.4.4", features = ["bundled"] }
 libduckdb-sys = { version = "=1.4.4" }
@@ -67,14 +101,15 @@ tracing = {version = "0.1.44"}
 uuid = { version = "1.22", features = ["serde", "v4"] }
 
 [workspace.package]
-# TODO: turn this on when https://github.com/googleapis/release-please/issues number 2111 is fixed
-# version = "0.1.32"
+version = "0.5.34"
 authors = ["oxy engineers"]
 description = "Oxy"
 documentation = "https://oxy.tech/docs"
 edition = "2024"
 exclude = ["examples/"]
-publish = false
+# publish = false breaks release-plz release path (release-plz/release-plz#2693).
+# git_only = true in release-plz.toml prevents actual crates.io publishing.
+publish = true
 rust-version = "1.94.0"
 
 [profile.dev.package]

@@ -17,13 +17,13 @@ echo "Rust   : $(rustc --version 2>/dev/null || echo 'NOT FOUND — install via:
 echo "Cargo  : $(cargo --version 2>/dev/null || echo 'NOT FOUND')"
 echo "Node   : $(node --version 2>/dev/null || echo 'NOT FOUND')"
 echo "pnpm   : $(pnpm --version 2>/dev/null || echo 'NOT FOUND — install via: npm install -g pnpm')"
-echo "nextest: $(cargo nextest --version 2>/dev/null || echo 'NOT FOUND — run: make install')"
+echo "nextest: $(cargo nextest --version 2>/dev/null || echo 'NOT FOUND — run: just install')"
 echo ""
 
 # Check for stale/missing node_modules and auto-install
 if [ ! -d node_modules ] || [ package.json -nt node_modules ]; then
-  echo "INFO: dependencies missing or stale — running 'make install'..."
-  make install 2>&1 || echo "WARNING: 'make install' failed — check toolchain above"
+  echo "INFO: dependencies missing or stale — running 'just install'..."
+  just install 2>&1 || echo "WARNING: 'just install' failed — check toolchain above"
 else
   echo "OK: dependencies up to date"
 fi
@@ -34,4 +34,4 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
 fi
 
 echo ""
-echo "Run 'make help' to see all available targets."
+echo "Run 'just' to see all available recipes."

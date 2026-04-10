@@ -1,6 +1,6 @@
 [package]
 name = "oxy-project"
-version = "0.5.33"
+version.workspace = true
 authors.workspace = true
 description = "Project and workspace management for Oxy"
 documentation.workspace = true
@@ -48,12 +48,12 @@ chrono = { workspace = true }
 
 # Database
 sea-orm = { workspace = true }
-entity = { path = "../entity" }
+entity = { workspace = true }
 
 # Shared infrastructure
-oxy-shared = { path = "../shared" }
+oxy-shared = { workspace = true }
 # oxy-config = { path = "../config" }  # Access via oxy::config instead
-oxy = { path = "../core" }
+oxy = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

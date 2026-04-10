@@ -6,7 +6,7 @@ edition.workspace = true
 name = "oxy-workflow"
 publish.workspace = true
 rust-version.workspace = true
-version = "0.5.33"
+version.workspace = true
 
 [dependencies]
 # Async runtime
@@ -49,18 +49,18 @@ utoipa = { git = "https://github.com/haitrr/utoipa.git", rev = "776f86e", featur
 uuid = { workspace = true }
 
 # Database
-entity = { path = "../entity" }
+entity = { workspace = true }
 sea-orm = { workspace = true }
 
 # Semantic engine
-oxy-semantic = { path = "../semantic" }
+oxy-semantic = { workspace = true }
 airlayer = { git = "https://github.com/oxy-hq/airlayer.git", rev = "4b92e5f" }
 
 # Shared infrastructure
-oxy-agent = { path = "../agent" }
-oxy-shared = { path = "../shared" }
+oxy-agent = { workspace = true }
+oxy-shared = { workspace = true }
 # oxy-config = { path = "../config" }  # Access via oxy::config instead
-oxy = { path = "../core" }
+oxy = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

@@ -1,6 +1,6 @@
 [package]
 name = "oxy-openai"
-version = "0.5.33"
+version.workspace = true
 authors.workspace = true
 description.workspace = true
 documentation.workspace = true
@@ -16,7 +16,7 @@ async-openai = { workspace = true, features = [
     "_api",
 ] }
 axum = { version = "0.8.8" }
-oxy-shared = { path = "../../../shared" }
+oxy-shared = { workspace = true }
 schemars = { version = "0.8.22", features = ["derive"] }
 secrecy = "0.10.3"
 serde = { workspace = true }

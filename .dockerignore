@@ -66,18 +66,17 @@ docs/
 *.log
 
 # config files not needed for build
+release-plz.toml
 .deepsource.toml
 .env*
 .lintstagedrc.js
 .prettierignore
 .prettierrc.js
-.release-please-manifest.json
 .tool-versions
 .whitesource
 cliff.toml
 commitlint.config.js
 CONTRIBUTING.md
 CLAUDE.md
-release-please-config.json
 turbo.json
 biome.json

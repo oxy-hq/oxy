@@ -1,6 +1,6 @@
 [package]
 name = "oxy-app"
-version = "0.5.33"
+version.workspace = true
 authors.workspace = true
 description = "Oxy Application - CLI and HTTP server"
 documentation.workspace = true
@@ -16,20 +16,20 @@ path = "src/main.rs"
 handlebars = "6"
 
 # Core functionality
-oxy = { path = "../core" }
-oxy-shared = { path = "../shared" }
-agentic-builder = { path = "../agentic/builder" }
-agentic-http = { path = "../agentic/http" }
-agentic-db = { path = "../agentic/db" }
-oxy-agent = { path = "../agent" }
-oxy-auth = { path = "../auth" }
-oxy-project = { path = "../project" }
-oxy-thread = { path = "../thread" }
-oxy-workflow = { path = "../workflow" }
-oxy-semantic = { path = "../semantic" }
-oxy_globals = { path = "../globals" }
-a2a = { path = "../a2a" }
-entity = { path = "../entity" }
+oxy = { workspace = true }
+oxy-shared = { workspace = true }
+agentic-builder = { workspace = true }
+agentic-http = { workspace = true }
+agentic-db = { workspace = true }
+oxy-agent = { workspace = true }
+oxy-auth = { workspace = true }
+oxy-project = { workspace = true }
+oxy-thread = { workspace = true }
+oxy-workflow = { workspace = true }
+oxy-semantic = { workspace = true }
+oxy_globals = { workspace = true }
+a2a = { workspace = true }
+entity = { workspace = true }
 
 # Async runtime
 tokio = { workspace = true }
@@ -167,11 +167,11 @@ semver = "1.0"
 backoff = { version = "0.4.0", features = ["tokio"] }
 rustc_version_runtime = "0.3.0"
 sentry = { workspace = true }
-omni = { path = "../omni" }
-oxy-looker = { path = "../integration/looker" }
+omni = { workspace = true }
+oxy-looker = { workspace = true }
 
 # Database migration
-migration = { path = "../migration" }
+migration = { workspace = true }
 
 # MCP
 rmcp = { version = "0.8.5", features = [
@@ -192,4 +192,4 @@ tokio = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }
 assert_cmd = "2.2.0"
 serial_test = "3.4.0"
-oxy-test-utils = { path = "../test-utils" }
+oxy-test-utils = { workspace = true }

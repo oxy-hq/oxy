@@ -1,7 +1,6 @@
 [package]
 name = "migration"
-version = "0.5.33" # TODO: remove this when https://github.com/googleapis/release-please/issues number 2111 is fixed
-# version.workspace = true
+version.workspace = true
 authors.workspace = true
 description.workspace = true
 documentation.workspace = true
@@ -13,7 +12,7 @@ rust-version.workspace = true
 [dependencies]
 async-std = { version = "1.13.2", features = ["attributes", "tokio1"] }
 sea-orm-migration = { workspace = true }
-entity = { path = "../entity" }
+entity = { workspace = true }
 anyhow = "1.0"
 clap = { version = "4.6", features = ["derive", "env"] }
 tracing = { workspace = true }

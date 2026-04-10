@@ -6,11 +6,11 @@ edition.workspace = true
 name = "oxy-anthropic"
 publish.workspace = true
 rust-version.workspace = true
-version = "0.5.33"
+version.workspace = true
 
 [dependencies]
 async-openai = {workspace = true, features = ["byot", "chat-completion-types", "_api"]}
-oxy-shared = {path = "../../../shared"}
+oxy-shared = { workspace = true }
 schemars = {version = "0.8.22", features = ["derive"]}
 serde = {workspace = true}
 serde_with = "3.18.0"

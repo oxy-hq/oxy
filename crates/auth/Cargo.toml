@@ -1,6 +1,6 @@
 [package]
 name = "oxy-auth"
-version = "0.5.33"
+version.workspace = true
 authors.workspace = true
 description = "Authentication and authorization for Oxy"
 documentation.workspace = true
@@ -18,7 +18,7 @@ axum = { version = "0.8.8", features = ["macros"] }
 
 # Database
 sea-orm = { workspace = true }
-entity = { path = "../entity" }
+entity = { workspace = true }
 
 # Cryptography
 jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
@@ -41,9 +41,9 @@ chrono = { workspace = true }
 uuid = { workspace = true }
 
 # Shared infrastructure
-oxy-shared = { path = "../shared" }
+oxy-shared = { workspace = true }
 # oxy-config = { path = "../config" }  # Access via oxy::config instead
-oxy = { path = "../core" }
+oxy = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

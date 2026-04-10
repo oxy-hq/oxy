@@ -383,24 +383,10 @@ jobs:
         run: shasum --algorithm 256 --binary oxy-${{ matrix.job.target }} | tee SHA256SUM-oxy-${{ matrix.job.target }}.txt
         working-directory: artifacts
 
-      # Stable-only: Copy changelogs for release
-      - name: Copy backend changelog (stable only)
+      # Stable-only: Copy changelog for release
+      - name: Copy changelog (stable only)
         if: needs.determine-build-type.outputs.is_stable == 'true' && matrix.job.target == 'aarch64-apple-darwin'
-        run: cp crates/core/CHANGELOG.md artifacts/backend-CHANGELOG.md
-
-      - name: Copy frontend changelog (stable only)
-        if: needs.determine-build-type.outputs.is_stable == 'true' && matrix.job.target == 'aarch64-apple-darwin'
-        run: cp web-app/CHANGELOG.md artifacts/frontend-CHANGELOG.md
-
-      - name: Unify release-please changelog (stable only)
-        if: needs.determine-build-type.outputs.is_stable == 'true' && matrix.job.target == 'aarch64-apple-darwin'
-        run: |
-          VERSION="${{ needs.determine-build-type.outputs.version }}"
-          echo "## Backend" > artifacts/CHANGELOG.md
-          awk '/^## \[/{flag=0} /^## \['"${VERSION}"'\]/{flag=1} flag' artifacts/backend-CHANGELOG.md >> artifacts/CHANGELOG.md
-          echo "" >> artifacts/CHANGELOG.md
-          echo "## Frontend" >> artifacts/CHANGELOG.md
-          awk '/^## \[/{flag=0} /^## \['"${VERSION}"'\]/{flag=1} flag' artifacts/frontend-CHANGELOG.md >> artifacts/CHANGELOG.md
+        run: cp CHANGELOG.md artifacts/CHANGELOG.md
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v7
