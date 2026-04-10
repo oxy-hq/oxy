@@ -159,72 +159,14 @@ jobs:
           git -C oxy-content config user.email "${USER_ID}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com"
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
       - name: Generate and publish changelog draft
-        uses: anthropics/claude-code-action@v1
         env:
+          RELEASE_VERSION: ${{ needs.release.outputs.release_version }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          claude_args: >-
-            --allowedTools
-            "mcp__deepwiki__ask_question,mcp__deepwiki__read_wiki_contents,
-            Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh pr create:*),Bash(gh pr edit:*),
-            Bash(gh label create:*),Bash(git -C oxy-content:*),Bash(cat:*),Bash(date:*),
-            Read,Write,Glob,Grep"
-          prompt: |
-            Create a user-facing changelog draft in oxy-hq/oxy-content for Oxy release ${{ needs.release.outputs.release_version }}.
-
-            ## Context — gather before writing
-
-            1. Read the cliff release notes:
-               `cat /tmp/release-notes.md`
-
-            2. For every PR #NNN referenced in those notes, fetch the full description:
-               `gh pr view NNN --repo oxy-hq/oxy-internal --json number,title,body`
-               Skip "chore: release" PRs. PR bodies are your primary source of user-facing context.
-
-            3. Use DeepWiki for any feature whose PR description doesn't make the user impact clear:
-               `mcp__deepwiki__ask_question(repo="oxy-hq/oxy", question="...")`
-
-            4. Read `product-context.md` for Oxy product terminology and feature map.
-
-            5. Read `oxy-content/CLAUDE.md` — follow it exactly for format and tone.
-
-            ## Generate the MDX
-
-            Write a single cohesive MDX changelog entry.
-            - Run `date +%Y-%m-%d` for today's date (filename + frontmatter)
-            - Author: "Luong Vo (luong@oxy.tech)"
-            - Add `<!-- versions: ${{ needs.release.outputs.release_version }} -->` after the frontmatter `---`
-            - No image markdown — screenshots are added manually by the reviewer
-            - Skip: internal refactors, CI/build changes, dependency bumps, test-only changes
-
-            ## Write to oxy-content
-
-            1. Write the MDX to `oxy-content/changelog/$(date +%Y-%m-%d).mdx`
-            2. In `oxy-content/docs.json`, prepend `"changelog/$(date +%Y-%m-%d)"` to the top of
-               the "Recent Updates" `pages` array inside the "Changelog" tab.
-
-            ## Create or update the pending PR
-
-            Ensure the label exists first:
-            `gh label create --repo oxy-hq/oxy-content pending-release --color 0075ca --description "Pending changelog draft" 2>/dev/null || true`
-
-            Check for an open PR with that label:
-            `gh pr list --repo oxy-hq/oxy-content --label pending-release --state open --json number,headRefName --jq '.[0]'`
-
-            **If a PR exists:** fetch and checkout its branch, append the new release content to
-            the existing .mdx (synthesize, do not duplicate sections), commit and push, then update
-            the PR body to add "${{ needs.release.outputs.release_version }}" to the included versions.
-
-            **If no open PR:** create branch "pending-changelog" from main (delete remote branch first if stale),
-            commit, push, then:
-            ```
-            gh pr create --repo oxy-hq/oxy-content \
-              --title "chore: pending changelog ($(date +%Y-%m-%d))" \
-              --label pending-release --head pending-changelog --base main \
-              --body "Changelog draft. Included releases: ${{ needs.release.outputs.release_version }}"
-            ```
+        run: uv run scripts/release/update-content-changelog.py
 
   # Tag the public oxy-hq/oxy repo when a release is created.
   release-public:

@@ -46,7 +46,9 @@ DRY_RUN = "--dry-run" in sys.argv
 # Versions: positional CLI args take precedence (for local multi-version dry-runs),
 # otherwise fall back to RELEASE_VERSION env var (used by CI).
 _cli_versions = [a for a in sys.argv[1:] if not a.startswith("--")]
-VERSIONS: list[str] = _cli_versions if _cli_versions else [os.environ["RELEASE_VERSION"]]
+VERSIONS: list[str] = (
+    _cli_versions if _cli_versions else [os.environ["RELEASE_VERSION"]]
+)
 RELEASE_VERSION = VERSIONS[-1]  # latest version; used for single-version CI ops
 
 CONTENT_DIR = Path("oxy-content")
@@ -59,9 +61,13 @@ CONTENT_REPO = "oxy-hq/oxy-content"
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
 
+
 def run(cmd, cwd=None):
     result = subprocess.run(
-        cmd, check=True, capture_output=True, text=True,
+        cmd,
+        check=True,
+        capture_output=True,
+        text=True,
         cwd=str(cwd) if cwd else None,
     )
     return result.stdout.strip()
@@ -81,6 +87,7 @@ def git(*args):
 
 
 # ── Writing guide ─────────────────────────────────────────────────────────────
+
 
 def get_writing_guide() -> str:
     """Load oxy-content's CLAUDE.md; fall back to embedded rules if not present."""
@@ -115,9 +122,13 @@ Rules:
 
 # ── Claude ────────────────────────────────────────────────────────────────────
 
+
 def get_product_context() -> str:
     """Load product-context.md from the repo root (best-effort)."""
-    for candidate in [Path("product-context.md"), Path(__file__).parent.parent.parent / "product-context.md"]:
+    for candidate in [
+        Path("product-context.md"),
+        Path(__file__).parent.parent.parent / "product-context.md",
+    ]:
         if candidate.exists():
             return candidate.read_text()
     return ""
@@ -137,14 +148,16 @@ def build_prompt(
 
     product_block = (
         f"\n<product_context>\n{product_context}\n</product_context>\n"
-        if product_context else ""
+        if product_context
+        else ""
     )
 
     deepwiki_block = (
         "\nIf you need deeper context on how a specific feature works, call the DeepWiki MCP tool:\n"
-        "  mcp__deepwiki__ask_question(repo=\"oxy-hq/oxy\", question=\"...\")\n"
+        '  mcp__deepwiki__ask_question(repo="oxy-hq/oxy", question="...")\n'
         "Use it for any feature whose PR description leaves the user-facing impact unclear.\n"
-        if include_deepwiki_hint else ""
+        if include_deepwiki_hint
+        else ""
     )
 
     if existing_content:
@@ -155,12 +168,24 @@ Follow this writing guide exactly:
 {writing_guide}
 </writing_guide>
 {product_block}{deepwiki_block}
+## Your task
+
 An existing draft changelog entry already covers earlier releases this cycle.
 Merge in release(s) {versions_str} WITHOUT rewriting existing content:
 - Append new features as new `####` subsections under `### New Features`.
 - Add new fixes/improvements under `### Platform Improvements`.
 - Update frontmatter title/description/slug/sidebarTitle only if the new features are significant.
 - Update the `<!-- versions: ... -->` tracking comment to include {versions_str}; create it if absent.
+
+## How to read the release notes
+
+The release notes contain two parts:
+1. **Git commit subjects** (from git-cliff) — terse, engineer-facing. Use these only to identify which PRs exist.
+2. **Pull Request Descriptions** (under "## Pull Request Descriptions") — the primary source. Each PR body explains
+   the feature's user-facing purpose and impact. Base your feature descriptions on the PR body, not the commit subject.
+
+Include: new features, UX improvements, meaningful bug fixes visible to users, performance improvements users notice.
+Skip: internal refactors, CI/build/tooling changes, dependency bumps, test-only changes, chores with no user impact.
 
 <release_notes>
 {release_notes}
@@ -170,7 +195,6 @@ Merge in release(s) {versions_str} WITHOUT rewriting existing content:
 {existing_content}
 </existing_draft>
 
-Skip: internal refactors, CI/build changes, dependency bumps, test-only changes.
 Return ONLY the complete updated MDX — no explanation, no code fences."""
 
     return f"""You are writing a user-facing changelog for Oxy (an AI-powered data analytics platform).
@@ -180,44 +204,78 @@ Follow this writing guide exactly:
 {writing_guide}
 </writing_guide>
 {product_block}{deepwiki_block}
+## Your task
+
 Convert the release notes below (covering {versions_str}) into a single user-friendly MDX changelog entry.
 If multiple releases are provided, synthesize them into a cohesive entry — do not write a separate section per version.
+
+## How to read the release notes
+
+The release notes contain two parts:
+1. **Git commit subjects** (from git-cliff) — terse, engineer-facing. Use these only to identify which PRs exist.
+2. **Pull Request Descriptions** (under "## Pull Request Descriptions") — the primary source. Each PR body explains
+   the feature's user-facing purpose and impact. Base your feature descriptions on the PR body, not the commit subject.
+
+If a PR body is missing or too vague, fall back to inferring user impact from the commit subject and feature name.
+
+## What to include / skip
+
+Include: new features, UX improvements, meaningful bug fixes visible to users, performance improvements users notice.
+Skip: internal refactors, CI/build/tooling changes, dependency bumps, test-only changes, chores with no user impact.
+When in doubt, ask: "Would a data analyst care about this?" If no, skip it.
 
 <release_notes>
 {release_notes}
 </release_notes>
 
-Additional rules:
+## Output rules
 - Use date {today} in the frontmatter `date` field.
 - Author is always "Luong Vo (luong@oxy.tech)".
 - After the closing `---` of the frontmatter, add exactly: `{versions_comment}`
-- Skip: internal refactors, CI/build changes, dependency bumps, test-only changes.
 - Do NOT add image markdown — omit screenshots entirely (human reviewer adds them).
 - Return ONLY the MDX content — no explanation, no code fences."""
 
 
-def call_claude(release_notes: str, versions: list[str], existing_content: str = "") -> str:
+def call_claude(
+    release_notes: str, versions: list[str], existing_content: str = ""
+) -> str:
     if os.environ.get("ANTHROPIC_API_KEY"):
         import anthropic
-        prompt = build_prompt(release_notes, versions, existing_content, include_deepwiki_hint=False)
+
+        prompt = build_prompt(
+            release_notes, versions, existing_content, include_deepwiki_hint=False
+        )
         client = anthropic.Anthropic()
         message = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=4096,
+            max_tokens=8192,
+            system=(
+                "You are a technical writer producing user-facing release changelogs for Oxy, "
+                "an AI-powered data analytics platform. Write clearly for data analysts and "
+                "business users, not engineers. Output raw MDX only — no explanation, no markdown fences."
+            ),
             messages=[{"role": "user", "content": prompt}],
         )
         return message.content[0].text.strip()
     # No API key — use local Claude Code CLI which has MCP (including DeepWiki) available
-    print("[dry-run] ANTHROPIC_API_KEY not set, using local claude CLI...", file=sys.stderr)
-    prompt = build_prompt(release_notes, versions, existing_content, include_deepwiki_hint=True)
+    print(
+        "[dry-run] ANTHROPIC_API_KEY not set, using local claude CLI...",
+        file=sys.stderr,
+    )
+    prompt = build_prompt(
+        release_notes, versions, existing_content, include_deepwiki_hint=True
+    )
     result = subprocess.run(
         ["claude", "-p", prompt],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     )
     return result.stdout.strip()
 
 
 # ── docs.json ─────────────────────────────────────────────────────────────────
+
 
 def register_in_docs_json(slug: str):
     """Prepend slug to the Recent Updates pages array in docs.json."""
@@ -235,11 +293,20 @@ def register_in_docs_json(slug: str):
 
 # ── PR helpers ────────────────────────────────────────────────────────────────
 
+
 def ensure_label():
     try:
-        gh("label", "create", "--repo", CONTENT_REPO,
-           PENDING_LABEL, "--color", "0075ca",
-           "--description", "Pending changelog draft for next publish")
+        gh(
+            "label",
+            "create",
+            "--repo",
+            CONTENT_REPO,
+            PENDING_LABEL,
+            "--color",
+            "0075ca",
+            "--description",
+            "Pending changelog draft for next publish",
+        )
     except subprocess.CalledProcessError:
         pass  # Label already exists
 
@@ -247,9 +314,20 @@ def ensure_label():
 def find_open_pr():
     """Return (pr_number, branch) or (None, None)."""
     try:
-        result = gh("pr", "list", "--repo", CONTENT_REPO,
-                    "--label", PENDING_LABEL, "--state", "open",
-                    "--json", "number,headRefName", "--jq", ".[0]")
+        result = gh(
+            "pr",
+            "list",
+            "--repo",
+            CONTENT_REPO,
+            "--label",
+            PENDING_LABEL,
+            "--state",
+            "open",
+            "--json",
+            "number,headRefName",
+            "--jq",
+            ".[0]",
+        )
         if result and result not in ("null", ""):
             data = json.loads(result)
             return data.get("number"), data.get("headRefName")
@@ -266,6 +344,7 @@ def find_pending_mdx():
 
 # ── Release notes + PR context ────────────────────────────────────────────────
 
+
 def get_cliff_notes(version: str) -> str:
     """Return git-cliff release notes for a version, generating if needed.
 
@@ -278,7 +357,9 @@ def get_cliff_notes(version: str) -> str:
     if ci_path.exists() and not versioned_path.exists():
         return ci_path.read_text()
     if not versioned_path.exists():
-        print(f"Generating release notes for {version} via git-cliff...", file=sys.stderr)
+        print(
+            f"Generating release notes for {version} via git-cliff...", file=sys.stderr
+        )
         subprocess.run(
             ["git", "cliff", "--tag", version, "--latest", "-o", str(versioned_path)],
             check=True,
@@ -293,17 +374,30 @@ def fetch_pr_context(cliff_notes: str) -> str:
     notes that git-cliff produces. Skips release PRs and PRs with empty bodies.
     Silently ignores fetch errors (gh not authed, PR not found, etc.).
     """
-    pr_numbers = re.findall(r'\(#(\d+)\)', cliff_notes)
+    pr_numbers = re.findall(r"\(#(\d+)\)", cliff_notes)
     if not pr_numbers:
         return ""
 
-    print(f"Fetching PR context for: {', '.join('#' + n for n in pr_numbers)}", file=sys.stderr)
+    print(
+        f"Fetching PR context for: {', '.join('#' + n for n in pr_numbers)}",
+        file=sys.stderr,
+    )
 
     sections: list[str] = []
     for num in dict.fromkeys(pr_numbers):  # deduplicate, preserve order
         try:
-            raw = run(["gh", "pr", "view", num, "--repo", "oxy-hq/oxy-internal",
-                       "--json", "number,title,body,labels"])
+            raw = run(
+                [
+                    "gh",
+                    "pr",
+                    "view",
+                    num,
+                    "--repo",
+                    "oxy-hq/oxy-internal",
+                    "--json",
+                    "number,title,body,labels",
+                ]
+            )
             pr = json.loads(raw)
         except (subprocess.CalledProcessError, json.JSONDecodeError):
             continue
@@ -347,6 +441,7 @@ def gather_release_notes(versions: list[str]) -> str:
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+
 def main():
     release_notes = gather_release_notes(VERSIONS)
 
@@ -362,7 +457,9 @@ def main():
 
     if pr_number:
         # ── Append to existing pending PR ────────────────────────────────────
-        print(f"Found open PR #{pr_number} on branch {pr_branch!r} — appending release {RELEASE_VERSION}")
+        print(
+            f"Found open PR #{pr_number} on branch {pr_branch!r} — appending release {RELEASE_VERSION}"
+        )
         git("fetch", "origin", pr_branch)
         git("checkout", pr_branch)
 
@@ -382,10 +479,26 @@ def main():
         git("commit", "-m", f"chore: add release {RELEASE_VERSION} to changelog draft")
         git("push", "origin", pr_branch)
 
-        current_body = gh("pr", "view", str(pr_number), "--repo", CONTENT_REPO,
-                          "--json", "body", "--jq", ".body")
-        gh("pr", "edit", str(pr_number), "--repo", CONTENT_REPO,
-           "--body", current_body + f"\n- {RELEASE_VERSION}")
+        current_body = gh(
+            "pr",
+            "view",
+            str(pr_number),
+            "--repo",
+            CONTENT_REPO,
+            "--json",
+            "body",
+            "--jq",
+            ".body",
+        )
+        gh(
+            "pr",
+            "edit",
+            str(pr_number),
+            "--repo",
+            CONTENT_REPO,
+            "--body",
+            current_body + f"\n- {RELEASE_VERSION}",
+        )
 
         print(f"Updated PR #{pr_number} with release {RELEASE_VERSION}")
 
@@ -420,13 +533,22 @@ def main():
             f"> Add screenshots to `changelog/images/{today}/` where helpful.\n"
             f"> Claude may have missed details or over-included internal changes."
         )
-        gh("pr", "create",
-           "--repo", CONTENT_REPO,
-           "--title", f"chore: pending changelog ({today})",
-           "--body", pr_body,
-           "--label", PENDING_LABEL,
-           "--head", PENDING_BRANCH,
-           "--base", "main")
+        gh(
+            "pr",
+            "create",
+            "--repo",
+            CONTENT_REPO,
+            "--title",
+            f"chore: pending changelog ({today})",
+            "--body",
+            pr_body,
+            "--label",
+            PENDING_LABEL,
+            "--head",
+            PENDING_BRANCH,
+            "--base",
+            "main",
+        )
 
         print(f"Created pending changelog PR for {today}")
 
