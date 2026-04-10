@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 ### ⚙️ Miscellaneous Tasks
 
 - Refactor release process and remove release-plz configuration
+- Release 0.5.34 (#2058)
 
 ## [0.5.33] - 2026-04-09
 
