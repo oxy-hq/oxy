@@ -5,38 +5,37 @@
 #   "anthropic>=0.40.0",
 # ]
 # ///
-"""Creates or updates a pending changelog PR in oxy-hq/oxy-content.
+"""Local dry-run tool for previewing changelog drafts against past releases.
 
-When a release is made in oxy-internal this script:
-  1. Checks oxy-content for an open PR labelled "pending-release".
-  2. If found  → appends the new release to the existing draft MDX file.
-  3. If absent → generates a fresh MDX file and opens a new PR.
+In CI, changelog generation is handled by anthropics/claude-code-action@v1 in
+.github/workflows/prepare-release.yaml (content-changelog job), which gives
+Claude MCP access (DeepWiki, gh, file tools) without needing this script.
 
-Multiple releases can accumulate in the same pending PR until the human
-reviewer curates, adds screenshots, and merges.
-
-Environment variables required:
-  ANTHROPIC_API_KEY   — Anthropic API key
-  RELEASE_VERSION     — semver string, e.g. "0.5.35"
-  GH_TOKEN            — GitHub token with write access to oxy-content
-                        (not required in --dry-run mode)
-
-Inputs:
-  /tmp/release-notes.md   — release notes from git-cliff --latest
-                            (auto-generated via git-cliff if absent)
-  ./oxy-content/          — local checkout of oxy-hq/oxy-content
-                            (not required in --dry-run mode)
+This script is for LOCAL use only — preview what a changelog would look like
+for any past release(s) before merging or publishing.
 
 Flags:
-  --dry-run   Generate and print the MDX to stdout; skip all git/GitHub ops.
-              Useful for previewing output locally against any past tag.
+  --dry-run   (implicit when run locally) — generate MDX, print to stdout.
+              No git or GitHub operations are performed.
 
-Example (local dry-run against a past release):
-  RELEASE_VERSION=0.5.34 uv run scripts/release/update-content-changelog.py --dry-run
+Positional args: one or more semver tags to generate the changelog for.
+  If omitted, falls back to RELEASE_VERSION env var.
+
+Examples:
+  just release-changelog-preview 0.5.34
+  just release-changelog-preview 0.5.33 0.5.34 0.5.35
+
+How it works:
+  1. Generates git-cliff release notes for each version (auto-runs git cliff)
+  2. Fetches PR descriptions for every #NNN reference via `gh`
+  3. Calls Claude (local claude CLI or ANTHROPIC_API_KEY) with product-context.md,
+     oxy-content/CLAUDE.md, and DeepWiki hint (when using local claude CLI)
+  4. Prints the generated MDX to stdout
 """
 
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import date
@@ -116,20 +115,46 @@ Rules:
 
 # ── Claude ────────────────────────────────────────────────────────────────────
 
-def call_claude(release_notes: str, versions: list[str], existing_content: str = "") -> str:
+def get_product_context() -> str:
+    """Load product-context.md from the repo root (best-effort)."""
+    for candidate in [Path("product-context.md"), Path(__file__).parent.parent.parent / "product-context.md"]:
+        if candidate.exists():
+            return candidate.read_text()
+    return ""
+
+
+def build_prompt(
+    release_notes: str,
+    versions: list[str],
+    existing_content: str = "",
+    include_deepwiki_hint: bool = False,
+) -> str:
     writing_guide = get_writing_guide()
+    product_context = get_product_context()
     today = date.today().isoformat()
     versions_str = ", ".join(versions)
     versions_comment = f"<!-- versions: {versions_str} -->"
 
+    product_block = (
+        f"\n<product_context>\n{product_context}\n</product_context>\n"
+        if product_context else ""
+    )
+
+    deepwiki_block = (
+        "\nIf you need deeper context on how a specific feature works, call the DeepWiki MCP tool:\n"
+        "  mcp__deepwiki__ask_question(repo=\"oxy-hq/oxy\", question=\"...\")\n"
+        "Use it for any feature whose PR description leaves the user-facing impact unclear.\n"
+        if include_deepwiki_hint else ""
+    )
+
     if existing_content:
-        prompt = f"""You are writing a user-facing changelog for Oxy (an AI-powered data analytics platform).
+        return f"""You are writing a user-facing changelog for Oxy (an AI-powered data analytics platform).
 
 Follow this writing guide exactly:
 <writing_guide>
 {writing_guide}
 </writing_guide>
-
+{product_block}{deepwiki_block}
 An existing draft changelog entry already covers earlier releases this cycle.
 Merge in release(s) {versions_str} WITHOUT rewriting existing content:
 - Append new features as new `####` subsections under `### New Features`.
@@ -147,14 +172,14 @@ Merge in release(s) {versions_str} WITHOUT rewriting existing content:
 
 Skip: internal refactors, CI/build changes, dependency bumps, test-only changes.
 Return ONLY the complete updated MDX — no explanation, no code fences."""
-    else:
-        prompt = f"""You are writing a user-facing changelog for Oxy (an AI-powered data analytics platform).
+
+    return f"""You are writing a user-facing changelog for Oxy (an AI-powered data analytics platform).
 
 Follow this writing guide exactly:
 <writing_guide>
 {writing_guide}
 </writing_guide>
-
+{product_block}{deepwiki_block}
 Convert the release notes below (covering {versions_str}) into a single user-friendly MDX changelog entry.
 If multiple releases are provided, synthesize them into a cohesive entry — do not write a separate section per version.
 
@@ -170,8 +195,11 @@ Additional rules:
 - Do NOT add image markdown — omit screenshots entirely (human reviewer adds them).
 - Return ONLY the MDX content — no explanation, no code fences."""
 
+
+def call_claude(release_notes: str, versions: list[str], existing_content: str = "") -> str:
     if os.environ.get("ANTHROPIC_API_KEY"):
         import anthropic
+        prompt = build_prompt(release_notes, versions, existing_content, include_deepwiki_hint=False)
         client = anthropic.Anthropic()
         message = client.messages.create(
             model="claude-sonnet-4-6",
@@ -179,14 +207,14 @@ Additional rules:
             messages=[{"role": "user", "content": prompt}],
         )
         return message.content[0].text.strip()
-    else:
-        # No API key — fall back to local Claude Code CLI (claude -p)
-        print("[dry-run] ANTHROPIC_API_KEY not set, using local claude CLI...", file=sys.stderr)
-        result = subprocess.run(
-            ["claude", "-p", prompt],
-            capture_output=True, text=True, check=True,
-        )
-        return result.stdout.strip()
+    # No API key — use local Claude Code CLI which has MCP (including DeepWiki) available
+    print("[dry-run] ANTHROPIC_API_KEY not set, using local claude CLI...", file=sys.stderr)
+    prompt = build_prompt(release_notes, versions, existing_content, include_deepwiki_hint=True)
+    result = subprocess.run(
+        ["claude", "-p", prompt],
+        capture_output=True, text=True, check=True,
+    )
+    return result.stdout.strip()
 
 
 # ── docs.json ─────────────────────────────────────────────────────────────────
@@ -236,28 +264,84 @@ def find_pending_mdx():
     return files[0] if files else None
 
 
-# ── Release notes ─────────────────────────────────────────────────────────────
+# ── Release notes + PR context ────────────────────────────────────────────────
 
-def get_release_notes(version: str) -> str:
-    """Return release notes for a version, generating via git-cliff if needed."""
-    path = Path(f"/tmp/release-notes-{version}.md")
-    if not path.exists():
+def get_cliff_notes(version: str) -> str:
+    """Return git-cliff release notes for a version, generating if needed.
+
+    In CI the workflow pre-generates /tmp/release-notes.md for the single
+    release version; we reuse that file to avoid running git-cliff twice.
+    """
+    ci_path = Path("/tmp/release-notes.md")
+    versioned_path = Path(f"/tmp/release-notes-{version}.md")
+    # Prefer the CI-generated file for the primary version
+    if ci_path.exists() and not versioned_path.exists():
+        return ci_path.read_text()
+    if not versioned_path.exists():
         print(f"Generating release notes for {version} via git-cliff...", file=sys.stderr)
         subprocess.run(
-            ["git", "cliff", "--tag", version, "--latest", "-o", str(path)],
+            ["git", "cliff", "--tag", version, "--latest", "-o", str(versioned_path)],
             check=True,
         )
-    return path.read_text()
+    return versioned_path.read_text()
+
+
+def fetch_pr_context(cliff_notes: str) -> str:
+    """Fetch PR titles + bodies for every (#NNN) reference in cliff_notes.
+
+    Returns a formatted block of PR descriptions to supplement the commit-level
+    notes that git-cliff produces. Skips release PRs and PRs with empty bodies.
+    Silently ignores fetch errors (gh not authed, PR not found, etc.).
+    """
+    pr_numbers = re.findall(r'\(#(\d+)\)', cliff_notes)
+    if not pr_numbers:
+        return ""
+
+    print(f"Fetching PR context for: {', '.join('#' + n for n in pr_numbers)}", file=sys.stderr)
+
+    sections: list[str] = []
+    for num in dict.fromkeys(pr_numbers):  # deduplicate, preserve order
+        try:
+            raw = run(["gh", "pr", "view", num, "--repo", "oxy-hq/oxy-internal",
+                       "--json", "number,title,body,labels"])
+            pr = json.loads(raw)
+        except (subprocess.CalledProcessError, json.JSONDecodeError):
+            continue
+
+        title: str = pr.get("title", "")
+        body: str = (pr.get("body") or "").strip()
+
+        # Skip release PRs and PRs with no useful body
+        if title.startswith("chore: release") or not body:
+            continue
+
+        # Truncate very long bodies to keep the prompt manageable
+        if len(body) > 2000:
+            body = body[:2000] + "\n…(truncated)"
+
+        sections.append(f"### PR #{num}: {title}\n\n{body}")
+
+    if not sections:
+        return ""
+    return "## Pull Request Descriptions\n\n" + "\n\n---\n\n".join(sections)
+
+
+def get_release_context(version: str) -> str:
+    """Combine git-cliff notes and PR descriptions for a single version."""
+    cliff = get_cliff_notes(version)
+    pr_context = fetch_pr_context(cliff)
+    if pr_context:
+        return f"{cliff}\n\n{pr_context}"
+    return cliff
 
 
 def gather_release_notes(versions: list[str]) -> str:
-    """Concatenate release notes for all versions into a single string."""
+    """Assemble full context (cliff notes + PR bodies) for all versions."""
     if len(versions) == 1:
-        return get_release_notes(versions[0])
+        return get_release_context(versions[0])
     parts = []
     for v in versions:
-        notes = get_release_notes(v)
-        parts.append(f"## Release {v}\n\n{notes}")
+        parts.append(f"## Release {v}\n\n{get_release_context(v)}")
     return "\n\n---\n\n".join(parts)
 
 
