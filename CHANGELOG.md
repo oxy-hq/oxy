@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.35] - 2026-04-10
+
+### 🐛 Bug Fixes
+
+- Use produced key for hotkeys to support all keyboard layouts (#2056)
+
+### ⚙️ Miscellaneous Tasks
+
+- Update release scripts to use uv and add content changelog generation
+- Enhance changelog generation with local dry-run tool and improved context fetching
+- Update conditions for changesets and claude-review jobs to exclude release branches
+
 ## [0.5.34] - 2026-04-10
 
 ### 🐛 Bug Fixes
@@ -18,6 +30,7 @@ All notable changes to this project will be documented in this file.
 - Release 0.5.34 (#2058)
 - Release 0.5.34 (#2059)
 - Extract version from commit message using regex pattern
+- Release 0.5.34 (#2060)
 
 ## [0.5.33] - 2026-04-09
 

@@ -100,7 +100,7 @@ tracing = {version = "0.1.44"}
 uuid = { version = "1.22", features = ["serde", "v4"] }
 
 [workspace.package]
-version = "0.5.34"
+version = "0.5.35"
 authors = ["oxy engineers"]
 description = "Oxy"
 documentation = "https://oxy.tech/docs"
