@@ -43,13 +43,13 @@ defaults:
 
 jobs:
   changesets:
-    if: ${{ github.event_name != 'pull_request' || (!startsWith(github.head_ref, 'release-plz-') && !github.event.pull_request.draft) }}
+    if: ${{ github.event_name != 'pull_request' || (!startsWith(github.head_ref, 'release/') && !github.event.pull_request.draft) }}
     uses: ./.github/workflows/changesets.yaml
     name: Changesets
 
   typos:
     name: Typos
-    if: github.event.pull_request.draft != true
+    if: github.event.pull_request.draft != true && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release/'))
     runs-on: ${{ github.repository == 'oxy-hq/oxy-internal' && 'ubuntu-slim' || 'ubuntu-latest' }}
     steps:
       - name: Checkout
