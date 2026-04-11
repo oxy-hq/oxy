@@ -49,6 +49,11 @@ lint-backend:
 lint-frontend:
     pnpm lint
 
+# DRY up workspace Cargo.toml manifests by inheriting shared deps from workspace root
+autoinherit:
+    @cargo autoinherit --version >/dev/null 2>&1 || cargo install cargo-autoinherit
+    cargo autoinherit
+
 # Format all code (clippy auto-fix + rustfmt + frontend)
 fmt:
     cargo clippy --fix --allow-dirty --allow-staged --broken-code --workspace --lib && cargo fmt --all

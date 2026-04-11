@@ -15,8 +15,8 @@ rust-version.workspace = true
 
 # Async runtime
 tokio = { workspace = true }
-async-trait = "0.1.89"
-async-stream = "0.3.6"
+async-trait = { workspace = true }
+async-stream = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
@@ -24,7 +24,7 @@ serde_json = { workspace = true }
 
 # Error handling
 thiserror = { workspace = true }
-anyhow = "1.0"
+anyhow = { workspace = true }
 
 # Logging
 tracing = { workspace = true }

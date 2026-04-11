@@ -14,6 +14,6 @@ oxy-gemini = { workspace = true }
 oxy-ollama = { workspace = true }
 oxy-openai = { workspace = true }
 oxy-shared = { workspace = true }
-schemars = { version = "0.8.22", features = ["derive"] }
+schemars = { workspace = true, features = ["derive"] }
 serde = { workspace = true }
-serde_with = "3.18.0"
+serde_with = { workspace = true }

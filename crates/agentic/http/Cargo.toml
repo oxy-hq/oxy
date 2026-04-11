@@ -24,14 +24,14 @@ agentic-workflow = { workspace = true }
 oxy = { workspace = true }
 oxy-shared = { workspace = true }
 oxy-workflow = { workspace = true }
-async-trait = "0.1"
+async-trait = { workspace = true }
 agentic-builder = { workspace = true }
 entity = { workspace = true }
 oxy-auth = { workspace = true }
 
 # Web
 axum = { workspace = true }
-async-stream = "0.3"
+async-stream = { workspace = true }
 
 # Database
 sea-orm = { workspace = true }
@@ -40,13 +40,13 @@ sea-orm = { workspace = true }
 tokio = { workspace = true }
 
 # State
-dashmap = "5"
+dashmap = { workspace = true }
 uuid = { workspace = true }
 
 # Serde / JSON
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_yaml = "0.9"
+serde_yaml = { workspace = true }
 chrono = { workspace = true }
 
 # Logging

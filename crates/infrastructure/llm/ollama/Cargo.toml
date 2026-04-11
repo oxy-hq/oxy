@@ -15,5 +15,5 @@ async-openai = { workspace = true, features = [
     "_api",
 ] }
 oxy-shared = { workspace = true }
-schemars = { version = "0.8.22", features = ["derive"] }
+schemars = { workspace = true, features = ["derive"] }
 serde = { workspace = true }

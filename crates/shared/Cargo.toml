@@ -11,7 +11,7 @@ rust-version.workspace = true
 [dependencies]
 # Core async runtime
 tokio = { workspace = true }
-async-trait = "0.1.89"
+async-trait = { workspace = true }
 
 # Database
 sea-orm = { workspace = true }
@@ -23,7 +23,7 @@ serde_json = { workspace = true }
 
 # Error handling
 thiserror = { workspace = true }
-anyhow = "1.0"
+anyhow = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
@@ -33,31 +33,27 @@ log = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
 indexmap = { workspace = true }
-itertools = "0.14.0"
-enum_dispatch = "0.3.13"
-schemars = { version = "0.8.22", features = ["derive", "impl_json_schema"] }
+itertools = { workspace = true }
+enum_dispatch = { workspace = true }
+schemars = { workspace = true, features = ["derive", "impl_json_schema"] }
 
 # HTTP/API
 axum = { workspace = true }
-utoipa = { git = "https://github.com/haitrr/utoipa.git", rev = "776f86e", features = [
-    "uuid",
-    "chrono",
-    "axum_extras",
-] }
+utoipa = { workspace = true, features = ["uuid", "chrono", "axum_extras"] }
 
 # AI/LLM
 async-openai = { workspace = true, features = ["byot", "_api"] }
-secrecy = "0.10"
+secrecy = { workspace = true }
 
 # Vector store
-lancedb = "0.23.1"
-serde_arrow = { version = "0.13.7", features = ["arrow-56"] }
+lancedb = { workspace = true }
+serde_arrow = { workspace = true, features = ["arrow-56"] }
 
 # Semantic layer
 oxy-semantic = { workspace = true }
 
 # Docker support
-futures = "0.3"
+futures = { workspace = true }
 
 # Sentry error tracking
 sentry = { workspace = true }

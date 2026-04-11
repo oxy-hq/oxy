@@ -79,19 +79,6 @@ jobs:
           node-version: 24.x
           cache: "pnpm"
 
-      # Cache pnpm store for faster dependency installation
-      - name: Get pnpm store directory
-        shell: bash
-        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - name: Setup pnpm store cache
-        uses: actions/cache@v5
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: pnpm-store-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            pnpm-store-${{ runner.os }}-
-
       - name: Run pnpm install
         run: pnpm install --frozen-lockfile --prefer-offline
       - name: Run lint-staged
@@ -125,40 +112,27 @@ jobs:
           node-version: 24.x
           cache: "pnpm"
 
-      # Cache pnpm store for faster dependency installation
-      - name: Get pnpm store directory
-        shell: bash
-        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - name: Setup pnpm store cache
-        uses: actions/cache@v5
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: pnpm-store-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            pnpm-store-${{ runner.os }}-
-
       # Cache TypeScript build info for incremental compilation
+      # Key on tsconfig only — tsbuildinfo handles incremental source changes internally
       - name: Cache TypeScript build info
         uses: actions/cache@v5
         with:
           path: |
             web-app/tsconfig.app.tsbuildinfo
             web-app/tsconfig.node.tsbuildinfo
-          key: typescript-${{ runner.os }}-${{ hashFiles('web-app/tsconfig*.json', 'web-app/src/**/*.ts', 'web-app/src/**/*.tsx') }}
+          key: typescript-${{ runner.os }}-${{ hashFiles('web-app/tsconfig*.json') }}
           restore-keys: |
             typescript-${{ runner.os }}-
 
-      # Cache Vite optimized deps and build cache
+      # Cache Vite pre-bundled deps (only invalidates when dependencies change, not source)
       - name: Cache Vite
         uses: actions/cache@v5
         with:
           path: |
             web-app/node_modules/.vite
             web-app/.vite
-          key: vite-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('web-app/vite.config.*', 'web-app/src/**') }}
+          key: vite-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml', 'web-app/vite.config.*') }}
           restore-keys: |
-            vite-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}-
             vite-${{ runner.os }}-
 
       # Cache Turbo for monorepo builds
@@ -475,26 +449,13 @@ jobs:
           node-version: 24.x
           cache: "pnpm"
 
-      # Cache pnpm store for faster dependency installation
-      - name: Get pnpm store directory
-        shell: bash
-        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - name: Setup pnpm store cache
-        uses: actions/cache@v5
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: pnpm-store-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            pnpm-store-${{ runner.os }}-
-
       # Cache Playwright browsers - significant time saver!
       - name: Cache Playwright browsers
         uses: actions/cache@v5
         id: playwright-cache
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('web-app/pnpm-lock.yaml') }}
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
             playwright-${{ runner.os }}-
 

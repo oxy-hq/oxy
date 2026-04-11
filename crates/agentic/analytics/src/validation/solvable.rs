@@ -270,7 +270,7 @@ impl SolvableRule for ColumnRefsValidRule {
 /// Checks: the query itself, CTE definitions, and subqueries in FROM.
 fn query_has_order_by(q: &Query) -> bool {
     // 1. Outermost query
-    if q.order_by.as_ref().is_some_and(|ob| !ob.exprs.is_empty()) {
+    if !q.order_by.is_empty() {
         return true;
     }
     // 2. CTE bodies

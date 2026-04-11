@@ -19,24 +19,30 @@ agentic-core = { workspace = true }
 agentic-connector = { workspace = true }
 agentic-llm = { workspace = true }
 duckdb = { workspace = true, optional = true }
-async-stream = "0.3"
-async-trait = "0.1"
-futures = "0.3"
-futures-core = "0.3"
-glob = "0.3"
-reqwest = { version = "0.12", features = ["json", "stream"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-serde_yaml = "0.9"
-sqlparser = { version = "0.53", features = ["visitor"] }
-statrs = "0.17"
-tokio = { version = "1", features = ["sync"] }
-tokio-stream = "0.1"
+async-stream = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+futures-core = { workspace = true }
+glob = { workspace = true }
+reqwest = { workspace = true, features = ["json", "stream"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+sqlparser = { workspace = true, features = ["visitor"] }
+statrs = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+tokio-stream = { workspace = true }
 tracing = { workspace = true }
-airlayer = { git = "https://github.com/oxy-hq/airlayer.git", tag = "v0.0.9" }
-strsim = "0.11"
+airlayer = { workspace = true }
+strsim = { workspace = true }
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt", "sync", "net", "io-util"] }
-async-trait = "0.1"
-rusqlite = { version = "0.32", features = ["bundled"] }
+tokio = { workspace = true, features = [
+    "macros",
+    "rt",
+    "sync",
+    "net",
+    "io-util",
+] }
+async-trait = { workspace = true }
+rusqlite = { workspace = true, features = ["bundled"] }

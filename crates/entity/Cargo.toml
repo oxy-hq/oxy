@@ -11,7 +11,7 @@ rust-version.workspace = true
 [dependencies]
 sea-orm = { workspace = true }
 chrono = { workspace = true }
-serde = { version = "1.0", features = ["derive"] }
+serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 indexmap = { workspace = true }
 

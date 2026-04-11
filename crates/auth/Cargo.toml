@@ -11,18 +11,18 @@ rust-version.workspace = true
 [dependencies]
 # Async runtime
 tokio = { workspace = true }
-async-trait = "0.1.89"
+async-trait = { workspace = true }
 
 # Web framework
-axum = { version = "0.8.8", features = ["macros"] }
+axum = { workspace = true, features = ["macros"] }
 
 # Database
 sea-orm = { workspace = true }
 entity = { workspace = true }
 
 # Cryptography
-jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
-base64 = "0.22"
+jsonwebtoken = { workspace = true, features = ["aws_lc_rs"] }
+base64 = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
@@ -30,7 +30,7 @@ serde_json = { workspace = true }
 
 # Error handling
 thiserror = { workspace = true }
-anyhow = "1.0"
+anyhow = { workspace = true }
 
 # Logging
 tracing = { workspace = true }

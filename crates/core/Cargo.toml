@@ -29,30 +29,39 @@ exclude = [
 ]
 
 [dependencies]
-aes-gcm = "0.10.3"
-anyhow = "1.0.102"
-argon2 = "0.5"
-arrow = { version = "=56.2.0", default-features = false, features = ["json"] } # arrow version has to comply with duckdb version
-assert_cmd = "2.2.0"
-async-openai = { workspace = true, features = ["byot", "chat-completion-types", "response-types", "_api", "responses", "chat-completion", "embedding-types", "embedding"] }
-async-stream = "0.3.6"
-async-trait = "0.1.89"
-axum = { version = "0.8.8", features = ["macros", "http2"] }
+aes-gcm = { workspace = true }
+anyhow = { workspace = true }
+argon2 = { workspace = true }
+arrow = { workspace = true, features = ["json"] } # arrow version has to comply with duckdb version
+assert_cmd = { workspace = true }
+async-openai = { workspace = true, features = [
+  "byot",
+  "chat-completion-types",
+  "response-types",
+  "_api",
+  "responses",
+  "chat-completion",
+  "embedding-types",
+  "embedding",
+] }
+async-stream = { workspace = true }
+async-trait = { workspace = true }
+axum = { workspace = true, features = ["macros", "http2"] }
 axum-server = { workspace = true }
-base64 = "0.22"
-bollard = "0.20.2"
-bcrypt = "0.17.1"
+base64 = { workspace = true }
+bollard = { workspace = true }
+bcrypt = { workspace = true }
 chrono = { workspace = true }
-chrono-english = "0.1.8"
-clap = { version = "4.6.0", features = ["derive"] }
-clickhouse = { version = "0.13.3", features = ["rustls-tls"] }
-colored = "3.1.1"
-connectorx = { version = "0.4.5", features = ["dst_arrow", "src_bigquery", "src_postgres", "src_mysql"] }
-csv = "1.4.0"
-dirs = "6.0.0"
-dotenv = "0.15.0"
+chrono-english = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+clickhouse = { workspace = true, features = ["rustls-tls"] }
+colored = { workspace = true }
+connectorx = { workspace = true, features = ["dst_arrow", "src_bigquery", "src_postgres", "src_mysql"] }
+csv = { workspace = true }
+dirs = { workspace = true }
+dotenv = { workspace = true }
 duckdb = { workspace = true }
-email_address = "0.2.9"
+email_address = { workspace = true }
 entity = { workspace = true }
 omni = { workspace = true }
 oxy-looker = { workspace = true }
@@ -69,109 +78,108 @@ oxy_globals = { workspace = true }
 # They depend on oxy, so oxy cannot depend on them
 # Use them via CLI crate instead
 a2a = { workspace = true }
-enum_dispatch = "0.3.13"
-futures = "0.3.32"
-garde = { version = "0.22.1", features = ["full"] }
-glob = "0.3.3"
-wildcard = "0.3.0"
-home = "0.5"
-human-panic = "2.0.8"
-humantime = "2.3.0"
-include_dir = "0.7"
-indoc = "2.0.7"
-itertools = "0.14.0"
-jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
-lancedb = "0.23.1"
-lazy_static = "1.5.0"
-libc = "0.2"
-lettre = "0.11.21"
-libduckdb-sys = { workspace = true } # lock version to avoid breaking changes, such as https://github.com/duckdb/duckdb-rs/issues number 436
+enum_dispatch = { workspace = true }
+futures = { workspace = true }
+garde = { workspace = true, features = ["full"] }
+glob = { workspace = true }
+wildcard = { workspace = true }
+home = { workspace = true }
+human-panic = { workspace = true }
+humantime = { workspace = true }
+include_dir = { workspace = true }
+indoc = { workspace = true }
+itertools = { workspace = true }
+jsonwebtoken = { workspace = true, features = ["aws_lc_rs"] }
+lancedb = { workspace = true }
+lazy_static = { workspace = true }
+libc = { workspace = true }
+lettre = { workspace = true }
 log = { workspace = true }
 migration = { workspace = true }
 minijinja = { workspace = true, features = ["loader"] }
-once_cell = "1.21.4"
-predicates = "3.1.4"
-pulldown-cmark = "0.13"
-rand = "0.8"
-schemars = { version = "0.8.22", features = ["derive", "impl_json_schema"] }
-scopeguard = "1.2.0"
+once_cell = { workspace = true }
+predicates = { workspace = true }
+pulldown-cmark = { workspace = true }
+rand = { workspace = true }
+schemars = { workspace = true, features = ["derive", "impl_json_schema"] }
+scopeguard = { workspace = true }
 sea-orm = { workspace = true }
 serde = { workspace = true }
-serde_arrow = { version = "0.13.7", features = ["arrow-56"] }
-serde_json = { workspace = true}
-serde_urlencoded = "0.7"
-self_update = "0.42.0"
-slugify = "0.1.0"
-sqlformat = { git = "https://github.com/shssoichiro/sqlformat-rs.git", rev = "80255c7" }
-syntect = "5.3"
-tabled = "0.20.0"
-terminal-light = "1.8.0"
-terminal_size = "0.4.4"
+serde_arrow = { workspace = true, features = ["arrow-56"] }
+serde_json = { workspace = true }
+serde_urlencoded = { workspace = true }
+self_update = { workspace = true }
+slugify = { workspace = true }
+sqlformat = { workspace = true }
+syntect = { workspace = true }
+tabled = { workspace = true }
+terminal-light = { workspace = true }
+terminal_size = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-tokio-stream = "0.1.18"
-tokio-util = "0.7.18"
-tower = "0.5.3"
-tower-http = { version = "0.6.8", features = ["fs", "cors", "trace", "timeout", "compression-gzip"] }
-tower-serve-static = "0.1.1"
-tqdm = "0.7.0"
-uuid = { version = "1.23.0", features = ["v4", "serde"] }
-reqwest = { version = "0.12.28" }
-secrecy = "0.10.3"
-fxhash = "0.2.1"
-deser-incomplete = "0.1.2"
-snowflake-api = { git = "https://github.com/oxy-hq/snowflake-rs.git", tag = "v0.13.0-browser-auth" }
-rmcp = {version = "0.8.5", features = ["server", "transport-sse-server", "transport-io"]}
-serde_with = "3.18.0"
+tokio-stream = { workspace = true }
+tokio-util = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true, features = ["fs", "cors", "trace", "timeout", "compression-gzip"] }
+tower-serve-static = { workspace = true }
+tqdm = { workspace = true }
+uuid = { workspace = true, features = ["v4", "serde"] }
+reqwest = { workspace = true }
+secrecy = { workspace = true }
+fxhash = { workspace = true }
+deser-incomplete = { workspace = true }
+snowflake-api = { workspace = true }
+rmcp = { workspace = true, features = ["server", "transport-sse-server", "transport-io"] }
+serde_with = { workspace = true }
 # we use chrono::DateTimeWithTimeZone, which is not currently supported by utoipa
 # need to use this until this PR is released https://github.com/juhaku/utoipa/pull/1367
-utoipa = {git="https://github.com/haitrr/utoipa.git", rev="776f86e", features = ["uuid", "chrono", "axum_extras"] }
-utoipa-axum = {git="https://github.com/haitrr/utoipa.git",rev="776f86e" }
-utoipa-swagger-ui={git="https://github.com/haitrr/utoipa.git",rev="776f86e", features = ["axum"] }
-strip-ansi-escapes = "=0.2.1"
+utoipa = { workspace = true, features = ["uuid", "chrono", "axum_extras"] }
+utoipa-axum = { workspace = true }
+utoipa-swagger-ui = { workspace = true, features = ["axum"] }
+strip-ansi-escapes = { workspace = true }
 regex = { workspace = true }
-url = "2.5.8"
-gcp-bigquery-client = "0.25.1"
-fehler = "1.0.0"
-sqlparser = "0.37.0"
-backoff = { version = "0.4.0", features = ["tokio"] }
-rustc_version_runtime = "0.3.0"
-apalis = "0.7.4"
-apalis-core = "0.7.4"
-apalis-sql = { version = "0.7.4", features = ["postgres", "tokio"] }
-sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres"] }
-semver = "1.0"
-rustls = { version = "0.23.37", features = ["aws_lc_rs"] }
-parquet = "=56.2.0"  # needs to be the same with arrow version
-short-uuid = "0.2.1"
-rapidfuzz = "0.5.0"
+url = { workspace = true }
+gcp-bigquery-client = { workspace = true }
+fehler = { workspace = true }
+sqlparser = { workspace = true }
+backoff = { workspace = true, features = ["tokio"] }
+rustc_version_runtime = { workspace = true }
+apalis = { workspace = true }
+apalis-core = { workspace = true }
+apalis-sql = { workspace = true, features = ["postgres", "tokio"] }
+sqlx = { workspace = true, features = ["runtime-tokio-rustls", "postgres"] }
+semver = { workspace = true }
+rustls = { workspace = true, features = ["aws_lc_rs"] }
+parquet = { workspace = true } # needs to be the same with arrow version
+short-uuid = { workspace = true }
+rapidfuzz = { workspace = true }
 indexmap = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt", "json"] }
-tracing-appender = "0.2.4"
-tracing-log = "0.2.0"
-opentelemetry = { version = "0.27", features = ["trace"] }
-opentelemetry-otlp = { version = "0.27", features = ["trace", "grpc-tonic"] }
-opentelemetry_sdk = { version = "0.27", features = ["trace", "rt-tokio"] }
-tracing-opentelemetry = "0.28"
-jsonschema = "0.33.0"
-ndarray = { version = "0.16.1" }
-hmac = "0.12.1"
-sha2 = "0.10.9"
-hex = "0.4.3"
+tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "json"] }
+tracing-appender = { workspace = true }
+tracing-log = { workspace = true }
+opentelemetry = { workspace = true, features = ["trace"] }
+opentelemetry-otlp = { workspace = true, features = ["trace", "grpc-tonic"] }
+opentelemetry_sdk = { workspace = true, features = ["trace", "rt-tokio"] }
+tracing-opentelemetry = { workspace = true }
+jsonschema = { workspace = true }
+ndarray = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
 serde_yaml = { workspace = true }
-urlencoding="2.1.3"
+urlencoding = { workspace = true }
 tempfile = { workspace = true }
-constant_time_eq = "0.4.2"
-xxhash-rust = { version = "0.8", features = ["xxh3"] }
-aho-corasick = "1.1"
-rkyv = { version = "0.7.46", features = ["validation"] }
+constant_time_eq = { workspace = true }
+xxhash-rust = { workspace = true, features = ["xxh3"] }
+aho-corasick = { workspace = true }
+rkyv = { workspace = true, features = ["validation"] }
 sentry = { workspace = true }
-df-interchange = { version = "0.3.3", features = ["arrow_54", "arrow_56"] }
+df-interchange = { workspace = true, features = ["arrow_54", "arrow_56"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-serial_test = "3.4.0"
+serial_test = { workspace = true }
 oxy-test-utils = { workspace = true }
 
 [lib]

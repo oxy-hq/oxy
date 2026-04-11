@@ -15,10 +15,10 @@ async-openai = { workspace = true, features = [
     "response-types",
     "_api",
 ] }
-axum = { version = "0.8.8" }
+axum = { workspace = true }
 oxy-shared = { workspace = true }
-schemars = { version = "0.8.22", features = ["derive"] }
-secrecy = "0.10.3"
+schemars = { workspace = true, features = ["derive"] }
+secrecy = { workspace = true }
 serde = { workspace = true }
-serde_with = "3.18.0"
-tracing = "0.1"
+serde_with = { workspace = true }
+tracing = { workspace = true }

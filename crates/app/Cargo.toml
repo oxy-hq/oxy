@@ -13,7 +13,7 @@ name = "oxy"
 path = "src/main.rs"
 
 [dependencies]
-handlebars = "6"
+handlebars = { workspace = true }
 
 # Core functionality
 oxy = { workspace = true }
@@ -33,9 +33,9 @@ entity = { workspace = true }
 
 # Async runtime
 tokio = { workspace = true }
-async-trait = "0.1.89"
-futures = "0.3.32"
-async-stream = "0.3.6"
+async-trait = { workspace = true }
+futures = { workspace = true }
+async-stream = { workspace = true }
 async-openai = { workspace = true, features = [
     "byot",
     "chat-completion-types",
@@ -53,119 +53,109 @@ serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 
 # Validation
-garde = { version = "0.22.1", features = ["full"] }
-schemars = { version = "0.8.22", features = ["derive", "impl_json_schema"] }
+garde = { workspace = true, features = ["full"] }
+schemars = { workspace = true, features = ["derive", "impl_json_schema"] }
 
 # Error handling
 thiserror = { workspace = true }
-anyhow = "1.0"
+anyhow = { workspace = true }
 
 # Logging/Tracing
 tracing = { workspace = true }
-tracing-subscriber = { version = "0.3.23", features = [
-    "env-filter",
-    "fmt",
-    "json",
-] }
+tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "json"] }
 log = { workspace = true }
 
 # Web framework
 axum = { workspace = true }
 axum-server = { workspace = true }
-tower = "0.5"
-tower-http = { version = "0.6.8", features = ["cors", "trace", "timeout"] }
-utoipa = { git = "https://github.com/haitrr/utoipa.git", rev = "776f86e", features = [
-    "uuid",
-    "chrono",
-    "axum_extras",
-] }
-utoipa-axum = { git = "https://github.com/haitrr/utoipa.git", rev = "776f86e" }
-utoipa-swagger-ui = { git = "https://github.com/haitrr/utoipa.git", rev = "776f86e", features = [
-    "axum",
-] }
+tower = { workspace = true }
+tower-http = { workspace = true, features = ["cors", "trace", "timeout"] }
+utoipa = { workspace = true, features = ["uuid", "chrono", "axum_extras"] }
+utoipa-axum = { workspace = true }
+utoipa-swagger-ui = { workspace = true, features = ["axum"] }
 
 # HTTP client
-reqwest = { version = "0.12.28" }
+reqwest = { workspace = true }
 
 # Code utilities
-enum_dispatch = "0.3.13"
-rapidfuzz = "0.5.0"
+enum_dispatch = { workspace = true }
+rapidfuzz = { workspace = true }
 
 # CLI
-clap = { version = "4.6.0", features = ["derive"] }
-colored = "3.1.1"
-indicatif = "0.17"
-headless_chrome = { version = "1.0" }
+clap = { workspace = true, features = ["derive"] }
+colored = { workspace = true }
+indicatif = { workspace = true }
+headless_chrome = { workspace = true }
 
 # Database
 sea-orm = { workspace = true }
-clickhouse = { version = "0.13.3", features = ["rustls-tls"] }
+clickhouse = { workspace = true, features = ["rustls-tls"] }
 
 # Machine learning (for traces analytics)
-linfa = "0.8.1"
-linfa-reduction = "0.8.1"
-ndarray = { version = "0.16", features = ["rayon"] }
+linfa = { workspace = true }
+linfa-reduction = { workspace = true }
+ndarray = { workspace = true, features = ["rayon"] }
 
 # Data processing
-arrow = { version = "=56.2.0", default-features = false, features = ["json"] }
-parquet = "=56.2.0"
+arrow = { workspace = true, features = ["json"] }
+parquet = { workspace = true }
 duckdb = { workspace = true }
 
 # Utilities
 uuid = { workspace = true }
 chrono = { workspace = true }
 minijinja = { workspace = true, features = ["loader"] }
-once_cell = "1.21.4"
-pulldown-cmark = "0.13"
-scopeguard = "1.2.0"
-tokio-util = "0.7.18"
-tokio-stream = "0.1.18"
-include_dir = "0.7"
-tower-serve-static = "0.1.1"
-xxhash-rust = { version = "0.8", features = ["xxh3"] }
-constant_time_eq = "0.4.2"
-hmac = "0.12.1"
-sha2 = "0.10.9"
-hex = "0.4.3"
-rand = "0.8"
-aws-config = { version = "1", features = ["behavior-version-latest"] }
-aws-sdk-sesv2 = "1"
-governor = "0.10"
-base64 = { version = "0.22", features = ["std"] }
+once_cell = { workspace = true }
+pulldown-cmark = { workspace = true }
+scopeguard = { workspace = true }
+tokio-util = { workspace = true }
+tokio-stream = { workspace = true }
+include_dir = { workspace = true }
+tower-serve-static = { workspace = true }
+xxhash-rust = { workspace = true, features = ["xxh3"] }
+constant_time_eq = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+rand = { workspace = true }
+aws-config = { workspace = true, features = ["behavior-version-latest"] }
+aws-sdk-sesv2 = { workspace = true }
+governor = { workspace = true }
+base64 = { workspace = true, features = ["std"] }
 regex = { workspace = true }
 indexmap = { workspace = true }
-itertools = "0.14.0"
-glob = "0.3.3"
-wildcard = "0.3.0"
-home = "0.5"
-human-panic = "2.0.8"
-humantime = "2.3.0"
-indoc = "2.0.7"
-jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
-lazy_static = "1.5.0"
-email_address = "0.2.9"
-serde_urlencoded = "0.7"
-self_update = "0.42.0"
-slugify = "0.1.0"
-syntect = "5.3"
-tabled = "0.20.0"
-terminal-light = "1.8.0"
-terminal_size = "0.4.4"
-secrecy = "0.10.3"
-serde_with = "3.18.0"
-strip-ansi-escapes = "=0.2.1"
-url = "2.5.8"
-urlencoding = "2.1.3"
-rustls = { version = "0.23.37", features = ["aws_lc_rs"] }
-tracing-appender = "0.2.4"
-tracing-log = "0.2.0"
-apalis = "0.7.4"
-apalis-core = "0.7.4"
-apalis-sql = { version = "0.7.4", features = ["postgres", "tokio"] }
-sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres"] }
-semver = "1.0"
-backoff = { version = "0.4.0", features = ["tokio"] }
-rustc_version_runtime = "0.3.0"
+itertools = { workspace = true }
+glob = { workspace = true }
+wildcard = { workspace = true }
+home = { workspace = true }
+human-panic = { workspace = true }
+humantime = { workspace = true }
+indoc = { workspace = true }
+jsonwebtoken = { workspace = true, features = ["aws_lc_rs"] }
+lazy_static = { workspace = true }
+email_address = { workspace = true }
+serde_urlencoded = { workspace = true }
+self_update = { workspace = true }
+slugify = { workspace = true }
+syntect = { workspace = true }
+tabled = { workspace = true }
+terminal-light = { workspace = true }
+terminal_size = { workspace = true }
+secrecy = { workspace = true }
+serde_with = { workspace = true }
+strip-ansi-escapes = { workspace = true }
+url = { workspace = true }
+urlencoding = { workspace = true }
+rustls = { workspace = true, features = ["aws_lc_rs"] }
+tracing-appender = { workspace = true }
+tracing-log = { workspace = true }
+apalis = { workspace = true }
+apalis-core = { workspace = true }
+apalis-sql = { workspace = true, features = ["postgres", "tokio"] }
+sqlx = { workspace = true, features = ["runtime-tokio-rustls", "postgres"] }
+semver = { workspace = true }
+backoff = { workspace = true, features = ["tokio"] }
+rustc_version_runtime = { workspace = true }
 sentry = { workspace = true }
 omni = { workspace = true }
 oxy-looker = { workspace = true }
@@ -174,15 +164,11 @@ oxy-looker = { workspace = true }
 migration = { workspace = true }
 
 # MCP
-rmcp = { version = "0.8.5", features = [
-    "server",
-    "transport-sse-server",
-    "transport-io",
-] }
+rmcp = { workspace = true, features = ["server", "transport-sse-server", "transport-io"] }
 
 # Other dependencies from core that might be needed
-dotenv = "0.15.0"
-dirs = "6.0.0"
+dotenv = { workspace = true }
+dirs = { workspace = true }
 
 [build-dependencies]
 chrono = { workspace = true }
@@ -190,6 +176,6 @@ chrono = { workspace = true }
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
 tempfile = { workspace = true }
-assert_cmd = "2.2.0"
-serial_test = "3.4.0"
+assert_cmd = { workspace = true }
+serial_test = { workspace = true }
 oxy-test-utils = { workspace = true }
