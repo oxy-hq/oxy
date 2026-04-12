@@ -341,33 +341,35 @@ impl BuilderSolver {
                         let change: Option<ProposeChangePayload> =
                             serde_json::from_str(&question).ok();
                         let answer_lower = resume.answer.to_lowercase();
-                        if answer_lower.contains("accept") {
-                            if let Some(change) = change.as_ref() {
-                                let apply_result = if change.delete {
-                                    delete_file(&self.workspace_root, &change.file_path).await
-                                } else {
-                                    apply_change(
-                                        &self.workspace_root,
-                                        &change.file_path,
-                                        &change.new_content,
-                                    )
-                                    .await
-                                };
-                                if let Err(err) = apply_result {
-                                    return Err((
-                                        BuilderError::Resume(err),
-                                        BackTarget::Solve(
-                                            serde_json::from_value(
-                                                resume.data.stage_data["spec"].clone(),
-                                            )
-                                            .unwrap_or(BuilderSpec {
+                        if answer_lower.contains("accept")
+                            && let Some(change) = change.as_ref()
+                        {
+                            let apply_result = if change.delete {
+                                delete_file(&self.workspace_root, &change.file_path).await
+                            } else {
+                                apply_change(
+                                    &self.workspace_root,
+                                    &change.file_path,
+                                    &change.new_content,
+                                )
+                                .await
+                            };
+                            if let Err(err) = apply_result {
+                                return Err((
+                                    BuilderError::Resume(err),
+                                    BackTarget::Solve(
+                                        serde_json::from_value(
+                                            resume.data.stage_data["spec"].clone(),
+                                        )
+                                        .unwrap_or(
+                                            BuilderSpec {
                                                 question: resume.data.original_input.clone(),
                                                 history: vec![],
-                                            }),
-                                            Default::default(),
+                                            },
                                         ),
-                                    ));
-                                }
+                                        Default::default(),
+                                    ),
+                                ));
                             }
                         }
 
