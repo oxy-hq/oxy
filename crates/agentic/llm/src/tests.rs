@@ -2401,6 +2401,79 @@ fn find_suspended_tool_id_finds_propose_change() {
     );
 }
 
+/// Regression test: when the LLM calls multiple `propose_change` tools in a
+/// single batch (e.g. one per view file), the tool loop suspends on the FIRST
+/// one.  `find_suspended_tool_id` must return the FIRST unmatched tool_use ID,
+/// not the last — otherwise the resumed request has earlier tool_uses without
+/// results and Anthropic rejects with
+/// "tool_use ids were found without tool_result blocks immediately after".
+#[test]
+fn find_suspended_tool_id_batched_propose_change_returns_first() {
+    use super::client::find_suspended_tool_id;
+
+    // All three propose_change calls are in one assistant turn; none have
+    // results yet (the first one suspended before any results were flushed).
+    let messages = vec![
+        json!({"role": "user", "content": "build the semantic layer"}),
+        json!({
+            "role": "assistant",
+            "content": [
+                {"type": "tool_use", "id": "toolu_pc1", "name": "propose_change", "input": {"file_path": "semantics/view1.view.yml"}},
+                {"type": "tool_use", "id": "toolu_pc2", "name": "propose_change", "input": {"file_path": "semantics/view2.view.yml"}},
+                {"type": "tool_use", "id": "toolu_pc3", "name": "propose_change", "input": {"file_path": "semantics/view3.view.yml"}}
+            ]
+        }),
+    ];
+    assert_eq!(
+        find_suspended_tool_id(&messages),
+        Some("toolu_pc1".to_string()),
+        "must return the FIRST propose_change id (the one that actually suspended)",
+    );
+}
+
+/// Regression test: `build_resume_messages` must produce a `tool_result` for
+/// every unmatched `tool_use` ID in the batch, not just the first.
+/// Validates that the resulting messages satisfy Anthropic's constraint that
+/// all `tool_use` IDs have matching `tool_result` blocks.
+#[test]
+fn build_resume_messages_batched_propose_change_all_ids_resolved() {
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let client =
+        LlmClient::with_provider(AnthropicMockProvider::new(vec![], Arc::clone(&captured)));
+
+    let prior = vec![
+        json!({"role": "user", "content": "build the semantic layer"}),
+        json!({
+            "role": "assistant",
+            "content": [
+                {"type": "tool_use", "id": "toolu_pc1", "name": "propose_change", "input": {"file_path": "v1.view.yml"}},
+                {"type": "tool_use", "id": "toolu_pc2", "name": "propose_change", "input": {"file_path": "v2.view.yml"}},
+                {"type": "tool_use", "id": "toolu_pc3", "name": "propose_change", "input": {"file_path": "v3.view.yml"}}
+            ]
+        }),
+    ];
+
+    let msgs = client.build_resume_messages(&prior, "", &[], "accepted");
+
+    // All three IDs must have tool_results.
+    validate_anthropic_messages(&msgs)
+        .expect("all three tool_use ids must have matching tool_results");
+
+    let last = msgs.last().unwrap();
+    let results: Vec<&str> = last["content"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|b| b["type"] == "tool_result")
+        .map(|b| b["tool_use_id"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        results,
+        ["toolu_pc1", "toolu_pc2", "toolu_pc3"],
+        "all three tool_use ids must appear in the tool_results"
+    );
+}
+
 // ── Batched tool call + ask_user suspension test ─────────────────────────
 
 /// Regression test: when the model calls multiple tools in one batch and

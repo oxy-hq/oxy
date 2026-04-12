@@ -13,7 +13,7 @@ use crate::{
 use super::solver::{BuilderSolver, dispatch_tool, make_resume_stage_data, record_tool_exchange};
 use agentic_core::solver::DomainSolver;
 
-#[derive(Clone, Debug, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 struct ProposeChangePayload {
     file_path: String,
     #[serde(default)]
@@ -22,9 +22,65 @@ struct ProposeChangePayload {
     delete: bool,
 }
 
-struct ResolvedSuspendedTool {
-    exchange: ToolExchange,
-    resume_answer: String,
+/// Extract all `propose_change` payloads from the most recent assistant turn.
+/// Handles all three provider message formats:
+/// - Anthropic: `{"role":"assistant","content":[{"type":"tool_use",...}]}`
+/// - OpenAI Responses API: `[{"type":"function_call","name":...,"arguments":...}]`
+/// - OpenAI Chat Completions: `{"role":"assistant","tool_calls":[...]}`
+///
+/// Unlike `find_all_unmatched_tool_ids`, this does not filter by matched status.
+/// `propose_change` always suspends immediately, so no call in the last turn
+/// will ever have a result yet — all of them need to be applied.
+fn extract_all_propose_changes(prior_messages: &[serde_json::Value]) -> Vec<ProposeChangePayload> {
+    let mut result = Vec::new();
+
+    let parse_args = |args: &str| serde_json::from_str::<ProposeChangePayload>(args).ok();
+
+    for m in prior_messages.iter().rev() {
+        // Anthropic: role:"assistant", content array with tool_use blocks.
+        if m["role"].as_str() == Some("assistant") {
+            if let Some(blocks) = m["content"].as_array() {
+                for block in blocks {
+                    if block["type"].as_str() == Some("tool_use")
+                        && block["name"].as_str() == Some("propose_change")
+                    {
+                        if let Ok(payload) =
+                            serde_json::from_value::<ProposeChangePayload>(block["input"].clone())
+                        {
+                            result.push(payload);
+                        }
+                    }
+                }
+            }
+            // OpenAI Chat Completions: tool_calls array.
+            if let Some(tool_calls) = m["tool_calls"].as_array() {
+                for tc in tool_calls {
+                    if tc["function"]["name"].as_str() == Some("propose_change") {
+                        if let Some(p) = tc["function"]["arguments"].as_str().and_then(parse_args) {
+                            result.push(p);
+                        }
+                    }
+                }
+            }
+            break; // only inspect the most recent assistant turn
+        }
+        // OpenAI Responses API: Value::Array of flat function_call items.
+        if let Some(items) = m.as_array() {
+            for item in items {
+                if item["type"].as_str() == Some("function_call")
+                    && item["name"].as_str() == Some("propose_change")
+                {
+                    if let Some(p) = item["arguments"].as_str().and_then(parse_args) {
+                        result.push(p);
+                    }
+                }
+            }
+            if !result.is_empty() {
+                break;
+            }
+        }
+    }
+    result
 }
 
 /// Maximum number of transient-error retries before surfacing the failure to
@@ -40,33 +96,25 @@ impl BuilderSolver {
     ) -> Result<BuilderSolution, (BuilderError, BackTarget<BuilderDomain>)> {
         let system = self.build_solving_system_prompt();
         let tools = all_tools();
-        let (current_initial, _resumed_tool_exchange, prior_tool_exchanges) =
-            match self.resume_data.take() {
-                Some(resume) => {
-                    let mut prior_tool_exchanges = resume
-                        .data
-                        .stage_data
-                        .get("tool_exchanges")
-                        .cloned()
-                        .and_then(|value| serde_json::from_value::<Vec<ToolExchange>>(value).ok())
-                        .unwrap_or_default();
-                    let (initial_messages, resumed_tool_exchange) =
-                        self.resume_initial_messages(&spec, resume).await?;
-                    if let Some(exchange) = resumed_tool_exchange.as_ref() {
-                        prior_tool_exchanges.push(exchange.clone());
-                    }
-                    (
-                        initial_messages,
-                        resumed_tool_exchange,
-                        prior_tool_exchanges,
-                    )
-                }
-                None => (
-                    self.build_initial_messages(&spec.question, &spec.history),
-                    None,
-                    Vec::new(),
-                ),
-            };
+        let (current_initial, prior_tool_exchanges) = match self.resume_data.take() {
+            Some(resume) => {
+                let mut prior_tool_exchanges = resume
+                    .data
+                    .stage_data
+                    .get("tool_exchanges")
+                    .cloned()
+                    .and_then(|value| serde_json::from_value::<Vec<ToolExchange>>(value).ok())
+                    .unwrap_or_default();
+                let (initial_messages, resumed_exchanges) =
+                    self.resume_initial_messages(&spec, resume).await?;
+                prior_tool_exchanges.extend(resumed_exchanges);
+                (initial_messages, prior_tool_exchanges)
+            }
+            None => (
+                self.build_initial_messages(&spec.question, &spec.history),
+                Vec::new(),
+            ),
+        };
         let exchanges = Arc::new(Mutex::new(prior_tool_exchanges));
 
         let test_runner = self.test_runner.clone();
@@ -312,7 +360,7 @@ impl BuilderSolver {
         &self,
         _spec: &BuilderSpec,
         resume: agentic_core::human_input::ResumeInput,
-    ) -> Result<(InitialMessages, Option<ToolExchange>), (BuilderError, BackTarget<BuilderDomain>)>
+    ) -> Result<(InitialMessages, Vec<ToolExchange>), (BuilderError, BackTarget<BuilderDomain>)>
     {
         let prior_messages = resume
             .data
@@ -336,13 +384,38 @@ impl BuilderSolver {
                     .ok()
                     .and_then(|v| v["type"].as_str().map(String::from));
 
-                let resolved_tool = match prompt_type.as_deref() {
+                // IMPORTANT: if a new suspending tool is added, add a branch here to
+                // apply its side effects across ALL batched calls in the last assistant
+                // turn (not just the first).  The LLM can batch multiple calls of the
+                // same suspending tool in one response; `build_resume_messages` already
+                // generates tool_results for all unmatched IDs, but the side effects
+                // (e.g. writing files for `propose_change`) must be handled here.
+                // See `extract_all_propose_changes` for the pattern to follow.
+                let (exchanges, resume_answer) = match prompt_type.as_deref() {
                     Some("propose_change") => {
-                        let change: Option<ProposeChangePayload> =
-                            serde_json::from_str(&question).ok();
                         let answer_lower = resume.answer.to_lowercase();
-                        if answer_lower.contains("accept") {
-                            if let Some(change) = change.as_ref() {
+                        let accepting = answer_lower.contains("accept");
+
+                        let all_changes = extract_all_propose_changes(&prior_messages);
+                        // Fall back to `question` if prior_messages didn't yield any payloads.
+                        let changes_to_apply: Vec<ProposeChangePayload> = if all_changes.is_empty()
+                        {
+                            serde_json::from_str::<ProposeChangePayload>(&question)
+                                .ok()
+                                .into_iter()
+                                .collect()
+                        } else {
+                            all_changes
+                        };
+
+                        if accepting {
+                            let spec_fallback =
+                                serde_json::from_value(resume.data.stage_data["spec"].clone())
+                                    .unwrap_or(BuilderSpec {
+                                        question: resume.data.original_input.clone(),
+                                        history: vec![],
+                                    });
+                            for change in &changes_to_apply {
                                 let apply_result = if change.delete {
                                     delete_file(&self.workspace_root, &change.file_path).await
                                 } else {
@@ -354,47 +427,64 @@ impl BuilderSolver {
                                     .await
                                 };
                                 if let Err(err) = apply_result {
+                                    // TODO: files applied before this one are not rolled back.
+                                    // apply_change/delete_file should be made transactional, or
+                                    // the loop should collect all errors before failing.
                                     return Err((
                                         BuilderError::Resume(err),
-                                        BackTarget::Solve(
-                                            serde_json::from_value(
-                                                resume.data.stage_data["spec"].clone(),
-                                            )
-                                            .unwrap_or(BuilderSpec {
-                                                question: resume.data.original_input.clone(),
-                                                history: vec![],
-                                            }),
-                                            Default::default(),
-                                        ),
+                                        BackTarget::Solve(spec_fallback, Default::default()),
                                     ));
                                 }
                             }
                         }
 
-                        let resume_answer = if answer_lower.contains("accept") {
-                            format!(
-                                "The user accepted the proposed change{}. The file has been updated.",
-                                change
-                                    .as_ref()
-                                    .map(|c| format!(" to '{}'", c.file_path))
-                                    .unwrap_or_default()
-                            )
+                        let resume_answer = if accepting {
+                            let paths: Vec<&str> = changes_to_apply
+                                .iter()
+                                .map(|c| c.file_path.as_str())
+                                .collect();
+                            if paths.is_empty() {
+                                "The user accepted the proposed change.".to_string()
+                            } else {
+                                format!(
+                                    "The user accepted the proposed change{}. The {} been updated.",
+                                    if paths.len() == 1 {
+                                        format!(" to '{}'", paths[0])
+                                    } else {
+                                        format!(
+                                            "s to {}",
+                                            paths
+                                                .iter()
+                                                .map(|p| format!("'{p}'"))
+                                                .collect::<Vec<_>>()
+                                                .join(", ")
+                                        )
+                                    },
+                                    if paths.len() == 1 {
+                                        "file has"
+                                    } else {
+                                        "files have"
+                                    }
+                                )
+                            }
                         } else {
                             "The user rejected the proposed change. Please reconsider or propose an alternative approach."
                                 .to_string()
                         };
 
-                        Some(ResolvedSuspendedTool {
-                            exchange: ToolExchange {
+                        let tool_exchanges: Vec<ToolExchange> = changes_to_apply
+                            .iter()
+                            .map(|c| ToolExchange {
                                 name: "propose_change".to_string(),
-                                input: question.clone(),
+                                input: serde_json::to_string(c).unwrap_or_default(),
                                 output: resume_answer.clone(),
-                            },
-                            resume_answer,
-                        })
+                            })
+                            .collect();
+
+                        (tool_exchanges, resume_answer)
                     }
-                    _ => Some(ResolvedSuspendedTool {
-                        exchange: ToolExchange {
+                    _ => {
+                        let exchange = ToolExchange {
                             name: "ask_user".to_string(),
                             input: serde_json::json!({
                                 "prompt": question,
@@ -402,31 +492,26 @@ impl BuilderSolver {
                             })
                             .to_string(),
                             output: resume.answer.clone(),
-                        },
-                        resume_answer: resume.answer.clone(),
-                    }),
+                        };
+                        (vec![exchange], resume.answer.clone())
+                    }
                 };
-
-                let resume_answer = resolved_tool
-                    .as_ref()
-                    .map(|tool| tool.resume_answer.as_str())
-                    .unwrap_or(resume.answer.as_str());
 
                 Ok((
                     InitialMessages::Messages(self.client.build_resume_messages(
                         &prior_messages,
                         &question,
                         &suggestions,
-                        resume_answer,
+                        &resume_answer,
                     )),
-                    resolved_tool.map(|tool| tool.exchange),
+                    exchanges,
                 ))
             }
             Some("max_tool_rounds") | Some("max_tokens") => Ok((
                 InitialMessages::Messages(agentic_llm::LlmClient::build_continue_messages(
                     &prior_messages,
                 )),
-                None,
+                vec![],
             )),
             other => Err((
                 BuilderError::Resume(format!(

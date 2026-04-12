@@ -95,33 +95,38 @@ impl LlmClient {
         suggestions: &[String],
         answer: &str,
     ) -> Vec<Value> {
-        // The ask_user tool call in the last assistant turn uses an id
-        // assigned by the model.  Extract it so the tool_result we append
-        // references the correct id.  The message format differs per
-        // provider, so we check all three shapes:
-        //
-        //  1. Anthropic:           role:"assistant" → content[{type:"tool_use", name, id}]
-        //  2. OpenAI Responses:    flat item {type:"function_call", name, call_id}
-        //  3. OpenAI Chat Compl.:  role:"assistant" → tool_calls[{id, function:{name}}]
         tracing::trace!(
             prior_messages_count = prior_messages.len(),
             "build_resume_messages called"
         );
-        let tool_use_id =
-            find_suspended_tool_id(prior_messages).unwrap_or_else(|| "ask_user_0".to_string());
+        let unmatched_ids = find_all_unmatched_tool_ids(prior_messages);
+        let ids_to_resolve = if unmatched_ids.is_empty() {
+            vec!["ask_user_0".to_string()]
+        } else {
+            unmatched_ids
+        };
 
         let _ = (question, suggestions); // already encoded in prior_messages
         let mut msgs = prior_messages.to_vec();
-        let new_results =
-            self.provider
-                .tool_result_messages(&[(tool_use_id, answer.to_string(), false)]);
+        // For batched tool calls, put the full answer on the first result only;
+        // subsequent results get "confirmed" to avoid repeating a long summary N times.
+        let result_pairs: Vec<(String, String, bool)> = ids_to_resolve
+            .into_iter()
+            .enumerate()
+            .map(|(i, id)| {
+                let content = if i == 0 {
+                    answer.to_string()
+                } else {
+                    "confirmed".to_string()
+                };
+                (id, content, false)
+            })
+            .collect();
+        let new_results = self.provider.tool_result_messages(&result_pairs);
 
-        // When `ask_user` was in a batch with other tools, the tool loop
-        // flushes results for already-executed tools before suspending.
-        // For Anthropic, those results are a single user message with
-        // `tool_result` blocks.  We must merge the ask_user result into
-        // that existing message rather than appending a new user message
-        // (Anthropic requires ALL tool_results for a batch in one message).
+        // Anthropic requires all tool_results for a batch in one user message.
+        // If the tool loop already flushed partial results before suspending,
+        // merge new results into that message rather than appending a new one.
         if let Some(last) = msgs.last_mut()
             && last["role"].as_str() == Some("user")
             && let Some(content) = last["content"].as_array()
@@ -130,12 +135,12 @@ impl LlmClient {
                 .iter()
                 .any(|b| b["type"].as_str() == Some("tool_result"));
             if has_tool_results {
-                // Merge: extract tool_result blocks from new_results
-                // and append them to the existing user message content.
                 let mut merged_content = content.clone();
                 for r in &new_results {
                     if let Some(blocks) = r["content"].as_array() {
                         merged_content.extend(blocks.iter().cloned());
+                    } else {
+                        debug_assert!(false, "tool_result_messages returned a result without a content array");
                     }
                 }
                 last["content"] = Value::Array(merged_content);
@@ -143,7 +148,6 @@ impl LlmClient {
             }
         }
 
-        // No partial results to merge — just append.
         msgs.extend(new_results);
         msgs
     }
@@ -854,26 +858,12 @@ pub(super) async fn emit_core<Ev: DomainEvents>(tx: &Option<EventStream<Ev>>, ev
     }
 }
 
-/// Extract the tool-call ID of the suspended tool from a provider-native
-/// message history.
-///
-/// The suspended tool is the last tool_use (any name) in the history that
-/// does NOT yet have a corresponding tool_result.  This works for both
-/// `ask_user` (analytics pipeline) and `propose_change` (builder pipeline),
-/// or any future tool that returns [`ToolError::Suspended`].
-///
-/// Supports all three provider formats:
-///  - **Anthropic**: `{role:"assistant", content:[{type:"tool_use", id}]}`
-///    with results in `{role:"user", content:[{type:"tool_result", tool_use_id}]}`
-///  - **OpenAI Responses API**: `{type:"function_call", call_id}` items
-///    with results in `{type:"function_call_output", call_id}` items
-///  - **OpenAI Chat Completions**: `{role:"assistant", tool_calls:[{id}]}`
-///    with results in `{role:"tool", tool_call_id}` messages
-pub(crate) fn find_suspended_tool_id(messages: &[Value]) -> Option<String> {
-    // Step 1: collect all tool_use_ids that already have a matching tool_result.
+/// Return all unmatched tool-call IDs from the most recent assistant turn, in
+/// forward order.  IDs are returned for every tool_use that lacks a result —
+/// needed when the LLM batches multiple calls and suspends on the first.
+pub(crate) fn find_all_unmatched_tool_ids(messages: &[Value]) -> Vec<String> {
     let mut matched: std::collections::HashSet<String> = std::collections::HashSet::new();
     for m in messages.iter() {
-        // Anthropic: user message with tool_result blocks
         if m["role"].as_str() == Some("user")
             && let Some(content) = m["content"].as_array()
         {
@@ -885,19 +875,16 @@ pub(crate) fn find_suspended_tool_id(messages: &[Value]) -> Option<String> {
                 }
             }
         }
-        // OpenAI Chat: role:"tool" messages
         if m["role"].as_str() == Some("tool")
             && let Some(id) = m["tool_call_id"].as_str()
         {
             matched.insert(id.to_string());
         }
-        // OpenAI Responses: flat function_call_output item
         if m["type"].as_str() == Some("function_call_output")
             && let Some(id) = m["call_id"].as_str()
         {
             matched.insert(id.to_string());
         }
-        // OpenAI Responses: array of items (assistant_message returns Value::Array)
         if let Some(items) = m.as_array() {
             for item in items.iter() {
                 if item["type"].as_str() == Some("function_call_output")
@@ -909,29 +896,30 @@ pub(crate) fn find_suspended_tool_id(messages: &[Value]) -> Option<String> {
         }
     }
 
-    // Step 2: find the last tool_use whose id is not yet matched.
     for m in messages.iter().rev() {
-        // Anthropic: role:"assistant" with content blocks
+        let mut unmatched = Vec::new();
         if m["role"].as_str() == Some("assistant") {
             if let Some(blocks) = m["content"].as_array() {
-                for b in blocks.iter().rev() {
+                for b in blocks.iter() {
                     if b["type"].as_str() == Some("tool_use")
                         && let Some(id) = b["id"].as_str()
                         && !matched.contains(id)
                     {
-                        return Some(id.to_string());
+                        unmatched.push(id.to_string());
                     }
                 }
             }
-            // OpenAI Chat Completions: tool_calls array
             if let Some(tool_calls) = m["tool_calls"].as_array() {
-                for tc in tool_calls.iter().rev() {
+                for tc in tool_calls.iter() {
                     if let Some(id) = tc["id"].as_str()
                         && !matched.contains(id)
                     {
-                        return Some(id.to_string());
+                        unmatched.push(id.to_string());
                     }
                 }
+            }
+            if !unmatched.is_empty() {
+                return unmatched;
             }
         }
         // OpenAI Responses: flat function_call item
@@ -939,21 +927,31 @@ pub(crate) fn find_suspended_tool_id(messages: &[Value]) -> Option<String> {
             && let Some(id) = m["call_id"].as_str()
             && !matched.contains(id)
         {
-            return Some(id.to_string());
+            return vec![id.to_string()];
         }
         // OpenAI Responses: array of items
         if let Some(items) = m.as_array() {
-            for item in items.iter().rev() {
+            for item in items.iter() {
                 if item["type"].as_str() == Some("function_call")
                     && let Some(id) = item["call_id"].as_str()
                     && !matched.contains(id)
                 {
-                    return Some(id.to_string());
+                    unmatched.push(id.to_string());
                 }
+            }
+            if !unmatched.is_empty() {
+                return unmatched;
             }
         }
     }
-    None
+    Vec::new()
+}
+
+/// Returns the first unmatched tool_use ID from the most recent assistant turn
+/// — the tool that actually suspended.
+#[cfg(test)]
+pub(crate) fn find_suspended_tool_id(messages: &[Value]) -> Option<String> {
+    find_all_unmatched_tool_ids(messages).into_iter().next()
 }
 
 /// Try to extract the first top-level JSON object from `text` that may be
