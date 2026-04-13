@@ -150,5 +150,4 @@ jobs:
           gh issue create \
             --repo oxy-hq/oxy-internal \
             --title "Weekly Enhancement Suggestions — ${DATE}" \
-            --body-file body.md \
-            --label "automated"
+            --body-file body.md 
