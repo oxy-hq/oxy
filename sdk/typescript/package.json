@@ -62,7 +62,7 @@
   },
   "devDependencies": {
     "@duckdb/duckdb-wasm": "^1.32.0",
-    "@types/node": "^25.5.0",
+    "@types/node": "^25.6.0",
     "@types/react": "^19.2.14",
     "@typescript-eslint/eslint-plugin": "^8.57.2",
     "@typescript-eslint/parser": "^8.57.2",
@@ -70,7 +70,7 @@
     "react": "^19.2.4",
     "tsdown": "^0.21.5",
     "typescript": "^6.0.2",
-    "vitest": "^4.1.1"
+    "vitest": "^4.1.4"
   },
   "engines": {
     "node": ">=18.0.0"
