@@ -152,7 +152,7 @@ jobs:
         id: time
         run: echo "current_time=$(date -u +'-%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
       - name: Upload files to github release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           draft: false
           prerelease: ${{ inputs.tag != '' }}

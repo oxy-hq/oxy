@@ -473,7 +473,7 @@ jobs:
 
       - name: Create stable release
         if: needs.determine-build-type.outputs.is_stable == 'true'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           draft: false
           prerelease: true
@@ -490,7 +490,7 @@ jobs:
       # Edge release
       - name: Create edge release
         if: needs.determine-build-type.outputs.is_stable == 'false'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           token: ${{ steps.app-token.outputs.token }}
           draft: false
