@@ -572,8 +572,6 @@ async fn serve_application(
         });
     }
 
-    let _shutdown = create_shutdown_signal();
-
     if args.http2_only {
         // If TLS cert/key files exist, use HTTPS+HTTP/2
         let cert_exists = std::path::Path::new(&args.tls_cert).exists();
@@ -666,6 +664,16 @@ async fn create_shutdown_signal() {
             tracing::info!("Received termination signal, cleaning up...");
         },
     }
+
+    // If the user presses Ctrl+C again while graceful shutdown is in progress,
+    // force-exit immediately instead of showing ^C and hanging.
+    tokio::spawn(async {
+        signal::ctrl_c()
+            .await
+            .expect("failed to install second Ctrl+C handler");
+        tracing::warn!("Received second shutdown signal, forcing exit");
+        std::process::exit(1);
+    });
 
     // Cleanup Docker containers (stop and remove all oxy-managed containers)
     docker::cleanup_containers().await;
