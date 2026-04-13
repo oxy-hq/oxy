@@ -140,7 +140,10 @@ impl LlmClient {
                     if let Some(blocks) = r["content"].as_array() {
                         merged_content.extend(blocks.iter().cloned());
                     } else {
-                        debug_assert!(false, "tool_result_messages returned a result without a content array");
+                        debug_assert!(
+                            false,
+                            "tool_result_messages returned a result without a content array"
+                        );
                     }
                 }
                 last["content"] = Value::Array(merged_content);

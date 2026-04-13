@@ -62,7 +62,7 @@ fmt:
 # Check formatting without writing
 fmt-check:
     cargo fmt --check
-    pnpm format:docs:check
+    pnpm --filter oxy-web run format:check
 
 # ── Test ───────────────────────────────────────────────────────────────────────
 

@@ -19,7 +19,7 @@ pub const LOCAL_GUEST_EMAIL: &str = "<local-user@example.com>";
 /// 2. If `OXY_OWNER` is set, only that email is admin (plus the local guest).
 /// 3. If `OXY_OWNER` is unset, everyone is admin (permissive default for single-user installs).
 pub fn is_local_admin(owner_email: Option<&str>, email: &str) -> bool {
-    email == LOCAL_GUEST_EMAIL || owner_email.map_or(true, |owner| owner == email)
+    email == LOCAL_GUEST_EMAIL || owner_email.is_none_or(|owner| owner == email)
 }
 
 /// Convenience wrapper that reads `OXY_OWNER` from the environment.

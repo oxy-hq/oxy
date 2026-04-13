@@ -43,22 +43,20 @@ fn extract_all_propose_changes(prior_messages: &[serde_json::Value]) -> Vec<Prop
                 for block in blocks {
                     if block["type"].as_str() == Some("tool_use")
                         && block["name"].as_str() == Some("propose_change")
-                    {
-                        if let Ok(payload) =
+                        && let Ok(payload) =
                             serde_json::from_value::<ProposeChangePayload>(block["input"].clone())
-                        {
-                            result.push(payload);
-                        }
+                    {
+                        result.push(payload);
                     }
                 }
             }
             // OpenAI Chat Completions: tool_calls array.
             if let Some(tool_calls) = m["tool_calls"].as_array() {
                 for tc in tool_calls {
-                    if tc["function"]["name"].as_str() == Some("propose_change") {
-                        if let Some(p) = tc["function"]["arguments"].as_str().and_then(parse_args) {
-                            result.push(p);
-                        }
+                    if tc["function"]["name"].as_str() == Some("propose_change")
+                        && let Some(p) = tc["function"]["arguments"].as_str().and_then(parse_args)
+                    {
+                        result.push(p);
                     }
                 }
             }
@@ -69,10 +67,9 @@ fn extract_all_propose_changes(prior_messages: &[serde_json::Value]) -> Vec<Prop
             for item in items {
                 if item["type"].as_str() == Some("function_call")
                     && item["name"].as_str() == Some("propose_change")
+                    && let Some(p) = item["arguments"].as_str().and_then(parse_args)
                 {
-                    if let Some(p) = item["arguments"].as_str().and_then(parse_args) {
-                        result.push(p);
-                    }
+                    result.push(p);
                 }
             }
             if !result.is_empty() {

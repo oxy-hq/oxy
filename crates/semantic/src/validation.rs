@@ -111,10 +111,10 @@ impl SemanticValidator for Entity {
         }
 
         // Validate description (optional)
-        if let Some(ref desc) = self.description {
-            if desc.is_empty() {
-                result.add_error("Entity description cannot be empty".to_string());
-            }
+        if let Some(ref desc) = self.description
+            && desc.is_empty()
+        {
+            result.add_error("Entity description cannot be empty".to_string());
         }
 
         // Validate key or keys
@@ -330,10 +330,10 @@ impl SemanticValidator for View {
         }
 
         // Validate description (optional)
-        if let Some(ref desc) = self.description {
-            if desc.is_empty() {
-                result.add_error("View description cannot be empty".to_string());
-            }
+        if let Some(ref desc) = self.description
+            && desc.is_empty()
+        {
+            result.add_error("View description cannot be empty".to_string());
         }
 
         // Validate data source configuration
@@ -463,10 +463,10 @@ impl SemanticValidator for Topic {
         }
 
         // Validate description (optional)
-        if let Some(ref desc) = self.description {
-            if desc.is_empty() {
-                result.add_error("Topic description cannot be empty".to_string());
-            }
+        if let Some(ref desc) = self.description
+            && desc.is_empty()
+        {
+            result.add_error("Topic description cannot be empty".to_string());
         }
 
         // Validate views
