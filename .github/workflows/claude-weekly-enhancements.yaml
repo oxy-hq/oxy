@@ -103,7 +103,7 @@ jobs:
           claude_args: |
             --allowedTools "Read,Glob,Grep,Write,Bash(git log:*),Bash(git diff:*),Bash(git show:*),Bash(python3:*)"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: findings-${{ matrix.category }}
