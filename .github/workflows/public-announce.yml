@@ -2,7 +2,7 @@ name: Public Announce Releases to Slack
 
 on:
   workflow_run:
-    workflows: ["Public Unified Release", "Public Release"]
+    workflows: ["Public Release"]
     types:
       - completed
 
@@ -10,166 +10,268 @@ jobs:
   announce-to-slack:
     if: github.repository == 'oxy-hq/oxy' && github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Determine build type and channel
         id: build_info
         run: |
-          WORKFLOW="${{ github.event.workflow_run.name }}"
           EVENT="${{ github.event.workflow_run.event }}"
           BRANCH="${{ github.event.workflow_run.head_branch }}"
+          SHA="${{ github.event.workflow_run.head_sha }}"
 
-          echo "Workflow: $WORKFLOW"
-          echo "Event: $EVENT"
-          echo "Branch: $BRANCH"
+          echo "event=$EVENT branch=$BRANCH sha=$SHA"
 
-          # Detect build type
-          if [[ "$WORKFLOW" == "Public Release" && "$EVENT" == "push" && "$BRANCH" != "main" ]]; then
-            # Stable release (tagged)
-            echo "type=Stable" >> $GITHUB_OUTPUT
-            echo "emoji=:rocket:" >> $GITHUB_OUTPUT
-            echo "channel=product-releases-prod" >> $GITHUB_OUTPUT
-            echo "generate_changelog=false" >> $GITHUB_OUTPUT
-            echo "version=$BRANCH" >> $GITHUB_OUTPUT
-          elif [[ "$WORKFLOW" == "Public Unified Release" && "$EVENT" == "schedule" ]]; then
-            # Nightly build (scheduled)
-            echo "type=Nightly" >> $GITHUB_OUTPUT
-            echo "emoji=:crescent_moon:" >> $GITHUB_OUTPUT
-            echo "channel=product-releases-dev" >> $GITHUB_OUTPUT
-            echo "generate_changelog=true" >> $GITHUB_OUTPUT
-            echo "version=nightly" >> $GITHUB_OUTPUT
-          elif [[ "$WORKFLOW" == "Public Unified Release" && "$EVENT" == "push" && "$BRANCH" == "main" ]]; then
-            # Edge build (push to main)
-            echo "type=Edge" >> $GITHUB_OUTPUT
-            echo "emoji=:zap:" >> $GITHUB_OUTPUT
-            echo "channel=product-releases-dev" >> $GITHUB_OUTPUT
-            echo "generate_changelog=true" >> $GITHUB_OUTPUT
-            echo "version=edge" >> $GITHUB_OUTPUT
+          # Stable: push event where head_branch is a semver tag
+          if [[ "$EVENT" == "push" && "$BRANCH" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            {
+              echo "type=stable"
+              echo "channel=product-releases-prod"
+              echo "emoji=:rocket:"
+              echo "version=$BRANCH"
+              echo "release_repo=oxy-hq/oxy"
+            } >> "$GITHUB_OUTPUT"
+          # Edge: scheduled builds or pushes to main
+          elif [[ "$EVENT" == "schedule" || ( "$EVENT" == "push" && "$BRANCH" == "main" ) ]]; then
+            {
+              echo "type=edge"
+              echo "channel=product-releases-dev"
+              echo "emoji=:zap:"
+              echo "version=edge-${SHA:0:7}"
+              echo "release_repo=oxy-hq/oxy-nightly"
+            } >> "$GITHUB_OUTPUT"
           else
-            echo "Unknown build type, skipping announcement"
-            exit 0
+            echo "type=skip" >> "$GITHUB_OUTPUT"
+            echo "Unrecognized trigger (event=$EVENT, branch=$BRANCH) — skipping."
           fi
 
-      - name: Get changelog since last successful build
-        id: changelog
-        if: steps.build_info.outputs.generate_changelog == 'true'
+      - name: Resolve previous reference
+        id: prev
+        if: steps.build_info.outputs.type != 'skip'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          TYPE="${{ steps.build_info.outputs.type }}"
+          VERSION="${{ steps.build_info.outputs.version }}"
           CURRENT_SHA="${{ github.event.workflow_run.head_sha }}"
-          WORKFLOW_NAME="${{ github.event.workflow_run.name }}"
           CURRENT_RUN_ID="${{ github.event.workflow_run.id }}"
 
-          # Find the previous successful run (excluding current)
-          PREV_SHA=$(gh api "/repos/${{ github.repository }}/actions/workflows/public-release.yaml/runs?status=success&per_page=10" \
-            --jq "[.workflow_runs[] | select(.id != ${CURRENT_RUN_ID} and .head_sha != \"${CURRENT_SHA}\")] | .[0].head_sha // empty")
+          git fetch --tags --force --quiet
 
-          if [ -z "$PREV_SHA" ]; then
-            echo "No previous successful run found"
-            echo "changelog=_First successful build or no previous builds found_" >> $GITHUB_OUTPUT
-            echo "commit_count=0" >> $GITHUB_OUTPUT
-          else
-            echo "Previous successful build SHA: $PREV_SHA"
-            echo "Current build SHA: $CURRENT_SHA"
+          PREV_LABEL=""
+          PREV_SHA=""
 
-            # Get commit count
-            COMMIT_COUNT=$(git rev-list --count ${PREV_SHA}..${CURRENT_SHA} 2>/dev/null || echo "0")
-            echo "commit_count=${COMMIT_COUNT}" >> $GITHUB_OUTPUT
-
-            # Generate changelog (limit to 20 commits for Slack message size)
-            CHANGELOG=$(git log --pretty=format:"• %s (%h)" ${PREV_SHA}..${CURRENT_SHA} --no-merges 2>/dev/null | head -20)
-
-            if [ -z "$CHANGELOG" ]; then
-              CHANGELOG="_No new commits_"
-            elif [ "$COMMIT_COUNT" -gt 20 ]; then
-              CHANGELOG="${CHANGELOG}
-          _...and $((COMMIT_COUNT - 20)) more commits_"
+          if [[ "$TYPE" == "stable" ]]; then
+            # Most recent stable tag that isn't the current one
+            PREV_LABEL=$(git tag --list '[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname \
+              | grep -v "^${VERSION}$" | head -1 || true)
+            if [[ -n "$PREV_LABEL" ]]; then
+              PREV_SHA=$(git rev-parse "$PREV_LABEL")
             fi
-
-            # Escape for GitHub Actions output
-            {
-              echo "changelog<<EOF"
-              echo "$CHANGELOG"
-              echo "EOF"
-            } >> $GITHUB_OUTPUT
+          else
+            # Most recent successful edge build (schedule or push-to-main) that isn't this run
+            PREV_SHA=$(gh api \
+              "/repos/${{ github.repository }}/actions/workflows/public-release.yaml/runs?status=success&per_page=30" \
+              --jq "[.workflow_runs[]
+                      | select(.id != ${CURRENT_RUN_ID})
+                      | select(.event == \"schedule\" or (.event == \"push\" and .head_branch == \"main\"))
+                      | .head_sha] | .[0] // empty")
+            if [[ -n "$PREV_SHA" ]]; then
+              PREV_LABEL="${PREV_SHA:0:7}"
+            fi
           fi
+
+          {
+            echo "label=$PREV_LABEL"
+            echo "sha=$PREV_SHA"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Install git-cliff (stable only)
+        if: steps.build_info.outputs.type == 'stable'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff
+
+      - name: Build changelog
+        id: changelog
+        if: steps.build_info.outputs.type != 'skip'
+        run: |
+          TYPE="${{ steps.build_info.outputs.type }}"
+          VERSION="${{ steps.build_info.outputs.version }}"
+          CURRENT_SHA="${{ github.event.workflow_run.head_sha }}"
+          PREV_SHA="${{ steps.prev.outputs.sha }}"
+          PREV_LABEL="${{ steps.prev.outputs.label }}"
+          REPO_URL="https://github.com/${{ github.repository }}"
+
+          CHANGELOG=""
+          COMMIT_COUNT=0
+          CONTRIBUTORS=""
+          BREAKING="false"
+          LAST_COMMIT_AT=""
+          COMPARE_URL=""
+
+          LAST_COMMIT_AT=$(git log -1 --pretty=format:'%cI' "$CURRENT_SHA" 2>/dev/null || echo "")
+          echo "last_commit_at=$LAST_COMMIT_AT" >> "$GITHUB_OUTPUT"
+
+          if [[ -z "$PREV_SHA" ]]; then
+            {
+              echo "commit_count=0"
+              echo "compare_url="
+              echo "contributors="
+              echo "breaking=false"
+              echo "body<<BODYEOF"
+              echo "_No previous reference found — cannot compute diff._"
+              echo "BODYEOF"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          COMMIT_COUNT=$(git rev-list --count "${PREV_SHA}..${CURRENT_SHA}" 2>/dev/null || echo 0)
+          echo "commit_count=$COMMIT_COUNT" >> "$GITHUB_OUTPUT"
+
+          COMPARE_URL="${REPO_URL}/compare/${PREV_LABEL}...${VERSION}"
+          echo "compare_url=$COMPARE_URL" >> "$GITHUB_OUTPUT"
+
+          CONTRIBUTORS=$(git log --pretty=format:'%an' "${PREV_SHA}..${CURRENT_SHA}" \
+            | sort -u | paste -sd ', ' -)
+          echo "contributors=$CONTRIBUTORS" >> "$GITHUB_OUTPUT"
+
+          if git log --format='%B' "${PREV_SHA}..${CURRENT_SHA}" \
+              | grep -qE '^BREAKING CHANGE:|^[a-z]+(\([^)]*\))?!:'; then
+            BREAKING="true"
+          fi
+          echo "breaking=$BREAKING" >> "$GITHUB_OUTPUT"
+
+          if [[ "$TYPE" == "stable" ]]; then
+            # Full categorized changelog from git-cliff
+            BODY=$(git cliff "${PREV_LABEL}..${VERSION}" --strip all 2>/dev/null || echo "")
+            if [[ -z "$BODY" ]]; then
+              BODY=$(git log --no-merges \
+                --pretty=format:"• <${REPO_URL}/commit/%H|%h> %s — _%an_" \
+                "${PREV_SHA}..${CURRENT_SHA}" | head -30)
+            fi
+          else
+            # Flat list for edge — most recent first, up to 20
+            BODY=$(git log --no-merges \
+              --pretty=format:"• <${REPO_URL}/commit/%H|%h> %s — _%an_" \
+              "${PREV_SHA}..${CURRENT_SHA}" | head -20)
+            if [[ "$COMMIT_COUNT" -gt 20 ]]; then
+              BODY="${BODY}"$'\n'"_...and $((COMMIT_COUNT - 20)) more commits — see compare link below_"
+            fi
+          fi
+
+          if [[ -z "$BODY" ]]; then
+            BODY="_No new commits_"
+          fi
+
+          # Turn (#1234) into clickable PR links (use @ delimiter since replacement contains |)
+          BODY=$(printf '%s' "$BODY" | sed -E "s@\(#([0-9]+)\)@(<${REPO_URL}/pull/\1|#\1>)@g")
+
+          {
+            echo "body<<BODYEOF"
+            echo "$BODY"
+            echo "BODYEOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build Slack message
         id: message
+        if: steps.build_info.outputs.type != 'skip'
         run: |
-          BUILD_TYPE="${{ steps.build_info.outputs.type }}"
+          TYPE="${{ steps.build_info.outputs.type }}"
           EMOJI="${{ steps.build_info.outputs.emoji }}"
           VERSION="${{ steps.build_info.outputs.version }}"
-          BRANCH="${{ github.event.workflow_run.head_branch }}"
+          RELEASE_REPO="${{ steps.build_info.outputs.release_repo }}"
           SHA="${{ github.event.workflow_run.head_sha }}"
-          UPDATED_AT="${{ github.event.workflow_run.updated_at }}"
+          SHORT_SHA="${SHA:0:7}"
+          CUT_AT="${{ github.event.workflow_run.updated_at }}"
+          LAST_COMMIT_AT="${{ steps.changelog.outputs.last_commit_at }}"
           WORKFLOW_URL="${{ github.event.workflow_run.html_url }}"
+          COMMIT_URL="https://github.com/${{ github.repository }}/commit/${SHA}"
+          PREV_LABEL="${{ steps.prev.outputs.label }}"
+          COMMIT_COUNT="${{ steps.changelog.outputs.commit_count }}"
+          CONTRIBUTORS="${{ steps.changelog.outputs.contributors }}"
+          BREAKING="${{ steps.changelog.outputs.breaking }}"
+          COMPARE_URL="${{ steps.changelog.outputs.compare_url }}"
+          CHANGELOG="${{ steps.changelog.outputs.body }}"
 
-          if [[ "$BUILD_TYPE" == "Stable" ]]; then
-            # Stable release message
-            TITLE="$EMOJI Stable Release $VERSION $EMOJI"
-            MESSAGE="*Details:*
-          - *Version:* $VERSION
-          - *Completed At:* $UPDATED_AT
-
-          To install: \`bash <(curl --proto '=https' --tlsv1.2 -LsSf https://get.oxy.tech)\`
-          To install this version: \`OXY_VERSION=$VERSION bash <(curl --proto '=https' --tlsv1.2 -LsSf https://get.oxy.tech)\`
-
-          Docker images: \`ghcr.io/oxy-hq/oxy:$VERSION\`
-
-          View the workflow run: $WORKFLOW_URL"
-          else
-            # Nightly/Edge build message
-            CHANGELOG="${{ steps.changelog.outputs.changelog }}"
-            COMMIT_COUNT="${{ steps.changelog.outputs.commit_count }}"
-            INSTALL_CMD="${{ steps.build_info.outputs.type == 'Nightly' && 'OXY_CHANNEL=nightly ' || '' }}bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)"
-
-            TITLE="$EMOJI $BUILD_TYPE Build Completed $EMOJI"
-            MESSAGE="*Details:*
-          - *Build Type:* $BUILD_TYPE
-          - *Branch:* $BRANCH
-          - *Commit:* \`$SHA\`
-          - *Completed At:* $UPDATED_AT
-
-          *Changes ($COMMIT_COUNT commits):*
-          $CHANGELOG
-
-          *Links:*
-          • <https://github.com/oxy-hq/oxy-nightly/releases/latest|Latest Release>
-          • <$WORKFLOW_URL|Workflow Run>
-
-          To install: \`$INSTALL_CMD\`"
+          PREV_SUFFIX=""
+          if [[ -n "$PREV_LABEL" ]]; then
+            PREV_SUFFIX=" (previous: \`$PREV_LABEL\`)"
           fi
 
-          # Export for next step
+          BREAKING_LINE=""
+          if [[ "$BREAKING" == "true" ]]; then
+            BREAKING_LINE=":warning: *This release contains breaking changes.*
+          "
+          fi
+
+          COMPARE_LINE=""
+          if [[ -n "$COMPARE_URL" ]]; then
+            COMPARE_LINE="• <${COMPARE_URL}|Full diff (\`${PREV_LABEL}...${VERSION}\`)>
+          "
+          fi
+
+          CONTRIB_LINE=""
+          if [[ -n "$CONTRIBUTORS" ]]; then
+            CONTRIB_LINE="*Contributors:* $CONTRIBUTORS
+          "
+          fi
+
+          if [[ "$TYPE" == "stable" ]]; then
+            TITLE="$EMOJI Stable Release \`$VERSION\` is live"
+            INSTALL_BLOCK='`bash <(curl --proto '"'"'=https'"'"' --tlsv1.2 -LsSf https://get.oxy.tech)`
+          To pin this version: `OXY_VERSION='"$VERSION"' bash <(curl --proto '"'"'=https'"'"' --tlsv1.2 -LsSf https://get.oxy.tech)`'
+            DOCKER_BLOCK="*Docker:* \`ghcr.io/oxy-hq/oxy:$VERSION\` (also tagged \`:latest\`)"
+            RELEASE_LINK="<https://github.com/${RELEASE_REPO}/releases/tag/${VERSION}|GitHub release>"
+          else
+            TITLE="$EMOJI Edge build \`$VERSION\` published"
+            INSTALL_BLOCK='`bash <(curl --proto '"'"'=https'"'"' --tlsv1.2 -LsSf https://nightly.oxy.tech)`
+          To pin this build: `OXY_VERSION='"$VERSION"' bash <(curl --proto '"'"'=https'"'"' --tlsv1.2 -LsSf https://nightly.oxy.tech)`'
+            DOCKER_BLOCK="*Docker:* \`ghcr.io/oxy-hq/oxy:$VERSION\` (also tagged \`:edge-latest\`)"
+            RELEASE_LINK="<https://github.com/${RELEASE_REPO}/releases/tag/${VERSION}|Edge release>"
+          fi
+
+          MESSAGE="${BREAKING_LINE}*Version:* \`$VERSION\`${PREV_SUFFIX}
+          *Cut at:* \`$CUT_AT\` (build completed)
+          *Head commit:* <${COMMIT_URL}|${SHORT_SHA}> — committed \`${LAST_COMMIT_AT}\`
+          _Anything merged to main after the head-commit timestamp is NOT in this build._
+
+          *Changes (${COMMIT_COUNT} commits):*
+          ${CHANGELOG}
+
+          ${CONTRIB_LINE}*Install:*
+          ${INSTALL_BLOCK}
+
+          ${DOCKER_BLOCK}
+
+          *Links:*
+          ${COMPARE_LINE}• ${RELEASE_LINK}
+          • <${WORKFLOW_URL}|Build workflow run>"
+
           {
-            echo "title<<EOF"
+            echo "title<<TITLEEOF"
             echo "$TITLE"
-            echo "EOF"
-          } >> $GITHUB_OUTPUT
-
-          {
-            echo "message<<EOF"
+            echo "TITLEEOF"
+            echo "body<<BODYEOF"
             echo "$MESSAGE"
-            echo "EOF"
-          } >> $GITHUB_OUTPUT
+            echo "BODYEOF"
+          } >> "$GITHUB_OUTPUT"
 
-      - name: Send Slack Notification
-        if: steps.build_info.outputs.channel != ''
+      - name: Send Slack notification
+        if: steps.build_info.outputs.type != 'skip'
         uses: rtCamp/action-slack-notify@v2
         env:
-          SLACK_USERNAME: "${{ steps.build_info.outputs.type }} Build Notifier"
+          SLACK_USERNAME: "Release Notifier"
           MSG_MINIMAL: ref,commit
-          SLACK_ICON_EMOJI: "${{ steps.build_info.outputs.emoji }}"
+          SLACK_ICON_EMOJI: ${{ steps.build_info.outputs.emoji }}
           SLACK_LINK_NAMES: true
           SLACKIFY_MARKDOWN: true
           SLACK_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL: ${{ steps.build_info.outputs.channel }}
           SLACK_FOOTER: ""
           SLACK_TITLE: ${{ steps.message.outputs.title }}
-          SLACK_MESSAGE: ${{ steps.message.outputs.message }}
+          SLACK_MESSAGE: ${{ steps.message.outputs.body }}
