@@ -3,7 +3,7 @@ import { RefreshCcw } from "lucide-react";
 import { Button } from "@/components/ui/shadcn/button";
 import { type NodeStatus, NodeStatusIndicator } from "@/components/ui/shadcn/node-status-indicator";
 import type { NodeData, NodeType } from "@/stores/useWorkflow";
-import { useIsProcessing, useTaskRun, useWorkflowRun } from "../../useWorkflowRun";
+import { useIsProcessing, useStreamEvents, useTaskRun, useWorkflowRun } from "../../useWorkflowRun";
 import { NodeContent } from "./NodeContent";
 import { StepContainer } from "./nodes/StepContainer";
 
@@ -40,6 +40,7 @@ export function DiagramNode({
   const { taskRun, taskRunId, runId, loopRuns } = useTaskRun(task);
   const isProcessing = useIsProcessing(task.workflowId, task.runId || "");
   const runWorkflow = useWorkflowRun();
+  const { stream } = useStreamEvents();
 
   let nodeStatus: NodeStatus = "initial";
   if (taskRun) {
@@ -64,18 +65,29 @@ export function DiagramNode({
           variant='ghost'
           tooltip={"Replay this step"}
           size='icon'
-          onClick={() => {
+          onClick={async () => {
             if (!runId) {
               return;
             }
-            runWorkflow.mutate({
-              workflowId: task.workflowId,
-              retryType: {
-                type: "retry",
-                run_index: +runId,
-                replay_id: taskRunId
-              }
-            });
+            try {
+              await runWorkflow.mutateAsync({
+                workflowId: task.workflowId,
+                retryType: {
+                  type: "retry",
+                  run_index: +runId,
+                  replay_id: taskRunId
+                }
+              });
+              // Manually trigger streaming after the replay starts.
+              // This is necessary because the run_index might be the same,
+              // so the URL won't change and the auto-stream useEffect won't re-trigger.
+              await stream.mutateAsync({
+                sourceId: task.workflowId,
+                runIndex: +runId
+              });
+            } catch (error) {
+              console.error("Failed to replay from step:", error);
+            }
           }}
         >
           <RefreshCcw />
