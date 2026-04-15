@@ -89,7 +89,7 @@ impl LlmProvider for AnthropicProvider {
                     "name": t.name,
                     "description": t.description,
                     "input_schema": t.parameters,
-                    "strict": true
+                    "strict": t.strict
                 })
             })
             .collect();

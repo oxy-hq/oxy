@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use agentic_core::{HumanInputQuestion, back_target::BackTarget, human_input::SuspendedRunData};
@@ -6,7 +8,10 @@ use agentic_llm::{InitialMessages, LlmError, LlmOutput};
 use agentic_core::orchestrator::RunContext;
 
 use crate::{
-    tools::{all_tools, apply_change, delete_file},
+    tools::{
+        ChangeBlock, all_tools, apply_blocks_to_content, apply_change_blocks, delete_file,
+        safe_path, write_file_content,
+    },
     types::{BuilderDomain, BuilderError, BuilderSolution, BuilderSpec, ToolExchange},
 };
 
@@ -17,9 +22,56 @@ use agentic_core::solver::DomainSolver;
 struct ProposeChangePayload {
     file_path: String,
     #[serde(default)]
-    new_content: String,
+    changes: Option<Vec<ChangeBlock>>,
     #[serde(default)]
     delete: bool,
+    /// Pre-computed file content stored in the suspended prompt JSON.
+    /// When present, written directly to avoid a TOCTOU re-read.
+    #[serde(default)]
+    new_content: Option<String>,
+}
+
+/// For each `propose_change` call in `prior_messages` whose `file_path` is NOT
+/// already covered by the suspended `prompt` (i.e. already has a pre-computed
+/// `new_content`), read the file and apply the change blocks **now** (at
+/// suspension time) so that [`resume_initial_messages`] can write the exact
+/// pre-computed content without a TOCTOU re-read.
+///
+/// Returns a map from `file_path` → `new_content`.  Delete proposals are
+/// skipped (no content to pre-compute).
+async fn precompute_batch_changes(
+    workspace_root: &Path,
+    prior_messages: &[serde_json::Value],
+    suspended_prompt: &str,
+) -> HashMap<String, String> {
+    let suspended_file: Option<String> =
+        serde_json::from_str::<serde_json::Value>(suspended_prompt)
+            .ok()
+            .and_then(|v| v["file_path"].as_str().map(String::from));
+
+    let mut result = HashMap::new();
+    for payload in extract_all_propose_changes(prior_messages) {
+        if payload.delete {
+            continue;
+        }
+        if suspended_file.as_deref() == Some(payload.file_path.as_str()) {
+            continue; // already stored in the suspended prompt JSON
+        }
+        if result.contains_key(&payload.file_path) {
+            continue; // deduplicate
+        }
+        if let Some(blocks) = &payload.changes {
+            let abs = match safe_path(workspace_root, &payload.file_path) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            let old_content = tokio::fs::read_to_string(&abs).await.unwrap_or_default();
+            if let Ok(new_content) = apply_blocks_to_content(&old_content, blocks) {
+                result.insert(payload.file_path, new_content);
+            }
+        }
+    }
+    result
 }
 
 /// Extract all `propose_change` payloads from the most recent assistant turn.
@@ -163,20 +215,31 @@ impl BuilderSolver {
                 prior_messages,
             }) => {
                 let tool_exchanges = exchanges.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                // Pre-compute new_content for every batched propose_change call in
+                // this turn whose file isn't already covered by the suspended prompt.
+                // Stored in stage_data so resume can write exact content without a
+                // TOCTOU re-read (adjacent gap to the TODO at the apply loop below).
+                let batch_precomputed =
+                    precompute_batch_changes(&self.workspace_root, &prior_messages, &prompt).await;
+                let mut stage_data = make_resume_stage_data(
+                    &spec,
+                    &prior_messages,
+                    "tool_suspended",
+                    &prompt,
+                    &suggestions,
+                    &tool_exchanges,
+                );
+                if !batch_precomputed.is_empty() {
+                    stage_data["precomputed_changes"] =
+                        serde_json::to_value(&batch_precomputed).unwrap_or_default();
+                }
                 <BuilderSolver as DomainSolver<BuilderDomain>>::store_suspension_data(
                     self,
                     SuspendedRunData {
                         from_state: "solving".to_string(),
                         original_input: spec.question.clone(),
                         trace_id: String::new(),
-                        stage_data: make_resume_stage_data(
-                            &spec,
-                            &prior_messages,
-                            "tool_suspended",
-                            &prompt,
-                            &suggestions,
-                            &tool_exchanges,
-                        ),
+                        stage_data,
                         question: prompt.clone(),
                         suggestions: suggestions.clone(),
                     },
@@ -412,16 +475,63 @@ impl BuilderSolver {
                                         question: resume.data.original_input.clone(),
                                         history: vec![],
                                     });
+                            // The suspended prompt JSON already contains the pre-computed
+                            // `new_content` for the file that triggered the suspension.
+                            // `precomputed_changes` holds pre-computed content for any
+                            // additional files batched in the same LLM turn (computed by
+                            // `precompute_batch_changes` at suspension time to close the
+                            // TOCTOU window for multi-file batches).
+                            let question_payload: Option<ProposeChangePayload> =
+                                serde_json::from_str(&question).ok();
+                            let batch_precomputed: HashMap<String, String> = resume
+                                .data
+                                .stage_data
+                                .get("precomputed_changes")
+                                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                                .unwrap_or_default();
                             for change in &changes_to_apply {
+                                // Tier 1: `new_content` embedded directly in the payload
+                                //         (question-fallback path).
+                                // Tier 2: `new_content` from the suspended prompt JSON
+                                //         (first file in a batched turn).
+                                // Tier 3: pre-computed content stored at suspension time
+                                //         for other files in the same batched turn.
+                                // Tier 4 (last resort): re-apply blocks from disk —
+                                //         TOCTOU window, only reached if none of the above
+                                //         sources are available.
+                                let precomputed = change
+                                    .new_content
+                                    .as_deref()
+                                    .or_else(|| {
+                                        question_payload
+                                            .as_ref()
+                                            .filter(|q| q.file_path == change.file_path)
+                                            .and_then(|q| q.new_content.as_deref())
+                                    })
+                                    .or_else(|| {
+                                        batch_precomputed.get(&change.file_path).map(String::as_str)
+                                    });
                                 let apply_result = if change.delete {
                                     delete_file(&self.workspace_root, &change.file_path).await
-                                } else {
-                                    apply_change(
+                                } else if let Some(content) = precomputed {
+                                    write_file_content(
                                         &self.workspace_root,
                                         &change.file_path,
-                                        &change.new_content,
+                                        content,
                                     )
                                     .await
+                                } else if let Some(blocks) = &change.changes {
+                                    apply_change_blocks(
+                                        &self.workspace_root,
+                                        &change.file_path,
+                                        blocks,
+                                    )
+                                    .await
+                                } else {
+                                    Err(format!(
+                                        "propose_change for '{}' has no blocks and is not a deletion",
+                                        change.file_path
+                                    ))
                                 };
                                 if let Err(err) = apply_result {
                                     // TODO: files applied before this one are not rolled back.

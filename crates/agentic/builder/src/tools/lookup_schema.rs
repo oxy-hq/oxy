@@ -23,6 +23,7 @@ Config (config.yml): Config, Database, DatabaseType.",
             "required": ["object_name"],
             "additionalProperties": false
         }),
+        ..Default::default()
     }
 }
 

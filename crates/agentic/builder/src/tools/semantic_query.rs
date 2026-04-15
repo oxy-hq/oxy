@@ -117,6 +117,7 @@ pub fn semantic_query_def() -> ToolDef {
             "required": ["topic", "measures", "dimensions", "time_dimensions", "filters", "orders", "limit", "offset"],
             "additionalProperties": false
         }),
+        ..Default::default()
     }
 }
 

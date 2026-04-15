@@ -23,6 +23,7 @@ pub fn run_tests_def() -> ToolDef {
             "required": ["file_path"],
             "additionalProperties": false
         }),
+        ..Default::default()
     }
 }
 

@@ -54,7 +54,6 @@ function findProposeChangePayload(
   input: {
     file_path?: string;
     description?: string;
-    new_content?: string;
     delete?: boolean;
   } | null,
   runEvents: ToolRunEvent[]
@@ -75,8 +74,7 @@ function findProposeChangePayload(
         (payload) =>
           payload &&
           payload.file_path === input.file_path &&
-          payload.description === input.description &&
-          payload.new_content === (input.new_content ?? "")
+          payload.description === input.description
       ) ?? null
   );
 }
@@ -85,7 +83,6 @@ function getProposeChangeState(
   input: {
     file_path?: string;
     description?: string;
-    new_content?: string;
     delete?: boolean;
   } | null,
   runEvents: ToolRunEvent[]
@@ -105,8 +102,7 @@ function getProposeChangeState(
         (payload) =>
           payload &&
           payload.file_path === input.file_path &&
-          payload.description === input.description &&
-          payload.new_content === (input.new_content ?? "")
+          payload.description === input.description
       );
   });
 
@@ -131,7 +127,6 @@ export const ProposeChangeToolView = ({
   const input = parseToolJson<{
     file_path?: string;
     description?: string;
-    new_content?: string;
     delete?: boolean;
   }>(item.toolInput);
 
@@ -140,7 +135,7 @@ export const ProposeChangeToolView = ({
   const description = payload?.description ?? input?.description ?? "";
   const isDelete = payload?.delete ?? input?.delete ?? false;
   const oldContent = payload?.old_content ?? "";
-  const newContent = payload?.new_content ?? input?.new_content ?? "";
+  const newContent = payload?.new_content ?? "";
   const action = isDelete ? "Delete" : oldContent ? "Update" : "Create";
   const changeState = getProposeChangeState(input, runEvents);
   const stateLabel = changeState === "accepted" ? "Accepted" : "Awaiting confirmation";

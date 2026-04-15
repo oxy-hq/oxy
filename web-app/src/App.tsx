@@ -90,7 +90,10 @@ const MainLayout = React.memo(function MainLayout() {
 
   const { setIsOpen: setBuilderDialogOpen } = useBuilderDialog();
   const { setIsOpen: setFileQuickOpenOpen } = useFileQuickOpen();
-  useHotkeys("meta+i", () => setBuilderDialogOpen(true), { preventDefault: true, useKey: true });
+  useHotkeys("meta+i", () => setBuilderDialogOpen(!useBuilderDialog.getState().isOpen), {
+    preventDefault: true,
+    useKey: true
+  });
   useHotkeys("meta+p", () => setFileQuickOpenOpen(true), { preventDefault: true, useKey: true });
 
   React.useEffect(() => {

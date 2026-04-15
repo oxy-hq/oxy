@@ -253,6 +253,7 @@ dependencies = [
  "agentic-llm",
  "arrow 56.2.0",
  "async-trait",
+ "chrono",
  "glob",
  "oxy",
  "oxy-semantic",

@@ -24,6 +24,7 @@ pub fn search_text_def() -> ToolDef {
             "required": ["pattern", "file_glob"],
             "additionalProperties": false
         }),
+        ..Default::default()
     }
 }
 

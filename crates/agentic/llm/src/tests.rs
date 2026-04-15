@@ -1059,6 +1059,7 @@ async fn anthropic_render_chart_tool_use_result_pairing() {
                     },
                     "required": ["data", "chart_type"]
                 }),
+                ..Default::default()
             }],
             |name: String, params| {
                 assert_eq!(name, "render_chart");
@@ -1227,6 +1228,7 @@ async fn anthropic_render_chart_with_thinking_tool_use_result_pairing() {
                 name: "render_chart",
                 description: "Render a chart.",
                 parameters: json!({"type": "object"}),
+                ..Default::default()
             }],
             |_, _| {
                 Box::pin(async {
@@ -1328,6 +1330,7 @@ async fn anthropic_two_tool_calls_both_get_tool_results() {
                 name: "render_chart",
                 description: "Render a chart.",
                 parameters: json!({"type": "object"}),
+                ..Default::default()
             }],
             |name: String, _| {
                 calls.push(name);
@@ -1430,6 +1433,7 @@ async fn anthropic_multi_round_tool_calls_all_paired() {
                 name: "render_chart",
                 description: "Render a chart.",
                 parameters: json!({"type": "object"}),
+                ..Default::default()
             }],
             |_, _| Box::pin(async { Ok(json!({"chart_url": "ok"})) }),
             &None,
@@ -2854,6 +2858,7 @@ async fn tool_rounds_exhausted_returns_max_tool_rounds_reached() {
                 name: "noop",
                 description: "does nothing",
                 parameters: json!({"type": "object"}),
+                ..Default::default()
             }],
             |_, _| Box::pin(async { Ok(json!({})) }),
             &None,
@@ -2921,6 +2926,7 @@ async fn max_tool_rounds_prior_messages_excludes_current_tool_request() {
                 name: "noop",
                 description: "no-op",
                 parameters: json!({"type": "object"}),
+                ..Default::default()
             }],
             |_, _| Box::pin(async { Ok(json!({})) }),
             &None,

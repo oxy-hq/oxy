@@ -28,6 +28,8 @@ pub fn read_file_def() -> ToolDef {
             "required": ["path", "start_line", "end_line"],
             "additionalProperties": false
         }),
+        strict: false, // ["integer", "null"] union types are incompatible with strict mode
+        ..Default::default()
     }
 }
 
@@ -55,8 +57,13 @@ pub async fn execute_read_file(workspace_root: &Path, params: &Value) -> Result<
         .unwrap_or((start + MAX_FILE_LINES).min(total_lines));
 
     let end = end.min(start + MAX_FILE_LINES);
-    let selected: Vec<&str> = lines[start.min(total_lines)..end.min(total_lines)].to_vec();
-    let result_content = selected.join("\n");
+    let selected = &lines[start.min(total_lines)..end.min(total_lines)];
+    let result_content = selected
+        .iter()
+        .enumerate()
+        .map(|(i, line)| format!("{} | {}", start + 1 + i, line))
+        .collect::<Vec<_>>()
+        .join("\n");
 
     Ok(json!({
         "content": result_content,

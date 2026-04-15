@@ -67,8 +67,12 @@ impl BuilderSolver {
 
     pub(crate) fn build_solving_system_prompt(&self) -> String {
         let root = self.workspace_root.to_string_lossy();
+        let now = chrono::Utc::now();
+        let current_datetime = now.format("%Y-%m-%d %H:%M:%S UTC").to_string();
         format!(
-            r#"You are a copilot for an Oxy data project located at: {root}
+            r#"Current date and time: {current_datetime}
+
+You are a copilot for an Oxy data project located at: {root}
 
 Oxy is a data platform. A project is a directory of YAML configuration files that define
 agents, workflows, semantic models, and data apps. You help users read, understand, and
@@ -80,7 +84,7 @@ modify these files.
 - <name>.agent.yml — LLM agent: model, system_instructions, tools (execute_sql, visualize, retrieval, workflow, semantic_search), context files, tests.
 - <name>.procedure.yml / <name>.workflow.yml / <name>.automation.yml — Multi-step workflow: variables (JSON Schema), tasks (execute_sql, agent, formatter, loop_sequential…), tests.
 - <name>.aw.yml — FSM-based agentic workflow: model, start/end states, transitions (query, semantic_query, visualize, insight, save_automation), optional routing.
-- <name>.app.yml — Data app / dashboard: query tasks + display components (table, bar_chart, line_chart, pie_chart, markdown). Lives in apps/.
+- <name>.app.yml — Data app / dashboard: query tasks + display components (table, bar_chart, line_chart, pie_chart, markdown).
 - <name>.topic.yml — Semantic topic: groups related views into a domain. Lives in semantics/.
 - <name>.view.yml — Semantic view: maps a database table to typed dimensions (attributes) and measures (aggregations); entities declare primary/foreign keys for joins. Lives in semantics/.
 - globals/semantics.yml — Shared global semantic definitions that views can inherit from.
@@ -92,7 +96,7 @@ modify these files.
 - search_files(pattern): find files by glob pattern (e.g. "agents/*.agent.yml", "**/*.view.yml", "**/*.test.yml")
 - read_file(path, start_line?, end_line?): read file content with optional line range
 - search_text(pattern, file_glob?): grep-like text search across files
-- propose_change(file_path, description, new_content?, delete?): propose a file change or deletion and ask the user for confirmation. Set delete=true to delete a file; omit new_content when deleting.
+- propose_change(file_path, description, changes, delete?): propose targeted line-range edits or a file deletion and ask the user for confirmation. Each block in `changes` has `from_line`, `to_line`, and `content` fields. Set delete=true to delete a file (omit changes).
 - validate_project(file_path?): validate all project files (or a single file) against the Oxy schema; returns any errors
 - lookup_schema(object_name): look up the JSON schema for any Oxy object type — semantic (Dimension, Measure, View, Topic…), agent (AgentConfig, AgentType, ToolType…), FSM workflow (AgenticConfig), workflow tasks (Workflow, Task, ExecuteSQLTask, AgentTask…), app (AppConfig, Display…), test (TestFileConfig, TestSettings, TestCase), or config (Config, Database, DatabaseType)
 - run_tests(file_path?): run a specific .test.yml file (or all test files if omitted) using the Oxy eval pipeline; returns pass rate and any errors
@@ -106,7 +110,8 @@ modify these files.
 - Always read config.yml first to understand available databases and models before making changes
 - Read the relevant files before proposing any changes — never guess at existing content
 - Always use propose_change before writing, modifying, or deleting any file — never assume permission
-- Write the complete new file content when proposing a change (propose_change replaces the whole file)
+- Use targeted line-range blocks when proposing a change — specify only the lines that change, not the whole file
+- To create a new file, pass a single block with from_line=1, to_line=1 and the full content as `content`
 - Use propose_change with delete=true to delete a file
 - Use file paths relative to the project root in all tool calls and responses
 - When proposing changes, explain what you are changing and why
@@ -117,37 +122,27 @@ modify these files.
 - Use lookup_schema(TestFileConfig) to see the full test file schema before writing tests
 - After writing a test file, use run_tests to execute it and report the results to the user
 
-## Output format
+## CRITICAL INSTRUCTION
 
-When you have finished using tools, output a structured internal work summary — NOT a user-facing message.
-This summary is consumed by a separate synthesis step that produces the final reply.
-
-Use this format:
-
-FINDINGS:
-<what you discovered about the project — files read, schemas inspected, SQL/semantic results>
-
-CHANGES:
-<for each propose_change call: file path, whether the user accepted or rejected it, and what changed>
-
-VALIDATION:
-<results of any validate_project or run_tests calls>
-
-OPEN_ISSUES:
-<any errors, schema violations, test failures, or unresolved questions>"#
+After your last tool call, output NOTHING. No summary, no confirmation, no closing message.
+A separate step reads your tool results and writes the reply to the user.
+Any text you output after the final tool call is wasted tokens and will be discarded."#
         )
     }
 
-    pub(crate) fn build_interpreting_system_prompt(&self) -> &'static str {
-        r#"You are the final response synthesizer for the Oxy builder agent.
-You receive a structured internal work summary (FINDINGS / CHANGES / VALIDATION / OPEN_ISSUES)
-produced by the solving phase, plus the raw tool exchange log.
-Your job is to turn this into a concise, friendly reply to the user.
-Cover: what was found or done, which file changes were accepted or rejected,
-validation and test outcomes, and any follow-up the user should be aware of.
-Be specific — reference file names and key results.
-Restrict emoji usage.
-Do not invent tool results or file changes not present in the summary."#
+    pub(crate) fn build_interpreting_system_prompt(&self) -> String {
+        let now = chrono::Utc::now();
+        let current_datetime = now.format("%Y-%m-%d %H:%M:%S UTC").to_string();
+        format!(
+            r#"Current date and time: {current_datetime}
+
+You are the final response synthesizer for the Oxy builder agent.
+You receive the user's original request and the full tool exchange log from the solving phase.
+Your job is to write a short, direct reply.
+State what was done and call out any notable outcome or follow-up the user must know.
+Skip listing every file, field, or test step unless something went wrong.
+No emoji. Do not invent results not present in the tool exchange log."#
+        )
     }
 
     pub(crate) fn build_initial_messages(
@@ -292,7 +287,18 @@ pub(crate) async fn dispatch_tool(
         "propose_change" => {
             let file_path = params["file_path"].as_str().unwrap_or("").to_string();
             let description = params["description"].as_str().unwrap_or("").to_string();
-            let new_content = params["new_content"].as_str().unwrap_or("").to_string();
+            let result = execute_propose_change(workspace_root, params, human_input.as_ref()).await;
+            // new_content is computed inside execute_propose_change (by applying the
+            // change blocks) and embedded in the suspended prompt JSON. Extract it here
+            // so the frontend can visualize the diff via the proposed_change event.
+            let new_content = if let Err(ToolError::Suspended { ref prompt, .. }) = result {
+                serde_json::from_str::<serde_json::Value>(prompt)
+                    .ok()
+                    .and_then(|v| v["new_content"].as_str().map(String::from))
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
             emit_domain(
                 event_tx,
                 BuilderEvent::ProposedChange {
@@ -302,7 +308,7 @@ pub(crate) async fn dispatch_tool(
                 },
             )
             .await;
-            execute_propose_change(workspace_root, params, human_input.as_ref()).await
+            result
         }
         "ask_user" => agentic_core::tools::handle_ask_user(params, human_input.as_ref()),
         "lookup_schema" => {

@@ -547,11 +547,11 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
     use std::panic;
 
     panic::set_hook(Box::new(move |panic_info| {
-        error!(
-            error = %panic_info,
-            trace = %backtrace::Backtrace::force_capture(),
-            "panic occurred"
-        );
+        // Use eprintln! here — tracing macros must not be called inside a panic
+        // hook because the current span's data may already be unwinding, causing
+        // a second panic in tracing_subscriber's lookup_current.
+        let trace = backtrace::Backtrace::force_capture();
+        eprintln!("panic occurred: {panic_info}\n{trace}");
 
         // Capture panic in Sentry
         sentry::capture_message(

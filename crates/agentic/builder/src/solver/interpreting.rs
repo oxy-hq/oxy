@@ -28,15 +28,15 @@ impl BuilderSolver {
         };
 
         let user_prompt = format!(
-            "User request:\n{}\n\nSolving phase summary:\n{}\n\nTool exchanges:\n{}\n\nWrite the final user-facing reply based on the summary above.",
-            result.question, result.draft_text, tool_summary
+            "User request:\n{}\n\nTool exchanges:\n{}\n\nWrite the final user-facing reply based on the tool exchanges above.",
+            result.question, tool_summary
         );
 
         let tools = Vec::new();
         match self
             .client
             .run_with_tools(
-                self.build_interpreting_system_prompt(),
+                &self.build_interpreting_system_prompt(),
                 InitialMessages::User(user_prompt),
                 &tools,
                 |_name, _params| {

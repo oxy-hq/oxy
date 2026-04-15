@@ -83,6 +83,7 @@ pub fn triage_tools() -> Vec<ToolDef> {
                 "required": ["query"],
                 "additionalProperties": false
             }),
+            ..Default::default()
         },
         ToolDef {
             name: "search_catalog",
@@ -99,6 +100,7 @@ pub fn triage_tools() -> Vec<ToolDef> {
                 "required": ["queries"],
                 "additionalProperties": false
             }),
+            ..Default::default()
         },
     ]
 }
@@ -125,6 +127,7 @@ pub fn clarifying_tools(has_semantic: bool) -> Vec<ToolDef> {
                 "required": ["queries"],
                 "additionalProperties": false
             }),
+            ..Default::default()
         },
         ToolDef {
             name: "search_procedures",
@@ -140,6 +143,7 @@ pub fn clarifying_tools(has_semantic: bool) -> Vec<ToolDef> {
                 "required": ["query"],
                 "additionalProperties": false
             }),
+            ..Default::default()
         },
     ];
     if !has_semantic {
@@ -173,6 +177,7 @@ pub fn specifying_tools(has_semantic: bool) -> Vec<ToolDef> {
                 "required": ["queries"],
                 "additionalProperties": false
             }),
+            ..Default::default()
         },
         ToolDef {
             name: "sample_columns",
@@ -207,6 +212,7 @@ pub fn specifying_tools(has_semantic: bool) -> Vec<ToolDef> {
                 "required": ["columns"],
                 "additionalProperties": false
             }),
+            ..Default::default()
         },
     ];
     if !has_semantic {
@@ -231,6 +237,7 @@ pub fn specifying_tools(has_semantic: bool) -> Vec<ToolDef> {
                 "required": ["from_entity", "to_entity"],
                 "additionalProperties": false
             }),
+            ..Default::default()
         });
         tools.push(list_tables_tool_def());
         tools.push(describe_table_tool_def());
@@ -257,6 +264,7 @@ pub fn solving_tools() -> Vec<ToolDef> {
             "required": ["sql"],
             "additionalProperties": false
         }),
+        ..Default::default()
     }]
 }
 
@@ -326,6 +334,7 @@ pub fn interpreting_tools() -> Vec<ToolDef> {
             "required": ["chart_type", "x", "y", "series", "name", "value", "x_axis_label", "y_axis_label", "result_index", "title"],
             "additionalProperties": false
         }),
+        ..Default::default()
     }]
 }
 
@@ -895,6 +904,7 @@ fn list_tables_tool_def() -> ToolDef {
             "required": ["database"],
             "additionalProperties": false
         }),
+        ..Default::default()
     }
 }
 
@@ -920,6 +930,7 @@ fn describe_table_tool_def() -> ToolDef {
             "required": ["table", "database"],
             "additionalProperties": false
         }),
+        ..Default::default()
     }
 }
 

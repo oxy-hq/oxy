@@ -54,12 +54,11 @@ export function BuilderDialog() {
   const { formRef, onKeyDown: enterSubmitKeyDown } = useEnterSubmit();
   const { mutateAsync: sendAgenticMessage } = useAskAgentic();
   const textareaElRef = useRef<HTMLTextAreaElement | null>(null);
-  const textareaRafRef = useRef<number | null>(null);
   const insertMentionRafRef = useRef<number | null>(null);
+  const placeCursorAtEndRef = useRef(false);
 
   useEffect(() => {
     return () => {
-      if (textareaRafRef.current !== null) cancelAnimationFrame(textareaRafRef.current);
       if (insertMentionRafRef.current !== null) cancelAnimationFrame(insertMentionRafRef.current);
     };
   }, []);
@@ -119,27 +118,30 @@ export function BuilderDialog() {
     setSelectedIndex(0);
   }, [mentionResults.length]);
 
-  const textareaRef = useCallback(
-    (node: HTMLTextAreaElement | null) => {
-      if (textareaRafRef.current !== null) {
-        cancelAnimationFrame(textareaRafRef.current);
-        textareaRafRef.current = null;
-      }
-      textareaElRef.current = node;
-      if (node && isOpen && message) {
-        textareaRafRef.current = requestAnimationFrame(() => {
-          textareaRafRef.current = null;
-          const len = node.value.length;
-          node.setSelectionRange(len, len);
-        });
-      }
-    },
-    [isOpen, message]
-  );
+  const textareaRef = useCallback((node: HTMLTextAreaElement | null) => {
+    textareaElRef.current = node;
+  }, []);
+
+  // Place cursor at end after message updates (handles pre-filled @mention).
+  // setTimeout(0) runs after all RAFs including Radix's FocusScope, which
+  // otherwise resets the cursor when it re-focuses the textarea post-animation.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: message is used as a trigger only — the effect reads refs, not message itself
+  useEffect(() => {
+    if (!placeCursorAtEndRef.current) return;
+    placeCursorAtEndRef.current = false;
+    const node = textareaElRef.current;
+    if (!node) return;
+    const id = setTimeout(() => {
+      node.focus();
+      node.setSelectionRange(node.value.length, node.value.length);
+    }, 0);
+    return () => clearTimeout(id);
+  }, [message]);
 
   // Pre-fill @mention when dialog opens with file context or thread agent
   useEffect(() => {
     if (isOpen && fileDisplayName && fileContext) {
+      placeCursorAtEndRef.current = true;
       setMessage(`@${fileDisplayName} `);
       setMentions(new Map([[fileDisplayName, fileContext.filePath]]));
     } else if (isOpen && threadData?.source && threadData.source !== "__builder__") {
@@ -148,6 +150,7 @@ export function BuilderDialog() {
         ? getCleanObjectName(agentFile.name)
         : getCleanObjectName(threadData.source.split("/").pop() ?? threadData.source);
       const filePath = agentFile?.path ?? threadData.source;
+      placeCursorAtEndRef.current = true;
       setMessage(`@${displayName} `);
       setMentions(new Map([[displayName, filePath]]));
     }
@@ -245,6 +248,11 @@ export function BuilderDialog() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.metaKey && e.key === "i") {
+      e.preventDefault();
+      setIsOpen(false);
+      return;
+    }
     if (showMentionPopup) {
       if (e.key === "ArrowDown") {
         e.preventDefault();

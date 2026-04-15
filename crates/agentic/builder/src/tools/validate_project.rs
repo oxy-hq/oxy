@@ -20,6 +20,7 @@ pub fn validate_project_def() -> ToolDef {
             "required": ["file_path"],
             "additionalProperties": false
         }),
+        ..Default::default()
     }
 }
 

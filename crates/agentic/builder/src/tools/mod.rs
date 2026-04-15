@@ -26,12 +26,16 @@ use agentic_core::tools::ToolDef;
 
 pub use execute_sql::execute_execute_sql;
 pub use lookup_schema::execute_lookup_schema;
-pub use propose_change::{apply_change, delete_file, execute_propose_change};
+pub use propose_change::{
+    ChangeBlock, apply_blocks_to_content, apply_change_blocks, delete_file, execute_propose_change,
+    write_file_content,
+};
 pub use read_file::execute_read_file;
 pub use run_tests::execute_run_tests;
 pub use search_files::execute_search_files;
 pub use search_text::execute_search_text;
 pub use semantic_query::execute_semantic_query;
+pub use utils::safe_path;
 pub use validate_project::execute_validate_project;
 
 /// All tools available to the builder copilot.

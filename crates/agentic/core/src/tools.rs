@@ -44,6 +44,22 @@ pub struct ToolDef {
     /// Must be a `{"type":"object","properties":{...},"required":[...]}` shape
     /// compatible with the Anthropic `input_schema` format.
     pub parameters: Value,
+    /// Whether to enable strict mode for this tool (provider-specific).
+    /// Defaults to `true`. Set to `false` for tools whose schemas use union
+    /// types (`["string", "null"]`) or other constructs incompatible with
+    /// strict structured-output validation.
+    pub strict: bool,
+}
+
+impl Default for ToolDef {
+    fn default() -> Self {
+        Self {
+            name: "",
+            description: "",
+            parameters: Value::Null,
+            strict: true,
+        }
+    }
 }
 
 // ── ToolError ─────────────────────────────────────────────────────────────────
@@ -111,6 +127,7 @@ pub fn ask_user_tool_def() -> ToolDef {
             "required": ["prompt", "suggestions"],
             "additionalProperties": false
         }),
+        ..Default::default()
     }
 }
 

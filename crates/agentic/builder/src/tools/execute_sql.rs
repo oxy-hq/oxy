@@ -35,6 +35,7 @@ pub fn execute_sql_def() -> ToolDef {
             "required": ["sql", "database"],
             "additionalProperties": false
         }),
+        ..Default::default()
     }
 }
 

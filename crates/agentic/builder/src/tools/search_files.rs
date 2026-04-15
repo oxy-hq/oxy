@@ -20,6 +20,7 @@ pub fn search_files_def() -> ToolDef {
             "required": ["pattern"],
             "additionalProperties": false
         }),
+        ..Default::default()
     }
 }
 
