@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use chrono::Utc;
+
 use agentic_connector::DatabaseConnector;
 use agentic_core::{
     BackTarget,
@@ -263,7 +265,15 @@ impl AnalyticsSolver {
         base: &str,
         dialect: Option<&str>,
     ) -> String {
-        let mut parts = vec![base.to_string()];
+        let now = Utc::now();
+        let mut parts = vec![
+            base.to_string(),
+            format!(
+                "<current_datetime>\nToday's date: {}\nCurrent time: {} UTC\n</current_datetime>",
+                now.format("%Y-%m-%d"),
+                now.format("%H:%M:%S"),
+            ),
+        ];
 
         match state {
             "clarifying" | "specifying" => {
@@ -419,7 +429,15 @@ impl AnalyticsFanoutWorker {
 
     /// Build a composite system prompt (mirrors `AnalyticsSolver::build_system_prompt`).
     fn build_system_prompt(&self, state: &str, base: &str, dialect: Option<&str>) -> String {
-        let mut parts = vec![base.to_string()];
+        let now = Utc::now();
+        let mut parts = vec![
+            base.to_string(),
+            format!(
+                "<current_datetime>\nToday's date: {}\nCurrent time: {} UTC\n</current_datetime>",
+                now.format("%Y-%m-%d"),
+                now.format("%H:%M:%S"),
+            ),
+        ];
 
         match state {
             "clarifying" | "specifying" => {
