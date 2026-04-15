@@ -68,11 +68,11 @@ oxy_globals = { path = "crates/globals" }
 
 # External dependencies
 async-openai = {version = "0.33.1"}
-duckdb = { version = "=1.4.4", features = ["bundled"] }
-axum = {version = "0.8.8", features = ["macros", "http2"]}
+duckdb = { version = "=1.10502.0", features = ["bundled"] }
+axum = {version = "0.8.9", features = ["macros", "http2"]}
 axum-server = {version = "0.8.0", features = ["tls-rustls"]}
 chrono = "*"
-indexmap = {version = "2.13.0", features = ["serde"]}
+indexmap = {version = "2.14.0", features = ["serde"]}
 log = {version = "0.4"}
 minijinja = {version = "2.19.0"}
 regex = {version = "1.12.3"}
@@ -94,7 +94,7 @@ serde_yaml = {version = "0.9.34"}
 sqlparser = {version = "0.37"}
 tempfile = {version = "3.27.0"}
 thiserror = {version = "2.0.18"}
-tokio = {version = "1.51", features = ["full"]}
+tokio = {version = "1.52", features = ["full"]}
 tracing = {version = "0.1.44"}
 uuid = { version = "1.22", features = ["serde", "v4"] }
 aes-gcm = "0.10.3"
@@ -174,7 +174,7 @@ rkyv = "0.7.46"
 rmcp = "0.8.5"
 rusqlite = "0.32"
 rustc_version_runtime = "0.3.0"
-rustls = "0.23.37"
+rustls = "0.23.38"
 schemars = "0.8.22"
 scopeguard = "1.2.0"
 secrecy = "0.10.3"
