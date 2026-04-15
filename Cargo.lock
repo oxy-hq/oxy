@@ -228,6 +228,7 @@ dependencies = [
  "airlayer",
  "async-stream",
  "async-trait",
+ "chrono",
  "duckdb",
  "futures",
  "futures-core",

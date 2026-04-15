@@ -1,18 +1,16 @@
-import type { Parent, PhrasingContent } from "mdast";
+import type { Root } from "mdast";
 import { visit } from "unist-util-visit";
 
-export interface TextDirective extends Parent {
-  type: "textDirective" | "leafDirective";
+interface ChartDirectiveNode {
+  type: string;
   name: string;
-  attributes?: Record<string, string | null | undefined> | null | undefined;
-  children: Array<PhrasingContent>;
+  attributes?: Record<string, string | null | undefined> | null;
+  data?: Record<string, unknown>;
 }
 
-function handleChartNode(node: TextDirective) {
+function handleChartNode(node: ChartDirectiveNode) {
   if (node.name !== "chart") return;
 
-  if (!node.data) node.data = {};
-  const data = node.data;
   const attributes = node.attributes || {};
   const chart_src = attributes.chart_src;
 
@@ -20,16 +18,17 @@ function handleChartNode(node: TextDirective) {
     return;
   }
 
-  data.hName = "chart";
-  data.hProperties = {
-    chart_src
+  node.data = {
+    ...node.data,
+    hName: "chart",
+    hProperties: { chart_src }
   };
 }
 
 function ChartPlugin() {
-  return (tree: TextDirective) => {
-    visit(tree, "textDirective", handleChartNode);
-    visit(tree, "leafDirective", handleChartNode);
+  return (tree: Root) => {
+    visit(tree, "textDirective", (node) => handleChartNode(node as unknown as ChartDirectiveNode));
+    visit(tree, "leafDirective", (node) => handleChartNode(node as unknown as ChartDirectiveNode));
   };
 }
 

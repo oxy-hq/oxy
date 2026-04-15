@@ -1,19 +1,11 @@
-import type { Parent, PhrasingContent } from "mdast";
 import { visit } from "unist-util-visit";
-
-export interface TextDirective extends Parent {
-  type: "textDirective";
-  name: string;
-  attributes?: Record<string, string | null | undefined> | null | undefined;
-  children: Array<PhrasingContent>;
-}
+import type { TextDirective } from "./types";
 
 function TableVirtualizedPlugin() {
   return (tree: TextDirective) => {
     visit(tree, "textDirective", (node) => {
       if (node.name !== "table_virtualized") return;
 
-      const data = node.data || (node.data = {});
       const attributes = node.attributes || {};
       const table_id = attributes.table_id;
 
@@ -21,9 +13,10 @@ function TableVirtualizedPlugin() {
         return;
       }
 
-      data.hName = "table_virtualized";
-      data.hProperties = {
-        table_id: table_id
+      node.data = {
+        ...node.data,
+        hName: "table_virtualized",
+        hProperties: { table_id }
       };
     });
   };

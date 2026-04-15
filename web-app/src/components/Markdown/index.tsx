@@ -14,6 +14,7 @@ import ReasoningContainer from "./components/Reasoning";
 import TableVirtualized from "./components/TableVirtualized";
 import ArtifactPlugin from "./plugins/ArtifactPlugin";
 import ChartPlugin from "./plugins/ChartPlugin";
+import DirectiveFallbackPlugin from "./plugins/DirectiveFallbackPlugin";
 import ReasoningPlugin from "./plugins/ReasoningPlugin";
 import TableVirtualizedPlugin from "./plugins/TableVirtualizedPlugin";
 import { extractLargeTables } from "./utils/extractLargeTables";
@@ -134,7 +135,8 @@ function Markdown({ children, onArtifactClick }: Props) {
           ChartPlugin,
           ArtifactPlugin,
           ReasoningPlugin,
-          TableVirtualizedPlugin
+          TableVirtualizedPlugin,
+          DirectiveFallbackPlugin
         ]}
         rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
         components={getExtendedComponents({ tables, onArtifactClick })}

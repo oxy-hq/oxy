@@ -396,6 +396,9 @@ importers:
       '@types/react-window':
         specifier: ^2.0.0
         version: 2.0.0(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
+      '@types/unist':
+        specifier: ^3.0.3
+        version: 3.0.3
       '@vitejs/plugin-react-swc':
         specifier: ^4.3.0
         version: 4.3.0(@swc/helpers@0.5.19)(vite@8.0.8(@types/node@25.6.0)(esbuild@0.27.3)(jiti@2.6.1)(yaml@2.8.3))
