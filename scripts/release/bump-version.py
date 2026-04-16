@@ -10,9 +10,12 @@ Usage:
   python3 scripts/release/bump-version.py --dry-run # prints new version only, no file changes
 
 Version bump rules (conventional commits):
-  feat!: / BREAKING CHANGE -> major
-  feat:                     -> minor
-  fix: / perf: / etc.       -> patch
+  Pre-1.0 (major == 0):
+    All commits -> patch only (minor bumps are manual/intentional)
+  Post-1.0 (major >= 1):
+    feat!: / BREAKING CHANGE -> major
+    feat:                     -> minor
+    fix: / perf: / etc.       -> patch
 """
 import subprocess
 import re
@@ -37,21 +40,27 @@ try:
 except subprocess.CalledProcessError:
     commits = []
 
-bump = "patch"
-for c in commits:
-    if "BREAKING CHANGE" in c or re.match(r"^feat(\(.+\))?!:", c):
-        bump = "major"
-        break
-    if re.match(r"^feat(\(.+\))?:", c) and bump != "major":
-        bump = "minor"
-
 major, minor, patch = map(int, latest_tag.lstrip("v").split("."))
-if bump == "major":
-    major, minor, patch = major + 1, 0, 0
-elif bump == "minor":
-    minor, patch = minor + 1, 0
-else:
+
+if major == 0:
+    # Pre-1.0: always bump patch only
     patch += 1
+else:
+    # Post-1.0: full conventional commit rules
+    bump = "patch"
+    for c in commits:
+        if "BREAKING CHANGE" in c or re.match(r"^feat(\(.+\))?!:", c):
+            bump = "major"
+            break
+        if re.match(r"^feat(\(.+\))?:", c) and bump != "major":
+            bump = "minor"
+
+    if bump == "major":
+        major, minor, patch = major + 1, 0, 0
+    elif bump == "minor":
+        minor, patch = minor + 1, 0
+    else:
+        patch += 1
 
 new_version = f"{major}.{minor}.{patch}"
 
