@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version to generate changelog for (e.g. 1.2.3)"
+        description: "Release version to generate changelog for (e.g. 0.5.36)"
         required: true
         type: string
 
@@ -39,6 +39,21 @@ jobs:
             VERSION=$(echo "${{ github.head_ref }}" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve release PR number
+        id: release-pr
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            # Manual trigger: try to find the merged release PR by branch name
+            PR_NUMBER=$(gh pr list --repo oxy-hq/oxy-internal \
+              --state merged --head "release/${{ steps.version.outputs.version }}" \
+              --json number --jq '.[0].number')
+          else
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+          fi
+          echo "number=${PR_NUMBER:-}" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - uses: actions/create-github-app-token@v3
         name: Create GitHub App Token
@@ -80,62 +95,84 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_args: >-
             --allowedTools
-            "mcp__deepwiki__ask_question,mcp__deepwiki__read_wiki_contents,
-            Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh pr create:*),Bash(gh pr edit:*),
+            "Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh pr create:*),Bash(gh pr edit:*),
             Bash(gh issue view:*),Bash(gh label create:*),
             Bash(git -C oxy-content:*),Bash(cat:*),Bash(date:*),
             Read,Write,Glob,Grep"
           prompt: |
             Create a user-facing changelog draft in oxy-hq/oxy-content for Oxy release ${{ steps.version.outputs.version }}.
 
-            The release PR is #${{ github.event.pull_request.number }} in oxy-hq/oxy-internal.
+            There are two modes — pick the right one based on context:
 
-            ## Step 1 — Gather context (do all of this before writing)
+            - **Release PR number:** "${{ steps.release-pr.outputs.number }}"
+            - If non-empty → **Mode A** (release PR exists)
+            - If empty → **Mode B** (manual trigger, use CHANGELOG.md)
 
-            1. Read the release PR body — it contains the structured release notes:
-               `gh pr view ${{ github.event.pull_request.number }} --repo oxy-hq/oxy-internal --json body --jq .body`
+            ---
 
-            2. For every PR #NNN referenced in those notes, fetch its full description:
-               `gh pr view NNN --repo oxy-hq/oxy-internal --json number,title,body,closingIssuesReferences`
-               - Skip PRs titled "chore: release"
-               - If the body is sparse (< 150 chars of real content after stripping template
-                 boilerplate like checkboxes, Testing:, Screenshots: N/A sections), also fetch
-                 linked issues for richer context:
-                 `gh issue view ISSUE_NUM --repo oxy-hq/oxy-internal --json title,body`
-               - PR + issue bodies are your PRIMARY source of user-facing context.
-                 Commit subjects are only pointers — do not base descriptions on them.
+            ## Step 1 — Gather the list of changes
 
-            3. For any feature whose user impact is still unclear after reading the PR/issue bodies,
-               use DeepWiki to understand the feature in the context of the full codebase:
-               `mcp__deepwiki__ask_question(repo="oxy-hq/oxy", question="...")`
+            ### Mode A: Read the release PR
 
-            4. Read `product-context.md` — it explains Oxy's product terminology, features, and
+            1. Fetch the release PR body:
+               `gh pr view ${{ steps.release-pr.outputs.number }} --repo oxy-hq/oxy-internal --json body --jq .body`
+            2. Extract every PR number (#NNN) referenced in the body.
+            3. For each PR, fetch details:
+               `gh pr view NNN --repo oxy-hq/oxy-internal --json number,title,body,labels,closingIssuesReferences`
+            4. Skip PRs titled "chore: release" or that are purely CI/deps/chore.
+            5. If a PR body is sparse (< 150 chars after stripping boilerplate), also fetch linked issues:
+               `gh issue view ISSUE_NUM --repo oxy-hq/oxy-internal --json title,body`
+
+            ### Mode B: Read CHANGELOG.md
+
+            1. Read `CHANGELOG.md` in the repo root.
+            2. Find the section for `[${{ steps.version.outputs.version }}]` — this is the **target version**.
+            3. The section immediately below it is the **previous version**.
+               Only the target version section matters — ignore everything else.
+            4. From the target version section, extract every PR number (#NNN).
+            5. For each PR, fetch details:
+               `gh pr view NNN --repo oxy-hq/oxy-internal --json number,title,body,labels,closingIssuesReferences`
+            6. Skip PRs that are purely CI/deps/chore (titled "chore: release", dependency bumps, etc.).
+            7. If a PR body is sparse (< 150 chars after stripping boilerplate), also fetch linked issues:
+               `gh issue view ISSUE_NUM --repo oxy-hq/oxy-internal --json title,body`
+
+            ---
+
+            ## Step 2 — Read product and style context
+
+            1. Read `product-context.md` — it explains Oxy's product terminology, features, and
                which components exist. Use it to write descriptions that match how we talk about
                the product to users.
-
-            5. Read `oxy-content/CLAUDE.md` — follow its format and tone rules exactly.
-
-            6. Read the most recent existing MDX in `oxy-content/changelog/` as a concrete
+            2. Read `oxy-content/CLAUDE.md` — follow its format and tone rules exactly.
+            3. Read the most recent existing MDX in `oxy-content/changelog/` as a concrete
                format example to match precisely.
 
-            ## Step 2 — Write the MDX
+            ---
 
-            Write a single cohesive entry covering ${{ steps.version.outputs.version }}.
+            ## Step 3 — Write the MDX
+
+            Write a single cohesive, user-facing changelog entry for ${{ steps.version.outputs.version }}.
             - Use `date +%Y-%m-%d` for today's date in the filename and `date` frontmatter field
             - Author: "Luong Vo (luong@oxy.tech)"
-            - Immediately after the closing `---` of the frontmatter, add:
-              `<!-- versions: ${{ steps.version.outputs.version }} -->`
-            - Skip: internal refactors, CI/build changes, dependency bumps, test-only changes,
-              anything a data analyst or business user would not notice or care about
-            - No image markdown — screenshots are added by the human reviewer
+            - Immediately after the closing `---` of the frontmatter, add an MDX comment:
+              `{/* versions: ${{ steps.version.outputs.version }} */}`
+              Do NOT use HTML comments (`<!-- -->`), they are invalid in MDX.
+            - **User-facing only**: Focus on features, meaningful bug fixes, and performance improvements
+              that a data analyst or business user would notice. Skip: internal refactors, CI/build
+              changes, dependency bumps, test-only changes, chore tasks.
+            - No image markdown — screenshots are added by the human reviewer.
 
-            ## Step 3 — Write to oxy-content
+            ---
+
+            ## Step 4 — Write to oxy-content
 
             1. Write the MDX to `oxy-content/changelog/$(date +%Y-%m-%d).mdx`
             2. In `oxy-content/docs.json`, prepend `"changelog/$(date +%Y-%m-%d)"` to the top
                of the "Recent Updates" `pages` array inside the "Changelog" tab.
 
-            ## Step 4 — Create or update the pending PR in oxy-content
+            ---
+
+            ## Step 5 — Create or update the pending PR in oxy-content
 
             Ensure the label exists:
             `gh label create --repo oxy-hq/oxy-content pending-release --color 0075ca --description "Pending changelog draft" 2>/dev/null || true`
@@ -146,7 +183,7 @@ jobs:
             **If a PR already exists:**
             - Fetch and checkout its branch
             - Read the existing .mdx; merge the new content in (synthesize — no duplicate sections)
-            - Update the `<!-- versions: ... -->` comment to include ${{ steps.version.outputs.version }}
+            - Update the `{/* versions: ... */}` comment to include ${{ steps.version.outputs.version }}
             - Commit and push
             - Update the PR body to append ${{ steps.version.outputs.version }} to included versions
 
