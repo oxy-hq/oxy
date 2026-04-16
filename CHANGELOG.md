@@ -2,6 +2,51 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.36] - 2026-04-16
+
+### 🚀 Features
+
+- Builder agent improvements (#2078)
+- Add time awareness to analytics agent (#2082)
+- Allow save on main for local proj and deploy to separate branch (#2087)
+- Add verified badge on analytic agent (#2081)
+
+### 🐛 Bug Fixes
+
+- Handle batched tool_use blocks when resuming from suspension (#2054)
+- Shutdown signal handling (#2066)
+- Markdown directives swallow colons in text (e.g. timestamps) (#2083)
+- Task-level replay button now triggers workflow execution from selected step (#2077)
+- Resolve duplicate error display and add dismiss button in SQL editor (#1809)
+
+### 💼 Other
+
+- *(deps)* Bump actions/upload-artifact from 4 to 7 (#2067)
+- *(deps)* Bump the prod-npm-minor-dependencies group with 11 updates (#2069)
+- *(deps)* Bump crate-ci/typos from 1.44.0 to 1.45.1 (#2068)
+- *(deps-dev)* Bump the dev-npm-minor-dependencies group across 1 directory with 8 updates (#2071)
+- *(deps)* Upgrade vite from 7.3.1 to 8.0.8 in package.json and pnpm-lock.yaml
+- *(ci)* Simplify public announce workflow and enhance changelog generation
+- *(deps-dev)* Bump typescript from 5.9.3 to 6.0.2 in the dev-npm-major-dependencies group across 1 directory (#2080)
+
+### 🚜 Refactor
+
+- Simplify conditionals in extract_all_propose_changes and validation functions
+
+### 📚 Documentation
+
+- Delete internal-docs/local-git-branching.md
+
+### ⚙️ Miscellaneous Tasks
+
+- Update prepare-release workflow to install uv and enhance changelog generation script
+- Refactor changelog generation workflow and update dependencies to version 0.5.35
+- Upgrade airlayer to v0.0.9 (#2053)
+- Use git-cliff --latest for GitHub Release notes on public repo
+- Unify all deps and optimize ci (#2063)
+- Remove automated label from weekly enhancement issue creation
+- Update version bump rules for pre-1.0 and post-1.0 handling
+
 ## [0.5.35] - 2026-04-10
 
 ### 🐛 Bug Fixes
@@ -13,6 +58,7 @@ All notable changes to this project will be documented in this file.
 - Update release scripts to use uv and add content changelog generation
 - Enhance changelog generation with local dry-run tool and improved context fetching
 - Update conditions for changesets and claude-review jobs to exclude release branches
+- Release 0.5.35 (#2061)
 
 ## [0.5.34] - 2026-04-10
 
