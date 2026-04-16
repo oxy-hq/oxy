@@ -33,6 +33,10 @@ export type SqlItem = {
   rowCount?: number;
   durationMs?: number;
   error?: string;
+  /** Which code path produced the SQL. "semantic" = compiled by airlayer. */
+  source?: "semantic" | "llm" | "vendor";
+  /** Structured semantic query attached when source === "semantic". */
+  semanticQuery?: import("@/services/api/analytics").SemanticQueryPayload;
   isStreaming: boolean;
 };
 
@@ -440,7 +444,9 @@ function buildDomainItem(ev: UiBlock, nextId: (prefix: string) => string): Trace
         rowCount: ev.payload.row_count,
         durationMs: ev.payload.duration_ms,
         error: ev.payload.success ? undefined : (ev.payload.error ?? "unknown error"),
-        result: [ev.payload.columns].concat(ev.payload.rows ?? [])
+        result: [ev.payload.columns].concat(ev.payload.rows ?? []),
+        source: ev.payload.source,
+        semanticQuery: ev.payload.semantic_query
       };
 
     case "analytics_validation_failed":

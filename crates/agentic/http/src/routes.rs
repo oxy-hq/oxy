@@ -22,7 +22,8 @@ use uuid::Uuid;
 use agentic_analytics::LlmClient;
 use agentic_analytics::OpenAiProvider;
 use agentic_analytics::{
-    AnalyticsEvent, AnalyticsIntent, QuestionType, build_analytics_handlers,
+    AnalyticsEvent, AnalyticsIntent, QuestionType, analytics_step_summary, analytics_tool_summary,
+    build_analytics_handlers,
     config::{AgentConfig, BuildContext},
 };
 use agentic_builder::{
@@ -45,6 +46,26 @@ use crate::{
 use oxy::adapters::workspace::manager::WorkspaceManager;
 use oxy::database::client::establish_connection;
 use sea_orm::DatabaseConnection;
+
+/// Sentinel agent_id marking a run as belonging to the builder domain.
+const BUILDER_AGENT_ID: &str = "__builder__";
+
+/// Build a fresh [`UiTransformState`] wired with the correct per-domain
+/// step- and tool-summary functions for the given `agent_id`.
+///
+/// Builder runs use `agent_id == BUILDER_AGENT_ID`; everything else is
+/// treated as an analytics run.
+fn make_ui_state(agent_id: &str) -> UiTransformState<AnalyticsEvent> {
+    if agent_id == BUILDER_AGENT_ID {
+        UiTransformState::new()
+            .with_summary_fn(builder_step_summary)
+            .with_tool_summary_fn(builder_tool_summary)
+    } else {
+        UiTransformState::new()
+            .with_summary_fn(analytics_step_summary)
+            .with_tool_summary_fn(analytics_tool_summary)
+    }
+}
 
 // ── Request / response types ──────────────────────────────────────────────────
 
@@ -242,8 +263,15 @@ pub async fn create_run(
             .as_deref()
             .and_then(|s| Uuid::parse_str(s).ok());
 
-        if let Err(e) =
-            db::insert_run(&db, &run_id, "__builder__", &question, thread_id_uuid, None).await
+        if let Err(e) = db::insert_run(
+            &db,
+            &run_id,
+            BUILDER_AGENT_ID,
+            &question,
+            thread_id_uuid,
+            None,
+        )
+        .await
         {
             return (StatusCode::INTERNAL_SERVER_ERROR, format!("db error: {e}")).into_response();
         }
@@ -449,14 +477,20 @@ pub async fn stream_events(
         }
     };
 
+    // Look up the run record so we know which domain's UI summaries to apply.
+    // Missing run rows default to analytics summaries.
+    let agent_id = db::get_run(&db, &run_id)
+        .await
+        .ok()
+        .flatten()
+        .map(|r| r.agent_id)
+        .unwrap_or_default();
+
     let stream = async_stream::stream! {
         let mut last_sent_seq = last_seq;
         // Per-connection transformer: fresh state for each reconnect so
         // that replaying from seq=0 rebuilds current_label / fan-out state.
-        let mut ui_state: UiTransformState<AnalyticsEvent> =
-            UiTransformState::new()
-                .with_summary_fn(builder_step_summary)
-                .with_tool_summary_fn(builder_tool_summary);
+        let mut ui_state: UiTransformState<AnalyticsEvent> = make_ui_state(&agent_id);
         let mut ui_serializer = sse::UiBlockSerializer::new();
 
         loop {
@@ -1099,9 +1133,7 @@ pub async fn list_runs_by_thread(
                     tracing::warn!(run_id = %r.id, error = %e, "get_all_events failed, returning empty event list");
                     vec![]
                 });
-                let mut ui_state: UiTransformState<AnalyticsEvent> = UiTransformState::new()
-                    .with_summary_fn(builder_step_summary)
-                    .with_tool_summary_fn(builder_tool_summary);
+                let mut ui_state: UiTransformState<AnalyticsEvent> = make_ui_state(&r.agent_id);
                 let mut ui_serializer = sse::UiBlockSerializer::new();
                 let mut ui_events: Vec<sse::UiEvent> = Vec::new();
                 for row in raw_rows {

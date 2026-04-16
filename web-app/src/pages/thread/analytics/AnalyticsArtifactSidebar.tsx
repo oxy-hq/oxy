@@ -1,9 +1,16 @@
+import Editor from "@monaco-editor/react";
+import { BadgeCheck } from "lucide-react";
 import SqlArtifactPanel from "@/components/ArtifactPanel/ArtifactsContent/sql";
+import SqlResultsTable from "@/components/sql/SqlResultsTable";
+import ErrorAlert from "@/components/ui/ErrorAlert";
 import { Panel, PanelContent, PanelHeader } from "@/components/ui/panel";
+import { Spinner } from "@/components/ui/shadcn/spinner";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/tooltip";
 import type { ArtifactItem, ProcedureItem, SqlItem } from "@/hooks/analyticsSteps";
 import type { AnalyticsDisplayBlock, SseEvent } from "@/hooks/useAnalyticsRun";
 import { extractDisplayBlockForSeq } from "@/hooks/useAnalyticsRun";
 import ProcedureRunDagPanel from "../agentic/ProcedureRunDagPanel";
+import { VERIFIED_TOOLTIP } from "../constants";
 import {
   AskUserView,
   ChartSection,
@@ -36,7 +43,8 @@ import {
   RunTestsView,
   SearchFilesView,
   SemanticQueryView,
-  ValidateProjectView
+  ValidateProjectView,
+  VerifiedSemanticQueryView
 } from "./BuilderArtifactViews";
 
 interface Props {
@@ -69,17 +77,74 @@ const AnalyticsArtifactSidebar = ({
 
   // ── kind === "sql" (query_executed domain event) ──────────────────────────
   if (item.kind === "sql") {
+    const verified = item.source === "semantic";
+    const title = (
+      <div className='flex min-w-0 items-center gap-1.5'>
+        <h3 className='truncate font-semibold text-sm'>
+          {verified ? "Semantic Query" : "SQL Query"}
+        </h3>
+        {verified && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <BadgeCheck className='h-4 w-4 shrink-0 text-special' />
+            </TooltipTrigger>
+            <TooltipContent side='bottom'>{VERIFIED_TOOLTIP}</TooltipContent>
+          </Tooltip>
+        )}
+      </div>
+    );
+    const subtitle =
+      item.rowCount !== undefined ? `${item.rowCount} rows · ${item.durationMs ?? 0}ms` : undefined;
+
+    if (verified && item.semanticQuery) {
+      const sqlLineCount = item.sql.split("\n").length;
+      const sqlHeight = Math.min(Math.max(sqlLineCount * 18 + 24, 120), 320);
+      return (
+        <Panel>
+          <PanelHeader title={title} subtitle={subtitle} onClose={onClose} />
+          <PanelContent scrollable={true} padding={false} className='flex min-h-0 flex-col'>
+            <VerifiedSemanticQueryView query={item.semanticQuery} database={item.database} />
+            <div className='border-t'>
+              <div className='px-4 pt-3 pb-1.5 font-medium text-muted-foreground text-xs uppercase tracking-wide'>
+                Compiled SQL
+              </div>
+              <div style={{ height: sqlHeight }}>
+                <Editor
+                  height='100%'
+                  width='100%'
+                  theme='vs-dark'
+                  defaultValue={item.sql}
+                  language='sql'
+                  value={item.sql}
+                  loading={<Spinner />}
+                  options={{
+                    readOnly: true,
+                    scrollBeyondLastLine: false,
+                    automaticLayout: true,
+                    minimap: { enabled: false }
+                  }}
+                />
+              </div>
+            </div>
+            {item.error && (
+              <ErrorAlert className='mx-3 my-2 max-h-32 overflow-y-auto' message={item.error} />
+            )}
+            {!item.error && item.result && (
+              <div className='border-t'>
+                <div className='px-4 pt-3 pb-1.5 font-medium text-muted-foreground text-xs uppercase tracking-wide'>
+                  Results
+                </div>
+                <SqlResultsTable result={item.result} />
+              </div>
+            )}
+          </PanelContent>
+        </Panel>
+      );
+    }
+
     return (
       <Panel>
-        <PanelHeader
-          title='SQL Query'
-          subtitle={
-            item.rowCount !== undefined
-              ? `${item.rowCount} rows · ${item.durationMs ?? 0}ms`
-              : undefined
-          }
-          onClose={onClose}
-        />
+        <PanelHeader title={title} subtitle={subtitle} onClose={onClose} />
         <PanelContent scrollable={false} padding={false} className='flex min-h-0 flex-col'>
           <div className='min-h-0 flex-1'>
             <SqlArtifactPanel artifact={sqlArtifactFromSqlItem(item)} />

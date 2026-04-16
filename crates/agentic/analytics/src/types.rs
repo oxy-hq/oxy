@@ -655,6 +655,12 @@ pub struct AnalyticsSolution {
     /// (and the Solving-skip boundary).  The Executing handler routes to
     /// `AnalyticsSolver::connectors[connector_name]`.
     pub connector_name: String,
+    /// Structured semantic query (dimensions, measures, filters, time dimensions)
+    /// that produced this solution.  Populated on the `SolutionSource::SemanticLayer`
+    /// path and forwarded on the `QueryExecuted` event so the UI can render the
+    /// semantic view alongside the compiled SQL for verified queries.  `None` on
+    /// all other paths.
+    pub semantic_query: Option<QueryRequestItem>,
 }
 
 /// One executed-query result set (data + optional column stats).

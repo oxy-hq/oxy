@@ -1,4 +1,5 @@
 import {
+  BadgeCheck,
   BarChart2,
   BookOpen,
   Brain,
@@ -35,6 +36,7 @@ import type {
   TraceItem
 } from "@/hooks/analyticsSteps";
 import { cn } from "@/libs/shadcn/utils";
+import { VERIFIED_TOOLTIP } from "../constants";
 
 // ── LLM Usage Tooltip ────────────────────────────────────────────────────────
 
@@ -124,25 +126,39 @@ function stepColors(label: string): Colors {
 const PILL_CLASS =
   "flex shrink-0 items-center gap-1 rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground max-w-[120px]";
 
+const VERIFIED_PILL_CLASS =
+  "flex shrink-0 items-center gap-1 rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 font-mono text-[11px] text-primary transition-colors hover:bg-primary/20 max-w-[140px]";
+
 interface ArtifactPillProps {
   icon: React.FC<React.SVGProps<SVGSVGElement>>;
   label: string;
+  verified?: boolean;
   onClick: () => void;
 }
 
-const ArtifactPill = ({ icon: Icon, label, onClick }: ArtifactPillProps) => (
-  <button
-    type='button'
-    onClick={(e) => {
-      e.stopPropagation();
-      onClick();
-    }}
-    className={PILL_CLASS}
-  >
-    <Icon className='h-3 w-3 shrink-0' />
-    <span className='truncate'>{label}</span>
-  </button>
-);
+const ArtifactPill = ({ icon: Icon, label, verified, onClick }: ArtifactPillProps) => {
+  const pill = (
+    <button
+      type='button'
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className={verified ? VERIFIED_PILL_CLASS : PILL_CLASS}
+    >
+      <Icon className='h-3 w-3 shrink-0' />
+      <span className='truncate'>{label}</span>
+      {verified && <BadgeCheck className='h-3.5 w-3.5 shrink-0 text-special' />}
+    </button>
+  );
+  if (!verified) return pill;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{pill}</TooltipTrigger>
+      <TooltipContent side='top'>{VERIFIED_TOOLTIP}</TooltipContent>
+    </Tooltip>
+  );
+};
 
 // ── Child item renderers ──────────────────────────────────────────────────────
 
@@ -444,8 +460,8 @@ const SqlChild = ({
   item: SqlItem;
   onSelect: (item: SelectableItem) => void;
 }) => {
-  const preview = item.sql.trim().split("\n")[0];
-  const truncated = preview.length > 60 ? `${preview.slice(0, 60)}…` : preview;
+  const verified = item.source === "semantic";
+  const label = verified ? "Semantic Query" : "SQL Query";
 
   return (
     <button
@@ -453,14 +469,31 @@ const SqlChild = ({
       onClick={() => onSelect(item)}
       className='flex w-full items-center gap-1.5 py-0.5 text-left transition-opacity hover:opacity-70'
     >
-      <Database className='h-3 w-3 shrink-0 text-muted-foreground' />
-      <span className='flex-1 truncate font-mono text-muted-foreground text-xs'>{truncated}</span>
+      <Database
+        className={cn("h-3 w-3 shrink-0", verified ? "text-primary" : "text-muted-foreground")}
+      />
+      <span
+        className={cn(
+          "flex-1 truncate font-medium text-xs",
+          verified ? "text-primary" : "text-muted-foreground"
+        )}
+      >
+        {label}
+      </span>
+      {verified && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <BadgeCheck className='h-3.5 w-3.5 shrink-0 text-special' />
+          </TooltipTrigger>
+          <TooltipContent side='top'>{VERIFIED_TOOLTIP}</TooltipContent>
+        </Tooltip>
+      )}
       {item.isStreaming && <Loader2 className='h-3 w-3 shrink-0 animate-spin text-primary' />}
       {!item.isStreaming && item.error && (
-        <span className='shrink-0 text-[10px] text-destructive'>Failed: {item.error}</span>
+        <span className='shrink-0 text-destructive text-xs'>Failed: {item.error}</span>
       )}
       {!item.isStreaming && !item.error && item.rowCount !== undefined && (
-        <span className='shrink-0 font-mono text-[10px] text-muted-foreground/60'>
+        <span className='shrink-0 font-mono text-muted-foreground/60 text-xs'>
           {item.rowCount} rows
         </span>
       )}
@@ -505,6 +538,7 @@ type PillInfo = {
   id: string;
   icon: React.FC<React.SVGProps<SVGSVGElement>>;
   label: string;
+  verified?: boolean;
   item: SelectableItem;
 };
 
@@ -515,9 +549,14 @@ function collectPills(items: TraceItem[]): PillInfo[] {
       const { Icon, label } = getToolDisplay(item);
       pills.push({ id: item.id, icon: Icon, label, item });
     } else if (item.kind === "sql") {
-      const firstLine = item.sql.trim().split("\n")[0] ?? "SQL";
-      const label = firstLine.length > 20 ? `${firstLine.slice(0, 20)}…` : firstLine;
-      pills.push({ id: item.id, icon: Database, label, item });
+      const verified = item.source === "semantic";
+      pills.push({
+        id: item.id,
+        icon: Database,
+        label: verified ? "Semantic Query" : "SQL Query",
+        verified,
+        item
+      });
     } else if (item.kind === "procedure") {
       pills.push({ id: item.id, icon: GitBranch, label: item.procedureName, item });
     }
@@ -602,6 +641,7 @@ const AnalyticsStepRow = ({ step, onSelectArtifact }: AnalyticsStepRowProps) => 
                   key={pill.id}
                   icon={pill.icon}
                   label={pill.label}
+                  verified={pill.verified}
                   onClick={() => onSelectArtifact(pill.item)}
                 />
               ))}

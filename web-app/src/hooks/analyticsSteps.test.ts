@@ -23,14 +23,15 @@ const subSpecStart = (index: number, label: string) =>
   ev("sub_spec_start", { index, total: 0, label });
 const subSpecEnd = (index: number, success = true) => ev("sub_spec_end", { index, success });
 const fanOutEnd = () => ev("fan_out_end", { success: true });
-const queryExecuted = (sql = "SELECT 1") =>
+const queryExecuted = (sql = "SELECT 1", source: "semantic" | "llm" | "vendor" = "llm") =>
   ev("query_executed", {
     query: sql,
     row_count: 1,
     duration_ms: 10,
     success: true,
     columns: ["id"],
-    rows: [["1"]]
+    rows: [["1"]],
+    source
   });
 
 // ── basic step behaviour ──────────────────────────────────────────────────────
@@ -55,6 +56,16 @@ describe("buildAnalyticsSteps — basic steps", () => {
   it("failed step_end sets error", () => {
     const items = buildAnalyticsSteps([stepStart("Solving"), stepEnd("failed")]);
     expect(items[0]).toMatchObject({ kind: "step", error: "Step failed" });
+  });
+
+  it("query_executed source is propagated to SqlItem", () => {
+    const steps = buildAnalyticsSteps([
+      stepStart("Executing"),
+      queryExecuted("SELECT 1", "semantic"),
+      stepEnd()
+    ]);
+    const step = steps[0] as { items: { kind: string; source?: string }[] };
+    expect(step.items[0]).toMatchObject({ kind: "sql", source: "semantic" });
   });
 
   it("sequential steps are all in result", () => {

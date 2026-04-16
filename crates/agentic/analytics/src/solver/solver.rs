@@ -16,7 +16,7 @@ use async_trait::async_trait;
 
 use crate::config::StateConfig;
 use crate::engine::SemanticEngine;
-use crate::events::AnalyticsEvent;
+use crate::events::{AnalyticsEvent, QuerySource};
 use crate::llm::{InitialMessages, LlmClient, ThinkingConfig, ToolLoopConfig};
 use crate::procedure::ProcedureRunner;
 use crate::schemas::solve_response_schema;
@@ -549,6 +549,7 @@ impl<Ev: DomainEvents> FanoutWorker<AnalyticsDomain, Ev> for AnalyticsFanoutWork
                         payload,
                         solution_source: SolutionSource::SemanticLayer,
                         connector_name: spec.connector_name.clone(),
+                        semantic_query: spec.query_request_item.clone(),
                     })
                 } else {
                     None
@@ -560,6 +561,7 @@ impl<Ev: DomainEvents> FanoutWorker<AnalyticsDomain, Ev> for AnalyticsFanoutWork
                     file_path: file_path.clone(),
                 },
                 connector_name: spec.connector_name.clone(),
+                semantic_query: None,
             }),
             SolutionSource::VendorEngine(_) => {
                 if let Some(payload) = spec.precomputed.clone() {
@@ -567,6 +569,7 @@ impl<Ev: DomainEvents> FanoutWorker<AnalyticsDomain, Ev> for AnalyticsFanoutWork
                         payload,
                         solution_source: spec.solution_source.clone(),
                         connector_name: spec.connector_name.clone(),
+                        semantic_query: None,
                     })
                 } else {
                     None
@@ -729,10 +732,14 @@ impl AnalyticsFanoutWorker {
 
         let solution_source = spec.solution_source.clone();
         let connector_name = spec.connector_name.clone();
+        let semantic_query = matches!(solution_source, SolutionSource::SemanticLayer)
+            .then(|| spec.query_request_item.clone())
+            .flatten();
         Ok(AnalyticsSolution {
             payload: SolutionPayload::Sql(sql),
             solution_source,
             connector_name,
+            semantic_query,
         })
     }
 
@@ -747,6 +754,20 @@ impl AnalyticsFanoutWorker {
     ) -> Result<AnalyticsResult, (AnalyticsError, BackTarget<AnalyticsDomain>)> {
         const DEFAULT_SAMPLE_LIMIT: u64 = 1_000;
         let start = std::time::Instant::now();
+
+        let query_source = match &solution.solution_source {
+            SolutionSource::SemanticLayer => QuerySource::Semantic,
+            SolutionSource::VendorEngine(_) => QuerySource::Vendor,
+            // NOTE: `Procedure` solutions *can* reach this fan-out worker (unlike the
+            // serial `execute_solution` in executing.rs, which intercepts them first).
+            // Badging them as `Llm` is imprecise — user-authored YAML procedures are
+            // not LLM-generated SQL. Revisit by introducing a dedicated
+            // `QuerySource::UserDefined` variant if/when procedure provenance needs to
+            // surface distinctly in the UI.
+            SolutionSource::LlmWithSemanticContext | SolutionSource::Procedure { .. } => {
+                QuerySource::Llm
+            }
+        };
 
         let sql = match &solution.payload {
             SolutionPayload::Sql(sql) => sql.clone(),
@@ -798,7 +819,9 @@ impl AnalyticsFanoutWorker {
                         error: None,
                         columns,
                         rows,
+                        source: query_source,
                         sub_spec_index,
+                        semantic_query: solution.semantic_query.clone(),
                     },
                 )
                 .await;
@@ -816,7 +839,9 @@ impl AnalyticsFanoutWorker {
                         error: Some(e.to_string()),
                         columns: vec![],
                         rows: vec![],
+                        source: query_source,
                         sub_spec_index,
+                        semantic_query: solution.semantic_query.clone(),
                     },
                 )
                 .await;

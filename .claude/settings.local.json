@@ -57,7 +57,8 @@
       "Bash(rg '\"#[0-9a-fA-F]{3,8}\"' --glob '*.tsx' --glob '*.ts' --glob '!**/icons/**' --glob '!**/github-dark-theme*' --glob '!**/LoginWithGoogleButton*' --glob '!**/node_modules/**' --glob '!**/theme.json' --glob '!**/Echarts/index.tsx' web-app/src/)",
       "Bash(rg \"'#[0-9a-fA-F]{3,8}'\" --glob '*.tsx' --glob '*.ts' --glob '!**/icons/**' --glob '!**/github-dark-theme*' --glob '!**/LoginWithGoogleButton*' --glob '!**/node_modules/**' --glob '!**/theme.json' --glob '!**/Echarts/index.tsx' web-app/src/)",
       "Bash(node -e ':*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(pnpm --dir /Users/taynguyen/Workspace/github.com/dataframehq/claude-isolated/oxy-internal/web-app exec vitest run src/hooks/analyticsSteps.test.ts)"
     ],
     "deny": [],
     "ask": []

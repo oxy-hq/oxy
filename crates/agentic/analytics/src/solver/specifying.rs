@@ -769,6 +769,7 @@ impl AnalyticsSolver {
                     .unwrap_or(SolutionPayload::Sql(String::new())),
                 solution_source: spec.solution_source.clone(),
                 connector_name: spec.connector_name.clone(),
+                semantic_query: None,
             },
         )))
     }
@@ -1084,10 +1085,15 @@ impl AnalyticsSolver {
     ) -> TransitionResult<AnalyticsDomain> {
         // Fast path: precomputed SQL available (semantic compile / vendor engine).
         if let Some(payload) = spec.precomputed.clone() {
+            let semantic_query =
+                matches!(spec.solution_source, crate::SolutionSource::SemanticLayer)
+                    .then(|| spec.query_request_item.clone())
+                    .flatten();
             return TransitionResult::ok(ProblemState::Executing(crate::AnalyticsSolution {
                 payload,
                 solution_source: spec.solution_source.clone(),
                 connector_name: spec.connector_name.clone(),
+                semantic_query,
             }));
         }
 
@@ -1097,6 +1103,7 @@ impl AnalyticsSolver {
                 payload: SolutionPayload::Sql(String::new()),
                 solution_source: spec.solution_source.clone(),
                 connector_name: spec.connector_name.clone(),
+                semantic_query: None,
             }));
         }
 
@@ -1127,6 +1134,7 @@ impl AnalyticsSolver {
                             payload: SolutionPayload::Sql(sql),
                             solution_source: SolutionSource::SemanticLayer,
                             connector_name: spec.connector_name.clone(),
+                            semantic_query: spec.query_request_item.clone(),
                         },
                     ));
                 }
@@ -1429,6 +1437,7 @@ pub(super) fn build_specifying_handler()
                                     file_path: file_path.clone(),
                                 },
                                 connector_name: default_conn,
+                                semantic_query: None,
                             },
                         ));
                     }

@@ -187,6 +187,20 @@ export type QueryGeneratedBlock = {
   payload: { sql: string; sub_spec_index?: number | null };
 };
 
+export type SemanticQueryPayload = {
+  measures?: string[];
+  dimensions?: string[];
+  filters?: Array<{ member: string; operator: string; values?: string[] }>;
+  time_dimensions?: Array<{
+    dimension: string;
+    granularity?: string | null;
+    date_range?: string[] | null;
+  }>;
+  order?: Array<{ id: string; desc?: boolean }>;
+  limit?: number | null;
+  assumptions?: string[];
+};
+
 export type QueryExecutedBlock = {
   seq: number;
   event_type: "query_executed";
@@ -198,7 +212,9 @@ export type QueryExecutedBlock = {
     error?: string;
     columns: string[];
     rows: string[][];
+    source?: "semantic" | "llm" | "vendor";
     sub_spec_index?: number | null;
+    semantic_query?: SemanticQueryPayload;
   };
 };
 

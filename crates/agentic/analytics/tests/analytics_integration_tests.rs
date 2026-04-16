@@ -196,6 +196,7 @@ impl DomainSolver<AnalyticsDomain> for FullPipelineSolver {
             ),
             solution_source: Default::default(),
             connector_name: String::new(),
+            semantic_query: None,
         })
     }
 
@@ -402,6 +403,7 @@ impl DomainSolver<AnalyticsDomain> for PriorIntentSolver {
             payload: SolutionPayload::Sql("SELECT COUNT(*) AS order_count FROM orders".into()),
             solution_source: Default::default(),
             connector_name: String::new(),
+            semantic_query: None,
         })
     }
 
@@ -626,6 +628,7 @@ impl DomainSolver<AnalyticsDomain> for AmbiguousColumnSolver {
             ),
             solution_source: Default::default(),
             connector_name: String::new(),
+            semantic_query: None,
         })
     }
 
@@ -830,6 +833,7 @@ impl DomainSolver<AnalyticsDomain> for ProcedureSolver {
             payload: SolutionPayload::Sql(String::new()),
             solution_source: SolutionSource::Procedure { file_path },
             connector_name: String::new(),
+            semantic_query: None,
         })
     }
 

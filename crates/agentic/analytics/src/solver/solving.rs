@@ -348,10 +348,14 @@ impl AnalyticsSolver {
 
         let solution_source = spec.solution_source.clone();
         let connector_name = spec.connector_name.clone();
+        let semantic_query = matches!(solution_source, crate::SolutionSource::SemanticLayer)
+            .then(|| spec.query_request_item.clone())
+            .flatten();
         Ok(AnalyticsSolution {
             payload: SolutionPayload::Sql(sql),
             solution_source,
             connector_name,
+            semantic_query,
         })
     }
 
@@ -433,6 +437,7 @@ pub(super) fn build_solving_handler()
                                     payload: SolutionPayload::Sql(sql),
                                     solution_source: crate::SolutionSource::SemanticLayer,
                                     connector_name: spec.connector_name.clone(),
+                                    semantic_query: spec.query_request_item.clone(),
                                 };
                                 return TransitionResult::ok(ProblemState::Executing(solution));
                             }

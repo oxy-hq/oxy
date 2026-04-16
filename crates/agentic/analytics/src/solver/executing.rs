@@ -15,7 +15,7 @@ use agentic_core::{
 };
 
 use crate::engine::EngineError;
-use crate::events::AnalyticsEvent;
+use crate::events::{AnalyticsEvent, QuerySource};
 use crate::procedure::ProcedureOutput;
 use crate::types::{SolutionPayload, SolutionSource};
 
@@ -95,6 +95,17 @@ impl AnalyticsSolver {
 
         let start = std::time::Instant::now();
 
+        let query_source = match &solution.solution_source {
+            SolutionSource::SemanticLayer => QuerySource::Semantic,
+            SolutionSource::VendorEngine(_) => QuerySource::Vendor,
+            // Procedure solutions are intercepted by `build_executing_handler` before
+            // `execute_solution` is ever called, so this arm is unreachable for that
+            // variant. Kept in the pattern only to satisfy exhaustiveness.
+            SolutionSource::LlmWithSemanticContext | SolutionSource::Procedure { .. } => {
+                QuerySource::Llm
+            }
+        };
+
         match &solution.payload {
             SolutionPayload::Sql(sql) => {
                 tracing::debug!(
@@ -166,7 +177,9 @@ impl AnalyticsSolver {
                                 error: None,
                                 columns,
                                 rows,
+                                source: query_source,
                                 sub_spec_index: None,
+                                semantic_query: solution.semantic_query.clone(),
                             },
                         )
                         .await;
@@ -196,7 +209,9 @@ impl AnalyticsSolver {
                                 error: Some(e.to_string()),
                                 columns: vec![],
                                 rows: vec![],
+                                source: query_source,
                                 sub_spec_index: None,
+                                semantic_query: solution.semantic_query.clone(),
                             },
                         )
                         .await;
@@ -250,7 +265,9 @@ impl AnalyticsSolver {
                                 error: None,
                                 columns,
                                 rows,
+                                source: query_source,
                                 sub_spec_index: None,
+                                semantic_query: solution.semantic_query.clone(),
                             },
                         )
                         .await;
@@ -269,7 +286,9 @@ impl AnalyticsSolver {
                                 error: Some(message.clone()),
                                 columns: vec![],
                                 rows: vec![],
+                                source: query_source,
                                 sub_spec_index: None,
+                                semantic_query: solution.semantic_query.clone(),
                             },
                         )
                         .await;

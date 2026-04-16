@@ -7,3 +7,4 @@ export { RunTestsView } from "./RunTestsView";
 export { SearchFilesView } from "./SearchFilesView";
 export { SemanticQueryView } from "./SemanticQueryView";
 export { ValidateProjectView } from "./ValidateProjectView";
+export { VerifiedSemanticQueryView } from "./VerifiedSemanticQueryView";

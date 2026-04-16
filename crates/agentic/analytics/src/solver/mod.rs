@@ -193,6 +193,7 @@ dimensions:
             payload: SolutionPayload::Sql(String::new()),
             solution_source: Default::default(),
             connector_name: "default".to_string(),
+            semantic_query: None,
         }
     }
 
@@ -1287,9 +1288,10 @@ ORDER BY activity_date ASC
                 Box::new(make_duckdb_connector()),
             );
             let solution = AnalyticsSolution {
-                sql: BINDER_ERROR_SQL.to_string(),
+                payload: SolutionPayload::Sql(BINDER_ERROR_SQL.to_string()),
                 solution_source: SolutionSource::LlmWithSemanticContext,
                 connector_name: "default".to_string(),
+                semantic_query: None,
             };
             let result = solver.execute(solution).await;
             assert!(
@@ -1313,9 +1315,10 @@ ORDER BY activity_date ASC
             );
             let spec = make_spec();
             let solution = AnalyticsSolution {
-                sql: BINDER_ERROR_SQL.to_string(),
+                payload: SolutionPayload::Sql(BINDER_ERROR_SQL.to_string()),
                 solution_source: SolutionSource::LlmWithSemanticContext,
                 connector_name: "default".to_string(),
+                semantic_query: None,
             };
             let handlers = build_analytics_handlers();
             let execute_fn = {
@@ -1457,6 +1460,7 @@ ORDER BY activity_date ASC
             payload: SolutionPayload::Vendor(vq),
             solution_source: SolutionSource::VendorEngine("test_vendor".to_string()),
             connector_name: "default".to_string(),
+            semantic_query: None,
         };
 
         let result = s
@@ -1513,6 +1517,7 @@ ORDER BY activity_date ASC
             payload: SolutionPayload::Vendor(vq),
             solution_source: SolutionSource::VendorEngine("error_vendor".to_string()),
             connector_name: "default".to_string(),
+            semantic_query: None,
         };
 
         let err = s.execute_solution(solution).await.unwrap_err().0;

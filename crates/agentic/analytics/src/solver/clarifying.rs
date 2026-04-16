@@ -326,15 +326,6 @@ impl AnalyticsSolver {
                     )
                     .await;
 
-                    emit_domain(
-                        &self.event_tx,
-                        AnalyticsEvent::QueryGenerated {
-                            sql: sql.clone(),
-                            sub_spec_index: None,
-                        },
-                    )
-                    .await;
-
                     // Determine connector from resolved tables.
                     let translation = self.catalog.translate_to_raw_context(&query_request, "");
                     let connector_name = translation
@@ -347,6 +338,7 @@ impl AnalyticsSolver {
                         payload: SolutionPayload::Sql(sql),
                         solution_source: SolutionSource::SemanticLayer,
                         connector_name,
+                        semantic_query: Some(semantic_query.clone()),
                     }));
                 }
                 Err(e) => {
