@@ -1,5 +1,6 @@
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, X } from "lucide-react";
 import type { ReactNode } from "react";
+import { Button } from "@/components/ui/shadcn/button";
 import { cn } from "@/libs/shadcn/utils";
 
 interface ErrorAlertProps {
@@ -9,9 +10,18 @@ interface ErrorAlertProps {
   actions?: ReactNode;
   children?: ReactNode;
   className?: string;
+  onDismiss?: () => void;
 }
 
-const ErrorAlert = ({ title, message, icon, actions, children, className }: ErrorAlertProps) => {
+const ErrorAlert = ({
+  title,
+  message,
+  icon,
+  actions,
+  children,
+  className,
+  onDismiss
+}: ErrorAlertProps) => {
   const iconElement = icon ?? <AlertCircle className='mt-0.5 h-4 w-4 shrink-0 text-error' />;
 
   return (
@@ -32,6 +42,17 @@ const ErrorAlert = ({ title, message, icon, actions, children, className }: Erro
           </>
         )}
       </div>
+      {onDismiss && (
+        <Button
+          variant='ghost'
+          size='icon'
+          className='h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground'
+          onClick={onDismiss}
+          aria-label='Dismiss error'
+        >
+          <X className='h-3 w-3' />
+        </Button>
+      )}
     </div>
   );
 };

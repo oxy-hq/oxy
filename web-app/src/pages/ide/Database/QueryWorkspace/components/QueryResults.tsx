@@ -4,7 +4,7 @@ import { Spinner } from "@/components/ui/shadcn/spinner";
 import useDatabaseClient from "@/stores/useDatabaseClient";
 
 export default function QueryResults() {
-  const { tabs, activeTabId } = useDatabaseClient();
+  const { tabs, activeTabId, setTabError } = useDatabaseClient();
   const activeTab = tabs.find((t) => t.id === activeTabId);
 
   if (!activeTab) {
@@ -26,7 +26,11 @@ export default function QueryResults() {
   if (activeTab.error) {
     return (
       <div className='flex h-full flex-col items-center justify-center p-4'>
-        <ErrorAlert message={activeTab.error} className='max-w-lg' />
+        <ErrorAlert
+          message={activeTab.error}
+          className='max-w-lg'
+          onDismiss={() => setTabError(activeTab.id, undefined)}
+        />
       </div>
     );
   }

@@ -103,7 +103,6 @@ export default function QueryEditor({ onSave }: QueryEditorProps) {
       const errorMessage = messageMatch ? messageMatch[1] : rawError;
 
       setTabError(activeTab.id, errorMessage);
-      toast.error(errorMessage);
     }
   }, [activeTab, project.id, branchName, setTabExecuting, setTabResults, setTabError]);
 
