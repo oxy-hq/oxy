@@ -62,6 +62,13 @@ export interface AuthConfigResponse {
    * Only set in local_git mode.
    */
   protected_branches?: string[];
+  /**
+   * Fork point for auto-created feature branches.  Configured via `base_branch`
+   * in config.yml.  When unset, new branches fork from whatever the server has
+   * checked out (usually the default branch).  Use this to serve from a
+   * deployment branch while forking new work from an integration branch.
+   */
+  base_branch?: string;
   /** Set when needs_onboarding is true due to an unexpected error (e.g. workspace directory deleted). */
   workspace_error?: string;
 }

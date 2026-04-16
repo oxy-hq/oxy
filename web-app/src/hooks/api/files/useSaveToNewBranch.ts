@@ -1,9 +1,11 @@
 import { useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
 import useCurrentUser from "@/hooks/api/users/useCurrentUser";
 import { useSwitchWorkspaceBranch } from "@/hooks/api/workspaces/useWorkspaces";
 import useCurrentWorkspaceBranch from "@/hooks/useCurrentWorkspaceBranch";
-import { FileService } from "@/services/api";
+import { FileService, WorkspaceService } from "@/services/api";
 import useIdeBranch from "@/stores/useIdeBranch";
 import queryKeys from "../queryKey";
 
@@ -27,10 +29,12 @@ function toUserSlug(email?: string, name?: string): string {
  */
 export function useSaveToNewBranch() {
   const { workspace, branchName: originalBranch } = useCurrentWorkspaceBranch();
+  const { authConfig } = useAuth();
   const queryClient = useQueryClient();
   const { setCurrentBranch } = useIdeBranch();
   const switchBranch = useSwitchWorkspaceBranch();
   const { data: currentUser } = useCurrentUser();
+  const [isSaving, setIsSaving] = useState(false);
 
   const saveToNewBranch = async (
     pathb64: string,
@@ -43,15 +47,30 @@ export function useSaveToNewBranch() {
     const userSlug = toUserSlug(currentUser?.email, currentUser?.name);
     const newBranch = `${userSlug}/${timestamp}`;
 
-    // 1. Create the git worktree for the new branch
-    await switchBranch.mutateAsync({ workspaceId: workspace.id, branchName: newBranch });
-
-    // 2. Save file — if this fails, roll back the IDE to the original branch
+    // 1. Create the git worktree for the new branch.  When `base_branch` is
+    //    configured in config.yml, fork from it instead of whatever the server
+    //    currently has checked out — this lets Oxy serve from a deployment
+    //    branch while still forking new work from an integration branch.
+    setIsSaving(true);
     try {
+      await switchBranch.mutateAsync({
+        workspaceId: workspace.id,
+        branchName: newBranch,
+        baseBranch: authConfig.base_branch
+      });
+
+      // 2. Save file — if this fails, clean up the orphaned worktree and roll back
       await FileService.saveFile(workspace.id, pathb64, content, newBranch);
     } catch (err) {
       setCurrentBranch(workspace.id, originalBranch);
+      try {
+        await WorkspaceService.deleteBranch(workspace.id, newBranch);
+      } catch (cleanupErr) {
+        console.error("Failed to clean up orphaned branch:", cleanupErr);
+      }
       throw err;
+    } finally {
+      setIsSaving(false);
     }
 
     // 3. Invalidate the file cache for the new branch so it reloads cleanly
@@ -66,5 +85,5 @@ export function useSaveToNewBranch() {
     onSuccess?.();
   };
 
-  return { saveToNewBranch, isPending: switchBranch.isPending };
+  return { saveToNewBranch, isPending: isSaving };
 }

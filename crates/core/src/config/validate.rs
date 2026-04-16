@@ -329,6 +329,7 @@ mod tests {
                 mcp: None,
                 a2a: None,
                 protected_branches: None,
+                base_branch: None,
             },
             metadata: None,
         }

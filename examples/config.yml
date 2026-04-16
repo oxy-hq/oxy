@@ -152,3 +152,30 @@ a2a:
       name: local
     - ref: agents/semantic.agent.yml
       name: semantic
+
+# ── Git branch workflow ────────────────────────────────────────────────────
+# When the workspace is a git repository, Oxy's IDE can auto-create a new
+# feature branch on save instead of writing directly to a protected branch.
+#
+# Uncomment and adjust the two fields below to opt in.  See
+# https://docs.oxy.tech/reference/branch-configuration for full details.
+#
+# Scenario A — single long-lived branch (simplest):
+#   protected_branches are guarded, new work forks from whatever Oxy has
+#   checked out (usually the same branch).  `base_branch` can stay unset.
+#
+# protected_branches:
+#   - main
+#
+# Scenario B — deployment branch split from integration branch:
+#   Oxy serves from `deploy` (e.g. because your cluster points at that ref),
+#   but you want new work to fork from `main` so feature branches start from
+#   the latest integration commits, not from whatever was last deployed.
+#
+# protected_branches:
+#   - deploy
+# base_branch: main
+#
+# Note: in single-workspace mode (`oxy serve --local`) the protected-branch
+# guard is disabled entirely — a single developer on their own checkout writes
+# directly to the current branch regardless of these settings.

@@ -78,6 +78,11 @@ impl ConfigManager {
         self.config.protected_branches.as_deref()
     }
 
+    /// Returns the configured fork-point branch for auto-created worktrees, if any.
+    pub fn base_branch(&self) -> Option<&str> {
+        self.config.base_branch.as_deref()
+    }
+
     pub async fn resolve_file<P: AsRef<Path>>(&self, file_ref: P) -> Result<String, OxyError> {
         self.storage.fs_link(file_ref).await
     }

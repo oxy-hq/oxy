@@ -1,0 +1,133 @@
+---
+title: "Branch Configuration"
+description: Configure Oxy's IDE branch workflow — protected branches and the fork point for new worktrees.
+---
+
+When Oxy runs against a git-enabled workspace, the IDE supports two branch
+safety controls via `config.yml`:
+
+- **`protected_branches`** — branches where saving a file auto-creates a new
+  feature branch instead of writing directly to the current branch.
+- **`base_branch`** — the branch that newly auto-created feature branches fork
+  from. Lets you serve from a "deployment" branch while forking new work from a
+  separate "integration" branch.
+
+Both fields only take effect when the workspace is a git repository (the
+`local_git` indicator in the IDE) and the server is running in multi-workspace
+mode.  In single-workspace mode (`oxy serve --local`) the protected-branch
+guard is disabled entirely — a single developer on their own machine writes
+directly to whichever branch they have checked out.
+
+## `protected_branches`
+
+<ParamField path="protected_branches" type="string[]" default="[default_branch]">
+  Branches where saving a file in the IDE auto-creates a new feature branch
+  instead of overwriting the current branch.  Defaults to the repository's
+  default branch (usually `main` or `master`), resolved from
+  `git symbolic-ref refs/remotes/origin/HEAD`.
+</ParamField>
+
+When the IDE is viewing a file on a protected branch, the Save button is
+relabelled **"Save to new branch"** and the editor shows a
+*"Saving will create a new branch"* hint.  Pressing save creates a worktree at
+`<user-slug>/<timestamp>` (e.g. `alice/2026-04-15-113742`), writes the file
+there, and switches the IDE to that branch.
+
+```yaml config.yml
+protected_branches:
+  - main
+  - develop
+```
+
+## `base_branch`
+
+<ParamField path="base_branch" type="string">
+  Branch used as the fork point when Oxy auto-creates a new feature branch.
+  When unset (the default), new branches fork from the main worktree's current
+  `HEAD` — whatever the server has checked out.
+</ParamField>
+
+By default, a new worktree created from `<user-slug>/<timestamp>` forks from
+whatever branch the server currently has checked out.  That is fine when Oxy
+serves from `main` and you want new work to branch off `main`.
+
+It is **not** fine when Oxy serves from a dedicated deployment branch — in that
+case you usually want new work to fork from your integration branch (e.g.
+`main`), not from the deployment checkout.  `base_branch` is the switch:
+
+```yaml config.yml
+# Oxy serves from `deploy` (which is what `protected_branches` gates), but
+# new feature branches fork from `main` so they contain the latest integration
+# work, not just whatever has been deployed.
+protected_branches:
+  - deploy
+base_branch: main
+```
+
+`base_branch` only affects **newly created** branches.  Attaching a worktree
+to a branch that already exists always uses that branch's existing ref as the
+starting point, regardless of this setting.
+
+### When to use it
+
+Use `base_branch` when your workflow has a meaningful split between:
+
+- **A deployment / serving branch** — the one Oxy actually runs against
+  (configured via `GIT_BRANCH` at startup, or whatever you manually check out
+  in the workspace directory).
+- **An integration branch** — the one humans merge their PRs into and where
+  new work should start.
+
+If your repository has only one long-lived branch, or if Oxy serves from the
+same branch that you merge into, leave `base_branch` unset and new worktrees
+will fork from the current checkout.
+
+## Interaction with Single-Workspace Mode
+
+When Oxy runs with `oxy serve --local` (single-workspace mode), the
+protected-branch guard is **always disabled**, regardless of how
+`protected_branches` is configured.  The assumption is that a single developer
+running Oxy locally against their own checkout expects direct writes to the
+branch they have open, not an auto-PR workflow.
+
+`base_branch` still has no effect in this mode because no new branches are
+auto-created — the user writes directly to whichever branch they have out.
+
+If you want the full branching workflow locally, run Oxy in multi-workspace
+mode (omit `--local`) and point it at your workspace.
+
+## Full Example
+
+```yaml config.yml
+databases:
+  - name: local
+    type: duckdb
+    key_path: None
+    dataset: .db/
+
+models:
+  - name: openai-4o-mini
+    vendor: openai
+    model_ref: gpt-4o-mini
+    key_var: OPENAI_API_KEY
+
+defaults:
+  database: local
+
+# Oxy serves from the `deploy` branch (checked out in the workspace).
+# Saving a file on `deploy` auto-creates a new worktree forked from `main`,
+# so the new branch starts from the latest integration work rather than from
+# whatever was last deployed.
+protected_branches:
+  - deploy
+base_branch: main
+```
+
+## See Also
+
+- [`oxy serve` reference](/reference/oxy-commands) — `--local` flag and git
+  initialization behaviour.
+- [Readonly Mode](/reference/readonly-mode) — a related guard that blocks all
+  file writes at the API layer, not just writes to protected branches.
+- [Cloud Mode](/deployment/cloud-mode) — deployment scenarios where the
+  deployment-vs-integration branch split is most common.

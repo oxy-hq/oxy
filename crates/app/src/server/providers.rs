@@ -429,16 +429,20 @@ impl WorkspaceBackend {
     }
 
     /// Switch to (or create) `branch`, returning its metadata.
+    ///
+    /// `base_branch` overrides the fork point when `branch` does not yet exist.
+    /// Pass `None` to fall back to git's default (HEAD of the main worktree).
     pub async fn switch_branch(
         &self,
         workspace_id: Uuid,
         branch: &str,
+        base_branch: Option<&str>,
     ) -> Result<ProjectBranch, OxyError> {
         let root = self.workspace_root().await;
         // Lazily initialize a git repo when the workspace was created without one
         // (demo / blank workspaces). This is a no-op when .git already exists.
         LocalGitService::ensure_initialized(&root).await?;
-        LocalGitService::get_or_create_worktree(&root, branch).await?;
+        LocalGitService::get_or_create_worktree(&root, branch, base_branch).await?;
         let now = Utc::now().to_string();
         Ok(ProjectBranch {
             id: Uuid::nil(),

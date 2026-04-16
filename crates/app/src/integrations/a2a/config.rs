@@ -118,6 +118,7 @@ impl A2aConfig {
             mcp: None,
             a2a: None,
             protected_branches: None,
+            base_branch: None,
             repositories: vec![],
         };
         let context = ValidationContext {

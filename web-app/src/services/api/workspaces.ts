@@ -41,8 +41,15 @@ export const WorkspaceService = {
     return response.data;
   },
 
-  async switchWorkspaceBranch(workspaceId: string, branchName: string): Promise<WorkspaceBranch> {
-    const response = await apiClient.post(`/${workspaceId}/switch-branch`, { branch: branchName });
+  async switchWorkspaceBranch(
+    workspaceId: string,
+    branchName: string,
+    baseBranch?: string
+  ): Promise<WorkspaceBranch> {
+    const response = await apiClient.post(`/${workspaceId}/switch-branch`, {
+      branch: branchName,
+      ...(baseBranch ? { base_branch: baseBranch } : {})
+    });
     return response.data;
   },
 

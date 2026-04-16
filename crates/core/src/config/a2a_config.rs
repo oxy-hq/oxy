@@ -118,6 +118,7 @@ impl A2aConfig {
             mcp: None,
             a2a: None,
             protected_branches: None,
+            base_branch: None,
             repositories: vec![],
         };
         let context = ValidationContext {
@@ -302,6 +303,7 @@ mod tests {
             a2a: None,
             slack: None,
             protected_branches: None,
+            base_branch: None,
         };
         let context = ValidationContext {
             config: dummy_config,
@@ -344,6 +346,7 @@ mod tests {
             mcp: None,
             a2a: None,
             protected_branches: None,
+            base_branch: None,
         };
         let context = ValidationContext {
             config: dummy_config,

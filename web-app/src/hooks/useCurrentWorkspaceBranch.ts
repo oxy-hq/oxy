@@ -19,10 +19,13 @@ export default function useCurrentWorkspaceBranch() {
   // "force edit mode": editing is allowed freely but saving auto-creates a branch.
   // Protected branches are configured via `protected_branches` in config.yml;
   // defaults to [default_branch] (usually "main") when not set.
+  // Skipped in single-workspace mode (`oxy serve --local`): a single developer
+  // on their own machine expects direct writes to main, not a PR workflow.
   const protectedBranches = authConfig.protected_branches ?? [authConfig.default_branch ?? "main"];
   const isMainEditMode = !!(
     authConfig.local_git &&
     authConfig.git_remote &&
+    !authConfig.single_workspace &&
     selectedBranch &&
     protectedBranches.includes(selectedBranch)
   );

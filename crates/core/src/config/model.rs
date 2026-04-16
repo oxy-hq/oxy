@@ -105,6 +105,18 @@ pub struct Config {
     #[garde(skip)]
     pub protected_branches: Option<Vec<String>>,
 
+    /// Branch that new worktrees fork from when saving on a protected branch.
+    /// Defaults to the currently checked-out branch (usually the default branch)
+    /// when not set.  Use this when Oxy serves from a "deployment" branch but
+    /// new work should fork from an "integration" branch (e.g. serve from
+    /// `deploy`, fork new work from `main`).
+    ///
+    /// Example config.yml:
+    ///   base_branch: main
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[garde(skip)]
+    pub base_branch: Option<String>,
+
     /// External repositories (dbt, LookML, data models, etc.) to surface in the IDE.
     ///
     /// Example config.yml:

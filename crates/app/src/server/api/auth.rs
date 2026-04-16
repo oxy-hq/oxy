@@ -140,6 +140,12 @@ pub struct AuthConfigResponse {
     /// defaults to `[default_branch]` when not set.
     /// Only meaningful when `local_git` is true.
     pub protected_branches: Vec<String>,
+    /// Fork point for auto-created feature branches.  Configured via
+    /// `base_branch` in config.yml; `None` means "fork from whatever the server
+    /// currently has checked out" (git's default).  Only meaningful when
+    /// `local_git` is true.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_branch: Option<String>,
     /// Present when `GITHUB_CLIENT_ID` is set — enables "Login with GitHub".
     pub github: Option<GitHubAuthConfig>,
     /// Set when `needs_onboarding` is forced true due to an unexpected error (e.g. the
@@ -215,23 +221,28 @@ pub async fn get_config(
         "main".to_string()
     };
 
-    // Resolve protected_branches from config.yml for the active project, falling
-    // back to [default_branch].  Computed per-request so switching projects via
-    // activate_project is reflected immediately.
-    let protected_branches: Vec<String> = if local_git {
-        let config_branches = match resolved_project_path.as_deref() {
+    // Resolve protected_branches and base_branch from config.yml for the active
+    // project.  Computed per-request so switching projects via activate_project
+    // is reflected immediately.  Both fields live under the same config manager,
+    // so we build it once and read both values off it.
+    let (protected_branches, base_branch): (Vec<String>, Option<String>) = if local_git {
+        let manager = match resolved_project_path.as_deref() {
             Some(p) => match ConfigBuilder::new().with_workspace_path(p) {
-                Ok(builder) => match builder.build_with_fallback_config().await {
-                    Ok(manager) => manager.protected_branches().map(|b| b.to_vec()),
-                    Err(_) => None,
-                },
+                Ok(builder) => builder.build_with_fallback_config().await.ok(),
                 Err(_) => None,
             },
             None => None,
         };
-        config_branches.unwrap_or_else(|| vec![default_branch.clone()])
+        let branches = manager
+            .as_ref()
+            .and_then(|m| m.protected_branches().map(|b| b.to_vec()))
+            .unwrap_or_else(|| vec![default_branch.clone()]);
+        let base = manager
+            .as_ref()
+            .and_then(|m| m.base_branch().map(String::from));
+        (branches, base)
     } else {
-        vec![default_branch.clone()]
+        (vec![default_branch.clone()], None)
     };
 
     // git_remote: true when GIT_REPOSITORY_URL is set OR the repo already has
@@ -303,6 +314,7 @@ pub async fn get_config(
             git_remote,
             default_branch,
             protected_branches,
+            base_branch,
             github: github_client_id.map(|client_id| GitHubAuthConfig { client_id }),
             workspace_error,
         }));
@@ -333,6 +345,7 @@ pub async fn get_config(
         git_remote,
         default_branch,
         protected_branches,
+        base_branch,
         github: github_client_id.map(|client_id| GitHubAuthConfig { client_id }),
         workspace_error,
     };

@@ -25,8 +25,15 @@ export const useSwitchWorkspaceBranch = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ workspaceId, branchName }: { workspaceId: string; branchName: string }) =>
-      WorkspaceService.switchWorkspaceBranch(workspaceId, branchName),
+    mutationFn: ({
+      workspaceId,
+      branchName,
+      baseBranch
+    }: {
+      workspaceId: string;
+      branchName: string;
+      baseBranch?: string;
+    }) => WorkspaceService.switchWorkspaceBranch(workspaceId, branchName, baseBranch),
     onSuccess: (_, variables) => {
       // Invalidate workspace details and branches to refetch
       queryClient.invalidateQueries({

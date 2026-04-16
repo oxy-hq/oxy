@@ -409,6 +409,7 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
         mcp: None,
         a2a: None,
         protected_branches: None,
+        base_branch: None,
         repositories: vec![],
     };
 

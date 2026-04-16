@@ -118,14 +118,15 @@ jobs:
           echo "last_commit_at=$LAST_COMMIT_AT" >> "$GITHUB_OUTPUT"
 
           if [[ -z "$PREV_SHA" ]]; then
+            DELIM="EOF_$(uuidgen)"
             {
               echo "commit_count=0"
               echo "compare_url="
               echo "contributors="
               echo "breaking=false"
-              echo "body<<BODYEOF"
+              echo "body<<${DELIM}"
               echo "_No previous reference found — cannot compute diff._"
-              echo "BODYEOF"
+              echo "${DELIM}"
             } >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -171,10 +172,11 @@ jobs:
           # Turn (#1234) into clickable PR links (use @ delimiter since replacement contains |)
           BODY=$(printf '%s' "$BODY" | sed -E "s@\(#([0-9]+)\)@(<${REPO_URL}/pull/\1|#\1>)@g")
 
+          DELIM="EOF_$(uuidgen)"
           {
-            echo "body<<BODYEOF"
+            echo "body<<${DELIM}"
             echo "$BODY"
-            echo "BODYEOF"
+            echo "${DELIM}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Build Slack message
@@ -252,13 +254,15 @@ jobs:
           ${COMPARE_LINE}• ${RELEASE_LINK}
           • <${WORKFLOW_URL}|Build workflow run>"
 
+          DELIM_T="EOF_$(uuidgen)"
+          DELIM_B="EOF_$(uuidgen)"
           {
-            echo "title<<TITLEEOF"
+            echo "title<<${DELIM_T}"
             echo "$TITLE"
-            echo "TITLEEOF"
-            echo "body<<BODYEOF"
+            echo "${DELIM_T}"
+            echo "body<<${DELIM_B}"
             echo "$MESSAGE"
-            echo "BODYEOF"
+            echo "${DELIM_B}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Send Slack notification

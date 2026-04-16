@@ -48,6 +48,10 @@ impl From<SyncStatus> for ApiSyncStatus {
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct SwitchBranchRequest {
     pub branch: String,
+    /// Optional fork point when creating a new branch.  Ignored when `branch`
+    /// already exists.  Defaults to git's `HEAD` of the main worktree.
+    #[serde(default)]
+    pub base_branch: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -579,11 +583,25 @@ pub async fn switch_workspace_branch(
     if app_state.readonly {
         return Err(StatusCode::FORBIDDEN);
     }
+
+    if let Some(base) = &request.base_branch {
+        if !base.is_empty() {
+            LocalGitService::validate_branch_name(base).map_err(|e| {
+                error!("Invalid base_branch: {}", e);
+                StatusCode::UNPROCESSABLE_ENTITY
+            })?;
+        }
+    }
+
     info!("Switching branch for workspace: {}", workspace_id);
 
     app_state
         .backend
-        .switch_branch(workspace_id, &request.branch)
+        .switch_branch(
+            workspace_id,
+            &request.branch,
+            request.base_branch.as_deref(),
+        )
         .await
         .map(ResponseJson)
         .map_err(|e| {

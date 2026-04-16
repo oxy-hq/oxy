@@ -1,8 +1,0 @@
-settings:
-  runs: 1
-  concurrency: 1
-
-cases:
-  - prompt: "Build a simple report"
-    expected: "A report with data analysis"
-    tags: [smoke]

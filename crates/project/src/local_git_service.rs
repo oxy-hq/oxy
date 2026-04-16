@@ -41,9 +41,10 @@ use tracing::{info, warn};
 /// Directory name for git worktrees inside the project root.
 const WORKTREES_DIR: &str = ".worktrees";
 
-/// Process-lifetime cache for the default branch name.
-/// Computed once on first call; subsequent calls are free.
-static DEFAULT_BRANCH: tokio::sync::OnceCell<String> = tokio::sync::OnceCell::const_new();
+/// Per-workspace cache for the default branch name.
+/// Keyed by canonicalized workspace root so each workspace resolves independently.
+static DEFAULT_BRANCHES: std::sync::LazyLock<tokio::sync::RwLock<HashMap<PathBuf, String>>> =
+    std::sync::LazyLock::new(|| tokio::sync::RwLock::new(HashMap::new()));
 
 /// Git operations for local (non-cloud) Oxy deployments.
 ///
@@ -365,11 +366,15 @@ impl LocalGitService {
     /// Returns the worktree path for `branch`, creating the worktree (and the
     /// branch, if it does not already exist) when necessary.
     ///
-    /// The branch is always forked from `HEAD` of the main project directory,
-    /// so the new branch starts with a clean copy of the current project state.
+    /// When `base_branch` is `Some`, a newly-created branch is forked from that
+    /// ref instead of the main project directory's `HEAD`.  Use this to serve
+    /// from a "deployment" branch while forking new work from an "integration"
+    /// branch (see `config.yml: base_branch`).  Has no effect when the branch
+    /// already exists.
     pub async fn get_or_create_worktree(
         workspace_root: &Path,
         branch: &str,
+        base_branch: Option<&str>,
     ) -> Result<PathBuf, OxyError> {
         let default_branch = Self::get_default_branch(workspace_root).await;
         if branch.is_empty() || branch == default_branch {
@@ -395,26 +400,26 @@ impl LocalGitService {
         // Determine whether the branch already exists locally
         let branch_exists = Self::branch_exists(workspace_root, branch).await?;
 
+        let worktree_path_str = worktree_path.to_string_lossy();
         let result = if branch_exists {
             // Attach existing branch to a new worktree
             Self::run_git(
                 workspace_root,
-                &["worktree", "add", &worktree_path.to_string_lossy(), branch],
+                &["worktree", "add", worktree_path_str.as_ref(), branch],
             )
             .await
         } else {
-            // Create a new branch and worktree in one step
-            Self::run_git(
-                workspace_root,
-                &[
-                    "worktree",
-                    "add",
-                    "-b",
-                    branch,
-                    &worktree_path.to_string_lossy(),
-                ],
-            )
-            .await
+            // Create a new branch and worktree in one step.  If a base branch is
+            // configured, use it as the fork point; otherwise git defaults to HEAD.
+            let mut args: Vec<&str> =
+                vec!["worktree", "add", "-b", branch, worktree_path_str.as_ref()];
+            if let Some(base) = base_branch
+                && !base.is_empty()
+                && base != branch
+            {
+                args.push(base);
+            }
+            Self::run_git(workspace_root, &args).await
         };
 
         match result {
@@ -1025,31 +1030,44 @@ impl LocalGitService {
     /// 2. `git symbolic-ref --short refs/remotes/origin/HEAD` (strips "origin/" prefix)
     /// 3. Falls back to `"main"`
     ///
-    /// The result is cached for the process lifetime; git remote HEAD almost never
-    /// changes at runtime.
+    /// The result is cached per workspace for the process lifetime; git remote
+    /// HEAD almost never changes at runtime.
     pub async fn get_default_branch(workspace_root: &Path) -> String {
-        DEFAULT_BRANCH
-            .get_or_init(|| async {
-                if let Ok(b) = std::env::var("GIT_DEFAULT_BRANCH")
-                    && !b.is_empty()
-                {
-                    return b;
-                }
-                match Self::run_git(
-                    workspace_root,
-                    &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
-                )
-                .await
-                {
-                    Ok(out) => {
-                        let s = out.trim().to_string();
-                        s.strip_prefix("origin/").map(str::to_string).unwrap_or(s)
-                    }
-                    Err(_) => "main".to_string(),
-                }
-            })
+        let key = workspace_root
+            .canonicalize()
+            .unwrap_or_else(|_| workspace_root.to_path_buf());
+
+        // Fast path: read lock
+        {
+            let cache = DEFAULT_BRANCHES.read().await;
+            if let Some(branch) = cache.get(&key) {
+                return branch.clone();
+            }
+        }
+
+        // Slow path: compute and insert under write lock
+        let branch = if let Ok(b) = std::env::var("GIT_DEFAULT_BRANCH")
+            && !b.is_empty()
+        {
+            b
+        } else {
+            match Self::run_git(
+                workspace_root,
+                &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+            )
             .await
-            .clone()
+            {
+                Ok(out) => {
+                    let s = out.trim().to_string();
+                    s.strip_prefix("origin/").map(str::to_string).unwrap_or(s)
+                }
+                Err(_) => "main".to_string(),
+            }
+        };
+
+        let mut cache = DEFAULT_BRANCHES.write().await;
+        cache.entry(key).or_insert_with(|| branch.clone());
+        branch
     }
 
     /// Removes the worktree for `branch` (if any) and deletes the local branch ref.

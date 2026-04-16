@@ -39,6 +39,7 @@ impl ConfigBuilder {
             mcp: None,
             a2a: None,
             protected_branches: None,
+            base_branch: None,
             repositories: vec![],
         };
 

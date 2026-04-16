@@ -240,6 +240,7 @@ impl ConfigStorage for LocalSource {
             mcp: None,
             a2a: None,
             protected_branches: None,
+            base_branch: None,
             repositories: vec![],
         });
         config.workspace_path = self.project_path.clone();
