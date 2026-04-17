@@ -48,6 +48,7 @@ import {
   useActivateWorkspace as useActivateProject,
   useAllWorkspaces as useAllProjects,
   useForcePush,
+  usePullChanges,
   usePushChanges
 } from "@/hooks/api/workspaces/useWorkspaces";
 import { FEATURES } from "@/libs/features";
@@ -433,6 +434,7 @@ export const Header = () => {
     refetchRevision();
   };
 
+  const pullMutation = usePullChanges();
   const pushMutation = usePushChanges();
   const forcePushMutation = useForcePush();
   const handlePush = async (commitMessage: string) => {
@@ -451,6 +453,28 @@ export const Header = () => {
       }
     } catch {
       toast.error("Push failed");
+    }
+  };
+
+  const handleDirectPull = async () => {
+    if (!project?.id || !ideBranch) return;
+    try {
+      const result = await pullMutation.mutateAsync({
+        workspaceId: project.id,
+        branchName: ideBranch
+      });
+      if (result.success) {
+        toast.success("Pulled latest changes");
+        await Promise.all([refetchDiff(), refetchRevision()]);
+      } else {
+        await Promise.all([refetchDiff(), refetchRevision()]);
+        const isConflictResult = result.message?.toLowerCase().includes("conflict");
+        if (!isConflictResult) {
+          toast.error(result.message || "Pull failed");
+        }
+      }
+    } catch {
+      toast.error("Failed to pull changes");
     }
   };
 
@@ -621,7 +645,7 @@ export const Header = () => {
             ? "pull"
             : showOpenPr
               ? "pr"
-              : !isOnMain && hasRemote
+              : hasRemote
                 ? "fetch"
                 : "none";
 
@@ -702,7 +726,7 @@ export const Header = () => {
         <div className='mx-0.5 h-4 w-px bg-border/50' />
 
         {/* ── On main: new branch shortcut ────────────────────────── */}
-        {isOnMain && !hasLocalChanges && (
+        {isOnMain && !hasLocalChanges && !isBehind && !isConflict && (
           <button
             type='button'
             onClick={() => setIsBranchPickerOpen(true)}
@@ -754,7 +778,24 @@ export const Header = () => {
               </button>
             )}
 
-            {ctaState === "pull" && (
+            {ctaState === "pull" && isOnMain && (
+              <button
+                type='button'
+                onClick={handleDirectPull}
+                disabled={pullMutation.isPending}
+                data-testid='ide-pull-button'
+                className='flex items-center gap-1 rounded border border-border/50 px-2.5 text-muted-foreground text-xs transition-colors hover:border-border hover:bg-accent/40 hover:text-foreground disabled:opacity-40'
+              >
+                {pullMutation.isPending ? (
+                  <Loader2 className='h-3 w-3 animate-spin' />
+                ) : (
+                  <Download className='h-3 w-3' />
+                )}
+                {pullMutation.isPending ? "Pulling…" : "Pull"}
+              </button>
+            )}
+
+            {ctaState === "pull" && !isOnMain && (
               <>
                 <button
                   type='button'
