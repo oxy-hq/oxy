@@ -1,0 +1,134 @@
+name: Update Product Context
+
+on:
+  schedule:
+    - cron: "0 8 * * 1" # Every Monday at 15:00 Vietnam time (08:00 UTC)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  update-product-context:
+    if: ${{ github.repository == 'oxy-hq/oxy-internal' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/create-github-app-token@v3
+        name: Create GitHub App Token
+        id: app-token
+        with:
+          app-id: ${{ vars.ARGO_APP_ID }}
+          private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
+          repositories: |
+            oxy-internal
+            oxy-content
+
+      - name: Checkout oxy-internal
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Checkout oxy-content
+        uses: actions/checkout@v6
+        with:
+          repository: oxy-hq/oxy-content
+          token: ${{ steps.app-token.outputs.token }}
+          path: oxy-content
+          fetch-depth: 1
+
+      - name: Configure git
+        run: |
+          USER_ID=$(gh api "/users/${{ steps.app-token.outputs.app-slug }}[bot]" --jq .id)
+          git config user.name "${{ steps.app-token.outputs.app-slug }}[bot]"
+          git config user.email "${USER_ID}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com"
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      - name: Update product context from changelogs
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: >-
+            --allowedTools
+            "Read,Write,Edit,Glob,Grep,Bash(git:*),Bash(gh pr create:*),Bash(gh pr list:*),Bash(date:*),Bash(ls:*)"
+          prompt: |
+            You are maintaining the `product-context.md` file in oxy-hq/oxy-internal.
+            This file is a living reference document that describes Oxy's product features,
+            pages, components, bug areas, and design system. It is injected into every
+            Claude API call to provide product context.
+
+            ## Your task
+
+            Enrich `product-context.md` with critical information from recent changelogs
+            in the `oxy-content/changelog/` directory.
+
+            ## Steps
+
+            ### Step 1 — Read existing context
+
+            Read `product-context.md` carefully. Understand what is already documented.
+
+            ### Step 2 — Read the 10 most recent changelogs
+
+            1. Use Glob to find all `oxy-content/changelog/*.mdx` files.
+            2. Sort by filename (date-based) and read the 10 most recent ones.
+            3. Extract new features, renamed concepts, new pages/UI sections, new agent
+               types, new API endpoints, new file extensions, new deployment modes,
+               authentication changes, and new bug-prone areas.
+
+            ### Step 3 — Identify gaps
+
+            Compare what the changelogs describe against what `product-context.md` already
+            covers. Only add or update information that is:
+            - **Missing entirely** — a new feature, page, concept, or component not mentioned
+            - **Outdated** — a renamed concept, removed feature, or changed behavior
+            - **A new common bug area** — explicitly mentioned bug fixes that suggest
+              recurring fragile areas
+
+            Do NOT:
+            - Remove existing content that is still accurate
+            - Add changelog entries verbatim — synthesize into the existing document style
+            - Add version numbers or dates — the document should be evergreen
+            - Add implementation details (crate names, internal function names)
+            - Duplicate information already present
+
+            ### Step 4 — Edit product-context.md
+
+            Use the Edit tool to make targeted updates to each section:
+            - **Product Overview** — update if deployment modes, supported databases, or
+              core capabilities have changed
+            - **Main Pages / Features** — add new pages, update existing descriptions
+            - **Key Components / Concepts** — add new agent types, renamed concepts,
+              new integrations
+            - **Common Bug Areas** — add newly discovered fragile areas from bug fixes
+            - **Key API Endpoints** — add new endpoint groups if introduced
+            - **Key File Extensions** — add new file types if introduced
+            - **Design System** — update only if color scale or usage rules changed
+
+            Keep the document concise and well-organized. Match the existing tone and
+            formatting style.
+
+            ### Step 5 — Commit and create PR
+
+            1. Check if there are actual changes: `git diff --stat product-context.md`
+            2. If no changes, stop here — the document is already up to date.
+            3. If changes exist:
+               - Create a new branch: `git checkout -b update-product-context/$(date +%Y-%m-%d)`
+               - Stage and commit: `git add product-context.md`
+               - Commit with message: "docs: update product-context.md from recent changelogs"
+               - Push: `git push -u origin HEAD`
+               - Create a PR:
+                 ```
+                 gh pr create --repo oxy-hq/oxy-internal \
+                   --title "docs: update product-context.md from recent changelogs" \
+                   --body "Weekly automated update of product-context.md based on the 10 most recent entries in oxy-content/changelog/.
+
+            **Review before merging** — verify that new entries are accurate, well-organized, and don't duplicate existing content."
+                 ```
