@@ -224,35 +224,26 @@ jobs:
           fi
 
           if [[ "$TYPE" == "stable" ]]; then
-            TITLE="$EMOJI Stable Release \`$VERSION\` is live"
-            INSTALL_BLOCK='`bash <(curl --proto '"'"'=https'"'"' --tlsv1.2 -LsSf https://get.oxy.tech)`
-          To pin this version: `OXY_VERSION='"$VERSION"' bash <(curl --proto '"'"'=https'"'"' --tlsv1.2 -LsSf https://get.oxy.tech)`'
-            DOCKER_BLOCK="*Docker:* \`ghcr.io/oxy-hq/oxy:$VERSION\` (also tagged \`:latest\`)"
-            RELEASE_LINK="<https://github.com/${RELEASE_REPO}/releases/tag/${VERSION}|GitHub release>"
+            TITLE="$EMOJI \`$VERSION\` is live${PREV_SUFFIX}"
+
+            MESSAGE="${BREAKING_LINE}${CHANGELOG}
+          ${CONTRIB_LINE}
+          <${COMMIT_URL}|${SHORT_SHA}>${COMPARE_URL:+ · <${COMPARE_URL}|diff>} · <https://github.com/${RELEASE_REPO}/releases/tag/${VERSION}|release> · <${WORKFLOW_URL}|build>
+          \`bash <(curl --proto '=https' --tlsv1.2 -LsSf https://get.oxy.tech)\` · \`ghcr.io/oxy-hq/oxy:${VERSION}\`"
           else
-            TITLE="$EMOJI Edge build \`$VERSION\` published"
-            INSTALL_BLOCK='`bash <(curl --proto '"'"'=https'"'"' --tlsv1.2 -LsSf https://nightly.oxy.tech)`
-          To pin this build: `OXY_VERSION='"$VERSION"' bash <(curl --proto '"'"'=https'"'"' --tlsv1.2 -LsSf https://nightly.oxy.tech)`'
-            DOCKER_BLOCK="*Docker:* \`ghcr.io/oxy-hq/oxy:$VERSION\` (also tagged \`:edge-latest\`)"
-            RELEASE_LINK="<https://github.com/${RELEASE_REPO}/releases/tag/${VERSION}|Edge release>"
+            TITLE="$EMOJI \`$VERSION\`${PREV_SUFFIX}"
+
+            if [[ "$COMMIT_COUNT" -eq 0 ]]; then
+              CHANGES_LINE="_No new commits_"
+            else
+              CHANGES_LINE="${CHANGELOG}"
+            fi
+
+            MESSAGE="${BREAKING_LINE}${CHANGES_LINE}
+          ${CONTRIB_LINE}
+          <${COMMIT_URL}|${SHORT_SHA}>${COMPARE_URL:+ · <${COMPARE_URL}|diff>} · <https://github.com/${RELEASE_REPO}/releases/tag/${VERSION}|release> · <${WORKFLOW_URL}|build>
+          \`bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)\` · \`ghcr.io/oxy-hq/oxy:${VERSION}\`"
           fi
-
-          MESSAGE="${BREAKING_LINE}*Version:* \`$VERSION\`${PREV_SUFFIX}
-          *Cut at:* \`$CUT_AT\` (build completed)
-          *Head commit:* <${COMMIT_URL}|${SHORT_SHA}> — committed \`${LAST_COMMIT_AT}\`
-          _Anything merged to main after the head-commit timestamp is NOT in this build._
-
-          *Changes (${COMMIT_COUNT} commits):*
-          ${CHANGELOG}
-
-          ${CONTRIB_LINE}*Install:*
-          ${INSTALL_BLOCK}
-
-          ${DOCKER_BLOCK}
-
-          *Links:*
-          ${COMPARE_LINE}• ${RELEASE_LINK}
-          • <${WORKFLOW_URL}|Build workflow run>"
 
           DELIM_T="EOF_$(uuidgen)"
           DELIM_B="EOF_$(uuidgen)"

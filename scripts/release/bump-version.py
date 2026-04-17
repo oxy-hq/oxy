@@ -3,10 +3,10 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-"""Determines next semver version from conventional commits and updates Cargo.toml.
+"""Determines next semver version from conventional commits and updates Cargo.toml + Cargo.lock.
 
 Usage:
-  python3 scripts/release/bump-version.py           # bumps version in Cargo.toml, prints new version
+  python3 scripts/release/bump-version.py           # bumps version in Cargo.toml and Cargo.lock, prints new version
   python3 scripts/release/bump-version.py --dry-run # prints new version only, no file changes
 
 Version bump rules (conventional commits):
@@ -70,5 +70,18 @@ if not DRY_RUN:
     content = content.replace(f'version = "{latest_tag}"', f'version = "{new_version}"')
     with open("Cargo.toml", "w") as f:
         f.write(content)
+
+    # Update workspace crate versions in Cargo.lock.
+    # Entries look like: name = "oxy"\nversion = "0.5.35"
+    # We replace the old version only on lines immediately following a workspace crate name.
+    with open("Cargo.lock") as f:
+        lockfile = f.read()
+    lockfile = re.sub(
+        rf'(name = "[^"]+"\nversion = "){re.escape(latest_tag)}"',
+        rf'\g<1>{new_version}"',
+        lockfile,
+    )
+    with open("Cargo.lock", "w") as f:
+        f.write(lockfile)
 
 print(new_version, end="")
