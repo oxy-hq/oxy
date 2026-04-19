@@ -584,13 +584,13 @@ pub async fn switch_workspace_branch(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    if let Some(base) = &request.base_branch {
-        if !base.is_empty() {
-            LocalGitService::validate_branch_name(base).map_err(|e| {
-                error!("Invalid base_branch: {}", e);
-                StatusCode::UNPROCESSABLE_ENTITY
-            })?;
-        }
+    if let Some(base) = &request.base_branch
+        && !base.is_empty()
+    {
+        LocalGitService::validate_branch_name(base).map_err(|e| {
+            error!("Invalid base_branch: {}", e);
+            StatusCode::UNPROCESSABLE_ENTITY
+        })?;
     }
 
     info!("Switching branch for workspace: {}", workspace_id);

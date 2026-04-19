@@ -371,8 +371,16 @@ impl DatabaseConnector for SnowflakeConnector {
                         data_type: column_types.get(idx).cloned().flatten(),
                         null_count: row.as_ref().map(|r| r.null_count).unwrap_or(0),
                         distinct_count: row.as_ref().map(|r| r.distinct_count),
-                        min: Some(row.as_ref().map(|r| r.min.clone()).unwrap_or(CellValue::Null)),
-                        max: Some(row.as_ref().map(|r| r.max.clone()).unwrap_or(CellValue::Null)),
+                        min: Some(
+                            row.as_ref()
+                                .map(|r| r.min.clone())
+                                .unwrap_or(CellValue::Null),
+                        ),
+                        max: Some(
+                            row.as_ref()
+                                .map(|r| r.max.clone())
+                                .unwrap_or(CellValue::Null),
+                        ),
                         mean: row.as_ref().and_then(|r| r.mean),
                         std_dev: row.as_ref().and_then(|r| r.std_dev),
                     }
@@ -490,8 +498,8 @@ fn snowflake_type_category(raw: &str) -> TypeCategory {
     match normalized.as_str() {
         // Snowflake native
         "NUMBER" | "DECIMAL" | "NUMERIC" | "INT" | "INTEGER" | "BIGINT" | "SMALLINT"
-        | "TINYINT" | "BYTEINT" | "FLOAT" | "FLOAT4" | "FLOAT8" | "DOUBLE"
-        | "DOUBLE PRECISION" | "REAL" => return TypeCategory::Numeric,
+        | "TINYINT" | "BYTEINT" | "FLOAT" | "FLOAT4" | "FLOAT8" | "DOUBLE" | "DOUBLE PRECISION"
+        | "REAL" => return TypeCategory::Numeric,
         // Arrow Display
         "INT8" | "INT16" | "INT32" | "INT64" | "UINT8" | "UINT16" | "UINT32" | "UINT64"
         | "FLOAT16" | "FLOAT32" | "FLOAT64" => return TypeCategory::Numeric,
@@ -556,7 +564,9 @@ fn build_multi_stat_sql(
         .enumerate()
         .map(|(idx, (name, ty))| {
             let quoted = format!("\"{}\"", name.replace('"', "\"\""));
-            let category = ty.map(|t| snowflake_type_category(t)).unwrap_or(TypeCategory::Other);
+            let category = ty
+                .map(snowflake_type_category)
+                .unwrap_or(TypeCategory::Other);
             let (mean_expr, stddev_expr) = match category {
                 TypeCategory::Numeric => (
                     format!("AVG(CAST({quoted} AS FLOAT))"),
@@ -663,7 +673,9 @@ fn decode_stat_rows(result: SnowflakeQueryResult) -> Vec<StatRow> {
                         }
                     };
                     let get_cell = |i: usize| -> CellValue {
-                        vals.get(i).map(json_value_to_cell).unwrap_or(CellValue::Null)
+                        vals.get(i)
+                            .map(json_value_to_cell)
+                            .unwrap_or(CellValue::Null)
                     };
                     out.push(StatRow {
                         col_idx: get_u64(0),
@@ -900,10 +912,7 @@ mod tests {
     fn type_category_arrow_strings() {
         assert_eq!(snowflake_type_category("Utf8"), TypeCategory::String);
         assert_eq!(snowflake_type_category("LargeUtf8"), TypeCategory::String);
-        assert_eq!(
-            snowflake_type_category("LargeBinary"),
-            TypeCategory::String
-        );
+        assert_eq!(snowflake_type_category("LargeBinary"), TypeCategory::String);
     }
 
     #[test]
@@ -939,10 +948,7 @@ mod tests {
             snowflake_type_category("  number(18,0)  "),
             TypeCategory::Numeric
         );
-        assert_eq!(
-            snowflake_type_category("varchar"),
-            TypeCategory::String
-        );
+        assert_eq!(snowflake_type_category("varchar"), TypeCategory::String);
         assert_eq!(
             snowflake_type_category("timestamp_ntz(9)"),
             TypeCategory::Other
