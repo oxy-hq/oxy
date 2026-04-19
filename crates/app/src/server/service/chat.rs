@@ -716,7 +716,7 @@ impl ChatService {
             })?;
 
         // Sort messages chronologically
-        messages.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+        messages.sort_by_key(|a| a.created_at);
 
         Ok(messages
             .into_iter()

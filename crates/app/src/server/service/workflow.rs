@@ -135,10 +135,8 @@ where
             },
             CONCURRENCY_SOURCE => {}
             _ => match event.kind {
-                EventKind::Started { name, .. } => {
-                    if event.source.kind.as_str() == TASK_SOURCE {
-                        self.logger.log(&format!("\n⏳Starting {name}"));
-                    }
+                EventKind::Started { name, .. } if event.source.kind.as_str() == TASK_SOURCE => {
+                    self.logger.log(&format!("\n⏳Starting {name}"));
                 }
                 EventKind::Updated { chunk } => match chunk.delta.clone() {
                     Output::SQL(sql) => {
