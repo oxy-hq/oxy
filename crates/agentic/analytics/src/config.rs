@@ -68,6 +68,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::catalog::SchemaCatalog;
@@ -171,7 +172,7 @@ impl From<glob::PatternError> for ConfigError {
 /// Vendor identifier for bundled semantic engine adapters.
 ///
 /// Internal to the config layer — never part of the `SemanticEngine` public API.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 enum VendorKind {
     Cube,
@@ -193,7 +194,7 @@ enum VendorKind {
 ///   client_id: "${LOOKER_CLIENT_ID}"
 ///   client_secret: "${LOOKER_CLIENT_SECRET}"
 /// ```
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct SemanticEngineConfig {
     vendor: VendorKind,
     pub base_url: String,
@@ -237,28 +238,34 @@ impl SemanticEngineConfig {
 /// Returns [`ConfigError::MissingEnvVar`] when a referenced variable is absent,
 /// so misconfigured deployments fail at startup rather than silently sending
 /// empty credentials.
+///
+/// Expansion is **single-pass** — the substituted value is emitted verbatim and
+/// is not rescanned for further `${…}` placeholders. An env var whose value
+/// happens to contain `${SOMETHING}` will be treated as a literal, not
+/// expanded recursively.
 fn interpolate_env(s: &str) -> Result<String, ConfigError> {
-    let mut result = s.to_string();
-    while let Some(start) = result.find("${") {
-        if let Some(end) = result[start..].find('}') {
-            let var_name = result[start + 2..start + end].to_string();
-            let value = std::env::var(&var_name)
-                .map_err(|_| ConfigError::MissingEnvVar(var_name.clone()))?;
-            result = format!(
-                "{}{}{}",
-                &result[..start],
-                value,
-                &result[start + end + 1..]
-            );
-        } else {
+    let mut result = String::with_capacity(s.len());
+    let mut cursor = 0;
+    while let Some(rel_start) = s[cursor..].find("${") {
+        let start = cursor + rel_start;
+        // No closing `}` — treat the rest as literal and stop.
+        let Some(rel_end) = s[start..].find('}') else {
             break;
-        }
+        };
+        let end = start + rel_end;
+        let var_name = &s[start + 2..end];
+        let value = std::env::var(var_name)
+            .map_err(|_| ConfigError::MissingEnvVar(var_name.to_string()))?;
+        result.push_str(&s[cursor..start]);
+        result.push_str(&value);
+        cursor = end + 1;
     }
+    result.push_str(&s[cursor..]);
     Ok(result)
 }
 
 /// Top-level agent configuration.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct AgentConfig {
     /// Global instructions injected into every LLM call.
     #[serde(default)]
@@ -333,7 +340,7 @@ pub struct AgentConfig {
 }
 
 /// Per-state configuration overrides.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct StateConfig {
     /// Additional instructions injected for this state only.
     #[serde(default)]
@@ -368,7 +375,17 @@ pub struct StateConfig {
 ///
 /// Accepts either a shorthand string (`"adaptive"`, `"disabled"`) or a
 /// map with `budget_tokens`.
-#[derive(Debug, Clone, Deserialize)]
+///
+/// Because this enum is `#[serde(untagged)]`, schemars emits a JSON Schema
+/// `oneOf` with each variant represented by its structural shape (a plain
+/// string for [`ThinkingConfigYaml::Shorthand`] and an object for
+/// [`ThinkingConfigYaml::Manual`] / [`ThinkingConfigYaml::Effort`]). Serde
+/// discriminates at runtime by trying variants in declaration order, so
+/// there is no parse ambiguity. Some IDEs, however, validate each `oneOf`
+/// branch independently and may annotate a valid string with
+/// "invalid against variant 2 / variant 3" warnings — those are cosmetic
+/// and the file still deserializes correctly at runtime.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum ThinkingConfigYaml {
     /// Shorthand string: `"adaptive"`, `"disabled"`, `"effort:low"`,
@@ -421,7 +438,7 @@ fn parse_effort_level(s: &str) -> ThinkingConfig {
 ///   model: llama3.2
 ///   base_url: http://localhost:11434/v1
 /// ```
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum LlmVendor {
     /// Anthropic Messages API (default).  Uses `ANTHROPIC_API_KEY`.
@@ -437,7 +454,7 @@ pub enum LlmVendor {
 }
 
 /// LLM configuration section.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct LlmConfigYaml {
     /// Named model reference from the project's `config.yml`.
     ///
@@ -508,7 +525,7 @@ pub struct LlmConfigYaml {
 ///
 /// Overrides the default model and/or thinking config when the user
 /// activates "extended thinking" mode from the UI.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct ExtendedThinkingConfigYaml {
     /// Model ID override for extended thinking mode.
     #[serde(default)]

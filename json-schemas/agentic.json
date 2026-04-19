@@ -1,0 +1,402 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AgentConfig",
+  "description": "Top-level agent configuration.",
+  "type": "object",
+  "properties": {
+    "context": {
+      "description": "Glob patterns for context files (`.view.yml`, `.topic.yml`, `.sql`, `.md`).  Resolved relative to the directory containing the YAML file.",
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "databases": {
+      "description": "Database names from config.yml to use as connectors.\n\nEach string is the `name:` of a database entry in the project's `config.yml`.  The HTTP layer resolves these names to live connectors (via [`BuildContext`]) so that connection details are defined once and reused across agents.  All database types supported by Oxy (DuckDB, Postgres, BigQuery, Snowflake, ClickHouse, …) can be listed here.\n\n```yaml databases: - local - analytics_db ```",
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "instructions": {
+      "description": "Global instructions injected into every LLM call.",
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "llm": {
+      "description": "LLM configuration.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/LlmConfigYaml"
+        }
+      ]
+    },
+    "semantic_engine": {
+      "description": "Optional vendor semantic engine configuration.\n\nWhen absent, the solver routes exclusively through the internal semantic layer and LLM paths (identical to today's behaviour).",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/SemanticEngineConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "states": {
+      "description": "Per-state overrides.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/StateConfig"
+      }
+    },
+    "thinking": {
+      "description": "Global thinking/reasoning config applied to all pipeline states.\n\nCan be overridden per-state via the `states:` section.\n\n```yaml thinking: adaptive       # shorthand # — or — thinking: budget_tokens: 10000   # explicit budget ```",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ThinkingConfigYaml"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "validation": {
+      "description": "Validation rule configuration.\n\nWhen absent, all built-in rules run with their default parameters. Use this section to disable specific rules or tune parameters such as the outlier detection threshold:\n\n```yaml validation: rules: solved: - name: outlier_detection enabled: true threshold_sigma: 3.0 min_rows: 6 ```",
+      "default": null,
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ValidationConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "definitions": {
+    "ExtendedThinkingConfigYaml": {
+      "description": "Extended thinking mode preset configuration.\n\nOverrides the default model and/or thinking config when the user activates \"extended thinking\" mode from the UI.",
+      "type": "object",
+      "properties": {
+        "model": {
+          "description": "Model ID override for extended thinking mode.",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "thinking": {
+          "description": "Thinking config override for extended thinking mode.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ThinkingConfigYaml"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "LlmConfigYaml": {
+      "description": "LLM configuration section.",
+      "type": "object",
+      "properties": {
+        "api_key": {
+          "description": "API key.  Falls back to `ANTHROPIC_API_KEY` (Anthropic) or `OPENAI_API_KEY` (OpenAi / OpenAiCompat) environment variables.",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "base_url": {
+          "description": "Base URL override.\n\n- Anthropic: proxy URL (default: `https://api.anthropic.com/v1/messages`) - OpenAi: Responses API base (default: `https://api.openai.com/v1/responses`) - OpenAiCompat: local server root, e.g. `http://localhost:11434/v1`",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "extended_thinking": {
+          "description": "\"Extended thinking\" mode preset: an alternative model + thinking configuration activated at runtime via the UI toggle.\n\n```yaml llm: thinking: effort:low extended_thinking: model: gpt-5.4 thinking: effort:medium ```",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ExtendedThinkingConfigYaml"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "max_tokens": {
+          "description": "Maximum output tokens per call.  Defaults to 4096.",
+          "default": null,
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "model": {
+          "description": "Model ID.  Overrides the `model_ref` resolved from `ref`.",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ref": {
+          "description": "Named model reference from the project's `config.yml`.\n\nWhen set, the vendor, api_key, and base_url of that model entry are used as defaults and any other fields in this section override them.\n\n```yaml llm: ref: openai-4o-mini   # model name from config.yml model: gpt-5.4        # override the model_ref only ```",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "thinking": {
+          "description": "Default thinking/reasoning config for all pipeline states.\n\nTakes precedence over the top-level `thinking:` field on `AgentConfig`.\n\n```yaml llm: thinking: adaptive ```",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ThinkingConfigYaml"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "vendor": {
+          "description": "Backend vendor.  Defaults to [`LlmVendor::Anthropic`].\n\nOverrides the vendor resolved from `ref` when both are set.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/LlmVendor"
+            }
+          ]
+        }
+      }
+    },
+    "LlmVendor": {
+      "description": "LLM vendor / backend selector.\n\n```yaml llm: vendor: openai_compat   # Ollama, vLLM, LM Studio, … model: llama3.2 base_url: http://localhost:11434/v1 ```",
+      "oneOf": [
+        {
+          "description": "Anthropic Messages API (default).  Uses `ANTHROPIC_API_KEY`.",
+          "type": "string",
+          "enum": [
+            "anthropic"
+          ]
+        },
+        {
+          "description": "OpenAI Responses API (`/v1/responses`).  Uses `OPENAI_API_KEY`.",
+          "type": "string",
+          "enum": [
+            "open_ai"
+          ]
+        },
+        {
+          "description": "OpenAI-compatible Chat Completions API (`/v1/chat/completions`). Suitable for Ollama, vLLM, LM Studio, and similar local/self-hosted backends.  Uses `OPENAI_API_KEY` as fallback (or pass `api_key` directly).",
+          "type": "string",
+          "enum": [
+            "open_ai_compat"
+          ]
+        }
+      ]
+    },
+    "RuleEntry": {
+      "description": "One entry in a rule list.\n\nExtra TOML/YAML keys beyond `name` and `enabled` are collected into `params` via `#[serde(flatten)]`.  Each rule's constructor deserialises `params` into its own typed struct using [`serde_json::from_value`].\n\n# Example YAML ```yaml - name: outlier_detection enabled: true threshold_sigma: 3.0 min_rows: 6 ```",
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "RuleSetConfig": {
+      "description": "Rules grouped by pipeline stage.",
+      "type": "object",
+      "properties": {
+        "solvable": {
+          "description": "Rules applied after the **Solve** stage.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RuleEntry"
+          }
+        },
+        "solved": {
+          "description": "Rules applied after the **Execute** stage.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RuleEntry"
+          }
+        },
+        "specified": {
+          "description": "Rules applied after the **Specify** stage.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RuleEntry"
+          }
+        }
+      }
+    },
+    "SemanticEngineConfig": {
+      "description": "Configuration for an external vendor semantic engine.\n\n```yaml semantic_engine: vendor: cube base_url: https://cube.example.com api_token: \"${CUBE_API_TOKEN}\"\n\n# — OR for Looker — semantic_engine: vendor: looker base_url: https://myco.looker.com client_id: \"${LOOKER_CLIENT_ID}\" client_secret: \"${LOOKER_CLIENT_SECRET}\" ```",
+      "type": "object",
+      "required": [
+        "base_url",
+        "vendor"
+      ],
+      "properties": {
+        "api_token": {
+          "description": "API token (Cube).  Supports `\"${ENV_VAR}\"` interpolation.",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "base_url": {
+          "type": "string"
+        },
+        "client_id": {
+          "description": "OAuth client ID (Looker).",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "client_secret": {
+          "description": "OAuth client secret (Looker).",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "vendor": {
+          "$ref": "#/definitions/VendorKind"
+        }
+      }
+    },
+    "StateConfig": {
+      "description": "Per-state configuration overrides.",
+      "type": "object",
+      "properties": {
+        "instructions": {
+          "description": "Additional instructions injected for this state only.",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max_retries": {
+          "description": "Maximum tool-use rounds before failing.",
+          "default": null,
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "model": {
+          "description": "Model ID override for this state.\n\nWhen set, this model is used instead of the global `llm.model`. The vendor, API key, and base URL from the global `llm:` section are inherited; only the model ID is replaced.\n\n```yaml states: clarifying: model: claude-haiku-4-5   # cheap model for fast triage solving: model: claude-opus-4-6    # powerful model for SQL generation ```",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "thinking": {
+          "description": "Thinking/reasoning config for this state.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ThinkingConfigYaml"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "ThinkingConfigYaml": {
+      "description": "Thinking configuration as expressed in YAML.\n\nAccepts either a shorthand string (`\"adaptive\"`, `\"disabled\"`) or a map with `budget_tokens`.\n\nBecause this enum is `#[serde(untagged)]`, schemars emits a JSON Schema `oneOf` with each variant represented by its structural shape (a plain string for [`ThinkingConfigYaml::Shorthand`] and an object for [`ThinkingConfigYaml::Manual`] / [`ThinkingConfigYaml::Effort`]). Serde discriminates at runtime by trying variants in declaration order, so there is no parse ambiguity. Some IDEs, however, validate each `oneOf` branch independently and may annotate a valid string with \"invalid against variant 2 / variant 3\" warnings — those are cosmetic and the file still deserializes correctly at runtime.",
+      "anyOf": [
+        {
+          "description": "Shorthand string: `\"adaptive\"`, `\"disabled\"`, `\"effort:low\"`, `\"effort:medium\"`, or `\"effort:high\"`.",
+          "type": "string"
+        },
+        {
+          "description": "Explicit budget: `budget_tokens: N`.",
+          "type": "object",
+          "required": [
+            "budget_tokens"
+          ],
+          "properties": {
+            "budget_tokens": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          }
+        },
+        {
+          "description": "OpenAI o-series reasoning effort: `effort: low|medium|high`.",
+          "type": "object",
+          "required": [
+            "effort"
+          ],
+          "properties": {
+            "effort": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "ValidationConfig": {
+      "description": "Validation section of the agent YAML config.",
+      "type": "object",
+      "properties": {
+        "rules": {
+          "default": {
+            "solvable": [],
+            "solved": [],
+            "specified": []
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/RuleSetConfig"
+            }
+          ]
+        }
+      }
+    },
+    "VendorKind": {
+      "description": "Vendor identifier for bundled semantic engine adapters.\n\nInternal to the config layer — never part of the `SemanticEngine` public API.",
+      "type": "string",
+      "enum": [
+        "cube",
+        "looker"
+      ]
+    }
+  }
+}

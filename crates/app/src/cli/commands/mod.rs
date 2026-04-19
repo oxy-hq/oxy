@@ -398,7 +398,13 @@ struct ValidateArgs {
     /// Validate a specific file instead of all configuration files
     ///
     /// Provide a path to a workflow (.workflow.yml), agent (.agent.yml),
-    /// or app (.app.yml) file to validate just that file.
+    /// agentic agent (.agentic.yml), or app (.app.yml) file to validate
+    /// just that file.
+    ///
+    /// Note: .agentic.yml validation is structural only — the file is parsed
+    /// against the AgentConfig schema, but `databases:` entries and `llm.ref`
+    /// are not resolved against config.yml, so a structurally valid file can
+    /// still fail at runtime if those references don't exist.
     #[clap(long, short)]
     file: Option<std::path::PathBuf>,
 }
@@ -489,6 +495,11 @@ fn validate_single_file(file_path: &PathBuf, config: &Config) -> Result<(), Stri
                 .validate_agent(&agent, path)
                 .map_err(|e| e.to_string())
         }
+        _ if file_name.ends_with(".agentic.yml") => {
+            agentic_analytics::config::AgentConfig::from_file(file_path)
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        }
         _ if file_name.ends_with(".app.yml") => {
             let app = config.load_app(file_path).map_err(|e| e.to_string())?;
             config.validate_app(&app).map_err(|e| e.to_string())
@@ -516,7 +527,7 @@ fn validate_single_file(file_path: &PathBuf, config: &Config) -> Result<(), Stri
             }
         }
         _ => Err(format!(
-            "Unknown file type: {}. Expected .workflow.yml, .automation.yml, .agent.yml, .app.yml, .view.yml, or .topic.yml",
+            "Unknown file type: {}. Expected .workflow.yml, .automation.yml, .agent.yml, .agentic.yml, .app.yml, .view.yml, or .topic.yml",
             file_path.display()
         )),
     }
@@ -617,6 +628,12 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                     serde_json::to_string_pretty(&schemars::schema_for!(AgentConfig))?,
                 ),
                 (
+                    "agentic.json",
+                    serde_json::to_string_pretty(&schemars::schema_for!(
+                        agentic_analytics::config::AgentConfig
+                    ))?,
+                ),
+                (
                     "app.json",
                     serde_json::to_string_pretty(&schemars::schema_for!(AppConfig))?,
                 ),
@@ -647,17 +664,31 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                     exit(1);
                 }
 
-                let changed_files = String::from_utf8(output.stdout)?;
+                // `git status --short` emits one "XY <path>" entry per line,
+                // with rename entries as "XY <old> -> <new>". Parse line-by-line
+                // and compare each path exactly — substring matching would
+                // misfire on e.g. `agent.json` matching `agent-test.json`.
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let changed_paths: std::collections::HashSet<&str> = stdout
+                    .lines()
+                    .filter_map(|line| {
+                        // Skip the 2-char status + 1-char separator.
+                        let rest = line.get(3..)?.trim_start();
+                        // For renames the affected path is after " -> ".
+                        Some(rest.rsplit_once(" -> ").map(|(_, new)| new).unwrap_or(rest))
+                    })
+                    .collect();
+
                 let schema_files: Vec<String> = schemas
                     .iter()
                     .map(|(filename, _)| format!("json-schemas/{filename}"))
                     .collect();
 
                 for file in schema_files {
-                    if changed_files.contains(&file) {
+                    if changed_paths.contains(file.as_str()) {
                         eprintln!("Unexpected changes were found in schema files.");
                         eprintln!(
-                            "Please review these changes and update the schema generation code by `cargo run gen-config-schema.`"
+                            "Please review these changes and update the schema generation code by `cargo run gen-config-schema`."
                         );
                         exit(1)
                     }
@@ -789,6 +820,14 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                     match validate_single_file(&agent_file, cfg) {
                         Ok(_) => valid_count += 1,
                         Err(e) => errors.push(format!("{}: {}", agent_file.display(), e)),
+                    }
+                }
+
+                // Validate agentic agents
+                for agentic_file in cfg.list_agentic_agents(&cfg.workspace_path) {
+                    match validate_single_file(&agentic_file, cfg) {
+                        Ok(_) => valid_count += 1,
+                        Err(e) => errors.push(format!("{}: {}", agentic_file.display(), e)),
                     }
                 }
 

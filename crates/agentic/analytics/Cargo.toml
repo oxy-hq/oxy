@@ -25,6 +25,7 @@ futures = { workspace = true }
 futures-core = { workspace = true }
 glob = { workspace = true }
 reqwest = { workspace = true, features = ["json", "stream"] }
+schemars = { workspace = true, features = ["derive", "impl_json_schema"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }

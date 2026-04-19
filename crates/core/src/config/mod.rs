@@ -204,6 +204,10 @@ impl Config {
         self.list_by_sub_extension(dir, "app")
     }
 
+    pub fn list_agentic_agents(&self, dir: &PathBuf) -> Vec<PathBuf> {
+        self.list_by_sub_extension(dir, "agentic")
+    }
+
     pub fn load_workflow(&self, workflow_path: &PathBuf) -> Result<Workflow, OxyError> {
         if !workflow_path.exists() {
             return Err(OxyError::ArgumentError(format!(

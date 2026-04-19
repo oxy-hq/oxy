@@ -40,6 +40,7 @@
 //! When the `validation:` key is absent from the YAML, [`ValidationConfig::default_all_rules`]
 //! is used, which enables all built-in rules with their default parameters.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
@@ -47,14 +48,14 @@ use serde::{Deserialize, Serialize};
 // ---------------------------------------------------------------------------
 
 /// Validation section of the agent YAML config.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, JsonSchema)]
 pub struct ValidationConfig {
     #[serde(default)]
     pub rules: RuleSetConfig,
 }
 
 /// Rules grouped by pipeline stage.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, JsonSchema)]
 pub struct RuleSetConfig {
     /// Rules applied after the **Specify** stage.
     #[serde(default)]
@@ -80,7 +81,7 @@ pub struct RuleSetConfig {
 ///   threshold_sigma: 3.0
 ///   min_rows: 6
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RuleEntry {
     pub name: String,
     #[serde(default = "bool_true")]

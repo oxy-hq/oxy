@@ -207,6 +207,29 @@ fn resumed_builder_tool_result(
     Some(("propose_change".to_string(), output))
 }
 
+/// Resolve an api key by name, preferring the workspace secrets store and
+/// falling back to the process environment.
+///
+/// Logs (but does not propagate) errors from the secrets store so the caller
+/// still attempts the env-var fallback — a DB hiccup shouldn't surface as a
+/// 401 that looks identical to "api key not configured". Returns `None` when
+/// neither source yields a value.
+async fn resolve_api_key(
+    secrets_manager: &oxy::adapters::secrets::SecretsManager,
+    key_var: &str,
+) -> Option<String> {
+    match secrets_manager.resolve_secret(key_var).await {
+        Ok(Some(v)) => return Some(v),
+        Ok(None) => {}
+        Err(e) => tracing::warn!(
+            key_var = %key_var,
+            error = %e,
+            "secrets_manager.resolve_secret failed; falling back to std::env::var"
+        ),
+    }
+    std::env::var(key_var).ok()
+}
+
 /// Lightweight summary returned by GET /analytics/threads/:thread_id/run
 #[derive(Serialize)]
 pub struct RunSummary {
@@ -305,13 +328,8 @@ pub async fn create_run(
             let key_var = resolved_model
                 .and_then(|m| m.key_var().map(|s| s.to_string()))
                 .unwrap_or_else(|| "ANTHROPIC_API_KEY".to_string());
-            workspace_manager
-                .secrets_manager
-                .resolve_secret(&key_var)
+            resolve_api_key(&workspace_manager.secrets_manager, &key_var)
                 .await
-                .ok()
-                .flatten()
-                .or_else(|| std::env::var(&key_var).ok())
                 .unwrap_or_default()
         };
 
@@ -1595,7 +1613,14 @@ pub(crate) async fn build_project_context_pub(
                 ctx.has_explicit_ref = is_explicit_ref;
 
                 if let Some(key_var) = model.key_var() {
-                    ctx.project_api_key = std::env::var(key_var).ok();
+                    // Check the workspace secrets store before falling back to env.
+                    // Onboarding (and the Settings → Secrets UI) persist the api key
+                    // into the secrets store, not the server process environment, so
+                    // env::var alone will miss it and every LLM call 401s with
+                    // "x-api-key header is required". Mirrors the builder-agent path
+                    // above.
+                    ctx.project_api_key =
+                        resolve_api_key(&workspace_manager.secrets_manager, key_var).await;
                 }
 
                 match model {

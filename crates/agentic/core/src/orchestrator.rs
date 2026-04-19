@@ -1496,7 +1496,7 @@ impl<D: Domain, S: DomainSolver<D> + 'static, Ev: DomainEvents> Orchestrator<D, 
                             emit(
                                 &self.event_tx,
                                 CoreEvent::Error {
-                                    message: "fatal error from diagnose".to_string(),
+                                    message: format!("fatal error from diagnose: {fatal}"),
                                     trace_id: trace_id.to_string(),
                                 },
                             )
@@ -1671,9 +1671,9 @@ impl<D: Domain, S: DomainSolver<D> + 'static, Ev: DomainEvents> Orchestrator<D, 
                                                 emit(
                                                     &self.event_tx,
                                                     CoreEvent::Error {
-                                                        message:
-                                                            "fatal error from fan-out diagnose"
-                                                                .to_string(),
+                                                        message: format!(
+                                                            "fatal error from fan-out diagnose: {fatal}"
+                                                        ),
                                                         trace_id: trace_id.to_string(),
                                                     },
                                                 )
@@ -1817,8 +1817,9 @@ impl<D: Domain, S: DomainSolver<D> + 'static, Ev: DomainEvents> Orchestrator<D, 
                                         emit(
                                             &self.event_tx,
                                             CoreEvent::Error {
-                                                message: "fatal error from handler diagnose"
-                                                    .to_string(),
+                                                message: format!(
+                                                    "fatal error from handler diagnose: {fatal}"
+                                                ),
                                                 trace_id: trace_id.to_string(),
                                             },
                                         )
