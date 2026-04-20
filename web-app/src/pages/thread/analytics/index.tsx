@@ -274,7 +274,7 @@ const PastRunEntry = ({
       selectedChangeId={selectedChangeId}
     >
       {run.status === "done" && (
-        <>
+        <div className='flex flex-col gap-4'>
           {run.ui_events &&
             extractDisplayBlocks(run.ui_events.map((e) => uiBlockToSseEvent(e))).map((block, i) => {
               const key = `${block.config.chart_type}-${block.config.title ?? i}`;
@@ -287,7 +287,7 @@ const PastRunEntry = ({
               <Markdown>{runAnswer}</Markdown>
             </div>
           )}
-        </>
+        </div>
       )}
       {run.status === "failed" && (
         <ErrorAlert title='Run failed'>

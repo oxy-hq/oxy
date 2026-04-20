@@ -46,24 +46,17 @@ export function Header() {
       <div className='px-2 py-2'>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
-              className='h-8 gap-2.5 rounded-md px-2.5 font-medium text-[13px]'
-            >
+            <SidebarMenuButton asChild>
               <Link to={homeUri}>
-                <DiamondPlus className='h-[15px] w-[15px] shrink-0' />
+                <DiamondPlus />
                 <span data-testid='start-new-thread'>Start new thread</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
-              isActive={isHome}
-              className='h-8 gap-2.5 rounded-md px-2.5 font-medium text-[13px]'
-            >
+            <SidebarMenuButton asChild isActive={isHome}>
               <Link to={homeUri}>
-                <Home className='h-[15px] w-[15px] shrink-0' />
+                <Home />
                 <span>Home</span>
               </Link>
             </SidebarMenuButton>
