@@ -343,8 +343,13 @@ pub async fn wait_for_postgres_ready(timeout_secs: u64) -> Result<(), OxyError> 
 
                     // If we got here, pg_isready executed successfully
                     if String::from_utf8_lossy(&stdout).contains("accepting connections") {
-                        info!("PostgreSQL is ready!");
-                        return Ok(());
+                        // pg_isready checks the unix socket inside the container. The host
+                        // still needs Docker's port publisher to forward 15432 -> 5432.
+                        // Probe the host-side TCP port to close that race before returning.
+                        if probe_host_tcp("127.0.0.1", POSTGRES_PORT).await {
+                            info!("PostgreSQL is ready!");
+                            return Ok(());
+                        }
                     }
                 }
             }
@@ -367,6 +372,26 @@ pub async fn wait_for_postgres_ready(timeout_secs: u64) -> Result<(), OxyError> 
         // Wait before retrying (exponential backoff with cap at 2 seconds)
         let wait_ms = std::cmp::min(100 * 2u64.pow(retry_count.min(4)), 2000);
         tokio::time::sleep(tokio::time::Duration::from_millis(wait_ms)).await;
+    }
+}
+
+async fn probe_host_tcp(host: &str, port: u16) -> bool {
+    let addr = format!("{}:{}", host, port);
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        tokio::net::TcpStream::connect(&addr),
+    )
+    .await;
+    match result {
+        Ok(Ok(_)) => true,
+        Ok(Err(e)) => {
+            tracing::debug!("TCP probe to {} failed: {}", addr, e);
+            false
+        }
+        Err(_) => {
+            tracing::debug!("TCP probe to {} timed out after 1s", addr);
+            false
+        }
     }
 }
 
