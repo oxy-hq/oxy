@@ -28,7 +28,7 @@ pub struct WorkflowToolExecutor;
 #[async_trait]
 impl ToolExecutor for WorkflowToolExecutor {
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = events::tool::WORKFLOW_EXECUTE,
+        oxy.name = events::tool::WORKFLOW_EXECUTE,
         oxy.span_type = events::tool::TOOL_CALL_TYPE,
         oxy.execution_type = events::tool::EXECUTION_TYPE_WORKFLOW,
         oxy.is_verified = tracing::field::Empty,
@@ -101,7 +101,7 @@ pub struct SemanticQueryToolExecutor;
 #[async_trait]
 impl ToolExecutor for SemanticQueryToolExecutor {
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = events::tool::SEMANTIC_QUERY_EXECUTE,
+        oxy.name = events::tool::SEMANTIC_QUERY_EXECUTE,
         oxy.span_type = events::tool::TOOL_CALL_TYPE,
         oxy.execution_type = events::tool::EXECUTION_TYPE_SEMANTIC_QUERY,
         oxy.is_verified = true,

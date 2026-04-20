@@ -20,7 +20,7 @@ struct SQLTaskMapper;
 #[async_trait::async_trait]
 impl ParamMapper<ExecuteSQLTask, SQLInput> for SQLTaskMapper {
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = workflow_events::task::execute_sql::NAME_MAP,
+        oxy.name = workflow_events::task::execute_sql::NAME_MAP,
         oxy.span_type = workflow_events::task::execute_sql::TYPE,
         oxy.database.ref = %input.database,
     ))]

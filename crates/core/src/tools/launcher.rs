@@ -137,7 +137,7 @@ impl Executable<ToolInput> for ToolLauncherExecutable {
     type Response = OutputContainer;
 
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = events::tool::TOOL_LAUNCHER_EXECUTE,
+        oxy.name = events::tool::TOOL_LAUNCHER_EXECUTE,
         oxy.span_type = events::tool::TOOL_CALL_TYPE,
     ))]
     async fn execute(

@@ -166,7 +166,7 @@ impl AnalyticsSolver {
     #[tracing::instrument(
         skip_all,
         fields(
-            otel.name = "analytics.solve",
+            oxy.name = "analytics.solve",
             oxy.span_type = "analytics",
             connector = tracing::field::Empty,
         )

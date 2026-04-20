@@ -33,11 +33,6 @@ mod embedding;
 pub mod storage;
 pub mod types;
 
-// Re-export migrations from the new location for backward compatibility
-pub mod migrations {
-    pub use crate::storage::clickhouse::migrations::*;
-}
-
 pub use classifier::IntentClassifier;
 pub use types::{
     Cluster, IncrementalResult, IntentAnalytics, IntentClassification, IntentCluster, IntentConfig,

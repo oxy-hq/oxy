@@ -170,7 +170,7 @@ where
 }
 
 #[tracing::instrument(skip_all, err, fields(
-    otel.name = workflow_events::run_workflow::NAME,
+    oxy.name = workflow_events::run_workflow::NAME,
     oxy.span_type = workflow_events::run_workflow::TYPE,
     oxy.workflow.ref = %path.as_ref().to_string_lossy().to_string(),
     oxy.execution.source = tracing::field::Empty,
@@ -259,7 +259,7 @@ pub async fn run_workflow<P: AsRef<Path>, L: WorkflowLogger + 'static>(
 }
 
 #[tracing::instrument(skip_all, err, fields(
-    otel.name = workflow_events::run_workflow::NAME,
+    oxy.name = workflow_events::run_workflow::NAME,
     oxy.span_type = workflow_events::run_workflow::TYPE,
     oxy.workflow.ref = %path.as_ref().to_string_lossy().to_string(),
     oxy.execution.source = tracing::field::Empty,

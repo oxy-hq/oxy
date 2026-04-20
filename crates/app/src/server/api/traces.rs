@@ -1,17 +1,16 @@
 use axum::{
     Router,
-    extract::{self, Path, Query},
+    extract::{self, Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::get,
 };
-use clickhouse::Row;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use crate::server::router::AppState;
-use oxy::storage::clickhouse::ClickHouseStorage;
 
 /// Custom error type for trace endpoints
 #[derive(Debug)]
@@ -24,7 +23,7 @@ impl IntoResponse for TracesError {
     fn into_response(self) -> Response {
         let (status, message) = match &self {
             TracesError::QueryFailed(err) => {
-                tracing::error!("ClickHouse query failed: {}", err);
+                tracing::error!("Traces query failed: {}", err);
                 (StatusCode::INTERNAL_SERVER_ERROR, "Failed to query traces")
             }
             TracesError::NotFound(trace_id) => {
@@ -53,7 +52,7 @@ fn default_limit() -> i64 {
     50
 }
 
-#[derive(Debug, Serialize, Deserialize, Row, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct TraceResponse {
     #[serde(rename = "traceId")]
     pub trace_id: String,
@@ -92,8 +91,8 @@ pub struct PaginatedTraceResponse {
     pub offset: i64,
 }
 
-/// Full trace span detail response (all columns from otel_traces table)
-#[derive(Debug, Serialize, Deserialize, Row, ToSchema)]
+/// Full trace span detail response (all columns from spans table)
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct TraceDetailSpan {
     #[serde(rename = "timestamp")]
     pub timestamp: String,
@@ -123,10 +122,61 @@ pub struct TraceDetailSpan {
     pub events_attributes: Vec<Vec<(String, String)>>,
 }
 
-/// Helper function to get ClickHouse storage client
-fn get_clickhouse_storage() -> ClickHouseStorage {
-    ClickHouseStorage::from_env()
+// ── JSON helpers ─────────────────────────────────────────────────────────
+
+/// Parse a JSON object string into a flat list of key-value pairs.
+fn parse_json_to_pairs(json: &str) -> Vec<(String, String)> {
+    serde_json::from_str::<HashMap<String, serde_json::Value>>(json)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(k, v)| {
+            (
+                k,
+                v.as_str()
+                    .map(String::from)
+                    .unwrap_or_else(|| v.to_string()),
+            )
+        })
+        .collect()
 }
+
+/// Parse event_data JSON array into the nested pairs format expected by the
+/// frontend: `Vec<Vec<(String, String)>>` where each inner vec represents one
+/// event with its name + attributes flattened into pairs.
+fn parse_event_data_to_pairs(json: &str) -> Vec<Vec<(String, String)>> {
+    let events: Vec<serde_json::Value> = serde_json::from_str(json).unwrap_or_default();
+    events
+        .into_iter()
+        .map(|ev| {
+            let mut pairs = Vec::new();
+            if let Some(name) = ev.get("name").and_then(|n| n.as_str()) {
+                pairs.push(("name".to_string(), name.to_string()));
+            }
+            if let Some(attrs) = ev.get("attributes").and_then(|a| a.as_object()) {
+                for (k, v) in attrs {
+                    pairs.push((
+                        k.clone(),
+                        v.as_str()
+                            .map(String::from)
+                            .unwrap_or_else(|| v.to_string()),
+                    ));
+                }
+            }
+            pairs
+        })
+        .collect()
+}
+
+/// Extract event names from event_data JSON array.
+fn extract_event_names(json: &str) -> Vec<String> {
+    let events: Vec<serde_json::Value> = serde_json::from_str(json).unwrap_or_default();
+    events
+        .iter()
+        .filter_map(|ev| ev.get("name").and_then(|n| n.as_str()).map(String::from))
+        .collect()
+}
+
+// ── Handlers ─────────────────────────────────────────────────────────────
 
 /// List recent traces
 #[utoipa::path(
@@ -138,117 +188,47 @@ fn get_clickhouse_storage() -> ClickHouseStorage {
     params(TraceListQuery)
 )]
 pub async fn list_traces(
+    State(state): State<AppState>,
     Query(params): Query<TraceListQuery>,
 ) -> Result<extract::Json<PaginatedTraceResponse>, TracesError> {
-    let storage = get_clickhouse_storage();
+    let storage = state
+        .observability
+        .as_ref()
+        .ok_or_else(|| TracesError::QueryFailed("Observability not configured".into()))?;
 
-    // Build WHERE clause for both count and data queries
-    // Collect only root traces (no parent span) for workflow.run_workflow, agent.run_agent, or analytics.run
-    let mut where_clause = String::from(
-        "WHERE (t.SpanName = 'workflow.run_workflow' OR t.SpanName = 'agent.run_agent' OR t.SpanName = 'analytics.run') AND t.ParentSpanId = ''",
-    );
-
-    if let Some(ref agent_ref) = params.agent_ref {
-        where_clause.push_str(&format!(
-            " AND t.SpanAttributes['agent.ref'] = '{}'",
-            agent_ref.replace("'", "''")
-        ));
-    }
-
-    if let Some(ref status) = params.status {
-        where_clause.push_str(&format!(
-            " AND t.StatusCode = '{}'",
-            status.replace("'", "''")
-        ));
-    }
-
-    // Apply duration filter
-    if let Some(ref duration) = params.duration {
-        let interval = match duration.as_str() {
-            "1h" => "1 HOUR",
-            "24h" => "24 HOUR",
-            "7d" => "7 DAY",
-            "30d" => "30 DAY",
-            _ => "", // "all" or any other value - no filter
-        };
-        if !interval.is_empty() {
-            where_clause.push_str(&format!(
-                " AND t.Timestamp >= now() - INTERVAL {}",
-                interval
-            ));
-        }
-    }
-
-    // Count query
-    let count_query = format!(
-        "SELECT count() as cnt FROM otel.otel_traces t {}",
-        where_clause
-    );
-
-    #[derive(Row, Deserialize)]
-    struct CountResult {
-        cnt: u64,
-    }
-
-    let count_result = storage
-        .client()
-        .query(&count_query)
-        .fetch_one::<CountResult>()
+    let (traces, total) = storage
+        .list_traces(
+            params.limit,
+            params.offset,
+            params.agent_ref.as_deref(),
+            params.status.as_deref(),
+            params.duration.as_deref(),
+        )
         .await
         .map_err(|e| TracesError::QueryFailed(e.to_string()))?;
 
-    let total = count_result.cnt as i64;
-
-    // Data query
-    let data_query = format!(
-        "SELECT 
-            t.TraceId as trace_id,
-            t.SpanId as span_id,
-            toString(t.Timestamp) as timestamp,
-            t.SpanName as span_name,
-            t.ServiceName as service_name,
-            t.Duration as duration_ns,
-            t.StatusCode as status_code,
-            t.StatusMessage as status_message,
-            t.SpanKind as span_kind,
-            t.SpanAttributes as span_attributes,
-            t.Events.Attributes as events_attributes,
-            COALESCE(u.prompt_tokens, 0) as prompt_tokens,
-            COALESCE(u.completion_tokens, 0) as completion_tokens,
-            COALESCE(u.total_tokens, 0) as total_tokens
-        FROM otel.otel_traces t
-        LEFT JOIN (
-            SELECT 
-                TraceId,
-                SUM(arraySum(arrayMap(
-                    attrs -> if(attrs['name'] = 'llm.usage', toInt64OrZero(attrs['prompt_tokens']), 0),
-                    Events.Attributes
-                ))) as prompt_tokens,
-                SUM(arraySum(arrayMap(
-                    attrs -> if(attrs['name'] = 'llm.usage', toInt64OrZero(attrs['completion_tokens']), 0),
-                    Events.Attributes
-                ))) as completion_tokens,
-                SUM(arraySum(arrayMap(
-                    attrs -> if(attrs['name'] = 'llm.usage', toInt64OrZero(attrs['total_tokens']), 0),
-                    Events.Attributes
-                ))) as total_tokens
-            FROM otel.otel_traces
-            GROUP BY TraceId
-        ) u ON t.TraceId = u.TraceId
-        {}
-        ORDER BY t.Timestamp DESC LIMIT {} OFFSET {}",
-        where_clause, params.limit, params.offset
-    );
-
-    let traces = storage
-        .client()
-        .query(&data_query)
-        .fetch_all::<TraceResponse>()
-        .await
-        .map_err(|e| TracesError::QueryFailed(e.to_string()))?;
+    let items = traces
+        .into_iter()
+        .map(|t| TraceResponse {
+            trace_id: t.trace_id,
+            span_id: t.span_id,
+            timestamp: t.timestamp,
+            span_name: t.span_name,
+            service_name: t.service_name,
+            duration_ns: t.duration_ns,
+            status_code: t.status_code,
+            status_message: t.status_message,
+            span_kind: "INTERNAL".to_string(),
+            span_attributes: parse_json_to_pairs(&t.span_attributes),
+            events_attributes: parse_event_data_to_pairs(&t.event_data),
+            prompt_tokens: t.prompt_tokens,
+            completion_tokens: t.completion_tokens,
+            total_tokens: t.total_tokens,
+        })
+        .collect();
 
     Ok(extract::Json(PaginatedTraceResponse {
-        items: traces,
+        items,
         total,
         limit: params.limit,
         offset: params.offset,
@@ -268,44 +248,41 @@ pub async fn list_traces(
     )
 )]
 pub async fn get_trace_detail(
+    State(state): State<AppState>,
     Path((_workspace_id, trace_id)): Path<(Uuid, String)>,
 ) -> Result<extract::Json<Vec<TraceDetailSpan>>, TracesError> {
-    let storage = get_clickhouse_storage();
+    let storage = state
+        .observability
+        .as_ref()
+        .ok_or_else(|| TracesError::QueryFailed("Observability not configured".into()))?;
 
-    let query = format!(
-        "SELECT 
-            toString(Timestamp) as timestamp,
-            TraceId as trace_id,
-            SpanId as span_id,
-            ParentSpanId as parent_span_id,
-            SpanName as span_name,
-            SpanKind as span_kind,
-            ServiceName as service_name,
-            SpanAttributes as span_attributes,
-            Duration as duration,
-            StatusCode as status_code,
-            StatusMessage as status_message,
-            Events.Name as events_name,
-            Events.Attributes as events_attributes
-        FROM otel.otel_traces
-        WHERE TraceId = '{}'
-        ORDER BY Timestamp ASC",
-        trace_id.replace("'", "''")
-    );
-
-    let spans = storage
-        .client()
-        .query(&query)
-        .fetch_all::<TraceDetailSpan>()
+    let rows = storage
+        .get_trace_detail(&trace_id)
         .await
-        .map_err(|e| {
-            tracing::error!("ClickHouse query error: {:?}", e);
-            TracesError::QueryFailed(e.to_string())
-        })?;
+        .map_err(|e| TracesError::QueryFailed(e.to_string()))?;
 
-    if spans.is_empty() {
+    if rows.is_empty() {
         return Err(TracesError::NotFound(trace_id));
     }
+
+    let spans = rows
+        .into_iter()
+        .map(|r| TraceDetailSpan {
+            timestamp: r.timestamp,
+            trace_id: r.trace_id,
+            span_id: r.span_id,
+            parent_span_id: r.parent_span_id,
+            span_name: r.span_name,
+            span_kind: "INTERNAL".to_string(),
+            service_name: r.service_name,
+            span_attributes: parse_json_to_pairs(&r.span_attributes),
+            duration: r.duration_ns,
+            status_code: r.status_code,
+            status_message: r.status_message,
+            events_name: extract_event_names(&r.event_data),
+            events_attributes: parse_event_data_to_pairs(&r.event_data),
+        })
+        .collect();
 
     Ok(extract::Json(spans))
 }
@@ -398,41 +375,6 @@ fn default_cluster_map_days() -> u32 {
     30
 }
 
-/// Row for reading embeddings with classification data
-#[derive(Debug, Row, Deserialize)]
-struct EmbeddingWithClassification {
-    #[serde(rename = "TraceId")]
-    trace_id: String,
-    #[serde(rename = "Question")]
-    question: String,
-    #[serde(rename = "Embedding")]
-    embedding: Vec<f32>,
-    #[serde(rename = "ClusterId")]
-    cluster_id: u32,
-    #[serde(rename = "IntentName")]
-    intent_name: String,
-    #[serde(rename = "Confidence")]
-    confidence: f32,
-    #[serde(rename = "classified_at_str")]
-    classified_at: String,
-    #[allow(dead_code)]
-    #[serde(rename = "Source")]
-    source: String,
-}
-
-/// Row for reading cluster info
-#[derive(Debug, Row, Deserialize)]
-struct ClusterInfoRow {
-    #[serde(rename = "ClusterId")]
-    cluster_id: u32,
-    #[serde(rename = "IntentName")]
-    intent_name: String,
-    #[serde(rename = "IntentDescription")]
-    intent_description: String,
-    #[serde(rename = "SampleQuestions")]
-    sample_questions: Vec<String>,
-}
-
 /// Get cluster map data for visualization
 #[utoipa::path(
     get,
@@ -440,75 +382,21 @@ struct ClusterInfoRow {
     params(ClusterMapQuery),
     responses(
         (status = 200, description = "Cluster map data", body = ClusterMapResponse),
-        (status = 503, description = "ClickHouse unavailable")
+        (status = 503, description = "Storage unavailable")
     )
 )]
 pub async fn get_cluster_map(
+    State(state): State<AppState>,
     Query(query): Query<ClusterMapQuery>,
 ) -> Result<extract::Json<ClusterMapResponse>, TracesError> {
-    let storage = get_clickhouse_storage();
-
-    // Check if intent_classifications table exists first
-    let table_exists_query = "SELECT count() FROM system.tables WHERE database = 'otel' AND name = 'intent_classifications'";
-
-    #[derive(Debug, Row, Deserialize)]
-    struct TableExistsResult {
-        #[serde(rename = "count()")]
-        count: u64,
-    }
-
-    let table_exists = storage
-        .client()
-        .query(table_exists_query)
-        .fetch_one::<TableExistsResult>()
-        .await
-        .map(|result| result.count > 0)
-        .unwrap_or(false);
-
-    if !table_exists {
-        // Return empty response if tables don't exist yet
-        return Ok(extract::Json(ClusterMapResponse {
-            points: vec![],
-            clusters: vec![],
-            total_points: 0,
-            outlier_count: 0,
-        }));
-    }
+    let storage = state
+        .observability
+        .as_ref()
+        .ok_or_else(|| TracesError::QueryFailed("Observability not configured".into()))?;
 
     // Fetch embeddings with their classifications
-    let mut where_conditions = vec![format!(
-        "ClassifiedAt >= now64() - INTERVAL {} DAY",
-        query.days
-    )];
-
-    if let Some(ref source) = query.source {
-        where_conditions.push(format!("Source = '{}'", source.replace("'", "''")));
-    }
-
-    let embeddings_query = format!(
-        r#"
-        SELECT
-            TraceId,
-            Question,
-            Embedding,
-            ClusterId,
-            IntentName,
-            Confidence,
-            toString(ClassifiedAt) as classified_at_str,
-            Source
-        FROM intent_classifications
-        WHERE {}
-        ORDER BY ClassifiedAt DESC
-        LIMIT {}
-        "#,
-        where_conditions.join(" AND "),
-        query.limit
-    );
-
-    let embeddings: Vec<EmbeddingWithClassification> = storage
-        .client()
-        .query(&embeddings_query)
-        .fetch_all()
+    let embeddings = storage
+        .get_cluster_map_data(query.days, query.limit, query.source.as_deref())
         .await
         .map_err(|e| TracesError::QueryFailed(e.to_string()))?;
 
@@ -522,34 +410,18 @@ pub async fn get_cluster_map(
     }
 
     // Fetch cluster info
-    let clusters_query = r#"
-        SELECT 
-            ClusterId,
-            IntentName,
-            IntentDescription,
-            SampleQuestions
-        FROM intent_clusters
-        ORDER BY ClusterId
-    "#;
-
-    let cluster_infos: Vec<ClusterInfoRow> = storage
-        .client()
-        .query(clusters_query)
-        .fetch_all()
-        .await
-        .unwrap_or_default();
+    let cluster_infos = storage.get_cluster_infos().await.unwrap_or_default();
 
     // Project embeddings to 2D using simple PCA-like approach
     let points_2d = project_to_2d(&embeddings);
 
     // Generate colors for clusters and build a color map by cluster_id
     let cluster_colors = generate_cluster_colors(cluster_infos.len() + 1); // +1 for outliers
-    let mut cluster_color_map: std::collections::HashMap<i32, String> =
-        std::collections::HashMap::new();
+    let mut cluster_color_map: HashMap<i32, String> = HashMap::new();
     cluster_color_map.insert(-1, cluster_colors[0].clone()); // Outliers get first color
     for (i, c) in cluster_infos.iter().enumerate() {
         cluster_color_map.insert(
-            c.cluster_id as i32,
+            c.cluster_id,
             cluster_colors
                 .get(i + 1)
                 .cloned()
@@ -560,61 +432,28 @@ pub async fn get_cluster_map(
     // Collect trace IDs for enrichment
     let trace_ids: Vec<String> = embeddings.iter().map(|e| e.trace_id.clone()).collect();
 
-    // Fetch trace status and output from otel_traces
-    let trace_ids_str = trace_ids
-        .iter()
-        .map(|id| format!("'{}'", id.replace("'", "''")))
-        .collect::<Vec<_>>()
-        .join(",");
-
-    #[derive(Debug, Row, Deserialize)]
-    struct TraceEnrichment {
-        trace_id: String,
-        status_code: String,
-        duration_ns: i64,
-    }
-
-    let enrichment_query = format!(
-        r#"
-        SELECT 
-            TraceId as trace_id,
-            StatusCode as status_code,
-            Duration as duration_ns
-        FROM otel.otel_traces
-        WHERE TraceId IN ({})
-        AND ParentSpanId = ''
-        "#,
-        trace_ids_str
-    );
-
-    let enrichments: Vec<TraceEnrichment> = if !trace_ids.is_empty() {
-        storage
-            .client()
-            .query(&enrichment_query)
-            .fetch_all()
-            .await
-            .unwrap_or_default()
-    } else {
-        vec![]
-    };
+    // Fetch trace status and duration from spans table
+    let enrichments = storage
+        .get_trace_enrichments(&trace_ids)
+        .await
+        .unwrap_or_default();
 
     // Build enrichment map
-    let enrichment_map: std::collections::HashMap<String, TraceEnrichment> = enrichments
+    let enrichment_map: HashMap<String, _> = enrichments
         .into_iter()
         .map(|e| (e.trace_id.clone(), e))
         .collect();
 
     // Build points with enrichment
     let mut points: Vec<ClusterMapPoint> = Vec::with_capacity(embeddings.len());
-    let mut cluster_counts: std::collections::HashMap<i32, usize> =
-        std::collections::HashMap::new();
+    let mut cluster_counts: HashMap<i32, usize> = HashMap::new();
 
     for (i, emb) in embeddings.iter().enumerate() {
         let (x, y) = points_2d[i];
         let cluster_id = if emb.intent_name == "unknown" {
             -1
         } else {
-            emb.cluster_id as i32
+            emb.cluster_id
         };
 
         *cluster_counts.entry(cluster_id).or_insert(0) += 1;
@@ -625,30 +464,13 @@ pub async fn get_cluster_map(
             Some(e) => {
                 let duration_ms = Some(e.duration_ns as f64 / 1_000_000.0);
                 let status = match e.status_code.as_str() {
-                    "STATUS_CODE_OK" => Some("ok".to_string()),
-                    "STATUS_CODE_ERROR" => Some("error".to_string()),
+                    "STATUS_CODE_OK" | "OK" => Some("ok".to_string()),
+                    "STATUS_CODE_ERROR" | "ERROR" => Some("error".to_string()),
                     _ => Some("ok".to_string()),
                 };
                 (duration_ms, status)
             }
-            None => {
-                // Generate random values when trace not found
-                use std::hash::{Hash, Hasher};
-                let mut hasher = std::collections::hash_map::DefaultHasher::new();
-                emb.trace_id.hash(&mut hasher);
-                let hash = hasher.finish();
-
-                // Random duration between 1000ms and 3000ms
-                let duration_ms = Some(1000.0 + (hash % 2001) as f64);
-
-                // Random status based on hash
-                let status = match hash % 3 {
-                    0 => Some("ok".to_string()),
-                    1 => Some("error".to_string()),
-                    _ => Some("ok".to_string()),
-                };
-                (duration_ms, status)
-            }
+            None => (None, None),
         };
 
         points.push(ClusterMapPoint {
@@ -665,19 +487,23 @@ pub async fn get_cluster_map(
         });
     }
 
+    // Parse sample_questions from JSON for each cluster info
+    let parse_sample_questions =
+        |sq: &str| -> Vec<String> { serde_json::from_str(sq).unwrap_or_default() };
+
     // Build cluster summaries
     let mut clusters: Vec<ClusterSummary> = cluster_infos
         .iter()
         .map(|c| ClusterSummary {
-            cluster_id: c.cluster_id as i32,
+            cluster_id: c.cluster_id,
             intent_name: c.intent_name.clone(),
             description: c.intent_description.clone(),
-            count: *cluster_counts.get(&(c.cluster_id as i32)).unwrap_or(&0),
+            count: *cluster_counts.get(&c.cluster_id).unwrap_or(&0),
             color: cluster_color_map
-                .get(&(c.cluster_id as i32))
+                .get(&c.cluster_id)
                 .cloned()
                 .unwrap_or_else(|| "#6b7280".to_string()),
-            sample_questions: c.sample_questions.clone(),
+            sample_questions: parse_sample_questions(&c.sample_questions),
         })
         .filter(|c| c.count > 0)
         .collect();
@@ -711,11 +537,12 @@ pub async fn get_cluster_map(
     }))
 }
 
+// ── PCA projection and color helpers (pure computation) ──────────────────
+
+use oxy_observability::types::ClusterMapDataRow;
+
 /// Fast 2D projection using PCA (Principal Component Analysis)
-/// PCA is O(n) and provides instant results for real-time API queries
-/// For better cluster visualization, consider pre-computing t-SNE/UMAP
-/// coordinates during intent classification and storing in ClickHouse
-fn project_to_2d(embeddings: &[EmbeddingWithClassification]) -> Vec<(f32, f32)> {
+fn project_to_2d(embeddings: &[ClusterMapDataRow]) -> Vec<(f32, f32)> {
     use linfa::prelude::*;
     use linfa_reduction::Pca;
     use ndarray::{Array2, Axis};
@@ -743,10 +570,8 @@ fn project_to_2d(embeddings: &[EmbeddingWithClassification]) -> Vec<(f32, f32)> 
         }
     }
 
-    // Create a Dataset from the array
     let dataset = DatasetBase::from(data);
 
-    // Fit PCA to reduce to 2 dimensions - this is very fast O(n*d)
     let pca = match Pca::params(2).fit(&dataset) {
         Ok(pca) => pca,
         Err(e) => {
@@ -755,10 +580,8 @@ fn project_to_2d(embeddings: &[EmbeddingWithClassification]) -> Vec<(f32, f32)> 
         }
     };
 
-    // Transform the data to 2D
     let projected = pca.transform(dataset);
 
-    // Extract 2D coordinates and normalize to display range
     let ncols = projected.records().ncols();
     let mut positions: Vec<(f64, f64)> = projected
         .records()
@@ -770,7 +593,6 @@ fn project_to_2d(embeddings: &[EmbeddingWithClassification]) -> Vec<(f32, f32)> 
         })
         .collect();
 
-    // Normalize to display range [-400, 400] x [-300, 300]
     normalize_positions(&mut positions);
 
     positions
@@ -803,7 +625,6 @@ fn normalize_positions(positions: &mut [(f64, f64)]) {
 
 /// Generate distinct colors for clusters
 fn generate_cluster_colors(n: usize) -> Vec<String> {
-    // Predefined palette of distinct colors
     let palette = [
         "#9ca3af", // Gray for outliers
         "#3b82f6", // Blue

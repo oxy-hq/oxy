@@ -1,9 +1,8 @@
 use crate::adapters::workspace::manager::WorkspaceManager;
+use oxy_observability::current_trace_id;
 // Note: Agent types are not imported here to avoid circular dependencies
 // Functions use generic serialization via serde::Serialize trait
-use opentelemetry::trace::TraceContextExt as _;
 use tracing::{Level, event, warn};
-use tracing_opentelemetry::OpenTelemetrySpanExt as _;
 
 /// Service-level events (no access to ExecutionContext - just tracing)
 pub mod run_agent {
@@ -26,17 +25,13 @@ pub mod run_agent {
         variables: &Option<std::collections::HashMap<String, serde_json::Value>>,
         source: &impl serde::Serialize,
     ) {
-        // Get trace_id from current OpenTelemetry span context
-        let trace_id = tracing::Span::current()
-            .context()
-            .span()
-            .span_context()
-            .trace_id()
-            .to_string();
+        // Get trace_id from current DuckDB observability layer
+        let trace_id =
+            current_trace_id().unwrap_or_else(|| "00000000000000000000000000000000".to_string());
 
         // Trigger intent classification if classifier is available
         if let Some(classifier) = &workspace.intent_classifier {
-            println!("Triggering intent classification...");
+            tracing::debug!("Triggering intent classification");
             let classifier = classifier.clone();
             let trace_id = trace_id.clone();
             let prompt = prompt.to_string();

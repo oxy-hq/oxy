@@ -13,7 +13,7 @@ oxy serve                        # multi-workspace mode (default)
 oxy serve --local                # single-workspace mode: serve the current directory
 oxy serve --port 8080            # custom port (default: 3000)
 oxy serve --host 0.0.0.0         # bind to all interfaces (needed in containers)
-oxy serve --enterprise           # enable ClickHouse telemetry + OTel Collector
+oxy serve --enterprise           # enable observability (traces, metrics, analytics)
 oxy serve --readonly             # reject file writes via the API (IDE-alongside mode)
 ```
 
@@ -32,7 +32,7 @@ Starts a PostgreSQL container with Docker and then launches the web server. Reco
 
 ```bash
 oxy start                        # start PostgreSQL container + web server
-oxy start --enterprise           # also start ClickHouse + OTel Collector
+oxy start --enterprise           # enable observability features
 oxy start --clean                # remove existing containers/volumes first
 ```
 

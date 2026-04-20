@@ -5,7 +5,7 @@ description: "Configure and use various container runtimes with Oxy"
 
 ## Overview
 
-Oxy requires a **Docker API-compatible endpoint** to manage PostgreSQL, ClickHouse, and other containerized services. This means any container runtime that exposes a Docker-compatible API socket.
+Oxy requires a **Docker API-compatible endpoint** to manage PostgreSQL and other containerized services. This means any container runtime that exposes a Docker-compatible API socket.
 
 <Warning>
 **Important:** Oxy communicates via the **Docker API** (typically through a Unix socket or TCP endpoint). You can use:
@@ -482,19 +482,7 @@ When using the `--enterprise` flag, Oxy starts additional containers:
 
   </Card>
 
-  <Card title="ClickHouse" icon="chart-line">
-    Analytics database
 
-    Ports: `8123` (HTTP), `9000` (Native)
-
-  </Card>
-
-  <Card title="OpenTelemetry Collector" icon="chart-mixed">
-    Observability pipeline
-
-    Ports: `4317` (gRPC), `4318` (HTTP)
-
-  </Card>
 </CardGroup>
 
 All container runtimes support these services with identical port mappings.

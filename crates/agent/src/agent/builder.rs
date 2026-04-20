@@ -26,7 +26,7 @@ impl Executable<AgentInput> for AgentExecutable {
     type Response = OutputContainer;
 
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = events::agent::agent::NAME,
+        oxy.name = events::agent::agent::NAME,
         oxy.span_type = events::agent::agent::TYPE,
         oxy.agent.ref = %input.agent_ref,
     ))]

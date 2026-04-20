@@ -13,7 +13,6 @@ use oxy::{
     config::{constants::DEFAULT_API_KEY_HEADER, resolve_local_workspace_path},
     database::{client::establish_connection, docker},
     state_dir::get_state_dir,
-    storage::{ClickHouseConfig, ClickHouseStorage},
     theme::StyledText,
 };
 use oxy_project::LocalGitService;
@@ -56,25 +55,8 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
         ));
     }
 
-    // Validate enterprise mode requirements
-    if args.enterprise && !ClickHouseConfig::is_configured() {
-        return Err(OxyError::RuntimeError(
-            "--enterprise flag requires ClickHouse configuration.\n\n\
-            Required environment variables:\n\
-            - OXY_CLICKHOUSE_URL (e.g., http://localhost:8123)\n\n\
-            Optional environment variables:\n\
-            - OXY_CLICKHOUSE_USER (default: default)\n\
-            - OXY_CLICKHOUSE_PASSWORD\n\
-            - OXY_CLICKHOUSE_DATABASE (default: otel)\n\n\
-            Options:\n\
-            1. Use 'oxy start --enterprise' to automatically start ClickHouse with Docker\n\
-            2. Set the environment variables to point to your ClickHouse instance"
-                .to_string(),
-        ));
-    }
-
     println!("serve: running database migrations");
-    run_database_migrations(args.enterprise).await?;
+    run_database_migrations().await?;
     println!("serve: migrations done, finding available port");
 
     // Initialize local git when running in multi-workspace / cloud mode.
@@ -167,14 +149,19 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
             String,
         >::new()));
 
+    // Retrieve the global observability storage (if initialized) for the API handlers.
+    let observability = oxy_observability::global::get_global().cloned();
+
     let _available_port = find_available_port(args.host.clone(), args.port).await?;
     let app = create_web_application(
         args.enterprise,
         args.readonly,
+        args.local,
         workspaces_root.clone(),
         active_workspace_path.clone(),
         cloning_workspaces.clone(),
         errored_workspaces.clone(),
+        observability.clone(),
     )
     .await?;
 
@@ -187,6 +174,7 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
                 active_workspace_path,
                 cloning_workspaces,
                 errored_workspaces,
+                observability,
             )
             .await?,
         )
@@ -290,7 +278,7 @@ async fn scan_and_register_projects(
         .filter(|p| p.exists()))
 }
 
-async fn run_database_migrations(enterprise: bool) -> Result<(), OxyError> {
+async fn run_database_migrations() -> Result<(), OxyError> {
     println!("migrations: establishing database connection (this builds the connection pool)");
     let db = establish_connection()
         .await
@@ -303,26 +291,8 @@ async fn run_database_migrations(enterprise: bool) -> Result<(), OxyError> {
         .map_err(|e| OxyError::RuntimeError(format!("Failed to run database migrations: {}", e)))?;
     println!("migrations: SeaORM migrations complete");
 
-    // Run ClickHouse migrations only when enterprise mode is enabled
-    if enterprise {
-        run_clickhouse_migrations().await?;
-    }
-
-    Ok(())
-}
-
-async fn run_clickhouse_migrations() -> Result<(), OxyError> {
-    tracing::info!("Running ClickHouse migrations for enterprise mode...");
-
-    let storage = ClickHouseStorage::from_env();
-
-    // Run ClickHouse migrations
-    storage
-        .run_migrations()
-        .await
-        .map_err(|e| OxyError::RuntimeError(format!("ClickHouse migrations failed: {e}")))?;
-
-    tracing::info!("ClickHouse migrations completed successfully");
+    // DuckDB schema migrations are handled automatically during DuckDBStorage::open()
+    // in main.rs, so no separate migration step is needed here.
 
     Ok(())
 }
@@ -375,20 +345,24 @@ async fn find_available_port(host: String, port: u16) -> Result<u16, OxyError> {
 async fn create_web_application(
     enterprise: bool,
     readonly: bool,
+    local_mode: bool,
     workspaces_root: Option<std::path::PathBuf>,
     active_workspace_path: std::sync::Arc<tokio::sync::RwLock<Option<std::path::PathBuf>>>,
     cloning_workspaces: std::sync::Arc<std::sync::Mutex<std::collections::HashSet<uuid::Uuid>>>,
     errored_workspaces: std::sync::Arc<
         std::sync::Mutex<std::collections::HashMap<uuid::Uuid, String>>,
     >,
+    observability: Option<std::sync::Arc<dyn oxy_observability::ObservabilityStore>>,
 ) -> Result<Router, OxyError> {
     let api_router = crate::server::router::api_router(
         enterprise,
         readonly,
+        local_mode,
         workspaces_root,
         active_workspace_path,
         cloning_workspaces,
         errored_workspaces,
+        observability,
     )
     .await
     .map_err(|e| OxyError::RuntimeError(format!("Failed to create API router: {}", e)))?;
@@ -441,6 +415,7 @@ async fn create_internal_application(
     errored_workspaces: std::sync::Arc<
         std::sync::Mutex<std::collections::HashMap<uuid::Uuid, String>>,
     >,
+    observability: Option<std::sync::Arc<dyn oxy_observability::ObservabilityStore>>,
 ) -> Result<Router, OxyError> {
     let internal_router = crate::server::router::internal_api_router(
         enterprise,
@@ -449,6 +424,7 @@ async fn create_internal_application(
         active_workspace_path,
         cloning_workspaces,
         errored_workspaces,
+        observability,
     )
     .await
     .map_err(|e| OxyError::RuntimeError(format!("Failed to create internal API router: {}", e)))?;

@@ -29,7 +29,7 @@ use crate::semantic_validator_builder::{
 };
 
 #[tracing::instrument(skip_all, err, fields(
-    otel.name = workflow_events::task::semantic_query::NAME_RENDER,
+    oxy.name = workflow_events::task::semantic_query::NAME_RENDER,
     oxy.span_type = workflow_events::task::semantic_query::TYPE,
     oxy.semantic_query.topic = tracing::field::Empty,
     oxy.semantic_query.dimensions_count = task.query.dimensions.len(),
@@ -199,7 +199,7 @@ struct SemanticQueryTaskMapper;
 #[async_trait::async_trait]
 impl ParamMapper<SemanticQueryTask, ValidatedSemanticQuery> for SemanticQueryTaskMapper {
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = workflow_events::task::semantic_query::NAME_MAP,
+        oxy.name = workflow_events::task::semantic_query::NAME_MAP,
         oxy.span_type = workflow_events::task::semantic_query::TYPE,
     ))]
     async fn map(
@@ -244,7 +244,7 @@ impl SemanticQueryExecutable {
     }
 
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = tool_events::SEMANTIC_QUERY_COMPILE,
+        oxy.name = tool_events::SEMANTIC_QUERY_COMPILE,
         oxy.span_type = tool_events::SEMANTIC_QUERY_COMPILE_TYPE,
         oxy.semantic_query.topic = %input.topic.name,
     ))]
@@ -348,7 +348,7 @@ impl Executable<ValidatedSemanticQuery> for SemanticQueryExecutable {
     type Response = Output;
 
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = workflow_events::task::semantic_query::NAME_EXECUTE,
+        oxy.name = workflow_events::task::semantic_query::NAME_EXECUTE,
         oxy.span_type = workflow_events::task::semantic_query::TYPE,
         oxy.semantic_query.topic = %input.topic.name,
         oxy.semantic_query.dimensions_count = input.task.query.dimensions.len(),
@@ -613,7 +613,7 @@ impl SemanticQueryExecutable {
 
     /// Execute SQL query directly using database connector and save results to file
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = workflow_events::task::semantic_query::NAME_EXECUTE_SQL,
+        oxy.name = workflow_events::task::semantic_query::NAME_EXECUTE_SQL,
         oxy.span_type = workflow_events::task::semantic_query::TYPE,
         oxy.database.ref = database_ref,
     ))]

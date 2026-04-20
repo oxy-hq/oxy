@@ -48,7 +48,7 @@ impl Executable<RoutingAgentInput> for RoutingAgentExecutable {
     type Response = OutputContainer;
 
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = events::agent::routing_agent::NAME,
+        oxy.name = events::agent::routing_agent::NAME,
         oxy.span_type = events::agent::routing_agent::TYPE,
         oxy.agent.name = %input.agent_name,
     ))]

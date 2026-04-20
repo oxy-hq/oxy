@@ -503,7 +503,7 @@ helm install oxy-app oci://ghcr.io/oxy-hq/helm-charts/oxy-app \
 
 ## oxy-start: Self-Contained Deployment
 
-The `oxy-start` chart runs all services (PostgreSQL, ClickHouse, OTel Collector) inside the pod using Docker-in-Docker. This is ideal for single-tenant deployments where you want a fully self-contained instance with no external database dependency.
+The `oxy-start` chart runs PostgreSQL inside the pod using Docker-in-Docker. This is ideal for single-tenant deployments where you want a fully self-contained instance with no external database dependency.
 
 ```yaml
 # oxy-start values.yaml
@@ -526,7 +526,7 @@ dind:
 
 # oxy start configuration
 oxyStart:
-  enterprise: true # Enables ClickHouse and OTel Collector
+  enterprise: true # Enables observability (traces, metrics, analytics)
   clean: false # Set true to wipe data on restart
 
 persistence:

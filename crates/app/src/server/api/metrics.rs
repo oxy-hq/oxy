@@ -1,16 +1,18 @@
 //! Metrics Analytics API
 //!
-//! Provides endpoints for querying metric usage analytics data.
+//! Provides endpoints for querying metric usage analytics data
+//! backed by DuckDB storage.
 
 use axum::{
     Router,
-    extract::{Json, Path, Query},
+    extract::{Json, Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::get,
 };
 use oxy::metrics::{
-    MetricAnalyticsResponse, MetricDetailResponse, MetricStorage, MetricsListResponse,
+    ContextTypeBreakdown, MetricAnalytics, MetricAnalyticsResponse, MetricDetailResponse,
+    MetricsListResponse, RecentUsage, RelatedMetric, SourceTypeBreakdown, UsageTrendPoint,
 };
 use serde::Deserialize;
 use utoipa::IntoParams;
@@ -78,11 +80,6 @@ pub struct MetricDetailQuery {
 }
 
 /// Get metric usage analytics summary
-///
-/// Returns aggregated analytics about metric usage including:
-/// - Total queries and unique metrics count
-/// - Usage breakdown by source type (agent, workflow, task)
-/// - Usage breakdown by context type (SQL, semantic query, question, response)
 #[utoipa::path(
     get,
     path = "/api/{workspace_id}/metrics/analytics",
@@ -93,22 +90,42 @@ pub struct MetricDetailQuery {
     )
 )]
 pub async fn get_analytics(
+    State(state): State<AppState>,
     Path(_workspace_id): Path<Uuid>,
     Query(params): Query<MetricsAnalyticsQuery>,
 ) -> Result<Json<MetricAnalyticsResponse>, MetricsError> {
-    let storage = MetricStorage::from_env();
+    let storage = state
+        .observability
+        .as_ref()
+        .ok_or_else(|| MetricsError::QueryFailed("Observability not configured".into()))?;
 
-    let analytics = storage
-        .get_analytics(params.days)
+    let data = storage
+        .get_metrics_analytics(params.days)
         .await
         .map_err(|e| MetricsError::QueryFailed(e.to_string()))?;
 
-    Ok(Json(analytics))
+    Ok(Json(MetricAnalyticsResponse {
+        total_queries: data.total_queries,
+        unique_metrics: data.unique_metrics,
+        avg_per_metric: data.avg_per_metric,
+        most_popular: data.most_popular,
+        most_popular_count: data.most_popular_count,
+        trend_vs_last_period: data.trend_vs_last_period,
+        by_source_type: SourceTypeBreakdown {
+            agent: data.by_source_type.agent,
+            workflow: data.by_source_type.workflow,
+            task: data.by_source_type.task,
+        },
+        by_context_type: ContextTypeBreakdown {
+            sql: data.by_context_type.sql,
+            semantic_query: data.by_context_type.semantic_query,
+            question: data.by_context_type.question,
+            response: data.by_context_type.response,
+        },
+    }))
 }
 
 /// Get paginated list of metrics
-///
-/// Returns a paginated list of metrics sorted by usage count
 #[utoipa::path(
     get,
     path = "/api/{workspace_id}/metrics/list",
@@ -119,26 +136,40 @@ pub async fn get_analytics(
     )
 )]
 pub async fn get_metrics_list(
+    State(state): State<AppState>,
     Path(_workspace_id): Path<Uuid>,
     Query(params): Query<MetricsListQuery>,
 ) -> Result<Json<MetricsListResponse>, MetricsError> {
-    let storage = MetricStorage::from_env();
+    let storage = state
+        .observability
+        .as_ref()
+        .ok_or_else(|| MetricsError::QueryFailed("Observability not configured".into()))?;
 
-    let list = storage
+    let data = storage
         .get_metrics_list(params.days, params.limit, params.offset)
         .await
         .map_err(|e| MetricsError::QueryFailed(e.to_string()))?;
 
-    Ok(Json(list))
+    let metrics = data
+        .metrics
+        .into_iter()
+        .map(|m| MetricAnalytics {
+            name: m.name,
+            count: m.count,
+            last_used: Some(m.last_used),
+            trend: None,
+        })
+        .collect();
+
+    Ok(Json(MetricsListResponse {
+        metrics,
+        total: data.total,
+        limit: data.limit,
+        offset: data.offset,
+    }))
 }
 
 /// Get detailed information about a specific metric
-///
-/// Returns detailed usage information for a single metric including:
-/// - Total usage count
-/// - Usage breakdown by source and context type
-/// - Related metrics (often used together)
-/// - Usage trend over time
 #[utoipa::path(
     get,
     path = "/api/{workspace_id}/metrics/{metric_name}",
@@ -150,22 +181,74 @@ pub async fn get_metrics_list(
     )
 )]
 pub async fn get_metric_detail(
+    State(state): State<AppState>,
     Path((_workspace_id, metric_name)): Path<(Uuid, String)>,
     Query(params): Query<MetricDetailQuery>,
 ) -> Result<Json<MetricDetailResponse>, MetricsError> {
-    let storage = MetricStorage::from_env();
+    let storage = state
+        .observability
+        .as_ref()
+        .ok_or_else(|| MetricsError::QueryFailed("Observability not configured".into()))?;
 
-    let detail = storage
+    let data = storage
         .get_metric_detail(&metric_name, params.days)
         .await
         .map_err(|e| MetricsError::QueryFailed(e.to_string()))?;
 
     // Check if metric was found (has any usage)
-    if detail.total_queries == 0 {
+    if data.total_queries == 0 {
         return Err(MetricsError::NotFound(metric_name));
     }
 
-    Ok(Json(detail))
+    let usage_trend = data
+        .usage_trend
+        .into_iter()
+        .map(|t| UsageTrendPoint {
+            date: t.date,
+            count: t.count,
+        })
+        .collect();
+
+    let related_metrics = data
+        .related_metrics
+        .into_iter()
+        .map(|r| RelatedMetric {
+            name: r.name,
+            co_occurrence_count: r.co_occurrence_count,
+        })
+        .collect();
+
+    let recent_usage = data
+        .recent_usage
+        .into_iter()
+        .map(|r| {
+            let context_types: Vec<String> =
+                serde_json::from_str(&r.context_types).unwrap_or_default();
+            RecentUsage {
+                source_type: r.source_type,
+                source_ref: r.source_ref,
+                context_types,
+                context: if r.context.is_empty() {
+                    None
+                } else {
+                    Some(r.context)
+                },
+                trace_id: r.trace_id,
+                created_at: r.created_at,
+            }
+        })
+        .collect();
+
+    Ok(Json(MetricDetailResponse {
+        name: data.name,
+        total_queries: data.total_queries,
+        trend_vs_last_period: data.trend_vs_last_period,
+        via_agent: data.via_agent,
+        via_workflow: data.via_workflow,
+        usage_trend,
+        related_metrics,
+        recent_usage,
+    }))
 }
 
 pub fn metrics_routes() -> Router<AppState> {

@@ -27,7 +27,7 @@ impl Executable<ReadDataAppInput> for ReadDataAppExecutable {
     type Response = Output;
 
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = events::tool::READ_DATA_APP_EXECUTE,
+        oxy.name = events::tool::READ_DATA_APP_EXECUTE,
         oxy.span_type = events::tool::TOOL_CALL_TYPE,
     ))]
     async fn execute(

@@ -7,16 +7,7 @@ use oxy_shared::errors::OxyError;
 
 /// Start the database and web server
 pub async fn start_database_and_server(args: StartArgs) -> Result<(), OxyError> {
-    let enterprise = args.serve.enterprise;
-
-    if enterprise {
-        println!(
-            "{}",
-            "=== Starting Oxy Enterprise with Docker PostgreSQL + ClickHouse + OTel ===\n".text()
-        );
-    } else {
-        println!("{}", "=== Starting Oxy with Docker PostgreSQL ===\n".text());
-    }
+    println!("{}", "=== Starting Oxy with Docker PostgreSQL ===\n".text());
 
     // 1. Check container runtime availability
     println!("{}", "🔍 Checking container runtime availability...".text());
@@ -25,12 +16,9 @@ pub async fn start_database_and_server(args: StartArgs) -> Result<(), OxyError> 
 
     // 2. Clean up before starting
     if args.clean {
-        // --clean: remove containers, volumes, and network (full reset)
-        println!(
-            "{}",
-            "🧹 Full cleanup (containers + volumes + network)...".text()
-        );
-        docker::clean_all(enterprise).await?;
+        // --clean: remove containers and volumes (full reset)
+        println!("{}", "🧹 Full cleanup (containers + volumes)...".text());
+        docker::clean_all().await?;
         println!("{}", "   ✓ Full clean complete\n".success());
 
         // Also remove the workspaces directory so stale on-disk directories don't
@@ -56,31 +44,26 @@ pub async fn start_database_and_server(args: StartArgs) -> Result<(), OxyError> 
         println!("{}", "   ✓ Containers cleaned\n".success());
     }
 
-    // 3. Start containers (PostgreSQL + ClickHouse in parallel if enterprise)
-    let db_url = if enterprise {
-        start_all_containers().await?
-    } else {
-        start_postgres().await?
-    };
+    // 3. Start PostgreSQL container
+    let db_url = start_postgres().await?;
+
+    // 3b. If --enterprise is on AND the observability backend is ClickHouse,
+    // start the ClickHouse container too. For the default (DuckDB/Postgres)
+    // backends, no extra container is needed.
+    if args.serve.enterprise
+        && std::env::var("OXY_OBSERVABILITY_BACKEND").as_deref() == Ok("clickhouse")
+    {
+        start_clickhouse().await?;
+    }
 
     // 4. Show helpful Docker commands
-    print_docker_tips(enterprise);
+    print_docker_tips();
 
     // 5. Set environment variables for the server
     // Safety: This is safe because we're setting variables in single-threaded context
     // before the server starts, and they're only read by our own code
     unsafe {
         std::env::set_var("OXY_DATABASE_URL", &db_url);
-    }
-
-    if enterprise {
-        unsafe {
-            std::env::set_var("OXY_CLICKHOUSE_URL", "http://localhost:8123");
-            std::env::set_var("OXY_CLICKHOUSE_USER", "default");
-            std::env::set_var("OXY_CLICKHOUSE_PASSWORD", "default");
-            std::env::set_var("OXY_CLICKHOUSE_DATABASE", "otel");
-            std::env::set_var("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317");
-        }
     }
 
     // 6. Start the web server (runs on host, not in Docker)
@@ -91,7 +74,56 @@ pub async fn start_database_and_server(args: StartArgs) -> Result<(), OxyError> 
     Ok(())
 }
 
-/// Start only PostgreSQL (non-enterprise mode)
+/// Start the ClickHouse container for the observability backend and set the
+/// matching `OXY_CLICKHOUSE_*` env vars so `ClickHouseObservabilityStorage::from_env()`
+/// connects to it.
+async fn start_clickhouse() -> Result<(), OxyError> {
+    println!("{}", "🐳 Starting ClickHouse container...".text());
+    println!("{}", "   Container: oxy-clickhouse".tertiary());
+    println!(
+        "{}",
+        format!(
+            "   Ports: {}:HTTP, {}:Native",
+            docker::CLICKHOUSE_HTTP_PORT,
+            docker::CLICKHOUSE_NATIVE_PORT
+        )
+        .tertiary()
+    );
+    println!("{}", "   Volume: oxy-clickhouse-data".tertiary());
+
+    docker::start_clickhouse_container().await?;
+    println!("{}", "   ✓ ClickHouse container started\n".success());
+
+    println!("{}", "⏳ Waiting for ClickHouse to be ready...".text());
+    docker::wait_for_clickhouse_ready(docker::CLICKHOUSE_READY_TIMEOUT_SECS).await?;
+    println!("{}", "✓ ClickHouse ready".success());
+
+    // Set env vars so the observability backend connects to the container we just started.
+    // Safety: single-threaded context before the server starts.
+    unsafe {
+        std::env::set_var(
+            "OXY_CLICKHOUSE_URL",
+            format!("http://localhost:{}", docker::CLICKHOUSE_HTTP_PORT),
+        );
+        std::env::set_var("OXY_CLICKHOUSE_USER", docker::CLICKHOUSE_USER);
+        std::env::set_var("OXY_CLICKHOUSE_PASSWORD", docker::CLICKHOUSE_PASSWORD);
+        std::env::set_var("OXY_CLICKHOUSE_DATABASE", docker::CLICKHOUSE_DATABASE);
+    }
+
+    println!(
+        "{}",
+        format!(
+            "   Connection: http://localhost:{} (user={}, db={})\n",
+            docker::CLICKHOUSE_HTTP_PORT,
+            docker::CLICKHOUSE_USER,
+            docker::CLICKHOUSE_DATABASE
+        )
+        .tertiary()
+    );
+    Ok(())
+}
+
+/// Start only PostgreSQL
 async fn start_postgres() -> Result<String, OxyError> {
     println!("{}", "🐳 Starting PostgreSQL container...".text());
     println!("{}", "   Container: oxy-postgres".tertiary());
@@ -113,115 +145,7 @@ async fn start_postgres() -> Result<String, OxyError> {
     Ok(db_url)
 }
 
-/// Start PostgreSQL, ClickHouse, and OTel Collector (enterprise mode)
-/// PostgreSQL and ClickHouse start in parallel; OTel starts after ClickHouse is ready.
-async fn start_all_containers() -> Result<String, OxyError> {
-    println!("{}", "🐳 Starting containers in parallel...".text());
-    println!(
-        "{}",
-        "   PostgreSQL:  oxy-postgres (postgres:18-alpine)".tertiary()
-    );
-    println!(
-        "{}",
-        "   ClickHouse:  oxy-clickhouse (clickhouse/clickhouse-server:25.12.5.44)".tertiary()
-    );
-
-    // Start PostgreSQL and ClickHouse in parallel
-    let (pg_result, ch_result) = tokio::join!(
-        docker::start_postgres_container(),
-        docker::start_clickhouse_container(),
-    );
-
-    // Handle partial failures: if one started but the other failed, stop the successful one
-    let db_url = match (&pg_result, &ch_result) {
-        (Ok(_), Err(_)) => {
-            eprintln!(
-                "{}",
-                "   ClickHouse failed to start, stopping PostgreSQL...".error()
-            );
-            let _ = docker::stop_postgres_container().await;
-            ch_result?;
-            unreachable!()
-        }
-        (Err(_), Ok(_)) => {
-            eprintln!(
-                "{}",
-                "   PostgreSQL failed to start, stopping ClickHouse...".error()
-            );
-            let _ = docker::stop_clickhouse_container().await;
-            pg_result?;
-            unreachable!()
-        }
-        (Err(_), Err(_)) => {
-            // Both failed, return the PostgreSQL error as primary
-            pg_result?;
-            unreachable!()
-        }
-        (Ok(url), Ok(_)) => url.clone(),
-    };
-
-    println!(
-        "{}",
-        "   ✓ PostgreSQL and ClickHouse containers started\n".success()
-    );
-
-    // Wait for both to be ready in parallel
-    println!(
-        "{}",
-        "⏳ Waiting for PostgreSQL and ClickHouse to be ready...".text()
-    );
-    let (pg_ready, ch_ready) = tokio::join!(
-        docker::wait_for_postgres_ready(docker::POSTGRES_READY_TIMEOUT_SECS),
-        docker::wait_for_clickhouse_ready(docker::CLICKHOUSE_READY_TIMEOUT_SECS),
-    );
-
-    // If either readiness check fails, stop both containers
-    if pg_ready.is_err() || ch_ready.is_err() {
-        eprintln!(
-            "{}",
-            "   Readiness check failed, stopping containers...".error()
-        );
-        let _ = docker::stop_enterprise_containers().await;
-        let _ = docker::stop_postgres_container().await;
-        pg_ready?;
-        ch_ready?;
-    }
-
-    println!("{}", "✓ PostgreSQL ready".success());
-    println!(
-        "{}",
-        "   Connection: postgresql://localhost:15432/oxy".tertiary()
-    );
-    println!("{}", "✓ ClickHouse ready".success());
-    println!(
-        "{}",
-        "   HTTP: http://localhost:8123, Native: localhost:9000\n".tertiary()
-    );
-
-    // Start OTel Collector (depends on ClickHouse being ready)
-    println!("{}", "🐳 Starting OTel Collector container...".text());
-    println!("{}", "   Container: oxy-otel-collector".tertiary());
-    println!(
-        "{}",
-        "   Image: otel/opentelemetry-collector-contrib:0.144.0".tertiary()
-    );
-    println!("{}", "   Ports: 4317 (gRPC), 4318 (HTTP)".tertiary());
-
-    if let Err(e) = docker::start_otel_collector_container().await {
-        eprintln!(
-            "{}",
-            "   OTel Collector failed, stopping all containers...".error()
-        );
-        let _ = docker::stop_enterprise_containers().await;
-        let _ = docker::stop_postgres_container().await;
-        return Err(e);
-    }
-    println!("{}", "   ✓ OTel Collector container started\n".success());
-
-    Ok(db_url)
-}
-
-fn print_docker_tips(enterprise: bool) {
+fn print_docker_tips() {
     println!("{}", "💡 Useful Docker Commands:".text());
     println!(
         "{}",
@@ -235,20 +159,6 @@ fn print_docker_tips(enterprise: bool) {
         "{}",
         "   Access psql:      docker exec -it oxy-postgres psql -U postgres -d oxy".secondary()
     );
-    if enterprise {
-        println!(
-            "{}",
-            "   ClickHouse logs:  docker logs oxy-clickhouse".secondary()
-        );
-        println!(
-            "{}",
-            "   OTel logs:        docker logs oxy-otel-collector".secondary()
-        );
-        println!(
-            "{}",
-            "   ClickHouse CLI:   docker exec -it oxy-clickhouse clickhouse-client".secondary()
-        );
-    }
     println!("{}", "   Check status:     oxy status".secondary());
     println!();
 }

@@ -212,7 +212,7 @@ impl AnalyticsSolver {
     #[tracing::instrument(
         skip_all,
         fields(
-            otel.name = "analytics.specify",
+            oxy.name = "analytics.specify",
             oxy.span_type = "analytics",
             solution_source = tracing::field::Empty,
             spec_count = tracing::field::Empty,
@@ -415,7 +415,7 @@ impl AnalyticsSolver {
     #[tracing::instrument(
         skip_all,
         fields(
-            otel.name = "analytics.specify_query_request",
+            oxy.name = "analytics.specify_query_request",
             oxy.span_type = "analytics",
         )
     )]

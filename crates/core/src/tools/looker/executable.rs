@@ -21,7 +21,7 @@ impl Executable<LookerQueryInput> for LookerQueryExecutable {
     type Response = Output;
 
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = "looker_query.execute",
+        oxy.name = "looker_query.execute",
         oxy.span_type = "looker_query",
         oxy.looker_query.integration = %input.integration,
         oxy.looker_query.model = %input.model,
@@ -72,7 +72,7 @@ impl LookerQueryExecutable {
 
     /// Core execution logic shared between tool and task implementations
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = "looker_query.execute_query",
+        oxy.name = "looker_query.execute_query",
         oxy.span_type = "looker_query",
         oxy.looker_query.integration = integration,
         oxy.looker_query.model = model,

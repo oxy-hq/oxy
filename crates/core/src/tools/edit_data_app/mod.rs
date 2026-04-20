@@ -31,7 +31,7 @@ impl Executable<EditDataAppInput> for EditDataAppExecutable {
     type Response = Output;
 
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = events::tool::EDIT_DATA_APP_EXECUTE,
+        oxy.name = events::tool::EDIT_DATA_APP_EXECUTE,
         oxy.span_type = events::tool::TOOL_CALL_TYPE,
     ))]
     async fn execute(

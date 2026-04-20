@@ -31,7 +31,7 @@ impl Executable<SQLInput> for SQLExecutable {
     type Response = Table;
 
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = events::tool::SQL_EXECUTE,
+        oxy.name = events::tool::SQL_EXECUTE,
         oxy.span_type = events::tool::TOOL_CALL_TYPE,
         oxy.execution_type = tracing::field::Empty,
         oxy.is_verified = tracing::field::Empty,

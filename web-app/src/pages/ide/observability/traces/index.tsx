@@ -11,6 +11,8 @@ import TraceCharts from "./components/Charts";
 import TracesList from "./components/TracesList";
 
 const DURATION_OPTIONS = [
+  { value: "1h", label: "1h" },
+  { value: "24h", label: "24h" },
   { value: "7d", label: "7d" },
   { value: "30d", label: "30d" },
   { value: "90d", label: "90d" }

@@ -77,11 +77,10 @@ Oxy is configured primarily through environment variables. This page covers the 
     Required only when using `oxy serve --enterprise` or `oxy start --enterprise`:
 
     ```bash
-    OXY_CLICKHOUSE_URL=http://localhost:8123
-    OXY_CLICKHOUSE_USER=default        # optional
-    OXY_CLICKHOUSE_PASSWORD=...        # optional
-    OXY_CLICKHOUSE_DATABASE=otel       # optional
+    # OXY_OBSERVABILITY_BACKEND=postgres  # auto-detected; set explicitly to override
     ```
+
+    Observability uses the existing `OXY_DATABASE_URL` Postgres connection by default.
 
   </Step>
 
@@ -138,14 +137,13 @@ See [Authentication](/authentication/overview) for setup instructions.
 
 See [GitHub App Setup](/deployment/github-app) for a full walkthrough.
 
-### Enterprise
+### Enterprise (Observability)
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `OXY_CLICKHOUSE_URL` | For `--enterprise` | ClickHouse connection URL |
-| `OXY_CLICKHOUSE_USER` | No | ClickHouse username (default: `default`) |
-| `OXY_CLICKHOUSE_PASSWORD` | No | ClickHouse password |
-| `OXY_CLICKHOUSE_DATABASE` | No | ClickHouse database name (default: `otel`) |
+| `OXY_OBSERVABILITY_BACKEND` | No | Storage backend: auto-detected (`postgres` if `OXY_DATABASE_URL` set, else `duckdb`) |
+| `OXY_SERVICE_NAME` | No | Service name for spans (default: `oxy`) |
+| `OXY_OBSERVABILITY_LOG_LEVEL` | No | Log level for observability layer (default: `debug`) |
 
 ---
 

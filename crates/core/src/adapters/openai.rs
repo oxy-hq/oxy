@@ -689,7 +689,7 @@ impl OpenAIAdapter {
     #[tracing::instrument(
         skip_all,
         fields(
-            otel.name = events::llm::LLM_OPENAI_CALL,
+            oxy.name = events::llm::LLM_OPENAI_CALL,
             oxy.span_type = events::llm::LLM_CALL_TYPE,
             gen_ai.request.model = %self.model_name,
             gen_ai.system = events::llm::OPENAI
@@ -721,7 +721,7 @@ impl OpenAIAdapter {
     #[tracing::instrument(
         skip_all,
         fields(
-            otel.name = events::llm::LLM_TOOL_CALL,
+            oxy.name = events::llm::LLM_TOOL_CALL,
             oxy.span_type = events::llm::LLM_CALL_TYPE,
             gen_ai.request.model = %self.model_name,
             gen_ai.system = events::llm::OPENAI

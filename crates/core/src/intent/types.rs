@@ -1,18 +1,19 @@
-//! Types for intent classification
+//! Types for intent classification.
+//!
+//! Persistence-facing types (`IntentCluster`, `IntentClassification`,
+//! `IntentAnalytics`, and the `UNKNOWN_CLUSTER_ID` sentinel) have moved to
+//! `oxy-observability` and are re-exported here for backward compatibility.
+//! The classifier-internal types still live in this file.
 
 use serde::{Deserialize, Serialize};
+
+pub use oxy_observability::intent_types::{
+    IntentAnalytics, IntentClassification, IntentCluster, UNKNOWN_CLUSTER_ID,
+};
 
 /// Configuration for intent classification
 #[derive(Debug, Clone)]
 pub struct IntentConfig {
-    /// ClickHouse connection URL
-    pub clickhouse_url: String,
-    /// ClickHouse user
-    pub clickhouse_user: String,
-    /// ClickHouse password
-    pub clickhouse_password: String,
-    /// ClickHouse database name
-    pub clickhouse_database: String,
     /// OpenAI API key for embeddings and LLM labeling
     pub openai_api_key: String,
     /// Embedding model to use (default: text-embedding-3-small)
@@ -34,10 +35,6 @@ pub struct IntentConfig {
 impl Default for IntentConfig {
     fn default() -> Self {
         Self {
-            clickhouse_url: "http://localhost:8123".to_string(),
-            clickhouse_user: "default".to_string(),
-            clickhouse_password: String::new(),
-            clickhouse_database: "otel".to_string(),
             openai_api_key: String::new(),
             embed_model: "text-embedding-3-small".to_string(),
             embed_dims: 1536,
@@ -54,13 +51,6 @@ impl IntentConfig {
     /// Create config from environment variables
     pub fn from_env() -> Self {
         Self {
-            clickhouse_url: std::env::var("OXY_CLICKHOUSE_URL")
-                .unwrap_or_else(|_| "http://localhost:8123".to_string()),
-            clickhouse_user: std::env::var("OXY_CLICKHOUSE_USER")
-                .unwrap_or_else(|_| "default".to_string()),
-            clickhouse_password: std::env::var("OXY_CLICKHOUSE_PASSWORD").unwrap_or_default(),
-            clickhouse_database: std::env::var("OXY_CLICKHOUSE_DATABASE")
-                .unwrap_or_else(|_| "otel".to_string()),
             openai_api_key: std::env::var(crate::config::constants::OPENAI_API_KEY_VAR)
                 .unwrap_or_default(),
             embed_model: std::env::var("INTENT_EMBED_MODEL")
@@ -127,71 +117,6 @@ impl Cluster {
         }
         centroid
     }
-}
-
-/// An intent cluster stored in ClickHouse
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IntentCluster {
-    pub cluster_id: u32,
-    pub intent_name: String,
-    pub intent_description: String,
-    pub centroid: Vec<f32>,
-    pub sample_questions: Vec<String>,
-}
-
-/// Special cluster ID for the "unknown" cluster
-pub const UNKNOWN_CLUSTER_ID: u32 = 0;
-
-impl IntentCluster {
-    /// Create an "unknown" cluster for outlier questions
-    pub fn unknown(embed_dims: usize) -> Self {
-        Self {
-            cluster_id: UNKNOWN_CLUSTER_ID,
-            intent_name: "unknown".to_string(),
-            intent_description: "Could not classify this question".to_string(),
-            centroid: vec![0.0; embed_dims],
-            sample_questions: vec![],
-        }
-    }
-
-    /// Check if this is the unknown cluster
-    pub fn is_unknown(&self) -> bool {
-        self.cluster_id == UNKNOWN_CLUSTER_ID
-    }
-}
-
-/// Result of classifying a question
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IntentClassification {
-    pub intent_name: String,
-    pub intent_description: String,
-    pub confidence: f32,
-    pub cluster_id: u32,
-}
-
-impl IntentClassification {
-    /// Create an "unknown" classification for outliers
-    pub fn unknown() -> Self {
-        Self {
-            intent_name: "unknown".to_string(),
-            intent_description: "Could not classify this question".to_string(),
-            confidence: 0.0,
-            cluster_id: UNKNOWN_CLUSTER_ID,
-        }
-    }
-
-    /// Check if this is an unknown classification
-    pub fn is_unknown(&self) -> bool {
-        self.cluster_id == UNKNOWN_CLUSTER_ID
-    }
-}
-
-/// Analytics data for intent distribution
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IntentAnalytics {
-    pub intent_name: String,
-    pub count: u64,
-    pub percentage: f64,
 }
 
 /// Result of running the clustering pipeline

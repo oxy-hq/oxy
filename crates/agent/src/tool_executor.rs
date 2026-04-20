@@ -24,7 +24,7 @@ pub struct AgentToolExecutor;
 #[async_trait]
 impl ToolExecutor for AgentToolExecutor {
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = events::tool::AGENT_EXECUTE,
+        oxy.name = events::tool::AGENT_EXECUTE,
         oxy.span_type = events::tool::TOOL_CALL_TYPE,
         oxy.execution_type = events::tool::EXECUTION_TYPE_AGENT_TOOL,
         oxy.is_verified = false,

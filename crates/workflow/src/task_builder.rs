@@ -196,7 +196,7 @@ impl Executable<TaskInput> for TaskExecutable {
     type Response = OutputContainer;
 
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = workflow_events::task::execute::NAME,
+        oxy.name = workflow_events::task::execute::NAME,
         oxy.span_type = workflow_events::task::execute::TYPE,
         oxy.task.name = %input.task.name,
     ))]

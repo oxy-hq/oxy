@@ -44,7 +44,7 @@ impl Executable<OpenAIExecutableResponse> for OpenAITool {
     type Response = Option<Vec<ChatCompletionRequestMessage>>;
 
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = events::tool::TOOL_EXECUTE,
+        oxy.name = events::tool::TOOL_EXECUTE,
         oxy.span_type = events::tool::TOOL_TYPE,
         oxy.agent.name = %self.agent_name,
     ))]

@@ -67,7 +67,7 @@ fn intent_for_recovery(
 #[tracing::instrument(
     skip_all,
     fields(
-        otel.name = "analytics.diagnose",
+        oxy.name = "analytics.diagnose",
         oxy.span_type = "analytics",
         error_kind = tracing::field::Empty,
     )

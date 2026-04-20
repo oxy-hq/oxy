@@ -2,16 +2,17 @@
 //!
 //! Provides endpoints for querying execution analytics data,
 //! tracking verified vs generated executions across different tool types.
+//! Backed by DuckDB storage.
 
 use axum::{
     Router,
-    extract::{Json, Path, Query},
+    extract::{Json, Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::get,
 };
 use oxy::execution_analytics::{
-    AgentExecutionStats, ExecutionAnalyticsStorage, ExecutionListResponse, ExecutionSummary,
+    AgentExecutionStats, ExecutionDetail, ExecutionListResponse, ExecutionSummary,
     ExecutionTimeBucket,
 };
 use serde::Deserialize;
@@ -111,17 +112,64 @@ fn default_agent_limit() -> usize {
     )
 )]
 pub async fn get_summary(
+    State(state): State<AppState>,
     Path(_workspace_id): Path<Uuid>,
     Query(params): Query<SummaryQuery>,
 ) -> Result<Json<ExecutionSummary>, ExecutionAnalyticsError> {
-    let storage = ExecutionAnalyticsStorage::from_env();
+    let storage = state.observability.as_ref().ok_or_else(|| {
+        ExecutionAnalyticsError::QueryFailed("Observability not configured".into())
+    })?;
 
-    let summary = storage
-        .get_summary(params.days)
+    let data = storage
+        .get_execution_summary(params.days)
         .await
         .map_err(|e| ExecutionAnalyticsError::QueryFailed(e.to_string()))?;
 
-    Ok(Json(summary))
+    let total = data.total_executions.max(1) as f64;
+    let verified_percent = (data.verified_count as f64 / total) * 100.0;
+    let generated_percent = (data.generated_count as f64 / total) * 100.0;
+
+    let success_rate_verified = if data.verified_count > 0 {
+        (data.success_count_verified as f64 / data.verified_count as f64) * 100.0
+    } else {
+        0.0
+    };
+
+    let success_rate_generated = if data.generated_count > 0 {
+        (data.success_count_generated as f64 / data.generated_count as f64) * 100.0
+    } else {
+        0.0
+    };
+
+    let type_counts = [
+        (data.semantic_query_count, "semantic_query"),
+        (data.omni_query_count, "omni_query"),
+        (data.sql_generated_count, "sql_generated"),
+        (data.workflow_count, "workflow"),
+        (data.agent_tool_count, "agent_tool"),
+    ];
+    let most_executed_type = type_counts
+        .iter()
+        .max_by_key(|(count, _)| *count)
+        .map(|(_, name)| *name)
+        .unwrap_or("none")
+        .to_string();
+
+    Ok(Json(ExecutionSummary {
+        total_executions: data.total_executions,
+        verified_count: data.verified_count,
+        generated_count: data.generated_count,
+        verified_percent,
+        generated_percent,
+        success_rate_verified,
+        success_rate_generated,
+        most_executed_type,
+        semantic_query_count: data.semantic_query_count,
+        omni_query_count: data.omni_query_count,
+        sql_generated_count: data.sql_generated_count,
+        workflow_count: data.workflow_count,
+        agent_tool_count: data.agent_tool_count,
+    }))
 }
 
 /// Get execution analytics time series
@@ -137,15 +185,32 @@ pub async fn get_summary(
     )
 )]
 pub async fn get_time_series(
+    State(state): State<AppState>,
     Path(_workspace_id): Path<Uuid>,
     Query(params): Query<TimeSeriesQuery>,
 ) -> Result<Json<Vec<ExecutionTimeBucket>>, ExecutionAnalyticsError> {
-    let storage = ExecutionAnalyticsStorage::from_env();
+    let storage = state.observability.as_ref().ok_or_else(|| {
+        ExecutionAnalyticsError::QueryFailed("Observability not configured".into())
+    })?;
 
-    let time_series = storage
-        .get_time_series(params.days)
+    let data = storage
+        .get_execution_time_series(params.days)
         .await
         .map_err(|e| ExecutionAnalyticsError::QueryFailed(e.to_string()))?;
+
+    let time_series = data
+        .into_iter()
+        .map(|row| ExecutionTimeBucket {
+            timestamp: row.date,
+            verified_count: row.verified_count,
+            generated_count: row.generated_count,
+            semantic_query_count: Some(row.semantic_query_count),
+            omni_query_count: Some(row.omni_query_count),
+            sql_generated_count: Some(row.sql_generated_count),
+            workflow_count: Some(row.workflow_count),
+            agent_tool_count: Some(row.agent_tool_count),
+        })
+        .collect();
 
     Ok(Json(time_series))
 }
@@ -163,15 +228,48 @@ pub async fn get_time_series(
     )
 )]
 pub async fn get_agent_stats(
+    State(state): State<AppState>,
     Path(_workspace_id): Path<Uuid>,
     Query(params): Query<AgentStatsQuery>,
 ) -> Result<Json<Vec<AgentExecutionStats>>, ExecutionAnalyticsError> {
-    let storage = ExecutionAnalyticsStorage::from_env();
+    let storage = state.observability.as_ref().ok_or_else(|| {
+        ExecutionAnalyticsError::QueryFailed("Observability not configured".into())
+    })?;
 
-    let agent_stats = storage
-        .get_agent_stats(params.days, params.limit)
+    let data = storage
+        .get_execution_agent_stats(params.days, params.limit)
         .await
         .map_err(|e| ExecutionAnalyticsError::QueryFailed(e.to_string()))?;
+
+    let agent_stats = data
+        .into_iter()
+        .map(|row| {
+            let total = row.total_executions.max(1) as f64;
+            let type_counts = [
+                (row.semantic_query_count, "semantic_query"),
+                (row.omni_query_count, "omni_query"),
+                (row.sql_generated_count, "sql_generated"),
+                (row.workflow_count, "workflow"),
+                (row.agent_tool_count, "agent_tool"),
+            ];
+            let most_executed_type = type_counts
+                .iter()
+                .max_by_key(|(count, _)| *count)
+                .map(|(_, name)| *name)
+                .unwrap_or("none")
+                .to_string();
+
+            AgentExecutionStats {
+                agent_ref: row.agent_ref,
+                total_executions: row.total_executions,
+                verified_count: row.verified_count,
+                generated_count: row.generated_count,
+                verified_percent: (row.verified_count as f64 / total) * 100.0,
+                most_executed_type,
+                success_rate: (row.success_count as f64 / total) * 100.0,
+            }
+        })
+        .collect();
 
     Ok(Json(agent_stats))
 }
@@ -189,13 +287,16 @@ pub async fn get_agent_stats(
     )
 )]
 pub async fn get_executions(
+    State(state): State<AppState>,
     Path(_workspace_id): Path<Uuid>,
     Query(params): Query<ExecutionsQuery>,
 ) -> Result<Json<ExecutionListResponse>, ExecutionAnalyticsError> {
-    let storage = ExecutionAnalyticsStorage::from_env();
+    let storage = state.observability.as_ref().ok_or_else(|| {
+        ExecutionAnalyticsError::QueryFailed("Observability not configured".into())
+    })?;
 
-    let executions = storage
-        .get_executions(
+    let data = storage
+        .get_execution_list(
             params.days,
             params.limit,
             params.offset,
@@ -207,7 +308,46 @@ pub async fn get_executions(
         .await
         .map_err(|e| ExecutionAnalyticsError::QueryFailed(e.to_string()))?;
 
-    Ok(Json(executions))
+    let executions = data
+        .executions
+        .into_iter()
+        .map(|row| ExecutionDetail {
+            trace_id: row.trace_id,
+            span_id: row.span_id,
+            timestamp: row.timestamp,
+            execution_type: row.execution_type,
+            is_verified: row.is_verified == "true",
+            source_type: row.source_type,
+            source_ref: row.source_ref,
+            status: row.status,
+            duration_ms: row.duration_ns as f64 / 1_000_000.0,
+            database: non_empty(row.database),
+            output: non_empty(row.output),
+            error: non_empty(row.error),
+            topic: non_empty(row.topic),
+            semantic_query_params: non_empty(row.semantic_query_params),
+            generated_sql: non_empty(row.generated_sql),
+            integration: non_empty(row.integration),
+            endpoint: non_empty(row.endpoint),
+            sql: non_empty(row.sql),
+            sql_ref: non_empty(row.sql_ref),
+            user_question: non_empty(row.user_question),
+            workflow_ref: non_empty(row.workflow_ref),
+            agent_ref: non_empty(row.agent_ref),
+            tool_input: non_empty(row.input).or_else(|| non_empty(row.tool_input)),
+        })
+        .collect();
+
+    Ok(Json(ExecutionListResponse {
+        executions,
+        total: data.total,
+        limit: data.limit,
+        offset: data.offset,
+    }))
+}
+
+fn non_empty(s: String) -> Option<String> {
+    if s.is_empty() { None } else { Some(s) }
 }
 
 pub fn execution_analytics_routes() -> Router<AppState> {

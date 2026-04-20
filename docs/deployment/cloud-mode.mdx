@@ -37,7 +37,7 @@ oxy serve
 # With a custom port
 oxy serve --port 8080
 
-# With enterprise features (ClickHouse telemetry, OTel Collector)
+# With enterprise features (observability, analytics)
 oxy serve --enterprise
 
 # Bind to all interfaces (needed in containers)
@@ -325,10 +325,7 @@ oxy init
 
 **Enterprise features not starting**
 
-The `--enterprise` flag requires ClickHouse:
+The `--enterprise` flag enables observability. By default it uses the existing Postgres database (`OXY_DATABASE_URL`). Optionally set:
 ```bash
-OXY_CLICKHOUSE_URL=http://localhost:8123
-OXY_CLICKHOUSE_USER=default       # optional
-OXY_CLICKHOUSE_PASSWORD=...       # optional
-OXY_CLICKHOUSE_DATABASE=otel      # optional
+# OXY_OBSERVABILITY_BACKEND=postgres  # auto-detected; set explicitly to override
 ```

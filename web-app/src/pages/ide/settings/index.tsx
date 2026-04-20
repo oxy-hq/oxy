@@ -16,6 +16,7 @@ import {
   SidebarMenuItem
 } from "@/components/ui/shadcn/sidebar";
 import useCurrentUser from "@/hooks/api/users/useCurrentUser";
+import useAuthConfig from "@/hooks/auth/useAuthConfig";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { FEATURES } from "@/libs/features";
 import ROUTES from "@/libs/utils/routes";
@@ -29,7 +30,12 @@ const SettingsSidebar: React.FC<{
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
   const { data: currentUser } = useCurrentUser();
+  const { data: authConfig } = useAuthConfig();
   const isAdmin = currentUser?.is_admin ?? false;
+  // Hide API Keys only when auth is disabled (there's no identity to key off).
+  // `single_workspace` is orthogonal to auth — a single-workspace deployment
+  // with auth enabled still needs API keys for programmatic access.
+  const isLocal = !authConfig?.auth_enabled;
 
   return (
     <div className='flex h-full flex-col overflow-hidden bg-sidebar-background'>
@@ -63,17 +69,19 @@ const SettingsSidebar: React.FC<{
                 </SidebarMenuButton>
               </SidebarMenuItem>
             )}
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
-                isActive={location.pathname === ROUTES.WORKSPACE(projectId).IDE.SETTINGS.API_KEYS}
-              >
-                <Link to={ROUTES.WORKSPACE(projectId).IDE.SETTINGS.API_KEYS}>
-                  <Key className='h-4 w-4' />
-                  <span>API Keys</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
+            {!isLocal && (
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={location.pathname === ROUTES.WORKSPACE(projectId).IDE.SETTINGS.API_KEYS}
+                >
+                  <Link to={ROUTES.WORKSPACE(projectId).IDE.SETTINGS.API_KEYS}>
+                    <Key className='h-4 w-4' />
+                    <span>API Keys</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
             {isAdmin && (
               <SidebarMenuItem>
                 <SidebarMenuButton

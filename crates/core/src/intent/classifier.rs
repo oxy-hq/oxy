@@ -36,7 +36,7 @@ impl IntentClassifier {
     /// Create a new intent classifier
     pub async fn new(config: IntentConfig) -> Result<Self, OxyError> {
         let embedding_service = EmbeddingService::new(&config)?;
-        let storage = IntentStorage::new(&config);
+        let storage = IntentStorage::new(&config)?;
 
         // Create LLM client for labeling
         let openai_config = OpenAIConfig::new().with_api_key(&config.openai_api_key);

@@ -124,7 +124,7 @@ pub struct MetricUsage {
     pub source_ref: String,
     /// Context types indicating how the metric was used
     pub context_types: Vec<ContextType>,
-    /// OpenTelemetry trace ID for correlation
+    /// Trace ID for correlation
     pub trace_id: String,
     /// JSON array of all context items (question, response, sql, semantic)
     pub context: Option<String>,

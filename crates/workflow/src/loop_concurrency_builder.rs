@@ -24,7 +24,7 @@ pub(super) struct LoopMapper;
 #[async_trait::async_trait]
 impl ParamMapper<Vec<minijinja::Value>, Vec<(usize, minijinja::Value)>> for LoopMapper {
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = workflow_events::task::loop_task::NAME_MAP,
+        oxy.name = workflow_events::task::loop_task::NAME_MAP,
         oxy.span_type = workflow_events::task::loop_task::TYPE,
         oxy.loop.iterations_count = input.len(),
     ))]
@@ -62,7 +62,7 @@ impl ParamMapper<((Vec<Task>, String), (usize, minijinja::Value)), TasksGroupInp
     for LoopItemMapper
 {
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = workflow_events::task::loop_task::NAME_ITEM_MAP,
+        oxy.name = workflow_events::task::loop_task::NAME_ITEM_MAP,
         oxy.span_type = workflow_events::task::loop_task::TYPE,
         oxy.loop.iteration_index = tracing::field::Empty,
         oxy.loop.task_name = tracing::field::Empty,

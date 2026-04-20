@@ -434,7 +434,7 @@ fn truncate_str(s: &str, max: usize) -> String {
 /// Execute a **clarifying** tool against `catalog`.
 #[tracing::instrument(
     skip(catalog),
-    fields(otel.name = "analytics.tool", oxy.span_type = "analytics", tool = %name)
+    fields(oxy.name = "analytics.tool", oxy.span_type = "analytics", tool = %name)
 )]
 pub fn execute_clarifying_tool(
     name: &str,
@@ -706,7 +706,7 @@ async fn sample_single_column(
 /// `connector` is used by `sample_columns` to run live queries.
 #[tracing::instrument(
     skip(catalog, connector),
-    fields(otel.name = "analytics.tool", oxy.span_type = "analytics", tool = %name)
+    fields(oxy.name = "analytics.tool", oxy.span_type = "analytics", tool = %name)
 )]
 pub async fn execute_specifying_tool(
     name: &str,
@@ -818,7 +818,7 @@ async fn execute_specifying_tool_inner(
 /// `connector` is used by `execute_preview` to run the SQL with LIMIT 5.
 #[tracing::instrument(
     skip(connector),
-    fields(otel.name = "analytics.tool", oxy.span_type = "analytics", tool = %name)
+    fields(oxy.name = "analytics.tool", oxy.span_type = "analytics", tool = %name)
 )]
 pub async fn execute_solving_tool(
     name: &str,
@@ -986,7 +986,7 @@ fn cached_schema(
 /// semantic layer doesn't cover the user's question.
 #[tracing::instrument(
     skip(connectors, cache),
-    fields(otel.name = "analytics.tool", oxy.span_type = "analytics", tool = %name)
+    fields(oxy.name = "analytics.tool", oxy.span_type = "analytics", tool = %name)
 )]
 pub async fn execute_database_lookup_tool(
     name: &str,
@@ -1199,7 +1199,7 @@ pub fn validate_chart_config(config: &ChartConfig, columns: &[String]) -> Vec<St
 /// [`ChartRendered`]: crate::events::AnalyticsEvent::ChartRendered
 #[tracing::instrument(
     skip(event_tx, result_sets, valid_charts),
-    fields(otel.name = "analytics.tool", oxy.span_type = "analytics", tool = %name)
+    fields(oxy.name = "analytics.tool", oxy.span_type = "analytics", tool = %name)
 )]
 pub async fn execute_interpreting_tool(
     name: &str,

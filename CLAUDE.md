@@ -63,6 +63,12 @@ web-app/                    # Frontend (Vite + React + TypeScript)
 
 Release builds take significantly longer and are only needed for production distributions.
 
+**Check all affected packages** - When changes span multiple crates, run `cargo check` for each changed package, not just one:
+
+- ✅ `cargo check -p oxy 2>&1 | grep ...` then `cargo check -p oxy-app 2>&1 | grep ...`
+- ✅ `cargo check --workspace 2>&1 | grep ...` (checks everything)
+- ❌ `cargo check -p oxy-app` alone when `oxy` (core) was also modified
+
 **Filter build output** - Always pipe `cargo check` / `cargo build` through grep to reduce output noise:
 
 - ✅ `cargo check 2>&1 | grep -E "^(error|warning\[)"`
@@ -133,14 +139,15 @@ cargo nextest run test_internal_port_disabled
 The `oxy start` command manages Docker containers programmatically via the `bollard` crate (not docker-compose).
 
 - **PostgreSQL** container: `oxy-postgres` (volume: `oxy-postgres-data`)
-- **ClickHouse** container (enterprise): `oxy-clickhouse` (volume: `oxy-clickhouse-data`)
-- **OTel Collector** container (enterprise): `oxy-otel-collector`
-- Enterprise services run on the `oxy-enterprise` Docker network.
 - Use `oxy start --clean` to remove all containers and volumes before starting fresh.
 
 ## Product Context (Web UI)
 
 @product-context.md
+
+## Design Docs & Specs
+
+- Save design documents and specs to `internal-docs/`, not `docs/superpowers/specs/`.
 
 ## Common Pitfalls
 

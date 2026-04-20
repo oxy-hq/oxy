@@ -16,7 +16,7 @@ struct LookerQueryTaskMapper;
 #[async_trait::async_trait]
 impl ParamMapper<LookerQueryTask, LookerQueryInput> for LookerQueryTaskMapper {
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = workflow_events::task::looker_query::NAME_MAP,
+        oxy.name = workflow_events::task::looker_query::NAME_MAP,
         oxy.span_type = workflow_events::task::looker_query::TYPE,
         oxy.looker_query.integration = %input.integration,
         oxy.looker_query.model = %input.model,

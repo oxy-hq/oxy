@@ -117,7 +117,7 @@ impl AgentLauncher {
     }
 
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = events::agent::get_global_context::NAME,
+        oxy.name = events::agent::get_global_context::NAME,
         oxy.span_type = events::agent::get_global_context::TYPE,
     ))]
     async fn get_global_context(
@@ -177,7 +177,7 @@ impl AgentLauncher {
     }
 
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = "agent.launcher.with_workspace",
+        oxy.name = "agent.launcher.with_workspace",
         oxy.span_type = "agent",
     ))]
     pub async fn with_workspace(
@@ -213,7 +213,7 @@ impl AgentLauncher {
     }
 
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = "agent.launcher.launch",
+        oxy.name = "agent.launcher.launch",
         oxy.span_type = "agent",
         oxy.agent.ref = %agent_input.agent_ref,
     ))]
@@ -309,7 +309,7 @@ impl AgentLauncher {
     }
 
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = "agent.launcher.launch_agentic_workflow",
+        oxy.name = "agent.launcher.launch_agentic_workflow",
         oxy.span_type = "agent",
         oxy.agent.ref = %agent_ref,
     ))]

@@ -17,7 +17,7 @@ struct OmniQueryTaskMapper;
 #[async_trait::async_trait]
 impl ParamMapper<OmniQueryTask, OmniQueryInput> for OmniQueryTaskMapper {
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = workflow_events::task::omni_query::NAME_MAP,
+        oxy.name = workflow_events::task::omni_query::NAME_MAP,
         oxy.span_type = workflow_events::task::omni_query::TYPE,
         oxy.omni_query.integration = %input.integration,
         oxy.omni_query.topic = %input.topic,

@@ -84,6 +84,9 @@ pub struct AppState {
     /// Maps workspace ID → human-readable error message.
     pub errored_workspaces:
         std::sync::Arc<std::sync::Mutex<std::collections::HashMap<uuid::Uuid, String>>>,
+    /// Observability storage (traces, metrics, execution analytics).
+    /// `None` when the server is started without enterprise/observability support.
+    pub observability: Option<std::sync::Arc<dyn oxy_observability::ObservabilityStore>>,
 }
 
 fn build_cors_layer() -> CorsLayer {
@@ -513,13 +516,23 @@ fn build_protected_routes(
     )
 }
 
-fn apply_middleware(protected_routes: Router<AppState>) -> Result<Router<AppState>, OxyError> {
-    let protected_regular_routes = protected_routes
-        .layer(middleware::from_fn(timeout_middleware))
-        .layer(middleware::from_fn_with_state(
-            AuthState::built_in(),
-            auth_middleware,
-        ));
+fn apply_middleware(
+    protected_routes: Router<AppState>,
+    local_mode: bool,
+) -> Result<Router<AppState>, OxyError> {
+    let protected_regular_routes = if local_mode {
+        // In local mode, skip JWT/API-key auth and auto-authenticate as a local user.
+        protected_routes
+            .layer(middleware::from_fn(timeout_middleware))
+            .layer(middleware::from_fn(internal_auth_middleware))
+    } else {
+        protected_routes
+            .layer(middleware::from_fn(timeout_middleware))
+            .layer(middleware::from_fn_with_state(
+                AuthState::built_in(),
+                auth_middleware,
+            ))
+    };
 
     Ok(protected_regular_routes)
 }
@@ -546,12 +559,14 @@ fn build_backend(
 pub async fn api_router(
     enterprise: bool,
     readonly: bool,
+    local_mode: bool,
     workspaces_root: Option<std::path::PathBuf>,
     active_workspace_path: std::sync::Arc<tokio::sync::RwLock<Option<std::path::PathBuf>>>,
     cloning_workspaces: std::sync::Arc<std::sync::Mutex<std::collections::HashSet<uuid::Uuid>>>,
     errored_workspaces: std::sync::Arc<
         std::sync::Mutex<std::collections::HashMap<uuid::Uuid, String>>,
     >,
+    observability: Option<std::sync::Arc<dyn oxy_observability::ObservabilityStore>>,
 ) -> Result<Router, OxyError> {
     let app_state = AppState {
         enterprise,
@@ -562,13 +577,14 @@ pub async fn api_router(
         active_workspace_path,
         cloning_workspaces,
         errored_workspaces,
+        observability,
     };
     cleanup_stale_runs().await.ok();
     let agentic_state =
         Arc::new(AgenticState::new().with_builder_test_runner(Arc::new(OxyTestRunner)));
     let public_routes = build_public_routes();
     let protected_routes = build_protected_routes(app_state.clone(), agentic_state);
-    let protected_routes = apply_middleware(protected_routes)?;
+    let protected_routes = apply_middleware(protected_routes, local_mode)?;
     let app_routes = public_routes.merge(protected_routes);
     let cors = build_cors_layer();
 
@@ -593,6 +609,7 @@ pub async fn internal_api_router(
     errored_workspaces: std::sync::Arc<
         std::sync::Mutex<std::collections::HashMap<uuid::Uuid, String>>,
     >,
+    observability: Option<std::sync::Arc<dyn oxy_observability::ObservabilityStore>>,
 ) -> Result<Router, OxyError> {
     let app_state = AppState {
         enterprise,
@@ -603,6 +620,7 @@ pub async fn internal_api_router(
         active_workspace_path,
         cloning_workspaces,
         errored_workspaces,
+        observability,
     };
     cleanup_stale_runs().await.ok();
     let agentic_state =

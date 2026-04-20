@@ -186,7 +186,7 @@ impl LlmClient {
     #[tracing::instrument(
         skip_all,
         fields(
-            otel.name = "llm.call",
+            oxy.name = "llm.call",
             oxy.span_type = "llm",
             gen_ai.request.model = %self.provider.model_name(),
         )
@@ -327,13 +327,13 @@ impl LlmClient {
         loop {
             let round_start = Instant::now();
 
-            // Create an OTel span for this LLM inference round.  The span
+            // Create a span for this LLM inference round.  The span
             // covers only the API call + stream consumption; it is explicitly
             // dropped before tool execution so its duration reflects pure
             // inference time.
             let llm_span = tracing::info_span!(
                 "llm_round",
-                otel.name = "llm.call",
+                oxy.name = "llm.call",
                 oxy.span_type = "llm",
                 gen_ai.request.model = %self.provider.model_name(),
                 llm.state = %config.state,
@@ -481,7 +481,7 @@ impl LlmClient {
             let round_llm_ms = round_start.elapsed().as_millis() as u64;
 
             // Record token usage as a visible span event on the LLM span so
-            // it appears in the ClickHouse trace detail view.
+            // it appears in the trace detail view.
             tracing::info!(
                 name: "llm.usage",
                 is_visible = true,

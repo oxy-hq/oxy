@@ -328,7 +328,7 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
     type Response = OpenAIExecutableResponse;
 
     #[tracing::instrument(skip_all,err, fields(
-        otel.name = events::llm::LLM_OPENAI_CALL,
+        oxy.name = events::llm::LLM_OPENAI_CALL,
         oxy.span_type = events::llm::LLM_CALL_TYPE,
         gen_ai.request.model = %self.model,
     ))]
@@ -566,7 +566,7 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OSSExecutable {
     type Response = OpenAIExecutableResponse;
 
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = events::llm::LLM_OSS_CALL,
+        oxy.name = events::llm::LLM_OSS_CALL,
         oxy.span_type = events::llm::LLM_CALL_TYPE,
         gen_ai.request.model = %self.model,
     ))]

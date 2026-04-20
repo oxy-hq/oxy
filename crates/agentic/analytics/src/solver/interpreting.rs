@@ -260,7 +260,7 @@ impl AnalyticsSolver {
     #[tracing::instrument(
         skip_all,
         fields(
-            otel.name = "analytics.interpret",
+            oxy.name = "analytics.interpret",
             oxy.span_type = "analytics",
             result_count = tracing::field::Empty,
         )

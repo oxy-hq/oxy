@@ -67,6 +67,7 @@ mod m20260401_000001_add_spec_hint_to_agentic_runs;
 mod m20260402_000001_add_thinking_mode_to_agentic_runs;
 mod m20260402_000001_rename_projects_to_workspaces;
 mod m20260409_000001_add_github_token_to_users;
+mod m20260416_000001_create_observability_tables;
 
 pub struct Migrator;
 
@@ -140,6 +141,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260402_000001_add_thinking_mode_to_agentic_runs::Migration),
             Box::new(m20260402_000001_rename_projects_to_workspaces::Migration),
             Box::new(m20260409_000001_add_github_token_to_users::Migration),
+            Box::new(m20260416_000001_create_observability_tables::Migration),
         ]
     }
 }

@@ -21,10 +21,8 @@
 //! let child_ctx = execution_context.metric_context().child(SourceType::Workflow, "nested");
 //! ```
 
-use opentelemetry::trace::TraceContextExt as _;
 use std::collections::HashSet;
 use std::sync::{Arc, RwLock};
-use tracing_opentelemetry::OpenTelemetrySpanExt as _;
 
 use tracing::warn;
 
@@ -58,7 +56,7 @@ pub type SharedMetricCtx = Arc<RwLock<MetricContext>>;
 /// ```
 #[derive(Debug, Clone)]
 pub struct MetricContext {
-    /// OpenTelemetry trace ID for correlation
+    /// Trace ID for correlation
     pub trace_id: String,
     /// Parent's trace ID (for nested execution correlation)
     pub parent_trace_id: Option<String>,
@@ -277,7 +275,13 @@ impl MetricContext {
             return;
         }
 
-        let storage = Arc::new(MetricStorage::from_env());
+        let storage = match MetricStorage::from_global() {
+            Ok(s) => Arc::new(s),
+            Err(e) => {
+                tracing::warn!("Cannot finalize metrics, storage not initialized: {}", e);
+                return;
+            }
+        };
         self.finalize_with_storage(storage);
     }
 
@@ -304,7 +308,7 @@ impl MetricContext {
         let source_ref = self.source_ref.clone();
 
         tokio::spawn(async move {
-            tracing::info!(
+            tracing::debug!(
                 "🔵 MetricContext finalize task started (trace_id={}, source={}::{})",
                 trace_id,
                 source_type,
@@ -316,7 +320,7 @@ impl MetricContext {
 
             // Collect Tier 1 metrics (explicit from semantic queries)
             let mut all_metrics = self.collect_tier1_metrics();
-            tracing::info!(
+            tracing::debug!(
                 "📊 Collected {} Tier 1 metrics for trace_id={}",
                 all_metrics.len(),
                 trace_id
@@ -327,7 +331,7 @@ impl MetricContext {
                 .ok()
                 .is_some_and(|v| !v.is_empty());
 
-            tracing::info!(
+            tracing::debug!(
                 "🔍 Tier 2 check for trace_id={}: OPENAI_API_KEY={}, question={}, response={}, sql_count={}",
                 trace_id,
                 has_openai_key,
@@ -337,7 +341,7 @@ impl MetricContext {
             );
 
             if has_openai_key && self.has_tier2_data() {
-                tracing::info!("🚀 Running Tier 2 LLM extraction for trace_id={}", trace_id);
+                tracing::debug!("🚀 Running Tier 2 LLM extraction for trace_id={}", trace_id);
 
                 let tier2_metrics = run_tier2_extraction(
                     self.question.as_deref(),
@@ -346,7 +350,7 @@ impl MetricContext {
                 )
                 .await;
 
-                tracing::info!(
+                tracing::debug!(
                     "📊 Collected {} Tier 2 metrics for trace_id={}",
                     tier2_metrics.len(),
                     trace_id
@@ -355,7 +359,7 @@ impl MetricContext {
                 // Merge Tier 2 into all_metrics (dedup automatically by HashSet)
                 all_metrics.extend(tier2_metrics);
             } else {
-                tracing::info!(
+                tracing::debug!(
                     "⏭️  Skipping Tier 2 extraction for trace_id={} (OPENAI_API_KEY={}, has_tier2_data={})",
                     trace_id,
                     has_openai_key,
@@ -366,7 +370,7 @@ impl MetricContext {
             // Create and store MetricUsage for each unique metric
             if !all_metrics.is_empty() {
                 let usages = self.create_metric_usages(&all_metrics, context_types, context_json);
-                tracing::info!(
+                tracing::debug!(
                     "💾 Storing {} unique metric usages for trace_id={}",
                     usages.len(),
                     trace_id
@@ -374,7 +378,7 @@ impl MetricContext {
 
                 match storage.store_metrics(&usages).await {
                     Ok(_) => {
-                        tracing::info!(
+                        tracing::debug!(
                             "✅ Successfully stored {} metrics for trace_id={}",
                             usages.len(),
                             trace_id
@@ -388,10 +392,10 @@ impl MetricContext {
                     }
                 }
             } else {
-                tracing::info!("ℹ️  No metrics to store for trace_id={}", trace_id);
+                tracing::debug!("ℹ️  No metrics to store for trace_id={}", trace_id);
             }
 
-            tracing::info!(
+            tracing::debug!(
                 "🔵 MetricContext finalize task completed (trace_id={})",
                 trace_id
             );
@@ -422,7 +426,7 @@ async fn run_tier2_extraction(
     match MetricExtractor::new(&config) {
         Ok(extractor) => match extractor.extract(&ctx).await {
             Ok(result) => {
-                tracing::info!(
+                tracing::debug!(
                     "✅ Extracted {} metrics via LLM: {:?}",
                     result.metrics.len(),
                     result.metric_names()
@@ -441,12 +445,10 @@ async fn run_tier2_extraction(
     }
 }
 
-/// Get the current trace ID from OpenTelemetry context
+/// Get the current trace ID from the DuckDB observability layer.
+///
+/// Falls back to a zeroed trace ID if no span is active.
 pub fn current_trace_id() -> String {
-    tracing::Span::current()
-        .context()
-        .span()
-        .span_context()
-        .trace_id()
-        .to_string()
+    oxy_observability::current_trace_id()
+        .unwrap_or_else(|| "00000000000000000000000000000000".to_string())
 }

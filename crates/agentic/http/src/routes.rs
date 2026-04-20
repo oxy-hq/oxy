@@ -690,7 +690,7 @@ pub async fn update_thinking_mode(
 // ── Background pipeline task ──────────────────────────────────────────────────
 
 #[tracing::instrument(skip_all, err, fields(
-    otel.name = "analytics.run",
+    oxy.name = "analytics.run",
     oxy.span_type = "analytics",
     run_id = %run_id,
     question = %question,

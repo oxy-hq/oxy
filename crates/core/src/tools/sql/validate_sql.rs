@@ -26,7 +26,7 @@ impl Executable<SQLInput> for ValidateSQLExecutable {
     type Response = Output;
 
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = events::tool::VALIDATE_SQL_EXECUTE,
+        oxy.name = events::tool::VALIDATE_SQL_EXECUTE,
         oxy.span_type = events::tool::TOOL_CALL_TYPE,
     ))]
     async fn execute(

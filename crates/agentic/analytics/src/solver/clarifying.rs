@@ -87,7 +87,7 @@ impl AnalyticsSolver {
     #[tracing::instrument(
         skip_all,
         fields(
-            otel.name = "analytics.clarify",
+            oxy.name = "analytics.clarify",
             oxy.span_type = "analytics",
             question_type = tracing::field::Empty,
             semantic_confidence = tracing::field::Empty,
@@ -387,7 +387,7 @@ impl AnalyticsSolver {
     #[tracing::instrument(
         skip_all,
         fields(
-            otel.name = "analytics.general_inquiry",
+            oxy.name = "analytics.general_inquiry",
             oxy.span_type = "analytics",
         )
     )]

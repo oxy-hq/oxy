@@ -112,7 +112,7 @@ impl ConfigManager {
     }
 
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = events::agent::load_agent_config::NAME,
+        oxy.name = events::agent::load_agent_config::NAME,
         oxy.span_type = events::agent::load_agent_config::TYPE,
     ))]
     pub async fn resolve_agent<P: AsRef<Path>>(

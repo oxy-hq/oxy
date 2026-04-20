@@ -23,7 +23,7 @@ impl Executable<OmniQueryInput> for OmniQueryExecutable {
     type Response = Output;
 
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = events::tool::OMNI_QUERY_EXECUTE,
+        oxy.name = events::tool::OMNI_QUERY_EXECUTE,
         oxy.span_type = events::tool::TOOL_CALL_TYPE,
         oxy.execution_type = events::tool::EXECUTION_TYPE_OMNI_QUERY,
         oxy.is_verified = true,

@@ -1,7 +1,7 @@
 //! Workflow execution observability events
 //!
 //! This module provides utilities for logging workflow and task execution events
-//! with consistent OpenTelemetry span creation and field recording.
+//! with consistent span creation and field recording.
 
 use tracing::{Level, Span, event};
 
@@ -605,7 +605,7 @@ pub mod task {
 pub fn task_agent_execute_span(agent_ref: &str, consistency_run: usize) -> Span {
     tracing::info_span!(
         "workflow.task.agent.execute",
-        otel.name = task::agent::NAME,
+        oxy.name = task::agent::NAME,
         oxy.span_type = task::agent::TYPE,
         oxy.agent.ref = %agent_ref,
         oxy.agent.consistency_run = consistency_run,
@@ -616,7 +616,7 @@ pub fn task_agent_execute_span(agent_ref: &str, consistency_run: usize) -> Span 
 pub fn task_formatter_execute_span() -> Span {
     tracing::info_span!(
         "workflow.task.formatter.execute",
-        otel.name = task::formatter::NAME_EXECUTE,
+        oxy.name = task::formatter::NAME_EXECUTE,
         oxy.span_type = task::formatter::TYPE,
     )
 }
@@ -625,7 +625,7 @@ pub fn task_formatter_execute_span() -> Span {
 pub fn task_sub_workflow_execute_span(workflow_ref: &str) -> Span {
     tracing::info_span!(
         "workflow.task.sub_workflow.execute",
-        otel.name = task::sub_workflow::NAME_EXECUTE,
+        oxy.name = task::sub_workflow::NAME_EXECUTE,
         oxy.span_type = task::sub_workflow::TYPE,
         oxy.workflow.ref = %workflow_ref,
     )

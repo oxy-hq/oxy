@@ -17,6 +17,7 @@ handlebars = { workspace = true }
 
 # Core functionality
 oxy = { workspace = true }
+oxy-observability = { workspace = true, features = ["duckdb", "postgres", "clickhouse"] }
 oxy-shared = { workspace = true }
 agentic-analytics = { workspace = true }
 agentic-builder = { workspace = true }

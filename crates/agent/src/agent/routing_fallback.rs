@@ -59,7 +59,7 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for FallbackAgent {
     type Response = Vec<OpenAIExecutableResponse>;
 
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = events::agent::fallback_agent::FALLBACK_NAME,
+        oxy.name = events::agent::fallback_agent::FALLBACK_NAME,
         oxy.span_type = events::agent::fallback_agent::FALLBACK_TYPE,
         oxy.agent.name = %self.agent_name,
     ))]

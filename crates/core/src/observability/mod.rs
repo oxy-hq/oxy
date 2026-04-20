@@ -1,4 +1,3 @@
+//! Domain-specific observability events. The tracing layer and storage
+//! backends are in the `oxy-observability` crate.
 pub mod events;
-pub mod telemetry;
-
-pub use telemetry::{init_otlp, init_stdout, init_telemetry, shutdown};

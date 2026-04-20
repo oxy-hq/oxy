@@ -75,13 +75,7 @@ pub struct ServeArgs {
     #[clap(long, default_value = "127.0.0.1")]
     pub internal_host: String,
 
-    /// Enable enterprise features (ClickHouse observability, analytics)
-    ///
-    /// When enabled, requires ClickHouse environment variables to be set:
-    /// - OXY_CLICKHOUSE_URL (required)
-    /// - OXY_CLICKHOUSE_USER (optional, default: default)
-    /// - OXY_CLICKHOUSE_PASSWORD (optional)
-    /// - OXY_CLICKHOUSE_DATABASE (optional, default: otel)
+    /// Enable enterprise features (observability, analytics)
     #[clap(long, default_value_t = false)]
     pub enterprise: bool,
 

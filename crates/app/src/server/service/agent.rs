@@ -239,9 +239,10 @@ impl EventHandler for AgentCLIHandler {
 }
 
 #[tracing::instrument(skip_all, err, fields(
-        otel.name = events::agent::run_agent::NAME,
+        oxy.name = events::agent::run_agent::NAME,
         oxy.span_type = events::agent::run_agent::TYPE,
         oxy.agent.ref = %agent_ref.as_ref().to_string_lossy().to_string(),
+        agent.prompt = tracing::field::Empty,
         oxy.execution.source = tracing::field::Empty,
         oxy.user.id = tracing::field::Empty,
         oxy.thread.id = tracing::field::Empty,
@@ -307,6 +308,9 @@ pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
             _ => {}
         }
     }
+
+    // Record the prompt on the span so intent classification can find it.
+    span.record("agent.prompt", prompt.as_str());
 
     events::agent::run_agent::input(
         &workspace,

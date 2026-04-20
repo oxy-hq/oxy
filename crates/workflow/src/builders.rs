@@ -86,7 +86,7 @@ impl WorkflowLauncher {
     }
 
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = workflow_events::launcher::get_global_context::NAME,
+        oxy.name = workflow_events::launcher::get_global_context::NAME,
         oxy.span_type = workflow_events::launcher::get_global_context::TYPE,
     ))]
     async fn get_global_context(
@@ -152,7 +152,7 @@ impl WorkflowLauncher {
     }
 
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = workflow_events::launcher::with_workspace::NAME,
+        oxy.name = workflow_events::launcher::with_workspace::NAME,
         oxy.span_type = workflow_events::launcher::with_workspace::TYPE,
     ))]
     pub async fn with_workspace(
@@ -267,7 +267,7 @@ impl WorkflowLauncher {
     }
 
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = workflow_events::launcher::launch::NAME,
+        oxy.name = workflow_events::launcher::launch::NAME,
         oxy.span_type = workflow_events::launcher::launch::TYPE,
         oxy.workflow.ref = %workflow_input.workflow_ref,
     ))]

@@ -28,39 +28,29 @@ See the [Container Runtime Setup Guide](/deployment/container-runtimes) for inst
 2. **Starting PostgreSQL in a container** (or using existing one)
 3. **Waiting for PostgreSQL to be ready**
 4. **Configuring the database connection** automatically
-5. **(Optional) Starting ClickHouse + OTel Collector** with `--enterprise` flag
+5. **(Optional) Enabling observability** with `--enterprise` flag
 
 ## Quick Usage
 
 ```bash
 oxy start                    # start DB + web server
-oxy start --enterprise       # also start ClickHouse + OTel
+oxy start --enterprise       # enable observability (traces, metrics, analytics)
 oxy start --clean            # clean existing containers/volumes first
 oxy start --clean --enterprise  # clean + start with enterprise features
 ```
 
 ## Key Ports
 
-| Service                                         |   Host Port |
-| ----------------------------------------------- | ----------: |
-| PostgreSQL (oxy-postgres)                       |       15432 |
-| ClickHouse (oxy-clickhouse) HTTP / Native       | 8123 / 9000 |
-| OTel Collector (oxy-otel-collector) gRPC / HTTP | 4317 / 4318 |
+| Service                   | Host Port |
+| ------------------------- | --------: |
+| PostgreSQL (oxy-postgres) |     15432 |
 
 ## Clean option
 
 The `--clean` flag removes all existing Oxy-managed Docker resources before starting:
 
-**Standard mode (`oxy start --clean`):**
-
 - Removes `oxy-postgres` container
 - Removes `oxy-postgres-data` volume (⚠️ **all data lost**)
-
-**Enterprise mode (`oxy start --clean --enterprise`):**
-
-- Removes `oxy-postgres`, `oxy-clickhouse`, `oxy-otel-collector` containers
-- Removes `oxy-postgres-data` and `oxy-clickhouse-data` volumes (⚠️ **all data lost**)
-- Removes the `oxy-enterprise-network` Docker network
 
 **Use cases:**
 
@@ -73,15 +63,14 @@ The `--clean` flag removes all existing Oxy-managed Docker resources before star
 
 ## Environment vars (enterprise)
 
-- `OXY_CLICKHOUSE_URL` = `http://localhost:8123`
-- `OXY_CLICKHOUSE_DATABASE` = `otel`
-- `OTEL_EXPORTER_OTLP_ENDPOINT` = `http://localhost:4317`
+- `OXY_OBSERVABILITY_BACKEND` = auto-detected (`postgres` when DB available, else `duckdb`)
+- `OXY_SERVICE_NAME` = `oxy` (service name for traces)
 
 ## Minimal commands
 
 - Check status: `oxy status`
-- View logs: `docker logs -f oxy-postgres` (and `oxy-clickhouse`, `oxy-otel-collector` for enterprise)
-- Stop containers: `docker stop oxy-postgres [oxy-clickhouse oxy-otel-collector]`
+- View logs: `docker logs -f oxy-postgres`
+- Stop containers: `docker stop oxy-postgres`
 - Clean restart: `oxy start --clean` (removes all containers and volumes)
 
 ## Command-Line Options
@@ -94,7 +83,7 @@ The `--clean` flag removes all existing Oxy-managed Docker resources before star
 </ParamField>
 
 <ParamField path="--enterprise" type="boolean" default="false">
-  Enable enterprise features including ClickHouse and OpenTelemetry Collector.
+  Enable enterprise features including observability (traces, metrics, analytics).
 </ParamField>
 
 ## Important Notes
@@ -105,7 +94,7 @@ The `--clean` flag removes all existing Oxy-managed Docker resources before star
   Setup](/deployment/container-runtimes) for options.
 </Warning>
 
-- Data persists in named volumes (`oxy-postgres-data`, `oxy-clickhouse-data`)
+- Data persists in named volumes (`oxy-postgres-data`)
 - Use `--clean` to remove existing containers and volumes for a fresh start (⚠️ data loss)
 - If a port is already in use, stop the conflicting service or configure external databases
 

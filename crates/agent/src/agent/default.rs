@@ -50,7 +50,7 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
     type Response = OutputContainer;
 
     #[tracing::instrument(skip_all, err, fields(
-        otel.name = events::agent::default_agent::NAME,
+        oxy.name = events::agent::default_agent::NAME,
         oxy.span_type = events::agent::default_agent::TYPE,
         oxy.agent.name = %input.agent_name,
     ))]
