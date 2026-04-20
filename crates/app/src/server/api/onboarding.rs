@@ -1,16 +1,28 @@
-use axum::{Json, extract::State, http::StatusCode};
+use axum::{Json, http::StatusCode};
 use oxy::adapters::secrets::SecretsManager;
+use oxy::adapters::workspace::{resolve_workspace_path, workspace_root_path};
 use oxy::config::ConfigBuilder;
-use oxy::github::GitHubClient;
+use oxy::github::{GitHubClient, default_git_client, github_token_for_namespace};
 use oxy::service::retrieval::{ReindexInput, reindex};
 use oxy_auth::extractor::AuthenticatedUserExtractor;
-use oxy_project::{GitService, LocalGitService, copy_demo_files_to};
+use oxy_git::GitClient;
+use oxy_project::copy_demo_files_to;
 use serde::{Deserialize, Serialize};
-use tokio::process::Command;
 use tracing::{error, info};
 use uuid::Uuid;
 
-use crate::server::router::AppState;
+use crate::server::api::middlewares::org_context::{OrgContext, OrgContextExtractor};
+
+fn require_org_admin(ctx: &OrgContext) -> Result<(), (StatusCode, String)> {
+    use entity::org_members::OrgRole;
+    match ctx.membership.role {
+        OrgRole::Owner | OrgRole::Admin => Ok(()),
+        OrgRole::Member => Err((
+            StatusCode::FORBIDDEN,
+            "Only org owners and admins can create workspaces".to_string(),
+        )),
+    }
+}
 
 /// Result returned by all three onboarding endpoints.
 #[derive(Serialize)]
@@ -53,32 +65,18 @@ fn parse_subdir(raw: &str) -> Result<Option<std::path::PathBuf>, (StatusCode, St
 
 /// Resolve the target workspace directory for an onboarding operation.
 ///
-/// - In single-workspace mode (`workspaces_root` is `None`): returns CWD.
-/// - In multi-workspace mode: returns `workspaces_root/<workspace_id>`, creating it if needed.
-///   Using the workspace UUID as the directory name guarantees uniqueness without any
-///   name-collision logic.
-fn resolve_project_dir(
-    app_state: &AppState,
-    workspace_id: Uuid,
-) -> Result<std::path::PathBuf, (StatusCode, String)> {
-    match &app_state.workspaces_root {
-        None => std::env::current_dir().map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to get current directory: {e}"),
-            )
-        }),
-        Some(root) => {
-            let dir = root.join(workspace_id.to_string());
-            std::fs::create_dir_all(&dir).map_err(|e| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Failed to create workspace directory '{dir:?}': {e}"),
-                )
-            })?;
-            Ok(dir)
-        }
-    }
+/// Returns `<state_dir>/workspaces/<workspace_id>`, creating it if needed.
+/// Using the workspace UUID as the directory name guarantees uniqueness
+/// without any name-collision logic.
+fn resolve_project_dir(workspace_id: Uuid) -> Result<std::path::PathBuf, (StatusCode, String)> {
+    let dir = workspace_root_path(workspace_id);
+    std::fs::create_dir_all(&dir).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to create workspace directory '{dir:?}': {e}"),
+        )
+    })?;
+    Ok(dir)
 }
 
 /// Find a unique workspace display name by appending " 2", " 3", … when the base name is taken.
@@ -130,6 +128,10 @@ async fn register_project(
     name: &str,
     workspace_id: Uuid,
     created_by: Option<Uuid>,
+    org_id: Option<Uuid>,
+    status: entity::workspaces::WorkspaceStatus,
+    git_namespace_id: Option<Uuid>,
+    git_remote_url: Option<String>,
 ) -> Result<Uuid, (StatusCode, String)> {
     use entity::workspaces;
     use oxy::database::client::establish_connection;
@@ -185,14 +187,16 @@ async fn register_project(
     let new_workspace = workspaces::ActiveModel {
         id: Set(workspace_id),
         name: Set(name.to_string()),
-        workspace_id: Set(Uuid::nil()),
-        project_repo_id: Set(None),
-        active_branch_id: Set(Uuid::nil()),
+        git_namespace_id: Set(git_namespace_id),
+        git_remote_url: Set(git_remote_url),
         created_at: Set(chrono::Utc::now().into()),
         updated_at: Set(chrono::Utc::now().into()),
         path: Set(Some(path_str.clone())),
         last_opened_at: Set(None),
         created_by: Set(created_by),
+        org_id: Set(org_id),
+        status: Set(status),
+        error: Set(None),
     };
     new_workspace.insert(&db).await.map_err(|e| {
         (
@@ -202,6 +206,37 @@ async fn register_project(
     })?;
     tracing::info!("Registered workspace '{}' at '{}'", name, path_str);
     Ok(workspace_id)
+}
+
+/// Update the clone status and error message for a workspace row.
+async fn update_workspace_status(
+    workspace_id: Uuid,
+    status: entity::workspaces::WorkspaceStatus,
+    error: Option<String>,
+) -> Result<(), String> {
+    use entity::workspaces;
+    use oxy::database::client::establish_connection;
+    use sea_orm::{ActiveModelTrait, EntityTrait, Set};
+
+    let db = establish_connection()
+        .await
+        .map_err(|e| format!("Database connection failed: {e}"))?;
+
+    let existing = workspaces::Entity::find_by_id(workspace_id)
+        .one(&db)
+        .await
+        .map_err(|e| format!("Failed to load workspace {workspace_id}: {e}"))?
+        .ok_or_else(|| format!("Workspace {workspace_id} no longer exists"))?;
+
+    let mut active: workspaces::ActiveModel = existing.into();
+    active.status = Set(status);
+    active.error = Set(error);
+    active.updated_at = Set(chrono::Utc::now().into());
+    active
+        .update(&db)
+        .await
+        .map_err(|e| format!("Failed to update workspace {workspace_id}: {e}"))?;
+    Ok(())
 }
 
 #[derive(Deserialize, Default)]
@@ -232,15 +267,17 @@ pub struct GitHubSetupRequest {
     pub subdir: Option<String>,
 }
 
-/// POST /onboarding/demo — copy embedded demo workspace files and trigger background reindex.
+/// POST /orgs/{org_id}/onboarding/demo — copy embedded demo workspace files and trigger background reindex.
 pub async fn setup_demo(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    State(app_state): State<AppState>,
+    OrgContextExtractor(ctx): OrgContextExtractor,
     body: Option<Json<DemoSetupRequest>>,
 ) -> Result<Json<OnboardingResult>, (StatusCode, String)> {
+    require_org_admin(&ctx)?;
     let req = body.map(|b| b.0).unwrap_or_default();
+
     let workspace_id = Uuid::new_v4();
-    let project_dir = resolve_project_dir(&app_state, workspace_id).map_err(|(status, msg)| {
+    let project_dir = resolve_project_dir(workspace_id).map_err(|(status, msg)| {
         error!("{}", msg);
         (status, msg)
     })?;
@@ -265,15 +302,25 @@ pub async fn setup_demo(
                 (s, m)
             })?,
     };
-    let workspace_id =
-        match register_project(&project_dir, &display_name, workspace_id, Some(user.id)).await {
-            Ok(id) => id,
-            Err((status, msg)) => {
-                error!("{}", msg);
-                let _ = std::fs::remove_dir_all(&project_dir);
-                return Err((status, msg));
-            }
-        };
+    let workspace_id = match register_project(
+        &project_dir,
+        &display_name,
+        workspace_id,
+        Some(user.id),
+        Some(ctx.org.id),
+        entity::workspaces::WorkspaceStatus::Ready,
+        None,
+        None,
+    )
+    .await
+    {
+        Ok(id) => id,
+        Err((status, msg)) => {
+            error!("{}", msg);
+            let _ = std::fs::remove_dir_all(&project_dir);
+            return Err((status, msg));
+        }
+    };
 
     // Background reindex — best-effort, does not block the response
     let dir_clone = project_dir.clone();
@@ -305,15 +352,17 @@ pub async fn setup_demo(
     }))
 }
 
-/// POST /onboarding/new — write a minimal config.yml to the workspace directory if none exists.
+/// POST /orgs/{org_id}/onboarding/new — write a minimal config.yml to the workspace directory if none exists.
 pub async fn setup_new(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    State(app_state): State<AppState>,
+    OrgContextExtractor(ctx): OrgContextExtractor,
     body: Option<Json<NewSetupRequest>>,
 ) -> Result<Json<OnboardingResult>, (StatusCode, String)> {
+    require_org_admin(&ctx)?;
     let req = body.map(|b| b.0).unwrap_or_default();
+
     let workspace_id = Uuid::new_v4();
-    let project_dir = resolve_project_dir(&app_state, workspace_id).map_err(|(status, msg)| {
+    let project_dir = resolve_project_dir(workspace_id).map_err(|(status, msg)| {
         error!("{}", msg);
         (status, msg)
     })?;
@@ -341,15 +390,25 @@ pub async fn setup_new(
                 (s, m)
             })?,
     };
-    let workspace_id =
-        match register_project(&project_dir, &display_name, workspace_id, Some(user.id)).await {
-            Ok(id) => id,
-            Err((status, msg)) => {
-                error!("{}", msg);
-                let _ = std::fs::remove_dir_all(&project_dir);
-                return Err((status, msg));
-            }
-        };
+    let workspace_id = match register_project(
+        &project_dir,
+        &display_name,
+        workspace_id,
+        Some(user.id),
+        Some(ctx.org.id),
+        entity::workspaces::WorkspaceStatus::Ready,
+        None,
+        None,
+    )
+    .await
+    {
+        Ok(id) => id,
+        Err((status, msg)) => {
+            error!("{}", msg);
+            let _ = std::fs::remove_dir_all(&project_dir);
+            return Err((status, msg));
+        }
+    };
 
     Ok(Json(OnboardingResult {
         workspace_type: "new".to_string(),
@@ -357,24 +416,46 @@ pub async fn setup_new(
     }))
 }
 
-/// POST /onboarding/github — register a GitHub repository as a workspace and clone it in the
-/// background. The workspace appears in the list immediately; the clone runs asynchronously so
-/// large repositories don't hit the global request timeout.
+/// POST /orgs/{org_id}/onboarding/github — register a GitHub repository as a workspace and clone
+/// it in the background. The workspace appears in the list immediately; the clone runs
+/// asynchronously so large repositories don't hit the global request timeout.
 pub async fn setup_github(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    State(app_state): State<AppState>,
+    OrgContextExtractor(ctx): OrgContextExtractor,
     axum::Json(req): axum::Json<GitHubSetupRequest>,
 ) -> Result<Json<OnboardingResult>, (StatusCode, String)> {
-    let token = GitService::load_token_from_git_namespace(req.namespace_id)
-        .await
-        .map_err(|e| {
-            let msg = format!(
-                "Failed to load token from git namespace {}: {}",
-                req.namespace_id, e
-            );
-            error!("{}", msg);
-            (StatusCode::INTERNAL_SERVER_ERROR, msg)
-        })?;
+    require_org_admin(&ctx)?;
+
+    // Verify the namespace belongs to the caller's org — unconditional now that the org is
+    // always available from the path. Closes the cross-org namespace bypass (security #2).
+    let ns = {
+        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+        let db = oxy::database::client::establish_connection()
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("DB error: {e}")))?;
+        let ns = entity::git_namespaces::Entity::find()
+            .filter(entity::git_namespaces::Column::Id.eq(req.namespace_id))
+            .one(&db)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("DB error: {e}")))?
+            .ok_or((StatusCode::NOT_FOUND, "Namespace not found".to_string()))?;
+        if ns.org_id != Some(ctx.org.id) {
+            return Err((
+                StatusCode::FORBIDDEN,
+                "Namespace does not belong to this org".to_string(),
+            ));
+        }
+        ns
+    };
+
+    let token = github_token_for_namespace(&ns).await.map_err(|e| {
+        let msg = format!(
+            "Failed to load token from git namespace {}: {}",
+            req.namespace_id, e
+        );
+        error!("{}", msg);
+        (StatusCode::INTERNAL_SERVER_ERROR, msg)
+    })?;
 
     let client = GitHubClient::from_token(token.clone()).map_err(|e| {
         let msg = format!("Failed to create GitHub client: {}", e);
@@ -405,7 +486,7 @@ pub async fn setup_github(
     let project_name = req.name.as_deref().unwrap_or(&repo.name);
     let workspace_id = Uuid::new_v4();
     // repo_dir is where the full git repository will be cloned.
-    let repo_dir = resolve_project_dir(&app_state, workspace_id).map_err(|(status, msg)| {
+    let repo_dir = resolve_project_dir(workspace_id).map_err(|(status, msg)| {
         error!("{}", msg);
         (status, msg)
     })?;
@@ -427,42 +508,45 @@ pub async fn setup_github(
     };
 
     // Register the workspace in the DB now so it appears in /workspaces immediately.
-    let workspace_id =
-        match register_project(&oxy_project_dir, project_name, workspace_id, Some(user.id)).await {
-            Ok(id) => id,
-            Err((status, msg)) => {
-                error!("{}", msg);
-                let _ = std::fs::remove_dir_all(&repo_dir);
-                return Err((status, msg));
-            }
-        };
-
-    // Mark this workspace as cloning so the frontend can show a pending indicator.
+    let workspace_id = match register_project(
+        &oxy_project_dir,
+        project_name,
+        workspace_id,
+        Some(user.id),
+        Some(ctx.org.id),
+        entity::workspaces::WorkspaceStatus::Cloning,
+        Some(req.namespace_id),
+        Some(repo.clone_url.clone()),
+    )
+    .await
     {
-        let mut cloning = app_state.cloning_workspaces.lock().unwrap();
-        cloning.insert(workspace_id);
-    }
+        Ok(id) => id,
+        Err((status, msg)) => {
+            error!("{}", msg);
+            let _ = std::fs::remove_dir_all(&repo_dir);
+            return Err((status, msg));
+        }
+    };
 
     // Clone the full repository in the background — large repositories can take
     // longer than the global request timeout.
     let clone_url = repo.clone_url.clone();
     let branch = req.branch.clone();
-    let cloning_projects = app_state.cloning_workspaces.clone();
-    let errored_projects = app_state.errored_workspaces.clone();
     let oxy_project_dir_clone = oxy_project_dir.clone();
     tokio::spawn(async move {
         info!(
             "Cloning repository '{}' branch '{}' into {:?}",
             clone_url, branch, repo_dir
         );
-        let clone_result =
-            LocalGitService::clone_or_init(&repo_dir, Some(&clone_url), &branch, Some(&token))
-                .await;
-        match clone_result {
+        let clone_result = default_git_client()
+            .clone_or_init(&repo_dir, Some(&clone_url), &branch, Some(&token))
+            .await;
+        let (new_status, new_error) = match clone_result {
             Ok(()) => {
                 info!("Repository cloned successfully into {:?}", repo_dir);
-                // Verify this is an Oxy project by checking for config.yml.
-                if !oxy_project_dir_clone.join("config.yml").exists() {
+                if oxy_project_dir_clone.join("config.yml").exists() {
+                    (entity::workspaces::WorkspaceStatus::Ready, None)
+                } else {
                     let msg = format!(
                         "Repository '{}' does not appear to be an Oxy project — no config.yml found{}.",
                         clone_url,
@@ -473,254 +557,25 @@ pub async fn setup_github(
                         }
                     );
                     error!("{}", msg);
-                    errored_projects.lock().unwrap().insert(workspace_id, msg);
+                    (entity::workspaces::WorkspaceStatus::Failed, Some(msg))
                 }
             }
             Err(e) => {
+                let msg = format!("Background clone failed: {e}");
                 error!(
                     "Background clone failed for workspace {}: {}",
                     workspace_id, e
                 );
-                // Clean up: remove the empty directory and the stale DB record so
-                // the workspace does not appear as a broken entry in /workspaces.
-                if let Err(rm_err) = std::fs::remove_dir_all(&repo_dir) {
-                    error!("Failed to remove repo_dir {:?}: {}", repo_dir, rm_err);
-                }
-                if let Ok(db) = oxy::database::client::establish_connection().await {
-                    use entity::prelude::Workspaces;
-                    use sea_orm::{EntityTrait, ModelTrait};
-                    if let Ok(Some(record)) = Workspaces::find_by_id(workspace_id).one(&db).await
-                        && let Err(del_err) = record.delete(&db).await
-                    {
-                        error!(
-                            "Failed to delete workspace {} from DB after failed clone: {}",
-                            workspace_id, del_err
-                        );
-                    }
-                }
+                (entity::workspaces::WorkspaceStatus::Failed, Some(msg))
             }
-        }
-        // Remove from cloning set regardless of success/failure.
-        cloning_projects.lock().unwrap().remove(&workspace_id);
-    });
+        };
 
-    Ok(Json(OnboardingResult {
-        workspace_type: "github".to_string(),
-        workspace_id,
-    }))
-}
-
-/// Request body for URL-based GitHub import (local / single-workspace mode).
-#[derive(Deserialize)]
-pub struct GitHubUrlSetupRequest {
-    /// Full git clone URL — HTTPS or SSH (e.g. `https://github.com/acme/repo.git`).
-    pub git_url: String,
-    /// Branch to clone. Defaults to `"main"` when omitted.
-    pub branch: Option<String>,
-    /// Local workspace directory name. Derived from the URL when omitted.
-    pub name: Option<String>,
-    /// Optional subdirectory inside the repository to use as the Oxy workspace root.
-    pub subdir: Option<String>,
-    /// Personal access token. Omit on the first attempt so host credentials are tried first.
-    pub token: Option<String>,
-}
-
-/// Check whether a remote git URL is accessible, without performing a full clone.
-///
-/// Runs `git ls-remote --exit-code --heads <url>` with `GIT_TERMINAL_PROMPT=0`
-/// so that git never hangs waiting for interactive credentials.
-///
-/// When a `token` is provided it is passed via `-c http.extraHeader` so that
-/// it never appears in the process argument list (visible via `ps aux`).
-///
-/// Returns `Ok(())` when the URL is reachable, or an error whose message
-/// contains `"auth"` when authentication was the problem.
-async fn check_remote_access(url: &str, token: Option<&str>) -> Result<(), String> {
-    let mut cmd = Command::new("git");
-    cmd.env("GIT_TERMINAL_PROMPT", "0");
-
-    if let Some(t) = token {
-        // Pass credentials via http.extraHeader — never embeds token in URL or
-        // process args, so it does not appear in `ps aux` output.
-        cmd.args(["-c", &format!("http.extraHeader=Authorization: Bearer {t}")]);
-    }
-
-    cmd.args(["ls-remote", "--exit-code", "--heads", url]);
-
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run git: {e}"))?;
-
-    if output.status.success() {
-        return Ok(());
-    }
-
-    let stderr = String::from_utf8_lossy(&output.stderr).to_lowercase();
-    let is_auth_err = stderr.contains("authentication failed")
-        || stderr.contains("could not read username")
-        || stderr.contains("invalid username or password")
-        || stderr.contains("repository not found")
-        || stderr.contains("not found")
-        || stderr.contains("403")
-        || stderr.contains("401");
-
-    if is_auth_err {
-        Err("auth".to_owned())
-    } else {
-        // Strip any credential-like patterns from stderr before surfacing to caller.
-        let raw = String::from_utf8_lossy(&output.stderr);
-        let sanitized = sanitize_git_stderr(&raw);
-        Err(sanitized)
-    }
-}
-
-/// Remove credential-bearing URL fragments (e.g. `https://token@host`) from git
-/// stderr output so they are never forwarded to the caller or written to logs.
-fn sanitize_git_stderr(stderr: &str) -> String {
-    // Replace `https://<anything>@` with `https://***@` in error messages.
-    let re = regex::Regex::new(r"https://[^@\s]+@").expect("static regex is valid");
-    re.replace_all(stderr.trim(), "https://***@").into_owned()
-}
-
-/// Derive a workspace directory name from a git URL (strips `.git` suffix, takes last path segment).
-fn name_from_git_url(url: &str) -> &str {
-    url.trim_end_matches('/')
-        .trim_end_matches(".git")
-        .rsplit('/')
-        .next()
-        .unwrap_or("workspace")
-}
-
-/// POST /onboarding/github-url — import a repository by URL, using host credentials first.
-///
-/// Call without `token` on the first attempt. If the response is `401 Unauthorized`
-/// the caller should prompt for a personal access token and retry with it set.
-pub async fn setup_github_url(
-    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    State(app_state): State<AppState>,
-    axum::Json(req): axum::Json<GitHubUrlSetupRequest>,
-) -> Result<Json<OnboardingResult>, (StatusCode, String)> {
-    // Fast auth check — avoids a full clone just to discover bad credentials.
-    match check_remote_access(&req.git_url, req.token.as_deref()).await {
-        Ok(()) => {}
-        Err(e) if e == "auth" => {
-            info!(
-                "Remote access check failed with auth error for {}",
-                req.git_url
+        if let Err(e) = update_workspace_status(workspace_id, new_status, new_error).await {
+            error!(
+                "Failed to persist clone status for workspace {}: {}",
+                workspace_id, e
             );
-            return Err((
-                StatusCode::UNAUTHORIZED,
-                "Authentication failed".to_string(),
-            ));
         }
-        Err(e) => {
-            error!("Remote access check failed for {}: {}", req.git_url, e);
-            return Err((StatusCode::BAD_REQUEST, e));
-        }
-    }
-
-    let subdir = req
-        .subdir
-        .as_deref()
-        .map(parse_subdir)
-        .transpose()
-        .map_err(|(status, msg)| {
-            error!("{}", msg);
-            (status, msg)
-        })?
-        .flatten();
-
-    let workspace_name = req
-        .name
-        .as_deref()
-        .unwrap_or_else(|| name_from_git_url(&req.git_url));
-
-    let workspace_id = Uuid::new_v4();
-    let repo_dir = resolve_project_dir(&app_state, workspace_id).map_err(|(s, msg)| {
-        error!("{}", msg);
-        (s, msg)
-    })?;
-
-    let oxy_dir = match &subdir {
-        Some(sub) => {
-            let dir = repo_dir.join(sub);
-            std::fs::create_dir_all(&dir).map_err(|e| {
-                let msg = format!("Failed to create subdir {:?}: {}", dir, e);
-                error!("{}", msg);
-                (StatusCode::INTERNAL_SERVER_ERROR, msg)
-            })?;
-            dir
-        }
-        None => repo_dir.clone(),
-    };
-
-    match register_project(&oxy_dir, workspace_name, workspace_id, Some(user.id)).await {
-        Ok(_) => {}
-        Err((status, msg)) => {
-            error!("{}", msg);
-            let _ = std::fs::remove_dir_all(&repo_dir);
-            return Err((status, msg));
-        }
-    };
-
-    {
-        let mut cloning = app_state.cloning_workspaces.lock().unwrap();
-        cloning.insert(workspace_id);
-    }
-
-    let git_url = req.git_url.clone();
-    let branch = req.branch.clone().unwrap_or_else(|| "main".to_string());
-    let token_owned = req.token.clone();
-    let cloning_set = app_state.cloning_workspaces.clone();
-    let errored_set = app_state.errored_workspaces.clone();
-    let oxy_dir_clone = oxy_dir.clone();
-
-    tokio::spawn(async move {
-        info!(
-            "Cloning '{}' branch '{}' into {:?}",
-            git_url, branch, repo_dir
-        );
-        match LocalGitService::clone_or_init(
-            &repo_dir,
-            Some(&git_url),
-            &branch,
-            token_owned.as_deref(),
-        )
-        .await
-        {
-            Ok(()) => {
-                info!("Cloned workspace {} successfully", workspace_id);
-                // Verify this is an Oxy project by checking for config.yml.
-                if !oxy_dir_clone.join("config.yml").exists() {
-                    let msg = format!(
-                        "Repository '{}' does not appear to be an Oxy project — no config.yml found{}.",
-                        git_url,
-                        if oxy_dir_clone != repo_dir {
-                            format!(" in subdirectory '{}'", oxy_dir_clone.display())
-                        } else {
-                            String::new()
-                        }
-                    );
-                    error!("{}", msg);
-                    errored_set.lock().unwrap().insert(workspace_id, msg);
-                }
-            }
-            Err(e) => {
-                error!("Clone failed for workspace {}: {}", workspace_id, e);
-                if let Err(rm) = std::fs::remove_dir_all(&repo_dir) {
-                    error!("Failed to remove {:?}: {}", repo_dir, rm);
-                }
-                if let Ok(db) = oxy::database::client::establish_connection().await {
-                    use entity::prelude::Workspaces;
-                    use sea_orm::{EntityTrait, ModelTrait};
-                    if let Ok(Some(rec)) = Workspaces::find_by_id(workspace_id).one(&db).await {
-                        let _ = rec.delete(&db).await;
-                    }
-                }
-            }
-        }
-        cloning_set.lock().unwrap().remove(&workspace_id);
     });
 
     Ok(Json(OnboardingResult {
@@ -740,26 +595,17 @@ pub struct ReadinessResponse {
     pub llm_keys_missing: Vec<String>,
 }
 
-#[derive(serde::Deserialize)]
-pub struct ReadinessQuery {
-    pub workspace_id: Option<uuid::Uuid>,
-}
-
-/// GET /onboarding/readiness — check which LLM API keys are needed by the workspace's config.yml.
-///
-/// Accepts an optional `workspace_id` query parameter. When provided, the endpoint loads the
-/// workspace's `config.yml`, collects the `key_var` names from all configured models, and
-/// checks only those variables — so keys that are not used by any model are not surfaced.
-/// When no workspace_id is given (or the config cannot be read), the response contains empty
-/// lists (the caller should treat this as "no LLM keys required by the current config").
+/// GET /{workspace_id}/onboarding-readiness — check which LLM API keys are needed by
+/// the workspace's config.yml. Runs behind workspace_middleware so access to the
+/// workspace is already verified.
 pub async fn onboarding_readiness(
-    _user: AuthenticatedUserExtractor,
-    axum::extract::Query(query): axum::extract::Query<ReadinessQuery>,
+    axum::extract::Path(crate::server::api::middlewares::workspace_context::WorkspacePath {
+        workspace_id,
+    }): axum::extract::Path<crate::server::api::middlewares::workspace_context::WorkspacePath>,
 ) -> Json<ReadinessResponse> {
-    let key_vars = match query.workspace_id {
-        Some(workspace_id) => load_key_vars_from_workspace(workspace_id).await,
-        None => vec![],
-    };
+    // Route is under /{workspace_id}/ behind workspace_middleware, which has
+    // already enforced org membership. No separate access check needed.
+    let key_vars = load_key_vars_from_workspace(workspace_id).await;
 
     let mut llm_keys_present = Vec::new();
     let mut llm_keys_missing = Vec::new();
@@ -783,23 +629,12 @@ pub async fn onboarding_readiness(
 
 /// Resolve the unique `key_var` names from the models configured in a workspace's `config.yml`.
 async fn load_key_vars_from_workspace(workspace_id: uuid::Uuid) -> Vec<String> {
-    use entity::prelude::Workspaces;
-    use oxy::database::client::establish_connection;
-    use sea_orm::EntityTrait;
-
-    let path = async {
-        let db = establish_connection().await?;
-        let ws = Workspaces::find_by_id(workspace_id).one(&db).await?;
-        Ok::<_, anyhow::Error>(ws.and_then(|w| w.path))
-    }
-    .await
-    .unwrap_or(None);
-
-    let Some(path_str) = path else {
-        return vec![];
+    let workspace_path = match resolve_workspace_path(workspace_id).await {
+        Ok(p) => p,
+        Err(_) => return vec![],
     };
 
-    let builder = match ConfigBuilder::new().with_workspace_path(std::path::Path::new(&path_str)) {
+    let builder = match ConfigBuilder::new().with_workspace_path(&workspace_path) {
         Ok(b) => b,
         Err(_) => return vec![],
     };

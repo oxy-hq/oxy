@@ -17,6 +17,7 @@ import {
 import useLookerIntegrations from "@/hooks/api/integrations/useLookerIntegrations";
 import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { FileTreeModel } from "@/types/file";
 import { detectFileType } from "@/utils/fileTypes";
 import { getFileTypeIcon, getObjectName, groupObjectsByType } from "./utils";
@@ -99,6 +100,7 @@ const GroupedObjectsView: React.FC<GroupedObjectsViewProps> = ({
 }) => {
   const grouped = React.useMemo(() => groupObjectsByType(files), [files]);
   const navigate = useNavigate();
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   const {
     integrationName: activeIntegration,
     model: activeModel,
@@ -120,12 +122,14 @@ const GroupedObjectsView: React.FC<GroupedObjectsViewProps> = ({
 
   const handleFileClick = (file: FileTreeModel) => {
     const pathb64 = encodeBase64(file.path);
-    navigate(ROUTES.WORKSPACE(projectId).IDE.FILES.FILE(pathb64));
+    navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.FILES.FILE(pathb64));
   };
 
   const handleExploreClick = (integrationName: string, model: string, exploreName: string) => {
     navigate(
-      ROUTES.WORKSPACE(projectId).IDE.FILES.LOOKER_EXPLORE(integrationName, model, exploreName)
+      ROUTES.ORG(orgSlug)
+        .WORKSPACE(projectId)
+        .IDE.FILES.LOOKER_EXPLORE(integrationName, model, exploreName)
     );
   };
 

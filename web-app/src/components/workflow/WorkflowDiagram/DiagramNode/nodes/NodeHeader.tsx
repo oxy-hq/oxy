@@ -21,6 +21,7 @@ import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
 import type { TaskRun } from "@/services/types";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import {
   type NodeType,
   type TaskConfigWithId,
@@ -125,17 +126,18 @@ const SubWorkflowNavigateButton = ({ task, taskRun }: SubWorkflowNavigateButtonP
   const navigate = useNavigate();
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
 
   const handleClick = () => {
     if (!projectId) return;
 
     const pathb64 = encodeBase64(task.src);
 
-    let workflowPath = ROUTES.WORKSPACE(projectId).WORKFLOW(pathb64).ROOT;
+    let workflowPath = ROUTES.ORG(orgSlug).WORKSPACE(projectId).WORKFLOW(pathb64).ROOT;
 
-    const ideRoute = ROUTES.WORKSPACE(projectId).IDE.ROOT;
+    const ideRoute = ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.ROOT;
     if (location.pathname.startsWith(ideRoute)) {
-      workflowPath = ROUTES.WORKSPACE(projectId).IDE.FILES.FILE(pathb64);
+      workflowPath = ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.FILES.FILE(pathb64);
     }
     navigate({
       pathname: workflowPath,

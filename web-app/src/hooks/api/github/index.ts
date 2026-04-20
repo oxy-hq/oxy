@@ -1,11 +1,10 @@
-export { useConnectNamespaceFromOAuth } from "./useConnectNamespaceFromOAuth";
-export { useCreateGitNamespace } from "./useCreateGitNamespace";
+export { useConnectGitHubAccount } from "./useConnectGitHubAccount";
 export { useCreateInstallationNamespace } from "./useCreateInstallationNamespace";
 export { useCreatePATNamespace } from "./useCreatePATNamespace";
 export { useDeleteGitNamespace } from "./useDeleteGitNamespace";
+export { useDisconnectGitHubAccount } from "./useDisconnectGitHubAccount";
+export { useGitHubAccount } from "./useGitHubAccount";
 export { useGitHubBranchesWithApp } from "./useGitHubBranchesWithApp";
-export { useGitHubInstallAppUrl } from "./useGitHubInstallAppUrl";
 export { useGitHubNamespaces } from "./useGitHubNamespaces";
 export { useGitHubRepositoriesWithApp } from "./useGitHubRepositoriesWithApp";
-export { useMyInstallations } from "./useMyInstallations";
-export { usePickNamespaceInstallation } from "./usePickNamespaceInstallation";
+export { useUserInstallations } from "./useUserInstallations";

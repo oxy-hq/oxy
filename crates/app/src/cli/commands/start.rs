@@ -23,19 +23,16 @@ pub async fn start_database_and_server(args: StartArgs) -> Result<(), OxyError> 
 
         // Also remove the workspaces directory so stale on-disk directories don't
         // conflict with the freshly-emptied database.
-        // In local mode there is no managed workspaces root, so skip this step.
-        if !args.serve.local {
-            let projects_root = get_state_dir().join("workspaces");
-            if projects_root.exists() {
-                println!("🗂️  {} workspaces directory…", "Removing".text());
-                std::fs::remove_dir_all(&projects_root).map_err(|e| {
-                    OxyError::IOError(format!(
-                        "Failed to remove workspaces directory '{}': {e}",
-                        projects_root.display()
-                    ))
-                })?;
-                println!("{}", "   ✓ Workspaces directory removed\n".success());
-            }
+        let projects_root = get_state_dir().join("workspaces");
+        if projects_root.exists() {
+            println!("🗂️  {} workspaces directory…", "Removing".text());
+            std::fs::remove_dir_all(&projects_root).map_err(|e| {
+                OxyError::IOError(format!(
+                    "Failed to remove workspaces directory '{}': {e}",
+                    projects_root.display()
+                ))
+            })?;
+            println!("{}", "   ✓ Workspaces directory removed\n".success());
         }
     } else {
         // Always cleanup existing containers for a fresh start

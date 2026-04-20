@@ -1,4 +1,5 @@
 use crate::cli::ServeArgs;
+use crate::server::serve_mode::ServeMode;
 use axum::handler::Handler;
 use axum::http::HeaderValue;
 use axum::{
@@ -15,7 +16,6 @@ use oxy::{
     state_dir::get_state_dir,
     theme::StyledText,
 };
-use oxy_project::LocalGitService;
 use oxy_shared::errors::OxyError;
 use std::net::SocketAddr;
 use tokio::signal;
@@ -36,13 +36,6 @@ static DIST: Dir = include_dir!("$CARGO_MANIFEST_DIR/dist");
 const ASSETS_CACHE_CONTROL: &str = "public, max-age=31536000, immutable";
 
 pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
-    // In local mode the CWD is already the workspace directory — log it for clarity.
-    if args.local
-        && let Ok(cwd) = std::env::current_dir()
-    {
-        tracing::info!("Local mode: serving workspace from {}", cwd.display());
-    }
-
     // Require OXY_DATABASE_URL to be set
     if std::env::var("OXY_DATABASE_URL").is_err() {
         return Err(OxyError::RuntimeError(
@@ -56,28 +49,8 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     }
 
     println!("serve: running database migrations");
-    run_database_migrations().await?;
+    run_database_migrations(args.enterprise).await?;
     println!("serve: migrations done, finding available port");
-
-    // Initialize local git when running in multi-workspace / cloud mode.
-    // Skipped in local mode: files are already on disk and git is optional.
-    if !args.local
-        && let Ok(workspace_root) = resolve_local_workspace_path()
-    {
-        let repo_url = std::env::var("GIT_REPOSITORY_URL").ok();
-        let branch = std::env::var("GIT_BRANCH").unwrap_or_else(|_| "main".to_string());
-        let token = LocalGitService::get_remote_token().await;
-        if let Err(e) = LocalGitService::clone_or_init(
-            &workspace_root,
-            repo_url.as_deref(),
-            &branch,
-            token.as_deref(),
-        )
-        .await
-        {
-            tracing::warn!("Failed to initialize local git repository: {}", e);
-        }
-    }
 
     // Warn when authentication is enabled but OXY_OWNER is not set.
     // In that case every authenticated user is treated as admin, which is
@@ -86,26 +59,12 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     let auth_configured = std::env::var("GOOGLE_CLIENT_ID").is_ok()
         || std::env::var("OKTA_CLIENT_ID").is_ok()
         || std::env::var("MAGIC_LINK_SECRET").is_ok();
-    let oxy_owner = std::env::var("OXY_OWNER").unwrap_or_default();
-    if auth_configured && oxy_owner.trim().is_empty() {
-        tracing::warn!(
-            "Authentication is enabled but OXY_OWNER is not set — \
-             every authenticated user will be treated as an admin. \
-             Set OXY_OWNER to the email address of the instance owner \
-             to restrict admin access."
-        );
-    }
 
-    // Resolve the workspaces root directory:
-    // - Single-workspace mode (--local flag): no workspaces root — server manages exactly one workspace.
-    // - Default multi-workspace mode: $OXY_STATE_DIR/workspaces/
-    let workspaces_root: Option<std::path::PathBuf> = if args.local {
-        None
-    } else {
+    // Ensure `$OXY_STATE_DIR/workspaces/` exists, migrating the legacy
+    // "projects" directory on first boot. The canonical on-disk layout is
+    // owned by `oxy::adapters::workspace::workspace_root_path`.
+    {
         let state = get_state_dir();
-        // Migrate legacy "projects" directory to "workspaces" if it exists and the
-        // new name does not yet exist.  This is a one-time, best-effort rename so
-        // that existing deployments continue to see their workspaces after upgrade.
         let legacy = state.join("projects");
         let root = state.join("workspaces");
         if legacy.exists()
@@ -120,64 +79,34 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
             );
         }
         std::fs::create_dir_all(&root).ok();
-        Some(root)
-    };
-
-    // Scan the workspaces root and register any discovered workspaces in the DB.
-    // Best-effort: a failure is logged but does not prevent the server from starting.
-    let first_workspace_path: Option<std::path::PathBuf> = if let Some(ref root) = workspaces_root {
-        match scan_and_register_projects(root).await {
-            Ok(first) => first,
-            Err(e) => {
-                tracing::warn!("Workspaces root scan failed: {}", e);
-                None
-            }
-        }
-    } else {
-        // Single-workspace mode: use CWD resolution
-        resolve_local_workspace_path().ok()
-    };
-
-    let active_workspace_path = std::sync::Arc::new(tokio::sync::RwLock::new(first_workspace_path));
-    // Shared across both the public and internal routers so either can update clone/error status.
-    let cloning_workspaces = std::sync::Arc::new(std::sync::Mutex::new(
-        std::collections::HashSet::<uuid::Uuid>::new(),
-    ));
-    let errored_workspaces =
-        std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::<
-            uuid::Uuid,
-            String,
-        >::new()));
+    }
 
     // Retrieve the global observability storage (if initialized) for the API handlers.
     let observability = oxy_observability::global::get_global().cloned();
 
     let _available_port = find_available_port(args.host.clone(), args.port).await?;
-    let app = create_web_application(
-        args.enterprise,
-        args.readonly,
-        args.local,
-        workspaces_root.clone(),
-        active_workspace_path.clone(),
-        cloning_workspaces.clone(),
-        errored_workspaces.clone(),
-        observability.clone(),
-    )
-    .await?;
+    let mode = if args.local {
+        if auth_configured {
+            tracing::info!(
+                "--local: ignoring configured auth providers — all requests will run as the local guest user"
+            );
+        }
+        // Validate that a workspace root is resolvable now, so "no config.yml"
+        // shows up as a startup error rather than a mystery 500 on the first request.
+        let path = resolve_local_workspace_path().map_err(|e| {
+            OxyError::RuntimeError(format!(
+                "--local requires a config.yml in the current directory or a parent: {e}"
+            ))
+        })?;
+        tracing::info!("Local mode: workspace resolved to {}", path.display());
+        ServeMode::Local
+    } else {
+        ServeMode::Cloud
+    };
+    let app = create_web_application(mode, args.enterprise, observability.clone()).await?;
 
     let internal_app = if args.internal_port > 0 {
-        Some(
-            create_internal_application(
-                args.enterprise,
-                args.readonly,
-                workspaces_root,
-                active_workspace_path,
-                cloning_workspaces,
-                errored_workspaces,
-                observability,
-            )
-            .await?,
-        )
+        Some(create_internal_application(args.enterprise, observability).await?)
     } else {
         println!("serve: internal port disabled (internal_port=0)");
         None
@@ -187,98 +116,7 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     serve_application(app, internal_app, args).await
 }
 
-/// Scan `workspaces_root` for subdirectories containing `config.yml` and upsert
-/// corresponding records in the `workspaces` table.  Existing DB records whose
-/// `path` no longer exists on disk are left untouched (they may have been moved).
-/// Returns the path of the most recently opened workspace (by `last_opened_at`),
-/// or any discovered workspace if none have been opened yet.
-async fn scan_and_register_projects(
-    workspaces_root: &std::path::Path,
-) -> Result<Option<std::path::PathBuf>, OxyError> {
-    use entity::prelude::Workspaces;
-    use entity::workspaces;
-    use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set};
-
-    let db = establish_connection()
-        .await
-        .map_err(|e| OxyError::RuntimeError(format!("DB connection failed: {}", e)))?;
-
-    let entries = std::fs::read_dir(workspaces_root).map_err(|e| {
-        OxyError::RuntimeError(format!(
-            "Cannot read workspaces root '{}': {}",
-            workspaces_root.display(),
-            e
-        ))
-    })?;
-
-    let workspaces_root_str = workspaces_root.to_string_lossy().to_string();
-
-    for entry in entries.flatten() {
-        let dir = entry.path();
-        if !dir.is_dir() || !dir.join("config.yml").exists() {
-            continue;
-        }
-
-        let path_str = dir.to_string_lossy().to_string();
-        let name = dir
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "workspace".to_string());
-
-        // Check if a workspace with this path already exists
-        let existing = Workspaces::find()
-            .filter(workspaces::Column::Path.eq(path_str.clone()))
-            .one(&db)
-            .await
-            .map_err(|e| {
-                OxyError::RuntimeError(format!("DB query failed for path '{}': {}", path_str, e))
-            })?;
-
-        if existing.is_none() {
-            // Insert a new workspace record
-            let new_workspace = workspaces::ActiveModel {
-                id: Set(uuid::Uuid::new_v4()),
-                name: Set(name.clone()),
-                workspace_id: Set(uuid::Uuid::nil()),
-                project_repo_id: Set(None),
-                active_branch_id: Set(uuid::Uuid::nil()),
-                created_at: Set(chrono::Utc::now().into()),
-                updated_at: Set(chrono::Utc::now().into()),
-                path: Set(Some(path_str.clone())),
-                last_opened_at: Set(None),
-                created_by: Set(None),
-            };
-            new_workspace.insert(&db).await.map_err(|e| {
-                OxyError::RuntimeError(format!("Failed to insert workspace '{}': {}", path_str, e))
-            })?;
-            tracing::info!("Registered workspace '{}' at '{}'", name, path_str);
-        }
-    }
-
-    // Return the most recently opened workspace whose path lives under workspaces_root.
-    // Falls back to the first workspace found (arbitrary) if none have been opened yet.
-    let most_recent = Workspaces::find()
-        // Use "root/%" (with a literal slash before the wildcard) so only paths
-        // that are actual children of workspaces_root match.  Without the slash,
-        // "root%" would also match sibling directories like "root-extra/…".
-        .filter(
-            workspaces::Column::Path
-                .like(format!("{}/%", workspaces_root_str.trim_end_matches('/'))),
-        )
-        .order_by_desc(workspaces::Column::LastOpenedAt)
-        .one(&db)
-        .await
-        .map_err(|e| {
-            OxyError::RuntimeError(format!("DB query for active workspace failed: {}", e))
-        })?;
-
-    Ok(most_recent
-        .and_then(|p| p.path)
-        .map(std::path::PathBuf::from)
-        .filter(|p| p.exists()))
-}
-
-async fn run_database_migrations() -> Result<(), OxyError> {
+async fn run_database_migrations(enterprise: bool) -> Result<(), OxyError> {
     println!("migrations: establishing database connection (this builds the connection pool)");
     let db = establish_connection()
         .await
@@ -343,29 +181,13 @@ async fn find_available_port(host: String, port: u16) -> Result<u16, OxyError> {
 }
 
 async fn create_web_application(
+    mode: ServeMode,
     enterprise: bool,
-    readonly: bool,
-    local_mode: bool,
-    workspaces_root: Option<std::path::PathBuf>,
-    active_workspace_path: std::sync::Arc<tokio::sync::RwLock<Option<std::path::PathBuf>>>,
-    cloning_workspaces: std::sync::Arc<std::sync::Mutex<std::collections::HashSet<uuid::Uuid>>>,
-    errored_workspaces: std::sync::Arc<
-        std::sync::Mutex<std::collections::HashMap<uuid::Uuid, String>>,
-    >,
     observability: Option<std::sync::Arc<dyn oxy_observability::ObservabilityStore>>,
 ) -> Result<Router, OxyError> {
-    let api_router = crate::server::router::api_router(
-        enterprise,
-        readonly,
-        local_mode,
-        workspaces_root,
-        active_workspace_path,
-        cloning_workspaces,
-        errored_workspaces,
-        observability,
-    )
-    .await
-    .map_err(|e| OxyError::RuntimeError(format!("Failed to create API router: {}", e)))?;
+    let api_router = crate::server::router::api_router(mode, enterprise, observability)
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("Failed to create API router: {}", e)))?;
     let openapi_router = crate::server::router::openapi_router().await;
     println!("create_web_application: openapi_router done, assembling final router");
     let mut openapi_doc = openapi_router.into_openapi().clone();
@@ -408,26 +230,13 @@ async fn create_web_application(
 
 async fn create_internal_application(
     enterprise: bool,
-    readonly: bool,
-    workspaces_root: Option<std::path::PathBuf>,
-    active_workspace_path: std::sync::Arc<tokio::sync::RwLock<Option<std::path::PathBuf>>>,
-    cloning_workspaces: std::sync::Arc<std::sync::Mutex<std::collections::HashSet<uuid::Uuid>>>,
-    errored_workspaces: std::sync::Arc<
-        std::sync::Mutex<std::collections::HashMap<uuid::Uuid, String>>,
-    >,
     observability: Option<std::sync::Arc<dyn oxy_observability::ObservabilityStore>>,
 ) -> Result<Router, OxyError> {
-    let internal_router = crate::server::router::internal_api_router(
-        enterprise,
-        readonly,
-        workspaces_root,
-        active_workspace_path,
-        cloning_workspaces,
-        errored_workspaces,
-        observability,
-    )
-    .await
-    .map_err(|e| OxyError::RuntimeError(format!("Failed to create internal API router: {}", e)))?;
+    let internal_router = crate::server::router::internal_api_router(enterprise, observability)
+        .await
+        .map_err(|e| {
+            OxyError::RuntimeError(format!("Failed to create internal API router: {}", e))
+        })?;
 
     let static_service = service_fn(handle_static_files);
 

@@ -1,7 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
-import { useAuth } from "@/contexts/AuthContext";
 import useCurrentUser from "@/hooks/api/users/useCurrentUser";
 import { useSwitchWorkspaceBranch } from "@/hooks/api/workspaces/useWorkspaces";
 import useCurrentWorkspaceBranch from "@/hooks/useCurrentWorkspaceBranch";
@@ -29,7 +28,6 @@ function toUserSlug(email?: string, name?: string): string {
  */
 export function useSaveToNewBranch() {
   const { workspace, branchName: originalBranch } = useCurrentWorkspaceBranch();
-  const { authConfig } = useAuth();
   const queryClient = useQueryClient();
   const { setCurrentBranch } = useIdeBranch();
   const switchBranch = useSwitchWorkspaceBranch();
@@ -55,8 +53,7 @@ export function useSaveToNewBranch() {
     try {
       await switchBranch.mutateAsync({
         workspaceId: workspace.id,
-        branchName: newBranch,
-        baseBranch: authConfig.base_branch
+        branchName: newBranch
       });
 
       // 2. Save file — if this fails, clean up the orphaned worktree and roll back

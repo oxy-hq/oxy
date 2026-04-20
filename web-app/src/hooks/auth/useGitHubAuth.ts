@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import ROUTES from "@/libs/utils/routes";
 import { AuthService } from "@/services/api";
 import type { AuthResponse, GitHubAuthRequest } from "@/types/auth";
+import { handlePostLoginOrgs } from "./postLoginRedirect";
 
 const GITHUB_AUTH_REDIRECT_URI = `${window.location.origin}/github/callback`;
 const GITHUB_STATE_KEY = "github_oauth_login_state";
@@ -17,7 +18,8 @@ export const useGitHubAuth = () => {
     onSuccess: (data) => {
       sessionStorage.removeItem(GITHUB_STATE_KEY);
       login(data.token, data.user);
-      navigate(ROUTES.ROOT);
+      const destination = handlePostLoginOrgs(data.orgs);
+      navigate(destination);
     },
     onError: (error) => {
       console.error("GitHub auth failed:", error);

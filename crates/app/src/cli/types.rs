@@ -40,13 +40,6 @@ pub struct ServeArgs {
     /// Default is 0.0.0.0 to listen on all interfaces.
     #[clap(long, default_value = "0.0.0.0")]
     pub host: String,
-    /// Prevent file modifications via the API (IDE mode)
-    ///
-    /// When enabled, the server will reject requests that create, modify,
-    /// rename, or delete workspace files via the API. Use this when running
-    /// the server alongside an IDE that owns the files.
-    #[clap(long, default_value_t = false)]
-    pub readonly: bool,
     /// Force HTTP/2 only mode (disable HTTP/1.1)
     ///
     /// When enabled, the server will only accept HTTP/2 connections over TLS.
@@ -79,9 +72,12 @@ pub struct ServeArgs {
     #[clap(long, default_value_t = false)]
     pub enterprise: bool,
 
-    /// Local single-workspace mode: serve the current directory as the only workspace
+    /// Run in local mode: single workspace rooted at the current directory,
+    /// no orgs, guest authentication. Ignores configured auth provider env vars.
     ///
-    /// Git sync is disabled — the workspace files are assumed to already exist on disk.
+    /// WARNING: local mode disables authentication entirely. Do not expose
+    /// a `--local` instance on a non-loopback interface without a reverse
+    /// proxy that restricts access.
     #[clap(long, default_value_t = false)]
     pub local: bool,
 }
@@ -100,4 +96,22 @@ pub struct StartArgs {
     /// troubleshooting or resetting the local environment.
     #[clap(long, default_value_t = false)]
     pub clean: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn local_flag_defaults_to_false() {
+        let args = ServeArgs::parse_from(["oxy"]);
+        assert!(!args.local);
+    }
+
+    #[test]
+    fn local_flag_is_parsed() {
+        let args = ServeArgs::parse_from(["oxy", "--local"]);
+        assert!(args.local);
+    }
 }

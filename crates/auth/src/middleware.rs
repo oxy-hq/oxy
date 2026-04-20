@@ -8,19 +8,22 @@ use std::sync::Arc;
 
 use crate::user::UserService;
 
-use crate::{
-    authenticator::Authenticator, built_in::BuiltInAuthenticator, types::AuthenticatedUser,
-};
-use entity::users::{UserRole, UserStatus};
+use crate::{authenticator::Authenticator, built_in::BuiltInAuthenticator};
+use entity::users::UserStatus;
 
 pub struct AuthState<T> {
     authenticator: Arc<T>,
+    /// When true, auth_middleware short-circuits: it never calls the
+    /// authenticator and injects the local guest user into extensions.
+    /// Set by `AuthState::guest_only()`. Used only by the local-mode router.
+    pub guest_only: bool,
 }
 
 impl<T> Clone for AuthState<T> {
     fn clone(&self) -> Self {
         Self {
             authenticator: Arc::clone(&self.authenticator),
+            guest_only: self.guest_only,
         }
     }
 }
@@ -29,6 +32,17 @@ impl AuthState<BuiltInAuthenticator> {
     pub fn built_in() -> Self {
         Self {
             authenticator: Arc::new(BuiltInAuthenticator::new()),
+            guest_only: false,
+        }
+    }
+
+    /// Returns an `AuthState` that bypasses the authenticator entirely and
+    /// always attaches the local guest user. Only appropriate for the
+    /// local-mode router.
+    pub fn guest_only() -> Self {
+        Self {
+            authenticator: Arc::new(BuiltInAuthenticator::new()),
+            guest_only: true,
         }
     }
 }
@@ -40,6 +54,32 @@ pub async fn auth_middleware<T: Authenticator>(
 ) -> Result<Response, StatusCode> {
     // Allow OPTIONS requests (CORS preflight) to pass through without authentication
     if request.method() == Method::OPTIONS {
+        return Ok(next.run(request).await);
+    }
+
+    // Guest-only mode (local server): never consult the authenticator, always
+    // attach the local guest user. Reuses the existing LOCAL_GUEST_EMAIL
+    // mechanism rather than inventing a new sentinel.
+    if auth_state.guest_only {
+        let identity = crate::types::Identity {
+            email: crate::user::LOCAL_GUEST_EMAIL.to_string(),
+            name: Some("Local User".to_string()),
+            picture: None,
+        };
+        let user = UserService::get_or_create_user(&identity)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to get or create local guest user: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+        if user.status != UserStatus::Active {
+            tracing::warn!(
+                "Local guest user is not active (status: {}) — refusing request",
+                user.status.as_str()
+            );
+            return Err(StatusCode::FORBIDDEN);
+        }
+        request.extensions_mut().insert(user);
         return Ok(next.run(request).await);
     }
 
@@ -107,22 +147,19 @@ pub async fn internal_auth_middleware(
     Ok(next.run(request).await)
 }
 
-pub async fn admin_middleware(
-    request: Request<axum::body::Body>,
-    next: Next,
-) -> Result<Response, StatusCode> {
-    let user = request
-        .extensions()
-        .get::<AuthenticatedUser>()
-        .ok_or(StatusCode::UNAUTHORIZED)?;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    if user.role != UserRole::Admin {
-        tracing::warn!(
-            "Non-admin user {} attempted to access admin route",
-            user.email
-        );
-        return Err(StatusCode::FORBIDDEN);
+    #[test]
+    fn built_in_state_is_not_guest_only() {
+        let state = AuthState::<BuiltInAuthenticator>::built_in();
+        assert!(!state.guest_only);
     }
 
-    Ok(next.run(request).await)
+    #[test]
+    fn guest_only_state_flags_itself() {
+        let state = AuthState::<BuiltInAuthenticator>::guest_only();
+        assert!(state.guest_only);
+    }
 }

@@ -8,6 +8,7 @@ import { useDeleteTestProjectRun, useTestProjectRuns } from "@/hooks/api/tests/u
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import ROUTES from "@/libs/utils/routes";
 import PageHeader from "@/pages/ide/components/PageHeader";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 
 const formatDate = (iso: string) =>
   new Date(iso).toLocaleString(undefined, {
@@ -60,12 +61,13 @@ const Dash = () => <span className='text-muted-foreground text-xs'>—</span>;
 const TestsRunsPage: React.FC = () => {
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   const { data: runs, isLoading } = useTestProjectRuns();
   const deleteRun = useDeleteTestProjectRun();
   const navigate = useNavigate();
 
   const handleView = (runId: string) => {
-    navigate(`${ROUTES.WORKSPACE(projectId).IDE.TESTS.ROOT}?run_id=${runId}`);
+    navigate(`${ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.TESTS.ROOT}?run_id=${runId}`);
   };
 
   return (

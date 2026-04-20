@@ -6,7 +6,7 @@ use sea_orm::{ActiveValue, DbErr, EntityTrait, PaginatorTrait, Set, prelude::*};
 use uuid::Uuid;
 
 use crate::types::{AuthenticatedUser, Identity};
-use entity::users::{UserRole, UserStatus};
+use entity::users::UserStatus;
 
 /// Email address for the built-in local guest user (no-auth local mode).
 /// This user is always granted Owner role so local installs work out of the box.
@@ -48,6 +48,21 @@ pub fn should_be_owner(email: &str) -> bool {
 pub struct UserService;
 
 impl UserService {
+    /// Look up an existing user by the email in the identity. Does not create.
+    /// Used by non-mutating endpoints (e.g. `GET /user`) where an incidental user
+    /// row should not be minted just because someone hit the endpoint.
+    pub async fn find_user_by_identity(
+        identity: &Identity,
+    ) -> Result<Option<AuthenticatedUser>, OxyError> {
+        let connection = establish_connection().await?;
+        let user = Users::find()
+            .filter_by_email(&identity.email)
+            .one(&connection)
+            .await
+            .map_err(|e| OxyError::DBError(format!("Failed to query user: {e}")))?;
+        Ok(user.map(|u| u.into()))
+    }
+
     pub async fn get_or_create_user(identity: &Identity) -> Result<AuthenticatedUser, OxyError> {
         let connection = establish_connection().await?;
 
@@ -58,40 +73,10 @@ impl UserService {
             .await
             .map_err(|e| OxyError::DBError(format!("Failed to query user: {e}")))?
         {
-            // Ensure the OXY_OWNER email always has Owner role in the DB.
-            // This runs on every login so that setting OXY_OWNER and re-logging
-            // in is enough to bootstrap ownership. Never demote an existing Owner.
-            if existing_user.role != UserRole::Owner && should_be_owner(&existing_user.email) {
-                let mut active: users::ActiveModel = existing_user.into();
-                active.role = Set(UserRole::Owner);
-                let updated = active.update(&connection).await.map_err(|e| {
-                    OxyError::DBError(format!("Failed to promote user to admin: {e}"))
-                })?;
-                return Ok(updated.into());
-            }
             return Ok(existing_user.into());
         }
 
-        // User not found, try to create.
-        // The local guest is always Owner. The very first real user to register
-        // becomes Owner so there is always a bootstrap owner without needing
-        // to pre-configure one in config.yml.
-        //
-        // We exclude the built-in LOCAL_GUEST_EMAIL from the count so that
-        // transitioning from no-auth → auth mode still produces an owner:
-        // the guest user pre-exists in the DB, but it is synthetic and should
-        // not prevent the first real user from getting the Owner role.
-        let existing_count = Users::find()
-            .filter(users::Column::Email.ne(LOCAL_GUEST_EMAIL))
-            .count(&connection)
-            .await
-            .unwrap_or(1); // fail-safe: don't grant owner if the count query errors
-        // The very first real user becomes Owner, as does any email matching OXY_OWNER.
-        let initial_role = if existing_count == 0 || should_be_owner(&identity.email) {
-            UserRole::Owner
-        } else {
-            UserRole::Member
-        };
+        // User not found, create new user.
 
         let new_user = users::ActiveModel {
             id: Set(Uuid::new_v4()),
@@ -104,21 +89,14 @@ impl UserService {
             email_verified: Set(true),
             magic_link_token: ActiveValue::not_set(),
             magic_link_token_expires_at: ActiveValue::not_set(),
-            role: Set(initial_role),
             status: Set(UserStatus::Active),
             created_at: ActiveValue::not_set(), // Will use database default
             last_login_at: ActiveValue::not_set(), // Will use database default
-            github_access_token: ActiveValue::not_set(),
         };
 
         match new_user.insert(&connection).await {
             Ok(user) => {
-                tracing::info!(
-                    "Created new user: {} ({}) with role: {}",
-                    user.email,
-                    user.id,
-                    user.role.as_str()
-                );
+                tracing::info!("Created new user: {} ({})", user.email, user.id);
                 Ok(user.into())
             }
             Err(e) if is_unique_violation(&e) => {
@@ -223,29 +201,76 @@ impl UserService {
 
         Ok(())
     }
-
-    pub async fn update_user_role(user_id: Uuid, role: UserRole) -> Result<(), OxyError> {
-        let connection = establish_connection().await?;
-
-        let user = Users::find_by_id(user_id)
-            .one(&connection)
-            .await
-            .map_err(|e| OxyError::DBError(format!("Failed to query user: {e}")))?
-            .ok_or_else(|| OxyError::DBError("User not found".to_string()))?;
-
-        let mut user: users::ActiveModel = user.into();
-        user.role = Set(role);
-
-        user.update(&connection)
-            .await
-            .map_err(|e| OxyError::DBError(format!("Failed to update user role: {e}")))?;
-
-        Ok(())
-    }
 }
 
 /// Check if a database error is a unique constraint violation.
+/// Uses Sea-ORM's structured `SqlErr` rather than string matching so the check
+/// is portable across DB engines.
 fn is_unique_violation(err: &DbErr) -> bool {
-    let err_str = err.to_string().to_lowercase();
-    err_str.contains("duplicate key") || err_str.contains("unique constraint")
+    matches!(
+        err.sql_err(),
+        Some(sea_orm::SqlErr::UniqueConstraintViolation(_))
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_guest_is_always_admin() {
+        assert!(is_local_admin(None, LOCAL_GUEST_EMAIL));
+        assert!(is_local_admin(Some("other@example.com"), LOCAL_GUEST_EMAIL));
+    }
+
+    #[test]
+    fn no_owner_makes_everyone_admin() {
+        assert!(is_local_admin(None, "anyone@example.com"));
+        assert!(is_local_admin(None, "random@test.org"));
+    }
+
+    #[test]
+    fn owner_set_restricts_access() {
+        assert!(is_local_admin(
+            Some("alice@example.com"),
+            "alice@example.com"
+        ));
+        assert!(!is_local_admin(
+            Some("alice@example.com"),
+            "bob@example.com"
+        ));
+    }
+
+    #[test]
+    fn should_be_owner_local_guest() {
+        assert!(should_be_owner(LOCAL_GUEST_EMAIL));
+    }
+
+    #[test]
+    fn should_be_owner_regular_user_without_env() {
+        unsafe {
+            std::env::remove_var("OXY_OWNER");
+        }
+        assert!(!should_be_owner("user@example.com"));
+    }
+
+    #[test]
+    fn should_be_owner_respects_oxy_owner_env() {
+        unsafe {
+            std::env::set_var("OXY_OWNER", "admin@example.com");
+        }
+        assert!(should_be_owner("admin@example.com"));
+        assert!(!should_be_owner("nobody@example.com"));
+        unsafe {
+            std::env::remove_var("OXY_OWNER");
+        }
+    }
+
+    #[test]
+    fn is_unique_violation_negative_on_non_sql_err() {
+        // DbErr variants without a structured SqlErr payload must not be
+        // treated as unique-constraint violations.
+        let err = DbErr::Custom("some non-DB error".to_string());
+        assert!(!is_unique_violation(&err));
+    }
 }

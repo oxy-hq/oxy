@@ -20,66 +20,30 @@ export interface GitHubNamespace {
   name: string;
 }
 
-export interface GitHubNamespacesResponse {
-  installations: GitHubNamespace[];
-}
-
-export interface CreateGitNamespaceRequest {
-  installation_id: string;
-  state: string;
-  code: string;
-}
-
 export interface ProjectStatus {
   required_secrets?: string[];
   is_config_valid: boolean;
   error?: string;
 }
 
-export type RepositorySyncStatus = "idle" | "syncing" | "synced" | "error";
+export type GitHubAccount = {
+  connected: boolean;
+  github_login?: string;
+};
 
-export interface CurrentProject {
-  repository?: GitHubRepository;
-  local_path?: string;
-  sync_status: ProjectSyncStatus;
-}
-
-export type ProjectSyncStatus = "synced" | "pending" | { error: string } | "not_configured";
-
-export interface StoreTokenRequest {
-  token: string;
-}
-
-export interface TokenResponse {
-  success: boolean;
-  message: string;
-}
-
-export interface SelectRepositoryRequest {
-  repository_id: number;
-}
-
-export interface SelectRepositoryResponse {
-  success: boolean;
-  message: string;
-}
-
-export interface ListRepositoriesResponse {
-  repositories: GitHubRepository[];
-}
-
-export interface OAuthInstallation {
+export type UserInstallation = {
   id: number;
-  name: string;
-  owner_type: string;
+  account_login: string;
+  account_type: string;
+};
+
+export interface GitHubCallbackBody {
+  state: string;
+  code?: string;
+  installation_id?: number;
+  setup_action?: string;
 }
 
-export type OAuthConnectResponse =
-  | { status: "connected"; namespace: GitHubNamespace }
-  | { status: "choose"; installations: OAuthInstallation[]; selection_token: string }
-  | { status: "not_installed" };
-
-export interface GitHubAppInstallationRequest {
-  installation_id: string;
-  // app_id field removed: we now use environment variables for app_id
-}
+export type GitHubCallbackResponse =
+  | { flow: "oauth"; login: string }
+  | { flow: "install"; namespace_id: string };

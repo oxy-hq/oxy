@@ -1,8 +1,16 @@
 import { isAxiosError } from "axios";
-import { Loader2, MoreHorizontal, Search, ShieldCheck, UserPlus, Users } from "lucide-react";
+import {
+  Copy,
+  Loader2,
+  MoreHorizontal,
+  Search,
+  ShieldCheck,
+  Trash2,
+  UserPlus,
+  Users
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { UserAvatar } from "@/components/UserAvatar";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,6 +34,13 @@ import {
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/shadcn/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -33,62 +48,58 @@ import {
   TableHeader,
   TableRow
 } from "@/components/ui/shadcn/table";
-import { useAuth } from "@/contexts/AuthContext";
-import { useInvite } from "@/hooks/auth/useInvite";
-import { useAllUsers, useRemoveUser, useUpdateUserRole } from "@/hooks/auth/useUsers";
-import type { UserInfo } from "@/types/auth";
-
-// ─── Permissions ──────────────────────────────────────────────────────────────
-
-type ViewerRole = "owner" | "admin" | "member";
-
-function useCurrentUser(): { user: UserInfo | null; isAdmin: boolean; viewerRole: ViewerRole } {
-  const { getUser, authConfig } = useAuth();
-  let user: UserInfo | null = null;
-  try {
-    user = JSON.parse(getUser() || "null");
-  } catch {
-    // malformed JSON — treat as unauthenticated
-  }
-  // In single-workspace mode or when auth is disabled, treat all users as owner.
-  const noAuth = !authConfig.auth_enabled || !!authConfig.single_workspace;
-  const viewerRole: ViewerRole = noAuth
-    ? "owner"
-    : ((user?.role as ViewerRole | undefined) ?? "member");
-  const isAdmin = noAuth || user?.is_admin === true;
-  return { user, isAdmin, viewerRole };
-}
+import {
+  useCreateInvitation,
+  useOrgInvitations,
+  useOrgMembers,
+  useRemoveMember,
+  useRevokeInvitation,
+  useUpdateMemberRole
+} from "@/hooks/api/organizations";
+import useCurrentUser from "@/hooks/api/users/useCurrentUser";
+import useCurrentOrg from "@/stores/useCurrentOrg";
+import type { OrgMember, OrgRole } from "@/types/organization";
 
 // ─── Invite dialog ────────────────────────────────────────────────────────────
 
 function InviteDialog({
   open,
-  onOpenChange
+  onOpenChange,
+  orgId,
+  viewerRole
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  orgId: string;
+  viewerRole: OrgRole;
 }) {
   const [email, setEmail] = useState("");
-  const { mutate: invite, isPending } = useInvite();
+  const [role, setRole] = useState<OrgRole>("member");
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const createInvitation = useCreateInvitation();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    invite(
-      { email },
-      {
-        onSuccess: () => {
-          toast.success(`Invitation sent to ${email}`);
-          setEmail("");
-          onOpenChange(false);
-        },
-        onError: (err) => {
-          const message = isAxiosError(err)
-            ? (err.response?.data?.message ?? err.message)
-            : err.message;
-          toast.error(message || "Failed to send invitation");
-        }
+    if (!email.trim()) return;
+    setEmailError(null);
+    try {
+      await createInvitation.mutateAsync({ orgId, email: email.trim(), role });
+      toast.success(`Invitation sent to ${email}`);
+      setEmail("");
+      setRole("member");
+      onOpenChange(false);
+    } catch (err) {
+      if (isAxiosError(err) && err.response?.status === 409) {
+        setEmailError("This email is already a member or has a pending invitation.");
+        return;
       }
-    );
+      const message = isAxiosError(err)
+        ? (err.response?.data?.message ?? err.message)
+        : err instanceof Error
+          ? err.message
+          : "Failed to send invitation";
+      setEmailError(message);
+    }
   };
 
   return (
@@ -105,18 +116,41 @@ function InviteDialog({
               type='email'
               placeholder='colleague@company.com'
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                if (emailError) setEmailError(null);
+              }}
               required
               autoFocus
+              aria-invalid={emailError ? true : undefined}
+              aria-describedby={emailError ? "invite-email-error" : undefined}
+              className={emailError ? "border-destructive focus-visible:ring-destructive" : ""}
             />
+            {emailError && (
+              <p id='invite-email-error' className='text-destructive text-sm'>
+                {emailError}
+              </p>
+            )}
+          </div>
+          <div className='space-y-1.5'>
+            <Label htmlFor='invite-role'>Role</Label>
+            <Select value={role} onValueChange={(v) => setRole(v as OrgRole)}>
+              <SelectTrigger id='invite-role'>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {viewerRole === "owner" && <SelectItem value='owner'>Owner</SelectItem>}
+                <SelectItem value='admin'>Admin</SelectItem>
+                <SelectItem value='member'>Member</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className='flex justify-end gap-2'>
             <Button type='button' variant='outline' size='sm' onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type='submit' size='sm' disabled={isPending || !email}>
-              {isPending && <Loader2 className='mr-1.5 h-3.5 w-3.5 animate-spin' />}
-              {isPending ? "Sending…" : "Send invite"}
+            <Button type='submit' size='sm' disabled={!email.trim() || createInvitation.isPending}>
+              {createInvitation.isPending ? "Sending..." : "Send invite"}
             </Button>
           </div>
         </form>
@@ -128,38 +162,54 @@ function InviteDialog({
 // ─── Row actions ──────────────────────────────────────────────────────────────
 
 function MemberRowActions({
-  user,
+  member,
+  orgId,
   viewerRole,
   isSelf,
-  onGrantAdmin,
-  onRevokeAdmin,
-  onRemove,
-  isUpdatingRole,
-  isRemoving
+  ownerCount
 }: {
-  user: UserInfo;
-  viewerRole: ViewerRole;
+  member: OrgMember;
+  orgId: string;
+  viewerRole: OrgRole;
   isSelf: boolean;
-  onGrantAdmin: () => void;
-  onRevokeAdmin: () => void;
-  onRemove: () => void;
-  isUpdatingRole: boolean;
-  isRemoving: boolean;
+  ownerCount: number;
 }) {
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const displayName = user.name || user.email.split("@")[0];
-  const targetRole = user.role as ViewerRole;
+  const updateRole = useUpdateMemberRole();
+  const removeMember = useRemoveMember();
+  const displayName = member.name || member.email.split("@")[0];
+  const isLastOwner = member.role === "owner" && ownerCount <= 1;
 
-  // Owners cannot be managed by anyone.
-  if (targetRole === "owner" || isSelf) return null;
+  if (isSelf || isLastOwner) return null;
 
-  // What this viewer can do to this target:
-  const canGrantAdmin = viewerRole === "owner" && targetRole === "member";
+  const canManage = viewerRole === "owner" || viewerRole === "admin";
+  if (!canManage) return null;
+
+  const canGrantAdmin = viewerRole === "owner" && member.role === "member";
+  const canGrantOwner = viewerRole === "owner" && member.role !== "owner";
   const canRevokeAdmin =
-    (viewerRole === "owner" || viewerRole === "admin") && targetRole === "admin";
-  const canRemove = viewerRole === "owner" || viewerRole === "admin";
+    (viewerRole === "owner" || viewerRole === "admin") && member.role === "admin";
+  const canDemoteToMember = viewerRole === "owner" && member.role !== "member";
+  const canRemove = true;
 
-  if (!canGrantAdmin && !canRevokeAdmin && !canRemove) return null;
+  const handleRoleChange = (role: string) => {
+    updateRole.mutate(
+      { orgId, userId: member.user_id, role },
+      { onError: () => toast.error("Failed to update role") }
+    );
+  };
+
+  const handleRemove = () => {
+    removeMember.mutate(
+      { orgId, userId: member.user_id },
+      {
+        onSuccess: () => toast.success(`${displayName} removed`),
+        onError: () => toast.error("Failed to remove member")
+      }
+    );
+  };
+
+  const isPending = updateRole.isPending || removeMember.isPending;
 
   return (
     <>
@@ -169,9 +219,9 @@ function MemberRowActions({
             variant='ghost'
             size='icon'
             className='h-8 w-8 data-[state=open]:bg-muted'
-            disabled={isUpdatingRole || isRemoving}
+            disabled={isPending}
           >
-            {isUpdatingRole || isRemoving ? (
+            {isPending ? (
               <Loader2 className='h-4 w-4 animate-spin' />
             ) : (
               <MoreHorizontal className='h-4 w-4' />
@@ -180,13 +230,29 @@ function MemberRowActions({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align='end' className='w-44'>
-          {canGrantAdmin && <DropdownMenuItem onClick={onGrantAdmin}>Grant admin</DropdownMenuItem>}
+          {canGrantOwner && member.role !== "owner" && (
+            <DropdownMenuItem onClick={() => handleRoleChange("owner")}>
+              Make owner
+            </DropdownMenuItem>
+          )}
+          {canGrantAdmin && (
+            <DropdownMenuItem onClick={() => handleRoleChange("admin")}>
+              Grant admin
+            </DropdownMenuItem>
+          )}
           {canRevokeAdmin && (
-            <DropdownMenuItem onClick={onRevokeAdmin}>Revoke admin</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => handleRoleChange("member")}>
+              Revoke admin
+            </DropdownMenuItem>
+          )}
+          {canDemoteToMember && member.role !== "member" && !canRevokeAdmin && (
+            <DropdownMenuItem onClick={() => handleRoleChange("member")}>
+              Demote to member
+            </DropdownMenuItem>
           )}
           {canRemove && (
             <>
-              {(canGrantAdmin || canRevokeAdmin) && <DropdownMenuSeparator />}
+              <DropdownMenuSeparator />
               <DropdownMenuItem
                 className='text-destructive focus:text-destructive'
                 onClick={() => setDeleteOpen(true)}
@@ -210,7 +276,7 @@ function MemberRowActions({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className='bg-destructive text-destructive-foreground hover:bg-destructive/90'
-              onClick={onRemove}
+              onClick={handleRemove}
             >
               Remove
             </AlertDialogAction>
@@ -221,32 +287,69 @@ function MemberRowActions({
   );
 }
 
+// ─── Role badge ───────────────────────────────────────────────────────────────
+
+function RoleBadge({ role }: { role: OrgRole }) {
+  if (role === "owner") {
+    return (
+      <Badge
+        variant='outline'
+        className='gap-1 border-amber-400/40 bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400'
+      >
+        <ShieldCheck className='h-3 w-3' />
+        Owner
+      </Badge>
+    );
+  }
+  if (role === "admin") {
+    return (
+      <Badge variant='outline' className='gap-1 border-primary/30 bg-primary/5 text-primary'>
+        <ShieldCheck className='h-3 w-3' />
+        Admin
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant='outline' className='text-muted-foreground'>
+      Member
+    </Badge>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function MembersPage() {
-  const { user: currentUser, isAdmin, viewerRole } = useCurrentUser();
-  const { data, isPending, isError } = useAllUsers();
-  const {
-    mutate: updateRole,
-    variables: updatingRoleVars,
-    isPending: isUpdatingRole
-  } = useUpdateUserRole();
-  const { mutate: removeUser, variables: removingId, isPending: isRemoving } = useRemoveUser();
+  const org = useCurrentOrg((s) => s.org);
+  const viewerRole = useCurrentOrg((s) => s.role) ?? "member";
+  const orgId = org?.id ?? "";
+  const { data: currentUser } = useCurrentUser();
+
+  const { data: members, isPending, isError } = useOrgMembers(orgId);
+  const { data: invitations } = useOrgInvitations(orgId);
+  const revokeInvitation = useRevokeInvitation();
   const [search, setSearch] = useState("");
   const [inviteOpen, setInviteOpen] = useState(false);
 
-  const users = data?.users ?? [];
+  const canManage = viewerRole === "owner" || viewerRole === "admin";
+  const ownerCount = members?.filter((m) => m.role === "owner").length ?? 0;
+  const adminCount = members?.filter((m) => m.role === "admin").length ?? 0;
+  const pendingInvitations = invitations?.filter((inv) => inv.status === "pending") ?? [];
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
-    if (!q) return users;
-    return users.filter(
-      (u) => u.email.toLowerCase().includes(q) || (u.name || "").toLowerCase().includes(q)
+    if (!q || !members) return members ?? [];
+    return members.filter(
+      (m) => m.email.toLowerCase().includes(q) || (m.name || "").toLowerCase().includes(q)
     );
-  }, [users, search]);
+  }, [members, search]);
 
-  const handleSetRole = (user: UserInfo, role: "admin" | "member") => {
-    updateRole({ userId: user.id, role }, { onError: () => toast.error("Failed to update role") });
+  const handleRevoke = async (invitationId: string) => {
+    try {
+      await revokeInvitation.mutateAsync({ orgId, invitationId });
+      toast.success("Invitation revoked");
+    } catch {
+      toast.error("Failed to revoke invitation");
+    }
   };
 
   if (isPending) {
@@ -265,8 +368,6 @@ export default function MembersPage() {
     );
   }
 
-  const adminCount = users.filter((u) => u.is_admin).length;
-
   return (
     <div className='mx-auto w-full max-w-3xl px-6 py-10'>
       {/* Header */}
@@ -274,11 +375,11 @@ export default function MembersPage() {
         <div>
           <h2 className='font-bold text-2xl tracking-tight'>Members</h2>
           <p className='text-muted-foreground text-sm'>
-            {users.length} {users.length === 1 ? "member" : "members"} · {adminCount}{" "}
-            {adminCount === 1 ? "admin" : "admins"}
+            {members?.length ?? 0} {(members?.length ?? 0) === 1 ? "member" : "members"} ·{" "}
+            {adminCount} {adminCount === 1 ? "admin" : "admins"}
           </p>
         </div>
-        {isAdmin && (
+        {canManage && (
           <Button onClick={() => setInviteOpen(true)} size='sm' className='gap-1.5'>
             <UserPlus className='h-4 w-4' />
             Invite member
@@ -290,21 +391,21 @@ export default function MembersPage() {
       <div className='relative mb-4'>
         <Search className='absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground' />
         <Input
-          placeholder='Search members…'
+          placeholder='Search members...'
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className='pl-9'
         />
       </div>
 
-      {/* Table */}
+      {/* Members table */}
       {filtered.length === 0 ? (
         <div className='flex flex-col items-center gap-3 rounded-md border py-20 text-center'>
           <Users className='h-8 w-8 text-muted-foreground/30' />
           <p className='text-muted-foreground text-sm'>
             {search ? `No members match "${search}"` : "No members yet"}
           </p>
-          {!search && isAdmin && (
+          {!search && canManage && (
             <Button
               size='sm'
               variant='outline'
@@ -327,21 +428,17 @@ export default function MembersPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((user) => {
-                const isSelf = user.id === currentUser?.id;
-                const displayName = user.name || user.email.split("@")[0];
+              {filtered.map((member) => {
+                const isSelf = member.user_id === currentUser?.id;
+                const displayName = member.name || member.email.split("@")[0];
 
                 return (
-                  <TableRow key={user.id}>
-                    {/* Identity */}
+                  <TableRow key={member.id}>
                     <TableCell className='px-4 py-3'>
                       <div className='flex items-center gap-3'>
-                        <UserAvatar
-                          name={user.name ?? ""}
-                          email={user.email}
-                          picture={user.picture}
-                          className='size-8 rounded-md'
-                        />
+                        <div className='flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted font-medium text-sm'>
+                          {member.name?.[0]?.toUpperCase() ?? "?"}
+                        </div>
                         <div className='flex flex-col gap-0.5'>
                           <span className='font-medium text-sm leading-none'>
                             {displayName}
@@ -352,48 +449,21 @@ export default function MembersPage() {
                             )}
                           </span>
                           <span className='font-mono text-muted-foreground text-xs'>
-                            {user.email}
+                            {member.email}
                           </span>
                         </div>
                       </div>
                     </TableCell>
-
-                    {/* Role */}
                     <TableCell className='w-32 px-4 py-3'>
-                      {user.role === "owner" ? (
-                        <Badge
-                          variant='outline'
-                          className='gap-1 border-amber-400/40 bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400'
-                        >
-                          <ShieldCheck className='h-3 w-3' />
-                          Owner
-                        </Badge>
-                      ) : user.is_admin ? (
-                        <Badge
-                          variant='outline'
-                          className='gap-1 border-primary/30 bg-primary/5 text-primary'
-                        >
-                          <ShieldCheck className='h-3 w-3' />
-                          Admin
-                        </Badge>
-                      ) : (
-                        <Badge variant='outline' className='text-muted-foreground'>
-                          Member
-                        </Badge>
-                      )}
+                      <RoleBadge role={member.role} />
                     </TableCell>
-
-                    {/* Actions */}
                     <TableCell className='w-12 px-2 py-3 text-right'>
                       <MemberRowActions
-                        user={user}
+                        member={member}
+                        orgId={orgId}
                         viewerRole={viewerRole}
                         isSelf={isSelf}
-                        onGrantAdmin={() => handleSetRole(user, "admin")}
-                        onRevokeAdmin={() => handleSetRole(user, "member")}
-                        onRemove={() => removeUser(user.id)}
-                        isUpdatingRole={isUpdatingRole && updatingRoleVars?.userId === user.id}
-                        isRemoving={isRemoving && removingId === user.id}
+                        ownerCount={ownerCount}
                       />
                     </TableCell>
                   </TableRow>
@@ -404,7 +474,51 @@ export default function MembersPage() {
         </div>
       )}
 
-      <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} />
+      {/* Pending invitations */}
+      {canManage && pendingInvitations.length > 0 && (
+        <div className='mt-8 space-y-3'>
+          <h3 className='font-medium'>Pending Invitations</h3>
+          <div className='divide-y divide-border rounded-lg border border-border'>
+            {pendingInvitations.map((inv) => (
+              <div key={inv.id} className='flex items-center gap-3 px-4 py-3'>
+                <div className='min-w-0 flex-1'>
+                  <div className='truncate text-sm'>{inv.email}</div>
+                  <div className='text-muted-foreground text-xs capitalize'>{inv.role}</div>
+                </div>
+                <div className='text-muted-foreground text-xs'>
+                  Expires {new Date(inv.expires_at).toLocaleDateString()}
+                </div>
+                <Button
+                  variant='ghost'
+                  size='icon'
+                  onClick={async () => {
+                    const inviteUrl = `${window.location.origin}/invite/${inv.token}`;
+                    try {
+                      await navigator.clipboard.writeText(inviteUrl);
+                      toast.success("Invite link copied");
+                    } catch {
+                      toast.error("Failed to copy invite link");
+                    }
+                  }}
+                  title='Copy invite link'
+                >
+                  <Copy className='h-4 w-4 text-muted-foreground' />
+                </Button>
+                <Button variant='ghost' size='icon' onClick={() => handleRevoke(inv.id)}>
+                  <Trash2 className='h-4 w-4 text-muted-foreground' />
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <InviteDialog
+        open={inviteOpen}
+        onOpenChange={setInviteOpen}
+        orgId={orgId}
+        viewerRole={viewerRole}
+      />
     </div>
   );
 }

@@ -14,6 +14,7 @@ import useDeleteFolder from "@/hooks/api/files/useDeleteFolder";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { decodeBase64, encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { FileTreeModel } from "@/types/file";
 
 interface AlertDeleteDialogProps {
@@ -29,6 +30,7 @@ const AlertDeleteDialog = ({ fileTree, visible, setVisible }: AlertDeleteDialogP
   const navigate = useNavigate();
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
 
   const isDir = fileTree.is_dir;
 
@@ -41,7 +43,7 @@ const AlertDeleteDialog = ({ fileTree, visible, setVisible }: AlertDeleteDialogP
       }
       const currentPath = decodeBase64(pathname.split("/").pop() ?? "");
       if (currentPath.startsWith(fileTree.path)) {
-        const ideUri = ROUTES.WORKSPACE(projectId).IDE.ROOT;
+        const ideUri = ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.ROOT;
         navigate(ideUri);
       }
     } catch (error) {

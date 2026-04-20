@@ -26,6 +26,7 @@ import useAddRepositoryFromGitHub from "@/hooks/api/repositories/useAddRepositor
 import useRemoveRepository from "@/hooks/api/repositories/useRemoveRepository";
 import useRepositories from "@/hooks/api/repositories/useRepositories";
 import PageHeader from "@/pages/ide/components/PageHeader";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { Repository } from "@/types/repository";
 
 function AddRepositoryDialog({
@@ -35,6 +36,8 @@ function AddRepositoryDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
+  const { org } = useCurrentOrg();
+  const orgId = org?.id ?? "";
   const addRepo = useAddRepositoryFromGitHub();
   const [namespaceId, setNamespaceId] = useState("");
   const [repoId, setRepoId] = useState<number | null>(null);
@@ -47,9 +50,10 @@ function AddRepositoryDialog({
     isPending: isLoadingRepos,
     refetch: refetchRepos,
     isFetching: isFetchingRepos
-  } = useGitHubRepositoriesWithApp(namespaceId);
+  } = useGitHubRepositoriesWithApp(orgId, namespaceId);
 
   const { data: branches = [], isPending: isLoadingBranches } = useGitHubBranchesWithApp(
+    orgId,
     namespaceId,
     repoName
   );

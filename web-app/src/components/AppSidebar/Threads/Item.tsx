@@ -16,6 +16,7 @@ import useDeleteThread from "@/hooks/api/threads/useDeleteThread";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { ThreadItem } from "@/types/chat";
 
 interface ItemProps {
@@ -28,9 +29,10 @@ const Item = ({ thread }: ItemProps) => {
   const { mutate: deleteThread } = useDeleteThread();
 
   const { project } = useCurrentProjectBranch();
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   const projectId = project.id;
 
-  const threadUri = ROUTES.WORKSPACE(projectId).THREAD(thread.id);
+  const threadUri = ROUTES.ORG(orgSlug).WORKSPACE(projectId).THREAD(thread.id);
   const isActive = location.pathname === threadUri;
 
   const handleDeleteThread = useCallback(() => {
@@ -38,11 +40,11 @@ const Item = ({ thread }: ItemProps) => {
     deleteThread(threadId, {
       onSuccess: () => {
         if (isActive) {
-          navigate(ROUTES.WORKSPACE(projectId).THREADS);
+          navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).THREADS);
         }
       }
     });
-  }, [deleteThread, isActive, navigate, thread.id, projectId]);
+  }, [deleteThread, isActive, navigate, thread.id, orgSlug, projectId]);
 
   return (
     <SidebarMenuSubItem key={thread.id}>

@@ -14,12 +14,14 @@ import useWorkflows from "@/hooks/api/workflows/useWorkflows";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 
 export function Workflows() {
   const [showAll, setShowAll] = useState(false);
   const location = useLocation();
   const { data: workflows, isPending } = useWorkflows();
   const { project } = useCurrentProjectBranch();
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   const projectId = project.id;
 
   const visibleWorkflows = showAll ? workflows : workflows?.slice(0, 5);
@@ -38,7 +40,7 @@ export function Workflows() {
         {!isPending &&
           visibleWorkflows?.map((workflow) => {
             const pathb64 = encodeBase64(workflow.path || "");
-            const workflowUri = ROUTES.WORKSPACE(projectId).WORKFLOW(pathb64).ROOT;
+            const workflowUri = ROUTES.ORG(orgSlug).WORKSPACE(projectId).WORKFLOW(pathb64).ROOT;
             return (
               <SidebarMenuSubItem key={pathb64}>
                 <SidebarMenuSubButton asChild isActive={location.pathname === workflowUri}>

@@ -39,6 +39,18 @@ export function formatDateToHumanReadable(dateString: string): string {
   return dayjs.duration(diffInMilliseconds).humanize();
 }
 
+const MS_PER_DAY = 1000 * 60 * 60 * 24;
+
+export function formatRelativeDate(dateStr: string | null | undefined): string | null {
+  if (!dateStr) return null;
+  const date = new Date(dateStr);
+  const diffDays = Math.floor((Date.now() - date.getTime()) / MS_PER_DAY);
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays} days ago`;
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 export function formatStartingDate(date?: Date) {
   if (!date) {
     return "";

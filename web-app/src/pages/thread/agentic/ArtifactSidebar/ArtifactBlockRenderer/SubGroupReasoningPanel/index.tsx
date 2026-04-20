@@ -12,11 +12,13 @@ import {
   useSelectedMessageReasoning
 } from "@/stores/agentic";
 import { useBlockStore } from "@/stores/block";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 
 const SubGroupReasoningPanel = ({ groupId }: { groupId: string }) => {
   const { setSelectedBlockId } = useSelectedMessageReasoning();
   const { project } = useCurrentProjectBranch();
   const navigate = useNavigate();
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   const isStreaming = useGroupStreaming(groupId);
   const groups = useBlockStore((state) => state.groups);
   const groupBlocks = useBlockStore((state) => state.groupBlocks);
@@ -67,7 +69,9 @@ const SubGroupReasoningPanel = ({ groupId }: { groupId: string }) => {
       <button
         type='button'
         onClick={() =>
-          navigate(ROUTES.WORKSPACE(project.id).WORKFLOW(encodeBase64(sourcePath)).ROOT)
+          navigate(
+            ROUTES.ORG(orgSlug).WORKSPACE(project.id).WORKFLOW(encodeBase64(sourcePath)).ROOT
+          )
         }
         className='flex items-center gap-1 text-muted-foreground text-xs transition-colors hover:text-foreground'
       >

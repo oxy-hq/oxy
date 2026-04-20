@@ -1,6 +1,6 @@
 use axum::extract::State;
 use axum::{
-    Extension, extract,
+    extract,
     http::{HeaderMap, StatusCode},
     response::Json,
 };
@@ -11,24 +11,16 @@ use governor::{
     clock::{Clock, DefaultClock},
 };
 use handlebars::Handlebars;
-use jsonwebtoken::{EncodingKey, Header, encode};
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use once_cell::sync::Lazy;
 use oxy::config::auth::MagicLinkAuth;
-use oxy::config::{ConfigBuilder, resolve_local_workspace_path};
-use oxy_project::LocalGitService;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, PaginatorTrait,
-    QueryFilter, Set,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, Set,
 };
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 use url::Url;
 use uuid::Uuid;
-
-// GIT_HAS_REMOTE and PROTECTED_BRANCHES_FROM_CONFIG were previously process-wide
-// OnceCells, but that caused stale values in multi-project mode when
-// activate_project switched to a different project after the first init.
-// Both values are now computed per-request from resolved_project_path.
 
 // ─── Magic Link Rate Limiter ────────────────────────────────────────────────
 //
@@ -58,17 +50,21 @@ use oxy::{
     config::constants::AUTHENTICATION_SECRET_KEY,
     database::{client::establish_connection, filters::UserQueryFilterExt},
 };
-use oxy_auth::types::AuthenticatedUser;
 use oxy_shared::errors::OxyError;
 
 #[derive(Deserialize)]
 pub struct GoogleAuthRequest {
     pub code: String,
+    /// Opaque token issued by `POST /auth/oauth/state`. Required to defend
+    /// against CSRF-style cross-user auth injection on the OAuth callback.
+    pub state: String,
 }
 
 #[derive(Deserialize)]
 pub struct OktaAuthRequest {
     pub code: String,
+    /// See `GoogleAuthRequest::state`.
+    pub state: String,
 }
 
 #[derive(Deserialize)]
@@ -85,16 +81,25 @@ pub struct MagicLinkVerifyRequest {
 pub struct AuthResponse {
     pub token: String,
     pub user: UserInfo,
+    pub orgs: Vec<OrgInfo>,
 }
 
+#[derive(Serialize)]
+pub struct OrgInfo {
+    pub id: String,
+    pub name: String,
+    pub slug: String,
+    pub role: String,
+}
+
+/// Global profile fields. Role / admin status are per-org and live on
+/// `OrgInfo` in the login response or on `GET /orgs`.
 #[derive(Serialize)]
 pub struct UserInfo {
     pub id: String,
     pub email: String,
     pub name: String,
     pub picture: Option<String>,
-    pub role: String,
-    pub is_admin: bool,
 }
 
 #[derive(Serialize)]
@@ -110,6 +115,77 @@ struct Claims {
     iat: usize,
 }
 
+// ─── OAuth state (CSRF defense) ────────────────────────────────────────────
+//
+// The frontend fetches a signed state token via `POST /auth/oauth/state`,
+// echoes it through the OAuth provider redirect, and sends it back with the
+// code. We verify the HMAC + short expiry before exchanging the code, which
+// prevents an attacker from splicing a captured code into another user's
+// session.
+
+/// Time-to-live for an OAuth state token. Long enough to complete the round
+/// trip through an interactive provider, short enough to limit replay.
+const OAUTH_STATE_TTL_SECS: i64 = 10 * 60;
+
+#[derive(Serialize, Deserialize)]
+struct OAuthStateClaims {
+    /// Random nonce — the state is single-use only in practice because the
+    /// frontend generates a new one per login attempt.
+    nonce: String,
+    /// Marker claim so a JWT intended for user auth cannot be repurposed as
+    /// an OAuth state and vice versa.
+    purpose: String,
+    exp: usize,
+    iat: usize,
+}
+
+const OAUTH_STATE_PURPOSE: &str = "oauth-state";
+
+#[derive(Serialize)]
+pub struct OAuthStateResponse {
+    pub state: String,
+}
+
+pub async fn issue_oauth_state() -> Result<Json<OAuthStateResponse>, StatusCode> {
+    let now = Utc::now();
+    let exp = now + Duration::seconds(OAUTH_STATE_TTL_SECS);
+    let nonce_bytes: [u8; 16] = rand::random();
+    let claims = OAuthStateClaims {
+        nonce: hex::encode(nonce_bytes),
+        purpose: OAUTH_STATE_PURPOSE.to_string(),
+        exp: exp.timestamp() as usize,
+        iat: now.timestamp() as usize,
+    };
+    let token = encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(AUTHENTICATION_SECRET_KEY.as_bytes()),
+    )
+    .map_err(|e| {
+        tracing::error!("Failed to sign OAuth state: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    Ok(Json(OAuthStateResponse { state: token }))
+}
+
+fn verify_oauth_state(state: &str) -> Result<(), StatusCode> {
+    let validation = Validation::default();
+    let data = decode::<OAuthStateClaims>(
+        state,
+        &DecodingKey::from_secret(AUTHENTICATION_SECRET_KEY.as_bytes()),
+        &validation,
+    )
+    .map_err(|e| {
+        tracing::warn!("OAuth state rejected: {}", e);
+        StatusCode::UNAUTHORIZED
+    })?;
+    if data.claims.purpose != OAUTH_STATE_PURPOSE {
+        tracing::warn!("OAuth state has wrong purpose claim");
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    Ok(())
+}
+
 #[derive(Serialize)]
 pub struct AuthConfigResponse {
     pub auth_enabled: bool,
@@ -117,42 +193,11 @@ pub struct AuthConfigResponse {
     pub okta: Option<OktaConfig>,
     pub magic_link: Option<bool>,
     pub enterprise: bool,
-    pub readonly: bool,
-    /// True when no `config.yml` is found — the frontend should redirect to
-    /// the onboarding wizard so the user can set up their first workspace.
-    pub needs_onboarding: bool,
-    /// True when running in single-workspace mode (i.e. `oxy serve --project <dir>`
-    /// was used). Workspace management UI (switcher, /workspaces page) should be
-    /// hidden or disabled when this is true.
-    pub single_workspace: bool,
-    /// True when the workspace directory contains a local git repository.
-    /// Enables the branch UI (create branch, commit, diff).
-    pub local_git: bool,
-    /// True when a remote repository is configured (`GIT_REPOSITORY_URL` is set).
-    /// Shows the Pull button and changes the Push label to "Commit & Push".
-    pub git_remote: bool,
-    /// The default branch name (e.g. "main", "master"). Resolved from
-    /// `git symbolic-ref refs/remotes/origin/HEAD`; falls back to "main".
-    /// Only meaningful when `local_git` is true.
-    pub default_branch: String,
-    /// Branches where saving a file auto-creates a new feature branch instead
-    /// of writing directly.  Configured via `protected_branches` in config.yml;
-    /// defaults to `[default_branch]` when not set.
-    /// Only meaningful when `local_git` is true.
-    pub protected_branches: Vec<String>,
-    /// Fork point for auto-created feature branches.  Configured via
-    /// `base_branch` in config.yml; `None` means "fork from whatever the server
-    /// currently has checked out" (git's default).  Only meaningful when
-    /// `local_git` is true.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub base_branch: Option<String>,
     /// Present when `GITHUB_CLIENT_ID` is set — enables "Login with GitHub".
     pub github: Option<GitHubAuthConfig>,
-    /// Set when `needs_onboarding` is forced true due to an unexpected error (e.g. the
-    /// previously active workspace directory no longer exists on disk). The frontend should
-    /// display this as a toast before showing the setup wizard.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspace_error: Option<String>,
+    /// "local" when the server is running `oxy serve --local`, "cloud" otherwise.
+    /// Frontend uses this to pick a route tree.
+    pub mode: &'static str,
 }
 
 #[derive(Serialize)]
@@ -191,112 +236,7 @@ pub async fn get_config(
         .and_then(|auth| auth.magic_link.as_ref())
         .is_some();
 
-    let auth_enabled = has_google || has_okta || has_magic_link;
-
-    // Resolve the active workspace path: prefer the CWD-based lookup (single-workspace
-    // mode), falling back to active_workspace_path (multi-workspace mode).
-    let resolved_project_path: Option<std::path::PathBuf> = match resolve_local_workspace_path() {
-        Ok(p) => Some(p),
-        Err(_) => {
-            let active = app_state.active_workspace_path.read().await;
-            active.clone()
-        }
-    };
-
-    // local_git is only meaningful in local (non-cloud) mode.
-    // In cloud mode the git lifecycle is managed via project_repo_id.
-    let local_git = resolved_project_path
-        .as_deref()
-        .map(|p| app_state.backend.is_git_enabled(p))
-        .unwrap_or(false);
-
-    // Resolve the default branch (e.g. "main", "master") for the local repo.
-    // Used by the frontend to gate isMainEditMode and the diff-badge guard.
-    let default_branch = if local_git {
-        match resolved_project_path.as_deref() {
-            Some(p) => LocalGitService::get_default_branch(p).await,
-            None => "main".to_string(),
-        }
-    } else {
-        "main".to_string()
-    };
-
-    // Resolve protected_branches and base_branch from config.yml for the active
-    // project.  Computed per-request so switching projects via activate_project
-    // is reflected immediately.  Both fields live under the same config manager,
-    // so we build it once and read both values off it.
-    let (protected_branches, base_branch): (Vec<String>, Option<String>) = if local_git {
-        let manager = match resolved_project_path.as_deref() {
-            Some(p) => match ConfigBuilder::new().with_workspace_path(p) {
-                Ok(builder) => builder.build_with_fallback_config().await.ok(),
-                Err(_) => None,
-            },
-            None => None,
-        };
-        let branches = manager
-            .as_ref()
-            .and_then(|m| m.protected_branches().map(|b| b.to_vec()))
-            .unwrap_or_else(|| vec![default_branch.clone()]);
-        let base = manager
-            .as_ref()
-            .and_then(|m| m.base_branch().map(String::from));
-        (branches, base)
-    } else {
-        (vec![default_branch.clone()], None)
-    };
-
-    // git_remote: true when GIT_REPOSITORY_URL is set OR the repo already has
-    // a configured remote (e.g. cloned manually).
-    let git_remote = {
-        if std::env::var("GIT_REPOSITORY_URL").is_ok() {
-            true
-        } else if local_git {
-            match resolved_project_path.as_deref() {
-                Some(p) => LocalGitService::has_remote(p).await,
-                None => false,
-            }
-        } else {
-            false
-        }
-    };
-
-    // needs_onboarding: use active_workspace_path as the authoritative source.
-    // If no active workspace is set (e.g. after deletion or first run), check the
-    // filesystem as a fallback for single-workspace mode.
-    let (needs_onboarding, workspace_error) = {
-        let active = app_state.active_workspace_path.read().await;
-        match active.as_deref() {
-            // An active workspace directory on disk is enough: the workspace is registered
-            // and may still be cloning (no config.yml yet). Checking config.yml would
-            // incorrectly send users back to /setup while a GitHub clone is in progress.
-            Some(path) => {
-                if path.exists() {
-                    (false, None)
-                } else {
-                    // The previously active workspace directory is gone — surface this as an
-                    // error so the frontend can show a toast before redirecting to setup.
-                    let msg = format!(
-                        "Workspace directory '{}' no longer exists. Please set up a new workspace.",
-                        path.display()
-                    );
-                    (true, Some(msg))
-                }
-            }
-            None => match &app_state.workspaces_root {
-                // Single-workspace mode: still require config.yml (no clone in flight here)
-                None => {
-                    let missing = std::env::current_dir()
-                        .map(|cwd| !cwd.join("config.yml").exists())
-                        .unwrap_or(true);
-                    (missing, None)
-                }
-                // Multi-workspace mode with no active workspace: onboarding needed
-                Some(_) => (true, None),
-            },
-        }
-    };
-
-    let single_workspace = app_state.workspaces_root.is_none();
+    let auth_enabled = (has_google || has_okta || has_magic_link) && !app_state.mode.is_local();
 
     let github_client_id = std::env::var("GITHUB_CLIENT_ID").ok();
 
@@ -307,16 +247,8 @@ pub async fn get_config(
             okta: None,
             magic_link: None,
             enterprise: app_state.enterprise,
-            readonly: app_state.readonly,
-            needs_onboarding,
-            single_workspace,
-            local_git,
-            git_remote,
-            default_branch,
-            protected_branches,
-            base_branch,
             github: github_client_id.map(|client_id| GitHubAuthConfig { client_id }),
-            workspace_error,
+            mode: app_state.mode.label(),
         }));
     }
 
@@ -338,16 +270,8 @@ pub async fn get_config(
         okta: okta_config,
         magic_link: if has_magic_link { Some(true) } else { None },
         enterprise: app_state.enterprise,
-        readonly: app_state.readonly,
-        needs_onboarding,
-        single_workspace,
-        local_git,
-        git_remote,
-        default_branch,
-        protected_branches,
-        base_branch,
         github: github_client_id.map(|client_id| GitHubAuthConfig { client_id }),
-        workspace_error,
+        mode: app_state.mode.label(),
     };
 
     Ok(Json(config))
@@ -394,6 +318,7 @@ pub async fn google_auth(
     headers: HeaderMap,
     extract::Json(google_request): extract::Json<GoogleAuthRequest>,
 ) -> Result<Json<AuthResponse>, StatusCode> {
+    verify_oauth_state(&google_request.state)?;
     let base_url = extract_base_url_from_headers(&headers);
     let user_info = exchange_google_code_for_user_info(&google_request.code, &base_url)
         .await
@@ -448,18 +373,6 @@ pub async fn google_auth(
             })?
         }
         None => {
-            let existing_count = Users::find()
-                .filter(users::Column::Email.ne(oxy_auth::LOCAL_GUEST_EMAIL))
-                .count(&connection)
-                .await
-                .unwrap_or(1);
-            let initial_role = if existing_count == 0 {
-                users::UserRole::Owner
-            } else if oxy_auth::should_be_owner(&user_info.email) {
-                users::UserRole::Owner
-            } else {
-                users::UserRole::Member
-            };
             let new_user = users::ActiveModel {
                 id: Set(Uuid::new_v4()),
                 email: Set(user_info.email.clone()),
@@ -468,21 +381,20 @@ pub async fn google_auth(
                 email_verified: Set(true),
                 magic_link_token: sea_orm::ActiveValue::NotSet,
                 magic_link_token_expires_at: sea_orm::ActiveValue::NotSet,
-                role: Set(initial_role),
                 status: Set(UserStatus::Active),
                 created_at: sea_orm::ActiveValue::NotSet,
                 last_login_at: sea_orm::ActiveValue::NotSet,
-                github_access_token: sea_orm::ActiveValue::NotSet,
             };
 
             insert_user_or_fetch_existing(new_user, &user_info.email, &connection).await?
         }
     };
 
-    let (token, user_info_payload) = finalize_login(user, &connection).await?;
+    let (token, user_info_payload, orgs) = finalize_login(user, &connection).await?;
     Ok(Json(AuthResponse {
         token,
         user: user_info_payload,
+        orgs,
     }))
 }
 
@@ -490,6 +402,7 @@ pub async fn okta_auth(
     headers: HeaderMap,
     extract::Json(okta_request): extract::Json<OktaAuthRequest>,
 ) -> Result<Json<AuthResponse>, StatusCode> {
+    verify_oauth_state(&okta_request.state)?;
     let base_url = extract_base_url_from_headers(&headers);
     let user_info = exchange_okta_code_for_user_info(&okta_request.code, &base_url)
         .await
@@ -532,18 +445,6 @@ pub async fn okta_auth(
             })?
         }
         None => {
-            let existing_count = Users::find()
-                .filter(users::Column::Email.ne(oxy_auth::LOCAL_GUEST_EMAIL))
-                .count(&connection)
-                .await
-                .unwrap_or(1);
-            let initial_role = if existing_count == 0 {
-                users::UserRole::Owner
-            } else if oxy_auth::should_be_owner(&user_info.email) {
-                users::UserRole::Owner
-            } else {
-                users::UserRole::Member
-            };
             let new_user = users::ActiveModel {
                 id: Set(Uuid::new_v4()),
                 email: Set(user_info.email.clone()),
@@ -552,41 +453,42 @@ pub async fn okta_auth(
                 email_verified: Set(true),
                 magic_link_token: sea_orm::ActiveValue::NotSet,
                 magic_link_token_expires_at: sea_orm::ActiveValue::NotSet,
-                role: Set(initial_role),
                 status: Set(UserStatus::Active),
                 created_at: sea_orm::ActiveValue::NotSet,
                 last_login_at: sea_orm::ActiveValue::NotSet,
-                github_access_token: sea_orm::ActiveValue::NotSet,
             };
 
             insert_user_or_fetch_existing(new_user, &user_info.email, &connection).await?
         }
     };
 
-    let (token, user_info_payload) = finalize_login(user, &connection).await?;
+    let (token, user_info_payload, orgs) = finalize_login(user, &connection).await?;
     Ok(Json(AuthResponse {
         token,
         user: user_info_payload,
+        orgs,
     }))
 }
 
 #[derive(Deserialize)]
 pub struct GitHubAuthRequest {
     pub code: String,
+    /// See `GoogleAuthRequest::state`.
+    pub state: String,
 }
 
 pub async fn github_auth(
     headers: HeaderMap,
     extract::Json(payload): extract::Json<GitHubAuthRequest>,
 ) -> Result<Json<AuthResponse>, StatusCode> {
+    verify_oauth_state(&payload.state)?;
     let base_url = extract_base_url_from_headers(&headers);
-    let (user_info, github_access_token) =
-        exchange_github_code_for_user_info(&payload.code, &base_url)
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to exchange GitHub code: {}", e);
-                StatusCode::UNAUTHORIZED
-            })?;
+    let (user_info) = exchange_github_code_for_user_info(&payload.code, &base_url)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to exchange GitHub code: {}", e);
+            StatusCode::UNAUTHORIZED
+        })?;
 
     let connection = establish_connection().await.map_err(|e| {
         tracing::error!("Failed to establish database connection: {}", e);
@@ -620,18 +522,6 @@ pub async fn github_auth(
             })?
         }
         None => {
-            let existing_count = Users::find()
-                .filter(users::Column::Email.ne(oxy_auth::LOCAL_GUEST_EMAIL))
-                .count(&connection)
-                .await
-                .unwrap_or(1);
-            let initial_role = if existing_count == 0 {
-                users::UserRole::Owner
-            } else if oxy_auth::should_be_owner(&user_info.email) {
-                users::UserRole::Owner
-            } else {
-                users::UserRole::Member
-            };
             let new_user = users::ActiveModel {
                 id: Set(Uuid::new_v4()),
                 email: Set(user_info.email.clone()),
@@ -640,36 +530,19 @@ pub async fn github_auth(
                 email_verified: Set(true),
                 magic_link_token: sea_orm::ActiveValue::NotSet,
                 magic_link_token_expires_at: sea_orm::ActiveValue::NotSet,
-                role: Set(initial_role),
                 status: Set(UserStatus::Active),
                 created_at: sea_orm::ActiveValue::NotSet,
                 last_login_at: sea_orm::ActiveValue::NotSet,
-                github_access_token: Set(Some(github_access_token.clone())),
             };
             insert_user_or_fetch_existing(new_user, &user_info.email, &connection).await?
         }
     };
 
-    // Persist the GitHub access token so the repo-connect flow can reuse it
-    // without requiring a second sign-in. Skipped for newly-created users since
-    // the token is already set during INSERT. Best-effort: login still succeeds
-    // even if this update fails.
-    if user.github_access_token.is_none() {
-        let mut active: users::ActiveModel = user.clone().into();
-        active.github_access_token = Set(Some(github_access_token));
-        if let Err(e) = active.update(&connection).await {
-            tracing::warn!(
-                "Failed to store GitHub access token for user {}: {}",
-                user.id,
-                e
-            );
-        }
-    }
-
-    let (token, user_info_payload) = finalize_login(user, &connection).await?;
+    let (token, user_info_payload, orgs) = finalize_login(user, &connection).await?;
     Ok(Json(AuthResponse {
         token,
         user: user_info_payload,
+        orgs,
     }))
 }
 
@@ -694,7 +567,7 @@ struct GitHubEmailEntry {
 async fn exchange_github_code_for_user_info(
     code: &str,
     base_url: &str,
-) -> Result<(OAuthUserInfo, String), OxyError> {
+) -> Result<(OAuthUserInfo), OxyError> {
     let client_id = std::env::var("GITHUB_CLIENT_ID")
         .map_err(|_| OxyError::ConfigurationError("GITHUB_CLIENT_ID not configured".to_string()))?;
     let client_secret = std::env::var("GITHUB_CLIENT_SECRET").map_err(|_| {
@@ -789,20 +662,21 @@ async fn exchange_github_code_for_user_info(
 
     let name = user_resp.name.unwrap_or_else(|| user_resp.login.clone());
 
-    Ok((
-        OAuthUserInfo {
-            email,
-            name,
-            picture: user_resp.avatar_url,
-        },
-        access_token,
-    ))
+    Ok((OAuthUserInfo {
+        email,
+        name,
+        picture: user_resp.avatar_url,
+    }))
 }
 
 /// Check if a database error is a unique constraint violation.
+/// Uses Sea-ORM's structured `SqlErr` rather than string matching so the check
+/// is portable across DB engines.
 fn is_unique_violation(err: &DbErr) -> bool {
-    let err_str = err.to_string().to_lowercase();
-    err_str.contains("duplicate key") || err_str.contains("unique constraint")
+    matches!(
+        err.sql_err(),
+        Some(sea_orm::SqlErr::UniqueConstraintViolation(_))
+    )
 }
 
 /// Insert a new user, handling the race condition where another request may have
@@ -840,44 +714,67 @@ async fn insert_user_or_fetch_existing(
     }
 }
 
-/// Ensure the user has Owner role if `should_be_owner` returns true,
-/// then build the `UserInfo` payload with the correct `is_admin` flag.
+/// Build the auth token, the `UserInfo` payload, and the user's org memberships.
 ///
-/// Call this after every login (Google, Okta, magic link verify) so that:
-/// - Setting `OXY_OWNER` and re-logging in immediately grants Owner role.
-/// - The first real user always gets Owner regardless of which auth provider they use.
+/// Called after every login (Google, Okta, GitHub, magic link verify). Role
+/// and admin status are per-org and appear on `OrgInfo` below — not on
+/// `UserInfo` — so that callers never have to reason about a global role.
 async fn finalize_login(
     user: users::Model,
     connection: &DatabaseConnection,
-) -> Result<(String, UserInfo), StatusCode> {
-    // Promote to Owner if warranted (OXY_OWNER env var or LOCAL_GUEST).
-    // Never demote an existing Owner. Re-login after setting OXY_OWNER is the
-    // bootstrap path to assign ownership without touching the database directly.
-    let user = if user.role != users::UserRole::Owner && oxy_auth::should_be_owner(&user.email) {
-        let mut active: users::ActiveModel = user.into();
-        active.role = Set(users::UserRole::Owner);
-        active.update(connection).await.map_err(|e| {
-            tracing::error!("Failed to promote user to admin: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?
-    } else {
-        user
-    };
-
-    let is_admin = user.role.is_admin_or_above();
+) -> Result<(String, UserInfo, Vec<OrgInfo>), StatusCode> {
     let token = create_auth_token(user.clone()).await.map_err(|e| {
         tracing::error!("Failed to create auth token: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     let user_info = UserInfo {
         id: user.id.to_string(),
-        email: user.email,
-        name: user.name,
-        picture: user.picture,
-        role: user.role.as_str().to_string(),
-        is_admin,
+        email: user.email.clone(),
+        name: user.name.clone(),
+        picture: user.picture.clone(),
     };
-    Ok((token, user_info))
+
+    // Query org memberships for this user
+    use entity::org_members::{self, Entity as OrgMembers};
+    use entity::organizations::{self, Entity as Organizations};
+
+    let memberships = OrgMembers::find()
+        .filter(org_members::Column::UserId.eq(user.id))
+        .all(connection)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to query org memberships: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    let org_ids: Vec<uuid::Uuid> = memberships.iter().map(|m| m.org_id).collect();
+    let orgs = if org_ids.is_empty() {
+        vec![]
+    } else {
+        let org_rows = Organizations::find()
+            .filter(organizations::Column::Id.is_in(org_ids))
+            .all(connection)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to query organizations: {}", e);
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+
+        org_rows
+            .iter()
+            .filter_map(|org| {
+                let membership = memberships.iter().find(|m| m.org_id == org.id)?;
+                Some(OrgInfo {
+                    id: org.id.to_string(),
+                    name: org.name.clone(),
+                    slug: org.slug.clone(),
+                    role: membership.role.as_str().to_string(),
+                })
+            })
+            .collect()
+    };
+
+    Ok((token, user_info, orgs))
 }
 
 pub(super) fn extract_base_url_from_headers(headers: &HeaderMap) -> String {
@@ -1257,18 +1154,6 @@ async fn request_magic_link_inner(
         Some(u) => u, // existing active user — reuse model directly
         None => {
             // Auto-create new user
-            let existing_count = Users::find()
-                .filter(users::Column::Email.ne(oxy_auth::LOCAL_GUEST_EMAIL))
-                .count(&connection)
-                .await
-                .unwrap_or(1);
-            let initial_role = if existing_count == 0 {
-                users::UserRole::Owner
-            } else if oxy_auth::should_be_owner(&req.email) {
-                users::UserRole::Owner
-            } else {
-                users::UserRole::Member
-            };
             let name = req.email.split('@').next().unwrap_or("User").to_string();
             let new_user = users::ActiveModel {
                 id: Set(Uuid::new_v4()),
@@ -1278,11 +1163,9 @@ async fn request_magic_link_inner(
                 email_verified: Set(false),
                 magic_link_token: Set(None),
                 magic_link_token_expires_at: Set(None),
-                role: Set(initial_role),
                 status: Set(UserStatus::Active),
                 created_at: sea_orm::ActiveValue::NotSet,
                 last_login_at: sea_orm::ActiveValue::NotSet,
-                github_access_token: sea_orm::ActiveValue::NotSet,
             };
             match new_user.insert(&connection).await {
                 Ok(inserted) => inserted,
@@ -1384,10 +1267,11 @@ pub async fn verify_magic_link(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let (token, user_info) = finalize_login(user, &connection).await?;
+    let (token, user_info, orgs) = finalize_login(user, &connection).await?;
     Ok(Json(AuthResponse {
         token,
         user: user_info,
+        orgs,
     }))
 }
 
@@ -1441,257 +1325,38 @@ fn build_magic_link_email_html(magic_link_url: &str, to_email: &str) -> Result<S
         .map_err(|e| OxyError::RuntimeError(format!("Failed to render magic link template: {e}")))
 }
 
-// ─── Invite ────────────────────────────────────────────────────────────────
+#[cfg(test)]
+mod mode_field_tests {
+    use super::*;
+    use crate::server::serve_mode::ServeMode;
 
-static INVITE_RATE_LIMITER: Lazy<DefaultKeyedRateLimiter<String>> =
-    Lazy::new(|| RateLimiter::keyed(Quota::per_hour(NonZeroU32::new(5).expect("5 > 0"))));
-
-fn check_invite_rate_limit(email: &str) -> Option<u64> {
-    match INVITE_RATE_LIMITER.check_key(&email.to_lowercase()) {
-        Ok(()) => None,
-        Err(not_until) => {
-            let wait = not_until.wait_time_from(DefaultClock::default().now());
-            Some(wait.as_secs().max(1))
-        }
-    }
-}
-
-#[derive(Deserialize)]
-pub struct InviteRequest {
-    pub email: String,
-}
-
-pub async fn invite_user(
-    Extension(caller): Extension<AuthenticatedUser>,
-    headers: HeaderMap,
-    extract::Json(req): extract::Json<InviteRequest>,
-) -> axum::response::Response {
-    use axum::http::header::RETRY_AFTER;
-    use axum::response::IntoResponse;
-
-    let email = req.email.to_lowercase();
-
-    if !is_valid_email_format(&email) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(MessageResponse {
-                message: "Invalid email address.".to_string(),
-            }),
-        )
-            .into_response();
+    #[test]
+    fn local_mode_serializes() {
+        let response = AuthConfigResponse {
+            auth_enabled: false,
+            google: None,
+            okta: None,
+            magic_link: None,
+            enterprise: false,
+            github: None,
+            mode: ServeMode::Local.label(),
+        };
+        let json = serde_json::to_value(&response).expect("serialize");
+        assert_eq!(json["mode"], "local");
     }
 
-    // Rate limit per target email address.
-    if let Some(retry_after_secs) = check_invite_rate_limit(&email) {
-        let mins = retry_after_secs.div_ceil(60);
-        tracing::warn!("Invite rate limit exceeded for: {}", email);
-        return (
-            StatusCode::TOO_MANY_REQUESTS,
-            [(
-                RETRY_AFTER,
-                axum::http::HeaderValue::from_str(&retry_after_secs.to_string())
-                    .unwrap_or_else(|_| axum::http::HeaderValue::from_static("3600")),
-            )],
-            Json(MessageResponse {
-                message: format!(
-                    "Too many invitations to this address. Please try again in {mins} minute{}.",
-                    if mins == 1 { "" } else { "s" }
-                ),
-            }),
-        )
-            .into_response();
+    #[test]
+    fn cloud_mode_serializes() {
+        let response = AuthConfigResponse {
+            auth_enabled: false,
+            google: None,
+            okta: None,
+            magic_link: None,
+            enterprise: false,
+            github: None,
+            mode: ServeMode::Cloud.label(),
+        };
+        let json = serde_json::to_value(&response).expect("serialize");
+        assert_eq!(json["mode"], "cloud");
     }
-
-    invite_user_inner(caller, headers, email)
-        .await
-        .into_response()
-}
-
-async fn invite_user_inner(
-    caller: AuthenticatedUser,
-    headers: HeaderMap,
-    email: String,
-) -> axum::response::Response {
-    use axum::response::IntoResponse;
-
-    // Respect the magic-link allowlist: invited email must be eligible.
-    let magic_link_config = oxy::config::oxy::get_oxy_config()
-        .ok()
-        .and_then(|c| c.authentication)
-        .and_then(|a| a.magic_link);
-    if let Some(ref cfg) = magic_link_config
-        && !is_email_allowed(&email, cfg)
-    {
-        tracing::info!("Invite attempted for non-allowlisted email: {}", email);
-        return StatusCode::FORBIDDEN.into_response();
-    }
-
-    let connection = match establish_connection().await {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::error!("Failed to establish database connection: {}", e);
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    };
-
-    // Check the existing user record before doing anything else.
-    let existing = match Users::find().filter_by_email(&email).one(&connection).await {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::error!("Failed to query user: {}", e);
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-        }
-    };
-
-    let user_for_update = match existing {
-        Some(u) if u.status == UserStatus::Deleted => {
-            tracing::warn!("Invite attempted for deleted user: {}", email);
-            return StatusCode::FORBIDDEN.into_response();
-        }
-        // Already signed in at least once — tell the caller clearly.
-        Some(u) if u.email_verified => {
-            return (
-                StatusCode::CONFLICT,
-                Json(MessageResponse {
-                    message: "This email address already has an active account.".to_string(),
-                }),
-            )
-                .into_response();
-        }
-        // Invited before but hasn't accepted yet — resend.
-        Some(u) => u,
-        // New user — create the record now.
-        None => {
-            let name = email.split('@').next().unwrap_or("User").to_string();
-            let new_user = users::ActiveModel {
-                id: Set(Uuid::new_v4()),
-                email: Set(email.clone()),
-                name: Set(name),
-                picture: Set(None),
-                email_verified: Set(false),
-                magic_link_token: Set(None),
-                magic_link_token_expires_at: Set(None),
-                role: Set(users::UserRole::Member),
-                status: Set(UserStatus::Active),
-                created_at: sea_orm::ActiveValue::NotSet,
-                last_login_at: sea_orm::ActiveValue::NotSet,
-                github_access_token: sea_orm::ActiveValue::NotSet,
-            };
-            match new_user.insert(&connection).await {
-                Ok(inserted) => inserted,
-                Err(e) if is_unique_violation(&e) => {
-                    match Users::find().filter_by_email(&email).one(&connection).await {
-                        Ok(Some(u)) => u,
-                        Ok(None) => {
-                            tracing::error!("User not found after unique violation: {}", email);
-                            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-                        }
-                        Err(e) => {
-                            tracing::error!("Failed to query user after race condition: {}", e);
-                            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-                        }
-                    }
-                }
-                Err(e) => {
-                    tracing::error!("Failed to create invited user: {}", e);
-                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-                }
-            }
-        }
-    };
-
-    // Generate token and store it
-    let token_bytes: [u8; 32] = rand::random();
-    let token = hex::encode(token_bytes);
-    let expires_at = Utc::now() + Duration::minutes(15);
-
-    let mut active: users::ActiveModel = user_for_update.into();
-    active.magic_link_token = Set(Some(token.clone()));
-    active.magic_link_token_expires_at = Set(Some(expires_at.into()));
-    if let Err(e) = active.update(&connection).await {
-        tracing::error!("Failed to save invitation token: {}", e);
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-    }
-
-    let base_url = extract_base_url_from_headers(&headers);
-    let invited_by = if caller.name.is_empty() {
-        caller.email.clone()
-    } else {
-        caller.name.clone()
-    };
-
-    tokio::spawn(async move {
-        if let Err(e) = send_invitation_email(&email, &token, &base_url, &invited_by).await {
-            tracing::error!("Failed to send invitation email: {}", e);
-        }
-    });
-
-    Json(MessageResponse {
-        message: "Invitation sent.".to_string(),
-    })
-    .into_response()
-}
-
-async fn send_invitation_email(
-    to_email: &str,
-    token: &str,
-    base_url: &str,
-    invited_by: &str,
-) -> Result<(), OxyError> {
-    use crate::emails::{
-        EmailMessage, EmailProvider, local_test::LocalTestEmailProvider, ses::SesEmailProvider,
-    };
-
-    let auth_config = oxy::config::oxy::get_oxy_config()
-        .ok()
-        .and_then(|c| c.authentication)
-        .and_then(|a| a.magic_link);
-
-    let magic_link_config = auth_config.ok_or_else(|| {
-        OxyError::ConfigurationError("Magic link auth not configured".to_string())
-    })?;
-
-    let magic_link_url = format!("{base_url}/auth/magic-link/callback?token={token}");
-    let message = EmailMessage {
-        subject: format!("{invited_by} invited you to Oxy"),
-        html_body: build_invitation_email_html(&magic_link_url, to_email, invited_by)?,
-        text_body: format!(
-            "You've been invited to Oxy\n\n{invited_by} has invited you to join Oxy. Click the link below to accept. For security, this link expires in 15 minutes.\n\n{magic_link_url}\n\nThis invitation was sent to {to_email}. If you weren't expecting this, you can safely ignore this email."
-        ),
-    };
-
-    if std::env::var("MAGIC_LINK_LOCAL_TEST").is_ok() {
-        LocalTestEmailProvider
-            .send(&magic_link_config.from_email, to_email, message)
-            .await
-    } else {
-        SesEmailProvider::new(magic_link_config.aws_region.as_deref())
-            .await
-            .send(&magic_link_config.from_email, to_email, message)
-            .await
-    }
-}
-
-static INVITATION_TEMPLATE: Lazy<Handlebars<'static>> = Lazy::new(|| {
-    let mut hbs = Handlebars::new();
-    hbs.register_template_string("invitation", include_str!("../../emails/invitation.hbs"))
-        .expect("invitation.hbs is valid");
-    hbs
-});
-
-fn build_invitation_email_html(
-    magic_link_url: &str,
-    to_email: &str,
-    invited_by: &str,
-) -> Result<String, OxyError> {
-    let data = serde_json::json!({
-        "magic_link_url": magic_link_url,
-        "to_email": to_email,
-        "invited_by": invited_by,
-        "year": Utc::now().format("%Y").to_string(),
-    });
-
-    INVITATION_TEMPLATE
-        .render("invitation", &data)
-        .map_err(|e| OxyError::RuntimeError(format!("Failed to render invitation template: {e}")))
 }

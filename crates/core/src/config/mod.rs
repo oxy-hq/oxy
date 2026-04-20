@@ -318,8 +318,3 @@ pub fn resolve_local_workspace_path() -> Result<PathBuf, OxyError> {
         "Could not find config.yml".to_string(),
     ))
 }
-
-/// Resolve the path to the semantics directory within the local project
-pub fn resolve_semantics_dir() -> Result<PathBuf, OxyError> {
-    Ok(resolve_local_workspace_path()?.join("semantics"))
-}

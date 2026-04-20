@@ -38,6 +38,7 @@ import useSaveFile from "@/hooks/api/files/useSaveFile";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { FileTreeModel } from "@/types/file";
 
 type ObjectType = "agent" | "agentic" | "workflow" | "view" | "topic" | "app" | "test";
@@ -171,6 +172,7 @@ const NewObjectButton: React.FC<NewObjectButtonProps> = ({ disabled }) => {
     }
   }, [dialogOpen]);
   const { project } = useCurrentProjectBranch();
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   const createFile = useCreateFile();
   const saveFile = useSaveFile();
   const navigate = useNavigate();
@@ -244,7 +246,7 @@ const NewObjectButton: React.FC<NewObjectButtonProps> = ({ disabled }) => {
       setFileName("");
 
       // Navigate to the file
-      navigate(ROUTES.WORKSPACE(project.id).IDE.FILES.FILE(pathb64));
+      navigate(ROUTES.ORG(orgSlug).WORKSPACE(project.id).IDE.FILES.FILE(pathb64));
     } catch (err) {
       toast.error("Failed to create file", {
         description: err instanceof Error ? err.message : "There was a problem creating the file."

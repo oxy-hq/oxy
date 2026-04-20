@@ -33,15 +33,32 @@ impl WorkspaceProvider {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, EnumIter, DeriveActiveEnum)]
+#[sea_orm(rs_type = "String", db_type = "String(StringLen::N(20))")]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceStatus {
+    #[sea_orm(string_value = "ready")]
+    Ready,
+    #[sea_orm(string_value = "cloning")]
+    Cloning,
+    #[sea_orm(string_value = "failed")]
+    Failed,
+}
+
+impl Default for WorkspaceStatus {
+    fn default() -> Self {
+        Self::Ready
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "workspaces")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
     pub name: String,
-    pub workspace_id: Uuid,
-    pub project_repo_id: Option<Uuid>,
-    pub active_branch_id: Uuid,
+    pub git_namespace_id: Option<Uuid>,
+    pub git_remote_url: Option<String>,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
     /// Filesystem path to the workspace directory (contains config.yml).
@@ -50,23 +67,49 @@ pub struct Model {
     pub last_opened_at: Option<DateTimeWithTimeZone>,
     /// User who created this workspace. Null for workspaces created before this field was added.
     pub created_by: Option<Uuid>,
+    /// Organization this workspace belongs to. Null for workspaces created before multi-tenancy.
+    pub org_id: Option<Uuid>,
+    pub status: WorkspaceStatus,
+    pub error: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(
-        belongs_to = "super::workspace_repos::Entity",
-        from = "Column::ProjectRepoId",
-        to = "super::workspace_repos::Column::Id",
+        belongs_to = "super::git_namespaces::Entity",
+        from = "Column::GitNamespaceId",
+        to = "super::git_namespaces::Column::Id",
         on_update = "NoAction",
         on_delete = "SetNull"
     )]
-    WorkspaceRepos,
+    GitNamespaces,
+    #[sea_orm(
+        belongs_to = "super::organizations::Entity",
+        from = "Column::OrgId",
+        to = "super::organizations::Column::Id",
+        on_update = "NoAction",
+        on_delete = "Cascade"
+    )]
+    Organizations,
+    #[sea_orm(has_many = "super::workspace_members::Entity")]
+    WorkspaceMembers,
 }
 
-impl Related<super::workspace_repos::Entity> for Entity {
+impl Related<super::git_namespaces::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::WorkspaceRepos.def()
+        Relation::GitNamespaces.def()
+    }
+}
+
+impl Related<super::organizations::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Organizations.def()
+    }
+}
+
+impl Related<super::workspace_members::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::WorkspaceMembers.def()
     }
 }
 

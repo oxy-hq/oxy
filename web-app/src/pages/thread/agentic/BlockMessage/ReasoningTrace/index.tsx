@@ -1,5 +1,4 @@
 import { useCallback, useMemo } from "react";
-import { useAuth } from "@/contexts/AuthContext";
 import useSaveAutomationMutation from "@/hooks/api/workflows/useSaveAutomationMutation";
 import useWorkflows from "@/hooks/api/workflows/useWorkflows";
 import { cn } from "@/libs/shadcn/utils";
@@ -55,7 +54,6 @@ const ReasoningTrace = ({
   onAutomationGenerated,
   onStepHover
 }: ReasoningTraceProps) => {
-  const { authConfig } = useAuth();
   const { selectBlock } = useSelectedMessageReasoning();
   const isStreaming = useMessageStreaming(runInfo);
   const steps = useMessageReasoningSteps(runInfo);
@@ -102,8 +100,7 @@ const ReasoningTrace = ({
   }, [getTaskThread, threadId, runInfo, onAutomationGenerated, triggerSaveAutomation, isPending]);
 
   const isComplete = !isStreaming && steps.length > 0;
-  const canAutomate =
-    !automationGenerated && isComplete && !hasRouteWithGroup(steps) && !authConfig.readonly;
+  const canAutomate = !automationGenerated && isComplete && !hasRouteWithGroup(steps);
 
   const [collapsed, setCollapsed] = useAutoCollapse(isStreaming, steps.length > 0);
 

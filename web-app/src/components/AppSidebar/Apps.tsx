@@ -12,11 +12,13 @@ import useApps from "@/hooks/api/apps/useApps";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 
 export function Apps() {
   const location = useLocation();
   const { data: apps, isPending } = useApps();
   const { project } = useCurrentProjectBranch();
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   const projectId = project.id;
 
   return (
@@ -33,7 +35,7 @@ export function Apps() {
         {!isPending &&
           apps?.map((app) => {
             const pathb64 = encodeBase64(app.path);
-            const appUri = ROUTES.WORKSPACE(projectId).APP(pathb64);
+            const appUri = ROUTES.ORG(orgSlug).WORKSPACE(projectId).APP(pathb64);
             return (
               <SidebarMenuSubItem key={pathb64}>
                 <SidebarMenuSubButton asChild isActive={location.pathname === appUri}>

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/shadcn/button";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 
 type WorkflowPageHeaderProps = {
   path: string;
@@ -17,6 +18,7 @@ const WorkflowPageHeader: React.FC<WorkflowPageHeaderProps> = ({ path, runId }) 
   const pathb64 = encodeBase64(path);
   const navigate = useNavigate();
   const { project } = useCurrentProjectBranch();
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
 
   return (
     <PageHeader className='items-center border-border border-b-1'>
@@ -34,7 +36,7 @@ const WorkflowPageHeader: React.FC<WorkflowPageHeaderProps> = ({ path, runId }) 
             size='sm'
             variant='ghost'
             onClick={() => {
-              const fileUri = ROUTES.WORKSPACE(project.id).IDE.FILES.FILE(pathb64);
+              const fileUri = ROUTES.ORG(orgSlug).WORKSPACE(project.id).IDE.FILES.FILE(pathb64);
               navigate(fileUri);
             }}
           >

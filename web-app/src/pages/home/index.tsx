@@ -8,6 +8,7 @@ import useAgents from "@/hooks/api/agents/useAgents";
 import useDatabases from "@/hooks/api/databases/useDatabases";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 
 const getGreeting = () => {
   const hour = new Date().getHours();
@@ -18,6 +19,7 @@ const getGreeting = () => {
 
 const ProjectSetupToast = () => {
   const { project } = useCurrentProjectBranch();
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   const { data: agents = [], isSuccess: agentsLoaded } = useAgents();
   const { data: databases = [], isSuccess: dbLoaded } = useDatabases();
   const [dismissed, setDismissed] = useState(false);
@@ -29,7 +31,7 @@ const ProjectSetupToast = () => {
   if (hasAgents && hasDatabases) return null;
   if (dismissed) return null;
 
-  const routes = ROUTES.WORKSPACE(project.id);
+  const routes = ROUTES.ORG(orgSlug).WORKSPACE(project.id);
 
   return (
     <div className='fade-in slide-in-from-top-2 fixed top-4 right-4 z-50 w-80 animate-in duration-300'>

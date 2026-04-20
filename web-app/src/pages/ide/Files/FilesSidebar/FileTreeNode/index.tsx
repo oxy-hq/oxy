@@ -13,7 +13,6 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem
 } from "@/components/ui/shadcn/sidebar";
-import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { cn } from "@/libs/shadcn/utils";
 import { SIDEBAR_REVEAL_FILE } from "@/pages/ide/Files/FilesSidebar";
 import type { FileTreeModel } from "@/types/file";
@@ -41,7 +40,6 @@ const FileTreeNode = ({
 export default FileTreeNode;
 
 const DirNode = ({ fileTree, activePath }: { fileTree: FileTreeModel; activePath?: string }) => {
-  const { isReadOnly } = useCurrentProjectBranch();
   const [isContextMenuOpen, setIsContextMenuOpen] = React.useState(false);
   const [isEditing, setIsEditing] = React.useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = React.useState(false);
@@ -77,25 +75,21 @@ const DirNode = ({ fileTree, activePath }: { fileTree: FileTreeModel; activePath
   }, [activePath, fileTree.path]);
 
   const handleRename = () => {
-    if (isReadOnly) return;
     setIsEditing(true);
   };
 
   const handleDelete = () => {
-    if (isReadOnly) return;
     setPendingDelete(true);
     setIsContextMenuOpen(false);
   };
 
   const handleCreateFile = () => {
-    if (isReadOnly) return;
     setCreationType("file");
     setIsCreating(true);
     setIsOpen(true);
   };
 
   const handleCreateFolder = () => {
-    if (isReadOnly) return;
     setCreationType("folder");
     setIsCreating(true);
     setIsOpen(true);
@@ -152,7 +146,7 @@ const DirNode = ({ fileTree, activePath }: { fileTree: FileTreeModel; activePath
 
             {isOpen && (
               <SidebarMenuSub className='ml-[15px]'>
-                {isCreating && !isReadOnly && (
+                {isCreating && (
                   <NewNode
                     ref={newItemInputRef}
                     creationType={creationType}
@@ -186,31 +180,22 @@ const DirNode = ({ fileTree, activePath }: { fileTree: FileTreeModel; activePath
             }
           }}
         >
-          {!isReadOnly && (
-            <>
-              <ContextMenuItem className='cursor-pointer' onClick={handleCreateFile}>
-                <FilePlus />
-                <span>New File</span>
-              </ContextMenuItem>
-              <ContextMenuItem className='cursor-pointer' onClick={handleCreateFolder}>
-                <FolderPlus />
-                <span>New Folder</span>
-              </ContextMenuItem>
-              <ContextMenuItem className='cursor-pointer' onClick={handleRename}>
-                <Pencil />
-                <span>Rename</span>
-              </ContextMenuItem>
-              <ContextMenuItem className='cursor-pointer text-destructive' onClick={handleDelete}>
-                <Trash2 />
-                <span>Delete</span>
-              </ContextMenuItem>
-            </>
-          )}
-          {isReadOnly && (
-            <ContextMenuItem disabled>
-              <span className='text-muted-foreground'>Read-only mode</span>
-            </ContextMenuItem>
-          )}
+          <ContextMenuItem className='cursor-pointer' onClick={handleCreateFile}>
+            <FilePlus />
+            <span>New File</span>
+          </ContextMenuItem>
+          <ContextMenuItem className='cursor-pointer' onClick={handleCreateFolder}>
+            <FolderPlus />
+            <span>New Folder</span>
+          </ContextMenuItem>
+          <ContextMenuItem className='cursor-pointer' onClick={handleRename}>
+            <Pencil />
+            <span>Rename</span>
+          </ContextMenuItem>
+          <ContextMenuItem className='cursor-pointer text-destructive' onClick={handleDelete}>
+            <Trash2 />
+            <span>Delete</span>
+          </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
     </div>

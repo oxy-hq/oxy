@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import ROUTES from "@/libs/utils/routes";
 import { AuthService } from "@/services/api";
 import type { AuthResponse, OktaAuthRequest } from "@/types/auth";
+import { handlePostLoginOrgs } from "./postLoginRedirect";
 
 const OKTA_REDIRECT_URI = `${window.location.origin}/auth/okta/callback`;
 const OKTA_STATE_KEY = "okta_oauth_state";
@@ -18,7 +19,8 @@ export const useOktaAuth = () => {
       // Clear state after successful authentication
       sessionStorage.removeItem(OKTA_STATE_KEY);
       login(data.token, data.user);
-      navigate(ROUTES.ROOT);
+      const destination = handlePostLoginOrgs(data.orgs);
+      navigate(destination);
     },
     onError: (error) => {
       console.error("Okta auth failed:", error);

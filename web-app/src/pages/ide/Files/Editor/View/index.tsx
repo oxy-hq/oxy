@@ -35,11 +35,11 @@ const ViewExplorer = () => {
 };
 
 const ViewEditor = () => {
-  const { pathb64, isReadOnly } = useEditorContext();
+  const { pathb64 } = useEditorContext();
 
   return (
     <ViewExplorerProvider>
-      <EditorPreview pathb64={pathb64} isReadOnly={isReadOnly} explorer={<ViewExplorer />} />
+      <EditorPreview pathb64={pathb64} explorer={<ViewExplorer />} />
     </ViewExplorerProvider>
   );
 };

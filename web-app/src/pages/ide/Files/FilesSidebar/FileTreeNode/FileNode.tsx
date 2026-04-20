@@ -25,6 +25,7 @@ import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { FileTreeModel } from "@/types/file";
 import { detectFileType, FileType } from "@/utils/fileTypes";
 import { SIDEBAR_REVEAL_FILE } from "..";
@@ -64,14 +65,18 @@ const getFileIcon = (path: string) => {
 };
 
 const FileNode = ({ fileTree, activePath }: { fileTree: FileTreeModel; activePath?: string }) => {
-  const { project, isReadOnly } = useCurrentProjectBranch();
+  const { project } = useCurrentProjectBranch();
   const projectId = project.id;
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
 
   const { pathname } = useLocation();
   const FileIcon = getFileIcon(fileTree.path);
   const isActive = activePath
     ? activePath === fileTree.path
-    : pathname === ROUTES.WORKSPACE(projectId || "").IDE.FILES.FILE(encodeBase64(fileTree.path));
+    : pathname ===
+      ROUTES.ORG(orgSlug)
+        .WORKSPACE(projectId || "")
+        .IDE.FILES.FILE(encodeBase64(fileTree.path));
 
   const [isContextMenuOpen, setIsContextMenuOpen] = React.useState(false);
   const [isEditing, setIsEditing] = React.useState(false);
@@ -81,17 +86,17 @@ const FileNode = ({ fileTree, activePath }: { fileTree: FileTreeModel; activePat
 
   const itemRef = React.useRef<HTMLLIElement | null>(null);
   const handleRename = () => {
-    if (isReadOnly) return;
     setIsEditing(true);
   };
 
   const handleDelete = () => {
-    if (isReadOnly) return;
     setPendingDelete(true);
     setIsContextMenuOpen(false);
   };
 
-  const fileUri = ROUTES.WORKSPACE(projectId).IDE.FILES.FILE(encodeBase64(fileTree.path));
+  const fileUri = ROUTES.ORG(orgSlug)
+    .WORKSPACE(projectId)
+    .IDE.FILES.FILE(encodeBase64(fileTree.path));
   // Scroll into view when this file becomes active
   React.useEffect(() => {
     if (isActive && itemRef.current) {
@@ -179,23 +184,14 @@ const FileNode = ({ fileTree, activePath }: { fileTree: FileTreeModel; activePat
             }
           }}
         >
-          {!isReadOnly && (
-            <>
-              <ContextMenuItem className='cursor-pointer' onClick={handleRename}>
-                <Pencil />
-                <span>Rename</span>
-              </ContextMenuItem>
-              <ContextMenuItem className='cursor-pointer text-destructive' onClick={handleDelete}>
-                <Trash2 />
-                <span>Delete</span>
-              </ContextMenuItem>
-            </>
-          )}
-          {isReadOnly && (
-            <ContextMenuItem disabled>
-              <span className='text-muted-foreground'>Read-only mode</span>
-            </ContextMenuItem>
-          )}
+          <ContextMenuItem className='cursor-pointer' onClick={handleRename}>
+            <Pencil />
+            <span>Rename</span>
+          </ContextMenuItem>
+          <ContextMenuItem className='cursor-pointer text-destructive' onClick={handleDelete}>
+            <Trash2 />
+            <span>Delete</span>
+          </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
     </>

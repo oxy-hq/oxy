@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 
 enum SidebarViewMode {
   FILES = "files",
@@ -40,8 +41,9 @@ const Sidebar: React.FC = () => {
   const { authConfig } = useAuth();
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
 
-  const filesRoot = ROUTES.WORKSPACE(projectId).IDE.FILES.ROOT;
+  const filesRoot = ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.FILES.ROOT;
   const currentViewMode = getViewModeFromPath(location.pathname, filesRoot);
 
   const handleNavigate = (mode: SidebarViewMode) => {
@@ -50,16 +52,16 @@ const Sidebar: React.FC = () => {
         navigate(filesRoot);
         break;
       case SidebarViewMode.OBSERVABILITY:
-        navigate(ROUTES.WORKSPACE(projectId).IDE.OBSERVABILITY.TRACES);
+        navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.OBSERVABILITY.TRACES);
         break;
       case SidebarViewMode.DATABASE:
-        navigate(ROUTES.WORKSPACE(projectId).IDE.DATABASE.ROOT);
+        navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.DATABASE.ROOT);
         break;
       case SidebarViewMode.TESTS:
-        navigate(ROUTES.WORKSPACE(projectId).IDE.TESTS.ROOT);
+        navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.TESTS.ROOT);
         break;
       case SidebarViewMode.SETTINGS:
-        navigate(ROUTES.WORKSPACE(projectId).IDE.SETTINGS.DATABASES);
+        navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.SETTINGS.DATABASES);
         break;
     }
   };

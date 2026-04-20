@@ -1,0 +1,71 @@
+//! Integration coverage for `api_router(ServeMode::Local)`.
+//!
+//! We drive the router via `tower::ServiceExt::oneshot` — no HTTP listener,
+//! and the requests exercised below do not reach the DB.
+
+use axum::body::Body;
+use axum::http::{Request, StatusCode};
+use oxy_app::server::router::api_router;
+use oxy_app::server::serve_mode::ServeMode;
+use tower::ServiceExt;
+
+#[tokio::test]
+async fn local_router_returns_404_for_organization_routes() {
+    let router = api_router(ServeMode::Local, false, None)
+        .await
+        .expect("build router");
+    for path in [
+        "/organizations",
+        "/organizations/acme",
+        "/organizations/acme/members",
+        "/organizations/acme/invitations",
+    ] {
+        let req = Request::builder().uri(path).body(Body::empty()).unwrap();
+        let resp = router
+            .clone()
+            .oneshot(req)
+            .await
+            .expect("oneshot succeeded");
+        assert_eq!(
+            resp.status(),
+            StatusCode::NOT_FOUND,
+            "{} should be absent in local mode, got {}",
+            path,
+            resp.status()
+        );
+    }
+}
+
+#[tokio::test]
+async fn local_router_returns_404_for_github_namespace_routes() {
+    let router = api_router(ServeMode::Local, false, None)
+        .await
+        .expect("build router");
+    for path in ["/github/namespaces", "/github/namespaces/pat"] {
+        let req = Request::builder().uri(path).body(Body::empty()).unwrap();
+        let resp = router
+            .clone()
+            .oneshot(req)
+            .await
+            .expect("oneshot succeeded");
+        assert_eq!(
+            resp.status(),
+            StatusCode::NOT_FOUND,
+            "{} should be absent in local mode",
+            path
+        );
+    }
+}
+
+#[tokio::test]
+async fn local_router_has_public_liveness_route() {
+    // Use /live instead of /health: /health returns 503 when DB is unreachable
+    // (which is the case in unit tests); /live is the unconditional liveness
+    // endpoint and always returns 200.
+    let router = api_router(ServeMode::Local, false, None)
+        .await
+        .expect("build router");
+    let req = Request::builder().uri("/live").body(Body::empty()).unwrap();
+    let resp = router.oneshot(req).await.expect("oneshot");
+    assert_eq!(resp.status(), StatusCode::OK);
+}

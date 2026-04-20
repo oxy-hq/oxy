@@ -18,6 +18,7 @@ import {
 import useThreads from "@/hooks/api/threads/useThreads";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import ClearAllThreadsDialog from "./ClearAllThreadsDialog";
 import ThreadItem from "./Item";
 
@@ -26,12 +27,13 @@ const SIDEBAR_THREADS_LIMIT = 50;
 const Threads = () => {
   const location = useLocation();
   const { project } = useCurrentProjectBranch();
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   const projectId = project.id;
   const { data: threadsResponse, isLoading } = useThreads(1, SIDEBAR_THREADS_LIMIT);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [showAll, setShowAll] = useState(false);
 
-  const threadsUri = ROUTES.WORKSPACE(projectId).THREADS;
+  const threadsUri = ROUTES.ORG(orgSlug).WORKSPACE(projectId).THREADS;
   const isThreadsPage = location.pathname === threadsUri;
 
   const threads = threadsResponse?.threads ?? [];

@@ -66,8 +66,19 @@ mod m20260401_000001_add_owner_role;
 mod m20260401_000001_add_spec_hint_to_agentic_runs;
 mod m20260402_000001_add_thinking_mode_to_agentic_runs;
 mod m20260402_000001_rename_projects_to_workspaces;
+mod m20260408_000001_create_organizations;
+mod m20260408_000002_create_org_members;
+mod m20260408_000003_create_org_invitations;
+mod m20260408_000004_create_workspace_members;
+mod m20260408_000005_add_org_id_to_tables;
 mod m20260409_000001_add_github_token_to_users;
+mod m20260414_000001_drop_github_token_from_users;
+mod m20260415_000001_create_github_accounts;
+mod m20260415_000002_null_installation_namespace_tokens;
+mod m20260416_000001_add_status_and_error_to_workspaces;
 mod m20260416_000001_create_observability_tables;
+mod m20260416_000002_swap_workspace_repo_for_git_namespace;
+mod m20260416_000003_drop_branches_and_workspace_repos;
 
 pub struct Migrator;
 
@@ -140,7 +151,18 @@ impl MigratorTrait for Migrator {
             Box::new(m20260401_000001_add_spec_hint_to_agentic_runs::Migration),
             Box::new(m20260402_000001_add_thinking_mode_to_agentic_runs::Migration),
             Box::new(m20260402_000001_rename_projects_to_workspaces::Migration),
+            Box::new(m20260408_000001_create_organizations::Migration),
+            Box::new(m20260408_000002_create_org_members::Migration),
+            Box::new(m20260408_000003_create_org_invitations::Migration),
+            Box::new(m20260408_000004_create_workspace_members::Migration),
+            Box::new(m20260408_000005_add_org_id_to_tables::Migration),
             Box::new(m20260409_000001_add_github_token_to_users::Migration),
+            Box::new(m20260414_000001_drop_github_token_from_users::Migration),
+            Box::new(m20260415_000001_create_github_accounts::Migration),
+            Box::new(m20260415_000002_null_installation_namespace_tokens::Migration),
+            Box::new(m20260416_000001_add_status_and_error_to_workspaces::Migration),
+            Box::new(m20260416_000002_swap_workspace_repo_for_git_namespace::Migration),
+            Box::new(m20260416_000003_drop_branches_and_workspace_repos::Migration),
             Box::new(m20260416_000001_create_observability_tables::Migration),
         ]
     }

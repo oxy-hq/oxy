@@ -8,6 +8,7 @@ import useDatabases from "@/hooks/api/databases/useDatabases";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import ROUTES from "@/libs/utils/routes";
 import { SidebarHeader } from "@/pages/ide/components/SidebarHeader";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import { ConnectionItem } from "./ConnectionItem";
 
 interface DatabaseSidebarProps {
@@ -21,6 +22,7 @@ export const DatabaseSidebar: React.FC<DatabaseSidebarProps> = ({
 }) => {
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
 
   const { data: databases = [], isLoading, refetch, isFetching } = useDatabases();
 
@@ -31,7 +33,7 @@ export const DatabaseSidebar: React.FC<DatabaseSidebarProps> = ({
         onCollapse={() => setSidebarOpen(!sidebarOpen)}
         actions={
           <>
-            <Link to={ROUTES.WORKSPACE(projectId).IDE.SETTINGS.DATABASES}>
+            <Link to={ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.SETTINGS.DATABASES}>
               <Button tooltip='Add new connection' variant='ghost' size='sm'>
                 <Plus />
               </Button>
@@ -61,7 +63,7 @@ export const DatabaseSidebar: React.FC<DatabaseSidebarProps> = ({
               <DatabaseIcon className='mb-2 h-8 w-8 opacity-50' />
               <p>No databases configured</p>
               <Link
-                to={ROUTES.WORKSPACE(projectId).IDE.SETTINGS.DATABASES}
+                to={ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.SETTINGS.DATABASES}
                 className='mt-1 text-primary text-xs hover:underline'
               >
                 Add database connection

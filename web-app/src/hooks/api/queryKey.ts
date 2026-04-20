@@ -109,10 +109,8 @@ const logsKeys = {
 
 const settingsKeys = {
   all: ["settings"] as const,
-  revisionInfo: () => [...settingsKeys.all, "revision-info"] as const,
   projectStatus: (project_id: string) =>
-    [...settingsKeys.all, "project-status", { project_id }] as const,
-  currentProject: () => [...settingsKeys.all, "current-project"] as const
+    [...settingsKeys.all, "project-status", { project_id }] as const
 };
 
 const repositoryKeys = {
@@ -153,7 +151,9 @@ const workspaceKeys = {
     [...workspaceKeys.all, "revisionInfo", workspaceId, branchName] as const,
 
   status: (workspaceId: string, branchName: string) =>
-    [...workspaceKeys.all, "status", workspaceId, branchName] as const
+    [...workspaceKeys.all, "status", workspaceId, branchName] as const,
+
+  members: (workspaceId: string) => [...workspaceKeys.all, "members", workspaceId] as const
 };
 
 const artifactKeys = {
@@ -201,14 +201,25 @@ const humanVerdictKeys = {
     [...humanVerdictKeys.all, "list", projectId, pathb64, runIndex] as const
 };
 
+const orgKeys = {
+  all: ["org"] as const,
+  list: () => [...orgKeys.all, "list"] as const,
+  item: (orgId: string) => [...orgKeys.all, "item", orgId] as const,
+  members: (orgId: string) => [...orgKeys.all, "members", orgId] as const,
+  invitations: (orgId: string) => [...orgKeys.all, "invitations", orgId] as const
+};
+
 const githubKeys = {
   all: ["github"] as const,
-  namespaces: ["github", "namespaces"] as const,
-  myInstallations: ["github", "my-installations"] as const,
-  installAppUrl: ["github", "install-app-url"] as const
+  namespaces: (orgId: string) => ["github", "namespaces", orgId] as const,
+  installAppUrl: (orgId: string) => ["github", "install-app-url", orgId] as const,
+  appInstallations: (orgId: string) => ["github", "app-installations", orgId] as const,
+  account: ["github", "account"] as const,
+  userInstallations: ["github", "user-installations"] as const
 };
 
 const queryKeys = {
+  org: orgKeys,
   agent: agentKeys,
   builder: builderKeys,
   analytics: analyticsKeys,

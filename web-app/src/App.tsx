@@ -3,6 +3,7 @@ import {
   createBrowserRouter,
   createRoutesFromElements,
   Navigate,
+  Outlet,
   Route,
   RouterProvider,
   Routes,
@@ -31,17 +32,19 @@ import ContextGraphPage from "@/pages/context-graph";
 import { ErrorBoundary } from "@/sentry";
 import { BuilderDialog } from "./components/BuilderDialog";
 import { FileQuickOpen } from "./components/FileQuickOpen";
+import OrgGuard from "./components/OrgGuard";
 import ProtectedRoute from "./components/ProtectedRoute";
-import { SettingsModal } from "./components/settings/SettingsModal";
 import WorkspaceStatus from "./components/WorkspaceStatus";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { useWorkspace } from "./hooks/api/workspaces/useWorkspaces";
 import useAuthConfig from "./hooks/auth/useAuthConfig";
+import { LOCAL_WORKSPACE_ID } from "./libs/utils/constants";
 import AppPage from "./pages/app";
 import GoogleCallback from "./pages/auth/GoogleCallback";
 import MagicLinkCallback from "./pages/auth/MagicLinkCallback";
 import OktaCallback from "./pages/auth/OktaCallback";
 import GitHubCallback from "./pages/github/callback";
+import GitHubOauthCallback from "./pages/github/oauth-callback";
 import IdePage from "./pages/ide";
 import DatabaseLayout from "./pages/ide/Database";
 import QueryWorkspacePage from "./pages/ide/Database/QueryWorkspace";
@@ -54,17 +57,22 @@ import SettingsLayout from "./pages/ide/settings";
 import ActivityLogsPage from "./pages/ide/settings/activity-logs";
 import ApiKeysPage from "./pages/ide/settings/api-keys";
 import DatabasesPage from "./pages/ide/settings/databases";
+import WorkspaceMembersPage from "./pages/ide/settings/members";
 import RepositoriesPage from "./pages/ide/settings/repositories";
 import SecretsPage from "./pages/ide/settings/secrets";
 import TestsLayout from "./pages/ide/tests";
 import TestFileDetailPage from "./pages/ide/tests/TestFileDetailPage";
 import TestsDashboardPage from "./pages/ide/tests/TestsDashboardPage";
 import TestsRunsPage from "./pages/ide/tests/TestsRunsPage";
+import InvitePage from "./pages/invite";
 import LoginPage from "./pages/login";
 import MembersPage from "./pages/members";
-import OnboardingPage from "./pages/onboarding";
+import OrgLayout from "./pages/OrgLayout";
+import OrgListPage from "./pages/OrgListPage";
+import OrgSettingsPage from "./pages/org-settings";
 import WorkspacesPage from "./pages/workspaces";
 import useBuilderDialog from "./stores/useBuilderDialog";
+import useCurrentOrg from "./stores/useCurrentOrg";
 import useCurrentWorkspace from "./stores/useCurrentWorkspace";
 import useFileQuickOpen from "./stores/useFileQuickOpen";
 import type { AuthConfigResponse } from "./types/auth";
@@ -78,14 +86,17 @@ const MainPageWrapper = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
-const MainLayout = React.memo(function MainLayout() {
-  const { authConfig } = useAuth();
-  const { workspaceId } = useParams();
+const WorkspaceLayout = React.memo(function WorkspaceLayout() {
+  const { authConfig, isLocalMode } = useAuth();
+  const { wsId: wsIdParam } = useParams<{ wsId: string }>();
+  const orgSlug = useCurrentOrg((s) => s.org?.slug);
   const navigate = useNavigate();
 
-  const { isPending, isError, error, data } = useWorkspace(
-    workspaceId || "00000000-0000-0000-0000-000000000000"
-  );
+  // In local mode the router doesn't carry a :wsId segment — the single
+  // implicit workspace is addressed by the nil UUID.
+  const wsId = isLocalMode ? LOCAL_WORKSPACE_ID : wsIdParam;
+  // biome-ignore lint/style/noNonNullAssertion: local gets the constant, cloud gets the :wsId param
+  const { isPending, isError, error, data } = useWorkspace(wsId!);
   const { setWorkspace, workspace } = useCurrentWorkspace();
 
   const { setIsOpen: setBuilderDialogOpen } = useBuilderDialog();
@@ -102,15 +113,34 @@ const MainLayout = React.memo(function MainLayout() {
     }
   }, [isPending, isError, setWorkspace, data]);
 
+  // In local mode there's nowhere to redirect to — surface the error via toast
+  // and let the caller see the empty layout. The cloud fallbacks below don't apply.
+  React.useEffect(() => {
+    if (!isPending && data?.workspace_error) {
+      toast.error(data.workspace_error);
+      if (isLocalMode) return;
+      if (orgSlug) {
+        navigate(ROUTES.ORG(orgSlug).WORKSPACES, { replace: true });
+      } else {
+        navigate(ROUTES.ROOT, { replace: true });
+      }
+    }
+  }, [isPending, data?.workspace_error, orgSlug, navigate, isLocalMode]);
+
   useEffect(() => {
     if (isError) {
       const msg =
         (error as { response?: { data?: { error?: string } } })?.response?.data?.error ??
         "Failed to load workspace.";
       toast.error(msg);
-      navigate(ROUTES.WORKSPACES, { replace: true });
+      if (isLocalMode) return;
+      if (orgSlug) {
+        navigate(ROUTES.ORG(orgSlug).WORKSPACES, { replace: true });
+      } else {
+        navigate(ROUTES.ROOT, { replace: true });
+      }
     }
-  }, [isError, error, navigate]);
+  }, [isError, error, navigate, orgSlug, isLocalMode]);
 
   if (isPending) {
     return (
@@ -126,14 +156,13 @@ const MainLayout = React.memo(function MainLayout() {
 
   return (
     <HotkeysProvider>
-      <SettingsModal />
       <BuilderDialog />
       <FileQuickOpen />
       <AppSidebar />
 
       <Routes>
         <Route
-          path='/'
+          index
           element={
             <MainPageWrapper>
               <Home />
@@ -142,7 +171,7 @@ const MainLayout = React.memo(function MainLayout() {
         />
 
         <Route
-          path='/home'
+          path='home'
           element={
             <MainPageWrapper>
               <Home />
@@ -150,7 +179,7 @@ const MainLayout = React.memo(function MainLayout() {
           }
         />
         <Route
-          path='/threads'
+          path='threads'
           element={
             <MainPageWrapper>
               <Threads />
@@ -158,16 +187,7 @@ const MainLayout = React.memo(function MainLayout() {
           }
         />
         <Route
-          path='/threads/:threadId'
-          element={
-            <MainPageWrapper>
-              <ThreadPage />
-            </MainPageWrapper>
-          }
-        />
-        {/* Workspace-scoped deep-link routes — used for shareable thread/workflow URLs */}
-        <Route
-          path='/workspaces/:workspaceId/threads/:threadId'
+          path='threads/:threadId'
           element={
             <MainPageWrapper>
               <ThreadPage />
@@ -175,7 +195,7 @@ const MainLayout = React.memo(function MainLayout() {
           }
         />
         <Route
-          path='/workflows/:pathb64'
+          path='workflows/:pathb64'
           element={
             <MainPageWrapper>
               <WorkflowPage />
@@ -183,23 +203,14 @@ const MainLayout = React.memo(function MainLayout() {
           }
         />
         <Route
-          path='/workspaces/:workspaceId/workflows/:pathb64'
-          element={
-            <MainPageWrapper>
-              <WorkflowPage />
-            </MainPageWrapper>
-          }
-        />
-        <Route
-          path='/workspaces/:workspaceId/apps/:pathb64'
+          path='apps/:pathb64'
           element={
             <MainPageWrapper>
               <AppPage />
             </MainPageWrapper>
           }
         />
-        {/* IDE is workspace-scoped — URL encodes the workspace so bookmarks/links always open the right workspace */}
-        <Route path='/workspaces/:workspaceId/ide' element={<IdePage />}>
+        <Route path='ide' element={<IdePage />}>
           {/* Files routes */}
           <Route path='files' element={<FilesLayout />}>
             <Route path=':pathb64' element={<EditorPage />} />
@@ -221,6 +232,7 @@ const MainLayout = React.memo(function MainLayout() {
             <Route path='activity-logs' element={<ActivityLogsPage />} />
             <Route path='api-keys' element={<ApiKeysPage />} />
             <Route path='secrets' element={<SecretsPage />} />
+            <Route path='members' element={<WorkspaceMembersPage />} />
           </Route>
 
           {/* Tests routes */}
@@ -246,42 +258,41 @@ const MainLayout = React.memo(function MainLayout() {
           <Route index element={<Navigate to='files' replace />} />
         </Route>
         <Route
-          path='/workspaces/:workspaceId/context-graph'
+          path='context-graph'
           element={
             <MainPageWrapper>
               <ContextGraphPage />
             </MainPageWrapper>
           }
         />
-        <Route
-          path='/workspaces'
-          element={
-            <MainPageWrapper>
-              <WorkspacesPage />
-            </MainPageWrapper>
-          }
-        />
 
-        <Route
-          path='/members'
-          element={
-            !authConfig.auth_enabled || authConfig.single_workspace ? (
-              <Navigate to='/' replace />
-            ) : (
-              <MainPageWrapper>
-                <MembersPage />
-              </MainPageWrapper>
-            )
-          }
-        />
-
-        <Route path='*' element={<Navigate to='/' />} />
+        <Route path='*' element={<Navigate to='.' />} />
       </Routes>
     </HotkeysProvider>
   );
 });
 
-const getRouter = (authConfig: AuthConfigResponse) =>
+/** Local-mode router: a flat shape with the implicit workspace mounted at `/`.
+ *  Mirrors the backend's local-mode route set (no org, no login, no workspace
+ *  management). Any path the user visits that isn't a workspace sub-route
+ *  falls through to the `*` handler inside `WorkspaceLayout` and lands on `/`. */
+const getLocalRouter = () =>
+  createBrowserRouter(
+    createRoutesFromElements(
+      <Route
+        path='/*'
+        element={
+          <ProtectedRoute>
+            <SidebarProvider>
+              <WorkspaceLayout />
+            </SidebarProvider>
+          </ProtectedRoute>
+        }
+      />
+    )
+  );
+
+const getCloudRouter = (authConfig: AuthConfigResponse) =>
   createBrowserRouter(
     createRoutesFromElements(
       <Route>
@@ -295,57 +306,68 @@ const getRouter = (authConfig: AuthConfigResponse) =>
           </>
         )}
 
-        {/* GitHub callback must always be accessible (used during onboarding popup flow) */}
+        {/* GitHub callback must always be accessible (used during the workspace import popup flow) */}
         <Route path='/github/callback' element={<GitHubCallback />} />
+        <Route path='/github/oauth-callback' element={<GitHubOauthCallback />} />
 
-        {/* Setup page — always accessible as a standalone full-screen page (no sidebar) */}
-        <Route path='/setup' element={<OnboardingPage />} />
+        {/* Invitation accept — public; the page itself redirects to /login if needed */}
+        <Route path='/invite/:token' element={<InvitePage />} />
 
-        {authConfig.needs_onboarding ? (
-          <Route path='*' element={<Navigate to='/setup' replace />} />
-        ) : (
-          <Route
-            path='/*'
-            element={
-              authConfig.auth_enabled ? (
-                <ProtectedRoute>
-                  <SidebarProvider>
-                    <MainLayout />
-                  </SidebarProvider>
-                </ProtectedRoute>
-              ) : (
+        {/* Auth-gated routes */}
+        <Route
+          path='/*'
+          element={
+            <ProtectedRoute>
+              <Outlet />
+            </ProtectedRoute>
+          }
+        >
+          {/* Top-level: org list */}
+          <Route index element={<OrgListPage />} />
+
+          {/* Org-scoped routes */}
+          <Route path=':orgSlug' element={<OrgGuard />}>
+            {/* Org-level pages with org sidebar */}
+            <Route
+              element={
                 <SidebarProvider>
-                  <MainLayout />
+                  <OrgLayout />
                 </SidebarProvider>
-              )
-            }
-          />
-        )}
+              }
+            >
+              <Route index element={<Navigate to='workspaces' replace />} />
+              <Route path='workspaces' element={<WorkspacesPage />} />
+              <Route path='members' element={<MembersPage />} />
+              <Route path='settings' element={<OrgSettingsPage />} />
+            </Route>
+
+            {/* Workspace-scoped routes */}
+            <Route
+              path='workspaces/:wsId/*'
+              element={
+                <SidebarProvider>
+                  <WorkspaceLayout />
+                </SidebarProvider>
+              }
+            />
+          </Route>
+        </Route>
       </Route>
     )
   );
 
+const getRouter = (authConfig: AuthConfigResponse) =>
+  authConfig.mode === "local" ? getLocalRouter() : getCloudRouter(authConfig);
+
 function App() {
   const { data: authConfig, isPending } = useAuthConfig();
-
-  // Show a one-time toast when the server reports a workspace error (e.g. the
-  // previously active workspace directory was deleted since last run).
-  const shownWorkspaceError = useRef(false);
-  useEffect(() => {
-    if (authConfig?.workspace_error && !shownWorkspaceError.current) {
-      shownWorkspaceError.current = true;
-      toast.error(authConfig.workspace_error);
-    }
-  }, [authConfig?.workspace_error]);
 
   // Only recreate the router when routing-relevant fields change — prevents the
   // router from being torn down on every authConfig refetch (e.g. when a GitHub
   // popup closes and the window regains focus), which would reset page state.
   const routerRef = useRef<ReturnType<typeof getRouter> | null>(null);
   const prevRouterKey = useRef<string | null>(null);
-  const routerKey = authConfig
-    ? `${authConfig.needs_onboarding}:${authConfig.auth_enabled}:${authConfig.single_workspace}`
-    : null;
+  const routerKey = authConfig ? `${authConfig.auth_enabled}:${authConfig.mode}` : null;
   if (authConfig && routerKey !== prevRouterKey.current) {
     routerRef.current = getRouter(authConfig);
     prevRouterKey.current = routerKey;

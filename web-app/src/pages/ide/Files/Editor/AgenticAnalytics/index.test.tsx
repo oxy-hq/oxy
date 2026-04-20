@@ -63,7 +63,6 @@ import AgenticAnalyticsEditor from "./index";
 const setupMocks = (subViewMode: FilesSubViewMode = FilesSubViewMode.OBJECTS) => {
   vi.mocked(useEditorContext).mockReturnValue({
     pathb64: "dGVzdA==",
-    isReadOnly: false,
     gitEnabled: false,
     filePath: "test.agentic.yml",
     fileType: "ANALYTICS_AGENT" as never,

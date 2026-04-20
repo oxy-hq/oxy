@@ -1,10 +1,63 @@
-use crate::github::{auth::GitHubEnv, types::*};
+use crate::github::{
+    app_auth::{GitHubInstallation, GitHubInstallationResponse},
+    auth::GitHubEnv,
+    types::*,
+};
 use oxy_shared::errors::OxyError;
 use reqwest::{
     Client,
     header::{AUTHORIZATION, HeaderMap, HeaderValue, USER_AGENT},
 };
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+#[derive(Debug, Serialize)]
+struct OauthExchangeRequest<'a> {
+    client_id: &'a str,
+    client_secret: &'a str,
+    code: &'a str,
+}
+
+#[derive(Debug, Deserialize)]
+struct OauthExchangeResponse {
+    access_token: Option<String>,
+    error: Option<String>,
+    error_description: Option<String>,
+}
+
+/// Exchanges a GitHub OAuth authorization code for a user access token.
+/// Reads `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` from the environment.
+pub async fn exchange_oauth_code(code: &str) -> Result<String, OxyError> {
+    let client_id = std::env::var("GITHUB_CLIENT_ID")
+        .map_err(|_| OxyError::ConfigurationError("GITHUB_CLIENT_ID not set".to_string()))?;
+    let client_secret = std::env::var("GITHUB_CLIENT_SECRET")
+        .map_err(|_| OxyError::ConfigurationError("GITHUB_CLIENT_SECRET not set".to_string()))?;
+
+    let resp = reqwest::Client::new()
+        .post("https://github.com/login/oauth/access_token")
+        .header("Accept", "application/json")
+        .header("User-Agent", "Oxy-GitHub-Integration/1.0")
+        .json(&OauthExchangeRequest {
+            client_id: &client_id,
+            client_secret: &client_secret,
+            code,
+        })
+        .send()
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("Failed to exchange OAuth code: {e}")))?;
+
+    let body: OauthExchangeResponse = resp.json().await.map_err(|e| {
+        OxyError::RuntimeError(format!("Failed to parse OAuth exchange response: {e}"))
+    })?;
+
+    body.access_token.ok_or_else(|| {
+        let message = body
+            .error_description
+            .or(body.error)
+            .unwrap_or_else(|| "OAuth exchange failed".to_string());
+        OxyError::RuntimeError(format!("GitHub OAuth error: {message}"))
+    })
+}
 
 pub struct GitHubClient {
     client: Client,
@@ -447,5 +500,42 @@ impl GitHubClient {
         })?;
 
         Ok(repo)
+    }
+
+    /// Lists GitHub App installations accessible to the authenticated user.
+    /// Uses the user access token stored in this client (obtained via OAuth).
+    pub async fn list_user_installations(&self) -> Result<Vec<GitHubInstallation>, OxyError> {
+        #[derive(Deserialize)]
+        struct UserInstallationsResponse {
+            installations: Vec<GitHubInstallationResponse>,
+        }
+
+        let url = format!("{}/user/installations", self.base_url);
+        let response = self.client.get(&url).send().await.map_err(|e| {
+            OxyError::RuntimeError(format!("Failed to list user installations: {e}"))
+        })?;
+
+        if !response.status().is_success() {
+            return Err(OxyError::RuntimeError(format!(
+                "GitHub API error: {} - {}",
+                response.status(),
+                response.text().await.unwrap_or_default()
+            )));
+        }
+
+        let resp: UserInstallationsResponse = response.json().await.map_err(|e| {
+            OxyError::RuntimeError(format!("Failed to parse user installations response: {e}"))
+        })?;
+
+        Ok(resp
+            .installations
+            .into_iter()
+            .map(|r| GitHubInstallation {
+                id: r.id,
+                owner_type: r.account.account_type,
+                slug: r.account.login.clone(),
+                name: r.account.login,
+            })
+            .collect())
     }
 }

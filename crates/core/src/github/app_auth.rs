@@ -9,11 +9,6 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use tracing::info;
 
-#[derive(Deserialize)]
-struct OAuthTokenResponse {
-    access_token: String,
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 struct AppTokenClaims {
     iat: i64,
@@ -35,19 +30,19 @@ pub struct GitHubAppAuth {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct GitHubAccount {
-    login: String,
+pub(crate) struct GitHubAccount {
+    pub(crate) login: String,
     #[serde(rename = "type")]
-    account_type: String,
-    id: i64,
+    pub(crate) account_type: String,
+    pub(crate) id: i64,
     // Other fields available but not needed for our use case
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct GitHubInstallationResponse {
-    id: i64,
-    account: GitHubAccount,
-    app_slug: String,
+pub(crate) struct GitHubInstallationResponse {
+    pub(crate) id: i64,
+    pub(crate) account: GitHubAccount,
+    pub(crate) app_slug: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -92,52 +87,6 @@ impl GitHubAppAuth {
         })?;
 
         Self::new(app_id, private_key)
-    }
-
-    pub async fn get_user_oauth_token(&self, code: &str) -> Result<String, OxyError> {
-        let client_id = env::var("GITHUB_CLIENT_ID").map_err(|_| {
-            OxyError::ConfigurationError(
-                "GitHub Client ID not configured in environment".to_string(),
-            )
-        })?;
-
-        let client_secret = env::var("GITHUB_CLIENT_SECRET").map_err(|_| {
-            OxyError::ConfigurationError(
-                "GitHub Client Secret not configured in environment".to_string(),
-            )
-        })?;
-
-        let url = format!("{}/login/oauth/access_token", "https://github.com");
-        let params = [
-            ("client_id", client_id.as_str()),
-            ("client_secret", client_secret.as_str()),
-            ("code", code),
-        ];
-
-        let response = self
-            .client
-            .post(url)
-            .form(&params)
-            .header(ACCEPT, "application/json")
-            .send()
-            .await
-            .map_err(|e| {
-                OxyError::RuntimeError(format!("Failed to exchange OAuth code for token: {e}"))
-            })?;
-
-        if !response.status().is_success() {
-            return Err(OxyError::RuntimeError(format!(
-                "GitHub OAuth error: {} - {}",
-                response.status(),
-                response.text().await.unwrap_or_default()
-            )));
-        }
-
-        let token_response: OAuthTokenResponse = response.json().await.map_err(|e| {
-            OxyError::RuntimeError(format!("Failed to parse OAuth token response: {e}"))
-        })?;
-
-        Ok(token_response.access_token)
     }
 
     pub async fn list_installations(&self) -> Result<Vec<GitHubInstallation>, OxyError> {

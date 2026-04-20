@@ -10,6 +10,8 @@ import type {
 } from "@/types/secret";
 import { apiClient } from "./api/axios";
 
+// Note: `projectId` arguments are the workspace row id (backend path param `workspace_id`).
+// The frontend uses "project" terminology for the same entity.
 export class SecretService {
   /**
    * Create a new secret

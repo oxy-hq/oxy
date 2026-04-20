@@ -1,10 +1,24 @@
-import { useAuth } from "@/contexts/AuthContext";
 import { useIDE } from "@/pages/ide";
 import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 import useIdeBranch from "@/stores/useIdeBranch";
+import type { GitCapabilities } from "@/types/workspace";
+
+const NO_GIT_CAPABILITIES: GitCapabilities = {
+  can_commit: false,
+  can_browse_history: false,
+  can_reset_to_commit: false,
+  can_switch_branch: false,
+  can_diff: false,
+  can_push: false,
+  can_pull: false,
+  can_fetch: false,
+  can_force_push: false,
+  can_rebase: false,
+  can_open_pr: false,
+  auto_feature_branch_on_protected: false
+};
 
 export default function useCurrentWorkspaceBranch() {
-  const { authConfig } = useAuth();
   const { workspace } = useCurrentWorkspace();
   const { insideIDE } = useIDE();
 
@@ -15,33 +29,28 @@ export default function useCurrentWorkspaceBranch() {
 
   const selectedBranch = insideIDE ? ideBranch : active_branch;
 
-  // When local git has a remote and the user is on a protected branch, we enter
-  // "force edit mode": editing is allowed freely but saving auto-creates a branch.
-  // Protected branches are configured via `protected_branches` in config.yml;
-  // defaults to [default_branch] (usually "main") when not set.
-  // Skipped in single-workspace mode (`oxy serve --local`): a single developer
-  // on their own machine expects direct writes to main, not a PR workflow.
-  const protectedBranches = authConfig.protected_branches ?? [authConfig.default_branch ?? "main"];
+  const defaultBranch = workspace?.default_branch ?? "main";
+  const protectedBranches = workspace?.protected_branches ?? [defaultBranch];
+  const capabilities = workspace?.capabilities ?? NO_GIT_CAPABILITIES;
+
+  // When the workspace is connected to a remote and the user is on a protected
+  // branch, edits are allowed but saving auto-creates a feature branch.
   const isMainEditMode = !!(
-    authConfig.local_git &&
-    authConfig.git_remote &&
-    !authConfig.single_workspace &&
+    capabilities.auto_feature_branch_on_protected &&
     selectedBranch &&
     protectedBranches.includes(selectedBranch)
   );
 
-  const isReadOnly = authConfig.readonly;
-
-  // Git UI is enabled when local git is active.
-  const gitEnabled = authConfig.local_git;
+  // Git UI is enabled whenever there is a local repo (commit/history/branches work).
+  const gitEnabled = capabilities.can_commit;
 
   return {
     // Non-null assertion: this hook is only used inside authenticated/workspace-scoped routes
     // where workspace is guaranteed to be set. The null case is handled at the route level.
     workspace: workspace!,
     branchName: selectedBranch,
-    isReadOnly: isReadOnly,
+    capabilities,
     isMainEditMode,
-    gitEnabled: gitEnabled
+    gitEnabled
   };
 }

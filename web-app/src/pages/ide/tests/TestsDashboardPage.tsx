@@ -69,6 +69,7 @@ import PageHeader from "@/pages/ide/components/PageHeader";
 import type { TestFileConfig } from "@/services/api/testFiles";
 import type { TestProjectRunInfo } from "@/services/api/testProjectRuns";
 import type { TestRunCaseResult } from "@/services/api/testRuns";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import useTestFileResults, {
   createCaseKey,
   type TestCaseResult,
@@ -602,6 +603,7 @@ const TestsDashboardPage: React.FC = () => {
   const { data: testFiles, isLoading } = useTestFiles();
   const { project, branchName } = useCurrentProjectBranch();
   const projectId = project.id;
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   const store = useTestFileResults();
   const createTestFile = useCreateTestFile();
   const createRun = useCreateTestRun();
@@ -1060,7 +1062,9 @@ const TestsDashboardPage: React.FC = () => {
                   ))}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem asChild className='text-muted-foreground text-xs'>
-                    <Link to={ROUTES.WORKSPACE(projectId).IDE.TESTS.RUNS}>View all runs →</Link>
+                    <Link to={ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.TESTS.RUNS}>
+                      View all runs →
+                    </Link>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -1350,7 +1354,7 @@ const TestsDashboardPage: React.FC = () => {
                 onRunFile={() => openRunDialog(pathb64)}
                 onStopFile={() => store.stopFile(projectId, branchName, pathb64)}
                 onNavigateToDetail={(caseIndex, runIndex) => {
-                  const url = ROUTES.WORKSPACE(projectId).IDE.TESTS.TEST_FILE(pathb64);
+                  const url = ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.TESTS.TEST_FILE(pathb64);
                   const params = new URLSearchParams();
                   if (runIndex !== undefined) params.set("run_index", String(runIndex));
                   navigate(
@@ -1531,6 +1535,7 @@ const TestFileCard: React.FC<TestFileCardProps> = ({
   onNavigateToDetail
 }) => {
   const { branchName } = useCurrentProjectBranch();
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   const store = useTestFileResults();
 
   const { data: historicalRun } = useTestRunDetail(
@@ -1713,7 +1718,7 @@ const TestFileCard: React.FC<TestFileCardProps> = ({
               )}
             </Button>
             <Link
-              to={ROUTES.WORKSPACE(projectId).IDE.FILES.FILE(pathb64)}
+              to={ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.FILES.FILE(pathb64)}
               onClick={(e) => e.stopPropagation()}
             >
               <Button variant='ghost' size='icon' className='h-7 w-7'>

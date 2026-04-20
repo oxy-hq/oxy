@@ -1,5 +1,5 @@
 use entity::prelude::{Threads, Users};
-use entity::users::{self, UserRole, UserStatus};
+use entity::users::{self, UserStatus};
 use oxy::{database::client::establish_connection, theme::StyledText};
 use oxy_shared::errors::OxyError;
 use sea_orm::{ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, QueryFilter, Set};
@@ -72,9 +72,7 @@ pub async fn seed_test_users() -> Result<Vec<users::Model>, OxyError> {
             magic_link_token_expires_at: ActiveValue::not_set(),
             created_at: ActiveValue::not_set(), // Will use database default
             last_login_at: ActiveValue::not_set(), // Will use database default
-            role: ActiveValue::Set(UserRole::Member),
             status: ActiveValue::Set(UserStatus::Active),
-            github_access_token: ActiveValue::not_set(),
         };
 
         let user = new_user

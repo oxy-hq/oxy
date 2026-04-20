@@ -10,12 +10,15 @@ import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useBulkCreateSecrets } from "@/hooks/api/secrets/useSecretMutations";
 import { useProjectStatus } from "@/hooks/useProjectStatus";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 
 const RequiredSecretsSetup: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   const { data: configStatus, refetch } = useProjectStatus(projectId!);
   const bulkCreateSecretsMutation = useBulkCreateSecrets(projectId!);
+  const workspaceRoot = ROUTES.ORG(orgSlug).WORKSPACE(projectId!).ROOT;
 
   const [secretValues, setSecretValues] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -77,7 +80,7 @@ const RequiredSecretsSetup: React.FC = () => {
       await refetch();
 
       // Navigate back to home
-      navigate(ROUTES.WORKSPACE(projectId!).ROOT, { replace: true });
+      navigate(workspaceRoot, { replace: true });
     } catch (error) {
       console.error("Error creating secrets:", error);
       toast.error("Failed to create some secrets. Please try again.");
@@ -139,7 +142,7 @@ const RequiredSecretsSetup: React.FC = () => {
           <Button
             type='button'
             variant='outline'
-            onClick={() => navigate(ROUTES.WORKSPACE(projectId!).ROOT, { replace: true })}
+            onClick={() => navigate(workspaceRoot, { replace: true })}
           >
             Skip for now
           </Button>

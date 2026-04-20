@@ -7,6 +7,7 @@ import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import { TaskType } from "@/stores/useWorkflow";
 import type { AutomationGenerated } from "../BlockMessage";
 
@@ -44,6 +45,7 @@ const AutomationDagPanel = ({
   const { tasks } = automationGenerated;
   const { project } = useCurrentProjectBranch();
   const navigate = useNavigate();
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   return (
     <Panel>
       <PanelHeader
@@ -56,7 +58,9 @@ const AutomationDagPanel = ({
             className='h-7 w-7'
             onClick={() => {
               navigate(
-                ROUTES.WORKSPACE(project.id).IDE.FILES.FILE(encodeBase64(automationGenerated.path))
+                ROUTES.ORG(orgSlug)
+                  .WORKSPACE(project.id)
+                  .IDE.FILES.FILE(encodeBase64(automationGenerated.path))
               );
             }}
           >

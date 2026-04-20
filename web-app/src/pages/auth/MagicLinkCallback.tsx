@@ -25,16 +25,9 @@ const MagicLinkCallback: React.FC = () => {
     if (!token) return;
 
     if (status === "idle") {
-      verifyMagicLink(
-        { token },
-        {
-          onSuccess: () => {
-            navigate(ROUTES.ROOT, { replace: true });
-          }
-        }
-      );
+      verifyMagicLink({ token });
     }
-  }, [searchParams, verifyMagicLink, status, navigate]);
+  }, [searchParams, verifyMagicLink, status]);
 
   const token = searchParams.get("token");
 

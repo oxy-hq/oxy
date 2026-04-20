@@ -8,11 +8,10 @@ import { ViewMode } from "./types";
 
 interface EditorPreviewProps {
   pathb64: string;
-  isReadOnly: boolean;
   explorer: JSX.Element;
 }
 
-const EditorPreview = ({ pathb64, isReadOnly, explorer }: EditorPreviewProps) => {
+const EditorPreview = ({ pathb64, explorer }: EditorPreviewProps) => {
   const { filesSubViewMode } = useFilesContext();
 
   const defaultViewMode =
@@ -28,7 +27,6 @@ const EditorPreview = ({ pathb64, isReadOnly, explorer }: EditorPreviewProps) =>
     <EditorPageWrapper
       headerPrefixAction={<ModeSwitcher viewMode={viewMode} onViewModeChange={setViewMode} />}
       pathb64={pathb64}
-      readOnly={isReadOnly}
       defaultDirection='horizontal'
       preview={explorer}
       previewOnly={viewMode === ViewMode.Explorer}

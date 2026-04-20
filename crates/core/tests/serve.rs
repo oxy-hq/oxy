@@ -4,6 +4,7 @@ use std::time::Duration;
 use assert_cmd::Command;
 
 #[test]
+#[ignore = "requires a running PostgreSQL database (OXY_DATABASE_URL)"]
 pub fn start_server_ok() {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let workspace_dir = PathBuf::from(manifest_dir)

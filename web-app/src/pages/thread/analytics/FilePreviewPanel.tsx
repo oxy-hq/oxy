@@ -16,6 +16,7 @@ import AgentPreview from "@/pages/ide/Files/Editor/Agent/Preview";
 import { EditorContext } from "@/pages/ide/Files/Editor/contexts/EditorContextTypes";
 import TopicEditor from "@/pages/ide/Files/Editor/Topic";
 import ViewEditor from "@/pages/ide/Files/Editor/View";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import { decodeFilePath, detectFileType, FileType } from "@/utils/fileTypes";
 
 interface FilePreviewPanelProps {
@@ -41,7 +42,6 @@ const MinimalEditorProvider = ({
       fileType,
       project,
       branchName,
-      isReadOnly: true,
       isMainEditMode: false,
       gitEnabled: false
     }),
@@ -88,8 +88,11 @@ const FileTypePreview = ({ filePath }: { filePath: string }) => {
 const FilePreviewPanel = ({ change, onClose }: FilePreviewPanelProps) => {
   const filename = change.filePath.split("/").pop() ?? change.filePath;
   const { project } = useCurrentProjectBranch();
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   const pathb64 = encodeBase64(change.filePath);
-  const ideHref = project ? ROUTES.WORKSPACE(project.id).IDE.FILES.FILE(pathb64) : null;
+  const ideHref = project
+    ? ROUTES.ORG(orgSlug).WORKSPACE(project.id).IDE.FILES.FILE(pathb64)
+    : null;
 
   const actions = ideHref ? (
     <Button

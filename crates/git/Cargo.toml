@@ -1,0 +1,25 @@
+[package]
+name = "oxy-git"
+version.workspace = true
+authors.workspace = true
+description = "Git CLI client for Oxy — one place owns all git operations"
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+tokio = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+secrecy = { workspace = true }
+uuid = { workspace = true }
+base64 = { workspace = true }
+
+oxy-shared = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }

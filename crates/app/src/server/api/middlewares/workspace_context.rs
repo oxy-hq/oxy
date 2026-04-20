@@ -9,14 +9,14 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
+use entity::workspace_members::WorkspaceRole;
 use oxy::adapters::runs::RunsManager;
 use oxy::adapters::secrets::SecretsManager;
 use oxy::adapters::workspace::builder::WorkspaceBuilder;
+use oxy::adapters::workspace::effective_workspace_path;
 use oxy::adapters::workspace::manager::WorkspaceManager;
-use oxy::config::resolve_local_workspace_path;
 use oxy::database::client::establish_connection;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
-use oxy_project::LocalGitService;
 use sea_orm::EntityTrait;
 use std::future::Future;
 use uuid::Uuid;
@@ -59,6 +59,55 @@ where
     }
 }
 
+/// The resolved workspace role for the current user.
+#[derive(Clone, Debug)]
+pub struct EffectiveWorkspaceRole(pub WorkspaceRole);
+
+impl<S> FromRequestParts<S> for EffectiveWorkspaceRole
+where
+    S: Send + Sync,
+{
+    type Rejection = StatusCode;
+
+    fn from_request_parts(
+        parts: &mut Parts,
+        _state: &S,
+    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
+        let result = parts
+            .extensions
+            .get::<EffectiveWorkspaceRole>()
+            .cloned()
+            .ok_or(StatusCode::INTERNAL_SERVER_ERROR);
+
+        async move { result }
+    }
+}
+
+/// The caller's org membership, inserted by workspace_middleware when the workspace belongs to an org.
+#[derive(Clone)]
+pub struct OrgMembershipExtractor(pub entity::org_members::Model);
+
+impl<S> FromRequestParts<S> for OrgMembershipExtractor
+where
+    S: Send + Sync,
+{
+    type Rejection = StatusCode;
+
+    fn from_request_parts(
+        parts: &mut Parts,
+        _state: &S,
+    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
+        let result = parts
+            .extensions
+            .get::<entity::org_members::Model>()
+            .cloned()
+            .map(OrgMembershipExtractor)
+            .ok_or(StatusCode::FORBIDDEN);
+
+        async move { result }
+    }
+}
+
 #[derive(serde::Deserialize)]
 pub struct WorkspacePath {
     pub workspace_id: Uuid,
@@ -70,151 +119,30 @@ pub struct BranchQuery {
 }
 
 pub async fn workspace_middleware(
-    State(app_state): State<AppState>,
+    State(_app_state): State<AppState>,
     Path(WorkspacePath { workspace_id }): Path<WorkspacePath>,
     Query(query): Query<BranchQuery>,
-    _user: AuthenticatedUserExtractor,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     mut request: Request<axum::body::Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
+    if workspace_id == Uuid::nil() {
+        tracing::warn!("Nil-UUID workspace path is not allowed");
+        return Err(StatusCode::NOT_FOUND);
+    }
+
     let branch_id = Uuid::nil();
 
-    // Resolve the workspace path:
-    // - Non-nil UUID: look up workspace in DB by ID and use its stored path.
-    // - Nil UUID (legacy / bootstrap): fall back to active_workspace_path or CWD discovery.
-    let resolved_path: Option<std::path::PathBuf> = if workspace_id != Uuid::nil() {
-        if let Ok(db) = establish_connection().await {
-            use entity::prelude::Workspaces;
-            if let Ok(Some(workspace_row)) = Workspaces::find_by_id(workspace_id).one(&db).await {
-                let model = entity::workspaces::Model {
-                    id: workspace_row.id,
-                    name: workspace_row.name.clone(),
-                    workspace_id: workspace_row.workspace_id,
-                    project_repo_id: workspace_row.project_repo_id,
-                    active_branch_id: workspace_row.active_branch_id,
-                    created_at: workspace_row.created_at,
-                    updated_at: workspace_row.updated_at,
-                    path: workspace_row.path.clone(),
-                    last_opened_at: workspace_row.last_opened_at,
-                    created_by: workspace_row.created_by,
-                };
-                request.extensions_mut().insert(model);
-                workspace_row.path.map(std::path::PathBuf::from)
-            } else {
-                tracing::warn!("Workspace {} not found in DB", workspace_id);
-                None
-            }
-        } else {
-            tracing::warn!(
-                "Could not connect to DB to resolve workspace {}",
-                workspace_id
-            );
-            None
-        }
-    } else {
-        // Bootstrap / single-workspace mode: use active_workspace_path or CWD.
-        let fake_workspace = entity::workspaces::Model {
-            id: Uuid::nil(),
-            name: "Oxy".to_string(),
-            workspace_id: Uuid::nil(),
-            project_repo_id: None,
-            active_branch_id: Uuid::nil(),
-            created_at: chrono::Utc::now().into(),
-            updated_at: chrono::Utc::now().into(),
-            path: None,
-            last_opened_at: None,
-            created_by: None,
-        };
-        request.extensions_mut().insert(fake_workspace);
-
-        {
-            let locked = app_state.active_workspace_path.read().await;
-            locked.clone()
-        }
-        .or_else(|| resolve_local_workspace_path().ok())
-    };
-
-    match resolved_path {
-        Some(workspace_path) => {
-            // Use the worktree path for non-main branches when one exists,
-            // so that workflow/app/agent execution reads from the correct branch.
-            let effective_path = query
-                .branch
-                .as_deref()
-                .filter(|b| !b.is_empty() && *b != "main")
-                .and_then(|b| LocalGitService::get_worktree_path(&workspace_path, b))
-                .unwrap_or(workspace_path);
-            match WorkspaceBuilder::new(workspace_id)
-                .with_workspace_path_and_fallback_config(&effective_path)
-                .await
-            {
-                Ok(mut builder) => {
-                    // Use DB-first with env fallback so DB secrets hot-reload
-                    // and override env vars without a server restart.
-                    let sm_result = SecretsManager::from_database_with_env_fallback(
-                        SecretManagerService::new(workspace_id),
-                    );
-                    if let Ok(secrets_manager) = sm_result {
-                        builder = builder.with_secrets_manager(secrets_manager);
-                    } else {
-                        tracing::warn!(
-                            "Failed to create secrets manager for workspace {}, continuing without it",
-                            workspace_id
-                        );
-                    }
-                    match RunsManager::default(workspace_id, branch_id).await {
-                        Ok(runs_manager) => {
-                            builder = builder.with_runs_manager(runs_manager);
-                        }
-                        Err(e) => {
-                            tracing::warn!(
-                                "Failed to create runs manager for workspace {}: {}, continuing without it",
-                                workspace_id,
-                                e
-                            );
-                        }
-                    }
-                    builder = builder.try_with_intent_classifier().await;
-                    match builder.build().await {
-                        Ok(workspace_manager) => {
-                            match EnumIndexManager::init_from_config(
-                                workspace_manager.config_manager.clone(),
-                            )
-                            .await
-                            {
-                                Ok(_) => {
-                                    tracing::debug!(
-                                        "Enum index initialized successfully for workspace {}",
-                                        workspace_id
-                                    );
-                                }
-                                Err(e) => {
-                                    tracing::debug!(
-                                        "Enum index initialization skipped for workspace {}: {}",
-                                        workspace_id,
-                                        e
-                                    );
-                                }
-                            }
-                            request.extensions_mut().insert(workspace_manager);
-                        }
-                        Err(e) => {
-                            tracing::warn!(
-                                "Failed to build workspace manager for workspace {}: {}, continuing without it",
-                                workspace_id,
-                                e
-                            );
-                        }
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to set workspace path in workspace builder for workspace {}: {}, continuing without workspace manager",
-                        workspace_id,
-                        e
-                    );
-                }
-            }
+    match authorize_workspace(workspace_id, user.id, &mut request).await? {
+        Some(workspace_row) => {
+            try_attach_workspace_manager(
+                &workspace_row,
+                query.branch.as_deref(),
+                workspace_id,
+                branch_id,
+                &mut request,
+            )
+            .await?;
         }
         None => {
             tracing::warn!(
@@ -225,4 +153,204 @@ pub async fn workspace_middleware(
     }
 
     Ok(next.run(request).await)
+}
+
+/// Looks up the workspace, authorizes the caller, and inserts request extensions
+/// (workspace row, effective role, org membership). Returns the workspace row
+/// only when it has a configured path — i.e. when builder construction should follow.
+///
+/// `Ok(None)`: workspace has no configured path (builder construction skipped).
+/// Fatal: DB unreachable (SERVICE_UNAVAILABLE), workspace not found (NOT_FOUND),
+/// workspace with no `org_id` (FORBIDDEN), caller not in org (FORBIDDEN),
+/// query errors (INTERNAL_SERVER_ERROR).
+async fn authorize_workspace(
+    workspace_id: Uuid,
+    user_id: Uuid,
+    request: &mut Request<axum::body::Body>,
+) -> Result<Option<entity::workspaces::Model>, StatusCode> {
+    use entity::prelude::Workspaces;
+
+    let db = establish_connection().await.map_err(|e| {
+        tracing::error!(
+            "Could not connect to DB to resolve workspace {}: {}",
+            workspace_id,
+            e
+        );
+        StatusCode::SERVICE_UNAVAILABLE
+    })?;
+
+    let workspace_row = Workspaces::find_by_id(workspace_id)
+        .one(&db)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to query workspace {}: {}", workspace_id, e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or_else(|| {
+            tracing::warn!("Workspace {} not found in DB", workspace_id);
+            StatusCode::NOT_FOUND
+        })?;
+
+    // Every workspace must belong to an org.
+    let org_id = workspace_row.org_id.ok_or_else(|| {
+        tracing::warn!("Workspace {} has no org_id — access denied", workspace_id);
+        StatusCode::FORBIDDEN
+    })?;
+
+    request.extensions_mut().insert(workspace_row.clone());
+
+    let (org_membership, effective_role) =
+        resolve_effective_role(&db, workspace_id, org_id, user_id).await?;
+
+    request
+        .extensions_mut()
+        .insert(EffectiveWorkspaceRole(effective_role));
+    request.extensions_mut().insert(org_membership);
+
+    if workspace_row.path.is_none() {
+        tracing::warn!(
+            "Workspace {} has no path configured — continuing without workspace manager",
+            workspace_id
+        );
+        return Ok(None);
+    }
+
+    Ok(Some(workspace_row))
+}
+
+async fn resolve_effective_role(
+    db: &sea_orm::DatabaseConnection,
+    workspace_id: Uuid,
+    org_id: Uuid,
+    user_id: Uuid,
+) -> Result<(entity::org_members::Model, WorkspaceRole), StatusCode> {
+    use entity::org_members::Column as OrgMemberCol;
+    use entity::prelude::{OrgMembers, WorkspaceMembers};
+    use entity::workspace_members::Column as WsMemberCol;
+    use sea_orm::{ColumnTrait, QueryFilter};
+
+    let org_membership = OrgMembers::find()
+        .filter(OrgMemberCol::OrgId.eq(org_id))
+        .filter(OrgMemberCol::UserId.eq(user_id))
+        .one(db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or_else(|| {
+            tracing::warn!(
+                "User {} denied access to workspace {} (not a member of org {})",
+                user_id,
+                workspace_id,
+                org_id
+            );
+            StatusCode::FORBIDDEN
+        })?;
+
+    let ws_override = WorkspaceMembers::find()
+        .filter(WsMemberCol::WorkspaceId.eq(workspace_id))
+        .filter(WsMemberCol::UserId.eq(user_id))
+        .one(db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let org_derived_role = match org_membership.role {
+        entity::org_members::OrgRole::Owner => WorkspaceRole::Owner,
+        entity::org_members::OrgRole::Admin => WorkspaceRole::Admin,
+        entity::org_members::OrgRole::Member => WorkspaceRole::Member,
+    };
+
+    // Workspace-member override can only elevate, never downgrade below org-derived role.
+    let effective_role = match ws_override {
+        Some(ws_member) => std::cmp::max(org_derived_role, ws_member.role),
+        None => org_derived_role,
+    };
+
+    Ok((org_membership, effective_role))
+}
+
+/// Best-effort: builds the `WorkspaceManager` (with secrets, runs, intent classifier)
+/// and inserts it into request extensions. The only fatal outcome is an invalid
+/// branch query parameter, which yields BAD_REQUEST.
+async fn try_attach_workspace_manager(
+    workspace_row: &entity::workspaces::Model,
+    branch_name: Option<&str>,
+    workspace_id: Uuid,
+    branch_id: Uuid,
+    request: &mut Request<axum::body::Body>,
+) -> Result<(), StatusCode> {
+    // Branch name is validated inside `effective_workspace_path`. The helper
+    // rejects ".." / leading "-" / non-allowed chars via OxyError::RuntimeError —
+    // we map that to 400 before the string reaches any shell-out downstream.
+    let effective_path = effective_workspace_path(workspace_row, branch_name)
+        .await
+        .map_err(|e| {
+            tracing::warn!(
+                "Invalid branch or missing path for workspace {}: {}",
+                workspace_id,
+                e
+            );
+            StatusCode::BAD_REQUEST
+        })?;
+
+    let mut builder = match WorkspaceBuilder::new(workspace_id)
+        .with_workspace_path_and_fallback_config(&effective_path)
+        .await
+    {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!(
+                "Failed to set workspace path in workspace builder for workspace {}: {}, continuing without workspace manager",
+                workspace_id,
+                e
+            );
+            return Ok(());
+        }
+    };
+
+    // DB-first with env fallback so DB secrets hot-reload and override env vars
+    // without a server restart.
+    match SecretsManager::from_database_with_env_fallback(SecretManagerService::new(workspace_id)) {
+        Ok(secrets_manager) => builder = builder.with_secrets_manager(secrets_manager),
+        Err(_) => tracing::warn!(
+            "Failed to create secrets manager for workspace {}, continuing without it",
+            workspace_id
+        ),
+    }
+
+    match RunsManager::default(workspace_id, branch_id).await {
+        Ok(runs_manager) => builder = builder.with_runs_manager(runs_manager),
+        Err(e) => tracing::warn!(
+            "Failed to create runs manager for workspace {}: {}, continuing without it",
+            workspace_id,
+            e
+        ),
+    }
+
+    builder = builder.try_with_intent_classifier().await;
+
+    let workspace_manager = match builder.build().await {
+        Ok(m) => m,
+        Err(e) => {
+            tracing::warn!(
+                "Failed to build workspace manager for workspace {}: {}, continuing without it",
+                workspace_id,
+                e
+            );
+            return Ok(());
+        }
+    };
+
+    match EnumIndexManager::init_from_config(workspace_manager.config_manager.clone()).await {
+        Ok(_) => tracing::debug!(
+            "Enum index initialized successfully for workspace {}",
+            workspace_id
+        ),
+        Err(e) => tracing::debug!(
+            "Enum index initialization skipped for workspace {}: {}",
+            workspace_id,
+            e
+        ),
+    }
+
+    request.extensions_mut().insert(workspace_manager);
+    Ok(())
 }

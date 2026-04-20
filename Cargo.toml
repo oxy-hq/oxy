@@ -6,6 +6,7 @@ members = [
   "crates/auth",
   "crates/core",
   "crates/entity",
+  "crates/git",
   "crates/globals",
   "crates/integration/looker",
   "crates/migration",
@@ -55,6 +56,7 @@ oxy-agent = { path = "crates/agent" }
 oxy-anthropic = { path = "crates/infrastructure/llm/anthropic" }
 oxy-auth = { path = "crates/auth" }
 oxy-gemini = { path = "crates/infrastructure/llm/gemini" }
+oxy-git = { path = "crates/git" }
 oxy-llm = { path = "crates/infrastructure/llm/oxy-llm" }
 oxy-looker = { path = "crates/integration/looker" }
 oxy-observability = { path = "crates/observability" }

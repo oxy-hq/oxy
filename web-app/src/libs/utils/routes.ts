@@ -11,74 +11,81 @@ const ROUTES = {
   GITHUB: {
     CALLBACK: "/github/callback"
   },
-  SETUP: "/setup",
-  WORKSPACES: "/workspaces",
-  MEMBERS: "/members",
 
-  WORKSPACE: (_workspaceId: string) => {
-    // Navigation routes are flat (no workspace-ID prefix) — workspace context is held
-    // in the Zustand store. API calls use the ID from useCurrentWorkspace().
-    // Exception: IDE and shareable resource URLs include the workspace ID so they
-    // are workspace-locked and can be bookmarked / shared as deep links.
-    const base = ``;
-    const ideBase = `/workspaces/${_workspaceId}`;
+  INVITE: (token: string) => `/invite/${token}`,
 
+  // Org-scoped routes. Passing an empty `orgSlug` degrades to flat local-mode
+  // paths (e.g. `/home` instead of `/acme/workspaces/<id>/home`) — in local
+  // mode there's no org and a single implicit workspace, and every call site
+  // already defaults to `useCurrentOrg(...).slug ?? ""`, so this makes URL
+  // building mode-agnostic without touching the ~100 consumers.
+  ORG: (orgSlug: string) => {
+    const isLocal = orgSlug === "";
+    const base = isLocal ? "" : `/${orgSlug}`;
     return {
-      ROOT: base || "/",
-      HOME: `${base}/home`,
-      NEW: `${base}/new`,
-      REQUIRED_SECRETS: `${ideBase}/ide/settings/secrets`,
+      ROOT: isLocal ? "/" : base,
+      WORKSPACES: `${base}/workspaces`,
+      MEMBERS: `${base}/members`,
+      SETTINGS: `${base}/settings`,
 
-      THREADS: `${base}/threads`,
-      // Thread and workflow URLs include the workspace ID so they can be shared as deep links.
-      THREAD: (threadId: string) => `/workspaces/${_workspaceId}/threads/${threadId}`,
-
-      WORKFLOW: (pathb64: string) => {
+      WORKSPACE: (wsId: string) => {
+        const wsBase = isLocal ? "" : `${base}/workspaces/${wsId}`;
         return {
-          ROOT: `/workspaces/${_workspaceId}/workflows/${pathb64}`
+          ROOT: wsBase,
+          HOME: `${wsBase}/home`,
+          NEW: `${wsBase}/new`,
+          REQUIRED_SECRETS: `${wsBase}/ide/settings/secrets`,
+
+          THREADS: `${wsBase}/threads`,
+          THREAD: (threadId: string) => `${wsBase}/threads/${threadId}`,
+
+          WORKFLOW: (pathb64: string) => ({
+            ROOT: `${wsBase}/workflows/${pathb64}`
+          }),
+
+          APP: (pathb64: string) => `${wsBase}/apps/${pathb64}`,
+
+          IDE: {
+            ROOT: `${wsBase}/ide`,
+            FILES: {
+              ROOT: `${wsBase}/ide/files`,
+              FILE: (pathb64: string) => `${wsBase}/ide/files/${pathb64}`,
+              LOOKER_EXPLORE: (integrationName: string, model: string, exploreName: string) =>
+                `${wsBase}/ide/files/looker/${encodeURIComponent(integrationName)}/${encodeURIComponent(model)}/${encodeURIComponent(exploreName)}`
+            },
+            DATABASE: {
+              ROOT: `${wsBase}/ide/database`
+            },
+            SETTINGS: {
+              ROOT: `${wsBase}/ide/settings`,
+              DATABASES: `${wsBase}/ide/settings/databases`,
+              REPOSITORIES: `${wsBase}/ide/settings/repositories`,
+              ACTIVITY_LOGS: `${wsBase}/ide/settings/activity-logs`,
+              API_KEYS: `${wsBase}/ide/settings/api-keys`,
+              SECRETS: `${wsBase}/ide/settings/secrets`,
+              MEMBERS: `${wsBase}/ide/settings/members`
+            },
+            TESTS: {
+              ROOT: `${wsBase}/ide/tests`,
+              RUNS: `${wsBase}/ide/tests/runs`,
+              TEST_FILE: (pathb64: string) => `${wsBase}/ide/tests/${pathb64}`
+            },
+            OBSERVABILITY: {
+              ROOT: `${wsBase}/ide/observability`,
+              TRACES: `${wsBase}/ide/observability/traces`,
+              TRACE: (traceId: string) => `${wsBase}/ide/observability/traces/${traceId}`,
+              CLUSTERS: `${wsBase}/ide/observability/clusters`,
+              CLUSTERS_V2: `${wsBase}/ide/observability/clusters-v2`,
+              METRICS: `${wsBase}/ide/observability/metrics`,
+              METRIC: (metricName: string) =>
+                `${wsBase}/ide/observability/metrics/${encodeURIComponent(metricName)}`,
+              EXECUTION_ANALYTICS: `${wsBase}/ide/observability/execution-analytics`
+            }
+          },
+
+          CONTEXT_GRAPH: `${wsBase}/context-graph`
         };
-      },
-
-      APP: (pathb64: string) => `/workspaces/${_workspaceId}/apps/${pathb64}`,
-
-      IDE: {
-        ROOT: `${ideBase}/ide`,
-        FILES: {
-          ROOT: `${ideBase}/ide/files`,
-          FILE: (pathb64: string) => `${ideBase}/ide/files/${pathb64}`,
-          LOOKER_EXPLORE: (integrationName: string, model: string, exploreName: string) =>
-            `${ideBase}/ide/files/looker/${encodeURIComponent(integrationName)}/${encodeURIComponent(model)}/${encodeURIComponent(exploreName)}`
-        },
-        DATABASE: {
-          ROOT: `${ideBase}/ide/database`
-        },
-        SETTINGS: {
-          ROOT: `${ideBase}/ide/settings`,
-          DATABASES: `${ideBase}/ide/settings/databases`,
-          REPOSITORIES: `${ideBase}/ide/settings/repositories`,
-          ACTIVITY_LOGS: `${ideBase}/ide/settings/activity-logs`,
-          API_KEYS: `${ideBase}/ide/settings/api-keys`,
-          SECRETS: `${ideBase}/ide/settings/secrets`
-        },
-        TESTS: {
-          ROOT: `${ideBase}/ide/tests`,
-          RUNS: `${ideBase}/ide/tests/runs`,
-          TEST_FILE: (pathb64: string) => `${ideBase}/ide/tests/${pathb64}`
-        },
-        OBSERVABILITY: {
-          ROOT: `${ideBase}/ide/observability`,
-          TRACES: `${ideBase}/ide/observability/traces`,
-          TRACE: (traceId: string) => `${ideBase}/ide/observability/traces/${traceId}`,
-          CLUSTERS: `${ideBase}/ide/observability/clusters`,
-          CLUSTERS_V2: `${ideBase}/ide/observability/clusters-v2`,
-          METRICS: `${ideBase}/ide/observability/metrics`,
-          METRIC: (metricName: string) =>
-            `${ideBase}/ide/observability/metrics/${encodeURIComponent(metricName)}`,
-          EXECUTION_ANALYTICS: `${ideBase}/ide/observability/execution-analytics`
-        }
-      },
-
-      CONTEXT_GRAPH: `${ideBase}/context-graph`
+      }
     };
   }
 } as const;

@@ -22,7 +22,7 @@ const toAgentViewMode = (m: AgenticViewMode): AgentViewMode => m as unknown as A
 const toAgenticViewMode = (m: AgentViewMode): AgenticViewMode => m as unknown as AgenticViewMode;
 
 const AgenticAnalyticsEditor = () => {
-  const { pathb64, isReadOnly, gitEnabled } = useEditorContext();
+  const { pathb64, gitEnabled } = useEditorContext();
   const { previewKey, refreshPreview } = usePreviewRefresh();
   const { filesSubViewMode } = useFilesContext();
 
@@ -52,7 +52,6 @@ const AgenticAnalyticsEditor = () => {
       }
       pathb64={pathb64}
       onSaved={refreshPreview}
-      readOnly={isReadOnly}
       git={gitEnabled}
       customEditor={viewMode === AgenticViewMode.Form ? <AgenticFormWrapper /> : undefined}
       onChanged={(value) => {

@@ -183,12 +183,11 @@ Keep in the component: dialog open/close state, form state, UI-only toggles that
 Use `useCurrentProjectBranch()` from `src/hooks/useCurrentProjectBranch.ts` to get the active project and branch context. **Must be called inside the IDE route** (it depends on `useIDE()` context); it throws if no project is selected.
 
 ```ts
-const { project, branchName, isReadOnly, isMainEditMode, gitEnabled } = useCurrentProjectBranch();
+const { project, branchName, isMainEditMode, gitEnabled } = useCurrentProjectBranch();
 ```
 
 - `project` — the current `Project` object (from `useCurrentProject` store)
 - `branchName` — the active branch: IDE-local branch override when inside the IDE, otherwise `project.active_branch`
-- `isReadOnly` — true when `authConfig.readonly` is set, or on cloud with a linked repo on its active branch
 - `isMainEditMode` — true when local git + remote is configured and the user is on a protected branch (edits are allowed but saving auto-creates a new branch)
 - `gitEnabled` — true when local git or cloud GitHub integration is active
 
@@ -196,8 +195,9 @@ If you only need the project (outside the IDE), use `useCurrentProject()` from `
 
 ## Authorization
 
-- Use `useCurrentUser()` from `src/hooks/api/users/useCurrentUser.ts` to get the authenticated user.
-- Check `currentUser?.is_admin` (boolean on `UserInfo`) to gate admin-only UI elements.
+- Use `useCurrentUser()` from `src/hooks/api/users/useCurrentUser.ts` to get the authenticated user's profile (id, email, name, picture). **`UserInfo` does not carry `role` or `is_admin`** — those are per-org.
+- For org-scoped gates, read role from `useCurrentOrg((s) => s.role)` (values: `"owner" | "admin" | "member"`). Treat `"owner"` and `"admin"` as admin-equivalent.
+- For workspace-scoped gates, the backend's `EffectiveWorkspaceRole` already handles the org→workspace role resolution — trust server-side 403s instead of duplicating the check in the UI when possible.
 - Feature flags from `authConfig` control broader access: `authConfig.enterprise` for enterprise-only features, `authConfig.cloud` for cloud-only features.
 
 ## Code Style

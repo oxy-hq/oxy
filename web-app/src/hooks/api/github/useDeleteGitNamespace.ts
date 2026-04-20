@@ -3,8 +3,8 @@ import { GitHubApiService } from "@/services/api";
 
 export const useDeleteGitNamespace = () => {
   const queryClient = useQueryClient();
-  return useMutation<void, Error, string>({
-    mutationFn: (id) => GitHubApiService.deleteGitNamespace(id),
+  return useMutation<void, Error, { orgId: string; id: string }>({
+    mutationFn: ({ orgId, id }) => GitHubApiService.deleteGitNamespace(orgId, id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["github", "namespaces"] });
     }

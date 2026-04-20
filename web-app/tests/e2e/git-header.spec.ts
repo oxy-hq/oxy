@@ -107,7 +107,8 @@ test.describe("Git Header — navigation & rendering", () => {
 
   test("branch pill is visible in the header", async ({ page }) => {
     // The branch pill is a button that contains a BranchInfo component.
-    // It should always be visible when local_git is enabled.
+    // It should always be visible when the workspace has a local git repo
+    // (capabilities.can_commit / git_mode != "none").
     // Prefer the more specific BranchQuickSwitcher trigger: it has a chevron
     // and git-branch icon. We just verify the header area has branch-related UI.
     const headerCard = page.locator(".border-b.bg-sidebar-background");

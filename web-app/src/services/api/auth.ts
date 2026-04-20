@@ -3,7 +3,6 @@ import type {
   AuthResponse,
   GitHubAuthRequest,
   GoogleAuthRequest,
-  InviteRequest,
   MagicLinkRequest,
   MagicLinkVerifyRequest,
   MessageResponse,
@@ -39,11 +38,6 @@ export class AuthService {
 
   static async verifyMagicLink(request: MagicLinkVerifyRequest): Promise<AuthResponse> {
     const response = await apiClient.post("/auth/magic-link/verify", request);
-    return response.data;
-  }
-
-  static async inviteUser(request: InviteRequest): Promise<MessageResponse> {
-    const response = await apiClient.post("/auth/invite", request);
     return response.data;
   }
 }

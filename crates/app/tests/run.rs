@@ -101,9 +101,9 @@ fn run_workflow_with_anonymization_ok() {
 
 #[test]
 fn run_workflow_with_loop_ok() {
-    // Skip test if OPENAI_API_KEY is not set
-    if std::env::var("OPENAI_API_KEY").is_err() {
-        println!("Skipping test: OPENAI_API_KEY not set");
+    // Skip test if ANTHROPIC_API_KEY is not set (workflow uses claude-sonnet-4-6)
+    if std::env::var("ANTHROPIC_API_KEY").is_err() {
+        println!("Skipping test: ANTHROPIC_API_KEY not set");
         return;
     }
 

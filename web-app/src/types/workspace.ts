@@ -1,11 +1,33 @@
+export type GitMode = "none" | "local" | "connected";
+
+export interface GitCapabilities {
+  can_commit: boolean;
+  can_browse_history: boolean;
+  can_reset_to_commit: boolean;
+  can_switch_branch: boolean;
+  can_diff: boolean;
+  can_push: boolean;
+  can_pull: boolean;
+  can_fetch: boolean;
+  can_force_push: boolean;
+  can_rebase: boolean;
+  can_open_pr: boolean;
+  auto_feature_branch_on_protected: boolean;
+}
+
 export interface Workspace {
   id: string;
   name: string;
   workspace_id: string;
-  project_repo_id?: string;
   active_branch: WorkspaceBranch | null;
   created_at: string;
   updated_at: string;
+
+  workspace_error?: string;
+  git_mode: GitMode;
+  capabilities: GitCapabilities;
+  default_branch: string;
+  protected_branches: string[];
 }
 
 export interface WorkspacesResponse {

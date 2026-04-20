@@ -30,7 +30,6 @@ export interface EditorPageWrapperProps {
   className?: string;
   pageContentClassName?: string;
   editorClassName?: string;
-  readOnly?: boolean;
   git?: boolean;
   defaultDirection?: "horizontal" | "vertical";
   customEditor?: JSX.Element;
@@ -65,7 +64,6 @@ const EditorPageWrapper = ({
   headerActions,
   headerPrefixAction,
   className,
-  readOnly,
   git = false,
   defaultDirection = "horizontal",
   customEditor,
@@ -99,11 +97,7 @@ const EditorPageWrapper = ({
       className={cn("flex min-h-0 flex-col overflow-hidden bg-editor-background")}
       style={{ width: "100%", height: "100%" }}
     >
-      {customEditor ? (
-        customEditor
-      ) : (
-        <FileEditor readOnly={readOnly} className={customEditor ? "hidden" : ""} />
-      )}
+      {customEditor ? customEditor : <FileEditor className={customEditor ? "hidden" : ""} />}
     </div>
   );
 
@@ -128,7 +122,6 @@ const EditorPageWrapper = ({
       <div className='flex h-full flex-1 flex-col overflow-hidden'>
         <EditorHeader
           prefixAction={headerPrefixAction}
-          readOnly={readOnly}
           actions={headerActions}
           filePath={filePath}
         />

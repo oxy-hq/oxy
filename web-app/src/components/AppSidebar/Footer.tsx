@@ -1,9 +1,13 @@
-import { LogOut, Users } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Building2, Check, HardDrive, LogOut } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { useOrgs } from "@/hooks/api/organizations";
+import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { UserInfo } from "@/types/auth";
 import { UserAvatar } from "../UserAvatar";
+import { Button } from "../ui/shadcn/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,105 +17,141 @@ import {
   DropdownMenuTrigger
 } from "../ui/shadcn/dropdown-menu";
 
-function useCurrentUser(): { user: UserInfo | null; isAdmin: boolean; isLocal: boolean } {
-  const { getUser, authConfig } = useAuth();
-  const isLocal = !authConfig.auth_enabled || !!authConfig.single_workspace;
+function useCurrentUser(): UserInfo | null {
+  const { getUser } = useAuth();
   try {
-    const user: UserInfo | null = JSON.parse(getUser() || "null");
-    const isAdmin = isLocal || user?.is_admin === true;
-    return { user, isAdmin, isLocal };
+    return JSON.parse(getUser() || "null");
   } catch {
-    return { user: null, isAdmin: isLocal, isLocal };
+    return null;
   }
 }
 
-function UserRow({
-  name,
-  email,
-  picture,
-  interactive
-}: {
-  name: string;
-  email: string;
-  picture?: string | null;
-  interactive: boolean;
-}) {
+function LocalModeFooter() {
   return (
-    <div
-      className={`flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left ${interactive ? "cursor-pointer transition-colors hover:bg-sidebar-accent" : ""}`}
-      title={email}
-    >
-      <UserAvatar
-        name={name}
-        email={email}
-        picture={picture}
-        className='h-8 w-8 shrink-0 rounded-lg'
-      />
-      <div className='grid min-w-0 flex-1 text-left leading-tight'>
-        <span className='truncate font-medium text-[13px] text-sidebar-foreground'>
-          {name || email.split("@")[0]}
-        </span>
-        <span className='truncate text-[11px] text-sidebar-foreground/50'>{email}</span>
+    <div className='border-sidebar-border/50 border-t p-2'>
+      <div className='flex items-center gap-2.5 rounded-md px-2 py-2 text-left group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0'>
+        <div className='flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground'>
+          <HardDrive className='h-4 w-4' />
+        </div>
+        <div className='grid min-w-0 flex-1 leading-tight group-data-[collapsible=icon]:hidden'>
+          <span className='truncate font-medium text-[13px] text-sidebar-foreground'>
+            Local mode
+          </span>
+          <span className='truncate text-[11px] text-muted-foreground'>
+            Running against local config
+          </span>
+        </div>
       </div>
     </div>
   );
 }
 
 export function Footer() {
+  const { isLocalMode } = useAuth();
+  if (isLocalMode) {
+    return <LocalModeFooter />;
+  }
+  return <CloudFooter />;
+}
+
+function CloudFooter() {
+  const navigate = useNavigate();
   const { logout } = useAuth();
-  const { user: currentUser, isAdmin, isLocal } = useCurrentUser();
+  const currentUser = useCurrentUser();
+  const { org: currentOrg, setOrg } = useCurrentOrg();
+  const { data: orgs } = useOrgs();
 
   const email = currentUser?.email ?? "guest@oxy.local";
   const name = currentUser?.name ?? "";
   const picture = currentUser?.picture;
   const isGuest = !currentUser;
-
-  const showManageMembers = isAdmin && !isLocal;
   const showLogout = !isGuest;
-  const hasActions = showManageMembers || showLogout;
+
+  const handleSwitchOrg = (org: NonNullable<typeof orgs>[number]) => {
+    setOrg(org);
+    navigate(ROUTES.ORG(org.slug).WORKSPACES);
+  };
 
   return (
     <div className='border-sidebar-border/50 border-t p-2'>
-      {hasActions ? (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button type='button' className='w-full'>
-              <UserRow name={name} email={email} picture={picture} interactive={true} />
-            </button>
-          </DropdownMenuTrigger>
-
-          <DropdownMenuContent
-            align='end'
-            sideOffset={4}
-            className='w-[var(--radix-dropdown-menu-trigger-width)] min-w-56 rounded-lg'
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant='ghost'
+            className='flex w-full group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0'
           >
-            {showManageMembers && (
-              <DropdownMenuGroup>
-                <DropdownMenuItem asChild className='cursor-pointer'>
-                  <Link to={ROUTES.MEMBERS}>
-                    <Users />
-                    <span>Manage members</span>
-                  </Link>
-                </DropdownMenuItem>
-              </DropdownMenuGroup>
-            )}
+            <div className='flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-primary font-bold text-primary-foreground text-sm'>
+              {currentOrg?.name?.[0]?.toUpperCase() ?? "?"}
+            </div>
+            <div className='grid min-w-0 flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden'>
+              <span className='truncate font-medium text-[13px] text-sidebar-foreground'>
+                {currentOrg?.name ?? "Select organization"}
+              </span>
+            </div>
+          </Button>
+        </DropdownMenuTrigger>
 
-            {showManageMembers && showLogout && <DropdownMenuSeparator />}
+        <DropdownMenuContent
+          side='top'
+          align='start'
+          sideOffset={4}
+          className='w-[var(--radix-dropdown-menu-trigger-width)] min-w-56 rounded-lg'
+        >
+          {/* User info */}
+          <div className='flex items-center gap-2.5 px-2 py-1.5'>
+            <UserAvatar
+              name={name}
+              email={email}
+              picture={picture}
+              className='h-6 w-6 shrink-0 rounded'
+            />
+            <div className='grid min-w-0 flex-1 leading-tight'>
+              <span className='truncate font-medium text-[13px]'>
+                {name || email.split("@")[0]}
+              </span>
+              <span className='truncate text-[11px] text-muted-foreground'>{email}</span>
+            </div>
+          </div>
+          <DropdownMenuSeparator />
+          {/* Org list */}
+          <DropdownMenuGroup>
+            {orgs?.map((org) => (
+              <DropdownMenuItem
+                key={org.id}
+                onClick={() => handleSwitchOrg(org)}
+                className={cn(
+                  "flex cursor-pointer items-center gap-2",
+                  currentOrg?.id === org.id && "bg-muted"
+                )}
+              >
+                <div className='flex h-6 w-6 items-center justify-center rounded bg-primary/10 font-bold text-primary text-xs'>
+                  {org.name[0]?.toUpperCase()}
+                </div>
+                <span className='flex-1 truncate'>{org.name}</span>
+                {currentOrg?.id === org.id && <Check className='h-4 w-4 text-primary' />}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuItem className='cursor-pointer' onClick={() => navigate(ROUTES.ROOT)}>
+              <Building2 className='h-4 w-4' />
+              Manage organizations
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
 
-            {showLogout && (
+          {/* Logout */}
+          {showLogout && (
+            <>
+              <DropdownMenuSeparator />
               <DropdownMenuItem
                 className='cursor-pointer text-destructive focus:text-destructive'
                 onClick={logout}
               >
-                <LogOut />
+                <LogOut className='h-4 w-4' />
                 <span>Log out</span>
               </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ) : (
-        <UserRow name={name} email={email} picture={picture} interactive={false} />
-      )}
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

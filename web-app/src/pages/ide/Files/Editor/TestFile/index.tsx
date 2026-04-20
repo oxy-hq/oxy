@@ -11,7 +11,7 @@ import RunSection from "./RunSection";
 import TestFileForm, { type TestFileFormData } from "./TestFileForm";
 
 const TestFileEditor = () => {
-  const { pathb64, isReadOnly, gitEnabled } = useEditorContext();
+  const { pathb64, gitEnabled } = useEditorContext();
   const { filesSubViewMode } = useFilesContext();
 
   const defaultViewMode =
@@ -40,7 +40,6 @@ const TestFileEditor = () => {
         />
       }
       pathb64={pathb64}
-      readOnly={isReadOnly}
       git={gitEnabled}
       customEditor={viewMode === AgentViewMode.Form ? <TestFileFormWrapper /> : undefined}
       onChanged={(value) => {

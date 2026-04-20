@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import ROUTES from "@/libs/utils/routes";
 import { AuthService } from "@/services/api";
 import type { AuthResponse, GoogleAuthRequest } from "@/types/auth";
+import { handlePostLoginOrgs } from "./postLoginRedirect";
 
 const GOOGLE_REDIRECT_URI = `${window.location.origin}/auth/google/callback`;
 const GOOGLE_STATE_KEY = "google_oauth_state";
@@ -18,7 +19,8 @@ export const useGoogleAuth = () => {
       // Clear state after successful authentication
       sessionStorage.removeItem(GOOGLE_STATE_KEY);
       login(data.token, data.user);
-      navigate(ROUTES.ROOT);
+      const destination = handlePostLoginOrgs(data.orgs);
+      navigate(destination);
     },
     onError: (error) => {
       console.error("Google auth failed:", error);

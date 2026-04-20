@@ -12,7 +12,6 @@ pub mod github;
 pub mod intent;
 pub mod metrics;
 pub mod observability;
-pub mod readonly;
 pub mod semantic;
 pub mod sentry_config;
 pub mod service;

@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/shadcn/badge";
 import { Button } from "@/components/ui/shadcn/button";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import useTestFileResults from "@/stores/useTestFileResults";
 import { EvalEventState, MetricKind, type MetricValue } from "@/types/eval";
 import type { TestFileFormData } from "./TestFileForm";
@@ -27,6 +28,7 @@ const getScoreDisplay = (metrics: MetricValue[]) => {
 const RunSection: React.FC<RunSectionProps> = ({ pathb64 }) => {
   const { state } = useFileEditorContext();
   const { project, branchName } = useCurrentProjectBranch();
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   const { runCase, getCase, clearCasesForFile } = useTestFileResults();
 
   useEffect(() => {
@@ -61,7 +63,7 @@ const RunSection: React.FC<RunSectionProps> = ({ pathb64 }) => {
         <span className='font-medium text-sm'>Results</span>
         <div className='flex items-center gap-2'>
           <Link
-            to={ROUTES.WORKSPACE(project.id).IDE.TESTS.TEST_FILE(pathb64)}
+            to={ROUTES.ORG(orgSlug).WORKSPACE(project.id).IDE.TESTS.TEST_FILE(pathb64)}
             className='text-muted-foreground text-xs hover:text-foreground'
           >
             View in Dashboard

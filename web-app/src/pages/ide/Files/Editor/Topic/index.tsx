@@ -35,11 +35,11 @@ const TopicExplorer = () => {
 };
 
 const TopicEditor = () => {
-  const { pathb64, isReadOnly } = useEditorContext();
+  const { pathb64 } = useEditorContext();
 
   return (
     <TopicExplorerProvider>
-      <EditorPreview pathb64={pathb64} isReadOnly={isReadOnly} explorer={<TopicExplorer />} />
+      <EditorPreview pathb64={pathb64} explorer={<TopicExplorer />} />
     </TopicExplorerProvider>
   );
 };

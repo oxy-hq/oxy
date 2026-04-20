@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/shadcn/button";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/shadcn/sidebar";
 import useSidebar from "@/components/ui/shadcn/sidebar-context";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 import ContextGraph from "./ContextGraph";
 import Ide from "./Ide";
@@ -13,8 +14,9 @@ export function Header() {
   const location = useLocation();
   const { toggleSidebar, open } = useSidebar();
   const { workspace } = useCurrentWorkspace();
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   const workspaceId = workspace?.id ?? "";
-  const homeUri = ROUTES.WORKSPACE(workspaceId).HOME;
+  const homeUri = ROUTES.ORG(orgSlug).WORKSPACE(workspaceId).HOME;
   const isHome = location.pathname === homeUri || location.pathname === "/";
 
   return (

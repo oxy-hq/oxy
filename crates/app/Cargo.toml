@@ -17,6 +17,7 @@ handlebars = { workspace = true }
 
 # Core functionality
 oxy = { workspace = true }
+oxy-git = { workspace = true }
 oxy-observability = { workspace = true, features = ["duckdb", "postgres", "clickhouse"] }
 oxy-shared = { workspace = true }
 agentic-analytics = { workspace = true }
@@ -181,3 +182,4 @@ tempfile = { workspace = true }
 assert_cmd = { workspace = true }
 serial_test = { workspace = true }
 oxy-test-utils = { workspace = true }
+tower = { version = "0.5.3", features = ["util"] }

@@ -14,6 +14,7 @@ import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
 import { IGNORE_FILES_REGEX } from "@/pages/ide/Files/FilesSidebar/constants";
 import { getFileTypeIcon } from "@/pages/ide/Files/FilesSidebar/utils";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import useFileQuickOpen from "@/stores/useFileQuickOpen";
 import type { FileTreeModel } from "@/types/file";
 import { detectFileType } from "@/utils/fileTypes";
@@ -35,6 +36,7 @@ export function FileQuickOpen() {
   const { isOpen, setIsOpen } = useFileQuickOpen();
   const { project } = useCurrentProjectBranch();
   const navigate = useNavigate();
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   const [query, setQuery] = useState("");
 
   const { data: fileTreeData } = useFileTree(isOpen);
@@ -55,7 +57,7 @@ export function FileQuickOpen() {
   const handleSelect = (file: FileTreeModel) => {
     setIsOpen(false);
     setQuery("");
-    navigate(ROUTES.WORKSPACE(project.id).IDE.FILES.FILE(encodeBase64(file.path)));
+    navigate(ROUTES.ORG(orgSlug).WORKSPACE(project.id).IDE.FILES.FILE(encodeBase64(file.path)));
   };
 
   const handleOpenChange = (open: boolean) => {

@@ -1,9 +1,8 @@
-import { AlertTriangle, FolderOpen, GitBranch, Loader2, Plus, RefreshCw } from "lucide-react";
+import { AlertTriangle, FolderOpen, Loader2, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useAuth } from "@/contexts/AuthContext";
 import { useGitHubBranchesWithApp, useGitHubRepositoriesWithApp } from "@/hooks/api/github";
-import useAddRepository from "@/hooks/api/repositories/useAddRepository";
 import useAddRepositoryFromGitHub from "@/hooks/api/repositories/useAddRepositoryFromGitHub";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import { GitNamespaceSelection } from "./GitNamespaceSelection";
 import { Button } from "./ui/shadcn/button";
 import { Combobox } from "./ui/shadcn/combobox";
@@ -14,134 +13,13 @@ import {
   DialogHeader,
   DialogTitle
 } from "./ui/shadcn/dialog";
-import { Input } from "./ui/shadcn/input";
 import { Label } from "./ui/shadcn/label";
-
-// ─── Derive a repo name from a git URL ───────────────────────────────────────
-
-function nameFromUrl(url: string): string {
-  return (
-    url
-      .trim()
-      .replace(/\.git$/, "")
-      .split(/[/:]/g)
-      .filter(Boolean)
-      .pop() ?? ""
-  );
-}
-
-// ─── Local mode: URL form ────────────────────────────────────────────────────
-
-function LocalLinkForm({ onClose }: { onClose: () => void }) {
-  const addRepo = useAddRepository();
-  const [gitUrl, setGitUrl] = useState("");
-  const [name, setName] = useState("");
-  const [branch, setBranch] = useState("");
-  const [nameManual, setNameManual] = useState(false);
-
-  const handleUrlChange = (v: string) => {
-    setGitUrl(v);
-    if (!nameManual) setName(nameFromUrl(v));
-  };
-
-  const handleNameChange = (v: string) => {
-    setName(v);
-    setNameManual(true);
-  };
-
-  const handleSubmit = async () => {
-    if (!gitUrl.trim() || !name.trim() || addRepo.isPending) return;
-    await addRepo.mutateAsync({
-      name: name.trim(),
-      git_url: gitUrl.trim(),
-      branch: branch.trim() || undefined
-    });
-    onClose();
-  };
-
-  const canSubmit = !!gitUrl.trim() && !!name.trim() && !addRepo.isPending;
-
-  return (
-    <div className='flex flex-col gap-5 p-6 pt-4'>
-      <div className='space-y-2'>
-        <Label htmlFor='link-git-url'>Git clone URL</Label>
-        <Input
-          id='link-git-url'
-          placeholder='https://github.com/org/repo.git'
-          value={gitUrl}
-          onChange={(e) => handleUrlChange(e.target.value)}
-          className='font-mono text-sm'
-          autoFocus
-        />
-      </div>
-
-      <div className='space-y-2'>
-        <Label htmlFor='link-name'>Name</Label>
-        <Input
-          id='link-name'
-          placeholder='my-dbt-project'
-          value={name}
-          onChange={(e) => handleNameChange(e.target.value)}
-          className='font-mono text-sm'
-        />
-        <p className='text-muted-foreground text-xs'>
-          Used as the local directory name. Leave blank to use the repository name.
-        </p>
-      </div>
-
-      <div className='space-y-2'>
-        <div className='flex items-center gap-1.5'>
-          <Label htmlFor='link-branch'>Branch</Label>
-          <span className='rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground'>
-            optional
-          </span>
-        </div>
-        <div className='relative'>
-          <GitBranch className='pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50' />
-          <Input
-            id='link-branch'
-            placeholder='main'
-            value={branch}
-            onChange={(e) => setBranch(e.target.value)}
-            className='pl-8 font-mono text-sm'
-          />
-        </div>
-      </div>
-
-      {name && (
-        <div className='rounded-md border border-border/50 bg-muted/30 px-3 py-2.5 text-muted-foreground text-xs leading-relaxed'>
-          Cloned to{" "}
-          <code className='rounded bg-muted px-1 font-mono text-[11px]'>.repositories/{name}/</code>{" "}
-          relative to your project and added to{" "}
-          <code className='rounded bg-muted px-1 font-mono text-[11px]'>.gitignore</code>.
-        </div>
-      )}
-
-      <div className='flex justify-end gap-2 pt-1'>
-        <Button type='button' variant='outline' onClick={onClose} size='sm'>
-          Cancel
-        </Button>
-        <Button size='sm' disabled={!canSubmit} onClick={handleSubmit}>
-          {addRepo.isPending ? (
-            <>
-              <Loader2 className='h-3.5 w-3.5 animate-spin' />
-              Linking…
-            </>
-          ) : (
-            <>
-              <Plus className='h-3.5 w-3.5' />
-              Link repository
-            </>
-          )}
-        </Button>
-      </div>
-    </div>
-  );
-}
 
 // ─── GitHub mode: namespace + repo + branch picker ───────────────────────────
 
 function GitHubLinkForm({ onClose }: { onClose: () => void }) {
+  const { org } = useCurrentOrg();
+  const orgId = org?.id ?? "";
   const addRepo = useAddRepositoryFromGitHub();
   const [namespaceId, setNamespaceId] = useState("");
   const [repoId, setRepoId] = useState<number | null>(null);
@@ -155,9 +33,10 @@ function GitHubLinkForm({ onClose }: { onClose: () => void }) {
     error: repoError,
     refetch: refetchRepos,
     isFetching: isFetchingRepos
-  } = useGitHubRepositoriesWithApp(namespaceId);
+  } = useGitHubRepositoriesWithApp(orgId, namespaceId);
 
   const { data: branches = [], isPending: isLoadingBranches } = useGitHubBranchesWithApp(
+    orgId,
     namespaceId,
     repoName
   );
@@ -305,10 +184,6 @@ interface LinkRepoDialogProps {
 }
 
 export function LinkRepoDialog({ open, onOpenChange }: LinkRepoDialogProps) {
-  const { authConfig } = useAuth();
-  // Local mode: single workspace or no GitHub remote configured — ask for a plain git URL.
-  const isLocal = !!authConfig.single_workspace;
-
   // Reset internal form state when the dialog closes.
   const [key, setKey] = useState(0);
   useEffect(() => {
@@ -323,16 +198,10 @@ export function LinkRepoDialog({ open, onOpenChange }: LinkRepoDialogProps) {
         <DialogHeader className='p-6 pb-0'>
           <DialogTitle>Link a repository</DialogTitle>
           <DialogDescription>
-            {isLocal
-              ? "Enter a git clone URL to link an external repository."
-              : "Connect a GitHub repository to browse and edit its files in the IDE."}
+            Connect a GitHub repository to browse and edit its files in the IDE.
           </DialogDescription>
         </DialogHeader>
-        {isLocal ? (
-          <LocalLinkForm key={key} onClose={handleClose} />
-        ) : (
-          <GitHubLinkForm key={key} onClose={handleClose} />
-        )}
+        <GitHubLinkForm key={key} onClose={handleClose} />
       </DialogContent>
     </Dialog>
   );

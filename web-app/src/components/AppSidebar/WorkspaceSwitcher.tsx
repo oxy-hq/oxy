@@ -1,78 +1,72 @@
-import { Check, ChevronDown, Loader2, Plus } from "lucide-react";
+import { Check, ChevronDown, Plus } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/shadcn/popover";
 import { Separator } from "@/components/ui/shadcn/separator";
-import { useActivateWorkspace, useAllWorkspaces } from "@/hooks/api/workspaces/useWorkspaces";
-import useAuthConfig from "@/hooks/auth/useAuthConfig";
+import { useAuth } from "@/contexts/AuthContext";
+import { useAllWorkspaces } from "@/hooks/api/workspaces/useWorkspaces";
 import ROUTES from "@/libs/utils/routes";
 import type { WorkspaceSummary } from "@/services/api/workspaces";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 
 function WorkspaceRow({
   workspace,
   isActive,
-  isSwitching,
   onSelect
 }: {
   workspace: WorkspaceSummary;
   isActive: boolean;
-  isSwitching: boolean;
   onSelect: () => void;
 }) {
   return (
     <button
       type='button'
       onClick={onSelect}
-      disabled={isSwitching}
-      className='flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent disabled:opacity-60'
+      className='flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent'
     >
       <span
         className={`flex-1 truncate ${isActive ? "font-medium text-foreground" : "text-muted-foreground"}`}
       >
         {workspace.name}
       </span>
-      {isSwitching ? (
-        <Loader2 className='h-3 w-3 animate-spin text-muted-foreground' />
-      ) : isActive ? (
-        <Check className='h-3 w-3 text-primary' />
-      ) : null}
+      {isActive ? <Check className='h-3 w-3 text-primary' /> : null}
     </button>
   );
 }
 
 export function WorkspaceSwitcher() {
   const [open, setOpen] = useState(false);
+  const { isLocalMode } = useAuth();
   const { workspace: currentWorkspace } = useCurrentWorkspace();
+  // `useAllWorkspaces` is already gated by `!!orgId`, so in local mode the
+  // query never fires — no extra guard needed here.
   const { data: workspaces = [] } = useAllWorkspaces();
-  const {
-    mutate: activate,
-    variables: switchingId,
-    isPending: isSwitching
-  } = useActivateWorkspace();
-  const { data: authConfig } = useAuthConfig();
+  const navigate = useNavigate();
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
 
   const displayName = currentWorkspace?.name ?? "Loading…";
-  const isSingleWorkspace = authConfig?.single_workspace === true;
+
+  if (isLocalMode) {
+    return (
+      <div className='flex w-full items-center px-2 py-1.5'>
+        <span className='flex-1 truncate text-left font-semibold text-[13px] text-sidebar-foreground'>
+          {displayName}
+        </span>
+      </div>
+    );
+  }
 
   const handleSelect = (workspaceId: string) => {
     if (workspaceId === currentWorkspace?.id) {
       setOpen(false);
       return;
     }
-    activate(workspaceId, { onSuccess: () => setOpen(false) });
+    const target = workspaces.find((w) => w.id === workspaceId);
+    if (!target?.org_id) return;
+    navigate(ROUTES.ORG(orgSlug).WORKSPACE(workspaceId).ROOT);
+    setOpen(false);
   };
-
-  // In single-workspace mode show a static non-interactive label.
-  if (isSingleWorkspace) {
-    return (
-      <div className='flex w-full items-center gap-1.5 px-2 py-1.5'>
-        <span className='flex-1 truncate font-semibold text-[13px] text-sidebar-foreground'>
-          {displayName}
-        </span>
-      </div>
-    );
-  }
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -101,7 +95,6 @@ export function WorkspaceSwitcher() {
                 key={w.id}
                 workspace={w}
                 isActive={w.id === currentWorkspace?.id}
-                isSwitching={isSwitching && switchingId === w.id}
                 onSelect={() => handleSelect(w.id)}
               />
             ))}
@@ -111,7 +104,7 @@ export function WorkspaceSwitcher() {
         <Separator className='my-1' />
 
         <Link
-          to={ROUTES.WORKSPACES}
+          to={ROUTES.ORG(orgSlug).WORKSPACES}
           onClick={() => setOpen(false)}
           className='flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-muted-foreground text-sm transition-colors hover:bg-accent hover:text-foreground'
         >

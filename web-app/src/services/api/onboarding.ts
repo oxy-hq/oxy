@@ -12,24 +12,29 @@ export interface ReadinessResponse {
 }
 
 export class OnboardingService {
-  static async setupDemo(name?: string): Promise<OnboardingResult> {
-    const response = await apiClient.post<OnboardingResult>("/onboarding/demo", { name });
+  static async setupDemo(orgId: string, name?: string): Promise<OnboardingResult> {
+    const response = await apiClient.post<OnboardingResult>(`/orgs/${orgId}/onboarding/demo`, {
+      name
+    });
     return response.data;
   }
 
-  static async setupNew(name?: string): Promise<OnboardingResult> {
-    const response = await apiClient.post<OnboardingResult>("/onboarding/new", { name });
+  static async setupNew(orgId: string, name?: string): Promise<OnboardingResult> {
+    const response = await apiClient.post<OnboardingResult>(`/orgs/${orgId}/onboarding/new`, {
+      name
+    });
     return response.data;
   }
 
   static async setupGitHub(
+    orgId: string,
     namespaceId: string,
     repoId: number,
     branch: string,
     name?: string,
     subdir?: string
   ): Promise<OnboardingResult> {
-    const response = await apiClient.post<OnboardingResult>("/onboarding/github", {
+    const response = await apiClient.post<OnboardingResult>(`/orgs/${orgId}/onboarding/github`, {
       namespace_id: namespaceId,
       repo_id: repoId,
       branch,
@@ -39,20 +44,8 @@ export class OnboardingService {
     return response.data;
   }
 
-  static async setupGithubUrl(opts: {
-    git_url: string;
-    branch?: string;
-    name?: string;
-    subdir?: string;
-    token?: string;
-  }): Promise<OnboardingResult> {
-    const response = await apiClient.post<OnboardingResult>("/onboarding/github-url", opts);
-    return response.data;
-  }
-
-  static async getReadiness(workspaceId?: string): Promise<ReadinessResponse> {
-    const params = workspaceId ? { workspace_id: workspaceId } : {};
-    const response = await apiClient.get<ReadinessResponse>("/onboarding/readiness", { params });
+  static async getReadiness(workspaceId: string): Promise<ReadinessResponse> {
+    const response = await apiClient.get<ReadinessResponse>(`/${workspaceId}/onboarding-readiness`);
     return response.data;
   }
 }

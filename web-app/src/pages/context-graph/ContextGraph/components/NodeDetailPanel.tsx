@@ -10,6 +10,7 @@ import useFile from "@/hooks/api/files/useFile";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { ContextGraphNode } from "@/types/contextGraph";
 import { TYPE_LABEL_SINGULAR } from "../constants";
 
@@ -30,6 +31,7 @@ function getLanguage(node: ContextGraphNode) {
 export function NodeDetailPanel({ node, onClose }: NodeDetailPanelProps) {
   const { project } = useCurrentProjectBranch();
   const navigate = useNavigate();
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
 
   const pathb64 = node?.data.path ? encodeBase64(node.data.path) : "";
   const isFileNode = node ? FILE_NODE_TYPES.has(node.type) : false;
@@ -40,7 +42,7 @@ export function NodeDetailPanel({ node, onClose }: NodeDetailPanelProps) {
   const handleOpenInIDE = () => {
     const filePath = node.data.path;
     if (filePath && project) {
-      navigate(ROUTES.WORKSPACE(project.id).IDE.FILES.FILE(encodeBase64(filePath)));
+      navigate(ROUTES.ORG(orgSlug).WORKSPACE(project.id).IDE.FILES.FILE(encodeBase64(filePath)));
     }
   };
 

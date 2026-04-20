@@ -8520,6 +8520,7 @@ dependencies = [
  "once_cell",
  "oxy-anthropic",
  "oxy-gemini",
+ "oxy-git",
  "oxy-llm",
  "oxy-looker",
  "oxy-observability",
@@ -8701,6 +8702,7 @@ dependencies = [
  "oxy",
  "oxy-agent",
  "oxy-auth",
+ "oxy-git",
  "oxy-looker",
  "oxy-observability",
  "oxy-project",
@@ -8796,6 +8798,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "oxy-git"
+version = "0.5.36"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "oxy-shared",
+ "secrecy",
+ "serde",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "oxy-llm"
 version = "0.5.36"
 dependencies = [
@@ -8882,6 +8900,7 @@ dependencies = [
  "include_dir",
  "log",
  "oxy",
+ "oxy-git",
  "oxy-shared",
  "sea-orm",
  "serde",

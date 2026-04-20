@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { get } from "lodash";
 import { Trash2 } from "lucide-react";
 import React from "react";
@@ -29,11 +29,12 @@ import {
   TooltipProvider,
   TooltipTrigger
 } from "@/components/ui/shadcn/tooltip";
+import { useOrgMembers } from "@/hooks/api/organizations";
 import queryKeys from "@/hooks/api/queryKey";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
-import { UserService } from "@/services/api/users";
 import type { RunInfo } from "@/services/types/runs";
-import type { UserInfo } from "@/types/auth";
+import useCurrentOrg from "@/stores/useCurrentOrg";
+import type { OrgMember } from "@/types/organization";
 import { useDeleteWorkflowRun, useListWorkflowRuns } from "../useWorkflowRun";
 
 interface Props {
@@ -52,30 +53,17 @@ const RunSelection: React.FC<Props> = ({ workflowId, runId }) => {
 
   const items = get(data, "items", []);
 
-  // Extract unique user_ids from runs
-  const userIds = React.useMemo(() => {
-    const ids = items.map((run: RunInfo) => run.user_id).filter((id): id is string => id != null);
-    return Array.from(new Set(ids));
-  }, [items]);
+  // Resolve run authors via org members (scoped to the caller's current org).
+  const orgId = useCurrentOrg((s) => s.org?.id);
+  const { data: members } = useOrgMembers(orgId ?? "", !!orgId);
 
-  // Fetch users by IDs
-  const { data: usersData } = useQuery({
-    queryKey: ["users", "batch", userIds],
-    queryFn: () => UserService.batchGetUsers(userIds),
-    enabled: userIds.length > 0,
-    staleTime: 5 * 60 * 1000 // Cache for 5 minutes
-  });
-
-  // Create a map of user_id to user info for quick lookup
   const usersMap = React.useMemo(() => {
-    const map = new Map<string, UserInfo>();
-    if (usersData?.users) {
-      usersData.users.forEach((user) => {
-        map.set(user.id, user);
-      });
-    }
+    const map = new Map<string, OrgMember>();
+    members?.forEach((member) => {
+      map.set(member.user_id, member);
+    });
     return map;
-  }, [usersData]);
+  }, [members]);
 
   const queryClient = useQueryClient();
   const { project: projectBranch, branchName } = useCurrentProjectBranch();
@@ -165,7 +153,7 @@ const RunSelection: React.FC<Props> = ({ workflowId, runId }) => {
                       <TooltipTrigger asChild>
                         <div className='flex min-w-0 flex-1 items-center gap-2'>
                           <Avatar className='h-5 w-5 flex-shrink-0'>
-                            <AvatarImage src={user?.picture} alt={displayName} />
+                            <AvatarImage alt={displayName} />
                             <AvatarFallback className='text-xs'>{avatarFallback}</AvatarFallback>
                           </Avatar>
                           <span className='flex-shrink-0 font-medium text-sm'>

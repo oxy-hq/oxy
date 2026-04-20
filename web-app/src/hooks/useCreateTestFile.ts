@@ -7,6 +7,7 @@ import useSaveFile from "@/hooks/api/files/useSaveFile";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { FileTreeModel } from "@/types/file";
 
 const DEFAULT_TEST_CONTENT = `target: ""
@@ -27,6 +28,7 @@ export const useCreateTestFile = () => {
 
   const { data: fileTree, refetch } = useFileTree();
   const { project } = useCurrentProjectBranch();
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   const createFile = useCreateFile();
   const saveFile = useSaveFile();
   const navigate = useNavigate();
@@ -74,7 +76,7 @@ export const useCreateTestFile = () => {
       await refetch();
       setDialogOpen(false);
       setFileName("");
-      navigate(ROUTES.WORKSPACE(project.id).IDE.FILES.FILE(pathb64));
+      navigate(ROUTES.ORG(orgSlug).WORKSPACE(project.id).IDE.FILES.FILE(pathb64));
     } catch (err) {
       toast.error("Failed to create test file", {
         description: err instanceof Error ? err.message : "There was a problem creating the file."

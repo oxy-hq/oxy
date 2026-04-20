@@ -1,4 +1,4 @@
-import { ChevronsRight, Database, GitBranch, Key, KeyRound } from "lucide-react";
+import { ChevronsRight, Database, GitBranch, Key, KeyRound, Users } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
@@ -15,12 +15,11 @@ import {
   SidebarMenuButton,
   SidebarMenuItem
 } from "@/components/ui/shadcn/sidebar";
-import useCurrentUser from "@/hooks/api/users/useCurrentUser";
-import useAuthConfig from "@/hooks/auth/useAuthConfig";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { FEATURES } from "@/libs/features";
 import ROUTES from "@/libs/utils/routes";
 import { SidebarHeader } from "@/pages/ide/components/SidebarHeader";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import { VersionBadge } from "./VersionBadge";
 
 const SettingsSidebar: React.FC<{
@@ -29,13 +28,9 @@ const SettingsSidebar: React.FC<{
   const location = useLocation();
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
-  const { data: currentUser } = useCurrentUser();
-  const { data: authConfig } = useAuthConfig();
-  const isAdmin = currentUser?.is_admin ?? false;
-  // Hide API Keys only when auth is disabled (there's no identity to key off).
-  // `single_workspace` is orthogonal to auth — a single-workspace deployment
-  // with auth enabled still needs API keys for programmatic access.
-  const isLocal = !authConfig?.auth_enabled;
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
+  const orgRole = useCurrentOrg((s) => s.role);
+  const isAdmin = orgRole === "owner" || orgRole === "admin";
 
   return (
     <div className='flex h-full flex-col overflow-hidden bg-sidebar-background'>
@@ -46,9 +41,12 @@ const SettingsSidebar: React.FC<{
             <SidebarMenuItem>
               <SidebarMenuButton
                 asChild
-                isActive={location.pathname === ROUTES.WORKSPACE(projectId).IDE.SETTINGS.DATABASES}
+                isActive={
+                  location.pathname ===
+                  ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.SETTINGS.DATABASES
+                }
               >
-                <Link to={ROUTES.WORKSPACE(projectId).IDE.SETTINGS.DATABASES}>
+                <Link to={ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.SETTINGS.DATABASES}>
                   <Database className='h-4 w-4' />
                   <span>Databases</span>
                 </Link>
@@ -59,25 +57,43 @@ const SettingsSidebar: React.FC<{
                 <SidebarMenuButton
                   asChild
                   isActive={
-                    location.pathname === ROUTES.WORKSPACE(projectId).IDE.SETTINGS.REPOSITORIES
+                    location.pathname ===
+                    ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.SETTINGS.REPOSITORIES
                   }
                 >
-                  <Link to={ROUTES.WORKSPACE(projectId).IDE.SETTINGS.REPOSITORIES}>
+                  <Link to={ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.SETTINGS.REPOSITORIES}>
                     <GitBranch className='h-4 w-4' />
                     <span>Repositories</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             )}
-            {!isLocal && (
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                isActive={
+                  location.pathname ===
+                  ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.SETTINGS.API_KEYS
+                }
+              >
+                <Link to={ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.SETTINGS.API_KEYS}>
+                  <Key className='h-4 w-4' />
+                  <span>API Keys</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            {isAdmin && (
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
-                  isActive={location.pathname === ROUTES.WORKSPACE(projectId).IDE.SETTINGS.API_KEYS}
+                  isActive={
+                    location.pathname ===
+                    ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.SETTINGS.SECRETS
+                  }
                 >
-                  <Link to={ROUTES.WORKSPACE(projectId).IDE.SETTINGS.API_KEYS}>
-                    <Key className='h-4 w-4' />
-                    <span>API Keys</span>
+                  <Link to={ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.SETTINGS.SECRETS}>
+                    <KeyRound className='h-4 w-4' />
+                    <span>Secrets</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -86,11 +102,14 @@ const SettingsSidebar: React.FC<{
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild
-                  isActive={location.pathname === ROUTES.WORKSPACE(projectId).IDE.SETTINGS.SECRETS}
+                  isActive={
+                    location.pathname ===
+                    ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.SETTINGS.MEMBERS
+                  }
                 >
-                  <Link to={ROUTES.WORKSPACE(projectId).IDE.SETTINGS.SECRETS}>
-                    <KeyRound className='h-4 w-4' />
-                    <span>Secrets</span>
+                  <Link to={ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.SETTINGS.MEMBERS}>
+                    <Users className='h-4 w-4' />
+                    <span>Members</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>

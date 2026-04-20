@@ -22,10 +22,9 @@ interface HeaderProps {
   filePath: string;
   actions?: React.ReactNode;
   prefixAction?: React.ReactNode;
-  readOnly?: boolean;
 }
 
-const EditorHeader = ({ filePath, actions, prefixAction, readOnly = false }: HeaderProps) => {
+const EditorHeader = ({ filePath, actions, prefixAction }: HeaderProps) => {
   const {
     state: { fileState, git, showDiff },
     actions: fileActions
@@ -85,7 +84,7 @@ const EditorHeader = ({ filePath, actions, prefixAction, readOnly = false }: Hea
             <span>Saving will create a new branch</span>
           </div>
         )}
-        {fileState === "modified" && !readOnly && (
+        {fileState === "modified" && (
           <Button
             variant='outline'
             size='sm'
@@ -94,9 +93,6 @@ const EditorHeader = ({ filePath, actions, prefixAction, readOnly = false }: Hea
           >
             {isMainEditMode ? "Save to new branch" : "Save changes"}
           </Button>
-        )}
-        {fileState === "modified" && readOnly && (
-          <span className='text-muted-foreground text-sm'>Read-only mode</span>
         )}
         {fileState === "saving" && <Spinner className='text-warning' />}
         {git && (

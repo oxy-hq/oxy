@@ -1,89 +1,93 @@
 import type {
-  CreateGitNamespaceRequest,
+  GitHubAccount,
   GitHubBranch,
+  GitHubCallbackBody,
+  GitHubCallbackResponse,
   GitHubNamespace,
   GitHubRepository,
-  OAuthConnectResponse
+  UserInstallation
 } from "@/types/github";
 import { apiClient } from "./axios";
 
 export class GitHubApiService {
   // Git Namespaces
-  static async listGitNamespaces(): Promise<GitHubNamespace[]> {
-    const response = await apiClient.get("/github/namespaces");
+  static async listGitNamespaces(orgId: string): Promise<GitHubNamespace[]> {
+    const response = await apiClient.get(`/orgs/${orgId}/github/namespaces`);
     return response.data.installations;
   }
 
-  static async getInstallAppUrl(): Promise<string> {
-    const response = await apiClient.get("/github/install-app-url", {
-      params: { origin: window.location.origin }
-    });
+  static async createPATNamespace(orgId: string, token: string): Promise<GitHubNamespace> {
+    const response = await apiClient.post(`/orgs/${orgId}/github/namespaces/pat`, { token });
     return response.data;
   }
 
-  static async createGitNamespace(data: CreateGitNamespaceRequest): Promise<GitHubNamespace> {
-    const response = await apiClient.post("/github/namespaces", data);
-    return response.data;
-  }
-
-  // Repositories and Branches
-  static async listRepositories(gitNamespaceId: string): Promise<GitHubRepository[]> {
-    const response = await apiClient.get("/github/repositories", {
-      params: { git_namespace_id: gitNamespaceId }
-    });
-    return response.data;
-  }
-
-  static async listBranches(gitNamespaceId: string, repoName: string): Promise<GitHubBranch[]> {
-    const response = await apiClient.get("/github/branches", {
-      params: { git_namespace_id: gitNamespaceId, repo_name: repoName }
-    });
-    return response.data;
-  }
-
-  static async createPATNamespace(token: string): Promise<GitHubNamespace> {
-    const response = await apiClient.post("/github/namespaces/pat", { token });
-    return response.data;
-  }
-
-  static async createInstallationNamespace(installationId: number): Promise<GitHubNamespace> {
-    const response = await apiClient.post("/github/namespaces/installation", {
+  static async createInstallationNamespace(
+    orgId: string,
+    installationId: number
+  ): Promise<GitHubNamespace> {
+    const response = await apiClient.post(`/orgs/${orgId}/github/namespaces/installation`, {
       installation_id: installationId
     });
     return response.data;
   }
 
-  static async deleteGitNamespace(id: string): Promise<void> {
-    await apiClient.delete(`/github/namespaces/${id}`);
+  static async deleteGitNamespace(orgId: string, id: string): Promise<void> {
+    await apiClient.delete(`/orgs/${orgId}/github/namespaces/${id}`);
   }
 
-  static async getOAuthConnectUrl(): Promise<string> {
-    const response = await apiClient.get<string>("/github/oauth-connect-url", {
-      params: { origin: window.location.origin }
+  // Repositories and Branches
+  static async listRepositories(
+    orgId: string,
+    gitNamespaceId: string
+  ): Promise<GitHubRepository[]> {
+    const response = await apiClient.get(`/orgs/${orgId}/github/repositories`, {
+      params: { git_namespace_id: gitNamespaceId }
     });
     return response.data;
   }
 
-  static async connectNamespaceFromOAuth(
-    code: string,
-    state: string
-  ): Promise<OAuthConnectResponse> {
-    const response = await apiClient.post<OAuthConnectResponse>("/github/namespaces/oauth", {
-      code,
-      state,
-      origin: window.location.origin
+  static async listBranches(
+    orgId: string,
+    gitNamespaceId: string,
+    repoName: string
+  ): Promise<GitHubBranch[]> {
+    const response = await apiClient.get(`/orgs/${orgId}/github/branches`, {
+      params: { git_namespace_id: gitNamespaceId, repo_name: repoName }
     });
     return response.data;
   }
 
-  static async pickNamespaceInstallation(
-    installation_id: number,
-    selection_token: string
-  ): Promise<GitHubNamespace> {
-    const response = await apiClient.post<GitHubNamespace>("/github/namespaces/pick", {
-      installation_id,
-      selection_token
+  // User-scoped GitHub account and installations
+  static async getAccount(): Promise<GitHubAccount> {
+    const response = await apiClient.get<GitHubAccount>("/user/github/account");
+    return response.data;
+  }
+
+  static async deleteAccount(): Promise<void> {
+    await apiClient.delete("/user/github/account");
+  }
+
+  static async getOauthUrl(orgId: string, origin: string): Promise<string> {
+    const response = await apiClient.get<{ url: string }>("/user/github/account/oauth-url", {
+      params: { org_id: orgId, origin }
     });
+    return response.data.url;
+  }
+
+  static async getNewInstallationUrl(orgId: string, origin: string): Promise<string> {
+    const response = await apiClient.get<{ url: string }>("/user/github/installations/new-url", {
+      params: { org_id: orgId, origin }
+    });
+    return response.data.url;
+  }
+
+  static async completeCallback(body: GitHubCallbackBody): Promise<GitHubCallbackResponse> {
+    const response = await apiClient.post<GitHubCallbackResponse>("/user/github/callback", body);
+    return response.data;
+  }
+
+  static async listUserInstallations(): Promise<UserInstallation[]> {
+    const response = await apiClient.get<UserInstallation[]>("/user/github/installations");
     return response.data;
   }
 }

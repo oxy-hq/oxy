@@ -6,6 +6,7 @@ import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { cn } from "@/libs/shadcn/utils";
 import { timeAgo } from "@/libs/utils/date";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { ThreadItem } from "@/types/chat";
 
 interface ThreadListProps {
@@ -32,6 +33,7 @@ const ThreadListItem = ({
 }: ThreadListItemProps) => {
   const navigate = useNavigate();
   const { project } = useCurrentProjectBranch();
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   const handleCheckboxChange = (checked: boolean) => {
     onSelect(thread.id, checked);
   };
@@ -42,7 +44,7 @@ const ThreadListItem = ({
       handleCheckboxChange(!isSelected);
       return;
     }
-    const threadUri = ROUTES.WORKSPACE(project.id).THREAD(thread.id);
+    const threadUri = ROUTES.ORG(orgSlug).WORKSPACE(project.id).THREAD(thread.id);
     navigate(threadUri);
   };
 

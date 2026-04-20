@@ -107,7 +107,7 @@ export const SIDEBAR_REVEAL_FILE = "sidebar:reveal-file";
 const FilesSidebar: React.FC<{
   setSidebarOpen: (open: boolean) => void;
 }> = ({ setSidebarOpen }) => {
-  const { isReadOnly, project } = useCurrentProjectBranch();
+  const { project } = useCurrentProjectBranch();
   const projectId = project.id;
   const { filesSubViewMode, setFilesSubViewMode } = useFilesContext();
   const { data, refetch, isPending } = useFileTree();
@@ -226,7 +226,7 @@ const FilesSidebar: React.FC<{
         onCollapse={() => setSidebarOpen(false)}
         actions={
           <>
-            {isPrimary && !isReadOnly && (
+            {isPrimary && (
               <>
                 {filesSubViewMode === FilesSubViewMode.OBJECTS && <NewObjectButton />}
                 {filesSubViewMode === FilesSubViewMode.FILES && (

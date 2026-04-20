@@ -2,7 +2,6 @@ export interface Project {
   id: string;
   name: string;
   workspace_id: string;
-  project_repo_id?: string;
   active_branch: ProjectBranch | null;
   created_at: string;
   updated_at: string;

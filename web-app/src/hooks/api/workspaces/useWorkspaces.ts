@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { WorkspaceService, type WorkspaceSummary } from "@/services/api/workspaces";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { Workspace, WorkspaceBranchesResponse } from "@/types/workspace";
 import queryKeys from "../queryKey";
 
@@ -123,14 +124,20 @@ export const usePushChanges = () => {
 };
 
 export const useAllWorkspaces = () => {
+  const orgId = useCurrentOrg((s) => s.org?.id);
+
   return useQuery<WorkspaceSummary[]>({
-    queryKey: queryKeys.workspaces.list(),
-    queryFn: () => WorkspaceService.listAllWorkspaces(),
+    queryKey: [...queryKeys.workspaces.list(), orgId],
+    queryFn: () => {
+      if (!orgId) return Promise.resolve([]);
+      return WorkspaceService.listAllWorkspaces(orgId);
+    },
+    enabled: !!orgId,
     // Poll every 3 s while any workspace is still cloning so the UI updates
     // automatically once the background git clone finishes.
     refetchInterval: (query) => {
       const data = query.state.data;
-      return data?.some((p) => p.is_cloning) ? 3000 : false;
+      return data?.some((p) => p.status === "cloning") ? 3000 : false;
     }
   });
 };
@@ -138,8 +145,15 @@ export const useAllWorkspaces = () => {
 export const useDeleteWorkspace = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, deleteFiles }: { id: string; deleteFiles?: boolean }) =>
-      WorkspaceService.deleteWorkspace(id, deleteFiles),
+    mutationFn: ({
+      orgId,
+      id,
+      deleteFiles
+    }: {
+      orgId: string;
+      id: string;
+      deleteFiles?: boolean;
+    }) => WorkspaceService.deleteWorkspace(orgId, id, deleteFiles),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.list() });
     }
@@ -149,31 +163,10 @@ export const useDeleteWorkspace = () => {
 export const useRenameWorkspace = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, name }: { id: string; name: string }) =>
-      WorkspaceService.renameWorkspace(id, name),
+    mutationFn: ({ orgId, id, name }: { orgId: string; id: string; name: string }) =>
+      WorkspaceService.renameWorkspace(orgId, id, name),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.list() });
-    }
-  });
-};
-
-export const useActivateWorkspace = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (workspaceId: string) => WorkspaceService.activateWorkspace(workspaceId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.list() });
-      queryClient.invalidateQueries({ queryKey: ["authConfig"] });
-      // Re-bootstrap the active workspace so MainLayout loads the new workspace's details.
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.workspaces.item("00000000-0000-0000-0000-000000000000")
-      });
-      // Flush all workspace-scoped data so the new workspace's content loads fresh.
-      queryClient.invalidateQueries({ queryKey: queryKeys.thread.all });
-      queryClient.invalidateQueries({ queryKey: queryKeys.agent.all });
-      queryClient.invalidateQueries({ queryKey: queryKeys.workflow.all });
-      queryClient.invalidateQueries({ queryKey: queryKeys.app.all });
-      queryClient.invalidateQueries({ queryKey: queryKeys.database.all });
     }
   });
 };

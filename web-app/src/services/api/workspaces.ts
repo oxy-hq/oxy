@@ -1,4 +1,5 @@
 import type { ProjectStatus } from "@/types/github";
+import type { WorkspaceMember } from "@/types/organization";
 import type { RevisionInfo } from "@/types/settings";
 import type { Workspace, WorkspaceBranch, WorkspaceBranchesResponse } from "@/types/workspace";
 import { apiClient } from "./axios";
@@ -49,16 +50,6 @@ export const WorkspaceService = {
     const response = await apiClient.post(`/${workspaceId}/switch-branch`, {
       branch: branchName,
       ...(baseBranch ? { base_branch: baseBranch } : {})
-    });
-    return response.data;
-  },
-
-  async switchWorkspaceActiveBranch(
-    workspaceId: string,
-    branchName: string
-  ): Promise<WorkspaceBranch> {
-    const response = await apiClient.post(`/${workspaceId}/switch-active-branch`, {
-      branch: branchName
     });
     return response.data;
   },
@@ -143,14 +134,6 @@ export const WorkspaceService = {
     return response.data;
   },
 
-  async updateGitHubToken(
-    token: string,
-    workspaceId: string
-  ): Promise<{ success: boolean; message: string }> {
-    const response = await apiClient.post(`/${workspaceId}/git-token`, { token });
-    return response.data;
-  },
-
   async deleteBranch(
     workspaceId: string,
     branchName: string
@@ -189,48 +172,47 @@ export const WorkspaceService = {
     return response.data;
   },
 
-  async createRepoFromWorkspace(
-    workspaceId: string,
-    gitNamespaceId: string,
-    repoName: string
-  ): Promise<{ success: boolean; message: string }> {
-    const response = await apiClient.post(`/${workspaceId}/create-repo`, {
-      git_namespace_id: gitNamespaceId,
-      repo_name: repoName
-    });
+  async listAllWorkspaces(orgId: string): Promise<WorkspaceSummary[]> {
+    const response = await apiClient.get(`/orgs/${orgId}/workspaces`);
     return response.data;
   },
 
-  async listAllWorkspaces(): Promise<WorkspaceSummary[]> {
-    const response = await apiClient.get("/workspaces");
-    return response.data;
-  },
-
-  async deleteWorkspace(workspaceId: string, deleteFiles = false): Promise<void> {
-    await apiClient.delete(`/workspaces/${workspaceId}`, {
+  async deleteWorkspace(orgId: string, workspaceId: string, deleteFiles = false): Promise<void> {
+    await apiClient.delete(`/orgs/${orgId}/workspaces/${workspaceId}`, {
       params: { delete_files: deleteFiles }
     });
   },
 
-  async activateWorkspace(workspaceId: string): Promise<void> {
-    await apiClient.post(`/workspaces/${workspaceId}/activate`);
+  async renameWorkspace(orgId: string, workspaceId: string, name: string): Promise<void> {
+    await apiClient.patch(`/orgs/${orgId}/workspaces/${workspaceId}/rename`, { name });
   },
 
-  async renameWorkspace(workspaceId: string, name: string): Promise<void> {
-    await apiClient.patch(`/workspaces/${workspaceId}/rename`, { name });
+  async getWorkspaceMembers(workspaceId: string): Promise<WorkspaceMember[]> {
+    const response = await apiClient.get<WorkspaceMember[]>(`/${workspaceId}/members`);
+    return response.data;
+  },
+
+  async setWorkspaceRoleOverride(workspaceId: string, userId: string, role: string): Promise<void> {
+    await apiClient.put(`/${workspaceId}/members/${userId}`, { role });
+  },
+
+  async removeWorkspaceRoleOverride(workspaceId: string, userId: string): Promise<void> {
+    await apiClient.delete(`/${workspaceId}/members/${userId}`);
   }
 };
 
+export type WorkspaceStatus = "ready" | "cloning" | "failed";
+
 export interface WorkspaceSummary {
   id: string;
+  org_id: string | null;
   name: string;
   path: string | null;
   created_at: string;
   last_opened_at: string | null;
-  active: boolean;
   created_by_name: string | null;
-  is_cloning: boolean;
-  clone_error?: string;
+  status: WorkspaceStatus;
+  error: string | null;
   agent_count: number;
   workflow_count: number;
   app_count: number;

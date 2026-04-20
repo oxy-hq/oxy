@@ -1,15 +1,10 @@
-use axum::{
-    Json,
-    extract::{Path, State},
-    http::StatusCode,
-    response::Json as ResponseJson,
-};
+use axum::{Json, extract::Path, http::StatusCode, response::Json as ResponseJson};
 use oxy::config::model::Repository;
 use oxy::database::client::establish_connection;
-use oxy::github::FileStatus;
-use oxy::github::app_auth::GitHubAppAuth;
+use oxy::github::{default_git_client, github_token_for_namespace};
 use oxy_auth::extractor::AuthenticatedUserExtractor;
-use oxy_project::{LocalGitService, data_repo_service::resolve_data_repo_path};
+use oxy_git::{FileStatus, GitClient};
+use oxy_project::data_repo_service::resolve_data_repo_path;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
 use tracing::error;
@@ -17,7 +12,6 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
-use crate::server::router::AppState;
 
 /// Validate a repository name to prevent path traversal attacks.
 ///
@@ -121,19 +115,14 @@ fn resolve_repo(
     })
 }
 
-/// Returns a fresh GitHub token for the given namespace UUID.
-/// Supports both PAT namespaces and GitHub App installation namespaces.
-async fn get_namespace_token(user_id: Uuid, namespace_id_str: &str) -> Result<String, StatusCode> {
-    let namespace_id = Uuid::parse_str(namespace_id_str).map_err(|_| StatusCode::BAD_REQUEST)?;
-
+/// Look up the org_id for a given workspace.
+async fn get_workspace_org_id(workspace_id: Uuid) -> Result<Option<Uuid>, StatusCode> {
     let db = establish_connection().await.map_err(|e| {
         error!("DB connection error: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let namespace = entity::git_namespaces::Entity::find()
-        .filter(entity::git_namespaces::Column::UserId.eq(user_id))
-        .filter(entity::git_namespaces::Column::Id.eq(namespace_id))
+    let workspace = entity::workspaces::Entity::find_by_id(workspace_id)
         .one(&db)
         .await
         .map_err(|e| {
@@ -142,22 +131,40 @@ async fn get_namespace_token(user_id: Uuid, namespace_id_str: &str) -> Result<St
         })?
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    if !namespace.oauth_token.is_empty() {
-        return Ok(namespace.oauth_token.clone());
-    }
+    Ok(workspace.org_id)
+}
 
-    let app_auth = GitHubAppAuth::from_env().map_err(|e| {
-        error!("GitHub App auth not configured: {}", e);
+async fn get_namespace_token(
+    namespace_id_str: &str,
+    org_id: Option<Uuid>,
+) -> Result<String, StatusCode> {
+    let namespace_id = Uuid::parse_str(namespace_id_str).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let db = establish_connection().await.map_err(|e| {
+        error!("DB connection error: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    app_auth
-        .get_installation_token(&namespace.installation_id.to_string())
+    let mut query = entity::git_namespaces::Entity::find()
+        .filter(entity::git_namespaces::Column::Id.eq(namespace_id));
+
+    if let Some(oid) = org_id {
+        query = query.filter(entity::git_namespaces::Column::OrgId.eq(oid));
+    }
+
+    let namespace = query
+        .one(&db)
         .await
         .map_err(|e| {
-            error!("Failed to get installation token: {}", e);
+            error!("DB query error: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
-        })
+        })?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    github_token_for_namespace(&namespace).await.map_err(|e| {
+        error!("Failed to load token from git namespace: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })
 }
 
 // ─── handlers ────────────────────────────────────────────────────────────────
@@ -176,15 +183,10 @@ pub async fn list_repositories(
 }
 
 pub async fn add_repository(
-    State(app_state): State<AppState>,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Path(_workspace_id): Path<Uuid>,
     Json(body): Json<AddDataRepoRequest>,
 ) -> Result<ResponseJson<DataRepoResponse>, StatusCode> {
-    if app_state.readonly {
-        return Err(StatusCode::FORBIDDEN);
-    }
-
     if !validate_repo_name(&body.name) {
         return Err(StatusCode::BAD_REQUEST);
     }
@@ -214,16 +216,11 @@ pub async fn add_repository(
 }
 
 pub async fn add_repo_from_github(
-    State(app_state): State<AppState>,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    Path(_workspace_id): Path<Uuid>,
+    Path(workspace_id): Path<Uuid>,
     Json(body): Json<AddRepoFromGitHubRequest>,
 ) -> Result<ResponseJson<DataRepoResponse>, StatusCode> {
-    if app_state.readonly {
-        return Err(StatusCode::FORBIDDEN);
-    }
-
     if !validate_repo_name(&body.name)
         || body.clone_url.is_empty()
         || body.git_namespace_id.is_empty()
@@ -232,7 +229,8 @@ pub async fn add_repo_from_github(
     }
 
     // Get a fresh token to authenticate the clone.
-    let token = get_namespace_token(user.id, &body.git_namespace_id).await?;
+    let org_id = get_workspace_org_id(workspace_id).await?;
+    let token = get_namespace_token(&body.git_namespace_id, org_id).await?;
 
     let repo = Repository {
         name: body.name.clone(),
@@ -285,7 +283,10 @@ pub async fn add_repo_from_github(
 
     tokio::spawn(async move {
         let dest = workspace_root.join(".repositories").join(&repo_name);
-        match LocalGitService::clone_or_init(&dest, Some(&clone_url), &branch, Some(&token)).await {
+        match default_git_client()
+            .clone_or_init(&dest, Some(&clone_url), &branch, Some(&token))
+            .await
+        {
             Ok(()) => tracing::info!("Linked repository '{}' cloned successfully", repo_name),
             Err(e) => tracing::error!("Failed to clone linked repository '{}': {}", repo_name, e),
         }
@@ -295,14 +296,9 @@ pub async fn add_repo_from_github(
 }
 
 pub async fn remove_repository(
-    State(app_state): State<AppState>,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Path((_workspace_id, name)): Path<(Uuid, String)>,
 ) -> Result<StatusCode, StatusCode> {
-    if app_state.readonly {
-        return Err(StatusCode::FORBIDDEN);
-    }
-
     workspace_manager
         .config_manager
         .remove_repository(&name)
@@ -320,7 +316,8 @@ pub async fn get_repo_branch(
     Path((_workspace_id, name)): Path<(Uuid, String)>,
 ) -> Result<ResponseJson<RepoBranchResponse>, StatusCode> {
     let repo_path = resolve_repo(&workspace_manager, &name)?;
-    let branch = LocalGitService::get_current_branch(&repo_path)
+    let branch = default_git_client()
+        .get_current_branch(&repo_path)
         .await
         .unwrap_or_else(|_| "HEAD".to_string());
     Ok(ResponseJson(RepoBranchResponse { branch }))
@@ -331,23 +328,19 @@ pub async fn get_repo_diff(
     Path((_workspace_id, name)): Path<(Uuid, String)>,
 ) -> Result<ResponseJson<Vec<FileStatus>>, StatusCode> {
     let repo_path = resolve_repo(&workspace_manager, &name)?;
-    let diff = LocalGitService::diff_numstat_summary(&repo_path)
+    let diff = default_git_client()
+        .diff_numstat_summary(&repo_path)
         .await
         .unwrap_or_default();
     Ok(ResponseJson(diff))
 }
 
 pub async fn commit_repo(
-    State(app_state): State<AppState>,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    Path((_workspace_id, name)): Path<(Uuid, String)>,
+    Path((workspace_id, name)): Path<(Uuid, String)>,
     Json(body): Json<CommitRepoRequest>,
 ) -> Result<ResponseJson<RepoCommitResponse>, StatusCode> {
-    if app_state.readonly {
-        return Err(StatusCode::FORBIDDEN);
-    }
-
     if body.message.trim().is_empty() {
         return Err(StatusCode::BAD_REQUEST);
     }
@@ -355,11 +348,12 @@ pub async fn commit_repo(
     let repo_path = resolve_repo(&workspace_manager, &name)?;
 
     // Resolve a fresh token for push if this repo was linked via GitHub App.
+    let org_id = get_workspace_org_id(workspace_id).await?;
     let token: Option<String> = {
         let config = workspace_manager.config_manager.get_config();
         if let Some(repo) = config.repositories.iter().find(|r| r.name == name) {
             if let Some(ns_id) = &repo.git_namespace_id {
-                match get_namespace_token(user.id, ns_id).await {
+                match get_namespace_token(ns_id, org_id).await {
                     Ok(t) => Some(t),
                     Err(_) => {
                         tracing::warn!(
@@ -389,7 +383,9 @@ pub async fn commit_repo(
     );
 
     // Stage + commit
-    let sha = LocalGitService::commit_changes(&repo_path, &commit_message)
+    let git = default_git_client();
+    let sha = git
+        .commit_changes(&repo_path, &commit_message)
         .await
         .map_err(|e| {
             error!("Failed to commit repository '{}': {}", name, e);
@@ -404,7 +400,7 @@ pub async fn commit_repo(
     }
 
     // Push with the fresh token (or without if not a GitHub App repo).
-    let push_result = LocalGitService::push_to_remote(&repo_path, token.as_deref()).await;
+    let push_result = git.push_to_remote(&repo_path, token.as_deref()).await;
 
     let msg = match push_result {
         Ok(_) => format!("Committed and pushed ({})", sha.trim()),
@@ -443,7 +439,7 @@ pub async fn get_repo_file_tree(
 pub async fn list_repo_branches(
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    Path((_workspace_id, name)): Path<(Uuid, String)>,
+    Path((workspace_id, name)): Path<(Uuid, String)>,
 ) -> Result<ResponseJson<RepoBranchesResponse>, StatusCode> {
     let repo_path = resolve_repo(&workspace_manager, &name)?;
     if !repo_path.exists() {
@@ -451,11 +447,12 @@ pub async fn list_repo_branches(
     }
 
     // Resolve a token for authenticated fetch (GitHub App repos).
+    let org_id = get_workspace_org_id(workspace_id).await?;
     let token: Option<String> = {
         let config = workspace_manager.config_manager.get_config();
         if let Some(repo) = config.repositories.iter().find(|r| r.name == name) {
             if let Some(ns_id) = &repo.git_namespace_id {
-                get_namespace_token(user.id, ns_id).await.ok()
+                get_namespace_token(ns_id, org_id).await.ok()
             } else {
                 None
             }
@@ -464,7 +461,8 @@ pub async fn list_repo_branches(
         }
     };
 
-    let branches = LocalGitService::list_all_branches(&repo_path, token.as_deref())
+    let branches = default_git_client()
+        .list_all_branches(&repo_path, token.as_deref())
         .await
         .map_err(|e| {
             error!("Failed to list branches for repo '{}': {}", name, e);
@@ -475,27 +473,23 @@ pub async fn list_repo_branches(
 }
 
 pub async fn checkout_repo_branch(
-    State(app_state): State<AppState>,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    Path((_workspace_id, name)): Path<(Uuid, String)>,
+    Path((workspace_id, name)): Path<(Uuid, String)>,
     Json(body): Json<CheckoutBranchRequest>,
 ) -> Result<StatusCode, StatusCode> {
-    if app_state.readonly {
-        return Err(StatusCode::FORBIDDEN);
-    }
-
     if body.branch.trim().is_empty() || body.branch.starts_with('-') {
         return Err(StatusCode::BAD_REQUEST);
     }
 
     let repo_path = resolve_repo(&workspace_manager, &name)?;
 
+    let org_id = get_workspace_org_id(workspace_id).await?;
     let token: Option<String> = {
         let config = workspace_manager.config_manager.get_config();
         if let Some(repo) = config.repositories.iter().find(|r| r.name == name) {
             if let Some(ns_id) = &repo.git_namespace_id {
-                get_namespace_token(user.id, ns_id).await.ok()
+                get_namespace_token(ns_id, org_id).await.ok()
             } else {
                 None
             }
@@ -504,7 +498,8 @@ pub async fn checkout_repo_branch(
         }
     };
 
-    LocalGitService::checkout_branch(&repo_path, &body.branch, token.as_deref())
+    default_git_client()
+        .checkout_branch(&repo_path, &body.branch, token.as_deref())
         .await
         .map_err(|e| {
             error!(

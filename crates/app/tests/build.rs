@@ -19,6 +19,7 @@ fn setup_command() -> Command {
 
 #[test]
 #[serial]
+#[ignore = "requires a running PostgreSQL database"]
 fn test_build_succeeds() {
     let mut cmd = setup_command();
     cmd.assert().success();
@@ -26,6 +27,7 @@ fn test_build_succeeds() {
 
 #[test]
 #[serial]
+#[ignore = "requires a running PostgreSQL database"]
 fn test_build_with_drop_all_tables_flag() {
     let mut cmd = setup_command();
     cmd.arg("--drop-all-tables").assert().success();

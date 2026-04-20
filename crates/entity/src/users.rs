@@ -29,42 +29,6 @@ impl UserStatus {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, EnumIter, DeriveActiveEnum)]
-#[sea_orm(rs_type = "String", db_type = "String(StringLen::N(10))")]
-pub enum UserRole {
-    #[sea_orm(string_value = "member")]
-    Member,
-    #[sea_orm(string_value = "admin")]
-    Admin,
-    /// Top-level role. Can grant/revoke admin. Only set via bootstrap (first user).
-    #[sea_orm(string_value = "owner")]
-    Owner,
-}
-
-impl UserRole {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            UserRole::Member => "member",
-            UserRole::Admin => "admin",
-            UserRole::Owner => "owner",
-        }
-    }
-
-    pub fn from_str(s: &str) -> Result<Self, String> {
-        match s {
-            "member" => Ok(UserRole::Member),
-            "admin" => Ok(UserRole::Admin),
-            "owner" => Ok(UserRole::Owner),
-            _ => Err(format!("Invalid role: {s}")),
-        }
-    }
-
-    /// Returns true if this role has at least admin-level access.
-    pub fn is_admin_or_above(&self) -> bool {
-        matches!(self, UserRole::Admin | UserRole::Owner)
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "users")]
 pub struct Model {
@@ -77,14 +41,9 @@ pub struct Model {
     pub email_verified: bool,
     pub magic_link_token: Option<String>,
     pub magic_link_token_expires_at: Option<DateTimeWithTimeZone>,
-    pub role: UserRole,
     pub status: UserStatus,
     pub created_at: DateTimeWithTimeZone,
     pub last_login_at: DateTimeWithTimeZone,
-    /// GitHub OAuth access token stored at login time when the user authenticates
-    /// via "Login with GitHub". Reused by the repo-connect flow so users who log
-    /// in with GitHub never need a second sign-in to import repositories.
-    pub github_access_token: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -93,6 +52,8 @@ pub enum Relation {
     ApiKeys,
     #[sea_orm(has_many = "super::logs::Entity")]
     Logs,
+    #[sea_orm(has_many = "super::org_members::Entity")]
+    OrgMembers,
     #[sea_orm(has_many = "super::secrets::Entity")]
     Secrets,
     #[sea_orm(has_many = "super::threads::Entity")]
@@ -108,6 +69,12 @@ impl Related<super::api_keys::Entity> for Entity {
 impl Related<super::logs::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Logs.def()
+    }
+}
+
+impl Related<super::org_members::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::OrgMembers.def()
     }
 }
 

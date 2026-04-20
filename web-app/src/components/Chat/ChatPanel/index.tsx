@@ -21,6 +21,7 @@ import { getFileTypeIcon } from "@/pages/ide/Files/FilesSidebar/utils";
 import type { ThinkingMode } from "@/services/api/analytics";
 import { useAskAgentic } from "@/stores/agentic";
 import { setPendingThinkingMode } from "@/stores/analyticsThinkingMode";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { FileTreeModel } from "@/types/file";
 import { detectFileType } from "@/utils/fileTypes";
 import AgentsDropdown, { type Agent } from "./AgentsDropdown";
@@ -31,6 +32,7 @@ const ChatPanel = () => {
   const navigate = useNavigate();
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
 
   const { sendMessage } = useAskAgent();
 
@@ -74,7 +76,7 @@ const ChatPanel = () => {
         runWorkflow(data.id);
         break;
     }
-    navigate(ROUTES.WORKSPACE(projectId).THREAD(data.id));
+    navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).THREAD(data.id));
   });
 
   const [autoApprove, setAutoApprove] = useState(

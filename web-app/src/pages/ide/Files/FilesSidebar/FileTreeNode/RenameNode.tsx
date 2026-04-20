@@ -8,6 +8,7 @@ import useRenameFolder from "@/hooks/api/files/useRenameFolder";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { decodeBase64, encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { FileTreeModel } from "@/types/file";
 
 interface RenameNodeProps {
@@ -21,6 +22,7 @@ const RenameNode = React.forwardRef<HTMLInputElement, RenameNodeProps>(
     const { pathname } = useLocation();
     const { project } = useCurrentProjectBranch();
     const projectId = project.id;
+    const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
 
     const { data } = useFileTree();
     const [editingName, setEditingName] = React.useState(fileTree.name);
@@ -70,7 +72,9 @@ const RenameNode = React.forwardRef<HTMLInputElement, RenameNodeProps>(
           const currentPath = decodeBase64(pathname.split("/").pop() ?? "");
           if (currentPath.startsWith(fileTree.path)) {
             const newUrl = currentPath.replace(fileTree.path, newPath);
-            const ideUri = ROUTES.WORKSPACE(projectId).IDE.FILES.FILE(encodeBase64(newUrl));
+            const ideUri = ROUTES.ORG(orgSlug)
+              .WORKSPACE(projectId)
+              .IDE.FILES.FILE(encodeBase64(newUrl));
             navigate(ideUri);
           }
           setError(false);

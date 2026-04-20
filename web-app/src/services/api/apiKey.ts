@@ -29,11 +29,6 @@ export class ApiKeyService {
     await apiClient.delete(`/${projectId}/api-keys/${id}`);
   }
 
-  static maskApiKey(key: string): string {
-    if (key.length <= 8) return key;
-    return `${key.slice(0, 8)}${"*".repeat(Math.max(0, key.length - 12))}${key.slice(-4)}`;
-  }
-
   static formatDate(dateString: string): string {
     return new Date(dateString).toLocaleDateString("en-US", {
       year: "numeric",

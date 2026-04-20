@@ -1,0 +1,43 @@
+import { useEffect } from "react";
+import { Navigate, Outlet, useParams } from "react-router-dom";
+import { Spinner } from "@/components/ui/shadcn/spinner";
+import { useOrgs } from "@/hooks/api/organizations";
+import ROUTES from "@/libs/utils/routes";
+import useCurrentOrg from "@/stores/useCurrentOrg";
+
+/**
+ * Route guard for /:orgSlug/* routes.
+ * Resolves org from slug, verifies user is a member, sets Zustand store.
+ * Redirects to / if org not found or user is not a member.
+ */
+export default function OrgGuard() {
+  const { orgSlug } = useParams<{ orgSlug: string }>();
+  const { data: orgs, isPending } = useOrgs();
+  const { org: currentOrg, setOrg, clearOrg } = useCurrentOrg();
+
+  const matchedOrg = orgs?.find((o) => o.slug === orgSlug);
+
+  useEffect(() => {
+    if (matchedOrg && matchedOrg.id !== currentOrg?.id) {
+      setOrg(matchedOrg);
+    }
+    // Clear stale org from store when orgs have loaded but slug is not found
+    if (!isPending && !matchedOrg && currentOrg?.slug === orgSlug) {
+      clearOrg();
+    }
+  }, [matchedOrg, currentOrg?.id, currentOrg?.slug, orgSlug, isPending, setOrg, clearOrg]);
+
+  if (isPending) {
+    return (
+      <div className='flex h-full w-full items-center justify-center'>
+        <Spinner className='size-6' />
+      </div>
+    );
+  }
+
+  if (!matchedOrg) {
+    return <Navigate to={ROUTES.ROOT} replace />;
+  }
+
+  return <Outlet />;
+}

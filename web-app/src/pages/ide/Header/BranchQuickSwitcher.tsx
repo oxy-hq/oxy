@@ -21,6 +21,7 @@ import {
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import useIdeBranch from "@/stores/useIdeBranch";
 
 interface BranchQuickSwitcherProps {
@@ -53,6 +54,7 @@ export const BranchQuickSwitcher = ({
   const navigate = useNavigate();
   const { project, branchName: currentBranch } = useCurrentProjectBranch();
   const { setCurrentBranch } = useIdeBranch();
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   const { data: branchResponse, isLoading: isBranchesLoading } = useProjectBranches(
     isExternal ? "" : project?.id || ""
   );
@@ -101,7 +103,7 @@ export const BranchQuickSwitcher = ({
           if (fallback) {
             await switchBranch.mutateAsync({ workspaceId: projectId, branchName: fallback });
             setCurrentBranch(projectId, fallback);
-            navigate(ROUTES.WORKSPACE(projectId).IDE.ROOT);
+            navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.ROOT);
           }
         }
       } else {
@@ -131,7 +133,7 @@ export const BranchQuickSwitcher = ({
       await switchBranch.mutateAsync({ workspaceId: projectId, branchName });
       setCurrentBranch(projectId, branchName);
       toast.success(`Switched to "${branchName}"`);
-      navigate(ROUTES.WORKSPACE(projectId).IDE.ROOT);
+      navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.ROOT);
     } catch {
       toast.error("Failed to switch branch.");
     }

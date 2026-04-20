@@ -10,7 +10,7 @@ import { useEditorContext } from "../contexts/useEditorContext";
 import HeaderActions from "./HeaderActions";
 
 const SqlEditor = () => {
-  const { pathb64, isReadOnly, gitEnabled } = useEditorContext();
+  const { pathb64, gitEnabled } = useEditorContext();
   const [result, setResult] = useState<string[][]>([]);
   const [resultFile, setResultFile] = useState<string | undefined>(undefined);
   const [sql, setSql] = useState("");
@@ -63,7 +63,6 @@ const SqlEditor = () => {
       pathb64={pathb64}
       onSaved={onSaved}
       onChanged={setSql}
-      readOnly={isReadOnly}
       git={gitEnabled}
       defaultDirection='vertical'
       headerActions={<HeaderActions onExecuteSql={handleExecuteSql} loading={loading} />}

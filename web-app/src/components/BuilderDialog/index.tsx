@@ -15,6 +15,7 @@ import { getFileTypeIcon } from "@/pages/ide/Files/FilesSidebar/utils";
 import { AnalyticsService } from "@/services/api";
 import { useAskAgentic } from "@/stores/agentic";
 import useBuilderDialog from "@/stores/useBuilderDialog";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { FileTreeModel } from "@/types/file";
 import { decodeFilePath, detectFileType } from "@/utils/fileTypes";
 import { Dialog, DialogContent } from "../ui/shadcn/dialog";
@@ -43,6 +44,7 @@ export function BuilderDialog() {
   const location = useLocation();
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
 
   const [autoApprove, setAutoApprove] = useState(
     () => localStorage.getItem("builder_auto_approve") === "true"
@@ -207,7 +209,7 @@ export function BuilderDialog() {
     }
     setIsOpen(false);
     setMessage("");
-    const threadUri = ROUTES.WORKSPACE(projectId).THREAD(data.id);
+    const threadUri = ROUTES.ORG(orgSlug).WORKSPACE(projectId).THREAD(data.id);
     navigate(threadUri);
   });
 

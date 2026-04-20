@@ -62,6 +62,7 @@ import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
 import PageHeader from "@/pages/ide/components/PageHeader";
 import type { TestRunCaseResult } from "@/services/api/testRuns";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { TestCaseState } from "@/stores/useTestFileResults";
 import useTestFileResults, { createCasePrefix } from "@/stores/useTestFileResults";
 import {
@@ -796,6 +797,7 @@ const TestFileDetailPage: React.FC = () => {
   const location = useLocation();
   const { project, branchName } = useCurrentProjectBranch();
   const projectId = project.id;
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   const { data: testFile, isLoading } = useTestFile(pathb64 ?? "", !!pathb64);
   const { runCase, getCase, stopFile, caseMap } = useTestFileResults();
 
@@ -1235,7 +1237,7 @@ const TestFileDetailPage: React.FC = () => {
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-            <Link to={ROUTES.WORKSPACE(projectId).IDE.FILES.FILE(pathb64)}>
+            <Link to={ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.FILES.FILE(pathb64)}>
               <Button variant='outline' size='sm' className='gap-1'>
                 <Pencil className='h-3 w-3' />
                 Edit

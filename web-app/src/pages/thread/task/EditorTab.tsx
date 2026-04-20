@@ -63,7 +63,6 @@ const EditorTab = ({ pathb64 }: { pathb64?: string }) => {
             pathb64={pathb64 ?? ""}
             pageContentClassName='md:flex-row flex-col'
             editorClassName='w-full h-full'
-            readOnly={true}
             onSaved={() => {
               onSaveApp();
             }}

@@ -9,6 +9,7 @@ import useFileTree from "@/hooks/api/files/useFileTree";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { FileTreeModel } from "@/types/file";
 
 export type CreationType = "file" | "folder";
@@ -32,6 +33,7 @@ const NewNode = React.forwardRef<HTMLInputElement, NewNodeProps>(
     const [error, setError] = React.useState(false);
 
     const projectId = project.id;
+    const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
 
     const onValidateName = (newPath: string) => {
       const pathExistsInTree = (items: FileTreeModel[]): boolean => {
@@ -60,7 +62,9 @@ const NewNode = React.forwardRef<HTMLInputElement, NewNodeProps>(
 
         if (creationType === "file") {
           await createFile.mutateAsync(encodeBase64(newPath));
-          const ideUri = ROUTES.WORKSPACE(projectId).IDE.FILES.FILE(encodeBase64(newPath));
+          const ideUri = ROUTES.ORG(orgSlug)
+            .WORKSPACE(projectId)
+            .IDE.FILES.FILE(encodeBase64(newPath));
           navigate(ideUri);
         } else {
           await createFolder.mutateAsync(encodeBase64(newPath));

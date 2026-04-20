@@ -13,6 +13,7 @@ import {
 import useDeleteAllThread from "@/hooks/api/threads/useDeleteAllThread";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 
 interface ClearAllThreadsDialogProps {
   open: boolean;
@@ -23,17 +24,18 @@ const ClearAllThreadsDialog = ({ open, onOpenChange }: ClearAllThreadsDialogProp
   const navigate = useNavigate();
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   const { mutate: clearAllThreads } = useDeleteAllThread();
 
   const confirm = useCallback(() => {
     clearAllThreads(undefined, {
       onSuccess: () => {
         if (projectId) {
-          navigate(ROUTES.WORKSPACE(projectId).THREADS);
+          navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).THREADS);
         }
       }
     });
-  }, [clearAllThreads, navigate, projectId]);
+  }, [clearAllThreads, navigate, projectId, orgSlug]);
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>

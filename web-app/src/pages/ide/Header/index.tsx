@@ -1,897 +1,84 @@
-import {
-  Check,
-  ChevronDown,
-  Download,
-  FolderOpen,
-  GitBranch,
-  GitFork,
-  GitMerge,
-  GitPullRequest,
-  History,
-  Home,
-  Link2,
-  Loader2,
-  RefreshCw,
-  RotateCcw,
-  Trash2,
-  Upload
-} from "lucide-react";
-import { useEffect, useState } from "react";
+import { Home } from "lucide-react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { toast } from "sonner";
-import { LinkRepoDialog } from "@/components/LinkRepoDialog";
 import { Button } from "@/components/ui/shadcn/button";
 import { Card } from "@/components/ui/shadcn/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger
-} from "@/components/ui/shadcn/dropdown-menu";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/shadcn/popover";
-import { Separator } from "@/components/ui/shadcn/separator";
 import useSidebar from "@/components/ui/shadcn/sidebar-context";
-import { Spinner } from "@/components/ui/shadcn/spinner";
-import { useAuth } from "@/contexts/AuthContext";
-import useDiffSummary from "@/hooks/api/files/useDiffSummary";
-import useFileTree from "@/hooks/api/files/useFileTree";
-import useRemoveRepository from "@/hooks/api/repositories/useRemoveRepository";
-import useRepoBranch from "@/hooks/api/repositories/useRepoBranch";
-import useRepoBranches from "@/hooks/api/repositories/useRepoBranches";
-import useRepoCheckout from "@/hooks/api/repositories/useRepoCheckout";
-import useRepoCommit from "@/hooks/api/repositories/useRepoCommit";
-import useRepoDiff from "@/hooks/api/repositories/useRepoDiff";
-import { useGithubSettings } from "@/hooks/api/useGithubSettings";
-import useRevisionInfo from "@/hooks/api/workspaces/useRevisionInfo";
-import {
-  useActivateWorkspace as useActivateProject,
-  useAllWorkspaces as useAllProjects,
-  useForcePush,
-  usePullChanges,
-  usePushChanges
-} from "@/hooks/api/workspaces/useWorkspaces";
 import { FEATURES } from "@/libs/features";
 import ROUTES from "@/libs/utils/routes";
-import type { CommitEntry } from "@/services/api";
-import { WorkspaceService as ProjectService } from "@/services/api/workspaces";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 import useIdeBranch from "@/stores/useIdeBranch";
 import useSelectedRepo from "@/stores/useSelectedRepo";
-import useTheme from "@/stores/useTheme";
-import { BranchInfo } from "./BranchInfo";
-import { BranchQuickSwitcher } from "./BranchQuickSwitcher";
-import { BranchSettings } from "./BranchSettings";
-import { PullDialog } from "./BranchSettings/BranchInfo/Actions/PullDialog";
 import { ChangesPanel } from "./ChangesPanel";
-
-// ─── Repo switcher ────────────────────────────────────────────────────────────
-
-function RepoSwitcher({ isReadOnly }: { isReadOnly: boolean }) {
-  const { data: fileTree } = useFileTree();
-  const { selectedRepo, setSelectedRepo } = useSelectedRepo();
-  const { theme } = useTheme();
-  const [linkOpen, setLinkOpen] = useState(false);
-  const [pendingRemove, setPendingRemove] = useState<string | null>(null);
-  const remove = useRemoveRepository();
-
-  const repos = fileTree?.repositories ?? [];
-  const isPrimary = selectedRepo === "primary";
-  const selectedRepoData = isPrimary ? undefined : repos.find((r) => r.name === selectedRepo);
-  const isCloning = selectedRepoData?.sync_status === "cloning";
-  const label = isPrimary ? "Root" : selectedRepo;
-  const oxyLogo = theme === "dark" ? "/oxy-dark.svg" : "/oxy-light.svg";
-
-  const handleRemove = (name: string) => {
-    remove.mutate(name, {
-      onSuccess: () => {
-        if (selectedRepo === name) setSelectedRepo("primary");
-        setPendingRemove(null);
-      },
-      onError: () => setPendingRemove(null)
-    });
-  };
-
-  if (repos.length === 0 && isReadOnly) return null;
-
-  return (
-    <>
-      <DropdownMenu
-        onOpenChange={(open) => {
-          if (!open) setPendingRemove(null);
-        }}
-      >
-        <DropdownMenuTrigger asChild>
-          <button
-            type='button'
-            className='flex h-7 items-center gap-1.5 rounded border border-border/50 bg-transparent px-2 text-xs transition-colors hover:border-border hover:bg-accent/40'
-          >
-            {isCloning ? (
-              <Loader2 className='h-3 w-3 shrink-0 animate-spin text-muted-foreground/60' />
-            ) : isPrimary ? (
-              <img src={oxyLogo} alt='Oxy' className='h-3 w-3 shrink-0' />
-            ) : (
-              <GitFork className='h-3 w-3 shrink-0 text-muted-foreground/60' />
-            )}
-            <span className='max-w-28 truncate text-muted-foreground'>{label}</span>
-            {isCloning && (
-              <span className='truncate text-[10px] text-muted-foreground/50'>cloning…</span>
-            )}
-            <ChevronDown className='h-3 w-3 shrink-0 text-muted-foreground/40' />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align='end' className='w-52'>
-          <DropdownMenuItem
-            onClick={() => setSelectedRepo("primary")}
-            className='flex items-center gap-2'
-          >
-            <img src={oxyLogo} alt='Oxy' className='h-3.5 w-3.5 shrink-0' />
-            <span className='flex-1'>Root</span>
-            {isPrimary && <Check className='h-3 w-3 text-primary' />}
-          </DropdownMenuItem>
-          {repos.map((repo) =>
-            pendingRemove === repo.name ? (
-              <div key={repo.name} className='flex items-center gap-1 px-2 py-1.5'>
-                <span className='flex-1 truncate text-destructive text-xs'>
-                  Remove {repo.name}?
-                </span>
-                <button
-                  type='button'
-                  onClick={() => handleRemove(repo.name)}
-                  disabled={remove.isPending}
-                  className='rounded px-1.5 py-0.5 text-[11px] text-destructive hover:bg-destructive/10 disabled:opacity-50'
-                >
-                  {remove.isPending ? <Loader2 className='h-3 w-3 animate-spin' /> : "Yes"}
-                </button>
-                <button
-                  type='button'
-                  onClick={() => setPendingRemove(null)}
-                  className='rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-accent'
-                >
-                  No
-                </button>
-              </div>
-            ) : (
-              <DropdownMenuItem
-                key={repo.name}
-                onClick={() => setSelectedRepo(repo.name)}
-                className='group flex items-center gap-2'
-              >
-                <GitFork className='h-3.5 w-3.5 shrink-0 text-muted-foreground' />
-                <span className='flex-1 truncate'>{repo.name}</span>
-                {repo.sync_status === "cloning" && (
-                  <Loader2 className='h-3 w-3 animate-spin text-muted-foreground/50' />
-                )}
-                {selectedRepo === repo.name && repo.sync_status !== "cloning" && (
-                  <Check className='h-3 w-3 text-primary' />
-                )}
-                {!isReadOnly && (
-                  <button
-                    type='button'
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPendingRemove(repo.name);
-                    }}
-                    className='ml-auto hidden rounded p-0.5 text-muted-foreground/40 hover:text-destructive group-hover:flex'
-                  >
-                    <Trash2 className='h-3 w-3' />
-                  </button>
-                )}
-              </DropdownMenuItem>
-            )
-          )}
-          {!isReadOnly && (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={() => setLinkOpen(true)}
-                className='flex items-center gap-2'
-              >
-                <Link2 className='h-3.5 w-3.5 shrink-0 text-muted-foreground' />
-                <span className='flex-1'>Link repository…</span>
-              </DropdownMenuItem>
-            </>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
-      <LinkRepoDialog open={linkOpen} onOpenChange={setLinkOpen} />
-    </>
-  );
-}
-
-// ─── Linked repo git actions ─────────────────────────────────────────────────
-
-function LinkedRepoActions({ repoName }: { repoName: string }) {
-  const { data: branchData } = useRepoBranch(repoName);
-  const [changesPanelOpen, setChangesPanelOpen] = useState(false);
-  const [branchOpen, setBranchOpen] = useState(false);
-  const commit = useRepoCommit(repoName);
-  const checkout = useRepoCheckout(repoName);
-  const { data: branchesData, isFetching: branchesFetching } = useRepoBranches(
-    repoName,
-    branchOpen
-  );
-  const { data: diffData, refetch: refetchDiff } = useRepoDiff(repoName, true);
-
-  const branch = branchData?.branch;
-  const branches = branchesData?.branches ?? [];
-  const changedFiles = diffData ?? [];
-  const hasChanges = changedFiles.length > 0;
-
-  const handleSelect = (b: string) => {
-    if (b === branch || checkout.isPending) return;
-    checkout.mutate(b);
-  };
-
-  const handleCommit = async (message: string) => {
-    try {
-      await commit.mutateAsync(message);
-    } finally {
-      refetchDiff();
-    }
-  };
-
-  const pill = (
-    <button
-      type='button'
-      className='flex h-7 max-w-36 items-center gap-1.5 overflow-hidden rounded border border-border/50 bg-transparent px-2 text-sm transition-colors hover:border-border hover:bg-accent/40'
-    >
-      <span className='flex min-w-0 flex-1 items-center gap-1 font-mono text-muted-foreground text-xs'>
-        {checkout.isPending ? (
-          <Loader2 className='h-3 w-3 shrink-0 animate-spin' />
-        ) : (
-          <GitBranch className='h-3 w-3 shrink-0' />
-        )}
-        <span className='truncate'>{branch ?? "…"}</span>
-      </span>
-      <ChevronDown className='h-3 w-3 shrink-0 text-muted-foreground/60' />
-    </button>
-  );
-
-  return (
-    <div className='flex items-center gap-1.5'>
-      <BranchQuickSwitcher
-        trigger={pill}
-        open={branchOpen}
-        onOpenChange={setBranchOpen}
-        externalBranches={branches}
-        externalCurrentBranch={branch}
-        isExternalLoading={branchesFetching && branches.length === 0}
-        onExternalSelect={handleSelect}
-      />
-
-      <div className='mx-0.5 h-4 w-px bg-border/50' />
-
-      <button
-        type='button'
-        onClick={() => {
-          refetchDiff();
-          setChangesPanelOpen(true);
-        }}
-        disabled={commit.isPending}
-        className={`flex h-7 items-center gap-1 rounded px-2.5 font-medium text-xs transition-all ${
-          hasChanges
-            ? "bg-gradient-to-b from-[#3550FF] to-[#2A40CC] text-white shadow-[#0B1033]/40 shadow-sm hover:from-[#5D73FF] hover:to-[#3550FF]"
-            : "border border-border/50 text-muted-foreground hover:border-border hover:bg-accent/40 hover:text-foreground"
-        }`}
-      >
-        {commit.isPending ? (
-          <Loader2 className='h-3 w-3 animate-spin' />
-        ) : (
-          <Upload className='h-3 w-3' />
-        )}
-        Commit
-      </button>
-
-      <ChangesPanel
-        open={changesPanelOpen}
-        onOpenChange={setChangesPanelOpen}
-        diffSummary={changedFiles}
-        isPushing={commit.isPending}
-        pushLabel='Commit & Push'
-        onPush={handleCommit}
-      />
-    </div>
-  );
-}
-
-// ─── Compact workspace switcher for the IDE header ───────────────────────────
-
-function IDEProjectSwitcher() {
-  const [open, setOpen] = useState(false);
-  const { workspace: currentProject } = useCurrentWorkspace();
-  const { data: projects = [] } = useAllProjects();
-  const { mutate: activate, variables: switchingId, isPending: isSwitching } = useActivateProject();
-  const navigate = useNavigate();
-
-  const handleSelect = (projectId: string) => {
-    if (projectId === currentProject?.id) {
-      setOpen(false);
-      return;
-    }
-    activate(projectId, { onSuccess: () => setOpen(false) });
-  };
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type='button'
-          className='flex h-7 max-w-44 items-center gap-1.5 rounded border border-border/50 bg-transparent px-2 text-sm transition-colors hover:border-border hover:bg-accent/40'
-          aria-label='Switch workspace'
-        >
-          {isSwitching ? (
-            <Loader2 className='h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground/60' />
-          ) : (
-            <FolderOpen className='h-3.5 w-3.5 shrink-0 text-muted-foreground/60' />
-          )}
-          <span className='min-w-0 flex-1 truncate text-left text-muted-foreground text-xs'>
-            {currentProject?.name ?? "…"}
-          </span>
-          <ChevronDown className='h-3 w-3 shrink-0 text-muted-foreground/40' />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent side='bottom' align='start' sideOffset={4} className='w-52 p-1.5'>
-        <p className='px-2 pb-1 font-medium text-[11px] text-muted-foreground uppercase tracking-wide'>
-          Switch workspace
-        </p>
-        {projects.map((p) => (
-          <button
-            key={p.id}
-            type='button'
-            onClick={() => handleSelect(p.id)}
-            disabled={isSwitching}
-            className='flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent disabled:opacity-60'
-          >
-            <span
-              className={`flex-1 truncate text-sm ${p.id === currentProject?.id ? "font-medium text-foreground" : "text-muted-foreground"}`}
-            >
-              {p.name}
-            </span>
-            {isSwitching && switchingId === p.id ? (
-              <Loader2 className='h-3 w-3 animate-spin text-muted-foreground' />
-            ) : p.id === currentProject?.id ? (
-              <Check className='h-3 w-3 text-primary' />
-            ) : null}
-          </button>
-        ))}
-        <Separator className='my-1' />
-        <button
-          type='button'
-          onClick={() => {
-            setOpen(false);
-            navigate(ROUTES.WORKSPACES);
-          }}
-          className='flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-muted-foreground text-sm transition-colors hover:bg-accent hover:text-foreground'
-        >
-          Manage workspaces
-        </button>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-const GithubIcon = ({ className }: { className?: string }) => (
-  <svg className={className} viewBox='0 0 24 24' fill='currentColor' aria-hidden='true'>
-    <path d='M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.603-3.369-1.342-3.369-1.342-.454-1.154-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.532 1.031 1.532 1.031.891 1.528 2.341 1.087 2.91.831.091-.645.349-1.087.635-1.337-2.22-.252-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.03-2.682-.103-.253-.447-1.27.097-2.646 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836a9.59 9.59 0 012.504.337c1.909-1.294 2.748-1.025 2.748-1.025.546 1.376.202 2.394.1 2.646.64.699 1.026 1.591 1.026 2.682 0 3.841-2.337 4.687-4.565 4.935.359.309.678.919.678 1.852 0 1.337-.012 2.414-.012 2.742 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z' />
-  </svg>
-);
+import { GitActions } from "./components/GitActions";
+import { GithubIcon } from "./components/GithubIcon";
+import { IDEProjectSwitcher } from "./components/IDEProjectSwitcher";
+import { LinkedRepoActions } from "./components/LinkedRepoActions";
+import { RepoSwitcher } from "./components/RepoSwitcher";
+import { useGithubUrls } from "./hooks/useGithubUrls";
+import { useGitMutations } from "./hooks/useGitMutations";
+import { PullDialog } from "./PullDialog";
 
 export const OPEN_BRANCH_SETTINGS = "ide:open-branch-settings";
 
 export const Header = () => {
-  const { authConfig } = useAuth();
   const { workspace: project } = useCurrentWorkspace();
   const { selectedRepo } = useSelectedRepo();
+  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   const isLinkedRepo = selectedRepo !== "primary";
   const { setOpen } = useSidebar();
   const navigate = useNavigate();
-  const [isBranchSettingOpen, setIsBranchSettingOpen] = useState(false);
-  const [isBranchPickerOpen, setIsBranchPickerOpen] = useState(false);
   const [pullDialogOpen, setPullDialogOpen] = useState(false);
   const [changesPanelOpen, setChangesPanelOpen] = useState(false);
-  const [resetPopoverOpen, setResetPopoverOpen] = useState(false);
-  const [recentCommits, setRecentCommits] = useState<CommitEntry[]>([]);
-  const [commitsLoading, setCommitsLoading] = useState(false);
-  const [resettingHash, setResettingHash] = useState<string | null>(null);
 
-  // Derive the current IDE branch without throwing (useCurrentWorkspaceBranch throws if no workspace).
+  // Resolve current IDE branch without throwing — useCurrentWorkspaceBranch
+  // requires a workspace, but Header renders during initial load too.
   const { getCurrentBranch } = useIdeBranch();
   const activeBranch = project?.active_branch?.name ?? "";
   const ideBranch = project ? (getCurrentBranch(project.id) ?? activeBranch) : activeBranch;
-  const defaultBranch = authConfig.default_branch ?? "main";
+  const defaultBranch = project?.default_branch ?? "main";
   const isOnMain = ideBranch === defaultBranch;
 
-  const isLocalOnly = !!authConfig.local_git;
-  const pushLabel = isLocalOnly ? (authConfig.git_remote ? "Commit & Push" : "Commit") : "Push";
+  const caps = project?.capabilities;
+  const canCommit = !!caps?.can_commit;
+  const canPush = !!caps?.can_push;
+  const canPull = !!caps?.can_pull;
+  const canBrowseHistory = !!caps?.can_browse_history;
+  const canDiff = !!caps?.can_diff;
+  const pushLabel = canCommit ? (canPush ? "Commit & Push" : "Commit") : "Push";
 
   const {
-    data: diffSummary,
-    refetch: refetchDiff,
-    isFetching: isDiffFetching
-  } = useDiffSummary((isLocalOnly || !isOnMain) && !!project?.id);
-  const { data: githubSettings } = useGithubSettings(false, false, false);
-  const {
-    data: revisionInfo,
-    refetch: refetchRevision,
-    isFetching: isRevisionFetching
-  } = useRevisionInfo(authConfig.local_git && !!project?.id);
-  // In local mode, allow committing on any branch (including protected/main).
-  // In cloud mode, only show changes when not on main — protected branches block direct push.
-  const hasLocalChanges = isLocalOnly
-    ? (diffSummary?.length ?? 0) > 0
-    : !isOnMain && (diffSummary?.length ?? 0) > 0;
+    diffSummary,
+    revisionInfo,
+    isFetching,
+    isPushing,
+    isForcePushing,
+    fetchAll,
+    push,
+    forcePush,
+    abortRebase,
+    continueRebase
+  } = useGitMutations({
+    workspaceId: project?.id,
+    branch: ideBranch,
+    enableDiff: canDiff || !isOnMain,
+    enableRevision: canDiff
+  });
 
-  const isBehind = revisionInfo?.sync_status === "behind";
-  const isAhead = revisionInfo?.sync_status === "ahead";
+  const hasLocalChanges = canCommit && (diffSummary?.length ?? 0) > 0;
   const isConflict = revisionInfo?.sync_status === "conflict";
-  const hasRemote = !!authConfig.git_remote;
-  const showPull = hasRemote && isBehind && !isConflict;
-  const isFetching = isDiffFetching || isRevisionFetching;
 
-  const handleFetch = () => {
-    refetchDiff();
-    refetchRevision();
-  };
-
-  const pullMutation = usePullChanges();
-  const pushMutation = usePushChanges();
-  const forcePushMutation = useForcePush();
-  const handlePush = async (commitMessage: string) => {
-    if (!project?.id || !ideBranch) return;
-    try {
-      const result = await pushMutation.mutateAsync({
-        workspaceId: project.id,
-        branchName: ideBranch,
-        commitMessage
-      });
-      if (result.success) {
-        toast.success(result.message || "Changes pushed");
-        await Promise.all([refetchDiff(), refetchRevision()]);
-      } else {
-        toast.error(result.message || "Push failed");
-      }
-    } catch {
-      toast.error("Push failed");
-    }
-  };
-
-  const handleDirectPull = async () => {
-    if (!project?.id || !ideBranch) return;
-    try {
-      const result = await pullMutation.mutateAsync({
-        workspaceId: project.id,
-        branchName: ideBranch
-      });
-      if (result.success) {
-        toast.success("Pulled latest changes");
-        await Promise.all([refetchDiff(), refetchRevision()]);
-      } else {
-        await Promise.all([refetchDiff(), refetchRevision()]);
-        const isConflictResult = result.message?.toLowerCase().includes("conflict");
-        if (!isConflictResult) {
-          toast.error(result.message || "Pull failed");
-        }
-      }
-    } catch {
-      toast.error("Failed to pull changes");
-    }
-  };
-
-  // Build GitHub URLs from either the local remote URL or cloud repository name
-  const { githubRepoUrl, githubPrUrl } = (() => {
-    const buildBase = (): string | null => {
-      const remoteUrl = revisionInfo?.remote_url;
-      if (remoteUrl) {
-        const match = remoteUrl.match(/github\.com[/:]([^/]+\/[^/.]+?)(?:\.git)?$/);
-        if (match) return `https://github.com/${match[1]}`;
-      }
-      if (githubSettings?.repository_name) {
-        return `https://github.com/${githubSettings.repository_name}`;
-      }
-      return null;
-    };
-
-    const base = buildBase();
-    if (!base) return { githubRepoUrl: null, githubPrUrl: null };
-    return {
-      githubRepoUrl: `${base}/tree/${ideBranch}`,
-      githubPrUrl: isOnMain ? null : `${base}/compare/${defaultBranch}...${ideBranch}?expand=1`
-    };
-  })();
-
-  // Show "Open PR" only when not on main, has a GitHub URL, and all commits are pushed
-  const showOpenPr = !isOnMain && !!githubPrUrl && !hasLocalChanges && !isConflict && !isAhead;
-
-  const handleOpenResetPopover = async (open: boolean) => {
-    setResetPopoverOpen(open);
-    if (open && project?.id && ideBranch) {
-      setCommitsLoading(true);
-      try {
-        const result = await ProjectService.getRecentCommits(project.id, ideBranch);
-        setRecentCommits(result.commits);
-      } catch {
-        setRecentCommits([]);
-      } finally {
-        setCommitsLoading(false);
-      }
-    }
-  };
-
-  const handleResetToCommit = async (hash: string) => {
-    if (!project?.id || !ideBranch) return;
-    setResettingHash(hash);
-    try {
-      const result = await ProjectService.resetToCommit(project.id, ideBranch, hash);
-      if (result.success) {
-        toast.success(`Restored to ${hash.substring(0, 7)}`);
-        setResetPopoverOpen(false);
-        setChangesPanelOpen(false);
-        await Promise.all([refetchDiff(), refetchRevision()]);
-      } else {
-        toast.error(result.message || "Restore failed");
-      }
-    } catch {
-      toast.error("Restore failed");
-    } finally {
-      setResettingHash(null);
-    }
-  };
-
-  const handleForcePush = async () => {
-    if (!project?.id || !ideBranch) return;
-    try {
-      const result = await forcePushMutation.mutateAsync({
-        workspaceId: project.id,
-        branchName: ideBranch
-      });
-      if (result.success) {
-        toast.success("Force pushed successfully");
-        refetchRevision();
-      } else {
-        toast.error(result.message || "Force push failed");
-      }
-    } catch {
-      toast.error("Force push failed");
-    }
-  };
-
-  const handleAbortConflict = async () => {
-    if (!project?.id || !ideBranch) return;
-    try {
-      const result = await ProjectService.abortRebase(project.id, ideBranch);
-      if (result.success) {
-        toast.success("Rebase aborted — branch restored to previous state");
-        setChangesPanelOpen(false);
-        refetchRevision();
-        refetchDiff();
-      } else {
-        toast.error(result.message || "Failed to abort");
-      }
-    } catch {
-      toast.error("Failed to abort");
-    }
-  };
-
-  const handleContinueRebase = async () => {
-    if (!project?.id || !ideBranch) return;
-    try {
-      const result = await ProjectService.continueRebase(project.id, ideBranch);
-      if (result.success) {
-        toast.success("Conflicts resolved — rebase complete");
-        setChangesPanelOpen(false);
-        refetchRevision();
-        refetchDiff();
-      } else {
-        toast.error(result.message || "Failed to continue rebase");
-      }
-    } catch {
-      toast.error("Failed to continue rebase");
-    }
-  };
-
-  useEffect(() => {
-    const handler = () => setIsBranchSettingOpen(true);
-    window.addEventListener(OPEN_BRANCH_SETTINGS, handler);
-    return () => window.removeEventListener(OPEN_BRANCH_SETTINGS, handler);
-  }, []);
-
-  const renderContent = () => {
-    // Pure local mode: no git — just show a label
-    if (!authConfig.local_git) {
-      return <div className='text-muted-foreground text-sm'>Local mode</div>;
-    }
-
-    const showBranchInfo = authConfig.local_git || !!project?.project_repo_id;
-    if (!showBranchInfo) {
-      return (
-        <button
-          type='button'
-          onClick={() => setIsBranchSettingOpen(true)}
-          className='flex h-7 items-center gap-1.5 rounded border border-border/50 bg-transparent px-2.5 text-sm transition-colors hover:border-border hover:bg-accent/40'
-        >
-          <GithubIcon className='h-3.5 w-3.5 text-muted-foreground' />
-          <span className='text-muted-foreground text-sm'>Connect repository</span>
-          <ChevronDown className='ml-0.5 h-3 w-3 flex-shrink-0 text-muted-foreground/60' />
-        </button>
-      );
-    }
-
-    const pill = (
-      <button
-        type='button'
-        className='flex h-7 max-w-36 items-center gap-1.5 overflow-hidden rounded border border-border/50 bg-transparent px-2 text-sm transition-colors hover:border-border hover:bg-accent/40'
-      >
-        <span className='min-w-0 flex-1'>
-          <BranchInfo />
-        </span>
-        <ChevronDown className='h-3 w-3 flex-shrink-0 text-muted-foreground/60' />
-      </button>
-    );
-
-    // Determine primary CTA state (priority order)
-    // "commit" = has uncommitted changes → open ChangesPanel to review + commit
-    //            local mode: allowed on any branch including protected/main
-    //            cloud mode: only when not on main (protected branches block direct push)
-    // "push"   = committed but not yet pushed → push directly without panel
-    type CtaState = "conflict" | "commit" | "push" | "pull" | "pr" | "fetch" | "none";
-    const ctaState: CtaState = isConflict
-      ? "conflict"
-      : hasLocalChanges
-        ? "commit"
-        : !isOnMain && isAhead
-          ? "push"
-          : showPull
-            ? "pull"
-            : showOpenPr
-              ? "pr"
-              : hasRemote
-                ? "fetch"
-                : "none";
-
-    const showSplit =
-      hasRemote && (ctaState === "commit" || ctaState === "push" || ctaState === "pr") && !isOnMain;
-
-    const splitTriggerClass =
-      "border-l border-white/20 bg-gradient-to-b from-[var(--blue-500)] to-[var(--blue-600)] text-white hover:from-[var(--blue-400)] hover:to-[var(--blue-500)]";
-
-    return (
-      <div className='flex items-center gap-1.5'>
-        {/* ── Branch pill ─────────────────────────────────────────── */}
-        <BranchQuickSwitcher
-          trigger={pill}
-          open={isBranchPickerOpen}
-          onOpenChange={setIsBranchPickerOpen}
-        />
-
-        {authConfig.local_git && (
-          <Popover open={resetPopoverOpen} onOpenChange={handleOpenResetPopover}>
-            <PopoverTrigger asChild>
-              <button
-                type='button'
-                title='View commit history'
-                className='flex h-7 items-center gap-1 rounded border border-border/50 px-2 text-muted-foreground text-xs transition-colors hover:border-border hover:bg-accent/40 hover:text-foreground'
-              >
-                <History className='h-3 w-3' />
-                History
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className='w-80 p-0' align='end' sideOffset={6}>
-              <div className='border-b px-3 py-2'>
-                <p className='font-medium text-sm'>Recent commits</p>
-                <p className='text-[11px] text-muted-foreground'>
-                  Select a commit to restore to it. A new commit will be created with those file
-                  contents.
-                </p>
-              </div>
-              <div className='max-h-72 overflow-y-auto'>
-                {commitsLoading ? (
-                  <div className='flex items-center justify-center py-6 text-muted-foreground text-xs'>
-                    <Spinner className='size-3' />
-                  </div>
-                ) : recentCommits.length === 0 ? (
-                  <div className='flex items-center justify-center py-6 text-muted-foreground text-xs'>
-                    No commits found
-                  </div>
-                ) : (
-                  recentCommits.map((c) => (
-                    <div
-                      key={c.hash}
-                      className='group flex items-start gap-2 border-b px-3 py-2 last:border-0 hover:bg-accent/40'
-                    >
-                      <div className='min-w-0 flex-1'>
-                        <p className='truncate text-xs'>{c.message}</p>
-                        <p className='font-mono text-[10px] text-muted-foreground'>
-                          {c.short_hash} · {c.author} · {c.date}
-                        </p>
-                      </div>
-                      <button
-                        type='button'
-                        onClick={() => handleResetToCommit(c.hash)}
-                        disabled={!!resettingHash}
-                        title={`Restore to ${c.short_hash}`}
-                        className='mt-0.5 hidden shrink-0 items-center gap-1 rounded bg-primary px-1.5 py-0.5 text-[10px] text-primary-foreground transition-colors hover:bg-primary/80 disabled:opacity-50 group-hover:flex'
-                      >
-                        <RotateCcw className='h-2.5 w-2.5' />
-                        {resettingHash === c.hash ? "…" : "Restore"}
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-            </PopoverContent>
-          </Popover>
-        )}
-
-        <div className='mx-0.5 h-4 w-px bg-border/50' />
-
-        {/* ── On main: new branch shortcut ────────────────────────── */}
-        {isOnMain && !hasLocalChanges && !isBehind && !isConflict && (
-          <button
-            type='button'
-            onClick={() => setIsBranchPickerOpen(true)}
-            title='Create a new branch'
-            className='flex h-7 items-center gap-1 rounded border border-primary/30 bg-primary/8 px-2 text-primary text-xs transition-colors hover:border-primary/50 hover:bg-primary/15'
-          >
-            <GitBranch className='h-3 w-3' />
-            New branch
-          </button>
-        )}
-
-        {/* ── Primary CTA ─────────────────────────────────────────── */}
-        {ctaState !== "none" && (
-          <div className='flex h-7 items-stretch'>
-            {ctaState === "conflict" && (
-              <button
-                type='button'
-                onClick={() => setChangesPanelOpen(true)}
-                className='flex items-center gap-1 rounded border border-warning/30 bg-warning/10 px-2.5 text-warning text-xs transition-colors hover:border-warning/50 hover:bg-warning/20'
-              >
-                <GitMerge className='h-3 w-3' />
-                Conflict
-              </button>
-            )}
-
-            {ctaState === "commit" && (
-              <button
-                type='button'
-                onClick={() => setChangesPanelOpen(true)}
-                disabled={pushMutation.isPending}
-                data-testid='ide-commit-push-button'
-                className={`flex items-center gap-1 bg-gradient-to-b from-[var(--blue-500)] to-[var(--blue-600)] px-2.5 font-medium text-white text-xs shadow-[var(--blue-900)]/40 shadow-sm transition-all hover:from-[var(--blue-400)] hover:to-[var(--blue-500)] disabled:opacity-50 ${showSplit ? "rounded-l" : "rounded"}`}
-              >
-                <Upload className='h-3 w-3' />
-                {pushLabel}
-              </button>
-            )}
-
-            {ctaState === "push" && (
-              <button
-                type='button'
-                onClick={() => handlePush("")}
-                disabled={pushMutation.isPending}
-                data-testid='ide-push-button'
-                className={`flex items-center gap-1 bg-gradient-to-b from-[var(--blue-500)] to-[var(--blue-600)] px-2.5 font-medium text-white text-xs shadow-[var(--blue-900)]/40 shadow-sm transition-all hover:from-[var(--blue-400)] hover:to-[var(--blue-500)] disabled:opacity-50 ${showSplit ? "rounded-l" : "rounded"}`}
-              >
-                <Upload className='h-3 w-3' />
-                {pushMutation.isPending ? "Pushing…" : "Push"}
-              </button>
-            )}
-
-            {ctaState === "pull" && isOnMain && (
-              <button
-                type='button'
-                onClick={handleDirectPull}
-                disabled={pullMutation.isPending}
-                data-testid='ide-pull-button'
-                className='flex items-center gap-1 rounded border border-border/50 px-2.5 text-muted-foreground text-xs transition-colors hover:border-border hover:bg-accent/40 hover:text-foreground disabled:opacity-40'
-              >
-                {pullMutation.isPending ? (
-                  <Loader2 className='h-3 w-3 animate-spin' />
-                ) : (
-                  <Download className='h-3 w-3' />
-                )}
-                {pullMutation.isPending ? "Pulling…" : "Pull"}
-              </button>
-            )}
-
-            {ctaState === "pull" && !isOnMain && (
-              <>
-                <button
-                  type='button'
-                  onClick={() => setPullDialogOpen(true)}
-                  data-testid='ide-pull-button'
-                  className='flex items-center gap-1 rounded-l border border-border/50 px-2.5 text-muted-foreground text-xs transition-colors hover:border-border hover:bg-accent/40 hover:text-foreground'
-                >
-                  <Download className='h-3 w-3' />
-                  Pull
-                </button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      type='button'
-                      aria-label='More actions'
-                      className='flex w-5 items-center justify-center rounded-r border border-border/50 border-l-0 text-muted-foreground text-xs transition-colors hover:border-border hover:bg-accent/40 hover:text-foreground'
-                    >
-                      <ChevronDown className='h-2.5 w-2.5' />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align='end' className='w-auto min-w-0'>
-                    <DropdownMenuItem
-                      onClick={handleForcePush}
-                      disabled={forcePushMutation.isPending}
-                      className='gap-1.5 px-2 py-1 text-destructive text-xs focus:text-destructive'
-                    >
-                      <Upload className='h-3 w-3' />
-                      {forcePushMutation.isPending ? "Pushing…" : "Force Push"}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </>
-            )}
-
-            {ctaState === "pr" && (
-              <a
-                href={githubPrUrl ?? ""}
-                target='_blank'
-                rel='noopener noreferrer'
-                title='Open pull request on GitHub'
-                className={`flex items-center gap-1 bg-gradient-to-b from-[var(--blue-500)] to-[var(--blue-600)] px-2.5 font-medium text-white text-xs shadow-[var(--blue-900)]/40 shadow-sm transition-all hover:from-[var(--blue-400)] hover:to-[var(--blue-500)] ${showSplit ? "rounded-l" : "rounded"}`}
-              >
-                <GitPullRequest className='h-3 w-3' />
-                Open PR
-              </a>
-            )}
-
-            {ctaState === "fetch" && (
-              <button
-                type='button'
-                onClick={handleFetch}
-                disabled={isFetching}
-                title='Fetch from origin'
-                data-testid='ide-git-refresh-button'
-                className='flex h-7 items-center gap-1 rounded border border-border/50 px-2.5 text-muted-foreground text-xs transition-colors hover:border-border hover:bg-accent/40 hover:text-foreground disabled:opacity-40'
-              >
-                <RefreshCw className={`h-3 w-3 ${isFetching ? "animate-spin" : ""}`} />
-                Fetch
-              </button>
-            )}
-
-            {/* Split ▼ — Fetch as secondary action */}
-            {showSplit && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type='button'
-                    aria-label='More actions'
-                    className={`flex w-5 items-center justify-center rounded-r text-xs transition-all ${splitTriggerClass}`}
-                  >
-                    <ChevronDown className='h-2.5 w-2.5' />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align='end' className='w-auto min-w-0'>
-                  <DropdownMenuItem
-                    onClick={handleFetch}
-                    disabled={isFetching}
-                    className='gap-1.5 px-2 py-1 text-xs'
-                  >
-                    <RefreshCw className={`h-3 w-3 ${isFetching ? "animate-spin" : ""}`} />
-                    {isFetching ? "Fetching…" : "Fetch"}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const homeRoute = project?.id ? ROUTES.WORKSPACE(project.id).HOME : ROUTES.ROOT;
+  const { repoUrl: githubRepoUrl, prUrl: githubPrUrl } = useGithubUrls({
+    remoteUrl: revisionInfo?.remote_url,
+    branch: ideBranch,
+    defaultBranch,
+    isOnMain
+  });
 
   const handleHomeClick = () => {
     setOpen(true);
-    navigate(homeRoute);
+    navigate(project?.id ? ROUTES.ORG(orgSlug).WORKSPACE(project.id).HOME : ROUTES.ROOT);
   };
 
   return (
@@ -905,42 +92,69 @@ export const Header = () => {
       >
         <Home className='h-4 w-4' />
       </Button>
-      {!authConfig.single_workspace && <IDEProjectSwitcher />}
+      <IDEProjectSwitcher />
       {githubRepoUrl && !isLinkedRepo && (
         <a
           href={githubRepoUrl}
           target='_blank'
           rel='noopener noreferrer'
-          title={githubSettings?.repository_name ?? "Open on GitHub"}
+          title='Open on GitHub'
           className='flex h-7 w-7 items-center justify-center rounded text-muted-foreground/60 transition-colors hover:bg-accent/40 hover:text-foreground'
         >
           <GithubIcon className='h-3.5 w-3.5' />
         </a>
       )}
       <div className='flex flex-1 items-center justify-end gap-2'>
-        {FEATURES.LINKED_REPOS && (
-          <RepoSwitcher isReadOnly={!!authConfig.local_git === false && !project?.id} />
-        )}
+        {FEATURES.LINKED_REPOS && <RepoSwitcher isReadOnly={!canCommit && !project?.id} />}
         {FEATURES.LINKED_REPOS && isLinkedRepo ? (
           <LinkedRepoActions repoName={selectedRepo} />
         ) : (
-          renderContent()
+          <GitActions
+            workspaceId={project?.id}
+            branch={ideBranch}
+            isOnMain={isOnMain}
+            canCommit={canCommit}
+            canBrowseHistory={canBrowseHistory}
+            canPush={canPush}
+            canPull={canPull}
+            hasLocalChanges={hasLocalChanges}
+            revisionInfo={revisionInfo}
+            prUrl={githubPrUrl}
+            pushLabel={pushLabel}
+            isPushing={isPushing}
+            isForcePushing={isForcePushing}
+            isFetching={isFetching}
+            onOpenChanges={() => setChangesPanelOpen(true)}
+            onOpenPullDialog={() => setPullDialogOpen(true)}
+            onPushDirect={() => push("")}
+            onForcePush={forcePush}
+            onFetch={fetchAll}
+            onResetSuccess={async () => {
+              setChangesPanelOpen(false);
+              await fetchAll();
+            }}
+          />
         )}
       </div>
 
-      <BranchSettings isOpen={isBranchSettingOpen} onClose={() => setIsBranchSettingOpen(false)} />
       <PullDialog open={pullDialogOpen} onOpenChange={setPullDialogOpen} />
       <ChangesPanel
         open={changesPanelOpen}
         onOpenChange={setChangesPanelOpen}
         diffSummary={diffSummary ?? []}
-        isPushing={pushMutation.isPending}
+        isPushing={isPushing}
         pushLabel={pushLabel}
-        onPush={handlePush}
+        onPush={push}
         isConflict={isConflict}
-        onAbortConflict={handleAbortConflict}
-        onContinueRebase={handleContinueRebase}
-        onConflictResolved={handleFetch}
+        onAbortConflict={async () => {
+          await abortRebase();
+          setChangesPanelOpen(false);
+        }}
+        onContinueRebase={async () => {
+          await continueRebase();
+          setChangesPanelOpen(false);
+        }}
+        onConflictResolved={fetchAll}
       />
     </Card>
   );

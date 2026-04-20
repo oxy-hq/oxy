@@ -3,34 +3,18 @@ import { useNavigate } from "react-router-dom";
 import ErrorAlert from "@/components/ui/ErrorAlert";
 import { Button } from "@/components/ui/shadcn/button";
 import { Spinner } from "@/components/ui/shadcn/spinner";
-import { useCreateGitNamespace } from "@/hooks/api/github";
 import { useGitHubAuth, validateGitHubAuthState } from "@/hooks/auth/useGitHubAuth";
 import ROUTES from "@/libs/utils/routes";
-import { getInstallationInfoFromUrl } from "@/utils/githubAppInstall";
-
-export const GITHUB_OAUTH_CALLBACK_MESSAGE = "github_oauth_callback";
 
 /**
- * Unified GitHub callback page — handles three cases:
- *
- * 1. Popup relay (namespace/install flow, any domain)
- *    GitHub redirects the popup here. We relay params to the opener via
- *    postMessage and close immediately. The opener calls its own backend.
- *
- * 2. Direct navigation — auth flow
- *    User clicked "Sign in with GitHub". State matches the value stored in
- *    sessionStorage by initiateGitHubAuth(). We exchange the code for a
- *    session token and navigate to the app.
- *
- * 3. Direct navigation — same-domain namespace/install
- *    No auth state in sessionStorage and no opener. We create the namespace
- *    directly (used during initial onboarding on the same domain).
+ * GitHub OAuth callback page — handles the direct-navigation auth flow
+ * (Sign in with GitHub). The namespace/install popup flow is now handled
+ * server-side; this page only processes auth code exchanges.
  */
 export default function GitHubCallback() {
   const [error, setError] = useState<string | null>(null);
   const hasRunRef = useRef(false);
   const navigate = useNavigate();
-  const createGitNamespace = useCreateGitNamespace();
   const authMutation = useGitHubAuth();
 
   useEffect(() => {
@@ -40,33 +24,17 @@ export default function GitHubCallback() {
       try {
         hasRunRef.current = true;
 
-        const { installationId, state, code } = getInstallationInfoFromUrl();
-        const urlError = new URLSearchParams(window.location.search).get("error");
+        const params = new URLSearchParams(window.location.search);
+        const urlError = params.get("error");
+        const code = params.get("code") ?? undefined;
+        const state = params.get("state") ?? undefined;
 
         if (urlError) {
-          if (window.opener) {
-            window.opener.postMessage(
-              { type: GITHUB_OAUTH_CALLBACK_MESSAGE, error: urlError },
-              "*"
-            );
-            window.close();
-          } else {
-            navigate(`${ROUTES.AUTH.LOGIN}?error=oauth_failed`);
-          }
+          navigate(`${ROUTES.AUTH.LOGIN}?error=oauth_failed`);
           return;
         }
 
-        // Case 1: Popup relay — send params back to opener and close.
-        if (window.opener) {
-          window.opener.postMessage(
-            { type: GITHUB_OAUTH_CALLBACK_MESSAGE, installation_id: installationId, code, state },
-            "*"
-          );
-          window.close();
-          return;
-        }
-
-        // Case 2: Direct navigation — GitHub auth (sign in with GitHub).
+        // Auth flow — GitHub login (sign in with GitHub button).
         if (validateGitHubAuthState(state ?? null)) {
           if (!code) {
             navigate(`${ROUTES.AUTH.LOGIN}?error=no_code`);
@@ -76,21 +44,8 @@ export default function GitHubCallback() {
           return;
         }
 
-        // Case 3: Direct navigation — same-domain namespace/install.
-        if (!state) {
-          setError("Missing required parameters in callback URL");
-          return;
-        }
-        if (!installationId) {
-          setError("No installation ID in callback — use the popup flow.");
-          return;
-        }
-        await createGitNamespace.mutateAsync({
-          installation_id: installationId,
-          state,
-          code
-        });
-        window.close();
+        // Unrecognised state — redirect to login.
+        navigate(ROUTES.AUTH.LOGIN);
       } catch (err: unknown) {
         const errorMsg = err instanceof Error ? err.message : "Unknown error";
         setError(`Unexpected error: ${errorMsg}`);
@@ -98,7 +53,7 @@ export default function GitHubCallback() {
     }
 
     handleCallback();
-  }, [navigate, createGitNamespace, authMutation]);
+  }, [navigate, authMutation]);
 
   return (
     <div className='flex min-h-screen min-w-screen items-center justify-center'>

@@ -11,7 +11,7 @@ import { ModeSwitcher } from "./components/ModeSwitcher";
 import { AppViewMode } from "./types";
 
 const AppEditor = () => {
-  const { pathb64, isReadOnly, gitEnabled } = useEditorContext();
+  const { pathb64, gitEnabled } = useEditorContext();
   const { previewKey, refreshPreview } = usePreviewRefresh();
   const { invalidateAppQueries } = useEditorQueryInvalidation();
   const { filesSubViewMode } = useFilesContext();
@@ -35,7 +35,6 @@ const AppEditor = () => {
       headerPrefixAction={<ModeSwitcher viewMode={viewMode} setViewMode={setViewMode} />}
       pathb64={pathb64}
       onSaved={handleSaved}
-      readOnly={isReadOnly}
       git={gitEnabled}
       customEditor={viewMode === AppViewMode.Form ? <AppFormWrapper /> : undefined}
       previewOnly={viewMode === AppViewMode.Visualization}

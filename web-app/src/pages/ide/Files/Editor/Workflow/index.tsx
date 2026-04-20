@@ -18,7 +18,7 @@ import ModeSwitcher from "./components/ModeSwitcher";
 import { WorkflowViewMode } from "./components/types";
 
 const WorkflowEditor = () => {
-  const { pathb64, isReadOnly, gitEnabled } = useEditorContext();
+  const { pathb64, gitEnabled } = useEditorContext();
   const { refreshPreview, previewKey } = usePreviewRefresh();
   const { filesSubViewMode } = useFilesContext();
 
@@ -34,7 +34,6 @@ const WorkflowEditor = () => {
     <EditorPageWrapper
       headerPrefixAction={<ModeSwitcher viewMode={viewMode} onViewModeChange={setViewMode} />}
       pathb64={pathb64}
-      readOnly={isReadOnly}
       onSaved={refreshPreview}
       customEditor={viewMode === WorkflowViewMode.Form ? <WorkflowFormWrapper /> : undefined}
       git={gitEnabled}
