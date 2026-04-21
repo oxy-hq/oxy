@@ -125,7 +125,7 @@ impl Engine for ConnectorX {
                 .map_err(|err| connector_internal_error(LOAD_ARROW_RESULT, &err))?;
             let converted_result = Interchange::from_arrow_54(result)
                 .map_err(|err| connector_internal_error(LOAD_ARROW_RESULT, &err))?
-                .to_arrow_56()
+                .to_arrow_57()
                 .map_err(|err| connector_internal_error(LOAD_ARROW_RESULT, &err))?;
             Result::<_, OxyError>::Ok(converted_result)
         })

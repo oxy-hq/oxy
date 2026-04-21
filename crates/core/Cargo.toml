@@ -107,7 +107,7 @@ schemars = { workspace = true, features = ["derive", "impl_json_schema"] }
 scopeguard = { workspace = true }
 sea-orm = { workspace = true }
 serde = { workspace = true }
-serde_arrow = { workspace = true, features = ["arrow-56"] }
+serde_arrow = { workspace = true, features = ["arrow-57"] }
 serde_json = { workspace = true }
 serde_urlencoded = { workspace = true }
 self_update = { workspace = true }
@@ -174,7 +174,7 @@ xxhash-rust = { workspace = true, features = ["xxh3"] }
 aho-corasick = { workspace = true }
 rkyv = { workspace = true, features = ["validation"] }
 sentry = { workspace = true }
-df-interchange = { workspace = true, features = ["arrow_54", "arrow_56"] }
+df-interchange = { workspace = true, features = ["arrow_54", "arrow_57"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }
