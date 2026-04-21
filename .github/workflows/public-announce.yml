@@ -49,9 +49,31 @@ jobs:
             echo "Unrecognized trigger (event=$EVENT, branch=$BRANCH) — skipping."
           fi
 
+      - name: Verify edge Docker image was published
+        id: edge_check
+        if: steps.build_info.outputs.type == 'edge'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # The release workflow reports `success` even when every build job
+          # was skipped (e.g. main push with no oxy/web-app/docker changeset).
+          # `Create Deployment Summary` only runs when the multi-arch manifest
+          # was actually pushed, so use it as the marker for "edge image built".
+          RUN_ID="${{ github.event.workflow_run.id }}"
+          PUBLISHED=$(gh api --paginate \
+            "/repos/${{ github.repository }}/actions/runs/${RUN_ID}/jobs" \
+            --jq '[.jobs[] | select(.name == "Create Deployment Summary") | .conclusion] | any(. == "success")')
+          echo "published=$PUBLISHED" >> "$GITHUB_OUTPUT"
+          if [[ "$PUBLISHED" != "true" ]]; then
+            echo "::notice::No edge Docker image published in run $RUN_ID — skipping announcement."
+          fi
+
       - name: Resolve previous reference
         id: prev
-        if: steps.build_info.outputs.type != 'skip'
+        if: >-
+          steps.build_info.outputs.type != 'skip'
+          && (steps.build_info.outputs.type != 'edge'
+              || steps.edge_check.outputs.published == 'true')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -98,7 +120,10 @@ jobs:
 
       - name: Build changelog
         id: changelog
-        if: steps.build_info.outputs.type != 'skip'
+        if: >-
+          steps.build_info.outputs.type != 'skip'
+          && (steps.build_info.outputs.type != 'edge'
+              || steps.edge_check.outputs.published == 'true')
         run: |
           TYPE="${{ steps.build_info.outputs.type }}"
           VERSION="${{ steps.build_info.outputs.version }}"
@@ -181,7 +206,10 @@ jobs:
 
       - name: Build Slack message
         id: message
-        if: steps.build_info.outputs.type != 'skip'
+        if: >-
+          steps.build_info.outputs.type != 'skip'
+          && (steps.build_info.outputs.type != 'edge'
+              || steps.edge_check.outputs.published == 'true')
         run: |
           TYPE="${{ steps.build_info.outputs.type }}"
           EMOJI="${{ steps.build_info.outputs.emoji }}"
@@ -260,7 +288,7 @@ jobs:
         if: >-
           steps.build_info.outputs.type != 'skip'
           && (steps.build_info.outputs.type == 'stable'
-              || steps.changelog.outputs.commit_count != '0')
+              || steps.edge_check.outputs.published == 'true')
         uses: rtCamp/action-slack-notify@v2
         env:
           SLACK_USERNAME: "Release Notifier"
