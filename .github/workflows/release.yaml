@@ -67,7 +67,7 @@ jobs:
   #     - name: Prep Rust
   #       uses: dtolnay/rust-toolchain@stable
   #       with:
-  #         toolchain: 1.94.0
+  #         toolchain: 1.95.0
   #         targets: ${{ matrix.job.target }}
   #     - name: Prep cargo cache
   #       uses: Swatinem/rust-cache@v2
@@ -156,6 +156,7 @@ jobs:
         with:
           draft: false
           prerelease: ${{ inputs.tag != '' }}
-          tag_name: ${{ inputs.tag || github.ref_name }}${{ inputs.unique && steps.time.outputs.current_time || '' }}
+          tag_name: ${{ inputs.tag || github.ref_name }}${{ inputs.unique &&
+            steps.time.outputs.current_time || '' }}
           # files: |
           # artifacts/**/*

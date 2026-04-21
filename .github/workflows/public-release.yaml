@@ -164,7 +164,7 @@ jobs:
   # ============================================================================
   changesets:
     name: Changesets
-    needs: [determine-build-type]
+    needs: [ determine-build-type ]
     if: needs.determine-build-type.outputs.needs_changesets == 'true'
     uses: ./.github/workflows/changesets.yaml
 
@@ -181,7 +181,7 @@ jobs:
   # ============================================================================
   download-edge-binary:
     name: Download latest edge binary for ${{ matrix.job.target }}
-    needs: [determine-build-type, changesets]
+    needs: [ determine-build-type, changesets ]
     if: |
       always() &&
       needs.determine-build-type.result == 'success' &&
@@ -225,7 +225,8 @@ jobs:
           chmod +x artifacts/oxy-${{ matrix.job.target }}
 
       - name: Create binary checksum
-        run: shasum --algorithm 256 --binary oxy-${{ matrix.job.target }} | tee SHA256SUM-oxy-${{ matrix.job.target }}.txt
+        run: shasum --algorithm 256 --binary oxy-${{ matrix.job.target }} | tee
+          SHA256SUM-oxy-${{ matrix.job.target }}.txt
         working-directory: artifacts
 
       - name: Upload release artifacts
@@ -240,8 +241,9 @@ jobs:
   # Job 3b: Build CLI (4 targets)
   # ============================================================================
   build-cli:
-    name: Build ${{ needs.determine-build-type.outputs.channel }} CLI for ${{ matrix.job.target }}
-    needs: [determine-build-type, changesets]
+    name: Build ${{ needs.determine-build-type.outputs.channel }} CLI for ${{
+      matrix.job.target }}
+    needs: [ determine-build-type, changesets ]
     if: |
       always() &&
       needs.determine-build-type.result == 'success' &&
@@ -278,7 +280,8 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          ref: ${{ needs.determine-build-type.outputs.is_stable == 'true' && needs.determine-build-type.outputs.version || github.sha }}
+          ref: ${{ needs.determine-build-type.outputs.is_stable == 'true' &&
+            needs.determine-build-type.outputs.version || github.sha }}
           token: ${{ steps.app-token.outputs.token }}
 
       - name: Create artifacts folder
@@ -292,7 +295,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.94.0
+          toolchain: 1.95.0
           targets: ${{ matrix.job.target }}
 
       - name: Setup Rust cache
@@ -337,7 +340,8 @@ jobs:
           path: |
             web-app/tsconfig.app.tsbuildinfo
             web-app/tsconfig.node.tsbuildinfo
-          key: typescript-${{ runner.os }}-${{ hashFiles('web-app/tsconfig*.json', 'web-app/src/**/*.ts', 'web-app/src/**/*.tsx') }}
+          key: typescript-${{ runner.os }}-${{ hashFiles('web-app/tsconfig*.json',
+            'web-app/src/**/*.ts', 'web-app/src/**/*.tsx') }}
           restore-keys: |
             typescript-${{ runner.os }}-
 
@@ -346,7 +350,8 @@ jobs:
         uses: actions/cache@v5
         with:
           path: web-app/node_modules/.vite
-          key: vite-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ hashFiles('web-app/vite.config.*', 'web-app/src/**') }}
+          key: vite-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}-${{
+            hashFiles('web-app/vite.config.*', 'web-app/src/**') }}
           restore-keys: |
             vite-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}-
             vite-${{ runner.os }}-
@@ -380,7 +385,8 @@ jobs:
           cp Cargo.lock artifacts/
 
       - name: Create binary checksum
-        run: shasum --algorithm 256 --binary oxy-${{ matrix.job.target }} | tee SHA256SUM-oxy-${{ matrix.job.target }}.txt
+        run: shasum --algorithm 256 --binary oxy-${{ matrix.job.target }} | tee
+          SHA256SUM-oxy-${{ matrix.job.target }}.txt
         working-directory: artifacts
 
       - name: Upload release artifacts
@@ -397,14 +403,16 @@ jobs:
   release-cli:
     name: Release ${{ needs.determine-build-type.outputs.channel }} CLI
     runs-on: ubuntu-latest
-    needs: [determine-build-type, build-cli]
+    needs: [ determine-build-type, build-cli ]
     # Concurrency: Lock releases per channel and version/ref
     concurrency:
       group: >-
-        ${{ github.event_name == 'schedule' && format('release-edge-scheduled-{0}', github.run_id) ||
+        ${{ github.event_name == 'schedule' &&
+        format('release-edge-scheduled-{0}', github.run_id) ||
             startsWith(github.ref, 'refs/tags/') && format('release-stable-{0}', github.ref_name) ||
             'release-edge-main' }}
-      cancel-in-progress: ${{ github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/') }}
+      cancel-in-progress: ${{ github.event_name == 'push' && !startsWith(github.ref,
+        'refs/tags/') }}
     if: |
       always() &&
       needs.determine-build-type.result == 'success' &&
@@ -469,7 +477,8 @@ jobs:
 
       - name: Generate release notes (stable only)
         if: needs.determine-build-type.outputs.is_stable == 'true'
-        run: git cliff --tag ${{ needs.determine-build-type.outputs.version }} --latest -o /tmp/release-notes.md
+        run: git cliff --tag ${{ needs.determine-build-type.outputs.version }} --latest
+          -o /tmp/release-notes.md
 
       - name: Create stable release
         if: needs.determine-build-type.outputs.is_stable == 'true'
@@ -498,7 +507,8 @@ jobs:
           prerelease: false
           make_latest: true
           tag_name: ${{ needs.determine-build-type.outputs.version }}
-          name: ${{ needs.determine-build-type.outputs.display_name }} (${{ needs.determine-build-type.outputs.version }})
+          name: ${{ needs.determine-build-type.outputs.display_name }} (${{
+            needs.determine-build-type.outputs.version }})
           files: |
             artifacts/oxy-*
             artifacts/*.json
@@ -519,20 +529,23 @@ jobs:
   # Job 5: Build and Publish Docker Images
   # ============================================================================
   build-docker-images:
-    name: Build ${{ matrix.target.name }} ${{ needs.determine-build-type.outputs.channel }} Docker for ${{ matrix.arch }}
-    needs: [determine-build-type, build-cli, download-edge-binary]
+    name: Build ${{ matrix.target.name }} ${{
+      needs.determine-build-type.outputs.channel }} Docker for ${{ matrix.arch
+      }}
+    needs: [ determine-build-type, build-cli, download-edge-binary ]
     if: |
       always() &&
       (needs.build-cli.result == 'success' || needs.download-edge-binary.result == 'success') &&
       needs.determine-build-type.outputs.should_build_docker == 'true'
     concurrency:
-      group: docker-${{ needs.determine-build-type.outputs.channel }}-${{ matrix.target.name }}-${{ matrix.arch }}
+      group: docker-${{ needs.determine-build-type.outputs.channel }}-${{
+        matrix.target.name }}-${{ matrix.arch }}
       cancel-in-progress: true
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: true
       matrix:
-        arch: [linux/amd64, linux/arm64]
+        arch: [ linux/amd64, linux/arm64 ]
         target:
           - name: runtime
             image: oxy
@@ -564,7 +577,8 @@ jobs:
         if: steps.should_build.outputs.should_build == 'true'
         uses: actions/checkout@v6
         with:
-          ref: ${{ needs.determine-build-type.outputs.is_stable == 'true' && needs.determine-build-type.outputs.version || github.sha }}
+          ref: ${{ needs.determine-build-type.outputs.is_stable == 'true' &&
+            needs.determine-build-type.outputs.version || github.sha }}
 
       - name: Download pre-built binary
         if: steps.should_build.outputs.should_build == 'true'
@@ -632,11 +646,13 @@ jobs:
   # Job 6: Create and Push Multi-Arch Manifests
   # ============================================================================
   create-manifests:
-    name: Create ${{ matrix.target.name }} ${{ needs.determine-build-type.outputs.channel }} manifest
-    needs: [determine-build-type, build-docker-images]
+    name: Create ${{ matrix.target.name }} ${{
+      needs.determine-build-type.outputs.channel }} manifest
+    needs: [ determine-build-type, build-docker-images ]
     # Concurrency: Lock manifest creation per target and channel
     concurrency:
-      group: manifest-${{ needs.determine-build-type.outputs.channel }}-${{ matrix.target.name }}
+      group: manifest-${{ needs.determine-build-type.outputs.channel }}-${{
+        matrix.target.name }}
       cancel-in-progress: false
     if: |
       always() &&
@@ -725,7 +741,7 @@ jobs:
   # ============================================================================
   deployment-summary:
     name: Create Deployment Summary
-    needs: [determine-build-type, create-manifests]
+    needs: [ determine-build-type, create-manifests ]
     if: |
       always() &&
       needs.create-manifests.result == 'success'
