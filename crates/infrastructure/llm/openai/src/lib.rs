@@ -121,6 +121,7 @@ pub fn convert_system_message(sys_msg: ChatCompletionRequestSystemMessage) -> In
         role: Role::System,
         content,
         r#type: Default::default(),
+        phase: None,
     })
 }
 
@@ -149,6 +150,7 @@ pub fn convert_user_message(user_msg: ChatCompletionRequestUserMessage) -> Input
         r#type: Default::default(),
         role: Role::User,
         content,
+        phase: None,
     })
 }
 
@@ -183,6 +185,7 @@ pub fn convert_assistant_message(
         r#type: Default::default(),
         role: Role::Assistant,
         content,
+        phase: None,
     }));
 
     if let Some(tool_calls) = asst_msg.tool_calls {
@@ -200,6 +203,7 @@ pub fn convert_assistant_message(
                         name: function_call.function.name,
                         arguments: function_call.function.arguments,
                         status: None,
+                        namespace: None,
                     });
 
                     items.push(InputItem::Item(function_call_item));
@@ -241,6 +245,7 @@ pub fn convert_developer_message(dev_msg: ChatCompletionRequestDeveloperMessage)
         r#type: Default::default(),
         role: Role::Developer,
         content,
+        phase: None,
     })
 }
 
@@ -350,6 +355,7 @@ pub fn convert_tools(chat_tools: &[ChatCompletionTool]) -> Result<Vec<Tool>, Oxy
                 parameters: tool.function.parameters.clone(),
                 strict: tool.function.strict,
                 description: tool.function.description.clone(),
+                defer_loading: None,
             }))
         })
         .collect()

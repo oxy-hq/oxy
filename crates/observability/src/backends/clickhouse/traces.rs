@@ -387,6 +387,7 @@ pub(super) async fn insert_spans(
     let mut insert = storage
         .client()
         .insert::<SpanInsertRow>("observability_spans")
+        .await
         .map_err(|e| OxyError::RuntimeError(format!("ClickHouse insert init failed: {e}")))?;
 
     for span in spans {

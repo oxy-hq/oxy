@@ -144,6 +144,7 @@ url = { workspace = true }
 gcp-bigquery-client = { workspace = true }
 fehler = { workspace = true }
 sqlparser = { workspace = true }
+sqlparser_connectorx = { package = "sqlparser", version = "0.37" }
 backoff = { workspace = true, features = ["tokio"] }
 rustc_version_runtime = { workspace = true }
 apalis = { workspace = true }

@@ -95,6 +95,7 @@ pub(super) async fn store_metric_usages(
     let mut insert = storage
         .client()
         .insert::<MetricUsageInsertRow>("observability_metric_usage")
+        .await
         .map_err(|e| OxyError::RuntimeError(format!("ClickHouse insert init failed: {e}")))?;
 
     for m in metrics {

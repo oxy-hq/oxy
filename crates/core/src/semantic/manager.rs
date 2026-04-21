@@ -7,7 +7,7 @@ use std::{
 };
 
 use futures::StreamExt;
-use tqdm::{Pbar, pbar};
+use tqdm::{Tqdm, pbar};
 
 use crate::{
     adapters::secrets::SecretsManager,
@@ -179,7 +179,7 @@ impl SemanticManager {
     async fn sync(
         &self,
         database: &Database,
-        pbar: Option<Arc<Mutex<Pbar>>>,
+        pbar: Option<Arc<Mutex<Tqdm<()>>>>,
     ) -> Result<SyncMetrics, OxyError> {
         let start_time = Instant::now();
 

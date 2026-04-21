@@ -200,13 +200,13 @@ pub fn hash_file<P: AsRef<Path>>(path: P) -> Result<String, SemanticLayerError> 
     })?;
 
     let hash = Sha256::digest(&content);
-    Ok(format!("{:x}", hash))
+    Ok(hex::encode(hash))
 }
 
 /// Compute SHA256 hash of a string
 pub fn hash_string(content: &str) -> String {
     let hash = Sha256::digest(content.as_bytes());
-    format!("{:x}", hash)
+    hex::encode(hash)
 }
 
 #[cfg(test)]

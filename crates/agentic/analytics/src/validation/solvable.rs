@@ -42,8 +42,10 @@ fn extract_query_tables(stmts: &[Statement]) -> Vec<String> {
     let mut tables = Vec::new();
     for stmt in stmts {
         let _ = visit_relations(stmt, |rel| {
-            if let Some(last) = rel.0.last() {
-                let n = last.value.to_lowercase();
+            if let Some(last) = rel.0.last()
+                && let Some(ident) = last.as_ident()
+            {
+                let n = ident.value.to_lowercase();
                 if !cte_names.contains(&n) {
                     tables.push(n);
                 }
@@ -270,7 +272,7 @@ impl SolvableRule for ColumnRefsValidRule {
 /// Checks: the query itself, CTE definitions, and subqueries in FROM.
 fn query_has_order_by(q: &Query) -> bool {
     // 1. Outermost query
-    if !q.order_by.is_empty() {
+    if q.order_by.is_some() {
         return true;
     }
     // 2. CTE bodies

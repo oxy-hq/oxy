@@ -71,7 +71,7 @@ oxy-workflow = { path = "crates/workflow" }
 oxy_globals = { path = "crates/globals" }
 
 # External dependencies
-async-openai = {version = "0.33.1"}
+async-openai = {version = "0.35.0"}
 duckdb = { version = "=1.4.4", features = ["bundled"] }
 axum = {version = "0.8.9", features = ["macros", "http2"]}
 axum-server = {version = "0.8.0", features = ["tls-rustls"]}
@@ -91,11 +91,11 @@ sea-orm-migration = {version = "1.1.20", features = [
   "runtime-tokio-rustls",
   "with-uuid",
 ]}
-sentry = {version = "0.46.2", features = ["tower-axum-matched-path", "rustls", "tracing"]}
+sentry = {version = "0.47.0", features = ["tower-axum-matched-path", "rustls", "tracing"]}
 serde = {version = "1.0", features = ["derive"]}
 serde_json = {version = "1.0.149"}
 serde_yaml = {version = "0.9.34"}
-sqlparser = {version = "0.37"}
+sqlparser = {version = "0.58"}
 tempfile = {version = "3.27.0"}
 thiserror = {version = "2.0.18"}
 tokio = {version = "1.52", features = ["full"]}
@@ -118,16 +118,16 @@ aws-config = "1"
 aws-sdk-sesv2 = "1"
 backoff = "0.4.0"
 base64 = "0.22"
-bcrypt = "0.17.1"
+bcrypt = "0.19.0"
 bollard = "0.20.2"
 chrono-english = "0.1.8"
 clap = "4.6.1"
-clickhouse = "0.13.3"
+clickhouse = "0.15.0"
 colored = "3.1.1"
 connectorx = "0.4.5"
-constant_time_eq = "0.4.2"
+constant_time_eq = "0.5.0"
 csv = "1.4.0"
-dashmap = "5"
+dashmap = "6"
 deser-incomplete = "0.1.2"
 df-interchange = "0.3.3"
 dirs = "6.0.0"
@@ -146,13 +146,13 @@ governor = "0.10"
 handlebars = "6"
 headless_chrome = "1.0"
 hex = "0.4.3"
-hmac = "0.12.1"
+hmac = "0.13.0"
 home = "0.5"
 http = "1.4"
 human-panic = "2.0.8"
 humantime = "2.3.0"
 include_dir = "0.7"
-indicatif = "0.17"
+indicatif = "0.18"
 indoc = "2.0.7"
 itertools = "0.14.0"
 jsonschema = "0.33.0"
@@ -172,7 +172,7 @@ rand = "0.10"
 rapidfuzz = "0.5.0"
 reqwest = { version = "*", features = ["rustls-tls"]  }
 rkyv = "0.7.46"
-rmcp = "0.8.5"
+rmcp = "0.10.0"
 rusqlite = "0.32"
 rustc_version_runtime = "0.3.0"
 rustls = "0.23.38"
@@ -185,13 +185,13 @@ serde_arrow = "0.13.7"
 serde_urlencoded = "0.7"
 serde_with = "3.18.0"
 serial_test = "3.4.0"
-sha2 = "0.10.9"
+sha2 = "0.11.0"
 short-uuid = "0.2.1"
 slugify = "0.1.0"
 snowflake-api = { git = "https://github.com/oxy-hq/snowflake-rs.git", tag = "v0.13.0-browser-auth" }
 sqlformat = { git = "https://github.com/shssoichiro/sqlformat-rs.git", rev = "80255c7" }
 sqlx = "0.8"
-statrs = "0.17"
+statrs = "0.18"
 strip-ansi-escapes = "=0.2.1"
 strsim = "0.11"
 syntect = "5.3"
@@ -204,7 +204,7 @@ tokio-util = "0.7.18"
 tower = "0.5.3"
 tower-http = "0.6.8"
 tower-serve-static = "0.1.1"
-tqdm = "0.7.0"
+tqdm = "0.8.0"
 tracing-appender = "0.2.5"
 tracing-log = "0.2.0"
 tracing-subscriber = "0.3.23"

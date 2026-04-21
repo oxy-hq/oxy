@@ -6,7 +6,7 @@
 use axum::body::Bytes;
 use axum::http::HeaderMap;
 use constant_time_eq::constant_time_eq;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use oxy_shared::errors::OxyError;
 use sha2::Sha256;
 use std::time::{SystemTime, UNIX_EPOCH};

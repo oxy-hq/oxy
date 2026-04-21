@@ -25,7 +25,7 @@ use gcp_bigquery_client::{
         query_response::ResultSet,
     },
 };
-use sqlparser::dialect::Dialect;
+use sqlparser_connectorx::dialect::Dialect;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 use url::Url;

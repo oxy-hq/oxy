@@ -155,6 +155,7 @@ pub(super) async fn store_clusters(
     let mut insert = storage
         .client()
         .insert::<ClusterInsertRow>("observability_intent_clusters")
+        .await
         .map_err(|e| OxyError::RuntimeError(format!("ClickHouse insert init failed: {e}")))?;
 
     for c in clusters {
@@ -233,6 +234,7 @@ pub(super) async fn store_classification(
     let mut insert = storage
         .client()
         .insert::<ClassificationInsertRow>("observability_intent_classifications")
+        .await
         .map_err(|e| OxyError::RuntimeError(format!("ClickHouse insert init failed: {e}")))?;
 
     let row = ClassificationInsertRow {
@@ -352,6 +354,7 @@ pub(super) async fn update_cluster_record(
     let mut insert = storage
         .client()
         .insert::<ClusterInsertRow>("observability_intent_clusters")
+        .await
         .map_err(|e| OxyError::RuntimeError(format!("ClickHouse insert init failed: {e}")))?;
 
     let row = ClusterInsertRow {
