@@ -8,6 +8,7 @@ use oxy::sentry_config;
 use oxy::state_dir::get_state_dir;
 use oxy::theme::StyledText;
 use oxy_app::cli::commands::cli;
+use oxy_app::observability_boot;
 use std::env;
 use tracing_subscriber::{EnvFilter, Layer, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -28,18 +29,11 @@ impl LogFormat {
             LogFormat::Local
         }
     }
-
-    fn is_cloud() -> bool {
-        matches!(Self::detect(), LogFormat::Cloud)
-    }
 }
 
-fn init_tracing_logging(
-    log_to_stdout: bool,
-    observability_store: Option<std::sync::Arc<dyn oxy_observability::ObservabilityStore>>,
-) {
+fn init_tracing_logging(log_to_stdout: bool, observability_enabled: bool) {
     let log_format = LogFormat::detect();
-    let is_cloud = LogFormat::is_cloud();
+    let is_cloud = matches!(log_format, LogFormat::Cloud);
 
     // Default to WARN level for minimal output in both cloud and local
     // Use OXY_LOG_LEVEL=info or OXY_LOG_LEVEL=debug for verbose output
@@ -80,12 +74,24 @@ fn init_tracing_logging(
     LOG_GUARD.set(guard).ok();
 
     // Build the `SpanCollectorLayer` up front so it can be composed with the
-    // same subscriber as Sentry + file appender + fmt (instead of being
-    // installed as a second, unrelated subscriber that would drop them).
-    // The filter is applied inline at the `.with()` site so that S can be
-    // inferred against the full subscriber stack.
-    let obs_collector = observability_store.map(oxy_observability::build_observability_layer);
+    // same subscriber as Sentry + file appender + fmt. The store isn't ready
+    // yet (for `oxy start`, Postgres hasn't been booted), so we stash the
+    // receiver and let `serve.rs` wire the bridge once the DB URL is set.
+    // Spans emitted during startup buffer in the unbounded channel and flush
+    // as soon as the bridge spawns.
+    let obs_collector = if observability_enabled {
+        let (layer, receiver) = oxy_observability::build_layer_and_receiver();
+        observability_boot::stash_receiver(receiver);
+        Some(layer)
+    } else {
+        None
+    };
 
+    // Filters are applied per-layer so that the observability layer captures
+    // agent/workflow spans independently of OXY_LOG_LEVEL. A global
+    // `.with(env_filter)` would drop info-level spans before they reached
+    // any layer — the legacy OTel pipeline masked this, but the custom
+    // SpanCollectorLayer must be kept isolated from console verbosity.
     match log_format {
         LogFormat::Local => {
             let stdout_layer = log_to_stdout.then(|| {
@@ -94,21 +100,28 @@ fn init_tracing_logging(
                     .with_level(true)
                     .with_writer(std::io::stdout)
                     .with_ansi(true)
+                    .with_filter(env_filter.clone())
             });
+            let obs_layer =
+                obs_collector.map(|l| l.with_filter(oxy_observability::observability_filter()));
             tracing_subscriber::registry()
-                .with(env_filter)
-                .with(sentry::integrations::tracing::layer())
+                .with(
+                    // Sentry only needs warn+ to populate breadcrumbs and
+                    // capture error events. Filtering here avoids shipping
+                    // the full info-level span firehose to its span store.
+                    sentry::integrations::tracing::layer()
+                        .with_filter(tracing_subscriber::filter::LevelFilter::WARN),
+                )
                 .with(
                     fmt::layer()
                         .with_target(true)
                         .with_level(true)
                         .with_writer(file_writer)
-                        .with_ansi(false),
+                        .with_ansi(false)
+                        .with_filter(env_filter),
                 )
                 .with(stdout_layer)
-                .with(
-                    obs_collector.map(|l| l.with_filter(oxy_observability::observability_filter())),
-                )
+                .with(obs_layer)
                 .init();
         }
         LogFormat::Cloud => {
@@ -119,145 +132,30 @@ fn init_tracing_logging(
                     .with_writer(std::io::stdout)
                     .with_ansi(false)
                     .compact()
+                    .with_filter(env_filter.clone())
             });
+            let obs_layer =
+                obs_collector.map(|l| l.with_filter(oxy_observability::observability_filter()));
             tracing_subscriber::registry()
-                .with(env_filter)
-                .with(sentry::integrations::tracing::layer())
+                .with(
+                    // Sentry only needs warn+ to populate breadcrumbs and
+                    // capture error events. Filtering here avoids shipping
+                    // the full info-level span firehose to its span store.
+                    sentry::integrations::tracing::layer()
+                        .with_filter(tracing_subscriber::filter::LevelFilter::WARN),
+                )
                 .with(
                     fmt::layer()
                         .with_target(false)
                         .with_level(true)
                         .with_writer(file_writer)
                         .with_ansi(false)
-                        .compact(),
+                        .compact()
+                        .with_filter(env_filter),
                 )
                 .with(stdout_layer)
-                .with(
-                    obs_collector.map(|l| l.with_filter(oxy_observability::observability_filter())),
-                )
+                .with(obs_layer)
                 .init();
-        }
-    }
-}
-
-/// Resolve the observability backend, open the store, and build a status
-/// message. The message is returned (not printed) so the caller can emit it
-/// AFTER the tracing subscriber is installed — this avoids mixing raw stdout
-/// with structured logs, and guarantees the printed backend matches the one
-/// actually in use (no misleading "postgres" label when we fell back to DuckDB).
-async fn resolve_observability_backend() -> (
-    Option<std::sync::Arc<dyn oxy_observability::ObservabilityStore>>,
-    Option<String>,
-) {
-    let requested = env::var("OXY_OBSERVABILITY_BACKEND").ok();
-    let has_db_url = env::var("OXY_DATABASE_URL").is_ok();
-    let backend = requested.clone().unwrap_or_else(|| {
-        if has_db_url {
-            "postgres".to_string()
-        } else {
-            "duckdb".to_string()
-        }
-    });
-
-    match backend.as_str() {
-        "duckdb" => {
-            let db_path = get_state_dir().join("observability.duckdb");
-            match oxy_observability::backends::duckdb::DuckDBStorage::open(&db_path) {
-                Ok(storage) => (
-                    Some(std::sync::Arc::new(storage)),
-                    Some(format!("Observability: duckdb ({})", db_path.display())),
-                ),
-                Err(e) => {
-                    eprintln!(
-                        "{}",
-                        format!("Failed to open DuckDB observability: {e}").error()
-                    );
-                    (None, None)
-                }
-            }
-        }
-        "clickhouse" => {
-            match oxy_observability::backends::clickhouse::ClickHouseObservabilityStorage::from_env(
-            )
-            .await
-            {
-                Ok(storage) => match storage.ensure_schema().await {
-                    Ok(()) => {
-                        // Apply retention TTL at the engine level so background
-                        // merges expire old rows automatically — no app-level
-                        // DELETE loop needed for ClickHouse.
-                        if let Err(e) = storage
-                            .apply_retention_ttl(oxy_observability::RETENTION_DAYS)
-                            .await
-                        {
-                            eprintln!("{}", format!("ClickHouse TTL apply failed: {e}").error());
-                        }
-                        (
-                            Some(std::sync::Arc::new(storage)
-                                as std::sync::Arc<dyn oxy_observability::ObservabilityStore>),
-                            Some("Observability: clickhouse (OXY_CLICKHOUSE_URL)".to_string()),
-                        )
-                    }
-                    Err(e) => {
-                        eprintln!("{}", format!("ClickHouse schema init failed: {e}").error());
-                        (None, None)
-                    }
-                },
-                Err(e) => {
-                    eprintln!("{}", format!("ClickHouse init failed: {e}").error());
-                    (None, None)
-                }
-            }
-        }
-        _ => {
-            // "postgres" or unknown: try Postgres if OXY_DATABASE_URL is set, else fall back to DuckDB.
-            if has_db_url {
-                match oxy_observability::backends::postgres::PostgresObservabilityStorage::from_env(
-                )
-                .await
-                {
-                    Ok(storage) => (
-                        Some(std::sync::Arc::new(storage)
-                            as std::sync::Arc<dyn oxy_observability::ObservabilityStore>),
-                        Some("Observability: postgres (OXY_DATABASE_URL)".to_string()),
-                    ),
-                    Err(e) => {
-                        eprintln!(
-                            "{}",
-                            format!("Postgres observability failed: {e}. Falling back to DuckDB.")
-                                .error()
-                        );
-                        fallback_to_duckdb()
-                    }
-                }
-            } else {
-                let label = if requested.as_deref() == Some("postgres") {
-                    "Observability: postgres → duckdb (OXY_DATABASE_URL not set)"
-                } else {
-                    "Observability: duckdb (no OXY_DATABASE_URL)"
-                };
-                let (store, _) = fallback_to_duckdb();
-                (store, Some(label.to_string()))
-            }
-        }
-    }
-}
-
-fn fallback_to_duckdb() -> (
-    Option<std::sync::Arc<dyn oxy_observability::ObservabilityStore>>,
-    Option<String>,
-) {
-    let db_path = get_state_dir().join("observability.duckdb");
-    match oxy_observability::backends::duckdb::DuckDBStorage::open(&db_path) {
-        Ok(s) => (
-            Some(
-                std::sync::Arc::new(s) as std::sync::Arc<dyn oxy_observability::ObservabilityStore>
-            ),
-            None,
-        ),
-        Err(e) => {
-            eprintln!("{}", format!("DuckDB fallback failed: {e}").error());
-            (None, None)
         }
     }
 }
@@ -285,8 +183,39 @@ fn main() {
         .unwrap_or("false")
         .eq_ignore_ascii_case("true");
 
-    // Check if --enterprise flag is present (enables observability)
+    // Check if --enterprise flag is present (gates the observability UI/routes)
     let enterprise_enabled = args.iter().any(|a| a == "--enterprise");
+    let local_mode = args.iter().any(|a| a == "--local");
+
+    // In `--local` mode, default the observability backend to DuckDB. Local
+    // installs are single-instance by definition, the state dir is already
+    // writable, and the alternative (making the operator set the env var for
+    // every local run) is pointless friction. For non-local runs the backend
+    // stays opt-in — we don't want to pick a backend for a multi-pod cluster
+    // without the operator asking.
+    //
+    // Safety: we're still single-threaded at this point (before `block_on`
+    // spins up the Tokio runtime), so setting the env var is safe.
+    if local_mode && env::var_os("OXY_OBSERVABILITY_BACKEND").is_none() {
+        unsafe {
+            env::set_var("OXY_OBSERVABILITY_BACKEND", "duckdb");
+        }
+    }
+
+    // Observability is only enabled when the user explicitly picks a backend
+    // (or is running --local, which implies duckdb). With `--enterprise` but
+    // no backend, we warn and run with observability disabled — no data is
+    // recorded and the UI surfaces a "not configured" banner.
+    let observability_backend = env::var("OXY_OBSERVABILITY_BACKEND").ok();
+    let observability_enabled = observability_backend.is_some();
+    if enterprise_enabled && !observability_enabled {
+        eprintln!(
+            "{}",
+            "Observability disabled: OXY_OBSERVABILITY_BACKEND is not set. \
+             Set it to duckdb, postgres, or clickhouse to record traces."
+                .text()
+        );
+    }
 
     rustls::crypto::aws_lc_rs::default_provider()
         .install_default()
@@ -299,36 +228,13 @@ fn main() {
         .build()
         .unwrap()
         .block_on(async {
-            // Initialize observability inside the Tokio runtime.
-            // OXY_OBSERVABILITY_BACKEND selects the storage backend:
-            //   "duckdb"    -> embedded DuckDB file
-            //   "postgres"  -> shared Postgres via OXY_DATABASE_URL
-            //   "clickhouse"-> ClickHouse via OXY_CLICKHOUSE_URL
-            // Default: postgres if OXY_DATABASE_URL is set, else duckdb.
-            let (observability_store, backend_msg) = if enterprise_enabled {
-                resolve_observability_backend().await
-            } else {
-                (None, None)
-            };
-
-            // Install tracing with Sentry + file appender + optional
-            // observability layer all on the same subscriber.
-            init_tracing_logging(log_to_stdout, observability_store.clone());
-
-            if let Some(msg) = backend_msg {
-                println!("{msg}");
-            }
-
-            if let Some(ref store) = observability_store {
-                oxy_observability::global::set_global(std::sync::Arc::clone(store));
-
-                // Start background retention cleanup. The retention window is
-                // derived from the longest duration the UI supports (see
-                // `oxy_observability::RETENTION_DAYS`). For ClickHouse this
-                // is a no-op since TTL was applied on schema init; for DuckDB
-                // and Postgres it runs a periodic DELETE loop.
-                oxy_observability::spawn_retention_cleanup(std::sync::Arc::clone(store));
-            }
+            // Install tracing with Sentry + file appender + (if enterprise)
+            // the SpanCollectorLayer. The observability *store* isn't wired
+            // yet — the `oxy start` path boots Postgres and only then is
+            // `OXY_DATABASE_URL` set. `observability_boot::finalize()` is
+            // called from `serve.rs` once the DB is ready to resolve the
+            // backend and spawn the bridge task.
+            init_tracing_logging(log_to_stdout, observability_enabled);
 
             // Register tool executors for workflow, agent, and semantic query tools
             // These registrations are critical - without them, workflow and agent tools won't work.
@@ -360,11 +266,7 @@ fn main() {
                 }
             };
 
-            // Gracefully shut down observability storage
-            if let Some(ref store) = observability_store {
-                store.shutdown().await;
-            }
-            oxy_observability::shutdown();
+            observability_boot::shutdown().await;
 
             if exit_code != 0 {
                 exit(exit_code);

@@ -193,6 +193,10 @@ pub struct AuthConfigResponse {
     pub okta: Option<OktaConfig>,
     pub magic_link: Option<bool>,
     pub enterprise: bool,
+    /// True when observability has a backend wired up. False when `--enterprise`
+    /// is on but `OXY_OBSERVABILITY_BACKEND` is unset — the UI should surface a
+    /// "not configured" banner on observability pages in that case.
+    pub observability_enabled: bool,
     /// Present when `GITHUB_CLIENT_ID` is set — enables "Login with GitHub".
     pub github: Option<GitHubAuthConfig>,
     /// "local" when the server is running `oxy serve --local`, "cloud" otherwise.
@@ -240,6 +244,8 @@ pub async fn get_config(
 
     let github_client_id = std::env::var("GITHUB_CLIENT_ID").ok();
 
+    let observability_enabled = app_state.observability.is_some();
+
     if !auth_enabled || app_state.internal {
         return Ok(Json(AuthConfigResponse {
             auth_enabled: false,
@@ -247,6 +253,7 @@ pub async fn get_config(
             okta: None,
             magic_link: None,
             enterprise: app_state.enterprise,
+            observability_enabled,
             github: github_client_id.map(|client_id| GitHubAuthConfig { client_id }),
             mode: app_state.mode.label(),
         }));
@@ -270,6 +277,7 @@ pub async fn get_config(
         okta: okta_config,
         magic_link: if has_magic_link { Some(true) } else { None },
         enterprise: app_state.enterprise,
+        observability_enabled,
         github: github_client_id.map(|client_id| GitHubAuthConfig { client_id }),
         mode: app_state.mode.label(),
     };
@@ -1338,6 +1346,7 @@ mod mode_field_tests {
             okta: None,
             magic_link: None,
             enterprise: false,
+            observability_enabled: false,
             github: None,
             mode: ServeMode::Local.label(),
         };
@@ -1353,6 +1362,7 @@ mod mode_field_tests {
             okta: None,
             magic_link: None,
             enterprise: false,
+            observability_enabled: false,
             github: None,
             mode: ServeMode::Cloud.label(),
         };

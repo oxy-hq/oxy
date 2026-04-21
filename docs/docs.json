@@ -38,6 +38,7 @@
         "learn-about-oxy/debugging",
         "learn-about-oxy/globals",
         "learn-about-oxy/context-graph",
+        "learn-about-oxy/observability",
         "learn-about-oxy/semantic-model",
         "learn-about-oxy/testing",
         "learn-about-oxy/workflows",

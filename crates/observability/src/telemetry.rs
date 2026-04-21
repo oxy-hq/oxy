@@ -53,24 +53,31 @@ fn build_observability_filter() -> EnvFilter {
     }
 }
 
-/// Build a `SpanCollectorLayer` wired to the observability store and spawn the
-/// batching bridge task. Returns the concrete [`SpanCollectorLayer`] ready to
-/// be composed into any `tracing_subscriber::Registry`. Callers typically
-/// apply [`build_observability_filter`] via `.with_filter(...)` on top.
+/// Build just the `SpanCollectorLayer` and its receiver. No store, no bridge.
 ///
-/// Use this when you already have a subscriber (e.g. Sentry + file appender +
-/// fmt) and want to add observability on top.
-pub fn build_observability_layer(store: Arc<dyn ObservabilityStore>) -> SpanCollectorLayer {
-    let (span_tx, mut span_rx) = tokio::sync::mpsc::unbounded_channel::<SpanRecord>();
-
+/// Use this when you need to install the tracing layer early (e.g. before the
+/// database is ready) and defer the store wiring. Spans emitted before the
+/// bridge is spawned accumulate in the unbounded channel — call
+/// [`spawn_bridge`] later with the matching receiver to drain them.
+pub fn build_layer_and_receiver() -> (
+    SpanCollectorLayer,
+    tokio::sync::mpsc::UnboundedReceiver<SpanRecord>,
+) {
+    let (span_tx, span_rx) = tokio::sync::mpsc::unbounded_channel::<SpanRecord>();
     let service_name = std::env::var("OXY_SERVICE_NAME").unwrap_or_else(|_| "oxy".to_string());
     let layer = SpanCollectorLayer::new(span_tx, service_name);
+    (layer, span_rx)
+}
 
-    // Bridge: batch SpanRecords from the tracing layer and flush to the store.
-    // Uses a short interval (1s) and small batch (100) to keep latency low
-    // while still amortizing write overhead for Postgres. These values match
-    // the DuckDB writer's internal buffer so the two don't stack latency.
-    let store_clone = Arc::clone(&store);
+/// Spawn the batching bridge task that drains `receiver` into `store`.
+///
+/// Uses a short interval (1s) and small batch (100) to keep latency low while
+/// still amortizing write overhead for Postgres. These values match the DuckDB
+/// writer's internal buffer so the two don't stack latency.
+pub fn spawn_bridge(
+    mut receiver: tokio::sync::mpsc::UnboundedReceiver<SpanRecord>,
+    store: Arc<dyn ObservabilityStore>,
+) {
     tokio::spawn(async move {
         let mut buffer = Vec::with_capacity(100);
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
@@ -78,13 +85,13 @@ pub fn build_observability_layer(store: Arc<dyn ObservabilityStore>) -> SpanColl
 
         loop {
             tokio::select! {
-                msg = span_rx.recv() => {
+                msg = receiver.recv() => {
                     match msg {
                         Some(record) => {
                             buffer.push(record);
                             if buffer.len() >= 100 {
                                 let batch = std::mem::take(&mut buffer);
-                                if let Err(e) = store_clone.insert_spans(batch).await {
+                                if let Err(e) = store.insert_spans(batch).await {
                                     tracing::error!("Failed to insert spans: {}", e);
                                 }
                             }
@@ -93,7 +100,7 @@ pub fn build_observability_layer(store: Arc<dyn ObservabilityStore>) -> SpanColl
                             // Channel closed — flush remaining and exit.
                             if !buffer.is_empty() {
                                 let batch = std::mem::take(&mut buffer);
-                                let _ = store_clone.insert_spans(batch).await;
+                                let _ = store.insert_spans(batch).await;
                             }
                             break;
                         }
@@ -102,7 +109,7 @@ pub fn build_observability_layer(store: Arc<dyn ObservabilityStore>) -> SpanColl
                 _ = interval.tick() => {
                     if !buffer.is_empty() {
                         let batch = std::mem::take(&mut buffer);
-                        if let Err(e) = store_clone.insert_spans(batch).await {
+                        if let Err(e) = store.insert_spans(batch).await {
                             tracing::error!("Failed to insert spans: {}", e);
                         }
                     }
@@ -110,7 +117,15 @@ pub fn build_observability_layer(store: Arc<dyn ObservabilityStore>) -> SpanColl
             }
         }
     });
+}
 
+/// Build a `SpanCollectorLayer` wired to the observability store and spawn the
+/// batching bridge task. Convenience combiner over [`build_layer_and_receiver`]
+/// + [`spawn_bridge`] for callers that have a store ready at subscriber-install
+/// time.
+pub fn build_observability_layer(store: Arc<dyn ObservabilityStore>) -> SpanCollectorLayer {
+    let (layer, receiver) = build_layer_and_receiver();
+    spawn_bridge(receiver, store);
     layer
 }
 

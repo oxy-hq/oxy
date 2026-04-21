@@ -44,12 +44,10 @@ pub async fn start_database_and_server(args: StartArgs) -> Result<(), OxyError> 
     // 3. Start PostgreSQL container
     let db_url = start_postgres().await?;
 
-    // 3b. If --enterprise is on AND the observability backend is ClickHouse,
-    // start the ClickHouse container too. For the default (DuckDB/Postgres)
-    // backends, no extra container is needed.
-    if args.serve.enterprise
-        && std::env::var("OXY_OBSERVABILITY_BACKEND").as_deref() == Ok("clickhouse")
-    {
+    // 3b. If the observability backend is ClickHouse, start its container.
+    // No extra container is needed for duckdb, postgres, or when the env var
+    // is unset (observability disabled).
+    if std::env::var("OXY_OBSERVABILITY_BACKEND").as_deref() == Ok("clickhouse") {
         start_clickhouse().await?;
     }
 
@@ -57,8 +55,9 @@ pub async fn start_database_and_server(args: StartArgs) -> Result<(), OxyError> 
     print_docker_tips();
 
     // 5. Set environment variables for the server
-    // Safety: This is safe because we're setting variables in single-threaded context
-    // before the server starts, and they're only read by our own code
+    // Safety: the Tokio runtime is running but no task reads OXY_DATABASE_URL
+    // until `start_server_and_web_app` below. No data race can occur because
+    // the first reader runs strictly after this write on the same task.
     unsafe {
         std::env::set_var("OXY_DATABASE_URL", &db_url);
     }
@@ -96,7 +95,9 @@ async fn start_clickhouse() -> Result<(), OxyError> {
     println!("{}", "✓ ClickHouse ready".success());
 
     // Set env vars so the observability backend connects to the container we just started.
-    // Safety: single-threaded context before the server starts.
+    // Safety: these vars are only read by `observability_boot::finalize` (called from
+    // `start_server_and_web_app` below) and the ClickHouse backend it initializes. All
+    // readers run strictly after this point on the same task, so no data race exists.
     unsafe {
         std::env::set_var(
             "OXY_CLICKHOUSE_URL",

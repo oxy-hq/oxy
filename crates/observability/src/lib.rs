@@ -18,7 +18,7 @@ pub use global::{get_global, set_global};
 pub use layer::{SpanCollectorLayer, current_trace_id};
 pub use store::ObservabilityStore;
 pub use telemetry::{
-    build_observability_layer, init_observability, init_stdout, observability_filter, shutdown,
-    spawn_retention_cleanup,
+    build_layer_and_receiver, build_observability_layer, init_observability, init_stdout,
+    observability_filter, shutdown, spawn_bridge, spawn_retention_cleanup,
 };
 pub use types::*;

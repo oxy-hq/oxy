@@ -77,4 +77,11 @@ export interface AuthConfigResponse {
   magic_link?: boolean;
   github?: { client_id: string };
   enterprise?: boolean;
+  /**
+   * True when the observability backend is wired up (OXY_OBSERVABILITY_BACKEND
+   * set to duckdb/postgres/clickhouse). When false on an enterprise build,
+   * observability pages render a "not configured" banner and record nothing.
+   * Always present — server serializes the bool unconditionally.
+   */
+  observability_enabled: boolean;
 }

@@ -52,6 +52,13 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     run_database_migrations(args.enterprise).await?;
     println!("serve: migrations done, finding available port");
 
+    // Now that OXY_DATABASE_URL is set (either externally for `oxy serve` or
+    // by `oxy start` after booting Postgres), resolve the observability
+    // backend and spawn the bridge that drains the span channel into it.
+    // No-op when OXY_OBSERVABILITY_BACKEND is unset — the layer was never
+    // installed and there's no receiver to drain.
+    crate::observability_boot::finalize().await;
+
     // Warn when authentication is enabled but OXY_OWNER is not set.
     // In that case every authenticated user is treated as admin, which is
     // correct for single-user installs but almost certainly unintentional

@@ -6,6 +6,7 @@
 pub mod cli;
 pub mod emails;
 pub mod integrations;
+pub mod observability_boot;
 pub mod server;
 
 // Re-export commonly used items

@@ -1,0 +1,103 @@
+---
+title: Observability
+sidebarTitle: Observability
+---
+
+Oxy can record every agent run, workflow execution, and tool call as a **trace** — a hierarchical view of what the AI did, how long each step took, which SQL was generated, how many tokens were used, and whether anything errored. Traces show up in the Observability section of the Developer Portal so you can debug slow runs, audit what agents produced, and spot patterns across many executions.
+
+Observability has two independent switches:
+
+- **`OXY_OBSERVABILITY_BACKEND`** — turns span **capture** on. Set it to `duckdb`, `postgres`, or `clickhouse` and Oxy starts writing traces to that store. No capture happens if it's unset.
+- **`--enterprise`** — mounts the observability **UI and API routes** (the Traces / Metrics / Execution Analytics pages and their `/api/*` endpoints). Without it, traces are still captured (if a backend is set) but are only reachable via direct DB access.
+
+For the normal "I want to see traces in the Developer Portal" path you want both.
+
+## Enabling observability
+
+Pick a storage backend by setting `OXY_OBSERVABILITY_BACKEND`, then start the server with `--enterprise` to expose the UI.
+
+```bash
+export OXY_OBSERVABILITY_BACKEND=duckdb
+oxy serve --enterprise
+```
+
+Or with the Docker-managed PostgreSQL stack:
+
+```bash
+export OXY_OBSERVABILITY_BACKEND=duckdb
+oxy start --enterprise
+```
+
+When `--local` is set, DuckDB is automatically used as the default backend — you don't need to set `OXY_OBSERVABILITY_BACKEND` for local development.
+
+```bash
+oxy serve --local --enterprise   # DuckDB is the implicit default in --local mode
+```
+
+Open `http://localhost:3000/ide/observability/traces` to see traces. Run an agent or workflow and the corresponding trace appears within a second or two.
+
+## Choosing a backend
+
+There is no default outside `--local`. Pick the backend that matches your deployment:
+
+| Backend | When to use | Storage |
+| --- | --- | --- |
+| `duckdb` | Single-instance deployments, local dev | Embedded file at `$OXY_STATE_DIR/observability.duckdb` |
+| `postgres` | Multi-instance / Kubernetes deployments | Reuses `OXY_DATABASE_URL` — same database as the app |
+| `clickhouse` | High-volume installs (>1M spans/day) | Dedicated ClickHouse instance |
+
+<Note>
+**DuckDB** is fastest for small-to-medium volumes and needs zero extra infrastructure. The trade-off is it only supports a single writer, so it can't be shared across multiple Oxy pods.
+
+**Postgres** is the right pick for horizontally-scaled deployments. It reuses the connection pool Oxy already uses for its own state, so there's no extra database to provision.
+
+**ClickHouse** is overkill for most installs. Only reach for it if DuckDB's single-writer limit is an actual bottleneck for you. `oxy start` starts a ClickHouse container automatically when you pick this backend.
+</Note>
+
+If you start the server with `--enterprise` but forget to set `OXY_OBSERVABILITY_BACKEND`, the Traces page renders a "not configured" banner and nothing is recorded. The server also prints a warning on startup.
+
+## What's recorded
+
+Oxy emits spans for the major execution boundaries:
+
+| Span | Description |
+| --- | --- |
+| `agent.run_agent` | Top-level agent run. Parent span for everything the agent does. |
+| `workflow.run_workflow` | Top-level workflow execution. |
+| `analytics.run` | Agentic analytics pipeline run. |
+| `llm.call` | Individual LLM request (includes prompt/completion token counts). |
+| `tool.call` | Tool invocation — SQL execution, semantic query compilation, Looker lookup, etc. |
+
+Each span carries attributes like the agent name, model, execution status, and error messages if any. Nested spans are stitched into a waterfall view in the Trace Detail page so you can see where time was spent.
+
+## Environment variables
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `OXY_OBSERVABILITY_BACKEND` | _(unset)_ | `duckdb`, `postgres`, or `clickhouse`. Defaults to `duckdb` when `--local` is set. Unset disables observability entirely. |
+| `OXY_DATABASE_URL` | _(required for postgres)_ | PostgreSQL connection string. Reused by the `postgres` backend. |
+| `OXY_CLICKHOUSE_URL` | _(required for clickhouse)_ | ClickHouse HTTP endpoint, e.g. `http://localhost:8123`. |
+| `OXY_CLICKHOUSE_USER` | `default` | ClickHouse username. |
+| `OXY_CLICKHOUSE_PASSWORD` | _(empty)_ | ClickHouse password. |
+| `OXY_CLICKHOUSE_DATABASE` | `observability` | ClickHouse database name. |
+| `OXY_OBSERVABILITY_LOG_LEVEL` | `debug` | Filter for span capture. Independent of `OXY_LOG_LEVEL` — console verbosity does not affect what is recorded. |
+| `OXY_SERVICE_NAME` | `oxy` | Service name attached to every span. |
+
+## Retention
+
+Trace data is automatically pruned after **90 days**. Retention is derived from the longest time-window the Traces UI exposes, so the UI and the retention policy always agree. For DuckDB and Postgres, a background task deletes rows older than the cutoff every 6 hours. For ClickHouse, the same policy is applied at the engine level via `ALTER TABLE ... MODIFY TTL` on schema init, so expiration is handled by ClickHouse's own background merges.
+
+## Switching backends
+
+Change `OXY_OBSERVABILITY_BACKEND` and restart the server. Trace data is **not** migrated across backends — each one has its own storage, so switching from DuckDB to Postgres starts you fresh. If you need to keep historical traces, export them before switching.
+
+## No traces showing up?
+
+1. Confirm the server was started with `--enterprise`.
+2. Confirm `OXY_OBSERVABILITY_BACKEND` is set (or that you're using `--local`, which defaults to `duckdb`). Check the startup output for a line like `Observability: duckdb (...)`.
+3. If the Traces page shows a "not configured" banner, the backend env var wasn't set when the server started.
+4. `OXY_LOG_LEVEL` does **not** affect what is recorded. Traces are captured even at `warn`.
+5. For Postgres: make sure `OXY_DATABASE_URL` is set and the `observability_spans` table exists (it's created by a migration on first boot).
+6. For ClickHouse: check `docker logs oxy-clickhouse` (if using `oxy start`) or your external instance's logs.
+
+For deeper architecture details see the [internal observability docs](https://github.com/oxy-hq/oxy/blob/main/internal-docs/observability-analytics.md).
