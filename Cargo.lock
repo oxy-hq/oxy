@@ -2067,7 +2067,7 @@ dependencies = [
  "getrandom 0.2.17",
  "instant",
  "pin-project-lite",
- "rand 0.8.5",
+ "rand 0.8.6",
  "tokio",
 ]
 
@@ -4237,7 +4237,7 @@ version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae79a5a5dd2b1abbd86597b547682b4e631c42f00ececc28714a8a2b8864b83e"
 dependencies = [
- "rand 0.8.5",
+ "rand 0.8.6",
  "serde",
  "serde_json",
  "static_assertions",
@@ -7290,7 +7290,7 @@ dependencies = [
  "approx 0.5.1",
  "ndarray",
  "num-traits",
- "rand 0.8.5",
+ "rand 0.8.6",
  "sprs",
  "thiserror 2.0.18",
 ]
@@ -7316,7 +7316,7 @@ checksum = "02a834c0ec063937688a0d13573aa515ab8c425bd8de3154b908dd3b9c197dc4"
 dependencies = [
  "ndarray",
  "num-traits",
- "rand 0.8.5",
+ "rand 0.8.6",
  "thiserror 1.0.69",
 ]
 
@@ -7348,7 +7348,7 @@ dependencies = [
  "ndarray",
  "ndarray-rand",
  "num-traits",
- "rand 0.8.5",
+ "rand 0.8.6",
  "rand_xoshiro 0.6.0",
  "sprs",
  "thiserror 2.0.18",
@@ -7773,7 +7773,7 @@ dependencies = [
  "mysql-common-derive",
  "num-bigint",
  "num-traits",
- "rand 0.8.5",
+ "rand 0.8.6",
  "regex",
  "rust_decimal",
  "saturating",
@@ -7801,7 +7801,7 @@ dependencies = [
  "num-complex 0.4.6",
  "num-rational",
  "num-traits",
- "rand 0.8.5",
+ "rand 0.8.6",
  "rand_distr 0.4.3",
  "simba",
  "typenum",
@@ -7868,7 +7868,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f093b3db6fd194718dcdeea6bd8c829417deae904e3fcc7732dabcd4416d25d8"
 dependencies = [
  "ndarray",
- "rand 0.8.5",
+ "rand 0.8.6",
  "rand_distr 0.4.3",
 ]
 
@@ -7884,7 +7884,7 @@ dependencies = [
  "noisy_float",
  "num-integer",
  "num-traits",
- "rand 0.8.5",
+ "rand 0.8.6",
 ]
 
 [[package]]
@@ -8011,7 +8011,7 @@ dependencies = [
  "num-integer",
  "num-iter",
  "num-traits",
- "rand 0.8.5",
+ "rand 0.8.6",
  "smallvec",
  "zeroize",
 ]
@@ -8396,7 +8396,7 @@ name = "omni"
 version = "0.5.36"
 dependencies = [
  "garde",
- "rand 0.8.5",
+ "rand 0.10.1",
  "reqwest",
  "serde",
  "serde_json",
@@ -8744,7 +8744,7 @@ dependencies = [
  "parquet",
  "predicates",
  "pulldown-cmark 0.13.3",
- "rand 0.8.5",
+ "rand 0.10.1",
  "rapidfuzz",
  "regex",
  "reqwest",
@@ -8925,7 +8925,7 @@ dependencies = [
  "oxy_globals",
  "parquet",
  "pulldown-cmark 0.13.3",
- "rand 0.8.5",
+ "rand 0.10.1",
  "rapidfuzz",
  "regex",
  "reqwest",
@@ -9589,7 +9589,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3c80231409c20246a13fddb31776fb942c38553c51e871f8cbd687a4cfb5843d"
 dependencies = [
  "phf_shared 0.11.3",
- "rand 0.8.5",
+ "rand 0.8.6",
 ]
 
 [[package]]
@@ -10271,9 +10271,9 @@ checksum = "dc33ff2d4973d518d823d61aa239014831e521c75da58e3df4840d3f47749d09"
 
 [[package]]
 name = "rand"
-version = "0.8.5"
+version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34af8d1a0e25924bc5b7c43c079c942339d8f0a8b57c39049bef581b46327404"
+checksum = "5ca0ecfa931c29007047d1bc58e623ab12e5590e8c7cc53200d5202b69266d8a"
 dependencies = [
  "libc",
  "rand_chacha 0.3.1",
@@ -10352,7 +10352,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32cb0b9bc82b0a0876c2dd994a7e7a2683d3e7390ca40e6886785ef0c7e3ee31"
 dependencies = [
  "num-traits",
- "rand 0.8.5",
+ "rand 0.8.6",
 ]
 
 [[package]]
@@ -10635,7 +10635,7 @@ dependencies = [
  "once_cell",
  "percent-encoding",
  "quick-xml 0.37.5",
- "rand 0.8.5",
+ "rand 0.8.6",
  "reqwest",
  "rsa",
  "rust-ini",
@@ -10755,7 +10755,7 @@ version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5875471e6cab2871bc150ecb8c727db5113c9338cc3354dc5ee3425b6aa40a1c"
 dependencies = [
- "rand 0.8.5",
+ "rand 0.8.6",
 ]
 
 [[package]]
@@ -10983,7 +10983,7 @@ dependencies = [
  "bytes",
  "num-traits",
  "postgres-types",
- "rand 0.8.5",
+ "rand 0.8.6",
  "rkyv",
  "serde",
  "serde_json",
@@ -12451,7 +12451,7 @@ dependencies = [
  "memchr",
  "once_cell",
  "percent-encoding",
- "rand 0.8.5",
+ "rand 0.8.6",
  "rsa",
  "rust_decimal",
  "serde",
@@ -12495,7 +12495,7 @@ dependencies = [
  "memchr",
  "num-bigint",
  "once_cell",
- "rand 0.8.5",
+ "rand 0.8.6",
  "rust_decimal",
  "serde",
  "serde_json",
@@ -12584,7 +12584,7 @@ dependencies = [
  "approx 0.5.1",
  "nalgebra",
  "num-traits",
- "rand 0.8.5",
+ "rand 0.8.6",
 ]
 
 [[package]]
@@ -13406,7 +13406,7 @@ dependencies = [
  "indexmap 1.9.3",
  "pin-project",
  "pin-project-lite",
- "rand 0.8.5",
+ "rand 0.8.6",
  "slab",
  "tokio",
  "tokio-util",
@@ -13631,7 +13631,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97fee6b57c6a41524a810daee9286c02d7752c4253064d0b05472833a438f675"
 dependencies = [
  "cfg-if",
- "rand 0.8.5",
+ "rand 0.8.6",
  "static_assertions",
 ]
 
