@@ -12,7 +12,8 @@ permissions:
 
 jobs:
   autofix:
-    if: ${{ github.repository == 'oxy-hq/oxy' && github.event_name != 'workflow_run' }}
+    if: ${{ github.repository == 'oxy-hq/oxy' && github.event_name != 'workflow_run'
+      }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/create-github-app-token@v3
@@ -24,7 +25,8 @@ jobs:
           owner: ${{ github.repository_owner }}
       - name: Get GitHub App User ID
         id: get-user-id
-        run: echo "user-id=$(gh api "/users/${{ steps.app-token.outputs.app-slug }}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
+        run: echo "user-id=$(gh api "/users/${{ steps.app-token.outputs.app-slug
+          }}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
       - uses: actions/checkout@v6
@@ -49,7 +51,7 @@ jobs:
         with:
           repo-token: ${{ steps.app-token.outputs.token }}
 
-      - uses: pnpm/action-setup@v5
+      - uses: pnpm/action-setup@v6
         with:
           run_install: false
 
@@ -112,7 +114,8 @@ jobs:
             --allowedTools "Read,Edit,Glob,Grep"
 
       - name: Cargo clippy --fix
-        run: cargo clippy --fix --allow-dirty --allow-staged --broken-code --workspace --lib
+        run: cargo clippy --fix --allow-dirty --allow-staged --broken-code --workspace
+          --lib
 
       - name: Cargo fmt
         run: cargo fmt --all
@@ -130,7 +133,8 @@ jobs:
         with:
           token: ${{ steps.app-token.outputs.token }}
           branch: autofix/weekly-${{ github.run_id }}
-          commit-message: "chore(${{ steps.date.outputs.value }}): weekly clippy fix, rustfmt, frontend format, workspace dep consolidation"
+          commit-message: "chore(${{ steps.date.outputs.value }}): weekly clippy fix,
+            rustfmt, frontend format, workspace dep consolidation"
           title: "chore: weekly auto-fix ${{ steps.date.outputs.value }}"
           body: |
             Automated weekly auto-fix run.

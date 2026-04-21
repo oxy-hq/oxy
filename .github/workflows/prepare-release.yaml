@@ -14,7 +14,8 @@ jobs:
   release-pr:
     name: Create/Update Release PR
     if: "!startsWith(github.event.head_commit.message, 'chore: release')"
-    runs-on: ${{ github.repository == 'oxy-hq/oxy-internal' && 'ubuntu-slim' || 'ubuntu-latest' }}
+    runs-on: ${{ github.repository == 'oxy-hq/oxy-internal' && 'ubuntu-slim' ||
+      'ubuntu-latest' }}
     concurrency:
       group: release-pr-${{ github.ref }}
       cancel-in-progress: false
@@ -47,7 +48,8 @@ jobs:
       - name: Generate full CHANGELOG.md
         run: git cliff --tag ${{ steps.bump.outputs.version }} -o CHANGELOG.md
       - name: Generate release PR body
-        run: git cliff --tag ${{ steps.bump.outputs.version }} --unreleased -o /tmp/release-notes.md
+        run: git cliff --tag ${{ steps.bump.outputs.version }} --unreleased -o
+          /tmp/release-notes.md
       - name: Create or update release PR
         uses: peter-evans/create-pull-request@v7
         with:
@@ -63,7 +65,8 @@ jobs:
   release:
     name: Tag and Release
     if: "startsWith(github.event.head_commit.message, 'chore: release')"
-    runs-on: ${{ github.repository == 'oxy-hq/oxy-internal' && 'ubuntu-slim' || 'ubuntu-latest' }}
+    runs-on: ${{ github.repository == 'oxy-hq/oxy-internal' && 'ubuntu-slim' ||
+      'ubuntu-latest' }}
     concurrency:
       group: release-${{ github.ref }}
       cancel-in-progress: false
@@ -103,9 +106,10 @@ jobs:
         with:
           tool: git-cliff
       - name: Generate release notes
-        run: git cliff --tag ${{ steps.version.outputs.version }} --latest -o /tmp/release-notes.md
+        run: git cliff --tag ${{ steps.version.outputs.version }} --latest -o
+          /tmp/release-notes.md
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           token: ${{ steps.app-token.outputs.token }}
           tag_name: ${{ steps.version.outputs.version }}
@@ -114,9 +118,10 @@ jobs:
 
   # Tag the public oxy-hq/oxy repo when a release is created.
   release-public:
-    needs: [release]
+    needs: [ release ]
     if: needs.release.outputs.releases_created == 'true'
-    runs-on: ${{ github.repository == 'oxy-hq/oxy-internal' && 'ubuntu-slim' || 'ubuntu-latest' }}
+    runs-on: ${{ github.repository == 'oxy-hq/oxy-internal' && 'ubuntu-slim' ||
+      'ubuntu-latest' }}
     permissions:
       contents: read
       actions: read
@@ -132,7 +137,8 @@ jobs:
             oxy
       - name: Get GitHub App User ID
         id: get-user-id
-        run: echo "user-id=$(gh api "/users/${{ steps.app-token.outputs.app-slug }}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
+        run: echo "user-id=$(gh api "/users/${{ steps.app-token.outputs.app-slug
+          }}[bot]" --jq .id)" >> "$GITHUB_OUTPUT"
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
       - name: Wait for publishing oss code to succeed
