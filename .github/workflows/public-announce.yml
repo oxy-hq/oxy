@@ -257,14 +257,16 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Send Slack notification
-        if: steps.build_info.outputs.type != 'skip'
+        if: >-
+          steps.build_info.outputs.type != 'skip'
+          && (steps.build_info.outputs.type == 'stable'
+              || steps.changelog.outputs.commit_count != '0')
         uses: rtCamp/action-slack-notify@v2
         env:
           SLACK_USERNAME: "Release Notifier"
           MSG_MINIMAL: ref,commit
           SLACK_ICON_EMOJI: ${{ steps.build_info.outputs.emoji }}
           SLACK_LINK_NAMES: true
-          SLACKIFY_MARKDOWN: true
           SLACK_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL: ${{ steps.build_info.outputs.channel }}
           SLACK_FOOTER: ""
