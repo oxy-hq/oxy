@@ -90,7 +90,7 @@ pub enum CoreEvent {
         trace_id: String,
     },
 
-    /// The LLM provider stream is starting; emitted once per state invocation,
+    /// The LLM provider stream is starting; emitted once per HTTP round,
     /// before the first token arrives.
     LlmStart {
         state: String,
@@ -107,8 +107,8 @@ pub enum CoreEvent {
         sub_spec_index: Option<usize>,
     },
 
-    /// The LLM provider stream has ended; emitted once per state invocation,
-    /// after all tokens and tool rounds are complete.
+    /// The LLM provider stream has ended; emitted once per HTTP round,
+    /// after all tokens for that round have been consumed.
     LlmEnd {
         state: String,
         output_tokens: usize,
@@ -207,16 +207,57 @@ pub enum CoreEvent {
         trace_id: String,
     },
 
-    /// The user provided an answer to a suspended run; the pipeline is resuming.
+    /// The suspended run received an answer and is resuming.
     ///
-    /// Emitted immediately before [`Orchestrator::resume`] is called so that
-    /// SSE replays can distinguish "still suspended" from "already answered".
+    /// Pairs with the preceding [`AwaitingHumanInput`] event — the
+    /// `trace_id` field matches the one on `AwaitingHumanInput` so the
+    /// frontend can correlate the open/close pair.
     ///
-    /// [`Orchestrator::resume`]: crate::orchestrator::Orchestrator::resume
-    HumanInputResolved {
-        /// The user's answer text.
+    /// The answer may come from a human (typed response) or from a
+    /// delegation (child task output).
+    ///
+    /// [`AwaitingHumanInput`]: CoreEvent::AwaitingHumanInput
+    #[serde(rename = "input_resolved")]
+    InputResolved {
+        /// The answer text (human response or delegation output).
         answer: String,
-        /// Trace ID shared by all events in this run.
+        /// Trace ID matching the corresponding `awaiting_input` event.
+        trace_id: String,
+    },
+
+    // ── Delegation events ────────────────────────────────────────────────
+    /// A delegation to a child task has started.
+    DelegationStarted {
+        /// The child task's identifier.
+        child_task_id: String,
+        /// Human-readable target description (e.g. `"agent:builder"` or
+        /// `"workflow:revenue.procedure.yml"`).
+        target: String,
+        /// The request/instruction sent to the child.
+        request: String,
+        trace_id: String,
+    },
+
+    /// A forwarded event from a running child task.
+    ///
+    /// The coordinator wraps child events in this envelope so the parent's
+    /// SSE stream shows delegation progress.
+    DelegationEvent {
+        child_task_id: String,
+        /// The original event type from the child (e.g. `"step_start"`).
+        inner_event_type: String,
+        /// The original serialized payload from the child.
+        inner_payload: serde_json::Value,
+    },
+
+    /// A child delegation completed (successfully or not).
+    DelegationCompleted {
+        child_task_id: String,
+        success: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        answer: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
         trace_id: String,
     },
 }
@@ -230,7 +271,10 @@ pub enum CoreEvent {
 ///
 /// The default implementation for `()` is provided so generic code that does
 /// not need domain events can use `Event<()>` with no boilerplate.
-pub trait DomainEvents: Send + 'static {}
+///
+/// Domain events must implement `Serialize` because they are persisted as JSON
+/// via the event bridge and streamed to clients via SSE.
+pub trait DomainEvents: serde::Serialize + Send + 'static {}
 
 impl DomainEvents for () {}
 
@@ -244,6 +288,45 @@ pub enum Event<D: DomainEvents = ()> {
     Core(CoreEvent),
     /// A domain-specific event emitted by a worker implementation.
     Domain(D),
+}
+
+impl<D: DomainEvents> Event<D> {
+    /// Serialize this event into `(event_type, payload)` for DB storage.
+    ///
+    /// Both `CoreEvent` and domain events must use
+    /// `#[serde(tag = "event_type")]` internally-tagged format.
+    pub fn serialize(&self) -> (String, serde_json::Value) {
+        let value = match self {
+            Event::Core(e) => {
+                serde_json::to_value(e).expect("CoreEvent serialization is infallible")
+            }
+            Event::Domain(e) => {
+                serde_json::to_value(e).expect("DomainEvent serialization is infallible")
+            }
+        };
+        split_tagged(value)
+    }
+}
+
+/// Split a serde internally-tagged enum value into `(event_type, payload)`.
+///
+/// Internally tagged enums serialize as `{ "event_type": "...", ...fields }`.
+/// This helper removes the tag key and returns it alongside the remaining object.
+fn split_tagged(v: serde_json::Value) -> (String, serde_json::Value) {
+    let serde_json::Value::Object(mut obj) = v else {
+        panic!("internally tagged enum always serializes to an object");
+    };
+    let event_type = obj
+        .remove("event_type")
+        .and_then(|v| {
+            if let serde_json::Value::String(s) = v {
+                Some(s)
+            } else {
+                None
+            }
+        })
+        .unwrap_or_default();
+    (event_type, serde_json::Value::Object(obj))
 }
 
 // ── EventStream type alias ─────────────────────────────────────────────────────

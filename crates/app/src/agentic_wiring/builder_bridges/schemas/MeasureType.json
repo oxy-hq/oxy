@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Represents the type of a measure aggregation",
+  "enum": [
+    "count",
+    "sum",
+    "average",
+    "min",
+    "max",
+    "count_distinct",
+    "median",
+    "custom"
+  ],
+  "title": "MeasureType",
+  "type": "string"
+}

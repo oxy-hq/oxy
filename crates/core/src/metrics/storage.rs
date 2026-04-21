@@ -98,6 +98,7 @@ impl MetricStorage {
                 agent: data.by_source_type.agent,
                 workflow: data.by_source_type.workflow,
                 task: data.by_source_type.task,
+                analytics: data.by_source_type.analytics,
             },
             by_context_type: ContextTypeBreakdown {
                 sql: data.by_context_type.sql,

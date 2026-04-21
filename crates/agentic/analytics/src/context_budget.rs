@@ -1,9 +1,13 @@
 //! [`ContextBudget`] — token-budget utility for prompt construction.
 //!
+//! Currently unused — kept as a utility for future prompt-assembly code.
+//!
 //! LLM context windows are finite.  When assembling prompts from multiple
 //! sources (schema, metric definitions, examples, retry context) the total
 //! may exceed the model's input limit.  `ContextBudget` provides a simple
 //! accounting layer:
+
+#![allow(dead_code)]
 //!
 //! 1. Estimate how many tokens a string consumes.
 //! 2. Reserve portions of the budget for each prompt section.

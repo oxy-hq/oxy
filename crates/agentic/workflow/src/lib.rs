@@ -1,5 +1,21 @@
+pub mod config;
+pub mod error;
 pub mod event_bridge;
+pub mod extension;
 pub mod runner;
+pub mod semantic;
+pub mod semantic_bridge;
+pub mod step_decider;
+pub mod step_executor;
+pub mod step_orchestrator;
+pub mod workspace;
 
+pub use config::{TaskType, WorkflowConfig};
+pub use error::WorkflowError;
 pub use event_bridge::WorkflowEventBridge;
+pub use extension::WorkflowMigrator;
 pub use runner::OxyProcedureRunner;
+pub use step_decider::{WorkflowDecider, WorkflowDecision};
+pub use step_executor::{extract_workflow_steps, run_workflow_step};
+pub use step_orchestrator::WorkflowStepOrchestrator;
+pub use workspace::WorkspaceContext;

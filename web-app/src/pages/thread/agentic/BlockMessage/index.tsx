@@ -28,7 +28,7 @@ const BlockMessage = ({
   const { selectBlock } = useSelectedMessageReasoning();
   const content = useMessageContent(runInfo);
 
-  const error = runInfo?.error || (runInfo?.status === "canceled" && "Agent run was cancelled");
+  const error = runInfo?.error || (runInfo?.status === "cancelled" && "Agent run was cancelled");
 
   if (!runInfo) {
     return null;

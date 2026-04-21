@@ -1,13 +1,12 @@
-import { ArrowUp, CircleX, Zap } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Zap } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import useFileTree from "@/hooks/api/files/useFileTree";
 import { cn } from "@/libs/shadcn/utils";
 import { flattenFiles, getActiveMention, getCleanObjectName } from "@/libs/utils/mention";
 import { getFileTypeIcon } from "@/pages/ide/Files/FilesSidebar/utils";
+import MessageInputShell from "@/pages/thread/analytics/MessageInputShell";
 import type { FileTreeModel } from "@/types/file";
 import { detectFileType } from "@/utils/fileTypes";
-import { Button } from "../ui/shadcn/button";
-import { Textarea } from "../ui/shadcn/textarea";
 
 // --- Component ---
 
@@ -64,10 +63,6 @@ const BuilderMessageInput = ({
   useEffect(() => {
     setSelectedIndex(0);
   }, [mentionResults.length]);
-
-  const textareaRef = useCallback((node: HTMLTextAreaElement | null) => {
-    textareaElRef.current = node;
-  }, []);
 
   const insertMention = (file: FileTreeModel) => {
     if (!activeMention) return;
@@ -172,32 +167,21 @@ const BuilderMessageInput = ({
   };
 
   return (
-    <div className='flex w-full flex-1 flex-col gap-1.5'>
-      {showWarning && (
-        <div className='w-full rounded-lg border border-border bg-muted p-2'>
-          <div className='flex items-center'>
-            <svg
-              aria-hidden='true'
-              className='mr-2 h-5 w-5 text-destructive'
-              fill='currentColor'
-              viewBox='0 0 20 20'
-            >
-              <path
-                fillRule='evenodd'
-                d='M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z'
-                clipRule='evenodd'
-              />
-            </svg>
-            <span className='font-medium text-foreground text-sm'>
-              You've asked a lot of questions. You may want to start a new thread for optimal
-              performance.
-            </span>
-          </div>
-        </div>
-      )}
-      <div className='relative'>
-        {/* Mention autocomplete dropdown — rendered above the textarea */}
-        {showMentionPopup && (
+    <MessageInputShell
+      value={message}
+      onChange={handleChange}
+      onKeyDown={handleKeyDown}
+      onSend={handleSend}
+      onStop={onStop}
+      disabled={disabled}
+      isLoading={isLoading}
+      showWarning={showWarning}
+      placeholder='Ask a follow-up question... (@ to mention a file)'
+      textareaRef={textareaElRef}
+      onSelect={handleSelect}
+      onClick={handleSelect}
+      aboveInput={
+        showMentionPopup ? (
           <div className='absolute right-0 bottom-full left-0 z-10 mb-1 max-h-52 overflow-y-auto rounded-md border bg-popover p-1 shadow-md'>
             {mentionResults.map((file, index) => {
               const fileType = detectFileType(file.path);
@@ -224,57 +208,24 @@ const BuilderMessageInput = ({
               );
             })}
           </div>
-        )}
-        <div className='overflow-hidden rounded-md border border-border bg-secondary transition-shadow focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50'>
-          <Textarea
-            ref={textareaRef}
-            value={message}
-            onChange={handleChange}
-            onSelect={handleSelect}
-            onClick={handleSelect}
-            onKeyDown={handleKeyDown}
-            placeholder='Ask a follow-up question... (@ to mention a file)'
-            className='h-14 max-h-20 resize-none overflow-y-auto rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0'
-            disabled={disabled}
-          />
-          <div className='flex items-center justify-end gap-2 border-border border-t bg-secondary px-2 py-1.5'>
-            {onAutoApproveChange && (
-              <button
-                type='button'
-                onClick={() => onAutoApproveChange(!autoApprove)}
-                className={cn(
-                  "flex items-center gap-1 rounded px-1.5 py-0.5 text-xs transition-colors hover:bg-accent",
-                  autoApprove ? "text-primary" : "text-muted-foreground"
-                )}
-              >
-                <Zap className='h-3 w-3' />
-                Auto-approve
-              </button>
+        ) : undefined
+      }
+      extraActions={
+        onAutoApproveChange ? (
+          <button
+            type='button'
+            onClick={() => onAutoApproveChange(!autoApprove)}
+            className={cn(
+              "flex items-center gap-1 rounded px-1.5 py-0.5 text-xs transition-colors hover:bg-accent",
+              autoApprove ? "text-primary" : "text-muted-foreground"
             )}
-            {isLoading ? (
-              <Button
-                size='icon'
-                className='size-7'
-                onClick={onStop}
-                data-testid='message-input-stop-button'
-              >
-                <CircleX className='size-4' />
-              </Button>
-            ) : (
-              <Button
-                size='icon'
-                className='size-7'
-                onClick={handleSend}
-                disabled={!message.trim() || disabled}
-                data-testid='message-input-send-button'
-              >
-                <ArrowUp className='size-4' />
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+          >
+            <Zap className='h-3 w-3' />
+            Auto-approve
+          </button>
+        ) : undefined
+      }
+    />
   );
 };
 

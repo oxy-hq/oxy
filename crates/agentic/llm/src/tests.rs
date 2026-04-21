@@ -2,7 +2,6 @@ use std::collections::VecDeque;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
-use async_trait::async_trait;
 use futures_core::Stream;
 use serde_json::{Value, json};
 
@@ -419,10 +418,12 @@ async fn tool_call_round_then_final_text() {
         vec![
             "LlmStart",
             "LlmToken", // "Checking "
+            "LlmEnd",   // round 1 end
             "ToolCall",
             "ToolResult",
+            "LlmStart", // round 2 start
             "LlmToken", // "Done."
-            "LlmEnd",
+            "LlmEnd",   // round 2 end
         ],
         "event order mismatch: {tags:?}"
     );
@@ -2786,7 +2787,7 @@ async fn max_tokens_reached_prior_messages_contains_truncated_assistant_turn() {
 #[test]
 fn build_continue_messages_appends_please_continue_user_turn() {
     let captured = Arc::new(Mutex::new(Vec::new()));
-    let client =
+    let _client =
         LlmClient::with_provider(AnthropicMockProvider::new(vec![], Arc::clone(&captured)));
 
     let prior = vec![

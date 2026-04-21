@@ -8,6 +8,8 @@ use crate::integrations::a2a::{
     agent_card::AgentCardService, handler::OxyA2aHandler, storage::OxyTaskStorage,
 };
 use a2a::server::{create_http_router, create_jsonrpc_router};
+use agentic_pipeline::{AnalyticsMigrator, WorkflowMigrator};
+use agentic_runtime::migration::RuntimeMigrator;
 use axum::{
     Router,
     http::StatusCode,
@@ -186,7 +188,19 @@ async fn run_database_migrations() -> Result<(), OxyError> {
 
     Migrator::up(&db, None)
         .await
-        .map_err(|e| OxyError::RuntimeError(format!("Failed to run database migrations: {}", e)))
+        .map_err(|e| OxyError::RuntimeError(format!("Failed to run database migrations: {}", e)))?;
+
+    RuntimeMigrator::up(&db, None)
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("runtime migrations failed: {}", e)))?;
+
+    AnalyticsMigrator::up(&db, None)
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("analytics migrations failed: {}", e)))?;
+
+    WorkflowMigrator::up(&db, None)
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("workflow migrations failed: {}", e)))
 }
 
 /// Create the A2A application with all routes

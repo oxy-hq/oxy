@@ -18,6 +18,7 @@ use tower_http::timeout::TimeoutLayer;
 use agentic_http::{AgenticState, cleanup_stale_runs};
 use oxy_auth::middleware::internal_auth_middleware;
 use oxy_shared::errors::OxyError;
+use tokio_util::sync::CancellationToken;
 
 use crate::api::middlewares::timeout::timeout_middleware;
 use crate::server::builder_test_runner::OxyTestRunner;
@@ -42,8 +43,7 @@ pub async fn api_router(
         observability,
         startup_cwd,
     };
-    cleanup_stale_runs().await.ok();
-    let agentic_state = new_agentic_state();
+    let agentic_state = new_agentic_state().await?;
 
     let protected_routes = match mode {
         ServeMode::Cloud => {
@@ -70,8 +70,7 @@ pub async fn internal_api_router(
         observability,
         startup_cwd: std::path::PathBuf::new(),
     };
-    cleanup_stale_runs().await.ok();
-    let agentic_state = new_agentic_state();
+    let agentic_state = new_agentic_state().await?;
 
     let protected_routes = build_protected_routes(app_state.clone(), agentic_state)
         .layer(middleware::from_fn(timeout_middleware))
@@ -82,8 +81,17 @@ pub async fn internal_api_router(
     Ok(finalize_router(app_routes, app_state))
 }
 
-fn new_agentic_state() -> Arc<AgenticState> {
-    Arc::new(AgenticState::new().with_builder_test_runner(Arc::new(OxyTestRunner)))
+async fn new_agentic_state() -> Result<Arc<AgenticState>, OxyError> {
+    let db = oxy::database::client::establish_connection()
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("db connect failed: {e}")))?;
+    cleanup_stale_runs(&db).await.ok();
+    let thread_owner: Arc<dyn agentic_pipeline::platform::ThreadOwnerLookup> =
+        Arc::new(crate::agentic_wiring::OxyThreadOwnerLookup::new(db.clone()));
+    Ok(Arc::new(
+        AgenticState::new(CancellationToken::new(), db, thread_owner)
+            .with_builder_test_runner(Arc::new(OxyTestRunner)),
+    ))
 }
 
 /// Applies the shared outer layers — state, CORS, the 60-second global

@@ -25,8 +25,10 @@ crates/
   test-utils/               # (oxy-test-utils) Test utilities, fixtures, and mocks
   agentic/
     core/                   # (agentic-core) Generic agentic workflow orchestration framework
+    runtime/                # (agentic-runtime) Run lifecycle, persistence, and event streaming
+    pipeline/               # (agentic-pipeline) Composition facade for starting/driving pipelines
     analytics/              # (agentic-analytics) Analytics domain for the agentic framework
-    app-builder/            # (agentic-app-builder) Data app builder domain for the agentic framework
+    builder/                # (agentic-builder) Builder domain (data apps + file edits)
     connector/              # (agentic-connector) Database connector trait and backend implementations
     db/                     # (agentic-db) Shared SeaORM entities and migrations for agentic pipeline
     http/                   # (agentic-http) Axum HTTP routes for the agentic analytics pipeline
@@ -144,6 +146,10 @@ The `oxy start` command manages Docker containers programmatically via the `boll
 ## Product Context (Web UI)
 
 @product-context.md
+
+## Backend Architecture
+
+@backend-architecture.md
 
 ## Design Docs & Specs
 

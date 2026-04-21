@@ -1,0 +1,325 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "Dimension": {
+      "description": "Represents a dimension in the semantic layer",
+      "properties": {
+        "description": {
+          "description": "Human-readable description of what this dimension represents",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expr": {
+          "description": "SQL expression that defines how to calculate this dimension",
+          "type": "string"
+        },
+        "name": {
+          "description": "Unique identifier for the dimension within the view",
+          "type": "string"
+        },
+        "original_expr": {
+          "description": "Original expression before variable encoding (if variables were used)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "samples": {
+          "description": "Example values to help users understand the dimension content",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "synonyms": {
+          "description": "Alternative names or terms that refer to this dimension",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "type": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/DimensionType"
+            }
+          ],
+          "description": "Data type of the dimension"
+        }
+      },
+      "required": [
+        "expr",
+        "name",
+        "type"
+      ],
+      "type": "object"
+    },
+    "DimensionType": {
+      "description": "Represents the data type of a dimension",
+      "enum": [
+        "string",
+        "number",
+        "date",
+        "datetime",
+        "boolean"
+      ],
+      "type": "string"
+    },
+    "Entity": {
+      "description": "Represents an entity in the semantic layer",
+      "properties": {
+        "description": {
+          "description": "Human-readable description of what this entity represents",
+          "type": "string"
+        },
+        "key": {
+          "description": "The dimension(s) that should be used as the key for the entity Can be a single key or multiple keys for composite primary keys",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "keys": {
+          "description": "Multiple keys for composite primary keys",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Unique identifier for the entity within the view",
+          "type": "string"
+        },
+        "type": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/EntityType"
+            }
+          ],
+          "description": "Type of entity (primary or foreign)"
+        }
+      },
+      "required": [
+        "description",
+        "name",
+        "type"
+      ],
+      "type": "object"
+    },
+    "EntityType": {
+      "description": "Represents the type of an entity in the semantic layer",
+      "oneOf": [
+        {
+          "description": "Primary entity representing the main subject of a view",
+          "enum": [
+            "primary"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Foreign entity representing a reference to an entity defined in another view",
+          "enum": [
+            "foreign"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "Measure": {
+      "description": "Represents a measure in the semantic layer",
+      "properties": {
+        "description": {
+          "description": "Human-readable description of what this measure represents",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expr": {
+          "description": "SQL expression for the measure (required for most types, not for count)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "filters": {
+          "description": "List of filters to apply to the measure calculation",
+          "items": {
+            "$ref": "#/definitions/MeasureFilter"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Unique identifier for the measure within the view",
+          "type": "string"
+        },
+        "original_expr": {
+          "description": "Original expression before variable encoding (if variables were used)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "samples": {
+          "description": "Sample values or example outputs to help users understand the measure",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "synonyms": {
+          "description": "Alternative names or terms that refer to this measure",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "type": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/MeasureType"
+            }
+          ],
+          "description": "Type of measure aggregation"
+        }
+      },
+      "required": [
+        "name",
+        "type"
+      ],
+      "type": "object"
+    },
+    "MeasureFilter": {
+      "description": "Represents a filter condition for measures",
+      "properties": {
+        "description": {
+          "description": "Human-readable description of the filter",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expr": {
+          "description": "SQL expression for the filter condition",
+          "type": "string"
+        },
+        "original_expr": {
+          "description": "Original expression before variable encoding (if variables were used)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "expr"
+      ],
+      "type": "object"
+    },
+    "MeasureType": {
+      "description": "Represents the type of a measure aggregation",
+      "enum": [
+        "count",
+        "sum",
+        "average",
+        "min",
+        "max",
+        "count_distinct",
+        "median",
+        "custom"
+      ],
+      "type": "string"
+    }
+  },
+  "description": "Represents a view in the semantic layer",
+  "properties": {
+    "datasource": {
+      "description": "Name of the datasource to use for this view",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "description": {
+      "description": "Human-readable description of what this view represents",
+      "type": "string"
+    },
+    "dimensions": {
+      "description": "List of dimensions (attributes) available in this view",
+      "items": {
+        "$ref": "#/definitions/Dimension"
+      },
+      "type": "array"
+    },
+    "entities": {
+      "description": "List of entities that define the core objects in this view",
+      "items": {
+        "$ref": "#/definitions/Entity"
+      },
+      "type": "array"
+    },
+    "label": {
+      "description": "Display name for the view (defaults to name if not specified)",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "measures": {
+      "description": "List of measures (aggregations) available in this view",
+      "items": {
+        "$ref": "#/definitions/Measure"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "name": {
+      "description": "Unique identifier for the view within the semantic layer",
+      "type": "string"
+    },
+    "sql": {
+      "description": "Custom SQL query (required if table not specified)",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "table": {
+      "description": "Database table reference (required if sql not specified)",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "description",
+    "dimensions",
+    "entities",
+    "name"
+  ],
+  "title": "View",
+  "type": "object"
+}

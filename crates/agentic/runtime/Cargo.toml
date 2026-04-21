@@ -1,0 +1,30 @@
+[package]
+name = "agentic-runtime"
+description = "Generic execution runtime for agentic pipeline runs — entities, migrations, and CRUD"
+version = "0.5.31"
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+
+[dependencies]
+agentic-core = { path = "../core" }
+sea-orm = { workspace = true }
+sea-orm-migration = { workspace = true }
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { version = "0.7", features = ["rt"] }
+dashmap = "5"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+agentic-analytics = { path = "../analytics" }
+agentic-builder = { path = "../builder" }
+testcontainers = { version = "0.27", features = ["blocking", "reusable-containers"] }
+testcontainers-modules = { version = "0.15", features = ["postgres"] }

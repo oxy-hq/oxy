@@ -1578,7 +1578,7 @@ fn hybrid_catalog_cardio_with_schema_semantic_wins() {
     let sem = build_semantic(&[cardio_view_yaml()], &[]);
 
     // Simulate what DuckDB introspection would produce for cardio_4_4.csv
-    let schema = SchemaCatalog::new().add_table(
+    let _schema = SchemaCatalog::new().add_table(
         "cardio_4_4",
         &[
             "Date",

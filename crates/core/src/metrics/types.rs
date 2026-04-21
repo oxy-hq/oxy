@@ -41,14 +41,19 @@ pub enum SourceType {
     Workflow,
     /// Metric used via direct task execution
     Task,
+    /// Metric used via agentic analytics pipeline execution
+    Analytics,
 }
 
 impl SourceType {
+    // Lowercase to match the on-disk convention already used by
+    // the tests, slack integration writer, and backend SQL filters.
     pub fn as_str(&self) -> &'static str {
         match self {
-            SourceType::Agent => "Agent",
-            SourceType::Workflow => "Workflow",
-            SourceType::Task => "Task",
+            SourceType::Agent => "agent",
+            SourceType::Workflow => "workflow",
+            SourceType::Task => "task",
+            SourceType::Analytics => "analytics",
         }
     }
 }
@@ -149,6 +154,8 @@ pub struct SourceTypeBreakdown {
     pub agent: u64,
     pub workflow: u64,
     pub task: u64,
+    #[serde(default)]
+    pub analytics: u64,
 }
 
 /// Breakdown by context type

@@ -1,232 +1,64 @@
-//! Concrete [`ProcedureRunner`] backed by [`WorkflowLauncher`].
+//! Procedure discovery and search for the agentic analytics domain.
+//!
+//! `OxyProcedureRunner` implements the `ProcedureRunner` trait, providing
+//! procedure search via fuzzy matching against YAML metadata. Procedure
+//! *execution* is handled by the coordinator-worker architecture (via
+//! `WorkflowStepOrchestrator`), not by this module.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use agentic_analytics::AnalyticsEvent;
-use agentic_analytics::procedure::{
-    ProcedureError, ProcedureOutput, ProcedureRef, ProcedureRunner, ProcedureStepResult,
-};
-use agentic_core::events::{Event, EventStream};
-use oxy::adapters::workspace::manager::WorkspaceManager;
-use oxy::checkpoint::types::RetryStrategy;
-use oxy::execute::writer::NoopHandler;
-use oxy_workflow::{WorkflowInput, WorkflowLauncher};
+use agentic_analytics::procedure::{ProcedureRef, ProcedureRunner};
 
-use crate::event_bridge::WorkflowEventBridge;
+use crate::workspace::WorkspaceContext;
 
-/// Runs `.procedure.yml` files through [`WorkflowLauncher`].
+/// Discovers and searches `.procedure.yml` files.
 ///
 /// Wire this into `AnalyticsSolver::with_procedure_runner(Arc::new(runner))`.
 ///
-/// Attach an [`EventStream`] via [`with_events`](Self::with_events) to bridge
-/// workflow task-lifecycle events into the analytics event stream, giving
-/// observers per-step progress during multi-step procedure execution.
-///
 /// Supply the procedure file paths discovered from the agent config's `context`
-/// globs via [`with_procedure_files`](Self::with_procedure_files).  When set,
+/// globs via [`with_procedure_files`](Self::with_procedure_files). When set,
 /// `search()` uses these paths directly instead of scanning the project
 /// directory via `list_workflows()`.
 pub struct OxyProcedureRunner {
-    workspace_manager: WorkspaceManager,
+    workspace: Arc<dyn WorkspaceContext>,
     /// Procedure file paths resolved from `context` globs at config load time.
     /// When non-empty, `search()` uses these instead of `list_workflows()`.
     procedure_files: Vec<PathBuf>,
-    /// When `Some`, workflow task events are forwarded to the analytics stream
-    /// via [`WorkflowEventBridge`] instead of being dropped.
-    event_tx: Option<EventStream<AnalyticsEvent>>,
 }
 
 impl OxyProcedureRunner {
-    pub fn new(workspace_manager: WorkspaceManager) -> Self {
+    pub fn new(workspace: Arc<dyn WorkspaceContext>) -> Self {
         Self {
-            workspace_manager,
+            workspace,
             procedure_files: Vec::new(),
-            event_tx: None,
         }
     }
 
     /// Provide the pre-resolved procedure file paths from the agent config's
-    /// `context` globs.  `search()` will use these paths directly.
+    /// `context` globs. `search()` will use these paths directly.
     pub fn with_procedure_files(mut self, files: Vec<PathBuf>) -> Self {
         self.procedure_files = files;
-        self
-    }
-
-    /// Attach an analytics event stream.
-    ///
-    /// When set, an internal [`WorkflowEventBridge`] is created for each
-    /// `run()` call, translating workflow task events (started / finished /
-    /// error) into [`AnalyticsEvent::ProcedureStepStarted`] /
-    /// [`AnalyticsEvent::ProcedureStepCompleted`] on the supplied sender.
-    pub fn with_events(mut self, tx: EventStream<AnalyticsEvent>) -> Self {
-        self.event_tx = Some(tx);
         self
     }
 }
 
 #[async_trait::async_trait]
 impl ProcedureRunner for OxyProcedureRunner {
-    async fn run(&self, file_path: &Path) -> Result<ProcedureOutput, ProcedureError> {
-        // Derive the human-readable procedure name and top-level task names so
-        // we can emit lifecycle events that let the frontend show the full DAG
-        // before any individual step events arrive.
-        let procedure_name = file_path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .map(|s| s.strip_suffix(".procedure").unwrap_or(s).to_string())
-            .unwrap_or_default();
-
-        use agentic_analytics::ProcedureStepInfo;
-        let steps: Vec<ProcedureStepInfo> = std::fs::read_to_string(file_path)
-            .ok()
-            .and_then(|s| serde_yaml::from_str::<ProcedureMeta>(&s).ok())
-            .map(|m| {
-                m.tasks
-                    .into_iter()
-                    .filter(|t| !t.name.is_empty())
-                    .map(|t| ProcedureStepInfo {
-                        name: t.name,
-                        task_type: t.task_type,
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        if let Some(tx) = &self.event_tx {
-            let _ = tx
-                .send(Event::Domain(AnalyticsEvent::ProcedureStarted {
-                    procedure_name: procedure_name.clone(),
-                    steps,
-                }))
-                .await;
-        }
-
-        let launcher = WorkflowLauncher::new()
-            .with_workspace(self.workspace_manager.clone())
-            .await
-            .map_err(|e| ProcedureError(e.to_string()))?;
-
-        let input = WorkflowInput {
-            workflow_ref: file_path.to_string_lossy().to_string(),
-            retry: RetryStrategy::NoRetry { variables: None },
-        };
-
-        let launch_result = match &self.event_tx {
-            Some(tx) => {
-                // Bridge workflow task events into the analytics event stream.
-                let bridge = WorkflowEventBridge::new(tx.clone());
-                launcher.launch(input, bridge, None).await
-            }
-            None => launcher.launch(input, NoopHandler, None).await,
-        };
-
-        if let Some(tx) = &self.event_tx {
-            let _ = tx
-                .send(Event::Domain(AnalyticsEvent::ProcedureCompleted {
-                    procedure_name,
-                    success: launch_result.is_ok(),
-                    error: launch_result.as_ref().err().map(|e| e.to_string()),
-                }))
-                .await;
-        }
-
-        let output_container = launch_result.map_err(|e| ProcedureError(e.to_string()))?;
-        let steps = extract_steps(&output_container);
-        Ok(ProcedureOutput { steps })
-    }
-
     async fn search(&self, query: &str) -> Vec<ProcedureRef> {
-        let config = &self.workspace_manager.config_manager;
-        let workspace_path = config.workspace_path().to_path_buf();
+        let workspace_path = self.workspace.workspace_path().to_path_buf();
 
         // Use context-resolved paths when available; fall back to full project scan.
         let paths = if !self.procedure_files.is_empty() {
             self.procedure_files.clone()
         } else {
-            match config.list_workflows().await {
+            match self.workspace.list_workflow_files().await {
                 Ok(p) => p,
                 Err(_) => return vec![],
             }
         };
 
         filter_procedure_paths(&paths, &workspace_path, query)
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Per-step output extraction
-// ---------------------------------------------------------------------------
-
-/// Maximum number of steps to include; excess steps are silently dropped.
-const MAX_PROCEDURE_STEPS: usize = 20;
-
-/// Maximum character length for non-table (text fallback) cells.
-const MAX_FALLBACK_TEXT_CHARS: usize = 2000;
-
-/// Flatten a top-level `OutputContainer` (always a `Map` for procedures)
-/// into an ordered vec of per-step results.
-fn extract_steps(container: &oxy::execute::types::OutputContainer) -> Vec<ProcedureStepResult> {
-    use oxy::execute::types::OutputContainer;
-
-    match container {
-        OutputContainer::Map(map) => map
-            .iter()
-            .filter(|(_, v)| !matches!(v, OutputContainer::Variable(_)))
-            .take(MAX_PROCEDURE_STEPS)
-            .map(|(name, output)| step_to_result(name.clone(), output))
-            .collect(),
-        other => vec![step_to_result("result".to_string(), other)],
-    }
-}
-
-/// Convert one step's `OutputContainer` into a [`ProcedureStepResult`].
-fn step_to_result(
-    step_name: String,
-    container: &oxy::execute::types::OutputContainer,
-) -> ProcedureStepResult {
-    use oxy::execute::types::{Output, OutputContainer};
-
-    // Unwrap one level of Metadata / Consistency.
-    let inner = match container {
-        OutputContainer::Metadata { value, .. } => value.output.as_ref(),
-        OutputContainer::Consistency { value, .. } => value.output.as_ref(),
-        other => other,
-    };
-
-    match inner {
-        OutputContainer::Single(Output::Table(table)) => {
-            match (table.columns(), table.to_typed_rows()) {
-                (Ok(columns), Ok((rows, truncated))) => {
-                    let total_row_count = rows.len() as u64;
-                    ProcedureStepResult {
-                        step_name,
-                        columns,
-                        rows,
-                        truncated,
-                        total_row_count,
-                    }
-                }
-                // Arrow file unreadable → text fallback.
-                _ => text_fallback(step_name, &format!("{container}")),
-            }
-        }
-        other => text_fallback(step_name, &format!("{other}")),
-    }
-}
-
-fn text_fallback(step_name: String, text: &str) -> ProcedureStepResult {
-    let is_long = text.len() > MAX_FALLBACK_TEXT_CHARS;
-    let cell = if is_long {
-        format!("{}…", &text[..MAX_FALLBACK_TEXT_CHARS])
-    } else {
-        text.to_string()
-    };
-    ProcedureStepResult {
-        step_name,
-        columns: vec!["result".to_string()],
-        rows: vec![vec![serde_json::Value::String(cell)]],
-        truncated: is_long,
-        total_row_count: 1,
     }
 }
 
@@ -237,11 +69,13 @@ struct ProcedureMeta {
     description: String,
     #[serde(default)]
     retrieval: RetrievalMeta,
+    #[allow(dead_code)]
     #[serde(default)]
     tasks: Vec<ProcedureTaskMeta>,
 }
 
 /// Minimal task metadata — only the name and type are needed for lifecycle events.
+#[allow(dead_code)]
 #[derive(serde::Deserialize, Default)]
 struct ProcedureTaskMeta {
     #[serde(default)]
@@ -403,9 +237,6 @@ mod tests {
     fn make_path(name: &str) -> PathBuf {
         PathBuf::from(format!("/project/{name}"))
     }
-
-    // NOTE: step_extraction_tests (text_fallback, extract_steps) are below;
-    // the rows field is now Vec<Vec<serde_json::Value>>, so helpers there use json!().
 
     #[test]
     fn non_procedure_files_are_excluded() {
@@ -694,80 +525,3 @@ mod tests {
 
 // ---------------------------------------------------------------------------
 // Tests for extract_steps / step_to_result / text_fallback
-// ---------------------------------------------------------------------------
-
-#[cfg(test)]
-mod step_extraction_tests {
-    use super::*;
-    use oxy::execute::types::{Output, OutputContainer};
-
-    fn text_container(s: &str) -> OutputContainer {
-        OutputContainer::Single(Output::Text(s.to_string()))
-    }
-
-    fn map_of(entries: Vec<(&str, OutputContainer)>) -> OutputContainer {
-        OutputContainer::Map(
-            entries
-                .into_iter()
-                .map(|(k, v)| (k.to_string(), v))
-                .collect(),
-        )
-    }
-
-    #[test]
-    fn empty_map_yields_no_steps() {
-        assert!(extract_steps(&map_of(vec![])).is_empty());
-    }
-
-    #[test]
-    fn variable_steps_are_filtered_out() {
-        let container = map_of(vec![(
-            "x",
-            OutputContainer::Variable(serde_json::Value::Null),
-        )]);
-        assert!(extract_steps(&container).is_empty());
-    }
-
-    #[test]
-    fn text_step_produces_single_cell_fallback() {
-        let container = map_of(vec![("step1", text_container("hello"))]);
-        let steps = extract_steps(&container);
-        assert_eq!(steps.len(), 1);
-        assert_eq!(steps[0].step_name, "step1");
-        assert_eq!(steps[0].columns, vec!["result"]);
-        assert_eq!(steps[0].rows[0][0], serde_json::json!("hello\n"));
-    }
-
-    #[test]
-    fn non_map_container_wraps_as_single_result_step() {
-        let steps = extract_steps(&text_container("output"));
-        assert_eq!(steps.len(), 1);
-        assert_eq!(steps[0].step_name, "result");
-    }
-
-    #[test]
-    fn step_count_is_capped_at_max() {
-        let entries: Vec<_> = (0..MAX_PROCEDURE_STEPS + 5)
-            .map(|i| (format!("step{i}"), text_container(&i.to_string())))
-            .collect();
-        let container = OutputContainer::Map(entries.into_iter().map(|(k, v)| (k, v)).collect());
-        assert_eq!(extract_steps(&container).len(), MAX_PROCEDURE_STEPS);
-    }
-
-    #[test]
-    fn long_text_is_truncated_in_fallback() {
-        let long_text = "x".repeat(MAX_FALLBACK_TEXT_CHARS + 100);
-        let step = text_fallback("s".to_string(), &long_text);
-        assert!(step.truncated);
-        // Cell value is a JSON string; check truncation length.
-        let cell_str = step.rows[0][0].as_str().unwrap();
-        assert!(cell_str.len() <= MAX_FALLBACK_TEXT_CHARS + 3); // +3 for '…'
-    }
-
-    #[test]
-    fn short_text_is_not_truncated() {
-        let step = text_fallback("s".to_string(), "short");
-        assert!(!step.truncated);
-        assert_eq!(step.rows[0][0], serde_json::json!("short"));
-    }
-}

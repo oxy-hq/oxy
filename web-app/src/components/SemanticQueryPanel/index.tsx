@@ -10,6 +10,7 @@ import FiltersDisplay from "./FiltersDisplay";
 import LimitOffset from "./LimitOffset";
 import OrdersDisplay from "./OrdersDisplay";
 import SqlDisplay from "./SqlDisplay";
+import TimeDimensionsDisplay from "./TimeDimensionsDisplay";
 import TopicHeader from "./TopicHeader";
 
 interface SemanticQueryPanelProps {
@@ -36,6 +37,7 @@ const SemanticQueryPanel = ({
     database,
     dimensions: originalDimensions,
     measures: originalMeasures,
+    time_dimensions: timeDimensions,
     filters: originalFilters,
     orders: originalOrders,
     limit,
@@ -229,6 +231,8 @@ const SemanticQueryPanel = ({
         onFieldRemove={handleMeasureRemove}
         onFieldAdd={handleMeasureAdd}
       />
+
+      <TimeDimensionsDisplay timeDimensions={timeDimensions ?? []} />
 
       <FiltersDisplay
         filters={editable ? filters : (originalFilters as SemanticQueryFilter[])}

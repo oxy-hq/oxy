@@ -51,7 +51,10 @@ export function useBuilderActivity(
         });
       } else if (ev.event_type === "proposed_change") {
         // Try to pair with the subsequent awaiting_input to extract old_content.
-        const decision = changeDecisions.get(ev.seq);
+        // Check explicit decisions first, then fall back to scanning events
+        // for input_resolved (handles page reload / hydration).
+        const decision =
+          changeDecisions.get(ev.seq) ?? extractChangeDecision(events, ev.seq) ?? "pending";
         const { oldContent, isDeletion } = extractProposedChangeMetadata(events, ev.seq);
         items.push({
           kind: "proposed_change",
@@ -61,7 +64,7 @@ export function useBuilderActivity(
           newContent: ev.payload.new_content,
           oldContent,
           isDeletion: ev.payload.delete ?? isDeletion,
-          status: decision ?? "pending"
+          status: decision
         });
       }
     }
@@ -103,4 +106,22 @@ export function extractProposedChangeMetadata(
 
 export function extractOldContent(events: UiBlock[], afterSeq: number): string {
   return extractProposedChangeMetadata(events, afterSeq).oldContent;
+}
+
+/**
+ * Finds the `input_resolved` event that follows a `proposed_change` event
+ * and determines whether the change was accepted or rejected based on the answer.
+ */
+export function extractChangeDecision(
+  events: UiBlock[],
+  afterSeq: number
+): "accepted" | "rejected" | null {
+  for (const ev of events) {
+    if (ev.seq <= afterSeq) continue;
+    if (ev.event_type === "input_resolved") {
+      const answer = (ev.payload as { answer?: string }).answer ?? "";
+      return answer.toLowerCase().includes("accept") ? "accepted" : "rejected";
+    }
+  }
+  return null;
 }

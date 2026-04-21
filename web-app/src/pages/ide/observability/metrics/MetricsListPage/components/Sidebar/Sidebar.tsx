@@ -28,19 +28,26 @@ export default function Sidebar({ analyticsData, isLoading }: SidebarProps) {
     if (!analyticsData?.by_source_type) {
       return {
         agent: { count: 0, percentage: 0 },
-        workflow: { count: 0, percentage: 0 }
+        workflow: { count: 0, percentage: 0 },
+        analytics: { count: 0, percentage: 0 }
       };
     }
-    const total = analyticsData.by_source_type.agent + analyticsData.by_source_type.workflow;
+    const analyticsCount = analyticsData.by_source_type.analytics ?? 0;
+    const total =
+      analyticsData.by_source_type.agent + analyticsData.by_source_type.workflow + analyticsCount;
+    const pct = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
     return {
       agent: {
         count: analyticsData.by_source_type.agent,
-        percentage: total > 0 ? Math.round((analyticsData.by_source_type.agent / total) * 100) : 0
+        percentage: pct(analyticsData.by_source_type.agent)
       },
       workflow: {
         count: analyticsData.by_source_type.workflow,
-        percentage:
-          total > 0 ? Math.round((analyticsData.by_source_type.workflow / total) * 100) : 0
+        percentage: pct(analyticsData.by_source_type.workflow)
+      },
+      analytics: {
+        count: analyticsCount,
+        percentage: pct(analyticsCount)
       }
     };
   }, [analyticsData]);

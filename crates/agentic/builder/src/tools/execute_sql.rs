@@ -1,11 +1,11 @@
 //! `execute_sql` tool — run a SQL query against a project database and return results.
 
-use std::path::Path;
 use std::time::Duration;
 
 use agentic_core::tools::{ToolDef, ToolError};
-use arrow::json::ArrayWriter;
 use serde_json::{Value, json};
+
+use crate::database::BuilderDatabaseProvider;
 
 const ROW_LIMIT: u64 = 100;
 const QUERY_TIMEOUT: Duration = Duration::from_secs(30);
@@ -40,86 +40,65 @@ pub fn execute_sql_def() -> ToolDef {
 }
 
 pub async fn execute_execute_sql(
-    workspace_root: &Path,
     params: &Value,
-    secrets_manager: Option<&oxy::adapters::secrets::SecretsManager>,
+    db_provider: &dyn BuilderDatabaseProvider,
 ) -> Result<Value, ToolError> {
     let sql = params["sql"]
         .as_str()
         .ok_or_else(|| ToolError::BadParams("missing 'sql'".into()))?;
 
-    // Build ConfigManager from project root (same pattern as validate_project).
-    let config_manager = oxy::config::ConfigBuilder::new()
-        .with_workspace_path(workspace_root)
-        .map_err(|e| ToolError::Execution(format!("config error: {e}")))?
-        .build()
-        .await
-        .map_err(|e| ToolError::Execution(format!("config error: {e}")))?;
-
     // Determine which database to use.
     let db_name = if let Some(name) = params["database"].as_str() {
         name.to_string()
     } else {
-        config_manager
-            .get_config()
-            .databases
-            .first()
+        let databases = db_provider.list_databases().await?;
+        databases
+            .into_iter()
+            .next()
             .ok_or_else(|| ToolError::Execution("no databases configured in config.yml".into()))?
-            .name
-            .clone()
     };
 
-    // Use provided secrets_manager (with DB fallback) or fall back to env-only.
-    let owned_sm;
-    let secrets_manager = match secrets_manager {
-        Some(sm) => sm,
-        None => {
-            owned_sm = oxy::adapters::secrets::SecretsManager::from_environment()
-                .map_err(|e| ToolError::Execution(format!("secrets manager error: {e}")))?;
-            &owned_sm
-        }
-    };
-
-    // Build a connector for the target database.
-    let connector = oxy::connector::Connector::from_database(
-        &db_name,
-        &config_manager,
-        secrets_manager,
-        Some(ROW_LIMIT),
-        None,
-        None,
-    )
-    .await
-    .map_err(|e| ToolError::Execution(e.to_string()))?;
+    let connector = db_provider.get_connector(&db_name).await?;
 
     // Wrap in a subquery so the outer LIMIT applies regardless of the user's SQL.
     let preview_sql = format!("SELECT * FROM ({sql}) AS _oxy_preview LIMIT {ROW_LIMIT}");
 
-    let (batches, schema) = tokio::time::timeout(
+    let result = tokio::time::timeout(
         QUERY_TIMEOUT,
-        connector.run_query_with_limit(&preview_sql, Some(ROW_LIMIT)),
+        connector.execute_query(&preview_sql, ROW_LIMIT),
     )
     .await
     .map_err(|_| ToolError::Execution("query timed out after 30 seconds".into()))?
     .map_err(|e| ToolError::Execution(e.to_string()))?;
 
-    let columns: Vec<String> = schema.fields().iter().map(|f| f.name().clone()).collect();
-    let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
+    let columns = &result.result.columns;
+    let total_rows = result.result.rows.len();
 
-    // Serialize batches to a JSON array using Arrow's writer.
-    let mut buf = Vec::new();
-    {
-        let mut writer = ArrayWriter::new(&mut buf);
-        writer
-            .write_batches(&batches.iter().collect::<Vec<_>>())
-            .map_err(|e| ToolError::Execution(format!("result serialization error: {e}")))?;
-        writer
-            .finish()
-            .map_err(|e| ToolError::Execution(format!("result serialization error: {e}")))?;
-    }
-
-    let rows: Value = serde_json::from_slice(&buf)
-        .map_err(|e| ToolError::Execution(format!("result parsing error: {e}")))?;
+    // Convert QueryResult rows to JSON array of objects.
+    let rows: Vec<Value> = result
+        .result
+        .rows
+        .iter()
+        .map(|row| {
+            let obj: serde_json::Map<String, Value> = columns
+                .iter()
+                .zip(row.0.iter())
+                .map(|(col, cell)| {
+                    let v = match cell {
+                        agentic_core::result::CellValue::Text(s) => Value::String(s.clone()),
+                        agentic_core::result::CellValue::Number(n) => {
+                            serde_json::Number::from_f64(*n)
+                                .map(Value::Number)
+                                .unwrap_or(Value::Null)
+                        }
+                        agentic_core::result::CellValue::Null => Value::Null,
+                    };
+                    (col.clone(), v)
+                })
+                .collect();
+            Value::Object(obj)
+        })
+        .collect();
 
     Ok(json!({
         "ok": true,

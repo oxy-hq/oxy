@@ -5,7 +5,6 @@ import { DisplayBlock } from "@/components/AppPreview/Displays";
 import BuilderMessageInput from "@/components/BuilderMessageInput";
 import ThinkingModeMenu from "@/components/Chat/ChatPanel/ThinkingModeMenu";
 import Markdown from "@/components/Markdown";
-import MessageInput from "@/components/MessageInput";
 import UserMessage from "@/components/Messages/UserMessage";
 import ErrorAlert from "@/components/ui/ErrorAlert";
 import { Button } from "@/components/ui/shadcn/button";
@@ -15,7 +14,13 @@ import {
   ResizablePanelGroup
 } from "@/components/ui/shadcn/resizable";
 import { Spinner } from "@/components/ui/shadcn/spinner";
-import type { SelectableItem } from "@/hooks/analyticsSteps";
+import type {
+  ArtifactItem,
+  BuilderDelegationItem,
+  ProcedureItem,
+  SelectableItem,
+  SqlItem
+} from "@/hooks/analyticsSteps";
 import queryKeys from "@/hooks/api/queryKey";
 import useBuilderAvailable from "@/hooks/api/useBuilderAvailable";
 import type { AnalyticsDisplayBlock, SseEvent } from "@/hooks/useAnalyticsRun";
@@ -27,7 +32,11 @@ import {
   useAnalyticsRun
 } from "@/hooks/useAnalyticsRun";
 import type { BuilderProposedChange } from "@/hooks/useBuilderActivity";
-import { extractProposedChangeMetadata, useBuilderActivity } from "@/hooks/useBuilderActivity";
+import {
+  extractChangeDecision,
+  extractProposedChangeMetadata,
+  useBuilderActivity
+} from "@/hooks/useBuilderActivity";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import type {
   AnalyticsRunSummary,
@@ -39,13 +48,14 @@ import { AnalyticsService } from "@/services/api/analytics";
 import { consumePendingThinkingMode } from "@/stores/analyticsThinkingMode";
 import type { DataContainer, Display } from "@/types/app";
 import type { ThreadItem } from "@/types/chat";
-import ProcedureRunDagPanel from "../agentic/ProcedureRunDagPanel";
 import AcceptedChangePills from "./AcceptedChangePills";
 import AnalyticsArtifactSidebar from "./AnalyticsArtifactSidebar";
 import AnalyticsReasoningTrace from "./AnalyticsReasoningTrace";
 import BuilderActivityPanel from "./BuilderActivityPanel";
+import BuilderDelegationPanel from "./BuilderDelegationPanel";
 import FilePreviewPanel from "./FilePreviewPanel";
 import Header from "./Header";
+import MessageInputShell from "./MessageInputShell";
 import { parseProposeChange } from "./ProposeChangeDiff";
 import SuspensionPrompt from "./SuspensionPrompt";
 
@@ -247,9 +257,11 @@ const PastRunEntry = ({
     let counter = 0;
     return events
       .filter((ev): ev is ProposedChangeBlock => ev.event_type === "proposed_change")
-      .map((ev) => {
+      .reduce<BuilderProposedChange[]>((acc, ev) => {
+        const decision = extractChangeDecision(events, ev.seq);
+        if (decision !== "accepted") return acc;
         const { oldContent, isDeletion } = extractProposedChangeMetadata(events, ev.seq);
-        return {
+        acc.push({
           kind: "proposed_change" as const,
           id: `past-${run.run_id}-change-${counter++}`,
           filePath: ev.payload.file_path,
@@ -258,8 +270,9 @@ const PastRunEntry = ({
           oldContent,
           isDeletion: ev.payload.delete ?? isDeletion,
           status: "accepted" as const
-        };
-      });
+        });
+        return acc;
+      }, []);
   }, [capturedChanges, isBuilder, run.run_id, run.status, run.ui_events]);
 
   return (
@@ -294,6 +307,11 @@ const PastRunEntry = ({
           {run.error_message && <Markdown>{run.error_message}</Markdown>}
         </ErrorAlert>
       )}
+      {run.status === "cancelled" && (
+        <div className='rounded-lg border border-border bg-muted p-4 text-center'>
+          <p className='text-muted-foreground text-sm'>Operation cancelled</p>
+        </div>
+      )}
     </RunEntry>
   );
 };
@@ -305,7 +323,9 @@ const AnalyticsThread = ({ thread }: Props) => {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [followUpQuestion, setFollowUpQuestion] = useState("");
-  const [selectedArtifact, setSelectedArtifact] = useState<SelectableItem | null>(null);
+  const [selectedArtifact, setSelectedArtifact] = useState<
+    ArtifactItem | SqlItem | ProcedureItem | null
+  >(null);
   const [selectedRunEvents, setSelectedRunEvents] = useState<SseEvent[]>([]);
   const [activeQuestion, setActiveQuestion] = useState<string | null>(null);
   const [builderPanelOpen, setBuilderPanelOpen] = useState(false);
@@ -313,13 +333,13 @@ const AnalyticsThread = ({ thread }: Props) => {
     () => new Map()
   );
   const [selectedFileChange, setSelectedFileChange] = useState<BuilderProposedChange | null>(null);
+  const [selectedDelegation, setSelectedDelegation] = useState<BuilderDelegationItem | null>(null);
   const [selectedDisplayBlocks, setSelectedDisplayBlocks] = useState<AnalyticsDisplayBlock[]>([]);
   // Accepted changes captured per-run when a run reaches terminal state, so they
   // survive the live→PastRunEntry transition (streamingEvents clears on reset).
   const [capturedRunChanges, setCapturedRunChanges] = useState<
     Map<string, BuilderProposedChange[]>
   >(() => new Map());
-  const [showProcedurePanel, setShowProcedurePanel] = useState(false);
   const [autoApprove, setAutoApprove] = useState(
     () => localStorage.getItem("builder_auto_approve") === "true"
   );
@@ -381,7 +401,7 @@ const AnalyticsThread = ({ thread }: Props) => {
   // When a run reaches a terminal state, invalidate allRuns so the completed run
   // appears with its ui_events on the next render. Also freeze the SSE events so
   // the sidebar keeps its state after reset() clears the run from memory.
-  const isTerminal = state.tag === "done" || state.tag === "failed";
+  const isTerminal = state.tag === "done" || state.tag === "failed" || state.tag === "cancelled";
   useEffect(() => {
     if (!isTerminal) return;
     const s = stateRef.current;
@@ -440,7 +460,7 @@ const AnalyticsThread = ({ thread }: Props) => {
 
   // Once allRuns reflects the terminal run, reset state to idle so it transitions
   // to a PastRunEntry. Uses the runId string (stable) rather than the full state object.
-  const terminalRunId = state.tag === "done" || state.tag === "failed" ? state.runId : null;
+  const terminalRunId = isTerminal && "runId" in state ? state.runId : null;
   useEffect(() => {
     if (!terminalRunId) return;
     const reflected = allRuns.some(
@@ -460,7 +480,6 @@ const AnalyticsThread = ({ thread }: Props) => {
     reset();
     setSelectedArtifact(null);
     setSelectedRunEvents([]);
-    setShowProcedurePanel(false);
     hasSyncedThinkingMode.current = false;
   }, [thread.id]);
 
@@ -493,24 +512,6 @@ const AnalyticsThread = ({ thread }: Props) => {
       setSelectedFileChange(null);
     }
   }, [isBuilder, state.tag]);
-  // Current SSE events: prefer live streaming events, fall back to frozen events from last run.
-  const currentEvents = "events" in state ? state.events : selectedRunEvents;
-
-  // Derive procedure info from the last procedure_started event in the current events.
-  const procedureInfo = useMemo(() => {
-    for (let i = currentEvents.length - 1; i >= 0; i--) {
-      const ev = currentEvents[i];
-      if (ev.type === "procedure_started") {
-        const data = ev.data as {
-          procedure_name: string;
-          steps: Array<{ name: string; task_type: string }>;
-        };
-        return { procedureName: data.procedure_name, steps: data.steps };
-      }
-    }
-    return null;
-  }, [currentEvents]);
-
   // Exclude the active run from history while it is being streamed / transitioning to
   // PastRunEntry to avoid rendering it twice (once live, once via allRuns).
   const activeRunId = state.tag !== "idle" && "runId" in state && state.runId ? state.runId : null;
@@ -608,10 +609,14 @@ const AnalyticsThread = ({ thread }: Props) => {
 
   const handleSelectArtifact = useCallback(
     (item: SelectableItem, blocks: AnalyticsDisplayBlock[] = [], runEvents: SseEvent[] = []) => {
-      if (item.kind === "procedure") {
-        setShowProcedurePanel((prev) => !prev);
+      if (item.kind === "builder_delegation") {
+        setSelectedDelegation(item);
+        setSelectedArtifact(null);
+        setSelectedFileChange(null);
+        setBuilderPanelOpen(false);
         return;
       }
+      setSelectedDelegation(null);
       setSelectedArtifact(item);
       setSelectedDisplayBlocks(blocks);
       setSelectedFileChange(null);
@@ -632,7 +637,7 @@ const AnalyticsThread = ({ thread }: Props) => {
               ? 50
               : selectedFileChange
                 ? 50
-                : selectedArtifact || (showProcedurePanel && procedureInfo)
+                : selectedArtifact
                   ? 50
                   : 100
           }
@@ -706,7 +711,7 @@ const AnalyticsThread = ({ thread }: Props) => {
 
                     {state.tag === "failed" && (
                       <ErrorAlert
-                        title={state.message === "Cancelled" ? "Cancelled" : "Run failed"}
+                        title='Run failed'
                         actions={
                           <Button
                             size='sm'
@@ -720,8 +725,13 @@ const AnalyticsThread = ({ thread }: Props) => {
                           </Button>
                         }
                       >
-                        {state.message !== "Cancelled" && <Markdown>{state.message}</Markdown>}
+                        <Markdown>{state.message}</Markdown>
                       </ErrorAlert>
+                    )}
+                    {state.tag === "cancelled" && (
+                      <div className='rounded-lg border border-border bg-muted p-4 text-center'>
+                        <p className='text-muted-foreground text-sm'>Operation cancelled</p>
+                      </div>
                     )}
                   </RunEntry>
                 )}
@@ -747,33 +757,46 @@ const AnalyticsThread = ({ thread }: Props) => {
                   onAutoApproveChange={handleAutoApproveChange}
                 />
               ) : (
-                <div className='flex-col items-end gap-2 rounded-md border border-border bg-secondary'>
-                  <div className='flex-1'>
-                    <MessageInput
-                      value={followUpQuestion}
-                      onChange={setFollowUpQuestion}
-                      onSend={handleSend}
-                      onStop={stop}
-                      disabled={state.tag === "running" || isStarting}
-                      isLoading={state.tag === "running" || isStarting}
-                      inputClassName='border-0'
-                      noFocusRing
-                    />
-                  </div>
-                  <div className='flex items-center justify-end px-2 pb-2'>
+                <MessageInputShell
+                  value={followUpQuestion}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                    setFollowUpQuestion(e.target.value)
+                  }
+                  onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
+                  onSend={handleSend}
+                  onStop={stop}
+                  disabled={state.tag === "running" || isStarting}
+                  isLoading={state.tag === "running" || isStarting}
+                  extraActions={
                     <ThinkingModeMenu
                       value={thinkingMode}
                       onChange={handleThinkingModeChange}
                       disabled={state.tag === "running" || isStarting}
                     />
-                  </div>
-                </div>
+                  }
+                />
               )}
             </div>
           </div>
         </ResizablePanel>
 
-        {isBuilder && builderPanelOpen ? (
+        {selectedDelegation ? (
+          <>
+            <ResizableHandle withHandle />
+            <ResizablePanel defaultSize={50} minSize={20} maxSize={70}>
+              <BuilderDelegationPanel
+                childRunId={selectedDelegation.childRunId}
+                projectId={project.id}
+                onClose={() => setSelectedDelegation(null)}
+              />
+            </ResizablePanel>
+          </>
+        ) : isBuilder && builderPanelOpen ? (
           <>
             <ResizableHandle withHandle />
             <ResizablePanel defaultSize={50} minSize={20} maxSize={70}>
@@ -812,21 +835,6 @@ const AnalyticsThread = ({ thread }: Props) => {
               </ResizablePanel>
             </>
           )
-        )}
-
-        {showProcedurePanel && procedureInfo && (
-          <>
-            <ResizableHandle withHandle />
-            <ResizablePanel defaultSize={40} minSize={20} maxSize={70}>
-              <ProcedureRunDagPanel
-                procedureName={procedureInfo.procedureName}
-                steps={procedureInfo.steps}
-                events={currentEvents}
-                isRunning={isStreaming}
-                onClose={() => setShowProcedurePanel(false)}
-              />
-            </ResizablePanel>
-          </>
         )}
       </ResizablePanelGroup>
     </div>

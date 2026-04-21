@@ -14,7 +14,13 @@
 //! therefore never sees `ask_user`; the listing in `tools_for_state` is purely
 //! for the LLM's function-call schema.
 
-use agentic_core::{human_input::SuspendedRunData, state::ProblemState, tools::ToolDef};
+use agentic_core::{
+    human_input::SuspendedRunData,
+    orchestrator::RunContext,
+    result::{CellValue, QueryRow},
+    state::ProblemState,
+    tools::ToolDef,
+};
 
 use crate::types::QuestionType;
 use crate::{AnalyticsDomain, AnalyticsIntent, AnalyticsResult, QuerySpec};
@@ -49,7 +55,10 @@ pub(super) use agentic_core::tools::handle_ask_user;
 /// Unknown or corrupt `from_state` values log a warning and fall back to
 /// `Clarifying` (safest re-entry point — triage will be skipped because
 /// `resume_data` is set).  This avoids a panic on stale suspension data.
-pub(super) fn problem_state_from_resume(data: &SuspendedRunData) -> ProblemState<AnalyticsDomain> {
+pub(super) fn problem_state_from_resume(
+    data: &SuspendedRunData,
+    resume_answer: Option<&str>,
+) -> ProblemState<AnalyticsDomain> {
     match data.from_state.as_str() {
         "clarifying" => {
             // Re-enter clarifying with a minimal intent built from the
@@ -147,6 +156,27 @@ pub(super) fn problem_state_from_resume(data: &SuspendedRunData) -> ProblemState
                 None,
             ))
         }
+        "executing" => {
+            // Procedure delegation completed. Parse the workflow output
+            // (JSON array of step results) into a real AnalyticsResult so
+            // the frontend gets proper query_executed events with columns
+            // and rows — just like inline procedure execution used to produce.
+            let result = resume_answer
+                .and_then(parse_delegation_answer)
+                .unwrap_or_else(|| {
+                    // Fallback: empty result if answer isn't available or parseable.
+                    AnalyticsResult::single(
+                        QueryResult {
+                            columns: vec![],
+                            rows: vec![],
+                            total_row_count: 0,
+                            truncated: false,
+                        },
+                        None,
+                    )
+                });
+            ProblemState::Interpreting(result)
+        }
         other => {
             // Warn instead of panic so stale/corrupt suspension data doesn't
             // crash the server.  Fall back to the safest re-entry point.
@@ -168,5 +198,121 @@ pub(super) fn problem_state_from_resume(data: &SuspendedRunData) -> ProblemState
                 semantic_confidence: 0.0,
             })
         }
+    }
+}
+
+/// Parse a delegation answer (JSON array of step results) into an
+/// `AnalyticsResult` with proper `QueryResult` entries.
+fn parse_delegation_answer(answer: &str) -> Option<AnalyticsResult> {
+    let steps: Vec<serde_json::Value> = serde_json::from_str(answer).ok()?;
+    if steps.is_empty() {
+        return None;
+    }
+
+    let mut result_sets = Vec::new();
+    for step in &steps {
+        if let Some(columns_arr) = step["columns"].as_array() {
+            let columns: Vec<String> = columns_arr
+                .iter()
+                .filter_map(|c| c.as_str().map(str::to_string))
+                .collect();
+            let rows: Vec<QueryRow> = step["rows"]
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|r| {
+                            r.as_array().map(|cells| {
+                                QueryRow(
+                                    cells
+                                        .iter()
+                                        .map(|cell| match cell {
+                                            serde_json::Value::Number(n) => {
+                                                CellValue::Number(n.as_f64().unwrap_or(0.0))
+                                            }
+                                            serde_json::Value::String(s) => {
+                                                CellValue::Text(s.clone())
+                                            }
+                                            serde_json::Value::Null => CellValue::Null,
+                                            other => CellValue::Text(other.to_string()),
+                                        })
+                                        .collect(),
+                                )
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let total = rows.len() as u64;
+            result_sets.push(crate::types::QueryResultSet {
+                data: QueryResult {
+                    columns,
+                    rows,
+                    total_row_count: total,
+                    truncated: false,
+                },
+                summary: None,
+            });
+        } else if let Some(text) = step["text"].as_str() {
+            result_sets.push(crate::types::QueryResultSet {
+                data: QueryResult {
+                    columns: vec!["result".to_string()],
+                    rows: vec![QueryRow(vec![CellValue::Text(text.to_string())])],
+                    total_row_count: 1,
+                    truncated: false,
+                },
+                summary: None,
+            });
+        }
+    }
+
+    if result_sets.is_empty() {
+        None
+    } else {
+        Some(AnalyticsResult {
+            results: result_sets,
+        })
+    }
+}
+
+/// Populate `RunContext` from suspension data so the orchestrator has
+/// `intent` and `spec` when resuming mid-pipeline (e.g. from Executing).
+pub(super) fn populate_resume_context(
+    data: &SuspendedRunData,
+    run_ctx: &mut RunContext<crate::AnalyticsDomain>,
+) {
+    // Restore intent from stage_data.
+    if let Some(intent_val) = data.stage_data.get("intent") {
+        if let Ok(intent) = serde_json::from_value::<crate::AnalyticsIntent>(intent_val.clone()) {
+            run_ctx.intent = Some(intent);
+        }
+    }
+
+    // Restore spec from stage_data.
+    if let Some(spec_val) = data.stage_data.get("spec") {
+        if let Ok(spec) = serde_json::from_value::<crate::QuerySpec>(spec_val.clone()) {
+            // If intent wasn't in stage_data, recover it from the spec.
+            if run_ctx.intent.is_none() {
+                run_ctx.intent = Some(spec.intent.clone());
+            }
+            run_ctx.spec = Some(spec);
+        }
+    }
+
+    // Last resort: build a minimal intent from original_input so the
+    // orchestrator's Done handler doesn't panic.
+    if run_ctx.intent.is_none() {
+        run_ctx.intent = Some(crate::AnalyticsIntent {
+            raw_question: data.original_input.clone(),
+            summary: String::new(),
+            question_type: QuestionType::SingleValue,
+            metrics: vec![],
+            dimensions: vec![],
+            filters: vec![],
+            history: vec![],
+            spec_hint: None,
+            selected_procedure: None,
+            semantic_query: Default::default(),
+            semantic_confidence: 0.0,
+        });
     }
 }

@@ -1,4 +1,5 @@
 mod a2a;
+mod agentic_cli;
 pub mod clean;
 pub mod export_chart;
 mod init;
@@ -276,6 +277,12 @@ enum SubCommand {
     /// Render ECharts charts to PNG images using server-side rendering.
     /// Requires Node.js to be installed on the system.
     ExportChart(export_chart::ExportChartArgs),
+    /// Run and debug agentic analytics pipelines
+    ///
+    /// Execute agentic pipelines with interactive debugging and event streaming.
+    /// Supports analytics and builder domains. Use --json for LLM-readable output.
+    /// Requires OXY_DATABASE_URL to be set.
+    Agentic(agentic_cli::AgenticArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -597,6 +604,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             SubCommand::Looker(_) => "looker",
             SubCommand::Intent(_) => "intent",
             SubCommand::ExportChart(_) => "export-chart",
+            SubCommand::Agentic(_) => "agentic",
         };
 
         sentry_config::add_breadcrumb(
@@ -991,6 +999,10 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
 
         Some(SubCommand::ExportChart(export_chart_args)) => {
             export_chart::handle_export_chart_command(export_chart_args).await?;
+        }
+
+        Some(SubCommand::Agentic(agentic_args)) => {
+            agentic_cli::handle_agentic_command(agentic_args).await?;
         }
 
         None => {

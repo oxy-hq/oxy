@@ -18,6 +18,9 @@ duckdb-test = ["dep:duckdb"]
 agentic-core = { workspace = true }
 agentic-connector = { workspace = true }
 agentic-llm = { workspace = true }
+agentic-runtime = { workspace = true }
+sea-orm = { workspace = true }
+sea-orm-migration = { workspace = true }
 duckdb = { workspace = true, optional = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
@@ -31,8 +34,9 @@ serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 sqlparser = { workspace = true, features = ["visitor"] }
 statrs = { workspace = true }
-tokio = { workspace = true, features = ["sync"] }
+tokio = { workspace = true, features = ["sync", "rt", "macros"] }
 tokio-stream = { workspace = true }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 airlayer = { workspace = true }
 strsim = { workspace = true }

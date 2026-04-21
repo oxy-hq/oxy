@@ -252,19 +252,3 @@ pub enum AnalyticsEvent {
 }
 
 impl DomainEvents for AnalyticsEvent {}
-
-impl AnalyticsEvent {
-    /// Returns true for events whose payload should be injected into the
-    /// `step_end` metadata block for frontend debugging.
-    pub fn is_accumulated(&self) -> bool {
-        matches!(
-            self,
-            Self::IntentClarified { .. }
-                | Self::SemanticShortcutAttempted { .. }
-                | Self::SemanticShortcutResolved { .. }
-                | Self::SpecResolved { .. }
-                | Self::QueryGenerated { .. }
-                | Self::QueryExecuted { .. }
-        )
-    }
-}

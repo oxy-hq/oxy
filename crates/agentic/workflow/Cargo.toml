@@ -11,16 +11,27 @@ authors.workspace = true
 [dependencies]
 agentic-core = { workspace = true }
 agentic-analytics = { workspace = true }
-oxy-workflow = { workspace = true }
-oxy = { workspace = true }
-oxy-shared = { workspace = true }
+agentic-connector = { path = "../connector", features = [
+    "duckdb", "postgres", "clickhouse", "snowflake", "bigquery"
+] }
+airlayer = { git = "https://github.com/oxy-hq/airlayer.git", rev = "4b92e5f" }
+omni = { workspace = true }
+oxy-looker = { workspace = true }
+chrono = { workspace = true }
+chrono-english = "0.1.8"
 
 async-trait = { workspace = true }
+minijinja = { workspace = true }
+sea-orm = { workspace = true }
+sea-orm-migration = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 strsim = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
 tracing = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

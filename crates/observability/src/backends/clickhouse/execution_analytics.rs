@@ -14,7 +14,7 @@ const CH_EXECUTION_BASE_FROM: &str = "\
     FROM observability_spans AS tool \
     INNER JOIN observability_spans AS agent \
         ON tool.trace_id = agent.trace_id \
-        AND agent.span_name = 'agent.run_agent'";
+        AND agent.span_name IN ('agent.run_agent', 'analytics.run')";
 
 const CH_EXECUTION_BASE_WHERE: &str = "\
     JSONExtractString(tool.span_attributes, 'oxy.span_type') = 'tool_call' \

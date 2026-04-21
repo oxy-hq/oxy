@@ -13,6 +13,7 @@ export interface SourceTypeBreakdown {
   agent: number;
   workflow: number;
   task: number;
+  analytics?: number;
 }
 
 export interface ContextTypeBreakdown {

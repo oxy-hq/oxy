@@ -1,4 +1,4 @@
-import { Activity, Database, Folder, Settings, ShieldCheck } from "lucide-react";
+import { Activity, Database, Folder, Radio, Settings, ShieldCheck } from "lucide-react";
 import type React from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/shadcn/button";
@@ -11,6 +11,7 @@ import useCurrentOrg from "@/stores/useCurrentOrg";
 enum SidebarViewMode {
   FILES = "files",
   TESTS = "tests",
+  COORDINATOR = "coordinator",
   OBSERVABILITY = "observability",
   DATABASE = "database",
   SETTINGS = "settings"
@@ -22,6 +23,9 @@ const getViewModeFromPath = (pathname: string, filesRoot: string): SidebarViewMo
   }
   if (pathname.includes("/ide/tests")) {
     return SidebarViewMode.TESTS;
+  }
+  if (pathname.includes("/ide/coordinator")) {
+    return SidebarViewMode.COORDINATOR;
   }
   if (pathname.includes("/ide/observability")) {
     return SidebarViewMode.OBSERVABILITY;
@@ -50,6 +54,9 @@ const Sidebar: React.FC = () => {
     switch (mode) {
       case SidebarViewMode.FILES:
         navigate(filesRoot);
+        break;
+      case SidebarViewMode.COORDINATOR:
+        navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.COORDINATOR.ACTIVE_RUNS);
         break;
       case SidebarViewMode.OBSERVABILITY:
         navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.OBSERVABILITY.TRACES);
@@ -97,6 +104,21 @@ const Sidebar: React.FC = () => {
           )}
         >
           <ShieldCheck className='h-4 w-4' />
+        </Button>
+
+        <Button
+          variant='ghost'
+          size='icon'
+          onClick={() => handleNavigate(SidebarViewMode.COORDINATOR)}
+          tooltip={{ content: "Coordinator", side: "right" }}
+          className={cn(
+            "h-8 w-8",
+            currentViewMode === SidebarViewMode.COORDINATOR
+              ? "bg-sidebar-accent text-sidebar-accent-foreground"
+              : "opacity-60 hover:opacity-100"
+          )}
+        >
+          <Radio className='h-4 w-4' />
         </Button>
 
         {authConfig.enterprise && (

@@ -5,8 +5,22 @@ interface SourceTypeBadgeProps {
   sourceType: string;
 }
 
+const FALLBACK_CONFIG = {
+  label: "Unknown",
+  color: "text-muted-foreground",
+  bgColor: "bg-muted border-border",
+  icon: null as React.ReactNode
+};
+
 export default function SourceTypeBadge({ sourceType }: SourceTypeBadgeProps) {
-  const config = SOURCE_TYPE_CONFIG[sourceType] || SOURCE_TYPE_CONFIG.agent;
+  // Lookup is case-insensitive — the backend writes lowercase since
+  // SourceType::as_str was normalized, but older rows may still use
+  // PascalCase. Fall back to a neutral "Unknown" badge so a novel
+  // `source_type` value can never crash the detail page.
+  const config =
+    SOURCE_TYPE_CONFIG[sourceType] ||
+    SOURCE_TYPE_CONFIG[sourceType.toLowerCase()] ||
+    FALLBACK_CONFIG;
   return (
     <span
       className={cn(
@@ -16,7 +30,7 @@ export default function SourceTypeBadge({ sourceType }: SourceTypeBadgeProps) {
       )}
     >
       {config.icon}
-      {config.label}
+      {config.label || sourceType}
     </span>
   );
 }

@@ -37,7 +37,7 @@ impl DuckDBStorage {
                         json_extract_string(s.span_attributes, '$.\"agent.prompt\"') as question,
                         json_extract_string(s.span_attributes, '$.\"oxy.agent.ref\"') as source
                     FROM spans s
-                    WHERE s.span_name = 'agent.run_agent'
+                    WHERE s.span_name IN ('agent.run_agent', 'analytics.run')
                       AND json_extract_string(s.span_attributes, '$.\"agent.prompt\"') != ''
                       AND (s.trace_id, json_extract_string(s.span_attributes, '$.\"agent.prompt\"'))
                           NOT IN (SELECT trace_id, question FROM intent_classifications)

@@ -234,7 +234,16 @@ async fn resolve_effective_role(
         .filter(OrgMemberCol::UserId.eq(user_id))
         .one(db)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to query org membership (org={}, user={}, workspace={}): {}",
+                org_id,
+                user_id,
+                workspace_id,
+                e
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
         .ok_or_else(|| {
             tracing::warn!(
                 "User {} denied access to workspace {} (not a member of org {})",
@@ -250,7 +259,15 @@ async fn resolve_effective_role(
         .filter(WsMemberCol::UserId.eq(user_id))
         .one(db)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to query workspace member override (workspace={}, user={}): {}",
+                workspace_id,
+                user_id,
+                e
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     let org_derived_role = match org_membership.role {
         entity::org_members::OrgRole::Owner => WorkspaceRole::Owner,
@@ -351,6 +368,14 @@ async fn try_attach_workspace_manager(
         ),
     }
 
+    let project_ctx = std::sync::Arc::new(crate::agentic_wiring::OxyProjectContext::new(
+        workspace_manager.clone(),
+    ));
+    let platform: std::sync::Arc<dyn agentic_pipeline::platform::PlatformContext> =
+        project_ctx.clone();
+    let bridges = crate::agentic_wiring::build_builder_bridges(project_ctx);
     request.extensions_mut().insert(workspace_manager);
+    request.extensions_mut().insert(platform);
+    request.extensions_mut().insert(bridges);
     Ok(())
 }

@@ -7,10 +7,12 @@ use agentic_core::{
     tools::ToolError,
 };
 use agentic_llm::{InitialMessages, LlmClient, ToolLoopConfig};
-use oxy::adapters::secrets::SecretsManager;
 
 use crate::{
+    database::BuilderDatabaseProvider,
     events::BuilderEvent,
+    schema_provider::BuilderSchemaProvider,
+    semantic::BuilderSemanticCompiler,
     test_runner::BuilderTestRunner,
     tools::{
         execute_execute_sql, execute_lookup_schema, execute_propose_change, execute_read_file,
@@ -18,35 +20,57 @@ use crate::{
         execute_validate_project,
     },
     types::{BuilderSpec, ConversationTurn, ToolExchange},
+    validator::BuilderProjectValidator,
 };
 
 pub struct BuilderSolver {
     pub(crate) client: LlmClient,
-    pub(crate) workspace_root: PathBuf,
+    pub(crate) project_root: PathBuf,
     pub(crate) event_tx: Option<EventStream<BuilderEvent>>,
     pub(crate) test_runner: Option<Arc<dyn BuilderTestRunner>>,
     pub(crate) human_input: HumanInputHandle,
     pub(crate) suspension_data: Option<SuspendedRunData>,
     pub(crate) resume_data: Option<ResumeInput>,
-    pub(crate) secrets_manager: Option<SecretsManager>,
+    pub(crate) db_provider: Option<Arc<dyn BuilderDatabaseProvider>>,
+    pub(crate) project_validator: Option<Arc<dyn BuilderProjectValidator>>,
+    pub(crate) schema_provider: Option<Arc<dyn BuilderSchemaProvider>>,
+    pub(crate) semantic_compiler: Option<Arc<dyn BuilderSemanticCompiler>>,
 }
 
 impl BuilderSolver {
-    pub fn new(client: LlmClient, workspace_root: PathBuf) -> Self {
+    pub fn new(client: LlmClient, project_root: PathBuf) -> Self {
         Self {
             client,
-            workspace_root,
+            project_root,
             event_tx: None,
             test_runner: None,
             human_input: Arc::new(DeferredInputProvider),
             suspension_data: None,
             resume_data: None,
-            secrets_manager: None,
+            db_provider: None,
+            project_validator: None,
+            schema_provider: None,
+            semantic_compiler: None,
         }
     }
 
-    pub fn with_secrets_manager(mut self, secrets_manager: SecretsManager) -> Self {
-        self.secrets_manager = Some(secrets_manager);
+    pub fn with_db_provider(mut self, provider: Arc<dyn BuilderDatabaseProvider>) -> Self {
+        self.db_provider = Some(provider);
+        self
+    }
+
+    pub fn with_project_validator(mut self, validator: Arc<dyn BuilderProjectValidator>) -> Self {
+        self.project_validator = Some(validator);
+        self
+    }
+
+    pub fn with_schema_provider(mut self, provider: Arc<dyn BuilderSchemaProvider>) -> Self {
+        self.schema_provider = Some(provider);
+        self
+    }
+
+    pub fn with_semantic_compiler(mut self, compiler: Arc<dyn BuilderSemanticCompiler>) -> Self {
+        self.semantic_compiler = Some(compiler);
         self
     }
 
@@ -66,7 +90,7 @@ impl BuilderSolver {
     }
 
     pub(crate) fn build_solving_system_prompt(&self) -> String {
-        let root = self.workspace_root.to_string_lossy();
+        let root = self.project_root.to_string_lossy();
         let now = chrono::Utc::now();
         let current_datetime = now.format("%Y-%m-%d %H:%M:%S UTC").to_string();
         format!(
@@ -197,18 +221,22 @@ pub(crate) async fn emit_domain(tx: &Option<EventStream<BuilderEvent>>, event: B
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn dispatch_tool(
     name: &str,
     params: &serde_json::Value,
-    workspace_root: &Path,
+    project_root: &Path,
     event_tx: &Option<EventStream<BuilderEvent>>,
     test_runner: Option<Arc<dyn BuilderTestRunner>>,
     human_input: HumanInputHandle,
-    secrets_manager: Option<&SecretsManager>,
+    db_provider: Option<&Arc<dyn BuilderDatabaseProvider>>,
+    project_validator: Option<&Arc<dyn BuilderProjectValidator>>,
+    schema_provider: Option<&Arc<dyn BuilderSchemaProvider>>,
+    semantic_compiler: Option<&Arc<dyn BuilderSemanticCompiler>>,
 ) -> Result<serde_json::Value, ToolError> {
     match name {
         "search_files" => {
-            let r = execute_search_files(workspace_root, params);
+            let r = execute_search_files(project_root, params);
             if let Ok(ref v) = r {
                 let count = v["count"].as_u64().unwrap_or(0);
                 emit_domain(
@@ -226,7 +254,7 @@ pub(crate) async fn dispatch_tool(
             r
         }
         "read_file" => {
-            let r = execute_read_file(workspace_root, params).await;
+            let r = execute_read_file(project_root, params).await;
             if let Ok(ref v) = r {
                 let lines = v["total_lines"].as_u64().unwrap_or(0);
                 emit_domain(
@@ -244,7 +272,7 @@ pub(crate) async fn dispatch_tool(
             r
         }
         "search_text" => {
-            let r = execute_search_text(workspace_root, params).await;
+            let r = execute_search_text(project_root, params).await;
             if let Ok(ref v) = r {
                 let count = v["count"].as_u64().unwrap_or(0);
                 emit_domain(
@@ -262,7 +290,10 @@ pub(crate) async fn dispatch_tool(
             r
         }
         "validate_project" => {
-            let r = execute_validate_project(workspace_root, params).await;
+            let validator = project_validator.ok_or_else(|| {
+                ToolError::Execution("project validator is not configured".into())
+            })?;
+            let r = execute_validate_project(project_root, params, validator.as_ref()).await;
             if let Ok(ref v) = r {
                 let summary = if v["valid"].as_bool().unwrap_or(false) {
                     format!(
@@ -287,7 +318,7 @@ pub(crate) async fn dispatch_tool(
         "propose_change" => {
             let file_path = params["file_path"].as_str().unwrap_or("").to_string();
             let description = params["description"].as_str().unwrap_or("").to_string();
-            let result = execute_propose_change(workspace_root, params, human_input.as_ref()).await;
+            let result = execute_propose_change(project_root, params, human_input.as_ref()).await;
             // new_content is computed inside execute_propose_change (by applying the
             // change blocks) and embedded in the suspended prompt JSON. Extract it here
             // so the frontend can visualize the diff via the proposed_change event.
@@ -312,7 +343,9 @@ pub(crate) async fn dispatch_tool(
         }
         "ask_user" => agentic_core::tools::handle_ask_user(params, human_input.as_ref()),
         "lookup_schema" => {
-            let r = execute_lookup_schema(params);
+            let provider = schema_provider
+                .ok_or_else(|| ToolError::Execution("schema provider is not configured".into()))?;
+            let r = execute_lookup_schema(params, provider.as_ref());
             if let Ok(ref v) = r {
                 let object_name = v["object_name"].as_str().unwrap_or("");
                 emit_domain(
@@ -332,7 +365,7 @@ pub(crate) async fn dispatch_tool(
                     .as_str()
                     .unwrap_or("<all tests>")
                     .to_string();
-                let r = execute_run_tests(workspace_root, params, runner).await;
+                let r = execute_run_tests(project_root, params, runner).await;
                 if let Ok(ref v) = r {
                     let summary = if let Some(n) = v["tests_run"].as_u64() {
                         format!("Ran {n} test file(s)")
@@ -355,7 +388,10 @@ pub(crate) async fn dispatch_tool(
             )),
         },
         "execute_sql" => {
-            let r = execute_execute_sql(workspace_root, params, secrets_manager).await;
+            let provider = db_provider.ok_or_else(|| {
+                ToolError::Execution("database provider is not configured".into())
+            })?;
+            let r = execute_execute_sql(params, provider.as_ref()).await;
             if let Ok(ref v) = r {
                 let db = v["database"].as_str().unwrap_or("");
                 let rows = v["row_count"].as_u64().unwrap_or(0);
@@ -371,7 +407,13 @@ pub(crate) async fn dispatch_tool(
             r
         }
         "semantic_query" => {
-            let r = execute_semantic_query(workspace_root, params, secrets_manager).await;
+            let provider = db_provider.ok_or_else(|| {
+                ToolError::Execution("database provider is not configured".into())
+            })?;
+            let compiler = semantic_compiler.ok_or_else(|| {
+                ToolError::Execution("semantic compiler is not configured".into())
+            })?;
+            let r = execute_semantic_query(params, provider.as_ref(), compiler.as_ref()).await;
             if let Ok(ref v) = r {
                 let topic = params["topic"].as_str().unwrap_or("");
                 let rows = v["row_count"].as_u64().unwrap_or(0);

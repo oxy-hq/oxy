@@ -1,4 +1,13 @@
-import { Code, Database, HelpCircle, LucideBot, LucideWorkflow, MessageCircle } from "lucide-react";
+import {
+  BarChart3,
+  Code,
+  Database,
+  HelpCircle,
+  LucideBot,
+  LucideWorkflow,
+  MessageCircle,
+  Zap
+} from "lucide-react";
 import { createElement } from "react";
 
 export const DAYS_OPTIONS = [
@@ -9,21 +18,49 @@ export const DAYS_OPTIONS = [
 
 export type DaysValue = (typeof DAYS_OPTIONS)[number]["value"];
 
+// Keys are lowercase to match what the backend stores in
+// `observability_metric_usage.source_type` (see `SourceType::as_str()`
+// in `oxy::metrics`). Historical PascalCase aliases kept so older rows
+// still render without crashing the detail page.
 export const SOURCE_TYPE_CONFIG: Record<
   string,
   { label: string; color: string; bgColor: string; icon: React.ReactNode }
 > = {
+  agent: {
+    label: "Agent",
+    color: "text-info",
+    bgColor: "bg-info/10 border-info/20",
+    icon: createElement(LucideBot, { className: "h-3.5 w-3.5" })
+  },
   Agent: {
     label: "Agent",
     color: "text-info",
     bgColor: "bg-info/10 border-info/20",
     icon: createElement(LucideBot, { className: "h-3.5 w-3.5" })
   },
+  workflow: {
+    label: "Workflow",
+    color: "text-vis-purple",
+    bgColor: "bg-vis-purple/10 border-vis-purple/20",
+    icon: createElement(LucideWorkflow, { className: "h-3.5 w-3.5" })
+  },
   Workflow: {
     label: "Workflow",
     color: "text-vis-purple",
     bgColor: "bg-vis-purple/10 border-vis-purple/20",
     icon: createElement(LucideWorkflow, { className: "h-3.5 w-3.5" })
+  },
+  task: {
+    label: "Task",
+    color: "text-success",
+    bgColor: "bg-success/10 border-success/20",
+    icon: createElement(Zap, { className: "h-3.5 w-3.5" })
+  },
+  analytics: {
+    label: "Analytics",
+    color: "text-vis-violet",
+    bgColor: "bg-vis-violet/10 border-vis-violet/20",
+    icon: createElement(BarChart3, { className: "h-3.5 w-3.5" })
   }
 };
 

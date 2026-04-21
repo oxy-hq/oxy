@@ -35,13 +35,17 @@ mod solved;
 mod specified;
 
 pub use config::ValidationConfig;
+#[allow(unused_imports)]
 pub use registry::RegistryError;
+#[allow(unused_imports)]
+pub use solvable::validate_solvable;
+#[allow(unused_imports)]
+pub use solved::validate_solved;
+#[allow(unused_imports)]
+pub use specified::validate_specified;
 pub use validator::Validator;
 
 // Backward-compatible free functions — delegate to Validator::default().
-pub use solvable::validate_solvable;
-pub use solved::validate_solved;
-pub use specified::validate_specified;
 
 // ---------------------------------------------------------------------------
 // Shared helper: extract table.column references from a SQL expression
@@ -198,6 +202,7 @@ pub(crate) mod test_fixtures {
     use agentic_core::result::CellValue;
     use agentic_core::{QueryResult, QueryRow};
 
+    #[allow(dead_code)]
     pub fn sample_schema_catalog() -> SchemaCatalog {
         SchemaCatalog::new()
             .add_table(

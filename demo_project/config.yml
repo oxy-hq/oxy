@@ -32,4 +32,5 @@ databases:
   #   catalog_path: DUCKLAKE_CATALOG_PATH
   #   schema_name: ducklake
 
-builder_agent: app_builder.agentic.yml
+builder_agent:
+  model: claude-sonnet-4-6

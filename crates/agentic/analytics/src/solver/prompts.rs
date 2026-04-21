@@ -141,6 +141,7 @@ the user asks for top-N.
 /// and column counts \u{2014} no column names).  It MUST use the available tools
 /// (`search_catalog`) to discover the actual columns before extracting
 /// the intent.
+#[allow(dead_code)]
 pub(super) const GROUND_SYSTEM_PROMPT: &str = "\
 <role>
 You are an analytics assistant performing the Ground phase. You have already triaged \

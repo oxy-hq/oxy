@@ -157,10 +157,14 @@ const AgenticAnalyticsPreview = ({ pathb64 }: AgenticAnalyticsPreviewProps) => {
 
               {state.tag === "failed" && (
                 <div className='rounded-lg border border-destructive bg-destructive/10 p-4'>
-                  <p className='font-medium text-destructive text-sm'>
-                    {state.message === "Cancelled" ? "Cancelled" : "Run failed"}
-                  </p>
-                  {state.message !== "Cancelled" && <Markdown>{state.message}</Markdown>}
+                  <p className='font-medium text-destructive text-sm'>Run failed</p>
+                  <Markdown>{state.message}</Markdown>
+                </div>
+              )}
+
+              {state.tag === "cancelled" && (
+                <div className='rounded-lg border border-border bg-muted p-4'>
+                  <p className='font-medium text-muted-foreground text-sm'>Operation cancelled</p>
                 </div>
               )}
             </>

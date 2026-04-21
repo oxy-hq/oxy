@@ -44,5 +44,8 @@ pub use openai_compat::OpenAiCompatProvider;
 mod client;
 pub use client::LlmClient;
 
+mod evaluator;
+pub use evaluator::LlmConsistencyEvaluator;
+
 #[cfg(test)]
 mod tests;

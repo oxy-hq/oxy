@@ -20,7 +20,9 @@
 //! everything in an [`Orchestrator`] and call [`Orchestrator::run`].
 
 pub mod back_target;
+pub mod delegation;
 pub mod domain;
+pub mod evaluator;
 pub mod events;
 pub mod human_input;
 pub mod orchestrator;
@@ -28,7 +30,10 @@ pub mod result;
 pub mod solver;
 pub mod state;
 pub mod tools;
+pub mod transport;
 pub mod ui_stream;
+
+pub use evaluator::{ConsistencyEvaluator, EvalError, EvalResult};
 
 #[cfg(feature = "storage")]
 pub mod app_storage;
@@ -36,6 +41,10 @@ pub mod app_storage;
 pub mod storage;
 
 pub use back_target::{BackTarget, RetryContext};
+pub use delegation::{
+    BackoffStrategy, DelegationItem, DelegationTarget, FanoutFailurePolicy, RetryPolicy,
+    SuspendReason, TaskAssignment, TaskOutcome, TaskPolicy, TaskSpec,
+};
 pub use domain::Domain;
 pub use events::{CoreEvent, DomainEvents, Event, EventStream, HumanInputQuestion, Outcome};
 pub use human_input::{
@@ -50,7 +59,8 @@ pub use result::{CellValue, QueryResult, QueryRow};
 pub use solver::{DomainSolver, FanoutWorker};
 pub use state::ProblemState;
 pub use tools::{ToolDef, ToolError};
-pub use ui_stream::{UiBlock, UiTransformState};
+pub use transport::{CoordinatorTransport, TransportError, WorkerMessage, WorkerTransport};
+pub use ui_stream::{UiBlock, UiTransformState, serialize_ui_block};
 
 #[cfg(feature = "storage")]
 pub use app_storage::{

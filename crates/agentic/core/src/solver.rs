@@ -344,6 +344,17 @@ pub trait DomainSolver<D: Domain>: Send + Sync {
         None
     }
 
+    /// Optionally populate the [`RunContext`] when resuming from a suspension.
+    ///
+    /// Called by [`Orchestrator::resume`] after [`problem_state_from_resume`]
+    /// but before re-entering the pipeline.  Override this when the resumed
+    /// state skips earlier stages (e.g. jumping straight to Interpreting from
+    /// Executing) and the `RunContext` fields (`intent`, `spec`) would
+    /// otherwise be `None`.
+    ///
+    /// The default implementation does nothing (leaves RunContext empty).
+    fn populate_resume_context(&self, _data: &SuspendedRunData, _run_ctx: &mut RunContext<D>) {}
+
     // ── Retry-from-checkpoint hooks ───────────────────────────────────────────
 
     /// Build checkpoint data so a failed run can be retried from this point.

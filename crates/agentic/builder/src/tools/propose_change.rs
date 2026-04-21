@@ -164,7 +164,16 @@ pub async fn execute_propose_change(
 
         let suggestions = vec!["Accept".to_string(), "Reject".to_string()];
         return match provider.request_sync(&prompt, &suggestions) {
-            Ok(answer) => Ok(json!({ "answer": answer })),
+            Ok(answer) => {
+                // Apply immediately when the provider accepts synchronously
+                // (e.g. AutoAcceptInputProvider for delegation children).
+                if answer.to_lowercase().contains("accept") {
+                    delete_file(workspace_root, file_path)
+                        .await
+                        .map_err(|e| ToolError::Execution(e))?;
+                }
+                Ok(json!({ "answer": answer }))
+            }
             Err(()) => Err(ToolError::Suspended {
                 prompt,
                 suggestions,
@@ -199,7 +208,16 @@ pub async fn execute_propose_change(
 
     let suggestions = vec!["Accept".to_string(), "Reject".to_string()];
     match provider.request_sync(&prompt, &suggestions) {
-        Ok(answer) => Ok(json!({ "answer": answer })),
+        Ok(answer) => {
+            // Apply immediately when the provider accepts synchronously
+            // (e.g. AutoAcceptInputProvider for delegation children).
+            if answer.to_lowercase().contains("accept") {
+                write_file_content(workspace_root, file_path, &new_content)
+                    .await
+                    .map_err(|e| ToolError::Execution(e))?;
+            }
+            Ok(json!({ "answer": answer }))
+        }
         Err(()) => Err(ToolError::Suspended {
             prompt,
             suggestions,
@@ -323,5 +341,102 @@ mod tests {
             err.contains("exceeds file length"),
             "error should mention file length: {err}"
         );
+    }
+
+    use agentic_core::human_input::AutoAcceptInputProvider;
+
+    /// Provider that always returns Ok("Reject").
+    struct RejectProvider;
+    impl HumanInputProvider for RejectProvider {
+        fn request_sync(&self, _prompt: &str, _suggestions: &[String]) -> Result<String, ()> {
+            Ok("Reject".to_string())
+        }
+    }
+
+    /// Create a temp dir that survives macOS symlink canonicalization.
+    async fn test_dir() -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("propose_test_{}", uuid::Uuid::new_v4()));
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        dir.canonicalize().unwrap()
+    }
+
+    #[tokio::test]
+    async fn propose_change_applies_file_on_immediate_accept() {
+        let dir = test_dir().await;
+
+        let params = json!({
+            "file_path": "new_metric.view.yml",
+            "changes": [{
+                "from_line": 1,
+                "to_line": 1,
+                "content": "name: revenue_per_customer\ntype: custom"
+            }],
+            "description": "add missing metric",
+            "delete": null
+        });
+
+        let result = execute_propose_change(&dir, &params, &AutoAcceptInputProvider).await;
+        assert!(result.is_ok(), "should succeed: {result:?}");
+
+        // File must exist on disk after immediate accept.
+        let content = tokio::fs::read_to_string(dir.join("new_metric.view.yml"))
+            .await
+            .expect("file should have been written");
+        assert_eq!(content, "name: revenue_per_customer\ntype: custom");
+
+        tokio::fs::remove_dir_all(&dir).await.ok();
+    }
+
+    #[tokio::test]
+    async fn propose_change_does_not_apply_on_reject() {
+        let dir = test_dir().await;
+
+        let params = json!({
+            "file_path": "should_not_exist.yml",
+            "changes": [{
+                "from_line": 1,
+                "to_line": 1,
+                "content": "content"
+            }],
+            "description": "test",
+            "delete": null
+        });
+
+        let result = execute_propose_change(&dir, &params, &RejectProvider).await;
+        assert!(result.is_ok());
+
+        // File must NOT exist — rejected changes are not applied.
+        assert!(
+            !dir.join("should_not_exist.yml").exists(),
+            "file should not be written on reject"
+        );
+
+        tokio::fs::remove_dir_all(&dir).await.ok();
+    }
+
+    #[tokio::test]
+    async fn propose_change_deletes_file_on_immediate_accept() {
+        let dir = test_dir().await;
+        tokio::fs::write(dir.join("to_delete.yml"), "old content")
+            .await
+            .unwrap();
+
+        let params = json!({
+            "file_path": "to_delete.yml",
+            "new_content": null,
+            "description": "remove obsolete file",
+            "delete": true
+        });
+
+        let result = execute_propose_change(&dir, &params, &AutoAcceptInputProvider).await;
+        assert!(result.is_ok());
+
+        // File must be gone after accepted deletion.
+        assert!(
+            !dir.join("to_delete.yml").exists(),
+            "file should have been deleted"
+        );
+
+        tokio::fs::remove_dir_all(&dir).await.ok();
     }
 }

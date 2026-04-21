@@ -15,6 +15,22 @@ export type AnalyticsDisplayBlock = {
   rows: unknown[][];
 };
 
+/**
+ * Detect whether an `awaiting_input` event represents a procedure delegation
+ * (not a human input question). Delegation prompts start with "Executing step:"
+ * which the workflow orchestrator uses for step delegation.
+ */
+export function isDelegationSuspension(questions: HumanInputQuestion[]): boolean {
+  if (questions.length === 0) return false;
+  const prompt = questions[0].prompt;
+  return (
+    prompt.startsWith("Executing step:") ||
+    prompt.startsWith("Execute procedure") ||
+    prompt.startsWith("Delegating to builder") ||
+    prompt.startsWith("The analytics pipeline could not")
+  );
+}
+
 // ── SSE event types ───────────────────────────────────────────────────────────
 
 export const ANALYTICS_SSE_TYPES = [
@@ -28,9 +44,10 @@ export const ANALYTICS_SSE_TYPES = [
   "tool_call",
   "tool_result",
   "awaiting_input",
-  "human_input_resolved",
+  "input_resolved",
   "done",
   "error",
+  "cancelled",
   "fan_out_start",
   "sub_spec_start",
   "sub_spec_end",
@@ -51,7 +68,12 @@ export const ANALYTICS_SSE_TYPES = [
   "procedure_step_started",
   "procedure_step_completed",
   // LLM usage metrics
-  "llm_usage"
+  "llm_usage",
+  // Recovery marker (transparent — same attempt, continued stream)
+  "recovery_resumed",
+  // Delegation lifecycle (emitted by coordinator for agent/workflow delegation)
+  "delegation_started",
+  "delegation_completed"
 ] as const;
 
 export type AnalyticsSseType = (typeof ANALYTICS_SSE_TYPES)[number];
@@ -202,7 +224,8 @@ export type AnalyticsRunState =
       durationMs: number;
       events: SseEvent[];
     }
-  | { tag: "failed"; runId: string; message: string; durationMs: number; events: SseEvent[] };
+  | { tag: "failed"; runId: string; message: string; durationMs: number; events: SseEvent[] }
+  | { tag: "cancelled"; runId: string; events: SseEvent[] };
 
 // ── Mappers ───────────────────────────────────────────────────────────────────
 
@@ -286,12 +309,18 @@ export function useAnalyticsRun({ projectId }: UseAnalyticsRunOptions): UseAnaly
       const url = AnalyticsService.eventsUrl(projectId, runId);
       const token = localStorage.getItem("auth_token");
 
+      // Compute the last seen event seq so the SSE endpoint skips
+      // already-delivered events (critical for cold resume reconnects).
+      const lastSeq =
+        existingEvents.length > 0 ? existingEvents[existingEvents.length - 1].id : undefined;
+
       setState({ tag: "running", runId, events: existingEvents });
 
       fetchEventSource(url, {
         method: "GET",
         headers: {
-          Authorization: token ?? ""
+          Authorization: token ?? "",
+          ...(lastSeq != null && { "Last-Event-ID": lastSeq })
         },
         openWhenHidden: true,
         signal: controller.signal,
@@ -312,17 +341,28 @@ export function useAnalyticsRun({ projectId }: UseAnalyticsRunOptions): UseAnaly
           const sseEvent = { id: ev.id ?? "", type: ev.event, data: parsed } as SseEvent;
           appendEvent(sseEvent);
 
+          if (ev.event === "recovery_resumed") {
+            // Transparent recovery marker — keep all events, stay in running state.
+            return;
+          }
           if (ev.event === "awaiting_input") {
+            const questions = (parsed.questions as HumanInputQuestion[]) ?? [];
+            // Don't show suspension popup for procedure delegations —
+            // the procedure progress renders inline via ProcedureChild/ProcedureDelegationCard.
+            if (isDelegationSuspension(questions)) {
+              // Stay in "running" state — procedure events will render inline.
+              return;
+            }
             setState((prev) => {
               if (prev.tag !== "running") return prev;
               return {
                 tag: "suspended",
                 runId,
                 events: prev.events,
-                questions: (parsed.questions as HumanInputQuestion[]) ?? []
+                questions
               };
             });
-          } else if (ev.event === "human_input_resolved") {
+          } else if (ev.event === "input_resolved") {
             setState((prev) => {
               if (prev.tag !== "suspended") return prev;
               return { tag: "running", runId, events: prev.events };
@@ -353,6 +393,13 @@ export function useAnalyticsRun({ projectId }: UseAnalyticsRunOptions): UseAnaly
                 durationMs: (parsed.duration_ms as number) ?? 0,
                 events: evs
               };
+            });
+          } else if (ev.event === "cancelled") {
+            controller.abort();
+            setState((prev) => {
+              const evs =
+                prev.tag === "running" || prev.tag === "suspended" ? prev.events : existingEvents;
+              return { tag: "cancelled", runId, events: evs };
             });
           }
         },
@@ -433,6 +480,13 @@ export function useAnalyticsRun({ projectId }: UseAnalyticsRunOptions): UseAnaly
       setState({ tag: "running", runId, events });
       setIsAnswering(true);
       AnalyticsService.submitAnswer(projectId, runId, text)
+        .then((res) => {
+          if (res.resumed) {
+            // Cold resume: pipeline was rebuilt server-side after a restart.
+            // Reconnect SSE so we receive events from the new pipeline.
+            openStream(runId, events);
+          }
+        })
         .catch((err: unknown) => {
           abortRef.current?.abort();
           setState({
@@ -445,7 +499,7 @@ export function useAnalyticsRun({ projectId }: UseAnalyticsRunOptions): UseAnaly
         })
         .finally(() => setIsAnswering(false));
     },
-    [state, projectId]
+    [state, projectId, openStream]
   );
 
   const reset = useCallback(() => {

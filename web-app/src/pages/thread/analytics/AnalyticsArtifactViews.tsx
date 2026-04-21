@@ -847,6 +847,28 @@ export const CompileSemanticQueryView = ({ item }: { item: ArtifactItem }) => {
               </div>
             </div>
           )}
+          {Array.isArray(input?.time_dimensions) && input.time_dimensions.length > 0 && (
+            <div>
+              <p className='mb-1.5 font-medium text-muted-foreground text-xs'>Time dimensions</p>
+              <div className='flex flex-wrap gap-1'>
+                {(input.time_dimensions as Record<string, unknown>[]).map((td) => {
+                  const dimension = String(td.dimension ?? "");
+                  const granularity = td.granularity != null ? String(td.granularity) : null;
+                  return (
+                    <span
+                      key={`${dimension}-${granularity ?? "none"}`}
+                      className='inline-flex items-center gap-1 rounded border bg-muted/50 px-1.5 py-0.5 font-mono text-[11px]'
+                    >
+                      <span className='font-medium'>{dimension.split(".").pop()}</span>
+                      {granularity && (
+                        <span className='text-muted-foreground'>by {granularity}</span>
+                      )}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {Array.isArray(input?.filters) && input.filters.length > 0 && (
             <div>
               <p className='mb-1.5 font-medium text-muted-foreground text-xs'>Filters</p>

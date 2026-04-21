@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use agentic_core::{
-    HumanInputQuestion,
+    HumanInputQuestion, SuspendReason,
     back_target::BackTarget,
     back_target::RetryContext,
     human_input::SuspendedRunData,
@@ -278,10 +278,12 @@ impl AnalyticsSolver {
                         prompt: prompt.clone(),
                     },
                     BackTarget::Suspend {
-                        questions: vec![HumanInputQuestion {
-                            prompt,
-                            suggestions: vec!["Continue with double budget".to_string()],
-                        }],
+                        reason: SuspendReason::HumanInput {
+                            questions: vec![HumanInputQuestion {
+                                prompt,
+                                suggestions: vec!["Continue with double budget".to_string()],
+                            }],
+                        },
                     },
                 ));
             }
@@ -312,10 +314,12 @@ impl AnalyticsSolver {
                         prompt: prompt.clone(),
                     },
                     BackTarget::Suspend {
-                        questions: vec![HumanInputQuestion {
-                            prompt,
-                            suggestions: vec!["Continue".to_string()],
-                        }],
+                        reason: SuspendReason::HumanInput {
+                            questions: vec![HumanInputQuestion {
+                                prompt,
+                                suggestions: vec!["Continue".to_string()],
+                            }],
+                        },
                     },
                 ));
             }
@@ -377,6 +381,7 @@ impl AnalyticsSolver {
 /// 2. QueryRequest with no precomputed SQL (compile failed in Specifying) —
 ///    try compile once more, then translate to raw context for LLM fallback.
 /// 3. No QueryRequest — standard LLM SQL generation via `solve_impl`.
+#[allow(dead_code)]
 pub(super) fn build_solving_handler()
 -> StateHandler<AnalyticsDomain, AnalyticsSolver, AnalyticsEvent> {
     StateHandler {

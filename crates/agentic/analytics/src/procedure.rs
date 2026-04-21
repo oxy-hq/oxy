@@ -24,8 +24,6 @@
 //!     .with_procedure_runner(Arc::new(MyRunner));
 //! ```
 
-use std::path::Path;
-
 // ---------------------------------------------------------------------------
 // I/O types
 // ---------------------------------------------------------------------------
@@ -92,19 +90,13 @@ impl std::error::Error for ProcedureError {}
 // Adapter trait
 // ---------------------------------------------------------------------------
 
-/// Adapter for an external procedure runner.
+/// Adapter for procedure search and discovery.
 ///
-/// Implement this trait to integrate any procedure execution backend.
-/// The analytics FSM only ever holds a [`PathBuf`] — the runner owns all
-/// YAML parsing and task-level execution.
+/// The analytics FSM uses this to discover existing procedures via the
+/// `search_procedures` tool.  Procedure *execution* is delegated to the
+/// coordinator-worker architecture (not this trait).
 #[async_trait::async_trait]
 pub trait ProcedureRunner: Send + Sync {
-    /// Execute the procedure defined at `file_path` and return its output.
-    ///
-    /// Called by the analytics FSM's executing stage when
-    /// `SolutionSource::Procedure` is set on the solution.
-    async fn run(&self, file_path: &Path) -> Result<ProcedureOutput, ProcedureError>;
-
     /// Search for existing procedures matching `query`.
     ///
     /// Used by the `search_procedures` clarifying tool so the LLM can

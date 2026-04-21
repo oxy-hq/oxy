@@ -94,10 +94,10 @@ export type AwaitingInputBlock = {
   payload: { questions: HumanInputQuestion[] };
 };
 
-export type HumanInputResolvedBlock = {
+export type InputResolvedBlock = {
   seq: number;
-  event_type: "human_input_resolved";
-  payload: { answer?: string };
+  event_type: "input_resolved";
+  payload: { answer?: string; trace_id?: string };
 };
 
 export type DoneBlock = {
@@ -365,6 +365,33 @@ export type LlmUsageBlock = {
   };
 };
 
+export type RecoveryResumedBlock = {
+  seq: number;
+  event_type: "recovery_resumed";
+  payload: Record<string, unknown>;
+};
+
+export type DelegationStartedBlock = {
+  seq: number;
+  event_type: "delegation_started";
+  payload: {
+    child_task_id: string;
+    target: string;
+    request: string;
+  };
+};
+
+export type DelegationCompletedBlock = {
+  seq: number;
+  event_type: "delegation_completed";
+  payload: {
+    child_task_id: string;
+    success: boolean;
+    answer?: string;
+    error?: string;
+  };
+};
+
 /** Strict discriminated union of all UI blocks emitted by the agentic pipeline.
  *  Mirrors the Rust `UiBlock<AnalyticsEvent>` enum. */
 export type UiBlock =
@@ -378,7 +405,7 @@ export type UiBlock =
   | ToolCallBlock
   | ToolResultBlock
   | AwaitingInputBlock
-  | HumanInputResolvedBlock
+  | InputResolvedBlock
   | DoneBlock
   | ErrorBlock
   | FanOutStartBlock
@@ -405,11 +432,14 @@ export type UiBlock =
   | SemanticShortcutResolvedBlock
   | LlmUsageBlock
   | ToolUsedBlock
-  | ProposedChangeBlock;
+  | ProposedChangeBlock
+  | RecoveryResumedBlock
+  | DelegationStartedBlock
+  | DelegationCompletedBlock;
 
 export interface AnalyticsRunSummary {
   run_id: string;
-  status: "running" | "suspended" | "done" | "failed";
+  status: "running" | "suspended" | "done" | "failed" | "cancelled";
   agent_id: string;
   question: string;
   answer?: string;
@@ -455,10 +485,15 @@ export class AnalyticsService {
     }
   }
 
-  static async submitAnswer(projectId: string, runId: string, answer: string): Promise<void> {
-    await apiClient.post(`/${projectId}/analytics/runs/${runId}/answer`, {
+  static async submitAnswer(
+    projectId: string,
+    runId: string,
+    answer: string
+  ): Promise<{ ok: boolean; resumed?: boolean }> {
+    const res = await apiClient.post(`/${projectId}/analytics/runs/${runId}/answer`, {
       answer
     });
+    return res.data;
   }
 
   static async cancelRun(projectId: string, runId: string): Promise<void> {

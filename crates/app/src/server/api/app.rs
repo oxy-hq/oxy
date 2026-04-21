@@ -907,7 +907,7 @@ pub async fn save_app_builder_run(
     Path((_workspace_id, run_id)): Path<(Uuid, String)>,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
 ) -> Result<extract::Json<SaveAppBuilderRunResponse>, StatusCode> {
-    use agentic_db::entity::agentic_run;
+    use agentic_runtime::entity::run as agentic_run;
     use sea_orm::EntityTrait;
 
     let db = oxy::database::client::establish_connection()

@@ -3,102 +3,112 @@
 //! Implements [`Domain`] for structured data analytics queries — turning
 //! natural-language questions into resolved query specs that can be executed
 //! against a columnar data store.
-//!
-//! # Catalog implementations
-//!
-//! | Type | Description |
-//! |---|---|
-//! | [`SchemaCatalog`] | Raw database schema; `try_compile` always returns `TooComplex` |
-//! | [`SemanticCatalog`] | Oxy semantic layer; compiles simple group-by queries directly |
-//! | [`SemanticCatalog`] | Semantic + schema fallback; primary runtime type |
-//!
-//! # Validation functions
-//!
-//! Three pure functions are provided, one per pipeline stage:
-//!
-//! | Function | Stage | Checks |
-//! |---|---|---|
-//! | [`validate_specified`] | `specify` | metrics/dimensions/joins/filters resolve to real columns |
-//! | [`validate_solvable`] | `solve` | SQL is syntactically sound and references known tables |
-//! | [`validate_solved`] | `execute` | results non-empty, shape matches spec, values plausible |
 
+#[doc(hidden)]
 pub mod airlayer_compat;
 mod catalog;
 pub mod config;
-pub mod context_budget;
-pub mod engine;
+pub(crate) mod context_budget;
+pub(crate) mod engine;
 mod events;
+pub mod extension;
 mod llm;
+pub mod metric_sink;
+pub mod pipeline;
 pub mod procedure;
 mod schemas;
 mod semantic;
 mod solver;
-pub mod tools;
+pub(crate) mod tools;
 mod types;
 mod ui;
 mod validation;
 
-// ── Engine ────────────────────────────────────────────────────────────────────
+// ── Extension meta facade ────────────────────────────────────────────────────
 
-pub use engine::{EngineError, SemanticEngine, TranslationContext, VendorQuery};
-
-// ── Catalog ───────────────────────────────────────────────────────────────────
-
-pub use catalog::{
-    Catalog, CatalogError, CatalogSearchResult, ColumnRange, DimensionSummary, JoinPath, MetricDef,
-    MetricSummary, QueryContext, SchemaCatalog, SemanticLayerError,
+pub use extension::{
+    AnalyticsMigrator, AnalyticsRunMeta, get_run_meta, get_run_metas, insert_run_meta,
+    update_run_spec_hint, update_run_thinking_mode,
 };
+
+// ── Catalog (only SchemaCatalog needed externally for schema cache) ──────────
+
+pub use catalog::SchemaCatalog;
+
+// Additional catalog types for integration tests only.
+#[doc(hidden)]
+pub use catalog::{Catalog, CatalogError, SemanticLayerError};
+#[doc(hidden)]
 pub use semantic::SemanticCatalog;
 
-// ── Events / LLM ─────────────────────────────────────────────────────────────
+// ── Events ──────────────────────────────────────────────────────────────────
 
 pub use events::{AnalyticsEvent, ProcedureStepInfo};
-pub use llm::{
-    AnthropicProvider, Chunk, ContentBlock, DEFAULT_MODEL, LlmClient, LlmError, LlmOutput,
-    LlmProvider, OpenAiProvider, ReasoningEffort, ResponseSchema, ThinkingConfig, ToolCallChunk,
-    ToolLoopConfig, Usage as LlmUsage,
-};
-pub use schemas::{
-    clarify_response_schema, solve_response_schema, specify_response_schema,
-    specify_response_schema_legacy, triage_response_schema,
-};
 
-// ── Config ────────────────────────────────────────────────────────────────────
+// LLM types used only by internal code and tests.
+#[doc(hidden)]
+pub use llm::LlmClient;
 
-pub use config::{AgentConfig, BuildContext, ConfigError, StateConfig, ThinkingConfigYaml};
+// ── Config ──────────────────────────────────────────────────────────────────
 
-// ── Procedure ─────────────────────────────────────────────────────────────────
+pub use config::{AgentConfig, BuildContext, ConfigError, ResolvedModelInfo};
+
+// ── Procedure ───────────────────────────────────────────────────────────────
 
 pub use procedure::{ProcedureError, ProcedureOutput, ProcedureRef, ProcedureRunner};
 
-// ── Solver ────────────────────────────────────────────────────────────────────
+// ── Pipeline facade ─────────────────────────────────────────────────────────
 
-pub use solver::{AnalyticsSolver, build_analytics_handlers};
+pub use pipeline::{PipelineParams, resume_pipeline, start_pipeline};
 
-// ── Tools ─────────────────────────────────────────────────────────────────────
+// ── Metric sink port ────────────────────────────────────────────────────────
 
-pub use tools::{
-    SchemaCache, clarifying_tools, execute_clarifying_tool, execute_database_lookup_tool,
-    execute_interpreting_tool, execute_solving_tool, execute_specifying_tool, interpreting_tools,
-    new_schema_cache, solving_tools, specifying_tools,
-};
+pub use metric_sink::{AnalyticsMetricSink, SharedMetricSink};
 
-// ── Domain types ──────────────────────────────────────────────────────────────
+// ── Solver (needed by pipeline's run_agentic_eval) ──────────────────────────
 
+pub use solver::build_analytics_handlers;
+
+// ── Domain types (only externally needed subset) ────────────────────────────
+
+pub use types::{AnalyticsIntent, ConversationTurn, QuestionType, SpecHint};
+
+// Remaining domain types — re-exported for internal modules and integration
+// tests.  External consumers (pipeline, http, cli) should NOT depend on these;
+// they are not part of the stable public API.
+#[doc(hidden)]
 pub use types::{
-    AnalyticsAnswer, AnalyticsCatalog, AnalyticsDomain, AnalyticsError, AnalyticsIntent,
-    AnalyticsResult, AnalyticsSolution, ChartConfig, ConversationTurn, DomainHypothesis,
-    QueryRequestItem, QueryResultSet, QuerySpec, QuestionType, ResultShape, SolutionPayload,
-    SolutionSource, SpecHint,
+    AnalyticsAnswer, AnalyticsCatalog, AnalyticsDomain, AnalyticsError, AnalyticsResult,
+    AnalyticsSolution, ChartConfig, DomainHypothesis, MissingMember, MissingMemberKind,
+    QueryRequestItem, QueryResultSet, QuerySpec, ResultShape, SolutionPayload, SolutionSource,
 };
 
-// ── Validation ────────────────────────────────────────────────────────────────
+// ── UI (crate-internal, used by event_handler below) ────────────────────────
 
-pub use validation::{
-    RegistryError, ValidationConfig, Validator, validate_solvable, validate_solved,
-    validate_specified,
-};
+use ui::{analytics_step_summary, analytics_tool_summary};
 
-// ── UI ────────────────────────────────────────────────────────────────────────
+// ── Event registry ──────────────────────────────────────────────────────────
 
-pub use ui::{analytics_step_summary, analytics_tool_summary};
+/// Create a [`DomainHandler`] for registering analytics events with the runtime's
+/// [`EventRegistry`].
+pub fn event_handler() -> agentic_runtime::event_registry::DomainHandler {
+    use agentic_runtime::event_registry::{DomainHandler, domain_row_processor};
+    use std::sync::Arc;
+
+    DomainHandler {
+        processor: domain_row_processor::<AnalyticsEvent>(),
+        summary_fn: Arc::new(analytics_step_summary),
+        tool_summary_fn: Arc::new(analytics_tool_summary),
+        should_accumulate: Some(Arc::new(|et| {
+            matches!(
+                et,
+                "intent_clarified"
+                    | "semantic_shortcut_attempted"
+                    | "semantic_shortcut_resolved"
+                    | "spec_resolved"
+                    | "query_generated"
+                    | "query_executed"
+            )
+        })),
+    }
+}

@@ -1,4 +1,5 @@
 import {
+  BarChart3,
   Code,
   Database,
   HelpCircle,
@@ -41,6 +42,12 @@ export const SOURCE_TYPE_CONFIG: Record<
     color: "text-success",
     bgColor: "bg-success/10",
     icon: createElement(Zap, { className: "h-4 w-4" })
+  },
+  analytics: {
+    label: "Analytics",
+    color: "text-vis-violet",
+    bgColor: "bg-vis-violet/10",
+    icon: createElement(BarChart3, { className: "h-4 w-4" })
   }
 };
 

@@ -12,6 +12,7 @@ import {
   FolderSearch,
   GitBranch,
   GitMerge,
+  Hammer,
   Info,
   Layers,
   Loader2,
@@ -37,6 +38,8 @@ import type {
 } from "@/hooks/analyticsSteps";
 import { cn } from "@/libs/shadcn/utils";
 import { VERIFIED_TOOLTIP } from "../constants";
+import BuilderDelegationCard from "./BuilderDelegationCard";
+import ProcedureDelegationCard from "./ProcedureDelegationCard";
 
 // ── LLM Usage Tooltip ────────────────────────────────────────────────────────
 
@@ -134,9 +137,16 @@ interface ArtifactPillProps {
   label: string;
   verified?: boolean;
   onClick: () => void;
+  variant?: "default" | "builder";
 }
 
-const ArtifactPill = ({ icon: Icon, label, verified, onClick }: ArtifactPillProps) => {
+const ArtifactPill = ({
+  icon: Icon,
+  label,
+  verified,
+  onClick,
+  variant = "default"
+}: ArtifactPillProps) => {
   const pill = (
     <button
       type='button'
@@ -144,7 +154,10 @@ const ArtifactPill = ({ icon: Icon, label, verified, onClick }: ArtifactPillProp
         e.stopPropagation();
         onClick();
       }}
-      className={verified ? VERIFIED_PILL_CLASS : PILL_CLASS}
+      className={cn(
+        verified ? VERIFIED_PILL_CLASS : PILL_CLASS,
+        variant === "builder" && "text-special hover:text-special/80"
+      )}
     >
       <Icon className='h-3 w-3 shrink-0' />
       <span className='truncate'>{label}</span>
@@ -273,6 +286,14 @@ function getToolDisplay(item: ArtifactItem): ToolDisplay {
         })
         .join(", ");
       return { Icon: Table2, label: "Sample Columns", preview: trunc(preview || "?") };
+    }
+
+    // ── Clarifying (semantic shortcut) ───────────────────────────────────────
+    case "propose_semantic_query": {
+      const measures = Array.isArray(input?.measures) ? (input.measures as string[]) : [];
+      const dims = Array.isArray(input?.dimensions) ? (input.dimensions as string[]) : [];
+      const preview = [...measures, ...dims].slice(0, 3).join(", ") || "Semantic query";
+      return { Icon: GitMerge, label: "Semantic Query", preview: trunc(preview) };
     }
 
     // ── Specifying (semantic compile) ─────────────────────────────────────────
@@ -540,6 +561,7 @@ type PillInfo = {
   label: string;
   verified?: boolean;
   item: SelectableItem;
+  variant?: "default" | "builder";
 };
 
 function collectPills(items: TraceItem[]): PillInfo[] {
@@ -559,6 +581,9 @@ function collectPills(items: TraceItem[]): PillInfo[] {
       });
     } else if (item.kind === "procedure") {
       pills.push({ id: item.id, icon: GitBranch, label: item.procedureName, item });
+    } else if (item.kind === "builder_delegation") {
+      const label = item.status === "running" ? "Building…" : "Builder";
+      pills.push({ id: item.id, icon: Hammer, label, item, variant: "builder" });
     }
   }
   return pills;
@@ -643,6 +668,7 @@ const AnalyticsStepRow = ({ step, onSelectArtifact }: AnalyticsStepRowProps) => 
                   label={pill.label}
                   verified={pill.verified}
                   onClick={() => onSelectArtifact(pill.item)}
+                  variant={pill.variant}
                 />
               ))}
             </div>
@@ -666,7 +692,15 @@ const AnalyticsStepRow = ({ step, onSelectArtifact }: AnalyticsStepRowProps) => 
               if (item.kind === "sql")
                 return <SqlChild key={item.id} item={item} onSelect={onSelectArtifact} />;
               if (item.kind === "procedure")
-                return <ProcedureChild key={item.id} item={item} onSelect={onSelectArtifact} />;
+                return item.isStreaming ? (
+                  <ProcedureDelegationCard key={item.id} item={item} onSelect={onSelectArtifact} />
+                ) : (
+                  <ProcedureChild key={item.id} item={item} onSelect={onSelectArtifact} />
+                );
+              if (item.kind === "builder_delegation")
+                return (
+                  <BuilderDelegationCard key={item.id} item={item} onSelect={onSelectArtifact} />
+                );
               return <TextChild key={item.id} item={item} />;
             })}
           </div>

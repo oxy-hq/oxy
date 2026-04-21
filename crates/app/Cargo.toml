@@ -22,8 +22,19 @@ oxy-observability = { workspace = true, features = ["duckdb", "postgres", "click
 oxy-shared = { workspace = true }
 agentic-analytics = { workspace = true }
 agentic-builder = { workspace = true }
+agentic-connector = { workspace = true, features = [
+    "duckdb",
+    "postgres",
+    "clickhouse",
+    "snowflake",
+    "bigquery",
+] }
+agentic-core = { workspace = true }
 agentic-http = { workspace = true }
-agentic-db = { workspace = true }
+agentic-pipeline = { workspace = true }
+agentic-runtime = { workspace = true }
+agentic-workflow = { workspace = true }
+airlayer = { git = "https://github.com/oxy-hq/airlayer.git", rev = "4b92e5f" }
 oxy-agent = { workspace = true }
 oxy-auth = { workspace = true }
 oxy-project = { workspace = true }

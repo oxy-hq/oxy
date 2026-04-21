@@ -1,5 +1,5 @@
+use crate::delegation::SuspendReason;
 use crate::domain::Domain;
-use crate::events::HumanInputQuestion;
 
 /// Context carried on back-edges so retried stages know what went wrong.
 ///
@@ -76,24 +76,20 @@ pub enum BackTarget<D: Domain> {
     /// Return to the **Interpret** stage with the given result.
     Interpret(D::Result, RetryContext),
 
-    /// The LLM invoked `ask_user` with a [`DeferredInputProvider`] — the
-    /// pipeline must suspend and present the questions to the user in the next
-    /// turn.
+    /// The pipeline must suspend — either to ask the user a question or to
+    /// delegate work to another agent/workflow.
     ///
-    /// Lightweight: carries only what is needed for the
-    /// [`AwaitingHumanInput`] event.  The solver stores the full
-    /// [`SuspendedRunData`] internally via
-    /// [`DomainSolver::store_suspension_data`].
+    /// The [`SuspendReason`] tells the coordinator how to fulfil the
+    /// suspension.  The solver stores the full [`SuspendedRunData`]
+    /// internally via [`DomainSolver::store_suspension_data`] before
+    /// returning this variant.
     ///
-    /// [`DeferredInputProvider`]: crate::human_input::DeferredInputProvider
-    /// [`AwaitingHumanInput`]: crate::events::CoreEvent::AwaitingHumanInput
+    /// [`SuspendReason`]: crate::delegation::SuspendReason
     /// [`SuspendedRunData`]: crate::human_input::SuspendedRunData
     /// [`DomainSolver::store_suspension_data`]: crate::solver::DomainSolver::store_suspension_data
     Suspend {
-        /// One or more questions to present to the user. Triage may produce
-        /// multiple independent ambiguity questions; tool-loop `ask_user`
-        /// always produces exactly one.
-        questions: Vec<HumanInputQuestion>,
+        /// Why the pipeline is suspending.
+        reason: SuspendReason,
     },
 }
 

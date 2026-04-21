@@ -1,6 +1,6 @@
 [package]
 name = "agentic-http"
-description = "Axum HTTP routes for the agentic analytics pipeline"
+description = "Axum HTTP routes for the agentic pipeline"
 version.workspace = true
 documentation.workspace = true
 publish.workspace = true
@@ -9,24 +9,9 @@ rust-version.workspace = true
 authors.workspace = true
 
 [dependencies]
-agentic-analytics = { workspace = true }
-
-agentic-connector = { workspace = true, features = [
-    "duckdb",
-    "postgres",
-    "clickhouse",
-    "snowflake",
-    "bigquery",
-] }
-agentic-core = { workspace = true }
-agentic-db = { workspace = true }
-agentic-workflow = { workspace = true }
-oxy = { workspace = true }
-oxy-shared = { workspace = true }
-oxy-workflow = { workspace = true }
+agentic-pipeline = { workspace = true }
+agentic-runtime = { workspace = true }
 async-trait = { workspace = true }
-agentic-builder = { workspace = true }
-entity = { workspace = true }
 oxy-auth = { workspace = true }
 
 # Web
@@ -38,6 +23,7 @@ sea-orm = { workspace = true }
 
 # Async
 tokio = { workspace = true }
+tokio-util = { version = "0.7" }
 
 # State
 dashmap = { workspace = true }

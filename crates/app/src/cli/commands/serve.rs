@@ -1,5 +1,7 @@
 use crate::cli::ServeArgs;
 use crate::server::serve_mode::ServeMode;
+use agentic_pipeline::{AnalyticsMigrator, WorkflowMigrator};
+use agentic_runtime::migration::RuntimeMigrator;
 use axum::handler::Handler;
 use axum::http::HeaderValue;
 use axum::{
@@ -19,6 +21,7 @@ use oxy::{
 use oxy_shared::errors::OxyError;
 use std::net::SocketAddr;
 use tokio::signal;
+use tokio_util::sync::CancellationToken;
 use tower::service_fn;
 use tower_http::trace::{self, TraceLayer};
 use tower_serve_static::ServeDir;
@@ -113,6 +116,7 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     } else {
         ServeMode::Cloud
     };
+    let shutdown_token = CancellationToken::new();
     let startup_cwd = std::env::current_dir().map_err(|e| {
         OxyError::RuntimeError(format!("Failed to resolve startup working directory: {e}"))
     })?;
@@ -132,7 +136,7 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     };
 
     println!("serve: starting application");
-    serve_application(app, internal_app, args).await
+    serve_application(app, internal_app, args, shutdown_token).await
 }
 
 async fn run_database_migrations(enterprise: bool) -> Result<(), OxyError> {
@@ -148,8 +152,27 @@ async fn run_database_migrations(enterprise: bool) -> Result<(), OxyError> {
         .map_err(|e| OxyError::RuntimeError(format!("Failed to run database migrations: {}", e)))?;
     println!("migrations: SeaORM migrations complete");
 
-    // DuckDB schema migrations are handled automatically during DuckDBStorage::open()
-    // in main.rs, so no separate migration step is needed here.
+    // Run orchestrator runtime migrations (separate tracking table).
+    RuntimeMigrator::up(&db, None)
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("runtime migrations failed: {}", e)))?;
+    println!("migrations: runtime migrations complete");
+
+    // Run analytics domain extension migrations (separate tracking table).
+    AnalyticsMigrator::up(&db, None)
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("analytics migrations failed: {}", e)))?;
+    println!("migrations: analytics migrations complete");
+
+    // Run workflow state migrations (separate tracking table).
+    WorkflowMigrator::up(&db, None)
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("workflow migrations failed: {}", e)))?;
+    println!("migrations: workflow migrations complete");
+
+    // Observability schema (DuckDB / Postgres / ClickHouse) is initialized by
+    // the backend itself during `*Storage::open()` in `main.rs`, so no separate
+    // migration step is needed here.
 
     Ok(())
 }
@@ -315,6 +338,7 @@ async fn serve_application(
     app: Router,
     internal_app: Option<Router>,
     args: ServeArgs,
+    shutdown_token: CancellationToken,
 ) -> Result<(), OxyError> {
     let socket_addr = format!("{}:{}", args.host, args.port)
         .parse()
@@ -419,9 +443,11 @@ async fn serve_application(
 
         // Spawn shutdown signal handler
         let shutdown_handle = handle.clone();
+        let token = shutdown_token;
         tokio::spawn(async move {
             create_shutdown_signal().await;
             tracing::info!("Shutdown signal received, stopping server...");
+            token.cancel();
             shutdown_handle.shutdown();
         });
 
@@ -435,7 +461,10 @@ async fn serve_application(
             .await
             .map_err(|e| OxyError::RuntimeError(format!("Failed to bind to address: {}", e)))?;
 
-        let shutdown = create_shutdown_signal();
+        let shutdown = async move {
+            create_shutdown_signal().await;
+            shutdown_token.cancel();
+        };
 
         axum::serve(listener, app)
             .with_graceful_shutdown(shutdown)

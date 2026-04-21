@@ -46,6 +46,12 @@ import OktaCallback from "./pages/auth/OktaCallback";
 import GitHubCallback from "./pages/github/callback";
 import GitHubOauthCallback from "./pages/github/oauth-callback";
 import IdePage from "./pages/ide";
+import CoordinatorLayout from "./pages/ide/coordinator";
+import ActiveRunsPage from "./pages/ide/coordinator/ActiveRuns";
+import QueueHealthPage from "./pages/ide/coordinator/QueueHealth";
+import RecoveryPage from "./pages/ide/coordinator/Recovery";
+import RunHistoryPage from "./pages/ide/coordinator/RunHistory";
+import RunTreePage from "./pages/ide/coordinator/RunTree";
 import DatabaseLayout from "./pages/ide/Database";
 import QueryWorkspacePage from "./pages/ide/Database/QueryWorkspace";
 import FilesLayout from "./pages/ide/Files";
@@ -251,6 +257,16 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
             <Route index element={<TestsDashboardPage />} />
             <Route path='runs' element={<TestsRunsPage />} />
             <Route path=':pathb64' element={<TestFileDetailPage />} />
+          </Route>
+
+          {/* Coordinator routes */}
+          <Route path='coordinator' element={<CoordinatorLayout />}>
+            <Route path='active-runs' element={<ActiveRunsPage />} />
+            <Route path='run-history' element={<RunHistoryPage />} />
+            <Route path='recovery' element={<RecoveryPage />} />
+            <Route path='queue' element={<QueueHealthPage />} />
+            <Route path='runs/:runId/tree' element={<RunTreePage />} />
+            <Route index element={<Navigate to='active-runs' replace />} />
           </Route>
 
           {/* Observability routes (enterprise only) */}

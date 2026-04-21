@@ -70,6 +70,14 @@ const ROUTES = {
               RUNS: `${wsBase}/ide/tests/runs`,
               TEST_FILE: (pathb64: string) => `${wsBase}/ide/tests/${pathb64}`
             },
+            COORDINATOR: {
+              ROOT: `${wsBase}/ide/coordinator`,
+              ACTIVE_RUNS: `${wsBase}/ide/coordinator/active-runs`,
+              RUN_HISTORY: `${wsBase}/ide/coordinator/run-history`,
+              RECOVERY: `${wsBase}/ide/coordinator/recovery`,
+              QUEUE: `${wsBase}/ide/coordinator/queue`,
+              RUN_TREE: (runId: string) => `${wsBase}/ide/coordinator/runs/${runId}/tree`
+            },
             OBSERVABILITY: {
               ROOT: `${wsBase}/ide/observability`,
               TRACES: `${wsBase}/ide/observability/traces`,

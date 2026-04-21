@@ -499,6 +499,22 @@ const AnalyticsArtifactSidebar = ({
     );
   }
 
+  // ── propose_semantic_query → semantic shortcut query ─────────────────────
+  if (item.toolName === "propose_semantic_query") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Semantic Query'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <CompileSemanticQueryView item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
   // ── compile_semantic_query → airlayer compile result ─────────────────────
   if (item.toolName === "compile_semantic_query") {
     return (

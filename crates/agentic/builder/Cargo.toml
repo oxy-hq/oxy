@@ -9,20 +9,19 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+agentic-connector = { workspace = true }
 agentic-core = { workspace = true }
 agentic-llm = { workspace = true }
-async-trait = { workspace = true }
-oxy = { workspace = true }
-glob = { workspace = true }
-oxy_globals = { workspace = true }
-oxy-semantic = { workspace = true }
-oxy-workflow = { workspace = true }
+agentic-runtime = { workspace = true }
 arrow = { workspace = true, features = ["json"] }
+async-trait = { workspace = true }
+glob = { workspace = true }
 regex = { workspace = true }
 schemars = { workspace = true, features = ["derive", "impl_json_schema"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["sync", "fs", "io-util"] }
+tokio-util = { workspace = true, features = ["rt"] }
 uuid = { workspace = true }
 chrono = { workspace = true }
 tracing = { workspace = true }

@@ -46,6 +46,20 @@ impl HumanInputProvider for DeferredInputProvider {
 
 // ── SuspendedRunData / ResumeInput ────────────────────────────────────────────
 
+// ── AutoAcceptInputProvider ──────────────────────────────────────────────────
+
+/// Always accepts immediately — returns `Ok("Accept")` for every prompt.
+///
+/// Used when a builder agent runs as a delegation child so that
+/// `propose_change` tool calls are applied without user interaction.
+pub struct AutoAcceptInputProvider;
+
+impl HumanInputProvider for AutoAcceptInputProvider {
+    fn request_sync(&self, _prompt: &str, _suggestions: &[String]) -> Result<String, ()> {
+        Ok("Accept".to_string())
+    }
+}
+
 /// Minimal payload persisted when a pipeline suspends on an `ask_user` call.
 ///
 /// Contains only the information needed to re-enter the correct pipeline state
@@ -91,4 +105,36 @@ pub struct ResumeInput {
     pub data: SuspendedRunData,
     /// The user's answer to the `ask_user` question.
     pub answer: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deferred_provider_always_suspends() {
+        let provider = DeferredInputProvider;
+        assert!(provider.request_sync("any prompt", &[]).is_err());
+    }
+
+    #[test]
+    fn auto_accept_returns_ok_accept() {
+        let provider = AutoAcceptInputProvider;
+        let result = provider.request_sync(
+            "propose_change json...",
+            &["Accept".into(), "Reject".into()],
+        );
+        assert_eq!(result, Ok("Accept".to_string()));
+    }
+
+    #[test]
+    fn auto_accept_ignores_prompt_content() {
+        let provider = AutoAcceptInputProvider;
+        // Returns Accept regardless of prompt or suggestions.
+        assert_eq!(provider.request_sync("", &[]), Ok("Accept".to_string()));
+        assert_eq!(
+            provider.request_sync("ask_user: what do you want?", &["A".into(), "B".into()]),
+            Ok("Accept".to_string())
+        );
+    }
 }

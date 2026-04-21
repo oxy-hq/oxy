@@ -25,11 +25,15 @@ const EXECUTION_BASE_WHERE: &str = "\
     AND json_extract_string(agent.span_attributes, '$.\"oxy.agent.ref\"') != ''";
 
 /// Common FROM + JOIN clause.
+///
+/// `analytics.run` is included alongside `agent.run_agent` so agentic
+/// analytics runs surface in the Execution Analytics tab on the same
+/// footing as classic agent runs.
 const EXECUTION_BASE_FROM: &str = "\
     FROM spans AS tool \
     INNER JOIN spans AS agent \
         ON tool.trace_id = agent.trace_id \
-        AND agent.span_name = 'agent.run_agent'";
+        AND agent.span_name IN ('agent.run_agent', 'analytics.run')";
 
 // ── Queries ────────────────────────────────────────────────────────────────
 

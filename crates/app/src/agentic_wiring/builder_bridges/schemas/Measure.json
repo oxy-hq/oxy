@@ -1,0 +1,118 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "MeasureFilter": {
+      "description": "Represents a filter condition for measures",
+      "properties": {
+        "description": {
+          "description": "Human-readable description of the filter",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expr": {
+          "description": "SQL expression for the filter condition",
+          "type": "string"
+        },
+        "original_expr": {
+          "description": "Original expression before variable encoding (if variables were used)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "expr"
+      ],
+      "type": "object"
+    },
+    "MeasureType": {
+      "description": "Represents the type of a measure aggregation",
+      "enum": [
+        "count",
+        "sum",
+        "average",
+        "min",
+        "max",
+        "count_distinct",
+        "median",
+        "custom"
+      ],
+      "type": "string"
+    }
+  },
+  "description": "Represents a measure in the semantic layer",
+  "properties": {
+    "description": {
+      "description": "Human-readable description of what this measure represents",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "expr": {
+      "description": "SQL expression for the measure (required for most types, not for count)",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "filters": {
+      "description": "List of filters to apply to the measure calculation",
+      "items": {
+        "$ref": "#/definitions/MeasureFilter"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "name": {
+      "description": "Unique identifier for the measure within the view",
+      "type": "string"
+    },
+    "original_expr": {
+      "description": "Original expression before variable encoding (if variables were used)",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "samples": {
+      "description": "Sample values or example outputs to help users understand the measure",
+      "items": {
+        "type": "string"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "synonyms": {
+      "description": "Alternative names or terms that refer to this measure",
+      "items": {
+        "type": "string"
+      },
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "type": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/MeasureType"
+        }
+      ],
+      "description": "Type of measure aggregation"
+    }
+  },
+  "required": [
+    "name",
+    "type"
+  ],
+  "title": "Measure",
+  "type": "object"
+}

@@ -841,7 +841,7 @@ async fn event_stream_retry_uses_retry_outcome() {
 // ═════════════════════════════════════════════════════════════════════════════
 
 /// A trivial domain event to exercise the generic domain-event path.
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize)]
 enum MockDomainEvent {
     TaskStarted { label: String },
 }

@@ -36,6 +36,7 @@ use super::AnalyticsSolver;
 ///     .catalog(my_catalog)
 ///     .build();
 /// ```
+#[allow(dead_code)]
 #[derive(Default)]
 pub struct AnalyticsSolverBuilder {
     connectors: HashMap<String, Arc<dyn DatabaseConnector>>,
@@ -45,6 +46,7 @@ pub struct AnalyticsSolverBuilder {
     engine: Option<Arc<dyn SemanticEngine>>,
 }
 
+#[allow(dead_code)]
 impl AnalyticsSolverBuilder {
     pub fn new() -> Self {
         Self::default()

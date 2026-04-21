@@ -18,8 +18,13 @@ export default function StatsRow({ analyticsData, daysFilter, isLoading }: Stats
   const trendVsLastPeriod = analyticsData?.trend_vs_last_period || null;
   const parseTrend = () => {
     if (!trendVsLastPeriod) return undefined;
+    // Backend returns the literal "new" when there is no prior-period data
+    // to compare against — treat that as "no trend to render" rather than
+    // trying to parse it as a percentage.
+    if (trendVsLastPeriod === "new") return undefined;
     const isPositive = trendVsLastPeriod.startsWith("+");
     const value = parseInt(trendVsLastPeriod.replace(/[+\-%]/g, ""), 10);
+    if (Number.isNaN(value)) return undefined;
     return { value, positive: isPositive };
   };
 

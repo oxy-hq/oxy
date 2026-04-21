@@ -51,7 +51,7 @@ export type SemanticQueryArtifact = {
       topic: string;
       dimensions: string[];
       measures: string[];
-      timeDimensions?: TimeDimension[];
+      time_dimensions?: TimeDimension[];
       filters: Array<{
         field: string;
         op: string;

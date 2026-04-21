@@ -1,0 +1,90 @@
+import { fetchEventSource } from "@microsoft/fetch-event-source";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { UiBlock } from "@/services/api/analytics";
+import { AnalyticsService } from "@/services/api/analytics";
+
+interface BuilderDelegationEventsResult {
+  events: UiBlock[];
+  isStreaming: boolean;
+}
+
+/**
+ * Opens an SSE connection to a child builder run and collects its events.
+ * Only connects when `isOpen` is true and `childRunId` is non-null.
+ */
+export function useBuilderDelegationEvents(
+  projectId: string,
+  childRunId: string | null,
+  isOpen: boolean
+): BuilderDelegationEventsResult {
+  const [events, setEvents] = useState<UiBlock[]>([]);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const appendEvent = useCallback((ev: UiBlock) => {
+    setEvents((prev) => [...prev, ev]);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen || !childRunId) return;
+
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    const url = AnalyticsService.eventsUrl(projectId, childRunId);
+    const token = localStorage.getItem("auth_token");
+
+    setIsStreaming(true);
+    setEvents([]);
+
+    fetchEventSource(url, {
+      method: "GET",
+      headers: {
+        Authorization: token ?? ""
+      },
+      openWhenHidden: true,
+      signal: controller.signal,
+      async onopen(res) {
+        if (res.status !== 200) {
+          setIsStreaming(false);
+        }
+      },
+      onmessage(ev) {
+        if (!ev.event) return;
+        let parsed: Record<string, unknown> = {};
+        try {
+          parsed = JSON.parse(ev.data ?? "{}");
+        } catch {
+          // ignore malformed events
+        }
+        const block = {
+          seq: Number(ev.id) || 0,
+          event_type: ev.event,
+          payload: parsed
+        } as UiBlock;
+        appendEvent(block);
+
+        if (ev.event === "done" || ev.event === "error" || ev.event === "cancelled") {
+          setIsStreaming(false);
+        }
+      },
+      onerror(err) {
+        setIsStreaming(false);
+        // Re-throw to stop the library from retrying. The child builder run
+        // is either done or unreachable — retrying would exhaust browser
+        // connections (HTTP/1.1 limit of ~6) and cancel the parent's SSE.
+        throw err;
+      },
+      onclose() {
+        setIsStreaming(false);
+      }
+    });
+
+    return () => {
+      controller.abort();
+    };
+  }, [isOpen, childRunId, projectId, appendEvent]);
+
+  return { events, isStreaming };
+}

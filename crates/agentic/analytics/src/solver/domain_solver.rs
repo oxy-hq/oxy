@@ -139,7 +139,16 @@ impl DomainSolver<AnalyticsDomain> for AnalyticsSolver {
         data: &SuspendedRunData,
         _memory: &SessionMemory<AnalyticsDomain>,
     ) -> Option<ProblemState<AnalyticsDomain>> {
-        Some(resuming::problem_state_from_resume(data))
+        let answer = self.resume_data.as_ref().map(|r| r.answer.as_str());
+        Some(resuming::problem_state_from_resume(data, answer))
+    }
+
+    fn populate_resume_context(
+        &self,
+        data: &SuspendedRunData,
+        run_ctx: &mut RunContext<AnalyticsDomain>,
+    ) {
+        resuming::populate_resume_context(data, run_ctx);
     }
 
     // ── Pipeline stage delegates ──────────────────────────────────────────────
@@ -185,9 +194,9 @@ impl DomainSolver<AnalyticsDomain> for AnalyticsSolver {
     fn fanout_worker<Ev: DomainEvents>(
         &self,
     ) -> Option<Arc<dyn FanoutWorker<AnalyticsDomain, Ev>>> {
-        Some(Arc::new(super::solver::AnalyticsFanoutWorker::from_solver(
-            self,
-        )))
+        Some(Arc::new(
+            super::fanout_worker::AnalyticsFanoutWorker::from_solver(self),
+        ))
     }
 
     async fn solve(

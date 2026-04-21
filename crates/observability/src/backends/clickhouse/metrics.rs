@@ -214,11 +214,13 @@ pub(super) async fn get_metrics_analytics(
     let mut agent = 0u64;
     let mut workflow = 0u64;
     let mut task = 0u64;
+    let mut analytics = 0u64;
     for r in &source_rows {
         match r.source_type.as_str() {
             "agent" => agent = r.cnt,
             "workflow" => workflow = r.cnt,
             "task" => task = r.cnt,
+            "analytics" => analytics = r.cnt,
             _ => {}
         }
     }
@@ -264,6 +266,7 @@ pub(super) async fn get_metrics_analytics(
             agent,
             workflow,
             task,
+            analytics,
         },
         by_context_type: ContextTypeBreakdownData {
             sql: sql_count,

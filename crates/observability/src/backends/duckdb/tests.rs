@@ -2980,3 +2980,316 @@ async fn test_list_traces_duration_filter() {
 
     storage.shutdown().await;
 }
+
+// ── analytics.run parity tests ──────────────────────────────────────────────
+//
+// These lock in that `analytics.run` spans (emitted by the agentic analytics
+// pipeline) are treated as first-class citizens by the Clusters, Metrics,
+// and Execution Analytics observability tabs — identical behaviour to
+// classic `agent.run_agent` spans.
+
+fn make_analytics_run_span(
+    trace_id: &str,
+    span_id: &str,
+    agent_ref: &str,
+    prompt: &str,
+) -> SpanRecord {
+    let attrs = format!(
+        r#"{{"oxy.agent.ref":"{}","agent.prompt":"{}","oxy.span_type":"analytics","oxy.name":"analytics.run"}}"#,
+        agent_ref, prompt,
+    );
+    SpanRecord {
+        trace_id: trace_id.to_string(),
+        span_id: span_id.to_string(),
+        parent_span_id: String::new(),
+        span_name: "analytics.run".to_string(),
+        service_name: "oxy".to_string(),
+        span_attributes: attrs,
+        duration_ns: 3_000_000,
+        status_code: "OK".to_string(),
+        status_message: String::new(),
+        event_data: "[]".to_string(),
+        timestamp: "2026-04-15T12:00:00Z".to_string(),
+    }
+}
+
+#[tokio::test]
+async fn test_execution_analytics_includes_analytics_run() {
+    let storage = test_storage();
+
+    // analytics.run parent + tool_call child — mirrors what the agentic
+    // analytics pipeline now emits.
+    let parent = make_analytics_run_span("t-an-1", "s-an-1", "revenue_agent", "q");
+    insert_span(&storage, &parent);
+    let tool = make_tool_call_span(
+        "t-an-1",
+        "s-an-tool-1",
+        "s-an-1",
+        "semantic_query",
+        true,
+        "revenue_agent",
+    );
+    insert_span(&storage, &tool);
+
+    let summary = storage
+        .get_execution_summary(30)
+        .await
+        .expect("get_execution_summary should succeed");
+
+    assert_eq!(summary.total_executions, 1);
+    assert_eq!(summary.semantic_query_count, 1);
+    assert_eq!(summary.verified_count, 1);
+
+    storage.shutdown().await;
+}
+
+#[tokio::test]
+async fn test_fetch_unprocessed_questions_includes_analytics_run() {
+    let storage = test_storage();
+
+    insert_span(
+        &storage,
+        &make_analytics_run_span("t-cl-1", "s-cl-1", "revenue_agent", "top customers"),
+    );
+
+    let rows = storage
+        .fetch_unprocessed_questions(10)
+        .await
+        .expect("fetch_unprocessed_questions should succeed");
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].0, "t-cl-1");
+    assert_eq!(rows[0].1, "top customers");
+    assert_eq!(rows[0].2, "revenue_agent");
+
+    storage.shutdown().await;
+}
+
+/// Replicates the production span topology: `analytics.run` is the root,
+/// entered via `.instrument(run_span)` on a spawned task; `analytics.execute`
+/// is a child via `#[instrument]`; `analytics.tool_call` is a grandchild
+/// created with `info_span!` inside the executing function. Verifies that
+/// the Execution Analytics join predicate
+/// (`agent.span_name IN (...) AND tool.trace_id = agent.trace_id`)
+/// matches correctly through this three-level hierarchy.
+#[tokio::test]
+async fn test_analytics_run_nested_spans_end_to_end() {
+    use tracing::Instrument as _;
+    use tracing_subscriber::layer::SubscriberExt;
+
+    let storage = test_storage();
+    let (span_tx, mut span_rx) = tokio::sync::mpsc::unbounded_channel::<SpanRecord>();
+    let layer = crate::layer::SpanCollectorLayer::new(span_tx, "oxy".to_string());
+    let subscriber = std::sync::Arc::new(tracing_subscriber::registry().with(layer));
+
+    let _default = tracing::subscriber::set_default(subscriber);
+
+    async fn execute_with_tool_call() {
+        let exec_span = tracing::info_span!(
+            "analytics.execute",
+            oxy.name = "analytics.execute",
+            oxy.span_type = "analytics",
+        );
+        async {
+            let tool_span = tracing::info_span!(
+                "analytics.tool_call",
+                oxy.name = "analytics.tool_call",
+                oxy.span_type = "tool_call",
+                oxy.execution_type = "semantic_query",
+                oxy.is_verified = true,
+                connector = "duckdb",
+            );
+            async { /* connector.execute_query(...) */ }
+                .instrument(tool_span.clone())
+                .await;
+            tool_span.in_scope(|| {
+                tracing::info!(name: "tool_call.output", status = "success", row_count = 3_i64);
+            });
+        }
+        .instrument(exec_span)
+        .await;
+    }
+
+    let run_span = tracing::info_span!(
+        parent: None,
+        "analytics.run",
+        oxy.name = "analytics.run",
+        oxy.span_type = "analytics",
+        oxy.agent.ref = "nested_agent",
+        agent.prompt = "q",
+        question = "q",
+    );
+    tokio::spawn(execute_with_tool_call().instrument(run_span))
+        .await
+        .unwrap();
+
+    // Give on_close a moment to fire.
+    tokio::time::sleep(Duration::from_millis(20)).await;
+
+    let mut records = Vec::new();
+    while let Ok(r) = span_rx.try_recv() {
+        records.push(r);
+    }
+    let run = records
+        .iter()
+        .find(|r| r.span_name == "analytics.run")
+        .expect("analytics.run must be captured");
+    let exec = records
+        .iter()
+        .find(|r| r.span_name == "analytics.execute")
+        .expect("analytics.execute must be captured");
+    let tool = records
+        .iter()
+        .find(|r| r.span_name == "analytics.tool_call")
+        .expect("analytics.tool_call must be captured");
+
+    assert_eq!(run.trace_id, exec.trace_id, "exec inherits run.trace_id");
+    assert_eq!(
+        exec.trace_id, tool.trace_id,
+        "tool inherits exec.trace_id (= run.trace_id)"
+    );
+    let tool_attrs: std::collections::HashMap<String, String> =
+        serde_json::from_str(&tool.span_attributes).unwrap();
+    assert_eq!(
+        tool_attrs.get("oxy.span_type").map(String::as_str),
+        Some("tool_call")
+    );
+
+    storage.insert_spans(records).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(30)).await;
+
+    let summary = storage.get_execution_summary(30).await.unwrap();
+    assert_eq!(
+        summary.total_executions, 1,
+        "nested tool_call row must appear in Execution Analytics"
+    );
+    storage.shutdown().await;
+}
+
+/// End-to-end test: go through the real tracing subscriber +
+/// `SpanCollectorLayer` + DuckDB writer + exec_analytics query. Mirrors
+/// what the agentic analytics pipeline does at runtime to confirm the
+/// analytics.run + child analytics.tool_call spans actually propagate
+/// into the Execution Analytics tab.
+#[tokio::test]
+async fn test_analytics_run_end_to_end_through_tracing_layer() {
+    use tracing_subscriber::layer::SubscriberExt;
+
+    let storage = test_storage();
+    let (span_tx, mut span_rx) = tokio::sync::mpsc::unbounded_channel::<SpanRecord>();
+    let layer = crate::layer::SpanCollectorLayer::new(span_tx, "oxy".to_string());
+    let subscriber = tracing_subscriber::registry().with(layer);
+
+    tracing::subscriber::with_default(subscriber, || {
+        let run = tracing::info_span!(
+            parent: None,
+            "analytics.run",
+            oxy.name = "analytics.run",
+            oxy.span_type = "analytics",
+            oxy.agent.ref = "e2e_agent",
+            agent.prompt = "top customers",
+            question = "top customers",
+        );
+        let tool_span = tracing::info_span!(
+            parent: &run,
+            "analytics.tool_call",
+            oxy.name = "analytics.tool_call",
+            oxy.span_type = "tool_call",
+            oxy.execution_type = "semantic_query",
+            oxy.is_verified = true,
+            connector = "duckdb",
+        );
+        tool_span.in_scope(|| {
+            tracing::info!(
+                name: "tool_call.output",
+                status = "success",
+                row_count = 3_i64,
+            );
+        });
+        drop(tool_span);
+        drop(run);
+    });
+
+    // Drain the channel into records.
+    let mut records = Vec::new();
+    while let Ok(r) = span_rx.try_recv() {
+        records.push(r);
+    }
+    assert!(
+        records.iter().any(|r| r.span_name == "analytics.run"),
+        "analytics.run span should be captured"
+    );
+    assert!(
+        records.iter().any(|r| r.span_name == "analytics.tool_call"),
+        "analytics.tool_call span should be captured"
+    );
+
+    storage
+        .insert_spans(records)
+        .await
+        .expect("insert_spans should succeed");
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let summary = storage
+        .get_execution_summary(30)
+        .await
+        .expect("get_execution_summary should succeed");
+    assert_eq!(
+        summary.total_executions, 1,
+        "one tool_call row should surface in Execution Analytics"
+    );
+    assert_eq!(summary.semantic_query_count, 1);
+    assert_eq!(summary.verified_count, 1);
+
+    storage.shutdown().await;
+}
+
+#[tokio::test]
+async fn test_metrics_analytics_source_type_bucket() {
+    let storage = test_storage();
+
+    let records = vec![
+        MetricUsageRecord {
+            metric_name: "orders.revenue".into(),
+            source_type: "analytics".into(),
+            source_ref: "revenue_agent".into(),
+            context: "{}".into(),
+            context_types: r#"["SemanticQuery"]"#.into(),
+            trace_id: "t-met-1".into(),
+        },
+        MetricUsageRecord {
+            metric_name: "orders.count".into(),
+            source_type: "analytics".into(),
+            source_ref: "revenue_agent".into(),
+            context: "{}".into(),
+            context_types: r#"["SemanticQuery"]"#.into(),
+            trace_id: "t-met-1".into(),
+        },
+        MetricUsageRecord {
+            metric_name: "orders.revenue".into(),
+            source_type: "agent".into(),
+            source_ref: "classic_agent".into(),
+            context: "{}".into(),
+            context_types: r#"["SemanticQuery"]"#.into(),
+            trace_id: "t-met-2".into(),
+        },
+    ];
+    storage
+        .store_metric_usages(records)
+        .await
+        .expect("store_metric_usages should succeed");
+
+    // Writer is async — let the flush task drain.
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    let analytics = storage
+        .get_metrics_analytics(30)
+        .await
+        .expect("get_metrics_analytics should succeed");
+
+    assert_eq!(analytics.by_source_type.analytics, 2);
+    assert_eq!(analytics.by_source_type.agent, 1);
+    assert_eq!(analytics.by_source_type.workflow, 0);
+
+    storage.shutdown().await;
+}

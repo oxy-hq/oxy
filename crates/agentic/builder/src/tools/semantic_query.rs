@@ -1,19 +1,20 @@
 //! `semantic_query` tool — compile and execute a semantic layer query.
 //!
 //! Validates the query against the project's `.view.yml` / `.topic.yml` files,
-//! compiles it to SQL via airlayer, and runs it against the configured database.
-//! Useful for verifying semantic layer definitions before proposing file changes.
+//! compiles it to SQL via the semantic compiler, and runs it against the
+//! configured database. Useful for verifying semantic layer definitions before
+//! proposing file changes.
 
-use std::path::Path;
 use std::time::Duration;
 
 use agentic_core::tools::{ToolDef, ToolError};
-use arrow::json::ArrayWriter;
-use oxy::config::model::SemanticQueryTask;
-use oxy::types::SemanticQueryParams;
 use serde_json::{Value, json};
 
+use crate::database::BuilderDatabaseProvider;
+use crate::semantic::BuilderSemanticCompiler;
+
 const QUERY_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_ROW_LIMIT: u64 = 100;
 
 pub fn semantic_query_def() -> ToolDef {
     // Hand-written schema compatible with OpenAI strict mode (no oneOf/anyOf).
@@ -122,95 +123,59 @@ pub fn semantic_query_def() -> ToolDef {
 }
 
 pub async fn execute_semantic_query(
-    workspace_root: &Path,
     params: &Value,
-    secrets_manager: Option<&oxy::adapters::secrets::SecretsManager>,
+    db_provider: &dyn BuilderDatabaseProvider,
+    semantic_compiler: &dyn BuilderSemanticCompiler,
 ) -> Result<Value, ToolError> {
-    // Build ConfigManager from project root.
-    let config_manager = oxy::config::ConfigBuilder::new()
-        .with_workspace_path(workspace_root)
-        .map_err(|e| ToolError::Execution(format!("config error: {e}")))?
-        .build()
-        .await
-        .map_err(|e| ToolError::Execution(format!("config error: {e}")))?;
+    // Compile the semantic query to SQL via the compiler trait.
+    let compiled = semantic_compiler.compile(params).await?;
 
-    // Deserialize into the canonical SemanticQueryParams (same type used by the semantic query agent).
-    let query: SemanticQueryParams = serde_json::from_value(params.clone())
-        .map_err(|e| ToolError::BadParams(format!("invalid semantic query params: {e}")))?;
+    let sql = &compiled.sql;
+    let db_name = &compiled.database_name;
 
     // Cap row limit.
-    let row_limit = query.limit.unwrap_or(20).min(100);
+    let row_limit = params["limit"].as_u64().unwrap_or(20).min(MAX_ROW_LIMIT);
 
-    let task = SemanticQueryTask {
-        variables: query.variables.clone(),
-        query,
-        export: None,
-    };
-
-    // Validate against the semantic layer (loads .view.yml / .topic.yml files).
-    let validated = oxy_workflow::semantic_validator_builder::validate_semantic_query_task(
-        &config_manager,
-        &task,
-    )
-    .await
-    .map_err(|e| ToolError::Execution(e.to_string()))?;
-
-    // Compile to SQL (no ExecutionContext needed).
-    let sql = oxy_workflow::semantic_builder::compile_validated_to_sql(&validated, &config_manager)
-        .map_err(|e| ToolError::Execution(e.to_string()))?;
-
-    // Determine target database from view datasource annotations.
-    let db_name = oxy_workflow::semantic_builder::get_database_from_validated(&validated)
-        .map_err(|e| ToolError::Execution(e.to_string()))?;
-
-    // Use provided secrets_manager (with DB fallback) or fall back to env-only.
-    let owned_sm;
-    let secrets_manager = match secrets_manager {
-        Some(sm) => sm,
-        None => {
-            owned_sm = oxy::adapters::secrets::SecretsManager::from_environment()
-                .map_err(|e| ToolError::Execution(format!("secrets manager error: {e}")))?;
-            &owned_sm
-        }
-    };
-
-    let connector = oxy::connector::Connector::from_database(
-        &db_name,
-        &config_manager,
-        secrets_manager,
-        Some(row_limit),
-        None,
-        None,
-    )
-    .await
-    .map_err(|e| ToolError::Execution(e.to_string()))?;
+    let connector = db_provider.get_connector(db_name).await?;
 
     let limited_sql = format!("SELECT * FROM ({sql}) AS _oxy_semantic_preview LIMIT {row_limit}");
 
-    let (batches, schema) = tokio::time::timeout(
+    let result = tokio::time::timeout(
         QUERY_TIMEOUT,
-        connector.run_query_with_limit(&limited_sql, Some(row_limit)),
+        connector.execute_query(&limited_sql, row_limit),
     )
     .await
     .map_err(|_| ToolError::Execution("query timed out after 30 seconds".into()))?
     .map_err(|e| ToolError::Execution(e.to_string()))?;
 
-    let columns: Vec<String> = schema.fields().iter().map(|f| f.name().clone()).collect();
-    let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
+    let columns = &result.result.columns;
+    let total_rows = result.result.rows.len();
 
-    let mut buf = Vec::new();
-    {
-        let mut writer = ArrayWriter::new(&mut buf);
-        writer
-            .write_batches(&batches.iter().collect::<Vec<_>>())
-            .map_err(|e| ToolError::Execution(format!("result serialization error: {e}")))?;
-        writer
-            .finish()
-            .map_err(|e| ToolError::Execution(format!("result serialization error: {e}")))?;
-    }
-
-    let rows: Value = serde_json::from_slice(&buf)
-        .map_err(|e| ToolError::Execution(format!("result parsing error: {e}")))?;
+    // Convert QueryResult rows to JSON array of objects.
+    let rows: Vec<Value> = result
+        .result
+        .rows
+        .iter()
+        .map(|row| {
+            let obj: serde_json::Map<String, Value> = columns
+                .iter()
+                .zip(row.0.iter())
+                .map(|(col, cell)| {
+                    let v = match cell {
+                        agentic_core::result::CellValue::Text(s) => Value::String(s.clone()),
+                        agentic_core::result::CellValue::Number(n) => {
+                            serde_json::Number::from_f64(*n)
+                                .map(Value::Number)
+                                .unwrap_or(Value::Null)
+                        }
+                        agentic_core::result::CellValue::Null => Value::Null,
+                    };
+                    (col.clone(), v)
+                })
+                .collect();
+            Value::Object(obj)
+        })
+        .collect();
 
     Ok(json!({
         "ok": true,

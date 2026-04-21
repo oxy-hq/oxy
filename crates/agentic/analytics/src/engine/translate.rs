@@ -280,7 +280,7 @@ fn parse_looker_filters(view: &str, filters: &[String]) -> Result<Value, EngineE
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::catalog::{DimensionSummary, JoinPath, MetricDef};
+    use crate::catalog::{DimensionSummary, MetricDef};
     use crate::engine::TranslationContext;
     use crate::types::{AnalyticsIntent, QuestionType};
 

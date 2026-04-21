@@ -56,9 +56,26 @@ export type ProcedureItem = {
   isStreaming: boolean;
 };
 
-export type TraceItem = ThinkingItem | ArtifactItem | SqlItem | TextItem | ProcedureItem;
+export type BuilderDelegationItem = {
+  kind: "builder_delegation";
+  id: string;
+  childRunId: string;
+  request: string;
+  status: "running" | "done" | "failed";
+  answer?: string;
+  error?: string;
+  isStreaming: boolean;
+};
 
-export type SelectableItem = ArtifactItem | SqlItem | ProcedureItem;
+export type TraceItem =
+  | ThinkingItem
+  | ArtifactItem
+  | SqlItem
+  | TextItem
+  | ProcedureItem
+  | BuilderDelegationItem;
+
+export type SelectableItem = ArtifactItem | SqlItem | ProcedureItem | BuilderDelegationItem;
 
 // ── Step / fan-out types ──────────────────────────────────────────────────────
 
@@ -148,7 +165,20 @@ function createScope() {
   const currentStep = (subSpecIndex?: number | null) => getStepStack(subSpecIndex).at(-1);
 
   const pushItem = (item: TraceItem, subSpecIndex?: number | null) => {
-    currentStep(subSpecIndex)?.items.push(item);
+    const step = currentStep(subSpecIndex);
+    if (step) {
+      step.items.push(item);
+      return;
+    }
+    // Fallback: if no current step (e.g. after recovery flush), find the
+    // last flushed step that contains a procedure item and push there.
+    for (let i = result.length - 1; i >= 0; i--) {
+      const r = result[i];
+      if (r.kind === "step" && r.items.some((it) => it.kind === "procedure")) {
+        r.items.push(item);
+        return;
+      }
+    }
   };
 
   const findLastStreaming = <T extends TraceItem>(
@@ -170,11 +200,24 @@ function createScope() {
     subSpecIndex?: number | null
   ): ArtifactItem | undefined => {
     const items = currentStep(subSpecIndex)?.items;
-    if (!items) return undefined;
-    for (let i = items.length - 1; i >= 0; i--) {
-      const item = items[i];
-      if (item.kind === "artifact" && item.isStreaming && item.toolName === name) {
-        return item;
+    if (items) {
+      for (let i = items.length - 1; i >= 0; i--) {
+        const item = items[i];
+        if (item.kind === "artifact" && item.isStreaming && item.toolName === name) {
+          return item;
+        }
+      }
+    }
+    // Fallback: search flushed results (recovery case — step was closed
+    // but procedure step artifacts were pushed into it afterwards).
+    for (let i = result.length - 1; i >= 0; i--) {
+      const r = result[i];
+      if (r.kind !== "step") continue;
+      for (let j = r.items.length - 1; j >= 0; j--) {
+        const item = r.items[j];
+        if (item.kind === "artifact" && item.isStreaming && item.toolName === name) {
+          return item;
+        }
       }
     }
     return undefined;
@@ -335,6 +378,41 @@ function createScope() {
       currentFanOut.isStreaming = false;
       result.push(currentFanOut);
       currentFanOut = null;
+    },
+
+    // ── Procedure lookup across flushed results ────────────────────────────────
+    // Search flushed results for a procedure item with a matching name.
+    // Used on recovery to reuse an existing procedure instead of creating a
+    // duplicate.
+    findExistingProcedure(name?: string): ProcedureItem | undefined {
+      for (let i = result.length - 1; i >= 0; i--) {
+        const item = result[i];
+        if (item.kind !== "step") continue;
+        for (const child of item.items) {
+          if (child.kind === "procedure" && (!name || child.procedureName === name)) return child;
+        }
+      }
+      return undefined;
+    },
+
+    // ── Attempt boundary ──────────────────────────────────────────────────────
+    // Close any open (streaming) steps when a new recovery attempt begins.
+    // Steps are flushed to result so subsequent events from the new attempt
+    // appear after them. Procedure items are NOT marked as failed — they
+    // will be updated by events from the new attempt to show aggregate
+    // progress across all attempts.
+    closeInterruptedSteps() {
+      for (const step of stepStack.splice(0)) {
+        step.isStreaming = false;
+        // Only mark non-procedure steps as interrupted. Procedure steps
+        // keep their current state so the new attempt's events can
+        // continue updating them (e.g., more procedure_step_completed).
+        const hasProcedure = step.items.some((it) => it.kind === "procedure");
+        if (!hasProcedure) {
+          step.error = "Interrupted by server restart";
+        }
+        result.push(step);
+      }
     },
 
     // ── Flush ────────────────────────────────────────────────────────────────
@@ -520,6 +598,12 @@ function buildDomainItem(ev: UiBlock, nextId: (prefix: string) => string): Trace
 export function buildAnalyticsSteps(events: UiBlock[]): StepOrGroup[] {
   const scope = createScope();
 
+  // Track whether the most recent awaiting_input was a procedure delegation
+  // (not human input).  When true, the subsequent step_end "suspended" should
+  // NOT close the step — procedure events need an open step to attach to.
+  let lastAwaitingIsDelegation = false;
+  let delegationStepOpen = false;
+
   for (const ev of events) {
     // Extract sub_spec_index for routing events to the correct card.
     const ssi =
@@ -528,11 +612,29 @@ export function buildAnalyticsSteps(events: UiBlock[]): StepOrGroup[] {
         : undefined;
 
     switch (ev.event_type) {
+      // ── Recovery marker (transparent — close any interrupted steps) ──────
+      case "recovery_resumed":
+        scope.closeInterruptedSteps();
+        // Push a completed info step so the user knows we're resuming.
+        scope.openStep(
+          "Resuming",
+          (ev.payload as { message?: string }).message || "Resuming from server restart"
+        );
+        scope.closeStep("advanced");
+        break;
+
       // ── Step lifecycle ─────────────────────────────────────────────────────
       case "step_start":
         scope.openStep(ev.payload.label, ev.payload.summary ?? undefined, ssi);
         break;
       case "step_end":
+        // When the step suspended for a delegation, keep it open so
+        // procedure_started / procedure_step_* events can attach to it.
+        if (ev.payload.outcome === "suspended" && lastAwaitingIsDelegation) {
+          lastAwaitingIsDelegation = false;
+          delegationStepOpen = true;
+          break;
+        }
         scope.closeStep(ev.payload.outcome, ev.payload.metadata, ssi);
         break;
       case "step_summary_update":
@@ -590,19 +692,36 @@ export function buildAnalyticsSteps(events: UiBlock[]): StepOrGroup[] {
 
       // ── Human-in-the-loop ──────────────────────────────────────────────────
       case "awaiting_input": {
-        // Neither ask_user nor propose_change get a tool_result because the
-        // pipeline suspends before one is emitted.  Mark them as done here
-        // so the spinner stops.
-        for (const toolName of ["ask_user", "propose_change"]) {
-          const artifact = scope.findLastStreamingArtifactByName(toolName);
-          if (artifact) {
-            artifact.toolOutput = JSON.stringify({ status: "awaiting_response" });
-            artifact.isStreaming = false;
+        // Detect delegation suspensions: prompts starting with "Executing step:"
+        // or "Execute procedure" indicate procedure delegation, not human input.
+        const questions: Array<{ prompt: string }> = ev.payload.questions ?? [];
+        const prompt = questions[0]?.prompt ?? "";
+        lastAwaitingIsDelegation =
+          prompt.startsWith("Executing step:") ||
+          prompt.startsWith("Execute procedure") ||
+          prompt.startsWith("Delegating to builder") ||
+          prompt.startsWith("The analytics pipeline could not");
+
+        if (!lastAwaitingIsDelegation) {
+          // Neither ask_user nor propose_change get a tool_result because the
+          // pipeline suspends before one is emitted.  Mark them as done here
+          // so the spinner stops.
+          for (const toolName of ["ask_user", "propose_change"]) {
+            const artifact = scope.findLastStreamingArtifactByName(toolName);
+            if (artifact) {
+              artifact.toolOutput = JSON.stringify({ status: "awaiting_response" });
+              artifact.isStreaming = false;
+            }
           }
         }
         break;
       }
-      case "human_input_resolved": {
+      case "input_resolved": {
+        // If we kept a step open for a delegation, close it now.
+        if (delegationStepOpen) {
+          delegationStepOpen = false;
+          scope.closeStep("advanced", null, ssi);
+        }
         // The ask_user artifact lives in a completed (suspended) step that
         // has already been popped from stepStack into result.  Search there.
         if (ev.payload.answer) {
@@ -631,20 +750,36 @@ export function buildAnalyticsSteps(events: UiBlock[]): StepOrGroup[] {
         break;
 
       // ── Procedure lifecycle ────────────────────────────────────────────────
-      case "procedure_started":
-        scope.pushItem({
-          kind: "procedure",
-          id: scope.nextId("proc-run"),
-          procedureName: ev.payload.procedure_name,
-          steps: ev.payload.steps,
-          stepsDone: 0,
-          isStreaming: true
-        });
+      case "procedure_started": {
+        // On recovery, a procedure_started event fires again for the same
+        // procedure. Find the existing item in flushed results and re-open
+        // it instead of creating a duplicate.
+        const existingProc = scope.findExistingProcedure(ev.payload.procedure_name);
+        if (existingProc) {
+          existingProc.isStreaming = true;
+        } else {
+          scope.pushItem({
+            kind: "procedure",
+            id: scope.nextId("proc-run"),
+            procedureName: ev.payload.procedure_name,
+            steps: ev.payload.steps,
+            stepsDone: 0,
+            isStreaming: true
+          });
+        }
         break;
+      }
 
       case "procedure_completed": {
+        // Check current steps first, then flushed results (recovery case).
         const p = scope.findLastStreaming<ProcedureItem>("procedure");
-        if (p) p.isStreaming = false;
+        if (p) {
+          p.isStreaming = false;
+        } else {
+          // On recovery the procedure item lives in flushed results.
+          const existing = scope.findExistingProcedure(ev.payload.procedure_name ?? "");
+          if (existing) existing.isStreaming = false;
+        }
         break;
       }
 
@@ -666,9 +801,14 @@ export function buildAnalyticsSteps(events: UiBlock[]): StepOrGroup[] {
           artifact.isStreaming = false;
           artifact.toolOutput = ev.payload.success ? "Completed" : (ev.payload.error ?? "Failed");
         }
-        // Also update stepsDone on the procedure item
+        // Also update stepsDone on the procedure item.
+        // Check current steps first, then flushed results (recovery case).
         if (ev.payload.success) {
-          const p = scope.findLastStreaming<ProcedureItem>("procedure");
+          let p = scope.findLastStreaming<ProcedureItem>("procedure");
+          if (!p) {
+            // On recovery the procedure was flushed — find the most recent one.
+            p = scope.findExistingProcedure("") ?? undefined;
+          }
           if (p?.steps.some((s) => s.name === ev.payload.step)) p.stepsDone += 1;
         }
         break;
@@ -691,6 +831,32 @@ export function buildAnalyticsSteps(events: UiBlock[]): StepOrGroup[] {
         if (sem) {
           sem.toolOutput = JSON.stringify({ success: true, sql: ev.payload.sql });
           sem.isStreaming = false;
+        }
+        break;
+      }
+
+      // ── Builder delegation lifecycle ─────────────────────────────────────────
+      case "delegation_started": {
+        if (typeof ev.payload.target === "string" && ev.payload.target.startsWith("agent:")) {
+          scope.pushItem({
+            kind: "builder_delegation",
+            id: scope.nextId("delegation"),
+            childRunId: ev.payload.child_task_id,
+            request: ev.payload.request,
+            status: "running",
+            isStreaming: true
+          });
+        }
+        break;
+      }
+
+      case "delegation_completed": {
+        const d = scope.findLastStreaming<BuilderDelegationItem>("builder_delegation");
+        if (d) {
+          d.status = ev.payload.success ? "done" : "failed";
+          d.answer = ev.payload.answer;
+          d.error = ev.payload.error;
+          d.isStreaming = false;
         }
         break;
       }

@@ -112,17 +112,18 @@ Encrypted blobs preserved WITHIN a tool loop only. Never cross state boundaries.
 ### Events: token-level streaming
 
 ```rust
-CoreEvent::LlmStart    { state, prompt_tokens }   // once per state invocation
+CoreEvent::LlmStart    { state, prompt_tokens }   // once per HTTP round
 CoreEvent::LlmToken    { token }                   // per output token
-CoreEvent::LlmEnd      { state, output_tokens, duration_ms }  // once per state invocation
+CoreEvent::LlmEnd      { state, output_tokens, duration_ms }  // once per HTTP round
 CoreEvent::ThinkingStart { state }                 // per thinking block
 CoreEvent::ThinkingToken { token }                 // per thinking token
 CoreEvent::ThinkingEnd   { state }                 // per thinking block
 ```
 
-`LlmStart`/`LlmEnd` appear exactly once per `run_with_tools` call regardless
-of tool rounds. `ThinkingStart`/`ThinkingEnd` pairs may appear multiple times
-(once per thinking block, including interleaved thinking between tool rounds).
+`LlmStart`/`LlmEnd` appear once per HTTP round (i.e. per `provider.stream()`
+call). When the tool loop runs N rounds, there will be N pairs, each with
+per-round token counts and inference-only timing. `ThinkingStart`/`ThinkingEnd`
+pairs may appear multiple times within a single round.
 
 ## Domain trait
 

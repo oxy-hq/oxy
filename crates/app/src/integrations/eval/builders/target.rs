@@ -74,12 +74,18 @@ impl Executable<EvalTarget> for EvalTargetWrapper {
                             agentic_input.config_path
                         ))
                     })?;
-                let answer_text = agentic_http::routes::run_agentic_eval(
-                    ctx.workspace.clone(),
+                let project_ctx = std::sync::Arc::new(
+                    crate::agentic_wiring::OxyProjectContext::new(ctx.workspace.clone()),
+                );
+                let platform: std::sync::Arc<dyn agentic_pipeline::platform::PlatformContext> =
+                    project_ctx;
+                let answer_text = agentic_pipeline::run_agentic_eval(
+                    platform,
                     std::path::Path::new(&resolved),
                     agentic_input.prompt,
                 )
-                .await?;
+                .await
+                .map_err(OxyError::RuntimeError)?;
                 Ok(OutputContainer::Single(Output::Text(answer_text)))
             }
         }

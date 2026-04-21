@@ -32,7 +32,7 @@ pub mod bigquery;
 
 pub use config::{
     BigQueryConfig, ClickHouseConfig, ConnectorConfig, DuckDbConfig, DuckDbLoadStrategy,
-    PostgresConfig, SnowflakeConfig,
+    DuckDbRawConfig, DuckDbUrlConfig, PostgresConfig, SnowflakeConfig,
 };
 
 // ── Trait re-exports ──────────────────────────────────────────────────────────
@@ -63,8 +63,9 @@ pub use bigquery::BigQueryConnector;
 
 /// Construct a `Box<dyn DatabaseConnector>` from a sync-compatible config.
 ///
-/// Only [`ConnectorConfig::DuckDb`] is supported here (DuckDB opens synchronously).
-/// For all other variants use [`build_connector_async`].
+/// Only [`ConnectorConfig::DuckDb`], [`ConnectorConfig::DuckDbRaw`], and
+/// [`ConnectorConfig::DuckDbUrl`] are supported here (DuckDB opens
+/// synchronously).  For all other variants use [`build_connector_async`].
 ///
 /// Returns `Err(ConnectorError::ConnectionError)` if the requested backend is
 /// not compiled in (missing feature flag) or if the backend itself fails to
@@ -94,6 +95,53 @@ pub fn build_connector(cfg: ConnectorConfig) -> Result<Box<dyn DatabaseConnector
                 ))
             }
         }
+        ConnectorConfig::DuckDbRaw(c) => {
+            #[cfg(feature = "duckdb")]
+            {
+                use crate::duckdb::DuckDbConnector;
+                use ::duckdb::Connection;
+
+                let conn = Connection::open_in_memory()
+                    .map_err(|e| ConnectorError::ConnectionError(e.to_string()))?;
+                for stmt in &c.init_statements {
+                    conn.execute_batch(stmt)
+                        .map_err(|e| ConnectorError::QueryFailed {
+                            sql: stmt.clone(),
+                            message: e.to_string(),
+                        })?;
+                }
+                Ok(Box::new(DuckDbConnector::new(conn)))
+            }
+            #[cfg(not(feature = "duckdb"))]
+            {
+                let _ = c;
+                Err(ConnectorError::ConnectionError(
+                    "DuckDB support is not compiled in — enable the 'duckdb' feature on \
+                     agentic-connector"
+                        .into(),
+                ))
+            }
+        }
+        ConnectorConfig::DuckDbUrl(c) => {
+            #[cfg(feature = "duckdb")]
+            {
+                use crate::duckdb::DuckDbConnector;
+                use ::duckdb::Connection;
+
+                let conn = Connection::open(&c.url)
+                    .map_err(|e| ConnectorError::ConnectionError(e.to_string()))?;
+                Ok(Box::new(DuckDbConnector::new(conn)))
+            }
+            #[cfg(not(feature = "duckdb"))]
+            {
+                let _ = c;
+                Err(ConnectorError::ConnectionError(
+                    "DuckDB support is not compiled in — enable the 'duckdb' feature on \
+                     agentic-connector"
+                        .into(),
+                ))
+            }
+        }
         other => Err(ConnectorError::ConnectionError(format!(
             "use build_connector_async for {:?}",
             std::mem::discriminant(&other)
@@ -107,10 +155,22 @@ pub async fn build_connector_async(
     cfg: ConnectorConfig,
 ) -> Result<Box<dyn DatabaseConnector>, ConnectorError> {
     match cfg {
-        ConnectorConfig::DuckDb(_) => build_connector(cfg),
+        ConnectorConfig::DuckDb(_)
+        | ConnectorConfig::DuckDbRaw(_)
+        | ConnectorConfig::DuckDbUrl(_) => {
+            // DuckDB variants open synchronously — delegate to spawn_blocking
+            // so we don't block the async runtime.
+            let result: Result<Box<dyn DatabaseConnector>, ConnectorError> =
+                tokio::task::spawn_blocking(move || build_connector(cfg))
+                    .await
+                    .map_err(|e| {
+                        ConnectorError::ConnectionError(format!("task join error: {e}"))
+                    })?;
+            result
+        }
 
         #[cfg(feature = "postgres")]
-        ConnectorConfig::Postgres(c) => {
+        ConnectorConfig::Postgres(c) | ConnectorConfig::Redshift(c) => {
             let conn =
                 PostgresConnector::new(&c.host, c.port, &c.user, &c.password, &c.database).await?;
             Ok(Box::new(conn))
@@ -149,4 +209,26 @@ pub async fn build_connector_async(
             std::mem::discriminant(&other)
         ))),
     }
+}
+
+/// Build multiple named connectors from resolved configs.
+///
+/// Individual connector failures are logged and skipped — only successfully
+/// opened connectors appear in the returned map.  An empty map is perfectly
+/// valid (the solver will catch it as `ConfigError::NoDatabases`).
+pub async fn build_named_connectors(
+    configs: Vec<(String, ConnectorConfig)>,
+) -> std::collections::HashMap<String, std::sync::Arc<dyn DatabaseConnector>> {
+    let mut result = std::collections::HashMap::new();
+    for (name, config) in configs {
+        match build_connector_async(config).await {
+            Ok(connector) => {
+                result.insert(name, std::sync::Arc::from(connector));
+            }
+            Err(e) => {
+                tracing::warn!(connector = %name, "skipping connector: {e}");
+            }
+        }
+    }
+    result
 }

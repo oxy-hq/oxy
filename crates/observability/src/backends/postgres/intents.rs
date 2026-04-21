@@ -71,7 +71,7 @@ pub(super) async fn fetch_unprocessed_questions(
         s.span_attributes->>'agent.prompt' AS question,
         s.span_attributes->>'oxy.agent.ref' AS source
     FROM observability_spans s
-    WHERE s.span_name = 'agent.run_agent'
+    WHERE s.span_name IN ('agent.run_agent', 'analytics.run')
       AND s.span_attributes->>'agent.prompt' != ''
       AND (s.trace_id, s.span_attributes->>'agent.prompt')
           NOT IN (SELECT trace_id, question FROM observability_intent_classifications)

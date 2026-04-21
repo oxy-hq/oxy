@@ -10,8 +10,8 @@ members = [
   "crates/globals",
   "crates/integration/looker",
   "crates/migration",
+  "crates/integration/omni",
   "crates/observability",
-  "crates/omni",
   "crates/project",
   "crates/semantic",
   "crates/shared",
@@ -27,9 +27,10 @@ members = [
   "crates/agentic/builder",
   "crates/agentic/core",
   "crates/agentic/llm",
-  "crates/agentic/db",
   "crates/agentic/connector",
   "crates/agentic/http",
+  "crates/agentic/pipeline",
+  "crates/agentic/runtime",
   "crates/agentic/workflow",
   "web-app",
 ]
@@ -44,13 +45,14 @@ agentic-analytics = { path = "crates/agentic/analytics" }
 agentic-builder = { path = "crates/agentic/builder" }
 agentic-connector = { path = "crates/agentic/connector" }
 agentic-core = { path = "crates/agentic/core" }
-agentic-db = { path = "crates/agentic/db" }
 agentic-http = { path = "crates/agentic/http" }
 agentic-llm = { path = "crates/agentic/llm" }
+agentic-pipeline = { path = "crates/agentic/pipeline" }
+agentic-runtime = { path = "crates/agentic/runtime" }
 agentic-workflow = { path = "crates/agentic/workflow" }
 entity = { path = "crates/entity" }
 migration = { path = "crates/migration" }
-omni = { path = "crates/omni" }
+omni = { path = "crates/integration/omni" }
 oxy = { path = "crates/core" }
 oxy-agent = { path = "crates/agent" }
 oxy-anthropic = { path = "crates/infrastructure/llm/anthropic" }

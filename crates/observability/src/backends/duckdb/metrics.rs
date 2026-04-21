@@ -106,6 +106,7 @@ impl DuckDBStorage {
                 let mut agent = 0u64;
                 let mut workflow = 0u64;
                 let mut task = 0u64;
+                let mut analytics = 0u64;
 
                 let mut stmt = conn
                     .prepare(&format!(
@@ -129,6 +130,7 @@ impl DuckDBStorage {
                         "agent" => agent = cnt as u64,
                         "workflow" => workflow = cnt as u64,
                         "task" => task = cnt as u64,
+                        "analytics" => analytics = cnt as u64,
                         _ => {}
                     }
                 }
@@ -137,6 +139,7 @@ impl DuckDBStorage {
                     agent,
                     workflow,
                     task,
+                    analytics,
                 }
             };
 

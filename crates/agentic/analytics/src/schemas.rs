@@ -64,72 +64,29 @@ pub fn triage_response_schema() -> ResponseSchema {
                     "type": ["string", "null"],
                     "description": "If an available procedure directly answers the question, set this to its exact path string (e.g. 'workflows/sales/report.procedure.yml'). The pipeline will execute that procedure and skip SQL generation entirely. Set null when no procedure matches."
                 },
-                "semantic_query": {
-                    "type": ["object", "null"],
-                    "description": "ONLY populate this when: (1) search_catalog returned matching measures AND dimensions for everything the question needs, AND (2) you are certain about the view.member paths (no guessing). When set, the pipeline will attempt a fast semantic compile and skip SQL generation entirely. Null when unsure or catalog doesn't cover the full question.",
-                    "properties": {
-                        "measures": {
-                            "type": "array",
-                            "items": { "type": "string" },
-                            "description": "Exact measure member paths in view.member format (e.g. 'orders.revenue'). Must match names from search_catalog results exactly."
-                        },
-                        "dimensions": {
-                            "type": "array",
-                            "items": { "type": "string" },
-                            "description": "Exact dimension member paths in view.member format. Must match names from search_catalog results exactly."
-                        },
-                        "filters": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "member": { "type": "string" },
-                                    "operator": { "type": "string" },
-                                    "values": { "type": "array", "items": { "type": "string" } }
-                                },
-                                "required": ["member", "operator", "values"],
-                                "additionalProperties": false
+                "missing_members": {
+                    "type": "array",
+                    "description": "Semantic members the question requires but that search_catalog could NOT find. Populate this when the catalog lacks a measure or dimension needed to fully answer the question. Empty array when all needed members exist in the catalog.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "description": "Suggested member name in snake_case (e.g. 'revenue_per_customer')."
                             },
-                            "description": "Structured filter conditions using exact member paths."
-                        },
-                        "time_dimensions": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "dimension": { "type": "string" },
-                                    "granularity": { "type": ["string", "null"] },
-                                    "date_range": { "type": ["array", "null"], "items": { "type": "string" } }
-                                },
-                                "required": ["dimension", "granularity", "date_range"],
-                                "additionalProperties": false
+                            "kind": {
+                                "type": "string",
+                                "description": "Whether this is a measure or dimension.",
+                                "enum": ["measure", "dimension"]
                             },
-                            "description": "Time dimension entries with granularity and optional date range."
+                            "description": {
+                                "type": "string",
+                                "description": "Natural-language description of what this member should represent."
+                            }
                         },
-                        "order": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "id": { "type": "string" },
-                                    "desc": { "type": "boolean" }
-                                },
-                                "required": ["id", "desc"],
-                                "additionalProperties": false
-                            },
-                            "description": "Sort order entries."
-                        },
-                        "limit": {
-                            "type": ["integer", "null"],
-                            "description": "Row limit, or null for no limit."
-                        }
-                    },
-                    "required": ["measures", "dimensions", "filters", "time_dimensions", "order", "limit"],
-                    "additionalProperties": false
-                },
-                "semantic_confidence": {
-                    "type": "number",
-                    "description": "How confident you are that the semantic_query members are correct (0.0–1.0). Set to 0.0 when semantic_query is null. Only set >= 0.85 when ALL measures and dimensions were confirmed by search_catalog results."
+                        "additionalProperties": false,
+                        "required": ["name", "kind", "description"]
+                    }
                 }
             },
             "additionalProperties": false,
@@ -141,8 +98,7 @@ pub fn triage_response_schema() -> ResponseSchema {
                 "ambiguities",
                 "ambiguity_questions",
                 "selected_procedure_path",
-                "semantic_query",
-                "semantic_confidence"
+                "missing_members"
             ]
         }),
     }
@@ -153,6 +109,7 @@ pub fn triage_response_schema() -> ResponseSchema {
 ///
 /// The model must produce a JSON object matching [`crate::types::AnalyticsIntent`]
 /// (excluding `raw_question`, which is preserved from the input).
+#[allow(dead_code)]
 pub fn clarify_response_schema() -> ResponseSchema {
     ResponseSchema {
         name: "clarify_response".into(),
@@ -577,6 +534,25 @@ mod tests {
             variants.contains(&"GeneralInquiry"),
             "missing GeneralInquiry variant"
         );
+    }
+
+    #[test]
+    fn triage_schema_includes_missing_members() {
+        let schema = triage_response_schema();
+        let required = schema.schema["required"].as_array().unwrap();
+        let fields: Vec<&str> = required.iter().map(|v| v.as_str().unwrap()).collect();
+        assert!(
+            fields.contains(&"missing_members"),
+            "triage schema must require 'missing_members'"
+        );
+
+        let mm = &schema.schema["properties"]["missing_members"];
+        assert_eq!(mm["type"], "array");
+        let item_required = mm["items"]["required"].as_array().unwrap();
+        let item_fields: Vec<&str> = item_required.iter().map(|v| v.as_str().unwrap()).collect();
+        assert!(item_fields.contains(&"name"));
+        assert!(item_fields.contains(&"kind"));
+        assert!(item_fields.contains(&"description"));
     }
 
     #[test]

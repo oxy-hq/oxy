@@ -73,6 +73,7 @@ export function formatSpanLabel(spanName: string): string {
     "analytics.execute": "Execute Query",
     "analytics.interpret": "Interpret Results",
     "analytics.tool": "Analytics Tool",
+    "analytics.tool_call": "Execute Tool Call",
     "analytics.specify_query_request": "Specify Query",
     "analytics.solve": "Solve",
     "analytics.diagnose": "Diagnose",

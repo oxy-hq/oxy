@@ -384,6 +384,7 @@ pub fn current_trace_id() -> Option<String> {
 mod tests {
     use super::*;
     use tokio::sync::mpsc;
+    use tracing::Instrument as _;
     use tracing_subscriber::layer::SubscriberExt;
 
     #[test]
@@ -465,6 +466,348 @@ mod tests {
         assert_eq!(parent_record.span_name, "parent_span");
         assert_eq!(child_record.trace_id, parent_record.trace_id);
         assert_eq!(child_record.parent_span_id, parent_record.span_id);
+    }
+
+    /// Mirror the exact span shape emitted by `agentic_analytics` for
+    /// `analytics.run` + child `analytics.tool_call` spans, and assert that
+    /// every attribute consumed by the Execution Analytics SQL query is
+    /// faithfully captured — in particular that dotted field names like
+    /// `oxy.span_type`, `oxy.execution_type`, `oxy.is_verified`, and
+    /// `oxy.agent.ref` round-trip through `FieldVisitor` intact.
+    #[tokio::test]
+    async fn test_analytics_run_and_tool_call_span_attributes() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let layer = SpanCollectorLayer::new(tx, "test-service".to_string());
+        let subscriber = tracing_subscriber::registry().with(layer);
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        {
+            let run = tracing::info_span!(
+                "analytics.run",
+                oxy.name = "analytics.run",
+                oxy.span_type = "analytics",
+                oxy.agent.ref = "revenue_agent",
+                agent.prompt = "top customers",
+                question = "top customers",
+            );
+            let _run_enter = run.enter();
+            {
+                let tool = tracing::info_span!(
+                    "analytics.tool_call",
+                    oxy.name = "analytics.tool_call",
+                    oxy.span_type = "tool_call",
+                    oxy.execution_type = "semantic_query",
+                    oxy.is_verified = true,
+                    connector = "duckdb",
+                );
+                let _tool_enter = tool.enter();
+                tracing::info!(name: "tool_call.output", status = "success", row_count = 7);
+            }
+        }
+
+        let tool_record = rx.try_recv().expect("tool record");
+        let run_record = rx.try_recv().expect("run record");
+
+        assert_eq!(tool_record.span_name, "analytics.tool_call");
+        assert_eq!(run_record.span_name, "analytics.run");
+        assert_eq!(tool_record.trace_id, run_record.trace_id);
+        assert_eq!(tool_record.parent_span_id, run_record.span_id);
+
+        let tool_attrs: HashMap<String, String> =
+            serde_json::from_str(&tool_record.span_attributes).unwrap();
+        assert_eq!(
+            tool_attrs.get("oxy.span_type").map(String::as_str),
+            Some("tool_call")
+        );
+        assert_eq!(
+            tool_attrs.get("oxy.execution_type").map(String::as_str),
+            Some("semantic_query")
+        );
+        assert_eq!(
+            tool_attrs.get("oxy.is_verified").map(String::as_str),
+            Some("true")
+        );
+
+        let run_attrs: HashMap<String, String> =
+            serde_json::from_str(&run_record.span_attributes).unwrap();
+        assert_eq!(
+            run_attrs.get("oxy.span_type").map(String::as_str),
+            Some("analytics")
+        );
+        assert_eq!(
+            run_attrs.get("oxy.agent.ref").map(String::as_str),
+            Some("revenue_agent")
+        );
+        assert_eq!(
+            run_attrs.get("agent.prompt").map(String::as_str),
+            Some("top customers")
+        );
+
+        // The `tool_call.output` event must land on the tool span.
+        let events: Vec<serde_json::Value> = serde_json::from_str(&tool_record.event_data).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0]["name"], "tool_call.output");
+        assert_eq!(events[0]["attributes"]["status"], "success");
+    }
+
+    /// Exercise the exact async_trait path the fanout worker uses and confirm
+    /// that an inner `info_span!` inherits the outer `.instrument(sub_span)`
+    /// chain as its parent — so trace_id inheritance works.
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_info_span_parent_through_async_trait_and_spawn() {
+        use std::sync::Arc;
+        use tracing::Instrument as _;
+        use tracing_subscriber::layer::SubscriberExt;
+
+        #[async_trait::async_trait]
+        trait Worker: Send + Sync {
+            async fn go(&self) -> String;
+        }
+        struct W;
+        #[async_trait::async_trait]
+        impl Worker for W {
+            async fn go(&self) -> String {
+                async { /* connector.execute_query */ }.await;
+                let tool_span = tracing::info_span!("analytics.tool_call");
+                tool_span.in_scope(|| current_trace_id().unwrap_or_default())
+            }
+        }
+
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let layer = SpanCollectorLayer::new(tx, "oxy".to_string());
+        let subscriber = tracing_subscriber::registry().with(layer);
+        let _default = tracing::subscriber::set_default(subscriber);
+
+        let run_span = tracing::info_span!(parent: None, "analytics.run");
+        let sub_span = tracing::info_span!(parent: &run_span, "fanout.sub_spec");
+
+        let w: Arc<dyn Worker> = Arc::new(W);
+        let got = tokio::spawn(async move { w.go().await }.instrument(sub_span))
+            .await
+            .unwrap();
+
+        assert!(
+            !got.is_empty(),
+            "current_trace_id() must not be empty inside the fanout worker's \
+             tool_call span — got {got:?}"
+        );
+    }
+
+    /// Reproduce the production bug: the FMT log in the bug report shows the
+    /// `tool_call.output` event inside `analytics.tool_call` *only* — no
+    /// `fanout.sub_spec` or `analytics.run` ancestors visible. That means the
+    /// span chain seen by `Span::current()` inside the fanout worker does
+    /// *not* reach `analytics.run`, so `current_trace_id()` fails. This test
+    /// forces the issue: when `info_span!` is used for the `tool_call` span
+    /// with `parent: None` (or without a properly entered parent stack), the
+    /// span is rooted at itself rather than under the intended parent.
+    #[tokio::test]
+    async fn test_fanout_tool_call_span_chain_reaches_root() {
+        use tracing::Instrument as _;
+        use tracing_subscriber::layer::SubscriberExt;
+
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let layer = SpanCollectorLayer::new(tx, "oxy".to_string());
+        let subscriber = tracing_subscriber::registry().with(layer);
+        let _default = tracing::subscriber::set_default(subscriber);
+
+        let run_span = tracing::info_span!(
+            parent: None,
+            "analytics.run",
+            oxy.name = "analytics.run",
+            oxy.agent.ref = "a",
+        );
+        let sub_span = tracing::info_span!(parent: &run_span, "fanout.sub_spec");
+
+        let captured_trace_id = tokio::spawn(
+            async {
+                // Mirror fanout_worker.rs exactly — create tool_span here.
+                let tool_span =
+                    tracing::info_span!("analytics.tool_call", oxy.span_type = "tool_call",);
+                async { /* execute_query */ }
+                    .instrument(tool_span.clone())
+                    .await;
+                tool_span.in_scope(|| {
+                    tracing::info!(name: "tool_call.output", status = "success");
+                });
+                drop(tool_span);
+                current_trace_id()
+            }
+            .instrument(sub_span),
+        )
+        .await
+        .unwrap();
+
+        drop(run_span);
+
+        // Collect all the records, find tool_call and run, verify they share trace_id.
+        let mut records = Vec::new();
+        while let Ok(r) = rx.try_recv() {
+            records.push(r);
+        }
+        let tool = records
+            .iter()
+            .find(|r| r.span_name == "analytics.tool_call")
+            .expect("tool_call span must be captured");
+        let run = records
+            .iter()
+            .find(|r| r.span_name == "analytics.run")
+            .expect("run span must be captured");
+
+        assert_eq!(
+            tool.trace_id, run.trace_id,
+            "tool_call span must share trace_id with analytics.run"
+        );
+        assert_eq!(
+            captured_trace_id.as_deref(),
+            Some(run.trace_id.as_str()),
+            "current_trace_id() inside the fanout task must return the \
+             analytics.run trace_id"
+        );
+    }
+
+    /// Exact production pattern: `tokio::spawn(future.instrument(sub_span))`,
+    /// where the spawned future runs `await .instrument(tool_span)` then
+    /// `in_scope`, then calls `current_trace_id()` synchronously.
+    /// This is what the fanout worker does.
+    #[tokio::test]
+    async fn test_current_trace_id_after_instrument_await_in_spawned_task() {
+        use tracing::Instrument as _;
+        use tracing_subscriber::layer::SubscriberExt;
+
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let layer = SpanCollectorLayer::new(tx, "oxy".to_string());
+        let subscriber = std::sync::Arc::new(tracing_subscriber::registry().with(layer));
+
+        // Use set_default (not global set) so the test is self-contained.
+        let _default = tracing::subscriber::set_default(subscriber);
+
+        let run_span = tracing::info_span!(parent: None, "analytics.run");
+        let sub_span = tracing::info_span!(parent: &run_span, "fanout.sub_spec");
+
+        // Spawn a task instrumented with sub_span (mirrors run_fanout_concurrent).
+        // WARNING: `set_default` is NOT propagated to tokio::spawn tasks —
+        // only `set_global_default` works across tasks. So this test's setup
+        // intentionally uses the current-thread runtime so `set_default`
+        // carries into the spawned task's thread.
+        let handle = tokio::spawn(
+            async {
+                let tool_span = tracing::info_span!("analytics.tool_call");
+                async { /* connector.execute_query */ }
+                    .instrument(tool_span.clone())
+                    .await;
+
+                tool_span.in_scope(|| {
+                    tracing::info!(name: "tool_call.output", status = "success");
+                });
+
+                // The critical call — identical to what metrics_recorder does.
+                current_trace_id()
+            }
+            .instrument(sub_span),
+        );
+
+        let got = handle.await.unwrap();
+        assert!(
+            got.is_some() && !got.as_deref().unwrap_or("").is_empty(),
+            "current_trace_id() must return Some after in_scope in an \
+             instrumented spawned task; got {got:?}"
+        );
+    }
+
+    /// Repro for the production bug: `current_trace_id()` returns `None`
+    /// when the subscriber is built from multiple layers (fmt + Sentry +
+    /// SpanCollectorLayer + EnvFilter) because `downcast_ref::<Registry>()`
+    /// on a `Layered<_, _>` chain may not always descend to the bottom.
+    #[tokio::test]
+    async fn test_current_trace_id_through_layered_subscriber() {
+        use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt};
+
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let layer = SpanCollectorLayer::new(tx, "oxy".to_string());
+        // Mirror the production stack: Registry + EnvFilter + fmt + collector.
+        let subscriber = tracing_subscriber::registry()
+            .with(EnvFilter::new("debug"))
+            .with(fmt::layer().with_writer(std::io::sink))
+            .with(layer);
+        let _default = tracing::subscriber::set_default(subscriber);
+
+        let root = tracing::info_span!(parent: None, "analytics.run");
+        let _enter = root.enter();
+
+        let got = current_trace_id();
+        assert!(
+            got.is_some() && !got.as_deref().unwrap_or("").is_empty(),
+            "current_trace_id() must succeed through a Layered subscriber \
+             (got {got:?})"
+        );
+    }
+
+    /// Reproduce the exact pattern used by `execute_solution` in the
+    /// analytics crate: create a `tool_span`, `.instrument()` an awaited
+    /// future with a clone, then use `.in_scope()` on the original to emit
+    /// the `tool_call.output` event. This asserts that the event still
+    /// lands on the tool span after the instrumented future has completed.
+    #[tokio::test]
+    async fn test_tool_call_output_event_after_instrumented_await() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let layer = SpanCollectorLayer::new(tx, "test-service".to_string());
+        let subscriber = tracing_subscriber::registry().with(layer);
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        {
+            let run = tracing::info_span!(
+                "analytics.run",
+                oxy.name = "analytics.run",
+                oxy.span_type = "analytics",
+                oxy.agent.ref = "test_agent",
+                agent.prompt = "q",
+            );
+            let _run_enter = run.enter();
+
+            let tool_span = tracing::info_span!(
+                "analytics.tool_call",
+                oxy.name = "analytics.tool_call",
+                oxy.span_type = "tool_call",
+                oxy.execution_type = "semantic_query",
+                oxy.is_verified = true,
+            );
+
+            async { /* simulate connector.execute_query().await */ }
+                .instrument(tool_span.clone())
+                .await;
+
+            tool_span.in_scope(|| {
+                tracing::info!(
+                    name: "tool_call.output",
+                    status = "success",
+                    row_count = 3_i64,
+                );
+            });
+            drop(tool_span);
+        }
+
+        let tool_record = rx.try_recv().expect("tool record");
+        assert_eq!(tool_record.span_name, "analytics.tool_call");
+        let tool_attrs: HashMap<String, String> =
+            serde_json::from_str(&tool_record.span_attributes).unwrap();
+        assert_eq!(
+            tool_attrs.get("oxy.span_type").map(String::as_str),
+            Some("tool_call")
+        );
+        assert_eq!(
+            tool_attrs.get("oxy.execution_type").map(String::as_str),
+            Some("semantic_query")
+        );
+
+        let events: Vec<serde_json::Value> = serde_json::from_str(&tool_record.event_data).unwrap();
+        assert_eq!(
+            events.len(),
+            1,
+            "tool_call.output event must be attached to tool_span"
+        );
+        assert_eq!(events[0]["name"], "tool_call.output");
+        assert_eq!(events[0]["attributes"]["status"], "success");
     }
 
     #[tokio::test]

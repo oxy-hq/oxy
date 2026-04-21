@@ -220,10 +220,24 @@ const githubKeys = {
   userInstallations: ["github", "user-installations"] as const
 };
 
+const coordinatorKeys = {
+  all: ["coordinator"] as const,
+  activeRuns: (projectId: string) => [...coordinatorKeys.all, "activeRuns", projectId] as const,
+  runHistory: (
+    projectId: string,
+    params: { limit: number; offset: number; status?: string; source_type?: string }
+  ) => [...coordinatorKeys.all, "runHistory", projectId, params] as const,
+  runTree: (projectId: string, runId: string) =>
+    [...coordinatorKeys.all, "runTree", projectId, runId] as const,
+  recovery: (projectId: string) => [...coordinatorKeys.all, "recovery", projectId] as const,
+  queue: (projectId: string) => [...coordinatorKeys.all, "queue", projectId] as const
+};
+
 const queryKeys = {
   org: orgKeys,
   agent: agentKeys,
   builder: builderKeys,
+  coordinator: coordinatorKeys,
   analytics: analyticsKeys,
   thread: threadKeys,
   apiKey: apiKeyKeys,

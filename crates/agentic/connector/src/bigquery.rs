@@ -35,6 +35,7 @@ use crate::connector::{
 pub struct BigQueryConnector {
     client: Client,
     project_id: String,
+    #[allow(dead_code)]
     dataset: Option<String>,
     cached_schema: SchemaInfo,
 }

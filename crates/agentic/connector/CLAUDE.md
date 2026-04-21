@@ -1,0 +1,40 @@
+# agentic-connector
+
+Database connectivity abstraction. Provides a unified `DatabaseConnector` trait over multiple backends.
+
+## Supported Backends
+
+| Feature flag | Connector | Backend |
+| ------------- | ----------- | --------- |
+| `duckdb` | `DuckDbConnector` | Bundled DuckDB |
+| `postgres` | `PostgresConnector` | `tokio-postgres` |
+| `clickhouse` | `ClickHouseConnector` | HTTP API via `reqwest` |
+| `snowflake` | `SnowflakeConnector` | `snowflake-api` |
+| `bigquery` | `BigQueryConnector` | `gcp-bigquery-client` |
+
+## Key Types
+
+```rust
+pub trait DatabaseConnector: Send + Sync {
+    async fn execute_query(&self, sql: &str) -> Result<QueryResult, ConnectorError>;
+    async fn introspect_schema(&self) -> Result<SchemaInfo, ConnectorError>;
+    fn dialect(&self) -> SqlDialect;
+}
+
+pub enum ConnectorConfig {
+    DuckDb(DuckDbConfig),
+    Postgres(PostgresConfig),
+    Redshift(PostgresConfig),
+    ClickHouse(ClickHouseConfig),
+    Snowflake(SnowflakeConfig),
+    BigQuery(BigQueryConfig),
+    DuckDbRaw(DuckDbRawConfig),
+    DuckDbUrl(DuckDbUrlConfig),
+}
+```
+
+## Rules
+
+- This is an **infrastructure crate** — shared by analytics and builder domains.
+- Config construction (secret resolution, project path resolution) happens in `agentic-pipeline::platform`, NOT here. This crate only knows about `ConnectorConfig` values, never credentials or secret managers.
+- `build_connector()` / `build_named_connectors()` are the entry points for creating connector instances from configs.

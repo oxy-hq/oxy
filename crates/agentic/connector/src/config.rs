@@ -79,6 +79,32 @@ pub struct BigQueryConfig {
     pub dataset: Option<String>,
 }
 
+// ── DuckDB (raw init statements) ─────────────────────────────────────────────
+
+/// Configuration for a DuckDB connector opened in-memory and initialised with
+/// arbitrary SQL statements.
+///
+/// Use this for DuckLake (ATTACH via extension), custom extensions, or any
+/// scenario where the caller pre-resolves secrets into plain SQL before handing
+/// off to the connector layer.
+#[derive(Debug, Clone)]
+pub struct DuckDbRawConfig {
+    /// SQL statements executed sequentially against a fresh in-memory connection.
+    pub init_statements: Vec<String>,
+}
+
+// ── DuckDB (connection URL) ──────────────────────────────────────────────────
+
+/// Configuration for a DuckDB connector opened from a connection URL string.
+///
+/// Suitable for MotherDuck (`md:mydb?motherduck_token=...`) or any DuckDB URL
+/// that `Connection::open` accepts.
+#[derive(Debug, Clone)]
+pub struct DuckDbUrlConfig {
+    /// Full connection URL passed to `duckdb::Connection::open`.
+    pub url: String,
+}
+
 // ── Top-level enum ────────────────────────────────────────────────────────────
 
 /// Which database/warehouse to connect to and how.
@@ -88,7 +114,13 @@ pub struct BigQueryConfig {
 #[derive(Debug, Clone)]
 pub enum ConnectorConfig {
     DuckDb(DuckDbConfig),
+    /// DuckDB opened in-memory with init SQL (DuckLake, extensions).
+    DuckDbRaw(DuckDbRawConfig),
+    /// DuckDB opened from a connection URL (MotherDuck).
+    DuckDbUrl(DuckDbUrlConfig),
     Postgres(PostgresConfig),
+    /// Redshift (Postgres-compatible wire protocol).
+    Redshift(PostgresConfig),
     ClickHouse(ClickHouseConfig),
     Snowflake(SnowflakeConfig),
     BigQuery(BigQueryConfig),

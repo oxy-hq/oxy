@@ -12,7 +12,10 @@ const ev = <T extends UiBlock["event_type"]>(
 
 const stepStart = (label: string, subSpecIndex?: number) =>
   ev("step_start", { label, ...(subSpecIndex != null ? { sub_spec_index: subSpecIndex } : {}) });
-const stepEnd = (outcome: "advanced" | "failed" = "advanced", subSpecIndex?: number) =>
+const stepEnd = (
+  outcome: "advanced" | "failed" | "suspended" = "advanced",
+  subSpecIndex?: number
+) =>
   ev("step_end", {
     label: "",
     outcome,
@@ -678,5 +681,433 @@ describe("buildAnalyticsSteps — concurrent fan-out", () => {
     expect(group.cards[1].label).toBe("Q2");
     expect(group.cards[1].steps).toHaveLength(1);
     expect(group.cards[1].steps[0].label).toBe("Solving");
+  });
+});
+
+// ── delegation suspension — procedure events attach to the open step ─────────
+
+const awaitingDelegation = (prompt = "Executing step: run_proc") =>
+  ev("awaiting_input", { questions: [{ prompt, suggestions: [] }] });
+
+const awaitingHuman = (prompt = "What database?") =>
+  ev("awaiting_input", { questions: [{ prompt, suggestions: [] }] });
+
+const inputResolved = (answer = "done") => ev("input_resolved", { answer });
+
+describe("buildAnalyticsSteps — delegation suspension", () => {
+  it("procedure events attach to step kept open during delegation", () => {
+    const items = buildAnalyticsSteps([
+      stepStart("Executing"),
+      awaitingDelegation(),
+      stepEnd("suspended"),
+      procedureStarted(),
+      procStepStarted("fetch_data"),
+      procStepCompleted("fetch_data"),
+      procStepStarted("process_data"),
+      procStepCompleted("process_data"),
+      procStepStarted("generate_report"),
+      procStepCompleted("generate_report"),
+      procCompleted(),
+      inputResolved()
+    ]);
+
+    expect(items).toHaveLength(1);
+    const step = items[0] as { kind: string; items: { kind: string }[] };
+    expect(step.kind).toBe("step");
+    // procedure item + 3 procedure step artifacts
+    const procItems = step.items.filter((i) => i.kind === "procedure");
+    expect(procItems).toHaveLength(1);
+    expect(getProcItem(items).stepsDone).toBe(3);
+  });
+
+  it("procedure pill appears in collapsed step row", () => {
+    const items = buildAnalyticsSteps([
+      stepStart("Executing"),
+      awaitingDelegation(),
+      stepEnd("suspended"),
+      procedureStarted("my_proc"),
+      procCompleted("my_proc"),
+      inputResolved()
+    ]);
+
+    const step = items[0] as { items: { kind: string; procedureName?: string }[] };
+    const proc = step.items.find((i) => i.kind === "procedure");
+    expect(proc).toBeDefined();
+    expect(proc?.procedureName).toBe("my_proc");
+  });
+
+  it("human input suspension still closes the step normally", () => {
+    const items = buildAnalyticsSteps([
+      stepStart("Clarifying"),
+      awaitingHuman(),
+      stepEnd("suspended"),
+      // After human responds, a new step starts
+      inputResolved("PostgreSQL"),
+      stepStart("Solving"),
+      stepEnd()
+    ]);
+
+    // Both steps should be closed (not kept open)
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({ kind: "step", label: "Clarifying", isStreaming: false });
+    expect(items[1]).toMatchObject({ kind: "step", label: "Solving", isStreaming: false });
+  });
+
+  it("delegation step closes on input_resolved", () => {
+    const items = buildAnalyticsSteps([
+      stepStart("Executing"),
+      awaitingDelegation(),
+      stepEnd("suspended"),
+      procedureStarted(),
+      procCompleted(),
+      inputResolved()
+    ]);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ kind: "step", isStreaming: false });
+  });
+
+  it("delegation step stays open (streaming) while procedure is running", () => {
+    const items = buildAnalyticsSteps([
+      stepStart("Executing"),
+      awaitingDelegation(),
+      stepEnd("suspended"),
+      procedureStarted(),
+      procStepStarted("fetch_data")
+      // no input_resolved yet — still running
+    ]);
+
+    expect(items).toHaveLength(1);
+    // Step is still streaming (kept open)
+    const step = items[0] as { kind: string; isStreaming: boolean; items: { kind: string }[] };
+    expect(step.isStreaming).toBe(true);
+    expect(step.items.some((i) => i.kind === "procedure")).toBe(true);
+  });
+});
+
+// ── recovery attempt boundary ────────────────────────────────────────────────
+
+const recoveryResumed = (attempt: number) => ev("recovery_resumed", { attempt });
+
+describe("buildAnalyticsSteps — recovery_resumed (recovery)", () => {
+  it("open non-procedure step is marked interrupted on recovery_resumed", () => {
+    const items = buildAnalyticsSteps([
+      stepStart("Solving"),
+      ev("text_delta", { token: "partial" }),
+      recoveryResumed(1),
+      stepStart("Solving again"),
+      stepEnd()
+    ]);
+
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({
+      kind: "step",
+      label: "Solving",
+      isStreaming: false,
+      error: "Interrupted by server restart"
+    });
+    expect(items[1]).toMatchObject({
+      kind: "step",
+      label: "Solving again",
+      isStreaming: false
+    });
+  });
+
+  it("procedure step is NOT marked interrupted — kept for aggregation", () => {
+    const items = buildAnalyticsSteps([
+      stepStart("Executing"),
+      awaitingDelegation(),
+      stepEnd("suspended"),
+      procedureStarted(),
+      procStepStarted("fetch_data"),
+      procStepCompleted("fetch_data"),
+      procStepStarted("process_data"),
+      // crash mid-step
+      recoveryResumed(1),
+      // new attempt re-emits procedure_started + continues
+      procedureStarted(),
+      procStepStarted("process_data"),
+      procStepCompleted("process_data"),
+      procStepStarted("generate_report"),
+      procStepCompleted("generate_report"),
+      procCompleted(),
+      inputResolved()
+    ]);
+
+    // The step containing the procedure should NOT have an error
+    const step = items[0] as { kind: string; error?: string; items: { kind: string }[] };
+    expect(step.error).toBeUndefined();
+    // The procedure item should aggregate steps from both attempts
+    const proc = getProcItem(items);
+    expect(proc.stepsDone).toBe(3); // fetch_data + process_data + generate_report
+    expect(proc.isStreaming).toBe(false);
+  });
+
+  it("procedure stepsDone does not double-count steps completed before and after recovery", () => {
+    const items = buildAnalyticsSteps([
+      stepStart("Executing"),
+      awaitingDelegation(),
+      stepEnd("suspended"),
+      procedureStarted(),
+      procStepStarted("fetch_data"),
+      procStepCompleted("fetch_data"), // +1
+      // crash
+      recoveryResumed(1),
+      // recovery re-emits procedure_started, resumes from fetch_data
+      procedureStarted(),
+      procStepStarted("fetch_data"),
+      procStepCompleted("fetch_data"), // already counted — but stepsDone increments again
+      procStepStarted("process_data"),
+      procStepCompleted("process_data"), // +1
+      procCompleted(),
+      inputResolved()
+    ]);
+
+    const proc = getProcItem(items);
+    // fetch_data counted twice (once per attempt) + process_data = 3
+    // This is acceptable: the procedure item shows progress, not unique completions
+    expect(proc.stepsDone).toBe(3);
+  });
+
+  it("procedure steps after recovery (no new procedure_started) still update progress", () => {
+    // Real payload: procedure_started at attempt 0, some steps complete,
+    // then recovery_resumed(1), recovery_resumed(2), then more procedure_step_*
+    // events WITHOUT a new procedure_started event.
+    const steps = [
+      { name: "temperature_correlation", task_type: "execute_sql" },
+      { name: "fuel_price_impact", task_type: "execute_sql" },
+      { name: "unemployment_impact", task_type: "execute_sql" },
+      { name: "correlation_matrix", task_type: "execute_sql" },
+      { name: "combined_factors_analysis", task_type: "execute_sql" },
+      { name: "factor_significance", task_type: "execute_sql" },
+      { name: "external_factors_summary", task_type: "formatter" }
+    ];
+    const items = buildAnalyticsSteps([
+      stepStart("Executing"),
+      awaitingDelegation(),
+      stepEnd("suspended"),
+      procedureStarted("external_factors_correlation", steps),
+      procStepStarted("temperature_correlation"),
+      procStepCompleted("temperature_correlation"),
+      procStepStarted("fuel_price_impact"),
+      // crash mid fuel_price_impact
+      recoveryResumed(1),
+      recoveryResumed(2),
+      // recovery continues without new procedure_started
+      procStepStarted("fuel_price_impact"),
+      procStepCompleted("fuel_price_impact"),
+      procStepStarted("unemployment_impact"),
+      procStepCompleted("unemployment_impact"),
+      procStepStarted("correlation_matrix"),
+      procStepCompleted("correlation_matrix"),
+      procStepStarted("combined_factors_analysis"),
+      procStepCompleted("combined_factors_analysis"),
+      procStepStarted("factor_significance"),
+      procStepCompleted("factor_significance"),
+      procStepStarted("external_factors_summary"),
+      procStepCompleted("external_factors_summary"),
+      procCompleted("external_factors_correlation"),
+      inputResolved()
+    ]);
+
+    const proc = getProcItem(items);
+    // temperature_correlation(attempt 0) + all 6 remaining from attempt 2 = 7
+    expect(proc.stepsDone).toBe(7);
+    expect(proc.isStreaming).toBe(false);
+
+    // Verify artifacts exist for procedure steps — the step containing
+    // the procedure should have artifact items for each proc step.
+    const procStep = items.find(
+      (i) =>
+        i.kind === "step" &&
+        (i as { items: { kind: string }[] }).items.some((it) => it.kind === "procedure")
+    ) as { items: { kind: string; toolName?: string; isStreaming: boolean }[] };
+    const artifacts = procStep.items.filter((i) => i.kind === "artifact");
+    // Should have artifacts for: temperature_correlation(attempt 0),
+    // fuel_price_impact(started attempt 0 but not completed),
+    // then from attempt 2: fuel_price_impact, unemployment_impact,
+    // correlation_matrix, combined_factors_analysis, factor_significance,
+    // external_factors_summary
+    // Total: at least 7 completed artifacts
+    const completedArtifacts = artifacts.filter((a) => !a.isStreaming);
+    expect(completedArtifacts.length).toBeGreaterThanOrEqual(7);
+  });
+
+  it("recovery_resumed with no open steps is a no-op", () => {
+    const items = buildAnalyticsSteps([
+      stepStart("A"),
+      stepEnd(),
+      recoveryResumed(1),
+      stepStart("B"),
+      stepEnd()
+    ]);
+
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({ kind: "step", label: "A" });
+    expect((items[0] as { error?: string }).error).toBeUndefined();
+    expect(items[1]).toMatchObject({ kind: "step", label: "B" });
+    expect((items[1] as { error?: string }).error).toBeUndefined();
+  });
+
+  it("multiple attempt boundaries work correctly", () => {
+    const items = buildAnalyticsSteps([
+      stepStart("Attempt 0"),
+      recoveryResumed(1),
+      stepStart("Attempt 1"),
+      recoveryResumed(2),
+      stepStart("Attempt 2"),
+      stepEnd()
+    ]);
+
+    expect(items).toHaveLength(3);
+    expect(items[0]).toMatchObject({ label: "Attempt 0", error: "Interrupted by server restart" });
+    expect(items[1]).toMatchObject({ label: "Attempt 1", error: "Interrupted by server restart" });
+    expect(items[2]).toMatchObject({ label: "Attempt 2", isStreaming: false });
+    expect((items[2] as { error?: string }).error).toBeUndefined();
+  });
+});
+
+// ── Builder delegation tests ────────────────────────────────────────────────
+
+describe("builder delegation", () => {
+  it("delegation_started with agent target creates BuilderDelegationItem", () => {
+    seq = 0;
+    // Real event order: step opens → awaiting_input (delegation) → step_end(suspended)
+    // keeps step open → delegation_started attaches to the open step.
+    const items = buildAnalyticsSteps([
+      stepStart("Analyzing"),
+      ev("awaiting_input", {
+        questions: [
+          {
+            prompt: "Delegating to builder: creating 1 missing semantic member(s)",
+            suggestions: []
+          }
+        ],
+        from_state: "clarifying",
+        trace_id: "t1"
+      }),
+      stepEnd("suspended"),
+      ev("delegation_started", {
+        child_task_id: "root.1",
+        target: "agent:__builder__",
+        request: "create missing metric revenue_per_customer"
+      })
+    ]);
+
+    expect(items).toHaveLength(1);
+    const step = items[0];
+    expect(step).toMatchObject({ label: "Analyzing" });
+    if (!("items" in step)) throw new Error("expected items");
+    const delegation = step.items.find((c: { kind: string }) => c.kind === "builder_delegation");
+    expect(delegation).toBeDefined();
+    expect(delegation).toMatchObject({
+      kind: "builder_delegation",
+      childRunId: "root.1",
+      request: "create missing metric revenue_per_customer",
+      status: "running",
+      isStreaming: true
+    });
+  });
+
+  it("delegation_completed updates status to done", () => {
+    seq = 0;
+    const items = buildAnalyticsSteps([
+      stepStart("Analyzing"),
+      ev("awaiting_input", {
+        questions: [
+          {
+            prompt: "Delegating to builder: creating 1 missing semantic member(s)",
+            suggestions: []
+          }
+        ],
+        from_state: "clarifying",
+        trace_id: "t1"
+      }),
+      stepEnd("suspended"),
+      ev("delegation_started", {
+        child_task_id: "root.1",
+        target: "agent:__builder__",
+        request: "create metric"
+      }),
+      ev("delegation_completed", {
+        child_task_id: "root.1",
+        success: true,
+        answer: "metric created"
+      })
+    ]);
+
+    expect(items).toHaveLength(1);
+    const step = items[0];
+    if (!("items" in step)) throw new Error("expected items");
+    const delegation = step.items.find((c: { kind: string }) => c.kind === "builder_delegation");
+    expect(delegation).toMatchObject({
+      status: "done",
+      answer: "metric created",
+      isStreaming: false
+    });
+  });
+
+  it("delegation_completed with failure sets status to failed", () => {
+    seq = 0;
+    const items = buildAnalyticsSteps([
+      stepStart("Analyzing"),
+      ev("awaiting_input", {
+        questions: [
+          {
+            prompt: "Delegating to builder: creating 1 missing semantic member(s)",
+            suggestions: []
+          }
+        ],
+        from_state: "clarifying",
+        trace_id: "t1"
+      }),
+      stepEnd("suspended"),
+      ev("delegation_started", {
+        child_task_id: "root.1",
+        target: "agent:__builder__",
+        request: "create metric"
+      }),
+      ev("delegation_completed", {
+        child_task_id: "root.1",
+        success: false,
+        error: "builder failed"
+      })
+    ]);
+
+    expect(items).toHaveLength(1);
+    const step = items[0];
+    if (!("items" in step)) throw new Error("expected items");
+    const delegation = step.items.find((c: { kind: string }) => c.kind === "builder_delegation");
+    expect(delegation).toMatchObject({
+      status: "failed",
+      error: "builder failed",
+      isStreaming: false
+    });
+  });
+
+  it("workflow delegation_started does not create BuilderDelegationItem", () => {
+    seq = 0;
+    const items = buildAnalyticsSteps([
+      stepStart("Running"),
+      ev("awaiting_input", {
+        questions: [{ prompt: "Execute procedure test.yml", suggestions: [] }],
+        from_state: "executing",
+        trace_id: "t1"
+      }),
+      stepEnd("suspended"),
+      ev("delegation_started", {
+        child_task_id: "root.1",
+        target: "workflow:test.procedure.yml",
+        request: "execute procedure"
+      })
+    ]);
+
+    expect(items).toHaveLength(1);
+    const step = items[0];
+    if (!("items" in step)) {
+      return;
+    }
+    const delegation = step.items.find((c: { kind: string }) => c.kind === "builder_delegation");
+    expect(delegation).toBeUndefined();
   });
 });

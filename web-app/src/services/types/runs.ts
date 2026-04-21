@@ -48,7 +48,7 @@ export type StreamEventsPayload = {
   runIndex: number;
 };
 
-export type RunStatus = "pending" | "running" | "canceled" | "completed" | "failed";
+export type RunStatus = "pending" | "running" | "cancelled" | "completed" | "failed";
 
 export type RunInfo = {
   source_id: string;

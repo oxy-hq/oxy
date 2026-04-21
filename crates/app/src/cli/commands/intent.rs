@@ -91,6 +91,13 @@ pub enum IntentAction {
 pub async fn handle_intent_command(intent_args: IntentArgs) -> Result<(), OxyError> {
     sentry_config::add_operation_context("intent", None);
 
+    // `oxy intent` runs as a standalone CLI, not under `oxy serve --enterprise`,
+    // so the global `ObservabilityStore` isn't auto-initialized. Open the
+    // same backend the server would use (DuckDB by default, Postgres if
+    // `OXY_DATABASE_URL` is set) so `IntentClassifier::new` has a store to
+    // read/write. No-op if already initialized.
+    crate::observability_setup::ensure_global_store_initialized().await?;
+
     let mut config = IntentConfig::from_env();
 
     // Update min_cluster_size from CLI args if in Cluster action

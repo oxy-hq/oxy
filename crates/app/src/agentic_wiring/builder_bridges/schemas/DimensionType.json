@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Represents the data type of a dimension",
+  "enum": [
+    "string",
+    "number",
+    "date",
+    "datetime",
+    "boolean"
+  ],
+  "title": "DimensionType",
+  "type": "string"
+}

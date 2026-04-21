@@ -1,0 +1,42 @@
+[package]
+name = "agentic-pipeline"
+description = "High-level API for starting and driving agentic pipelines"
+version = "0.5.31"
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+
+[dependencies]
+agentic-analytics = { path = "../analytics" }
+agentic-builder = { path = "../builder" }
+agentic-connector = { path = "../connector", features = [
+    "duckdb",
+    "postgres",
+    "clickhouse",
+    "snowflake",
+    "bigquery",
+] }
+agentic-core = { path = "../core" }
+agentic-llm = { path = "../llm" }
+agentic-runtime = { path = "../runtime" }
+agentic-workflow = { path = "../workflow" }
+async-trait = "0.1"
+serde_yaml = "0.9"
+
+sea-orm = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { version = "0.7", features = ["rt"] }
+tracing = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+sea-orm-migration = { workspace = true }
+tempfile = { workspace = true }
+testcontainers = { version = "0.27", features = ["blocking", "reusable-containers"] }
+testcontainers-modules = { version = "0.15", features = ["postgres"] }
+airlayer = { git = "https://github.com/oxy-hq/airlayer.git", rev = "4b92e5f" }

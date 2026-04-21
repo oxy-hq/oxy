@@ -37,6 +37,7 @@ use crate::connector::{
 struct ChResponse {
     meta: Vec<ChMeta>,
     data: Vec<Vec<Value>>,
+    #[allow(dead_code)]
     #[serde(default)]
     rows: u64,
 }

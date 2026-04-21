@@ -3,10 +3,12 @@
 //! This crate provides both command-line interface and HTTP server functionality
 //! for Oxy, integrating domain crates (oxy-agent, oxy-auth, oxy-workflow, etc.)
 
+pub mod agentic_wiring;
 pub mod cli;
 pub mod emails;
 pub mod integrations;
 pub mod observability_boot;
+pub mod observability_setup;
 pub mod server;
 
 // Re-export commonly used items

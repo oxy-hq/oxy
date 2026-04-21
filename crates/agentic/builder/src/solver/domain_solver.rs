@@ -106,7 +106,12 @@ impl DomainSolver<BuilderDomain> for BuilderSolver {
 
     fn tools_for_state(state: &str) -> Vec<ToolDef> {
         match state {
-            "solving" => all_tools(),
+            // Return an empty set here; the actual tool list is built in
+            // solve_impl with access to `self.schema_provider`.
+            "solving" => {
+                let empty = crate::schema_provider::EmptySchemaProvider;
+                all_tools(&empty)
+            }
             _ => vec![],
         }
     }
@@ -122,11 +127,14 @@ impl DomainSolver<BuilderDomain> for BuilderSolver {
                 super::solver::dispatch_tool(
                     name,
                     &params,
-                    &self.workspace_root,
+                    &self.project_root,
                     &self.event_tx,
                     self.test_runner.clone(),
                     self.human_input.clone(),
-                    self.secrets_manager.as_ref(),
+                    self.db_provider.as_ref(),
+                    self.project_validator.as_ref(),
+                    self.schema_provider.as_ref(),
+                    self.semantic_compiler.as_ref(),
                 )
                 .await
             }

@@ -152,6 +152,7 @@ pub struct SourceTypeBreakdownData {
     pub agent: u64,
     pub workflow: u64,
     pub task: u64,
+    pub analytics: u64,
 }
 
 #[derive(Debug, Clone)]
