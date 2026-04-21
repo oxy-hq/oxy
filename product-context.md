@@ -38,7 +38,7 @@ Oxy supports three deployment modes:
   - **Database / SQL IDE** — Multi-tab SQL editor with schema browser, Cmd/Ctrl+Enter execution, database connection management, and Parquet-backed result tables with paging/sorting
   - **Settings** — Secrets panel (LLM API keys always visible, scans `key_var` and credential vars from config)
   - **Observability** — Version badge with build metadata (commit hash, timestamp)
-  - Supports open, edit, save (with unsaved-changes indicator), breadcrumb navigation, undo/redo, and Git workflow (branch protection, merge conflict resolution, branch-aware file operations).
+  - Supports open, edit, save (with unsaved-changes indicator), breadcrumb navigation, undo/redo, and Git workflow (branch protection, merge conflict resolution, branch-aware file operations). In local project mode, files can be saved directly on the main branch with deployment to a separate branch.
   - **Readonly mode** — `oxy serve --readonly` disables all file modifications via API (405 responses), reflected in UI.
 - **Agent Testing** (`/tests`) — Test dashboard for managing and executing agent test suites:
   - **Test files** (`*.agent.test.yml` / `*.aw.test.yml`) with LLM-as-judge correctness evaluation
@@ -64,9 +64,9 @@ Oxy supports three deployment modes:
 - **Thread** — A persisted conversation (question + agent responses). Created when the user first submits from the Home page; accessible from the sidebar or Threads list.
 - **Agent Message / Artifact** — Within a thread, agent responses contain free-text (`agent-response-text`) and structured artifacts (`agent-artifact`). The `execute_sql` artifact kind shows the SQL query the agent ran.
 - **Procedure (formerly Workflow/Automation)** — A multi-step automation defined in `.procedure.yml` (also accepts `.workflow.yml` and `.automation.yml` for backward compatibility). Steps are visualized as diagram nodes with colored status borders (emerald = success). Supports step replay (re-execute from a specific step forward). Task types include SQL execution, `looker_query`, and more. Triggered from the procedure page (Run button) or from chat (Workflow mode).
-- **Data App** — A YAML-configured dashboard (`.app.yml`) with `tasks` (SQL queries) and `display` (visualization blocks). Runs automatically on page load; results cached by default. Interactive controls (select, date picker, toggle) inject values via Jinja and re-trigger dependent tasks on change. App builder agents can generate these from natural language.
+- **Data App** — A YAML-configured dashboard (`.app.yml`) with `tasks` (SQL queries) and `display` (visualization blocks). Runs automatically on page load; results cached by default. Interactive controls (select, date picker, toggle) inject values via Jinja and re-trigger dependent tasks on change. App builder agents can generate these from natural language. AI tools (`EditDataApp`, `ReadDataApp`) enable context-aware editing of existing app configurations during agent execution.
 - **Looker Integration** — Full Looker platform integration: `oxy looker sync` fetches explore metadata, `looker_query` task type for procedures, `AutoLookerQuery` FSM trigger for agentic workflows, OAuth2 client with token management.
-- **Semantic Layer** — Powered by [airlayer](https://github.com/oxy-hq/airlayer), an in-process Rust semantic engine. Schema defined in `.view.yml` / `.topic.yml` files. `airlayer` compiles these definitions into dialect-specific SQL with automatic join resolution, fan-out protection via CTEs, and multi-dialect support (Postgres, DuckDB, BigQuery, Snowflake, etc.). Exposed to the `semantic` agent. Managed via the IDE's Objects → Semantic Layer group.
+- **Semantic Layer** — Powered by [airlayer](https://github.com/oxy-hq/airlayer), an in-process Rust semantic engine. Schema defined in `.view.yml` / `.topic.yml` files. `airlayer` compiles these definitions into dialect-specific SQL with automatic join resolution, fan-out protection via CTEs, and multi-dialect support (Postgres, DuckDB, BigQuery, Snowflake, etc.). Time dimensions support configurable granularity (day, week, month, quarter, year) and relative time filters (e.g., "last 30 days", "this quarter"). Exposed to the `semantic` agent. Managed via the IDE's Objects → Semantic Layer group.
 - **Developer Portal (IDE)** — Monaco editor + file browser + SQL IDE + Git workflow. Sidebar tabs: Files, Objects, Database, Settings, Observability. Save button appears only when there are unsaved changes. Supports readonly mode (`--readonly` flag). Git flow includes auto-init, protected main branch (edits auto-redirect to new branch), merge conflict resolution, and branch-aware file CRUD.
 - **SQL IDE** — Multi-tab Monaco SQL editor within the Dev Portal. Schema browser, Cmd/Ctrl+Enter execution, Parquet-backed result tables with sorting/paging. Database connections managed centrally with manual refresh.
 - **Authentication** — Magic link (passwordless) via AWS SES. Endpoints: `/auth/magic-link/request` and `/auth/magic-link/verify`. Domain restrictions configurable. Local dev mode writes HTML to temp file. Legacy password auth removed.
@@ -98,6 +98,8 @@ Oxy supports three deployment modes:
 - **Test dashboard progress bar** — Stale state issue where "Run All" progress bar doesn't appear until page remount.
 - **App result caching** — Cached results served by default; stale cache can show outdated data if underlying SQL or schema changed. Use `?refresh` to force re-execution.
 - **Secrets panel variable discovery** — Panel scans `key_var` fields and database credential vars from config. Missing variables if config format changes or new variable patterns introduced.
+- **SQL IDE error display** — Duplicate error notifications can appear in the SQL editor; errors may persist in the results panel if the dismiss action is unavailable or the editor state isn't reset between queries.
+- **Environment variable startup validation** — Missing required environment variables cause a startup failure with an error message. Misconfigured deployments (e.g., missing GitHub App credentials in multi-workspace mode) may silently fall back to empty strings if validation is bypassed.
 
 ---
 
@@ -113,6 +115,20 @@ Oxy supports three deployment modes:
 | `GET` | `/analytics/app-runs/:id/events` | SSE stream of build steps and generated app |
 | `POST` | `/analytics/app-runs/:id/answer` | Resume a suspended build with a human answer |
 | `POST` | `/analytics/app-runs/:id/cancel` | Cancel a running or suspended build |
+
+## Key API Endpoints (Agent Testing)
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/api/projects/:id/tests` | List all test files with case counts |
+| `GET` | `/api/projects/:id/tests/:pathb64` | Resolve a specific test file config |
+| `POST` | `/api/projects/:id/tests/:pathb64/run` | Run a test file; stream events via SSE and persist results |
+| `GET` | `/api/projects/:id/test-runs` | List test runs for a file |
+| `GET` | `/api/projects/:id/test-runs/:runId` | Detailed case results for a run |
+| `POST` | `/api/projects/:id/test-runs/:runId/cases/:caseIndex/human-verdict` | Set or update a human verdict on a test case |
+| `GET` | `/api/projects/:id/test-project-runs` | List project-level runs |
+| `POST` | `/api/projects/:id/test-project-runs` | Run all test files as a project run; stream events via SSE |
+| `DELETE` | `/api/projects/:id/test-project-runs/:runId` | Delete a project run |
 
 ## Key File Extensions
 
