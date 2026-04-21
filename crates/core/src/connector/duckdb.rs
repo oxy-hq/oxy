@@ -1,3 +1,6 @@
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
 use arrow::array::RecordBatch;
 use arrow::datatypes::SchemaRef;
 use duckdb::Connection;
@@ -8,6 +11,7 @@ use crate::adapters::secrets::SecretsManager;
 use crate::config::model::DuckDBOptions;
 use crate::connector::constants::{
     CREATE_CONN, CREATE_TEMP_TABLE, EXECUTE_QUERY, PREPARE_DUCKDB_STMT, SET_FILE_SEARCH_PATH,
+    SET_TEMP_DIRECTORY,
 };
 use crate::connector::utils::connector_internal_error;
 use oxy_shared::errors::OxyError;
@@ -26,74 +30,55 @@ impl DuckDB {
         }
     }
 
-    fn create_temp_table_from_file(
-        &self,
-        conn: &Connection,
-        file_search_path: &str,
-        file_path: &str,
-    ) -> Result<(), OxyError> {
-        // Extract file name to use as table name by:
-        // Example: file_search_path = "data/", file_path = "data//sales/january.csv" -> table_name = "sales__january.csv"
-        let normalized_file_path = std::path::Path::new(file_path)
-            .components()
-            .collect::<std::path::PathBuf>();
-        let relative_path = normalized_file_path
-            .strip_prefix(file_search_path)
-            .map_err(|err| connector_internal_error(CREATE_TEMP_TABLE, &err))?
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("unnamed")
-            .to_string();
-
-        let create_stmt = format!(
-            "CREATE TEMPORARY TABLE '{}' AS FROM '{}'",
-            slugify!(&relative_path, separator = "_"),
-            file_path
-        );
-        tracing::info!(
-            "Creating temporary table from file: {} with statement: {}",
-            file_path,
-            create_stmt
-        );
-        conn.execute(&create_stmt, [])
-            .map_err(|err| connector_internal_error(CREATE_TEMP_TABLE, &err))?;
-        Ok(())
-    }
-
     pub async fn init_connection(&self) -> Result<Connection, OxyError> {
         let conn = match &self.options {
             DuckDBOptions::Local { file_search_path } => {
+                let canonical_dir = canonicalize_local_dir(file_search_path)?;
+                let files = collect_supported_files(&canonical_dir)?;
+                if files.is_empty() {
+                    return Err(OxyError::DBError(format!(
+                        "DuckDB directory '{}' contains no .csv or .parquet files. Add at least one supported file or point to a different directory.",
+                        canonical_dir.display()
+                    )));
+                }
+
                 let conn = Connection::open_in_memory()
                     .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
-                let dir_set_stmt = format!("SET file_search_path = '{}';", &file_search_path);
+
+                let canonical_str = canonical_dir.display().to_string();
+                let dir_set_stmt = format!(
+                    "SET file_search_path = '{}';",
+                    escape_sql_string(&canonical_str)
+                );
                 conn.execute(&dir_set_stmt, [])
                     .map_err(|err| connector_internal_error(SET_FILE_SEARCH_PATH, &err))?;
-                let temp_set_stmt = format!("SET temp_directory = '{}/tmp';", &file_search_path);
+                let temp_set_stmt = format!(
+                    "SET temp_directory = '{}';",
+                    escape_sql_string(&format!("{canonical_str}/tmp"))
+                );
                 conn.execute(&temp_set_stmt, [])
-                    .map_err(|err| connector_internal_error(SET_FILE_SEARCH_PATH, &err))?;
-                let file_paths = {
-                    let mut stmt = conn
-                        .prepare("SELECT * FROM glob('*')")
-                        .map_err(|e| connector_internal_error(CREATE_CONN, &e))?;
-                    let rows = stmt
-                        .query_map([], |row| row.get(0))
-                        .map_err(|e| connector_internal_error(CREATE_CONN, &e))?;
+                    .map_err(|err| connector_internal_error(SET_TEMP_DIRECTORY, &err))?;
 
-                    let mut file_paths: Vec<String> = vec![];
-                    for row in rows {
-                        let file_path: String =
-                            row.map_err(|e| connector_internal_error(CREATE_CONN, &e))?;
-                        file_paths.push(file_path);
-                    }
-                    file_paths
-                };
-
-                for file_path in file_paths {
-                    self.create_temp_table_from_file(&conn, file_search_path, &file_path)?;
+                for (stem, path) in files {
+                    let table_name = slugify!(&stem, separator = "_");
+                    let path_display = path.display().to_string();
+                    let create_stmt = format!(
+                        "CREATE TEMPORARY TABLE {} AS FROM '{}'",
+                        quote_sql_identifier(&table_name),
+                        escape_sql_string(&path_display)
+                    );
+                    tracing::info!(
+                        "Creating temporary table '{}' from file '{}'",
+                        table_name,
+                        path_display
+                    );
+                    conn.execute(&create_stmt, [])
+                        .map_err(|err| connector_internal_error(CREATE_TEMP_TABLE, &err))?;
                 }
+
                 tracing::debug!(
                     "Initialized DuckDB with file search path '{}'",
-                    file_search_path,
+                    canonical_str,
                 );
                 conn
             }
@@ -127,6 +112,92 @@ impl DuckDB {
     }
 }
 
+/// Escape single quotes for inclusion inside a DuckDB single-quoted string literal.
+fn escape_sql_string(s: &str) -> String {
+    s.replace('\'', "''")
+}
+
+/// Wrap `name` in double quotes, escaping any embedded double quotes per SQL rules.
+fn quote_sql_identifier(name: &str) -> String {
+    format!("\"{}\"", name.replace('"', "\"\""))
+}
+
+/// Canonicalize `file_search_path` and verify it points to an existing directory.
+fn canonicalize_local_dir(file_search_path: &str) -> Result<PathBuf, OxyError> {
+    let path = Path::new(file_search_path);
+    let canonical = path.canonicalize().map_err(|e| {
+        OxyError::DBError(format!(
+            "DuckDB path '{file_search_path}' does not exist or is not accessible: {e}"
+        ))
+    })?;
+    if !canonical.is_dir() {
+        return Err(OxyError::DBError(format!(
+            "DuckDB path '{}' must be a directory containing .csv or .parquet files.",
+            canonical.display()
+        )));
+    }
+    Ok(canonical)
+}
+
+/// Scan `dir` (non-recursively) for `.csv` and `.parquet` files and return
+/// `(file_stem, path)` pairs sorted by stem for deterministic output.
+///
+/// When two files share a stem (e.g. `orders.csv` and `orders.parquet`), only
+/// the `.parquet` file is returned.
+fn collect_supported_files(dir: &Path) -> Result<Vec<(String, PathBuf)>, OxyError> {
+    let entries = std::fs::read_dir(dir).map_err(|e| {
+        OxyError::DBError(format!(
+            "Cannot read DuckDB directory '{}': {e}",
+            dir.display()
+        ))
+    })?;
+
+    // BTreeMap gives deterministic iteration order by stem name.
+    let mut candidates: BTreeMap<String, (PathBuf, bool)> = BTreeMap::new();
+    for entry_result in entries {
+        let entry = match entry_result {
+            Ok(e) => e,
+            Err(err) => {
+                tracing::warn!(
+                    "Skipping unreadable entry in DuckDB directory '{}': {err}",
+                    dir.display()
+                );
+                continue;
+            }
+        };
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_lowercase())
+            .unwrap_or_default();
+        if ext != "csv" && ext != "parquet" {
+            continue;
+        }
+        let stem = match path.file_stem().and_then(|s| s.to_str()) {
+            Some(s) if !s.is_empty() => s.to_string(),
+            _ => continue,
+        };
+        let is_parquet = ext == "parquet";
+        candidates
+            .entry(stem)
+            .and_modify(|e| {
+                if is_parquet {
+                    *e = (path.clone(), true);
+                }
+            })
+            .or_insert((path, is_parquet));
+    }
+
+    Ok(candidates
+        .into_iter()
+        .map(|(stem, (path, _))| (stem, path))
+        .collect())
+}
+
 impl Engine for DuckDB {
     async fn run_query_with_limit(
         &self,
@@ -146,5 +217,133 @@ impl Engine for DuckDB {
         let arrow_chunks = arrow_stream.collect();
         tracing::debug!("Query results: {:?}", arrow_chunks);
         Ok((arrow_chunks, schema))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn write_file(dir: &Path, name: &str, contents: &str) -> PathBuf {
+        let path = dir.join(name);
+        fs::write(&path, contents).unwrap();
+        path
+    }
+
+    #[test]
+    fn escape_sql_string_doubles_single_quotes() {
+        assert_eq!(escape_sql_string("no quotes"), "no quotes");
+        assert_eq!(escape_sql_string("O'Brien"), "O''Brien");
+        assert_eq!(escape_sql_string("'a'b'"), "''a''b''");
+    }
+
+    #[test]
+    fn quote_sql_identifier_wraps_and_escapes_double_quotes() {
+        assert_eq!(quote_sql_identifier("orders"), "\"orders\"");
+        assert_eq!(quote_sql_identifier("weird\"name"), "\"weird\"\"name\"");
+        assert_eq!(quote_sql_identifier(""), "\"\"");
+    }
+
+    #[test]
+    fn canonicalize_local_dir_accepts_valid_directory() {
+        let tmp = TempDir::new().unwrap();
+        let canonical = canonicalize_local_dir(tmp.path().to_str().unwrap()).unwrap();
+        assert_eq!(canonical, tmp.path().canonicalize().unwrap());
+    }
+
+    #[test]
+    fn canonicalize_local_dir_rejects_nonexistent_path() {
+        let tmp = TempDir::new().unwrap();
+        let missing = tmp.path().join("does_not_exist");
+        let err = canonicalize_local_dir(missing.to_str().unwrap()).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("does not exist") || msg.contains("not accessible"),
+            "unexpected error: {msg}"
+        );
+    }
+
+    #[test]
+    fn canonicalize_local_dir_rejects_file() {
+        let tmp = TempDir::new().unwrap();
+        let file = write_file(tmp.path(), "orders.csv", "a,b\n1,2\n");
+        let err = canonicalize_local_dir(file.to_str().unwrap()).unwrap_err();
+        assert!(
+            err.to_string().contains("must be a directory"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn collect_supported_files_returns_csv_and_parquet() {
+        let tmp = TempDir::new().unwrap();
+        write_file(tmp.path(), "orders.csv", "a,b\n1,2\n");
+        write_file(tmp.path(), "customers.parquet", "");
+        write_file(tmp.path(), "readme.md", "ignore me");
+        write_file(tmp.path(), ".DS_Store", "");
+
+        let files = collect_supported_files(tmp.path()).unwrap();
+        let stems: Vec<&str> = files.iter().map(|(s, _)| s.as_str()).collect();
+        assert_eq!(stems, vec!["customers", "orders"]);
+    }
+
+    #[test]
+    fn collect_supported_files_prefers_parquet_on_collision() {
+        let tmp = TempDir::new().unwrap();
+        write_file(tmp.path(), "orders.csv", "a,b\n1,2\n");
+        let parquet = write_file(tmp.path(), "orders.parquet", "");
+
+        let files = collect_supported_files(tmp.path()).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].0, "orders");
+        assert_eq!(files[0].1, parquet);
+    }
+
+    #[test]
+    fn collect_supported_files_is_case_insensitive_on_extension() {
+        let tmp = TempDir::new().unwrap();
+        write_file(tmp.path(), "orders.CSV", "a,b\n1,2\n");
+        write_file(tmp.path(), "customers.PARQUET", "");
+
+        let files = collect_supported_files(tmp.path()).unwrap();
+        let stems: Vec<&str> = files.iter().map(|(s, _)| s.as_str()).collect();
+        assert_eq!(stems, vec!["customers", "orders"]);
+    }
+
+    #[test]
+    fn collect_supported_files_ignores_subdirectories() {
+        let tmp = TempDir::new().unwrap();
+        let subdir = tmp.path().join("nested");
+        fs::create_dir(&subdir).unwrap();
+        write_file(&subdir, "deep.csv", "a,b\n1,2\n");
+        write_file(tmp.path(), "top.csv", "a,b\n1,2\n");
+
+        let files = collect_supported_files(tmp.path()).unwrap();
+        let stems: Vec<&str> = files.iter().map(|(s, _)| s.as_str()).collect();
+        assert_eq!(stems, vec!["top"]);
+    }
+
+    #[test]
+    fn collect_supported_files_returns_empty_for_dir_without_matches() {
+        let tmp = TempDir::new().unwrap();
+        write_file(tmp.path(), "notes.txt", "hi");
+        write_file(tmp.path(), "data.json", "{}");
+
+        let files = collect_supported_files(tmp.path()).unwrap();
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn collect_supported_files_sorted_deterministically() {
+        let tmp = TempDir::new().unwrap();
+        write_file(tmp.path(), "zeta.csv", "");
+        write_file(tmp.path(), "alpha.csv", "");
+        write_file(tmp.path(), "mike.csv", "");
+
+        let files = collect_supported_files(tmp.path()).unwrap();
+        let stems: Vec<&str> = files.iter().map(|(s, _)| s.as_str()).collect();
+        assert_eq!(stems, vec!["alpha", "mike", "zeta"]);
     }
 }
