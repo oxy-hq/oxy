@@ -32,7 +32,10 @@ updates:
         update-types:
           - "major"
   - package-ecosystem: "npm"
-    directory: "/"
+    # sdk/typescript is intentionally excluded — it's released independently.
+    directories:
+      - "/"
+      - "/web-app"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
