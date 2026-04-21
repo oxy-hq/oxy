@@ -64,12 +64,12 @@
     "@duckdb/duckdb-wasm": "^1.32.0",
     "@types/node": "^25.6.0",
     "@types/react": "^19.2.14",
-    "@typescript-eslint/eslint-plugin": "^8.58.2",
-    "@typescript-eslint/parser": "^8.58.2",
-    "eslint": "^10.1.0",
+    "@typescript-eslint/eslint-plugin": "^8.59.0",
+    "@typescript-eslint/parser": "^8.59.0",
+    "eslint": "^10.2.1",
     "react": "^19.2.5",
-    "tsdown": "^0.21.8",
-    "typescript": "^6.0.2",
+    "tsdown": "^0.21.9",
+    "typescript": "^6.0.3",
     "vitest": "^4.1.4"
   },
   "engines": {
