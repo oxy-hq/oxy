@@ -5,6 +5,7 @@ import {
   TooltipProvider,
   TooltipTrigger
 } from "@/components/ui/shadcn/tooltip";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface CommitShortInfoProps {
   commit?: string;
@@ -12,6 +13,9 @@ interface CommitShortInfoProps {
 }
 
 export const CommitShortInfo = ({ commit, revision }: CommitShortInfoProps) => {
+  const { isLocalMode } = useAuth();
+  if (isLocalMode) return null;
+
   let sha: string | undefined;
   let message: string | undefined;
 

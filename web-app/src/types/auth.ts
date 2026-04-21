@@ -1,13 +1,23 @@
 export interface GoogleAuthRequest {
   code: string;
+  /** Opaque JWT issued by `POST /auth/oauth/state`. Required; backend rejects with 422 if absent and 401 if invalid. */
+  state: string;
 }
 
 export interface OktaAuthRequest {
   code: string;
+  /** See `GoogleAuthRequest.state`. */
+  state: string;
 }
 
 export interface GitHubAuthRequest {
   code: string;
+  /** See `GoogleAuthRequest.state`. */
+  state: string;
+}
+
+export interface OAuthStateResponse {
+  state: string;
 }
 
 export interface MagicLinkRequest {

@@ -29,14 +29,15 @@ export const useGitHubAuth = () => {
   });
 };
 
-export const initiateGitHubAuth = (clientId: string) => {
+export const initiateGitHubAuth = async (clientId: string) => {
+  // See useGoogleAuth.initiateGoogleAuth for CSRF design notes.
+  const { state } = await AuthService.issueOAuthState();
+  sessionStorage.setItem(GITHUB_STATE_KEY, state);
+
   const url = new URL("https://github.com/login/oauth/authorize");
   url.searchParams.set("client_id", clientId);
   url.searchParams.set("redirect_uri", GITHUB_AUTH_REDIRECT_URI);
   url.searchParams.set("scope", "read:user user:email");
-
-  const state = crypto.randomUUID ? crypto.randomUUID() : generateSecureRandomState();
-  sessionStorage.setItem(GITHUB_STATE_KEY, state);
   url.searchParams.set("state", state);
 
   window.location.href = url.toString();
@@ -47,10 +48,4 @@ export const validateGitHubAuthState = (receivedState: string | null): boolean =
   const storedState = sessionStorage.getItem(GITHUB_STATE_KEY);
   if (!storedState) return false;
   return receivedState === storedState;
-};
-
-const generateSecureRandomState = (): string => {
-  const array = new Uint8Array(32);
-  crypto.getRandomValues(array);
-  return Array.from(array, (byte) => byte.toString(16).padStart(2, "0")).join("");
 };

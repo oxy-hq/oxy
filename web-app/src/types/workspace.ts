@@ -28,6 +28,9 @@ export interface Workspace {
   capabilities: GitCapabilities;
   default_branch: string;
   protected_branches: string[];
+
+  /** True when this workspace is in local mode and has no config.yml yet. */
+  requires_local_setup?: boolean;
 }
 
 export interface WorkspacesResponse {

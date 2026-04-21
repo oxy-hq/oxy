@@ -36,11 +36,11 @@ export default function GitHubCallback() {
 
         // Auth flow — GitHub login (sign in with GitHub button).
         if (validateGitHubAuthState(state ?? null)) {
-          if (!code) {
+          if (!code || !state) {
             navigate(`${ROUTES.AUTH.LOGIN}?error=no_code`);
             return;
           }
-          authMutation.mutate({ code });
+          authMutation.mutate({ code, state });
           return;
         }
 

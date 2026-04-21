@@ -32,9 +32,10 @@ const GoogleCallback = () => {
       return;
     }
 
-    // Proceed with authentication if we have a valid code
-    if (code) {
-      googleAuthMutation.mutate({ code });
+    // Proceed with authentication if we have a valid code. validateGoogleState
+    // already confirmed `state` is non-null above (early returns otherwise).
+    if (code && state) {
+      googleAuthMutation.mutate({ code, state });
     } else {
       navigate(`${ROUTES.AUTH.LOGIN}?error=no_code`);
     }

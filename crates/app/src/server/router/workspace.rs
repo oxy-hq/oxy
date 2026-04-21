@@ -14,9 +14,9 @@ use agentic_http::{AgenticState, router as agentic_router};
 
 use crate::api::{
     agent, api_keys, app, artifacts, chart, data, data_repo, database, execution_analytics,
-    exported_chart, file, integration, message, metrics, onboarding, result_files, run, semantic,
-    task, test_file, test_project_run, test_run, thread, traces, workflow, workspace_members,
-    workspaces,
+    exported_chart, file, integration, local_setup, message, metrics, onboarding, result_files,
+    run, semantic, task, test_file, test_project_run, test_run, thread, traces, workflow,
+    workspace_members, workspaces,
 };
 
 use super::AppState;
@@ -25,41 +25,19 @@ use super::secrets::build_secret_routes;
 pub(super) fn build_workspace_routes(
     app_state: AppState,
     agentic_state: Arc<AgenticState>,
+    include_git_features: bool,
+    include_local_setup: bool,
 ) -> Router<AppState> {
-    Router::new()
+    let mut router = Router::new()
         .route("/details", get(workspaces::get_workspace))
         .route("/status", get(workspaces::get_workspace_status))
-        .route("/revision-info", get(workspaces::get_revision_info))
-        .route("/branches", get(workspaces::get_workspace_branches))
-        .route("/branches/{branch_name}", delete(workspaces::delete_branch))
-        .route("/switch-branch", post(workspaces::switch_workspace_branch))
-        .route("/pull-changes", post(workspaces::pull_changes))
-        .route("/push-changes", post(workspaces::push_changes))
-        .route("/abort-rebase", post(workspaces::abort_rebase))
-        .route("/continue-rebase", post(workspaces::continue_rebase))
-        .route(
-            "/resolve-conflict-file",
-            post(workspaces::resolve_conflict_file),
-        )
-        .route(
-            "/unresolve-conflict-file",
-            post(workspaces::unresolve_conflict_file),
-        )
-        .route(
-            "/resolve-conflict-with-content",
-            post(workspaces::resolve_conflict_with_content),
-        )
-        .route("/force-push", post(workspaces::force_push_branch))
-        .route("/recent-commits", get(workspaces::get_recent_commits))
-        .route("/reset-to-commit", post(workspaces::reset_to_commit))
         .nest("/workflows", build_workflow_routes())
         .nest("/automations", build_automation_routes())
         .nest("/threads", build_thread_routes())
         .nest("/agents", build_agent_routes())
         .nest("/api-keys", build_api_key_routes())
-        .nest("/files", build_file_routes())
+        .nest("/files", build_file_routes(include_git_features))
         .nest("/databases", build_database_routes())
-        .nest("/repositories", build_data_repo_routes())
         .nest("/integrations", build_integration_routes())
         .nest("/secrets", build_secret_routes(app_state))
         .route("/members", get(workspace_members::list_workspace_members))
@@ -122,7 +100,51 @@ pub(super) fn build_workspace_routes(
             "/results/files/{file_id}",
             delete(result_files::delete_result_file),
         )
-        .nest("/analytics", agentic_router(agentic_state))
+        .nest("/analytics", agentic_router(agentic_state));
+
+    if include_git_features {
+        router = router
+            .merge(build_git_routes())
+            .nest("/repositories", build_data_repo_routes());
+    }
+
+    if include_local_setup {
+        router = router
+            .route("/setup/empty", post(local_setup::setup_empty))
+            .route("/setup/demo", post(local_setup::setup_demo));
+    }
+
+    router
+}
+
+/// Git-backed workspace routes: local and remote git operations on the
+/// workspace itself. Mounted only when `include_git_features` is true —
+/// local mode (`ServeMode::Local`) omits the entire set.
+fn build_git_routes() -> Router<AppState> {
+    Router::new()
+        .route("/branches", get(workspaces::get_workspace_branches))
+        .route("/branches/{branch_name}", delete(workspaces::delete_branch))
+        .route("/switch-branch", post(workspaces::switch_workspace_branch))
+        .route("/pull-changes", post(workspaces::pull_changes))
+        .route("/push-changes", post(workspaces::push_changes))
+        .route("/abort-rebase", post(workspaces::abort_rebase))
+        .route("/continue-rebase", post(workspaces::continue_rebase))
+        .route(
+            "/resolve-conflict-file",
+            post(workspaces::resolve_conflict_file),
+        )
+        .route(
+            "/unresolve-conflict-file",
+            post(workspaces::unresolve_conflict_file),
+        )
+        .route(
+            "/resolve-conflict-with-content",
+            post(workspaces::resolve_conflict_with_content),
+        )
+        .route("/force-push", post(workspaces::force_push_branch))
+        .route("/recent-commits", get(workspaces::get_recent_commits))
+        .route("/revision-info", get(workspaces::get_revision_info))
+        .route("/reset-to-commit", post(workspaces::reset_to_commit))
 }
 
 fn build_workflow_routes() -> Router<AppState> {
@@ -183,20 +205,26 @@ fn build_api_key_routes() -> Router<AppState> {
         .route("/{id}", delete(api_keys::delete_api_key))
 }
 
-fn build_file_routes() -> Router<AppState> {
-    Router::new()
+fn build_file_routes(include_git_features: bool) -> Router<AppState> {
+    let mut router = Router::new()
         .route("/", get(file::get_file_tree))
-        .route("/diff-summary", get(file::get_diff_summary))
         .route("/{pathb64}", get(file::get_file))
-        .route("/{pathb64}/from-git", get(file::get_file_from_git))
-        .route("/{pathb64}/revert", post(file::revert_file))
         .route("/{pathb64}", post(file::save_file))
         .route("/{pathb64}/delete-file", delete(file::delete_file))
         .route("/{pathb64}/delete-folder", delete(file::delete_folder))
         .route("/{pathb64}/rename-file", put(file::rename_file))
         .route("/{pathb64}/rename-folder", put(file::rename_folder))
         .route("/{pathb64}/new-file", post(file::create_file))
-        .route("/{pathb64}/new-folder", post(file::create_folder))
+        .route("/{pathb64}/new-folder", post(file::create_folder));
+
+    if include_git_features {
+        router = router
+            .route("/diff-summary", get(file::get_diff_summary))
+            .route("/{pathb64}/from-git", get(file::get_file_from_git))
+            .route("/{pathb64}/revert", post(file::revert_file));
+    }
+
+    router
 }
 
 fn build_database_routes() -> Router<AppState> {
@@ -275,4 +303,132 @@ fn build_app_routes() -> Router<AppState> {
         .route("/file/{pathb64}", get(app::get_data))
         .route("/source/{pathb64}", get(app::get_source_file))
         .route("/save-from-run/{run_id}", post(app::save_app_builder_run))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt;
+
+    use crate::server::serve_mode::ServeMode;
+
+    fn test_app_state() -> AppState {
+        AppState {
+            enterprise: false,
+            internal: false,
+            mode: ServeMode::Local,
+            observability: None,
+            startup_cwd: std::path::PathBuf::new(),
+        }
+    }
+
+    fn test_agentic_state() -> Arc<AgenticState> {
+        Arc::new(AgenticState::new())
+    }
+
+    async fn status_for(router: axum::Router, method: &str, path: &str) -> StatusCode {
+        let req = Request::builder()
+            .method(method)
+            .uri(path)
+            .body(Body::empty())
+            .unwrap();
+        router.oneshot(req).await.unwrap().status()
+    }
+
+    /// Every git-shaped route must 404 when `include_git_features: false`.
+    /// This is the invariant that guarantees local mode cannot reach a
+    /// git handler regardless of how the caller is wired.
+    #[tokio::test]
+    async fn git_routes_absent_when_flag_disabled() {
+        let state = test_app_state();
+        let router = build_workspace_routes(state.clone(), test_agentic_state(), false, false)
+            .with_state(state);
+
+        let cases: &[(&str, &str)] = &[
+            ("GET", "/branches"),
+            ("DELETE", "/branches/foo"),
+            ("POST", "/switch-branch"),
+            ("POST", "/pull-changes"),
+            ("POST", "/push-changes"),
+            ("POST", "/force-push"),
+            ("POST", "/abort-rebase"),
+            ("POST", "/continue-rebase"),
+            ("POST", "/resolve-conflict-file"),
+            ("POST", "/unresolve-conflict-file"),
+            ("POST", "/resolve-conflict-with-content"),
+            ("GET", "/recent-commits"),
+            ("GET", "/revision-info"),
+            ("POST", "/reset-to-commit"),
+            ("GET", "/repositories"),
+            ("GET", "/files/Zm9vLnltbA==/from-git"),
+            ("POST", "/files/Zm9vLnltbA==/revert"),
+        ];
+
+        for (method, path) in cases {
+            let router = router.clone();
+            let status = status_for(router, method, path).await;
+            assert_eq!(
+                status,
+                StatusCode::NOT_FOUND,
+                "{method} {path} must 404 when git is disabled (got {status})"
+            );
+        }
+    }
+
+    /// Sanity check: when the flag is on, the same routes are mounted.
+    /// We only assert `!= 404` — the actual status depends on handler
+    /// behavior under a stripped harness, which is out of scope.
+    #[tokio::test]
+    async fn git_routes_present_when_flag_enabled() {
+        let state = test_app_state();
+        let router = build_workspace_routes(state.clone(), test_agentic_state(), true, false)
+            .with_state(state);
+
+        let status = status_for(router, "GET", "/branches").await;
+        assert_ne!(
+            status,
+            StatusCode::NOT_FOUND,
+            "/branches must be mounted when git is enabled"
+        );
+    }
+
+    /// Setup endpoints are mounted when `include_local_setup: true` (local mode).
+    #[tokio::test]
+    async fn setup_routes_present_when_include_local_setup_true() {
+        let state = test_app_state();
+        let router = build_workspace_routes(state.clone(), test_agentic_state(), false, true)
+            .with_state(state);
+
+        for path in ["/setup/empty", "/setup/demo"] {
+            let status = status_for(router.clone(), "POST", path).await;
+            assert_ne!(
+                status,
+                StatusCode::NOT_FOUND,
+                "{} must be mounted when include_local_setup=true (got {})",
+                path,
+                status
+            );
+        }
+    }
+
+    /// Setup endpoints are absent when `include_local_setup: false` (cloud mode).
+    #[tokio::test]
+    async fn setup_routes_absent_when_include_local_setup_false() {
+        let state = test_app_state();
+        let router = build_workspace_routes(state.clone(), test_agentic_state(), true, false)
+            .with_state(state);
+
+        for path in ["/setup/empty", "/setup/demo"] {
+            let status = status_for(router.clone(), "POST", path).await;
+            assert_eq!(
+                status,
+                StatusCode::NOT_FOUND,
+                "{} must 404 when include_local_setup=false (got {})",
+                path,
+                status
+            );
+        }
+    }
 }

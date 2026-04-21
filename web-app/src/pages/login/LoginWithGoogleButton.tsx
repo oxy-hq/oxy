@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 import { Button } from "@/components/ui/shadcn/button";
 import { initiateGoogleAuth } from "@/hooks/auth/useGoogleAuth";
 
@@ -7,8 +8,13 @@ interface Props {
 }
 
 const LoginWithGoogleButton = ({ disabled, clientId }: Props) => {
-  const handleGoogleAuth = () => {
-    initiateGoogleAuth(clientId);
+  const handleGoogleAuth = async () => {
+    try {
+      await initiateGoogleAuth(clientId);
+    } catch (err) {
+      console.error("Failed to start Google login:", err);
+      toast.error("Couldn't start Google login. Please try again.");
+    }
   };
 
   return (

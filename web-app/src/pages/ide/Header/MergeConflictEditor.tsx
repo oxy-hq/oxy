@@ -11,6 +11,7 @@ import {
   ResizablePanelGroup
 } from "@/components/ui/shadcn/resizable";
 import { Spinner } from "@/components/ui/shadcn/spinner";
+import { useAuth } from "@/contexts/AuthContext";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import { FileService } from "@/services/api";
@@ -257,7 +258,11 @@ function makeSpacerDom(): HTMLElement {
 
 function clearZones(ed: editor.IStandaloneCodeEditor, recs: ZoneRec[]) {
   if (!recs.length) return;
-  ed.changeViewZones((a) => recs.forEach((z) => a.removeZone(z.id)));
+  ed.changeViewZones((a) => {
+    for (const z of recs) {
+      a.removeZone(z.id);
+    }
+  });
 }
 
 // Zones only reserve 22px of vertical space — actual buttons are React overlays.
@@ -297,6 +302,7 @@ interface MergeConflictEditorProps {
 }
 
 export function MergeConflictEditor({ file, onResolved }: MergeConflictEditorProps) {
+  const { isLocalMode } = useAuth();
   const { project, branchName } = useCurrentProjectBranch();
   const pathb64 = encodeBase64(file.path);
   const language = getLanguageFromFileName(file.path);
@@ -544,6 +550,8 @@ export function MergeConflictEditor({ file, onResolved }: MergeConflictEditorPro
       setIsSaving(false);
     }
   };
+
+  if (isLocalMode) return null;
 
   if (isLoading) {
     return (

@@ -71,6 +71,7 @@ import OrgLayout from "./pages/OrgLayout";
 import OrgListPage from "./pages/OrgListPage";
 import OrgSettingsPage from "./pages/org-settings";
 import WorkspacesPage from "./pages/workspaces";
+import { LocalWorkspaceSetupDialog } from "./pages/workspaces/components/LocalWorkspaceSetupDialog";
 import useBuilderDialog from "./stores/useBuilderDialog";
 import useCurrentOrg from "./stores/useCurrentOrg";
 import useCurrentWorkspace from "./stores/useCurrentWorkspace";
@@ -148,6 +149,16 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
         <Spinner />
       </div>
     );
+  }
+
+  // When a local-mode server has no config.yml, render a blocking setup
+  // dialog instead of the main shell. Short-circuits before the sidebar /
+  // IDE / routes mount, so WorkspaceManager-dependent endpoints are never
+  // called (they would 503). `WorkspaceStatus` is not mounted in this path
+  // either — it would surface config errors as a banner, which is the
+  // wrong UX for the first-run case.
+  if (isLocalMode && data?.requires_local_setup) {
+    return <LocalWorkspaceSetupDialog />;
   }
 
   if (isError || !workspace) {

@@ -33,12 +33,14 @@ pub async fn api_router(
     mode: ServeMode,
     enterprise: bool,
     observability: Option<std::sync::Arc<dyn oxy_observability::ObservabilityStore>>,
+    startup_cwd: std::path::PathBuf,
 ) -> Result<Router, OxyError> {
     let app_state = AppState {
         enterprise,
         internal: false,
         mode,
         observability,
+        startup_cwd,
     };
     cleanup_stale_runs().await.ok();
     let agentic_state = new_agentic_state();
@@ -66,6 +68,7 @@ pub async fn internal_api_router(
         internal: true,
         mode: ServeMode::Cloud,
         observability,
+        startup_cwd: std::path::PathBuf::new(),
     };
     cleanup_stale_runs().await.ok();
     let agentic_state = new_agentic_state();

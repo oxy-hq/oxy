@@ -2,6 +2,7 @@ import { Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/shadcn/popover";
 import { Spinner } from "@/components/ui/shadcn/spinner";
+import { useAuth } from "@/contexts/AuthContext";
 
 const DEFAULT_MESSAGE = "Auto-commit: Oxy changes";
 
@@ -22,6 +23,7 @@ export const CommitMessagePopover = ({
   pushLabel,
   onPush
 }: CommitMessagePopoverProps) => {
+  const { isLocalMode } = useAuth();
   const [message, setMessage] = useState(DEFAULT_MESSAGE);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -35,6 +37,8 @@ export const CommitMessagePopover = ({
       return () => clearTimeout(t);
     }
   }, [open]);
+
+  if (isLocalMode) return null;
 
   const handleSubmit = () => {
     if (!message.trim() || isPushing) return;

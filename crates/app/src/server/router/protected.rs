@@ -27,7 +27,7 @@ pub(super) fn build_protected_routes(
 ) -> Router<AppState> {
     Router::new().merge(build_global_routes()).nest(
         "/{workspace_id}",
-        build_workspace_routes(app_state.clone(), agentic_state).layer(
+        build_workspace_routes(app_state.clone(), agentic_state, true, false).layer(
             middleware::from_fn_with_state(app_state, workspace_middleware),
         ),
     )
@@ -56,7 +56,7 @@ pub(super) fn build_local_protected_routes(
 ) -> Router<AppState> {
     Router::new().nest(
         "/{workspace_id}",
-        build_workspace_routes(app_state, agentic_state)
+        build_workspace_routes(app_state, agentic_state, false, true)
             .route_layer(middleware::from_fn(local_context_middleware)),
     )
 }

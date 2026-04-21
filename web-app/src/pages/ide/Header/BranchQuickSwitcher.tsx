@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/shadcn/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/shadcn/popover";
 import { Spinner } from "@/components/ui/shadcn/spinner";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   useDeleteBranch,
   useWorkspaceBranches as useProjectBranches,
@@ -47,6 +48,7 @@ export const BranchQuickSwitcher = ({
   isExternalLoading,
   onExternalSelect
 }: BranchQuickSwitcherProps) => {
+  const { isLocalMode } = useAuth();
   const isExternal = !!onExternalSelect;
 
   const [internalOpen, setInternalOpen] = useState(false);
@@ -66,6 +68,8 @@ export const BranchQuickSwitcher = ({
 
   const projectId = project?.id || "";
   const deleteBranch = useDeleteBranch(projectId);
+
+  if (isLocalMode) return null;
 
   // Resolve which data to display
   const branches = isExternal ? (externalBranches ?? []) : branchResponse?.branches || [];

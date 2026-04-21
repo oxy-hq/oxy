@@ -31,31 +31,19 @@ export const useOktaAuth = () => {
   });
 };
 
-export const initiateOktaAuth = (client_id: string, domain: string) => {
+export const initiateOktaAuth = async (client_id: string, domain: string) => {
+  // See useGoogleAuth.initiateGoogleAuth for CSRF design notes.
+  const { state } = await AuthService.issueOAuthState();
+  sessionStorage.setItem(OKTA_STATE_KEY, state);
+
   const url = new URL(`https://${domain}/oauth2/v1/authorize`);
   url.searchParams.set("client_id", client_id);
   url.searchParams.set("redirect_uri", OKTA_REDIRECT_URI);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("scope", "openid email profile");
-
-  // Generate cryptographically secure random state for CSRF protection
-  const state = crypto.randomUUID ? crypto.randomUUID() : generateSecureRandomState();
-
-  // Store state in sessionStorage for validation on callback
-  sessionStorage.setItem(OKTA_STATE_KEY, state);
   url.searchParams.set("state", state);
 
   window.location.href = url.toString();
-};
-
-/**
- * Generates a cryptographically secure random state token
- * Fallback for browsers that don't support crypto.randomUUID
- */
-const generateSecureRandomState = (): string => {
-  const array = new Uint8Array(32);
-  crypto.getRandomValues(array);
-  return Array.from(array, (byte) => byte.toString(16).padStart(2, "0")).join("");
 };
 
 /**

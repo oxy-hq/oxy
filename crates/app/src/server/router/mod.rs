@@ -33,6 +33,10 @@ pub struct AppState {
     pub internal: bool,
     pub mode: ServeMode,
     pub observability: Option<std::sync::Arc<dyn oxy_observability::ObservabilityStore>>,
+    /// The server's working directory at startup. In local mode, used as the
+    /// target for `POST /{workspace_id}/setup/*`. In cloud/internal mode,
+    /// unused — populated with `PathBuf::new()`.
+    pub startup_cwd: std::path::PathBuf,
 }
 
 #[derive(Clone)]
@@ -78,12 +82,14 @@ mod app_state_tests {
             internal: false,
             mode: ServeMode::Local,
             observability: None,
+            startup_cwd: std::path::PathBuf::from("/tmp"),
         };
         let cloud = AppState {
             enterprise: false,
             internal: false,
             mode: ServeMode::Cloud,
             observability: None,
+            startup_cwd: std::path::PathBuf::new(),
         };
         assert!(local.mode.is_local());
         assert!(!cloud.mode.is_local());
@@ -99,7 +105,7 @@ mod router_split_tests {
 
     #[tokio::test]
     async fn local_router_does_not_expose_organizations() {
-        let router = api_router(ServeMode::Local, false, None)
+        let router = api_router(ServeMode::Local, false, None, std::path::PathBuf::new())
             .await
             .expect("router built");
         let req = Request::builder().uri("/orgs").body(Body::empty()).unwrap();
@@ -113,7 +119,7 @@ mod router_split_tests {
 
     #[tokio::test]
     async fn local_router_serves_health() {
-        let router = api_router(ServeMode::Local, false, None)
+        let router = api_router(ServeMode::Local, false, None, std::path::PathBuf::new())
             .await
             .expect("router built");
         // /live always returns 200 regardless of DB availability — confirms
@@ -126,7 +132,7 @@ mod router_split_tests {
     #[tokio::test]
     async fn local_router_mounts_workspace_routes_under_nil_uuid() {
         use crate::server::serve_mode::LOCAL_WORKSPACE_ID;
-        let router = api_router(ServeMode::Local, false, None)
+        let router = api_router(ServeMode::Local, false, None, std::path::PathBuf::new())
             .await
             .expect("router built");
         let uri = format!("/{}/agents", LOCAL_WORKSPACE_ID);
@@ -143,7 +149,7 @@ mod router_split_tests {
 
     #[tokio::test]
     async fn cloud_router_still_has_organizations_mounted() {
-        let router = api_router(ServeMode::Cloud, false, None)
+        let router = api_router(ServeMode::Cloud, false, None, std::path::PathBuf::new())
             .await
             .expect("router built");
         let req = Request::builder().uri("/orgs").body(Body::empty()).unwrap();

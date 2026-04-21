@@ -6,11 +6,22 @@ import type {
   MagicLinkRequest,
   MagicLinkVerifyRequest,
   MessageResponse,
+  OAuthStateResponse,
   OktaAuthRequest
 } from "@/types/auth";
 import { apiClient } from "./axios";
 
 export class AuthService {
+  /**
+   * Mint a short-lived signed OAuth state token. Call before redirecting the
+   * user to an external provider; echo the returned `state` through the
+   * provider's `state` query param and back to the `/auth/{provider}` endpoint.
+   */
+  static async issueOAuthState(): Promise<OAuthStateResponse> {
+    const response = await apiClient.post("/auth/oauth/state");
+    return response.data;
+  }
+
   static async googleAuth(request: GoogleAuthRequest): Promise<AuthResponse> {
     const response = await apiClient.post("/auth/google", request);
     return response.data;

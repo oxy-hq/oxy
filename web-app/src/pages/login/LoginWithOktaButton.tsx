@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 import { Button } from "@/components/ui/shadcn/button";
 import { initiateOktaAuth } from "@/hooks/auth/useOktaAuth";
 
@@ -8,8 +9,13 @@ interface Props {
 }
 
 const LoginWithOktaButton = ({ disabled, clientId, domain }: Props) => {
-  const handleOktaAuth = () => {
-    initiateOktaAuth(clientId, domain);
+  const handleOktaAuth = async () => {
+    try {
+      await initiateOktaAuth(clientId, domain);
+    } catch (err) {
+      console.error("Failed to start Okta login:", err);
+      toast.error("Couldn't start Okta login. Please try again.");
+    }
   };
 
   return (

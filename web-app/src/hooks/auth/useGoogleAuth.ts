@@ -31,32 +31,22 @@ export const useGoogleAuth = () => {
   });
 };
 
-export const initiateGoogleAuth = (client_id: string) => {
+export const initiateGoogleAuth = async (client_id: string) => {
+  // CSRF defense: the backend mints a signed, short-lived JWT. We echo it
+  // through Google's `state` round-trip; the backend re-verifies signature
+  // + purpose claim when we send it back with the code.
+  const { state } = await AuthService.issueOAuthState();
+  sessionStorage.setItem(GOOGLE_STATE_KEY, state);
+
   const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
   url.searchParams.set("client_id", client_id);
   url.searchParams.set("redirect_uri", GOOGLE_REDIRECT_URI);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("scope", "openid email profile");
   url.searchParams.set("access_type", "offline");
-
-  // Generate cryptographically secure random state for CSRF protection
-  const state = crypto.randomUUID ? crypto.randomUUID() : generateSecureRandomState();
-
-  // Store state in sessionStorage for validation on callback
-  sessionStorage.setItem(GOOGLE_STATE_KEY, state);
   url.searchParams.set("state", state);
 
   window.location.href = url.toString();
-};
-
-/**
- * Generates a cryptographically secure random state token
- * Fallback for browsers that don't support crypto.randomUUID
- */
-const generateSecureRandomState = (): string => {
-  const array = new Uint8Array(32);
-  crypto.getRandomValues(array);
-  return Array.from(array, (byte) => byte.toString(16).padStart(2, "0")).join("");
 };
 
 /**

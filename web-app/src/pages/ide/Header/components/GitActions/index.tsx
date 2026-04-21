@@ -1,5 +1,6 @@
 import { ChevronDown, GitBranch } from "lucide-react";
 import { useState } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 import type { RevisionInfo } from "@/types/settings";
 import { BranchInfo } from "../../BranchInfo";
 import { BranchQuickSwitcher } from "../../BranchQuickSwitcher";
@@ -67,7 +68,10 @@ export function GitActions({
   onFetch,
   onResetSuccess
 }: Props) {
+  const { isLocalMode } = useAuth();
   const [isBranchPickerOpen, setIsBranchPickerOpen] = useState(false);
+
+  if (isLocalMode) return null;
 
   if (!canCommit) {
     return <div className='text-muted-foreground text-sm'>Local mode</div>;

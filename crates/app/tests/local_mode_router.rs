@@ -11,7 +11,7 @@ use tower::ServiceExt;
 
 #[tokio::test]
 async fn local_router_returns_404_for_organization_routes() {
-    let router = api_router(ServeMode::Local, false, None)
+    let router = api_router(ServeMode::Local, false, None, std::path::PathBuf::new())
         .await
         .expect("build router");
     for path in [
@@ -38,7 +38,7 @@ async fn local_router_returns_404_for_organization_routes() {
 
 #[tokio::test]
 async fn local_router_returns_404_for_github_namespace_routes() {
-    let router = api_router(ServeMode::Local, false, None)
+    let router = api_router(ServeMode::Local, false, None, std::path::PathBuf::new())
         .await
         .expect("build router");
     for path in ["/github/namespaces", "/github/namespaces/pat"] {
@@ -62,10 +62,17 @@ async fn local_router_has_public_liveness_route() {
     // Use /live instead of /health: /health returns 503 when DB is unreachable
     // (which is the case in unit tests); /live is the unconditional liveness
     // endpoint and always returns 200.
-    let router = api_router(ServeMode::Local, false, None)
+    let router = api_router(ServeMode::Local, false, None, std::path::PathBuf::new())
         .await
         .expect("build router");
     let req = Request::builder().uri("/live").body(Body::empty()).unwrap();
     let resp = router.oneshot(req).await.expect("oneshot");
     assert_eq!(resp.status(), StatusCode::OK);
 }
+
+// Cloud-mode 404 coverage for /setup/* lives in router/workspace.rs
+// (setup_routes_absent_when_include_local_setup_false). It drives
+// build_workspace_routes directly without workspace_middleware, so no DB
+// setup is required. Trying to assert the same behavior through the full
+// api_router here would trip over workspace_middleware hitting an
+// unavailable DB, returning 500 instead of 404.

@@ -21,6 +21,7 @@ import {
   SelectValue
 } from "@/components/ui/shadcn/select";
 import { Separator } from "@/components/ui/shadcn/separator";
+import { useAuth } from "@/contexts/AuthContext";
 import { useGitHubBranchesWithApp, useGitHubRepositoriesWithApp } from "@/hooks/api/github";
 import useAddRepositoryFromGitHub from "@/hooks/api/repositories/useAddRepositoryFromGitHub";
 import useRemoveRepository from "@/hooks/api/repositories/useRemoveRepository";
@@ -280,8 +281,11 @@ function RepositoryRow({ repo }: { repo: Repository }) {
 }
 
 export default function RepositoriesPage() {
+  const { isLocalMode } = useAuth();
   const { data: repos = [], isLoading } = useRepositories();
   const [addOpen, setAddOpen] = useState(false);
+
+  if (isLocalMode) return null;
 
   return (
     <div className='flex h-full flex-col'>

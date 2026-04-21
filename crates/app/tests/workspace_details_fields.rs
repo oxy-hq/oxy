@@ -6,7 +6,10 @@
 //! That gives us the same field-level coverage the plan calls for without
 //! inventing a new test harness.
 
-use oxy_app::api::workspaces::{GitMode, build_workspace_details_response};
+use oxy_app::api::workspaces::{
+    GitCapabilities, GitMode, build_workspace_details_response,
+    build_workspace_details_response_for_uninitialized_local,
+};
 use std::process::Command;
 use tempfile::TempDir;
 use uuid::Uuid;
@@ -49,7 +52,7 @@ async fn git_enabled_workspace_reports_local_mode() {
     init_git_repo(tmp.path());
 
     let workspace_id = Uuid::new_v4();
-    let resp = build_workspace_details_response(workspace_id, "test-workspace", tmp.path())
+    let resp = build_workspace_details_response(workspace_id, "test-workspace", tmp.path(), false)
         .await
         .expect("builder returned error");
 
@@ -81,6 +84,10 @@ async fn git_enabled_workspace_reports_local_mode() {
         "protected_branches should contain default branch, got {:?}",
         body.protected_branches
     );
+    assert!(
+        !body.requires_local_setup,
+        "requires_local_setup must be false here"
+    );
     let branch = body.active_branch.expect("active_branch expected");
     assert_eq!(branch.name, "main");
 }
@@ -92,7 +99,7 @@ async fn missing_workspace_directory_reports_workspace_error() {
     assert!(!missing.exists());
 
     let workspace_id = Uuid::new_v4();
-    let resp = build_workspace_details_response(workspace_id, "gone", &missing)
+    let resp = build_workspace_details_response(workspace_id, "gone", &missing, false)
         .await
         .expect("builder returned error");
 
@@ -125,4 +132,60 @@ async fn missing_workspace_directory_reports_workspace_error() {
         body.active_branch.is_none(),
         "active_branch should be None when dir missing"
     );
+    assert!(
+        !body.requires_local_setup,
+        "requires_local_setup must be false here"
+    );
+}
+
+#[tokio::test]
+async fn local_mode_forces_git_mode_none_even_with_dot_git_present() {
+    // User runs `oxy start` inside a directory that already has a .git
+    // folder (e.g. the oxy source checkout). detect_git_mode would
+    // otherwise report Local; we must force None so the frontend does
+    // not light up UI for routes that are not mounted.
+    let tmp = TempDir::new().expect("tempdir");
+    init_git_repo(tmp.path());
+
+    let workspace_id = Uuid::new_v4();
+    let resp = build_workspace_details_response(
+        workspace_id,
+        "local-workspace",
+        tmp.path(),
+        true, // git_disabled
+    )
+    .await
+    .expect("builder returned error");
+
+    let body = resp.0;
+    assert_eq!(
+        body.git_mode,
+        GitMode::None,
+        "local mode must force git_mode=None regardless of on-disk .git"
+    );
+    let expected_caps: GitCapabilities = GitMode::None.into();
+    assert_eq!(
+        body.capabilities, expected_caps,
+        "capabilities must exactly match GitMode::None"
+    );
+    assert!(
+        body.active_branch.is_none(),
+        "active_branch must be None when git is disabled"
+    );
+    assert!(
+        !body.requires_local_setup,
+        "requires_local_setup must be false here"
+    );
+}
+
+#[tokio::test]
+async fn uninitialized_local_workspace_returns_requires_local_setup_true() {
+    let workspace_id = Uuid::new_v4();
+    let resp = build_workspace_details_response_for_uninitialized_local(workspace_id, "local");
+
+    let body = resp.0;
+    assert!(body.requires_local_setup);
+    assert_eq!(body.git_mode, GitMode::None);
+    assert!(body.workspace_error.is_none());
+    assert_eq!(body.name, "local");
 }

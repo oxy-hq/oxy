@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/shadcn/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/shadcn/popover";
 import { Spinner } from "@/components/ui/shadcn/spinner";
+import { useAuth } from "@/contexts/AuthContext";
 import { useWorkspaceBranches as useProjectBranches } from "@/hooks/api/workspaces/useWorkspaces";
 import { cn } from "@/libs/shadcn/utils";
 import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
@@ -23,6 +24,7 @@ interface Props {
 }
 
 const BranchSelector = ({ selectedBranch, setSelectedBranch }: Props) => {
+  const { isLocalMode } = useAuth();
   const { workspace: project } = useCurrentWorkspace();
   const { data: branchResponse, isLoading, error } = useProjectBranches(project?.id || "");
   const [open, setOpen] = React.useState(false);
@@ -30,6 +32,8 @@ const BranchSelector = ({ selectedBranch, setSelectedBranch }: Props) => {
 
   const branches = branchResponse?.branches || [];
   const activeBranchName = project?.active_branch?.name;
+
+  if (isLocalMode) return null;
 
   if (isLoading) {
     return (

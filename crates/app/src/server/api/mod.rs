@@ -13,6 +13,7 @@ pub mod file;
 pub mod github;
 pub mod healthcheck;
 pub mod integration;
+pub mod local_setup;
 pub mod message;
 pub mod metrics;
 pub mod middlewares;

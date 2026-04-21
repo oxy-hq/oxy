@@ -153,7 +153,9 @@ const workspaceKeys = {
   status: (workspaceId: string, branchName: string) =>
     [...workspaceKeys.all, "status", workspaceId, branchName] as const,
 
-  members: (workspaceId: string) => [...workspaceKeys.all, "members", workspaceId] as const
+  members: (workspaceId: string) => [...workspaceKeys.all, "members", workspaceId] as const,
+
+  localSetup: (workspaceId: string) => [...workspaceKeys.all, "localSetup", workspaceId] as const
 };
 
 const artifactKeys = {

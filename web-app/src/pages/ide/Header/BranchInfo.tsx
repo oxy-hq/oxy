@@ -1,12 +1,16 @@
 import { GitBranch } from "lucide-react";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 import { Spinner } from "@/components/ui/shadcn/spinner";
+import { useAuth } from "@/contexts/AuthContext";
 import useRevisionInfo from "@/hooks/api/workspaces/useRevisionInfo";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 
 export const BranchInfo = () => {
+  const { isLocalMode } = useAuth();
   const { branchName } = useCurrentProjectBranch();
-  const { isLoading: revisionLoading } = useRevisionInfo();
+  const { isLoading: revisionLoading } = useRevisionInfo(!isLocalMode);
+
+  if (isLocalMode) return null;
 
   if (revisionLoading) {
     return (

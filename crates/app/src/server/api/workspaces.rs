@@ -82,7 +82,7 @@ pub enum GitMode {
 /// What the workspace's git mode allows. Derived from `GitMode` via
 /// `GitCapabilities::from(mode)` — never set ad-hoc. Adding a new git
 /// operation = one row here, no scattered conditionals.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct GitCapabilities {
     pub can_commit: bool,
     pub can_browse_history: bool,
@@ -166,6 +166,12 @@ pub struct WorkspaceDetailsResponse {
     /// Branches where saving a file auto-creates a feature branch. Configured
     /// via `protected_branches` in config.yml; defaults to `[default_branch]`.
     pub protected_branches: Vec<String>,
+
+    /// True when this workspace is in local mode and no `config.yml` is
+    /// resolvable. The frontend should render the setup dialog instead of
+    /// the main app. Always `false` in cloud mode.
+    #[serde(default)]
+    pub requires_local_setup: bool,
 }
 
 // BranchType and ProjectBranch imported from oxy::api_types
@@ -644,22 +650,89 @@ pub async fn get_revision_info(
     tag = "Workspaces"
 )]
 pub async fn get_workspace(
-    State(_app_state): State<AppState>,
+    State(app_state): State<AppState>,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Extension(project): Extension<entity::workspaces::Model>,
     Path(workspace_id): Path<Uuid>,
 ) -> Result<ResponseJson<WorkspaceDetailsResponse>, StatusCode> {
     info!("Getting workspace details for ID: {}", workspace_id);
 
+    // Local-mode short-circuit: when there is no resolvable config.yml,
+    // skip the normal path (which 500s on path: None) and return the
+    // "setup required" shape so the FE renders the bootstrap dialog.
+    if app_state.mode.is_local() {
+        let config_exists = match &project.path {
+            Some(p) => tokio::fs::try_exists(std::path::Path::new(p).join("config.yml"))
+                .await
+                .unwrap_or(false),
+            None => false,
+        };
+        if !config_exists {
+            return Ok(build_workspace_details_response_for_uninitialized_local(
+                workspace_id,
+                &project.name,
+            ));
+        }
+    }
+
     let workspace_root = workspace_root(&project).await?;
 
-    build_workspace_details_response(workspace_id, &project.name, &workspace_root).await
+    build_workspace_details_response(
+        workspace_id,
+        &project.name,
+        &workspace_root,
+        app_state.mode.is_local(),
+    )
+    .await
+}
+
+/// Build a `WorkspaceDetailsResponse` in one of the two "no git visible"
+/// shapes. Shared between the missing-directory branch and the
+/// local-mode short-circuit so a future field addition only lands in
+/// one place.
+fn no_git_response(
+    workspace_id: Uuid,
+    name: &str,
+    now: String,
+    workspace_error: Option<String>,
+    requires_local_setup: bool,
+) -> ResponseJson<WorkspaceDetailsResponse> {
+    let mode = GitMode::None;
+    ResponseJson(WorkspaceDetailsResponse {
+        id: workspace_id,
+        name: name.to_string(),
+        workspace_id: Uuid::nil(),
+        created_at: now.clone(),
+        updated_at: now,
+        active_branch: None,
+        workspace_error,
+        git_mode: mode,
+        capabilities: mode.into(),
+        default_branch: "main".to_string(),
+        protected_branches: vec!["main".to_string()],
+        requires_local_setup,
+    })
+}
+
+/// Response builder for the local-mode "no config.yml yet" case. Exposed
+/// publicly so integration tests can assert the shape without spinning up
+/// the full router + DB.
+pub fn build_workspace_details_response_for_uninitialized_local(
+    workspace_id: Uuid,
+    name: &str,
+) -> ResponseJson<WorkspaceDetailsResponse> {
+    let now = chrono::Utc::now().to_string();
+    no_git_response(workspace_id, name, now, None, true)
 }
 
 pub async fn build_workspace_details_response(
     workspace_id: Uuid,
     name: &str,
     workspace_root: &std::path::Path,
+    // Set to true in local mode so the response reports `GitMode::None`
+    // even when a `.git` folder exists on disk. Opposite polarity from
+    // the router's `include_git_features` — matches `ServeMode::is_local`.
+    git_disabled: bool,
 ) -> Result<ResponseJson<WorkspaceDetailsResponse>, StatusCode> {
     let now = chrono::Utc::now().to_string();
 
@@ -667,23 +740,23 @@ pub async fn build_workspace_details_response(
     // Return a flagged response with safe defaults so the frontend can
     // surface a toast instead of erroring.
     if !workspace_root.exists() {
-        let mode = GitMode::None;
-        return Ok(ResponseJson(WorkspaceDetailsResponse {
-            id: workspace_id,
-            name: name.to_string(),
-            workspace_id: Uuid::nil(),
-            created_at: now.clone(),
-            updated_at: now,
-            active_branch: None,
-            workspace_error: Some(format!(
+        return Ok(no_git_response(
+            workspace_id,
+            name,
+            now,
+            Some(format!(
                 "Workspace directory not found: {}",
                 workspace_root.display()
             )),
-            git_mode: mode,
-            capabilities: mode.into(),
-            default_branch: "main".to_string(),
-            protected_branches: vec!["main".to_string()],
-        }));
+            false,
+        ));
+    }
+
+    // Local-mode servers disable all git features — routes are not
+    // mounted, capabilities must match. Force None regardless of
+    // what lives on disk.
+    if git_disabled {
+        return Ok(no_git_response(workspace_id, name, now, None, false));
     }
 
     let git = default_git_client();
@@ -751,6 +824,7 @@ pub async fn build_workspace_details_response(
         capabilities: git_mode.into(),
         default_branch,
         protected_branches,
+        requires_local_setup: false,
     }))
 }
 

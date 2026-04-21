@@ -1,6 +1,7 @@
 import { History, RotateCcw } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/shadcn/popover";
 import { Spinner } from "@/components/ui/shadcn/spinner";
+import { useAuth } from "@/contexts/AuthContext";
 import { useRecentCommits } from "../hooks/useRecentCommits";
 
 interface Props {
@@ -16,11 +17,14 @@ interface Props {
  * with that file content rather than rewriting history).
  */
 export function HistoryPopover({ workspaceId, branch, onResetSuccess }: Props) {
+  const { isLocalMode } = useAuth();
   const { open, onOpenChange, commits, loading, resettingHash, resetToCommit } = useRecentCommits({
     workspaceId,
     branch,
     onResetSuccess
   });
+
+  if (isLocalMode) return null;
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>

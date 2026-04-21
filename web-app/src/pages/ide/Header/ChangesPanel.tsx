@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/shadcn/resizable";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/shadcn/sheet";
 import { Spinner } from "@/components/ui/shadcn/spinner";
+import { useAuth } from "@/contexts/AuthContext";
 import useRevertFile from "@/hooks/api/files/useRevertFile";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
@@ -112,6 +113,7 @@ export const ChangesPanel = ({
   onContinueRebase,
   onConflictResolved
 }: ChangesPanelProps) => {
+  const { isLocalMode } = useAuth();
   const { project, branchName } = useCurrentProjectBranch();
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [message, setMessage] = useState(DEFAULT_MESSAGE);
@@ -278,6 +280,8 @@ export const ChangesPanel = ({
     },
     [panelWidth]
   );
+
+  if (isLocalMode) return null;
 
   const selectedFile = diffSummary.find((f) => f.path === selectedPath) ?? null;
 

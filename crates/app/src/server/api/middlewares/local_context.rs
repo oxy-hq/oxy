@@ -39,15 +39,22 @@ pub async fn local_context_middleware(
     mut request: Request<axum::body::Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    let path = resolve_local_workspace_path().map_err(|e| {
-        tracing::error!(
-            "local mode: could not resolve workspace path (no config.yml found): {}",
-            e
-        );
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    let resolved_path = resolve_local_workspace_path().ok();
 
     let now = Utc::now().into();
+    let (status, path_str) = match &resolved_path {
+        Some(p) => (
+            WorkspaceStatus::Ready,
+            Some(p.to_string_lossy().into_owned()),
+        ),
+        None => {
+            tracing::debug!(
+                "local mode: no config.yml resolvable; continuing without WorkspaceManager"
+            );
+            (WorkspaceStatus::Failed, None)
+        }
+    };
+
     let workspace = WorkspaceModel {
         id: LOCAL_WORKSPACE_ID,
         name: "local".to_string(),
@@ -55,11 +62,11 @@ pub async fn local_context_middleware(
         git_remote_url: None,
         created_at: now,
         updated_at: now,
-        path: Some(path.to_string_lossy().into_owned()),
+        path: path_str,
         last_opened_at: None,
         created_by: None,
         org_id: None,
-        status: WorkspaceStatus::Ready,
+        status,
         error: None,
     };
 
@@ -68,7 +75,9 @@ pub async fn local_context_middleware(
         .extensions_mut()
         .insert(EffectiveWorkspaceRole(WorkspaceRole::Owner));
 
-    attach_workspace_manager(&mut request, &workspace).await?;
+    if resolved_path.is_some() {
+        attach_workspace_manager(&mut request, &workspace).await?;
+    }
     Ok(next.run(request).await)
 }
 
@@ -141,4 +150,66 @@ async fn attach_workspace_manager(
 
     request.extensions_mut().insert(workspace_manager);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::Request;
+    use axum::response::IntoResponse;
+    use axum::routing::get;
+    use axum::{Router, body::Body};
+    use std::sync::{Arc, Mutex};
+    use tower::ServiceExt;
+
+    /// The middleware must not 500 when no config.yml is resolvable — it
+    /// must still run the handler with a fabricated workspace Model that
+    /// has `path: None` and `status: Failed`.
+    #[tokio::test]
+    async fn tolerates_missing_config_and_inserts_model_with_no_path() {
+        // Point CWD at a directory with no config.yml and no ancestors with one.
+        // Tests run in the same process; no other test in this file depends on CWD.
+        let tmp = tempfile::TempDir::new().expect("tempdir");
+        std::env::set_current_dir(tmp.path()).expect("set cwd");
+
+        let captured: Arc<Mutex<Option<WorkspaceModel>>> = Arc::new(Mutex::new(None));
+        let captured_clone = captured.clone();
+
+        let app = Router::new()
+            .route(
+                "/probe",
+                get(move |request: Request<Body>| {
+                    let cap = captured_clone.clone();
+                    async move {
+                        let ws = request
+                            .extensions()
+                            .get::<WorkspaceModel>()
+                            .cloned()
+                            .expect("workspace model in extensions");
+                        *cap.lock().unwrap() = Some(ws);
+                        axum::http::StatusCode::OK.into_response()
+                    }
+                }),
+            )
+            .layer(axum::middleware::from_fn(local_context_middleware));
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/probe")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("oneshot");
+        assert_eq!(resp.status(), axum::http::StatusCode::OK);
+
+        let ws = captured.lock().unwrap().clone().expect("model captured");
+        assert_eq!(ws.id, LOCAL_WORKSPACE_ID);
+        assert!(
+            ws.path.is_none(),
+            "fabricated model must have path: None when no config.yml"
+        );
+        assert_eq!(ws.status, WorkspaceStatus::Failed);
+    }
 }

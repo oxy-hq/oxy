@@ -6,7 +6,7 @@ use oxy::github::{GitHubClient, default_git_client, github_token_for_namespace};
 use oxy::service::retrieval::{ReindexInput, reindex};
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use oxy_git::GitClient;
-use oxy_project::copy_demo_files_to;
+use oxy_project::{copy_demo_files_to, write_minimal_config_yml};
 use serde::{Deserialize, Serialize};
 use tracing::{error, info};
 use uuid::Uuid;
@@ -367,18 +367,15 @@ pub async fn setup_new(
         (status, msg)
     })?;
 
-    let config_path = project_dir.join("config.yml");
-    if !config_path.exists() {
-        let minimal_config = "# Oxy workspace configuration\n# Add your databases and agents here.\n\ndatabases: []\nmodels: []\n";
-        if let Err(e) = std::fs::write(&config_path, minimal_config) {
-            error!("Failed to write config.yml: {}", e);
-            let _ = std::fs::remove_dir_all(&project_dir);
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to write config.yml: {e}"),
-            ));
-        }
-        info!("Created minimal config.yml at {:?}", config_path);
+    if !project_dir.join("config.yml").exists()
+        && let Err(e) = write_minimal_config_yml(&project_dir).await
+    {
+        error!("Failed to write config.yml: {}", e);
+        let _ = std::fs::remove_dir_all(&project_dir);
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to write config.yml: {e}"),
+        ));
     }
 
     let display_name = match req.name.as_deref() {

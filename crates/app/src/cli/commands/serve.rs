@@ -91,19 +91,31 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
                 "--local: ignoring configured auth providers — all requests will run as the local guest user"
             );
         }
-        // Validate that a workspace root is resolvable now, so "no config.yml"
-        // shows up as a startup error rather than a mystery 500 on the first request.
-        let path = resolve_local_workspace_path().map_err(|e| {
-            OxyError::RuntimeError(format!(
-                "--local requires a config.yml in the current directory or a parent: {e}"
-            ))
-        })?;
-        tracing::info!("Local mode: workspace resolved to {}", path.display());
+        match resolve_local_workspace_path() {
+            Ok(path) => {
+                tracing::info!("Local mode: workspace resolved to {}", path.display());
+            }
+            Err(e) => {
+                tracing::info!(
+                    "local mode: no workspace found ({}), waiting for setup via web UI",
+                    e
+                );
+            }
+        }
         ServeMode::Local
     } else {
         ServeMode::Cloud
     };
-    let app = create_web_application(mode, args.enterprise, observability.clone()).await?;
+    let startup_cwd = std::env::current_dir().map_err(|e| {
+        OxyError::RuntimeError(format!("Failed to resolve startup working directory: {e}"))
+    })?;
+    let app = create_web_application(
+        mode,
+        args.enterprise,
+        observability.clone(),
+        startup_cwd.clone(),
+    )
+    .await?;
 
     let internal_app = if args.internal_port > 0 {
         Some(create_internal_application(args.enterprise, observability).await?)
@@ -184,10 +196,12 @@ async fn create_web_application(
     mode: ServeMode,
     enterprise: bool,
     observability: Option<std::sync::Arc<dyn oxy_observability::ObservabilityStore>>,
+    startup_cwd: std::path::PathBuf,
 ) -> Result<Router, OxyError> {
-    let api_router = crate::server::router::api_router(mode, enterprise, observability)
-        .await
-        .map_err(|e| OxyError::RuntimeError(format!("Failed to create API router: {}", e)))?;
+    let api_router =
+        crate::server::router::api_router(mode, enterprise, observability, startup_cwd)
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("Failed to create API router: {}", e)))?;
     let openapi_router = crate::server::router::openapi_router().await;
     println!("create_web_application: openapi_router done, assembling final router");
     let mut openapi_doc = openapi_router.into_openapi().clone();

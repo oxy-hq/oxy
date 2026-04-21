@@ -33,9 +33,9 @@ const OktaCallback = () => {
       return;
     }
 
-    // Proceed with authentication if we have a valid code
-    if (code) {
-      oktaAuthMutation.mutate({ code });
+    // validateOktaState already confirmed `state` is non-null (early return above).
+    if (code && state) {
+      oktaAuthMutation.mutate({ code, state });
     } else {
       navigate(`${ROUTES.AUTH.LOGIN}?error=no_code`);
     }

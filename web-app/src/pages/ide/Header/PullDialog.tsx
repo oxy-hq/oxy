@@ -11,6 +11,7 @@ import {
   AlertDialogTitle
 } from "@/components/ui/shadcn/alert-dialog";
 import { Spinner } from "@/components/ui/shadcn/spinner";
+import { useAuth } from "@/contexts/AuthContext";
 import { usePullChanges } from "@/hooks/api/workspaces/useWorkspaces";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import ROUTES from "@/libs/utils/routes";
@@ -22,10 +23,13 @@ interface Props {
 }
 
 export const PullDialog = ({ open, onOpenChange }: Props) => {
+  const { isLocalMode } = useAuth();
   const { project, branchName } = useCurrentProjectBranch();
   const pullChangesMutation = usePullChanges();
   const navigate = useNavigate();
   const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
+
+  if (isLocalMode) return null;
 
   const onConfirm = async (e: { preventDefault: () => void }) => {
     e.preventDefault();
