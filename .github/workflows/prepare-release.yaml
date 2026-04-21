@@ -51,7 +51,7 @@ jobs:
         run: git cliff --tag ${{ steps.bump.outputs.version }} --unreleased -o
           /tmp/release-notes.md
       - name: Create or update release PR
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ steps.app-token.outputs.token }}
           commit-message: "chore: release ${{ steps.bump.outputs.version }}"

@@ -129,7 +129,7 @@ jobs:
         run: echo "value=$(date -u +'%Y-%m-%d')" >> $GITHUB_OUTPUT
 
       - name: Create pull request
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ steps.app-token.outputs.token }}
           branch: autofix/weekly-${{ github.run_id }}
