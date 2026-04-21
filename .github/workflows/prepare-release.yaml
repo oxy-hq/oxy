@@ -38,7 +38,7 @@ jobs:
         with:
           tool: git-cliff
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
       - name: Bump version in Cargo.toml
         id: bump
         run: |
