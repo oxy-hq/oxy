@@ -308,8 +308,12 @@ fn build_app_routes() -> Router<AppState> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use agentic_pipeline::platform::ThreadOwnerLookup;
+    use async_trait::async_trait;
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
+    use sea_orm::DatabaseConnection;
+    use tokio_util::sync::CancellationToken;
     use tower::ServiceExt;
 
     use crate::server::serve_mode::ServeMode;
@@ -324,8 +328,24 @@ mod tests {
         }
     }
 
+    struct StubThreadOwner;
+
+    #[async_trait]
+    impl ThreadOwnerLookup for StubThreadOwner {
+        async fn thread_owner(
+            &self,
+            _thread_id: uuid::Uuid,
+        ) -> Result<Option<Option<uuid::Uuid>>, String> {
+            Ok(None)
+        }
+    }
+
     fn test_agentic_state() -> Arc<AgenticState> {
-        Arc::new(AgenticState::new())
+        Arc::new(AgenticState::new(
+            CancellationToken::new(),
+            DatabaseConnection::default(),
+            Arc::new(StubThreadOwner),
+        ))
     }
 
     async fn status_for(router: axum::Router, method: &str, path: &str) -> StatusCode {
