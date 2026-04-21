@@ -192,11 +192,17 @@ export default defineConfig({
     ]
   },
   resolve: {
-    alias: {
-      "@": resolve(__dirname, "./src"),
-      "styled-system": resolve(__dirname, "./styled-system"),
-      elkjs: "elkjs/lib/elk.bundled.js"
-    }
+    alias: [
+      { find: "@", replacement: resolve(__dirname, "./src") },
+      { find: "styled-system", replacement: resolve(__dirname, "./styled-system") },
+      { find: "elkjs", replacement: "elkjs/lib/elk.bundled.js" },
+      // react-syntax-highlighter@16 imports "refractor/lib/core|all" and "refractor/lang/*.js"
+      // directly, but refractor@5 only exposes these via its exports map as
+      // "refractor/core", "refractor/all", and "refractor/<lang>" (no lib/ or lang/ prefix).
+      { find: "refractor/lib/core", replacement: "refractor/core" },
+      { find: "refractor/lib/all", replacement: "refractor/all" },
+      { find: /^refractor\/lang\/([^/]+)\.js$/, replacement: "refractor/$1" }
+    ]
   },
   plugins: [
     react(),
