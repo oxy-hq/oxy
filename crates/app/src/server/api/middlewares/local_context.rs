@@ -148,7 +148,15 @@ async fn attach_workspace_manager(
         Err(e) => tracing::debug!("local_context: enum index initialization skipped: {}", e),
     }
 
+    let project_ctx = std::sync::Arc::new(crate::agentic_wiring::OxyProjectContext::new(
+        workspace_manager.clone(),
+    ));
+    let platform: std::sync::Arc<dyn agentic_pipeline::platform::PlatformContext> =
+        project_ctx.clone();
+    let bridges = crate::agentic_wiring::build_builder_bridges(project_ctx);
     request.extensions_mut().insert(workspace_manager);
+    request.extensions_mut().insert(platform);
+    request.extensions_mut().insert(bridges);
     Ok(())
 }
 
