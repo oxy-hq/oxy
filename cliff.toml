@@ -44,6 +44,13 @@ postprocessors = [
 # output = "test.md"
 
 [git]
+# Only consider semver release tags. The public mirror (oxy-hq/oxy) carries
+# per-commit `edge-main-*` / `nightly-main-*` tags from nightly/edge builds;
+# without this filter, git-cliff attributes commits to the nearest edge tag
+# and `--latest` produces near-empty release notes (only commits without an
+# edge tag land in the release section). The internal repo has no such tags
+# so this is a no-op there.
+tag_pattern = "^[0-9]+\\.[0-9]+\\.[0-9]+$"
 # parse the commits based on https://www.conventionalcommits.org
 conventional_commits = true
 # filter out the commits that are not conventional

@@ -93,12 +93,13 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          claude_args: >-
-            --allowedTools
-            "Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh pr create:*),Bash(gh pr edit:*),
-            Bash(gh issue view:*),Bash(gh label create:*),
-            Bash(git -C oxy-content:*),Bash(cat:*),Bash(date:*),
-            Read,Write,Glob,Grep"
+          show_full_output: "true"
+          # Bare `Bash` (no prefix) allows any shell command. The previous per-prefix
+          # list broke on compound forms in the prompt (`... 2>/dev/null || true`,
+          # `$(date +%Y-%m-%d)` inside quoted bodies) — the branch got pushed but
+          # label + PR-create were denied, so the run reported success with no PR.
+          # Other tools stay restricted; token is scoped to oxy-internal + oxy-content.
+          claude_args: --allowedTools "Bash,Read,Write,Glob,Grep"
           prompt: |
             Create a user-facing changelog draft in oxy-hq/oxy-content for Oxy release ${{ steps.version.outputs.version }}.
 

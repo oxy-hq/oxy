@@ -397,7 +397,7 @@ def get_cliff_notes(version: str) -> str:
     return versioned_path.read_text()
 
 
-MAX_PRS = 20           # bound gh round-trips and prompt size
+MAX_PRS = 50           # bound gh round-trips and prompt size
 PR_BODY_LIMIT = 1500  # chars per PR after cleaning
 
 # Section headers that are pure template noise

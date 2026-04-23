@@ -95,16 +95,27 @@ jobs:
               PREV_SHA=$(git rev-parse "$PREV_LABEL")
             fi
           else
-            # Most recent successful edge build (schedule or push-to-main) that isn't this run
-            PREV_SHA=$(gh api \
+            # Candidate SHAs from recent successful Public Release runs on main,
+            # newest-first, excluding this run. workflow_run events can complete out
+            # of order (a fast docs-only run may finish before an earlier build-heavy
+            # run), so "most recent success" is NOT necessarily an ancestor of
+            # CURRENT_SHA. Pick the newest candidate that is a strict ancestor —
+            # otherwise the `PREV..CURRENT` diff inverts and reports 0 commits.
+            mapfile -t CANDIDATES < <(gh api \
               "/repos/${{ github.repository }}/actions/workflows/public-release.yaml/runs?status=success&per_page=30" \
               --jq "[.workflow_runs[]
                       | select(.id != ${CURRENT_RUN_ID})
                       | select(.event == \"schedule\" or (.event == \"push\" and .head_branch == \"main\"))
-                      | .head_sha] | .[0] // empty")
-            if [[ -n "$PREV_SHA" ]]; then
-              PREV_LABEL="${PREV_SHA:0:7}"
-            fi
+                      | .head_sha] | .[]")
+            for sha in "${CANDIDATES[@]}"; do
+              [[ "$sha" == "$CURRENT_SHA" ]] && continue
+              git cat-file -e "$sha" 2>/dev/null || continue
+              if git merge-base --is-ancestor "$sha" "$CURRENT_SHA"; then
+                PREV_SHA="$sha"
+                PREV_LABEL="${PREV_SHA:0:7}"
+                break
+              fi
+            done
           fi
 
           {
