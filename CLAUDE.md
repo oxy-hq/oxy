@@ -161,7 +161,7 @@ The `oxy start` command manages Docker containers programmatically via the `boll
 
 ## Backend Architecture
 
-@backend-architecture.md
+@internal-docs/backend-architecture.md
 
 ## Design Docs & Specs
 
