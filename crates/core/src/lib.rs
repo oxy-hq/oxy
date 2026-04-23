@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 pub mod adapters;
 pub mod api_types;
 pub mod checkpoint;
