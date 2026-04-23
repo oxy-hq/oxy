@@ -1,5 +1,6 @@
 import { Database, Plus, Trash2 } from "lucide-react";
 import { useCallback, useState } from "react";
+import { CanWorkspaceAdmin } from "@/components/auth/Can";
 import { Button } from "@/components/ui/shadcn/button";
 import {
   Dialog,
@@ -36,22 +37,24 @@ export default function DatabasesPage() {
   };
 
   const listViewActions = (
-    <div className='flex gap-2'>
-      <Button size='sm' variant='outline' onClick={() => setIsAddDialogOpen(true)}>
-        <Plus />
-        Add Database
-      </Button>
-      <Button size='sm' variant='outline' onClick={handleCleanAll} disabled={cleaningInProgress}>
-        {cleaningInProgress ? (
-          <Spinner />
-        ) : (
-          <>
-            <Trash2 />
-            Reset Oxy State
-          </>
-        )}
-      </Button>
-    </div>
+    <CanWorkspaceAdmin>
+      <div className='flex gap-2'>
+        <Button size='sm' variant='outline' onClick={() => setIsAddDialogOpen(true)}>
+          <Plus />
+          Add Database
+        </Button>
+        <Button size='sm' variant='outline' onClick={handleCleanAll} disabled={cleaningInProgress}>
+          {cleaningInProgress ? (
+            <Spinner />
+          ) : (
+            <>
+              <Trash2 />
+              Reset Oxy State
+            </>
+          )}
+        </Button>
+      </div>
+    </CanWorkspaceAdmin>
   );
 
   return (

@@ -6,6 +6,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::{
+    api::middlewares::role_guards::{WorkspaceAdmin, WorkspaceEditor},
     api::middlewares::workspace_context::WorkspaceManagerExtractor,
     server::service::test_runs::{TestProjectRunInfo, TestRunsManager},
 };
@@ -16,6 +17,7 @@ pub struct CreateProjectRunBody {
 }
 
 pub async fn create_project_run(
+    _: WorkspaceEditor,
     Path(workspace_id): Path<Uuid>,
     WorkspaceManagerExtractor(_pm): WorkspaceManagerExtractor,
     extract::Json(body): extract::Json<CreateProjectRunBody>,
@@ -47,6 +49,7 @@ pub async fn list_project_runs(
 }
 
 pub async fn delete_project_run(
+    _: WorkspaceAdmin,
     Path((workspace_id, project_run_id)): Path<(Uuid, Uuid)>,
     WorkspaceManagerExtractor(_pm): WorkspaceManagerExtractor,
 ) -> Result<StatusCode, StatusCode> {

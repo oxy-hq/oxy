@@ -43,15 +43,6 @@ pub struct WorkspaceMemberPath {
 // Helpers
 // ---------------------------------------------------------------------------
 
-pub(crate) fn require_org_admin(
-    org_membership: &entity::org_members::Model,
-) -> Result<(), StatusCode> {
-    match org_membership.role {
-        OrgRole::Owner | OrgRole::Admin => Ok(()),
-        _ => Err(StatusCode::FORBIDDEN),
-    }
-}
-
 pub(crate) fn map_org_role_to_workspace(org_role: &OrgRole) -> WorkspaceRole {
     match org_role {
         OrgRole::Owner => WorkspaceRole::Owner,
@@ -169,7 +160,9 @@ pub async fn set_workspace_role_override(
     }): Path<WorkspaceMemberPath>,
     Json(body): Json<SetRoleRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    require_org_admin(&org_membership)?;
+    if !matches!(org_membership.role, OrgRole::Owner | OrgRole::Admin) {
+        return Err(StatusCode::FORBIDDEN);
+    }
 
     let role = WorkspaceRole::from_str(&body.role).map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
 
@@ -245,7 +238,9 @@ pub async fn remove_workspace_role_override(
         user_id,
     }): Path<WorkspaceMemberPath>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    require_org_admin(&org_membership)?;
+    if !matches!(org_membership.role, OrgRole::Owner | OrgRole::Admin) {
+        return Err(StatusCode::FORBIDDEN);
+    }
 
     let db = establish_connection()
         .await

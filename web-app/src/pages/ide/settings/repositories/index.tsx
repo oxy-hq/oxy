@@ -1,5 +1,6 @@
 import { GitBranch, Globe, HardDrive, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { CanWorkspaceAdmin } from "@/components/auth/Can";
 import { GitNamespaceSelection } from "@/components/GitNamespaceSelection";
 import GithubIcon from "@/components/ui/GithubIcon";
 import { Badge } from "@/components/ui/shadcn/badge";
@@ -233,20 +234,22 @@ function RepositoryRow({ repo }: { repo: Repository }) {
               local
             </Badge>
           )}
-          <Button
-            variant='ghost'
-            size='sm'
-            onClick={() => setConfirmOpen(true)}
-            disabled={removeRepo.isPending}
-            className='h-7 w-7 p-0 text-muted-foreground hover:text-destructive'
-            tooltip='Remove repository'
-          >
-            {removeRepo.isPending ? (
-              <Loader2 className='h-3.5 w-3.5 animate-spin' />
-            ) : (
-              <Trash2 className='h-3.5 w-3.5' />
-            )}
-          </Button>
+          <CanWorkspaceAdmin>
+            <Button
+              variant='ghost'
+              size='sm'
+              onClick={() => setConfirmOpen(true)}
+              disabled={removeRepo.isPending}
+              className='h-7 w-7 p-0 text-muted-foreground hover:text-destructive'
+              tooltip='Remove repository'
+            >
+              {removeRepo.isPending ? (
+                <Loader2 className='h-3.5 w-3.5 animate-spin' />
+              ) : (
+                <Trash2 className='h-3.5 w-3.5' />
+              )}
+            </Button>
+          </CanWorkspaceAdmin>
         </div>
       </div>
 
@@ -293,10 +296,12 @@ export default function RepositoriesPage() {
         icon={GitBranch}
         title='Repositories'
         actions={
-          <Button size='sm' variant='outline' onClick={() => setAddOpen(true)}>
-            <Plus className='h-3.5 w-3.5' />
-            Add repository
-          </Button>
+          <CanWorkspaceAdmin>
+            <Button size='sm' variant='outline' onClick={() => setAddOpen(true)}>
+              <Plus className='h-3.5 w-3.5' />
+              Add repository
+            </Button>
+          </CanWorkspaceAdmin>
         }
       />
 
@@ -324,10 +329,12 @@ export default function RepositoriesPage() {
                 Add a dbt, LookML, or other data modeling repo to browse its files in the IDE.
               </p>
             </div>
-            <Button size='sm' variant='outline' onClick={() => setAddOpen(true)}>
-              <Plus className='h-3.5 w-3.5' />
-              Add repository
-            </Button>
+            <CanWorkspaceAdmin>
+              <Button size='sm' variant='outline' onClick={() => setAddOpen(true)}>
+                <Plus className='h-3.5 w-3.5' />
+                Add repository
+              </Button>
+            </CanWorkspaceAdmin>
           </div>
         ) : (
           <div className='flex flex-col gap-2'>

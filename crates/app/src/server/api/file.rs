@@ -1,3 +1,4 @@
+use crate::server::api::middlewares::role_guards::WorkspaceEditor;
 use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
 use crate::server::router::AppState;
 use axum::Json;
@@ -23,6 +24,7 @@ pub struct SaveFileRequest {
 }
 
 pub async fn create_file(
+    _: WorkspaceEditor,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
 ) -> Result<extract::Json<String>, StatusCode> {
@@ -52,6 +54,7 @@ pub async fn create_file(
 }
 
 pub async fn create_folder(
+    _: WorkspaceEditor,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
 ) -> Result<extract::Json<String>, StatusCode> {
@@ -73,6 +76,7 @@ pub async fn create_folder(
 }
 
 pub async fn delete_file(
+    _: WorkspaceEditor,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
 ) -> Result<extract::Json<String>, StatusCode> {
@@ -94,6 +98,7 @@ pub async fn delete_file(
 }
 
 pub async fn delete_folder(
+    _: WorkspaceEditor,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
 ) -> Result<extract::Json<String>, StatusCode> {
@@ -120,6 +125,7 @@ pub struct RenameFileRequest {
 }
 
 pub async fn rename_file(
+    _: WorkspaceEditor,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     extract::Json(payload): extract::Json<RenameFileRequest>,
@@ -149,6 +155,7 @@ pub async fn rename_file(
 }
 
 pub async fn rename_folder(
+    _: WorkspaceEditor,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     extract::Json(payload): extract::Json<RenameFileRequest>,
@@ -179,6 +186,7 @@ pub async fn rename_folder(
 
 #[axum::debug_handler]
 pub async fn save_file(
+    _: WorkspaceEditor,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     extract::Json(payload): extract::Json<SaveFileRequest>,
@@ -336,6 +344,7 @@ pub async fn get_file_from_git(
 /// - Modified / deleted files: `git checkout HEAD -- <path>`
 /// - Newly added (untracked) files: `git clean -f -- <path>` (removes the file)
 pub async fn revert_file(
+    _: WorkspaceEditor,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
 ) -> Result<extract::Json<String>, StatusCode> {

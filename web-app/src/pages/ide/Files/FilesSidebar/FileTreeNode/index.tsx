@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronRight, FilePlus, FolderPlus, Pencil, Trash2 } from "lucide-react";
 import React from "react";
+import { CanWorkspaceEditor } from "@/components/auth/Can";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -180,22 +181,24 @@ const DirNode = ({ fileTree, activePath }: { fileTree: FileTreeModel; activePath
             }
           }}
         >
-          <ContextMenuItem className='cursor-pointer' onClick={handleCreateFile}>
-            <FilePlus />
-            <span>New File</span>
-          </ContextMenuItem>
-          <ContextMenuItem className='cursor-pointer' onClick={handleCreateFolder}>
-            <FolderPlus />
-            <span>New Folder</span>
-          </ContextMenuItem>
-          <ContextMenuItem className='cursor-pointer' onClick={handleRename}>
-            <Pencil />
-            <span>Rename</span>
-          </ContextMenuItem>
-          <ContextMenuItem className='cursor-pointer text-destructive' onClick={handleDelete}>
-            <Trash2 />
-            <span>Delete</span>
-          </ContextMenuItem>
+          <CanWorkspaceEditor>
+            <ContextMenuItem className='cursor-pointer' onClick={handleCreateFile}>
+              <FilePlus />
+              <span>New File</span>
+            </ContextMenuItem>
+            <ContextMenuItem className='cursor-pointer' onClick={handleCreateFolder}>
+              <FolderPlus />
+              <span>New Folder</span>
+            </ContextMenuItem>
+            <ContextMenuItem className='cursor-pointer' onClick={handleRename}>
+              <Pencil />
+              <span>Rename</span>
+            </ContextMenuItem>
+            <ContextMenuItem className='cursor-pointer text-destructive' onClick={handleDelete}>
+              <Trash2 />
+              <span>Delete</span>
+            </ContextMenuItem>
+          </CanWorkspaceEditor>
         </ContextMenuContent>
       </ContextMenu>
     </div>

@@ -1,6 +1,7 @@
 import { AlertCircle, History, Play, Trash2 } from "lucide-react";
 import type React from "react";
 import { useNavigate } from "react-router-dom";
+import { CanWorkspaceAdmin } from "@/components/auth/Can";
 import { Badge } from "@/components/ui/shadcn/badge";
 import { Button } from "@/components/ui/shadcn/button";
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
@@ -164,15 +165,17 @@ const TestsRunsPage: React.FC = () => {
                           <Play className='h-3 w-3' />
                           View
                         </Button>
-                        <Button
-                          variant='ghost'
-                          size='icon'
-                          className='h-7 w-7 text-muted-foreground hover:text-destructive'
-                          onClick={() => deleteRun.mutate({ projectRunId: run.id })}
-                          disabled={deleteRun.isPending}
-                        >
-                          <Trash2 className='h-3 w-3' />
-                        </Button>
+                        <CanWorkspaceAdmin>
+                          <Button
+                            variant='ghost'
+                            size='icon'
+                            className='h-7 w-7 text-muted-foreground hover:text-destructive'
+                            onClick={() => deleteRun.mutate({ projectRunId: run.id })}
+                            disabled={deleteRun.isPending}
+                          >
+                            <Trash2 className='h-3 w-3' />
+                          </Button>
+                        </CanWorkspaceAdmin>
                       </div>
                     </td>
                   </tr>

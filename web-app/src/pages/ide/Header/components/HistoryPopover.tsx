@@ -1,4 +1,5 @@
 import { History, RotateCcw } from "lucide-react";
+import { CanWorkspaceAdmin } from "@/components/auth/Can";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/shadcn/popover";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -66,16 +67,18 @@ export function HistoryPopover({ workspaceId, branch, onResetSuccess }: Props) {
                     {c.short_hash} · {c.author} · {c.date}
                   </p>
                 </div>
-                <button
-                  type='button'
-                  onClick={() => resetToCommit(c.hash)}
-                  disabled={!!resettingHash}
-                  title={`Restore to ${c.short_hash}`}
-                  className='mt-0.5 hidden shrink-0 items-center gap-1 rounded bg-primary px-1.5 py-0.5 text-[10px] text-primary-foreground transition-colors hover:bg-primary/80 disabled:opacity-50 group-hover:flex'
-                >
-                  <RotateCcw className='h-2.5 w-2.5' />
-                  {resettingHash === c.hash ? "…" : "Restore"}
-                </button>
+                <CanWorkspaceAdmin>
+                  <button
+                    type='button'
+                    onClick={() => resetToCommit(c.hash)}
+                    disabled={!!resettingHash}
+                    title={`Restore to ${c.short_hash}`}
+                    className='mt-0.5 hidden shrink-0 items-center gap-1 rounded bg-primary px-1.5 py-0.5 text-[10px] text-primary-foreground transition-colors hover:bg-primary/80 disabled:opacity-50 group-hover:flex'
+                  >
+                    <RotateCcw className='h-2.5 w-2.5' />
+                    {resettingHash === c.hash ? "…" : "Restore"}
+                  </button>
+                </CanWorkspaceAdmin>
               </div>
             ))
           )}

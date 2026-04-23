@@ -24,6 +24,7 @@ import {
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useParams, useSearchParams } from "react-router-dom";
+import { CanWorkspaceAdmin, CanWorkspaceEditor } from "@/components/auth/Can";
 import ErrorAlert from "@/components/ui/ErrorAlert";
 import { Badge } from "@/components/ui/shadcn/badge";
 import { Button } from "@/components/ui/shadcn/button";
@@ -536,16 +537,18 @@ const CaseDetailPanel: React.FC<CaseDetailPanelProps> = ({
             >
               <ChevronRight className='h-3.5 w-3.5' />
             </Button>
-            <Button
-              variant='ghost'
-              size='icon'
-              className='ml-1 h-7 w-7'
-              onClick={onRun}
-              disabled={isRunning}
-              title='Run this case'
-            >
-              <CirclePlay className='h-4 w-4' />
-            </Button>
+            <CanWorkspaceEditor>
+              <Button
+                variant='ghost'
+                size='icon'
+                className='ml-1 h-7 w-7'
+                onClick={onRun}
+                disabled={isRunning}
+                title='Run this case'
+              >
+                <CirclePlay className='h-4 w-4' />
+              </Button>
+            </CanWorkspaceEditor>
           </div>
         </div>
       </div>
@@ -762,26 +765,28 @@ const CaseDetailPanel: React.FC<CaseDetailPanelProps> = ({
                 </span>
               )}
             </div>
-            <div className='flex gap-1.5'>
-              <Button
-                variant={humanVerdict === "pass" ? "default" : "outline"}
-                size='sm'
-                className='h-7 gap-1 text-xs'
-                onClick={() => onSetHumanOverride(humanVerdict === "pass" ? null : "pass")}
-              >
-                <ThumbsUp className='h-3 w-3' />
-                Pass
-              </Button>
-              <Button
-                variant={humanVerdict === "fail" ? "destructive" : "outline"}
-                size='sm'
-                className='h-7 gap-1 text-xs'
-                onClick={() => onSetHumanOverride(humanVerdict === "fail" ? null : "fail")}
-              >
-                <ThumbsDown className='h-3 w-3' />
-                Fail
-              </Button>
-            </div>
+            <CanWorkspaceEditor>
+              <div className='flex gap-1.5'>
+                <Button
+                  variant={humanVerdict === "pass" ? "default" : "outline"}
+                  size='sm'
+                  className='h-7 gap-1 text-xs'
+                  onClick={() => onSetHumanOverride(humanVerdict === "pass" ? null : "pass")}
+                >
+                  <ThumbsUp className='h-3 w-3' />
+                  Pass
+                </Button>
+                <Button
+                  variant={humanVerdict === "fail" ? "destructive" : "outline"}
+                  size='sm'
+                  className='h-7 gap-1 text-xs'
+                  onClick={() => onSetHumanOverride(humanVerdict === "fail" ? null : "fail")}
+                >
+                  <ThumbsDown className='h-3 w-3' />
+                  Fail
+                </Button>
+              </div>
+            </CanWorkspaceEditor>
           </div>
         )}
       </div>
@@ -1213,25 +1218,27 @@ const TestFileDetailPage: React.FC = () => {
                           Failed
                         </Badge>
                       )}
-                      <Button
-                        variant='ghost'
-                        size='icon'
-                        className='ml-1 h-5 w-5 shrink-0 opacity-60 hover:opacity-100'
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          e.preventDefault();
-                          deleteRun.mutate({
-                            pathb64,
-                            runIndex: run.run_index
-                          });
-                          if (selectedRunIndex === run.run_index && runs.length > 1) {
-                            const other = runs.find((r) => r.run_index !== run.run_index);
-                            if (other) handleSelectRun(other.run_index);
-                          }
-                        }}
-                      >
-                        <Trash2 className='h-3 w-3' />
-                      </Button>
+                      <CanWorkspaceAdmin>
+                        <Button
+                          variant='ghost'
+                          size='icon'
+                          className='ml-1 h-5 w-5 shrink-0 opacity-60 hover:opacity-100'
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            deleteRun.mutate({
+                              pathb64,
+                              runIndex: run.run_index
+                            });
+                            if (selectedRunIndex === run.run_index && runs.length > 1) {
+                              const other = runs.find((r) => r.run_index !== run.run_index);
+                              if (other) handleSelectRun(other.run_index);
+                            }
+                          }}
+                        >
+                          <Trash2 className='h-3 w-3' />
+                        </Button>
+                      </CanWorkspaceAdmin>
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
@@ -1243,22 +1250,24 @@ const TestFileDetailPage: React.FC = () => {
                 Edit
               </Button>
             </Link>
-            {isFileRunning ? (
-              <Button
-                variant='destructive'
-                size='sm'
-                className='gap-1'
-                onClick={() => stopFile(projectId, branchName, pathb64)}
-              >
-                <Square className='h-3 w-3 fill-current' />
-                Stop
-              </Button>
-            ) : (
-              <Button variant='default' size='sm' className='gap-1' onClick={handleRunAll}>
-                <Play className='h-3 w-3' />
-                Run All
-              </Button>
-            )}
+            <CanWorkspaceEditor>
+              {isFileRunning ? (
+                <Button
+                  variant='destructive'
+                  size='sm'
+                  className='gap-1'
+                  onClick={() => stopFile(projectId, branchName, pathb64)}
+                >
+                  <Square className='h-3 w-3 fill-current' />
+                  Stop
+                </Button>
+              ) : (
+                <Button variant='default' size='sm' className='gap-1' onClick={handleRunAll}>
+                  <Play className='h-3 w-3' />
+                  Run All
+                </Button>
+              )}
+            </CanWorkspaceEditor>
           </>
         }
       />

@@ -1,3 +1,5 @@
+import type { WorkspaceRole } from "@/types/organization";
+
 export type GitMode = "none" | "local" | "connected";
 
 export interface GitCapabilities {
@@ -31,6 +33,11 @@ export interface Workspace {
 
   /** True when this workspace is in local mode and has no config.yml yet. */
   requires_local_setup?: boolean;
+
+  /** Authenticated user's effective role in this workspace. Optional so
+   * existing callers that build a partial Workspace don't have to fabricate
+   * a value; consumers that need the role should fall back to "viewer". */
+  current_user_role?: WorkspaceRole;
 }
 
 export interface WorkspacesResponse {

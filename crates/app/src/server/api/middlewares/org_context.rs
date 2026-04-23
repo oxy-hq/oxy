@@ -10,7 +10,7 @@ use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use std::future::Future;
 use uuid::Uuid;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct OrgContext {
     pub org: entity::organizations::Model,
     pub membership: entity::org_members::Model,

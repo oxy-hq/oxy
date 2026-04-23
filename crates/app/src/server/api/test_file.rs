@@ -1,4 +1,5 @@
 use crate::{
+    api::middlewares::role_guards::WorkspaceEditor,
     api::middlewares::workspace_context::WorkspaceManagerExtractor,
     server::service::test::TestCasePersistContext, server::service::test::run_test,
     server::service::test_runs::TestRunsManager,
@@ -110,6 +111,7 @@ pub struct RunTestCaseQuery {
 }
 
 pub async fn run_test_case(
+    _: WorkspaceEditor,
     Path((workspace_id, pathb64, case_index)): Path<(Uuid, String, usize)>,
     Query(query): Query<RunTestCaseQuery>,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,

@@ -52,13 +52,20 @@ async fn git_enabled_workspace_reports_local_mode() {
     init_git_repo(tmp.path());
 
     let workspace_id = Uuid::new_v4();
-    let resp = build_workspace_details_response(workspace_id, "test-workspace", tmp.path(), false)
-        .await
-        .expect("builder returned error");
+    let resp = build_workspace_details_response(
+        workspace_id,
+        "test-workspace",
+        tmp.path(),
+        false,
+        "owner".to_string(),
+    )
+    .await
+    .expect("builder returned error");
 
     let body = resp.0;
     assert_eq!(body.id, workspace_id);
     assert_eq!(body.name, "test-workspace");
+    assert_eq!(body.current_user_role, "owner");
     assert!(
         body.workspace_error.is_none(),
         "no workspace_error expected"
@@ -99,9 +106,15 @@ async fn missing_workspace_directory_reports_workspace_error() {
     assert!(!missing.exists());
 
     let workspace_id = Uuid::new_v4();
-    let resp = build_workspace_details_response(workspace_id, "gone", &missing, false)
-        .await
-        .expect("builder returned error");
+    let resp = build_workspace_details_response(
+        workspace_id,
+        "gone",
+        &missing,
+        false,
+        "admin".to_string(),
+    )
+    .await
+    .expect("builder returned error");
 
     let body = resp.0;
     assert_eq!(body.id, workspace_id);
@@ -153,6 +166,7 @@ async fn local_mode_forces_git_mode_none_even_with_dot_git_present() {
         "local-workspace",
         tmp.path(),
         true, // git_disabled
+        "owner".to_string(),
     )
     .await
     .expect("builder returned error");
@@ -181,11 +195,16 @@ async fn local_mode_forces_git_mode_none_even_with_dot_git_present() {
 #[tokio::test]
 async fn uninitialized_local_workspace_returns_requires_local_setup_true() {
     let workspace_id = Uuid::new_v4();
-    let resp = build_workspace_details_response_for_uninitialized_local(workspace_id, "local");
+    let resp = build_workspace_details_response_for_uninitialized_local(
+        workspace_id,
+        "local",
+        "owner".to_string(),
+    );
 
     let body = resp.0;
     assert!(body.requires_local_setup);
     assert_eq!(body.git_mode, GitMode::None);
     assert!(body.workspace_error.is_none());
     assert_eq!(body.name, "local");
+    assert_eq!(body.current_user_role, "owner");
 }

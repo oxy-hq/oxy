@@ -7,6 +7,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::{
+    api::middlewares::role_guards::{WorkspaceAdmin, WorkspaceEditor},
     api::middlewares::workspace_context::WorkspaceManagerExtractor,
     server::service::test_runs::{
         HumanVerdictInfo, TestRunInfo, TestRunWithCases, TestRunsManager,
@@ -31,6 +32,7 @@ pub struct CreateRunBody {
 }
 
 pub async fn create_run(
+    _: WorkspaceEditor,
     Path((workspace_id, pathb64)): Path<(Uuid, String)>,
     WorkspaceManagerExtractor(_pm): WorkspaceManagerExtractor,
     extract::Json(body): extract::Json<CreateRunBody>,
@@ -87,6 +89,7 @@ pub async fn get_run(
 }
 
 pub async fn delete_run(
+    _: WorkspaceAdmin,
     Path((workspace_id, pathb64, run_index)): Path<(Uuid, String, i32)>,
     WorkspaceManagerExtractor(_pm): WorkspaceManagerExtractor,
 ) -> Result<StatusCode, StatusCode> {
@@ -111,6 +114,7 @@ pub struct SetHumanVerdictBody {
 }
 
 pub async fn set_human_verdict(
+    _: WorkspaceEditor,
     Path((workspace_id, pathb64, run_index, case_index)): Path<(Uuid, String, i32, i32)>,
     WorkspaceManagerExtractor(_pm): WorkspaceManagerExtractor,
     extract::Json(body): extract::Json<SetHumanVerdictBody>,

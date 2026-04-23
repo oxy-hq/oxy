@@ -16,27 +16,6 @@ fn make_org_member(role: OrgRole) -> entity::org_members::Model {
     }
 }
 
-// ---- require_org_admin ----
-
-#[test]
-fn require_org_admin_allows_owner() {
-    let member = make_org_member(OrgRole::Owner);
-    assert!(require_org_admin(&member).is_ok());
-}
-
-#[test]
-fn require_org_admin_allows_admin() {
-    let member = make_org_member(OrgRole::Admin);
-    assert!(require_org_admin(&member).is_ok());
-}
-
-#[test]
-fn require_org_admin_rejects_member() {
-    let member = make_org_member(OrgRole::Member);
-    let err = require_org_admin(&member).unwrap_err();
-    assert_eq!(err, StatusCode::FORBIDDEN);
-}
-
 // ---- validate_role_override ----
 
 #[test]

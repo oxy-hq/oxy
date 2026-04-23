@@ -1,3 +1,4 @@
+use crate::server::api::middlewares::role_guards::WorkspaceEditor;
 use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
 use crate::server::router::WorkspaceExtractor;
 use crate::server::service::task_manager::TASK_MANAGER;
@@ -415,6 +416,7 @@ fn remove_all_files_in_dir<P: AsRef<std::path::Path>>(dir: P) {
     tag = "Threads"
 )]
 pub async fn delete_all_threads(
+    _: WorkspaceEditor,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     WorkspaceExtractor(project): WorkspaceExtractor,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
@@ -546,6 +548,7 @@ pub struct BulkDeleteThreadsRequest {
     tag = "Threads"
 )]
 pub async fn bulk_delete_threads(
+    _: WorkspaceEditor,
     WorkspaceExtractor(project): WorkspaceExtractor,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     extract::Json(request): extract::Json<BulkDeleteThreadsRequest>,

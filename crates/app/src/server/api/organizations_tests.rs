@@ -2,23 +2,6 @@ use super::*;
 use entity::org_members::OrgRole;
 use uuid::Uuid;
 
-// ---- is_owner_or_admin ----
-
-#[test]
-fn owner_is_owner_or_admin() {
-    assert!(is_owner_or_admin(&OrgRole::Owner));
-}
-
-#[test]
-fn admin_is_owner_or_admin() {
-    assert!(is_owner_or_admin(&OrgRole::Admin));
-}
-
-#[test]
-fn member_is_not_owner_or_admin() {
-    assert!(!is_owner_or_admin(&OrgRole::Member));
-}
-
 // ---- slugify_name ----
 
 #[test]

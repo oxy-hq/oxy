@@ -62,10 +62,9 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     // installed and there's no receiver to drain.
     crate::observability_boot::finalize().await;
 
-    // Warn when authentication is enabled but OXY_OWNER is not set.
-    // In that case every authenticated user is treated as admin, which is
-    // correct for single-user installs but almost certainly unintentional
-    // for multi-user deployments.
+    // Detect whether any cloud auth provider is configured — used only to
+    // surface an informational log when `--local` is requested with providers
+    // present (the providers are ignored in local mode).
     let auth_configured = std::env::var("GOOGLE_CLIENT_ID").is_ok()
         || std::env::var("OKTA_CLIENT_ID").is_ok()
         || std::env::var("MAGIC_LINK_SECRET").is_ok();

@@ -10,6 +10,7 @@ use serde::Deserialize;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::server::api::middlewares::role_guards::WorkspaceAdmin;
 use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
 use crate::server::service::block::GroupBlockHandler;
 use crate::server::service::statics::BROADCASTER;
@@ -684,6 +685,7 @@ pub async fn get_blocks(
     tag = "Runs"
 )]
 pub async fn delete_workflow_run(
+    _: WorkspaceAdmin,
     Path((_workspace_id, pathb64, run_id)): Path<(Uuid, String, i32)>,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
 ) -> Result<impl axum::response::IntoResponse, StatusCode> {
@@ -751,6 +753,7 @@ pub struct BulkDeleteRunsResponse {
     tag = "Runs"
 )]
 pub async fn bulk_delete_workflow_runs(
+    _: WorkspaceAdmin,
     Path(_workspace_id): Path<Uuid>,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     extract::Json(payload): extract::Json<BulkDeleteRunsRequest>,

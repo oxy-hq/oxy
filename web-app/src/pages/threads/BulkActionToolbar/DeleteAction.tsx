@@ -1,5 +1,6 @@
 import { Trash2 } from "lucide-react";
 import type React from "react";
+import { CanWorkspaceEditor } from "@/components/auth/Can";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -38,30 +39,32 @@ const DeleteAction: React.FC<Props> = ({
       : `Are you sure you want to delete ${threadsToDelete} ${threadText}? This action cannot be undone.`;
 
   return (
-    <AlertDialog>
-      <AlertDialogTrigger asChild>
-        <Button variant='destructive' size='sm' disabled={isLoading}>
-          <Trash2 className='h-4 w-4' />
-          Delete {threadsToDelete}
-        </Button>
-      </AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Delete threads?</AlertDialogTitle>
-          <AlertDialogDescription>{description}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={isLoading}>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={onBulkDelete}
-            disabled={isLoading}
-            className={buttonVariants({ variant: "destructive" })}
-          >
-            {isLoading ? "Deleting..." : "Delete"}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <CanWorkspaceEditor>
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button variant='destructive' size='sm' disabled={isLoading}>
+            <Trash2 className='h-4 w-4' />
+            Delete {threadsToDelete}
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete threads?</AlertDialogTitle>
+            <AlertDialogDescription>{description}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isLoading}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={onBulkDelete}
+              disabled={isLoading}
+              className={buttonVariants({ variant: "destructive" })}
+            >
+              {isLoading ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </CanWorkspaceEditor>
   );
 };
 

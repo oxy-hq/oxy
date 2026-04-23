@@ -6,8 +6,12 @@ use serde::{Deserialize, Serialize};
 use tracing::{error, info};
 use uuid::Uuid;
 
+use crate::server::api::middlewares::org_context::OrgContextExtractor;
+use crate::server::api::middlewares::role_guards::{
+    OrgAdmin, WorkspaceAdmin, WorkspaceEditor, ensure_org_admin_or_workspace_creator,
+};
 use crate::server::api::middlewares::workspace_context::{
-    BranchQuery, WorkspaceManagerExtractor, WorkspacePath,
+    BranchQuery, EffectiveWorkspaceRole, WorkspaceManagerExtractor, WorkspacePath,
 };
 use crate::server::router::AppState;
 use axum::extract::Extension;
@@ -172,6 +176,11 @@ pub struct WorkspaceDetailsResponse {
     /// the main app. Always `false` in cloud mode.
     #[serde(default)]
     pub requires_local_setup: bool,
+
+    /// The authenticated user's effective role in this workspace
+    /// (`"owner" | "admin" | "member" | "viewer"`). Lets the UI gate
+    /// destructive actions without a 403 roundtrip.
+    pub current_user_role: String,
 }
 
 // BranchType and ProjectBranch imported from oxy::api_types
@@ -375,6 +384,7 @@ async fn resolve_branch(query_branch: Option<String>, root: &std::path::Path) ->
 }
 
 pub async fn pull_changes(
+    _: WorkspaceEditor,
     Extension(ws): Extension<entity::workspaces::Model>,
     WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
     Query(query): Query<BranchQuery>,
@@ -429,6 +439,7 @@ pub struct ResolveConflictWithContentBody {
 }
 
 pub async fn resolve_conflict_with_content(
+    _: WorkspaceEditor,
     WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
     Query(query): Query<ResolveConflictWithContentQuery>,
     Json(body): Json<ResolveConflictWithContentBody>,
@@ -453,6 +464,7 @@ pub async fn resolve_conflict_with_content(
 }
 
 pub async fn resolve_conflict_file(
+    _: WorkspaceEditor,
     WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
     Query(query): Query<ResolveConflictQuery>,
 ) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
@@ -477,6 +489,7 @@ pub async fn resolve_conflict_file(
 }
 
 pub async fn unresolve_conflict_file(
+    _: WorkspaceEditor,
     WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
     Query(query): Query<UnresolveConflictQuery>,
 ) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
@@ -500,6 +513,7 @@ pub async fn unresolve_conflict_file(
 }
 
 pub async fn force_push_branch(
+    _: WorkspaceAdmin,
     Extension(ws): Extension<entity::workspaces::Model>,
     WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
 ) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
@@ -527,6 +541,7 @@ pub async fn get_recent_commits(
 }
 
 pub async fn reset_to_commit(
+    _: WorkspaceAdmin,
     WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
     Query(query): Query<ResetToCommitQuery>,
 ) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
@@ -550,6 +565,7 @@ pub async fn reset_to_commit(
 }
 
 pub async fn abort_rebase(
+    _: WorkspaceEditor,
     WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
 ) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
     let worktree = wm.config_manager.workspace_path();
@@ -569,6 +585,7 @@ pub async fn abort_rebase(
 }
 
 pub async fn continue_rebase(
+    _: WorkspaceEditor,
     WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
 ) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
     let worktree = wm.config_manager.workspace_path();
@@ -593,6 +610,7 @@ pub struct PushChangesRequest {
 }
 
 pub async fn push_changes(
+    _: WorkspaceEditor,
     Extension(ws): Extension<entity::workspaces::Model>,
     WorkspaceManagerExtractor(wm): WorkspaceManagerExtractor,
     Json(request): Json<PushChangesRequest>,
@@ -652,10 +670,13 @@ pub async fn get_revision_info(
 pub async fn get_workspace(
     State(app_state): State<AppState>,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+    EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
     Extension(project): Extension<entity::workspaces::Model>,
     Path(workspace_id): Path<Uuid>,
 ) -> Result<ResponseJson<WorkspaceDetailsResponse>, StatusCode> {
     info!("Getting workspace details for ID: {}", workspace_id);
+
+    let role_str = role.as_str().to_string();
 
     // Local-mode short-circuit: when there is no resolvable config.yml,
     // skip the normal path (which 500s on path: None) and return the
@@ -671,6 +692,7 @@ pub async fn get_workspace(
             return Ok(build_workspace_details_response_for_uninitialized_local(
                 workspace_id,
                 &project.name,
+                role_str,
             ));
         }
     }
@@ -682,6 +704,7 @@ pub async fn get_workspace(
         &project.name,
         &workspace_root,
         app_state.mode.is_local(),
+        role_str,
     )
     .await
 }
@@ -696,6 +719,7 @@ fn no_git_response(
     now: String,
     workspace_error: Option<String>,
     requires_local_setup: bool,
+    current_user_role: String,
 ) -> ResponseJson<WorkspaceDetailsResponse> {
     let mode = GitMode::None;
     ResponseJson(WorkspaceDetailsResponse {
@@ -711,6 +735,7 @@ fn no_git_response(
         default_branch: "main".to_string(),
         protected_branches: vec!["main".to_string()],
         requires_local_setup,
+        current_user_role,
     })
 }
 
@@ -720,9 +745,10 @@ fn no_git_response(
 pub fn build_workspace_details_response_for_uninitialized_local(
     workspace_id: Uuid,
     name: &str,
+    current_user_role: String,
 ) -> ResponseJson<WorkspaceDetailsResponse> {
     let now = chrono::Utc::now().to_string();
-    no_git_response(workspace_id, name, now, None, true)
+    no_git_response(workspace_id, name, now, None, true, current_user_role)
 }
 
 pub async fn build_workspace_details_response(
@@ -733,6 +759,7 @@ pub async fn build_workspace_details_response(
     // even when a `.git` folder exists on disk. Opposite polarity from
     // the router's `include_git_features` — matches `ServeMode::is_local`.
     git_disabled: bool,
+    current_user_role: String,
 ) -> Result<ResponseJson<WorkspaceDetailsResponse>, StatusCode> {
     let now = chrono::Utc::now().to_string();
 
@@ -749,6 +776,7 @@ pub async fn build_workspace_details_response(
                 workspace_root.display()
             )),
             false,
+            current_user_role,
         ));
     }
 
@@ -756,7 +784,14 @@ pub async fn build_workspace_details_response(
     // mounted, capabilities must match. Force None regardless of
     // what lives on disk.
     if git_disabled {
-        return Ok(no_git_response(workspace_id, name, now, None, false));
+        return Ok(no_git_response(
+            workspace_id,
+            name,
+            now,
+            None,
+            false,
+            current_user_role,
+        ));
     }
 
     let git = default_git_client();
@@ -825,6 +860,7 @@ pub async fn build_workspace_details_response(
         default_branch,
         protected_branches,
         requires_local_setup: false,
+        current_user_role,
     }))
 }
 
@@ -862,6 +898,7 @@ pub async fn get_workspace_branches(
 }
 
 pub async fn delete_branch(
+    _: WorkspaceAdmin,
     Extension(ws): Extension<entity::workspaces::Model>,
     Path((_workspace_id, branch_name)): Path<(Uuid, String)>,
 ) -> Result<ResponseJson<ProjectResponse>, StatusCode> {
@@ -882,6 +919,7 @@ pub async fn delete_branch(
 }
 
 pub async fn switch_workspace_branch(
+    _: WorkspaceEditor,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Extension(ws): Extension<entity::workspaces::Model>,
     Json(request): Json<SwitchBranchRequest>,
@@ -1134,46 +1172,21 @@ pub async fn list_workspaces(
     Ok(ResponseJson(summaries))
 }
 
-/// Checks the authenticated user has owner or admin role in the workspace's org.
-async fn validate_workspace_org_admin(
-    workspace: &entity::workspaces::Model,
-    user_id: uuid::Uuid,
-    db: &sea_orm::DatabaseConnection,
-) -> Result<(), StatusCode> {
-    use entity::org_members::{Column as OmCol, OrgRole};
-    use entity::prelude::OrgMembers;
-    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
-
-    let Some(org_id) = workspace.org_id else {
-        return Ok(());
-    };
-
-    let membership = OrgMembers::find()
-        .filter(OmCol::OrgId.eq(org_id))
-        .filter(OmCol::UserId.eq(user_id))
-        .one(db)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to check org membership: {e}");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?
-        .ok_or(StatusCode::FORBIDDEN)?;
-
-    if !matches!(membership.role, OrgRole::Owner | OrgRole::Admin) {
-        return Err(StatusCode::FORBIDDEN);
-    }
-
-    Ok(())
-}
-
 /// PATCH /workspaces/{id}/rename — change the display name of a workspace.
 #[derive(Deserialize)]
 pub struct RenameWorkspaceRequest {
     pub name: String,
 }
 
+// SECURITY: the access rule is "Org Owner/Admin OR the workspace creator".
+// The creator branch needs `ctx.membership.user_id` plus `workspace.created_by`,
+// which is only available after a DB lookup — so we can't use a pure typed
+// guard like `OrgAdmin` here. Instead we use `OrgContextExtractor` to surface
+// the membership and delegate the role check to
+// `ensure_org_admin_or_workspace_creator`, which lives in `role_guards.rs`
+// alongside the other role checks.
 pub async fn rename_workspace(
-    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    OrgContextExtractor(ctx): OrgContextExtractor,
     Path((org_id, workspace_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<RenameWorkspaceRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
@@ -1224,52 +1237,15 @@ pub async fn rename_workspace(
         return Err((StatusCode::NOT_FOUND, "Workspace not found".to_string()));
     }
 
-    // Only org admins/owners or the workspace creator can rename.
-    if let Some(org_id) = workspace.org_id {
-        use entity::org_members::OrgRole;
-        use entity::prelude::OrgMembers;
-        let membership = OrgMembers::find()
-            .filter(entity::org_members::Column::OrgId.eq(org_id))
-            .filter(entity::org_members::Column::UserId.eq(user.id))
-            .one(&db)
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to check org membership: {e}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "DB error".to_string())
-            })?;
-        let is_admin = membership
-            .as_ref()
-            .map(|m| matches!(m.role, OrgRole::Owner | OrgRole::Admin))
-            .unwrap_or(false);
-        let is_member = membership.is_some();
-        let is_creator = workspace.created_by == Some(user.id);
-        if !is_member {
-            return Err((StatusCode::FORBIDDEN, "Not an org member".to_string()));
-        }
-        if !is_admin && !is_creator {
-            return Err((
-                StatusCode::FORBIDDEN,
-                "Only admins or workspace creator can rename".to_string(),
-            ));
-        }
-    } else {
-        // Legacy workspaces (no org): only the creator can rename.
-        if workspace.created_by != Some(user.id) {
-            return Err((
-                StatusCode::FORBIDDEN,
-                "Only the workspace creator can rename".to_string(),
-            ));
-        }
-    }
+    // Org admins/owners can rename any workspace; Org Members can rename only
+    // those they created. Rule lives in role_guards::ensure_org_admin_or_workspace_creator.
+    ensure_org_admin_or_workspace_creator(&ctx, &workspace)?;
 
-    // Reject duplicate names within the same org (or globally for legacy workspaces).
-    let mut name_query = Workspaces::find()
+    // Reject duplicate names within the same org.
+    let name_taken = Workspaces::find()
         .filter(workspaces::Column::Name.eq(&name))
-        .filter(workspaces::Column::Id.ne(workspace_id));
-    if let Some(org_id) = workspace.org_id {
-        name_query = name_query.filter(workspaces::Column::OrgId.eq(org_id));
-    }
-    let name_taken = name_query
+        .filter(workspaces::Column::Id.ne(workspace_id))
+        .filter(workspaces::Column::OrgId.eq(org_id))
         .one(&db)
         .await
         .map_err(|e| {
@@ -1314,7 +1290,7 @@ pub struct DeleteProjectQuery {
 }
 
 pub async fn delete_workspace(
-    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    _: OrgAdmin,
     State(app_state): State<AppState>,
     Path((org_id, workspace_id)): Path<(Uuid, Uuid)>,
     Query(query): Query<DeleteProjectQuery>,
@@ -1340,14 +1316,6 @@ pub async fn delete_workspace(
 
     if workspace.org_id != Some(org_id) {
         return Err(StatusCode::NOT_FOUND);
-    }
-
-    // Org-scoped workspaces: require org admin/owner.
-    // Legacy workspaces (no org): require workspace creator.
-    if workspace.org_id.is_some() {
-        validate_workspace_org_admin(&workspace, user.id, &db).await?;
-    } else if workspace.created_by != Some(user.id) {
-        return Err(StatusCode::FORBIDDEN);
     }
 
     // Capture the workspace path before deleting the record

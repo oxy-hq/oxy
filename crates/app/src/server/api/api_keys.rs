@@ -1,3 +1,4 @@
+use crate::server::api::middlewares::role_guards::WorkspaceAdmin;
 use crate::server::service::api_key::{
     ApiKeyConfig, ApiKeyService, CreateApiKeyParams, CreateApiKeyResponse,
 };
@@ -149,6 +150,7 @@ impl From<ApiKeyModel> for ApiKeyResponse {
     ),
 )]
 pub async fn create_api_key(
+    _: WorkspaceAdmin,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Path(workspace_id): Path<Uuid>,
     extract::Json(request): extract::Json<CreateApiKeyRequest>,
@@ -310,6 +312,7 @@ pub async fn get_api_key(
     ),
 )]
 pub async fn delete_api_key(
+    _: WorkspaceAdmin,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, StatusCode> {

@@ -11,18 +11,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{error, info};
 use uuid::Uuid;
 
-use crate::server::api::middlewares::org_context::{OrgContext, OrgContextExtractor};
-
-fn require_org_admin(ctx: &OrgContext) -> Result<(), (StatusCode, String)> {
-    use entity::org_members::OrgRole;
-    match ctx.membership.role {
-        OrgRole::Owner | OrgRole::Admin => Ok(()),
-        OrgRole::Member => Err((
-            StatusCode::FORBIDDEN,
-            "Only org owners and admins can create workspaces".to_string(),
-        )),
-    }
-}
+use crate::server::api::middlewares::role_guards::OrgAdmin;
 
 /// Result returned by all three onboarding endpoints.
 #[derive(Serialize)]
@@ -269,11 +258,10 @@ pub struct GitHubSetupRequest {
 
 /// POST /orgs/{org_id}/onboarding/demo — copy embedded demo workspace files and trigger background reindex.
 pub async fn setup_demo(
+    OrgAdmin(ctx): OrgAdmin,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    OrgContextExtractor(ctx): OrgContextExtractor,
     body: Option<Json<DemoSetupRequest>>,
 ) -> Result<Json<OnboardingResult>, (StatusCode, String)> {
-    require_org_admin(&ctx)?;
     let req = body.map(|b| b.0).unwrap_or_default();
 
     let workspace_id = Uuid::new_v4();
@@ -354,11 +342,10 @@ pub async fn setup_demo(
 
 /// POST /orgs/{org_id}/onboarding/new — write a minimal config.yml to the workspace directory if none exists.
 pub async fn setup_new(
+    OrgAdmin(ctx): OrgAdmin,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    OrgContextExtractor(ctx): OrgContextExtractor,
     body: Option<Json<NewSetupRequest>>,
 ) -> Result<Json<OnboardingResult>, (StatusCode, String)> {
-    require_org_admin(&ctx)?;
     let req = body.map(|b| b.0).unwrap_or_default();
 
     let workspace_id = Uuid::new_v4();
@@ -417,12 +404,10 @@ pub async fn setup_new(
 /// it in the background. The workspace appears in the list immediately; the clone runs
 /// asynchronously so large repositories don't hit the global request timeout.
 pub async fn setup_github(
+    OrgAdmin(ctx): OrgAdmin,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
-    OrgContextExtractor(ctx): OrgContextExtractor,
     axum::Json(req): axum::Json<GitHubSetupRequest>,
 ) -> Result<Json<OnboardingResult>, (StatusCode, String)> {
-    require_org_admin(&ctx)?;
-
     // Verify the namespace belongs to the caller's org — unconditional now that the org is
     // always available from the path. Closes the cross-org namespace bypass (security #2).
     let ns = {

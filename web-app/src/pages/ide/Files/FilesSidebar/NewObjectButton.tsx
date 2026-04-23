@@ -13,6 +13,7 @@ import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { CanWorkspaceEditor } from "@/components/auth/Can";
 import { Button } from "@/components/ui/shadcn/button";
 import {
   Dialog,
@@ -265,7 +266,7 @@ const NewObjectButton: React.FC<NewObjectButtonProps> = ({ disabled }) => {
   };
 
   return (
-    <>
+    <CanWorkspaceEditor>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -351,7 +352,7 @@ const NewObjectButton: React.FC<NewObjectButtonProps> = ({ disabled }) => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </CanWorkspaceEditor>
   );
 };
 

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { CanOrgAdmin } from "@/components/auth/Can";
 import ErrorAlert from "@/components/ui/ErrorAlert";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/shadcn/dialog";
 import { Spinner } from "@/components/ui/shadcn/spinner";
@@ -86,7 +87,9 @@ export function ManageWorkspacesDialog({ open, onClose }: Props) {
                   isDeleting={isDeleting}
                 />
               ))}
-              <NewWorkspaceCard index={workspaces.length} onClick={() => setCreateOpen(true)} />
+              <CanOrgAdmin>
+                <NewWorkspaceCard index={workspaces.length} onClick={() => setCreateOpen(true)} />
+              </CanOrgAdmin>
             </div>
           )}
         </DialogContent>

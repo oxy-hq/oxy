@@ -1,4 +1,5 @@
 import { ChevronDown, Download, GitMerge, GitPullRequest, RefreshCw, Upload } from "lucide-react";
+import { CanWorkspaceAdmin, CanWorkspaceEditor } from "@/components/auth/Can";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -68,33 +69,37 @@ export function PrimaryCta({
       )}
 
       {state === "commit" && (
-        <button
-          type='button'
-          onClick={onOpenChanges}
-          disabled={isPushing}
-          data-testid='ide-commit-push-button'
-          className={`${PRIMARY_BUTTON_CLASS} ${radius}`}
-        >
-          <Upload className='h-3 w-3' />
-          {pushLabel}
-        </button>
+        <CanWorkspaceEditor>
+          <button
+            type='button'
+            onClick={onOpenChanges}
+            disabled={isPushing}
+            data-testid='ide-commit-push-button'
+            className={`${PRIMARY_BUTTON_CLASS} ${radius}`}
+          >
+            <Upload className='h-3 w-3' />
+            {pushLabel}
+          </button>
+        </CanWorkspaceEditor>
       )}
 
       {state === "push" && (
-        <button
-          type='button'
-          onClick={onPushDirect}
-          disabled={isPushing}
-          data-testid='ide-push-button'
-          className={`${PRIMARY_BUTTON_CLASS} ${radius}`}
-        >
-          <Upload className='h-3 w-3' />
-          {isPushing ? "Pushing…" : "Push"}
-        </button>
+        <CanWorkspaceEditor>
+          <button
+            type='button'
+            onClick={onPushDirect}
+            disabled={isPushing}
+            data-testid='ide-push-button'
+            className={`${PRIMARY_BUTTON_CLASS} ${radius}`}
+          >
+            <Upload className='h-3 w-3' />
+            {isPushing ? "Pushing…" : "Push"}
+          </button>
+        </CanWorkspaceEditor>
       )}
 
       {state === "pull" && (
-        <>
+        <CanWorkspaceEditor>
           <button
             type='button'
             onClick={onOpenPullDialog}
@@ -104,28 +109,30 @@ export function PrimaryCta({
             <Download className='h-3 w-3' />
             Pull
           </button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type='button'
-                aria-label='More actions'
-                className='flex w-5 items-center justify-center rounded-r border border-border/50 border-l-0 text-muted-foreground text-xs transition-colors hover:border-border hover:bg-accent/40 hover:text-foreground'
-              >
-                <ChevronDown className='h-2.5 w-2.5' />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align='end' className='w-auto min-w-0'>
-              <DropdownMenuItem
-                onClick={onForcePush}
-                disabled={isForcePushing}
-                className='gap-1.5 px-2 py-1 text-destructive text-xs focus:text-destructive'
-              >
-                <Upload className='h-3 w-3' />
-                {isForcePushing ? "Pushing…" : "Force Push"}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </>
+          <CanWorkspaceAdmin>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type='button'
+                  aria-label='More actions'
+                  className='flex w-5 items-center justify-center rounded-r border border-border/50 border-l-0 text-muted-foreground text-xs transition-colors hover:border-border hover:bg-accent/40 hover:text-foreground'
+                >
+                  <ChevronDown className='h-2.5 w-2.5' />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align='end' className='w-auto min-w-0'>
+                <DropdownMenuItem
+                  onClick={onForcePush}
+                  disabled={isForcePushing}
+                  className='gap-1.5 px-2 py-1 text-destructive text-xs focus:text-destructive'
+                >
+                  <Upload className='h-3 w-3' />
+                  {isForcePushing ? "Pushing…" : "Force Push"}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </CanWorkspaceAdmin>
+        </CanWorkspaceEditor>
       )}
 
       {state === "pr" && prUrl && (

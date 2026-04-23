@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::middlewares::org_context::OrgContextExtractor;
+use super::middlewares::role_guards::{OrgAdmin, OrgOwner};
 
 // ---------------------------------------------------------------------------
 // Request / Response types
@@ -142,10 +143,6 @@ pub(crate) fn org_response(org: &organizations::Model, role: &OrgRole) -> OrgRes
         workspace_count: None,
         member_count: None,
     }
-}
-
-pub(crate) fn is_owner_or_admin(role: &OrgRole) -> bool {
-    matches!(role, OrgRole::Owner | OrgRole::Admin)
 }
 
 /// Canonical slug generation. The frontend has a preview slugify for UX, but
@@ -389,13 +386,9 @@ pub async fn get_org(
 
 /// PATCH /orgs/:org_id
 pub async fn update_org(
-    OrgContextExtractor(ctx): OrgContextExtractor,
+    OrgAdmin(ctx): OrgAdmin,
     Json(req): Json<UpdateOrgRequest>,
 ) -> Result<Json<OrgResponse>, StatusCode> {
-    if !is_owner_or_admin(&ctx.membership.role) {
-        return Err(StatusCode::FORBIDDEN);
-    }
-
     let db = establish_connection().await.map_err(|e| {
         tracing::error!("DB connection error: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
@@ -433,13 +426,7 @@ pub async fn update_org(
 }
 
 /// DELETE /orgs/:org_id
-pub async fn delete_org(
-    OrgContextExtractor(ctx): OrgContextExtractor,
-) -> Result<StatusCode, StatusCode> {
-    if ctx.membership.role != OrgRole::Owner {
-        return Err(StatusCode::FORBIDDEN);
-    }
-
+pub async fn delete_org(OrgOwner(ctx): OrgOwner) -> Result<StatusCode, StatusCode> {
     let db = establish_connection().await.map_err(|e| {
         tracing::error!("DB connection error: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
@@ -499,14 +486,10 @@ pub async fn list_members(
 
 /// PATCH /orgs/:org_id/members/:user_id
 pub async fn update_member_role(
-    OrgContextExtractor(ctx): OrgContextExtractor,
+    OrgAdmin(ctx): OrgAdmin,
     Path((_org_id, target_user_id)): Path<(Uuid, Uuid)>,
     Json(req): Json<UpdateRoleRequest>,
 ) -> Result<Json<MemberResponse>, StatusCode> {
-    if !is_owner_or_admin(&ctx.membership.role) {
-        return Err(StatusCode::FORBIDDEN);
-    }
-
     // Owners cannot demote themselves — use "leave org" or transfer ownership first.
     if target_user_id == ctx.membership.user_id && ctx.membership.role == OrgRole::Owner {
         return Err(StatusCode::BAD_REQUEST);
@@ -605,13 +588,9 @@ pub async fn update_member_role(
 
 /// DELETE /orgs/:org_id/members/:user_id
 pub async fn remove_member(
-    OrgContextExtractor(ctx): OrgContextExtractor,
+    OrgAdmin(ctx): OrgAdmin,
     Path((_org_id, target_user_id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, StatusCode> {
-    if !is_owner_or_admin(&ctx.membership.role) {
-        return Err(StatusCode::FORBIDDEN);
-    }
-
     // Owners cannot remove themselves — use a dedicated "leave org" flow.
     if target_user_id == ctx.membership.user_id && ctx.membership.role == OrgRole::Owner {
         return Err(StatusCode::BAD_REQUEST);
@@ -718,14 +697,10 @@ pub async fn remove_member(
 
 /// POST /orgs/:org_id/invitations
 pub async fn create_invitation(
-    OrgContextExtractor(ctx): OrgContextExtractor,
+    OrgAdmin(ctx): OrgAdmin,
     headers: HeaderMap,
     Json(req): Json<InviteRequest>,
 ) -> Result<Json<InvitationResponse>, StatusCode> {
-    if !is_owner_or_admin(&ctx.membership.role) {
-        return Err(StatusCode::FORBIDDEN);
-    }
-
     // Validate role.
     let role = OrgRole::from_str(&req.role).map_err(|_| StatusCode::BAD_REQUEST)?;
 
@@ -857,14 +832,10 @@ pub async fn create_invitation(
 /// reason about partial state. Emails are spawned only after a successful
 /// commit.
 pub async fn create_bulk_invitations(
-    OrgContextExtractor(ctx): OrgContextExtractor,
+    OrgAdmin(ctx): OrgAdmin,
     headers: HeaderMap,
     Json(req): Json<BulkInviteRequest>,
 ) -> Result<Json<BulkInviteResponse>, StatusCode> {
-    if !is_owner_or_admin(&ctx.membership.role) {
-        return Err(StatusCode::FORBIDDEN);
-    }
-
     if req.invitations.is_empty() {
         return Err(StatusCode::BAD_REQUEST);
     }
@@ -1030,12 +1001,8 @@ pub async fn create_bulk_invitations(
 
 /// GET /orgs/:org_id/invitations
 pub async fn list_invitations(
-    OrgContextExtractor(ctx): OrgContextExtractor,
+    OrgAdmin(ctx): OrgAdmin,
 ) -> Result<Json<Vec<InvitationSummary>>, StatusCode> {
-    if !is_owner_or_admin(&ctx.membership.role) {
-        return Err(StatusCode::FORBIDDEN);
-    }
-
     let db = establish_connection().await.map_err(|e| {
         tracing::error!("DB connection error: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
@@ -1070,13 +1037,9 @@ pub async fn list_invitations(
 
 /// DELETE /orgs/:org_id/invitations/:invitation_id
 pub async fn revoke_invitation(
-    OrgContextExtractor(ctx): OrgContextExtractor,
+    OrgAdmin(ctx): OrgAdmin,
     Path((_org_id, invitation_id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, StatusCode> {
-    if !is_owner_or_admin(&ctx.membership.role) {
-        return Err(StatusCode::FORBIDDEN);
-    }
-
     let db = establish_connection().await.map_err(|e| {
         tracing::error!("DB connection error: {e}");
         StatusCode::INTERNAL_SERVER_ERROR

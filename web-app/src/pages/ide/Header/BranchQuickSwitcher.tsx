@@ -2,6 +2,7 @@ import { GitBranch, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { CanWorkspaceAdmin } from "@/components/auth/Can";
 import {
   Command,
   CommandEmpty,
@@ -204,14 +205,16 @@ export const BranchQuickSwitcher = ({
                           <GitBranch className='h-3 w-3 shrink-0 text-primary' />
                         )}
                         {!isExternal && name !== currentBranch && name !== activeBranchName && (
-                          <button
-                            type='button'
-                            className='ml-auto hidden items-center text-muted-foreground hover:text-destructive group-hover:flex'
-                            onClick={(e) => handleDelete(e, name)}
-                            title='Delete branch'
-                          >
-                            <Trash2 className='h-3 w-3' />
-                          </button>
+                          <CanWorkspaceAdmin>
+                            <button
+                              type='button'
+                              className='ml-auto hidden items-center text-muted-foreground hover:text-destructive group-hover:flex'
+                              onClick={(e) => handleDelete(e, name)}
+                              title='Delete branch'
+                            >
+                              <Trash2 className='h-3 w-3' />
+                            </button>
+                          </CanWorkspaceAdmin>
                         )}
                       </CommandItem>
                     ))}

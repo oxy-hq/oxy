@@ -11,6 +11,7 @@ use tracing::error;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::server::api::middlewares::role_guards::{WorkspaceAdmin, WorkspaceEditor};
 use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
 
 /// Validate a repository name to prevent path traversal attacks.
@@ -183,6 +184,7 @@ pub async fn list_repositories(
 }
 
 pub async fn add_repository(
+    _: WorkspaceAdmin,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Path(_workspace_id): Path<Uuid>,
     Json(body): Json<AddDataRepoRequest>,
@@ -216,6 +218,7 @@ pub async fn add_repository(
 }
 
 pub async fn add_repo_from_github(
+    _: WorkspaceAdmin,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Path(workspace_id): Path<Uuid>,
@@ -296,6 +299,7 @@ pub async fn add_repo_from_github(
 }
 
 pub async fn remove_repository(
+    _: WorkspaceAdmin,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Path((_workspace_id, name)): Path<(Uuid, String)>,
 ) -> Result<StatusCode, StatusCode> {
@@ -336,6 +340,7 @@ pub async fn get_repo_diff(
 }
 
 pub async fn commit_repo(
+    _: WorkspaceEditor,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Path((workspace_id, name)): Path<(Uuid, String)>,
@@ -473,6 +478,7 @@ pub async fn list_repo_branches(
 }
 
 pub async fn checkout_repo_branch(
+    _: WorkspaceEditor,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Path((workspace_id, name)): Path<(Uuid, String)>,

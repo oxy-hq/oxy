@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Columns2, GitMerge, Play, RotateCcw, Upload, WrapText, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { CanWorkspaceEditor } from "@/components/auth/Can";
 import { getLanguageFromFileName } from "@/components/FileEditor/constants";
 import { BaseMonacoEditor } from "@/components/MonacoEditor";
 import {
@@ -505,37 +506,39 @@ export const ChangesPanel = ({
 
         {/* Footer */}
         {isConflict ? (
-          <div className='flex items-center gap-2 border-border/40 border-t px-3 py-2'>
-            <button
-              type='button'
-              onClick={handleContinue}
-              disabled={!allResolved || isContinuing || !onContinueRebase}
-              data-testid='changes-panel-continue-button'
-              title={
-                allResolved
-                  ? undefined
-                  : `Resolve ${unresolvedCount} remaining file${unresolvedCount === 1 ? "" : "s"} first`
-              }
-              className='flex items-center gap-1.5 rounded bg-gradient-to-b from-[var(--blue-500)] to-[var(--blue-600)] px-3 py-1 font-medium text-white text-xs shadow-[var(--blue-900)]/40 shadow-sm transition-all hover:from-[var(--blue-400)] hover:to-[var(--blue-500)] disabled:opacity-40'
-            >
-              {isContinuing ? <Spinner className='size-3' /> : <Play className='h-3 w-3' />}
-              {isContinuing ? "Saving…" : "Save resolution"}
-            </button>
-            <button
-              type='button'
-              onClick={handleAbort}
-              disabled={isAborting || !onAbortConflict}
-              className='flex items-center gap-1.5 rounded border border-destructive/30 px-3 py-1 text-destructive text-xs transition-colors hover:bg-destructive/10 disabled:opacity-50'
-            >
-              {isAborting ? <Spinner className='size-3' /> : <X className='h-3 w-3' />}
-              {isAborting ? "Aborting…" : "Abort"}
-            </button>
-            {unresolvedCount > 0 && (
-              <span className='ml-auto font-mono text-[10px] text-muted-foreground/50'>
-                {unresolvedCount} file{unresolvedCount === 1 ? "" : "s"} remaining
-              </span>
-            )}
-          </div>
+          <CanWorkspaceEditor>
+            <div className='flex items-center gap-2 border-border/40 border-t px-3 py-2'>
+              <button
+                type='button'
+                onClick={handleContinue}
+                disabled={!allResolved || isContinuing || !onContinueRebase}
+                data-testid='changes-panel-continue-button'
+                title={
+                  allResolved
+                    ? undefined
+                    : `Resolve ${unresolvedCount} remaining file${unresolvedCount === 1 ? "" : "s"} first`
+                }
+                className='flex items-center gap-1.5 rounded bg-gradient-to-b from-[var(--blue-500)] to-[var(--blue-600)] px-3 py-1 font-medium text-white text-xs shadow-[var(--blue-900)]/40 shadow-sm transition-all hover:from-[var(--blue-400)] hover:to-[var(--blue-500)] disabled:opacity-40'
+              >
+                {isContinuing ? <Spinner className='size-3' /> : <Play className='h-3 w-3' />}
+                {isContinuing ? "Saving…" : "Save resolution"}
+              </button>
+              <button
+                type='button'
+                onClick={handleAbort}
+                disabled={isAborting || !onAbortConflict}
+                className='flex items-center gap-1.5 rounded border border-destructive/30 px-3 py-1 text-destructive text-xs transition-colors hover:bg-destructive/10 disabled:opacity-50'
+              >
+                {isAborting ? <Spinner className='size-3' /> : <X className='h-3 w-3' />}
+                {isAborting ? "Aborting…" : "Abort"}
+              </button>
+              {unresolvedCount > 0 && (
+                <span className='ml-auto font-mono text-[10px] text-muted-foreground/50'>
+                  {unresolvedCount} file{unresolvedCount === 1 ? "" : "s"} remaining
+                </span>
+              )}
+            </div>
+          </CanWorkspaceEditor>
         ) : (
           <div className='flex flex-col border-border/40 border-t'>
             <div className='border-border/40 border-b px-3 py-2'>

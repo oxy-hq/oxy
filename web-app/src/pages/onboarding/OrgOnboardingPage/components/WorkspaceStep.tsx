@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { CanOrgAdmin } from "@/components/auth/Can";
 import {
   Card,
   CardContent,
@@ -32,24 +33,38 @@ export default function WorkspaceStep({
   const preparing = phase === "preparing";
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className='text-lg'>
-          {preparing ? "Preparing your workspace" : "Create your first workspace"}
-        </CardTitle>
-        <CardDescription>
-          {preparing
-            ? "Hang tight — we're getting everything ready."
-            : `Spin up a workspace for ${org.name}. Import from GitHub, start with a demo, or go blank.`}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <WorkspaceCreator
-          org={{ id: org.id, slug: org.slug }}
-          onBack={onBack}
-          onPhaseChange={setPhase}
-        />
-      </CardContent>
-    </Card>
+    <CanOrgAdmin
+      fallback={
+        <Card>
+          <CardHeader>
+            <CardTitle className='text-lg'>Waiting for an admin</CardTitle>
+            <CardDescription>
+              {org.name} doesn't have a workspace yet. Only org owners and admins can create one —
+              ask an admin to set it up.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      }
+    >
+      <Card>
+        <CardHeader>
+          <CardTitle className='text-lg'>
+            {preparing ? "Preparing your workspace" : "Create your first workspace"}
+          </CardTitle>
+          <CardDescription>
+            {preparing
+              ? "Hang tight — we're getting everything ready."
+              : `Spin up a workspace for ${org.name}. Import from GitHub, start with a demo, or go blank.`}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <WorkspaceCreator
+            org={{ id: org.id, slug: org.slug }}
+            onBack={onBack}
+            onPhaseChange={setPhase}
+          />
+        </CardContent>
+      </Card>
+    </CanOrgAdmin>
   );
 }

@@ -2,6 +2,7 @@ import { isAxiosError } from "axios";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { CanOrgAdmin, CanOrgOwner } from "@/components/auth/Can";
 import { ConfirmDeleteDialog } from "@/components/ui/ConfirmDeleteDialog";
 import { Button } from "@/components/ui/shadcn/button";
 import { Input } from "@/components/ui/shadcn/input";
@@ -70,34 +71,35 @@ export default function GeneralSection({ org, onClose }: GeneralSectionProps) {
     }
   };
 
-  const isOwner = org.role === "owner";
   const hasChanges = name.trim() !== org.name || slug.trim() !== org.slug;
 
   return (
     <div className='space-y-8'>
-      <div className='space-y-4'>
-        <div className='space-y-2'>
-          <Label htmlFor='org-name'>Organization name</Label>
-          <Input id='org-name' value={name} onChange={(e) => setName(e.target.value)} />
+      <CanOrgAdmin>
+        <div className='space-y-4'>
+          <div className='space-y-2'>
+            <Label htmlFor='org-name'>Organization name</Label>
+            <Input id='org-name' value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className='space-y-2'>
+            <Label htmlFor='org-slug'>URL slug</Label>
+            <Input
+              id='org-slug'
+              value={slug}
+              onChange={(e) => {
+                setSlug(e.target.value);
+                setSlugError("");
+              }}
+            />
+            {slugError && <p className='text-destructive text-sm'>{slugError}</p>}
+          </div>
+          <Button onClick={handleSave} disabled={!hasChanges || updateOrg.isPending}>
+            {updateOrg.isPending ? "Saving..." : "Save"}
+          </Button>
         </div>
-        <div className='space-y-2'>
-          <Label htmlFor='org-slug'>URL slug</Label>
-          <Input
-            id='org-slug'
-            value={slug}
-            onChange={(e) => {
-              setSlug(e.target.value);
-              setSlugError("");
-            }}
-          />
-          {slugError && <p className='text-destructive text-sm'>{slugError}</p>}
-        </div>
-        <Button onClick={handleSave} disabled={!hasChanges || updateOrg.isPending}>
-          {updateOrg.isPending ? "Saving..." : "Save"}
-        </Button>
-      </div>
+      </CanOrgAdmin>
 
-      {isOwner && (
+      <CanOrgOwner>
         <div className='space-y-4 rounded-lg border border-destructive/50 p-4'>
           <h3 className='font-medium text-destructive'>Danger Zone</h3>
           <p className='text-muted-foreground text-sm'>
@@ -107,7 +109,7 @@ export default function GeneralSection({ org, onClose }: GeneralSectionProps) {
             Delete Organization
           </Button>
         </div>
-      )}
+      </CanOrgOwner>
 
       <ConfirmDeleteDialog
         open={deleteOpen}

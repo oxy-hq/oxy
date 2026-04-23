@@ -1,3 +1,4 @@
+use crate::server::api::middlewares::role_guards::WorkspaceAdmin;
 use crate::server::api::middlewares::workspace_context::WorkspaceManagerExtractor;
 use crate::server::service::secret_manager::{
     CreateSecretParams, SecretInfo, SecretManagerService, UpdateSecretParams,
@@ -114,6 +115,7 @@ pub struct UpdateSecretRequest {
 
 /// Create a new secret
 pub async fn create_secret(
+    _: WorkspaceAdmin,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Path(workspace_id): Path<Uuid>,
     extract::Json(request): extract::Json<CreateSecretRequest>,
@@ -190,6 +192,7 @@ pub async fn create_secret(
 
 /// Create multiple secrets in bulk
 pub async fn bulk_create_secrets(
+    _: WorkspaceAdmin,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Path(workspace_id): Path<Uuid>,
     extract::Json(request): extract::Json<BulkCreateSecretsRequest>,
@@ -265,6 +268,7 @@ pub async fn bulk_create_secrets(
 
 /// List all secrets (without values)
 pub async fn list_secrets(
+    _: WorkspaceAdmin,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Path(workspace_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, StatusCode> {
@@ -318,6 +322,7 @@ pub async fn list_secrets(
 
 /// Get secret metadata by ID (without value)
 pub async fn get_secret(
+    _: WorkspaceAdmin,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Path((workspace_id, id)): Path<(Uuid, String)>,
 ) -> Result<impl IntoResponse, StatusCode> {
@@ -348,6 +353,7 @@ pub async fn get_secret(
 
 /// Update a secret by ID
 pub async fn update_secret(
+    _: WorkspaceAdmin,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     Path((workspace_id, id)): Path<(Uuid, String)>,
     extract::Json(request): extract::Json<UpdateSecretRequest>,
@@ -547,6 +553,7 @@ pub struct EnvSecretInfo {
 /// This helps users see which secrets are being read from the environment
 /// and potentially override them with database-stored secrets.
 pub async fn list_env_secrets(
+    _: WorkspaceAdmin,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Path(_workspace_id): Path<Uuid>,
@@ -776,6 +783,7 @@ pub async fn list_env_secrets(
 
 /// Delete a secret by ID
 pub async fn delete_secret(
+    _: WorkspaceAdmin,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Path((workspace_id, id)): Path<(Uuid, String)>,
 ) -> Result<impl IntoResponse, StatusCode> {
@@ -821,8 +829,9 @@ pub async fn delete_secret(
     }
 }
 
-/// Reveal the plaintext value of a DB secret by ID (admin-only via middleware).
+/// Reveal the plaintext value of a DB secret by ID (WorkspaceAdmin only).
 pub async fn reveal_secret(
+    _: WorkspaceAdmin,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Path((workspace_id, id)): Path<(Uuid, String)>,
 ) -> Result<impl IntoResponse, StatusCode> {

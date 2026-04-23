@@ -1,5 +1,6 @@
 import { Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { CanOrgAdmin } from "@/components/auth/Can";
 import { ConfirmDeleteDialog } from "@/components/ui/ConfirmDeleteDialog";
 import { Button } from "@/components/ui/shadcn/button";
 import type { WorkspaceSummary } from "@/services/api/workspaces";
@@ -36,20 +37,22 @@ export function CardFooter({
         )}
       </div>
 
-      <div className='flex items-center gap-1'>
-        {showRename && (
-          <Button
-            variant='ghost'
-            size='icon'
-            onClick={onRename}
-            aria-label={`Rename ${workspace.name}`}
-            className='h-6 w-6 text-muted-foreground/30 opacity-0 transition-all hover:bg-muted hover:text-foreground group-hover:opacity-100'
-          >
-            <Pencil className='size-3' />
-          </Button>
-        )}
-        <DeleteAction workspaceName={workspace.name} disabled={isDeleting} onConfirm={onDelete} />
-      </div>
+      <CanOrgAdmin>
+        <div className='flex items-center gap-1'>
+          {showRename && (
+            <Button
+              variant='ghost'
+              size='icon'
+              onClick={onRename}
+              aria-label={`Rename ${workspace.name}`}
+              className='h-6 w-6 text-muted-foreground/30 opacity-0 transition-all hover:bg-muted hover:text-foreground group-hover:opacity-100'
+            >
+              <Pencil className='size-3' />
+            </Button>
+          )}
+          <DeleteAction workspaceName={workspace.name} disabled={isDeleting} onConfirm={onDelete} />
+        </div>
+      </CanOrgAdmin>
     </div>
   );
 }

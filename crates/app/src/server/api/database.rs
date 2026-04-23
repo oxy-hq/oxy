@@ -1,3 +1,4 @@
+use crate::server::api::middlewares::role_guards::WorkspaceAdmin;
 use crate::server::api::middlewares::workspace_context::{
     WorkspaceManagerExtractor, WorkspacePath,
 };
@@ -74,6 +75,7 @@ pub struct SyncDatabaseQuery {
 }
 
 pub async fn sync_database(
+    _: WorkspaceAdmin,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Path(WorkspacePath {
         workspace_id: _workspace_id,
@@ -257,6 +259,7 @@ pub struct CleanResponse {
 }
 
 pub async fn clean_data(
+    _: WorkspaceAdmin,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Query(params): Query<CleanRequest>,
 ) -> Result<Json<CleanResponse>, StatusCode> {
@@ -345,6 +348,7 @@ pub struct CreateDatabaseConfigResponse {
     tag = "Databases"
 )]
 pub async fn create_database_config(
+    _: WorkspaceAdmin,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Path(WorkspacePath { workspace_id: _ }): Path<WorkspacePath>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
