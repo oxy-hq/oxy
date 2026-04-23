@@ -2,6 +2,66 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.37] - 2026-04-23
+
+### 🚀 Features
+
+- Add direct pull functionality to IDE header when on main  (#2096)
+- Duckdb/postgres/clickhouse  observability backend (#2094)
+- Support multi tenancy (#2040)
+- Apply facade to agentic crates (#2034)
+- Multi org improvement (#2120)
+
+### 🐛 Bug Fixes
+
+- Add id-token write permission and remove invalid input in content-changelog workflow (#2092)
+- Update bump-version script to modify Cargo.lock along with Cargo.toml
+- Agentic.yml validation, runtime errors, secrets resolution, Snowflake stats (#2102)
+- *(web-app)* Chart/answer gap + sidebar icon alignment (#2108)
+- Add retry logic for transient PostgreSQL connection errors (#2109)
+- Hotfix for backend selection observability and add docs (#2113)
+- Update dependencies rand for security issue
+- *(duckdb)* Validate path, filter extensions, handle collisions (#2122)
+- *(server)* Install PlatformContext and BuilderBridges in local mode (#2130)
+- Agentic state init (#2133)
+
+### 💼 Other
+
+- *(deps-dev)* Bump the dev-npm-minor-dependencies group with 8 updates (#2116)
+- *(deps)* Bump astral-sh/setup-uv from 5 to 7 (#2115)
+- *(deps)* Bump lewagon/wait-on-check-action from 1.6.1 to 1.7.0 (#2114)
+- *(deps)* Bump the prod-cargo-minor-dependencies group across 1 directory with 9 updates (#2118)
+- *(deps)* Bump the prod-cargo-major-dependencies group across 1 directory with 17 updates (#2121)
+- Upgrade rust toolchains
+- Bump arrow to 57, upgrade lancedb/duckdb/snowflake-api (#2129)
+- *(deps)* Bump actions/github-script from 8 to 9 (#2125)
+- *(deps)* Bump peter-evans/create-pull-request from 7 to 8 (#2124)
+- *(deps)* Bump rustls from 0.23.38 to 0.23.39 in the prod-cargo-minor-dependencies group across 1 directory (#2138)
+
+### 🚜 Refactor
+
+- *(docs)* Update backend architecture link and add new documentation file
+
+### 📚 Documentation
+
+- Update product-context.md from recent changelogs (#2110)
+
+### ⚙️ Miscellaneous Tasks
+
+- Update changelog workflow to support manual PR resolution and refine version input description
+- Auto update product context (#2099)
+- Weekly auto-fix 2026-04-19 (#2106)
+- Format CI workflow and remove clickhouse dependency
+- Upgrade react-syntax-highlighter to v16 and fix refractor imports (#2123)
+- Update pnpm and action-gh-release versions in CI workflows
+- Enhance Slack notification conditions for stable releases and changelog updates
+- Add verification for edge Docker image publication in Slack announcements
+- Update npm package ecosystem to include web-app directory for dependency updates
+- Downgrade windows-sys and socket2 dependencies in Cargo.lock
+- Update cargo deps
+- Update dependencies in package.json
+- Downgrade pnpm action version to v5
+
 ## [0.5.36] - 2026-04-16
 
 ### 🚀 Features
@@ -46,6 +106,7 @@ All notable changes to this project will be documented in this file.
 - Unify all deps and optimize ci (#2063)
 - Remove automated label from weekly enhancement issue creation
 - Update version bump rules for pre-1.0 and post-1.0 handling
+- Release 0.5.36 (#2062)
 
 ## [0.5.35] - 2026-04-10
 
