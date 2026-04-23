@@ -43,6 +43,11 @@ pub enum WorkspaceStatus {
     Cloning,
     #[sea_orm(string_value = "failed")]
     Failed,
+    /// Clone completed, but the repository is missing a `config.yml` at the
+    /// workspace root — so it isn't an Oxy project. The user can open the IDE
+    /// to add one; retrying the clone won't help.
+    #[sea_orm(string_value = "not_oxy_project")]
+    NotOxyProject,
 }
 
 impl Default for WorkspaceStatus {

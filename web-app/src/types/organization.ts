@@ -38,3 +38,15 @@ export interface OrgInvitation {
   expires_at: string;
   created_at: string;
 }
+
+export interface MyInvitation {
+  id: string;
+  token: string;
+  role: OrgRole;
+  expires_at: string;
+  created_at: string;
+  org_id: string;
+  org_name: string;
+  org_slug: string;
+  invited_by_name?: string;
+}

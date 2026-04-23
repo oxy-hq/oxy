@@ -1,80 +1,80 @@
-import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import ErrorAlert from "@/components/ui/ErrorAlert";
-import { Button } from "@/components/ui/shadcn/button";
+import { useEffect, useRef } from "react";
 import { Spinner } from "@/components/ui/shadcn/spinner";
-import { useGitHubAuth, validateGitHubAuthState } from "@/hooks/auth/useGitHubAuth";
-import ROUTES from "@/libs/utils/routes";
+import { validateGitHubAuthState } from "@/hooks/auth/useGitHubAuth";
+import { AuthService, GitHubApiService } from "@/services/api";
+import type { CallbackMessage } from "@/utils/githubCallbackMessage";
 
 /**
- * GitHub OAuth callback page — handles the direct-navigation auth flow
- * (Sign in with GitHub). The namespace/install popup flow is now handled
- * server-side; this page only processes auth code exchanges.
+ * Popup target for all GitHub OAuth + App-install flows. Inspects the URL
+ * `state` to decide which backend endpoint to call, then postMessages the
+ * opener and closes itself.
+ *
+ *  - state matches the client-stored login state → `POST /auth/github`
+ *    (sign-in flow, returns JWT + user + orgs)
+ *  - otherwise → `POST /user/github/callback`
+ *    (authenticated account-connect / app-install flow)
  */
 export default function GitHubCallback() {
-  const [error, setError] = useState<string | null>(null);
   const hasRunRef = useRef(false);
-  const navigate = useNavigate();
-  const authMutation = useGitHubAuth();
 
   useEffect(() => {
     if (hasRunRef.current) return;
+    hasRunRef.current = true;
 
-    async function handleCallback() {
+    async function run() {
+      const params = new URLSearchParams(window.location.search);
+      const state = params.get("state");
+      const code = params.get("code") ?? undefined;
+      const installationIdRaw = params.get("installation_id");
+      const installationId = installationIdRaw ? Number(installationIdRaw) : undefined;
+      const githubError = params.get("error");
+
+      const post = (msg: CallbackMessage) => {
+        window.opener?.postMessage(msg, window.location.origin);
+      };
+
+      if (githubError) {
+        post({ type: "github-callback-error", reason: githubError });
+        window.close();
+        return;
+      }
+
+      if (!state) {
+        post({ type: "github-callback-error", reason: "Missing state parameter" });
+        window.close();
+        return;
+      }
+
       try {
-        hasRunRef.current = true;
-
-        const params = new URLSearchParams(window.location.search);
-        const urlError = params.get("error");
-        const code = params.get("code") ?? undefined;
-        const state = params.get("state") ?? undefined;
-
-        if (urlError) {
-          navigate(`${ROUTES.AUTH.LOGIN}?error=oauth_failed`);
-          return;
+        if (validateGitHubAuthState(state)) {
+          if (!code) throw new Error("Missing code parameter");
+          const auth = await AuthService.githubAuth({ code, state });
+          post({ type: "github-callback-success", flow: "auth", auth });
+        } else {
+          const result = await GitHubApiService.completeCallback({
+            state,
+            code,
+            installation_id: installationId
+          });
+          post({ type: "github-callback-success", ...result });
         }
-
-        // Auth flow — GitHub login (sign in with GitHub button).
-        if (validateGitHubAuthState(state ?? null)) {
-          if (!code || !state) {
-            navigate(`${ROUTES.AUTH.LOGIN}?error=no_code`);
-            return;
-          }
-          authMutation.mutate({ code, state });
-          return;
-        }
-
-        // Unrecognised state — redirect to login.
-        navigate(ROUTES.AUTH.LOGIN);
       } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : "Unknown error";
-        setError(`Unexpected error: ${errorMsg}`);
+        const reason = err instanceof Error ? err.message : "Unknown error";
+        post({ type: "github-callback-error", reason });
+      } finally {
+        window.close();
       }
     }
 
-    handleCallback();
-  }, [navigate, authMutation]);
+    void run();
+  }, []);
 
   return (
     <div className='flex min-h-screen min-w-screen items-center justify-center'>
-      <div className='text-center'>
-        {error ? (
-          <ErrorAlert
-            title='GitHub Error'
-            message={error}
-            actions={
-              <Button size='sm' onClick={() => navigate(ROUTES.ROOT)}>
-                Go back
-              </Button>
-            }
-          />
-        ) : (
-          <div className='flex flex-col items-center gap-4'>
-            <Spinner className='size-8 text-primary' />
-            <h2 className='font-medium text-xl'>Completing GitHub connection…</h2>
-            <p className='text-muted-foreground'>Please wait a moment.</p>
-          </div>
-        )}
+      <div className='flex flex-col items-center gap-4 text-center'>
+        <Spinner className='size-8 text-primary' />
+        <h2 className='font-medium text-xl'>Connecting GitHub…</h2>
+        <p className='text-muted-foreground'>This window will close automatically.</p>
       </div>
     </div>
   );

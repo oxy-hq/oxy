@@ -49,11 +49,17 @@ export default function CreateOrgDialog({
       const org = await createOrg.mutateAsync({ name: name.trim(), slug: slug.trim() });
       onCreated(org);
     } catch (err) {
-      if (isAxiosError(err) && err.response?.status === 409) {
-        setSlugError("This slug is already taken. Please choose a different one.");
-      } else {
-        toast.error("Failed to create organization");
+      if (isAxiosError(err)) {
+        if (err.response?.status === 409) {
+          setSlugError("This slug is already taken. Please choose a different one.");
+          return;
+        }
+        if (err.response?.status === 422) {
+          setSlugError("This slug is reserved. Please choose a different one.");
+          return;
+        }
       }
+      toast.error("Failed to create organization");
     }
   };
 

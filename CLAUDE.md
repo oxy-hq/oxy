@@ -112,13 +112,25 @@ cargo nextest run --test serve
 cargo nextest run test_internal_port_disabled
 ```
 
+## Committing Changes
+
+Commit with a clear and concise message following the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) specification.
+
+```bash
+git commit -m "feat: add feature description"
+```
+
+- Allowed types: `feat`, `fix`, `refactor`, `docs`, `test`, `build`, `chore`, `perf`, `style`, `ci`.
+- Reference the area in the subject after the colon, e.g. `fix: web-app chart rendering bug`, `feat: api add invitations/mine endpoint`.
+- Subject line: imperative mood, under 72 characters, no trailing period.
+- Put the "why" in the body, not the subject. Keep the subject focused on what changed.
+
 ## Code Style and Conventions
 
 ### Rust
 
 - Follow standard `rustfmt` formatting (run `cargo fmt`).
 - Address `clippy` warnings — CI runs `cargo clippy --profile ci --workspace`.
-- Use **Conventional Commits**: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `build:`, `chore:`.
 - Prefer `thiserror` / `OxyError` for error types — look at existing patterns in `oxy_shared::errors`.
 - Use `tracing` for logging (`info!`, `warn!`, `debug!`), not `println!` in library crates.
 - CLI user-facing output uses the `StyledText` trait from `oxy::theme` (`.text()`, `.success()`, `.error()`, `.tertiary()`, `.secondary()`).

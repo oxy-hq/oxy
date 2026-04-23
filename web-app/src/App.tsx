@@ -35,16 +35,18 @@ import { FileQuickOpen } from "./components/FileQuickOpen";
 import OrgGuard from "./components/OrgGuard";
 import ProtectedRoute from "./components/ProtectedRoute";
 import WorkspaceStatus from "./components/WorkspaceStatus";
+import { LocalWorkspaceSetupDialog } from "./components/workspaces/components/LocalWorkspaceSetupDialog";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { useWorkspace } from "./hooks/api/workspaces/useWorkspaces";
 import useAuthConfig from "./hooks/auth/useAuthConfig";
 import { LOCAL_WORKSPACE_ID } from "./libs/utils/constants";
+import { setLastWorkspaceId } from "./libs/utils/lastWorkspace";
 import AppPage from "./pages/app";
 import GoogleCallback from "./pages/auth/GoogleCallback";
 import MagicLinkCallback from "./pages/auth/MagicLinkCallback";
 import OktaCallback from "./pages/auth/OktaCallback";
 import GitHubCallback from "./pages/github/callback";
-import GitHubOauthCallback from "./pages/github/oauth-callback";
+import InvitePage from "./pages/Invite";
 import IdePage from "./pages/ide";
 import CoordinatorLayout from "./pages/ide/coordinator";
 import ActiveRunsPage from "./pages/ide/coordinator/ActiveRuns";
@@ -70,14 +72,11 @@ import TestsLayout from "./pages/ide/tests";
 import TestFileDetailPage from "./pages/ide/tests/TestFileDetailPage";
 import TestsDashboardPage from "./pages/ide/tests/TestsDashboardPage";
 import TestsRunsPage from "./pages/ide/tests/TestsRunsPage";
-import InvitePage from "./pages/invite";
 import LoginPage from "./pages/login";
-import MembersPage from "./pages/members";
-import OrgLayout from "./pages/OrgLayout";
-import OrgListPage from "./pages/OrgListPage";
-import OrgSettingsPage from "./pages/org-settings";
-import WorkspacesPage from "./pages/workspaces";
-import { LocalWorkspaceSetupDialog } from "./pages/workspaces/components/LocalWorkspaceSetupDialog";
+import OrgDispatcher from "./pages/OrgDispatcher";
+import OnboardingPage from "./pages/onboarding";
+import OrgOnboardingPage from "./pages/onboarding/OrgOnboardingPage";
+import PostLoginDispatcher from "./pages/PostLoginDispatcher";
 import useBuilderDialog from "./stores/useBuilderDialog";
 import useCurrentOrg from "./stores/useCurrentOrg";
 import useCurrentWorkspace from "./stores/useCurrentWorkspace";
@@ -97,6 +96,7 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
   const { authConfig, isLocalMode } = useAuth();
   const { wsId: wsIdParam } = useParams<{ wsId: string }>();
   const orgSlug = useCurrentOrg((s) => s.org?.slug);
+  const orgId = useCurrentOrg((s) => s.org?.id);
   const navigate = useNavigate();
 
   // In local mode the router doesn't carry a :wsId segment — the single
@@ -120,6 +120,15 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
     }
   }, [isPending, isError, setWorkspace, data]);
 
+  // Remember the last-opened workspace per-org so the post-login dispatcher
+  // can skip the picker next time. Skipped in local mode (no real orgs).
+  React.useEffect(() => {
+    if (isLocalMode) return;
+    if (!isPending && !isError && data && orgId && wsId) {
+      setLastWorkspaceId(orgId, wsId);
+    }
+  }, [isPending, isError, data, orgId, wsId, isLocalMode]);
+
   // In local mode there's nowhere to redirect to — surface the error via toast
   // and let the caller see the empty layout. The cloud fallbacks below don't apply.
   React.useEffect(() => {
@@ -127,7 +136,7 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
       toast.error(data.workspace_error);
       if (isLocalMode) return;
       if (orgSlug) {
-        navigate(ROUTES.ORG(orgSlug).WORKSPACES, { replace: true });
+        navigate(ROUTES.ORG(orgSlug).ROOT, { replace: true });
       } else {
         navigate(ROUTES.ROOT, { replace: true });
       }
@@ -142,7 +151,7 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
       toast.error(msg);
       if (isLocalMode) return;
       if (orgSlug) {
-        navigate(ROUTES.ORG(orgSlug).WORKSPACES, { replace: true });
+        navigate(ROUTES.ORG(orgSlug).ROOT, { replace: true });
       } else {
         navigate(ROUTES.ROOT, { replace: true });
       }
@@ -335,7 +344,6 @@ const getCloudRouter = (authConfig: AuthConfigResponse) =>
 
         {/* GitHub callback must always be accessible (used during the workspace import popup flow) */}
         <Route path='/github/callback' element={<GitHubCallback />} />
-        <Route path='/github/oauth-callback' element={<GitHubOauthCallback />} />
 
         {/* Invitation accept — public; the page itself redirects to /login if needed */}
         <Route path='/invite/:token' element={<InvitePage />} />
@@ -349,24 +357,17 @@ const getCloudRouter = (authConfig: AuthConfigResponse) =>
             </ProtectedRoute>
           }
         >
-          {/* Top-level: org list */}
-          <Route index element={<OrgListPage />} />
+          {/* Top-level: smart dispatcher picks onboarding / last workspace / first workspace */}
+          <Route index element={<PostLoginDispatcher />} />
+          <Route path='onboarding' element={<OnboardingPage />} />
 
           {/* Org-scoped routes */}
           <Route path=':orgSlug' element={<OrgGuard />}>
-            {/* Org-level pages with org sidebar */}
-            <Route
-              element={
-                <SidebarProvider>
-                  <OrgLayout />
-                </SidebarProvider>
-              }
-            >
-              <Route index element={<Navigate to='workspaces' replace />} />
-              <Route path='workspaces' element={<WorkspacesPage />} />
-              <Route path='members' element={<MembersPage />} />
-              <Route path='settings' element={<OrgSettingsPage />} />
-            </Route>
+            {/* Org onboarding (first workspace + optional invites) — no sidebar */}
+            <Route path='onboarding' element={<OrgOnboardingPage />} />
+
+            {/* Org root picks a workspace and redirects into it */}
+            <Route index element={<OrgDispatcher />} />
 
             {/* Workspace-scoped routes */}
             <Route
@@ -404,7 +405,7 @@ function App() {
   if (isPending || !authConfig || !router) {
     return (
       <div className='flex h-full w-full items-center justify-center'>
-        <Spinner />
+        <Spinner className='size-6' />
       </div>
     );
   }

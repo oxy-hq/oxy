@@ -51,7 +51,7 @@ pub async fn get_new_installation_url(
     })?;
 
     let origin = q.origin.trim_end_matches('/');
-    let redirect_uri = format!("{origin}/github/oauth-callback");
+    let redirect_uri = format!("{origin}/github/callback");
 
     let url = format!(
         "https://github.com/apps/{}/installations/new?state={}&redirect_uri={}",

@@ -101,7 +101,7 @@ pub async fn get_oauth_url(
     })?;
 
     let origin = q.origin.trim_end_matches('/');
-    let redirect_uri = format!("{origin}/github/oauth-callback");
+    let redirect_uri = format!("{origin}/github/callback");
 
     let url = format!(
         "https://github.com/login/oauth/authorize?client_id={}&redirect_uri={}&state={}&scope=read:user,read:org",

@@ -5,7 +5,7 @@ import { openSecureWindow } from "@/utils/githubAppInstall";
 import { waitForGitHubCallback } from "@/utils/githubCallbackMessage";
 
 /**
- * Opens a popup to GitHub OAuth, waits for the popup's /github/oauth-callback
+ * Opens a popup to GitHub OAuth, waits for the popup's /github/callback
  * page to postMessage success, then refetches the account.
  */
 export const useConnectGitHubAccount = () => {

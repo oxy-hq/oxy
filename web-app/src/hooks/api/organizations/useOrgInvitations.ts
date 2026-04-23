@@ -21,6 +21,22 @@ export const useCreateInvitation = () => {
   });
 };
 
+export const useCreateBulkInvitations = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      orgId,
+      invitations
+    }: {
+      orgId: string;
+      invitations: Array<{ email: string; role: string }>;
+    }) => OrganizationService.createBulkInvitations(orgId, invitations),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.org.invitations(variables.orgId) });
+    }
+  });
+};
+
 export const useRevokeInvitation = () => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -38,6 +54,15 @@ export const useAcceptInvitation = () => {
     mutationFn: (token: string) => OrganizationService.acceptInvitation(token),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.org.list() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.org.myInvitations() });
     }
+  });
+};
+
+export const useMyInvitations = (enabled = true) => {
+  return useQuery({
+    queryKey: queryKeys.org.myInvitations(),
+    queryFn: () => OrganizationService.listMyInvitations(),
+    enabled
   });
 };

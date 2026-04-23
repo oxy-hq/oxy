@@ -22,7 +22,7 @@ export const useCreateOrg = () => {
   return useMutation({
     mutationFn: (data: { name: string; slug: string }) => OrganizationService.createOrg(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.org.list() });
+      queryClient.removeQueries({ queryKey: queryKeys.org.list() });
     }
   });
 };
@@ -44,7 +44,10 @@ export const useDeleteOrg = () => {
   return useMutation({
     mutationFn: (orgId: string) => OrganizationService.deleteOrg(orgId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.org.list() });
+      // Drop the cached list entirely — a stale entry containing the deleted
+      // org can cause PostLoginDispatcher's pickOrg to briefly re-select it
+      // before the refetch lands, which looks like "delete didn't navigate".
+      queryClient.removeQueries({ queryKey: queryKeys.org.list() });
     }
   });
 };

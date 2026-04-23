@@ -919,9 +919,13 @@ pub async fn get_workspace_status(
 ) -> Result<axum::response::Json<ProjectStatus>, StatusCode> {
     use entity::workspaces::WorkspaceStatus;
 
-    // Short-circuit when the row itself records a clone failure — the workspace
-    // directory may be empty or partial, so running WorkspaceBuilder is pointless.
-    if workspace.status == WorkspaceStatus::Failed {
+    // Short-circuit when the row itself records a clone failure or a missing
+    // `config.yml`. In both cases WorkspaceBuilder has nothing to load, so we
+    // return the persisted error straight through.
+    if matches!(
+        workspace.status,
+        WorkspaceStatus::Failed | WorkspaceStatus::NotOxyProject
+    ) {
         return Ok(axum::response::Json(ProjectStatus {
             required_secrets: None,
             is_config_valid: false,

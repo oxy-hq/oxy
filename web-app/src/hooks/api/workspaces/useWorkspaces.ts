@@ -123,8 +123,18 @@ export const usePushChanges = () => {
   });
 };
 
-export const useAllWorkspaces = () => {
-  const orgId = useCurrentOrg((s) => s.org?.id);
+/**
+ * Fetches the workspace list for an org.
+ *
+ * Default reads the org id from the currentOrg Zustand store. Callers that
+ * already know which org they're asking about (e.g. the dispatcher which
+ * computes chosenOrg before the store is primed) should pass `orgIdOverride`
+ * so the query key and fetched data can never drift out of sync with the
+ * store while it catches up.
+ */
+export const useAllWorkspaces = (orgIdOverride?: string) => {
+  const storeOrgId = useCurrentOrg((s) => s.org?.id);
+  const orgId = orgIdOverride ?? storeOrgId;
 
   return useQuery<WorkspaceSummary[]>({
     queryKey: [...queryKeys.workspaces.list(), orgId],

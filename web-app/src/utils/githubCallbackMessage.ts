@@ -14,12 +14,12 @@ export class GitHubCallbackCancelled extends Error {
 const POPUP_CLOSED_POLL_MS = 500;
 
 /**
- * Listens for a postMessage from the popup at /github/oauth-callback.
+ * Listens for a postMessage from the popup at /github/callback.
  * Resolves with the success payload (filtered by `expectedFlow`) or rejects
  * if the popup posts an error, the popup is closed before posting, or the
  * popup is null (blocked).
  */
-export function waitForGitHubCallback<F extends "oauth" | "install">(
+export function waitForGitHubCallback<F extends GitHubCallbackResponse["flow"]>(
   popup: Window | null,
   expectedFlow: F
 ): Promise<Extract<GitHubCallbackResponse, { flow: F }>> {

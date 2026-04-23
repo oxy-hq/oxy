@@ -201,7 +201,7 @@ export const WorkspaceService = {
   }
 };
 
-export type WorkspaceStatus = "ready" | "cloning" | "failed";
+export type WorkspaceStatus = "ready" | "cloning" | "failed" | "not_oxy_project";
 
 export interface WorkspaceSummary {
   id: string;

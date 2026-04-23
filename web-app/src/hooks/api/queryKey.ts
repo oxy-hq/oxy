@@ -208,7 +208,8 @@ const orgKeys = {
   list: () => [...orgKeys.all, "list"] as const,
   item: (orgId: string) => [...orgKeys.all, "item", orgId] as const,
   members: (orgId: string) => [...orgKeys.all, "members", orgId] as const,
-  invitations: (orgId: string) => [...orgKeys.all, "invitations", orgId] as const
+  invitations: (orgId: string) => [...orgKeys.all, "invitations", orgId] as const,
+  myInvitations: () => [...orgKeys.all, "my-invitations"] as const
 };
 
 const githubKeys = {

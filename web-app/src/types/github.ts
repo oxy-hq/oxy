@@ -1,3 +1,5 @@
+import type { AuthResponse } from "@/types/auth";
+
 export interface GitHubRepository {
   id: number;
   name: string;
@@ -41,9 +43,9 @@ export interface GitHubCallbackBody {
   state: string;
   code?: string;
   installation_id?: number;
-  setup_action?: string;
 }
 
 export type GitHubCallbackResponse =
   | { flow: "oauth"; login: string }
-  | { flow: "install"; namespace_id: string };
+  | { flow: "install"; namespace_id: string }
+  | { flow: "auth"; auth: AuthResponse };

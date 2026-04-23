@@ -1,4 +1,4 @@
-import type { Organization, OrgInvitation, OrgMember } from "@/types/organization";
+import type { MyInvitation, Organization, OrgInvitation, OrgMember } from "@/types/organization";
 import { apiClient } from "./axios";
 
 export class OrganizationService {
@@ -55,6 +55,17 @@ export class OrganizationService {
     return response.data;
   }
 
+  static async createBulkInvitations(
+    orgId: string,
+    invitations: Array<{ email: string; role: string }>
+  ): Promise<OrgInvitation[]> {
+    const response = await apiClient.post<{ invitations: OrgInvitation[] }>(
+      `/orgs/${orgId}/invitations/bulk`,
+      { invitations }
+    );
+    return response.data.invitations;
+  }
+
   static async listInvitations(orgId: string): Promise<OrgInvitation[]> {
     const response = await apiClient.get<OrgInvitation[]>(`/orgs/${orgId}/invitations`);
     return response.data;
@@ -66,6 +77,11 @@ export class OrganizationService {
 
   static async acceptInvitation(token: string): Promise<Organization> {
     const response = await apiClient.post<Organization>(`/invitations/${token}/accept`);
+    return response.data;
+  }
+
+  static async listMyInvitations(): Promise<MyInvitation[]> {
+    const response = await apiClient.get<MyInvitation[]>("/invitations/mine");
     return response.data;
   }
 }

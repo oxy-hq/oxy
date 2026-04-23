@@ -4,16 +4,8 @@ import { Label } from "@/components/ui/shadcn/label";
 import { useDeleteGitNamespace, useGitHubNamespaces } from "@/hooks/api/github";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { GitHubNamespace } from "@/types/github";
-import AddNamespaceMenu from "./AddNamespaceMenu";
-import AddViaInstallationDialog from "./AddViaInstallationDialog";
-import AddViaPATDialog from "./AddViaPATDialog";
+import AddGitNamespaceFlow from "./AddGitNamespaceFlow";
 import NamespaceList from "./NamespaceList";
-
-type DialogState =
-  | { kind: "closed" }
-  | { kind: "menu" }
-  | { kind: "pat" }
-  | { kind: "installation" };
 
 interface Props {
   value?: string;
@@ -31,23 +23,23 @@ export const GitNamespaceSelection = ({ value, onChange }: Props) => {
   } = useGitHubNamespaces(orgId);
   const { mutate: deleteNamespace } = useDeleteGitNamespace();
 
-  const [dialog, setDialog] = useState<DialogState>({ kind: "closed" });
+  const [addOpen, setAddOpen] = useState(false);
 
-  // Snapshot the namespace count when the connect dialog opens so we can
-  // detect when a new namespace is added (e.g. via popup on a different domain).
+  // Snapshot the namespace count when the add flow opens so we can detect when
+  // a new namespace is added (e.g. via popup on a different domain).
   const namespaceCountOnOpenRef = useRef(0);
   useEffect(() => {
-    if (dialog.kind !== "closed") namespaceCountOnOpenRef.current = gitNamespaces.length;
-  }, [dialog.kind, gitNamespaces.length]);
+    if (addOpen) namespaceCountOnOpenRef.current = gitNamespaces.length;
+  }, [addOpen, gitNamespaces.length]);
 
-  // When a new namespace appears while the connect dialog is open, treat it as
-  // a successful connection and close the dialog automatically.
+  // When a new namespace appears while the add flow is open, treat it as a
+  // successful connection and close the flow automatically.
   useEffect(() => {
-    if (dialog.kind === "closed" || gitNamespaces.length <= namespaceCountOnOpenRef.current) return;
+    if (!addOpen || gitNamespaces.length <= namespaceCountOnOpenRef.current) return;
     const newest = gitNamespaces[gitNamespaces.length - 1];
-    setDialog({ kind: "closed" });
+    setAddOpen(false);
     onChange?.(newest.id);
-  }, [dialog.kind, gitNamespaces, onChange]);
+  }, [addOpen, gitNamespaces, onChange]);
 
   // Auto-select the only connected namespace so the user doesn't have to click it.
   useEffect(() => {
@@ -57,7 +49,7 @@ export const GitNamespaceSelection = ({ value, onChange }: Props) => {
   }, [isLoadingNamespaces, gitNamespaces, value, onChange]);
 
   const handleConnected = (namespaceId: string) => {
-    setDialog({ kind: "closed" });
+    setAddOpen(false);
     refetch().then(() => onChange?.(namespaceId));
   };
 
@@ -76,7 +68,7 @@ export const GitNamespaceSelection = ({ value, onChange }: Props) => {
         value={value}
         onChange={onChange}
         onDelete={handleDelete}
-        onAdd={() => setDialog({ kind: "menu" })}
+        onAdd={() => setAddOpen(true)}
       />
 
       {value && (
@@ -90,24 +82,10 @@ export const GitNamespaceSelection = ({ value, onChange }: Props) => {
         </button>
       )}
 
-      <AddNamespaceMenu
-        open={dialog.kind === "menu"}
-        onClose={() => setDialog({ kind: "closed" })}
-        onSelectApp={() => setDialog({ kind: "installation" })}
-        onSelectPAT={() => setDialog({ kind: "pat" })}
-      />
-
-      <AddViaPATDialog
+      <AddGitNamespaceFlow
         orgId={orgId}
-        open={dialog.kind === "pat"}
-        onClose={() => setDialog({ kind: "closed" })}
-        onConnected={handleConnected}
-      />
-
-      <AddViaInstallationDialog
-        orgId={orgId}
-        open={dialog.kind === "installation"}
-        onClose={() => setDialog({ kind: "closed" })}
+        open={addOpen}
+        onOpenChange={setAddOpen}
         onConnected={handleConnected}
       />
     </div>

@@ -18,7 +18,6 @@ pub struct CallbackBody {
     pub state: String,
     pub code: Option<String>,
     pub installation_id: Option<i64>,
-    pub setup_action: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -29,7 +28,7 @@ pub enum CallbackResponse {
 }
 
 /// POST /user/github/callback — authenticated callback completion.
-/// The frontend `/github/oauth-callback` page calls this after GitHub redirects
+/// The frontend `/github/callback` page calls this after GitHub redirects
 /// back. Dispatches on `state.flow` and returns structured JSON.
 pub async fn callback(
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,

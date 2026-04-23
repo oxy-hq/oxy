@@ -1,5 +1,6 @@
 const ROUTES = {
   ROOT: "/",
+  ONBOARDING: "/onboarding",
 
   AUTH: {
     LOGIN: "/login",
@@ -27,6 +28,7 @@ const ROUTES = {
       WORKSPACES: `${base}/workspaces`,
       MEMBERS: `${base}/members`,
       SETTINGS: `${base}/settings`,
+      ONBOARDING: `${base}/onboarding`,
 
       WORKSPACE: (wsId: string) => {
         const wsBase = isLocal ? "" : `${base}/workspaces/${wsId}`;

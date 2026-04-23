@@ -554,7 +554,10 @@ pub async fn setup_github(
                         }
                     );
                     error!("{}", msg);
-                    (entity::workspaces::WorkspaceStatus::Failed, Some(msg))
+                    (
+                        entity::workspaces::WorkspaceStatus::NotOxyProject,
+                        Some(msg),
+                    )
                 }
             }
             Err(e) => {
