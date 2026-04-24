@@ -9,7 +9,7 @@ use crate::{
             database_config::DatabaseConfigBuilder,
             models::{WarehouseConfig, WarehousesFormData},
         },
-        sync::sync_databases,
+        sync::{SyncFilter, sync_databases},
     },
 };
 use axum::{
@@ -20,6 +20,10 @@ use axum::{
 use oxy::config::model::{DatabaseType, SemanticModels, SnowflakeAuthType};
 use oxy::connector::Connector;
 use oxy::semantic::SemanticManager;
+use oxy::semantic::inspector::{
+    InspectEvent, InspectionResult, SchemaListResult, SchemaTablesResult, inspect_database,
+    inspect_schema_tables, inspect_schemas,
+};
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use scopeguard::guard;
 use serde::de::{self, Deserializer};
@@ -45,33 +49,53 @@ pub struct DatabaseSyncResponse {
 }
 
 // support deserializing datasets as either a single string or a list of strings
-fn deserialize_datasets<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
+/// Deserialize a query param that can be:
+/// - absent → None
+/// - a single string → Some(vec![string]) (also splits on commas)
+/// - a JSON array of strings → Some(vec![...])
+fn deserialize_string_list<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
 where
     D: Deserializer<'de>,
 {
     let opt = Option::<serde_json::Value>::deserialize(deserializer)?;
     match opt {
         None => Ok(None),
-        Some(serde_json::Value::String(s)) => Ok(Some(vec![s])),
+        Some(serde_json::Value::String(s)) => {
+            // Support comma-separated values in a single string
+            let items: Vec<String> = s
+                .split(',')
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty())
+                .collect();
+            if items.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(items))
+            }
+        }
         Some(serde_json::Value::Array(arr)) => {
             let mut result = Vec::with_capacity(arr.len());
             for v in arr {
                 match v {
                     serde_json::Value::String(s) => result.push(s),
-                    _ => return Err(de::Error::custom("Expected string in datasets array")),
+                    _ => return Err(de::Error::custom("Expected string in array")),
                 }
             }
             Ok(Some(result))
         }
-        _ => Err(de::Error::custom("Invalid type for datasets")),
+        _ => Err(de::Error::custom("Invalid type for string list param")),
     }
 }
 
 #[derive(Deserialize, ToSchema)]
 pub struct SyncDatabaseQuery {
     pub database: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_datasets")]
+    #[serde(default, deserialize_with = "deserialize_string_list")]
     pub datasets: Option<Vec<String>>,
+    /// Specific tables to sync in "schema.table" format.
+    /// When provided, only these tables are synced (overrides datasets).
+    #[serde(default, deserialize_with = "deserialize_string_list")]
+    pub tables: Option<Vec<String>>,
 }
 
 pub async fn sync_database(
@@ -83,10 +107,15 @@ pub async fn sync_database(
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Query(params): Query<SyncDatabaseQuery>,
 ) -> Result<Json<DatabaseSyncResponse>, StatusCode> {
-    let filter = params.database.map(|db| {
-        let datasets = params.datasets.unwrap_or_default();
-        (db, datasets)
-    });
+    let filter = if params.database.is_some() || params.tables.is_some() {
+        Some(SyncFilter {
+            database: params.database,
+            datasets: params.datasets.unwrap_or_default(),
+            tables: params.tables.unwrap_or_default(),
+        })
+    } else {
+        None
+    };
 
     let overwrite = true; // Always overwrite
 
@@ -490,8 +519,8 @@ pub async fn test_database_connection(
     .await
     {
         Ok(config) => config,
-        Err(_) => {
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        Err(status) => {
+            return Err(status);
         }
     };
 
@@ -660,4 +689,186 @@ pub async fn test_database_connection(
     });
 
     Ok(Sse::new(oxy::utils::create_sse_stream(rx)))
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct InspectDatabaseQuery {
+    /// Optional database name to inspect. When omitted, inspects all
+    /// configured databases (rare during onboarding — usually one).
+    pub database: Option<String>,
+}
+
+/// Lightweight schema/table discovery for the onboarding table picker.
+///
+/// Returns just `{ schema, table, column_count }` per table via a single
+/// GROUP BY query per database (vs. one INFORMATION_SCHEMA.COLUMNS query per
+/// schema in the full sync). Full column metadata is loaded later via
+/// `POST /databases/sync?tables=...` once the user picks tables.
+pub async fn inspect_database_handler(
+    _: WorkspaceAdmin,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path(WorkspacePath {
+        workspace_id: _workspace_id,
+    }): Path<WorkspacePath>,
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+    Query(params): Query<InspectDatabaseQuery>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let (tx, rx) = mpsc::channel::<InspectEvent>(100);
+    let config = workspace_manager.config_manager.clone();
+    let secrets_manager = workspace_manager.secrets_manager.clone();
+
+    tokio::spawn(async move {
+        let databases: Vec<oxy::config::model::Database> = match &params.database {
+            Some(name) => match config.resolve_database(name) {
+                Ok(db) => vec![db.clone()],
+                Err(e) => {
+                    let _ = tx
+                        .send(InspectEvent::Error {
+                            message: format!("Database '{name}' not found: {e}"),
+                        })
+                        .await;
+                    return;
+                }
+            },
+            None => config.list_databases().to_vec(),
+        };
+
+        if databases.is_empty() {
+            let _ = tx
+                .send(InspectEvent::Error {
+                    message: "No databases configured".to_string(),
+                })
+                .await;
+            return;
+        }
+
+        // Inspect each configured database and merge results into a single
+        // schema list. In practice onboarding always passes a single
+        // `database` param so this loop runs once.
+        let mut merged_schemas = Vec::new();
+        let mut total_tables: u32 = 0;
+        let mut total_elapsed_ms: u64 = 0;
+        for db in &databases {
+            match inspect_database(db, &config, &secrets_manager, Some(tx.clone())).await {
+                Ok(result) => {
+                    total_tables += result.table_count;
+                    total_elapsed_ms += result.elapsed_ms;
+                    merged_schemas.extend(result.schemas);
+                }
+                Err(e) => {
+                    tracing::error!("Schema inspection failed for {}: {}", db.name, e);
+                    let _ = tx
+                        .send(InspectEvent::Error {
+                            message: format!("Inspection failed: {e}"),
+                        })
+                        .await;
+                    return;
+                }
+            }
+        }
+
+        let _ = tx
+            .send(InspectEvent::Complete {
+                result: InspectionResult {
+                    schema_count: merged_schemas.len() as u32,
+                    table_count: total_tables,
+                    schemas: merged_schemas,
+                    elapsed_ms: total_elapsed_ms,
+                },
+            })
+            .await;
+    });
+
+    Ok(Sse::new(oxy::utils::create_sse_stream(rx)))
+}
+
+/// Fast schema-only discovery: returns `{ schema, table_count }` per schema.
+/// Preferred over `inspect_database_handler` for onboarding because it avoids
+/// scanning every column in the warehouse.
+pub async fn inspect_schemas_handler(
+    _: WorkspaceAdmin,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path(WorkspacePath {
+        workspace_id: _workspace_id,
+    }): Path<WorkspacePath>,
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+    Query(params): Query<InspectDatabaseQuery>,
+) -> Result<Json<SchemaListResult>, StatusCode> {
+    let config = workspace_manager.config_manager;
+    let secrets_manager = workspace_manager.secrets_manager;
+
+    let database = match &params.database {
+        Some(name) => config.resolve_database(name).map_err(|e| {
+            tracing::error!("Database '{}' not found: {}", name, e);
+            StatusCode::NOT_FOUND
+        })?,
+        None => {
+            let dbs = config.list_databases();
+            if dbs.len() != 1 {
+                tracing::error!(
+                    "inspect_schemas requires a `database` query param when {} databases are configured",
+                    dbs.len()
+                );
+                return Err(StatusCode::BAD_REQUEST);
+            }
+            &dbs[0]
+        }
+    };
+
+    match inspect_schemas(database, &config, &secrets_manager).await {
+        Ok(result) => Ok(Json(result)),
+        Err(e) => {
+            tracing::error!("Schema discovery failed for {}: {}", database.name, e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct InspectSchemaTablesQuery {
+    pub database: Option<String>,
+    pub schema: String,
+}
+
+/// Lazy per-schema table listing: returns `{ name, column_count }` for each
+/// table in the given schema. Called when the user expands a schema in the
+/// onboarding picker.
+pub async fn inspect_schema_tables_handler(
+    _: WorkspaceAdmin,
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path(WorkspacePath {
+        workspace_id: _workspace_id,
+    }): Path<WorkspacePath>,
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+    Query(params): Query<InspectSchemaTablesQuery>,
+) -> Result<Json<SchemaTablesResult>, StatusCode> {
+    let config = workspace_manager.config_manager;
+    let secrets_manager = workspace_manager.secrets_manager;
+
+    let database = match &params.database {
+        Some(name) => config.resolve_database(name).map_err(|e| {
+            tracing::error!("Database '{}' not found: {}", name, e);
+            StatusCode::NOT_FOUND
+        })?,
+        None => {
+            let dbs = config.list_databases();
+            if dbs.len() != 1 {
+                return Err(StatusCode::BAD_REQUEST);
+            }
+            &dbs[0]
+        }
+    };
+
+    match inspect_schema_tables(database, &params.schema, &config, &secrets_manager).await {
+        Ok(result) => Ok(Json(result)),
+        Err(e) => {
+            tracing::error!(
+                "Table discovery failed for {}.{}: {}",
+                database.name,
+                params.schema,
+                e
+            );
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }

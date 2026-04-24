@@ -152,12 +152,16 @@ impl LlmProvider for OpenAiProvider {
         // - Plain role messages get `"type": "message"` added.
         // - Arrays (from assistant_message) are flattened into individual items.
         // - Items that already have a `type` (e.g. function_call_output) pass through.
+        // - Anthropic-format tool_use / tool_result blocks are converted to
+        //   OpenAI Responses API function_call / function_call_output items.
         let mut input: Vec<Value> = Vec::new();
         for msg in messages {
             if let Some(arr) = msg.as_array() {
                 input.extend(arr.iter().cloned());
             } else if msg.get("type").is_some() {
                 input.push(msg.clone());
+            } else if let Some(converted) = convert_anthropic_tool_msg(msg) {
+                input.extend(converted);
             } else {
                 let mut item = msg.clone();
                 item["type"] = json!("message");
@@ -516,5 +520,51 @@ impl LlmProvider for OpenAiProvider {
 
     fn model_name(&self) -> &str {
         &self.model
+    }
+}
+
+/// Convert an Anthropic-format message containing `tool_use` or `tool_result`
+/// content blocks into OpenAI Responses API items (`function_call` /
+/// `function_call_output`).  Returns `None` if the message doesn't contain
+/// Anthropic tool blocks.
+fn convert_anthropic_tool_msg(msg: &Value) -> Option<Vec<Value>> {
+    let content = msg.get("content")?.as_array()?;
+    let first_type = content.first()?.get("type")?.as_str()?;
+
+    match first_type {
+        "tool_use" => {
+            // Assistant message with tool_use blocks →
+            // function_call items for the Responses API.
+            let items: Vec<Value> = content
+                .iter()
+                .filter(|b| b.get("type").and_then(|t| t.as_str()) == Some("tool_use"))
+                .map(|b| {
+                    json!({
+                        "type": "function_call",
+                        "call_id": b.get("id").and_then(|v| v.as_str()).unwrap_or(""),
+                        "name": b.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                        "arguments": b.get("input").map(|v| v.to_string()).unwrap_or_else(|| "{}".to_string())
+                    })
+                })
+                .collect();
+            Some(items)
+        }
+        "tool_result" => {
+            // User message with tool_result blocks →
+            // function_call_output items for the Responses API.
+            let items: Vec<Value> = content
+                .iter()
+                .filter(|b| b.get("type").and_then(|t| t.as_str()) == Some("tool_result"))
+                .map(|b| {
+                    json!({
+                        "type": "function_call_output",
+                        "call_id": b.get("tool_use_id").and_then(|v| v.as_str()).unwrap_or(""),
+                        "output": b.get("content").and_then(|v| v.as_str()).unwrap_or("")
+                    })
+                })
+                .collect();
+            Some(items)
+        }
+        _ => None,
     }
 }

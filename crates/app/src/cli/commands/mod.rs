@@ -22,7 +22,7 @@ use crate::server::service::agent::run_agent;
 use crate::server::service::eval::EvalEventsHandler;
 use crate::server::service::eval::run_eval_with_tag;
 use crate::server::service::retrieval::{ReindexInput, SearchInput, reindex, search};
-use crate::server::service::sync::sync_databases;
+use crate::server::service::sync::{SyncFilter, sync_databases};
 use ::oxy::adapters::runs::RunsManager;
 use ::oxy::adapters::secrets::SecretsManager;
 use ::oxy::adapters::workspace::builder::WorkspaceBuilder;
@@ -776,10 +776,11 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 .await?;
 
             let secrets_manager = SecretsManager::from_environment()?;
-            let filter = sync_args
-                .database
-                .clone()
-                .map(|db| (db, sync_args.datasets.clone()));
+            let filter = sync_args.database.clone().map(|db| SyncFilter {
+                database: Some(db),
+                datasets: sync_args.datasets.clone(),
+                tables: vec![],
+            });
             debug!(sync_args = ?sync_args, "Syncing");
             println!("🔄Syncing databases");
             let sync_metrics =

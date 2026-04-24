@@ -64,6 +64,7 @@ impl ChartOptionsGenerator for BarChartGenerator {
                         title: Some(Self::generate_title(&cat_col.name, &num_col.name, None)),
                         data: context.data_reference.clone(),
                         series: None,
+                        y_format: None,
                     }),
                 });
             }
@@ -113,6 +114,7 @@ impl ChartOptionsGenerator for BarChartGenerator {
                                     )),
                                     data: context.data_reference.clone(),
                                     series: Some(group_col.name.clone()),
+                                    y_format: None,
                                 }),
                             });
                         }
@@ -134,6 +136,7 @@ impl ChartOptionsGenerator for BarChartGenerator {
                         title: Some(format!("{} by {}", num_col.name, bool_col.name)),
                         data: context.data_reference.clone(),
                         series: None,
+                        y_format: None,
                     }),
                 });
             }
@@ -152,6 +155,7 @@ impl ChartOptionsGenerator for BarChartGenerator {
                         title: Some(format!("{} by {}", num_col.name, temp_col.name)),
                         data: context.data_reference.clone(),
                         series: None,
+                        y_format: None,
                     }),
                 });
             }

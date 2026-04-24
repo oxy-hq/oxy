@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronLeft, ChevronRight, Layers } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import {
   type AnalyticsStep,
@@ -151,29 +151,29 @@ const TraceHeader = ({
   llmCalls,
   llmTotalMs
 }: HeaderProps) => {
-  const { total, done } = countSteps(items);
+  const { total } = countSteps(items);
   const isComplete = !isStreaming;
 
   return (
-    <button type='button' onClick={onToggle} className='mb-2 flex w-full items-center gap-2'>
-      {isComplete ? (
-        <ChevronDown
-          className={cn(
-            "h-3 w-3 shrink-0 text-muted-foreground transition-transform",
-            collapsed && "-rotate-90"
-          )}
-        />
-      ) : (
-        <Spinner className='size-3 text-primary' />
-      )}
+    <button type='button' onClick={onToggle} className='flex w-full items-center gap-2'>
+      <ChevronDown
+        className={cn(
+          "h-3 w-3 shrink-0 text-muted-foreground transition-transform",
+          collapsed && "-rotate-90"
+        )}
+      />
+      {!isComplete && <Spinner className='size-3 shrink-0 text-primary' />}
       <span className='font-medium text-muted-foreground text-sm'>Reasoning trace</span>
       <span className='ml-auto flex items-center gap-2 font-mono text-muted-foreground text-xs'>
         {llmCalls > 0 && (
-          <span>
-            {llmCalls} LLM {llmCalls === 1 ? "call" : "calls"} · {formatDuration(llmTotalMs)}
-          </span>
+          <>
+            <span>
+              {llmCalls} LLM {llmCalls === 1 ? "call" : "calls"} · {formatDuration(llmTotalMs)}
+            </span>
+            <span>·</span>
+          </>
         )}
-        <span>{isComplete ? `${total} steps` : total > 0 ? `${done}/${total}` : ""}</span>
+        <span>{isComplete ? `${total} steps` : total > 0 ? `${total} steps` : ""}</span>
       </span>
     </button>
   );
@@ -185,12 +185,21 @@ interface AnalyticsReasoningTraceProps {
   events: UiBlock[];
   isRunning: boolean;
   onSelectArtifact: (item: SelectableItem) => void;
+  defaultCollapsed?: boolean;
+  /** Override the displayed duration (wall-clock ms) instead of summing individual LLM durations.
+   *  Useful when events are aggregated from multiple parallel runs. */
+  wallClockMs?: number;
+  /** When true, drop the outer bordered card so the trace blends into its container. */
+  flat?: boolean;
 }
 
 const AnalyticsReasoningTrace = ({
   events,
   isRunning,
-  onSelectArtifact
+  onSelectArtifact,
+  defaultCollapsed = false,
+  wallClockMs,
+  flat = false
 }: AnalyticsReasoningTraceProps) => {
   const items = buildAnalyticsSteps(events);
   const { calls: llmCalls, totalMs: llmTotalMs } = useMemo(
@@ -199,31 +208,43 @@ const AnalyticsReasoningTrace = ({
   );
 
   const hasContent = items.length > 0;
-  const [collapsed, setCollapsed] = useAutoCollapse(isRunning, hasContent);
-  const toggleCollapse = useCallback(
-    () => !isRunning && setCollapsed((prev) => !prev),
-    [isRunning, setCollapsed]
-  );
+  const [collapsed, setCollapsed] = useAutoCollapse(isRunning, hasContent, defaultCollapsed);
+  const toggleCollapse = useCallback(() => setCollapsed((prev) => !prev), [setCollapsed]);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom on every new SSE event so content is always visible while streaming
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on every event/collapse change
+  useEffect(() => {
+    if (!collapsed && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [events.length, collapsed]);
 
   if (!isRunning && !hasContent) return null;
 
   return (
-    <div className='space-y-1.5 rounded-lg border border-border p-3'>
+    <div className={cn(!flat && "rounded-lg border border-border p-3")}>
       <TraceHeader
         items={items}
         isStreaming={isRunning}
         collapsed={collapsed}
         onToggle={toggleCollapse}
         llmCalls={llmCalls}
-        llmTotalMs={llmTotalMs}
+        llmTotalMs={wallClockMs ?? llmTotalMs}
       />
 
       <div
+        ref={scrollRef}
         className={cn(
           "transition-all duration-500",
           collapsed
             ? "max-h-0 overflow-hidden opacity-0"
-            : "max-h-[600px] overflow-y-auto opacity-100"
+            : cn(
+                "mt-1.5 overflow-y-auto opacity-100",
+                flat ? "max-h-[180px]" : "max-h-[600px]"
+              )
         )}
       >
         <div className='space-y-1.5'>
@@ -235,10 +256,12 @@ const AnalyticsReasoningTrace = ({
                 key={item.id}
                 step={item as AnalyticsStep}
                 onSelectArtifact={onSelectArtifact}
+                flat={flat}
               />
             )
           )}
         </div>
+        <div ref={bottomRef} />
       </div>
     </div>
   );

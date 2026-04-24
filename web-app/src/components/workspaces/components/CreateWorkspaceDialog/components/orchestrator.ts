@@ -1,0 +1,1841 @@
+import { useCallback, useEffect, useMemo, useReducer } from "react";
+import type {
+  BuildPhase,
+  ConnectionStatus,
+  GithubSetup,
+  LlmProvider,
+  OnboardingMessage,
+  OnboardingMode,
+  OnboardingRailState,
+  OnboardingState,
+  OnboardingStep,
+  PhaseStatus,
+  SchemaInfo,
+  SelectionOption,
+  WarehouseType
+} from "./types";
+
+// ── Topic / second-app prediction ───────────────────────────────────────────
+//
+// Each selected table becomes one `.view.yml` + one `.topic.yml`, and the
+// topic name is the short (post-`.`) table name. The builder picks topics
+// alphabetically, so we can predict which topic each app will cover:
+//
+// - Overview (always) → always named `apps/overview.app.yml`.
+// - Second deep-dive → only built when ≥ 2 topics exist, and its filename is
+//   `apps/<topic>.app.yml` where <topic> is the SECOND topic alphabetically.
+//   The frontend labels / expected-file entries reflect that predicted topic
+//   so the UI never shows a generic "Detail Dashboard" placeholder.
+//
+// These helpers are exported so the hooks/components share a single source
+// of truth for the gate + display names.
+
+/** Short table name: the segment after the last dot. */
+function shortTableName(table: string): string {
+  return table.split(".").pop() ?? table;
+}
+
+/** Sorted (alpha) list of short table names. */
+function sortedTopicSlugs(tables: string[]): string[] {
+  return tables.map(shortTableName).sort();
+}
+
+/**
+ * Predict the topic slug the deep-dive dashboard will cover, or `undefined`
+ * when the workspace has fewer than 2 topics (in which case no second app
+ * is built).
+ */
+export function predictSecondAppTopic(tables: string[]): string | undefined {
+  const sorted = sortedTopicSlugs(tables);
+  return sorted.length >= 2 ? sorted[1] : undefined;
+}
+
+/** True when onboarding should build the second (deep-dive) dashboard. */
+export function wantsSecondApp(tables: string[]): boolean {
+  return predictSecondAppTopic(tables) !== undefined;
+}
+
+/** Title-case a snake_case slug for display (e.g. "order_items" → "Order Items"). */
+export function humanizeTopicSlug(slug: string): string {
+  return slug
+    .split("_")
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+// ── Actions ─────────────────────────────────────────────────────────────────
+
+type Action =
+  | { type: "SET_LLM_PROVIDER"; provider: LlmProvider }
+  | { type: "SET_LLM_MODEL"; model: string; modelRef: string; vendor: string }
+  | { type: "SET_LLM_KEY"; apiKey: string }
+  | { type: "SET_WAREHOUSE_TYPE"; warehouseType: WarehouseType }
+  | { type: "SET_WAREHOUSE_CREDENTIALS"; credentials: Record<string, string> }
+  | { type: "SET_UPLOADED_WAREHOUSE_FILES"; files: string[]; subdir: string }
+  | { type: "SET_CONNECTION_STATUS"; status: ConnectionStatus; error?: string }
+  | { type: "SET_DISCOVERED_SCHEMAS"; schemas: SchemaInfo[] }
+  | { type: "HYDRATE_DISCOVERED_SCHEMAS"; schemas: SchemaInfo[] }
+  | {
+      type: "SET_SCHEMA_TABLES_STATUS";
+      schema: string;
+      status: "loading" | "error";
+      error?: string;
+    }
+  | {
+      type: "SET_SCHEMA_TABLES";
+      schema: string;
+      tables: SchemaInfo["tables"];
+    }
+  | { type: "SET_SCHEMA_DISCOVERY_STATUS"; message: string | undefined }
+  | { type: "SET_SCHEMA_DISCOVERY_ERROR"; error: string }
+  | { type: "SET_SELECTED_TABLES"; tables: string[] }
+  | { type: "START_PHASE"; phase: BuildPhase; threadId: string; runId: string }
+  | { type: "SET_PHASE_STATUS"; phase: BuildPhase; status: PhaseStatus }
+  | { type: "START_VIEW_RUN"; table: string; runId: string }
+  | { type: "SET_VIEW_RUN_STATUS"; table: string; status: PhaseStatus }
+  | { type: "SET_BUILD_ERROR"; error: string }
+  | { type: "STOP_BUILD"; message: string }
+  | { type: "COMPLETE"; createdFiles: string[]; sampleQuestions: string[] }
+  | { type: "GO_TO_STEP"; step: OnboardingStep }
+  // GitHub-flow actions
+  | { type: "SET_GITHUB_SETUP"; setup: GithubSetup }
+  | { type: "ADVANCE_GITHUB_LLM_KEY" }
+  | {
+      type: "ADVANCE_GITHUB_WAREHOUSE";
+      result: "success" | "skipped" | "failed";
+      warehouseName: string;
+    }
+  | { type: "START_GITHUB_WAREHOUSE_TEST" }
+  | { type: "FAIL_GITHUB_WAREHOUSE_TEST"; error: string };
+
+// ── Initial State ───────────────────────────────────────────────────────────
+
+export const initialState: OnboardingState = {
+  step: "welcome",
+  connectionStatus: "idle",
+  discoveredSchemas: [],
+  selectedTables: []
+};
+
+// ── Reducer ─────────────────────────────────────────────────────────────────
+
+function reducer(state: OnboardingState, action: Action): OnboardingState {
+  switch (action.type) {
+    case "SET_LLM_PROVIDER":
+      return { ...state, step: "llm_model", llmProvider: action.provider };
+
+    case "SET_LLM_MODEL":
+      return {
+        ...state,
+        step: "llm_key",
+        llmModel: action.model,
+        llmModelRef: action.modelRef,
+        llmVendor: action.vendor
+      };
+
+    case "SET_LLM_KEY":
+      return {
+        ...state,
+        step: "warehouse_type",
+        llmApiKey: action.apiKey
+      };
+
+    case "SET_WAREHOUSE_TYPE":
+      return {
+        ...state,
+        step: "warehouse_credentials",
+        warehouseType: action.warehouseType
+      };
+
+    case "SET_WAREHOUSE_CREDENTIALS":
+      return {
+        ...state,
+        step: "connection_test",
+        warehouseCredentials: action.credentials,
+        connectionStatus: "testing"
+      };
+
+    case "SET_UPLOADED_WAREHOUSE_FILES":
+      return {
+        ...state,
+        uploadedWarehouseFiles: action.files,
+        uploadedWarehouseSubdir: action.subdir
+      };
+
+    case "SET_CONNECTION_STATUS":
+      if (action.status === "success") {
+        return {
+          ...state,
+          step: "schema_discovery",
+          connectionStatus: "success",
+          connectionError: undefined
+        };
+      }
+      return {
+        ...state,
+        connectionStatus: action.status,
+        connectionError: action.error
+      };
+
+    case "SET_DISCOVERED_SCHEMAS":
+      return {
+        ...state,
+        step: "table_selection",
+        discoveredSchemas: action.schemas,
+        schemaDiscoveryError: undefined,
+        schemaDiscoveryStatus: undefined
+      };
+
+    case "HYDRATE_DISCOVERED_SCHEMAS":
+      // Update column metadata in-place after a filtered re-sync — does NOT
+      // change `step`, so callers can refresh schemas mid-build without
+      // bouncing the user back to the table picker.
+      return { ...state, discoveredSchemas: action.schemas, schemaDiscoveryStatus: undefined };
+
+    case "SET_SCHEMA_TABLES_STATUS":
+      return {
+        ...state,
+        discoveredSchemas: state.discoveredSchemas.map((schema) =>
+          schema.schema === action.schema
+            ? {
+                ...schema,
+                loading: action.status === "loading",
+                loadError: action.status === "error" ? action.error : undefined
+              }
+            : schema
+        )
+      };
+
+    case "SET_SCHEMA_TABLES":
+      return {
+        ...state,
+        discoveredSchemas: state.discoveredSchemas.map((schema) =>
+          schema.schema === action.schema
+            ? {
+                ...schema,
+                tables: action.tables,
+                tableCount: action.tables.length || schema.tableCount,
+                loaded: true,
+                loading: false,
+                loadError: undefined
+              }
+            : schema
+        )
+      };
+
+    case "SET_SCHEMA_DISCOVERY_STATUS":
+      return { ...state, schemaDiscoveryStatus: action.message };
+
+    case "SET_SCHEMA_DISCOVERY_ERROR":
+      return { ...state, schemaDiscoveryError: action.error, schemaDiscoveryStatus: undefined };
+
+    case "SET_SELECTED_TABLES":
+      return {
+        ...state,
+        step: "building",
+        selectedTables: action.tables,
+        builderThreadId: undefined,
+        phaseRunIds: undefined,
+        phaseStatuses: undefined,
+        viewRunIds: undefined,
+        viewRunStatuses: undefined,
+        buildError: undefined,
+        createdFiles: undefined,
+        sampleQuestions: undefined
+      };
+
+    case "START_PHASE":
+      return {
+        ...state,
+        // First phase creates the thread; subsequent phases reuse it
+        builderThreadId: state.builderThreadId ?? action.threadId,
+        phaseRunIds: { ...state.phaseRunIds, [action.phase]: action.runId },
+        phaseStatuses: { ...state.phaseStatuses, [action.phase]: "running" as PhaseStatus },
+        buildError: undefined
+      };
+
+    case "SET_PHASE_STATUS":
+      return {
+        ...state,
+        phaseStatuses: { ...state.phaseStatuses, [action.phase]: action.status }
+      };
+
+    case "START_VIEW_RUN":
+      return {
+        ...state,
+        viewRunIds: { ...state.viewRunIds, [action.table]: action.runId },
+        viewRunStatuses: { ...state.viewRunStatuses, [action.table]: "running" as PhaseStatus }
+      };
+
+    case "SET_VIEW_RUN_STATUS":
+      return {
+        ...state,
+        viewRunStatuses: { ...state.viewRunStatuses, [action.table]: action.status }
+      };
+
+    case "SET_BUILD_ERROR":
+      return { ...state, buildError: action.error };
+
+    case "STOP_BUILD": {
+      // Flip any still-running phase / view to failed so the progress rail
+      // and messages reflect the cancellation without relying on an in-flight
+      // SSE to land the terminal event. Completed phases stay done.
+      const nextPhaseStatuses: Partial<Record<BuildPhase, PhaseStatus>> = {
+        ...(state.phaseStatuses ?? {})
+      };
+      for (const [phase, status] of Object.entries(nextPhaseStatuses) as [
+        BuildPhase,
+        PhaseStatus
+      ][]) {
+        if (status === "running") nextPhaseStatuses[phase] = "failed";
+      }
+      const nextViewRunStatuses: Record<string, PhaseStatus> = {
+        ...(state.viewRunStatuses ?? {})
+      };
+      for (const [table, status] of Object.entries(nextViewRunStatuses)) {
+        if (status === "running") nextViewRunStatuses[table] = "failed";
+      }
+      return {
+        ...state,
+        phaseStatuses: nextPhaseStatuses,
+        viewRunStatuses: nextViewRunStatuses,
+        buildError: action.message
+      };
+    }
+
+    case "COMPLETE":
+      return {
+        ...state,
+        step: "complete",
+        createdFiles: action.createdFiles,
+        sampleQuestions: action.sampleQuestions
+      };
+
+    case "SET_GITHUB_SETUP": {
+      // First question / warehouse drives the step cursor. If nothing is
+      // missing we skip straight to complete — the repo is fully configured.
+      const hasLlmKeys = action.setup.missing_llm_key_vars.length > 0;
+      const hasWarehouses = action.setup.warehouses.length > 0;
+      const nextStep: OnboardingStep = hasLlmKeys
+        ? "github_llm_keys"
+        : hasWarehouses
+          ? "github_warehouse_creds"
+          : "complete";
+      return {
+        ...state,
+        step: nextStep,
+        githubSetup: action.setup,
+        githubLlmKeyCursor: 0,
+        githubWarehouseCursor: 0,
+        githubWarehouseResults: {}
+      };
+    }
+
+    case "ADVANCE_GITHUB_LLM_KEY": {
+      const cursor = (state.githubLlmKeyCursor ?? 0) + 1;
+      const total = state.githubSetup?.missing_llm_key_vars.length ?? 0;
+      const hasWarehouses = (state.githubSetup?.warehouses.length ?? 0) > 0;
+      if (cursor < total) {
+        return { ...state, githubLlmKeyCursor: cursor };
+      }
+      return {
+        ...state,
+        githubLlmKeyCursor: cursor,
+        step: hasWarehouses ? "github_warehouse_creds" : "complete"
+      };
+    }
+
+    case "ADVANCE_GITHUB_WAREHOUSE": {
+      const cursor = (state.githubWarehouseCursor ?? 0) + 1;
+      const total = state.githubSetup?.warehouses.length ?? 0;
+      const results = {
+        ...(state.githubWarehouseResults ?? {}),
+        [action.warehouseName]: action.result
+      };
+      // Moving to the next warehouse always clears the active submission /
+      // error state — each warehouse has its own form instance.
+      if (cursor < total) {
+        return {
+          ...state,
+          githubWarehouseCursor: cursor,
+          githubWarehouseResults: results,
+          githubWarehouseSubmitting: false,
+          githubWarehouseError: undefined
+        };
+      }
+      return {
+        ...state,
+        githubWarehouseCursor: cursor,
+        githubWarehouseResults: results,
+        githubWarehouseSubmitting: false,
+        githubWarehouseError: undefined,
+        step: "complete"
+      };
+    }
+
+    case "START_GITHUB_WAREHOUSE_TEST":
+      return {
+        ...state,
+        githubWarehouseSubmitting: true,
+        githubWarehouseError: undefined
+      };
+
+    case "FAIL_GITHUB_WAREHOUSE_TEST":
+      return {
+        ...state,
+        githubWarehouseSubmitting: false,
+        githubWarehouseError: action.error
+      };
+
+    case "GO_TO_STEP": {
+      const targetIdx = STEP_ORDER.indexOf(action.step);
+      const currentIdx = STEP_ORDER.indexOf(state.step);
+
+      // Going backwards — clear state from the target step onwards
+      if (targetIdx < currentIdx) {
+        const cleared: Partial<OnboardingState> = {};
+        if (targetIdx <= stepIndex("llm_provider")) {
+          cleared.llmProvider = undefined;
+        }
+        if (targetIdx <= stepIndex("llm_model")) {
+          cleared.llmModel = undefined;
+          cleared.llmModelRef = undefined;
+          cleared.llmVendor = undefined;
+        }
+        if (targetIdx <= stepIndex("llm_key")) {
+          cleared.llmApiKey = undefined;
+        }
+        if (targetIdx <= stepIndex("warehouse_type")) {
+          cleared.warehouseType = undefined;
+        }
+        if (targetIdx <= stepIndex("warehouse_credentials")) {
+          cleared.warehouseCredentials = undefined;
+        }
+        if (targetIdx <= stepIndex("warehouse_type")) {
+          // Uploaded files are tied to the warehouse choice — clearing the
+          // warehouse type implies the user is picking a different backend, so
+          // the prior upload list is no longer meaningful. The files still live
+          // on disk in `.db/`; "Start over" is the explicit way to delete them.
+          cleared.uploadedWarehouseFiles = undefined;
+          cleared.uploadedWarehouseSubdir = undefined;
+        }
+        if (targetIdx <= stepIndex("connection_test")) {
+          cleared.connectionStatus = "idle" as ConnectionStatus;
+          cleared.connectionError = undefined;
+        }
+        if (targetIdx <= stepIndex("schema_discovery")) {
+          cleared.discoveredSchemas = [];
+          cleared.schemaDiscoveryError = undefined;
+          cleared.schemaDiscoveryStatus = undefined;
+        }
+        if (targetIdx <= stepIndex("table_selection")) {
+          cleared.selectedTables = [];
+          cleared.builderThreadId = undefined;
+          cleared.phaseRunIds = undefined;
+          cleared.phaseStatuses = undefined;
+          cleared.viewRunIds = undefined;
+          cleared.viewRunStatuses = undefined;
+          cleared.buildError = undefined;
+          cleared.createdFiles = undefined;
+          cleared.sampleQuestions = undefined;
+        }
+        return { ...state, ...cleared, step: action.step };
+      }
+
+      // Going forward or same step — just set the step and clear relevant errors
+      return {
+        ...state,
+        step: action.step,
+        schemaDiscoveryError:
+          action.step === "schema_discovery" ? undefined : state.schemaDiscoveryError,
+        ...(action.step === "building"
+          ? {
+              buildError: undefined,
+              builderThreadId: undefined,
+              phaseRunIds: undefined,
+              phaseStatuses: undefined,
+              viewRunIds: undefined,
+              viewRunStatuses: undefined,
+              createdFiles: undefined,
+              sampleQuestions: undefined
+            }
+          : {})
+      };
+    }
+
+    default:
+      return state;
+  }
+}
+
+// ── Step Ordering ───────────────────────────────────────────────────────────
+
+const STEP_ORDER: OnboardingStep[] = [
+  "welcome",
+  "llm_provider",
+  "llm_model",
+  "llm_key",
+  "warehouse_type",
+  "warehouse_credentials",
+  "connection_test",
+  "schema_discovery",
+  "table_selection",
+  "building",
+  // GitHub-only steps — not on the blank-workspace path. Ordering is
+  // informational; github mode skips directly between them.
+  "github_loading",
+  "github_llm_keys",
+  "github_warehouse_creds",
+  "github_connection_test",
+  "complete"
+];
+
+function stepIndex(step: OnboardingStep): number {
+  return STEP_ORDER.indexOf(step);
+}
+
+/** Steps that support going back, mapped to their previous step. */
+const BACK_TARGETS: Partial<Record<OnboardingStep, OnboardingStep>> = {
+  llm_model: "llm_provider",
+  llm_key: "llm_model",
+  warehouse_credentials: "warehouse_type",
+  connection_test: "warehouse_credentials",
+  schema_discovery: "warehouse_credentials",
+  table_selection: "warehouse_credentials"
+};
+
+export function getPreviousStep(current: OnboardingStep): OnboardingStep | undefined {
+  return BACK_TARGETS[current];
+}
+
+// ── GitHub mode: message derivation ─────────────────────────────────────────
+//
+// GitHub flow is shorter and cursor-driven: one prompt per missing LLM key,
+// then one credential form per warehouse needing creds. Each answered prompt
+// is retained in history as a "complete"/user message pair so the thread
+// reads as a linear conversation like blank mode.
+
+function deriveGithubMessages(state: OnboardingState): OnboardingMessage[] {
+  const messages: OnboardingMessage[] = [];
+  const setup = state.githubSetup;
+  const llmCursor = state.githubLlmKeyCursor ?? 0;
+  const whCursor = state.githubWarehouseCursor ?? 0;
+
+  messages.push({
+    id: "welcome",
+    role: "assistant",
+    content:
+      "Welcome back. Your repository is imported — I just need a few secrets from you before you can start asking questions. Skip anything you're not ready to set up yet.",
+    status: state.step === "github_loading" ? undefined : "complete"
+  });
+
+  if (state.step === "github_loading") {
+    messages.push({
+      id: "github_loading",
+      role: "assistant",
+      content: "Scanning config.yml to see what setup is needed…",
+      status: "working"
+    });
+    return messages;
+  }
+
+  if (!setup) {
+    return messages;
+  }
+
+  const totalLlmKeys = setup.missing_llm_key_vars.length;
+  for (let i = 0; i < totalLlmKeys; i++) {
+    const keyVar = setup.missing_llm_key_vars[i];
+    const isActive = state.step === "github_llm_keys" && i === llmCursor;
+    const isPast = i < llmCursor || state.step !== "github_llm_keys";
+    const id = `github_llm_key_${keyVar.var_name}`;
+    messages.push({
+      id,
+      role: "assistant",
+      content: `Enter your ${keyVar.vendor} API key (stored as \`${keyVar.var_name}\`). This will be saved as a workspace secret.`,
+      inputBlock: isActive
+        ? {
+            type: "secure_input",
+            label: keyVar.var_name,
+            placeholder: `Enter your ${keyVar.vendor} API key…`,
+            buttonLabel: "Save & Continue"
+          }
+        : undefined,
+      status: isPast ? "complete" : undefined,
+      allowSkip: isActive
+    });
+    if (isPast) {
+      messages.push({
+        id: `${id}_answer`,
+        role: "user",
+        content: "API key saved"
+      });
+    }
+  }
+
+  const totalWarehouses = setup.warehouses.length;
+  const warehousesActive = state.step === "github_warehouse_creds";
+
+  if (warehousesActive || state.step === "complete") {
+    for (let i = 0; i < totalWarehouses; i++) {
+      const warehouse = setup.warehouses[i];
+      const isActive = warehousesActive && i === whCursor;
+      const isPast = i < whCursor || state.step === "complete";
+      const id = `github_warehouse_${warehouse.name}`;
+      const fields = warehouse.missing_vars.map((v) => ({
+        key: v.var_name,
+        label: humanizeWarehouseField(v.field, v.var_name),
+        placeholder: v.var_name,
+        type: (v.field === "port" ? "text" : "password") as "text" | "password",
+        required: v.required
+      }));
+
+      const submitting = isActive && state.githubWarehouseSubmitting === true;
+      const activeError = isActive ? state.githubWarehouseError : undefined;
+      messages.push({
+        id,
+        role: "assistant",
+        content: `Fill in credentials for the \`${warehouse.name}\` (${warehouse.dialect}) warehouse. Each field maps to a \`*_var\` entry in the repo's config.yml.`,
+        inputBlock: isActive
+          ? {
+              type: "credential_form",
+              fields,
+              buttonLabel: submitting ? "Testing connection…" : "Save & Test Connection",
+              busy: submitting,
+              errorMessage: activeError
+            }
+          : undefined,
+        status: isPast ? "complete" : undefined,
+        allowSkip: isActive && !submitting
+      });
+
+      if (isPast) {
+        const result = state.githubWarehouseResults?.[warehouse.name];
+        const label =
+          result === "success"
+            ? "Connected"
+            : result === "failed"
+              ? "Saved (connection failed)"
+              : "Skipped";
+        messages.push({
+          id: `${id}_answer`,
+          role: "user",
+          content: label
+        });
+      }
+    }
+  }
+
+  return messages;
+}
+
+/** Pretty field label for a warehouse credential prompt. */
+function humanizeWarehouseField(field: string, varName: string): string {
+  const fieldLabel = field
+    .split("_")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+  return `${fieldLabel} (${varName})`;
+}
+
+// ── Messages derived from state ─────────────────────────────────────────────
+
+export function deriveMessages(state: OnboardingState): OnboardingMessage[] {
+  if (state.mode === "github") {
+    return deriveGithubMessages(state);
+  }
+
+  const messages: OnboardingMessage[] = [];
+  const currentIdx = stepIndex(state.step);
+
+  // Welcome
+  messages.push({
+    id: "welcome",
+    role: "assistant",
+    content:
+      "Welcome to Oxy. I'll help you set up your workspace — connect your LLM, link your data warehouse, and build your first semantic layer.\n\nLet's get started.",
+    status: currentIdx > 0 ? "complete" : undefined
+  });
+
+  if (currentIdx < stepIndex("llm_provider")) return messages;
+
+  // LLM Provider selection
+  messages.push({
+    id: "llm_provider",
+    role: "assistant",
+    content: "First, which LLM provider would you like to use?",
+    inputBlock:
+      currentIdx === stepIndex("llm_provider")
+        ? {
+            type: "selection_cards",
+            options: [
+              {
+                id: "anthropic",
+                label: "Anthropic",
+                description: "Claude models — recommended for analytics"
+              },
+              { id: "openai", label: "OpenAI", description: "GPT-5.4, GPT-5.4 Mini, and GPT-4.1" }
+            ]
+          }
+        : undefined,
+    userSelection: state.llmProvider,
+    status: currentIdx > stepIndex("llm_provider") ? "complete" : undefined
+  });
+
+  if (state.llmProvider && currentIdx > stepIndex("llm_provider")) {
+    messages.push({
+      id: "llm_provider_answer",
+      role: "user",
+      content: state.llmProvider.charAt(0).toUpperCase() + state.llmProvider.slice(1)
+    });
+  }
+
+  if (currentIdx < stepIndex("llm_model")) return messages;
+
+  // LLM Model selection
+  const modelOptions = getModelOptions(state.llmProvider);
+  messages.push({
+    id: "llm_model",
+    role: "assistant",
+    content: "Which model would you like to use? You can always change this later.",
+    inputBlock:
+      currentIdx === stepIndex("llm_model")
+        ? { type: "selection_cards", collapseAfter: 2, options: modelOptions }
+        : undefined,
+    userSelection: state.llmModel,
+    status: currentIdx > stepIndex("llm_model") ? "complete" : undefined
+  });
+
+  if (state.llmModel && currentIdx > stepIndex("llm_model")) {
+    const modelLabel =
+      MODEL_OPTIONS[state.llmProvider ?? "anthropic"]?.find((m) => m.id === state.llmModel)
+        ?.label ?? state.llmModel;
+    messages.push({
+      id: "llm_model_answer",
+      role: "user",
+      content: modelLabel
+    });
+  }
+
+  if (currentIdx < stepIndex("llm_key")) return messages;
+
+  // LLM API Key
+  const providerName = state.llmProvider
+    ? state.llmProvider.charAt(0).toUpperCase() + state.llmProvider.slice(1)
+    : "your provider";
+
+  messages.push({
+    id: "llm_key",
+    role: "assistant",
+    content: `Enter your ${providerName} API key. This will be stored securely as a project secret.`,
+    inputBlock:
+      currentIdx === stepIndex("llm_key")
+        ? {
+            type: "secure_input",
+            label: "API Key",
+            placeholder: `Enter your ${providerName} API key...`,
+            buttonLabel: "Save & Continue"
+          }
+        : undefined,
+    status: currentIdx > stepIndex("llm_key") ? "complete" : undefined
+  });
+
+  if (state.llmApiKey && currentIdx > stepIndex("llm_key")) {
+    messages.push({
+      id: "llm_key_answer",
+      role: "user",
+      content: "API key saved"
+    });
+    messages.push({
+      id: "llm_configured",
+      role: "assistant",
+      content: `${providerName} API key saved. You can update this later in Settings > Secrets.`,
+      status: "complete"
+    });
+  }
+
+  if (currentIdx < stepIndex("warehouse_type")) return messages;
+
+  // Warehouse type
+  messages.push({
+    id: "warehouse_type",
+    role: "assistant",
+    content:
+      "Now let's connect your data warehouse. You can always add more sources later in Settings.",
+    inputBlock:
+      currentIdx === stepIndex("warehouse_type")
+        ? {
+            type: "selection_cards",
+            collapseAfter: 4,
+            options: [
+              { id: "snowflake", label: "Snowflake", description: "Cloud data platform" },
+              { id: "clickhouse", label: "ClickHouse", description: "Columnar analytics database" },
+              { id: "bigquery", label: "BigQuery", description: "Google Cloud data warehouse" },
+              { id: "duckdb", label: "DuckDB", description: "In-process analytics database" },
+              {
+                id: "postgres",
+                label: "PostgreSQL",
+                description: "Open-source relational database"
+              },
+              { id: "mysql", label: "MySQL", description: "Relational database" }
+            ]
+          }
+        : undefined,
+    userSelection: state.warehouseType,
+    status: currentIdx > stepIndex("warehouse_type") ? "complete" : undefined
+  });
+
+  if (state.warehouseType && currentIdx > stepIndex("warehouse_type")) {
+    messages.push({
+      id: "warehouse_type_answer",
+      role: "user",
+      content: state.warehouseType.charAt(0).toUpperCase() + state.warehouseType.slice(1)
+    });
+  }
+
+  if (currentIdx < stepIndex("warehouse_credentials")) return messages;
+
+  // Warehouse credentials
+  messages.push({
+    id: "warehouse_credentials",
+    role: "assistant",
+    content: `Enter your ${state.warehouseType} connection details.`,
+    inputBlock:
+      currentIdx === stepIndex("warehouse_credentials")
+        ? {
+            type: "credential_form",
+            fields: getWarehouseFields(state.warehouseType ?? "postgres"),
+            buttonLabel: "Test Connection"
+          }
+        : undefined,
+    status: currentIdx > stepIndex("warehouse_credentials") ? "complete" : undefined
+  });
+
+  if (currentIdx < stepIndex("connection_test")) return messages;
+
+  // Connection test
+  if (state.connectionStatus === "testing") {
+    messages.push({
+      id: "connection_test",
+      role: "assistant",
+      content: "Testing connection to your warehouse...",
+      status: "working"
+    });
+  } else if (state.connectionStatus === "success") {
+    messages.push({
+      id: "connection_test",
+      role: "assistant",
+      content: "Connection successful. Warehouse connected.",
+      status: "complete"
+    });
+  } else if (state.connectionStatus === "failed") {
+    messages.push({
+      id: "connection_test",
+      role: "assistant",
+      content: `Connection failed: ${state.connectionError ?? "Unknown error"}. Please check your credentials and try again.`,
+      status: "error",
+      inputBlock: {
+        type: "credential_form",
+        fields: getWarehouseFields(state.warehouseType ?? "postgres"),
+        buttonLabel: "Retry Connection",
+        initialValues: state.warehouseCredentials
+      },
+      goBackStep: "warehouse_type",
+      goBackLabel: "Change warehouse type"
+    });
+  }
+
+  if (currentIdx < stepIndex("schema_discovery")) return messages;
+
+  // Schema discovery
+  if (state.schemaDiscoveryError) {
+    messages.push({
+      id: "schema_discovery",
+      role: "assistant",
+      content: `Schema inspection failed: ${state.schemaDiscoveryError}. Let's try again.`,
+      status: "error",
+      inputBlock: { type: "confirm_button", label: "Retry Schema Discovery" },
+      goBackStep: "warehouse_credentials",
+      goBackLabel: "Change connection details"
+    });
+  } else if (state.discoveredSchemas.length === 0 && currentIdx === stepIndex("schema_discovery")) {
+    messages.push({
+      id: "schema_discovery",
+      role: "assistant",
+      content: state.schemaDiscoveryStatus ?? "Inspecting your warehouse schema...",
+      status: "working"
+    });
+  } else if (state.discoveredSchemas.length > 0) {
+    const totalTables = state.discoveredSchemas.reduce((n, s) => n + s.tableCount, 0);
+    messages.push({
+      id: "schema_discovery",
+      role: "assistant",
+      content: `Found ${state.discoveredSchemas.length} schema${state.discoveredSchemas.length > 1 ? "s" : ""} with ${totalTables} table${totalTables > 1 ? "s" : ""}.`,
+      status: "complete"
+    });
+  }
+
+  if (currentIdx < stepIndex("table_selection")) return messages;
+
+  // Table selection
+  messages.push({
+    id: "table_selection",
+    role: "assistant",
+    content:
+      "Select the tables you'd like to include in your semantic layer. These will be used to build views, measures, and dimensions.",
+    inputBlock:
+      currentIdx === stepIndex("table_selection") ? { type: "table_selector" } : undefined,
+    status: currentIdx > stepIndex("table_selection") ? "complete" : undefined
+  });
+
+  if (state.selectedTables.length > 0 && currentIdx > stepIndex("table_selection")) {
+    messages.push({
+      id: "table_selection_answer",
+      role: "user",
+      content: `Selected ${state.selectedTables.length} table${state.selectedTables.length > 1 ? "s" : ""}`
+    });
+  }
+
+  if (currentIdx < stepIndex("building")) return messages;
+
+  // Building phase — show a discrete message per build phase
+  if (state.buildError) {
+    messages.push({
+      id: "building",
+      role: "assistant",
+      content: `Something went wrong: ${state.buildError}. Let's try again.`,
+      status: "error",
+      inputBlock: { type: "confirm_button", label: "Retry Build" }
+    });
+    return messages;
+  }
+
+  const ps = state.phaseStatuses ?? {};
+  const vs = state.viewRunStatuses ?? {};
+  const isDone = state.step === "complete";
+  const db = state.warehouseType ?? "warehouse";
+
+  // Semantic layer message — shown as soon as the building step starts
+  if (currentIdx >= stepIndex("building")) {
+    // Semantic layer is "done" when config + all views are complete
+    const totalViews = state.selectedTables.length;
+    const doneViews = Object.values(vs).filter((s) => s === "done" || s === "failed").length;
+    const configDone = ps.config === "done";
+    const allViewsDone = totalViews > 0 && doneViews === totalViews && configDone;
+    const anyViewRunning = Object.values(vs).some((s) => s === "running");
+
+    const status: OnboardingMessage["status"] =
+      allViewsDone || isDone
+        ? "complete"
+        : ps.config === "failed"
+          ? "error"
+          : ps.config === "running" || anyViewRunning
+            ? "working"
+            : ps.semantic_layer === "done" || ps.semantic_layer === "failed"
+              ? ps.semantic_layer === "done"
+                ? "complete"
+                : "error"
+              : ps.semantic_layer === "running"
+                ? "working"
+                : "working";
+
+    const viewProgress =
+      totalViews > 0 && (ps.config || anyViewRunning || doneViews > 0)
+        ? ` (${doneViews}/${totalViews} views)`
+        : "";
+
+    messages.push({
+      id: "phase_semantic",
+      role: "assistant",
+      content: `Inspecting your ${db} tables and building the semantic layer${viewProgress}…`,
+      status
+    });
+  }
+
+  // Agent + app messages — shown once semantic layer phase has started
+  const semanticStarted = ps.config || ps.semantic_layer;
+  if (semanticStarted) {
+    const totalViews = state.selectedTables.length;
+    const doneViews = Object.values(vs).filter((s) => s === "done" || s === "failed").length;
+    const configDone = ps.config === "done";
+    const semanticDone =
+      (totalViews > 0 && doneViews === totalViews && configDone) ||
+      ps.semantic_layer === "done" ||
+      isDone;
+
+    const agentStatus: OnboardingMessage["status"] =
+      ps.agent === "done" || isDone
+        ? "complete"
+        : ps.agent === "failed"
+          ? "error"
+          : ps.agent === "running"
+            ? "working"
+            : semanticDone
+              ? "working"
+              : "pending";
+    messages.push({
+      id: "phase_agent",
+      role: "assistant",
+      content: semanticDone ? "Creating your analytics agent…" : "Analytics agent",
+      status: agentStatus
+    });
+
+    const appStatus: OnboardingMessage["status"] =
+      ps.app === "done" || isDone
+        ? "complete"
+        : ps.app === "failed"
+          ? "error"
+          : ps.app === "running"
+            ? "working"
+            : semanticDone
+              ? "working"
+              : "pending";
+    messages.push({
+      id: "phase_app",
+      role: "assistant",
+      content: semanticDone ? "Building your starter dashboard…" : "Starter dashboard",
+      status: appStatus
+    });
+
+    // Deep-dive dashboard — only advertised when the workspace has ≥ 2 topics.
+    // With a single topic there's no variety to warrant a second dashboard,
+    // so the UI should not even tease one.
+    if (wantsSecondApp(state.selectedTables)) {
+      const secondTopic = predictSecondAppTopic(state.selectedTables) ?? "detail";
+      const secondTopicLabel = humanizeTopicSlug(secondTopic);
+      const app2Status: OnboardingMessage["status"] =
+        ps.app2 === "done" || isDone
+          ? "complete"
+          : ps.app2 === "failed"
+            ? "error"
+            : ps.app2 === "running"
+              ? "working"
+              : semanticDone
+                ? "working"
+                : "pending";
+      messages.push({
+        id: "phase_app2",
+        role: "assistant",
+        content: semanticDone
+          ? `Building your ${secondTopicLabel} dashboard…`
+          : `${secondTopicLabel} dashboard`,
+        status: app2Status
+      });
+    }
+  }
+
+  return messages;
+}
+
+// ── Build phase sub-milestones ───────────────────────────────────────────────
+
+function toMilestoneStatus(
+  ps: PhaseStatus | undefined,
+  isDone: boolean
+): "pending" | "active" | "complete" | "error" {
+  if (isDone) return "complete";
+  if (!ps) return "pending";
+  if (ps === "running") return "active";
+  if (ps === "done") return "complete";
+  return "error";
+}
+
+function buildPhaseMilestones(
+  state: OnboardingState,
+  isDone: boolean
+): import("./types").Milestone[] {
+  const ps = state.phaseStatuses ?? {};
+  const viewStatuses = state.viewRunStatuses ?? {};
+  const totalViews = state.selectedTables.length;
+  const doneViews = Object.values(viewStatuses).filter(
+    (s) => s === "done" || s === "failed"
+  ).length;
+
+  // Semantic layer milestone — no per-file detail here; the BUILDING section handles that
+  const configDone = ps.config === "done";
+  const allViewsDone = totalViews > 0 && doneViews === totalViews;
+  const semanticStatus: "pending" | "active" | "complete" | "error" = isDone
+    ? "complete"
+    : allViewsDone && configDone
+      ? "complete"
+      : ps.config === "running" || Object.values(viewStatuses).some((s) => s === "running")
+        ? "active"
+        : ps.semantic_layer
+          ? toMilestoneStatus(ps.semantic_layer, isDone)
+          : "pending";
+
+  const milestones: import("./types").Milestone[] = [
+    {
+      id: "build-semantic",
+      label: "Semantic Layer",
+      status: semanticStatus
+    },
+    {
+      id: "build-agent",
+      label: "Analytics Agent",
+      status: toMilestoneStatus(ps.agent, isDone)
+    },
+    {
+      id: "build-app",
+      label: "Starter Dashboard",
+      status: toMilestoneStatus(ps.app, isDone)
+    }
+  ];
+
+  // Surface the deep-dive milestone only when we have enough topic variety
+  // to warrant a second dashboard. Labelling it with the topic name (e.g.
+  // "Customers Dashboard") sets the user's expectation that this is a
+  // specific business concept, not a generic "detail" view.
+  const secondTopic = predictSecondAppTopic(state.selectedTables);
+  if (secondTopic) {
+    milestones.push({
+      id: "build-app2",
+      label: `${humanizeTopicSlug(secondTopic)} Dashboard`,
+      status: toMilestoneStatus(ps.app2, isDone)
+    });
+  }
+
+  return milestones;
+}
+
+// ── Right rail state derived from onboarding state ──────────────────────────
+
+export function deriveRailState(state: OnboardingState): OnboardingRailState {
+  if (state.mode === "github") {
+    return deriveGithubRailState(state);
+  }
+
+  const currentIdx = stepIndex(state.step);
+  const milestones = [
+    {
+      id: "llm",
+      label: "LLM Provider",
+      status:
+        currentIdx > stepIndex("llm_key")
+          ? ("complete" as const)
+          : currentIdx >= stepIndex("llm_provider")
+            ? ("active" as const)
+            : ("pending" as const),
+      // The rail no longer has a separate "Connected" section — show the vendor
+      // (Anthropic / OpenAI) inline here so the user can see which service is
+      // connected at a glance.
+      detail: state.llmProvider
+        ? state.llmProvider.charAt(0).toUpperCase() + state.llmProvider.slice(1)
+        : undefined
+    },
+    {
+      id: "warehouse",
+      label: "Data Warehouse",
+      // Once the user is past the connection-test step the warehouse is
+      // connected — treat it as complete regardless of the live
+      // `connectionStatus` flag, which can drift (e.g. while re-running
+      // discovery). "failed" is only surfaced during the active connection
+      // test so the user can retry with new credentials.
+      status:
+        currentIdx > stepIndex("connection_test")
+          ? ("complete" as const)
+          : state.connectionStatus === "success"
+            ? ("complete" as const)
+            : state.connectionStatus === "failed"
+              ? ("error" as const)
+              : currentIdx >= stepIndex("warehouse_type")
+                ? ("active" as const)
+                : ("pending" as const),
+      detail: state.warehouseType
+        ? state.warehouseType.charAt(0).toUpperCase() + state.warehouseType.slice(1)
+        : undefined
+    },
+    {
+      id: "schema",
+      label: "Schema Discovery",
+      status:
+        state.discoveredSchemas.length > 0
+          ? ("complete" as const)
+          : currentIdx >= stepIndex("schema_discovery")
+            ? ("active" as const)
+            : ("pending" as const),
+      detail:
+        state.discoveredSchemas.length > 0
+          ? `${state.discoveredSchemas.reduce((n, s) => n + s.tableCount, 0)} tables found`
+          : undefined
+    },
+    {
+      id: "tables",
+      label: "Table Selection",
+      status:
+        state.selectedTables.length > 0
+          ? ("complete" as const)
+          : currentIdx >= stepIndex("table_selection")
+            ? ("active" as const)
+            : ("pending" as const),
+      detail:
+        state.selectedTables.length > 0 ? `${state.selectedTables.length} selected` : undefined
+    },
+    {
+      id: "build",
+      label: "Build Workspace",
+      status:
+        state.step === "complete"
+          ? ("complete" as const)
+          : state.step === "building"
+            ? ("active" as const)
+            : ("pending" as const),
+      children:
+        state.step === "building" || state.step === "complete"
+          ? buildPhaseMilestones(state, state.step === "complete")
+          : undefined
+    }
+  ];
+
+  const connectedServices = [];
+  if (state.llmProvider && currentIdx > stepIndex("llm_key")) {
+    connectedServices.push({
+      type: "llm" as const,
+      name: state.llmProvider.charAt(0).toUpperCase() + state.llmProvider.slice(1),
+      status: "connected" as const
+    });
+  }
+  if (state.connectionStatus === "success" && state.warehouseType) {
+    connectedServices.push({
+      type: "warehouse" as const,
+      name: state.warehouseType.charAt(0).toUpperCase() + state.warehouseType.slice(1),
+      status: "connected" as const
+    });
+  }
+
+  // Build expected file list: config + views + agent + app(s).
+  //
+  // The second app's name matches the topic slug the builder will pick
+  // (second topic alphabetically), so the `apps/<topic>.app.yml` artifact
+  // reported on completion cleanly matches this entry's `name`.
+  const secondAppTopic = predictSecondAppTopic(state.selectedTables);
+  const expectedFiles: import("./types").ExpectedFile[] =
+    state.selectedTables.length > 0
+      ? [
+          { name: "config.yml", type: "config" },
+          ...state.selectedTables.map((t) => {
+            const tableName = t.split(".").pop() ?? t;
+            return { name: tableName, type: "view" as const };
+          }),
+          { name: "analytics.agentic.yml", type: "agentic" },
+          { name: "overview", type: "app" as const },
+          ...(secondAppTopic ? [{ name: secondAppTopic, type: "app" as const }] : [])
+        ]
+      : [];
+
+  const isBuildRunning = state.step === "building";
+
+  return {
+    milestones,
+    connectedServices,
+    selectedTables: state.selectedTables,
+    generatedArtifacts: [],
+    expectedFiles,
+    isBuildRunning
+  };
+}
+
+// ── GitHub mode: right-rail state ──────────────────────────────────────────
+//
+// The rail shows two milestone rows — LLM keys + warehouses — with per-entry
+// detail so the user can see at a glance what's done / remaining. There is no
+// "Build workspace" milestone: github mode doesn't build anything.
+
+function deriveGithubRailState(state: OnboardingState): OnboardingRailState {
+  const setup = state.githubSetup;
+  const totalLlmKeys = setup?.missing_llm_key_vars.length ?? 0;
+  const llmCursor = state.githubLlmKeyCursor ?? 0;
+  const totalWarehouses = setup?.warehouses.length ?? 0;
+  const whCursor = state.githubWarehouseCursor ?? 0;
+  const isComplete = state.step === "complete";
+
+  const llmStatus: "pending" | "active" | "complete" | "error" =
+    isComplete || (totalLlmKeys > 0 && llmCursor >= totalLlmKeys)
+      ? "complete"
+      : state.step === "github_llm_keys"
+        ? "active"
+        : totalLlmKeys === 0
+          ? "complete"
+          : "pending";
+
+  const whStatus: "pending" | "active" | "complete" | "error" =
+    isComplete || (totalWarehouses > 0 && whCursor >= totalWarehouses)
+      ? "complete"
+      : state.step === "github_warehouse_creds"
+        ? "active"
+        : totalWarehouses === 0
+          ? "complete"
+          : "pending";
+
+  const connectedServices: OnboardingRailState["connectedServices"] = [];
+  if (totalLlmKeys === 0 || llmCursor >= totalLlmKeys) {
+    connectedServices.push({
+      type: "llm",
+      name: "LLM configured",
+      status: "connected"
+    });
+  }
+  const successfulWarehouses = Object.entries(state.githubWarehouseResults ?? {})
+    .filter(([, r]) => r === "success")
+    .map(([name]) => name);
+  for (const name of successfulWarehouses) {
+    connectedServices.push({
+      type: "warehouse",
+      name,
+      status: "connected"
+    });
+  }
+
+  return {
+    milestones: [
+      {
+        id: "llm",
+        label: "LLM API keys",
+        status: llmStatus,
+        detail:
+          totalLlmKeys > 0
+            ? `${Math.min(llmCursor, totalLlmKeys)} of ${totalLlmKeys}`
+            : "none required"
+      },
+      {
+        id: "warehouse",
+        label: "Warehouse credentials",
+        status: whStatus,
+        detail:
+          totalWarehouses > 0
+            ? `${Math.min(whCursor, totalWarehouses)} of ${totalWarehouses}`
+            : "none required"
+      }
+    ],
+    connectedServices,
+    selectedTables: [],
+    generatedArtifacts: [],
+    expectedFiles: [],
+    isBuildRunning: false,
+    isBuildComplete: isComplete
+  };
+}
+
+// ── Model options per provider ───────────────────────────────────────────────
+
+interface ModelOption {
+  id: string; // config name written to config.yml
+  label: string; // display name
+  description: string;
+  modelRef: string; // provider's model ID
+  vendor: string; // vendor for config.yml
+}
+
+function getModelOptions(provider?: LlmProvider): SelectionOption[] {
+  const models = MODEL_OPTIONS[provider ?? "anthropic"] ?? [];
+  return models.map((m) => ({
+    id: m.id,
+    label: m.label,
+    description: m.description
+  }));
+}
+
+export const MODEL_OPTIONS: Record<LlmProvider, ModelOption[]> = {
+  anthropic: [
+    {
+      id: "claude-opus-4-7",
+      label: "Claude Opus 4.7",
+      description: "Most capable, deepest reasoning",
+      modelRef: "claude-opus-4-7",
+      vendor: "anthropic"
+    },
+    {
+      id: "claude-sonnet-4-6",
+      label: "Claude Sonnet 4.6",
+      description: "Balanced speed and capability",
+      modelRef: "claude-sonnet-4-6",
+      vendor: "anthropic"
+    }
+  ],
+  openai: [
+    {
+      id: "gpt-5.4",
+      label: "GPT-5.4",
+      description: "Most capable, best reasoning",
+      modelRef: "gpt-5.4",
+      vendor: "openai"
+    },
+    {
+      id: "gpt-5.4-mini",
+      label: "GPT-5.4 Mini",
+      description: "Fast and cost-effective",
+      modelRef: "gpt-5.4-mini",
+      vendor: "openai"
+    },
+    {
+      id: "gpt-4.1",
+      label: "GPT-4.1",
+      description: "Well-tested with Oxy",
+      modelRef: "gpt-4.1",
+      vendor: "openai"
+    }
+  ]
+};
+
+// ── Warehouse credential field definitions ──────────────────────────────────
+
+function getWarehouseFields(type: WarehouseType) {
+  switch (type) {
+    case "postgres":
+    case "mysql":
+      return [
+        {
+          key: "host",
+          label: "Host",
+          placeholder: "localhost",
+          type: "text" as const,
+          required: true
+        },
+        {
+          key: "port",
+          label: "Port",
+          placeholder: type === "postgres" ? "5432" : "3306",
+          type: "number" as const,
+          required: true,
+          defaultValue: type === "postgres" ? "5432" : "3306"
+        },
+        {
+          key: "database",
+          label: "Database",
+          placeholder: "my_database",
+          type: "text" as const,
+          required: true
+        },
+        {
+          key: "user",
+          label: "Username",
+          placeholder: "admin",
+          type: "text" as const,
+          required: true
+        },
+        {
+          key: "password",
+          label: "Password",
+          placeholder: "Enter password",
+          type: "password" as const,
+          required: true
+        }
+      ];
+    case "bigquery":
+      return [
+        {
+          key: "dataset",
+          label: "Dataset",
+          placeholder: "my_dataset",
+          type: "text" as const,
+          required: true
+        },
+        {
+          key: "key_json",
+          label: "Service Account Key (JSON)",
+          placeholder: "Paste JSON key contents...",
+          type: "password" as const,
+          required: true
+        }
+      ];
+    case "snowflake":
+      return [
+        {
+          key: "account",
+          label: "Account",
+          placeholder: "org-account",
+          type: "text" as const,
+          required: true
+        },
+        {
+          key: "warehouse",
+          label: "Warehouse",
+          placeholder: "COMPUTE_WH",
+          type: "text" as const,
+          required: true
+        },
+        {
+          key: "database",
+          label: "Database",
+          placeholder: "MY_DB",
+          type: "text" as const,
+          required: true
+        },
+        {
+          key: "username",
+          label: "Username",
+          placeholder: "admin",
+          type: "text" as const,
+          required: true
+        },
+        {
+          key: "password",
+          label: "Password",
+          placeholder: "Enter password",
+          type: "password" as const,
+          required: true
+        }
+      ];
+    case "clickhouse":
+      return [
+        {
+          key: "host",
+          label: "Host",
+          placeholder: "localhost",
+          type: "text" as const,
+          required: true
+        },
+        {
+          key: "port",
+          label: "Port",
+          placeholder: "8123",
+          type: "number" as const,
+          required: true,
+          defaultValue: "8123"
+        },
+        {
+          key: "database",
+          label: "Database",
+          placeholder: "default",
+          type: "text" as const,
+          required: true
+        },
+        {
+          key: "user",
+          label: "Username",
+          placeholder: "default",
+          type: "text" as const,
+          required: true
+        },
+        {
+          key: "password",
+          label: "Password",
+          placeholder: "Enter password",
+          type: "password" as const
+        }
+      ];
+    case "duckdb":
+      return [
+        {
+          key: "dataset",
+          label: "Upload data files",
+          placeholder: "Drop CSV or Parquet files here, or click to browse",
+          type: "file_upload" as const,
+          required: true,
+          accept: ".csv,.parquet",
+          multiple: true,
+          helperText:
+            "Files are uploaded to .db/ inside your workspace. DuckDB reads each file as a table named after the filename."
+        }
+      ];
+  }
+}
+
+// ── Hook ────────────────────────────────────────────────────────────────────
+
+const STORAGE_KEY = "oxy_onboarding_state";
+
+/** Fields safe to persist in localStorage (no credentials) */
+type PersistableState = Omit<OnboardingState, "llmApiKey" | "warehouseCredentials">;
+
+function saveState(state: OnboardingState) {
+  try {
+    const { llmApiKey: _, warehouseCredentials: __, ...safe } = state;
+    // Persist only the schema skeleton — drop per-schema tables and transient
+    // load flags. On warehouses with thousands of tables this keeps
+    // localStorage usage small and re-renders cheap; schemas are re-hydrated
+    // on expand, and the resync hydrates columns for the picked tables.
+    const persistable = {
+      ...safe,
+      discoveredSchemas: safe.discoveredSchemas.map((schema) => ({
+        schema: schema.schema,
+        tables: [] as SchemaInfo["tables"],
+        tableCount: schema.tableCount,
+        loaded: false
+      }))
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(persistable));
+  } catch {
+    // localStorage may be unavailable
+  }
+}
+
+const VALID_STEPS: ReadonlySet<OnboardingStep> = new Set<OnboardingStep>([
+  "welcome",
+  "llm_provider",
+  "llm_model",
+  "llm_key",
+  "warehouse_type",
+  "warehouse_credentials",
+  "connection_test",
+  "schema_discovery",
+  "table_selection",
+  "building",
+  "github_loading",
+  "github_llm_keys",
+  "github_warehouse_creds",
+  "github_connection_test",
+  "complete"
+]);
+
+function loadState(): OnboardingState {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return initialState;
+    const parsed = JSON.parse(raw) as PersistableState;
+    // Discard state from older schema versions: if `step` is missing, unknown,
+    // or not a string, start fresh rather than silently producing an invalid
+    // state machine transition.
+    if (typeof parsed?.step !== "string" || !VALID_STEPS.has(parsed.step)) {
+      return initialState;
+    }
+    // Don't resume into "building" without phaseRunIds — the runs may have been lost
+    if (parsed.step === "building" && !parsed.phaseRunIds) {
+      return { ...initialState, ...parsed, step: "table_selection" };
+    }
+    // A connection-test submission in flight doesn't survive a reload —
+    // there's no in-memory promise to tie the re-hydrated state back to,
+    // so we'd leave the form permanently stuck in "Testing connection…"
+    // with inputs disabled and no way forward. Reset the flag so the user
+    // can retry. `githubWarehouseError` is left alone — it's just a string
+    // the user can read on reload.
+    return { ...initialState, ...parsed, githubWarehouseSubmitting: false };
+  } catch {
+    return initialState;
+  }
+}
+
+export function clearOnboardingState() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Replace any persisted onboarding state with a fresh state tagged with the
+ * given workspace id. Call this when redirecting a newly-created workspace to
+ * `/onboarding` so (a) stale state from a previously-onboarded workspace is
+ * wiped, and (b) the home-page guard can detect in-progress onboarding for
+ * this specific workspace.
+ *
+ * Pass `mode` to pick the flow variant. `"new"` (default) runs the full
+ * blank-workspace flow. `"github"` runs the cloned-repo flow that only
+ * collects secrets declared in `config.yml`.
+ */
+export function initOnboardingStateForWorkspace(workspaceId: string, mode: OnboardingMode = "new") {
+  try {
+    // GitHub mode starts on `github_loading` so the page can immediately
+    // fetch the setup manifest without flashing the welcome screen.
+    const step: OnboardingStep = mode === "github" ? "github_loading" : "welcome";
+    const seeded: PersistableState = { ...initialState, workspaceId, mode, step };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded));
+  } catch {
+    // localStorage may be unavailable
+  }
+}
+
+/**
+ * Returns true when the persisted onboarding state is tagged for this
+ * workspace and the flow hasn't reached "complete" yet.
+ */
+export function hasPendingOnboardingForWorkspace(workspaceId: string): boolean {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as PersistableState;
+    if (parsed?.workspaceId !== workspaceId) return false;
+    return typeof parsed.step === "string" && parsed.step !== "complete";
+  } catch {
+    return false;
+  }
+}
+
+export function useOnboardingOrchestrator() {
+  const [state, dispatch] = useReducer(reducer, undefined, loadState);
+
+  // Persist to localStorage on state changes. Debounced because dispatches
+  // can burst during lazy table loads / per-schema expansion, and JSON
+  // serialization of the full state is not free on large warehouses.
+  useEffect(() => {
+    const handle = setTimeout(() => saveState(state), 150);
+    return () => clearTimeout(handle);
+  }, [state]);
+
+  const messages = useMemo(() => deriveMessages(state), [state]);
+  const railState = useMemo(() => deriveRailState(state), [state]);
+
+  const setLlmProvider = useCallback(
+    (provider: LlmProvider) => dispatch({ type: "SET_LLM_PROVIDER", provider }),
+    []
+  );
+
+  const setLlmModel = useCallback(
+    (model: string, modelRef: string, vendor: string) =>
+      dispatch({ type: "SET_LLM_MODEL", model, modelRef, vendor }),
+    []
+  );
+
+  const setLlmKey = useCallback((apiKey: string) => dispatch({ type: "SET_LLM_KEY", apiKey }), []);
+
+  const setWarehouseType = useCallback(
+    (warehouseType: WarehouseType) => dispatch({ type: "SET_WAREHOUSE_TYPE", warehouseType }),
+    []
+  );
+
+  const setWarehouseCredentials = useCallback(
+    (credentials: Record<string, string>) =>
+      dispatch({ type: "SET_WAREHOUSE_CREDENTIALS", credentials }),
+    []
+  );
+
+  const setUploadedWarehouseFiles = useCallback(
+    (files: string[], subdir: string) =>
+      dispatch({ type: "SET_UPLOADED_WAREHOUSE_FILES", files, subdir }),
+    []
+  );
+
+  const setConnectionStatus = useCallback(
+    (status: ConnectionStatus, error?: string) =>
+      dispatch({ type: "SET_CONNECTION_STATUS", status, error }),
+    []
+  );
+
+  const setDiscoveredSchemas = useCallback(
+    (schemas: SchemaInfo[]) => dispatch({ type: "SET_DISCOVERED_SCHEMAS", schemas }),
+    []
+  );
+
+  const hydrateDiscoveredSchemas = useCallback(
+    (schemas: SchemaInfo[]) => dispatch({ type: "HYDRATE_DISCOVERED_SCHEMAS", schemas }),
+    []
+  );
+
+  const setSchemaTablesStatus = useCallback(
+    (schema: string, status: "loading" | "error", error?: string) =>
+      dispatch({ type: "SET_SCHEMA_TABLES_STATUS", schema, status, error }),
+    []
+  );
+
+  const setSchemaTables = useCallback(
+    (schema: string, tables: SchemaInfo["tables"]) =>
+      dispatch({ type: "SET_SCHEMA_TABLES", schema, tables }),
+    []
+  );
+
+  const setSchemaDiscoveryError = useCallback(
+    (error: string) => dispatch({ type: "SET_SCHEMA_DISCOVERY_ERROR", error }),
+    []
+  );
+
+  const setSchemaDiscoveryStatus = useCallback(
+    (message: string | undefined) =>
+      dispatch({ type: "SET_SCHEMA_DISCOVERY_STATUS", message }),
+    []
+  );
+
+  const setSelectedTables = useCallback(
+    (tables: string[]) => dispatch({ type: "SET_SELECTED_TABLES", tables }),
+    []
+  );
+
+  const startPhase = useCallback(
+    (phase: BuildPhase, threadId: string, runId: string) =>
+      dispatch({ type: "START_PHASE", phase, threadId, runId }),
+    []
+  );
+
+  const setPhaseStatus = useCallback(
+    (phase: BuildPhase, status: PhaseStatus) =>
+      dispatch({ type: "SET_PHASE_STATUS", phase, status }),
+    []
+  );
+
+  const startViewRun = useCallback(
+    (table: string, runId: string) => dispatch({ type: "START_VIEW_RUN", table, runId }),
+    []
+  );
+
+  const setViewRunStatus = useCallback(
+    (table: string, status: PhaseStatus) =>
+      dispatch({ type: "SET_VIEW_RUN_STATUS", table, status }),
+    []
+  );
+
+  const setBuildError = useCallback(
+    (error: string) => dispatch({ type: "SET_BUILD_ERROR", error }),
+    []
+  );
+
+  const stopBuild = useCallback((message: string) => dispatch({ type: "STOP_BUILD", message }), []);
+
+  const complete = useCallback(
+    (createdFiles: string[], sampleQuestions: string[]) =>
+      dispatch({ type: "COMPLETE", createdFiles, sampleQuestions }),
+    []
+  );
+
+  const goToStep = useCallback(
+    (step: OnboardingStep) => dispatch({ type: "GO_TO_STEP", step }),
+    []
+  );
+
+  const setGithubSetup = useCallback(
+    (setup: GithubSetup) => dispatch({ type: "SET_GITHUB_SETUP", setup }),
+    []
+  );
+
+  const advanceGithubLlmKey = useCallback(() => dispatch({ type: "ADVANCE_GITHUB_LLM_KEY" }), []);
+
+  const advanceGithubWarehouse = useCallback(
+    (warehouseName: string, result: "success" | "skipped" | "failed") =>
+      dispatch({ type: "ADVANCE_GITHUB_WAREHOUSE", warehouseName, result }),
+    []
+  );
+
+  const startGithubWarehouseTest = useCallback(
+    () => dispatch({ type: "START_GITHUB_WAREHOUSE_TEST" }),
+    []
+  );
+
+  const failGithubWarehouseTest = useCallback(
+    (error: string) => dispatch({ type: "FAIL_GITHUB_WAREHOUSE_TEST", error }),
+    []
+  );
+
+  return {
+    state,
+    messages,
+    railState,
+    // Actions
+    setLlmProvider,
+    setLlmModel,
+    setLlmKey,
+    setWarehouseType,
+    setWarehouseCredentials,
+    setUploadedWarehouseFiles,
+    setConnectionStatus,
+    setDiscoveredSchemas,
+    hydrateDiscoveredSchemas,
+    setSchemaTablesStatus,
+    setSchemaTables,
+    setSchemaDiscoveryError,
+    setSchemaDiscoveryStatus,
+    setSelectedTables,
+    startPhase,
+    setPhaseStatus,
+    startViewRun,
+    setViewRunStatus,
+    setBuildError,
+    stopBuild,
+    complete,
+    goToStep,
+    setGithubSetup,
+    advanceGithubLlmKey,
+    advanceGithubWarehouse,
+    startGithubWarehouseTest,
+    failGithubWarehouseTest
+  };
+}

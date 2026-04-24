@@ -1,4 +1,5 @@
 mod contexts;
+pub mod inspector;
 mod loader;
 mod manager;
 mod storage;

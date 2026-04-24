@@ -9,7 +9,7 @@ rust-version.workspace = true
 authors.workspace = true
 
 [features]
-duckdb = ["dep:duckdb"]
+duckdb = ["dep:duckdb", "dep:slugify"]
 postgres = ["dep:tokio-postgres"]
 clickhouse = ["dep:reqwest", "dep:serde_json", "dep:serde"]
 snowflake = ["dep:snowflake-api", "dep:arrow", "dep:serde_json"]
@@ -23,6 +23,7 @@ tracing = { workspace = true }
 
 # DuckDB
 duckdb = { workspace = true, optional = true }
+slugify = { workspace = true, optional = true }
 
 # Postgres
 tokio-postgres = { workspace = true, features = ["with-chrono-0_4"], optional = true }

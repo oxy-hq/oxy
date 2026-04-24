@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import {
   Sidebar as ShadcnSidebar,
   SidebarGroup,
@@ -11,6 +12,8 @@ import Threads from "./Threads";
 import { Workflows } from "./Workflows";
 
 export function AppSidebar() {
+  const location = useLocation();
+  const isOnboarding = location.pathname.includes("/onboarding");
   const [isScrolled, setIsScrolled] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -22,22 +25,30 @@ export function AppSidebar() {
 
   return (
     <ShadcnSidebar className='border-sidebar-border border-r bg-sidebar-background'>
-      <Header />
+      <Header isOnboarding={isOnboarding} />
 
       <div className='relative min-h-0 flex-1'>
-        <div
-          ref={scrollRef}
-          onScroll={handleScroll}
-          className='scrollbar-gutter-auto flex h-full flex-col overflow-auto'
-        >
-          <SidebarGroup className='mb-10 px-2 pt-2'>
-            <SidebarMenu>
-              <Threads />
-              <Workflows />
-              <Apps />
-            </SidebarMenu>
-          </SidebarGroup>
-        </div>
+        {isOnboarding ? (
+          <div className='flex h-full items-center justify-center px-4'>
+            <p className='text-center text-muted-foreground/50 text-xs'>
+              Setting up your workspace...
+            </p>
+          </div>
+        ) : (
+          <div
+            ref={scrollRef}
+            onScroll={handleScroll}
+            className='scrollbar-gutter-auto flex h-full flex-col overflow-auto'
+          >
+            <SidebarGroup className='mb-10 px-2 pt-2'>
+              <SidebarMenu>
+                <Threads />
+                <Workflows />
+                <Apps />
+              </SidebarMenu>
+            </SidebarGroup>
+          </div>
+        )}
         <div
           className={`pointer-events-none absolute top-0 right-0 left-0 z-10 h-10 bg-gradient-to-b from-sidebar-background to-transparent transition-opacity ${isScrolled ? "opacity-100" : "opacity-0"}`}
         />

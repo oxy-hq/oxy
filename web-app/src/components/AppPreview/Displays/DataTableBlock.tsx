@@ -11,7 +11,14 @@ import {
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { getDuckDB } from "@/libs/duckdb";
 import type { DataContainer, TableData, TableDisplay } from "@/types/app";
-import { getArrowFieldType, getArrowValueWithType, getData, registerFromTableData } from "./utils";
+import {
+  formatValue,
+  getArrowFieldType,
+  getArrowValueWithType,
+  getData,
+  inferCurrencyFormat,
+  registerFromTableData
+} from "./utils";
 
 const load_table = async (
   tableData: { file_path: string; json?: string | null },
@@ -98,7 +105,21 @@ export const DataTableBlock = ({
               {table.schema.fields.map((field) => {
                 const fieldType = getArrowFieldType(field.name, table.schema);
                 const value = row[field.name];
-                const formattedValue = fieldType ? getArrowValueWithType(value, fieldType) : value;
+                // Explicit per-column format from the app.yml wins; otherwise
+                // infer `currency` from column names like `*_sales` /
+                // `*_revenue` so existing dashboards get the right formatting
+                // without regeneration.
+                const columnFormat =
+                  display.formats?.[field.name] ?? inferCurrencyFormat(field.name);
+                // When a format is in play, always route through the
+                // currency/percent/number formatter — it handles bigints and
+                // stringified numerics uniformly. Otherwise fall back to the
+                // Arrow-aware value formatter (dates, decimals, …).
+                const formattedValue = columnFormat
+                  ? formatValue(value, columnFormat)
+                  : fieldType
+                    ? getArrowValueWithType(value, fieldType)
+                    : value;
                 return (
                   <TableCell className='border' key={field.name}>
                     {String(formattedValue)}

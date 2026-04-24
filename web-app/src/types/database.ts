@@ -174,3 +174,47 @@ export type ConnectionTestEvent =
       type: "complete";
       result: TestDatabaseConnectionResponse;
     };
+
+// Schema Inspection Types (lightweight discovery used during onboarding —
+// returns just schema/table names + column counts so the user can pick tables
+// before the heavyweight column sync runs).
+export interface DiscoveredTable {
+  name: string;
+  column_count: number;
+}
+
+export interface DiscoveredSchema {
+  schema: string;
+  tables: DiscoveredTable[];
+}
+
+export interface InspectionResult {
+  schemas: DiscoveredSchema[];
+  schema_count: number;
+  table_count: number;
+  elapsed_ms: number;
+}
+
+export type InspectEvent =
+  | { type: "progress"; message: string }
+  | { type: "complete"; result: InspectionResult }
+  | { type: "error"; message: string };
+
+// Schema-first discovery: the onboarding picker first asks for schemas + total
+// table counts (one cheap query per warehouse), then lazily fetches tables for
+// each schema when the user expands it.
+export interface SchemaSummary {
+  schema: string;
+  table_count: number;
+}
+
+export interface SchemaListResult {
+  schemas: SchemaSummary[];
+  elapsed_ms: number;
+}
+
+export interface SchemaTablesResult {
+  schema: string;
+  tables: DiscoveredTable[];
+  elapsed_ms: number;
+}

@@ -68,6 +68,25 @@ pub fn propose_change_def() -> ToolDef {
 pub fn apply_blocks_to_content(content: &str, blocks: &[ChangeBlock]) -> Result<String, String> {
     let mut lines: Vec<String> = content.lines().map(|l| l.to_string()).collect();
 
+    // Safety net for the "create from empty" pattern applied to a non-empty file.
+    // A single block with from_line=1, to_line=1 and multi-line content replaces
+    // only line 1, leaving lines 2..N intact — the new content gets prepended and
+    // the file doubles. This is almost always an LLM drafting mistake (it thought
+    // the file was empty). Reject with guidance instead of silently duplicating.
+    if blocks.len() == 1 {
+        let block = &blocks[0];
+        let new_line_count = block.content.lines().count();
+        let old_line_count = lines.len();
+        if block.from_line == 1 && block.to_line == 1 && new_line_count > 1 && old_line_count >= 2 {
+            return Err(format!(
+                "single block with from_line=1, to_line=1 and {new_line_count}-line content would \
+                 leave lines 2..={old_line_count} of the existing file intact and duplicate content. \
+                 If you intended to replace the entire file, set to_line={old_line_count}. \
+                 If you intended to edit only line 1, keep the new content to a single line."
+            ));
+        }
+    }
+
     let mut sorted: Vec<&ChangeBlock> = blocks.iter().collect();
     sorted.sort_by(|a, b| b.from_line.cmp(&a.from_line));
 
@@ -170,7 +189,7 @@ pub async fn execute_propose_change(
                 if answer.to_lowercase().contains("accept") {
                     delete_file(workspace_root, file_path)
                         .await
-                        .map_err(|e| ToolError::Execution(e))?;
+                        .map_err(ToolError::Execution)?;
                 }
                 Ok(json!({ "answer": answer }))
             }
@@ -214,7 +233,7 @@ pub async fn execute_propose_change(
             if answer.to_lowercase().contains("accept") {
                 write_file_content(workspace_root, file_path, &new_content)
                     .await
-                    .map_err(|e| ToolError::Execution(e))?;
+                    .map_err(ToolError::Execution)?;
             }
             Ok(json!({ "answer": answer }))
         }
@@ -341,6 +360,43 @@ mod tests {
             err.contains("exceeds file length"),
             "error should mention file length: {err}"
         );
+    }
+
+    // Regression guard for the onboarding bug where the builder LLM re-drafts a
+    // file it already created and calls propose_change with from_line=1, to_line=1
+    // thinking the file is empty. Previously this silently duplicated the file
+    // contents. Now it should return a BadParams-style error the LLM can act on.
+    #[test]
+    fn rejects_create_from_empty_on_populated_file() {
+        let content = "line1\nline2\nline3\n";
+        let err = apply_blocks_to_content(content, &[block(1, 1, "new1\nnew2\nnew3")]).unwrap_err();
+        assert!(
+            err.contains("to_line=3"),
+            "error should suggest setting to_line to the current file length: {err}"
+        );
+    }
+
+    // The "create from empty" pattern MUST still work on a genuinely empty file.
+    #[test]
+    fn create_from_empty_pattern_on_empty_file_still_works() {
+        let result = apply_blocks_to_content("", &[block(1, 1, "a\nb\nc")]).unwrap();
+        assert_eq!(result, "a\nb\nc");
+    }
+
+    // Full-file replace (to_line = file length) must still be accepted.
+    #[test]
+    fn full_file_replace_accepted_when_to_line_matches_length() {
+        let content = "a\nb\nc\n";
+        let result = apply_blocks_to_content(content, &[block(1, 3, "X\nY")]).unwrap();
+        assert_eq!(result, "X\nY\n");
+    }
+
+    // Replacing a single line with a single new line must still be accepted.
+    #[test]
+    fn single_line_edit_on_populated_file_accepted() {
+        let content = "a\nb\nc\n";
+        let result = apply_blocks_to_content(content, &[block(1, 1, "A")]).unwrap();
+        assert_eq!(result, "A\nb\nc\n");
     }
 
     use agentic_core::human_input::AutoAcceptInputProvider;

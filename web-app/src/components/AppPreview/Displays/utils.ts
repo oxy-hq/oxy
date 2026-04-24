@@ -16,7 +16,7 @@ dayjs.extend(timezone);
 import { getDuckDB } from "@/libs/duckdb";
 import { encodeBase64 } from "@/libs/encoding";
 import { apiClient } from "@/services/api/axios";
-import type { DataContainer } from "@/types/app";
+import type { DataContainer, DisplayFormat } from "@/types/app";
 
 const getArrowValue = (value: unknown): number | string | unknown => {
   if (value instanceof Uint32Array) return formatNumber(value[0]);
@@ -110,8 +110,161 @@ function formatTime(value: number | bigint | string): string {
   return dayjs.utc(value).format("HH:mm:ss");
 }
 
+// NOTE: This function is on the data-extraction path — `getArrowValue` calls
+// it on every cell value pulled out of an Arrow table, including the series
+// data fed into ECharts. Its return value is consumed by ECharts on a
+// `type: "value"` axis, which coerces numeric *strings* back to numbers only
+// when they contain pure digits. Adding locale-aware thousands separators
+// here breaks that coercion (`"43,149,473.45"` is no longer parseable) and
+// blanks the y-axis and line. Human-friendly formatting with commas /
+// dollar signs lives at the render layer (`formatValue`, chart tooltip
+// formatter, table cells).
 function formatNumber(num: number) {
   return num % 1 === 0 ? num.toString() : num.toFixed(2);
+}
+
+/**
+ * Monetary column-name detection. When a column name contains any of these
+ * word parts (split on non-alphanumerics), the value is formatted as
+ * currency even if the app.yml didn't declare a `format` hint. Keeps
+ * existing dashboards legible without requiring regeneration.
+ */
+const MONETARY_KEYWORDS: ReadonlySet<string> = new Set([
+  "sales",
+  "revenue",
+  "price",
+  "prices",
+  "cost",
+  "costs",
+  "spend",
+  "spends",
+  "spending",
+  "profit",
+  "profits",
+  "margin",
+  "margins",
+  "gmv",
+  "arr",
+  "mrr",
+  "ltv",
+  "aov",
+  "arpu",
+  "acv",
+  "tcv",
+  "cac",
+  "payment",
+  "payments",
+  "payout",
+  "payouts",
+  "amount",
+  "amounts",
+  "fee",
+  "fees",
+  "discount",
+  "discounts",
+  "balance",
+  "balances",
+  "income",
+  "expense",
+  "expenses",
+  "usd",
+  "eur",
+  "gbp"
+]);
+
+/**
+ * Infer a `DisplayFormat` from a column name. Returns `"currency"` when the
+ * column name contains a word that strongly suggests a monetary measure,
+ * and `undefined` otherwise so the caller can fall back to the default
+ * numeric formatter.
+ *
+ * Examples:
+ *   `oxymart__total_weekly_sales` → `"currency"` (matches `sales`)
+ *   `oxymart__store`              → `undefined`
+ *   `holiday_flag`                → `undefined`
+ *   `product_price`               → `"currency"` (matches `price`)
+ */
+export function inferCurrencyFormat(
+  columnName: string | undefined | null
+): DisplayFormat | undefined {
+  if (!columnName) return undefined;
+  // Split on any non-alphanumeric separator so `oxymart__total_weekly_sales`
+  // becomes `["oxymart", "total", "weekly", "sales"]` and we can check each
+  // part against the keyword set individually.
+  const parts = columnName
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+  return parts.some((part) => MONETARY_KEYWORDS.has(part)) ? "currency" : undefined;
+}
+
+// Intl.NumberFormat instances are expensive to construct; cache one per
+// (format, compact) pairing so repeat chart renders don't allocate.
+const formatterCache = new Map<string, Intl.NumberFormat>();
+
+function getFormatter(format: DisplayFormat, compact: boolean): Intl.NumberFormat {
+  const key = `${format}:${compact}`;
+  const cached = formatterCache.get(key);
+  if (cached) return cached;
+
+  let options: Intl.NumberFormatOptions;
+  if (format === "currency") {
+    options = compact
+      ? { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1 }
+      : { style: "currency", currency: "USD", maximumFractionDigits: 2 };
+  } else if (format === "percent") {
+    // Values are treated as already-scaled percentages (0–100), so divide
+    // by 100 to hand Intl a ratio.
+    options = { style: "percent", maximumFractionDigits: 2 };
+  } else {
+    options = compact
+      ? { notation: "compact", maximumFractionDigits: 1 }
+      : { maximumFractionDigits: 2 };
+  }
+
+  const formatter = new Intl.NumberFormat("en-US", options);
+  formatterCache.set(key, formatter);
+  return formatter;
+}
+
+/**
+ * Format a numeric value according to the requested `DisplayFormat`.
+ *
+ * - `currency` → `$301,397,792.46` (compact: `$301M`)
+ * - `percent`  → `12.50%` (input is already a percentage, 0–100)
+ * - `number`   → `1,234,567` (compact: `1.2M`)
+ *
+ * Returns a passthrough string conversion when the value is not a finite
+ * number or when `format` is undefined, so callers can pipe every cell value
+ * through the same helper.
+ */
+export function formatValue(
+  value: unknown,
+  format?: DisplayFormat,
+  options: { compact?: boolean } = {}
+): string {
+  if (value === null || value === undefined) return "";
+  const compact = options.compact ?? false;
+
+  const num =
+    typeof value === "number"
+      ? value
+      : typeof value === "bigint"
+        ? Number(value)
+        : typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))
+          ? Number(value)
+          : NaN;
+
+  if (!Number.isFinite(num)) {
+    return String(value);
+  }
+
+  if (!format) {
+    return formatNumber(num);
+  }
+
+  const formatter = getFormatter(format, compact);
+  return format === "percent" ? formatter.format(num / 100) : formatter.format(num);
 }
 
 type KeyPart = {

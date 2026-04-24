@@ -1,9 +1,10 @@
 import { AlertCircle, ArrowRight, Database, GitFork, X } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate, useLocation } from "react-router-dom";
 import ChatPanel from "@/components/Chat/ChatPanel";
 import PageHeader from "@/components/PageHeader";
 import useSidebar from "@/components/ui/shadcn/sidebar-context";
+import { hasPendingOnboardingForWorkspace } from "@/components/workspaces/components/CreateWorkspaceDialog/components/orchestrator";
 import useAgents from "@/hooks/api/agents/useAgents";
 import useDatabases from "@/hooks/api/databases/useDatabases";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
@@ -92,8 +93,22 @@ const ProjectSetupToast = () => {
 
 const Home = () => {
   const { open } = useSidebar();
+  const { project } = useCurrentProjectBranch();
   const { data: agents = [], isSuccess: agentsLoaded } = useAgents();
   const { data: databases = [], isSuccess: dbLoaded } = useDatabases();
+  const location = useLocation();
+  const locationState = location.state as {
+    prefillQuestion?: string;
+    agentPath?: string;
+    autoSubmit?: boolean;
+  } | null;
+
+  // If onboarding is mid-flight for this workspace, bounce back to /onboarding
+  // instead of rendering the chat. This covers the case where a blank
+  // workspace was created but its agentic setup never reached "complete".
+  if (project?.id && hasPendingOnboardingForWorkspace(project.id)) {
+    return <Navigate to='onboarding' replace />;
+  }
 
   const greeting = getGreeting();
 
@@ -126,7 +141,11 @@ const Home = () => {
               !setupComplete ? "pointer-events-none w-full select-none opacity-40" : "w-full"
             }
           >
-            <ChatPanel />
+            <ChatPanel
+              initialMessage={locationState?.prefillQuestion}
+              initialAgentPath={locationState?.agentPath}
+              autoSubmit={locationState?.autoSubmit}
+            />
           </div>
         </div>
       </div>

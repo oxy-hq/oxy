@@ -19,6 +19,7 @@ use std::{
 
 use async_trait::async_trait;
 use duckdb::{Connection, types::Value};
+use slugify::slugify;
 
 use agentic_core::result::{CellValue, QueryResult, QueryRow};
 
@@ -179,12 +180,11 @@ impl DuckDbConnector {
             let abs = path.canonicalize().map_err(|e| {
                 ConnectorError::ConnectionError(format!("cannot resolve {}: {e}", path.display()))
             })?;
-            let name = abs
+            let raw_stem = abs
                 .file_stem()
                 .and_then(|s| s.to_str())
-                .unwrap_or("unnamed")
-                .to_string()
-                .replace('"', "\"\"");
+                .unwrap_or("unnamed");
+            let name = normalize_table_name(raw_stem);
             let ext = abs
                 .extension()
                 .and_then(|e| e.to_str())
@@ -238,6 +238,28 @@ impl DuckDbConnector {
     /// Tables / views registered during construction.
     pub fn loaded_tables(&self) -> &[TableInfo] {
         &self.loaded_tables
+    }
+}
+
+// ── Table naming ─────────────────────────────────────────────────────────────
+
+/// Derive a DuckDB table name from a file stem that is safe to reference
+/// unquoted. Spaces, hyphens, and other non-identifier characters are
+/// collapsed to `_`, and a leading digit is prefixed with `_` so the name is
+/// a valid bare identifier.
+///
+/// Downstream consumers (including LLM-generated `.view.yml` files) often
+/// round-trip identifiers through normalization, so keeping table names to
+/// `[A-Za-z_][A-Za-z0-9_]*` avoids silent rename drift.
+fn normalize_table_name(stem: &str) -> String {
+    let slug = slugify!(stem, separator = "_");
+    if slug.is_empty() {
+        return "unnamed".to_string();
+    }
+    if slug.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+        format!("_{slug}")
+    } else {
+        slug
     }
 }
 
@@ -487,5 +509,44 @@ impl DatabaseConnector for DuckDbConnector {
         let join_keys = detect_join_keys(&tables);
 
         Ok(SchemaInfo { tables, join_keys })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_collapses_spaces_to_underscores() {
+        assert_eq!(
+            normalize_table_name("c20251018_lake_sonoma_100k copy"),
+            "c20251018_lake_sonoma_100k_copy"
+        );
+        assert_eq!(normalize_table_name("my data file"), "my_data_file");
+    }
+
+    #[test]
+    fn normalize_prefixes_leading_digit() {
+        assert_eq!(
+            normalize_table_name("20250816_tamalpa_headlands_50k"),
+            "_20250816_tamalpa_headlands_50k"
+        );
+    }
+
+    #[test]
+    fn normalize_leaves_clean_names_intact() {
+        assert_eq!(normalize_table_name("oxymart"), "oxymart");
+        assert_eq!(normalize_table_name("orders_2024"), "orders_2024");
+    }
+
+    #[test]
+    fn normalize_handles_hyphens_and_dots() {
+        assert_eq!(normalize_table_name("my-table.v2"), "my_table_v2");
+    }
+
+    #[test]
+    fn normalize_fallback_for_empty_slug() {
+        assert_eq!(normalize_table_name(""), "unnamed");
+        assert_eq!(normalize_table_name("---"), "unnamed");
     }
 }

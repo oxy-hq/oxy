@@ -1,3 +1,6 @@
+/** How a numeric value is formatted for display in charts + tables. */
+export type DisplayFormat = "currency" | "percent" | "number";
+
 export type LineChartDisplay = {
   type: "line_chart" | "line";
   x: string;
@@ -7,6 +10,8 @@ export type LineChartDisplay = {
   data: string;
   series?: string;
   title?: string;
+  /** Optional formatting for the y-axis + tooltip values. */
+  y_format?: DisplayFormat;
 };
 
 export type BarChartDisplay = {
@@ -16,6 +21,8 @@ export type BarChartDisplay = {
   y: string;
   title?: string;
   series?: string;
+  /** Optional formatting for the y-axis + tooltip values. */
+  y_format?: DisplayFormat;
 };
 
 export type PieChartDisplay = {
@@ -24,12 +31,19 @@ export type PieChartDisplay = {
   name: string;
   value: string;
   title?: string;
+  /** Optional formatting for the slice value in the tooltip. */
+  value_format?: DisplayFormat;
 };
 
 export type TableDisplay = {
   type: "table";
   data: string;
   title?: string;
+  /**
+   * Optional per-column number formatting. Keys are the output column names
+   * in the task result — for semantic_query tasks, that's `<view>__<field>`.
+   */
+  formats?: Record<string, DisplayFormat>;
 };
 
 export type MarkdownDisplay = {
@@ -115,6 +129,8 @@ export type AppDisplay = {
 export type AppItem = {
   name: string;
   path: string;
+  /** Human-friendly title from the app's `title:` field, when present. */
+  title?: string;
 };
 
 export type Chunk = {

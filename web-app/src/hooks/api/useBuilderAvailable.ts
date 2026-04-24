@@ -10,7 +10,7 @@ import { BuilderService } from "@/services/api";
  */
 export default function useBuilderAvailable() {
   const { project } = useCurrentProjectBranch();
-  const projectId = project.id;
+  const projectId = project?.id ?? "";
 
   const { data, isLoading } = useQuery({
     queryKey: queryKeys.builder.availability(projectId),

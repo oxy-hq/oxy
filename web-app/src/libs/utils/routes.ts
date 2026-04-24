@@ -93,7 +93,8 @@ const ROUTES = {
             }
           },
 
-          CONTEXT_GRAPH: `${wsBase}/context-graph`
+          CONTEXT_GRAPH: `${wsBase}/context-graph`,
+          ONBOARDING: `${wsBase}/onboarding`
         };
       }
     };

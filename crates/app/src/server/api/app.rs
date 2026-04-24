@@ -29,6 +29,9 @@ use uuid::Uuid;
 pub struct AppItem {
     pub name: String,
     pub path: String,
+    /// Human-friendly title pulled from the app's `title:` field, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -117,27 +120,37 @@ pub async fn list_apps(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let app_items: Vec<AppItem> = apps
-        .iter()
-        .filter_map(|app_path| {
-            app_path
-                .strip_prefix(workspace_path)
-                .ok()
-                .map(|relative_path| {
-                    let name = relative_path
-                        .file_name()
-                        .unwrap()
-                        .to_string_lossy()
-                        .to_string()
-                        .replace(".app.yml", "");
+    let mut app_items: Vec<AppItem> = Vec::with_capacity(apps.len());
+    for app_path in &apps {
+        let Ok(relative_path) = app_path.strip_prefix(workspace_path) else {
+            continue;
+        };
+        let name = relative_path
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string()
+            .replace(".app.yml", "");
 
-                    AppItem {
-                        name,
-                        path: relative_path.to_string_lossy().to_string(),
-                    }
-                })
-        })
-        .collect();
+        // Best-effort: a malformed app file shouldn't hide the rest of the list.
+        let title = match config_manager.resolve_app(relative_path).await {
+            Ok(cfg) => cfg.title.filter(|t| !t.trim().is_empty()),
+            Err(err) => {
+                tracing::warn!(
+                    path = %relative_path.display(),
+                    error = %err,
+                    "Failed to parse app config for title; falling back to filename"
+                );
+                None
+            }
+        };
+
+        app_items.push(AppItem {
+            name,
+            path: relative_path.to_string_lossy().to_string(),
+            title,
+        });
+    }
 
     Ok(extract::Json(app_items))
 }

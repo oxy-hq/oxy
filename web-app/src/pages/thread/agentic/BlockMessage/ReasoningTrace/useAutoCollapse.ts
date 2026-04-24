@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 
 const AUTO_COLLAPSE_DELAY_MS = 800;
 
-function useAutoCollapse(isStreaming: boolean, hasSteps: boolean) {
-  const [collapsed, setCollapsed] = useState(false);
+function useAutoCollapse(isStreaming: boolean, hasSteps: boolean, defaultCollapsed = false) {
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const wasStreamingRef = useRef(isStreaming);
 
   useEffect(() => {

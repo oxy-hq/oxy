@@ -396,6 +396,24 @@ impl ConfigManager {
         Ok(())
     }
 
+    /// Removes a model entry from the configuration by name.
+    pub async fn remove_model(&self, model_name: &str) -> Result<(), OxyError> {
+        let mut updated_config = (*self.config).clone();
+
+        let initial_len = updated_config.models.len();
+        updated_config.models.retain(|m| m.name() != model_name);
+
+        if updated_config.models.len() == initial_len {
+            return Err(OxyError::ConfigurationError(format!(
+                "Model with name '{}' not found",
+                model_name
+            )));
+        }
+
+        self.storage.write_config(&updated_config).await?;
+        Ok(())
+    }
+
     /// Returns the current data repos
     pub fn list_repositories(&self) -> &[crate::config::model::Repository] {
         &self.config.repositories

@@ -22,6 +22,16 @@ pub struct CreateRunRequest {
     pub model: Option<String>,
     #[serde(default)]
     pub thinking_mode: ThinkingMode,
+    /// Structured onboarding context — when present, the prompt is built
+    /// server-side from the user's selections (tables, warehouse type, model
+    /// config) instead of using `question` directly.
+    #[serde(default)]
+    pub onboarding_context: Option<agentic_pipeline::onboarding::OnboardingContext>,
+    /// When true, the solver auto-accepts all `propose_change` tool calls
+    /// without suspending for human input. Used by the onboarding flow where
+    /// file changes are always accepted automatically.
+    #[serde(default)]
+    pub auto_accept: bool,
 }
 
 #[derive(Serialize)]

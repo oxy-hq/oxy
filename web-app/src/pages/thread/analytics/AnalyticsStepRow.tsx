@@ -592,9 +592,12 @@ function collectPills(items: TraceItem[]): PillInfo[] {
 interface AnalyticsStepRowProps {
   step: AnalyticsStep;
   onSelectArtifact: (item: SelectableItem) => void;
+  /** When true, render without the bordered/bg card styling so the row blends
+   *  into a flat container (used by the onboarding BuildJobsPanel). */
+  flat?: boolean;
 }
 
-const AnalyticsStepRow = ({ step, onSelectArtifact }: AnalyticsStepRowProps) => {
+const AnalyticsStepRow = ({ step, onSelectArtifact, flat = false }: AnalyticsStepRowProps) => {
   const [expanded, setExpanded] = useState(step.isStreaming);
   const colors = stepColors(step.label);
   const isRunning = step.isStreaming;
@@ -611,10 +614,15 @@ const AnalyticsStepRow = ({ step, onSelectArtifact }: AnalyticsStepRowProps) => 
       >
         <div
           className={cn(
-            "rounded-md border px-3 py-1.5 transition-all duration-200",
-            isRunning
-              ? cn("border-l-2", colors.border, "bg-secondary/80")
-              : "border-transparent bg-card/50 hover:bg-card"
+            "transition-all duration-200",
+            flat
+              ? "py-0.5"
+              : cn(
+                  "rounded-md border px-3 py-1.5",
+                  isRunning
+                    ? cn("border-l-2", colors.border, "bg-secondary/80")
+                    : "border-transparent bg-card/50 hover:bg-card"
+                )
           )}
         >
           <div className='flex items-center gap-2'>

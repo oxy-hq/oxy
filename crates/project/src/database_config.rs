@@ -64,7 +64,7 @@ impl DatabaseConfigBuilder {
                         .await?
                 }
                 "bigquery" => Self::build_bigquery_config(db_name, warehouse, repo_path).await?,
-                "duckdb" => Self::build_duckdb_config(db_name, warehouse),
+                "duckdb" => Self::build_duckdb_config(db_name, warehouse)?,
                 "snowflake" => {
                     Self::build_snowflake_config(db_name, warehouse, user_id, secrets_manager)
                         .await?
@@ -86,7 +86,7 @@ impl DatabaseConfigBuilder {
         created_by: Uuid,
         secrets_manager: &SecretsManager,
     ) -> std::result::Result<Database, StatusCode> {
-        let postgres_config = warehouse.get_postgres_config();
+        let postgres_config = warehouse.get_postgres_config()?;
 
         let db_var_name = db_name.to_uppercase() + "_PASSWORD";
 
@@ -127,7 +127,7 @@ impl DatabaseConfigBuilder {
         created_by: Uuid,
         secrets_manager: &SecretsManager,
     ) -> std::result::Result<Database, StatusCode> {
-        let redshift_config = warehouse.get_redshift_config();
+        let redshift_config = warehouse.get_redshift_config()?;
 
         let db_var_name = db_name.to_uppercase() + "_PASSWORD";
 
@@ -168,7 +168,7 @@ impl DatabaseConfigBuilder {
         created_by: Uuid,
         secrets_manager: &SecretsManager,
     ) -> std::result::Result<Database, StatusCode> {
-        let mysql_config = warehouse.get_mysql_config();
+        let mysql_config = warehouse.get_mysql_config()?;
 
         let db_var_name = db_name.to_uppercase() + "_PASSWORD";
 
@@ -209,7 +209,7 @@ impl DatabaseConfigBuilder {
         created_by: Uuid,
         secrets_manager: &SecretsManager,
     ) -> std::result::Result<Database, StatusCode> {
-        let clickhouse_config = warehouse.get_clickhouse_config();
+        let clickhouse_config = warehouse.get_clickhouse_config()?;
 
         let db_var_name = db_name.to_uppercase() + "_PASSWORD";
 
@@ -263,7 +263,7 @@ impl DatabaseConfigBuilder {
         warehouse: &WarehouseConfig,
         repo_path: &Path,
     ) -> std::result::Result<Database, StatusCode> {
-        let bigquery_config = warehouse.get_bigquery_config();
+        let bigquery_config = warehouse.get_bigquery_config()?;
 
         let key_content = match &bigquery_config.key {
             Some(key) => key,
@@ -296,10 +296,13 @@ impl DatabaseConfigBuilder {
         })
     }
 
-    fn build_duckdb_config(db_name: String, warehouse: &WarehouseConfig) -> Database {
-        let duckdb_config = warehouse.get_duckdb_config();
+    fn build_duckdb_config(
+        db_name: String,
+        warehouse: &WarehouseConfig,
+    ) -> std::result::Result<Database, StatusCode> {
+        let duckdb_config = warehouse.get_duckdb_config()?;
 
-        Database {
+        Ok(Database {
             name: db_name,
             database_type: DatabaseType::DuckDB(oxy::config::model::DuckDB {
                 options: oxy::config::model::DuckDBOptions::Local {
@@ -308,7 +311,7 @@ impl DatabaseConfigBuilder {
                         .unwrap_or_else(|| "data".to_string()),
                 },
             }),
-        }
+        })
     }
 
     async fn build_snowflake_config(
@@ -317,7 +320,7 @@ impl DatabaseConfigBuilder {
         created_by: Uuid,
         secrets_manager: &SecretsManager,
     ) -> std::result::Result<Database, StatusCode> {
-        let snowflake_config = warehouse.get_snowflake_config();
+        let snowflake_config = warehouse.get_snowflake_config()?;
 
         // Determine auth type based on auth_mode field or fallback to legacy logic
         let auth_type = match snowflake_config.auth_mode.as_deref() {

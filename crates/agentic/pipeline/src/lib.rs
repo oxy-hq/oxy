@@ -14,7 +14,6 @@ use std::sync::{Arc, Mutex};
 use agentic_analytics::SchemaCatalog;
 use agentic_analytics::config::AgentConfig;
 use agentic_builder::BuilderTestRunner;
-use agentic_llm::LlmClient;
 use agentic_runtime::event_registry::EventRegistry;
 use agentic_runtime::handle::{PipelineHandle, PipelineOutcome};
 use agentic_runtime::state::RuntimeState;
@@ -33,6 +32,12 @@ pub use agentic_analytics::SchemaCatalog as AnalyticsSchemaCatalog;
 pub use agentic_analytics::extension::AnalyticsMigrator;
 pub use agentic_analytics::{AnalyticsMetricSink, SharedMetricSink};
 pub use agentic_builder::BuilderTestRunner as BuilderTestRunnerTrait;
+pub use agentic_builder::onboarding;
+pub use agentic_core::human_input::{
+    AutoAcceptInputProvider, HumanInputHandle, HumanInputProvider,
+};
+pub use agentic_llm::LlmClient;
+pub use agentic_llm::{AnthropicProvider, OpenAiProvider};
 pub use agentic_workflow::WorkflowMigrator;
 
 // ── ThinkingMode ────────────────────────────────────────────────────────────
@@ -90,6 +95,9 @@ pub struct PipelineBuilder {
     /// Override the default human input provider for the builder domain.
     /// When set, passed through to `BuilderPipelineParams.human_input`.
     human_input: Option<agentic_core::human_input::HumanInputHandle>,
+    /// Override the default LLM client for the builder domain. Used by the
+    /// onboarding flow where the chosen model is not yet in `config.yml`.
+    builder_llm_override: Option<LlmClient>,
 }
 
 enum Domain {
@@ -134,6 +142,7 @@ impl PipelineBuilder {
             builder_test_runner: None,
             existing_run_id: None,
             human_input: None,
+            builder_llm_override: None,
         }
     }
 
@@ -147,6 +156,17 @@ impl PipelineBuilder {
     /// Override the human input provider for the builder domain.
     pub fn human_input(mut self, provider: agentic_core::human_input::HumanInputHandle) -> Self {
         self.human_input = Some(provider);
+        self
+    }
+
+    /// Override the LLM client used for the builder domain.
+    ///
+    /// Used by the onboarding flow where the chosen model isn't yet present in
+    /// `config.yml`, so the normal `resolve_model` → `build_llm_client` path
+    /// can't find it. The caller is responsible for constructing a client with
+    /// the correct vendor/provider and API key.
+    pub fn with_builder_llm_client(mut self, client: LlmClient) -> Self {
+        self.builder_llm_override = Some(client);
         self
     }
 
@@ -559,7 +579,7 @@ impl PipelineBuilder {
     }
 
     async fn start_builder(
-        self,
+        mut self,
         db: &DatabaseConnection,
         run_id: &str,
         model: Option<String>,
@@ -588,8 +608,11 @@ impl PipelineBuilder {
             )
         })?;
 
-        // Resolve model + API key.
-        let client = build_builder_llm_client(&*self.platform, model).await;
+        // Resolve model + API key, honouring an explicit override (onboarding flow).
+        let client = match self.builder_llm_override.take() {
+            Some(c) => c,
+            None => build_builder_llm_client(&*self.platform, model).await,
+        };
 
         // Thread history.
         let history: Vec<agentic_builder::ConversationTurn> = if let Some(tid) = self.thread_id {

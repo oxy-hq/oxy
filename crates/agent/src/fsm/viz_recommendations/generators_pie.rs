@@ -71,6 +71,7 @@ impl ChartOptionsGenerator for PieChartGenerator {
                         value: num_col.name.clone(),
                         title: Some(Self::generate_title(&cat_col.name, &num_col.name)),
                         data: context.data_reference.clone(),
+                        value_format: None,
                     }),
                 });
             }
@@ -88,6 +89,7 @@ impl ChartOptionsGenerator for PieChartGenerator {
                         value: num_col.name.clone(),
                         title: Some(format!("{} by {}", num_col.name, bool_col.name)),
                         data: context.data_reference.clone(),
+                        value_format: None,
                     }),
                 });
             }
@@ -110,6 +112,7 @@ impl ChartOptionsGenerator for PieChartGenerator {
                                 value: value_col.name.clone(),
                                 title: Some(Self::generate_title(&num_col.name, &value_col.name)),
                                 data: context.data_reference.clone(),
+                                value_format: None,
                             }),
                         });
                     }

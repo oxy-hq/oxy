@@ -13,6 +13,7 @@ import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
 import useCurrentOrg from "@/stores/useCurrentOrg";
+import { appDisplayLabel } from "@/utils/appLabel";
 
 export function Apps() {
   const location = useLocation();
@@ -40,7 +41,7 @@ export function Apps() {
               <SidebarMenuSubItem key={pathb64}>
                 <SidebarMenuSubButton asChild isActive={location.pathname === appUri}>
                   <Link to={appUri} data-testid={`app-link-${app.name}`}>
-                    <span>{app.name}</span>
+                    <span>{appDisplayLabel(app)}</span>
                   </Link>
                 </SidebarMenuSubButton>
               </SidebarMenuSubItem>

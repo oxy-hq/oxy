@@ -102,6 +102,7 @@ pub async fn get_threads(
     let total = Threads::find()
         .filter(threads::Column::UserId.eq(Some(user.id)))
         .filter(threads::Column::ProjectId.eq(project.id))
+        .filter(threads::Column::Source.ne("__onboarding__"))
         .count(&connection)
         .await
         .map_err(|e| {
@@ -131,6 +132,7 @@ pub async fn get_threads(
     let threads = Threads::find()
         .filter(threads::Column::UserId.eq(Some(user.id)))
         .filter(threads::Column::ProjectId.eq(project.id))
+        .filter(threads::Column::Source.ne("__onboarding__"))
         .order_by_desc(threads::Column::CreatedAt)
         .offset(offset)
         .limit(limit)

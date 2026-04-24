@@ -1,5 +1,8 @@
 /target
 
+# Local-only development coordination artifacts
+SESSION_HANDOFF.md
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 .pytest_cache/

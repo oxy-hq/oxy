@@ -3,6 +3,9 @@ import type {
   CreateDatabaseConfigResponse,
   DatabaseInfo,
   DatabaseSyncResponse,
+  InspectEvent,
+  SchemaListResult,
+  SchemaTablesResult,
   TestDatabaseConnectionRequest,
   WarehousesFormData
 } from "@/types/database";
@@ -63,15 +66,18 @@ export class DatabaseService {
     projectId: string,
     branchName: string,
     database?: string,
-    options?: { datasets?: string[] }
+    options?: { datasets?: string[]; tables?: string[] }
   ): Promise<DatabaseSyncResponse> {
     const params = new URLSearchParams();
     params.append("branch", branchName);
     if (database) params.append("database", database);
     if (options?.datasets && options.datasets.length > 0) {
-      options.datasets.forEach((dataset) => {
+      for (const dataset of options.datasets) {
         params.append("datasets", dataset);
-      });
+      }
+    }
+    if (options?.tables && options.tables.length > 0) {
+      params.append("tables", options.tables.join(","));
     }
 
     const response = await apiClient.post(`/${projectId}/databases/sync?${params.toString()}`);
@@ -141,5 +147,69 @@ export class DatabaseService {
       body: request,
       onMessage: onEvent
     });
+  }
+
+  /**
+   * Lightweight schema/table discovery for the onboarding table picker.
+   * Returns just `{ schema, table, column_count }` per table. Full column
+   * metadata is pulled lazily by `syncDatabase({ tables: [...] })` once the
+   * user has selected which tables to include.
+   */
+  static async inspectDatabase(
+    projectId: string,
+    branchName: string,
+    database: string | undefined,
+    onEvent: (event: InspectEvent) => void
+  ): Promise<void> {
+    const params = new URLSearchParams();
+    params.append("branch", branchName);
+    if (database) params.append("database", database);
+    const baseUrl = apiClient.defaults.baseURL || "";
+    const url = `${baseUrl}/${projectId}/databases/inspect?${params.toString()}`;
+
+    await fetchSSE<InspectEvent>(url, {
+      method: "POST",
+      onMessage: onEvent
+    });
+  }
+
+  /**
+   * Fast schema-only discovery: returns schema names + total table counts
+   * per schema via a single INFORMATION_SCHEMA.TABLES scan. Tables for each
+   * schema are fetched lazily via `inspectSchemaTables` when the user expands
+   * a schema in the picker.
+   */
+  static async inspectSchemas(
+    projectId: string,
+    branchName: string,
+    database?: string
+  ): Promise<SchemaListResult> {
+    const params = new URLSearchParams();
+    params.append("branch", branchName);
+    if (database) params.append("database", database);
+    const response = await apiClient.post<SchemaListResult>(
+      `/${projectId}/databases/inspect-schemas?${params.toString()}`
+    );
+    return response.data;
+  }
+
+  /**
+   * Lazy per-schema table listing. One cheap GROUP BY query against the
+   * schema's columns metadata — called when the user expands a schema.
+   */
+  static async inspectSchemaTables(
+    projectId: string,
+    branchName: string,
+    schema: string,
+    database?: string
+  ): Promise<SchemaTablesResult> {
+    const params = new URLSearchParams();
+    params.append("branch", branchName);
+    params.append("schema", schema);
+    if (database) params.append("database", database);
+    const response = await apiClient.post<SchemaTablesResult>(
+      `/${projectId}/databases/inspect-schema-tables?${params.toString()}`
+    );
+    return response.data;
   }
 }

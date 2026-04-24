@@ -62,6 +62,7 @@ impl ChartOptionsGenerator for LineChartGenerator {
                         data: context.data_reference.clone(),
                         series: None,
                         title: Some(Self::generate_title(&temp_col.name, &num_col.name, None)),
+                        y_format: None,
                     }),
                 });
 
@@ -97,6 +98,7 @@ impl ChartOptionsGenerator for LineChartGenerator {
                                     &num_col.name,
                                     Some(&cat_col.name),
                                 )),
+                                y_format: None,
                             }),
                         });
                     }
@@ -124,6 +126,7 @@ impl ChartOptionsGenerator for LineChartGenerator {
                                 data: context.data_reference.clone(),
                                 series: None,
                                 title: Some(format!("{} vs {}", y_col.name, x_col.name)),
+                                y_format: None,
                             }),
                         });
                     }
@@ -148,6 +151,7 @@ impl ChartOptionsGenerator for LineChartGenerator {
                             data: context.data_reference.clone(),
                             series: None,
                             title: Some(format!("{} by {}", num_col.name, cat_col.name)),
+                            y_format: None,
                         }),
                     });
                 }

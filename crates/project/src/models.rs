@@ -1,3 +1,4 @@
+use axum::http::StatusCode;
 use serde::{Deserialize, Deserializer, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -6,16 +7,25 @@ fn deserialize_optional_u64_from_string<'de, D>(deserializer: D) -> Result<Optio
 where
     D: Deserializer<'de>,
 {
-    let s: Option<String> = Option::deserialize(deserializer)?;
-    match s {
-        Some(s) => {
+    use serde::de::Error;
+
+    let value: Option<serde_json::Value> = Option::deserialize(deserializer)?;
+    match value {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(serde_json::Value::String(s)) => {
             if s.is_empty() {
                 Ok(None)
             } else {
-                s.parse::<u64>().map(Some).map_err(serde::de::Error::custom)
+                s.parse::<u64>().map(Some).map_err(D::Error::custom)
             }
         }
-        None => Ok(None),
+        Some(serde_json::Value::Number(n)) => n
+            .as_u64()
+            .map(Some)
+            .ok_or_else(|| D::Error::custom("expected a non-negative integer")),
+        Some(other) => Err(D::Error::custom(format!(
+            "expected string or number, got {other}"
+        ))),
     }
 }
 
@@ -68,7 +78,7 @@ pub struct ClickHouseConfig {
 pub struct BigQueryConfig {
     pub key: Option<String>,
     pub dataset: Option<String>,
-    #[serde(deserialize_with = "deserialize_optional_u64_from_string")]
+    #[serde(default, deserialize_with = "deserialize_optional_u64_from_string")]
     pub dry_run_limit: Option<u64>,
 }
 
@@ -99,87 +109,38 @@ pub struct WarehouseConfig {
 }
 
 impl WarehouseConfig {
-    pub fn get_postgres_config(&self) -> PostgresConfig {
-        serde_json::from_value::<PostgresConfig>(self.config.clone()).unwrap_or({
-            PostgresConfig {
-                host: None,
-                port: None,
-                user: None,
-                password: None,
-                password_var: None,
-                database: None,
-            }
-        })
+    pub fn get_postgres_config(&self) -> Result<PostgresConfig, StatusCode> {
+        self.parse_config("postgres")
     }
 
-    pub fn get_redshift_config(&self) -> RedshiftConfig {
-        serde_json::from_value::<RedshiftConfig>(self.config.clone()).unwrap_or({
-            RedshiftConfig {
-                host: None,
-                port: None,
-                user: None,
-                password: None,
-                password_var: None,
-                database: None,
-            }
-        })
+    pub fn get_redshift_config(&self) -> Result<RedshiftConfig, StatusCode> {
+        self.parse_config("redshift")
     }
 
-    pub fn get_mysql_config(&self) -> MysqlConfig {
-        serde_json::from_value::<MysqlConfig>(self.config.clone()).unwrap_or(MysqlConfig {
-            host: None,
-            port: None,
-            user: None,
-            password: None,
-            password_var: None,
-            database: None,
-        })
+    pub fn get_mysql_config(&self) -> Result<MysqlConfig, StatusCode> {
+        self.parse_config("mysql")
     }
 
-    pub fn get_clickhouse_config(&self) -> ClickHouseConfig {
-        serde_json::from_value::<ClickHouseConfig>(self.config.clone()).unwrap_or({
-            ClickHouseConfig {
-                host: None,
-                user: None,
-                password: None,
-                password_var: None,
-                database: None,
-            }
-        })
+    pub fn get_clickhouse_config(&self) -> Result<ClickHouseConfig, StatusCode> {
+        self.parse_config("clickhouse")
     }
 
-    pub fn get_bigquery_config(&self) -> BigQueryConfig {
-        serde_json::from_value::<BigQueryConfig>(self.config.clone()).unwrap_or({
-            BigQueryConfig {
-                key: None,
-                dataset: None,
-                dry_run_limit: None,
-            }
-        })
+    pub fn get_bigquery_config(&self) -> Result<BigQueryConfig, StatusCode> {
+        self.parse_config("bigquery")
     }
 
-    pub fn get_duckdb_config(&self) -> DuckDBConfig {
-        serde_json::from_value::<DuckDBConfig>(self.config.clone()).unwrap_or({
-            DuckDBConfig {
-                file_search_path: None,
-            }
-        })
+    pub fn get_duckdb_config(&self) -> Result<DuckDBConfig, StatusCode> {
+        self.parse_config("duckdb")
     }
 
-    pub fn get_snowflake_config(&self) -> SnowflakeConfig {
-        serde_json::from_value::<SnowflakeConfig>(self.config.clone()).unwrap_or({
-            SnowflakeConfig {
-                account: None,
-                username: None,
-                password: None,
-                password_var: None,
-                warehouse: None,
-                database: None,
-                schema: None,
-                role: None,
-                private_key_path: None,
-                auth_mode: None,
-            }
+    pub fn get_snowflake_config(&self) -> Result<SnowflakeConfig, StatusCode> {
+        self.parse_config("snowflake")
+    }
+
+    fn parse_config<T: for<'de> Deserialize<'de>>(&self, warehouse: &str) -> Result<T, StatusCode> {
+        serde_json::from_value::<T>(self.config.clone()).map_err(|e| {
+            tracing::error!("Failed to deserialize {warehouse} warehouse config: {e}");
+            StatusCode::BAD_REQUEST
         })
     }
 }

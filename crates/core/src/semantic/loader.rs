@@ -267,6 +267,12 @@ impl GetSchemaQuery for Database {
                         format!(" AND ({table_conditions})")
                     };
 
+                    let schema_filter = if dataset.is_empty() {
+                        "c.TABLE_SCHEMA <> 'INFORMATION_SCHEMA'".to_string()
+                    } else {
+                        format!("c.TABLE_SCHEMA = '{dataset}'")
+                    };
+
                     let query = format!(
                         "SELECT c.TABLE_SCHEMA as table_schema,
                                 c.TABLE_NAME as table_name,
@@ -275,8 +281,8 @@ impl GetSchemaQuery for Database {
                                 CASE WHEN c.IS_IDENTITY = 'YES' THEN TRUE ELSE FALSE END as is_partitioning_column,
                                 c.COMMENT as description
                          FROM INFORMATION_SCHEMA.COLUMNS c
-                         WHERE c.TABLE_SCHEMA = '{dataset}'{tables_filter}
-                         ORDER BY c.TABLE_NAME, c.ORDINAL_POSITION"
+                         WHERE {schema_filter}{tables_filter}
+                         ORDER BY c.TABLE_SCHEMA, c.TABLE_NAME, c.ORDINAL_POSITION"
                     );
                     tracing::debug!("Snowflake schema query for dataset '{}': {}", dataset, query);
                     Ok(query)

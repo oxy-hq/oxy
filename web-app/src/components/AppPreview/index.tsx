@@ -16,36 +16,8 @@ import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import type { DataContainer, TableData } from "@/types/app";
 import AppDataState from "./AppDataState";
 
-const RUNNING_MESSAGES = [
-  "Running queries…",
-  "Crunching numbers…",
-  "Fetching data…",
-  "Analyzing results…",
-  "Building visualizations…",
-  "Almost there…"
-];
-
-function RotatingStatus({ active }: { active: boolean }) {
-  const [index, setIndex] = useState(0);
-
-  useEffect(() => {
-    if (!active) {
-      setIndex(0);
-      return;
-    }
-    const id = setInterval(() => {
-      setIndex((i) => (i + 1) % RUNNING_MESSAGES.length);
-    }, 2000);
-    return () => clearInterval(id);
-  }, [active]);
-
-  if (!active) return null;
-
-  return (
-    <p className='h-5 text-muted-foreground text-sm transition-opacity duration-300'>
-      {RUNNING_MESSAGES[index]}
-    </p>
-  );
+function LoadingStatus({ label }: { label: string }) {
+  return <p className='h-5 text-muted-foreground text-sm'>{label}</p>;
 }
 
 // Module-level cache: survives component unmount/remount (i.e. navigation away and back).
@@ -243,6 +215,13 @@ export default function AppPreview({ appPath64, runButton = true, autoRun = true
 
   const displayData = paramData ?? appDataQueryResult.data?.data;
 
+  // True on first load (including newly-created apps) before any data has
+  // arrived and before any error surfaces. Prevents displays from briefly
+  // rendering "No data found" against undefined data while the initial
+  // server fetch or client-mode DuckDB tasks are still in flight.
+  const isInitialLoading =
+    displayData === undefined && !appDataQueryResult.isError && !appDataQueryResult.data?.error;
+
   return (
     <div className='relative h-full w-full overflow-hidden px-2' data-testid='app-preview'>
       {runButton && controls.length === 0 && (
@@ -275,17 +254,27 @@ export default function AppPreview({ appPath64, runButton = true, autoRun = true
         )}
         <div className='mx-auto w-full max-w-200 p-2'>
           <AppDataState appDataQueryResult={appDataQueryResult} />
-          <div
-            className={`relative transition-opacity duration-150 ${isRunning ? "pointer-events-none opacity-40" : "opacity-100"}`}
-          >
-            {isRunning && (
-              <div className='absolute inset-0 z-10 flex flex-col items-center justify-center gap-3'>
-                <Spinner className='size-8' />
-                <RotatingStatus active={isRunning} />
-              </div>
-            )}
-            <Displays displays={appDisplay?.displays || []} data={displayData} />
-          </div>
+          {isInitialLoading ? (
+            <div
+              className='flex min-h-100 flex-col items-center justify-center gap-3'
+              data-testid='app-preview-loading'
+            >
+              <Spinner className='size-8' />
+              <LoadingStatus label='Loading app…' />
+            </div>
+          ) : (
+            <div
+              className={`relative transition-opacity duration-150 ${isRunning ? "pointer-events-none opacity-40" : "opacity-100"}`}
+            >
+              {isRunning && (
+                <div className='absolute inset-0 z-10 flex flex-col items-center justify-center gap-3'>
+                  <Spinner className='size-8' />
+                  <LoadingStatus label='Loading app…' />
+                </div>
+              )}
+              <Displays displays={appDisplay?.displays || []} data={displayData} />
+            </div>
+          )}
         </div>
       </div>
     </div>

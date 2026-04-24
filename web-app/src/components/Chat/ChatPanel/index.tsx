@@ -28,7 +28,15 @@ import AgentsDropdown, { type Agent } from "./AgentsDropdown";
 import SelectItemWithDetail from "./SelectItemWithDetail";
 import WorkflowsDropdown, { type WorkflowOption } from "./WorkflowsDropdown";
 
-const ChatPanel = () => {
+const ChatPanel = ({
+  initialMessage,
+  initialAgentPath,
+  autoSubmit
+}: {
+  initialMessage?: string;
+  initialAgentPath?: string;
+  autoSubmit?: boolean;
+}) => {
   const navigate = useNavigate();
   const { project } = useCurrentProjectBranch();
   const projectId = project.id;
@@ -79,10 +87,22 @@ const ChatPanel = () => {
     navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).THREAD(data.id));
   });
 
+  const autoSubmitDone = useRef(false);
+
   const [autoApprove, setAutoApprove] = useState(
     () => localStorage.getItem("builder_auto_approve") === "true"
   );
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(initialMessage ?? "");
+
+  // Auto-submit when navigated with prefilled question + agent (e.g. from onboarding)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: formRef is a stable ref
+  useEffect(() => {
+    if (autoSubmit && !autoSubmitDone.current && message && agent && !isPending) {
+      autoSubmitDone.current = true;
+      formRef.current?.requestSubmit();
+    }
+  }, [autoSubmit, message, agent, isPending]);
+
   const [cursorPos, setCursorPos] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [mentions, setMentions] = useState<Map<string, string>>(new Map());
@@ -382,6 +402,7 @@ const ChatPanel = () => {
                 setAgent(a);
               }}
               agentSelected={agent}
+              preferAgentPath={initialAgentPath}
               thinkingMode={thinkingMode}
               onThinkingModeChange={setThinkingMode}
               disabled={isPending}

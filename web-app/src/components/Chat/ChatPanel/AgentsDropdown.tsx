@@ -24,6 +24,8 @@ export type Agent = {
 type Props = {
   onSelect: (agent: Agent) => void;
   agentSelected: Agent | null;
+  /** When set, auto-select this agent instead of the first in the list */
+  preferAgentPath?: string;
   thinkingMode: ThinkingMode;
   onThinkingModeChange: (mode: ThinkingMode) => void;
   disabled?: boolean;
@@ -32,6 +34,7 @@ type Props = {
 const AgentsDropdown = ({
   onSelect,
   agentSelected,
+  preferAgentPath,
   thinkingMode,
   onThinkingModeChange,
   disabled = false
@@ -54,9 +57,12 @@ const AgentsDropdown = ({
 
   useEffect(() => {
     if (isSuccess && agents && agents.length > 0 && !agentSelected) {
-      onSelect(agentOptions[0]);
+      const preferred = preferAgentPath
+        ? agentOptions.find((a) => a.id === preferAgentPath)
+        : undefined;
+      onSelect(preferred ?? agentOptions[0]);
     }
-  }, [isSuccess, agents, agentOptions, onSelect, agentSelected]);
+  }, [isSuccess, agents, agentOptions, onSelect, agentSelected, preferAgentPath]);
 
   return (
     <DropdownMenu>

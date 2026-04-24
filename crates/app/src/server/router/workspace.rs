@@ -80,6 +80,8 @@ pub(super) fn build_workspace_routes(
             "/onboarding-readiness",
             get(onboarding::onboarding_readiness),
         )
+        .route("/onboarding/github-setup", get(onboarding::github_setup))
+        .nest("/onboarding", build_onboarding_routes())
         .route("/sql/{pathb64}", post(data::execute_sql))
         .route("/sql/query", post(data::execute_sql_query))
         .route("/semantic", post(semantic::execute_semantic_query))
@@ -232,9 +234,31 @@ fn build_database_routes() -> Router<AppState> {
         .route("/", get(database::list_databases))
         .route("/", post(database::create_database_config))
         .route("/test-connection", post(database::test_database_connection))
+        .route("/inspect", post(database::inspect_database_handler))
+        .route("/inspect-schemas", post(database::inspect_schemas_handler))
+        .route(
+            "/inspect-schema-tables",
+            post(database::inspect_schema_tables_handler),
+        )
         .route("/sync", post(database::sync_database))
         .route("/build", post(data::build_embeddings))
         .route("/clean", post(database::clean_data))
+}
+
+/// `/onboarding/*` subtree. Groups the file-upload route with its siblings so
+/// the oversized-body limit layer can be applied at the `Router` level rather
+/// than on an individual `MethodRouter` — the latter can interact unexpectedly
+/// with outer CORS preflight handling on axum 0.8.
+fn build_onboarding_routes() -> Router<AppState> {
+    Router::new()
+        .route("/reset", post(onboarding::reset_onboarding))
+        .route(
+            "/upload-warehouse-files",
+            post(onboarding::upload_warehouse_files),
+        )
+        .layer(axum::extract::DefaultBodyLimit::max(
+            onboarding::MAX_UPLOAD_BODY_BYTES,
+        ))
 }
 
 fn build_data_repo_routes() -> Router<AppState> {

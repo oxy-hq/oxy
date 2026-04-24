@@ -8,6 +8,8 @@ export interface CreateAnalyticsRunRequest {
   question: string;
   thread_id?: string;
   thinking_mode?: ThinkingMode;
+  /** When true, the backend auto-accepts all propose_change tool calls. */
+  auto_accept?: boolean;
 }
 
 export interface CreateAnalyticsRunResponse {

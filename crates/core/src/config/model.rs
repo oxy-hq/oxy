@@ -1209,7 +1209,8 @@ impl Database {
             }
             DatabaseType::Snowflake(sf) => {
                 if sf.datasets.is_empty() {
-                    HashMap::from_iter([("".to_string(), vec!["*".to_string()])]) // Default to CORE schema
+                    // Empty key signals "all user schemas" — see Snowflake branch in loader::get_schemas_queries
+                    HashMap::from_iter([("".to_string(), vec!["*".to_string()])])
                 } else {
                     sf.datasets.clone()
                 }
@@ -1259,6 +1260,46 @@ impl Database {
                     ..self
                 }
             }
+            _ => self,
+        }
+    }
+
+    /// Filter sync to specific tables within their schemas.
+    /// Accepts a map of schema name → table names.
+    pub fn with_schema_tables(self, schema_tables: HashMap<String, Vec<String>>) -> Self {
+        if schema_tables.is_empty() {
+            return self;
+        }
+
+        match &self.database_type {
+            DatabaseType::Bigquery(bq) => Database {
+                database_type: DatabaseType::Bigquery(BigQuery {
+                    datasets: schema_tables,
+                    ..bq.clone()
+                }),
+                ..self
+            },
+            DatabaseType::ClickHouse(ch) => Database {
+                database_type: DatabaseType::ClickHouse(ClickHouse {
+                    schemas: schema_tables,
+                    ..ch.clone()
+                }),
+                ..self
+            },
+            DatabaseType::Snowflake(sf) => Database {
+                database_type: DatabaseType::Snowflake(Snowflake {
+                    datasets: schema_tables,
+                    ..sf.clone()
+                }),
+                ..self
+            },
+            DatabaseType::MotherDuck(md) => Database {
+                database_type: DatabaseType::MotherDuck(MotherDuck {
+                    schemas: schema_tables,
+                    ..md.clone()
+                }),
+                ..self
+            },
             _ => self,
         }
     }
@@ -2658,6 +2699,23 @@ pub struct MarkdownDisplay {
     pub content: String,
 }
 
+/// How a numeric value is formatted for display.
+///
+/// Used on chart axes / tooltips and on individual table columns. When unset,
+/// the renderer falls back to its default numeric formatting (trailing zeros
+/// stripped for integers, two decimals for floats).
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Copy, PartialEq, Eq, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DisplayFormat {
+    /// Monetary values — e.g. `$301,397,792.46`. Uses USD by default.
+    Currency,
+    /// Percentage values — e.g. `12.5%`. Input is already a percentage
+    /// (0–100), not a ratio.
+    Percent,
+    /// Plain number with thousands separators — e.g. `1,234,567`.
+    Number,
+}
+
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate, ToSchema)]
 #[garde(context(ValidationContext))]
 pub struct LineChartDisplay {
@@ -2677,6 +2735,11 @@ pub struct LineChartDisplay {
     pub series: Option<String>,
     #[garde(skip)]
     pub title: Option<String>,
+    /// Optional formatting applied to the y-axis labels and tooltip values.
+    /// Use `currency` for monetary measures. Unset renders raw numbers.
+    #[garde(skip)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub y_format: Option<DisplayFormat>,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate, ToSchema)]
@@ -2694,6 +2757,11 @@ pub struct BarChartDisplay {
     pub data: String,
     #[garde(skip)]
     pub series: Option<String>,
+    /// Optional formatting applied to the y-axis labels and tooltip values.
+    /// Use `currency` for monetary measures. Unset renders raw numbers.
+    #[garde(skip)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub y_format: Option<DisplayFormat>,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate, ToSchema)]
@@ -2709,6 +2777,11 @@ pub struct PieChartDisplay {
     #[garde(custom(validate_task_data_reference))]
     #[schemars(description = "reference data output from a table using table name")]
     pub data: String,
+    /// Optional formatting applied to the slice value in the tooltip.
+    /// Use `currency` for monetary measures. Unset renders raw numbers.
+    #[garde(skip)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value_format: Option<DisplayFormat>,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate)]
@@ -2719,6 +2792,13 @@ pub struct TableDisplay {
     pub data: String,
     #[garde(skip)]
     pub title: Option<String>,
+    /// Optional per-column formatting. Keys are the output column names as
+    /// they appear in the task result (e.g. `oxymart__total_weekly_sales`
+    /// for semantic_query tasks, which join view + field with `__`). Columns
+    /// omitted from the map fall back to the default numeric formatter.
+    #[garde(skip)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub formats: Option<HashMap<String, DisplayFormat>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate)]
@@ -2855,6 +2935,11 @@ pub struct AppConfig {
     #[schemars(skip)]
     #[garde(skip)]
     pub name: String,
+    /// Human-friendly title shown in dashboard listings. When unset, callers
+    /// fall back to a humanized form of the filename-derived name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[garde(skip)]
+    pub title: Option<String>,
     /// Optional description of the app.
     #[serde(default)]
     #[garde(skip)]

@@ -4,6 +4,7 @@ import { Echarts } from "@/components/Echarts";
 import type { DataContainer, LineChartDisplay } from "@/types/app";
 import {
   type ChartBuilderParams,
+  createAxisTooltipFormatter,
   createBaseChartOptions,
   createXYAxisOptions,
   getSeriesData,
@@ -12,6 +13,7 @@ import {
   getXAxisData,
   useChartBase
 } from "./hooks";
+import { inferCurrencyFormat } from "./utils";
 
 export const LineChart = ({
   display,
@@ -26,14 +28,18 @@ export const LineChart = ({
     async ({ display, connection, fileName, isDarkMode }: ChartBuilderParams<LineChartDisplay>) => {
       const baseOptions = createBaseChartOptions(isDarkMode);
       const xData = await getXAxisData(connection, fileName, display.x);
-      const xyAxisOptions = createXYAxisOptions(xData, isDarkMode);
+      // Explicit `y_format` wins; otherwise infer from the y column name.
+      const yFormat = display.y_format ?? inferCurrencyFormat(display.y);
+      const xyAxisOptions = createXYAxisOptions(xData, isDarkMode, yFormat);
+      const tooltipFormatter = createAxisTooltipFormatter(yFormat);
 
       // Configure tooltip to show values on hover
       const tooltipOptions = {
         trigger: "axis" as const,
         axisPointer: {
           type: "line" as const
-        }
+        },
+        ...(tooltipFormatter ? { formatter: tooltipFormatter } : {})
       };
 
       let series: LineSeriesOption[];

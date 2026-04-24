@@ -16,6 +16,7 @@ import { useAllWorkspaces } from "@/hooks/api/workspaces/useWorkspaces";
 import { cn } from "@/libs/shadcn/utils";
 import { setLastWorkspaceId } from "@/libs/utils/lastWorkspace";
 import ROUTES from "@/libs/utils/routes";
+import { initOnboardingStateForWorkspace } from "./CreateWorkspaceDialog/components/orchestrator";
 
 const REDIRECT_SECONDS = 5;
 
@@ -60,9 +61,19 @@ export default function WorkspacePreparing({
   const ws = workspaces?.find((w) => w.id === workspaceId);
   const status = ws?.status;
 
+  // Blank ("new") and GitHub-imported workspaces both drop the user into the
+  // agentic onboarding flow — blank walks the full model/warehouse/build arc,
+  // github mode only collects the secrets referenced by the cloned repo's
+  // config.yml. Demo workspaces skip onboarding since they ship with sample
+  // agents + data already configured.
   const goToWorkspace = useCallback(() => {
+    if (creationType === "new" || creationType === "github") {
+      initOnboardingStateForWorkspace(workspaceId, creationType);
+      navigate(ROUTES.ORG(orgSlug).WORKSPACE(workspaceId).ONBOARDING, { replace: true });
+      return;
+    }
     navigate(ROUTES.ORG(orgSlug).WORKSPACE(workspaceId).HOME, { replace: true });
-  }, [navigate, orgSlug, workspaceId]);
+  }, [creationType, navigate, orgSlug, workspaceId]);
 
   const [countdown, setCountdown] = useState(REDIRECT_SECONDS);
 

@@ -44,6 +44,19 @@ impl HumanInputProvider for DeferredInputProvider {
     }
 }
 
+// ── AutoAcceptProvider ───────────────────────────────────────────────────────
+
+/// Always accepts — immediately returns `Ok("Accept")` for any prompt.
+///
+/// Used during onboarding where file changes are always accepted automatically.
+pub struct AutoAcceptProvider;
+
+impl HumanInputProvider for AutoAcceptProvider {
+    fn request_sync(&self, _prompt: &str, _suggestions: &[String]) -> Result<String, ()> {
+        Ok("Accept".to_string())
+    }
+}
+
 // ── SuspendedRunData / ResumeInput ────────────────────────────────────────────
 
 // ── AutoAcceptInputProvider ──────────────────────────────────────────────────

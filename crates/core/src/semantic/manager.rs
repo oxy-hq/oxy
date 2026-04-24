@@ -307,15 +307,18 @@ impl SemanticManager {
     }
     pub async fn sync_all(
         &self,
-        filter: Option<(String, Vec<String>)>,
+        filter: crate::service::sync::SyncFilter,
     ) -> Result<Vec<Result<SyncMetrics, OxyError>>, OxyError> {
         let mut global_semantics = self.storage.load_global_semantics().await?;
-        let databases = match filter {
-            Some((db, datasets)) => {
+        // Remember table-level filter for post-sync cleanup
+        let table_filter = filter.tables.clone();
+        let (db_filter, schema_tables) = filter.into_filter();
+        let databases = match db_filter {
+            Some(db) => {
                 tracing::debug!(
-                    "Filtering to database: {} with datasets: {:?}",
+                    "Filtering to database: {} with schema_tables: {:?}",
                     db,
-                    datasets
+                    schema_tables
                 );
                 let resolved_db = self.config.resolve_database(&db)?;
                 tracing::debug!(
@@ -323,7 +326,11 @@ impl SemanticManager {
                     resolved_db.name,
                     resolved_db.database_type
                 );
-                vec![resolved_db.clone().with_datasets(datasets)]
+                if schema_tables.is_empty() {
+                    vec![resolved_db.clone()]
+                } else {
+                    vec![resolved_db.clone().with_schema_tables(schema_tables)]
+                }
             }
             None => {
                 let all_dbs = self.config.list_databases().to_vec();
@@ -412,6 +419,28 @@ impl SemanticManager {
                         }
                     }
                 }
+            }
+        }
+
+        // When syncing specific tables, prune dimensions that reference tables
+        // outside the filter. This ensures semantics.yml only contains dimensions
+        // for user-selected tables (e.g., after onboarding table selection).
+        // Filter entries are "schema.table" format, targets are "db.schema.table.column".
+        if !table_filter.is_empty() {
+            let allowed_tables: std::collections::HashSet<&str> =
+                table_filter.iter().map(|t| t.as_str()).collect();
+            for dim in &mut global_semantics.dimensions {
+                dim.targets.retain(|target| {
+                    // Target format: "db.schema.table.column"
+                    let parts: Vec<&str> = target.splitn(4, '.').collect();
+                    if parts.len() >= 3 {
+                        // Match against "schema.table" (parts[1].parts[2])
+                        let schema_table = format!("{}.{}", parts[1], parts[2]);
+                        allowed_tables.contains(schema_table.as_str())
+                    } else {
+                        true // Keep targets we can't parse
+                    }
+                });
             }
         }
 

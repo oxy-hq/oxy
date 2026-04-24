@@ -48,7 +48,8 @@ pub use delegation::{
 pub use domain::Domain;
 pub use events::{CoreEvent, DomainEvents, Event, EventStream, HumanInputQuestion, Outcome};
 pub use human_input::{
-    DeferredInputProvider, HumanInputHandle, HumanInputProvider, ResumeInput, SuspendedRunData,
+    AutoAcceptProvider, DeferredInputProvider, HumanInputHandle, HumanInputProvider, ResumeInput,
+    SuspendedRunData,
 };
 pub use orchestrator::{
     CompletedTurn, Orchestrator, OrchestratorError, PipelineOutput, RunContext, SessionMemory,

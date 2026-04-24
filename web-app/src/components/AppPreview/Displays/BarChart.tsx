@@ -4,6 +4,7 @@ import { Echarts } from "@/components/Echarts";
 import type { BarChartDisplay, DataContainer } from "@/types/app";
 import {
   type ChartBuilderParams,
+  createAxisTooltipFormatter,
   createBaseChartOptions,
   createXYAxisOptions,
   getSeriesData,
@@ -12,6 +13,7 @@ import {
   getXAxisData,
   useChartBase
 } from "./hooks";
+import { inferCurrencyFormat } from "./utils";
 
 export const BarChart = ({
   display,
@@ -26,7 +28,12 @@ export const BarChart = ({
     async ({ display, connection, fileName, isDarkMode }: ChartBuilderParams<BarChartDisplay>) => {
       const baseOptions = createBaseChartOptions(isDarkMode);
       const xData = await getXAxisData(connection, fileName, display.x);
-      const xyAxisOptions = createXYAxisOptions(xData, isDarkMode);
+      // Explicit `y_format` wins; otherwise infer currency from the y
+      // column name so dashboards built before `y_format` existed still
+      // render monetary columns as dollars.
+      const yFormat = display.y_format ?? inferCurrencyFormat(display.y);
+      const xyAxisOptions = createXYAxisOptions(xData, isDarkMode, yFormat);
+      const tooltipFormatter = createAxisTooltipFormatter(yFormat);
 
       let series: BarSeriesOption[];
 
@@ -68,6 +75,15 @@ export const BarChart = ({
       return {
         ...baseOptions,
         ...xyAxisOptions,
+        ...(tooltipFormatter
+          ? {
+              tooltip: {
+                trigger: "axis" as const,
+                axisPointer: { type: "shadow" as const },
+                formatter: tooltipFormatter
+              }
+            }
+          : {}),
         series
       };
     },

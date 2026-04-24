@@ -3,6 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/shadcn/button";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/shadcn/sidebar";
 import useSidebar from "@/components/ui/shadcn/sidebar-context";
+import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
@@ -10,7 +11,7 @@ import ContextGraph from "./ContextGraph";
 import Ide from "./Ide";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 
-export function Header() {
+export function Header({ isOnboarding = false }: { isOnboarding?: boolean }) {
   const location = useLocation();
   const { toggleSidebar, open } = useSidebar();
   const { workspace } = useCurrentWorkspace();
@@ -45,7 +46,7 @@ export function Header() {
       </div>
 
       {/* Primary navigation */}
-      <div className='px-2 py-2'>
+      <div className={cn("px-2 py-2", isOnboarding && "pointer-events-none opacity-40")}>
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton asChild>

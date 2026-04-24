@@ -182,6 +182,7 @@ impl Trigger for BuildDataApp<MachineContext> {
                 Display::Table(TableDisplay {
                     title: Some(t.name.clone()),
                     data: t.name.clone(),
+                    formats: None,
                 })
             })
             .collect::<Vec<_>>();

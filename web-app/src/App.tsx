@@ -35,6 +35,7 @@ import { FileQuickOpen } from "./components/FileQuickOpen";
 import OrgGuard from "./components/OrgGuard";
 import ProtectedRoute from "./components/ProtectedRoute";
 import WorkspaceStatus from "./components/WorkspaceStatus";
+import AgenticSetupPage from "./components/workspaces/components/CreateWorkspaceDialog/components/AgenticSetup";
 import { LocalWorkspaceSetupDialog } from "./components/workspaces/components/LocalWorkspaceSetupDialog";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { useWorkspace } from "./hooks/api/workspaces/useWorkspaces";
@@ -293,6 +294,14 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
           {/* Default redirect to files */}
           <Route index element={<Navigate to='files' replace />} />
         </Route>
+        <Route
+          path='onboarding'
+          element={
+            <MainPageWrapper>
+              <AgenticSetupPage />
+            </MainPageWrapper>
+          }
+        />
         <Route
           path='context-graph'
           element={

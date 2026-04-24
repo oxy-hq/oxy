@@ -5,6 +5,7 @@
 
 pub mod database;
 pub mod events;
+pub mod onboarding;
 pub mod pipeline;
 pub mod schema_provider;
 pub mod semantic;

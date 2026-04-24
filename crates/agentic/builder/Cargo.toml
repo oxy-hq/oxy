@@ -25,3 +25,6 @@ tokio-util = { workspace = true, features = ["rt"] }
 uuid = { workspace = true }
 chrono = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+serde_yaml = { workspace = true }

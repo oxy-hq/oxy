@@ -8,6 +8,7 @@ import {
   getPieChartData,
   useChartBase
 } from "./hooks";
+import { inferCurrencyFormat } from "./utils";
 
 export const PieChart = ({
   display,
@@ -20,7 +21,9 @@ export const PieChart = ({
 }) => {
   const buildChartOptions = useCallback(
     async ({ display, connection, fileName, isDarkMode }: ChartBuilderParams<PieChartDisplay>) => {
-      const baseOptions = createPieChartOptions(isDarkMode);
+      // Explicit `value_format` wins; otherwise infer from the value column name.
+      const valueFormat = display.value_format ?? inferCurrencyFormat(display.value);
+      const baseOptions = createPieChartOptions(isDarkMode, valueFormat);
 
       const pieData = await getPieChartData(connection, fileName, display.name, display.value);
 

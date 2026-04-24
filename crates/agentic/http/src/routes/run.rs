@@ -17,6 +17,7 @@ use uuid::Uuid;
 
 use agentic_pipeline::PipelineBuilder;
 use agentic_pipeline::platform::{BuilderBridges, PlatformContext};
+use agentic_pipeline::{AutoAcceptInputProvider, LlmClient, OpenAiProvider};
 
 use crate::{
     db, sse,
@@ -24,6 +25,10 @@ use crate::{
 };
 
 use super::{AnswerRequest, CreateRunRequest, CreateRunResponse, RunIdPath, ThinkingMode};
+
+/// Cap on the number of tables an onboarding request may supply — guards
+/// against pathological LLM prompts and request-size blowups.
+const MAX_ONBOARDING_TABLES: usize = 50;
 
 pub async fn create_run(
     Extension(state): Extension<Arc<AgenticState>>,
@@ -37,6 +42,17 @@ pub async fn create_run(
         thread_id = ?body.thread_id,
         "create_run: received request"
     );
+
+    if let Some(ctx) = &body.onboarding_context
+        && ctx.tables.len() > MAX_ONBOARDING_TABLES
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            format!("onboarding_context.tables exceeds limit of {MAX_ONBOARDING_TABLES} entries"),
+        )
+            .into_response();
+    }
+
     let db = state.db.clone();
 
     let thread_id_uuid = body
@@ -44,9 +60,17 @@ pub async fn create_run(
         .as_deref()
         .and_then(|s| Uuid::parse_str(s).ok());
 
+    // If onboarding context is provided, build the prompt server-side.
+    // Otherwise use the raw question from the request.
+    let question = if let Some(ctx) = &body.onboarding_context {
+        ctx.build_prompt()
+    } else {
+        body.question.clone()
+    };
+
     let mut builder = PipelineBuilder::new(platform.clone())
         .with_builder_bridges(bridges.clone())
-        .question(&body.question)
+        .question(&question)
         .thinking_mode(body.thinking_mode)
         .schema_cache(Arc::clone(&state.schema_cache));
 
@@ -55,6 +79,32 @@ pub async fn create_run(
     }
     if let Some(runner) = state.builder_test_runner.clone() {
         builder = builder.test_runner(runner);
+    }
+
+    // Onboarding auto-accepts all propose_change tool calls — no HITL.
+    if body.auto_accept {
+        builder = builder.human_input(Arc::new(AutoAcceptInputProvider));
+    }
+
+    // During onboarding the chosen model may not be in config.yml yet (the
+    // builder agent is about to write it). When onboarding_context carries a
+    // model_config, build the LlmClient directly and override the pipeline's
+    // default resolution.
+    if let Some(mc) = body
+        .onboarding_context
+        .as_ref()
+        .and_then(|ctx| ctx.model_config.as_ref())
+    {
+        let api_key = platform
+            .resolve_secret(&mc.key_var)
+            .await
+            .unwrap_or_default();
+        let client = if mc.vendor == "openai" {
+            LlmClient::with_provider(OpenAiProvider::new(&api_key, &mc.model_ref))
+        } else {
+            LlmClient::with_model(api_key, mc.model_ref.clone())
+        };
+        builder = builder.with_builder_llm_client(client);
     }
 
     builder = if body.domain.as_deref() == Some("builder") {
