@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.38] - 2026-04-24
+
+### 🚀 Features
+
+- Support authentication with rds using aws iam role auth (#2135)
+- Agentic onboarding (#1850)
+
+### 🐛 Bug Fixes
+
+- Permission bugs (#2146)
+
+### 💼 Other
+
+- Add Trivy security scanning to CI/CD pipeline (#2156)
+
+### ⚙️ Miscellaneous Tasks
+
+- Fix multiple ci issues
+- Add CSS and JS file types to workflow paths (#2160)
+
 ## [0.5.37] - 2026-04-23
 
 ### 🚀 Features
@@ -61,6 +81,7 @@ All notable changes to this project will be documented in this file.
 - Update cargo deps
 - Update dependencies in package.json
 - Downgrade pnpm action version to v5
+- Release 0.5.37 (#2093)
 
 ## [0.5.36] - 2026-04-16
 
