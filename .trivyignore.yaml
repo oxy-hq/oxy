@@ -1,0 +1,6 @@
+secrets:
+  # BigQueryForm.tsx has a textarea placeholder showing the expected JSON shape
+  # for a GCP key file. It is not a real credential.
+  - id: gcp-service-account
+    paths:
+      - web-app/src/pages/create-workspace/steps/WarehouseStep/BigQueryForm.tsx

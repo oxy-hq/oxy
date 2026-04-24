@@ -53,6 +53,7 @@ permissions:
   pull-requests: read
   attestations: write
   id-token: write
+  security-events: write
 
 jobs:
   # ============================================================================
@@ -643,7 +644,68 @@ jobs:
           provenance: false
 
   # ============================================================================
-  # Job 6: Create and Push Multi-Arch Manifests
+  # Job 6: Trivy Docker Image Security Scan
+  # ============================================================================
+  trivy-image-scan:
+    name: Trivy Docker Image Scan
+    needs: [ determine-build-type, build-docker-images ]
+    if: |
+      always() &&
+      needs.build-docker-images.result == 'success'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine image to scan
+        id: image
+        run: |
+          VERSION="${{ needs.determine-build-type.outputs.version }}"
+          CHANNEL="${{ needs.determine-build-type.outputs.channel }}"
+          DATE="${{ needs.determine-build-type.outputs.current_date }}"
+          IMAGE="ghcr.io/${{ github.repository_owner }}/oxy"
+
+          if [ "$CHANNEL" = "stable" ]; then
+            echo "ref=${IMAGE}:${VERSION}-amd64" >> $GITHUB_OUTPUT
+          else
+            echo "ref=${IMAGE}:edge-${DATE}-amd64" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run Trivy vulnerability scanner (image)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ steps.image.outputs.ref }}
+          format: table
+          output: trivy-image-results.txt
+          severity: CRITICAL,HIGH
+          exit-code: "0"
+
+      - name: Publish image scan results to workflow summary
+        if: always()
+        run: |
+          if [[ -s trivy-image-results.txt ]]; then
+            {
+              echo "### Docker Image Vulnerability Scan"
+              echo "<details><summary>Click to expand</summary>"
+              echo ""
+              echo '```'
+              cat trivy-image-results.txt
+              echo '```'
+              echo "</details>"
+            } >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### Docker Image Vulnerability Scan" >> $GITHUB_STEP_SUMMARY
+            echo "No CRITICAL or HIGH vulnerabilities found." >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # ============================================================================
+  # Job 7: Create and Push Multi-Arch Manifests
   # ============================================================================
   create-manifests:
     name: Create ${{ matrix.target.name }} ${{
@@ -737,7 +799,7 @@ jobs:
           fi
 
   # ============================================================================
-  # Job 7: Create Deployment Summary
+  # Job 8: Create Deployment Summary
   # ============================================================================
   deployment-summary:
     name: Create Deployment Summary

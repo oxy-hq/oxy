@@ -1,0 +1,117 @@
+name: Security Scan
+
+on:
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+  push:
+    paths-ignore:
+      - "docs/**"
+  schedule:
+    - cron: "0 2 * * 1" # Weekly on Monday at 2am UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  vulnerability-scan:
+    name: Trivy Dependency Vulnerability Scan
+    if: |
+      github.repository == 'oxy-hq/oxy' ||
+      (github.repository == 'oxy-hq/oxy-internal' && github.event_name == 'pull_request')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run Trivy vulnerability scanner (filesystem)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: CRITICAL,HIGH
+          exit-code: "0"
+          format: ${{ github.repository == 'oxy-hq/oxy' && 'sarif' || 'table' }}
+          output: ${{ github.repository == 'oxy-hq/oxy' && 'trivy-vuln-results.sarif' || 'trivy-vuln-results.txt' }}
+
+      - name: Publish vulnerability results to workflow summary
+        if: github.repository != 'oxy-hq/oxy'
+        run: |
+          if [[ -s trivy-vuln-results.txt ]]; then
+            {
+              echo "### Dependency Vulnerability Scan"
+              echo "<details><summary>Click to expand</summary>"
+              echo ""
+              echo '```'
+              cat trivy-vuln-results.txt
+              echo '```'
+              echo "</details>"
+            } >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### Dependency Vulnerability Scan" >> $GITHUB_STEP_SUMMARY
+            echo "No CRITICAL or HIGH vulnerabilities found." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload vulnerability results to GitHub Security tab
+        if: github.repository == 'oxy-hq/oxy'
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-vuln-results.sarif
+          category: trivy-vulnerability
+
+  secret-scan:
+    name: Trivy Secret Scan
+    if: |
+      github.repository == 'oxy-hq/oxy' ||
+      (github.repository == 'oxy-hq/oxy-internal' && github.event_name == 'pull_request')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run Trivy secret scanner
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: secret
+          exit-code: "1"
+          # localhost+2-key.pem is a mkcert local-dev TLS cert (not a real secret).
+          # .env.example files contain placeholder values, not real credentials.
+          skip-files: "localhost+2-key.pem,localhost+2.pem,**/.env.example"
+          trivyignores: .trivyignore.yaml
+          format: ${{ github.repository == 'oxy-hq/oxy' && 'sarif' || 'table' }}
+          output: ${{ github.repository == 'oxy-hq/oxy' && 'trivy-secret-results.sarif' || 'trivy-secret-results.txt' }}
+
+      - name: Publish secret scan results to workflow summary
+        if: github.repository != 'oxy-hq/oxy' && always()
+        run: |
+          if [[ -s trivy-secret-results.txt ]]; then
+            {
+              echo "### Secret Scan"
+              echo "<details><summary>Click to expand</summary>"
+              echo ""
+              echo '```'
+              cat trivy-secret-results.txt
+              echo '```'
+              echo "</details>"
+            } >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### Secret Scan" >> $GITHUB_STEP_SUMMARY
+            echo "No secrets detected." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload secret scan results to GitHub Security tab
+        if: github.repository == 'oxy-hq/oxy'
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-secret-results.sarif
+          category: trivy-secret
