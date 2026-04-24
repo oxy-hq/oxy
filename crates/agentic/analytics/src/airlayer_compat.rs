@@ -16,16 +16,16 @@ use airlayer::DatasourceDialectMap;
 
 // ── YAML shim types ──────────────────────────────────────────────────────────
 //
-// airlayer's `View` has `description: String` (non-optional) while oxy YAML
-// files may omit it.  These thin wrappers add `#[serde(default)]` where needed
-// and convert into the real airlayer types.
+// These thin wrappers add `#[serde(default)]` on optional fields and accept
+// oxy's YAML aliases (e.g. `data_source`) before converting into the real
+// airlayer types.
 
 /// Intermediate view representation for oxy YAML files.
 #[derive(Debug, Deserialize)]
 struct ViewShim {
     name: String,
     #[serde(default)]
-    description: String,
+    description: Option<String>,
     #[serde(default)]
     label: Option<String>,
     /// Oxy YAML may use `data_source` or `datasource`.
@@ -52,7 +52,7 @@ struct ViewShim {
 struct TopicShim {
     name: String,
     #[serde(default)]
-    description: String,
+    description: Option<String>,
     #[serde(default)]
     views: Vec<String>,
     #[serde(default)]
@@ -86,6 +86,7 @@ pub fn parse_view_yaml(
         dimensions: shim.dimensions,
         measures: shim.measures,
         segments: shim.segments,
+        pre_aggregations: None,
         meta: None,
     })
 }

@@ -195,7 +195,7 @@ fn validate_semantic_file(abs: &Path) -> Result<(), String> {
 struct ViewShim {
     name: String,
     #[serde(default)]
-    description: String,
+    description: Option<String>,
     #[serde(default)]
     label: Option<String>,
     #[serde(default, alias = "data_source")]
@@ -220,7 +220,7 @@ struct ViewShim {
 struct TopicShim {
     name: String,
     #[serde(default)]
-    description: String,
+    description: Option<String>,
     #[serde(default)]
     views: Vec<String>,
     #[serde(default)]
@@ -245,6 +245,7 @@ fn parse_view_yaml(yaml: &str) -> Result<airlayer::View, Box<dyn std::error::Err
         dimensions: shim.dimensions,
         measures: shim.measures,
         segments: shim.segments,
+        pre_aggregations: None,
         meta: None,
     })
 }

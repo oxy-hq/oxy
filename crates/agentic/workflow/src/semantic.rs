@@ -127,7 +127,7 @@ fn resolve_topic(
         }
         Ok(airlayer::Topic {
             name: "adhoc_query".to_string(),
-            description: "Ad-hoc query inferred from views".to_string(),
+            description: Some("Ad-hoc query inferred from views".to_string()),
             views: view_names.into_iter().collect(),
             base_view: None,
             retrieval: None,

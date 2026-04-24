@@ -105,7 +105,7 @@ tracing = {version = "0.1.44"}
 uuid = { version = "1.23", features = ["serde", "v4"] }
 aes-gcm = "0.10.3"
 aho-corasick = "1.1"
-airlayer = { git = "https://github.com/oxy-hq/airlayer.git", tag = "v0.0.9" }
+airlayer = { git = "https://github.com/oxy-hq/airlayer.git", rev = "b8c734d" }
 anyhow = "1.0.102"
 apalis = "0.7.4"
 apalis-core = "0.7.4"

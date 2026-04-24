@@ -741,7 +741,7 @@ fn substitute_params(sql: &str, params: &[String]) -> String {
 fn convert_view_to_airlayer(view: &oxy_semantic::View) -> airlayer::View {
     airlayer::View {
         name: view.name.clone(),
-        description: view.description.clone().unwrap_or_default(),
+        description: view.description.clone(),
         label: view.label.clone(),
         datasource: view.datasource.clone(),
         dialect: None, // Dialect comes from datasource mapping
@@ -763,6 +763,7 @@ fn convert_view_to_airlayer(view: &oxy_semantic::View) -> airlayer::View {
             .map(|ms| ms.iter().map(convert_measure_to_airlayer).collect()),
         // TODO: pass through segments when oxy-semantic adds support
         segments: vec![],
+        pre_aggregations: None,
         meta: None,
     }
 }

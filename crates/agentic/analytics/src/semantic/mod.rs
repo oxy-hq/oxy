@@ -330,10 +330,11 @@ impl SemanticCatalog {
                     .iter()
                     .map(|v_name| {
                         if let Some(view) = self.engine.view(v_name) {
-                            if view.description.is_empty() {
-                                v_name.clone()
-                            } else {
-                                format!("{} ({})", v_name, view.description)
+                            match view.description.as_deref() {
+                                Some(desc) if !desc.is_empty() => {
+                                    format!("{} ({})", v_name, desc)
+                                }
+                                _ => v_name.clone(),
                             }
                         } else {
                             v_name.clone()
@@ -343,7 +344,7 @@ impl SemanticCatalog {
                 format!(
                     "- {}: {} (views: {})",
                     t.name,
-                    t.description,
+                    t.description.as_deref().unwrap_or(""),
                     views.join(", ")
                 )
             })

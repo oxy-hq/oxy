@@ -14,7 +14,7 @@ agentic-analytics = { workspace = true }
 agentic-connector = { path = "../connector", features = [
     "duckdb", "postgres", "clickhouse", "snowflake", "bigquery"
 ] }
-airlayer = { git = "https://github.com/oxy-hq/airlayer.git", rev = "4b92e5f" }
+airlayer = { git = "https://github.com/oxy-hq/airlayer.git", rev = "b8c734d" }
 omni = { workspace = true }
 oxy-looker = { workspace = true }
 chrono = { workspace = true }

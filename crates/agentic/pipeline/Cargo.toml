@@ -39,4 +39,4 @@ sea-orm-migration = { workspace = true }
 tempfile = { workspace = true }
 testcontainers = { version = "0.27", features = ["blocking", "reusable-containers"] }
 testcontainers-modules = { version = "0.15", features = ["postgres"] }
-airlayer = { git = "https://github.com/oxy-hq/airlayer.git", rev = "4b92e5f" }
+airlayer = { git = "https://github.com/oxy-hq/airlayer.git", rev = "b8c734d" }
