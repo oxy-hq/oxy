@@ -2,7 +2,7 @@ name: Draft Content Changelog
 
 on:
   pull_request:
-    types: [closed]
+    types: [ closed ]
     branches:
       - main
   workflow_dispatch:
@@ -89,17 +89,20 @@ jobs:
 
       - name: Generate and publish changelog draft
         uses: anthropics/claude-code-action@v1
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Pass the ARGO app token via the action's `github_token` input (wired to
+          # OVERRIDE_GITHUB_TOKEN internally). A step-level `env: GH_TOKEN:` does NOT
+          # work — the action generates its own claude[bot] token via OIDC and sets
+          # $GH_TOKEN from that inside the Claude runtime, overriding any step env.
+          # claude[bot] has no access to oxy-content, which is why `gh pr create` was
+          # silently 404'ing while git push (remote extraheader) still succeeded.
+          github_token: ${{ steps.app-token.outputs.token }}
           show_full_output: "true"
           # Bare `Bash` (no prefix) allows any shell command. The previous per-prefix
-          # list broke on compound forms in the prompt (`... 2>/dev/null || true`,
-          # `$(date +%Y-%m-%d)` inside quoted bodies) — the branch got pushed but
-          # label + PR-create were denied, so the run reported success with no PR.
-          # Other tools stay restricted; token is scoped to oxy-internal + oxy-content.
-          claude_args: --allowedTools "Bash,Read,Write,Glob,Grep"
+          # list broke on compound forms (`... 2>/dev/null || true`, `$(date +%Y-%m-%d)`
+          # inside quoted bodies). `Edit` is needed for modifying docs.json in place.
+          claude_args: --allowedTools "Bash,Read,Write,Edit,Glob,Grep"
           prompt: |
             Create a user-facing changelog draft in oxy-hq/oxy-content for Oxy release ${{ steps.version.outputs.version }}.
 
