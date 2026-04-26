@@ -20,7 +20,7 @@ jobs:
         name: Create GitHub App Token
         id: app-token
         with:
-          app-id: ${{ vars.ARGO_APP_ID }}
+          client-id: ${{ vars.ARGO_APP_CLIENT_ID }}
           private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
       - name: Get GitHub App User ID

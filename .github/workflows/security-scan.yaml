@@ -24,8 +24,9 @@ jobs:
   vulnerability-scan:
     name: Trivy Dependency Vulnerability Scan
     if: |
-      github.repository == 'oxy-hq/oxy' ||
-      (github.repository == 'oxy-hq/oxy-internal' && github.event_name == 'pull_request')
+      (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release/')) &&
+      (github.repository == 'oxy-hq/oxy' ||
+       (github.repository == 'oxy-hq/oxy-internal' && github.event_name == 'pull_request'))
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -70,8 +71,9 @@ jobs:
   secret-scan:
     name: Trivy Secret Scan
     if: |
-      github.repository == 'oxy-hq/oxy' ||
-      (github.repository == 'oxy-hq/oxy-internal' && github.event_name == 'pull_request')
+      (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release/')) &&
+      (github.repository == 'oxy-hq/oxy' ||
+       (github.repository == 'oxy-hq/oxy-internal' && github.event_name == 'pull_request'))
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
