@@ -490,7 +490,7 @@ mod tests {
         let views = vec![
             airlayer::View {
                 name: "v1".into(),
-                description: String::new(),
+                description: None,
                 label: None,
                 datasource: None,
                 dialect: None,
@@ -500,11 +500,12 @@ mod tests {
                 dimensions: vec![],
                 measures: None,
                 segments: vec![],
+                pre_aggregations: None,
                 meta: None,
             },
             airlayer::View {
                 name: "v2".into(),
-                description: String::new(),
+                description: None,
                 label: None,
                 datasource: Some("my_db".into()),
                 dialect: None,
@@ -514,6 +515,7 @@ mod tests {
                 dimensions: vec![],
                 measures: None,
                 segments: vec![],
+                pre_aggregations: None,
                 meta: None,
             },
         ];

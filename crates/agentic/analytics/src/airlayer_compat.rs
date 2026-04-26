@@ -68,7 +68,7 @@ struct TopicShim {
 /// Parse an oxy `.view.yml` string into an `airlayer::View`.
 ///
 /// Handles differences from airlayer's strict format:
-/// - `description` defaults to `""` when absent
+/// - `description` defaults to `None` when absent
 /// - `data_source` accepted as alias for `datasource`
 pub fn parse_view_yaml(
     yaml: &str,
