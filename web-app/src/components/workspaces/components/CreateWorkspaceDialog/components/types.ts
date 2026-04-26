@@ -61,13 +61,7 @@ export interface GithubSetup {
 }
 
 export type LlmProvider = "anthropic" | "openai";
-export type WarehouseType =
-  | "bigquery"
-  | "snowflake"
-  | "postgres"
-  | "mysql"
-  | "clickhouse"
-  | "duckdb";
+export type WarehouseType = "bigquery" | "snowflake" | "clickhouse" | "duckdb";
 
 export type ConnectionStatus = "idle" | "testing" | "success" | "failed";
 
@@ -218,7 +212,7 @@ export interface CredentialField {
   key: string;
   label: string;
   placeholder: string;
-  type: "text" | "password" | "number" | "file_upload";
+  type: "text" | "password" | "number" | "textarea" | "file_upload";
   required?: boolean;
   defaultValue?: string;
   /** For `file_upload`: comma-separated accept list (e.g. ".csv,.parquet"). */
@@ -227,6 +221,14 @@ export interface CredentialField {
   multiple?: boolean;
   /** For `file_upload`: secondary descriptive text shown under the field. */
   helperText?: string;
+  /** For `textarea`: number of visible rows. Defaults to 4. */
+  rows?: number;
+  /**
+   * Optional client-side validation. `"json"` parses the value as JSON and
+   * surfaces an inline error when malformed; an empty value defers to
+   * `required`. Failed validation also blocks the submit button.
+   */
+  validateAs?: "json";
 }
 
 export interface OnboardingMessage {

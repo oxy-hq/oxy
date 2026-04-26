@@ -3,6 +3,7 @@ import { type ChangeEvent, type DragEvent, useCallback, useRef, useState } from 
 import { SecretInput } from "@/components/ui/SecretInput";
 import { Button } from "@/components/ui/shadcn/button";
 import { Input } from "@/components/ui/shadcn/input";
+import { Textarea } from "@/components/ui/shadcn/textarea";
 import { cn } from "@/libs/shadcn/utils";
 import type { CredentialField } from "../types";
 
@@ -88,13 +89,32 @@ export default function CredentialForm({
     [uploads, values]
   );
 
+  /** Per-field validation message, or undefined when valid / empty. */
+  const validationError = useCallback(
+    (field: CredentialField): string | undefined => {
+      if (!field.validateAs) return undefined;
+      const raw = values[field.key];
+      if (typeof raw !== "string" || raw.trim() === "") return undefined;
+      if (field.validateAs === "json") {
+        try {
+          JSON.parse(raw);
+        } catch {
+          return "Must be valid JSON.";
+        }
+      }
+      return undefined;
+    },
+    [values]
+  );
+
   const allRequiredFilled = fields.every(isFieldFilled);
+  const allValid = fields.every((f) => validationError(f) === undefined);
   const anyUploading = Object.values(uploads).some((s) => s.uploading);
 
   const handleSubmit = useCallback(() => {
-    if (!allRequiredFilled || anyUploading) return;
+    if (!allRequiredFilled || !allValid || anyUploading) return;
     onSubmit(values);
-  }, [allRequiredFilled, anyUploading, onSubmit, values]);
+  }, [allRequiredFilled, allValid, anyUploading, onSubmit, values]);
 
   const runUpload = useCallback(
     async (fieldKey: string, files: File[]) => {
@@ -178,6 +198,28 @@ export default function CredentialForm({
               </div>
             );
           }
+          if (field.type === "textarea") {
+            const fieldError = validationError(field);
+            return (
+              <div key={field.key} className='col-span-2'>
+                <label htmlFor={inputId} className='mb-1 block text-muted-foreground text-xs'>
+                  {field.label}
+                  {field.required && <span className='text-destructive'> *</span>}
+                </label>
+                <Textarea
+                  id={inputId}
+                  value={values[field.key] ?? ""}
+                  onChange={(e) => handleChange(field.key, e.target.value)}
+                  placeholder={field.placeholder}
+                  disabled={disabled}
+                  rows={field.rows ?? 4}
+                  aria-invalid={fieldError ? true : undefined}
+                  className='font-mono text-sm'
+                />
+                {fieldError && <p className='mt-1 text-destructive text-xs'>{fieldError}</p>}
+              </div>
+            );
+          }
           const isPassword = field.type === "password";
           const InputComponent = isPassword ? SecretInput : Input;
           return (
@@ -209,7 +251,7 @@ export default function CredentialForm({
       <div className='flex justify-end'>
         <Button
           onClick={handleSubmit}
-          disabled={disabled || !allRequiredFilled || anyUploading}
+          disabled={disabled || !allRequiredFilled || !allValid || anyUploading}
           size='sm'
         >
           {buttonLabel}

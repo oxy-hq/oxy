@@ -403,4 +403,57 @@ mod duckdb {
             "no join keys in empty in-memory DuckDB"
         );
     }
+
+    // ── Per-column stats with complex types ───────────────────────────────────
+    //
+    // Smoke test: queries that return columns of complex DuckDB types (MAP,
+    // LIST, STRUCT, UNION, BLOB) must not break stats gathering. The current
+    // bundled DuckDB version aggregates all of these gracefully, but the
+    // connector still wraps each column's stats query in a per-column match
+    // (mirroring the BigQuery connector) so a future type or extension that
+    // rejects MIN/MAX/COUNT(DISTINCT) at bind time degrades just that one
+    // column's stats to None instead of failing the whole execute_query.
+
+    #[tokio::test]
+    async fn stats_handle_complex_column_types() {
+        let conn = DuckDbConnection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE mixed (
+                 id INTEGER,
+                 m MAP(VARCHAR, INTEGER),
+                 lst INTEGER[],
+                 stct STRUCT(a INTEGER, b VARCHAR)
+             );
+             INSERT INTO mixed VALUES
+                 (1, MAP {'a': 1}, [1, 2, 3], {'a': 1, 'b': 'x'}),
+                 (2, MAP {'b': 2}, [4, 5],    {'a': 2, 'b': 'y'});",
+        )
+        .unwrap();
+        let c = DuckDbConnector::new(conn);
+
+        let res = c
+            .execute_query("SELECT * FROM mixed ORDER BY id", 100)
+            .await
+            .expect("execute_query must not fail when columns include complex types");
+
+        assert_eq!(res.result.total_row_count, 2);
+        assert_eq!(res.result.columns, ["id", "m", "lst", "stct"]);
+        assert_eq!(
+            res.summary.columns.len(),
+            4,
+            "every input column must produce a stats entry, even if degraded"
+        );
+
+        let id = res
+            .summary
+            .columns
+            .iter()
+            .find(|s| s.name == "id")
+            .expect("id stats must be present");
+        assert_eq!(id.null_count, 0);
+        assert_eq!(id.distinct_count, Some(2));
+        assert_eq!(id.min, Some(CellValue::Number(1.0)));
+        assert_eq!(id.max, Some(CellValue::Number(2.0)));
+        assert!(id.mean.is_some(), "INTEGER column must have a mean");
+    }
 }

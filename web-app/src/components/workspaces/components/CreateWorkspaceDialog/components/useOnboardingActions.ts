@@ -38,19 +38,6 @@ function buildWarehouseConfig(
   credentials: Record<string, string>
 ): WarehouseConfig {
   switch (type) {
-    case "postgres":
-    case "mysql":
-      return {
-        type,
-        name: type,
-        config: {
-          host: credentials.host,
-          port: credentials.port,
-          database: credentials.database,
-          user: credentials.user,
-          password: credentials.password
-        }
-      };
     case "bigquery":
       return {
         type: "bigquery",
@@ -503,7 +490,7 @@ export function useOnboardingActions(orchestrator: Orchestrator) {
 
       const onboardingContext = {
         tables: selectedTables,
-        warehouse_type: warehouseType ?? "postgres",
+        warehouse_type: warehouseType ?? "bigquery",
         step: phase,
         model_config: buildModelConfig()
       };
@@ -560,7 +547,7 @@ export function useOnboardingActions(orchestrator: Orchestrator) {
 
       const onboardingContext = {
         tables: [table],
-        warehouse_type: warehouseType ?? "postgres",
+        warehouse_type: warehouseType ?? "bigquery",
         step: "semantic_view" as const,
         model_config: buildModelConfig(),
         ...(tableSchema && { table_schema: tableSchema })

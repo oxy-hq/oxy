@@ -344,10 +344,22 @@ impl DatabaseConnector for DuckDbConnector {
             })?
         };
 
-        // 4. Per-column stats.
+        // 4. Per-column stats. Each column's query is best-effort: a
+        // future DuckDB type, extension, or user-defined type without
+        // MIN/MAX/COUNT(DISTINCT)/TRY_CAST AS DOUBLE support could
+        // bind-error and otherwise tank the whole execute_query, surfacing
+        // to the analytics agent as a generic "query failed" loop in the
+        // reasoning trace. Match on the result and degrade just that
+        // column's stats to None — same shape as the BigQuery connector.
+        //
+        // NB: the DuckDB version pinned today aggregates all built-in
+        // complex types (MAP, LIST, STRUCT, UNION, BLOB, BIT) gracefully,
+        // so this branch is defense-in-depth rather than a fix for an
+        // observed bug.
         let mut col_stats: Vec<ColumnStats> = Vec::with_capacity(column_names.len());
         for (idx, col) in column_names.iter().enumerate() {
             let quoted = format!("\"{}\"", col.replace('"', "\"\""));
+            let data_type = column_types.get(idx).cloned();
             let stat_sql = format!(
                 "SELECT \
                     COUNT(*) - COUNT({quoted}), \
@@ -359,32 +371,54 @@ impl DatabaseConnector for DuckDbConnector {
                  FROM {tmp}"
             );
 
-            let (null_count, distinct_count, min_v, max_v, mean, std_dev) = conn
-                .query_row(&stat_sql, [], |row| {
-                    Ok((
-                        row.get::<_, i64>(0)?,
-                        row.get::<_, i64>(1)?,
-                        row.get::<_, Value>(2)?,
-                        row.get::<_, Value>(3)?,
-                        row.get::<_, Option<f64>>(4)?,
-                        row.get::<_, Option<f64>>(5)?,
-                    ))
-                })
-                .map_err(|e| ConnectorError::QueryFailed {
-                    sql: stat_sql.clone(),
-                    message: e.to_string(),
-                })?;
-
-            col_stats.push(ColumnStats {
-                name: col.clone(),
-                data_type: column_types.get(idx).cloned(),
-                null_count: null_count as u64,
-                distinct_count: Some(distinct_count as u64),
-                min: Some(duckdb_to_cell(min_v)),
-                max: Some(duckdb_to_cell(max_v)),
-                mean,
-                std_dev,
-            });
+            match conn.query_row(&stat_sql, [], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, Value>(2)?,
+                    row.get::<_, Value>(3)?,
+                    row.get::<_, Option<f64>>(4)?,
+                    row.get::<_, Option<f64>>(5)?,
+                ))
+            }) {
+                Ok((null_count, distinct_count, min_v, max_v, mean, std_dev)) => {
+                    col_stats.push(ColumnStats {
+                        name: col.clone(),
+                        data_type,
+                        null_count: null_count as u64,
+                        distinct_count: Some(distinct_count as u64),
+                        min: Some(duckdb_to_cell(min_v)),
+                        max: Some(duckdb_to_cell(max_v)),
+                        mean,
+                        std_dev,
+                    });
+                }
+                Err(e) => {
+                    // TODO(test): the bundled DuckDB version aggregates every
+                    // built-in complex type successfully, so this arm has no
+                    // realistic reproducer in `tests/duckdb_tests.rs`. If a
+                    // future change here breaks the degraded-stats shape it
+                    // won't be caught — revisit once an extension or UDT
+                    // exists that genuinely bind-errors.
+                    tracing::debug!(
+                        column = %col,
+                        column_type = ?data_type,
+                        error = %e,
+                        "DuckDB per-column stats query failed; degrading to empty stats \
+                         (null_count is unknown, reported as 0)"
+                    );
+                    col_stats.push(ColumnStats {
+                        name: col.clone(),
+                        data_type,
+                        null_count: 0,
+                        distinct_count: None,
+                        min: None,
+                        max: None,
+                        mean: None,
+                        std_dev: None,
+                    });
+                }
+            }
         }
 
         // 5. Clean up.

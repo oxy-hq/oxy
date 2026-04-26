@@ -767,18 +767,11 @@ export function deriveMessages(state: OnboardingState): OnboardingMessage[] {
       currentIdx === stepIndex("warehouse_type")
         ? {
             type: "selection_cards",
-            collapseAfter: 4,
             options: [
               { id: "snowflake", label: "Snowflake", description: "Cloud data platform" },
               { id: "clickhouse", label: "ClickHouse", description: "Columnar analytics database" },
               { id: "bigquery", label: "BigQuery", description: "Google Cloud data warehouse" },
-              { id: "duckdb", label: "DuckDB", description: "In-process analytics database" },
-              {
-                id: "postgres",
-                label: "PostgreSQL",
-                description: "Open-source relational database"
-              },
-              { id: "mysql", label: "MySQL", description: "Relational database" }
+              { id: "duckdb", label: "DuckDB", description: "In-process analytics database" }
             ]
           }
         : undefined,
@@ -805,7 +798,7 @@ export function deriveMessages(state: OnboardingState): OnboardingMessage[] {
       currentIdx === stepIndex("warehouse_credentials")
         ? {
             type: "credential_form",
-            fields: getWarehouseFields(state.warehouseType ?? "postgres"),
+            fields: getWarehouseFields(state.warehouseType ?? "bigquery"),
             buttonLabel: "Test Connection"
           }
         : undefined,
@@ -837,7 +830,7 @@ export function deriveMessages(state: OnboardingState): OnboardingMessage[] {
       status: "error",
       inputBlock: {
         type: "credential_form",
-        fields: getWarehouseFields(state.warehouseType ?? "postgres"),
+        fields: getWarehouseFields(state.warehouseType ?? "bigquery"),
         buttonLabel: "Retry Connection",
         initialValues: state.warehouseCredentials
       },
@@ -1382,46 +1375,6 @@ export const MODEL_OPTIONS: Record<LlmProvider, ModelOption[]> = {
 
 function getWarehouseFields(type: WarehouseType) {
   switch (type) {
-    case "postgres":
-    case "mysql":
-      return [
-        {
-          key: "host",
-          label: "Host",
-          placeholder: "localhost",
-          type: "text" as const,
-          required: true
-        },
-        {
-          key: "port",
-          label: "Port",
-          placeholder: type === "postgres" ? "5432" : "3306",
-          type: "number" as const,
-          required: true,
-          defaultValue: type === "postgres" ? "5432" : "3306"
-        },
-        {
-          key: "database",
-          label: "Database",
-          placeholder: "my_database",
-          type: "text" as const,
-          required: true
-        },
-        {
-          key: "user",
-          label: "Username",
-          placeholder: "admin",
-          type: "text" as const,
-          required: true
-        },
-        {
-          key: "password",
-          label: "Password",
-          placeholder: "Enter password",
-          type: "password" as const,
-          required: true
-        }
-      ];
     case "bigquery":
       return [
         {
@@ -1434,9 +1387,11 @@ function getWarehouseFields(type: WarehouseType) {
         {
           key: "key_json",
           label: "Service Account Key (JSON)",
-          placeholder: "Paste JSON key contents...",
-          type: "password" as const,
-          required: true
+          placeholder: '{"type": "service_account", ...}',
+          type: "textarea" as const,
+          rows: 6,
+          required: true,
+          validateAs: "json" as const
         }
       ];
     case "snowflake":
@@ -1715,8 +1670,7 @@ export function useOnboardingOrchestrator() {
   );
 
   const setSchemaDiscoveryStatus = useCallback(
-    (message: string | undefined) =>
-      dispatch({ type: "SET_SCHEMA_DISCOVERY_STATUS", message }),
+    (message: string | undefined) => dispatch({ type: "SET_SCHEMA_DISCOVERY_STATUS", message }),
     []
   );
 
