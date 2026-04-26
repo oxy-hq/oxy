@@ -33,6 +33,13 @@
       "items": {
         "$ref": "#/definitions/Task"
       }
+    },
+    "title": {
+      "description": "Human-friendly title shown in dashboard listings. When unset, callers fall back to a humanized form of the filename-derived name.",
+      "type": [
+        "string",
+        "null"
+      ]
     }
   },
   "additionalProperties": false,
@@ -182,6 +189,17 @@
                 "string",
                 "null"
               ]
+            },
+            "y_format": {
+              "description": "Optional formatting applied to the y-axis labels and tooltip values. Use `currency` for monetary measures. Unset renders raw numbers.",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/DisplayFormat"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           }
         },
@@ -215,6 +233,17 @@
             },
             "value": {
               "type": "string"
+            },
+            "value_format": {
+              "description": "Optional formatting applied to the slice value in the tooltip. Use `currency` for monetary measures. Unset renders raw numbers.",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/DisplayFormat"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           }
         },
@@ -254,6 +283,17 @@
             },
             "y": {
               "type": "string"
+            },
+            "y_format": {
+              "description": "Optional formatting applied to the y-axis labels and tooltip values. Use `currency` for monetary measures. Unset renders raw numbers.",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/DisplayFormat"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
           }
         },
@@ -266,6 +306,16 @@
           "properties": {
             "data": {
               "type": "string"
+            },
+            "formats": {
+              "description": "Optional per-column formatting. Keys are the output column names as they appear in the task result (e.g. `oxymart__total_weekly_sales` for semantic_query tasks, which join view + field with `__`). Columns omitted from the map fall back to the default numeric formatter.",
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": {
+                "$ref": "#/definitions/DisplayFormat"
+              }
             },
             "title": {
               "type": [
@@ -383,6 +433,32 @@
               ]
             }
           }
+        }
+      ]
+    },
+    "DisplayFormat": {
+      "description": "How a numeric value is formatted for display.\n\nUsed on chart axes / tooltips and on individual table columns. When unset, the renderer falls back to its default numeric formatting (trailing zeros stripped for integers, two decimals for floats).",
+      "oneOf": [
+        {
+          "description": "Monetary values — e.g. `$301,397,792.46`. Uses USD by default.",
+          "type": "string",
+          "enum": [
+            "currency"
+          ]
+        },
+        {
+          "description": "Percentage values — e.g. `12.5%`. Input is already a percentage (0–100), not a ratio.",
+          "type": "string",
+          "enum": [
+            "percent"
+          ]
+        },
+        {
+          "description": "Plain number with thousands separators — e.g. `1,234,567`.",
+          "type": "string",
+          "enum": [
+            "number"
+          ]
         }
       ]
     },
