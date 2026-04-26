@@ -72,19 +72,17 @@ function buildWarehouseConfig(
           password: credentials.password
         }
       };
-    case "clickhouse": {
-      const host = buildClickHouseHost(credentials);
+    case "clickhouse":
       return {
         type: "clickhouse",
         name: "clickhouse",
         config: {
-          host,
+          host: credentials.host,
           user: credentials.user,
           password: credentials.password,
           database: credentials.database
         }
       };
-    }
     case "duckdb":
       return {
         type: "duckdb",
@@ -94,20 +92,6 @@ function buildWarehouseConfig(
         }
       };
   }
-}
-
-function buildClickHouseHost(credentials: Record<string, string>): string {
-  let host = credentials.host ?? "localhost";
-  if (credentials.port && !host.includes(`:${credentials.port}`)) {
-    if (host.includes("://")) {
-      const url = new URL(host);
-      url.port = credentials.port;
-      host = url.toString().replace(/\/$/, "");
-    } else {
-      host = `${host}:${credentials.port}`;
-    }
-  }
-  return host;
 }
 
 // ── Hook: wires orchestrator actions to real API calls ──────────────────────

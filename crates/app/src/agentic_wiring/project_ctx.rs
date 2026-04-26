@@ -362,7 +362,19 @@ async fn resolve_connector_impl(
                 .get_database(&workspace_manager.secrets_manager)
                 .await
                 .unwrap_or_default();
-            let url = format!("http://{}:8123", host);
+            let url = if host.contains("://") {
+                // Caller already provided a full URL (scheme + host + optional
+                // port + optional path).  Pass it through verbatim — common for
+                // ClickHouse Cloud (HTTPS, port 8443) and port-forwarded hosts
+                // where the user enters the full address.
+                host
+            } else if host.contains(':') {
+                // Bare host:port — synthesize the scheme only.
+                format!("http://{host}")
+            } else {
+                // Bare hostname — fall back to the default ClickHouse HTTP port.
+                format!("http://{host}:8123")
+            };
             Some(ConnectorConfig::ClickHouse(ClickHouseConfig {
                 url,
                 user,

@@ -204,7 +204,7 @@ impl Engine for ClickHouse {
         };
 
         let base_client = Client::default()
-            .with_url(&host)
+            .with_url(normalize_clickhouse_url(&host))
             .with_user(self.config.get_user(&self.secret_manager).await?)
             .with_password(self.config.get_password(&self.secret_manager).await?)
             .with_database(&database);
@@ -289,5 +289,61 @@ impl Engine for ClickHouse {
             .collect::<Result<_, _>>()?;
 
         Ok((batches, schema))
+    }
+}
+
+/// Normalize a user-supplied ClickHouse `host:` value into a full URL the
+/// `clickhouse-rs` client accepts. The client's `with_url` requires a scheme
+/// (e.g. `http://...`) and rejects bare hostnames or `host:port` forms with
+/// "invalid format". Accept all three common shapes:
+///
+/// - `localhost`              → `http://localhost:8123`
+/// - `localhost:9000`         → `http://localhost:9000`
+/// - `https://x.cloud:8443`   → `https://x.cloud:8443`
+fn normalize_clickhouse_url(host: &str) -> String {
+    if host.contains("://") {
+        host.to_string()
+    } else if host.contains(':') {
+        format!("http://{host}")
+    } else {
+        format!("http://{host}:8123")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_clickhouse_url;
+
+    #[test]
+    fn passes_through_full_urls() {
+        assert_eq!(
+            normalize_clickhouse_url("http://localhost:8123"),
+            "http://localhost:8123"
+        );
+        assert_eq!(
+            normalize_clickhouse_url("https://x.clickhouse.cloud:8443"),
+            "https://x.clickhouse.cloud:8443"
+        );
+    }
+
+    #[test]
+    fn prepends_scheme_to_host_port() {
+        assert_eq!(
+            normalize_clickhouse_url("localhost:8123"),
+            "http://localhost:8123"
+        );
+        assert_eq!(
+            normalize_clickhouse_url("myhost:9000"),
+            "http://myhost:9000"
+        );
+    }
+
+    #[test]
+    fn defaults_port_for_bare_hostname() {
+        assert_eq!(normalize_clickhouse_url("localhost"), "http://localhost:8123");
+        assert_eq!(
+            normalize_clickhouse_url("clickhouse.internal"),
+            "http://clickhouse.internal:8123"
+        );
     }
 }

@@ -49,6 +49,56 @@ struct ChMeta {
     r#type: Option<String>,
 }
 
+// ── Type classification ────────────────────────────────────────────────────────
+
+/// Broad category used to pick the right avg/stddev expression for a column.
+///
+/// ClickHouse's `toFloat64OrNull` only accepts `String` input. Wrapping an
+/// already-numeric column (e.g. the result of `SUM(...)`) produces:
+/// `Illegal type Float64 of first argument of function toFloat64OrNull`.
+/// So numeric columns must use `avg` / `stddevPop` directly.
+enum TypeCategory {
+    /// Numeric types — avg/stddevPop can read the column directly.
+    Numeric,
+    /// String types — use toFloat64OrNull so non-numeric strings become NULL.
+    String,
+    /// Everything else (Date, DateTime, UUID, …) — skip mean/stddev.
+    Other,
+}
+
+/// Classify a ClickHouse column type string into a [`TypeCategory`].
+///
+/// Handles bare types (`Float64`, `Int32`) plus `Nullable(...)` and
+/// `LowCardinality(...)` wrappers, including arbitrary nesting like
+/// `LowCardinality(Nullable(String))` or `Nullable(LowCardinality(FixedString(16)))`.
+fn clickhouse_type_category(raw: &str) -> TypeCategory {
+    // Repeatedly strip Nullable(...) and LowCardinality(...) wrappers until the
+    // inner type stands alone. ClickHouse allows them in either order.
+    let mut inner = raw.trim();
+    loop {
+        let stripped = inner
+            .strip_prefix("Nullable(")
+            .or_else(|| inner.strip_prefix("LowCardinality("))
+            .and_then(|s| s.strip_suffix(')'));
+        match stripped {
+            Some(s) => inner = s.trim(),
+            None => break,
+        }
+    }
+
+    // Strip parenthesized precision/scale (e.g. "Decimal(18, 4)" → "Decimal",
+    // "FixedString(16)" → "FixedString").
+    let base = inner.split('(').next().unwrap_or(inner).trim();
+
+    match base {
+        "Float32" | "Float64" | "Int8" | "Int16" | "Int32" | "Int64" | "Int128" | "Int256"
+        | "UInt8" | "UInt16" | "UInt32" | "UInt64" | "UInt128" | "UInt256" | "Decimal"
+        | "Decimal32" | "Decimal64" | "Decimal128" | "Decimal256" => TypeCategory::Numeric,
+        "String" | "FixedString" => TypeCategory::String,
+        _ => TypeCategory::Other,
+    }
+}
+
 // ── Value converter ────────────────────────────────────────────────────────────
 
 /// Convert a `serde_json::Value` cell from a JSONCompact row into a [`CellValue`].
@@ -220,14 +270,35 @@ impl DatabaseConnector for ClickHouseConnector {
         let mut col_stats: Vec<ColumnStats> = Vec::with_capacity(col_count);
         for (idx, col) in column_names.iter().enumerate() {
             let quoted = format!("\"{}\"", col.replace('"', "\\\""));
+            let col_type = column_types.get(idx).and_then(|t| t.as_deref()).unwrap_or("");
+            // toFloat64OrNull only accepts String in ClickHouse. Route by type:
+            // - Numeric: avg/stddevPop work directly on numeric columns and
+            //   skip NULLs natively.
+            // - String:  wrap in toFloat64OrNull so non-numeric strings become
+            //   NULL; avg/stddevPop then skip them.
+            // - Other:   dates, UUIDs, etc. — emit NULL for mean/stddev.
+            let (avg_expr, sd_expr) = match clickhouse_type_category(col_type) {
+                TypeCategory::Numeric => (
+                    format!("avg({quoted})"),
+                    format!("stddevPop({quoted})"),
+                ),
+                TypeCategory::String => (
+                    format!("avg(toFloat64OrNull({quoted}))"),
+                    format!("stddevPop(toFloat64OrNull({quoted}))"),
+                ),
+                TypeCategory::Other => (
+                    "CAST(NULL AS Nullable(Float64))".to_string(),
+                    "CAST(NULL AS Nullable(Float64))".to_string(),
+                ),
+            };
             let stat_sql = format!(
                 "SELECT \
                     countIf(isNull({quoted})) AS nc, \
                     uniqExact({quoted}) AS dc, \
                     toString(min({quoted})) AS mn, \
                     toString(max({quoted})) AS mx, \
-                    avgIf(toFloat64OrNull({quoted}), isNotNull(toFloat64OrNull({quoted}))) AS avg_v, \
-                    stddevPopIf(toFloat64OrNull({quoted}), isNotNull(toFloat64OrNull({quoted}))) AS sd_v \
+                    {avg_expr} AS avg_v, \
+                    {sd_expr} AS sd_v \
                  FROM ({sql})"
             );
 
@@ -378,4 +449,78 @@ fn detect_join_keys(tables: &[SchemaTableInfo]) -> Vec<(String, String, String)>
         }
     }
     keys
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn is_numeric(t: &str) -> bool {
+        matches!(clickhouse_type_category(t), TypeCategory::Numeric)
+    }
+    fn is_string(t: &str) -> bool {
+        matches!(clickhouse_type_category(t), TypeCategory::String)
+    }
+    fn is_other(t: &str) -> bool {
+        matches!(clickhouse_type_category(t), TypeCategory::Other)
+    }
+
+    #[test]
+    fn type_category_numerics() {
+        assert!(is_numeric("Float64"));
+        assert!(is_numeric("Float32"));
+        assert!(is_numeric("Int32"));
+        assert!(is_numeric("Int64"));
+        assert!(is_numeric("Int128"));
+        assert!(is_numeric("UInt64"));
+        assert!(is_numeric("UInt32"));
+        assert!(is_numeric("Decimal(18, 4)"));
+        assert!(is_numeric("Decimal128(38, 10)"));
+    }
+
+    #[test]
+    fn type_category_nullable_numerics() {
+        assert!(is_numeric("Nullable(Float64)"));
+        assert!(is_numeric("Nullable(Int32)"));
+        assert!(is_numeric("Nullable(UInt64)"));
+        assert!(is_numeric("Nullable(Decimal(10, 2))"));
+    }
+
+    #[test]
+    fn type_category_strings() {
+        assert!(is_string("String"));
+        assert!(is_string("FixedString"));
+        // Realistic forms returned by ClickHouse: FixedString always carries a
+        // length, and both kinds are commonly Nullable.
+        assert!(is_string("FixedString(36)"));
+        assert!(is_string("Nullable(FixedString(16))"));
+        assert!(is_string("Nullable(String)"));
+    }
+
+    #[test]
+    fn type_category_low_cardinality() {
+        // LowCardinality is a dictionary-encoding wrapper; the inner type
+        // determines the category. Common in production for low-cardinality
+        // string columns (status, country, etc.) and occasionally numerics.
+        assert!(is_string("LowCardinality(String)"));
+        assert!(is_string("LowCardinality(FixedString(16))"));
+        assert!(is_numeric("LowCardinality(Float64)"));
+        assert!(is_numeric("LowCardinality(Int32)"));
+        // Either nesting order is legal in ClickHouse.
+        assert!(is_string("LowCardinality(Nullable(String))"));
+        assert!(is_string("Nullable(LowCardinality(String))"));
+        assert!(is_numeric("Nullable(LowCardinality(Float64))"));
+    }
+
+    #[test]
+    fn type_category_other() {
+        assert!(is_other("Date"));
+        assert!(is_other("Date32"));
+        assert!(is_other("DateTime"));
+        assert!(is_other("DateTime64(3)"));
+        assert!(is_other("UUID"));
+        assert!(is_other("Bool"));
+        assert!(is_other(""));
+        assert!(is_other("Array(String)"));
+    }
 }

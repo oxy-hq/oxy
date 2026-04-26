@@ -1482,17 +1482,9 @@ function getWarehouseFields(type: WarehouseType) {
         {
           key: "host",
           label: "Host",
-          placeholder: "localhost",
+          placeholder: "localhost:8123",
           type: "text" as const,
           required: true
-        },
-        {
-          key: "port",
-          label: "Port",
-          placeholder: "8123",
-          type: "number" as const,
-          required: true,
-          defaultValue: "8123"
         },
         {
           key: "database",
