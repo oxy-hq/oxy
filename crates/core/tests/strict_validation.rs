@@ -124,58 +124,6 @@ display:
 }
 
 // =============================================================================
-// Semantics Tests
-// =============================================================================
-
-mod semantics_tests {
-    use super::*;
-    use oxy::config::model::Semantics;
-
-    #[test]
-    fn test_valid_semantics() {
-        let yaml = r#"
-dimensions:
-  - name: test_dimension
-    targets:
-      - target1
-"#;
-        let result: Result<Semantics, _> = parse_yaml(yaml);
-        assert!(
-            result.is_ok(),
-            "Valid semantics should parse: {:?}",
-            result.err()
-        );
-    }
-
-    #[test]
-    fn test_semantics_rejects_unknown_fields() {
-        let yaml = r#"
-dimensions:
-  - name: test_dimension
-    targets:
-      - target1
-unknown_field: "should fail"
-"#;
-        let result: Result<Semantics, _> = parse_yaml(yaml);
-        assert_unknown_field_error_with_result(result, "unknown_field");
-    }
-
-    #[test]
-    fn test_empty_dimensions() {
-        let yaml = r#"
-dimensions: []
-"#;
-        let result: Result<Semantics, _> = parse_yaml(yaml);
-        // Empty dimensions should still parse (no min length requirement on Semantics)
-        assert!(
-            result.is_ok(),
-            "Empty dimensions should parse: {:?}",
-            result.err()
-        );
-    }
-}
-
-// =============================================================================
 // Config Tests
 // =============================================================================
 

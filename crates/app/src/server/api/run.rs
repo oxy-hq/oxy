@@ -256,7 +256,6 @@ pub async fn create_workflow_run(
                     },
                     None,
                     None,
-                    None, // No globals for retry
                     Some(crate::service::agent::ExecutionSource::WebApi {
                         thread_id: task_id.clone(),
                         user_id,

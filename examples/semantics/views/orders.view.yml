@@ -13,14 +13,17 @@ entities:
   key: customer_id
 - name: shipping_address
   type: foreign
-  description: "{{ globals.semantics.descriptions.shipping_address }}"
+  description: Shipping address for the order
   key: shipping_address_id
 dimensions:
 - name: order_id
   type: number
   description: Unique order identifier
   expr: id
-- inherits_from: globals.semantics.dimensions.customer_id
+- name: customer_id
+  type: number
+  description: Unique customer identifier
+  expr: customer_id
 - name: shipping_address_id
   type: number
   description: Shipping address identifier
@@ -31,7 +34,7 @@ dimensions:
   expr: order_date
 - name: order_status
   type: string
-  description: "{{ globals.semantics.descriptions.order_status }}"
+  description: Current status of the order
   expr: status
 - name: total_amount
   type: number
@@ -46,7 +49,9 @@ dimensions:
   description: Tax amount for the order
   expr: tax_amount
 measures:
-- inherits_from: globals.semantics.measures.total_orders
+- name: total_orders
+  type: count
+  description: Number of orders
 - name: total_order_value
   type: sum
   description: Total value of all orders

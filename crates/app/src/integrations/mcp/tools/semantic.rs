@@ -24,11 +24,8 @@ pub async fn resolve_semantic_tool(
     use oxy_semantic::models::Topic;
 
     // Load the semantic layer to get view metadata
-    let semantic_layer = parse_semantic_layer_from_dir(
-        config_manager.semantics_scan_path(),
-        config_manager.get_globals_registry(),
-    )?
-    .semantic_layer;
+    let semantic_layer =
+        parse_semantic_layer_from_dir(config_manager.semantics_scan_path())?.semantic_layer;
 
     let content = tokio::fs::read_to_string(&topic_path).await.map_err(|e| {
         OxyError::ConfigurationError(format!(

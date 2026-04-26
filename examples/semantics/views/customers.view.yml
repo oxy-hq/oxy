@@ -4,7 +4,9 @@ datasource: local
 table: customer.csv
 entities:
 - name: customer
-  inherits_from: globals.semantics.entities.customer
+  type: primary
+  description: Primary customer entity
+  key: customer_id
 dimensions:
 - name: customer_id
   type: number

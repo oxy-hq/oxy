@@ -30,8 +30,6 @@ pub struct A2aMessageRequest {
     pub filters: Option<SessionFilters>,
     /// Optional connection overrides for database connections
     pub connections: Option<ConnectionOverrides>,
-    /// Optional global variables for execution context
-    pub globals: Option<indexmap::IndexMap<String, serde_json::Value>>,
 }
 
 impl A2aMessageRequest {
@@ -43,7 +41,7 @@ impl A2aMessageRequest {
         // Convert message parts to prompt string
         let question = super::mapper::a2a_message_to_prompt(message)?;
 
-        // Extract filters, connections, and globals from message metadata if present
+        // Extract filters and connections from message metadata if present
         let filters = message
             .metadata
             .as_ref()
@@ -56,17 +54,10 @@ impl A2aMessageRequest {
             .and_then(|m| m.get("connections"))
             .and_then(|v| serde_json::from_value(v.clone()).ok());
 
-        let globals = message
-            .metadata
-            .as_ref()
-            .and_then(|m| m.get("globals"))
-            .and_then(|v| serde_json::from_value(v.clone()).ok());
-
         Ok(Self {
             question,
             filters,
             connections,
-            globals,
         })
     }
 }
@@ -82,10 +73,6 @@ impl ChatExecutionRequest for A2aMessageRequest {
 
     fn get_connections(&self) -> Option<ConnectionOverrides> {
         self.connections.clone()
-    }
-
-    fn get_globals(&self) -> Option<indexmap::IndexMap<String, serde_json::Value>> {
-        self.globals.clone()
     }
 }
 

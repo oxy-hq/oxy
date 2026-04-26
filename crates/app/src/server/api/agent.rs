@@ -300,10 +300,6 @@ pub struct AskAgentRequest {
 
     #[serde(default)]
     #[schema(value_type = Object)]
-    pub globals: Option<indexmap::IndexMap<String, serde_json::Value>>,
-
-    #[serde(default)]
-    #[schema(value_type = Object)]
     pub variables: Option<std::collections::HashMap<String, serde_json::Value>>,
 
     #[serde(default)]
@@ -384,7 +380,6 @@ pub async fn ask_agent_preview(
     let (tx, rx) = tokio::sync::mpsc::channel(100);
     let filters = payload.filters;
     let connections = payload.connections;
-    let globals = payload.globals;
     let variables = payload.variables;
     let user_id = user.id.to_string();
 
@@ -400,7 +395,6 @@ pub async fn ask_agent_preview(
             vec![],
             filters,
             connections,
-            globals,
             variables,
             Some(crate::service::agent::ExecutionSource::WebApi {
                 thread_id: "preview".to_string(), // Preview endpoint doesn't have thread_id
@@ -478,10 +472,6 @@ pub struct AskAgentNonStreamingRequest {
 
     #[serde(default)]
     #[schema(value_type = Object)]
-    pub globals: Option<indexmap::IndexMap<String, serde_json::Value>>,
-
-    #[serde(default)]
-    #[schema(value_type = Object)]
     pub variables: Option<std::collections::HashMap<String, serde_json::Value>>,
 }
 
@@ -496,10 +486,6 @@ impl ChatExecutionRequest for AskAgentNonStreamingRequest {
 
     fn get_connections(&self) -> Option<ConnectionOverrides> {
         self.connections.clone()
-    }
-
-    fn get_globals(&self) -> Option<indexmap::IndexMap<String, serde_json::Value>> {
-        self.globals.clone()
     }
 }
 
@@ -575,7 +561,6 @@ pub async fn ask_agent_sync(
     let question = payload.question.clone();
     let filters = payload.filters;
     let connections = payload.connections;
-    let globals = payload.globals;
     let variables = payload.variables;
     let user_id = user.id.to_string();
 
@@ -591,7 +576,6 @@ pub async fn ask_agent_sync(
             vec![],
             filters,
             connections,
-            globals,
             variables,
             Some(crate::service::agent::ExecutionSource::WebApi {
                 thread_id: "sync".to_string(), // Sync endpoint doesn't have thread_id
@@ -726,9 +710,6 @@ pub struct AskThreadRequest {
 
     #[serde(default)]
     pub connections: Option<ConnectionOverrides>,
-
-    #[serde(default)]
-    pub globals: Option<indexmap::IndexMap<String, serde_json::Value>>,
 }
 
 impl ChatExecutionRequest for AskThreadRequest {
@@ -742,10 +723,6 @@ impl ChatExecutionRequest for AskThreadRequest {
 
     fn get_connections(&self) -> Option<ConnectionOverrides> {
         self.connections.clone()
-    }
-
-    fn get_globals(&self) -> Option<indexmap::IndexMap<String, serde_json::Value>> {
-        self.globals.clone()
     }
 }
 
@@ -783,7 +760,6 @@ impl ChatHandler for AgentExecutor {
             context.memory.clone(),
             context.filters.clone(),
             context.connections.clone(),
-            context.globals.clone(),
             None, // TODO: Support variables from thread context
             Some(crate::service::agent::ExecutionSource::WebApi {
                 thread_id: thread.id.to_string(),

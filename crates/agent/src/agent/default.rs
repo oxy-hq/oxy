@@ -300,15 +300,7 @@ pub async fn build_global_context(
 
     let semantic_manager = SemanticManager::from_config(config, secrets_manager, false).await?;
     let semantic_contexts = semantic_manager.get_semantic_variables_contexts().await?;
-    let semantic_dimensions_contexts = semantic_manager
-        .get_semantic_dimensions_contexts(&semantic_contexts)
-        .await?;
-
-    // Get globals from the semantic manager
-    let globals_value = semantic_manager.get_globals_value()?;
-
-    // Convert serde_yaml::Value to minijinja::Value
-    let globals = Value::from_serialize(&globals_value);
+    let semantic_dimensions_contexts = semantic_manager.get_semantic_dimensions_contexts().await?;
 
     Ok(context! {
         context => Value::from_object(contexts),
@@ -316,7 +308,6 @@ pub async fn build_global_context(
         models => Value::from_object(semantic_contexts),
         dimensions => Value::from_object(semantic_dimensions_contexts),
         tools => Value::from_object(tools),
-        globals => globals,
     })
 }
 

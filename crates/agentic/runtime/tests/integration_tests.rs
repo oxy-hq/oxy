@@ -1429,7 +1429,7 @@ mod coordinator_tests {
                             let _ = event_tx
                                 .send((
                                     "tool_used".into(),
-                                    json!({"tool_name": "read_file", "summary": "Read semantics.yml"}),
+                                    json!({"tool_name": "read_file", "summary": "Read config.yml"}),
                                 ))
                                 .await;
                             drop(event_tx);

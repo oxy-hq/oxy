@@ -197,8 +197,8 @@ function BlankOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHandl
   }, [step, discoverSchemas]);
 
   // ── Build phase 1: Re-sync + Config + Views in parallel ─────────────────────
-  // Re-sync with only selected tables so semantics.yml is scoped correctly,
-  // then start config and all view runs simultaneously.
+  // Re-sync with only selected tables so .databases/<warehouse>/ is scoped to
+  // the user's selection, then start config and all view runs simultaneously.
   // Guard: ref prevents re-entry while the async startBuildPhase is in flight
   // (the state-based guard !phaseStatuses?.config only engages after START_PHASE
   // is dispatched, which happens inside the async chain).
@@ -1331,9 +1331,9 @@ function deriveCreatedFiles(
  * LLM key secret, the warehouse entry (which carries its password secret on
  * the backend), the model entry (which carries its key_var secret), any
  * generated file that was either tracked via `createdFiles` or is expected
- * given the user's table selection, the global `semantics.yml` index, and
- * the `.databases/<warehouse>/` sync directory. The backend skips missing
- * entries, so being conservative here is safe.
+ * given the user's table selection, and the `.databases/<warehouse>/` sync
+ * directory. The backend skips missing entries, so being conservative here is
+ * safe.
  */
 function deriveResetManifest(state: OnboardingState): OnboardingResetRequest {
   const secret_names: string[] = [];
@@ -1364,9 +1364,6 @@ function deriveResetManifest(state: OnboardingState): OnboardingResetRequest {
   for (const f of deriveCreatedFiles(state.selectedTables, state.phaseStatuses)) {
     if (f !== "config.yml") fileSet.add(f);
   }
-  // Global semantics index — written by the semantic-layer build step and not
-  // tracked in `createdFiles`.
-  fileSet.add("semantics.yml");
 
   // Recursively delete `.databases/<warehouse>/` — DatabaseService.syncDatabase
   // writes per-table `.schema.yml` files here that `remove_database` does not

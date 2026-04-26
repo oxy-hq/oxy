@@ -186,7 +186,6 @@ pub async fn run_workflow<P: AsRef<Path>, L: WorkflowLogger + 'static>(
     workspace_manager: WorkspaceManager,
     filters: Option<SessionFilters>,
     connections: Option<ConnectionOverrides>,
-    globals: Option<indexmap::IndexMap<String, serde_json::Value>>,
     source: Option<crate::service::agent::ExecutionSource>,
     user_id: Option<uuid::Uuid>,
 ) -> Result<OutputContainer, OxyError> {
@@ -237,7 +236,6 @@ pub async fn run_workflow<P: AsRef<Path>, L: WorkflowLogger + 'static>(
     let result = WorkflowLauncher::new()
         .with_filters(filters)
         .with_connections(connections)
-        .with_globals(globals)
         .with_workspace(workspace_manager)
         .await?
         .launch(
@@ -275,7 +273,6 @@ pub async fn run_workflow_v2<P: AsRef<Path>, H: EventHandler + Send + Sync + 'st
     retry_strategy: RetryStrategy,
     filters: Option<SessionFilters>,
     connections: Option<ConnectionOverrides>,
-    globals: Option<indexmap::IndexMap<String, serde_json::Value>>,
     source: Option<crate::service::agent::ExecutionSource>,
     user_id: Option<uuid::Uuid>,
 ) -> Result<OutputContainer, OxyError> {
@@ -326,7 +323,6 @@ pub async fn run_workflow_v2<P: AsRef<Path>, H: EventHandler + Send + Sync + 'st
     let result = WorkflowLauncher::new()
         .with_filters(filters)
         .with_connections(connections)
-        .with_globals(globals)
         .with_workspace(workspace_manager)
         .await?
         .launch(

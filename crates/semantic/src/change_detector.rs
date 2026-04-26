@@ -48,7 +48,11 @@ enum FileType {
 
 /// Change detector for incremental builds
 pub struct ChangeDetector {
-    /// Path to the semantic layer directory
+    /// Path to the semantic layer directory.
+    ///
+    /// Currently retained for API stability — `scan_semantic_files` derives
+    /// the scan root from `target_dir.parent()` to match the parser's scope.
+    #[allow(dead_code)]
     semantic_dir: PathBuf,
 
     /// Path to the target directory (.semantics/)
@@ -68,7 +72,6 @@ impl ChangeDetector {
     ///
     /// # Arguments
     /// * `config_hash` - Hash of current database configuration
-    /// * `globals_hash` - Hash of current globals/semantics.yml
     /// * `force` - Force full rebuild
     ///
     /// # Returns
@@ -76,7 +79,6 @@ impl ChangeDetector {
     pub fn detect_changes(
         &self,
         config_hash: String,
-        globals_hash: String,
         force: bool,
     ) -> Result<ChangeDetectionResult, SemanticLayerError> {
         // Handle force rebuild FIRST (before loading manifest)
@@ -110,18 +112,6 @@ impl ChangeDetector {
                 });
             }
         };
-
-        // Check globals hash
-        if manifest.globals_hash != globals_hash {
-            return Ok(ChangeDetectionResult {
-                views_to_rebuild: Vec::new(),
-                topics_to_rebuild: Vec::new(),
-                files_to_delete: Vec::new(),
-                requires_full_rebuild: true,
-                full_rebuild_reason: Some("Globals changed".to_string()),
-                requires_embedding_rebuild: true,
-            });
-        }
 
         // Check config hash
         if manifest.config_hash != config_hash {
@@ -428,23 +418,6 @@ pub fn hash_database_config(databases: &HashMap<String, crate::models::DatabaseD
     hash_string(&json_str)
 }
 
-/// Helper to compute hash of globals registry
-///
-/// Since GlobalRegistry doesn't implement Serialize, we hash the globals
-/// directory files directly. This is more accurate anyway since it detects
-/// file changes.
-pub fn hash_globals_registry(globals_dir: &std::path::Path) -> Result<String, SemanticLayerError> {
-    // Look for semantics.yml in the globals directory
-    let semantics_file = globals_dir.join("semantics.yml");
-
-    if semantics_file.exists() {
-        hash_file(&semantics_file)
-    } else {
-        // No globals file exists, return empty hash
-        Ok(String::new())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -499,7 +472,7 @@ mod tests {
 
         // Force rebuild
         let result = detector
-            .detect_changes("config_hash".to_string(), "globals_hash".to_string(), true)
+            .detect_changes("config_hash".to_string(), true)
             .unwrap();
 
         assert!(result.requires_full_rebuild);
@@ -522,44 +495,13 @@ mod tests {
 
         // No manifest exists
         let result = detector
-            .detect_changes("config_hash".to_string(), "globals_hash".to_string(), false)
+            .detect_changes("config_hash".to_string(), false)
             .unwrap();
 
         assert!(result.requires_full_rebuild);
         assert_eq!(
             result.full_rebuild_reason,
             Some("No previous manifest found".to_string())
-        );
-    }
-
-    #[test]
-    fn test_detect_changes_globals_changed() {
-        let temp_dir = TempDir::new().unwrap();
-        let semantic_dir = temp_dir.path().join("semantics");
-        let target_dir = temp_dir.path().join(".semantics");
-
-        std::fs::create_dir_all(&semantic_dir).unwrap();
-        std::fs::create_dir_all(&target_dir).unwrap();
-
-        // Create manifest with old globals hash
-        let mut manifest = BuildManifest::new();
-        manifest.set_globals_hash("old_hash".to_string());
-        manifest.set_config_hash("config_hash".to_string());
-        manifest
-            .save(&target_dir.join(".build_manifest.json"))
-            .unwrap();
-
-        let detector = ChangeDetector::new(&semantic_dir, &target_dir);
-
-        // New globals hash
-        let result = detector
-            .detect_changes("config_hash".to_string(), "new_hash".to_string(), false)
-            .unwrap();
-
-        assert!(result.requires_full_rebuild);
-        assert_eq!(
-            result.full_rebuild_reason,
-            Some("Globals changed".to_string())
         );
     }
 
@@ -574,7 +516,6 @@ mod tests {
 
         // Create manifest with old config hash
         let mut manifest = BuildManifest::new();
-        manifest.set_globals_hash("globals_hash".to_string());
         manifest.set_config_hash("old_config".to_string());
         manifest
             .save(&target_dir.join(".build_manifest.json"))
@@ -584,7 +525,7 @@ mod tests {
 
         // New config hash
         let result = detector
-            .detect_changes("new_config".to_string(), "globals_hash".to_string(), false)
+            .detect_changes("new_config".to_string(), false)
             .unwrap();
 
         assert!(result.requires_full_rebuild);
@@ -625,30 +566,5 @@ mod tests {
         );
         let hash3 = hash_database_config(&databases);
         assert_ne!(hash1, hash3);
-    }
-
-    #[test]
-    fn test_hash_globals_registry() {
-        let temp_dir = TempDir::new().unwrap();
-        let globals_dir = temp_dir.path().join("globals");
-
-        std::fs::create_dir_all(&globals_dir).unwrap();
-
-        // No semantics.yml file
-        let hash1 = hash_globals_registry(&globals_dir).unwrap();
-        assert_eq!(hash1, String::new());
-
-        // Create semantics.yml file
-        let semantics_file = globals_dir.join("semantics.yml");
-        std::fs::write(&semantics_file, "test: value").unwrap();
-
-        let hash2 = hash_globals_registry(&globals_dir).unwrap();
-        assert_ne!(hash2, String::new());
-        assert_eq!(hash2.len(), 64);
-
-        // Modify file
-        std::fs::write(&semantics_file, "test: different").unwrap();
-        let hash3 = hash_globals_registry(&globals_dir).unwrap();
-        assert_ne!(hash2, hash3);
     }
 }

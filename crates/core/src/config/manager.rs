@@ -4,10 +4,7 @@ use std::{
 };
 
 use crate::{
-    config::{
-        agent_config::AgenticConfig,
-        constants::{DATABASE_SEMANTIC_PATH, GLOBAL_SEMANTIC_PATH},
-    },
+    config::{agent_config::AgenticConfig, constants::DATABASE_SEMANTIC_PATH},
     observability::events,
 };
 use oxy_shared::errors::OxyError;
@@ -290,24 +287,8 @@ impl ConfigManager {
         self.config.workspace_path.clone()
     }
 
-    pub fn global_semantic_path(&self) -> PathBuf {
-        self.config.workspace_path.join(GLOBAL_SEMANTIC_PATH)
-    }
-
     pub fn database_semantic_path(&self) -> PathBuf {
         self.config.workspace_path.join(DATABASE_SEMANTIC_PATH)
-    }
-
-    pub fn globals_path(&self) -> PathBuf {
-        self.config.workspace_path.join("globals")
-    }
-
-    pub fn get_globals_registry(&self) -> oxy_globals::GlobalRegistry {
-        let globals_path = self.globals_path();
-        if !globals_path.exists() {
-            std::fs::create_dir_all(&globals_path).unwrap();
-        }
-        oxy_globals::GlobalRegistry::new(globals_path)
     }
 
     pub fn get_integration_by_name(

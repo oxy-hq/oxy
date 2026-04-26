@@ -259,7 +259,6 @@ async fn handle_workflow_file(
             project,
             None,
             None,
-            None, // No globals override from CLI
             Some(ExecutionSource::Cli),
             None, // No authenticated user in CLI context
         )
@@ -274,7 +273,6 @@ async fn handle_workflow_file(
             project,
             None,
             None,
-            None, // No globals override from CLI
             Some(ExecutionSource::Cli),
             None, // No authenticated user in CLI context
         )
@@ -289,7 +287,6 @@ async fn handle_workflow_file(
             project,
             None,
             None,
-            None, // No globals override from CLI
             Some(ExecutionSource::Cli),
             None, // No authenticated user in CLI context
         )
@@ -344,7 +341,6 @@ async fn handle_agent_file(file_path: &PathBuf, question: Option<String>) -> Res
         vec![],
         None,
         None,
-        None, // No globals from CLI
         None, // No variables from CLI (yet)
         Some(ExecutionSource::Cli),
         None, // No sandbox info from CLI

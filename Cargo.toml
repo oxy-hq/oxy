@@ -7,7 +7,6 @@ members = [
   "crates/core",
   "crates/entity",
   "crates/git",
-  "crates/globals",
   "crates/integration/looker",
   "crates/migration",
   "crates/integration/omni",
@@ -70,7 +69,6 @@ oxy-shared = { path = "crates/shared" }
 oxy-test-utils = { path = "crates/test-utils" }
 oxy-thread = { path = "crates/thread" }
 oxy-workflow = { path = "crates/workflow" }
-oxy_globals = { path = "crates/globals" }
 
 # External dependencies
 async-openai = {version = "0.35.0"}

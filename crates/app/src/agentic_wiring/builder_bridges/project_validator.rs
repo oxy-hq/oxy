@@ -166,11 +166,6 @@ fn validate_single_file(
 // ── Semantic file validation via airlayer ───────────────────────────────────
 
 /// Validate a semantic file by parsing it through airlayer's type system.
-///
-/// This replaces the previous approach that used `oxy_semantic::SemanticLayerParser`
-/// + `oxy_globals::GlobalRegistry`. The trade-off is that template variables
-/// (`{{globals.*}}`) and inheritance (`inherits_from`) are not resolved before
-/// parsing — but structural validation (missing fields, wrong types) is preserved.
 fn validate_semantic_file(abs: &Path) -> Result<(), String> {
     let content = std::fs::read_to_string(abs).map_err(|e| e.to_string())?;
     let file_name = abs.file_name().and_then(|n| n.to_str()).unwrap_or("");

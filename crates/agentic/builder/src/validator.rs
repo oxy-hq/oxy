@@ -1,7 +1,7 @@
 //! Project validation abstraction for the builder domain.
 //!
-//! Replaces direct use of `oxy::config::ConfigBuilder`, `oxy_globals`, and
-//! `oxy_semantic` for project file validation.
+//! Replaces direct use of `oxy::config::ConfigBuilder` and `oxy_semantic`
+//! for project file validation.
 
 use std::path::Path;
 
@@ -27,7 +27,7 @@ pub struct ValidationReport {
 ///
 /// The builder domain uses this trait instead of depending on oxy config/semantic
 /// crates directly. The pipeline layer supplies the implementation that bridges
-/// to oxy's `ConfigManager`, `GlobalRegistry`, and `SemanticLayerParser`.
+/// to oxy's `ConfigManager` and `SemanticLayerParser`.
 #[async_trait]
 pub trait BuilderProjectValidator: Send + Sync {
     /// Validate a single file by its absolute path.

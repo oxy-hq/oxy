@@ -51,15 +51,12 @@ pub fn build_semantic_topic_description(topic: &Topic, semantic_layer: &Semantic
 fn load_semantic_layer(config_manager: &config::ConfigManager) -> Result<SemanticLayer, OxyError> {
     let scan_path = config_manager.semantics_scan_path();
 
-    let parse_result =
-        parse_semantic_layer_from_dir(&scan_path, config_manager.get_globals_registry()).map_err(
-            |e| {
-                OxyError::ConfigurationError(format!(
-                    "No semantic layer metadata found. Please ensure you have .view.yml or .view.yaml files in your project. Error: {}",
-                    e
-                ))
-            },
-        )?;
+    let parse_result = parse_semantic_layer_from_dir(&scan_path).map_err(|e| {
+        OxyError::ConfigurationError(format!(
+            "No semantic layer metadata found. Please ensure you have .view.yml or .view.yaml files in your project. Error: {}",
+            e
+        ))
+    })?;
 
     Ok(parse_result.semantic_layer)
 }

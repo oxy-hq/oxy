@@ -335,7 +335,7 @@ Variables can reference global semantics values:
 variables:
   orders_table:
     type: string
-    default: "{{ globals.semantics.tables.orders }}"
+    default: "orders"
 
 tasks:
   - name: query_orders

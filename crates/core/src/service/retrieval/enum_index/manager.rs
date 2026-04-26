@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs, path::PathBuf};
+use std::{fs, path::PathBuf};
 
 use aho_corasick::AhoCorasick;
 use once_cell::sync::OnceCell;
@@ -10,7 +10,7 @@ use crate::{
         ConfigManager,
         constants::{ENUM_ROUTING_PATH, RETRIEVAL_CACHE_PATH},
     },
-    semantic::{SemanticManager, SemanticVariablesContexts},
+    semantic::SemanticManager,
 };
 use oxy_shared::errors::OxyError;
 
@@ -116,11 +116,7 @@ impl EnumIndexManager {
         // and non-enum variables more generally are not supported for retrieval.
         let semantic_manager =
             SemanticManager::from_config(config.clone(), secrets_manager.clone(), false).await?;
-        let semantic_variables_ctx =
-            SemanticVariablesContexts::new(HashMap::new(), HashMap::new())?;
-        let semantic_dimensions_ctx = semantic_manager
-            .get_semantic_dimensions_contexts(&semantic_variables_ctx)
-            .await?;
+        let semantic_dimensions_ctx = semantic_manager.get_semantic_dimensions_contexts().await?;
         let mut semantic_enums: Vec<SemanticEnum> = Vec::new();
         for (dim_name, schema) in semantic_dimensions_ctx.dimensions.iter() {
             if let Some(enum_values) = &schema.enum_values {

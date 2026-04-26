@@ -24,7 +24,6 @@ pub const CHECKPOINT_ROOT_PATH: &str = ".checkpoint";
 pub const CHECKPOINT_DATA_PATH: &str = "checkpoint_data";
 pub const DATABASE_SEMANTIC_PATH: &str = ".databases";
 pub const SEMANTIC_MODEL_PATH: &str = "models";
-pub const GLOBAL_SEMANTIC_PATH: &str = "semantics.yml";
 pub const CHECKPOINT_SUCCESS_MARKER: &str = "SUCCESS";
 pub const CONCURRENCY_SOURCE: &str = "concurrency";
 pub const CONCURRENCY_ITEM_ID_PREFIX: &str = "concurrency_item_";

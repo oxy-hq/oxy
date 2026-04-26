@@ -7,12 +7,17 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Version of the build manifest format
-const MANIFEST_VERSION: &str = "1.0";
+///
+/// Bumped to 2.0 when the `globals_hash` field was removed alongside the
+/// semantics.yml registry. Manifests written by older oxy versions are
+/// silently ignored, forcing a full rebuild that re-parses every view/topic
+/// against the post-removal parser semantics.
+const MANIFEST_VERSION: &str = "2.0";
 
 /// Build manifest that tracks the state of the last successful build
 ///
 /// This manifest is used to enable incremental builds by tracking:
-/// - File hashes of input files (semantic views/topics, config, globals)
+/// - File hashes of input files (semantic views/topics, config)
 /// - Embedding source file hashes (agents, workflows, SQL files)
 /// - Output file mappings (which generated files came from which sources)
 /// - Dependency graph (which views depend on which other views)
@@ -52,9 +57,6 @@ pub struct BuildManifest {
 
     /// Hash of config.yml database configurations
     pub config_hash: String,
-
-    /// Hash of globals/semantics.yml
-    pub globals_hash: String,
 }
 
 impl BuildManifest {
@@ -68,7 +70,6 @@ impl BuildManifest {
             dependency_graph: BTreeMap::new(),
             last_build: 0,
             config_hash: String::new(),
-            globals_hash: String::new(),
         }
     }
 
@@ -172,11 +173,6 @@ impl BuildManifest {
         self.config_hash = hash;
     }
 
-    /// Set the globals hash
-    pub fn set_globals_hash(&mut self, hash: String) {
-        self.globals_hash = hash;
-    }
-
     /// Set the embedding file hashes
     pub fn set_embedding_file_hashes(&mut self, hashes: BTreeMap<String, String>) {
         self.embedding_file_hashes = hashes;
@@ -222,7 +218,6 @@ mod tests {
         let mut manifest = BuildManifest::new();
         manifest.add_file_hash("test.yml", "abc123".to_string());
         manifest.set_config_hash("config123".to_string());
-        manifest.set_globals_hash("globals123".to_string());
         manifest.update_timestamp();
 
         // Save
@@ -237,7 +232,6 @@ mod tests {
             Some(&"abc123".to_string())
         );
         assert_eq!(loaded.config_hash, "config123");
-        assert_eq!(loaded.globals_hash, "globals123");
         assert!(loaded.last_build > 0);
     }
 
@@ -333,8 +327,7 @@ mod tests {
             "output_mapping": {},
             "dependency_graph": {},
             "last_build": 0,
-            "config_hash": "",
-            "globals_hash": ""
+            "config_hash": ""
         }"#;
 
         std::fs::write(&manifest_path, wrong_version).unwrap();

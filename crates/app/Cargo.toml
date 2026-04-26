@@ -41,7 +41,6 @@ oxy-project = { workspace = true }
 oxy-thread = { workspace = true }
 oxy-workflow = { workspace = true }
 oxy-semantic = { workspace = true }
-oxy_globals = { workspace = true }
 a2a = { workspace = true }
 entity = { workspace = true }
 

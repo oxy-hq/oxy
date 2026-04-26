@@ -40,9 +40,6 @@ pub trait ChatExecutionRequest {
     fn get_connections(&self) -> Option<ConnectionOverrides> {
         None
     }
-    fn get_globals(&self) -> Option<indexmap::IndexMap<String, serde_json::Value>> {
-        None
-    }
 }
 
 #[derive(Clone)]
@@ -55,7 +52,6 @@ pub struct ChatExecutionContext {
     pub cancellation_tokens: CancellationTokens,
     pub filters: Option<SessionFilters>,
     pub connections: Option<ConnectionOverrides>,
-    pub globals: Option<indexmap::IndexMap<String, serde_json::Value>>,
 }
 
 impl ChatExecutionContext {
@@ -76,7 +72,6 @@ impl ChatExecutionContext {
             cancellation_tokens,
             filters: None,
             connections: None,
-            globals: None,
         }
     }
 
@@ -99,14 +94,6 @@ impl ChatExecutionContext {
 
     pub fn with_connections(mut self, connections: impl Into<Option<ConnectionOverrides>>) -> Self {
         self.connections = connections.into();
-        self
-    }
-
-    pub fn with_globals(
-        mut self,
-        globals: impl Into<Option<indexmap::IndexMap<String, serde_json::Value>>>,
-    ) -> Self {
-        self.globals = globals.into();
         self
     }
 }
@@ -246,8 +233,7 @@ impl ChatService {
             cancellation_tokens,
         )
         .with_filters(payload.get_filters())
-        .with_connections(payload.get_connections())
-        .with_globals(payload.get_globals());
+        .with_connections(payload.get_connections());
 
         let (tx, rx) = tokio::sync::mpsc::channel(100);
 
@@ -349,8 +335,7 @@ impl ChatService {
             cancellation_tokens,
         )
         .with_filters(payload.get_filters())
-        .with_connections(payload.get_connections())
-        .with_globals(payload.get_globals());
+        .with_connections(payload.get_connections());
 
         let (tx, mut rx) = tokio::sync::mpsc::channel(100);
         let connection = self.connection.clone();

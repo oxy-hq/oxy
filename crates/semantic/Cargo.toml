@@ -18,7 +18,6 @@ regex = { workspace = true }
 indexmap = { workspace = true }
 serde_yaml = { workspace = true }
 minijinja = { workspace = true }
-oxy_globals = { workspace = true }
 tracing = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }

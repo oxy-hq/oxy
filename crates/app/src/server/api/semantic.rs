@@ -328,8 +328,6 @@ pub async fn get_view_details(
     use oxy_semantic::parser::ParserConfig;
     use oxy_semantic::parser::SemanticLayerParser;
 
-    let global_registry = workspace_manager.config_manager.get_globals_registry();
-
     // Decode base64 file path
     let decoded_path = BASE64_STANDARD.decode(&file_path_b64).map_err(|e| {
         (
@@ -377,7 +375,7 @@ pub async fn get_view_details(
 
     // Parse the specific view file
     let parser_config = ParserConfig::new(workspace_manager.config_manager.semantics_scan_path());
-    let parser = SemanticLayerParser::new(parser_config, global_registry);
+    let parser = SemanticLayerParser::new(parser_config);
 
     let view = parser.parse_view_file(&full_path).map_err(|e| {
         (
@@ -422,7 +420,6 @@ pub async fn get_topic_details(
     use oxy_semantic::parser::ParserConfig;
     use oxy_semantic::parser::SemanticLayerParser;
 
-    let global_registry = workspace_manager.config_manager.get_globals_registry();
     let semantics_path = workspace_manager.config_manager.semantics_scan_path();
 
     // Decode base64 file path
@@ -472,7 +469,7 @@ pub async fn get_topic_details(
 
     // Parse the specific topic file
     let parser_config = ParserConfig::new(&semantics_path);
-    let parser = SemanticLayerParser::new(parser_config, global_registry.clone());
+    let parser = SemanticLayerParser::new(parser_config);
 
     let topic = parser.parse_topic_file(&full_path).map_err(|e| {
         (
@@ -484,15 +481,14 @@ pub async fn get_topic_details(
     })?;
 
     // Parse the semantic layer to get all views for lookups
-    let parse_result =
-        parse_semantic_layer_from_dir(&semantics_path, global_registry).map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                extract::Json(ErrorResponse {
-                    message: format!("Failed to parse semantic layer: {}", e),
-                }),
-            )
-        })?;
+    let parse_result = parse_semantic_layer_from_dir(&semantics_path).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            extract::Json(ErrorResponse {
+                message: format!("Failed to parse semantic layer: {}", e),
+            }),
+        )
+    })?;
 
     let mut views_with_data = Vec::new();
 

@@ -96,13 +96,11 @@ Variables can reference global semantics:
 variables:
   orders_table:
     type: string
-    default: "{{ globals.semantics.tables.orders }}"
+    default: "orders"
 
 system_instructions: |
   Query data from the {{ orders_table }} table.
 ```
-
-See [Globals](/learn-about-oxy/globals) for more information.
 
 ## Context
 

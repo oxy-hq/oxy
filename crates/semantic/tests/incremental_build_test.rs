@@ -1,4 +1,4 @@
-use oxy_semantic::{BuildManifest, ChangeDetector, hash_globals_registry};
+use oxy_semantic::{BuildManifest, ChangeDetector};
 use std::collections::BTreeMap;
 use std::fs;
 use tempfile::TempDir;
@@ -15,13 +15,6 @@ fn create_topic_file(dir: &std::path::Path, name: &str, content: &str) {
     let topics_dir = dir.join("semantics/topics");
     fs::create_dir_all(&topics_dir).unwrap();
     fs::write(topics_dir.join(format!("{}.topic.yml", name)), content).unwrap();
-}
-
-/// Helper to create a globals file
-fn create_globals_file(dir: &std::path::Path, content: &str) {
-    let globals_dir = dir.join(".oxy/globals");
-    fs::create_dir_all(&globals_dir).unwrap();
-    fs::write(globals_dir.join("semantics.yml"), content).unwrap();
 }
 
 #[test]
@@ -52,7 +45,6 @@ table: orders.csv
         oxy_semantic::hash_file(&workspace_root.join("semantics/views/orders.view.yml")).unwrap(),
     );
     manifest.set_config_hash("config_hash".to_string());
-    manifest.set_globals_hash("globals_hash".to_string());
     manifest
         .save(&target_dir.join(".build_manifest.json"))
         .unwrap();
@@ -60,7 +52,7 @@ table: orders.csv
     // Run change detection
     let detector = ChangeDetector::new(&semantic_dir, &target_dir);
     let result = detector
-        .detect_changes("config_hash".to_string(), "globals_hash".to_string(), false)
+        .detect_changes("config_hash".to_string(), false)
         .unwrap();
 
     // No changes should be detected
@@ -94,7 +86,6 @@ table: orders.csv
     let mut manifest = BuildManifest::new();
     manifest.add_file_hash("semantics/views/orders.view.yml", "old_hash".to_string());
     manifest.set_config_hash("config_hash".to_string());
-    manifest.set_globals_hash("globals_hash".to_string());
     manifest
         .save(&target_dir.join(".build_manifest.json"))
         .unwrap();
@@ -113,7 +104,7 @@ table: orders_v2.csv  # Modified
     // Run change detection
     let detector = ChangeDetector::new(&semantic_dir, &target_dir);
     let result = detector
-        .detect_changes("config_hash".to_string(), "globals_hash".to_string(), false)
+        .detect_changes("config_hash".to_string(), false)
         .unwrap();
 
     // Should trigger full rebuild (semantic layer always rebuilds on any change)
@@ -152,7 +143,6 @@ table: orders.csv
         oxy_semantic::hash_file(&workspace_root.join("semantics/views/orders.view.yml")).unwrap(),
     );
     manifest.set_config_hash("config_hash".to_string());
-    manifest.set_globals_hash("globals_hash".to_string());
     manifest
         .save(&target_dir.join(".build_manifest.json"))
         .unwrap();
@@ -171,7 +161,7 @@ table: customers.csv
     // Run change detection
     let detector = ChangeDetector::new(&semantic_dir, &target_dir);
     let result = detector
-        .detect_changes("config_hash".to_string(), "globals_hash".to_string(), false)
+        .detect_changes("config_hash".to_string(), false)
         .unwrap();
 
     // Should trigger full rebuild (semantic layer always rebuilds on any change)
@@ -201,7 +191,6 @@ fn test_incremental_build_view_deleted() {
         vec![".semantics/model/customers.yml".to_string()],
     );
     manifest.set_config_hash("config_hash".to_string());
-    manifest.set_globals_hash("globals_hash".to_string());
     manifest
         .save(&target_dir.join(".build_manifest.json"))
         .unwrap();
@@ -220,7 +209,7 @@ table: orders.csv
     // Run change detection
     let detector = ChangeDetector::new(&semantic_dir, &target_dir);
     let result = detector
-        .detect_changes("config_hash".to_string(), "globals_hash".to_string(), false)
+        .detect_changes("config_hash".to_string(), false)
         .unwrap();
 
     // Should trigger full rebuild (semantic layer always rebuilds on any change)
@@ -275,7 +264,6 @@ table: orders.csv
     manifest.set_dependency_graph(dep_graph);
 
     manifest.set_config_hash("config_hash".to_string());
-    manifest.set_globals_hash("globals_hash".to_string());
     manifest
         .save(&target_dir.join(".build_manifest.json"))
         .unwrap();
@@ -294,7 +282,7 @@ table: customers_v2.csv  # Modified
     // Run change detection
     let detector = ChangeDetector::new(&semantic_dir, &target_dir);
     let result = detector
-        .detect_changes("config_hash".to_string(), "globals_hash".to_string(), false)
+        .detect_changes("config_hash".to_string(), false)
         .unwrap();
 
     // Should trigger full rebuild (semantic layer always rebuilds on any change)
@@ -302,61 +290,6 @@ table: customers_v2.csv  # Modified
     assert_eq!(
         result.full_rebuild_reason,
         Some("Semantic layer files changed".to_string())
-    );
-}
-
-#[test]
-fn test_full_rebuild_on_globals_change() {
-    let temp_dir = TempDir::new().unwrap();
-    let workspace_root = temp_dir.path();
-    let semantic_dir = workspace_root.join("semantics");
-    let target_dir = workspace_root.join(".semantics");
-
-    fs::create_dir_all(&semantic_dir).unwrap();
-    fs::create_dir_all(&target_dir).unwrap();
-
-    // Create view
-    create_view_file(
-        workspace_root,
-        "orders",
-        r#"
-name: orders
-datasource: local
-table: orders.csv
-"#,
-    );
-
-    // Create initial globals
-    create_globals_file(workspace_root, "version: 1");
-
-    // Create manifest with old globals hash
-    let old_globals_hash = hash_globals_registry(&workspace_root.join(".oxy/globals")).unwrap();
-    let mut manifest = BuildManifest::new();
-    manifest.add_file_hash(
-        "semantics/views/orders.view.yml",
-        oxy_semantic::hash_file(&workspace_root.join("semantics/views/orders.view.yml")).unwrap(),
-    );
-    manifest.set_config_hash("config_hash".to_string());
-    manifest.set_globals_hash(old_globals_hash);
-    manifest
-        .save(&target_dir.join(".build_manifest.json"))
-        .unwrap();
-
-    // Modify globals
-    create_globals_file(workspace_root, "version: 2");
-
-    // Run change detection
-    let new_globals_hash = hash_globals_registry(&workspace_root.join(".oxy/globals")).unwrap();
-    let detector = ChangeDetector::new(&semantic_dir, &target_dir);
-    let result = detector
-        .detect_changes("config_hash".to_string(), new_globals_hash, false)
-        .unwrap();
-
-    // Should trigger full rebuild
-    assert!(result.requires_full_rebuild);
-    assert_eq!(
-        result.full_rebuild_reason,
-        Some("Globals changed".to_string())
     );
 }
 
@@ -388,7 +321,6 @@ table: orders.csv
         oxy_semantic::hash_file(&workspace_root.join("semantics/views/orders.view.yml")).unwrap(),
     );
     manifest.set_config_hash("old_config".to_string());
-    manifest.set_globals_hash("globals_hash".to_string());
     manifest
         .save(&target_dir.join(".build_manifest.json"))
         .unwrap();
@@ -396,7 +328,7 @@ table: orders.csv
     // Run change detection with new config
     let detector = ChangeDetector::new(&semantic_dir, &target_dir);
     let result = detector
-        .detect_changes("new_config".to_string(), "globals_hash".to_string(), false)
+        .detect_changes("new_config".to_string(), false)
         .unwrap();
 
     // Should trigger full rebuild
@@ -431,7 +363,6 @@ base_view: orders
     let mut manifest = BuildManifest::new();
     manifest.add_file_hash("semantics/topics/sales.topic.yml", "old_hash".to_string());
     manifest.set_config_hash("config_hash".to_string());
-    manifest.set_globals_hash("globals_hash".to_string());
     manifest
         .save(&target_dir.join(".build_manifest.json"))
         .unwrap();
@@ -449,7 +380,7 @@ base_view: orders_v2  # Modified
     // Run change detection
     let detector = ChangeDetector::new(&semantic_dir, &target_dir);
     let result = detector
-        .detect_changes("config_hash".to_string(), "globals_hash".to_string(), false)
+        .detect_changes("config_hash".to_string(), false)
         .unwrap();
 
     // Should trigger full rebuild (semantic layer always rebuilds on any change)

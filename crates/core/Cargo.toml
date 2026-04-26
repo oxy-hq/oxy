@@ -78,7 +78,6 @@ oxy-ollama = { workspace = true }
 oxy-openai = { workspace = true }
 oxy-semantic = { workspace = true }
 oxy-shared = { workspace = true }
-oxy_globals = { workspace = true }
 # Cannot add oxy-agent, oxy-workflow, etc. here due to circular dependency
 # They depend on oxy, so oxy cannot depend on them
 # Use them via CLI crate instead

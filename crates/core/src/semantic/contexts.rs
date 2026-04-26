@@ -1,14 +1,12 @@
-use std::{collections::HashMap, str::FromStr, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use itertools::Itertools;
 use minijinja::value::Object;
 use schemars::schema::{Metadata, SchemaObject};
 use serde::Serialize;
 
-use crate::config::model::{Dimension, SemanticDimension, SemanticModels, Variables};
+use crate::config::model::{Dimension, SemanticModels, Variables};
 use oxy_shared::errors::OxyError;
-
-use super::types::SemanticTableRef;
 
 impl TryInto<SchemaObject> for Dimension {
     type Error = OxyError;
@@ -64,10 +62,7 @@ pub struct SemanticVariablesContexts {
 }
 
 impl SemanticVariablesContexts {
-    pub fn new(
-        models: HashMap<String, SemanticModels>,
-        gsm: HashMap<String, SemanticDimension>,
-    ) -> Result<Self, OxyError> {
+    pub fn new(models: HashMap<String, SemanticModels>) -> Result<Self, OxyError> {
         Ok(SemanticVariablesContexts {
             variables: models
                 .into_iter()
@@ -77,19 +72,7 @@ impl SemanticVariablesContexts {
                         .into_iter()
                         .map(|dim| {
                             let dim_name = dim.name.clone();
-                            dim.try_into().map(|mut s| {
-                                if let Some(dim) = gsm.get(&dim_name) {
-                                    let is_applied = dim
-                                        .targets
-                                        .iter()
-                                        .filter_map(|target| target.split('.').next_back())
-                                        .any(|t| t == table_name.as_str());
-                                    if is_applied {
-                                        override_schema(&mut s, &dim.schema);
-                                    }
-                                }
-                                (dim_name, s)
-                            })
+                            dim.try_into().map(|s| (dim_name, s))
                         })
                         .try_collect::<(String, SchemaObject), Vec<_>, OxyError>()
                         .map(|variables| {
@@ -104,54 +87,11 @@ impl SemanticVariablesContexts {
                 .try_collect::<(String, Variables), HashMap<String, Variables>, OxyError>()?,
         })
     }
-
-    pub fn get_base_schema(&self, target: &str) -> Option<&SchemaObject> {
-        let dim = target.split('.').next_back()?;
-        let table_ref = SemanticTableRef::from_str(target).ok()?;
-        match self
-            .variables
-            .get(&table_ref.table)
-            .and_then(|v| v.variables.get(dim))
-        {
-            Some(variable) => Some(variable),
-            None => {
-                tracing::warn!(
-                    "Semantic variable '{}' not found in table '{:?}'",
-                    dim,
-                    table_ref
-                );
-                None
-            }
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SemanticDimensionsContexts {
     pub dimensions: HashMap<String, SchemaObject>,
-}
-
-impl SemanticDimensionsContexts {
-    pub fn new(
-        dimensions: HashMap<String, SemanticDimension>,
-        model_contexts: &SemanticVariablesContexts,
-    ) -> Self {
-        // Override the dimensions with the variables from the model contexts
-        let dimensions = dimensions
-            .into_iter()
-            .map(|(name, dim)| {
-                let mut schema: SchemaObject = dim.schema;
-                if let Some(target) = dim.targets.first() {
-                    // If the dimension has targets, merge the schema with the target variable
-                    if let Some(variable) = model_contexts.get_base_schema(target) {
-                        schema = variable.clone();
-                    }
-                }
-                (name, schema)
-            })
-            .collect::<HashMap<String, SchemaObject>>();
-        SemanticDimensionsContexts { dimensions }
-    }
 }
 
 impl Object for Variables {
@@ -258,43 +198,4 @@ fn map_instance_type(
     };
 
     SingleOrVec::Single(Box::new(instance_type))
-}
-
-fn override_schema(base: &mut SchemaObject, override_with: &SchemaObject) {
-    if let Some(instance_type) = &override_with.instance_type {
-        base.instance_type = Some(instance_type.clone());
-    }
-    if let Some(metadata) = &override_with.metadata {
-        base.metadata = Some(metadata.clone());
-    }
-    if let Some(format) = &override_with.format {
-        base.format = Some(format.clone());
-    }
-    if let Some(enum_values) = &override_with.enum_values {
-        base.enum_values = Some(enum_values.clone());
-    }
-    if let Some(const_value) = &override_with.const_value {
-        base.const_value = Some(const_value.clone());
-    }
-    if let Some(subschemas) = &override_with.subschemas {
-        base.subschemas = Some(subschemas.clone());
-    }
-    if let Some(number) = &override_with.number {
-        base.number = Some(number.clone());
-    }
-    if let Some(string) = &override_with.string {
-        base.string = Some(string.clone());
-    }
-    if let Some(array) = &override_with.array {
-        base.array = Some(array.clone());
-    }
-    if let Some(object) = &override_with.object {
-        base.object = Some(object.clone());
-    }
-    if let Some(reference) = &override_with.reference {
-        base.reference = Some(reference.clone());
-    }
-    for (key, value) in &override_with.extensions {
-        base.extensions.insert(key.clone(), value.clone());
-    }
 }

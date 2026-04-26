@@ -200,10 +200,11 @@ pub async fn validate_semantic_query_task(
     // Load semantic layer metadata by scanning the project directory
     let scan_path = config.semantics_scan_path();
 
-    let parse_result = parse_semantic_layer_from_dir(&scan_path, config.get_globals_registry())
-        .map_err(|e| SemanticQueryError::MetadataMissing {
+    let parse_result = parse_semantic_layer_from_dir(&scan_path).map_err(|e| {
+        SemanticQueryError::MetadataMissing {
             path: format!("{} ({})", scan_path.display(), e),
-        })?;
+        }
+    })?;
 
     let semantic_layer = parse_result.semantic_layer;
 

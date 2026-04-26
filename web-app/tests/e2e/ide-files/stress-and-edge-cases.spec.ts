@@ -88,7 +88,7 @@ test.describe("IDE Files - Performance Stress Tests", () => {
     await idePage.verifyFilesMode();
 
     // Find multiple files to switch between
-    const fileNames = ["config.yml", "semantics.yml", "docker-compose.yml"];
+    const fileNames = ["config.yml", "docker-compose.yml"];
 
     // Rapid switching 20 times
     for (let i = 0; i < 20; i++) {

@@ -230,10 +230,6 @@ test.describe("IDE Functionality", () => {
       // Open second file
       await idePage.openFile("test-file-for-e2e.txt");
       await idePage.verifyBreadcrumb("test-file-for-e2e.txt");
-
-      // Open third file
-      await idePage.openFile("semantics.yml");
-      await idePage.verifyBreadcrumb("semantics.yml");
     });
 
     test("should handle typing special characters", async ({ page }) => {

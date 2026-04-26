@@ -33,7 +33,7 @@ Oxy supports three deployment modes:
 - **Workflows** (`/workflows/:id`) — Displays a YAML-defined workflow as a visual node diagram. Users click Run to execute it; step status is shown on each node (pending → running → success/failure). Output logs and result blocks appear below the diagram.
 - **Apps** (`/apps/:id`) — Runs a YAML-configured Data App automatically on load. Renders a dashboard composed of: Markdown blocks, Data Tables, Line Charts, Bar Charts, Pie Charts, interactive Controls (select dropdowns, date pickers, toggles), and multi-column Row layouts. Controls inject values into SQL via Jinja `controls` context and trigger re-execution of dependent tasks. Results are cached by parameter hash; use `?refresh` to force re-execution.
 - **Developer Portal / IDE** (`/ide`, `/ide/:filePath`) — Monaco-based code editor for all Oxy project files. Sidebar sections:
-  - **Files** — raw file tree (folders: `workflows/`, `agents/`, `example_sql/`, `generated/`; root files: `config.yml`, `semantics.yml`, etc.)
+  - **Files** — raw file tree (folders: `workflows/`, `agents/`, `example_sql/`, `generated/`; root files: `config.yml`, etc.)
   - **Objects** — files grouped by type: Agents, Procedures (Workflows), Semantic Layer, Apps
   - **Database / SQL IDE** — Multi-tab SQL editor with schema browser, Cmd/Ctrl+Enter execution, database connection management, and Parquet-backed result tables with paging/sorting
   - **Settings** — Secrets panel (LLM API keys always visible, scans `key_var` and credential vars from config)

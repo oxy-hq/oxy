@@ -1,7 +1,6 @@
 use itertools::Itertools;
 use std::{
-    collections::{HashMap, HashSet},
-    str::FromStr,
+    collections::HashMap,
     sync::{Arc, Mutex},
     time::Instant,
 };
@@ -11,10 +10,7 @@ use tqdm::{Tqdm, pbar};
 
 use crate::{
     adapters::secrets::SecretsManager,
-    config::{
-        ConfigManager,
-        model::{Database, SemanticDimension, SemanticModels},
-    },
+    config::{ConfigManager, model::Database},
     semantic::{loader::SchemaLoader, types::SemanticKey},
 };
 use oxy_shared::errors::OxyError;
@@ -23,7 +19,7 @@ use super::{
     SemanticVariablesContexts,
     contexts::SemanticDimensionsContexts,
     storage::SemanticStorage,
-    types::{DatabaseInfo, SemanticTableRef, SyncDimension, SyncMetrics},
+    types::{DatabaseInfo, SyncMetrics},
 };
 
 pub struct SemanticManager {
@@ -44,17 +40,6 @@ impl SemanticManager {
             secrets_manager,
             storage,
         })
-    }
-
-    /// Set global overrides in the underlying GlobalRegistry
-    ///
-    /// This allows runtime overrides of global values that take precedence over files.
-    /// Should be called before loading semantics.
-    pub fn set_global_overrides(
-        &mut self,
-        overrides: indexmap::IndexMap<String, serde_json::Value>,
-    ) -> Result<(), OxyError> {
-        self.storage.set_global_overrides(overrides)
     }
 
     pub async fn load_database_info(&self, database_ref: &str) -> Result<DatabaseInfo, OxyError> {
@@ -105,75 +90,28 @@ impl SemanticManager {
         }
     }
 
-    async fn load_global_semantics(
-        &self,
-    ) -> Result<
-        (
-            Vec<Result<(String, SemanticModels), OxyError>>,
-            HashMap<String, SemanticDimension>,
-        ),
-        OxyError,
-    > {
-        let semantics = self.storage.load_global_semantics().await?;
-        let targets = semantics.list_targets();
-        let models = async_stream::stream! {
-            for target in targets {
-                yield async move {
-                    let semantic_table_ref = SemanticTableRef::from_str(&target)
-                        .map_err(|err| {
-                            tracing::warn!("Failed to parse semantic table reference {}: {:?}", target, err);
-                            err
-                        })?;
-
-                    self.storage.load_model(&semantic_table_ref).await.map_err(|err| {
-                        tracing::warn!("Failed to load model for entity {}: {:?}", target, err);
-                        err
-                    }).map(|model| {
-                        (
-                            semantic_table_ref.table,
-                            model
-                        )
-                    })
-                };
-            }
-        }
-        .buffered(10)
-        .collect::<Vec<_>>()
-        .await;
-        let gsm = semantics
-            .dimensions
-            .into_iter()
-            .map(|dim| (dim.name.clone(), dim))
-            .collect::<HashMap<String, SemanticDimension>>();
-        Ok((models, gsm))
-    }
-
+    /// Build an empty `SemanticVariablesContexts` for jinja template rendering.
+    ///
+    /// Previously this enumerated `dimensions[].targets` from `semantics.yml` and
+    /// hydrated per-table dimension schemas. With the global semantics registry
+    /// removed, callers get an empty context — `{{ models.<table>.* }}` template
+    /// references resolve to undefined.
     pub async fn get_semantic_variables_contexts(
         &self,
     ) -> Result<SemanticVariablesContexts, OxyError> {
-        let (models, gsm) = self.load_global_semantics().await?;
-        SemanticVariablesContexts::new(models.into_iter().filter_map(Result::ok).collect(), gsm)
+        SemanticVariablesContexts::new(HashMap::new())
     }
 
+    /// Build an empty `SemanticDimensionsContexts` for jinja template rendering.
+    ///
+    /// Previously this exposed dimensions declared in `semantics.yml`. With the
+    /// global semantics registry removed, callers get an empty context.
     pub async fn get_semantic_dimensions_contexts(
         &self,
-        variables_contexts: &SemanticVariablesContexts,
     ) -> Result<SemanticDimensionsContexts, OxyError> {
-        let (_, gsm) = self.load_global_semantics().await?;
-        Ok(SemanticDimensionsContexts::new(gsm, variables_contexts))
-    }
-
-    /// Get all globals as a YAML value for use in template contexts
-    ///
-    /// This method returns all global values from the GlobalRegistry as a combined
-    /// YAML value that can be used in minijinja template contexts.
-    ///
-    /// # Returns
-    ///
-    /// A Result containing the globals as a YAML value, or an error if the globals
-    /// cannot be loaded or there is no GlobalRegistry.
-    pub fn get_globals_value(&self) -> Result<serde_yaml::Value, OxyError> {
-        self.storage.get_globals_value()
+        Ok(SemanticDimensionsContexts {
+            dimensions: HashMap::new(),
+        })
     }
 
     async fn sync(
@@ -309,9 +247,6 @@ impl SemanticManager {
         &self,
         filter: crate::service::sync::SyncFilter,
     ) -> Result<Vec<Result<SyncMetrics, OxyError>>, OxyError> {
-        let mut global_semantics = self.storage.load_global_semantics().await?;
-        // Remember table-level filter for post-sync cleanup
-        let table_filter = filter.tables.clone();
         let (db_filter, schema_tables) = filter.into_filter();
         let databases = match db_filter {
             Some(db) => {
@@ -370,87 +305,6 @@ impl SemanticManager {
         .collect::<Vec<_>>()
         .await;
 
-        for result in metrics.iter() {
-            if let Ok(metrics) = result {
-                for model in &metrics.dimensions {
-                    match model {
-                        SyncDimension::Created { dimensions, src } => {
-                            let dimension_names = dimensions
-                                .iter()
-                                .map(|d| d.name.clone())
-                                .collect::<HashSet<_>>();
-                            // Remove targets that no longer exist
-                            global_semantics.dimensions.iter_mut().for_each(|dim| {
-                                for target in dim.targets.clone().iter() {
-                                    if let Some(target_dim_name) =
-                                        target.strip_prefix(&src.table_ref())
-                                        && !dimension_names.contains(target_dim_name)
-                                    {
-                                        dim.targets.retain(|t| t != target);
-                                    }
-                                }
-                            });
-                            // Add new dimensions
-                            for dim in dimension_names {
-                                // Find if the dimension already exists and update it or create a new one
-                                match global_semantics
-                                    .dimensions
-                                    .iter_mut()
-                                    .find(|d| d.name == dim)
-                                {
-                                    Some(existing_dim) => {
-                                        existing_dim.targets.push(src.to_target(&dim));
-                                    }
-                                    None => {
-                                        global_semantics.dimensions.push(SemanticDimension {
-                                            name: dim.clone(),
-                                            targets: vec![src.to_target(&dim)],
-                                            ..Default::default()
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                        SyncDimension::DeletedRef { src } => {
-                            global_semantics.dimensions.iter_mut().for_each(|dim| {
-                                dim.targets
-                                    .retain(|target| !target.starts_with(&src.table_ref()));
-                            })
-                        }
-                    }
-                }
-            }
-        }
-
-        // When syncing specific tables, prune dimensions that reference tables
-        // outside the filter. This ensures semantics.yml only contains dimensions
-        // for user-selected tables (e.g., after onboarding table selection).
-        // Filter entries are "schema.table" format, targets are "db.schema.table.column".
-        if !table_filter.is_empty() {
-            let allowed_tables: std::collections::HashSet<&str> =
-                table_filter.iter().map(|t| t.as_str()).collect();
-            for dim in &mut global_semantics.dimensions {
-                dim.targets.retain(|target| {
-                    // Target format: "db.schema.table.column"
-                    let parts: Vec<&str> = target.splitn(4, '.').collect();
-                    if parts.len() >= 3 {
-                        // Match against "schema.table" (parts[1].parts[2])
-                        let schema_table = format!("{}.{}", parts[1], parts[2]);
-                        allowed_tables.contains(schema_table.as_str())
-                    } else {
-                        true // Keep targets we can't parse
-                    }
-                });
-            }
-        }
-
-        // Save the updated global semantics
-        global_semantics
-            .dimensions
-            .retain(|dim| !dim.targets.is_empty());
-        self.storage
-            .save_global_semantics(&global_semantics)
-            .await?;
         Ok(metrics)
     }
 }

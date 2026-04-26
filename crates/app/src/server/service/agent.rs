@@ -94,7 +94,6 @@ pub async fn ask_adhoc(
         vec![],
         None,
         None,
-        None,                            // No globals
         None,                            // No variables
         Some(ExecutionSource::Internal), // Internal/programmatic call
         None,                            // No sandbox_info
@@ -257,7 +256,6 @@ pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
     memory: Vec<Message>,
     filters: Option<SessionFilters>,
     connections: Option<ConnectionOverrides>,
-    globals: Option<indexmap::IndexMap<String, serde_json::Value>>,
     variables: Option<std::collections::HashMap<String, serde_json::Value>>,
     source: Option<ExecutionSource>,
     sandbox_info: Option<oxy::execute::types::event::SandboxInfo>,
@@ -335,7 +333,6 @@ pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
     let output = AgentLauncher::new()
         .with_filters(filters)
         .with_connections(connections)
-        .with_globals(globals)
         .with_sandbox_info(sandbox_info.clone())
         .with_data_app_file_path(data_app_file_path.clone())
         .with_workspace(workspace)

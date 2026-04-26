@@ -134,9 +134,7 @@ export function useOnboardingActions(orchestrator: Orchestrator) {
   // The ref bypasses that and gives the builder the real column names,
   // preventing the agent from hallucinating (e.g. inventing a `REPORT_DATE`
   // dimension when the actual column has a different name).
-  const hydratedColumnsRef = useRef<Map<string, Array<{ name: string; type: string }>>>(
-    new Map()
-  );
+  const hydratedColumnsRef = useRef<Map<string, Array<{ name: string; type: string }>>>(new Map());
 
   // Save LLM API key as a project secret, then advance step.
   // Uses create-or-update to ensure the latest key value is always persisted,
@@ -311,8 +309,7 @@ export function useOnboardingActions(orchestrator: Orchestrator) {
         return { schemas: result.schemas, error: null };
       } catch (err) {
         console.error("Schema discovery attempt failed:", err);
-        const message =
-          err instanceof Error ? err.message : "Schema discovery request failed";
+        const message = err instanceof Error ? err.message : "Schema discovery request failed";
         return { schemas: null, error: message };
       }
     };
@@ -353,7 +350,13 @@ export function useOnboardingActions(orchestrator: Orchestrator) {
     } finally {
       discoveryInFlight.current = false;
     }
-  }, [projectId, branchName, setDiscoveredSchemas, setSchemaDiscoveryError, setSchemaDiscoveryStatus]);
+  }, [
+    projectId,
+    branchName,
+    setDiscoveredSchemas,
+    setSchemaDiscoveryError,
+    setSchemaDiscoveryStatus
+  ]);
 
   // Lazily load tables for a single schema when the user expands it. Stored
   // on the orchestrator so the tables survive collapse/expand cycles without
@@ -361,9 +364,7 @@ export function useOnboardingActions(orchestrator: Orchestrator) {
   const { setSchemaTables, setSchemaTablesStatus } = orchestrator;
   const fetchSchemaTables = useCallback(
     async (schemaName: string) => {
-      const existing = stateRef.current.discoveredSchemas.find(
-        (s) => s.schema === schemaName
-      );
+      const existing = stateRef.current.discoveredSchemas.find((s) => s.schema === schemaName);
       if (!existing || existing.loaded || existing.loading) return;
 
       const dbName = stateRef.current.warehouseType ?? undefined;
@@ -412,11 +413,11 @@ export function useOnboardingActions(orchestrator: Orchestrator) {
     [projectId, orchestrator.state.builderThreadId]
   );
 
-  // Re-sync with only selected tables so semantics.yml is scoped correctly.
-  // After the sync completes we refresh `discoveredSchemas` from the cached
-  // semantic models so the per-table column metadata is available to
-  // `startViewRun` (it uses pre-fetched columns to skip a DESCRIBE round-trip
-  // in the builder).
+  // Re-sync with only selected tables so .databases/<warehouse>/ is scoped to
+  // the user's selection. After the sync completes we refresh
+  // `discoveredSchemas` from the cached semantic models so the per-table column
+  // metadata is available to `startViewRun` (it uses pre-fetched columns to
+  // skip a DESCRIBE round-trip in the builder).
   const resyncWithSelectedTables = useCallback(
     async (tables: string[]) => {
       const dbName = stateRef.current.warehouseType ?? undefined;
@@ -467,9 +468,7 @@ export function useOnboardingActions(orchestrator: Orchestrator) {
           const merged = stateRef.current.discoveredSchemas.map((schema) => {
             const hydratedTables = hydratedBySchema.get(schema.schema);
             if (!hydratedTables) return schema;
-            const mergedTables = schema.tables.map((t) =>
-              hydratedTables.get(t.name) ?? t
-            );
+            const mergedTables = schema.tables.map((t) => hydratedTables.get(t.name) ?? t);
             return { ...schema, tables: mergedTables };
           });
           orchestrator.hydrateDiscoveredSchemas(merged);
@@ -740,9 +739,7 @@ export function useOnboardingActions(orchestrator: Orchestrator) {
         await DatabaseService.syncDatabase(projectId, branchName, warehouse.name);
       } catch (err) {
         const message = err instanceof Error ? err.message : "Sync failed.";
-        orchestrator.failGithubWarehouseTest(
-          `Could not connect to ${warehouse.name}. ${message}`
-        );
+        orchestrator.failGithubWarehouseTest(`Could not connect to ${warehouse.name}. ${message}`);
         return;
       }
 

@@ -111,7 +111,6 @@ modify these files.
 - <name>.app.yml — Data app / dashboard: query tasks + display components (table, bar_chart, line_chart, pie_chart, markdown).
 - <name>.topic.yml — Semantic topic: groups related views into a domain. Lives in semantics/.
 - <name>.view.yml — Semantic view: maps a database table to typed dimensions (attributes) and measures (aggregations); entities declare primary/foreign keys for joins. Lives in semantics/.
-- globals/semantics.yml — Shared global semantic definitions that views can inherit from.
 - *.sql — SQL query files referenced by agents or workflows.
 - <name>.test.yml — Test suite for an agent or agentic workflow: target file, settings (runs, judge_model), and test cases (prompt, expected, tags).
 

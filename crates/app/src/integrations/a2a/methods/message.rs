@@ -124,7 +124,6 @@ async fn execute_via_chat_service(
             vec![],
             chat_request.filters,
             chat_request.connections,
-            chat_request.globals,
             None,
             Some(crate::service::agent::ExecutionSource::A2a {
                 task_id: task_id.clone(),

@@ -410,7 +410,6 @@ async fn execute_agent(
         None,
         None,
         None,
-        None,
         Some(crate::service::agent::ExecutionSource::Slack {
             thread_id: thread_id.to_string(),
             channel_id: None, // Could be extracted from delivery if needed

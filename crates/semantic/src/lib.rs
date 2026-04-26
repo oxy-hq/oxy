@@ -16,9 +16,7 @@ pub use builder::{
     DimensionBuilder, EntityBuilder, MeasureBuilder, SemanticLayerBuilder, TopicBuilder,
     ViewBuilder,
 };
-pub use change_detector::{
-    ChangeDetectionResult, ChangeDetector, hash_database_config, hash_globals_registry,
-};
+pub use change_detector::{ChangeDetectionResult, ChangeDetector, hash_database_config};
 pub use errors::SemanticLayerError;
 pub use models::{
     AccessLevel, DatabaseDetails, Dimension, DimensionType, Entity, EntityType, Measure,

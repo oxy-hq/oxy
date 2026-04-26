@@ -236,8 +236,6 @@ pub struct WorkflowRetryParam {
     pub replay_id: Option<String>,
 }
 
-pub type GlobalOverrides = IndexMap<String, serde_json::Value>;
-
 #[derive(Deserialize, ToSchema)]
 pub struct RunWorkflowRequest {
     #[schema(value_type = Object)]
@@ -250,10 +248,6 @@ pub struct RunWorkflowRequest {
     #[serde(default)]
     #[schema(value_type = Object)]
     pub connections: Option<ConnectionOverrides>,
-
-    #[serde(default)]
-    #[schema(value_type = Object)]
-    pub globals: Option<GlobalOverrides>,
 }
 
 /// Execute a workflow and stream results via Server-Sent Events
@@ -302,7 +296,6 @@ pub async fn run_workflow(
 
     let filters = request.filters;
     let connections = request.connections;
-    let globals = request.globals;
 
     let user_id = user.id.to_string();
     let _ = tokio::spawn(async move {
@@ -313,7 +306,6 @@ pub async fn run_workflow(
             workspace_manager.clone(),
             filters,
             connections,
-            globals,
             Some(crate::service::agent::ExecutionSource::WebApi {
                 thread_id: "workflow".to_string(),
                 user_id,
@@ -461,7 +453,6 @@ pub async fn run_workflow_thread(
             workspace_manager.clone(),
             None,
             None,
-            None, // No globals for thread execution (not in request)
             Some(crate::service::agent::ExecutionSource::WebApi {
                 thread_id: thread_clone.id.to_string(),
                 user_id: thread_clone
@@ -656,7 +647,6 @@ pub async fn run_workflow_thread_sync(
             workspace_manager.clone(),
             filters,
             connections,
-            None, // No globals for thread sync execution (not in request)
             Some(crate::service::agent::ExecutionSource::WebApi {
                 thread_id: thread_clone.id.to_string(),
                 user_id: thread_clone
@@ -986,7 +976,6 @@ pub async fn run_workflow_sync(
 
     let filters = request.filters;
     let connections = request.connections;
-    let globals = request.globals;
     let user_id = user.id.to_string();
 
     let mut workflow_task = tokio::spawn({
@@ -1002,7 +991,6 @@ pub async fn run_workflow_sync(
                 retry_strategy,
                 filters,
                 connections,
-                globals,
                 Some(crate::service::agent::ExecutionSource::WebApi {
                     thread_id: task_id_clone.clone(),
                     user_id,

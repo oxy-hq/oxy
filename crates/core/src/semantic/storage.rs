@@ -1,15 +1,10 @@
-use std::{collections::HashMap, fs::File, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf};
 
 use futures::StreamExt;
-use oxy_globals::{GlobalRegistry, TemplateResolver};
 use tokio::fs::{create_dir_all, read_dir, read_to_string};
 
 use crate::{
-    config::{
-        ConfigManager,
-        constants::SEMANTIC_MODEL_PATH,
-        model::{SemanticModels, Semantics},
-    },
+    config::{ConfigManager, constants::SEMANTIC_MODEL_PATH, model::SemanticModels},
     utils::get_file_stem,
 };
 use oxy_shared::errors::OxyError;
@@ -20,8 +15,6 @@ use super::types::{
 
 #[enum_dispatch::enum_dispatch]
 trait Storage {
-    async fn load_global_semantics(&self) -> Result<Semantics, OxyError>;
-    async fn save_global_semantics(&self, semantics: &Semantics) -> Result<(), OxyError>;
     async fn load_datasets(&self, database_ref: &str) -> Result<Vec<DatasetInfo>, OxyError>;
     async fn load_ddl(&self, key: &SemanticKey) -> Result<String, OxyError>;
     async fn save_ddl(
@@ -40,11 +33,9 @@ trait Storage {
 }
 
 pub struct SemanticFileStorage {
-    global_semantic_path: String,
     base_path: String,
     semantic_path: String,
     override_mode: bool,
-    global_registry: Option<GlobalRegistry>,
 }
 
 impl SemanticFileStorage {
@@ -53,74 +44,12 @@ impl SemanticFileStorage {
         override_mode: bool,
     ) -> Result<Self, OxyError> {
         let base_path = config.database_semantic_path();
-        let global_semantic_path = config.global_semantic_path();
-        let globals_path = config.globals_path();
-        let mut global_registry = None;
-        if globals_path.exists() {
-            global_registry = Some(GlobalRegistry::new(globals_path));
-        }
 
         Ok(SemanticFileStorage {
-            global_semantic_path: global_semantic_path.to_string_lossy().to_string(),
             base_path: base_path.to_string_lossy().to_string(),
             semantic_path: SEMANTIC_MODEL_PATH.to_string(),
             override_mode,
-            global_registry,
         })
-    }
-
-    /// Set global overrides in the GlobalRegistry
-    ///
-    /// This allows runtime overrides of global values that take precedence over files.
-    /// The overrides map should be keyed by "file_name.path" (e.g., "semantics.entities.Customer").
-    pub fn set_global_overrides(
-        &mut self,
-        overrides: indexmap::IndexMap<String, serde_json::Value>,
-    ) -> Result<(), OxyError> {
-        if let Some(ref registry) = self.global_registry {
-            for (key, json_value) in overrides {
-                // Convert serde_json::Value to serde_yaml::Value
-                let yaml_value: serde_yaml::Value = serde_json::from_value(json_value.clone())
-                    .map_err(|e| {
-                        OxyError::RuntimeError(format!(
-                            "Failed to convert global override for key '{}' to YAML: {}",
-                            key, e
-                        ))
-                    })?;
-
-                // Parse the key to extract file_name and path
-                // Expected format: "file_name.path" or just interpret the whole key as path to "semantics" file
-                let parts: Vec<&str> = key.splitn(2, '.').collect();
-                let (file_name, path) = if parts.len() == 2 {
-                    (parts[0], parts[1])
-                } else {
-                    // Default to "semantics" file if no file specified
-                    ("semantics", key.as_str())
-                };
-
-                registry
-                    .set_override(file_name, path, yaml_value)
-                    .map_err(|e| {
-                        OxyError::RuntimeError(format!(
-                            "Failed to set global override for '{}': {}",
-                            key, e
-                        ))
-                    })?;
-            }
-        }
-        Ok(())
-    }
-
-    /// Get all globals as a YAML value for use in template contexts
-    pub fn get_globals_value(&self) -> Result<serde_yaml::Value, OxyError> {
-        if let Some(ref registry) = self.global_registry {
-            registry
-                .get_all_globals()
-                .map_err(|e| OxyError::RuntimeError(format!("Failed to get globals value: {}", e)))
-        } else {
-            // Return an empty mapping if there's no global registry
-            Ok(serde_yaml::Value::Mapping(serde_yaml::Mapping::new()))
-        }
     }
 
     fn get_database_dir(&self, database_ref: &str) -> PathBuf {
@@ -145,74 +74,6 @@ impl SemanticFileStorage {
 }
 
 impl Storage for SemanticFileStorage {
-    async fn load_global_semantics(&self) -> Result<Semantics, OxyError> {
-        let global_semantic_path = PathBuf::from(&self.global_semantic_path);
-        if !global_semantic_path.exists() {
-            serde_yaml::to_writer(File::create(&global_semantic_path)?, &Semantics::default())
-                .map_err(|err| format!("Failed to create default semantics file: {err}"))?;
-        }
-
-        let content = read_to_string(&global_semantic_path)
-            .await
-            .map_err(|err| OxyError::IOError(format!("Failed to load global semantics: {err}")))?;
-
-        // Parse as YAML value first if we have a global registry
-        let semantics = if let Some(ref registry) = self.global_registry {
-            let mut yaml_value: serde_yaml::Value =
-                serde_yaml::from_str(&content).map_err(|err| {
-                    OxyError::SerializerError(format!("Failed to parse semantics YAML: {err}"))
-                })?;
-
-            // First resolve templates ({{globals.path}} expressions)
-            yaml_value = registry.resolve_templates(&yaml_value).map_err(|e| {
-                OxyError::SerializerError(format!(
-                    "Failed to resolve templates in semantics.yml: {}",
-                    e
-                ))
-            })?;
-
-            // Then resolve inheritance for the entire YAML structure
-            yaml_value = registry
-                .resolve_with_inheritance(&yaml_value)
-                .map_err(|e| {
-                    OxyError::SerializerError(format!(
-                        "Failed to resolve global references in semantics.yml: {}",
-                        e
-                    ))
-                })?;
-
-            // Deserialize the resolved YAML into Semantics struct
-            serde_yaml::from_value(yaml_value).map_err(|err| {
-                OxyError::SerializerError(format!("Failed to deserialize global semantics: {err}"))
-            })?
-        } else {
-            // No global registry, parse directly
-            serde_yaml::from_str::<Semantics>(&content).map_err(|err| {
-                OxyError::SerializerError(format!("Failed to deserialize global semantics: {err}"))
-            })?
-        };
-
-        Ok(semantics)
-    }
-
-    async fn save_global_semantics(&self, semantics: &Semantics) -> Result<(), OxyError> {
-        println!("Saving global semantics to: {}", self.global_semantic_path);
-        println!("Semantics: {semantics:?}");
-        let global_semantic_path = PathBuf::from(&self.global_semantic_path);
-        create_dir_all(global_semantic_path.parent().ok_or(OxyError::IOError(
-            "Failed to resolve global semantic path".to_string(),
-        ))?)
-        .await
-        .map_err(|err| {
-            OxyError::IOError(format!("Failed to create global semantic path: {err}"))
-        })?;
-
-        serde_yaml::to_writer(File::create(&global_semantic_path)?, semantics).map_err(|err| {
-            OxyError::SerializerError(format!("Failed to save global semantics: {err}"))
-        })?;
-        Ok(())
-    }
-
     async fn load_model(&self, table_ref: &SemanticTableRef) -> Result<SemanticModels, OxyError> {
         let path = self.get_semantic_file_path(
             &SemanticKey {
@@ -530,31 +391,6 @@ impl SemanticStorage {
         Ok(SemanticStorage {
             storage: StorageImpl::File(storage),
         })
-    }
-
-    pub async fn load_global_semantics(&self) -> Result<Semantics, OxyError> {
-        self.storage.load_global_semantics().await
-    }
-
-    pub async fn save_global_semantics(&self, semantics: &Semantics) -> Result<(), OxyError> {
-        self.storage.save_global_semantics(semantics).await
-    }
-
-    /// Set global overrides in the underlying GlobalRegistry
-    pub fn set_global_overrides(
-        &mut self,
-        overrides: indexmap::IndexMap<String, serde_json::Value>,
-    ) -> Result<(), OxyError> {
-        match &mut self.storage {
-            StorageImpl::File(file_storage) => file_storage.set_global_overrides(overrides),
-        }
-    }
-
-    /// Get all globals as a YAML value for use in template contexts
-    pub fn get_globals_value(&self) -> Result<serde_yaml::Value, OxyError> {
-        match &self.storage {
-            StorageImpl::File(file_storage) => file_storage.get_globals_value(),
-        }
     }
 
     pub async fn load_datasets(&self, database_ref: &str) -> Result<Vec<DatasetInfo>, OxyError> {

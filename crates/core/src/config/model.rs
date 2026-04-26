@@ -34,8 +34,6 @@ use oxy_shared::errors::OxyError;
 pub use workflow::WorkflowWithRawVariables;
 
 mod duckdb;
-mod semantics;
-pub use semantics::{SemanticDimension, Semantics};
 mod variables;
 mod workflow;
 

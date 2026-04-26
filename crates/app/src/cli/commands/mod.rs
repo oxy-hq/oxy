@@ -37,7 +37,7 @@ use clap::CommandFactory;
 use clap::Parser;
 use make::handle_make_command;
 use model::AgentConfig;
-use model::{Config, Semantics, Workflow};
+use model::{Config, Workflow};
 use oxy_shared::errors::OxyError;
 use serve::start_server_and_web_app;
 use std::backtrace;
@@ -512,15 +512,13 @@ fn validate_single_file(file_path: &PathBuf, config: &Config) -> Result<(), Stri
             config.validate_app(&app).map_err(|e| e.to_string())
         }
         _ if file_name.ends_with(".view.yml") || file_name.ends_with(".topic.yml") => {
-            let globals_path = config.workspace_path.join("globals");
-            let registry = oxy_globals::GlobalRegistry::new(globals_path);
             let parser_config = oxy_semantic::ParserConfig::new(
                 file_path
                     .parent()
                     .and_then(|p| p.parent())
                     .unwrap_or(&config.workspace_path),
             );
-            let parser = oxy_semantic::SemanticLayerParser::new(parser_config, registry);
+            let parser = oxy_semantic::SemanticLayerParser::new(parser_config);
             if file_name.ends_with(".view.yml") {
                 parser
                     .parse_view_file(file_path)
@@ -644,10 +642,6 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 (
                     "app.json",
                     serde_json::to_string_pretty(&schemars::schema_for!(AppConfig))?,
-                ),
-                (
-                    "global-semantics.json",
-                    serde_json::to_string_pretty(&schemars::schema_for!(Semantics))?,
                 ),
                 (
                     "agent-test.json",
@@ -974,7 +968,6 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 vec![],
                 None,
                 None,
-                None, // No globals from CLI
                 None, // No variables from CLI (yet)
                 Some(crate::server::service::agent::ExecutionSource::Cli),
                 None, // No sandbox info from CLI

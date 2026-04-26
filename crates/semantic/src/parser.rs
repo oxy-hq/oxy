@@ -2,9 +2,6 @@ use crate::SemanticLayerError;
 use crate::models::*;
 use crate::validation::{ValidationResult, validate_semantic_layer, validate_variable_syntax};
 use crate::variables::VariableEncoder;
-use minijinja::{Environment, context};
-use oxy_globals::{GlobalRegistry, TemplateResolver};
-use regex::Regex;
 use serde_yaml;
 use std::collections::HashSet;
 use std::fs;
@@ -60,16 +57,12 @@ pub struct ParseResult {
 /// Parser for semantic layer configurations
 pub struct SemanticLayerParser {
     config: ParserConfig,
-    pub global_registry: GlobalRegistry,
 }
 
 impl SemanticLayerParser {
     /// Creates a new parser with the given configuration
-    pub fn new(config: ParserConfig, global_registry: GlobalRegistry) -> Self {
-        Self {
-            config,
-            global_registry,
-        }
+    pub fn new(config: ParserConfig) -> Self {
+        Self { config }
     }
 
     /// Parses the semantic layer from the configured directory structure.
@@ -240,41 +233,27 @@ impl SemanticLayerParser {
 
     /// Parses a single view file
     pub fn parse_view_file(&self, path: &Path) -> Result<View, SemanticLayerError> {
-        // Read raw YAML content as a string (before parsing)
+        // Read raw YAML content as a string
         let content = fs::read_to_string(path).map_err(|e| {
             SemanticLayerError::IOError(format!("Failed to read file {}: {}", path.display(), e))
         })?;
 
-        // Render the YAML template with Jinja2 (resolves both {{globals.*}} and {{variables.*}})
-        let rendered_content = self.render_yaml_template(&content, path)?;
+        reject_legacy_globals(&content, path)?;
 
-        // Parse the rendered YAML
-        let mut yaml_value: serde_yaml::Value =
-            serde_yaml::from_str(&rendered_content).map_err(|e| {
-                let location_info = if let Some(location) = e.location() {
-                    format!(" at line {}, column {}", location.line(), location.column())
-                } else {
-                    String::new()
-                };
-                SemanticLayerError::ParsingError(format!(
-                    "Failed to parse rendered YAML in {}{}: {}",
-                    path.display(),
-                    location_info,
-                    e
-                ))
-            })?;
-
-        // Resolve inheritance (inherits_from fields)
-        yaml_value = self
-            .global_registry
-            .resolve_with_inheritance(&yaml_value)
-            .map_err(|e| {
-                SemanticLayerError::ParsingError(format!(
-                    "Failed to resolve global references in {}: {}",
-                    path.display(),
-                    e
-                ))
-            })?;
+        // Parse the YAML
+        let mut yaml_value: serde_yaml::Value = serde_yaml::from_str(&content).map_err(|e| {
+            let location_info = if let Some(location) = e.location() {
+                format!(" at line {}, column {}", location.line(), location.column())
+            } else {
+                String::new()
+            };
+            SemanticLayerError::ParsingError(format!(
+                "Failed to parse YAML in {}{}: {}",
+                path.display(),
+                location_info,
+                e
+            ))
+        })?;
 
         // Store original expressions before any variable processing
         yaml_value = self.preprocess_variables(&yaml_value, path)?;
@@ -303,8 +282,10 @@ impl SemanticLayerParser {
             SemanticLayerError::IOError(format!("Failed to read file {}: {}", path.display(), e))
         })?;
 
+        reject_legacy_globals(&content, path)?;
+
         // First parse as generic YAML value
-        let mut yaml_value: serde_yaml::Value = serde_yaml::from_str(&content).map_err(|e| {
+        let yaml_value: serde_yaml::Value = serde_yaml::from_str(&content).map_err(|e| {
             let location_info = if let Some(location) = e.location() {
                 format!(" at line {}, column {}", location.line(), location.column())
             } else {
@@ -317,31 +298,6 @@ impl SemanticLayerParser {
                 e
             ))
         })?;
-
-        // Resolve templates and global references if registry is available
-        // First resolve templates ({{globals.path}} expressions)
-        yaml_value = self
-            .global_registry
-            .resolve_templates(&yaml_value)
-            .map_err(|e| {
-                SemanticLayerError::ParsingError(format!(
-                    "Failed to resolve templates in {}: {}",
-                    path.display(),
-                    e
-                ))
-            })?;
-
-        // Then resolve inheritance (inherits_from fields)
-        yaml_value = self
-            .global_registry
-            .resolve_with_inheritance(&yaml_value)
-            .map_err(|e| {
-                SemanticLayerError::ParsingError(format!(
-                    "Failed to resolve global references in {}: {}",
-                    path.display(),
-                    e
-                ))
-            })?;
 
         // Topics don't currently have direct variable support in their structure,
         // but validate any variable syntax if present for future compatibility
@@ -594,87 +550,6 @@ impl SemanticLayerParser {
         Ok(semantic_layer)
     }
 
-    /// Render YAML template using Jinja2 with globals and variables context
-    ///
-    /// This method creates a unified Jinja2 context with both globals and variables,
-    /// then renders the YAML template in a single pass.
-    /// Only renders templates that reference globals.* or variables.*
-    fn render_yaml_template(
-        &self,
-        yaml_content: &str,
-        path: &Path,
-    ) -> Result<String, SemanticLayerError> {
-        // Build Jinja2 context with globals
-        let globals_context = self.global_registry.to_jinja_context().map_err(|e| {
-            SemanticLayerError::ParsingError(format!(
-                "Failed to build globals context for {}: {}",
-                path.display(),
-                e
-            ))
-        })?;
-
-        // Pre-process: temporarily replace non-globals templates with placeholders
-        // Variables should be preserved as-is for encoding by the semantic translator
-        let placeholder_prefix = "___TEMPLATE_PLACEHOLDER_";
-        let mut placeholders = Vec::new();
-        let re = Regex::new(r"\{\{[^}]+\}\}").unwrap();
-
-        let protected_content = re
-            .replace_all(yaml_content, |caps: &regex::Captures| {
-                let matched = caps.get(0).unwrap().as_str();
-                // Check if this template references globals.* or variables.*
-                let inner = matched
-                    .trim_start_matches("{{")
-                    .trim_end_matches("}}")
-                    .trim();
-                if inner.starts_with("globals.") {
-                    // Keep globals templates for rendering
-                    matched.to_string()
-                } else {
-                    // Replace ALL other templates (including variables.*) with placeholders
-                    // Variables will be encoded later by the semantic translator
-                    let placeholder = format!("{}{}", placeholder_prefix, placeholders.len());
-                    placeholders.push(matched.to_string());
-                    placeholder
-                }
-            })
-            .to_string();
-
-        // Create minijinja environment
-        let mut env = Environment::new();
-        env.set_auto_escape_callback(|_| minijinja::AutoEscape::None);
-
-        // Compile template from the protected YAML string
-        let template = env.template_from_str(&protected_content).map_err(|e| {
-            SemanticLayerError::ParsingError(format!(
-                "Failed to compile template in {}: {}",
-                path.display(),
-                e
-            ))
-        })?;
-
-        // Render with context (only globals are rendered at parse time)
-        let mut rendered = template
-            .render(context! {
-                globals => globals_context,
-            })
-            .map_err(|e| {
-                SemanticLayerError::ParsingError(format!(
-                    "Failed to render template in {}: {}",
-                    path.display(),
-                    e
-                ))
-            })?;
-
-        // Restore the original templates that were placeholders
-        for (i, original) in placeholders.iter().enumerate() {
-            let placeholder = format!("{}{}", placeholder_prefix, i);
-            rendered = rendered.replace(&placeholder, original);
-        }
-
-        Ok(rendered)
-    }
-
     /// Exports a semantic layer to YAML format
     pub fn export_to_yaml(semantic_layer: &SemanticLayer) -> Result<String, SemanticLayerError> {
         serde_yaml::to_string(semantic_layer).map_err(|e| {
@@ -745,13 +620,34 @@ impl SemanticLayerParser {
     }
 }
 
+/// Reject view/topic files that still reference the removed globals/inheritance features.
+///
+/// Without this guard, leftover `inherits_from:` keys are silently dropped (View/Topic
+/// don't declare the field) and `{{ globals.* }}` Jinja expressions survive YAML parsing
+/// as literal strings, producing semantically wrong views with no visible error.
+fn reject_legacy_globals(content: &str, path: &Path) -> Result<(), SemanticLayerError> {
+    let has_inherits_from = content
+        .lines()
+        .any(|line| line.trim_start().starts_with("inherits_from:"));
+    let has_globals_template = content.contains("{{globals.") || content.contains("{{ globals.");
+
+    if has_inherits_from || has_globals_template {
+        return Err(SemanticLayerError::ParsingError(format!(
+            "{} uses removed semantic-layer features (`inherits_from:` and/or \
+             `{{{{ globals.* }}}}`). The semantics.yml registry has been removed; \
+             inline the referenced values directly into the file.",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
 /// Convenience function to parse semantic layer from a directory
 pub fn parse_semantic_layer_from_dir<P: AsRef<Path>>(
     path: P,
-    global_registry: GlobalRegistry,
 ) -> Result<ParseResult, SemanticLayerError> {
     let parser_config = ParserConfig::new(path);
-    let parser = SemanticLayerParser::new(parser_config, global_registry);
+    let parser = SemanticLayerParser::new(parser_config);
     parser.parse()
 }
 
@@ -814,20 +710,13 @@ dimensions:
         }
     }
 
-    /// Creates a GlobalRegistry for testing under the given temp directory.
-    fn create_test_registry(temp_path: &Path) -> GlobalRegistry {
-        let globals_dir = temp_path.join("globals");
-        std::fs::create_dir_all(&globals_dir).unwrap();
-        GlobalRegistry::new(globals_dir)
-    }
-
     mod is_view_file_tests {
         use super::*;
 
         fn check_is_view_file(filename: &str) -> bool {
             let temp_dir = create_test_fixture();
             let config = ParserConfig::new(temp_dir.path());
-            let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
+            let parser = SemanticLayerParser::new(config);
             parser.is_view_file(&PathBuf::from(filename))
         }
 
@@ -863,7 +752,7 @@ dimensions:
         fn check_is_topic_file(filename: &str) -> bool {
             let temp_dir = create_test_fixture();
             let config = ParserConfig::new(temp_dir.path());
-            let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
+            let parser = SemanticLayerParser::new(config);
             parser.is_topic_file(&PathBuf::from(filename))
         }
 
@@ -894,8 +783,7 @@ dimensions:
         #[test]
         fn test_parse_missing_base_dir_fails() {
             let config = ParserConfig::new("/nonexistent/semantics");
-            let parser =
-                SemanticLayerParser::new(config, GlobalRegistry::new("/nonexistent/globals"));
+            let parser = SemanticLayerParser::new(config);
 
             let result = parser.parse();
             assert!(result.is_err());
@@ -907,7 +795,7 @@ dimensions:
         fn test_parse_no_view_files_with_validation_fails() {
             let temp_dir = create_test_fixture();
             let config = ParserConfig::new(temp_dir.path()).with_validation(true);
-            let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
+            let parser = SemanticLayerParser::new(config);
 
             let result = parser.parse();
             assert!(result.is_err());
@@ -919,7 +807,7 @@ dimensions:
         fn test_parse_no_view_files_without_validation_returns_empty() {
             let temp_dir = create_test_fixture();
             let config = ParserConfig::new(temp_dir.path()).with_validation(false);
-            let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
+            let parser = SemanticLayerParser::new(config);
 
             let result = parser.parse();
             assert!(result.is_ok());
@@ -937,7 +825,7 @@ dimensions:
             .unwrap();
 
             let config = ParserConfig::new(temp_dir.path()).with_validation(false);
-            let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
+            let parser = SemanticLayerParser::new(config);
 
             let result = parser.parse();
             assert!(result.is_ok());
@@ -959,7 +847,7 @@ dimensions:
             .unwrap();
 
             let config = ParserConfig::new(temp_dir.path()).with_validation(false);
-            let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
+            let parser = SemanticLayerParser::new(config);
 
             let result = parser.parse();
             assert!(result.is_ok());
@@ -981,7 +869,7 @@ dimensions:
             .unwrap();
 
             let config = ParserConfig::new(temp_dir.path()).with_validation(false);
-            let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
+            let parser = SemanticLayerParser::new(config);
 
             let result = parser.parse();
             assert!(result.is_ok());
@@ -1006,7 +894,7 @@ dimensions:
             .unwrap();
 
             let config = ParserConfig::new(temp_dir.path()).with_validation(false);
-            let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
+            let parser = SemanticLayerParser::new(config);
 
             let result = parser.parse();
             assert!(result.is_ok());
@@ -1028,7 +916,7 @@ dimensions:
             std::fs::write(temp_dir.path().join("data.json"), "{}").unwrap();
 
             let config = ParserConfig::new(temp_dir.path()).with_validation(false);
-            let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
+            let parser = SemanticLayerParser::new(config);
 
             let result = parser.parse();
             assert!(result.is_ok());
@@ -1048,7 +936,7 @@ dimensions:
             std::fs::write(&view_path, minimal_view_yaml("test")).unwrap();
 
             let config = ParserConfig::new(temp_dir.path());
-            let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
+            let parser = SemanticLayerParser::new(config);
 
             let result = parser.parse_view_file(&view_path);
             assert!(result.is_ok());
@@ -1060,7 +948,7 @@ dimensions:
         fn test_parse_view_file_not_found_fails() {
             let temp_dir = create_test_fixture();
             let config = ParserConfig::new(temp_dir.path());
-            let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
+            let parser = SemanticLayerParser::new(config);
 
             let result = parser.parse_view_file(&PathBuf::from("/nonexistent/path.yaml"));
             assert!(result.is_err());
@@ -1077,7 +965,7 @@ dimensions:
             std::fs::write(&view_path, "this: is: not: valid: yaml: [").unwrap();
 
             let config = ParserConfig::new(temp_dir.path());
-            let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
+            let parser = SemanticLayerParser::new(config);
 
             let result = parser.parse_view_file(&view_path);
             assert!(result.is_err());
@@ -1177,6 +1065,69 @@ views:
         }
     }
 
+    mod legacy_globals_rejection_tests {
+        use super::*;
+
+        #[test]
+        fn test_view_with_inherits_from_is_rejected() {
+            let temp_dir = create_test_fixture();
+            let view_path = temp_dir.path().join("orders.view.yaml");
+            std::fs::write(
+                &view_path,
+                r#"name: orders
+inherits_from: globals.semantics.views.orders
+table: orders
+entities: []
+dimensions: []
+"#,
+            )
+            .unwrap();
+
+            let parser = SemanticLayerParser::new(ParserConfig::new(temp_dir.path()));
+            let err = parser.parse_view_file(&view_path).unwrap_err();
+            assert!(matches!(err, SemanticLayerError::ParsingError(_)));
+            assert!(format!("{err:?}").contains("inherits_from"));
+        }
+
+        #[test]
+        fn test_view_with_globals_template_is_rejected() {
+            let temp_dir = create_test_fixture();
+            let view_path = temp_dir.path().join("orders.view.yaml");
+            std::fs::write(
+                &view_path,
+                r#"name: orders
+description: "{{ globals.semantics.descriptions.orders }}"
+table: orders
+entities: []
+dimensions: []
+"#,
+            )
+            .unwrap();
+
+            let parser = SemanticLayerParser::new(ParserConfig::new(temp_dir.path()));
+            let err = parser.parse_view_file(&view_path).unwrap_err();
+            assert!(matches!(err, SemanticLayerError::ParsingError(_)));
+        }
+
+        #[test]
+        fn test_topic_with_globals_template_is_rejected() {
+            let temp_dir = create_test_fixture();
+            let topic_path = temp_dir.path().join("sales.topic.yaml");
+            std::fs::write(
+                &topic_path,
+                r#"name: sales
+description: "{{globals.semantics.descriptions.sales}}"
+views: []
+"#,
+            )
+            .unwrap();
+
+            let parser = SemanticLayerParser::new(ParserConfig::new(temp_dir.path()));
+            let err = parser.parse_topic_file(&topic_path).unwrap_err();
+            assert!(matches!(err, SemanticLayerError::ParsingError(_)));
+        }
+    }
+
     mod variable_extraction_tests {
         use super::*;
 
@@ -1198,7 +1149,7 @@ dimensions:
             std::fs::write(temp_dir.path().join("orders.view.yaml"), view_with_vars).unwrap();
 
             let config = ParserConfig::new(temp_dir.path()).with_validation(false);
-            let parser = SemanticLayerParser::new(config, create_test_registry(temp_dir.path()));
+            let parser = SemanticLayerParser::new(config);
 
             let result = parser.parse();
             assert!(result.is_ok());

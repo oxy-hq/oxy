@@ -211,7 +211,6 @@ pub async fn handle_send_streaming_message(
                 None,
                 None,
                 None,
-                None,
                 Some(crate::service::agent::ExecutionSource::A2a {
                     task_id: task_id_clone.clone(),
                     context_id: context_id_clone.clone(),

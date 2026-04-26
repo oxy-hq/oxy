@@ -91,15 +91,14 @@ pub mod launcher {
             event!(Level::INFO, name = INPUT, is_visible = true);
         }
 
-        pub fn output(has_models: bool, has_dimensions: bool, has_globals: bool) {
+        pub fn output(has_models: bool, has_dimensions: bool) {
             event!(
                 Level::INFO,
                 name = OUTPUT,
                 is_visible = true,
                 status = "success",
                 has_models = has_models,
-                has_dimensions = has_dimensions,
-                has_globals = has_globals
+                has_dimensions = has_dimensions
             );
         }
     }

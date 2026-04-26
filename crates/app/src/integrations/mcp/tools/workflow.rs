@@ -164,7 +164,6 @@ pub async fn run_workflow_tool(
         workspace_manager.clone(),
         filters,
         connections,
-        None, // No globals override from MCP
         Some(crate::service::agent::ExecutionSource::Mcp {
             session_id: None, // MCP doesn't have session tracking yet
         }),

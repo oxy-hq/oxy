@@ -40,7 +40,6 @@ pub struct WorkflowLauncher {
     buf_writer: BufWriter,
     filters: Option<SessionFilters>,
     connections: Option<ConnectionOverrides>,
-    globals: Option<indexmap::IndexMap<String, serde_json::Value>>,
     controls: HashMap<String, serde_json::Value>,
 }
 
@@ -57,7 +56,6 @@ impl WorkflowLauncher {
             buf_writer: BufWriter::new(),
             filters: None,
             connections: None,
-            globals: None,
             controls: HashMap::new(),
         }
     }
@@ -69,14 +67,6 @@ impl WorkflowLauncher {
 
     pub fn with_connections(mut self, connections: impl Into<Option<ConnectionOverrides>>) -> Self {
         self.connections = connections.into();
-        self
-    }
-
-    pub fn with_globals(
-        mut self,
-        globals: impl Into<Option<indexmap::IndexMap<String, serde_json::Value>>>,
-    ) -> Self {
-        self.globals = globals.into();
         self
     }
 
@@ -96,38 +86,23 @@ impl WorkflowLauncher {
     ) -> Result<minijinja::Value, OxyError> {
         workflow_events::launcher::get_global_context::input();
 
-        let mut semantic_manager =
-            SemanticManager::from_config(config, secrets_manager, false).await?;
-
-        // Apply global overrides to the GlobalRegistry before loading semantics
-        if let Some(globals) = &self.globals {
-            semantic_manager.set_global_overrides(globals.clone())?;
-        }
+        let semantic_manager = SemanticManager::from_config(config, secrets_manager, false).await?;
 
         let semantic_variables_contexts =
             semantic_manager.get_semantic_variables_contexts().await?;
-        let semantic_dimensions_contexts = semantic_manager
-            .get_semantic_dimensions_contexts(&semantic_variables_contexts)
-            .await?;
-
-        // Get globals from the semantic manager
-        let globals_value = semantic_manager.get_globals_value()?;
-
-        // Convert serde_yaml::Value to minijinja::Value
-        let globals = minijinja::Value::from_serialize(&globals_value);
+        let semantic_dimensions_contexts =
+            semantic_manager.get_semantic_dimensions_contexts().await?;
 
         let controls = minijinja::Value::from_serialize(&self.controls);
         let global_context = context! {
             models => minijinja::Value::from_object(semantic_variables_contexts.clone()),
             dimensions => minijinja::Value::from_object(semantic_dimensions_contexts.clone()),
-            globals => globals,
             controls => controls,
         };
 
         workflow_events::launcher::get_global_context::output(
             true, // models context is always created
             !semantic_dimensions_contexts.dimensions.is_empty(),
-            !globals_value.is_null(),
         );
 
         Ok(global_context)
