@@ -92,7 +92,7 @@ impl Coordinator {
 
         // Notify SSE subscribers one final time so they can read
         // any events that were just flushed.
-        for (_, node) in &self.tasks {
+        for node in self.tasks.values() {
             self.state.notify(&node.run_id);
         }
     }
@@ -121,10 +121,10 @@ impl Coordinator {
             .collect();
 
         for (task_id, run_id) in &suspended {
-            if let Some(rx) = self.answer_rxs.get_mut(run_id) {
-                if let Ok(answer) = rx.try_recv() {
-                    return Some((task_id.clone(), answer));
-                }
+            if let Some(rx) = self.answer_rxs.get_mut(run_id)
+                && let Ok(answer) = rx.try_recv()
+            {
+                return Some((task_id.clone(), answer));
             }
         }
         None

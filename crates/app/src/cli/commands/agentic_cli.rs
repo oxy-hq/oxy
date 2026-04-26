@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use clap::Parser;
-use migration::{Migrator, MigratorTrait};
+use migration::MigratorTrait;
 use oxy::adapters::workspace::builder::WorkspaceBuilder;
 use oxy::config::resolve_local_workspace_path;
 use oxy::database::client::establish_connection;
@@ -329,8 +329,8 @@ async fn cmd_list(args: ListArgs) -> Result<(), OxyError> {
             return Ok(());
         }
         println!(
-            "{:<12} {:<10} {:<10} {}",
-            "RUN ID", "STATUS", "DOMAIN", "QUESTION"
+            "{:<12} {:<10} {:<10} QUESTION",
+            "RUN ID", "STATUS", "DOMAIN"
         );
         println!("{}", "─".repeat(70));
         for r in &runs {
@@ -732,10 +732,10 @@ async fn get_last_stage(db: &DatabaseConnection, run_id: &str) -> String {
 
     // Walk events in reverse to find the last state_enter.
     for event in events.iter().rev() {
-        if event.event_type == "state_enter" {
-            if let Some(label) = event.payload["state"].as_str() {
-                return label.to_string();
-            }
+        if event.event_type == "state_enter"
+            && let Some(label) = event.payload["state"].as_str()
+        {
+            return label.to_string();
         }
     }
     "—".to_string()

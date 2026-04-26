@@ -82,10 +82,10 @@ pub const RETENTION_DAYS: u32 = {
     let mut max_hours: u32 = 0;
     let mut i = 0;
     while i < DURATIONS.len() {
-        if let Some(h) = DURATIONS[i].hours {
-            if h > max_hours {
-                max_hours = h;
-            }
+        if let Some(h) = DURATIONS[i].hours
+            && h > max_hours
+        {
+            max_hours = h;
         }
         i += 1;
     }

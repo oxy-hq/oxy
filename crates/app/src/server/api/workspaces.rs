@@ -1053,7 +1053,7 @@ fn count_yml_suffix(dir: &std::path::Path, suffix: &str) -> usize {
 /// Membership is enforced by org_middleware; this handler just scopes the query.
 pub async fn list_workspaces(
     crate::server::api::middlewares::org_context::OrgContextExtractor(ctx): crate::server::api::middlewares::org_context::OrgContextExtractor,
-    State(app_state): State<AppState>,
+    State(_app_state): State<AppState>,
 ) -> Result<ResponseJson<Vec<WorkspaceSummary>>, StatusCode> {
     use entity::prelude::Workspaces;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
@@ -1291,7 +1291,7 @@ pub struct DeleteProjectQuery {
 
 pub async fn delete_workspace(
     _: OrgAdmin,
-    State(app_state): State<AppState>,
+    State(_app_state): State<AppState>,
     Path((org_id, workspace_id)): Path<(Uuid, Uuid)>,
     Query(query): Query<DeleteProjectQuery>,
 ) -> Result<StatusCode, StatusCode> {

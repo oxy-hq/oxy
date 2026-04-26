@@ -23,27 +23,27 @@ impl Coordinator {
         let run_id = node.run_id.clone();
 
         // Check retry policy.
-        if let Some(retry) = &policy.retry {
-            if node.attempt < retry.max_retries {
-                // Check retry_on filter.
-                let should_retry = retry.retry_on.is_empty()
-                    || retry.retry_on.iter().any(|p| error_msg.contains(p));
+        if let Some(retry) = &policy.retry
+            && node.attempt < retry.max_retries
+        {
+            // Check retry_on filter.
+            let should_retry =
+                retry.retry_on.is_empty() || retry.retry_on.iter().any(|p| error_msg.contains(p));
 
-                if should_retry {
-                    let delay = retry.backoff.delay_for_attempt(node.attempt);
-                    node.attempt += 1;
-                    node.status = TaskStatus::Running;
-                    let spec = node.original_spec.clone()?;
-                    let attempt = node.attempt;
+            if should_retry {
+                let delay = retry.backoff.delay_for_attempt(node.attempt);
+                node.attempt += 1;
+                node.status = TaskStatus::Running;
+                let spec = node.original_spec.clone()?;
+                let attempt = node.attempt;
 
-                    return Some(RetryAction::Retry {
-                        delay,
-                        attempt,
-                        spec,
-                        run_id,
-                        parent_task_id,
-                    });
-                }
+                return Some(RetryAction::Retry {
+                    delay,
+                    attempt,
+                    spec,
+                    run_id,
+                    parent_task_id,
+                });
             }
         }
 

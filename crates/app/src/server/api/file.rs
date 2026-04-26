@@ -251,12 +251,12 @@ pub async fn get_diff_summary(
     // is clean (e.g. the user just pushed), fall back to commits that are
     // ahead of the remote so the "Push N" state is still surfaced.
     let uncommitted = default_git_client()
-        .diff_numstat_summary(&repo_path)
+        .diff_numstat_summary(repo_path)
         .await
         .unwrap_or_default();
     let file_statuses = if uncommitted.is_empty() {
         default_git_client()
-            .diff_numstat_ahead(&repo_path)
+            .diff_numstat_ahead(repo_path)
             .await
             .unwrap_or_default()
     } else {

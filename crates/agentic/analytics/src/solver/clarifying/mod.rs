@@ -265,7 +265,6 @@ impl AnalyticsSolver {
             .lock()
             .expect("poisoned")
             .take()
-            .map(|(q, c)| (q, c))
             .unwrap_or_default();
 
         let span = tracing::Span::current();

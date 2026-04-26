@@ -206,9 +206,8 @@ impl LlmClient {
             use tokio_stream::StreamExt as _;
             s.next().await
         } {
-            match chunk? {
-                Chunk::Text(t) => text.push_str(&t),
-                _ => {}
+            if let Chunk::Text(t) = chunk? {
+                text.push_str(&t)
             }
         }
 

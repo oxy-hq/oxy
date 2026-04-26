@@ -117,9 +117,7 @@ impl ProjectContext for OxyProjectContext {
         // and the adapter's first call would just log-and-skip anyway —
         // returning `None` here keeps the pipeline hot path free of the
         // atomic load + tracing::warn on every query.
-        if oxy_observability::global::get_global().is_none() {
-            return None;
-        }
+        oxy_observability::global::get_global()?;
         Some(Arc::new(super::metric_sink::OxyAnalyticsMetricSink::new()))
     }
 }

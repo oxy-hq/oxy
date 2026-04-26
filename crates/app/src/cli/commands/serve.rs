@@ -138,7 +138,7 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     serve_application(app, internal_app, args, shutdown_token).await
 }
 
-async fn run_database_migrations(enterprise: bool) -> Result<(), OxyError> {
+async fn run_database_migrations(_enterprise: bool) -> Result<(), OxyError> {
     println!("migrations: establishing database connection (this builds the connection pool)");
     let db = establish_connection()
         .await

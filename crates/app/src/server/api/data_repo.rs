@@ -220,7 +220,7 @@ pub async fn add_repository(
 pub async fn add_repo_from_github(
     _: WorkspaceAdmin,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
-    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Path(workspace_id): Path<Uuid>,
     Json(body): Json<AddRepoFromGitHubRequest>,
 ) -> Result<ResponseJson<DataRepoResponse>, StatusCode> {
@@ -443,7 +443,7 @@ pub async fn get_repo_file_tree(
 
 pub async fn list_repo_branches(
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
-    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Path((workspace_id, name)): Path<(Uuid, String)>,
 ) -> Result<ResponseJson<RepoBranchesResponse>, StatusCode> {
     let repo_path = resolve_repo(&workspace_manager, &name)?;
@@ -480,7 +480,7 @@ pub async fn list_repo_branches(
 pub async fn checkout_repo_branch(
     _: WorkspaceEditor,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
-    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
     Path((workspace_id, name)): Path<(Uuid, String)>,
     Json(body): Json<CheckoutBranchRequest>,
 ) -> Result<StatusCode, StatusCode> {

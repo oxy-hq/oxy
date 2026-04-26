@@ -97,7 +97,7 @@ pub async fn generate_auth_token(config: &IamConfig) -> Result<String, OxyError>
         .into_parts();
 
     for (name, value) in signing_instructions.params() {
-        url.query_pairs_mut().append_pair(name, &value);
+        url.query_pairs_mut().append_pair(name, value);
     }
 
     // RDS expects the token as the URL *without* the `https://` scheme prefix.

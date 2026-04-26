@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/shadcn/button";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup
 } from "@/components/ui/shadcn/resizable";
-import { Button } from "@/components/ui/shadcn/button";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import useAgents from "@/hooks/api/agents/useAgents";
 import useDatabases from "@/hooks/api/databases/useDatabases";
@@ -70,9 +70,7 @@ export default function AgenticSetupPage() {
   const isPendingForThis = hasPendingOnboardingForWorkspace(project.id);
   const publicAgentCount = (agents ?? []).filter((a) => a.public).length;
   const isReady =
-    readiness?.has_llm_key === true &&
-    (databases?.length ?? 0) > 0 &&
-    publicAgentCount > 0;
+    readiness?.has_llm_key === true && (databases?.length ?? 0) > 0 && publicAgentCount > 0;
 
   if (readinessPending || databasesPending || agentsPending) {
     return (
@@ -92,8 +90,8 @@ export default function AgenticSetupPage() {
         <div className='flex max-w-sm flex-col items-center gap-3 text-center'>
           <p className='font-medium text-sm'>Couldn't check workspace setup</p>
           <p className='text-muted-foreground text-xs'>
-            We couldn't reach the server to determine whether onboarding is needed.
-            Check your connection and try again.
+            We couldn't reach the server to determine whether onboarding is needed. Check your
+            connection and try again.
           </p>
           <Button
             variant='outline'

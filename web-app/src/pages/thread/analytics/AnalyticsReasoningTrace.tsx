@@ -241,10 +241,7 @@ const AnalyticsReasoningTrace = ({
           "transition-all duration-500",
           collapsed
             ? "max-h-0 overflow-hidden opacity-0"
-            : cn(
-                "mt-1.5 overflow-y-auto opacity-100",
-                flat ? "max-h-[180px]" : "max-h-[600px]"
-              )
+            : cn("mt-1.5 overflow-y-auto opacity-100", flat ? "max-h-[180px]" : "max-h-[600px]")
         )}
       >
         <div className='space-y-1.5'>

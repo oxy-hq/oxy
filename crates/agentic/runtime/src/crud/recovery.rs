@@ -112,23 +112,23 @@ pub async fn cleanup_stale_runs(db: &DatabaseConnection) -> Result<u64, DbErr> {
 
     for orphan in orphans {
         // Check if the parent is terminal.
-        if let Some(ref parent_id) = orphan.parent_run_id {
-            if let Some(parent) = run::Entity::find_by_id(parent_id.clone()).one(db).await? {
-                let parent_terminal =
-                    matches!(parent.task_status.as_deref(), Some("done") | Some("failed"));
-                if parent_terminal {
-                    let update = run::ActiveModel {
-                        id: Set(orphan.id.clone()),
-                        task_status: Set(Some("failed".to_string())),
-                        error_message: Set(Some(
-                            "parent task completed; orphaned child cleaned up".to_string(),
-                        )),
-                        updated_at: Set(now()),
-                        ..Default::default()
-                    };
-                    run::Entity::update(update).exec(db).await?;
-                    reconciled += 1;
-                }
+        if let Some(ref parent_id) = orphan.parent_run_id
+            && let Some(parent) = run::Entity::find_by_id(parent_id.clone()).one(db).await?
+        {
+            let parent_terminal =
+                matches!(parent.task_status.as_deref(), Some("done") | Some("failed"));
+            if parent_terminal {
+                let update = run::ActiveModel {
+                    id: Set(orphan.id.clone()),
+                    task_status: Set(Some("failed".to_string())),
+                    error_message: Set(Some(
+                        "parent task completed; orphaned child cleaned up".to_string(),
+                    )),
+                    updated_at: Set(now()),
+                    ..Default::default()
+                };
+                run::Entity::update(update).exec(db).await?;
+                reconciled += 1;
             }
         }
     }
@@ -265,16 +265,16 @@ pub async fn get_max_child_counter(
         // Check every segment, not just the last, to catch nested IDs.
         for segment in id.split('.') {
             if let Some(gen_str) = segment.strip_prefix('a') {
-                if let Some((_, c)) = gen_str.split_once('_') {
-                    if let Ok(c) = c.parse::<u64>() {
-                        max_counter = max_counter.max(c);
-                    }
+                if let Some((_, c)) = gen_str.split_once('_')
+                    && let Ok(c) = c.parse::<u64>()
+                {
+                    max_counter = max_counter.max(c);
                 }
             } else if let Some(gen_str) = segment.strip_prefix('g') {
-                if let Some((_, c)) = gen_str.split_once('_') {
-                    if let Ok(c) = c.parse::<u64>() {
-                        max_counter = max_counter.max(c);
-                    }
+                if let Some((_, c)) = gen_str.split_once('_')
+                    && let Ok(c) = c.parse::<u64>()
+                {
+                    max_counter = max_counter.max(c);
                 }
             } else if let Ok(n) = segment.parse::<u64>() {
                 max_counter = max_counter.max(n);

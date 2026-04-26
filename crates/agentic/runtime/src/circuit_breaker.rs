@@ -70,11 +70,11 @@ impl CircuitBreaker {
             CircuitStatus::Closed => Ok(()),
             CircuitStatus::Open => {
                 // Check if reset timeout has elapsed → transition to half-open.
-                if let Some(last) = state.last_failure_at {
-                    if last.elapsed() >= self.reset_timeout {
-                        state.status = CircuitStatus::HalfOpen;
-                        return Ok(());
-                    }
+                if let Some(last) = state.last_failure_at
+                    && last.elapsed() >= self.reset_timeout
+                {
+                    state.status = CircuitStatus::HalfOpen;
+                    return Ok(());
                 }
                 Err(format!(
                     "circuit breaker open for '{target_key}': {} consecutive failures",

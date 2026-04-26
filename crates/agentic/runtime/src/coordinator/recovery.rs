@@ -270,13 +270,13 @@ impl Coordinator {
         };
 
         // Single-child: return the answer directly (backward compatible).
-        if child_task_ids.len() == 1 {
-            if let Some(result) = completed.get(&child_task_ids[0]) {
-                return match result {
-                    ChildResult::Done(a) => a.clone(),
-                    ChildResult::Failed(msg) => format!("Delegation failed: {msg}"),
-                };
-            }
+        if child_task_ids.len() == 1
+            && let Some(result) = completed.get(&child_task_ids[0])
+        {
+            return match result {
+                ChildResult::Done(a) => a.clone(),
+                ChildResult::Failed(msg) => format!("Delegation failed: {msg}"),
+            };
         }
 
         // Multi-child: aggregate as JSON.

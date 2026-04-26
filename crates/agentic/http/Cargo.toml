@@ -23,7 +23,7 @@ sea-orm = { workspace = true }
 
 # Async
 tokio = { workspace = true }
-tokio-util = { version = "0.7" }
+tokio-util = { workspace = true }
 
 # State
 dashmap = { workspace = true }

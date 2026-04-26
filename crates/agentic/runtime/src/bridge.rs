@@ -63,14 +63,13 @@ pub async fn run_bridge<Ev: DomainEvents>(
                 let (event_type, mut payload) = event.serialize();
 
                 // Inject duration_ms into terminal events.
-                if is_terminal(&event_type) {
-                    if let Value::Object(ref mut map) = payload {
+                if is_terminal(&event_type)
+                    && let Value::Object(ref mut map) = payload {
                         map.insert(
                             "duration_ms".into(),
                             (pipeline_start.elapsed().as_millis() as u64).into(),
                         );
                     }
-                }
 
                 // Let caller inspect events for state updates (e.g. suspension).
                 if let Some(ref cb) = on_event {

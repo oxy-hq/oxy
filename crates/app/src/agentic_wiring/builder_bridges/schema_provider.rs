@@ -64,6 +64,12 @@ const SUPPORTED_TYPES: &[&str] = &[
 /// `schema_for!()` on oxy config types.
 pub struct OxyBuilderSchemaProvider;
 
+impl Default for OxyBuilderSchemaProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OxyBuilderSchemaProvider {
     pub fn new() -> Self {
         Self

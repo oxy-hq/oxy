@@ -258,10 +258,10 @@ pub async fn remove_workspace_role_override(
                 tracing::error!("Failed to check target user org membership: {e}");
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
-        if let Some(t) = target {
-            if t.role >= org_membership.role {
-                return Err(StatusCode::FORBIDDEN);
-            }
+        if let Some(t) = target
+            && t.role >= org_membership.role
+        {
+            return Err(StatusCode::FORBIDDEN);
         }
     }
 

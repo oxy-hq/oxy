@@ -202,7 +202,7 @@ terminal-light = "1.8.0"
 terminal_size = "0.4.4"
 tokio-postgres = "0.7"
 tokio-stream = "0.1.18"
-tokio-util = "0.7.18"
+tokio-util = { version = "0.7.18", features = ["rt"] }
 tower = "0.5.3"
 tower-http = "0.6.8"
 tower-serve-static = "0.1.1"
