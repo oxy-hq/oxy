@@ -131,17 +131,17 @@ impl StreamProcessor {
         }
 
         // Try the domain-specific processor.
-        if let Some(ref processor) = self.domain_processor {
-            if let Some(events) = processor(event_type, payload) {
-                // Accumulate domain events for StepEnd metadata enrichment,
-                // filtered by the domain's `should_accumulate` (if provided).
-                for (et, p) in &events {
-                    if self.accumulation_filter.as_ref().is_none_or(|f| f(et)) {
-                        self.pending_domain.insert(et.clone(), p.clone());
-                    }
+        if let Some(ref processor) = self.domain_processor
+            && let Some(events) = processor(event_type, payload)
+        {
+            // Accumulate domain events for StepEnd metadata enrichment,
+            // filtered by the domain's `should_accumulate` (if provided).
+            for (et, p) in &events {
+                if self.accumulation_filter.as_ref().is_none_or(|f| f(et)) {
+                    self.pending_domain.insert(et.clone(), p.clone());
                 }
-                return events;
             }
+            return events;
         }
 
         // Coordinator lifecycle events pass through as-is so the frontend

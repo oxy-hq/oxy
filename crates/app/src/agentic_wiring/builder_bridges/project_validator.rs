@@ -268,10 +268,10 @@ fn list_semantic_files(project_path: &Path) -> Vec<PathBuf> {
         if let Ok(entries) = std::fs::read_dir(&dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    if name.ends_with(".view.yml") || name.ends_with(".topic.yml") {
-                        files.push(path);
-                    }
+                if let Some(name) = path.file_name().and_then(|n| n.to_str())
+                    && (name.ends_with(".view.yml") || name.ends_with(".topic.yml"))
+                {
+                    files.push(path);
                 }
             }
         }

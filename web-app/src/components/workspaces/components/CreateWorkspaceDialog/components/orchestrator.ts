@@ -1723,8 +1723,7 @@ export function useOnboardingOrchestrator() {
   );
 
   const setSchemaDiscoveryStatus = useCallback(
-    (message: string | undefined) =>
-      dispatch({ type: "SET_SCHEMA_DISCOVERY_STATUS", message }),
+    (message: string | undefined) => dispatch({ type: "SET_SCHEMA_DISCOVERY_STATUS", message }),
     []
   );
 

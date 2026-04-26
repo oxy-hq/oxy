@@ -45,7 +45,9 @@ pub use agentic_workflow::WorkflowMigrator;
 /// Thinking mode preset for a run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum ThinkingMode {
+    #[default]
     Auto,
     ExtendedThinking,
 }
@@ -63,12 +65,6 @@ impl ThinkingMode {
 
     pub fn is_extended(self) -> bool {
         matches!(self, Self::ExtendedThinking)
-    }
-}
-
-impl Default for ThinkingMode {
-    fn default() -> Self {
-        Self::Auto
     }
 }
 

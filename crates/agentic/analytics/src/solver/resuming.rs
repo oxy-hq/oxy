@@ -281,21 +281,21 @@ pub(super) fn populate_resume_context(
     run_ctx: &mut RunContext<crate::AnalyticsDomain>,
 ) {
     // Restore intent from stage_data.
-    if let Some(intent_val) = data.stage_data.get("intent") {
-        if let Ok(intent) = serde_json::from_value::<crate::AnalyticsIntent>(intent_val.clone()) {
-            run_ctx.intent = Some(intent);
-        }
+    if let Some(intent_val) = data.stage_data.get("intent")
+        && let Ok(intent) = serde_json::from_value::<crate::AnalyticsIntent>(intent_val.clone())
+    {
+        run_ctx.intent = Some(intent);
     }
 
     // Restore spec from stage_data.
-    if let Some(spec_val) = data.stage_data.get("spec") {
-        if let Ok(spec) = serde_json::from_value::<crate::QuerySpec>(spec_val.clone()) {
-            // If intent wasn't in stage_data, recover it from the spec.
-            if run_ctx.intent.is_none() {
-                run_ctx.intent = Some(spec.intent.clone());
-            }
-            run_ctx.spec = Some(spec);
+    if let Some(spec_val) = data.stage_data.get("spec")
+        && let Ok(spec) = serde_json::from_value::<crate::QuerySpec>(spec_val.clone())
+    {
+        // If intent wasn't in stage_data, recover it from the spec.
+        if run_ctx.intent.is_none() {
+            run_ctx.intent = Some(spec.intent.clone());
         }
+        run_ctx.spec = Some(spec);
     }
 
     // Last resort: build a minimal intent from original_input so the

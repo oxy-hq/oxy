@@ -128,18 +128,14 @@ impl TaskExecutor for PipelineTaskExecutor {
         }
 
         // Also check task_metadata for workflow orchestrator state.
-        if let Some(ref meta) = run.task_metadata {
-            if meta.get("original_spec").is_some() {
-                if let Some(spec) = meta.get("original_spec") {
-                    if spec.get("type").and_then(|t| t.as_str()) == Some("workflow") {
-                        // This was a workflow child — try to re-run the workflow.
-                        if let Some(workflow_ref) =
-                            spec.get("workflow_ref").and_then(|v| v.as_str())
-                        {
-                            return self.execute_workflow(&run.id, workflow_ref, None).await;
-                        }
-                    }
-                }
+        if let Some(ref meta) = run.task_metadata
+            && meta.get("original_spec").is_some()
+            && let Some(spec) = meta.get("original_spec")
+            && spec.get("type").and_then(|t| t.as_str()) == Some("workflow")
+        {
+            // This was a workflow child — try to re-run the workflow.
+            if let Some(workflow_ref) = spec.get("workflow_ref").and_then(|v| v.as_str()) {
+                return self.execute_workflow(&run.id, workflow_ref, None).await;
             }
         }
 

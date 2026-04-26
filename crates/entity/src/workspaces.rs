@@ -36,8 +36,10 @@ impl WorkspaceProvider {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, EnumIter, DeriveActiveEnum)]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::N(20))")]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum WorkspaceStatus {
     #[sea_orm(string_value = "ready")]
+    #[default]
     Ready,
     #[sea_orm(string_value = "cloning")]
     Cloning,
@@ -48,12 +50,6 @@ pub enum WorkspaceStatus {
     /// to add one; retrying the clone won't help.
     #[sea_orm(string_value = "not_oxy_project")]
     NotOxyProject,
-}
-
-impl Default for WorkspaceStatus {
-    fn default() -> Self {
-        Self::Ready
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]

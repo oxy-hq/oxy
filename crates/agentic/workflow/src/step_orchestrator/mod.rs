@@ -543,10 +543,10 @@ impl WorkflowStepOrchestrator {
         let mut answers: Vec<String> = Vec::new();
         if let Some(obj) = aggregated.as_object() {
             for (_child_id, result) in obj {
-                if result.get("status").and_then(|s| s.as_str()) == Some("done") {
-                    if let Some(a) = result.get("answer").and_then(|a| a.as_str()) {
-                        answers.push(a.to_string());
-                    }
+                if result.get("status").and_then(|s| s.as_str()) == Some("done")
+                    && let Some(a) = result.get("answer").and_then(|a| a.as_str())
+                {
+                    answers.push(a.to_string());
                 }
             }
         }

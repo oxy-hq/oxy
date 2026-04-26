@@ -2,9 +2,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/shadcn/button";
 import { Dialog, DialogContent } from "@/components/ui/shadcn/dialog";
+import type { SelectableItem } from "@/hooks/analyticsSteps";
 import useApps from "@/hooks/api/apps/useApps";
 import queryKeys from "@/hooks/api/queryKey";
-import type { SelectableItem } from "@/hooks/analyticsSteps";
 import type { UseAnalyticsRunResult } from "@/hooks/useAnalyticsRun";
 import type { BuilderActivityItem } from "@/hooks/useBuilderActivity";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
@@ -103,11 +103,7 @@ function toUiBlocks(run: UseAnalyticsRunResult): UiBlock[] {
 
 /** Prefer the LLM-authored `title:` from the on-disk app when available,
  *  falling back to a generic label while the YAML is still being written. */
-function labelForAppPath(
-  appsByPath: Map<string, AppItem>,
-  path: string,
-  fallback: string
-): string {
+function labelForAppPath(appsByPath: Map<string, AppItem>, path: string, fallback: string): string {
   const match = appsByPath.get(path);
   return match ? appDisplayLabel(match) : fallback;
 }

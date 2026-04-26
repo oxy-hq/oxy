@@ -103,7 +103,7 @@ impl WorkerTransport for LocalTransport {
     fn cancellation_token(&self, task_id: &str) -> CancellationToken {
         self.cancel_tokens
             .entry(task_id.to_string())
-            .or_insert_with(CancellationToken::new)
+            .or_default()
             .clone()
     }
 }

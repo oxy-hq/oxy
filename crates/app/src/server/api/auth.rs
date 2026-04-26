@@ -491,7 +491,7 @@ pub async fn github_auth(
 ) -> Result<Json<AuthResponse>, StatusCode> {
     verify_oauth_state(&payload.state)?;
     let base_url = extract_base_url_from_headers(&headers);
-    let (user_info) = exchange_github_code_for_user_info(&payload.code, &base_url)
+    let user_info = exchange_github_code_for_user_info(&payload.code, &base_url)
         .await
         .map_err(|e| {
             tracing::error!("Failed to exchange GitHub code: {}", e);
@@ -575,7 +575,7 @@ struct GitHubEmailEntry {
 async fn exchange_github_code_for_user_info(
     code: &str,
     base_url: &str,
-) -> Result<(OAuthUserInfo), OxyError> {
+) -> Result<OAuthUserInfo, OxyError> {
     let client_id = std::env::var("GITHUB_CLIENT_ID")
         .map_err(|_| OxyError::ConfigurationError("GITHUB_CLIENT_ID not configured".to_string()))?;
     let client_secret = std::env::var("GITHUB_CLIENT_SECRET").map_err(|_| {
@@ -670,11 +670,11 @@ async fn exchange_github_code_for_user_info(
 
     let name = user_resp.name.unwrap_or_else(|| user_resp.login.clone());
 
-    Ok((OAuthUserInfo {
+    Ok(OAuthUserInfo {
         email,
         name,
         picture: user_resp.avatar_url,
-    }))
+    })
 }
 
 /// Check if a database error is a unique constraint violation.

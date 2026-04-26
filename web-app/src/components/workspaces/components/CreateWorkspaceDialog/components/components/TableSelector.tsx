@@ -123,8 +123,7 @@ export default function TableSelector({
             const schemaSelectable = schema.loaded && schema.tables.length > 0;
             const tableNames = schema.tables.map((t) => `${schema.schema}.${t.name}`);
             const selectedCount = tableNames.filter((n) => selected.has(n)).length;
-            const allSelected =
-              schemaSelectable && selectedCount === schema.tables.length;
+            const allSelected = schemaSelectable && selectedCount === schema.tables.length;
 
             return (
               <div key={schema.schema}>
@@ -148,9 +147,7 @@ export default function TableSelector({
                       <Loader2 className='h-3 w-3 animate-spin text-muted-foreground' />
                     )}
                     {selectedCount > 0 && (
-                      <span className='ml-auto text-primary text-xs'>
-                        {selectedCount} selected
-                      </span>
+                      <span className='ml-auto text-primary text-xs'>{selectedCount} selected</span>
                     )}
                   </button>
                   {schemaSelectable && (

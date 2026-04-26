@@ -2,7 +2,7 @@ use entity::prelude::Users;
 use entity::users;
 use oxy::database::{client::establish_connection, filters::UserQueryFilterExt};
 use oxy_shared::errors::OxyError;
-use sea_orm::{ActiveValue, DbErr, EntityTrait, PaginatorTrait, Set, prelude::*};
+use sea_orm::{ActiveValue, DbErr, EntityTrait, Set, prelude::*};
 use uuid::Uuid;
 
 use crate::types::{AuthenticatedUser, Identity};
