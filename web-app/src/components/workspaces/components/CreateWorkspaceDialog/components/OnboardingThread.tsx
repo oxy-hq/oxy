@@ -1,12 +1,18 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/shadcn/button";
 import { Dialog, DialogContent } from "@/components/ui/shadcn/dialog";
+import useApps from "@/hooks/api/apps/useApps";
+import queryKeys from "@/hooks/api/queryKey";
 import type { SelectableItem } from "@/hooks/analyticsSteps";
 import type { UseAnalyticsRunResult } from "@/hooks/useAnalyticsRun";
 import type { BuilderActivityItem } from "@/hooks/useBuilderActivity";
+import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { cn } from "@/libs/shadcn/utils";
 import AnalyticsArtifactSidebar from "@/pages/thread/analytics/AnalyticsArtifactSidebar";
 import type { UiBlock } from "@/services/api/analytics";
+import type { AppItem } from "@/types/app";
+import { appDisplayLabel } from "@/utils/appLabel";
 import BuildJobsPanel, { type BuildJob, type JobStatus } from "./components/BuildJobsPanel";
 import CompletionCard from "./components/CompletionCard";
 import CredentialForm from "./components/CredentialForm";
@@ -95,6 +101,17 @@ function toUiBlocks(run: UseAnalyticsRunResult): UiBlock[] {
   })) as UiBlock[];
 }
 
+/** Prefer the LLM-authored `title:` from the on-disk app when available,
+ *  falling back to a generic label while the YAML is still being written. */
+function labelForAppPath(
+  appsByPath: Map<string, AppItem>,
+  path: string,
+  fallback: string
+): string {
+  const match = appsByPath.get(path);
+  return match ? appDisplayLabel(match) : fallback;
+}
+
 function runStatus(
   run: UseAnalyticsRunResult,
   phaseStatus: "running" | "done" | "failed" | undefined,
@@ -133,6 +150,35 @@ export default function OnboardingThread({
   const handleSelectArtifact = useCallback((item: SelectableItem) => {
     setSelectedArtifact(item);
   }, []);
+
+  // Workspace app list carries the LLM-authored `title:` for each dashboard
+  // (e.g. "Contact Coverage" instead of the predicted "CONTACT dashboard").
+  // Shared TanStack cache with CompletionCard. The refs below ensure we
+  // invalidate at most once per phase transition — without them, any later
+  // change to `project.id` / `branchName` would re-fire the invalidation.
+  const queryClient = useQueryClient();
+  const { project, branchName } = useCurrentProjectBranch();
+  const { data: workspaceApps } = useApps(true, false, false);
+  const appPhaseStatus = state.phaseStatuses?.app;
+  const app2PhaseStatus = state.phaseStatuses?.app2;
+  const appInvalidatedRef = useRef(false);
+  const app2InvalidatedRef = useRef(false);
+  useEffect(() => {
+    let shouldInvalidate = false;
+    if (appPhaseStatus === "done" && !appInvalidatedRef.current) {
+      appInvalidatedRef.current = true;
+      shouldInvalidate = true;
+    }
+    if (app2PhaseStatus === "done" && !app2InvalidatedRef.current) {
+      app2InvalidatedRef.current = true;
+      shouldInvalidate = true;
+    }
+    if (shouldInvalidate) {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.app.list(project.id, branchName)
+      });
+    }
+  }, [appPhaseStatus, app2PhaseStatus, queryClient, project.id, branchName]);
 
   const semanticEvents = toUiBlocks(semanticRun);
   const agentEvents = toUiBlocks(agentRun);
@@ -182,6 +228,25 @@ export default function OnboardingThread({
     const appProgress = phaseProgress?.app ?? semanticProgress;
     const app2Progress = phaseProgress?.app2 ?? semanticProgress;
 
+    // Look up each job's label from the LLM-authored `title:` in the
+    // generated `.app.yml` once it's on disk. Falls back to the predicted
+    // label while the file is still being written.
+    const appsByPath = new Map<string, AppItem>();
+    for (const app of workspaceApps ?? []) {
+      appsByPath.set(app.path, app);
+    }
+    // Pinned by the builder prompt at crates/agentic/builder/src/onboarding.rs
+    // (see test `app_prompt_produces_overview_file`). If that path moves,
+    // this fallback silently kicks in.
+    const appLabel = labelForAppPath(appsByPath, "apps/overview.app.yml", "Starter dashboard");
+    const secondTopic = includeApp2 ? predictSecondAppTopic(state.selectedTables) : undefined;
+    const app2Fallback = secondTopic
+      ? `${humanizeTopicSlug(secondTopic)} dashboard`
+      : "Deep-dive dashboard";
+    const app2Label = secondTopic
+      ? labelForAppPath(appsByPath, `apps/${secondTopic}.app.yml`, app2Fallback)
+      : app2Fallback;
+
     const jobs: BuildJob[] = [
       {
         id: "semantic",
@@ -202,7 +267,7 @@ export default function OnboardingThread({
       },
       {
         id: "app",
-        label: "Starter dashboard",
+        label: appLabel,
         status: runStatus(appRun, ps.app, !!ps.app),
         events: appEvents,
         run: appRun,
@@ -211,13 +276,7 @@ export default function OnboardingThread({
     ];
 
     // Deep-dive job — only advertised when the workspace has ≥ 2 topics.
-    // Label carries the predicted topic name (e.g. "Customers dashboard") so
-    // the user sees the specific concept, not a generic "Detail" placeholder.
     if (includeApp2) {
-      const secondTopic = predictSecondAppTopic(state.selectedTables);
-      const app2Label = secondTopic
-        ? `${humanizeTopicSlug(secondTopic)} dashboard`
-        : "Deep-dive dashboard";
       jobs.push({
         id: "app2",
         label: app2Label,
@@ -243,7 +302,8 @@ export default function OnboardingThread({
     app2Run,
     app2Events,
     includeApp2,
-    phaseProgress
+    phaseProgress,
+    workspaceApps
   ]);
 
   const isBuildPhase = state.step === "building" || state.step === "complete";

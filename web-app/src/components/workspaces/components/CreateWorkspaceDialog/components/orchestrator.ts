@@ -1606,14 +1606,6 @@ function loadState(): OnboardingState {
   }
 }
 
-export function clearOnboardingState() {
-  try {
-    localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // ignore
-  }
-}
-
 /**
  * Replace any persisted onboarding state with a fresh state tagged with the
  * given workspace id. Call this when redirecting a newly-created workspace to

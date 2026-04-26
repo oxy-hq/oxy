@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Navigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup
 } from "@/components/ui/shadcn/resizable";
+import { Button } from "@/components/ui/shadcn/button";
+import { Spinner } from "@/components/ui/shadcn/spinner";
+import useAgents from "@/hooks/api/agents/useAgents";
+import useDatabases from "@/hooks/api/databases/useDatabases";
+import useOnboardingReadiness from "@/hooks/api/onboarding/useOnboardingReadiness";
 import { sseEventToUiBlock, useAnalyticsRun } from "@/hooks/useAnalyticsRun";
 import { useBuilderActivity } from "@/hooks/useBuilderActivity";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
@@ -14,6 +20,7 @@ import OnboardingRightRail from "./OnboardingRightRail";
 import OnboardingThread from "./OnboardingThread";
 import {
   getPreviousStep,
+  hasPendingOnboardingForWorkspace,
   initOnboardingStateForWorkspace,
   predictSecondAppTopic,
   useOnboardingOrchestrator,
@@ -30,11 +37,84 @@ import type {
 import { LLM_KEY_VAR, useOnboardingActions } from "./useOnboardingActions";
 import { useViewRunManager } from "./useViewRunManager";
 
-/** Top-level onboarding dispatcher. Routes to the blank-workspace flow by
- *  default, or to the GitHub-import flow when the orchestrator's persisted
- *  mode is `"github"`. */
+/** Top-level onboarding dispatcher. Onboarding is one-shot per workspace:
+ *  once the workspace can answer questions — LLM key configured, at least
+ *  one database, at least one public agent — redirect any visit away. This
+ *  mirrors the home page's `setupComplete` signal so both surfaces agree on
+ *  what "set up" means. The localStorage check preserves resume-mid-build:
+ *  a user who reloaded with the wizard still in flight has a pending entry
+ *  tagged for this workspace and stays on the wizard. */
 export default function AgenticSetupPage() {
+  const { project } = useCurrentProjectBranch();
+  const {
+    data: readiness,
+    isPending: readinessPending,
+    isError: readinessError,
+    refetch: refetchReadiness
+  } = useOnboardingReadiness();
+  const {
+    data: databases,
+    isPending: databasesPending,
+    isError: databasesError,
+    refetch: refetchDatabases
+  } = useDatabases();
+  const {
+    data: agents,
+    isPending: agentsPending,
+    isError: agentsError,
+    refetch: refetchAgents
+  } = useAgents();
+
   const orchestrator = useOnboardingOrchestrator();
+
+  const isPendingForThis = hasPendingOnboardingForWorkspace(project.id);
+  const publicAgentCount = (agents ?? []).filter((a) => a.public).length;
+  const isReady =
+    readiness?.has_llm_key === true &&
+    (databases?.length ?? 0) > 0 &&
+    publicAgentCount > 0;
+
+  if (readinessPending || databasesPending || agentsPending) {
+    return (
+      <div className='flex h-full items-center justify-center'>
+        <Spinner className='size-6' />
+      </div>
+    );
+  }
+
+  // Failing the readiness lookup is a blocking, page-level error: with no
+  // data we can neither redirect nor safely render the wizard (an
+  // already-onboarded workspace would see a stale form). Surface a retry
+  // affordance instead of falling through.
+  if (readinessError || databasesError || agentsError) {
+    return (
+      <div className='flex h-full items-center justify-center p-6'>
+        <div className='flex max-w-sm flex-col items-center gap-3 text-center'>
+          <p className='font-medium text-sm'>Couldn't check workspace setup</p>
+          <p className='text-muted-foreground text-xs'>
+            We couldn't reach the server to determine whether onboarding is needed.
+            Check your connection and try again.
+          </p>
+          <Button
+            variant='outline'
+            size='sm'
+            onClick={() => {
+              void refetchReadiness();
+              void refetchDatabases();
+              void refetchAgents();
+            }}
+          >
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (isReady && !isPendingForThis) {
+    return <Navigate to='..' replace />;
+  }
+
   if (orchestrator.state.mode === "github") {
     return <GithubOnboardingPage orchestrator={orchestrator} />;
   }

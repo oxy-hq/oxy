@@ -89,6 +89,11 @@ const appKeys = {
     [...appKeys.all, "getDisplays", projectId, branchName, appPath] as const
 };
 
+const onboardingKeys = {
+  all: ["onboarding"] as const,
+  readiness: (projectId: string) => [...onboardingKeys.all, "readiness", projectId] as const
+};
+
 const apiKeyKeys = {
   all: ["apiKey"] as const,
   list: (projectId: string) => [...apiKeyKeys.all, "list", projectId] as const,
@@ -251,6 +256,7 @@ const queryKeys = {
   file: fileKeys,
   database: databaseKeys,
   app: appKeys,
+  onboarding: onboardingKeys,
   settings: settingsKeys,
   repositories: repositoryKeys,
   config: configKeys,
