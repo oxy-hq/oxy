@@ -21,7 +21,7 @@ in a built-in Developer Portal IDE with SQL IDE and Git integration.
 Oxy supports three deployment modes:
 - **Local** (`oxy start`) — PostgreSQL auto-managed in Docker, single workspace
 - **Remote** (`oxy serve --local`) — Single fixed workspace on a VM/container, embedded PostgreSQL
-- **Cloud / Multi-workspace** (`oxy serve`) — Multi-tenant platform with GitHub-based workspace import, role-based access control, and magic link authentication
+- **Cloud / Multi-workspace** (`oxy serve`) — Multi-tenant platform with multi-organization support, GitHub-based workspace import, role-based access control, and magic link authentication
 
 ---
 
@@ -37,7 +37,8 @@ Oxy supports three deployment modes:
   - **Objects** — files grouped by type: Agents, Procedures (Workflows), Semantic Layer, Apps
   - **Database / SQL IDE** — Multi-tab SQL editor with schema browser, Cmd/Ctrl+Enter execution, database connection management, and Parquet-backed result tables with paging/sorting
   - **Settings** — Secrets panel (LLM API keys always visible, scans `key_var` and credential vars from config)
-  - **Observability** — Version badge with build metadata (commit hash, timestamp)
+  - **Observability** — Version badge with build metadata (commit hash, timestamp). Configurable observability backends (DuckDB, PostgreSQL, or ClickHouse) for storing tracing and performance data; a setup banner appears when none is configured.
+  - A **Pull** button appears in the header when the active branch is behind the remote, allowing one-click sync without opening a terminal.
   - Supports open, edit, save (with unsaved-changes indicator), breadcrumb navigation, undo/redo, and Git workflow (branch protection, merge conflict resolution, branch-aware file operations). In local project mode, files can be saved directly on the main branch with deployment to a separate branch.
   - **Readonly mode** — `oxy serve --readonly` disables all file modifications via API (405 responses), reflected in UI.
 - **Agent Testing** (`/tests`) — Test dashboard for managing and executing agent test suites:
@@ -47,8 +48,9 @@ Oxy supports three deployment modes:
   - Pass rate history, consistency metrics, and per-run detail views
 - **Looker Explore** — Browse Looker data models from the Dev Portal semantic layer. Compile queries to SQL, browse dimensions/measures. Requires `oxy looker sync` (auto-triggered by `oxy build`).
 - **Context Graph** (`/context-graph`) — Visual graph showing relationships between data objects (agents, tables, semantic views, workflows). Provides an overview of how project entities connect.
+- **Organization Management** (multi-workspace mode) — Oxy supports multiple organizations, each with separate workspaces, members, and data sources. **Post-login onboarding** guides new users through accepting pending invitations, creating a new organization, or joining an existing one; workspace creation steps through GitHub, demo, and blank workspace types. A **workspace dispatcher** automatically opens the most recently used workspace in the selected org after login. **Bulk invitations** allow owners to invite multiple members in a single action.
 - **Workspace Management** (multi-workspace mode) — Import repositories from GitHub, switch workspaces, invite members with role-based access (Owner/Admin/Member). Owner set via `OXY_OWNER` env var.
-- **Sidebar** (persistent) — Navigation links (Home, Threads, Context Graph, Developer Portal), recent thread list, workflow shortcuts, and app shortcuts.
+- **Sidebar** (persistent) — Navigation links (Home, Threads, Context Graph, Developer Portal), recent thread list, workflow shortcuts, and app shortcuts. In multi-workspace mode, the user menu contains an **organization switcher** showing the current org's member and workspace counts, and lets users switch between orgs or create new ones.
 
 ---
 
@@ -73,7 +75,8 @@ Oxy supports three deployment modes:
 - **Agent Testing** — `*.agent.test.yml` / `*.aw.test.yml` files with LLM-as-judge evaluation. `oxy test` CLI with tag filtering and accuracy thresholds. Human verdicts for manual review. Project-wide test runs with pass rate tracking.
 - **Context Graph** — Node/edge graph visualizing relationships between Oxy entities.
 - **Streaming** — Agent responses are delivered as a server-sent event stream. A loading spinner shows while streaming; a Stop button cancels in-flight requests, which results in an "Operation cancelled" message. Agentic agents stream reasoning trace events with suspension support.
-- **YAML Validation** — Strict validation with `deny_unknown_fields` on Config, Workflow, AppConfig, Semantics. `oxy validate --file` for single-file validation. Catches common typos like `steps:` vs `tasks:`.
+- **YAML Validation** — Strict validation with `deny_unknown_fields` on Config, Workflow, AppConfig, Semantics. `oxy validate --file` for single-file validation; `oxy validate` also recognizes `.agentic.yml` files, with IDE schema validation highlighting issues on save. Catches common typos like `steps:` vs `tasks:`.
+- **Observability Backends** — Oxy can route tracing and performance data to a configurable backend: DuckDB (default for local), PostgreSQL, or ClickHouse. Configured via the IDE's Observability tab or server environment; a banner appears in the UI when the backend is not yet set up.
 
 ---
 
@@ -100,6 +103,10 @@ Oxy supports three deployment modes:
 - **Secrets panel variable discovery** — Panel scans `key_var` fields and database credential vars from config. Missing variables if config format changes or new variable patterns introduced.
 - **SQL IDE error display** — Duplicate error notifications can appear in the SQL editor; errors may persist in the results panel if the dismiss action is unavailable or the editor state isn't reset between queries.
 - **Environment variable startup validation** — Missing required environment variables cause a startup failure with an error message. Misconfigured deployments (e.g., missing GitHub App credentials in multi-workspace mode) may silently fall back to empty strings if validation is bypassed.
+- **DuckDB file path validation** — The DuckDB connector only supports CSV and Parquet files. Stray files (e.g., `.DS_Store`) or unsupported formats in the data directory will break DuckDB initialization.
+- **Snowflake column stats** — Numeric and date columns in Snowflake can fail during schema discovery with a type-casting error, causing the schema browser to show incomplete or no metadata for those columns.
+- **Agentic agent validation errors** — Misconfigured `.agentic.yml` files can surface as generic error banners at runtime. Run `oxy validate` before deployment and check IDE schema hints to catch root-cause issues early.
+- **Agentic runs in local mode** — Agentic analytics runs under `oxy serve --local` have historically had server-side errors; this deployment combination deserves explicit end-to-end testing after changes to the agentic pipeline.
 
 ---
 
