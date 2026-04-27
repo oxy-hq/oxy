@@ -192,6 +192,14 @@ export type OnboardingInputBlock =
       fields: CredentialField[];
       buttonLabel?: string;
       initialValues?: Record<string, string>;
+      /**
+       * Pre-populated uploaded paths per `file_upload` field key. Used when the
+       * user navigates back to a credentials step after a previous upload so
+       * the form remembers what was already sent and the CTA is not blocked by
+       * an empty file list. The backend rejects re-uploading the same name, so
+       * these surface as a confirmed list rather than re-prompting for picks.
+       */
+      initialUploadedFiles?: Record<string, string[]>;
       /** Disables the form while a submission is in flight. */
       busy?: boolean;
       /** Inline error surfaced under the form (e.g. failed connection test). */

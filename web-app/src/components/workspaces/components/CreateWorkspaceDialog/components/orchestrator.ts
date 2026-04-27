@@ -790,6 +790,29 @@ export function deriveMessages(state: OnboardingState): OnboardingMessage[] {
   if (currentIdx < stepIndex("warehouse_credentials")) return messages;
 
   // Warehouse credentials
+  const isDuckdb = state.warehouseType === "duckdb";
+  const warehouseFields = getWarehouseFields(state.warehouseType ?? "bigquery");
+  const fileUploadField = warehouseFields.find((f) => f.type === "file_upload");
+  // For DuckDB the CTA also runs the upload, so name it accordingly. Other
+  // warehouses still just test a remote connection.
+  const credentialsButtonLabel = isDuckdb ? "Upload & Connect" : "Test Connection";
+  // Pre-populate any already-uploaded paths so navigating back here doesn't
+  // strand the user with a disabled CTA + a backend that refuses duplicates.
+  const initialUploadedFiles =
+    fileUploadField && (state.uploadedWarehouseFiles?.length ?? 0) > 0
+      ? { [fileUploadField.key]: state.uploadedWarehouseFiles ?? [] }
+      : undefined;
+  // Hitting Back to this step clears `warehouseCredentials`, but for DuckDB
+  // the `dataset` value is just the upload subdir we still have around. Carry
+  // it over so a retry without re-picking files doesn't submit an empty path.
+  const initialCredentialValues =
+    fileUploadField && state.uploadedWarehouseSubdir
+      ? {
+          ...(state.warehouseCredentials ?? {}),
+          [fileUploadField.key]: state.uploadedWarehouseSubdir
+        }
+      : state.warehouseCredentials;
+
   messages.push({
     id: "warehouse_credentials",
     role: "assistant",
@@ -798,8 +821,10 @@ export function deriveMessages(state: OnboardingState): OnboardingMessage[] {
       currentIdx === stepIndex("warehouse_credentials")
         ? {
             type: "credential_form",
-            fields: getWarehouseFields(state.warehouseType ?? "bigquery"),
-            buttonLabel: "Test Connection"
+            fields: warehouseFields,
+            buttonLabel: credentialsButtonLabel,
+            initialValues: initialCredentialValues,
+            initialUploadedFiles
           }
         : undefined,
     status: currentIdx > stepIndex("warehouse_credentials") ? "complete" : undefined
@@ -830,9 +855,10 @@ export function deriveMessages(state: OnboardingState): OnboardingMessage[] {
       status: "error",
       inputBlock: {
         type: "credential_form",
-        fields: getWarehouseFields(state.warehouseType ?? "bigquery"),
-        buttonLabel: "Retry Connection",
-        initialValues: state.warehouseCredentials
+        fields: warehouseFields,
+        buttonLabel: isDuckdb ? "Upload & Retry" : "Retry Connection",
+        initialValues: initialCredentialValues,
+        initialUploadedFiles
       },
       goBackStep: "warehouse_type",
       goBackLabel: "Change warehouse type"

@@ -1,4 +1,4 @@
-import { ArrowRight, FileIcon, Loader2, UploadCloud } from "lucide-react";
+import { ArrowRight, CheckCircle2, FileIcon, Loader2, Trash2, UploadCloud } from "lucide-react";
 import { type ChangeEvent, type DragEvent, useCallback, useRef, useState } from "react";
 import { SecretInput } from "@/components/ui/SecretInput";
 import { Button } from "@/components/ui/shadcn/button";
@@ -8,17 +8,16 @@ import { cn } from "@/libs/shadcn/utils";
 import type { CredentialField } from "../types";
 
 /**
- * Per-field state for `file_upload` fields. Tracks the files the user picked,
- * whether an upload is in flight, which paths the backend confirmed, and any
- * error from the last upload attempt. One instance is keyed per field, so a
- * form can hypothetically carry multiple upload fields — today only DuckDB
- * uses this.
+ * Per-field state for `file_upload` fields. Files the user has picked stay in
+ * `selected` until the user clicks the form CTA — only then does the actual
+ * upload happen. After a successful upload, the server-confirmed paths land
+ * in `uploadedPaths`. One instance is keyed per field, so a form can
+ * hypothetically carry multiple upload fields — today only DuckDB uses this.
  */
 interface FileUploadState {
   selected: File[];
   uploading: boolean;
   uploadedPaths: string[];
-  subdir?: string;
   error?: string;
 }
 
@@ -35,15 +34,23 @@ interface CredentialFormProps {
   disabled?: boolean;
   initialValues?: Record<string, string>;
   /**
+   * Pre-populated uploaded paths per `file_upload` field key. Lets the form
+   * remember files an earlier visit already sent so the user isn't blocked
+   * with a disabled CTA after navigating back.
+   */
+  initialUploadedFiles?: Record<string, string[]>;
+  /**
    * Inline error surfaced below the form. Used by the GitHub onboarding flow
    * to show a failed connection-test message so the user can fix typos and
    * retry without losing what they've already typed.
    */
   errorMessage?: string;
   /**
-   * Called when the user picks files for a `file_upload` field. Should upload
-   * the files and resolve with the server-assigned subdir + file paths, or
-   * reject (the form surfaces the error inline).
+   * Invoked when the user clicks the form CTA with pending file selections.
+   * Should upload the files and resolve with the server-assigned subdir + file
+   * paths, or reject (the form surfaces the error inline). Files are NOT
+   * uploaded on drag/drop or pick — the form holds them locally so the user
+   * can remove mistakes before committing.
    */
   onFileUpload?: (files: File[]) => Promise<FileUploadResult | null>;
 }
@@ -54,6 +61,7 @@ export default function CredentialForm({
   onSubmit,
   disabled,
   initialValues,
+  initialUploadedFiles,
   errorMessage,
   onFileUpload
 }: CredentialFormProps) {
@@ -70,7 +78,15 @@ export default function CredentialForm({
     return initial;
   });
 
-  const [uploads, setUploads] = useState<Record<string, FileUploadState>>({});
+  const [uploads, setUploads] = useState<Record<string, FileUploadState>>(() => {
+    if (!initialUploadedFiles) return {};
+    const seeded: Record<string, FileUploadState> = {};
+    for (const [key, paths] of Object.entries(initialUploadedFiles)) {
+      if (paths.length === 0) continue;
+      seeded[key] = { selected: [], uploading: false, uploadedPaths: paths };
+    }
+    return seeded;
+  });
 
   const handleChange = useCallback((key: string, value: string) => {
     setValues((prev) => ({ ...prev, [key]: value }));
@@ -81,12 +97,16 @@ export default function CredentialForm({
       if (!field.required) return true;
       if (field.type === "file_upload") {
         const state = uploads[field.key];
-        return !!state && state.uploadedPaths.length > 0 && !state.uploading;
+        if (!state || state.uploading) return false;
+        // Pending picks only count if a handler can actually upload them —
+        // otherwise the CTA would submit with the field value still empty.
+        if (state.selected.length > 0 && onFileUpload) return true;
+        return state.uploadedPaths.length > 0;
       }
       const v = values[field.key];
       return typeof v === "string" && v.trim() !== "";
     },
-    [uploads, values]
+    [uploads, values, onFileUpload]
   );
 
   /** Per-field validation message, or undefined when valid / empty. */
@@ -111,67 +131,105 @@ export default function CredentialForm({
   const allValid = fields.every((f) => validationError(f) === undefined);
   const anyUploading = Object.values(uploads).some((s) => s.uploading);
 
-  const handleSubmit = useCallback(() => {
-    if (!allRequiredFilled || !allValid || anyUploading) return;
-    onSubmit(values);
-  }, [allRequiredFilled, allValid, anyUploading, onSubmit, values]);
-
-  const runUpload = useCallback(
-    async (fieldKey: string, files: File[]) => {
-      if (files.length === 0 || !onFileUpload) return;
-      setUploads((prev) => ({
+  const addSelectedFiles = useCallback((fieldKey: string, files: File[]) => {
+    if (files.length === 0) return;
+    setUploads((prev) => {
+      const current = prev[fieldKey] ?? {
+        selected: [],
+        uploading: false,
+        uploadedPaths: []
+      };
+      // Drop dupes (same name + size) so re-picking the same file doesn't
+      // create a phantom row the user can't tell apart from the original.
+      const seen = new Set(current.selected.map((f) => `${f.name}:${f.size}`));
+      const deduped = files.filter((f) => !seen.has(`${f.name}:${f.size}`));
+      return {
         ...prev,
         [fieldKey]: {
-          selected: [...(prev[fieldKey]?.selected ?? []), ...files],
-          uploading: true,
-          uploadedPaths: prev[fieldKey]?.uploadedPaths ?? [],
-          subdir: prev[fieldKey]?.subdir,
+          ...current,
+          selected: [...current.selected, ...deduped],
           error: undefined
         }
+      };
+    });
+  }, []);
+
+  const removeSelectedFile = useCallback((fieldKey: string, index: number) => {
+    setUploads((prev) => {
+      const current = prev[fieldKey];
+      if (!current) return prev;
+      const next = [...current.selected];
+      next.splice(index, 1);
+      return { ...prev, [fieldKey]: { ...current, selected: next } };
+    });
+  }, []);
+
+  const handleSubmit = useCallback(async () => {
+    if (!allRequiredFilled || !allValid || anyUploading) return;
+
+    // Upload any pending file_upload selections first, then submit with the
+    // server-chosen subdir as the field value (DuckDB uses this as
+    // `file_search_path`). Bail out without submitting if an upload fails.
+    let updatedValues = values;
+    for (const field of fields) {
+      if (field.type !== "file_upload") continue;
+      const state = uploads[field.key];
+      if (!state?.selected.length || !onFileUpload) continue;
+
+      const filesToUpload = state.selected;
+      setUploads((prev) => ({
+        ...prev,
+        [field.key]: { ...prev[field.key]!, uploading: true, error: undefined }
       }));
+
       try {
-        const result = await onFileUpload(files);
-        setUploads((prev) => {
-          const current = prev[fieldKey];
-          if (!current) return prev;
-          if (!result) {
-            return {
-              ...prev,
-              [fieldKey]: { ...current, uploading: false, error: "Upload failed." }
-            };
-          }
-          return {
+        const result = await onFileUpload(filesToUpload);
+        if (!result) {
+          setUploads((prev) => ({
             ...prev,
-            [fieldKey]: {
-              ...current,
-              uploading: false,
-              uploadedPaths: [...current.uploadedPaths, ...result.files],
-              subdir: result.subdir
-            }
-          };
-        });
-        if (result) {
-          // Seed the form value with the server-chosen subdir so the parent
-          // gets a meaningful value on submit (e.g. ".db" for DuckDB).
-          handleChange(fieldKey, result.subdir);
+            [field.key]: { ...prev[field.key]!, uploading: false, error: "Upload failed." }
+          }));
+          return;
         }
-      } catch (err) {
         setUploads((prev) => {
-          const current = prev[fieldKey];
+          const current = prev[field.key];
           if (!current) return prev;
           return {
             ...prev,
-            [fieldKey]: {
-              ...current,
+            [field.key]: {
+              selected: [],
               uploading: false,
-              error: err instanceof Error ? err.message : "Upload failed."
+              uploadedPaths: [...current.uploadedPaths, ...result.files]
             }
           };
         });
+        updatedValues = { ...updatedValues, [field.key]: result.subdir };
+        handleChange(field.key, result.subdir);
+      } catch (err) {
+        setUploads((prev) => ({
+          ...prev,
+          [field.key]: {
+            ...prev[field.key]!,
+            uploading: false,
+            error: err instanceof Error ? err.message : "Upload failed."
+          }
+        }));
+        return;
       }
-    },
-    [onFileUpload, handleChange]
-  );
+    }
+
+    onSubmit(updatedValues);
+  }, [
+    allRequiredFilled,
+    allValid,
+    anyUploading,
+    fields,
+    uploads,
+    values,
+    onFileUpload,
+    onSubmit,
+    handleChange
+  ]);
 
   return (
     <div className='flex flex-col gap-3'>
@@ -193,7 +251,8 @@ export default function CredentialForm({
                   multiple={field.multiple ?? false}
                   disabled={disabled}
                   state={uploads[field.key]}
-                  onPick={(files) => runUpload(field.key, files)}
+                  onPick={(files) => addSelectedFiles(field.key, files)}
+                  onRemoveSelected={(index) => removeSelectedFile(field.key, index)}
                 />
               </div>
             );
@@ -254,8 +313,9 @@ export default function CredentialForm({
           disabled={disabled || !allRequiredFilled || !allValid || anyUploading}
           size='sm'
         >
-          {buttonLabel}
-          <ArrowRight className='ml-1 h-3 w-3' />
+          {anyUploading ? <Loader2 className='size-3 animate-spin' /> : null}
+          {anyUploading ? "Uploading…" : buttonLabel}
+          {!anyUploading && <ArrowRight className='size-3' />}
         </Button>
       </div>
     </div>
@@ -271,6 +331,7 @@ interface FileUploadFieldProps {
   disabled?: boolean;
   state?: FileUploadState;
   onPick: (files: File[]) => void;
+  onRemoveSelected: (index: number) => void;
 }
 
 function FileUploadField({
@@ -281,7 +342,8 @@ function FileUploadField({
   multiple,
   disabled,
   state,
-  onPick
+  onPick,
+  onRemoveSelected
 }: FileUploadFieldProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -330,7 +392,10 @@ function FileUploadField({
     [handleFiles]
   );
 
-  const hasUploads = (state?.uploadedPaths.length ?? 0) > 0;
+  const selectedFiles = state?.selected ?? [];
+  const uploadedPaths = state?.uploadedPaths ?? [];
+  const hasSelected = selectedFiles.length > 0;
+  const hasUploaded = uploadedPaths.length > 0;
   const isUploading = state?.uploading ?? false;
 
   return (
@@ -376,14 +441,36 @@ function FileUploadField({
       />
       {helperText && <p className='text-muted-foreground text-xs'>{helperText}</p>}
       {state?.error && <p className='text-destructive text-xs'>{state.error}</p>}
-      {hasUploads && state && (
+      {(hasSelected || hasUploaded) && (
         <ul className='flex flex-col gap-1'>
-          {state.uploadedPaths.map((path) => (
+          {selectedFiles.map((file, index) => (
+            <li
+              // addSelectedFiles dedupes by name+size, so the pair is unique
+              // within `selected` and stable across sibling removals.
+              key={`${file.name}-${file.size}`}
+              className='flex items-center gap-2 rounded border border-border bg-muted/40 px-2 py-1 text-xs'
+            >
+              <FileIcon className='h-3 w-3 text-muted-foreground' />
+              <span className='flex-1 truncate font-mono'>{file.name}</span>
+              <Button
+                type='button'
+                variant='ghost'
+                size='icon'
+                className='size-5 text-muted-foreground hover:text-destructive'
+                onClick={() => onRemoveSelected(index)}
+                disabled={disabled || isUploading}
+                aria-label={`Remove ${file.name}`}
+              >
+                <Trash2 className='size-3' />
+              </Button>
+            </li>
+          ))}
+          {uploadedPaths.map((path) => (
             <li
               key={path}
               className='flex items-center gap-2 rounded border border-border bg-muted/40 px-2 py-1 text-xs'
             >
-              <FileIcon className='h-3 w-3 text-muted-foreground' />
+              <CheckCircle2 className='size-3 text-success' />
               <span className='flex-1 truncate font-mono'>{path}</span>
             </li>
           ))}

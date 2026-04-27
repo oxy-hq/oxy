@@ -478,6 +478,7 @@ function renderInputBlock(
           fields={block.fields}
           buttonLabel={block.buttonLabel}
           initialValues={block.initialValues}
+          initialUploadedFiles={block.initialUploadedFiles}
           disabled={block.busy}
           errorMessage={block.errorMessage}
           onSubmit={(values) => {
