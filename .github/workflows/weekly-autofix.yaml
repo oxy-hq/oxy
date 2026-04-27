@@ -46,10 +46,12 @@ jobs:
       - name: Prep cargo cache
         uses: Swatinem/rust-cache@v2
 
+      # Use apt instead of arduino/setup-protoc to avoid GitHub release rate limits / outages.
       - name: Install Protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ steps.app-token.outputs.token }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+          protoc --version
 
       - uses: pnpm/action-setup@v5
         with:

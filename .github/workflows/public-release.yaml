@@ -309,10 +309,20 @@ jobs:
           shared-key: build-cli-${{ matrix.job.os }}-${{ matrix.job.target }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      # Install protoc from the OS package manager instead of arduino/setup-protoc
+      # to avoid GitHub release rate limits / outages.
       - name: Install Protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ steps.app-token.outputs.token }}
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            sudo apt-get update
+            sudo apt-get install -y protobuf-compiler
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            brew install protobuf
+          else
+            echo "Unsupported runner OS: $RUNNER_OS" >&2
+            exit 1
+          fi
+          protoc --version
 
       - uses: pnpm/action-setup@v5
         with:
