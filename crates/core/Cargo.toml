@@ -32,7 +32,8 @@ exclude = [
 aes-gcm = { workspace = true }
 anyhow = { workspace = true }
 argon2 = { workspace = true }
-arrow = { workspace = true, features = ["json"] } # arrow version has to comply with duckdb version
+arrow = { workspace = true, features = ["json", "ipc"] } # arrow version has to comply with duckdb version
+arrow57 = { package = "arrow", version = "=57.3.0", default-features = false } # used for lancedb interface (lancedb 0.27.x requires arrow 57)
 assert_cmd = { workspace = true }
 aws-config = { workspace = true, features = ["behavior-version-latest"] }
 aws-credential-types = { workspace = true }
@@ -109,7 +110,7 @@ schemars = { workspace = true, features = ["derive", "impl_json_schema"] }
 scopeguard = { workspace = true }
 sea-orm = { workspace = true }
 serde = { workspace = true }
-serde_arrow = { workspace = true, features = ["arrow-57"] }
+serde_arrow = { workspace = true, features = ["arrow-58"] }
 serde_json = { workspace = true }
 serde_urlencoded = { workspace = true }
 self_update = { workspace = true }
@@ -176,7 +177,7 @@ xxhash-rust = { workspace = true, features = ["xxh3"] }
 aho-corasick = { workspace = true }
 rkyv = { workspace = true, features = ["validation"] }
 sentry = { workspace = true }
-df-interchange = { workspace = true, features = ["arrow_54", "arrow_57"] }
+df-interchange = { workspace = true, features = ["arrow_54", "arrow_58"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -2,7 +2,7 @@ use std::iter::once;
 
 use super::schema::SchemaUtils;
 use crate::config::constants::{RETRIEVAL_INCLUSIONS_TABLE, VECTOR_INDEX_MIN_ROWS};
-use arrow::array::{RecordBatch, RecordBatchIterator};
+use arrow57::array::{RecordBatch, RecordBatchIterator};
 use lancedb::{
     Connection, Table,
     database::CreateTableMode,

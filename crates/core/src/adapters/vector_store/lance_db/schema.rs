@@ -1,12 +1,12 @@
 use crate::config::constants::RETRIEVAL_EMBEDDINGS_COLUMN;
-use arrow::datatypes::{DataType, Field};
+use arrow57::datatypes::{DataType, Field};
 use std::sync::Arc;
 
 pub(super) struct SchemaUtils;
 
 impl SchemaUtils {
-    pub(super) fn create_retrieval_schema(n_dims: usize) -> Arc<arrow::datatypes::Schema> {
-        Arc::new(arrow::datatypes::Schema::new(vec![
+    pub(super) fn create_retrieval_schema(n_dims: usize) -> Arc<arrow57::datatypes::Schema> {
+        Arc::new(arrow57::datatypes::Schema::new(vec![
             Field::new("content", DataType::Utf8, false),
             Field::new("source_type", DataType::Utf8, false),
             Field::new("source_identifier", DataType::Utf8, false),
@@ -25,8 +25,8 @@ impl SchemaUtils {
     }
 
     pub(super) fn schemas_match(
-        expected: &arrow::datatypes::Schema,
-        existing: &arrow::datatypes::Schema,
+        expected: &arrow57::datatypes::Schema,
+        existing: &arrow57::datatypes::Schema,
     ) -> bool {
         expected.fields().len() == existing.fields().len()
             && expected

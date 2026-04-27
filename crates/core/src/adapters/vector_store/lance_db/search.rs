@@ -1,4 +1,4 @@
-use arrow::array::RecordBatch;
+use arrow57::array::RecordBatch;
 use futures::TryStreamExt;
 use lancedb::{
     DistanceType,

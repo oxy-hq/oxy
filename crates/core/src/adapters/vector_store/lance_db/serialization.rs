@@ -2,7 +2,7 @@ use crate::{
     adapters::vector_store::{build_index_key, types::RetrievalItem},
     config::constants::RETRIEVAL_EMBEDDINGS_COLUMN,
 };
-use arrow::array::{Array, FixedSizeListArray, Float32Array, RecordBatch, StringArray};
+use arrow57::array::{Array, FixedSizeListArray, Float32Array, RecordBatch, StringArray};
 use oxy_shared::errors::OxyError;
 use std::sync::Arc;
 
@@ -12,7 +12,7 @@ impl SerializationUtils {
     pub(super) fn create_retrieval_record_batch(
         items: &Vec<RetrievalItem>,
         n_dims: usize,
-    ) -> Result<arrow::array::RecordBatch, OxyError> {
+    ) -> Result<arrow57::array::RecordBatch, OxyError> {
         let schema = super::schema::SchemaUtils::create_retrieval_schema(n_dims);
 
         let contents = Arc::new(StringArray::from_iter_values(
@@ -32,7 +32,7 @@ impl SerializationUtils {
             items.iter().map(|it| it.embedding_content.clone()),
         ));
         let embeddings_array = Arc::new(FixedSizeListArray::from_iter_primitive::<
-            arrow::datatypes::Float32Type,
+            arrow57::datatypes::Float32Type,
             _,
             _,
         >(
@@ -45,7 +45,7 @@ impl SerializationUtils {
             items.iter().map(|it| it.radius),
         ));
 
-        let record_batch = arrow::array::RecordBatch::try_new(
+        let record_batch = arrow57::array::RecordBatch::try_new(
             schema.clone(),
             vec![
                 contents,

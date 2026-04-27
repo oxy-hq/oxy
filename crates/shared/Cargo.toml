@@ -47,7 +47,7 @@ secrecy = { workspace = true }
 
 # Vector store
 lancedb = { workspace = true }
-serde_arrow = { workspace = true, features = ["arrow-57"] }
+serde_arrow = { workspace = true, features = ["arrow-58"] }
 
 # Semantic layer
 oxy-semantic = { workspace = true }
