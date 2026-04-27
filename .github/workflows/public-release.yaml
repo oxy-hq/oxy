@@ -60,7 +60,11 @@ jobs:
   # Job 1: Determine build type and set all conditional flags
   # ============================================================================
   determine-build-type:
-    if: github.repository == 'oxy-hq/oxy'
+    if: |
+      github.repository == 'oxy-hq/oxy' &&
+      !(github.event_name == 'push' &&
+        github.ref == 'refs/heads/main' &&
+        startsWith(github.event.head_commit.message, 'chore: release'))
     name: Determine Build Type
     runs-on: ubuntu-latest
     outputs:
