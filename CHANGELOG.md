@@ -2,6 +2,45 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.39] - 2026-04-27
+
+### 🚀 Features
+
+- Polish agentic onboarding - live app titles, one-shot route (#2168)
+- Airhouse integration (#2131)
+- *(agentic-llm)* Enable Anthropic prompt caching for analytics + builder (#2172)
+- Improve DuckDB onboarding upload UX (#2180)
+- Validate LLM API key early in onboarding (blank + GitHub flows) (#2182)
+
+### 🐛 Bug Fixes
+
+- Adjust airlayer::View struct to new types (#2173)
+- *(clickhouse)* Semantic query stats, host URL handling, and onboarding form (#2175)
+- Harden agentic onboarding — drop unsupported warehouses, BigQuery key textarea, DuckDB stats resilience (#2178)
+- Scope workspace name uniqueness per organization (#2183)
+
+### 💼 Other
+
+- Bump airlayer to latest main (b8c734d) (#2170)
+- *(deps)* Bump the prod-npm-minor-dependencies group across 2 directories with 7 updates (#2155)
+- *(deps-dev)* Bump the dev-npm-minor-dependencies group across 2 directories with 2 updates (#2141)
+
+### 🚜 Refactor
+
+- Remove semantics.yml and oxy_globals (#2171)
+
+### 📚 Documentation
+
+- Update product-context.md from recent changelogs (#2184)
+
+### ⚙️ Miscellaneous Tasks
+
+- Update changelog action token handling
+- Weekly auto-fix 2026-04-26 (#2177)
+- Update .trivyignore comments for clarity and add missing file path
+- Update json schemas
+- Update GitHub App token configuration to use client-id instead of app-id
+
 ## [0.5.38] - 2026-04-24
 
 ### 🚀 Features
@@ -21,6 +60,7 @@ All notable changes to this project will be documented in this file.
 
 - Fix multiple ci issues
 - Add CSS and JS file types to workflow paths (#2160)
+- Release 0.5.38 (#2145)
 
 ## [0.5.37] - 2026-04-23
 
