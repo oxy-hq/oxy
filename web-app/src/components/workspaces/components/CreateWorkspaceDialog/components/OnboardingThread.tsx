@@ -461,6 +461,8 @@ function renderInputBlock(
           label={block.label}
           placeholder={block.placeholder}
           buttonLabel={block.buttonLabel}
+          disabled={block.busy}
+          errorMessage={block.errorMessage}
           onSubmit={(value) => {
             if (message.id === "llm_key") {
               actions.saveLlmKey(value);

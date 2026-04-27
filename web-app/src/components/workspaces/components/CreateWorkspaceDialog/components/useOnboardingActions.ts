@@ -30,6 +30,32 @@ export const LLM_KEY_VAR: Record<LlmProvider, string> = {
   openai: "OPENAI_API_KEY"
 };
 
+/**
+ * Map a backend `vendor` label (e.g. "Anthropic", "OpenAI", "Google") to one
+ * of the providers the test-llm-key endpoint accepts. Returns `null` for
+ * vendors we can't validate against (Google, Ollama) so the caller can fall
+ * back to saving without verification — better to skip the check than block
+ * onboarding for a vendor we don't know how to probe.
+ */
+function vendorToProbeProvider(vendor: string): LlmProvider | null {
+  const normalised = vendor.trim().toLowerCase();
+  if (normalised === "anthropic") return "anthropic";
+  if (normalised === "openai") return "openai";
+  return null;
+}
+
+/**
+ * Translate a thrown error from the test-llm-key request into a user-facing
+ * message. Network timeouts and generic Axios errors otherwise leak through
+ * as "Request failed with status code 500" — useless to the user.
+ */
+function formatLlmKeyValidationError(err: unknown): string {
+  if (err instanceof Error && err.message.toLowerCase().includes("timeout")) {
+    return "The validation request timed out. Please check your network and try again.";
+  }
+  return "We couldn't reach the provider to verify your API key. Please try again.";
+}
+
 // ── Build WarehouseConfig from user input ───────────────────────────────────
 
 /** Build config with raw passwords — used for testDatabaseConnection */
@@ -107,13 +133,34 @@ export function useOnboardingActions(orchestrator: Orchestrator) {
   // dimension when the actual column has a different name).
   const hydratedColumnsRef = useRef<Map<string, Array<{ name: string; type: string }>>>(new Map());
 
-  // Save LLM API key as a project secret, then advance step.
+  // Validate the LLM API key with the provider, then save it as a project
+  // secret and advance. Validation up-front prevents the user from completing
+  // warehouse + table setup with a typo'd key only to hit an auth_error deep
+  // in the agentic build phase. On validation failure we keep the user on
+  // the same step with an inline error so they can retry.
   // Uses create-or-update to ensure the latest key value is always persisted,
   // even if a previous onboarding attempt left a stale secret behind.
   const saveLlmKey = useCallback(
     async (apiKey: string) => {
       const provider = orchestrator.state.llmProvider;
       if (!provider) return;
+
+      orchestrator.startLlmKeyTest();
+
+      try {
+        const result = await OnboardingService.testLlmKey(projectId, provider, apiKey);
+        if (!result.success) {
+          orchestrator.failLlmKeyTest(
+            result.message ??
+              "We couldn't verify that API key with the provider. Please double-check the value."
+          );
+          return;
+        }
+      } catch (err) {
+        console.warn("[onboarding] LLM key validation request failed", err);
+        orchestrator.failLlmKeyTest(formatLlmKeyValidationError(err));
+        return;
+      }
 
       const keyVar = LLM_KEY_VAR[provider];
       try {
@@ -625,31 +672,63 @@ export function useOnboardingActions(orchestrator: Orchestrator) {
   }, [projectId, orchestrator]);
 
   // Save a single LLM key secret and advance the cursor. Empty value = skip.
+  // For Anthropic / OpenAI vars we validate the key against the provider
+  // first so the user catches typos before completing onboarding — same
+  // gate as the blank-workspace flow. Vendors we can't probe (Google,
+  // Ollama) skip validation and persist directly.
   const saveGithubLlmKey = useCallback(
     async (varName: string, value: string) => {
       const trimmed = value.trim();
-      if (trimmed.length > 0) {
+
+      // Empty submission = "skip this key"; advance without touching secrets.
+      if (trimmed.length === 0) {
+        orchestrator.advanceGithubLlmKey();
+        return;
+      }
+
+      const keyVar = orchestrator.state.githubSetup?.missing_llm_key_vars.find(
+        (k) => k.var_name === varName
+      );
+      const probeProvider = keyVar ? vendorToProbeProvider(keyVar.vendor) : null;
+
+      if (probeProvider) {
+        orchestrator.startGithubLlmKeyTest();
         try {
-          await SecretService.createSecret(projectId, {
-            name: varName,
-            value: trimmed,
-            description: `Provided during GitHub onboarding`
-          });
-        } catch (createErr) {
-          // Update if it already exists.
-          try {
-            const { secrets } = await SecretService.listSecrets(projectId);
-            const existing = secrets.find((s) => s.name === varName);
-            if (existing) {
-              await SecretService.updateSecret(projectId, existing.id, { value: trimmed });
-            } else {
-              console.warn(`[onboarding] Failed to save ${varName}`, createErr);
-              toast.error(`Failed to save ${varName}.`);
-            }
-          } catch (updateErr) {
-            console.warn(`[onboarding] Failed to save ${varName}`, updateErr);
+          const result = await OnboardingService.testLlmKey(projectId, probeProvider, trimmed);
+          if (!result.success) {
+            orchestrator.failGithubLlmKeyTest(
+              result.message ??
+                "We couldn't verify that API key with the provider. Please double-check the value."
+            );
+            return;
+          }
+        } catch (err) {
+          console.warn("[onboarding] GitHub LLM key validation request failed", err);
+          orchestrator.failGithubLlmKeyTest(formatLlmKeyValidationError(err));
+          return;
+        }
+      }
+
+      try {
+        await SecretService.createSecret(projectId, {
+          name: varName,
+          value: trimmed,
+          description: `Provided during GitHub onboarding`
+        });
+      } catch (createErr) {
+        // Update if it already exists.
+        try {
+          const { secrets } = await SecretService.listSecrets(projectId);
+          const existing = secrets.find((s) => s.name === varName);
+          if (existing) {
+            await SecretService.updateSecret(projectId, existing.id, { value: trimmed });
+          } else {
+            console.warn(`[onboarding] Failed to save ${varName}`, createErr);
             toast.error(`Failed to save ${varName}.`);
           }
+        } catch (updateErr) {
+          console.warn(`[onboarding] Failed to save ${varName}`, updateErr);
+          toast.error(`Failed to save ${varName}.`);
         }
       }
       orchestrator.advanceGithubLlmKey();

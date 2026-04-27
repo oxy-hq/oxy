@@ -59,6 +59,13 @@ export interface GithubSetupResponse {
   warehouses: GithubSetupWarehouse[];
 }
 
+export interface TestLlmKeyResponse {
+  /** True when the provider accepted the key. */
+  success: boolean;
+  /** Actionable error message when `success` is false; absent on success. */
+  message?: string;
+}
+
 export interface UploadWarehouseFilesResponse {
   /** Subdir (relative to workspace root) the files were written to. */
   subdir: string;
@@ -130,6 +137,25 @@ export class OnboardingService {
     const response = await apiClient.post<OnboardingResetResponse>(
       `/${workspaceId}/onboarding/reset`,
       manifest
+    );
+    return response.data;
+  }
+
+  /**
+   * Verify an LLM API key against the provider before saving it as a workspace
+   * secret. Hits the provider's `/v1/models` endpoint (no token cost) and
+   * reports whether the key is accepted. Used by the onboarding flow so users
+   * see "invalid key" before they pick a warehouse and tables, instead of
+   * deep inside the agentic build phase.
+   */
+  static async testLlmKey(
+    workspaceId: string,
+    provider: "anthropic" | "openai",
+    apiKey: string
+  ): Promise<TestLlmKeyResponse> {
+    const response = await apiClient.post<TestLlmKeyResponse>(
+      `/${workspaceId}/onboarding/test-llm-key`,
+      { provider, api_key: apiKey }
     );
     return response.data;
   }

@@ -12,9 +12,11 @@
 pub mod domain;
 pub mod errors;
 pub mod infrastructure;
+pub mod key_validation;
 pub mod openai_config;
 pub mod utils;
 
 // Re-export commonly used items
 pub use errors::OxyError;
+pub use key_validation::{KeyValidationError, KeyValidationErrorKind};
 pub use openai_config::{AzureModel, ConfigType, CustomOpenAIConfig, HeaderValue};

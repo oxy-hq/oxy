@@ -17,8 +17,13 @@ async-openai = { workspace = true, features = [
 ] }
 axum = { workspace = true }
 oxy-shared = { workspace = true }
+reqwest = { workspace = true }
 schemars = { workspace = true, features = ["derive"] }
 secrecy = { workspace = true }
 serde = { workspace = true }
 serde_with = { workspace = true }
 tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
+wiremock = { workspace = true }

@@ -114,6 +114,17 @@ export interface OnboardingState {
   githubSetup?: GithubSetup;
   /** For `mode === "github"`: cursor into `githubSetup.missing_llm_key_vars`. */
   githubLlmKeyCursor?: number;
+  /**
+   * For `mode === "github"`: true while the active LLM key is being verified
+   * against the provider. Disables the input + flips the button label so the
+   * user can't double-submit while a probe is in flight.
+   */
+  githubLlmKeyTesting?: boolean;
+  /**
+   * For `mode === "github"`: error from the most recent LLM key validation
+   * attempt for the active cursor entry. Cleared on advance / re-submit.
+   */
+  githubLlmKeyError?: string;
   /** For `mode === "github"`: cursor into `githubSetup.warehouses`. */
   githubWarehouseCursor?: number;
   /**
@@ -136,6 +147,19 @@ export interface OnboardingState {
   githubWarehouseError?: string;
   llmProvider?: LlmProvider;
   llmApiKey?: string;
+  /**
+   * True while the API key submitted on the `llm_key` step is being verified
+   * against the provider. The submit button stays disabled and the spinner
+   * label is shown until verification settles.
+   */
+  llmKeyTesting?: boolean;
+  /**
+   * Error from the most recent LLM key validation attempt. Cleared when the
+   * user re-submits or navigates away from the step. Surfacing the failure
+   * inline keeps the user on the same step instead of advancing into a
+   * doomed warehouse-setup flow.
+   */
+  llmKeyError?: string;
   llmModel?: string; // config name (e.g., "claude-sonnet-4-6")
   llmModelRef?: string; // provider model ID (e.g., "claude-sonnet-4-6")
   llmVendor?: string; // vendor name for config.yml (e.g., "anthropic")
@@ -186,7 +210,16 @@ export interface OnboardingState {
 
 export type OnboardingInputBlock =
   | { type: "selection_cards"; options: SelectionOption[]; collapseAfter?: number }
-  | { type: "secure_input"; label: string; placeholder: string; buttonLabel?: string }
+  | {
+      type: "secure_input";
+      label: string;
+      placeholder: string;
+      buttonLabel?: string;
+      /** Disables the input + submit while a validation call is in flight. */
+      busy?: boolean;
+      /** Inline error surfaced under the input (e.g. invalid API key). */
+      errorMessage?: string;
+    }
   | {
       type: "credential_form";
       fields: CredentialField[];

@@ -256,6 +256,7 @@ fn build_database_routes() -> Router<AppState> {
 fn build_onboarding_routes() -> Router<AppState> {
     Router::new()
         .route("/reset", post(onboarding::reset_onboarding))
+        .route("/test-llm-key", post(onboarding::test_llm_key))
         .route(
             "/upload-warehouse-files",
             post(onboarding::upload_warehouse_files),

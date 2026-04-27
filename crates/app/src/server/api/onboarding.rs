@@ -646,6 +646,60 @@ async fn load_key_vars_from_workspace(workspace_id: uuid::Uuid) -> Vec<String> {
     result
 }
 
+/// Request for `POST /{workspace_id}/onboarding/test-llm-key`.
+#[derive(Deserialize)]
+pub struct TestLlmKeyRequest {
+    /// `"anthropic"` or `"openai"`.
+    pub provider: String,
+    /// The raw API key to validate. Never logged, never persisted by this
+    /// endpoint — it is only used to make a single live call to the provider.
+    pub api_key: String,
+}
+
+/// Response from `test_llm_key`. `success: false` carries an actionable
+/// message — typically "invalid API key" but it can also surface network
+/// errors so the user understands why the test didn't pass.
+#[derive(Serialize)]
+pub struct TestLlmKeyResponse {
+    pub success: bool,
+    pub message: Option<String>,
+}
+
+/// POST /{workspace_id}/onboarding/test-llm-key — verify an LLM API key
+/// against the provider before the user advances past the key-entry step in
+/// onboarding.
+///
+/// Provider-specific probes (URLs, auth headers, status interpretation)
+/// live in the corresponding `oxy-{provider}` infrastructure crate; this
+/// handler only owns input validation, dispatch, and response shaping. We
+/// do not persist the key here — the caller still owns saving it as a
+/// project secret on success. Decoupling validation from persistence keeps
+/// this endpoint reusable from a Settings "Test key" affordance later.
+pub async fn test_llm_key(
+    Path(WorkspacePath { workspace_id: _ }): Path<WorkspacePath>,
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+    Json(req): Json<TestLlmKeyRequest>,
+) -> Json<TestLlmKeyResponse> {
+    let api_key = req.api_key.trim();
+    if api_key.is_empty() {
+        return Json(TestLlmKeyResponse {
+            success: false,
+            message: Some("API key is empty.".to_string()),
+        });
+    }
+
+    match oxy_llm::validate_provider_key(&req.provider, api_key).await {
+        Ok(()) => Json(TestLlmKeyResponse {
+            success: true,
+            message: None,
+        }),
+        Err(err) => Json(TestLlmKeyResponse {
+            success: false,
+            message: Some(err.user_message()),
+        }),
+    }
+}
+
 /// Response for `GET /{workspace_id}/onboarding/github-setup`.
 ///
 /// Describes the setup work a GitHub-imported workspace still needs before the
@@ -1491,4 +1545,5 @@ mod tests {
         assert!(!has_supported_extension("foo.json"));
         assert!(!has_supported_extension("notes.md"));
     }
+
 }

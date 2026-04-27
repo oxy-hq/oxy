@@ -8620,9 +8620,12 @@ version = "0.5.38"
 dependencies = [
  "async-openai",
  "oxy-shared",
+ "reqwest 0.12.28",
  "schemars 0.8.22",
  "serde",
  "serde_with",
+ "tokio",
+ "wiremock",
 ]
 
 [[package]]
@@ -8695,6 +8698,7 @@ dependencies = [
  "oxy-agent",
  "oxy-auth",
  "oxy-git",
+ "oxy-llm",
  "oxy-looker",
  "oxy-observability",
  "oxy-project",
@@ -8816,6 +8820,7 @@ dependencies = [
  "schemars 0.8.22",
  "serde",
  "serde_with",
+ "tokio",
 ]
 
 [[package]]
@@ -8869,11 +8874,14 @@ dependencies = [
  "async-openai",
  "axum",
  "oxy-shared",
+ "reqwest 0.12.28",
  "schemars 0.8.22",
  "secrecy",
  "serde",
  "serde_with",
+ "tokio",
  "tracing",
+ "wiremock",
 ]
 
 [[package]]

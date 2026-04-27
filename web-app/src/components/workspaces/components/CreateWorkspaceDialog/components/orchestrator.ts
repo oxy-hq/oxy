@@ -70,6 +70,8 @@ type Action =
   | { type: "SET_LLM_PROVIDER"; provider: LlmProvider }
   | { type: "SET_LLM_MODEL"; model: string; modelRef: string; vendor: string }
   | { type: "SET_LLM_KEY"; apiKey: string }
+  | { type: "START_LLM_KEY_TEST" }
+  | { type: "FAIL_LLM_KEY_TEST"; error: string }
   | { type: "SET_WAREHOUSE_TYPE"; warehouseType: WarehouseType }
   | { type: "SET_WAREHOUSE_CREDENTIALS"; credentials: Record<string, string> }
   | { type: "SET_UPLOADED_WAREHOUSE_FILES"; files: string[]; subdir: string }
@@ -107,7 +109,9 @@ type Action =
       warehouseName: string;
     }
   | { type: "START_GITHUB_WAREHOUSE_TEST" }
-  | { type: "FAIL_GITHUB_WAREHOUSE_TEST"; error: string };
+  | { type: "FAIL_GITHUB_WAREHOUSE_TEST"; error: string }
+  | { type: "START_GITHUB_LLM_KEY_TEST" }
+  | { type: "FAIL_GITHUB_LLM_KEY_TEST"; error: string };
 
 // ── Initial State ───────────────────────────────────────────────────────────
 
@@ -138,8 +142,16 @@ function reducer(state: OnboardingState, action: Action): OnboardingState {
       return {
         ...state,
         step: "warehouse_type",
-        llmApiKey: action.apiKey
+        llmApiKey: action.apiKey,
+        llmKeyTesting: false,
+        llmKeyError: undefined
       };
+
+    case "START_LLM_KEY_TEST":
+      return { ...state, llmKeyTesting: true, llmKeyError: undefined };
+
+    case "FAIL_LLM_KEY_TEST":
+      return { ...state, llmKeyTesting: false, llmKeyError: action.error };
 
     case "SET_WAREHOUSE_TYPE":
       return {
@@ -336,15 +348,35 @@ function reducer(state: OnboardingState, action: Action): OnboardingState {
       const cursor = (state.githubLlmKeyCursor ?? 0) + 1;
       const total = state.githubSetup?.missing_llm_key_vars.length ?? 0;
       const hasWarehouses = (state.githubSetup?.warehouses.length ?? 0) > 0;
+      // Always clear per-prompt validation state — the next entry has its
+      // own key + provider, so the previous error / busy flag must not bleed
+      // through to its initial render.
       if (cursor < total) {
-        return { ...state, githubLlmKeyCursor: cursor };
+        return {
+          ...state,
+          githubLlmKeyCursor: cursor,
+          githubLlmKeyTesting: false,
+          githubLlmKeyError: undefined
+        };
       }
       return {
         ...state,
         githubLlmKeyCursor: cursor,
+        githubLlmKeyTesting: false,
+        githubLlmKeyError: undefined,
         step: hasWarehouses ? "github_warehouse_creds" : "complete"
       };
     }
+
+    case "START_GITHUB_LLM_KEY_TEST":
+      return { ...state, githubLlmKeyTesting: true, githubLlmKeyError: undefined };
+
+    case "FAIL_GITHUB_LLM_KEY_TEST":
+      return {
+        ...state,
+        githubLlmKeyTesting: false,
+        githubLlmKeyError: action.error
+      };
 
     case "ADVANCE_GITHUB_WAREHOUSE": {
       const cursor = (state.githubWarehouseCursor ?? 0) + 1;
@@ -405,6 +437,8 @@ function reducer(state: OnboardingState, action: Action): OnboardingState {
         }
         if (targetIdx <= stepIndex("llm_key")) {
           cleared.llmApiKey = undefined;
+          cleared.llmKeyTesting = false;
+          cleared.llmKeyError = undefined;
         }
         if (targetIdx <= stepIndex("warehouse_type")) {
           cleared.warehouseType = undefined;
@@ -550,6 +584,8 @@ function deriveGithubMessages(state: OnboardingState): OnboardingMessage[] {
     const isActive = state.step === "github_llm_keys" && i === llmCursor;
     const isPast = i < llmCursor || state.step !== "github_llm_keys";
     const id = `github_llm_key_${keyVar.var_name}`;
+    const submitting = isActive && state.githubLlmKeyTesting === true;
+    const activeError = isActive ? state.githubLlmKeyError : undefined;
     messages.push({
       id,
       role: "assistant",
@@ -559,11 +595,13 @@ function deriveGithubMessages(state: OnboardingState): OnboardingMessage[] {
             type: "secure_input",
             label: keyVar.var_name,
             placeholder: `Enter your ${keyVar.vendor} API key…`,
-            buttonLabel: "Save & Continue"
+            buttonLabel: submitting ? "Verifying key…" : "Save & Continue",
+            busy: submitting,
+            errorMessage: activeError
           }
         : undefined,
-      status: isPast ? "complete" : undefined,
-      allowSkip: isActive
+      status: isPast ? "complete" : activeError ? "error" : submitting ? "working" : undefined,
+      allowSkip: isActive && !submitting
     });
     if (isPast) {
       messages.push({
@@ -735,10 +773,19 @@ export function deriveMessages(state: OnboardingState): OnboardingMessage[] {
             type: "secure_input",
             label: "API Key",
             placeholder: `Enter your ${providerName} API key...`,
-            buttonLabel: "Save & Continue"
+            buttonLabel: state.llmKeyTesting ? "Verifying key…" : "Save & Continue",
+            busy: state.llmKeyTesting,
+            errorMessage: state.llmKeyError
           }
         : undefined,
-    status: currentIdx > stepIndex("llm_key") ? "complete" : undefined
+    status:
+      currentIdx > stepIndex("llm_key")
+        ? "complete"
+        : state.llmKeyError
+          ? "error"
+          : state.llmKeyTesting
+            ? "working"
+            : undefined
   });
 
   if (state.llmApiKey && currentIdx > stepIndex("llm_key")) {
@@ -1571,9 +1618,15 @@ function loadState(): OnboardingState {
     // there's no in-memory promise to tie the re-hydrated state back to,
     // so we'd leave the form permanently stuck in "Testing connection…"
     // with inputs disabled and no way forward. Reset the flag so the user
-    // can retry. `githubWarehouseError` is left alone — it's just a string
-    // the user can read on reload.
-    return { ...initialState, ...parsed, githubWarehouseSubmitting: false };
+    // can retry. `githubWarehouseError` / `llmKeyError` are left alone —
+    // they're just strings the user can read on reload.
+    return {
+      ...initialState,
+      ...parsed,
+      githubWarehouseSubmitting: false,
+      githubLlmKeyTesting: false,
+      llmKeyTesting: false
+    };
   } catch {
     return initialState;
   }
@@ -1644,6 +1697,13 @@ export function useOnboardingOrchestrator() {
   );
 
   const setLlmKey = useCallback((apiKey: string) => dispatch({ type: "SET_LLM_KEY", apiKey }), []);
+
+  const startLlmKeyTest = useCallback(() => dispatch({ type: "START_LLM_KEY_TEST" }), []);
+
+  const failLlmKeyTest = useCallback(
+    (error: string) => dispatch({ type: "FAIL_LLM_KEY_TEST", error }),
+    []
+  );
 
   const setWarehouseType = useCallback(
     (warehouseType: WarehouseType) => dispatch({ type: "SET_WAREHOUSE_TYPE", warehouseType }),
@@ -1753,6 +1813,16 @@ export function useOnboardingOrchestrator() {
 
   const advanceGithubLlmKey = useCallback(() => dispatch({ type: "ADVANCE_GITHUB_LLM_KEY" }), []);
 
+  const startGithubLlmKeyTest = useCallback(
+    () => dispatch({ type: "START_GITHUB_LLM_KEY_TEST" }),
+    []
+  );
+
+  const failGithubLlmKeyTest = useCallback(
+    (error: string) => dispatch({ type: "FAIL_GITHUB_LLM_KEY_TEST", error }),
+    []
+  );
+
   const advanceGithubWarehouse = useCallback(
     (warehouseName: string, result: "success" | "skipped" | "failed") =>
       dispatch({ type: "ADVANCE_GITHUB_WAREHOUSE", warehouseName, result }),
@@ -1777,6 +1847,8 @@ export function useOnboardingOrchestrator() {
     setLlmProvider,
     setLlmModel,
     setLlmKey,
+    startLlmKeyTest,
+    failLlmKeyTest,
     setWarehouseType,
     setWarehouseCredentials,
     setUploadedWarehouseFiles,
@@ -1798,6 +1870,8 @@ export function useOnboardingOrchestrator() {
     goToStep,
     setGithubSetup,
     advanceGithubLlmKey,
+    startGithubLlmKeyTest,
+    failGithubLlmKeyTest,
     advanceGithubWarehouse,
     startGithubWarehouseTest,
     failGithubWarehouseTest

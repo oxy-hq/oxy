@@ -1,4 +1,5 @@
 mod config;
+mod validation;
 
 use async_openai::{
     Client,
@@ -33,6 +34,10 @@ pub use oxy_shared::{AzureModel, ConfigType, CustomOpenAIConfig};
 
 // Export model configuration types
 pub use config::{HeaderValue, OPENAI_API_URL, OpenAIModelConfig, default_openai_api_url};
+pub use validation::validate_api_key;
+
+/// Vendor label used in user-facing messages (e.g. validation errors).
+pub const VENDOR_LABEL: &str = "OpenAI";
 
 /// Type alias for OpenAI client with dynamic configuration
 pub type OpenAIClient = Client<ConfigType>;

@@ -9,6 +9,8 @@ interface SecureInputProps {
   buttonLabel?: string;
   onSubmit: (value: string) => void;
   disabled?: boolean;
+  /** When set, renders a red error message under the input. */
+  errorMessage?: string;
 }
 
 export default function SecureInput({
@@ -16,7 +18,8 @@ export default function SecureInput({
   placeholder,
   buttonLabel = "Continue",
   onSubmit,
-  disabled
+  disabled,
+  errorMessage
 }: SecureInputProps) {
   const [value, setValue] = useState("");
   const [visible, setVisible] = useState(false);
@@ -58,6 +61,7 @@ export default function SecureInput({
           <ArrowRight className='ml-1 h-3 w-3' />
         </Button>
       </div>
+      {errorMessage && <p className='text-destructive text-xs'>{errorMessage}</p>}
     </div>
   );
 }

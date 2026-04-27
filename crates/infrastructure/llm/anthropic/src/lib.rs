@@ -50,6 +50,7 @@
 //! All Anthropic-specific logic is isolated in this crate, so migration is contained.
 
 mod config;
+mod validation;
 
 use async_openai::config::OpenAIConfig;
 use oxy_shared::{ConfigType, CustomOpenAIConfig};
@@ -57,9 +58,17 @@ use std::collections::HashMap;
 
 // Export model configuration types
 pub use config::AnthropicModelConfig;
+pub use validation::validate_api_key;
 
 /// The default Anthropic API URL
 pub const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1";
+
+/// Vendor label used in user-facing messages (e.g. validation errors).
+pub const VENDOR_LABEL: &str = "Anthropic";
+
+/// Anthropic API version header value sent with native-protocol requests
+/// (e.g. the `/v1/models` listing used by `validate_api_key`).
+pub const ANTHROPIC_API_VERSION: &str = "2023-06-01";
 
 /// Returns the default Anthropic API URL wrapped in Option for serde defaults
 ///

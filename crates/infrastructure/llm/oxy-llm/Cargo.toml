@@ -17,3 +17,6 @@ oxy-shared = { workspace = true }
 schemars = { workspace = true, features = ["derive"] }
 serde = { workspace = true }
 serde_with = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
