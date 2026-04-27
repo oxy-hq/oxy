@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.40] - 2026-04-27
+
+### 🐛 Bug Fixes
+
+- Update schema reference in consistency procedure YAML
+
+### 💼 Other
+
+- *(deps)* Upgrade arrow/parquet/duckdb to 58, sqlparser to 0.61 (#2159)
+
+### 🚜 Refactor
+
+- Web-app drop oxy gif from home page and tidy layout
+
+### ⚙️ Miscellaneous Tasks
+
+- Remove outdated arrow dependency version from Cargo.lock
+
 ## [0.5.39] - 2026-04-27
 
 ### 🚀 Features
@@ -40,6 +58,7 @@ All notable changes to this project will be documented in this file.
 - Update .trivyignore comments for clarity and add missing file path
 - Update json schemas
 - Update GitHub App token configuration to use client-id instead of app-id
+- Release 0.5.39 (#2167)
 
 ## [0.5.38] - 2026-04-24
 

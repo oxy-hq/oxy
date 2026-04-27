@@ -220,7 +220,7 @@ wiremock = "0.6"
 xxhash-rust = "0.8"
 
 [workspace.package]
-version = "0.5.39"
+version = "0.5.40"
 authors = ["oxy engineers"]
 description = "Oxy"
 documentation = "https://oxy.tech/docs"
