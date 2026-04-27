@@ -73,11 +73,18 @@ fn resolve_project_dir(workspace_id: Uuid) -> Result<std::path::PathBuf, (Status
     Ok(dir)
 }
 
-/// Find a unique workspace display name by appending " 2", " 3", … when the base name is taken.
+/// Find a unique workspace display name within `org_id` by appending " 2", " 3", …
+/// when the base name is taken.
 ///
-/// Uses a single `LIKE '{base}%'` query to fetch all matching names, then finds the first
-/// gap in-process — avoiding up to 99 sequential round trips.
-async fn unique_display_name(base: &str) -> Result<String, (StatusCode, String)> {
+/// Builds the full candidate list (`base`, `base 2`, …, `base 99`) up-front and
+/// queries `WHERE name IN (…)` in a single round trip. Using `IN` instead of
+/// `LIKE` avoids wildcard semantics, which matters because `base` can come from
+/// caller-controlled input (e.g. a GitHub repo name containing `_` or `%`).
+/// Names in other orgs are ignored so each org has its own independent namespace.
+async fn unique_display_name(
+    base: &str,
+    org_id: Option<Uuid>,
+) -> Result<String, (StatusCode, String)> {
     use entity::{prelude::Workspaces, workspaces};
     use oxy::database::client::establish_connection;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
@@ -90,8 +97,18 @@ async fn unique_display_name(base: &str) -> Result<String, (StatusCode, String)>
         )
     })?;
 
-    let taken: HashSet<String> = Workspaces::find()
-        .filter(workspaces::Column::Name.like(format!("{base}%")))
+    let candidates: Vec<String> = std::iter::once(base.to_string())
+        .chain((2u32..=99).map(|i| format!("{base} {i}")))
+        .collect();
+
+    let mut query =
+        Workspaces::find().filter(workspaces::Column::Name.is_in(candidates.clone()));
+    query = match org_id {
+        Some(id) => query.filter(workspaces::Column::OrgId.eq(id)),
+        None => query.filter(workspaces::Column::OrgId.is_null()),
+    };
+
+    let taken: HashSet<String> = query
         .all(&db)
         .await
         .map_err(|e| {
@@ -104,8 +121,8 @@ async fn unique_display_name(base: &str) -> Result<String, (StatusCode, String)>
         .map(|w| w.name)
         .collect();
 
-    std::iter::once(base.to_string())
-        .chain((2u32..=99).map(|i| format!("{base} {i}")))
+    candidates
+        .into_iter()
         .find(|candidate| !taken.contains(candidate))
         .ok_or_else(|| {
             (
@@ -158,9 +175,16 @@ async fn register_project(
         return Ok(existing.id);
     }
 
-    // Reject duplicate names — each workspace must have a unique display name.
-    let name_taken = Workspaces::find()
-        .filter(workspaces::Column::Name.eq(name))
+    // Reject duplicate names within the same org — each workspace must have a
+    // unique display name relative to the org that owns it. Names in other orgs
+    // don't conflict (each org has its own namespace).
+    let mut name_query =
+        Workspaces::find().filter(workspaces::Column::Name.eq(name));
+    name_query = match org_id {
+        Some(id) => name_query.filter(workspaces::Column::OrgId.eq(id)),
+        None => name_query.filter(workspaces::Column::OrgId.is_null()),
+    };
+    let name_taken = name_query
         .one(&db)
         .await
         .map_err(|e| {
@@ -288,7 +312,7 @@ pub async fn setup_demo(
 
     let display_name = match req.name.as_deref() {
         Some(n) => n.to_string(),
-        None => unique_display_name("Demo workspace")
+        None => unique_display_name("Demo workspace", Some(ctx.org.id))
             .await
             .map_err(|(s, m)| {
                 error!("{}", m);
@@ -372,7 +396,7 @@ pub async fn setup_new(
 
     let display_name = match req.name.as_deref() {
         Some(n) => n.to_string(),
-        None => unique_display_name("New workspace")
+        None => unique_display_name("New workspace", Some(ctx.org.id))
             .await
             .map_err(|(s, m)| {
                 error!("{}", m);
@@ -468,9 +492,18 @@ pub async fn setup_github(
         })?
         .flatten();
 
-    // Use the caller-supplied name, or fall back to the repository's short name so
-    // each imported repo gets its own directory by default.
-    let project_name = req.name.as_deref().unwrap_or(&repo.name);
+    // Use the caller-supplied name as-is, or fall back to the repository's short
+    // name, auto-numbered (" 2", " 3", …) when that name is already taken in the
+    // org. Mirrors the demo/new flows so re-importing the same repo doesn't 409.
+    let project_name = match req.name.as_deref() {
+        Some(n) => n.to_string(),
+        None => unique_display_name(&repo.name, Some(ctx.org.id))
+            .await
+            .map_err(|(s, m)| {
+                error!("{}", m);
+                (s, m)
+            })?,
+    };
     let workspace_id = Uuid::new_v4();
     // repo_dir is where the full git repository will be cloned.
     let repo_dir = resolve_project_dir(workspace_id).map_err(|(status, msg)| {
@@ -497,7 +530,7 @@ pub async fn setup_github(
     // Register the workspace in the DB now so it appears in /workspaces immediately.
     let workspace_id = match register_project(
         &oxy_project_dir,
-        project_name,
+        &project_name,
         workspace_id,
         Some(user.id),
         Some(ctx.org.id),
