@@ -280,7 +280,6 @@ version = "0.5.39"
 dependencies = [
  "agentic-core",
  "arrow 58.1.0",
- "arrow 57.3.0",
  "async-stream",
  "async-trait",
  "base64 0.22.1",
@@ -4393,7 +4392,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9cb4506c50d7c95351335e2457a975e66f78d22d4f6b14d4b0c86ac33d06703c"
 dependencies = [
  "arrow 54.3.1",
- "arrow 57.3.0",
  "arrow 58.1.0",
  "paste",
  "thiserror 2.0.18",
