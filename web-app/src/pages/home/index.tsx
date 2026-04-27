@@ -8,6 +8,7 @@ import { hasPendingOnboardingForWorkspace } from "@/components/workspaces/compon
 import useAgents from "@/hooks/api/agents/useAgents";
 import useDatabases from "@/hooks/api/databases/useDatabases";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 
@@ -122,14 +123,8 @@ const Home = () => {
       {!open && <PageHeader />}
       <ProjectSetupToast />
       <div className='flex h-full flex-col items-center justify-center gap-10 px-4'>
-        <div className='flex max-w-2xl flex-col items-center justify-center'>
-          <video autoPlay muted loop className='h-40 w-40 opacity-70'>
-            <source src='https://www.oxy.tech/oxy_webm_final.webm' type='video/webm' />
-          </video>
-          <p className='text-3xl'>{greeting}! How can I assist you?</p>
-        </div>
+        <p className='text-center text-3xl'>{greeting}! How can I assist you?</p>
 
-        {/* Chat Panel - Center of screen */}
         <div className='flex w-full max-w-4xl flex-col items-center gap-3 pb-40'>
           {!setupComplete && (
             <p className='text-center text-muted-foreground/50 text-xs'>
@@ -137,9 +132,7 @@ const Home = () => {
             </p>
           )}
           <div
-            className={
-              !setupComplete ? "pointer-events-none w-full select-none opacity-40" : "w-full"
-            }
+            className={cn("w-full", !setupComplete && "pointer-events-none select-none opacity-40")}
           >
             <ChatPanel
               initialMessage={locationState?.prefillQuestion}
