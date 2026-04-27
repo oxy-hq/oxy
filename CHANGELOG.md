@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.41] - 2026-04-27
+
+### 🐛 Bug Fixes
+
+- Replace arduino/setup-protoc with apt for Protoc installation to avoid GitHub rate limits
+
 ## [0.5.40] - 2026-04-27
 
 ### 🐛 Bug Fixes
@@ -19,6 +25,7 @@ All notable changes to this project will be documented in this file.
 ### ⚙️ Miscellaneous Tasks
 
 - Remove outdated arrow dependency version from Cargo.lock
+- Release 0.5.40 (#2185)
 
 ## [0.5.39] - 2026-04-27
 
