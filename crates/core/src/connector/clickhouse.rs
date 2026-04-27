@@ -340,7 +340,10 @@ mod tests {
 
     #[test]
     fn defaults_port_for_bare_hostname() {
-        assert_eq!(normalize_clickhouse_url("localhost"), "http://localhost:8123");
+        assert_eq!(
+            normalize_clickhouse_url("localhost"),
+            "http://localhost:8123"
+        );
         assert_eq!(
             normalize_clickhouse_url("clickhouse.internal"),
             "http://clickhouse.internal:8123"

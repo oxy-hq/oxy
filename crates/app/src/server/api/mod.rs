@@ -30,6 +30,7 @@ pub mod test_project_run;
 pub mod test_run;
 pub mod thread;
 pub mod traces;
+pub mod typed_stream;
 pub mod user;
 pub mod workflow;
 pub mod workspace_members;

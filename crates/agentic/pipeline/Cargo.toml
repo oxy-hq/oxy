@@ -14,6 +14,7 @@ agentic-builder = { path = "../builder" }
 agentic-connector = { path = "../connector", features = [
     "duckdb",
     "postgres",
+    "airhouse",
     "clickhouse",
     "snowflake",
     "bigquery",

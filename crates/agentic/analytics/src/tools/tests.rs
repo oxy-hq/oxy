@@ -163,15 +163,23 @@ impl DatabaseConnector for NoopConnector {
     }
 }
 
+fn noop_connectors() -> std::collections::HashMap<String, std::sync::Arc<dyn DatabaseConnector>> {
+    let mut map: std::collections::HashMap<String, std::sync::Arc<dyn DatabaseConnector>> =
+        std::collections::HashMap::new();
+    map.insert("default".to_string(), std::sync::Arc::new(NoopConnector));
+    map
+}
+
 #[tokio::test]
 async fn get_join_path_known_pair() {
     let cat = make_catalog();
-    let conn = NoopConnector;
+    let conns = noop_connectors();
     let result = execute_specifying_tool(
         "get_join_path",
         serde_json::json!({ "from_entity": "orders", "to_entity": "customers" }),
         &cat,
-        &conn,
+        &conns,
+        "default",
     )
     .await
     .unwrap();
@@ -182,12 +190,13 @@ async fn get_join_path_known_pair() {
 #[tokio::test]
 async fn get_join_path_unknown_pair_returns_error() {
     let cat = make_catalog();
-    let conn = NoopConnector;
+    let conns = noop_connectors();
     let err = execute_specifying_tool(
         "get_join_path",
         serde_json::json!({ "from_entity": "orders", "to_entity": "products" }),
         &cat,
-        &conn,
+        &conns,
+        "default",
     )
     .await
     .unwrap_err();

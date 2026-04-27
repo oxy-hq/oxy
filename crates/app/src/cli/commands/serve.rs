@@ -124,11 +124,15 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
         args.enterprise,
         observability.clone(),
         startup_cwd.clone(),
+        shutdown_token.clone(),
     )
     .await?;
 
     let internal_app = if args.internal_port > 0 {
-        Some(create_internal_application(args.enterprise, observability).await?)
+        Some(
+            create_internal_application(args.enterprise, observability, shutdown_token.clone())
+                .await?,
+        )
     } else {
         println!("serve: internal port disabled (internal_port=0)");
         None
@@ -226,11 +230,17 @@ async fn create_web_application(
     enterprise: bool,
     observability: Option<std::sync::Arc<dyn oxy_observability::ObservabilityStore>>,
     startup_cwd: std::path::PathBuf,
+    shutdown_token: CancellationToken,
 ) -> Result<Router, OxyError> {
-    let api_router =
-        crate::server::router::api_router(mode, enterprise, observability, startup_cwd)
-            .await
-            .map_err(|e| OxyError::RuntimeError(format!("Failed to create API router: {}", e)))?;
+    let api_router = crate::server::router::api_router(
+        mode,
+        enterprise,
+        observability,
+        startup_cwd,
+        shutdown_token,
+    )
+    .await
+    .map_err(|e| OxyError::RuntimeError(format!("Failed to create API router: {}", e)))?;
     let openapi_router = crate::server::router::openapi_router().await;
     println!("create_web_application: openapi_router done, assembling final router");
     let mut openapi_doc = openapi_router.into_openapi().clone();
@@ -274,12 +284,14 @@ async fn create_web_application(
 async fn create_internal_application(
     enterprise: bool,
     observability: Option<std::sync::Arc<dyn oxy_observability::ObservabilityStore>>,
+    shutdown_token: CancellationToken,
 ) -> Result<Router, OxyError> {
-    let internal_router = crate::server::router::internal_api_router(enterprise, observability)
-        .await
-        .map_err(|e| {
-            OxyError::RuntimeError(format!("Failed to create internal API router: {}", e))
-        })?;
+    let internal_router =
+        crate::server::router::internal_api_router(enterprise, observability, shutdown_token)
+            .await
+            .map_err(|e| {
+                OxyError::RuntimeError(format!("Failed to create internal API router: {}", e))
+            })?;
 
     let static_service = service_fn(handle_static_files);
 

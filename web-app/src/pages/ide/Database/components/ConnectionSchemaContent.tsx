@@ -1,75 +1,52 @@
-import { get } from "lodash";
 import type React from "react";
 import ErrorAlert from "@/components/ui/ErrorAlert";
 import { SidebarMenuSub } from "@/components/ui/shadcn/sidebar";
 import { Spinner } from "@/components/ui/shadcn/spinner";
-import type { DatabaseInfo } from "@/types/database";
-import { SchemaTreeItem } from "./SchemaTreeItem";
-
-const IGNORE_METADATA_SCHEMA_PREFIX = "__ducklake";
-
-const getFilteredSchemas = (database: DatabaseInfo) => {
-  const datasets = get(database, "datasets");
-  if (!datasets) return [];
-  return Object.entries(database.datasets)
-    .filter(([, tables]) =>
-      Object.values(tables ?? {}).some(
-        (semantic) => !get(semantic, "database_name", "")?.startsWith(IGNORE_METADATA_SCHEMA_PREFIX)
-      )
-    )
-    .map(([schemaName, tables]) => ({ name: schemaName, tables }));
-};
+import type { DatabaseSchema } from "@/types/database";
+import { SchemaTableList } from "./SchemaTableList";
 
 interface ConnectionSchemaContentProps {
-  database: DatabaseInfo;
-  isSyncing: boolean;
-  syncError?: string;
-  handleSyncDatabase: (e: React.MouseEvent, databaseName: string) => void;
+  databaseName: string;
+  dialect: string;
+  schema: DatabaseSchema | undefined;
+  isLoading: boolean;
+  isError: boolean;
+  onRefresh: (e: React.MouseEvent) => void;
 }
 
 export const ConnectionSchemaContent: React.FC<ConnectionSchemaContentProps> = ({
-  database,
-  isSyncing,
-  syncError,
-  handleSyncDatabase
+  databaseName,
+  dialect,
+  schema,
+  isLoading,
+  isError,
+  onRefresh
 }) => {
-  if (syncError) {
+  if (isLoading) {
+    return (
+      <SidebarMenuSub className='ml-[15px]'>
+        <div className='flex items-center gap-2 px-2 py-2 text-muted-foreground text-xs'>
+          <Spinner className='size-2.5' />
+          Fetching schema…
+        </div>
+      </SidebarMenuSub>
+    );
+  }
+
+  if (isError) {
     return (
       <SidebarMenuSub className='ml-[15px]'>
         <div className='px-2 py-2 text-xs'>
-          <ErrorAlert message={`Sync failed: ${syncError}`} className='mb-1' />
-          <button
-            onClick={(e) => handleSyncDatabase(e, database.name)}
-            className='text-primary hover:underline'
-            disabled={isSyncing}
-          >
-            {isSyncing ? <Spinner className='size-2.5' /> : "Retry"}
+          <ErrorAlert message='Failed to load schema' className='mb-1' />
+          <button onClick={onRefresh} className='text-primary hover:underline'>
+            Retry
           </button>
         </div>
       </SidebarMenuSub>
     );
   }
 
-  if (!database.synced) {
-    return (
-      <SidebarMenuSub className='ml-[15px]'>
-        <div className='px-2 py-2 text-muted-foreground text-xs italic'>
-          Not synced.{" "}
-          <button
-            onClick={(e) => handleSyncDatabase(e, database.name)}
-            className='text-primary hover:underline'
-            disabled={isSyncing}
-          >
-            {isSyncing ? <Spinner className='size-2.5' /> : "Sync now"}
-          </button>
-        </div>
-      </SidebarMenuSub>
-    );
-  }
-
-  const filteredSchemas = getFilteredSchemas(database);
-
-  if (filteredSchemas.length === 0) {
+  if (!schema || schema.tables.length === 0) {
     return (
       <SidebarMenuSub className='ml-[15px]'>
         <div className='px-2 py-2 text-muted-foreground text-xs italic'>No tables found</div>
@@ -79,17 +56,7 @@ export const ConnectionSchemaContent: React.FC<ConnectionSchemaContentProps> = (
 
   return (
     <SidebarMenuSub className='ml-[15px]'>
-      {filteredSchemas
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .map((schema) => (
-          <SchemaTreeItem
-            key={`${database.name}-${schema.name}`}
-            schemaName={schema.name}
-            dialect={database.dialect}
-            databaseName={database.name}
-            tables={schema.tables}
-          />
-        ))}
+      <SchemaTableList tables={schema.tables} dialect={dialect} databaseName={databaseName} />
     </SidebarMenuSub>
   );
 };

@@ -159,6 +159,7 @@ impl Catalog for SemanticCatalog {
                 column_expr: dim.expr.clone(),
                 static_samples: dim.samples.clone().unwrap_or_default(),
                 data_type: Some(dim.dimension_type.to_string()),
+                datasource: view.datasource.clone(),
             });
         }
 
@@ -172,6 +173,7 @@ impl Catalog for SemanticCatalog {
                 column_expr: measure.expr.clone().unwrap_or_else(|| measure.name.clone()),
                 static_samples: measure.samples.clone().unwrap_or_default(),
                 data_type: None,
+                datasource: view.datasource.clone(),
             });
         }
 

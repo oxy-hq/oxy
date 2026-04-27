@@ -22,11 +22,14 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use gcp_bigquery_client::{Client, model::query_request::QueryRequest};
 
-use agentic_core::result::{CellValue, QueryResult, QueryRow};
+use agentic_core::result::{
+    CellValue, ColumnSpec, QueryResult, QueryRow, TypedRowError, TypedRowStream, TypedValue,
+};
 
+use crate::bigquery_typed::{bq_field_to_typed, decode_bq_row};
 use crate::connector::{
     ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, ResultSummary,
-    SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect,
+    SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect, normalize_sql,
 };
 
 // ── Connector ─────────────────────────────────────────────────────────────────
@@ -35,9 +38,9 @@ use crate::connector::{
 pub struct BigQueryConnector {
     client: Client,
     project_id: String,
-    #[allow(dead_code)]
-    dataset: Option<String>,
     cached_schema: SchemaInfo,
+    /// Set when schema pre-fetch fails so `introspect_schema` can surface the error.
+    schema_error: Option<String>,
 }
 
 impl BigQueryConnector {
@@ -45,21 +48,28 @@ impl BigQueryConnector {
     pub async fn new(
         key_path: &str,
         project_id: String,
-        dataset: Option<String>,
+        datasets: Vec<String>,
     ) -> Result<Self, ConnectorError> {
         let client = Client::from_service_account_key_file(key_path)
             .await
             .map_err(|e| ConnectorError::ConnectionError(e.to_string()))?;
 
-        let cached_schema = fetch_schema(&client, &project_id, dataset.as_deref())
-            .await
-            .unwrap_or_default();
+        let (cached_schema, schema_error) =
+            match fetch_schema(&client, &project_id, &datasets).await {
+                Ok(schema) => (schema, None),
+                Err(e) => {
+                    tracing::warn!(
+                        "bigquery: schema prefetch failed ({e}); schema browsing unavailable"
+                    );
+                    (SchemaInfo::default(), Some(e.to_string()))
+                }
+            };
 
         Ok(Self {
             client,
             project_id,
-            dataset,
             cached_schema,
+            schema_error,
         })
     }
 }
@@ -77,6 +87,7 @@ impl DatabaseConnector for BigQueryConnector {
         sql: &str,
         sample_limit: u64,
     ) -> Result<ExecutionResult, ConnectorError> {
+        let sql = normalize_sql(sql);
         // 1. Run the user query with a row limit.
         let request = QueryRequest {
             query: sql.to_string(),
@@ -253,7 +264,62 @@ impl DatabaseConnector for BigQueryConnector {
         })
     }
 
+    async fn execute_query_full(&self, sql: &str) -> Result<TypedRowStream, ConnectorError> {
+        let sql = normalize_sql(sql);
+        // No per-query row cap — `execute_query_full` must return the full
+        // result. BigQuery paginates internally, but `ResultSet::next_row`
+        // iterates all pages.
+        let request = QueryRequest {
+            query: sql.to_string(),
+            use_legacy_sql: false,
+            timeout_ms: Some(180_000),
+            ..Default::default()
+        };
+
+        let response = self
+            .client
+            .job()
+            .query(&self.project_id, request)
+            .await
+            .map_err(|e| ConnectorError::QueryFailed {
+                sql: sql.to_string(),
+                message: e.to_string(),
+            })?;
+
+        // Build `ColumnSpec`s directly from the BigQuery field schema
+        // (preserves REPEATED mode + RECORD nesting via the type mapper).
+        let columns: Vec<ColumnSpec> = response
+            .schema
+            .as_ref()
+            .and_then(|s| s.fields.as_ref())
+            .map(|fields| {
+                fields
+                    .iter()
+                    .map(|f| ColumnSpec {
+                        name: f.name.clone(),
+                        data_type: bq_field_to_typed(f),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let mut rs = gcp_bigquery_client::model::query_response::ResultSet::new_from_query_response(
+            response,
+        );
+        let mut typed_rows: Vec<Result<Vec<TypedValue>, TypedRowError>> = Vec::new();
+        while rs.next_row() {
+            typed_rows.push(decode_bq_row(&rs, &columns));
+        }
+
+        Ok(TypedRowStream::from_rows(columns, typed_rows))
+    }
+
     fn introspect_schema(&self) -> Result<SchemaInfo, ConnectorError> {
+        if let Some(ref err) = self.schema_error {
+            return Err(ConnectorError::ConnectionError(format!(
+                "schema introspection failed: {err}"
+            )));
+        }
         Ok(self.cached_schema.clone())
     }
 }
@@ -307,61 +373,82 @@ fn empty_col_stats(col: &str) -> ColumnStats {
 
 // ── Schema pre-fetch ──────────────────────────────────────────────────────────
 
-/// Fetch the schema from BigQuery `INFORMATION_SCHEMA.COLUMNS`.
+/// Fetch schema across all specified datasets.
 ///
-/// If no dataset is provided, returns an empty schema.
+/// Each dataset is queried separately and table names are prefixed with
+/// `dataset.table_name` so tables from different datasets don't collide.
+/// Returns an empty schema (no error) when `datasets` is empty.
 async fn fetch_schema(
     client: &Client,
     project_id: &str,
-    dataset: Option<&str>,
+    datasets: &[String],
 ) -> Result<SchemaInfo, ConnectorError> {
-    let Some(ds) = dataset else {
+    if datasets.is_empty() {
         return Ok(SchemaInfo::default());
-    };
-
-    let schema_sql = format!(
-        "SELECT table_name, column_name, data_type \
-         FROM `{project_id}.{ds}.INFORMATION_SCHEMA.COLUMNS` \
-         ORDER BY table_name, ordinal_position"
-    );
-
-    let request = QueryRequest {
-        query: schema_sql.clone(),
-        use_legacy_sql: false,
-        timeout_ms: Some(60_000),
-        ..Default::default()
-    };
-
-    let response = client.job().query(project_id, request).await.map_err(|e| {
-        ConnectorError::ConnectionError(format!("schema introspection failed: {e}"))
-    })?;
-
-    let mut rs =
-        gcp_bigquery_client::model::query_response::ResultSet::new_from_query_response(response);
+    }
 
     let mut map: HashMap<String, Vec<SchemaColumnInfo>> = HashMap::new();
-    while rs.next_row() {
-        let table = match rs.get_string_by_name("table_name").ok().flatten() {
-            Some(t) => t,
-            None => continue,
-        };
-        let column = match rs.get_string_by_name("column_name").ok().flatten() {
-            Some(c) => c,
-            None => continue,
-        };
-        let data_type = rs
-            .get_string_by_name("data_type")
-            .ok()
-            .flatten()
-            .unwrap_or_default();
+    let mut errors: Vec<String> = Vec::new();
 
-        map.entry(table).or_default().push(SchemaColumnInfo {
-            name: column,
-            data_type,
-            min: None,
-            max: None,
-            sample_values: vec![],
-        });
+    for ds in datasets {
+        let schema_sql = format!(
+            "SELECT table_name, column_name, data_type \
+             FROM `{project_id}.{ds}.INFORMATION_SCHEMA.COLUMNS` \
+             ORDER BY table_name, ordinal_position"
+        );
+
+        let request = QueryRequest {
+            query: schema_sql,
+            use_legacy_sql: false,
+            timeout_ms: Some(60_000),
+            ..Default::default()
+        };
+
+        let response = match client.job().query(project_id, request).await {
+            Ok(r) => r,
+            Err(e) => {
+                errors.push(format!("{ds}: {e}"));
+                continue;
+            }
+        };
+
+        let mut rs = gcp_bigquery_client::model::query_response::ResultSet::new_from_query_response(
+            response,
+        );
+        while rs.next_row() {
+            let table = match rs.get_string_by_name("table_name").ok().flatten() {
+                Some(t) => t,
+                None => continue,
+            };
+            let column = match rs.get_string_by_name("column_name").ok().flatten() {
+                Some(c) => c,
+                None => continue,
+            };
+            let data_type = rs
+                .get_string_by_name("data_type")
+                .ok()
+                .flatten()
+                .unwrap_or_default();
+
+            // Prefix table name with dataset so tables from different datasets
+            // are distinct and generate correct fully-qualified SQL.
+            let qualified = format!("{ds}.{table}");
+            map.entry(qualified).or_default().push(SchemaColumnInfo {
+                name: column,
+                data_type,
+                min: None,
+                max: None,
+                sample_values: vec![],
+            });
+        }
+    }
+
+    // Surface errors only if every dataset failed.
+    if map.is_empty() && !errors.is_empty() {
+        return Err(ConnectorError::ConnectionError(format!(
+            "schema introspection failed: {}",
+            errors.join("; ")
+        )));
     }
 
     let tables: Vec<SchemaTableInfo> = map

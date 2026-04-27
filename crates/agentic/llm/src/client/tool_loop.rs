@@ -3,6 +3,7 @@
 use std::time::Instant;
 
 use serde_json::{Value, json};
+use tracing::Instrument;
 
 use agentic_core::events::{CoreEvent, DomainEvents, EventStream};
 use agentic_core::tools::ToolDef;
@@ -98,9 +99,18 @@ impl LlmClient {
             let round_start = Instant::now();
 
             // Create a span for this LLM inference round.  The span
-            // covers only the API call + stream consumption; it is explicitly
-            // dropped before tool execution so its duration reflects pure
-            // inference time.
+            // covers only the API call + stream consumption; it is dropped
+            // before tool execution so its duration reflects pure inference
+            // time.
+            //
+            // NOTE: Using `.instrument(span)` on an async block rather than
+            // `let _guard = span.enter();` across `.await` points. The
+            // `Entered` guard would be entered on one tokio worker thread and
+            // dropped on another when the future migrates, corrupting
+            // tracing-subscriber's per-thread span stack. The leaked span ids
+            // then surfaced as `Span::current()` clone panics (ref_count==0)
+            // in later sqlx queries on the coordinator — see the
+            // cancel-race panic from `insert_event`.
             let llm_span = tracing::info_span!(
                 "llm_round",
                 oxy.name = "llm.call",
@@ -109,223 +119,263 @@ impl LlmClient {
                 llm.state = %config.state,
                 llm.round = rounds,
             );
-            let _llm_guard = llm_span.enter();
 
-            // Emit LlmStart for every HTTP round so the frontend sees each
-            // individual LLM call with its own token counts and timing.
-            emit_core(
-                events,
-                CoreEvent::LlmStart {
-                    state: config.state.clone(),
-                    prompt_tokens: next_prompt_tokens,
-                    sub_spec_index: ssi,
-                },
-            )
-            .await;
-
-            let s = self
-                .provider
-                .stream(
-                    system,
-                    &messages,
-                    tools,
-                    &config.thinking,
-                    config.response_schema.as_ref(),
-                    effective_max_tokens,
-                )
-                .await?;
-
-            let mut text = String::new();
-            let mut thinking_summary = String::new();
-            let mut tool_calls: Vec<ToolCallChunk> = Vec::new();
-            let mut raw_blocks: Vec<ContentBlock> = Vec::new();
-            // Track the original stream order of reasoning items and tool
-            // calls so we can reconstruct the assistant turn with correct
-            // interleaving.  OpenAI requires each reasoning item to be
-            // immediately followed by its output item (function_call /
-            // message); re-ordering breaks that invariant.
-            let mut ordered_blocks: Vec<ContentBlock> = Vec::new();
-            let mut in_thinking = false;
-            let mut usage = Usage::default();
-            let mut stream_err: Option<LlmError> = None;
-
-            let mut s = std::pin::pin!(s);
-            loop {
-                use tokio_stream::StreamExt as _;
-                let Some(chunk) = s.next().await else { break };
-                match chunk {
-                    Err(e) => {
-                        stream_err = Some(e);
-                        break;
-                    }
-                    Ok(chunk) => match chunk {
-                        Chunk::ThinkingSummary(t) => {
-                            if !in_thinking {
-                                in_thinking = true;
-                                emit_core(
-                                    events,
-                                    CoreEvent::ThinkingStart {
-                                        state: config.state.clone(),
-                                        sub_spec_index: ssi,
-                                    },
-                                )
-                                .await;
-                            }
-                            thinking_summary.push_str(&t);
-                            if !t.is_empty() {
-                                emit_core(
-                                    events,
-                                    CoreEvent::ThinkingToken {
-                                        token: t,
-                                        sub_spec_index: ssi,
-                                    },
-                                )
-                                .await;
-                            }
-                        }
-                        Chunk::Text(t) => {
-                            if in_thinking {
-                                in_thinking = false;
-                                emit_core(
-                                    events,
-                                    CoreEvent::ThinkingEnd {
-                                        state: config.state.clone(),
-                                        sub_spec_index: ssi,
-                                    },
-                                )
-                                .await;
-                            }
-                            text.push_str(&t);
-                            // Suppress token streaming when the LLM is
-                            // producing a structured JSON response via
-                            // response_schema — the raw JSON is not
-                            // user-friendly and the meaningful content is
-                            // already captured in domain events
-                            // (TriageCompleted, IntentClarified, etc.).
-                            if !t.is_empty() && config.response_schema.is_none() {
-                                emit_core(
-                                    events,
-                                    CoreEvent::LlmToken {
-                                        token: t,
-                                        sub_spec_index: ssi,
-                                    },
-                                )
-                                .await;
-                            }
-                        }
-                        Chunk::ToolCall(tc) => {
-                            // Destructure tc to move its fields.  One clone
-                            // per field is still required because both
-                            // ordered_blocks and tool_calls need owned copies.
-                            let ToolCallChunk {
-                                id,
-                                name,
-                                input,
-                                provider_data,
-                            } = tc;
-                            ordered_blocks.push(ContentBlock::ToolUse {
-                                id: id.clone(),
-                                name: name.clone(),
-                                input: input.clone(),
-                                provider_data: provider_data.clone(),
-                            });
-                            tool_calls.push(ToolCallChunk {
-                                id,
-                                name,
-                                input,
-                                provider_data,
-                            });
-                        }
-                        Chunk::RawBlock(block) => {
-                            ordered_blocks.push(block.clone());
-                            raw_blocks.push(block);
-                        }
-                        Chunk::Done(u) => {
-                            usage = u;
-                        }
-                    },
-                }
-            }
-
-            // Close any open thinking block (stream ended mid-thinking).
-            if in_thinking {
+            #[allow(clippy::type_complexity)]
+            let round_output: Result<
+                (
+                    String,
+                    String,
+                    Vec<ToolCallChunk>,
+                    Vec<ContentBlock>,
+                    Vec<ContentBlock>,
+                    Usage,
+                    u64,
+                ),
+                LlmError,
+            > = async {
+                // Emit LlmStart for every HTTP round so the frontend sees
+                // each individual LLM call with its own token counts and
+                // timing.
                 emit_core(
                     events,
-                    CoreEvent::ThinkingEnd {
+                    CoreEvent::LlmStart {
                         state: config.state.clone(),
+                        prompt_tokens: next_prompt_tokens,
                         sub_spec_index: ssi,
                     },
                 )
                 .await;
-            }
 
-            // Capture the LLM inference time for this round (excludes tool execution).
-            let round_llm_ms = round_start.elapsed().as_millis() as u64;
+                let s = self
+                    .provider
+                    .stream(
+                        system,
+                        &messages,
+                        tools,
+                        &config.thinking,
+                        config.response_schema.as_ref(),
+                        effective_max_tokens,
+                    )
+                    .await?;
 
-            // Record token usage as a visible span event on the LLM span so
-            // it appears in the trace detail view.
-            tracing::info!(
-                name: "llm.usage",
-                is_visible = true,
-                prompt_tokens = usage.input_tokens as i64,
-                completion_tokens = usage.output_tokens as i64,
-                total_tokens = (usage.input_tokens + usage.output_tokens) as i64,
-                model = %self.provider.model_name(),
-                duration_ms = round_llm_ms,
-                stop_reason = %format!("{:?}", usage.stop_reason),
-            );
+                let mut text = String::new();
+                let mut thinking_summary = String::new();
+                let mut tool_calls: Vec<ToolCallChunk> = Vec::new();
+                let mut raw_blocks: Vec<ContentBlock> = Vec::new();
+                // Track the original stream order of reasoning items and
+                // tool calls so we can reconstruct the assistant turn with
+                // correct interleaving.  OpenAI requires each reasoning item
+                // to be immediately followed by its output item
+                // (function_call / message); re-ordering breaks that
+                // invariant.
+                let mut ordered_blocks: Vec<ContentBlock> = Vec::new();
+                let mut in_thinking = false;
+                let mut usage = Usage::default();
+                let mut stream_err: Option<LlmError> = None;
 
-            // Record the LLM output (text + tool calls) as a visible event.
-            {
-                let tool_names: Vec<&str> = tool_calls.iter().map(|tc| tc.name.as_str()).collect();
-                let output_preview_buf;
-                let output_preview: &str = if text.len() > LLM_OUTPUT_PREVIEW_MAX_CHARS {
-                    // Truncate at a char boundary to avoid panicking on
-                    // multi-byte UTF-8 characters (e.g. CJK, emoji) that may
-                    // straddle the byte offset.
-                    let truncate_at = text
-                        .char_indices()
-                        .take_while(|(i, _)| *i < LLM_OUTPUT_PREVIEW_MAX_CHARS)
-                        .last()
-                        .map(|(i, c)| i + c.len_utf8())
-                        .unwrap_or(0);
-                    output_preview_buf =
-                        format!("{}… ({} chars)", &text[..truncate_at], text.len());
-                    &output_preview_buf
-                } else {
-                    &text
-                };
+                let mut s = std::pin::pin!(s);
+                loop {
+                    use tokio_stream::StreamExt as _;
+                    let Some(chunk) = s.next().await else { break };
+                    match chunk {
+                        Err(e) => {
+                            stream_err = Some(e);
+                            break;
+                        }
+                        Ok(chunk) => match chunk {
+                            Chunk::ThinkingSummary(t) => {
+                                if !in_thinking {
+                                    in_thinking = true;
+                                    emit_core(
+                                        events,
+                                        CoreEvent::ThinkingStart {
+                                            state: config.state.clone(),
+                                            sub_spec_index: ssi,
+                                        },
+                                    )
+                                    .await;
+                                }
+                                thinking_summary.push_str(&t);
+                                if !t.is_empty() {
+                                    emit_core(
+                                        events,
+                                        CoreEvent::ThinkingToken {
+                                            token: t,
+                                            sub_spec_index: ssi,
+                                        },
+                                    )
+                                    .await;
+                                }
+                            }
+                            Chunk::Text(t) => {
+                                if in_thinking {
+                                    in_thinking = false;
+                                    emit_core(
+                                        events,
+                                        CoreEvent::ThinkingEnd {
+                                            state: config.state.clone(),
+                                            sub_spec_index: ssi,
+                                        },
+                                    )
+                                    .await;
+                                }
+                                text.push_str(&t);
+                                // Suppress token streaming when the LLM is
+                                // producing a structured JSON response via
+                                // response_schema — the raw JSON is not
+                                // user-friendly and the meaningful content
+                                // is already captured in domain events
+                                // (TriageCompleted, IntentClarified, etc.).
+                                if !t.is_empty() && config.response_schema.is_none() {
+                                    emit_core(
+                                        events,
+                                        CoreEvent::LlmToken {
+                                            token: t,
+                                            sub_spec_index: ssi,
+                                        },
+                                    )
+                                    .await;
+                                }
+                            }
+                            Chunk::ToolCall(tc) => {
+                                // Destructure tc to move its fields.  One
+                                // clone per field is still required because
+                                // both ordered_blocks and tool_calls need
+                                // owned copies.
+                                let ToolCallChunk {
+                                    id,
+                                    name,
+                                    input,
+                                    provider_data,
+                                } = tc;
+                                ordered_blocks.push(ContentBlock::ToolUse {
+                                    id: id.clone(),
+                                    name: name.clone(),
+                                    input: input.clone(),
+                                    provider_data: provider_data.clone(),
+                                });
+                                tool_calls.push(ToolCallChunk {
+                                    id,
+                                    name,
+                                    input,
+                                    provider_data,
+                                });
+                            }
+                            Chunk::RawBlock(block) => {
+                                ordered_blocks.push(block.clone());
+                                raw_blocks.push(block);
+                            }
+                            Chunk::Done(u) => {
+                                usage = u;
+                            }
+                        },
+                    }
+                }
+
+                // Close any open thinking block (stream ended mid-thinking).
+                if in_thinking {
+                    emit_core(
+                        events,
+                        CoreEvent::ThinkingEnd {
+                            state: config.state.clone(),
+                            sub_spec_index: ssi,
+                        },
+                    )
+                    .await;
+                }
+
+                // Capture the LLM inference time for this round (excludes
+                // tool execution).
+                let round_llm_ms = round_start.elapsed().as_millis() as u64;
+
+                // Record token usage as a visible span event on the LLM
+                // span so it appears in the trace detail view.
                 tracing::info!(
-                    name: "llm.output",
+                    name: "llm.usage",
                     is_visible = true,
-                    text = %output_preview,
-                    tool_calls = %serde_json::to_string(&tool_names).unwrap_or_default(),
+                    prompt_tokens = usage.input_tokens as i64,
+                    completion_tokens = usage.output_tokens as i64,
+                    total_tokens = (usage.input_tokens + usage.output_tokens) as i64,
+                    model = %self.provider.model_name(),
+                    duration_ms = round_llm_ms,
+                    stop_reason = %format!("{:?}", usage.stop_reason),
                 );
-            }
 
-            // Emit LlmEnd for this round with per-round token counts and
-            // inference-only timing (excludes tool execution).
-            emit_core(
-                events,
-                CoreEvent::LlmEnd {
-                    state: config.state.clone(),
-                    output_tokens: usage.output_tokens,
-                    duration_ms: round_llm_ms,
-                    model: self.provider.model_name().to_string(),
-                    sub_spec_index: ssi,
-                },
-            )
+                // Record the LLM output (text + tool calls) as a visible
+                // event.
+                {
+                    let tool_names: Vec<&str> =
+                        tool_calls.iter().map(|tc| tc.name.as_str()).collect();
+                    let output_preview_buf;
+                    let output_preview: &str = if text.len() > LLM_OUTPUT_PREVIEW_MAX_CHARS {
+                        // Truncate at a char boundary to avoid panicking on
+                        // multi-byte UTF-8 characters (e.g. CJK, emoji) that
+                        // may straddle the byte offset.
+                        let truncate_at = text
+                            .char_indices()
+                            .take_while(|(i, _)| *i < LLM_OUTPUT_PREVIEW_MAX_CHARS)
+                            .last()
+                            .map(|(i, c)| i + c.len_utf8())
+                            .unwrap_or(0);
+                        output_preview_buf =
+                            format!("{}… ({} chars)", &text[..truncate_at], text.len());
+                        &output_preview_buf
+                    } else {
+                        &text
+                    };
+                    tracing::info!(
+                        name: "llm.output",
+                        is_visible = true,
+                        text = %output_preview,
+                        tool_calls = %serde_json::to_string(&tool_names).unwrap_or_default(),
+                    );
+                }
+
+                // Emit LlmEnd for this round with per-round token counts
+                // and inference-only timing (excludes tool execution).
+                emit_core(
+                    events,
+                    CoreEvent::LlmEnd {
+                        state: config.state.clone(),
+                        output_tokens: usage.output_tokens,
+                        duration_ms: round_llm_ms,
+                        model: self.provider.model_name().to_string(),
+                        sub_spec_index: ssi,
+                    },
+                )
+                .await;
+
+                // Propagate stream errors AFTER the balanced LlmEnd.
+                if let Some(e) = stream_err {
+                    return Err(e);
+                }
+
+                Ok((
+                    text,
+                    thinking_summary,
+                    tool_calls,
+                    raw_blocks,
+                    ordered_blocks,
+                    usage,
+                    round_llm_ms,
+                ))
+            }
+            .instrument(llm_span.clone())
             .await;
 
             // Close the LLM span before tool execution so its duration
             // reflects only inference time, not tool latency.
-            drop(_llm_guard);
             drop(llm_span);
 
-            // Propagate stream errors after emitting the balanced LlmEnd.
-            if let Some(e) = stream_err {
-                return Err(e);
-            }
+            let (
+                text,
+                thinking_summary,
+                tool_calls,
+                raw_blocks,
+                ordered_blocks,
+                usage,
+                round_llm_ms,
+            ) = round_output?;
 
             // Check if any tool call is the structured-response tool.
             // When found, treat it as the final output rather than executing it.

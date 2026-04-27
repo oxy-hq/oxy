@@ -5,10 +5,12 @@
 use std::collections::HashMap;
 
 use agentic_core::result::CellValue;
-use snowflake_api::{QueryResult as SnowflakeQueryResult, SnowflakeApi};
+use snowflake_api::QueryResult as SnowflakeQueryResult;
 
+use crate::config::SnowflakeAuth;
 use crate::connector::{ConnectorError, SchemaColumnInfo, SchemaInfo, SchemaTableInfo};
 
+use super::build_api;
 use super::conversion::{arrow_to_cell, json_value_to_cell};
 
 pub(super) fn extract_count(result: SnowflakeQueryResult) -> u64 {
@@ -285,23 +287,15 @@ pub(super) fn decode_stat_rows(result: SnowflakeQueryResult) -> Vec<StatRow> {
 pub(super) async fn fetch_schema(
     account: &str,
     username: &str,
-    password: &str,
+    auth: &SnowflakeAuth,
     role: Option<&str>,
     warehouse: &str,
     database: Option<&str>,
     schema_str: Option<&str>,
 ) -> Result<SchemaInfo, ConnectorError> {
-    let api = SnowflakeApi::with_password_auth(
-        account,
-        Some(warehouse),
-        database,
-        schema_str,
-        username,
-        role,
-        password,
-    )
-    .map_err(|e| ConnectorError::ConnectionError(e.to_string()))?;
-
+    let api = build_api(
+        account, username, auth, role, warehouse, database, schema_str,
+    )?;
     api.authenticate()
         .await
         .map_err(|e| ConnectorError::ConnectionError(e.to_string()))?;

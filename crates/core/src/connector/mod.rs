@@ -126,6 +126,24 @@ impl Connector {
                 );
                 EngineType::ConnectorX(ConnectorX::new(database.dialect(), db_path, None))
             }
+            DatabaseType::Airhouse(ah) => {
+                // Airhouse speaks the Postgres wire protocol but its SQL dialect is
+                // DuckDB, and the wire impl does not implement Postgres `COPY`.
+                // ConnectorX's default `binary` protocol for Postgres uses
+                // `COPY ... TO STDOUT` for bulk transfer, which Airhouse rejects
+                // with an `UnexpectedMessage` protocol error. Force the `cursor`
+                // protocol so ConnectorX issues plain `DECLARE CURSOR` + `FETCH`
+                // statements — same mitigation as the Redshift path below.
+                let db_path = format!(
+                    "{}:{}@{}:{}/{}?cxprotocol=cursor",
+                    ah.get_user(secrets_manager).await?,
+                    ah.get_password(secrets_manager).await?,
+                    ah.get_host(secrets_manager).await?,
+                    ah.get_port(secrets_manager).await?,
+                    ah.get_database(secrets_manager).await?,
+                );
+                EngineType::ConnectorX(ConnectorX::new("postgres".to_string(), db_path, None))
+            }
             DatabaseType::Redshift(rs) => {
                 let db_path = format!(
                     "{}:{}@{}:{}/{}?cxprotocol={}",

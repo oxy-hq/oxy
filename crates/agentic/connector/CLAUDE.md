@@ -8,9 +8,12 @@ Database connectivity abstraction. Provides a unified `DatabaseConnector` trait 
 | ------------- | ----------- | --------- |
 | `duckdb` | `DuckDbConnector` | Bundled DuckDB |
 | `postgres` | `PostgresConnector` | `tokio-postgres` |
+| `airhouse` | `AirhouseConnector` | `tokio-postgres` (pgwire, DuckDB dialect) |
+| `mysql` | `MysqlConnector` | `sqlx-mysql` |
 | `clickhouse` | `ClickHouseConnector` | HTTP API via `reqwest` |
 | `snowflake` | `SnowflakeConnector` | `snowflake-api` |
 | `bigquery` | `BigQueryConnector` | `gcp-bigquery-client` |
+| `domo` | `DomoConnector` | REST API via `reqwest` |
 
 ## Key Types
 

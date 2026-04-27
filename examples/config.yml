@@ -43,6 +43,15 @@ databases:
     password_var: POSTGRES_PASSWORD
     database: "default"
 
+  # Airhouse: Postgres wire protocol, DuckDB SQL dialect.
+  - name: airhouse
+    type: airhouse
+    host: "localhost"
+    port: "5445"
+    user: "airhouse"
+    password_var: AIRHOUSE_PASSWORD
+    database: "airhouse"
+
   - name: mysql
     type: mysql
     host: "localhost"

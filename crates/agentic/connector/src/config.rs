@@ -7,6 +7,7 @@
 //! `build_connector` reads this config and constructs a `Box<dyn DatabaseConnector>`.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 // ── DuckDB ────────────────────────────────────────────────────────────────────
 
@@ -42,6 +43,18 @@ pub struct PostgresConfig {
     pub database: String,
 }
 
+// ── MySQL ─────────────────────────────────────────────────────────────────────
+
+/// Already-resolved connection parameters for a MySQL / MariaDB database.
+#[derive(Debug, Clone)]
+pub struct MysqlConfig {
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+    pub password: String,
+    pub database: String,
+}
+
 // ── ClickHouse ────────────────────────────────────────────────────────────────
 
 /// Already-resolved connection parameters for a ClickHouse HTTP endpoint.
@@ -56,12 +69,38 @@ pub struct ClickHouseConfig {
 
 // ── Snowflake ─────────────────────────────────────────────────────────────────
 
-/// Already-resolved connection parameters for Snowflake (password auth).
+/// Callback invoked with the browser SSO URL during Snowflake external-browser
+/// authentication. Wrap in `Arc` so the closure is `Clone + Debug`.
+#[derive(Clone)]
+pub struct SsoUrlCallback(pub Arc<dyn Fn(String) + Send + Sync>);
+
+impl std::fmt::Debug for SsoUrlCallback {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("SsoUrlCallback(<fn>)")
+    }
+}
+
+/// Authentication mode for a Snowflake connection.
+#[derive(Debug, Clone)]
+pub enum SnowflakeAuth {
+    /// Username + password.
+    Password { password: String },
+    /// External browser (SSO / SAML). Token is cached in `cache_dir` across
+    /// calls so subsequent connections skip the browser step.
+    Browser {
+        timeout_secs: u64,
+        cache_dir: Option<PathBuf>,
+        /// Fired once with the redirect URL so callers can stream it to the UI.
+        sso_url_callback: Option<SsoUrlCallback>,
+    },
+}
+
+/// Already-resolved connection parameters for Snowflake.
 #[derive(Debug, Clone)]
 pub struct SnowflakeConfig {
     pub account: String,
     pub username: String,
-    pub password: String,
+    pub auth: SnowflakeAuth,
     pub role: Option<String>,
     pub warehouse: String,
     pub database: Option<String>,
@@ -76,7 +115,40 @@ pub struct BigQueryConfig {
     /// Path to a service-account JSON key file.
     pub key_path: String,
     pub project_id: String,
-    pub dataset: Option<String>,
+    /// Datasets to expose for schema browsing. Empty means no schema browsing.
+    /// Replaces the old single `dataset` field — callers should merge both
+    /// `dataset` (legacy) and `datasets` (multi) from the oxy config here.
+    pub datasets: Vec<String>,
+}
+
+// ── DOMO ──────────────────────────────────────────────────────────────────────
+
+/// Already-resolved connection parameters for DOMO's REST query API.
+#[derive(Debug, Clone)]
+pub struct DomoConfig {
+    /// Base URL for the DOMO API, e.g. `https://my-instance.domo.com/api`.
+    /// Callers may also pass the bare subdomain (`"my-instance"`) if they
+    /// build the URL via `DomoConfig::from_instance`.
+    pub base_url: String,
+    /// DOMO developer token.
+    pub developer_token: String,
+    /// Dataset ID to run queries against.
+    pub dataset_id: String,
+}
+
+impl DomoConfig {
+    /// Build a `DomoConfig` from an instance subdomain plus credentials.
+    pub fn from_instance(
+        instance: impl AsRef<str>,
+        developer_token: impl Into<String>,
+        dataset_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            base_url: format!("https://{}.domo.com/api", instance.as_ref()),
+            developer_token: developer_token.into(),
+            dataset_id: dataset_id.into(),
+        }
+    }
 }
 
 // ── DuckDB (raw init statements) ─────────────────────────────────────────────
@@ -121,6 +193,12 @@ pub enum ConnectorConfig {
     Postgres(PostgresConfig),
     /// Redshift (Postgres-compatible wire protocol).
     Redshift(PostgresConfig),
+    /// Airhouse: Postgres wire protocol, DuckDB SQL dialect.
+    Airhouse(PostgresConfig),
+    /// MySQL / MariaDB.
+    Mysql(MysqlConfig),
+    /// DOMO via its REST query API.
+    Domo(DomoConfig),
     ClickHouse(ClickHouseConfig),
     Snowflake(SnowflakeConfig),
     BigQuery(BigQueryConfig),

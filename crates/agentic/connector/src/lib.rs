@@ -19,8 +19,34 @@ pub mod duckdb;
 #[cfg(feature = "postgres")]
 pub mod postgres;
 
+/// Shared typed-row helpers used by the `postgres` backend's
+/// `execute_query_full`. Gated on `postgres` only — Airhouse uses the
+/// simple-query protocol and has its own path.
+#[cfg(feature = "postgres")]
+mod postgres_typed;
+
+#[cfg(feature = "airhouse")]
+pub mod airhouse;
+
+/// Typed-row helpers for the Airhouse backend's `execute_query_full`.
+/// Uses the simple-query (text) protocol + DuckDB-style DESCRIBE.
+#[cfg(feature = "airhouse")]
+mod airhouse_typed;
+
+#[cfg(feature = "mysql")]
+pub mod mysql;
+
+#[cfg(feature = "domo")]
+pub mod domo;
+
 #[cfg(feature = "clickhouse")]
 pub mod clickhouse;
+
+/// Typed-row helpers for the ClickHouse backend's `execute_query_full`.
+/// Parses CH type strings (with `Nullable` / `LowCardinality` wrappers) and
+/// JSONCompact cell values into `TypedValue`s.
+#[cfg(feature = "clickhouse")]
+mod clickhouse_typed;
 
 #[cfg(feature = "snowflake")]
 pub mod snowflake;
@@ -28,19 +54,28 @@ pub mod snowflake;
 #[cfg(feature = "bigquery")]
 pub mod bigquery;
 
+/// Typed-row helpers for the BigQuery backend's `execute_query_full`:
+/// `FieldType` → `TypedDataType` and `ResultSet` cell decoding.
+#[cfg(feature = "bigquery")]
+mod bigquery_typed;
+
 // ── Config re-exports ─────────────────────────────────────────────────────────
 
 pub use config::{
-    BigQueryConfig, ClickHouseConfig, ConnectorConfig, DuckDbConfig, DuckDbLoadStrategy,
-    DuckDbRawConfig, DuckDbUrlConfig, PostgresConfig, SnowflakeConfig,
+    BigQueryConfig, ClickHouseConfig, ConnectorConfig, DomoConfig, DuckDbConfig,
+    DuckDbLoadStrategy, DuckDbRawConfig, DuckDbUrlConfig, MysqlConfig, PostgresConfig,
+    SnowflakeAuth, SnowflakeConfig, SsoUrlCallback,
 };
 
 // ── Trait re-exports ──────────────────────────────────────────────────────────
 
 pub use connector::{
     ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, ResultSummary,
-    SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect,
+    SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect, normalize_sql,
 };
+
+#[cfg(feature = "arrow")]
+pub use connector::{ArrowQueryStream, AsArrowConnector};
 
 // ── Connector re-exports ──────────────────────────────────────────────────────
 
@@ -49,6 +84,15 @@ pub use duckdb::{DuckDbConnection, DuckDbConnector, LoadStrategy, TableInfo, Tab
 
 #[cfg(feature = "postgres")]
 pub use postgres::PostgresConnector;
+
+#[cfg(feature = "airhouse")]
+pub use airhouse::AirhouseConnector;
+
+#[cfg(feature = "mysql")]
+pub use mysql::MysqlConnector;
+
+#[cfg(feature = "domo")]
+pub use domo::DomoConnector;
 
 #[cfg(feature = "clickhouse")]
 pub use clickhouse::ClickHouseConnector;
@@ -171,8 +215,27 @@ pub async fn build_connector_async(
 
         #[cfg(feature = "postgres")]
         ConnectorConfig::Postgres(c) | ConnectorConfig::Redshift(c) => {
+            let conn = PostgresConnector::new(&c.host, c.port, &c.user, &c.password, &c.database);
+            Ok(Box::new(conn))
+        }
+
+        #[cfg(feature = "airhouse")]
+        ConnectorConfig::Airhouse(c) => {
             let conn =
-                PostgresConnector::new(&c.host, c.port, &c.user, &c.password, &c.database).await?;
+                AirhouseConnector::new(&c.host, c.port, &c.user, &c.password, &c.database).await?;
+            Ok(Box::new(conn))
+        }
+
+        #[cfg(feature = "mysql")]
+        ConnectorConfig::Mysql(c) => {
+            let conn =
+                MysqlConnector::new(&c.host, c.port, &c.user, &c.password, &c.database).await?;
+            Ok(Box::new(conn))
+        }
+
+        #[cfg(feature = "domo")]
+        ConnectorConfig::Domo(c) => {
+            let conn = DomoConnector::new(c.base_url, c.developer_token, c.dataset_id).await?;
             Ok(Box::new(conn))
         }
 
@@ -187,7 +250,7 @@ pub async fn build_connector_async(
             let conn = SnowflakeConnector::new(
                 c.account,
                 c.username,
-                c.password,
+                c.auth,
                 c.role,
                 c.warehouse,
                 c.database,
@@ -199,7 +262,7 @@ pub async fn build_connector_async(
 
         #[cfg(feature = "bigquery")]
         ConnectorConfig::BigQuery(c) => {
-            let conn = BigQueryConnector::new(&c.key_path, c.project_id, c.dataset).await?;
+            let conn = BigQueryConnector::new(&c.key_path, c.project_id, c.datasets).await?;
             Ok(Box::new(conn))
         }
 

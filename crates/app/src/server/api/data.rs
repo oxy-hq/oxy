@@ -1,16 +1,15 @@
+use crate::agentic_wiring::OxyProjectContext;
 use crate::server::api::middlewares::workspace_context::{
     WorkspaceManagerExtractor, WorkspacePath,
 };
-use crate::server::api::result_files::store_result_file;
 use crate::server::api::semantic::{ErrorResponse, ResultFormat, SemanticQueryResponse};
+use crate::server::api::typed_stream::{typed_stream_to_json_array, typed_stream_to_parquet};
 use crate::server::service::retrieval::{ReindexInput, reindex};
+use agentic_pipeline::platform::ProjectContext;
 use axum::extract::{self, Path};
 use axum::http::StatusCode;
 use oxy::adapters::{session_filters::SessionFilters, workspace::manager::WorkspaceManager};
 use oxy::config::model::ConnectionOverrides;
-use oxy::connector::{Connector, load_result};
-use oxy::execute::types::utils::record_batches_to_2d_array;
-use oxy::theme::StyledText;
 use oxy_shared::errors::OxyError;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -37,6 +36,95 @@ pub struct EmbeddingsBuildResponse {
     pub message: String,
 }
 
+/// Render an `OxyError` from [`run_via_agentic_connector`] as the (status,
+/// body) tuple the handlers return on failure.
+fn agentic_error_response(
+    payload: &SQLParams,
+    err: OxyError,
+) -> (StatusCode, extract::Json<ErrorResponse>) {
+    tracing::error!(
+        database = %payload.database,
+        sql = %truncate_sql_for_log(&payload.sql),
+        error.debug = ?err,
+        "SQL query execution failed"
+    );
+    (
+        StatusCode::BAD_REQUEST,
+        extract::Json(ErrorResponse {
+            message: format!(
+                "SQL query execution failed on database '{}': {}",
+                payload.database, err
+            ),
+        }),
+    )
+}
+
+/// Execute a SQL query through `agentic-connector` and shape the response
+/// according to the requested `result_format`. Every `DatabaseType` in
+/// `oxy::config::model` has a landing spot in `OxyProjectContext`, so this
+/// is now the single path for every Dev Portal query.
+async fn run_via_agentic_connector(
+    workspace_manager: &WorkspaceManager,
+    payload: &SQLParams,
+) -> Result<SemanticQueryResponse, OxyError> {
+    let ctx = OxyProjectContext::new(workspace_manager.clone());
+    let cfg = ctx
+        .resolve_connector(&payload.database)
+        .await
+        .ok_or_else(|| {
+            OxyError::RuntimeError(format!(
+                "could not resolve connector config for database '{}'",
+                payload.database
+            ))
+        })?;
+
+    let connector = agentic_connector::build_connector_async(cfg)
+        .await
+        .map_err(|e| OxyError::DBError(format!("failed to build connector: {e}")))?;
+
+    let stream = connector
+        .execute_query_full(&payload.sql)
+        .await
+        .map_err(|e| OxyError::DBError(e.to_string()))?;
+
+    let result_format = payload
+        .result_format
+        .as_ref()
+        .unwrap_or(&ResultFormat::Json);
+    match result_format {
+        ResultFormat::Parquet => {
+            let file_name = typed_stream_to_parquet(stream, workspace_manager).await?;
+            Ok(SemanticQueryResponse::Parquet { file_name })
+        }
+        ResultFormat::Json => {
+            let data = typed_stream_to_json_array(stream).await?;
+            Ok(SemanticQueryResponse::Json(data))
+        }
+    }
+}
+
+/// Cap SQL length in structured log fields so one bad query doesn't flood the
+/// log pipeline. The error response keeps the database name intact; the SQL
+/// preview is just for operator triage.
+fn truncate_sql_for_log(sql: &str) -> String {
+    const MAX: usize = 500;
+    if sql.len() <= MAX {
+        sql.to_string()
+    } else {
+        // Find the largest char boundary at or below MAX so we don't split a
+        // multi-byte UTF-8 sequence.
+        let boundary = (0..=MAX)
+            .rev()
+            .find(|i| sql.is_char_boundary(*i))
+            .unwrap_or(0);
+        format!(
+            "{}… [truncated, {} bytes total]",
+            &sql[..boundary],
+            sql.len()
+        )
+    }
+}
+
 pub async fn execute_sql(
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Path(WorkspacePath {
@@ -44,169 +132,18 @@ pub async fn execute_sql(
     }): Path<WorkspacePath>,
     extract::Json(payload): extract::Json<SQLParams>,
 ) -> Result<extract::Json<SemanticQueryResponse>, (StatusCode, extract::Json<ErrorResponse>)> {
-    let config_manager = workspace_manager.config_manager.clone();
-    let secrets_manager = workspace_manager.secrets_manager.clone();
-    let connector = Connector::from_database(
-        &payload.database,
-        &config_manager,
-        &secrets_manager,
-        None,
-        payload.filters,
-        payload.connections,
-    )
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to create database connector: {}", e);
-        (
-            StatusCode::BAD_REQUEST,
-            extract::Json(ErrorResponse {
-                message: format!(
-                    "Failed to connect to database '{}': {}",
-                    payload.database, e
-                ),
-            }),
-        )
-    })?;
-    let file_path = connector.run_query(&payload.sql).await.map_err(|e| {
-        tracing::error!("SQL query execution failed: {}", e);
-        (
-            StatusCode::BAD_REQUEST,
-            extract::Json(ErrorResponse {
-                message: format!("SQL query execution failed: {}", e),
-            }),
-        )
-    })?;
-
-    let result_format = payload
-        .result_format
-        .as_ref()
-        .unwrap_or(&ResultFormat::Json);
-
-    match result_format {
-        ResultFormat::Parquet => {
-            let file_name = store_result_file(&workspace_manager, &file_path)
-                .await
-                .map_err(|e| {
-                    tracing::error!("Failed to store result file: {}", e);
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        extract::Json(ErrorResponse {
-                            message: format!("Failed to store result file: {}", e),
-                        }),
-                    )
-                })?;
-
-            Ok(extract::Json(SemanticQueryResponse::Parquet { file_name }))
-        }
-        ResultFormat::Json => {
-            let (batches, schema) = load_result(&file_path).map_err(|e| {
-                tracing::error!("Failed to load query result: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    extract::Json(ErrorResponse {
-                        message: format!("Failed to load query result: {}", e),
-                    }),
-                )
-            })?;
-
-            let data = record_batches_to_2d_array(&batches, &schema).map_err(|e| {
-                tracing::error!("Failed to convert result to JSON: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    extract::Json(ErrorResponse {
-                        message: format!("Failed to convert result to JSON: {}", e),
-                    }),
-                )
-            })?;
-            Ok(extract::Json(SemanticQueryResponse::Json(data)))
-        }
-    }
+    run_via_agentic_connector(&workspace_manager, &payload)
+        .await
+        .map(extract::Json)
+        .map_err(|e| agentic_error_response(&payload, e))
 }
 
 pub async fn execute_sql_query(
-    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
-    Path(WorkspacePath {
-        workspace_id: _workspace_id,
-    }): Path<WorkspacePath>,
-    extract::Json(payload): extract::Json<SQLParams>,
+    extractor: WorkspaceManagerExtractor,
+    path: Path<WorkspacePath>,
+    payload: extract::Json<SQLParams>,
 ) -> Result<extract::Json<SemanticQueryResponse>, (StatusCode, extract::Json<ErrorResponse>)> {
-    let config_manager = workspace_manager.config_manager.clone();
-    let secrets_manager = workspace_manager.secrets_manager.clone();
-    let connector = Connector::from_database(
-        &payload.database,
-        &config_manager,
-        &secrets_manager,
-        None,
-        payload.filters,
-        payload.connections,
-    )
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to create database connector: {}", e);
-        (
-            StatusCode::BAD_REQUEST,
-            extract::Json(ErrorResponse {
-                message: format!(
-                    "Failed to connect to database '{}': {}",
-                    payload.database, e
-                ),
-            }),
-        )
-    })?;
-    let file_path = connector.run_query(&payload.sql).await.map_err(|e| {
-        tracing::error!("SQL query execution failed: {}", e);
-        (
-            StatusCode::BAD_REQUEST,
-            extract::Json(ErrorResponse {
-                message: format!("SQL query execution failed: {}", e),
-            }),
-        )
-    })?;
-
-    let result_format = payload
-        .result_format
-        .as_ref()
-        .unwrap_or(&ResultFormat::Json);
-
-    match result_format {
-        ResultFormat::Parquet => {
-            let file_name = store_result_file(&workspace_manager, &file_path)
-                .await
-                .map_err(|e| {
-                    tracing::error!("Failed to store result file: {}", e);
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        extract::Json(ErrorResponse {
-                            message: format!("Failed to store result file: {}", e),
-                        }),
-                    )
-                })?;
-
-            Ok(extract::Json(SemanticQueryResponse::Parquet { file_name }))
-        }
-        ResultFormat::Json => {
-            let (batches, schema) = load_result(&file_path).map_err(|e| {
-                tracing::error!("Failed to load query result: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    extract::Json(ErrorResponse {
-                        message: format!("Failed to load query result: {}", e),
-                    }),
-                )
-            })?;
-
-            let data = record_batches_to_2d_array(&batches, &schema).map_err(|e| {
-                tracing::error!("Failed to convert result to JSON: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    extract::Json(ErrorResponse {
-                        message: format!("Failed to convert result to JSON: {}", e),
-                    }),
-                )
-            })?;
-            Ok(extract::Json(SemanticQueryResponse::Json(data)))
-        }
-    }
+    execute_sql(extractor, path, payload).await
 }
 
 // TODO: may want to rename this and the `reindex()` function below as we're doing more

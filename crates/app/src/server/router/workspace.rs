@@ -243,6 +243,10 @@ fn build_database_routes() -> Router<AppState> {
         .route("/sync", post(database::sync_database))
         .route("/build", post(data::build_embeddings))
         .route("/clean", post(database::clean_data))
+        .route(
+            "/{database_name}/schema",
+            get(database::get_database_schema),
+        )
 }
 
 /// `/onboarding/*` subtree. Groups the file-upload route with its siblings so

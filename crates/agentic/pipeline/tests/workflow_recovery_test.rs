@@ -1177,6 +1177,173 @@ impl TaskExecutor for HappyPathExecutor {
 /// Noop [`agentic_pipeline::platform::PlatformContext`] impl for tests that
 /// exercise executor arms which never reach into the platform. Every method
 /// returns a "not implemented" error or an empty value.
+// ── Test: analytics run stuck in needs_resume is processed by recovery ──────
+//
+// Regression: `cleanup_stale_runs` was called on server startup, but
+// `recover_active_runs` was not — leaving runs that were interrupted
+// mid-execution stuck in `task_status = "needs_resume"` forever. The
+// frontend would show them as "active" with no progress.
+//
+// This test drives the exact sequence the server startup path should run:
+// `cleanup_stale_runs` → `recover_active_runs`. With `FakePlatform` the
+// pipeline-side resume cannot actually rebuild the agent (no config on
+// disk), so we only assert that `recover_active_runs` *processes* the
+// stuck run — `task_status` must leave `needs_resume`. A no-op recovery
+// (the regression) would leave the run stuck.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_recovery_processes_stuck_needs_resume_analytics_run() {
+    let Some(db) = test_db().await else {
+        eprintln!("skipping: no DB available");
+        return;
+    };
+
+    let run_id = format!("analytics-stuck-{}", uuid::Uuid::new_v4());
+
+    // Simulate the state a crashed mid-run would leave in the DB:
+    // - Row inserted with source_type="analytics" and some events written
+    // - task_status was "running" at the time of crash
+    crud::insert_run(
+        &db,
+        &run_id,
+        "what is revenue by quarter?",
+        None,
+        "analytics",
+        Some(json!({ "agent_id": "analytics" })),
+    )
+    .await
+    .expect("insert run");
+
+    // A handful of events so the run is not classified as "never started".
+    for (seq, event_type) in ["state_enter", "llm_start", "llm_token", "llm_token"]
+        .into_iter()
+        .enumerate()
+    {
+        crud::insert_event(&db, &run_id, seq as i64, event_type, &json!({}), 0)
+            .await
+            .expect("insert event");
+    }
+
+    // `cleanup_stale_runs` runs at startup and marks running rows needs_resume.
+    crud::cleanup_stale_runs(&db)
+        .await
+        .expect("cleanup_stale_runs");
+
+    let before = crud::get_run(&db, &run_id).await.unwrap().unwrap();
+    assert_eq!(
+        before.task_status.as_deref(),
+        Some("needs_resume"),
+        "cleanup_stale_runs should transition running → needs_resume; got {:?}",
+        before.task_status
+    );
+
+    // Now invoke the second half — what the app startup is supposed to do.
+    let state = Arc::new(RuntimeState::new());
+    let platform: Arc<dyn agentic_pipeline::platform::PlatformContext> =
+        Arc::new(FakePlatform::default());
+
+    let _recovered = agentic_pipeline::recovery::recover_active_runs(
+        db.clone(),
+        state,
+        platform,
+        None,
+        None,
+        None,
+    )
+    .await;
+
+    // Whatever the outcome, the run must have moved past needs_resume. In
+    // this test it ends as "failed" because FakePlatform can't rebuild the
+    // real pipeline — that is expected and still proves recovery ran.
+    let after = crud::get_run(&db, &run_id).await.unwrap().unwrap();
+    assert_ne!(
+        after.task_status.as_deref(),
+        Some("needs_resume"),
+        "recover_active_runs did not process the stuck run; still needs_resume"
+    );
+    assert!(
+        matches!(
+            after.task_status.as_deref(),
+            Some("failed") | Some("running") | Some("done")
+        ),
+        "unexpected terminal task_status after recovery: {:?}",
+        after.task_status
+    );
+}
+
+// ── Test: graceful shutdown marks active runs resumable ─────────────────────
+//
+// On SIGINT/SIGTERM the server must mark every active run as
+// `task_status = "shutdown"` (rather than leaving them in `running`) and
+// cancel their pipeline task via the cancel_tx channel. `"shutdown"` is
+// treated as resumable by `get_resumable_root_runs`, so the next server
+// start re-drives these runs through the recovery path — end-to-end, the
+// lifecycle is: `running` → (graceful stop) `shutdown` → (restart)
+// `recover_active_runs` processes it.
+#[tokio::test(flavor = "multi_thread")]
+async fn test_graceful_shutdown_marks_active_runs_resumable() {
+    let Some(db) = test_db().await else {
+        eprintln!("skipping: no DB available");
+        return;
+    };
+
+    let run_id = format!("analytics-shutdown-{}", uuid::Uuid::new_v4());
+
+    // Insert an active analytics run (simulates an in-flight pipeline).
+    crud::insert_run(
+        &db,
+        &run_id,
+        "shutdown cycle question",
+        None,
+        "analytics",
+        Some(json!({ "agent_id": "analytics" })),
+    )
+    .await
+    .expect("insert run");
+    crud::update_task_status(&db, &run_id, "running", None)
+        .await
+        .expect("set running");
+
+    // Register the run in RuntimeState — `shutdown_all` only touches rows
+    // whose `cancel_tx` is live, matching what the real lifecycle sees.
+    let state = Arc::new(RuntimeState::new());
+    let (answer_tx, _) = mpsc::channel::<String>(1);
+    let (cancel_tx, mut cancel_rx) = tokio::sync::watch::channel(false);
+    state.register(&run_id, answer_tx, cancel_tx);
+
+    // Trigger the same path `spawn_shutdown_hook` runs on token cancel.
+    let count = state.shutdown_all(&db).await;
+    assert_eq!(count, 1, "shutdown_all should process exactly 1 run");
+
+    // DB was flipped to the resumable "shutdown" state.
+    let after = crud::get_run(&db, &run_id).await.unwrap().unwrap();
+    assert_eq!(
+        after.task_status.as_deref(),
+        Some("shutdown"),
+        "expected task_status=shutdown, got {:?}",
+        after.task_status
+    );
+
+    // cancel_tx was fired so the in-flight pipeline would stop cleanly.
+    assert!(
+        cancel_rx.has_changed().unwrap_or(false),
+        "shutdown_all should have sent on the cancel channel"
+    );
+    assert!(
+        *cancel_rx.borrow_and_update(),
+        "cancel signal should be true"
+    );
+
+    // Confirm recovery still finds `"shutdown"` rows (so the next server
+    // start would resume them).
+    let resumable = agentic_runtime::crud::get_resumable_root_runs(&db)
+        .await
+        .expect("list resumable");
+    assert!(
+        resumable.iter().any(|r| r.id == run_id),
+        "get_resumable_root_runs must include the shutdown run"
+    );
+}
+
 #[derive(Default)]
 struct FakePlatform;
 

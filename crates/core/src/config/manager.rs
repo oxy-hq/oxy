@@ -238,6 +238,7 @@ impl ConfigManager {
     pub fn get_database_password_var(&self, database: &Database) -> Option<String> {
         match &database.database_type {
             crate::config::model::DatabaseType::Postgres(postgres) => postgres.password_var.clone(),
+            crate::config::model::DatabaseType::Airhouse(airhouse) => airhouse.password_var.clone(),
             crate::config::model::DatabaseType::Mysql(mysql) => mysql.password_var.clone(),
             crate::config::model::DatabaseType::Snowflake(snowflake) => {
                 snowflake.auth_type.get_password_var().cloned()

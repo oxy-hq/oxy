@@ -1,4 +1,10 @@
-import { ChevronDown, ChevronRight, Database as DatabaseIcon, RotateCw } from "lucide-react";
+import {
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  Database as DatabaseIcon,
+  RotateCw
+} from "lucide-react";
 import React from "react";
 import {
   BigQueryIcon,
@@ -12,7 +18,7 @@ import {
 import DomoIcon from "@/components/icons/Domoicon";
 import { Button } from "@/components/ui/shadcn/button";
 import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/shadcn/sidebar";
-import { useDatabaseSync } from "@/hooks/api/databases/useDatabaseSync";
+import useDatabaseSchema from "@/hooks/api/databases/useDatabaseSchema";
 import { cn } from "@/libs/shadcn/utils";
 import type { DatabaseInfo } from "@/types/database";
 import { ConnectionSchemaContent } from "./ConnectionSchemaContent";
@@ -50,11 +56,17 @@ interface ConnectionItemProps {
 export const ConnectionItem: React.FC<ConnectionItemProps> = ({ database }) => {
   const [isOpen, setIsOpen] = React.useState(false);
 
-  const syncMutation = useDatabaseSync();
+  const {
+    data: schema,
+    isLoading,
+    isError,
+    refetch,
+    isFetching
+  } = useDatabaseSchema(database.name, isOpen);
 
-  const handleSyncClick = (e: React.MouseEvent) => {
+  const handleRefresh = (e: React.MouseEvent) => {
     e.stopPropagation();
-    syncMutation.mutate({ database: database.name });
+    refetch();
   };
 
   const Chevron = isOpen ? ChevronDown : ChevronRight;
@@ -69,24 +81,32 @@ export const ConnectionItem: React.FC<ConnectionItemProps> = ({ database }) => {
         {getDatabaseIcon(database.dialect)}
         <span className='flex-1 truncate'>{database.name}</span>
 
+        {isError && !isFetching && (
+          <AlertCircle
+            className='h-3.5 w-3.5 shrink-0 text-destructive'
+            aria-label='Schema fetch failed'
+          />
+        )}
+
         <Button
           variant='ghost'
           size='icon'
-          className='opacity-0 group-hover/menu-item:opacity-100'
-          onClick={handleSyncClick}
-          disabled={syncMutation.isPending}
-          tooltip='Sync Schema'
+          onClick={handleRefresh}
+          disabled={isFetching}
+          tooltip='Refresh Schema'
         >
-          <RotateCw className={cn(syncMutation.isPending && "animate-spin")} />
+          <RotateCw className={cn(isFetching && "animate-spin")} />
         </Button>
       </SidebarMenuButton>
 
       {isOpen && (
         <ConnectionSchemaContent
-          database={database}
-          isSyncing={syncMutation.isPending}
-          syncError={syncMutation.isError ? syncMutation.error?.message : undefined}
-          handleSyncDatabase={handleSyncClick}
+          databaseName={database.name}
+          dialect={database.dialect}
+          schema={schema}
+          isLoading={isLoading}
+          isError={isError}
+          onRefresh={handleRefresh}
         />
       )}
     </SidebarMenuItem>

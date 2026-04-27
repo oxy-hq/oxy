@@ -105,7 +105,18 @@ impl RuntimeState {
 
     /// Signal a running pipeline task to cancel; returns false if the run is
     /// not active.
+    ///
+    /// Sets the in-memory `statuses` entry to [`RunStatus::Cancelled`]
+    /// *before* signalling the pipeline. This ordering matters for runs
+    /// suspended on delegation: the cancel token gets propagated to active
+    /// children by the cancel forwarder, but if the children finish before
+    /// that propagation completes, the coordinator's `record_child_result`
+    /// still sees the root as `Cancelled` and short-circuits the parent
+    /// resume instead of rebuilding and re-running the pipeline the user
+    /// just tried to stop.
     pub fn cancel(&self, run_id: &str) -> bool {
+        self.statuses
+            .insert(run_id.to_string(), RunStatus::Cancelled);
         if let Some(tx) = self.cancel_txs.get(run_id) {
             tx.send(true).is_ok()
         } else {

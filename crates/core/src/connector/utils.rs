@@ -9,12 +9,40 @@ use arrow::{
 
 use oxy_shared::errors::OxyError;
 
+/// Wrap a driver-level error into an [`OxyError`] with the full source chain
+/// flattened into the message.
+///
+/// Driver errors from `connectorx`, `tokio-postgres`, `arrow`, etc. frequently
+/// carry the interesting detail one or more layers deep; the top-level
+/// `Display` often reads as a generic label ("unexpected message from server")
+/// with the root cause only reachable via [`std::error::Error::source`]. This
+/// helper flattens the whole chain so a single log line / error response
+/// exposes that detail.
+///
+/// Callers wrapping an `anyhow::Error` pass `err.as_ref()` to get a
+/// `&dyn std::error::Error` view.
 pub(super) fn connector_internal_error(
     message: &str,
-    e: impl std::fmt::Display + std::fmt::Debug,
+    e: &(dyn std::error::Error + 'static),
 ) -> OxyError {
-    tracing::error!("{}: {:?}", message, e);
-    OxyError::DBError(format!("{message}: {e}"))
+    let chain = format_error_chain(e);
+    tracing::error!(error.debug = ?e, error.chain = %chain, "{}", message);
+    OxyError::DBError(format!("{message}: {chain}"))
+}
+
+/// Walk an error's `source()` chain and flatten into a single readable line.
+pub(super) fn format_error_chain(e: &(dyn std::error::Error + 'static)) -> String {
+    let mut parts = vec![e.to_string()];
+    let mut current = e.source();
+    while let Some(src) = current {
+        let msg = src.to_string();
+        // Avoid pathological duplicates when a wrapper prints its source inline.
+        if !parts.last().map(|p| p == &msg).unwrap_or(false) {
+            parts.push(format!("caused by: {msg}"));
+        }
+        current = src.source();
+    }
+    parts.join(" | ")
 }
 
 pub fn load_result(file_path: &str) -> anyhow::Result<(Vec<RecordBatch>, SchemaRef)> {

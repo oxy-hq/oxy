@@ -200,6 +200,35 @@ impl Coordinator {
         Value::Object(obj)
     }
 
+    /// Walk parent links from `task_id` up to the tree root and return that
+    /// root's `run_id`.
+    fn root_run_id_of(&self, task_id: &str) -> Option<String> {
+        let mut current = task_id.to_string();
+        loop {
+            let node = self.tasks.get(&current)?;
+            match &node.parent_task_id {
+                Some(p) => current = p.clone(),
+                None => return Some(node.run_id.clone()),
+            }
+        }
+    }
+
+    /// True if the root ancestor of `task_id` has been user-cancelled.
+    ///
+    /// `RuntimeState::cancel` marks `statuses[root_run_id] = Cancelled`
+    /// synchronously; this lookup lets the coordinator short-circuit parent
+    /// resumes when a delegated child finishes after the user clicked cancel.
+    pub(super) fn is_subtree_user_cancelled(&self, task_id: &str) -> bool {
+        let Some(root_run_id) = self.root_run_id_of(task_id) else {
+            return false;
+        };
+        self.state
+            .statuses
+            .get(&root_run_id)
+            .map(|r| matches!(r.value(), RunStatus::Cancelled))
+            .unwrap_or(false)
+    }
+
     /// Resume a suspended parent task by assigning a `TaskSpec::Resume` to the
     /// worker.
     ///
@@ -208,6 +237,33 @@ impl Coordinator {
     /// applies to both human answers and delegation completions — the
     /// awaiting/resolved pair is suspend-reason-agnostic.
     pub(super) async fn resume_parent(&mut self, parent_id: &str, answer: String) {
+        // Short-circuit: if the user cancelled the root while this parent was
+        // suspended on a delegation, don't rebuild the pipeline just because
+        // the child happened to finish. Finalise the parent via
+        // `handle_cancelled`, which also cascades the cancellation up to the
+        // root run.
+        //
+        // `handle_cancelled` → `record_child_result` → `resume_parent` forms
+        // an async cycle; `Box::pin` breaks the unbounded recursive future
+        // size so the compiler is happy.
+        if self.is_subtree_user_cancelled(parent_id) {
+            let already_finalised = self
+                .tasks
+                .get(parent_id)
+                .map(|n| matches!(n.status, TaskStatus::Failed))
+                .unwrap_or(true);
+            if already_finalised {
+                return;
+            }
+            tracing::info!(
+                target: "coordinator",
+                parent_id,
+                "root run user-cancelled; skipping parent resume"
+            );
+            Box::pin(self.handle_cancelled(parent_id)).await;
+            return;
+        }
+
         tracing::info!(
             target: "coordinator",
             parent_id,

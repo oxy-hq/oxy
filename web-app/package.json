@@ -120,6 +120,7 @@
     "@playwright/test": "^1.59.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/invariant": "^2.2.37",
     "@types/js-cookie": "^3.0.6",
     "@types/lodash": "^4.17.24",

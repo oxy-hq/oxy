@@ -11,7 +11,28 @@ mod duckdb {
     use agentic_connector::{
         ConnectorError, DatabaseConnector, DuckDbConnection, DuckDbConnector, LoadStrategy,
     };
-    use agentic_core::result::CellValue;
+    use agentic_core::result::{
+        CellValue, ColumnSpec, TypedDataType, TypedRowError, TypedRowStream, TypedValue,
+    };
+    use futures::StreamExt;
+
+    /// Drain a [`TypedRowStream`] into a flat `Vec<Vec<TypedValue>>`, failing
+    /// the test on any per-row error. Used across typed-stream tests.
+    async fn collect_typed(stream: TypedRowStream) -> (Vec<ColumnSpec>, Vec<Vec<TypedValue>>) {
+        let TypedRowStream { columns, mut rows } = stream;
+        let mut out = Vec::new();
+        while let Some(row) = rows.next().await {
+            match row {
+                Ok(cells) => out.push(cells),
+                Err(e) => panic!("row stream error: {e}"),
+            }
+        }
+        (columns, out)
+    }
+
+    // ensure TypedRowError is exported / usable for negative-path tests
+    #[allow(dead_code)]
+    fn _types_export_sanity(_e: TypedRowError) {}
 
     // ── helpers ───────────────────────────────────────────────────────────────
 
@@ -171,6 +192,52 @@ mod duckdb {
 
         assert_eq!(res.result.total_row_count, 3);
         assert_eq!(res.result.columns, ["product_id", "price"]);
+    }
+
+    /// Semantic views declare `table: "oxymart.csv"` (with extension), so the
+    /// connector must expose the file under its full filename too, not just
+    /// the stem.
+    #[tokio::test]
+    async fn csv_accessible_by_full_filename() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("oxymart.csv"),
+            "Date,Store\n2024-01-01,1\n2024-01-08,1\n2024-01-15,2\n",
+        )
+        .unwrap();
+
+        let c = DuckDbConnector::from_directory(dir.path(), LoadStrategy::View).unwrap();
+
+        // Stem name still works.
+        let by_stem = c
+            .execute_query(
+                "SELECT DISTINCT Date FROM oxymart WHERE Date IS NOT NULL",
+                100,
+            )
+            .await
+            .unwrap();
+        assert_eq!(by_stem.result.total_row_count, 3);
+
+        // Full filename (quoted) also resolves.
+        let by_full = c
+            .execute_query(
+                r#"SELECT DISTINCT Date FROM "oxymart.csv" WHERE Date IS NOT NULL"#,
+                100,
+            )
+            .await
+            .unwrap();
+        assert_eq!(by_full.result.total_row_count, 3);
+
+        // Exactly matches the failing sample_columns query from the user report:
+        // semantic-layer `year` dimension computed as EXTRACT(YEAR FROM CAST(...)).
+        let by_expr = c
+            .execute_query(
+                r#"SELECT DISTINCT EXTRACT(YEAR FROM CAST(Date AS DATE)) FROM "oxymart.csv" WHERE EXTRACT(YEAR FROM CAST(Date AS DATE)) IS NOT NULL LIMIT 20"#,
+                20,
+            )
+            .await
+            .unwrap();
+        assert_eq!(by_expr.result.total_row_count, 1);
     }
 
     #[tokio::test]
@@ -404,6 +471,128 @@ mod duckdb {
         );
     }
 
+    // ── execute_query_full ────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn execute_query_full_preserves_int_and_float_types() {
+        let c = make_sales_connector();
+        let stream = c
+            .execute_query_full("SELECT id, amount FROM sales ORDER BY id")
+            .await
+            .unwrap();
+        let (columns, rows) = collect_typed(stream).await;
+
+        assert_eq!(columns.len(), 2);
+        assert_eq!(columns[0].name, "id");
+        assert_eq!(columns[0].data_type, TypedDataType::Int32);
+        assert_eq!(columns[1].name, "amount");
+        assert_eq!(columns[1].data_type, TypedDataType::Float64);
+
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0][0], TypedValue::Int32(1));
+        assert_eq!(rows[0][1], TypedValue::Float64(10.0));
+        assert_eq!(rows[2][0], TypedValue::Int32(3));
+    }
+
+    #[tokio::test]
+    async fn execute_query_full_preserves_nulls() {
+        let c = make_sales_connector();
+        let stream = c
+            .execute_query_full("SELECT tag FROM sales ORDER BY id")
+            .await
+            .unwrap();
+        let (columns, rows) = collect_typed(stream).await;
+
+        assert_eq!(columns[0].data_type, TypedDataType::Text);
+        assert_eq!(rows[0][0], TypedValue::Text("a".into()));
+        assert_eq!(rows[2][0], TypedValue::Null);
+    }
+
+    #[tokio::test]
+    async fn execute_query_full_preserves_date_and_timestamp() {
+        let conn = DuckDbConnection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE t (d DATE, ts TIMESTAMP);
+             INSERT INTO t VALUES
+                ('2026-04-22', '2026-04-22 12:34:56'),
+                (NULL, NULL);",
+        )
+        .unwrap();
+        let c = DuckDbConnector::new(conn);
+
+        let stream = c
+            .execute_query_full("SELECT d, ts FROM t ORDER BY d NULLS LAST")
+            .await
+            .unwrap();
+        let (columns, rows) = collect_typed(stream).await;
+
+        assert_eq!(columns[0].data_type, TypedDataType::Date);
+        assert_eq!(columns[1].data_type, TypedDataType::Timestamp);
+
+        // 2026-04-22 = 2026 - 1970 = 56 * 365 + leaps. Verify by contract only:
+        // the value must be a Date (i32) and Timestamp (i64) — exact values
+        // are implementation-dependent.
+        assert!(matches!(rows[0][0], TypedValue::Date(_)));
+        assert!(matches!(rows[0][1], TypedValue::Timestamp(_)));
+
+        assert_eq!(rows[1][0], TypedValue::Null);
+        assert_eq!(rows[1][1], TypedValue::Null);
+    }
+
+    #[tokio::test]
+    async fn execute_query_full_no_truncation() {
+        let conn = DuckDbConnection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE big AS SELECT generate_series AS n FROM generate_series(1, 5000);",
+        )
+        .unwrap();
+        let c = DuckDbConnector::new(conn);
+
+        let stream = c.execute_query_full("SELECT n FROM big").await.unwrap();
+        let (_, rows) = collect_typed(stream).await;
+
+        assert_eq!(rows.len(), 5000, "execute_query_full must not truncate");
+    }
+
+    #[tokio::test]
+    async fn execute_query_full_reports_query_errors() {
+        let c = make_sales_connector();
+        let err = c
+            .execute_query_full("SELECT * FROM does_not_exist")
+            .await
+            .expect_err("unknown table must error");
+        assert!(matches!(err, ConnectorError::QueryFailed { .. }));
+    }
+
+    #[tokio::test]
+    async fn execute_query_full_handles_decimal_precision() {
+        let conn = DuckDbConnection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE money (amt DECIMAL(10,2));
+             INSERT INTO money VALUES (123.45), (0.01), (-1000.00);",
+        )
+        .unwrap();
+        let c = DuckDbConnector::new(conn);
+
+        let stream = c
+            .execute_query_full("SELECT amt FROM money ORDER BY amt")
+            .await
+            .unwrap();
+        let (columns, rows) = collect_typed(stream).await;
+
+        assert_eq!(
+            columns[0].data_type,
+            TypedDataType::Decimal {
+                precision: 10,
+                scale: 2
+            }
+        );
+        assert_eq!(rows.len(), 3);
+        for row in &rows {
+            assert!(matches!(row[0], TypedValue::Decimal(_)));
+        }
+    }
+
     // ── Per-column stats with complex types ───────────────────────────────────
     //
     // Smoke test: queries that return columns of complex DuckDB types (MAP,
@@ -455,5 +644,43 @@ mod duckdb {
         assert_eq!(id.min, Some(CellValue::Number(1.0)));
         assert_eq!(id.max, Some(CellValue::Number(2.0)));
         assert!(id.mean.is_some(), "INTEGER column must have a mean");
+    }
+
+    // ── AsArrowConnector (feature = "arrow") ────────────────────────────────
+
+    #[cfg(feature = "arrow")]
+    mod arrow_ext {
+        use super::*;
+        use agentic_connector::AsArrowConnector;
+        use futures::StreamExt;
+
+        #[tokio::test]
+        async fn as_arrow_returns_some_for_duckdb() {
+            let c = make_sales_connector();
+            let conn: &dyn DatabaseConnector = &c;
+            assert!(
+                conn.as_arrow().is_some(),
+                "DuckDB should expose an AsArrowConnector"
+            );
+        }
+
+        #[tokio::test]
+        async fn execute_query_arrow_round_trip() {
+            let c = make_sales_connector();
+            let stream = c
+                .execute_query_arrow("SELECT id, name FROM sales ORDER BY id")
+                .await
+                .unwrap();
+
+            assert_eq!(stream.schema.fields().len(), 2);
+            assert_eq!(stream.schema.field(0).name(), "id");
+
+            let batches: Vec<_> = stream.batches.collect().await;
+            let total_rows: usize = batches
+                .iter()
+                .map(|b| b.as_ref().map(|rb| rb.num_rows()).unwrap_or(0))
+                .sum();
+            assert_eq!(total_rows, 3);
+        }
     }
 }

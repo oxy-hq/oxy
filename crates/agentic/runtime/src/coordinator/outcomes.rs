@@ -410,7 +410,7 @@ impl Coordinator {
     ///
     /// Unlike `handle_failed`, cancellation skips retry/fallback — the user
     /// intentionally stopped the task.
-    async fn handle_cancelled(&mut self, task_id: &str) {
+    pub(super) async fn handle_cancelled(&mut self, task_id: &str) {
         tracing::info!(target: "coordinator", task_id, "handle_cancelled");
 
         let Some(node) = self.tasks.get_mut(task_id) else {

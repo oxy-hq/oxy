@@ -25,9 +25,12 @@ agentic-builder = { workspace = true }
 agentic-connector = { workspace = true, features = [
     "duckdb",
     "postgres",
+    "airhouse",
     "clickhouse",
     "snowflake",
     "bigquery",
+    "mysql",
+    "domo",
 ] }
 agentic-core = { workspace = true }
 agentic-http = { workspace = true }

@@ -9,8 +9,9 @@ use std::sync::Arc;
 
 use agentic_analytics::config::{LlmVendor, ResolvedModelInfo};
 use agentic_connector::{
-    BigQueryConfig, ClickHouseConfig, ConnectorConfig, DatabaseConnector, DuckDbConfig,
-    DuckDbLoadStrategy, DuckDbRawConfig, DuckDbUrlConfig, PostgresConfig, SnowflakeConfig,
+    BigQueryConfig, ClickHouseConfig, ConnectorConfig, DatabaseConnector, DomoConfig, DuckDbConfig,
+    DuckDbLoadStrategy, DuckDbRawConfig, DuckDbUrlConfig, MysqlConfig, PostgresConfig,
+    SnowflakeAuth, SnowflakeConfig,
 };
 use agentic_pipeline::SharedMetricSink;
 use agentic_pipeline::platform::ProjectContext;
@@ -59,7 +60,7 @@ impl OxyProjectContext {
                 let configs = agentic_pipeline::platform::resolve_connectors(&db_names, self).await;
                 let mut map = HashMap::new();
                 for (name, cfg) in configs {
-                    match agentic_connector::build_connector(cfg) {
+                    match agentic_connector::build_connector_async(cfg).await {
                         Ok(connector) => {
                             map.insert(name, Arc::from(connector));
                         }
@@ -242,7 +243,26 @@ async fn resolve_connector_impl(
             return None;
         }
     };
+    database_to_connector_config(&db, workspace_manager).await
+}
 
+/// Translate an already-resolved [`oxy::config::model::Database`] into an
+/// [`agentic_connector::ConnectorConfig`].
+///
+/// This is the secret-resolving counterpart of [`ConnectorConfig`]'s
+/// constructors: it reads the per-type host / port / user / password /
+/// database_var / developer_token_var values off `workspace_manager`'s
+/// `SecretsManager`, and for DuckDB + BigQuery also walks the
+/// workspace-relative file paths through `config_manager.resolve_file`.
+///
+/// Returns `None` for database shapes that [`agentic-connector`] does not yet
+/// handle — today, Snowflake browser-auth and Snowflake private-key auth
+/// both fall into this bucket. The test-connection handler uses that as a
+/// signal to fall back to the legacy `oxy::connector::Connector` path.
+pub async fn database_to_connector_config(
+    db: &oxy::config::model::Database,
+    workspace_manager: &WorkspaceManager,
+) -> Option<ConnectorConfig> {
     match &db.database_type {
         DatabaseType::DuckDB(duck) => match &duck.options {
             DuckDBOptions::Local { file_search_path } => {
@@ -253,7 +273,7 @@ async fn resolve_connector_impl(
                 {
                     Ok(p) => std::path::PathBuf::from(p),
                     Err(e) => {
-                        tracing::warn!(db = %db_name, "DuckDB: cannot resolve path: {e}");
+                        tracing::warn!(db = %db.name, "DuckDB: cannot resolve path: {e}");
                         return None;
                     }
                 };
@@ -269,7 +289,7 @@ async fn resolve_connector_impl(
                 {
                     Ok(s) => s,
                     Err(e) => {
-                        tracing::warn!(db = %db_name, "DuckLake attach: {e}");
+                        tracing::warn!(db = %db.name, "DuckLake attach: {e}");
                         return None;
                     }
                 };
@@ -303,6 +323,38 @@ async fn resolve_connector_impl(
                 .await
                 .unwrap_or_default();
             Some(ConnectorConfig::Postgres(PostgresConfig {
+                host,
+                port,
+                user,
+                password,
+                database,
+            }))
+        }
+
+        DatabaseType::Airhouse(ah) => {
+            let host = ah
+                .get_host(&workspace_manager.secrets_manager)
+                .await
+                .unwrap_or_else(|_| "localhost".into());
+            let port: u16 = ah
+                .get_port(&workspace_manager.secrets_manager)
+                .await
+                .unwrap_or_else(|_| "5445".into())
+                .parse()
+                .unwrap_or(5445);
+            let user = ah
+                .get_user(&workspace_manager.secrets_manager)
+                .await
+                .unwrap_or_else(|_| "admin".into());
+            let password = ah
+                .get_password(&workspace_manager.secrets_manager)
+                .await
+                .unwrap_or_else(|_| "airhouse".into());
+            let database = ah
+                .get_database(&workspace_manager.secrets_manager)
+                .await
+                .unwrap_or_else(|_| "airhouse".into());
+            Some(ConnectorConfig::Airhouse(PostgresConfig {
                 host,
                 port,
                 user,
@@ -382,24 +434,37 @@ async fn resolve_connector_impl(
         }
 
         DatabaseType::Snowflake(sf) => {
-            let password = match sf.get_password(&workspace_manager.secrets_manager).await {
-                Ok(p) => p,
-                Err(e) => {
-                    if matches!(
-                        sf.auth_type,
-                        SnowflakeAuthType::Password { .. } | SnowflakeAuthType::PasswordVar { .. }
-                    ) {
-                        tracing::warn!(db = %db_name, "Snowflake: cannot resolve password: {e}");
-                    } else {
-                        tracing::warn!(db = %db_name, "Snowflake: only password auth supported in agentic connector");
-                    }
+            let auth = match &sf.auth_type {
+                SnowflakeAuthType::BrowserAuth {
+                    browser_timeout_secs,
+                    cache_dir,
+                } => SnowflakeAuth::Browser {
+                    timeout_secs: *browser_timeout_secs,
+                    cache_dir: cache_dir.clone(),
+                    sso_url_callback: None,
+                },
+                SnowflakeAuthType::PrivateKey { .. } => {
+                    tracing::warn!(
+                        db = %db.name,
+                        "Snowflake: private-key auth not yet supported in agentic connector"
+                    );
                     return None;
+                }
+                _ => {
+                    let password = match sf.get_password(&workspace_manager.secrets_manager).await {
+                        Ok(p) => p,
+                        Err(e) => {
+                            tracing::warn!(db = %db.name, "Snowflake: cannot resolve password: {e}");
+                            return None;
+                        }
+                    };
+                    SnowflakeAuth::Password { password }
                 }
             };
             Some(ConnectorConfig::Snowflake(SnowflakeConfig {
                 account: sf.account.clone(),
                 username: sf.username.clone(),
-                password,
+                auth,
                 role: sf.role.clone(),
                 warehouse: sf.warehouse.clone(),
                 database: Some(sf.database.clone()),
@@ -411,7 +476,7 @@ async fn resolve_connector_impl(
             let key_path = match bq.get_key_path(&workspace_manager.secrets_manager).await {
                 Ok(p) => p,
                 Err(e) => {
-                    tracing::warn!(db = %db_name, "BigQuery: {e}");
+                    tracing::warn!(db = %db.name, "BigQuery: {e}");
                     return None;
                 }
             };
@@ -421,18 +486,27 @@ async fn resolve_connector_impl(
                 .await
                 .unwrap_or(key_path);
             let project_id = extract_project_id_from_key(&key_path).unwrap_or_default();
-            Some(ConnectorConfig::BigQuery(BigQueryConfig {
-                key_path,
-                project_id,
-                dataset: bq.dataset.clone(),
-            }))
+            {
+                // Merge legacy single `dataset` + multi `datasets` map keys.
+                let mut datasets: Vec<String> = bq.datasets.keys().cloned().collect();
+                if let Some(ref ds) = bq.dataset {
+                    if !datasets.contains(ds) {
+                        datasets.push(ds.clone());
+                    }
+                }
+                Some(ConnectorConfig::BigQuery(BigQueryConfig {
+                    key_path,
+                    project_id,
+                    datasets,
+                }))
+            }
         }
 
         DatabaseType::MotherDuck(md) => {
             let token = match md.get_token(&workspace_manager.secrets_manager).await {
                 Ok(t) => t,
                 Err(e) => {
-                    tracing::warn!(db = %db_name, "MotherDuck token: {e}");
+                    tracing::warn!(db = %db.name, "MotherDuck token: {e}");
                     return None;
                 }
             };
@@ -443,13 +517,63 @@ async fn resolve_connector_impl(
             Some(ConnectorConfig::DuckDbUrl(DuckDbUrlConfig { url }))
         }
 
-        DatabaseType::Mysql(_) => {
-            tracing::warn!(db = %db_name, "MySQL not yet supported in agentic connector");
-            None
+        DatabaseType::Mysql(my) => {
+            let host = my
+                .get_host(&workspace_manager.secrets_manager)
+                .await
+                .unwrap_or_else(|_| "localhost".into());
+            let port: u16 = my
+                .get_port(&workspace_manager.secrets_manager)
+                .await
+                .unwrap_or_else(|_| "3306".into())
+                .parse()
+                .unwrap_or(3306);
+            let user = my
+                .get_user(&workspace_manager.secrets_manager)
+                .await
+                .unwrap_or_default();
+            let password = my
+                .get_password(&workspace_manager.secrets_manager)
+                .await
+                .unwrap_or_default();
+            let database = my
+                .get_database(&workspace_manager.secrets_manager)
+                .await
+                .unwrap_or_default();
+            Some(ConnectorConfig::Mysql(MysqlConfig {
+                host,
+                port,
+                user,
+                password,
+                database,
+            }))
         }
-        DatabaseType::DOMO(_) => {
-            tracing::warn!(db = %db_name, "DOMO not yet supported in agentic connector");
-            None
+
+        DatabaseType::DOMO(d) => {
+            let developer_token = match workspace_manager
+                .secrets_manager
+                .resolve_secret(&d.developer_token_var)
+                .await
+            {
+                Ok(Some(t)) => t,
+                Ok(None) => {
+                    tracing::warn!(
+                        db = %db.name,
+                        var = %d.developer_token_var,
+                        "DOMO developer-token secret not found"
+                    );
+                    return None;
+                }
+                Err(e) => {
+                    tracing::warn!(db = %db.name, "DOMO developer-token resolution failed: {e}");
+                    return None;
+                }
+            };
+            Some(ConnectorConfig::Domo(DomoConfig::from_instance(
+                &d.instance,
+                developer_token,
+                &d.dataset_id,
+            )))
         }
     }
 }

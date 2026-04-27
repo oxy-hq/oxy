@@ -22,6 +22,14 @@ databases:
   - name: training
     dataset: .training_data/
     type: duckdb
+  # Airhouse: Postgres wire protocol, DuckDB SQL dialect.
+  - name: airhouse
+    type: airhouse
+    host: "localhost"
+    port: "5445"
+    user: "airhouse"
+    password_var: AIRHOUSE_PASSWORD
+    database: "airhouse"
   # - name: ducklake
   #   type: duckdb
   #   s3_secret_type: config

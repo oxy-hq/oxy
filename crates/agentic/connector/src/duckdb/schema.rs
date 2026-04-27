@@ -21,6 +21,24 @@ pub(super) fn describe_table(
     Ok(cols)
 }
 
+/// DESCRIBE an arbitrary SQL query without materializing its results.
+///
+/// DuckDB's `DESCRIBE (sql)` resolves column names and types at the logical
+/// plan level — no rows are fetched. Use this in `execute_query_full` to
+/// avoid creating a temp table just to get schema information.
+pub(super) fn describe_query(
+    conn: &Connection,
+    sql: &str,
+) -> Result<Vec<(String, String)>, duckdb::Error> {
+    let mut stmt = conn.prepare(&format!("DESCRIBE ({sql})"))?;
+    let cols = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(cols)
+}
+
 // ── DatabaseConnector impl ────────────────────────────────────────────────────
 
 pub(super) fn parse_summarize_cell(s: &str, col_type: &str) -> Option<CellValue> {

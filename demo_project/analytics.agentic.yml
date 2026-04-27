@@ -9,6 +9,7 @@ llm:
 context:
   - ./semantics/**/*
   - ./sales_semantics/**/*
+  - ./airhouse_semantics/**/*
   - ./workflows/**/*.procedure.yml
   - ./example_sql/*.sql
 states:

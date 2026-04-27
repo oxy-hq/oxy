@@ -14,7 +14,7 @@ pub(super) trait Engine {
         let (record_batches, schema_ref) = self.run_query_with_limit(query, None).await?;
         let file_path = format!("/tmp/{}.arrow", Uuid::new_v4());
         write_to_ipc(&record_batches, &file_path, &schema_ref)
-            .map_err(|err| connector_internal_error(WRITE_RESULT, &err))?;
+            .map_err(|err| connector_internal_error(WRITE_RESULT, err.as_ref()))?;
         Ok(file_path)
     }
     async fn run_query_with_limit(

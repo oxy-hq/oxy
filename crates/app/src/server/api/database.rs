@@ -1,3 +1,4 @@
+use crate::agentic_wiring::project_ctx::database_to_connector_config;
 use crate::server::api::middlewares::role_guards::WorkspaceAdmin;
 use crate::server::api::middlewares::workspace_context::{
     WorkspaceManagerExtractor, WorkspacePath,
@@ -12,6 +13,7 @@ use crate::{
         sync::{SyncFilter, sync_databases},
     },
 };
+use agentic_connector::{ConnectorConfig, SnowflakeAuth, SsoUrlCallback};
 use axum::{
     extract::{Json, Path, Query},
     http::StatusCode,
@@ -39,6 +41,86 @@ pub struct DatabaseInfo {
     pub dialect: String,
     pub datasets: HashMap<String, HashMap<String, SemanticModels>>,
     pub synced: bool,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ColumnInfo {
+    pub name: String,
+    pub data_type: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct TableInfo {
+    pub name: String,
+    pub columns: Vec<ColumnInfo>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct DatabaseSchemaResponse {
+    pub tables: Vec<TableInfo>,
+}
+
+#[derive(Deserialize)]
+pub struct DatabaseSchemaPath {
+    pub workspace_id: uuid::Uuid,
+    pub database_name: String,
+}
+
+pub async fn get_database_schema(
+    WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    Path(DatabaseSchemaPath {
+        workspace_id: _,
+        database_name,
+    }): Path<DatabaseSchemaPath>,
+    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+) -> Result<Json<DatabaseSchemaResponse>, StatusCode> {
+    let db = workspace_manager
+        .config_manager
+        .list_databases()
+        .into_iter()
+        .find(|d| d.name == database_name)
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let cfg = database_to_connector_config(&db, &workspace_manager)
+        .await
+        .ok_or(StatusCode::UNPROCESSABLE_ENTITY)?;
+
+    let connector = agentic_connector::build_connector_async(cfg)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to build connector for schema introspection: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    // Let lazy connectors (e.g. Postgres) open their connection and pre-fetch
+    // schema before the synchronous introspect_schema() call below.
+    connector.prepare_schema().await.map_err(|e| {
+        tracing::error!("Schema preparation failed for {}: {}", database_name, e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let schema = connector.introspect_schema().map_err(|e| {
+        tracing::error!("Schema introspection failed for {}: {}", database_name, e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let tables = schema
+        .tables
+        .into_iter()
+        .map(|t| TableInfo {
+            name: t.name,
+            columns: t
+                .columns
+                .into_iter()
+                .map(|c| ColumnInfo {
+                    name: c.name,
+                    data_type: c.data_type,
+                })
+                .collect(),
+        })
+        .collect();
+
+    Ok(Json(DatabaseSchemaResponse { tables }))
 }
 
 #[derive(Serialize, ToSchema)]
@@ -569,6 +651,85 @@ pub async fn test_database_connection(
             })
             .await;
 
+        // Fast path: drive the probe through `agentic-connector`.
+        // For Snowflake browser auth we inject an SSO-URL callback so the
+        // redirect URL is streamed back to the client via SSE before we block
+        // waiting for the browser login to complete.
+        // Only Snowflake private-key auth still falls through to the legacy path.
+        if let Some(mut cfg) = database_to_connector_config(db_config, &workspace_manager).await {
+            // Wire up the SSO URL channel for Snowflake browser auth.
+            if let ConnectorConfig::Snowflake(ref mut sf_cfg) = cfg {
+                if let SnowflakeAuth::Browser {
+                    ref mut sso_url_callback,
+                    timeout_secs,
+                    ..
+                } = sf_cfg.auth
+                {
+                    let (sso_tx, mut sso_rx) = mpsc::channel::<String>(1);
+                    let tx_sso = tx.clone();
+                    let timeout = timeout_secs;
+                    tokio::spawn(async move {
+                        if let Some(sso_url) = sso_rx.recv().await {
+                            let _ = tx_sso
+                                .send(ConnectionTestEvent::BrowserAuthRequired {
+                                    sso_url,
+                                    message: "Please complete authentication in your browser"
+                                        .to_string(),
+                                    timeout_secs: Some(timeout),
+                                })
+                                .await;
+                        }
+                    });
+                    *sso_url_callback = Some(SsoUrlCallback(std::sync::Arc::new(move |url| {
+                        let _ = sso_tx.try_send(url);
+                    })));
+                }
+            }
+
+            let _ = tx
+                .send(ConnectionTestEvent::Progress {
+                    message: "Testing connection...".to_string(),
+                })
+                .await;
+
+            let outcome = async {
+                let connector = agentic_connector::build_connector_async(cfg)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                connector
+                    .execute_query("SELECT 1", 1)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok::<_, String>(())
+            }
+            .await;
+
+            let elapsed = start_time.elapsed().as_millis() as u64;
+            let event = match outcome {
+                Ok(()) => ConnectionTestEvent::Complete {
+                    result: TestDatabaseConnectionResponse {
+                        success: true,
+                        message: "Connection successful".to_string(),
+                        connection_time_ms: Some(elapsed),
+                        error_details: None,
+                    },
+                },
+                Err(err) => ConnectionTestEvent::Complete {
+                    result: TestDatabaseConnectionResponse {
+                        success: false,
+                        message: "Connection failed".to_string(),
+                        connection_time_ms: Some(elapsed),
+                        error_details: Some(err),
+                    },
+                },
+            };
+            let _ = tx.send(event).await;
+            return;
+        }
+
+        // Fallback: legacy `Connector::from_db` — only Snowflake private-key
+        // auth reaches here now; browser auth is handled via the fast path above.
+
         // Create SSO URL channel
         let (sso_tx, mut sso_rx) = mpsc::channel::<String>(1);
 
@@ -870,5 +1031,57 @@ pub async fn inspect_schema_tables_handler(
             );
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
+    }
+}
+
+#[cfg(test)]
+mod schema_tests {
+    use super::*;
+
+    #[test]
+    fn database_schema_response_serializes() {
+        let resp = DatabaseSchemaResponse {
+            tables: vec![TableInfo {
+                name: "users".to_string(),
+                columns: vec![ColumnInfo {
+                    name: "id".to_string(),
+                    data_type: "int4".to_string(),
+                }],
+            }],
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("\"name\":\"users\""));
+        assert!(json.contains("\"data_type\":\"int4\""));
+    }
+
+    #[test]
+    fn empty_schema_serializes() {
+        let resp = DatabaseSchemaResponse { tables: vec![] };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert_eq!(json, r#"{"tables":[]}"#);
+    }
+
+    #[test]
+    fn table_with_multiple_columns_serializes() {
+        let resp = DatabaseSchemaResponse {
+            tables: vec![TableInfo {
+                name: "orders".to_string(),
+                columns: vec![
+                    ColumnInfo {
+                        name: "id".to_string(),
+                        data_type: "int8".to_string(),
+                    },
+                    ColumnInfo {
+                        name: "total".to_string(),
+                        data_type: "numeric".to_string(),
+                    },
+                ],
+            }],
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        assert!(json.contains("\"name\":\"orders\""));
+        assert!(json.contains("\"data_type\":\"numeric\""));
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["tables"][0]["columns"].as_array().unwrap().len(), 2);
     }
 }

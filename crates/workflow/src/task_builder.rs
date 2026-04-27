@@ -2,6 +2,7 @@ use std::{collections::HashMap, hash::Hash};
 
 use itertools::Itertools;
 use serde_json::Value as JsonValue;
+use tracing::Instrument;
 
 use oxy::{
     checkpoint::{RunInfo, types::RetryStrategy},
@@ -241,96 +242,105 @@ impl Executable<TaskInput> for TaskExecutable {
                     &agent_task.agent_ref,
                     agent_task.consistency_run,
                 );
-                let _guard = agent_span.enter();
 
-                let prompt = execution_context.renderer.render_str(&agent_task.prompt)?;
+                // Use `.instrument(span)` instead of holding `span.enter()`
+                // across `.await`. The `Entered` guard would be entered on
+                // one tokio worker thread and dropped on another when the
+                // future migrates, leaking stale span ids into the per-thread
+                // span stack — which surfaced as `clone_span` panics in
+                // later sqlx queries from the coordinator.
+                async {
+                    let prompt = execution_context.renderer.render_str(&agent_task.prompt)?;
 
-                // Render agent task variables with workflow context
-                let rendered_variables = if let Some(vars) = &agent_task.variables {
-                    let mut rendered_vars = HashMap::new();
-                    for (key, value) in vars {
-                        // Convert value to string for rendering
-                        let value_str = if value.is_string() {
-                            value.as_str().unwrap_or_default().to_string()
-                        } else {
-                            serde_json::to_string(value)?
-                        };
+                    // Render agent task variables with workflow context
+                    let rendered_variables = if let Some(vars) = &agent_task.variables {
+                        let mut rendered_vars = HashMap::new();
+                        for (key, value) in vars {
+                            // Convert value to string for rendering
+                            let value_str = if value.is_string() {
+                                value.as_str().unwrap_or_default().to_string()
+                            } else {
+                                serde_json::to_string(value)?
+                            };
 
-                        // Render the value with workflow context
-                        let rendered = execution_context.renderer.render_str(&value_str)?;
+                            // Render the value with workflow context
+                            let rendered = execution_context.renderer.render_str(&value_str)?;
 
-                        // Try to parse back as JSON, otherwise keep as string
-                        let rendered_value = serde_json::from_str(&rendered)
-                            .unwrap_or(serde_json::Value::String(rendered));
+                            // Try to parse back as JSON, otherwise keep as string
+                            let rendered_value = serde_json::from_str(&rendered)
+                                .unwrap_or(serde_json::Value::String(rendered));
 
-                        rendered_vars.insert(key.clone(), rendered_value);
-                    }
-                    Some(rendered_vars)
-                } else {
-                    None
-                };
+                            rendered_vars.insert(key.clone(), rendered_value);
+                        }
+                        Some(rendered_vars)
+                    } else {
+                        None
+                    };
 
-                match &agent_task.consistency_run {
-                    consistency_run if *consistency_run > 1 => {
-                        // Resolve consistency prompt: task > workflow > constant
-                        let consistency_prompt = agent_task
-                            .consistency_prompt
-                            .clone()
-                            .or(workflow_consistency_prompt.clone())
-                            .unwrap_or_else(|| {
-                                oxy::config::constants::CONSISTENCY_PROMPT.to_string()
-                            });
+                    match &agent_task.consistency_run {
+                        consistency_run if *consistency_run > 1 => {
+                            // Resolve consistency prompt: task > workflow > constant
+                            let consistency_prompt = agent_task
+                                .consistency_prompt
+                                .clone()
+                                .or(workflow_consistency_prompt.clone())
+                                .unwrap_or_else(|| {
+                                    oxy::config::constants::CONSISTENCY_PROMPT.to_string()
+                                });
 
-                        let mut executable = ExecutableBuilder::new()
-                            .consistency(
-                                AgentPicker {
-                                    task_description: prompt.clone(),
-                                    agent_ref: agent_task.agent_ref.to_string(),
-                                    consistency_prompt,
-                                },
-                                *consistency_run,
-                                10,
-                            )
-                            .executable(AgentLauncherExecutable);
-                        executable
-                            .execute(
-                                &execution_context,
-                                AgentInput {
-                                    agent_ref: agent_task.agent_ref.to_string(),
-                                    prompt,
-                                    memory: vec![],
-                                    variables: rendered_variables.clone(),
-                                    a2a_task_id: None,
-                                    a2a_thread_id: None,
-                                    a2a_context_id: None,
-                                    sandbox_info: None,
-                                },
-                            )
-                            .await
-                            .map(|(output, score)| {
-                                output
-                                    .try_get_metadata()
-                                    .map(|value| OutputContainer::Consistency { value, score })
-                            })?
-                    }
-                    _ => {
-                        AgentLauncherExecutable
-                            .execute(
-                                &execution_context,
-                                AgentInput {
-                                    agent_ref: agent_task.agent_ref.to_string(),
-                                    prompt,
-                                    memory: vec![],
-                                    variables: rendered_variables,
-                                    a2a_task_id: None,
-                                    a2a_thread_id: None,
-                                    a2a_context_id: None,
-                                    sandbox_info: None,
-                                },
-                            )
-                            .await
+                            let mut executable = ExecutableBuilder::new()
+                                .consistency(
+                                    AgentPicker {
+                                        task_description: prompt.clone(),
+                                        agent_ref: agent_task.agent_ref.to_string(),
+                                        consistency_prompt,
+                                    },
+                                    *consistency_run,
+                                    10,
+                                )
+                                .executable(AgentLauncherExecutable);
+                            executable
+                                .execute(
+                                    &execution_context,
+                                    AgentInput {
+                                        agent_ref: agent_task.agent_ref.to_string(),
+                                        prompt,
+                                        memory: vec![],
+                                        variables: rendered_variables.clone(),
+                                        a2a_task_id: None,
+                                        a2a_thread_id: None,
+                                        a2a_context_id: None,
+                                        sandbox_info: None,
+                                    },
+                                )
+                                .await
+                                .map(|(output, score)| {
+                                    output
+                                        .try_get_metadata()
+                                        .map(|value| OutputContainer::Consistency { value, score })
+                                })?
+                        }
+                        _ => {
+                            AgentLauncherExecutable
+                                .execute(
+                                    &execution_context,
+                                    AgentInput {
+                                        agent_ref: agent_task.agent_ref.to_string(),
+                                        prompt,
+                                        memory: vec![],
+                                        variables: rendered_variables,
+                                        a2a_task_id: None,
+                                        a2a_thread_id: None,
+                                        a2a_context_id: None,
+                                        sandbox_info: None,
+                                    },
+                                )
+                                .await
+                        }
                     }
                 }
+                .instrument(agent_span)
+                .await
             }
             TaskType::SemanticQuery(semantic_task) => {
                 let output = build_semantic_query_executable()
@@ -380,107 +390,122 @@ impl Executable<TaskInput> for TaskExecutable {
             }
             TaskType::Formatter(formatter_task) => {
                 let formatter_span = workflow_events::task_formatter_execute_span();
-                let _guard = formatter_span.enter();
 
-                let value: Result<OutputContainer, OxyError> = execution_context
-                    .renderer
-                    .render_str(&formatter_task.template)
-                    .map(|value| Output::Text(value).into());
-                match value.as_ref() {
-                    Ok(value) => {
-                        execution_context
-                            .write_kind(EventKind::Message {
-                                message: format!("{}", "\nOutput:".primary()),
-                            })
-                            .await?;
-                        execution_context
-                            .write_chunk(Chunk {
-                                key: None,
-                                delta: Output::Text(value.to_string()),
-                                finished: true,
-                            })
-                            .await?;
+                // See the `Agent` arm above: use `.instrument` not `.enter`.
+                async {
+                    let value: Result<OutputContainer, OxyError> = execution_context
+                        .renderer
+                        .render_str(&formatter_task.template)
+                        .map(|value| Output::Text(value).into());
+                    match value.as_ref() {
+                        Ok(value) => {
+                            execution_context
+                                .write_kind(EventKind::Message {
+                                    message: format!("{}", "\nOutput:".primary()),
+                                })
+                                .await?;
+                            execution_context
+                                .write_chunk(Chunk {
+                                    key: None,
+                                    delta: Output::Text(value.to_string()),
+                                    finished: true,
+                                })
+                                .await?;
+                        }
+                        Err(_e) => {}
                     }
-                    Err(_e) => {}
+                    value
                 }
-                value
+                .instrument(formatter_span)
+                .await
             }
             TaskType::Workflow(workflow_task) => {
                 let workflow_span = workflow_events::task_sub_workflow_execute_span(
                     &workflow_task.src.to_string_lossy(),
                 );
-                let _guard = workflow_span.enter();
 
-                let (run_info, variables) = match runtime_input {
-                    Some(RuntimeTaskInput::ChildRunInfo {
-                        variables,
-                        run_info,
-                    }) => (run_info, variables),
-                    _ => {
-                        return Err(OxyError::RuntimeError(
-                            "Workflow variables not provided".to_string(),
-                        ));
-                    }
-                };
-                match run_info {
-                    Some(run_info) => {
-                        let metadata = serde_json::to_string(
-                            &HashMap::<String, serde_json::Value>::from_iter([
-                                (
-                                    "type".to_string(),
-                                    serde_json::to_value("sub_workflow").unwrap(),
-                                ),
-                                (
-                                    "workflow_id".to_string(),
-                                    serde_json::to_value(run_info.get_source_id()).unwrap(),
-                                ),
-                                (
-                                    "run_id".to_string(),
-                                    serde_json::to_value(run_info.get_run_index()).unwrap(),
-                                ),
-                            ]),
-                        )
-                        .map_err(|e| {
-                            OxyError::RuntimeError(format!(
-                                "Failed to serialize sub workflow metadata: {e}"
-                            ))
-                        })?;
-                        task_execution_context
-                            .write_kind(EventKind::SetMetadata {
-                                attributes: HashMap::from_iter([(
-                                    "metadata".to_string(),
-                                    metadata,
-                                )]),
-                            })
-                            .await?;
-                        WorkflowLauncherExecutable
-                            .execute(
-                                &task_execution_context,
-                                WorkflowInput {
-                                    retry: RetryStrategy::RetryWithVariables {
-                                        replay_id: run_info.get_replay_id(),
-                                        run_index: run_info.get_run_index(),
-                                        variables: variables.map(|v| v.into_iter().collect()),
+                // See the `Agent` arm above: use `.instrument` not `.enter`.
+                async {
+                    let (run_info, variables) = match runtime_input {
+                        Some(RuntimeTaskInput::ChildRunInfo {
+                            variables,
+                            run_info,
+                        }) => (run_info, variables),
+                        _ => {
+                            return Err(OxyError::RuntimeError(
+                                "Workflow variables not provided".to_string(),
+                            ));
+                        }
+                    };
+                    match run_info {
+                        Some(run_info) => {
+                            let metadata =
+                                serde_json::to_string(
+                                    &HashMap::<String, serde_json::Value>::from_iter([
+                                        (
+                                            "type".to_string(),
+                                            serde_json::to_value("sub_workflow").unwrap(),
+                                        ),
+                                        (
+                                            "workflow_id".to_string(),
+                                            serde_json::to_value(run_info.get_source_id()).unwrap(),
+                                        ),
+                                        (
+                                            "run_id".to_string(),
+                                            serde_json::to_value(run_info.get_run_index()).unwrap(),
+                                        ),
+                                    ]),
+                                )
+                                .map_err(|e| {
+                                    OxyError::RuntimeError(format!(
+                                        "Failed to serialize sub workflow metadata: {e}"
+                                    ))
+                                })?;
+                            task_execution_context
+                                .write_kind(EventKind::SetMetadata {
+                                    attributes: HashMap::from_iter([(
+                                        "metadata".to_string(),
+                                        metadata,
+                                    )]),
+                                })
+                                .await?;
+                            WorkflowLauncherExecutable
+                                .execute(
+                                    &task_execution_context,
+                                    WorkflowInput {
+                                        retry: RetryStrategy::RetryWithVariables {
+                                            replay_id: run_info.get_replay_id(),
+                                            run_index: run_info.get_run_index(),
+                                            variables: variables.map(|v| v.into_iter().collect()),
+                                        },
+                                        workflow_ref: workflow_task
+                                            .src
+                                            .to_string_lossy()
+                                            .to_string(),
                                     },
-                                    workflow_ref: workflow_task.src.to_string_lossy().to_string(),
-                                },
-                            )
-                            .await
-                    }
-                    None => {
-                        WorkflowLauncherExecutable
-                            .execute(
-                                &task_execution_context,
-                                WorkflowInput {
-                                    retry: RetryStrategy::NoRetry {
-                                        variables: variables.map(|v| v.into_iter().collect()),
+                                )
+                                .await
+                        }
+                        None => {
+                            WorkflowLauncherExecutable
+                                .execute(
+                                    &task_execution_context,
+                                    WorkflowInput {
+                                        retry: RetryStrategy::NoRetry {
+                                            variables: variables.map(|v| v.into_iter().collect()),
+                                        },
+                                        workflow_ref: workflow_task
+                                            .src
+                                            .to_string_lossy()
+                                            .to_string(),
                                     },
-                                    workflow_ref: workflow_task.src.to_string_lossy().to_string(),
-                                },
-                            )
-                            .await
+                                )
+                                .await
+                        }
                     }
                 }
+                .instrument(workflow_span)
+                .await
             }
             TaskType::Conditional(_) => Err(OxyError::RuntimeError(
                 "Conditional task type is not yet supported for workflow execution".to_string(),

@@ -193,6 +193,12 @@ where
 /// message from the failed attempt is injected into [`RetryContext`] so the
 /// LLM can correct its SQL on the next attempt.  Only the failed sub-spec is
 /// retried; successful ones are kept.
+///
+/// Uses [`tokio::task::JoinSet`] so that when this future is dropped (e.g. the
+/// parent pipeline is cancelled), all in-flight fanout tasks are aborted. That
+/// avoids detached tasks outliving their parent spans and racing on tracing
+/// span refcounts, which previously surfaced as `clone_span` panics in
+/// sqlx/sea-orm calls from the coordinator.
 async fn run_fanout_concurrent<D, Ev>(
     worker: Arc<dyn FanoutWorker<D, Ev>>,
     specs: Vec<D::Spec>,
@@ -207,7 +213,8 @@ where
     D: Domain,
     Ev: DomainEvents,
 {
-    let mut handles = Vec::with_capacity(total);
+    let mut set: tokio::task::JoinSet<(usize, Result<D::Result, (D::Error, BackTarget<D>)>)> =
+        tokio::task::JoinSet::new();
     for (index, spec) in specs.into_iter().enumerate() {
         let w = Arc::clone(&worker);
         let ev = events.clone();
@@ -221,7 +228,7 @@ where
             sub_spec_index = index,
             total,
         );
-        let handle = tokio::spawn(
+        set.spawn(
             async move {
                 emit(
                     &ev,
@@ -300,13 +307,15 @@ where
             }
             .instrument(sub_span),
         );
-        handles.push(handle);
     }
 
     let mut outcomes = Vec::with_capacity(total);
-    for handle in handles {
-        match handle.await {
+    while let Some(joined) = set.join_next().await {
+        match joined {
             Ok(result) => outcomes.push(result),
+            Err(join_err) if join_err.is_cancelled() => {
+                // Parent cancellation aborted this task; nothing to record.
+            }
             Err(join_err) => {
                 // Task panicked — shouldn't happen, but handle gracefully.
                 eprintln!("fanout task panicked: {join_err}");

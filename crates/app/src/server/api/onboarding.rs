@@ -805,6 +805,13 @@ fn collect_warehouse_vars(database: &oxy::config::model::Database) -> Vec<Github
             push_opt(&mut out, "password", &p.password_var, p.password.is_some());
             push_opt(&mut out, "database", &p.database_var, p.database.is_some());
         }
+        DatabaseType::Airhouse(a) => {
+            push_opt(&mut out, "host", &a.host_var, a.host.is_some());
+            push_opt(&mut out, "port", &a.port_var, a.port.is_some());
+            push_opt(&mut out, "user", &a.user_var, a.user.is_some());
+            push_opt(&mut out, "password", &a.password_var, a.password.is_some());
+            push_opt(&mut out, "database", &a.database_var, a.database.is_some());
+        }
         DatabaseType::Redshift(r) => {
             push_opt(&mut out, "host", &r.host_var, r.host.is_some());
             push_opt(&mut out, "port", &r.port_var, r.port.is_some());

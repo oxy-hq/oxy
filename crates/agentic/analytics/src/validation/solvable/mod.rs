@@ -119,6 +119,7 @@ impl SolvableRule for SqlSyntaxRule {
                 message: "no SQL statement found".to_string(),
             });
         }
+
         // sqlparser's GenericDialect accepts FROM-first queries (e.g.
         // `FROM t JOIN u ON …`) by parsing them into a Select with an empty
         // projection. These are not valid standard SQL for our pipeline, so

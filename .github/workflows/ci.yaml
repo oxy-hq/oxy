@@ -195,17 +195,17 @@ jobs:
           --health-cmd "pg_isready -U admin -d default" --health-interval 10s
           --health-timeout 5s --health-retries 5
     steps:
-      # - name: Free disk space
-      #   if: matrix.task == 'test'
-      #   uses: jlumbroso/free-disk-space@main
-      #   with:
-      #     tool-cache: false
-      #     android: true
-      #     dotnet: true
-      #     haskell: true
-      #     large-packages: true
-      #     docker-images: true
-      #     swap-storage: true
+      - name: Free disk space
+        if: matrix.task == 'test'
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0

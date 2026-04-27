@@ -9,39 +9,104 @@ rust-version.workspace = true
 authors.workspace = true
 
 [features]
+# Optional Arrow zero-copy extension. Enables `AsArrowConnector` and the
+# `DatabaseConnector::as_arrow()` method. Backends that natively produce
+# Arrow (DuckDB, Snowflake) implement the extension under this feature.
+# Row-based backends never need it.
+arrow = ["dep:arrow", "dep:futures"]
+
 duckdb = ["dep:duckdb", "dep:slugify"]
-postgres = ["dep:tokio-postgres"]
+# `dep:chrono` — for decoding DATE / TIMESTAMP / TIMESTAMPTZ into owned
+# Rust types inside `execute_query_full`.
+# `dep:serde_json` — for decoding JSON / JSONB columns.
+postgres = ["dep:tokio-postgres", "dep:chrono", "dep:serde_json"]
+# Airhouse speaks the Postgres wire protocol but with DuckDB semantics;
+# shares the `tokio-postgres` dep with `postgres` but is gated separately.
+airhouse = ["dep:tokio-postgres", "dep:serde_json", "dep:uuid"]
+
 clickhouse = ["dep:reqwest", "dep:serde_json", "dep:serde"]
-snowflake = ["dep:snowflake-api", "dep:arrow", "dep:serde_json"]
-bigquery = ["dep:gcp-bigquery-client"]
+# MySQL via sqlx-mysql. `chrono` + `serde_json` decode DATE / DATETIME /
+# JSON columns into owned Rust types inside `execute_query_full`.
+mysql = [
+    "dep:sqlx",
+    "sqlx/mysql",
+    "sqlx/chrono",
+    "sqlx/json",
+    "sqlx/runtime-tokio-rustls",
+    "dep:chrono",
+    "dep:futures",
+    "dep:serde_json",
+]
+# Snowflake's driver decodes Arrow internally, so turning on `snowflake`
+# transitively forces the `arrow` extension on.
+snowflake = ["dep:snowflake-api", "dep:serde_json", "arrow", "arrow/json"]
+# BigQuery pulls in `base64` for BYTES decoding and `serde_json` for
+# RECORD / STRUCT / JSON / ARRAY cell passthrough.
+bigquery = ["dep:gcp-bigquery-client", "dep:base64", "dep:serde_json"]
+# DOMO: REST-API-backed. `reqwest` + `serde` + `serde_json` are the only
+# runtime deps — no DB driver, no CREATE TEMP TABLE.
+domo = ["dep:reqwest", "dep:serde", "dep:serde_json"]
 
 [dependencies]
 agentic-core = { workspace = true }
+async-stream = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true, features = ["sync", "rt"] }
 tracing = { workspace = true }
+
+# Arrow (feature-gated via `arrow`)
+arrow = { workspace = true, features = ["ipc"], optional = true }
+futures = { workspace = true, optional = true }
 
 # DuckDB
 duckdb = { workspace = true, optional = true }
 slugify = { workspace = true, optional = true }
 
 # Postgres
-tokio-postgres = { workspace = true, features = ["with-chrono-0_4"], optional = true }
+# `with-chrono-0_4` + `with-serde_json-1` let `execute_query_full` decode
+# DATE / TIMESTAMP / JSON / JSONB columns into owned Rust types.
+tokio-postgres = { workspace = true, features = [
+    "with-chrono-0_4",
+    "with-serde_json-1",
+], optional = true }
 chrono = { workspace = true, optional = true }
 
 # ClickHouse (HTTP API)
-reqwest = { workspace = true, features = ["rustls-tls", "json"], optional = true }
+reqwest = { workspace = true, features = [
+    "rustls-tls",
+    "json",
+], optional = true }
 serde_json = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"], optional = true }
 
 # Snowflake
 snowflake-api = { workspace = true, optional = true }
-arrow = { workspace = true, features = ["json"], optional = true }
 
 # BigQuery
 gcp-bigquery-client = { workspace = true, optional = true }
+base64 = { workspace = true, optional = true }
+
+# MySQL
+sqlx = { workspace = true, optional = true }
+
+# Airhouse — unique temp table names per execute_query_full invocation
+uuid = { workspace = true, optional = true }
 
 [dev-dependencies]
 duckdb = { workspace = true }
+futures = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tempfile = { workspace = true }
+# testcontainers for integration tests that spin up a real Postgres / MySQL
+# / ClickHouse server. DOMO tests use `wiremock` since there is no public
+# container image.
+testcontainers = { version = "0.27", features = [
+    "blocking",
+    "reusable-containers",
+] }
+testcontainers-modules = { version = "0.15", features = [
+    "postgres",
+    "clickhouse",
+    "mysql",
+] }
+wiremock = "0.6"

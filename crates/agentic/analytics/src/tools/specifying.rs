@@ -1,5 +1,8 @@
 //! Executor for **specifying**-state tools (`get_join_path`, `sample_columns`).
 
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use agentic_connector::DatabaseConnector;
 use agentic_core::result::CellValue;
 use agentic_core::tools::ToolError;
@@ -12,19 +15,24 @@ use super::{cell_to_json, emit_tool_error, emit_tool_input, emit_tool_output};
 /// Execute a **specifying** tool.
 ///
 /// `catalog` is used for `get_join_path` lookups.
-/// `connector` is used by `sample_columns` to run live queries.
+/// `connectors` + `default_connector` back `sample_columns`: each sampled
+/// column routes to the connector named by its semantic-view `datasource:`,
+/// falling back to `default_connector` when the view has none or the named
+/// connector isn't registered.
 #[tracing::instrument(
-    skip(catalog, connector),
+    skip(catalog, connectors),
     fields(oxy.name = "analytics.tool", oxy.span_type = "analytics", tool = %name)
 )]
 pub async fn execute_specifying_tool(
     name: &str,
     params: Value,
     catalog: &dyn Catalog,
-    connector: &dyn DatabaseConnector,
+    connectors: &HashMap<String, Arc<dyn DatabaseConnector>>,
+    default_connector: &str,
 ) -> Result<Value, ToolError> {
     emit_tool_input(name, &params);
-    let result = execute_specifying_tool_inner(name, params, catalog, connector).await;
+    let result =
+        execute_specifying_tool_inner(name, params, catalog, connectors, default_connector).await;
     match &result {
         Ok(v) => emit_tool_output(v),
         Err(e) => emit_tool_error(e),
@@ -36,7 +44,8 @@ async fn execute_specifying_tool_inner(
     name: &str,
     params: Value,
     catalog: &dyn Catalog,
-    connector: &dyn DatabaseConnector,
+    connectors: &HashMap<String, Arc<dyn DatabaseConnector>>,
+    default_connector: &str,
 ) -> Result<Value, ToolError> {
     match name {
         "get_join_path" => {
@@ -95,7 +104,14 @@ async fn execute_specifying_tool_inner(
             let futures: Vec<_> = specs
                 .iter()
                 .map(|(table, column, search_term)| {
-                    sample_single_column(table, column, *search_term, catalog, connector)
+                    sample_single_column(
+                        table,
+                        column,
+                        *search_term,
+                        catalog,
+                        connectors,
+                        default_connector,
+                    )
                 })
                 .collect();
             let results = futures::future::join_all(futures).await;
@@ -124,15 +140,41 @@ async fn execute_specifying_tool_inner(
 
 /// Sample a single column: resolve via catalog, query the database for distinct
 /// values and statistics.  Used by `sample_columns` (batch) above.
+///
+/// Picks the connector named by the view's `datasource:` (via `SampleTarget`).
+/// Falls back to `default_connector` when the view has no datasource or when
+/// the named connector isn't registered.
 async fn sample_single_column(
     table_param: &str,
     column_param: &str,
     search_term: Option<&str>,
     catalog: &dyn Catalog,
-    connector: &dyn DatabaseConnector,
+    connectors: &HashMap<String, Arc<dyn DatabaseConnector>>,
+    default_connector: &str,
 ) -> Result<Value, ToolError> {
     // Resolve semantic view/dimension names to physical table/column.
     let resolved = catalog.resolve_sample_target(table_param, column_param);
+
+    // Select the connector matching the view's datasource, falling back to the
+    // default.  Without this routing, a view declaring `datasource: local`
+    // would still be queried against whichever connector happens to be the
+    // default — which is how `oxymart.csv` lookups used to fail with "no such
+    // file" on the `training` connector.
+    let connector: &dyn DatabaseConnector = {
+        let name = resolved
+            .as_ref()
+            .and_then(|t| t.datasource.as_deref())
+            .filter(|n| connectors.contains_key(*n))
+            .unwrap_or(default_connector);
+        connectors
+            .get(name)
+            .ok_or_else(|| {
+                ToolError::Execution(format!(
+                    "no connector registered for '{name}' (requested for table '{table_param}')"
+                ))
+            })?
+            .as_ref()
+    };
 
     // If the semantic layer has static samples, return them directly.
     // When a search_term is provided, filter the static samples.

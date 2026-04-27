@@ -74,7 +74,9 @@ const fileKeys = {
 const databaseKeys = {
   all: ["database"] as const,
   list: (projectId: string, branchName: string) =>
-    [...databaseKeys.all, "list", projectId, branchName] as const
+    [...databaseKeys.all, "list", projectId, branchName] as const,
+  schema: (projectId: string, branchName: string, dbName: string) =>
+    [...databaseKeys.all, "schema", projectId, branchName, dbName] as const
 };
 
 const appKeys = {

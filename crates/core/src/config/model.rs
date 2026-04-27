@@ -456,6 +456,104 @@ impl Postgres {
     }
 }
 
+/// Airhouse: Postgres-wire-protocol warehouse that speaks the DuckDB SQL dialect.
+///
+/// Connection uses the same pgwire transport as `Postgres`, but queries are written
+/// in DuckDB syntax — so `Database::dialect()` returns `"duckdb"` for Airhouse and
+/// the connector layer hardcodes the `postgres://` scheme for transport.
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate, Default)]
+#[garde(context(ValidationContext))]
+pub struct Airhouse {
+    #[serde(default)]
+    #[garde(skip)]
+    pub host: Option<String>,
+    #[serde(default)]
+    #[garde(skip)]
+    pub host_var: Option<String>,
+    #[serde(default)]
+    #[garde(skip)]
+    pub port: Option<String>,
+    #[serde(default)]
+    #[garde(skip)]
+    pub port_var: Option<String>,
+    #[serde(default)]
+    #[garde(skip)]
+    pub user: Option<String>,
+    #[serde(default)]
+    #[garde(skip)]
+    pub user_var: Option<String>,
+    #[garde(skip)]
+    #[schemars(skip)]
+    #[serde(default)]
+    pub password: Option<String>,
+    #[serde(default)]
+    #[garde(skip)]
+    pub password_var: Option<String>,
+    #[serde(default)]
+    #[garde(skip)]
+    pub database: Option<String>,
+    #[serde(default)]
+    #[garde(skip)]
+    pub database_var: Option<String>,
+}
+
+impl Airhouse {
+    pub async fn get_password(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
+        secret_manager
+            .resolve_config_value(
+                self.password.as_deref(),
+                self.password_var.as_deref(),
+                "password",
+                Some("airhouse"),
+            )
+            .await
+    }
+
+    pub async fn get_host(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
+        secret_manager
+            .resolve_config_value(
+                self.host.as_deref(),
+                self.host_var.as_deref(),
+                "host",
+                Some("localhost"),
+            )
+            .await
+    }
+
+    pub async fn get_port(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
+        secret_manager
+            .resolve_config_value(
+                self.port.as_deref(),
+                self.port_var.as_deref(),
+                "port",
+                Some("5445"),
+            )
+            .await
+    }
+
+    pub async fn get_user(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
+        secret_manager
+            .resolve_config_value(
+                self.user.as_deref(),
+                self.user_var.as_deref(),
+                "user",
+                Some("admin"),
+            )
+            .await
+    }
+
+    pub async fn get_database(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
+        secret_manager
+            .resolve_config_value(
+                self.database.as_deref(),
+                self.database_var.as_deref(),
+                "database",
+                Some("airhouse"),
+            )
+            .await
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Validate, Default)]
 #[garde(context(ValidationContext))]
 pub struct Redshift {
@@ -1132,6 +1230,8 @@ pub enum DatabaseType {
     Snowflake(#[garde(dive)] Snowflake),
     #[serde(rename = "postgres")]
     Postgres(#[garde(dive)] Postgres),
+    #[serde(rename = "airhouse")]
+    Airhouse(#[garde(dive)] Airhouse),
     #[serde(rename = "redshift")]
     Redshift(#[garde(dive)] Redshift),
     #[serde(rename = "mysql")]
@@ -1151,6 +1251,7 @@ impl std::fmt::Display for DatabaseType {
             DatabaseType::DuckDB(_) => write!(f, "duckdb"),
             DatabaseType::Snowflake(_) => write!(f, "snowflake"),
             DatabaseType::Postgres(_) => write!(f, "postgres"),
+            DatabaseType::Airhouse(_) => write!(f, "airhouse"),
             DatabaseType::Redshift(_) => write!(f, "redshift"),
             DatabaseType::Mysql(_) => write!(f, "mysql"),
             DatabaseType::ClickHouse(_) => write!(f, "clickhouse"),
@@ -1177,6 +1278,7 @@ impl Database {
             DatabaseType::Bigquery(_) => "bigquery".to_owned(),
             DatabaseType::DuckDB(_) => "duckdb".to_owned(),
             DatabaseType::Postgres(_) => "postgres".to_owned(),
+            DatabaseType::Airhouse(_) => "duckdb".to_owned(),
             DatabaseType::Redshift(_) => "postgres".to_owned(),
             DatabaseType::Mysql(_) => "mysql".to_owned(),
             DatabaseType::ClickHouse(_) => "clickhouse".to_string(),

@@ -11,9 +11,15 @@ use tower::ServiceExt;
 
 #[tokio::test]
 async fn local_router_returns_404_for_organization_routes() {
-    let router = api_router(ServeMode::Local, false, None, std::path::PathBuf::new())
-        .await
-        .expect("build router");
+    let router = api_router(
+        ServeMode::Local,
+        false,
+        None,
+        std::path::PathBuf::new(),
+        tokio_util::sync::CancellationToken::new(),
+    )
+    .await
+    .expect("build router");
     for path in [
         "/organizations",
         "/organizations/acme",
@@ -38,9 +44,15 @@ async fn local_router_returns_404_for_organization_routes() {
 
 #[tokio::test]
 async fn local_router_returns_404_for_github_namespace_routes() {
-    let router = api_router(ServeMode::Local, false, None, std::path::PathBuf::new())
-        .await
-        .expect("build router");
+    let router = api_router(
+        ServeMode::Local,
+        false,
+        None,
+        std::path::PathBuf::new(),
+        tokio_util::sync::CancellationToken::new(),
+    )
+    .await
+    .expect("build router");
     for path in ["/github/namespaces", "/github/namespaces/pat"] {
         let req = Request::builder().uri(path).body(Body::empty()).unwrap();
         let resp = router
@@ -62,9 +74,15 @@ async fn local_router_has_public_liveness_route() {
     // Use /live instead of /health: /health returns 503 when DB is unreachable
     // (which is the case in unit tests); /live is the unconditional liveness
     // endpoint and always returns 200.
-    let router = api_router(ServeMode::Local, false, None, std::path::PathBuf::new())
-        .await
-        .expect("build router");
+    let router = api_router(
+        ServeMode::Local,
+        false,
+        None,
+        std::path::PathBuf::new(),
+        tokio_util::sync::CancellationToken::new(),
+    )
+    .await
+    .expect("build router");
     let req = Request::builder().uri("/live").body(Body::empty()).unwrap();
     let resp = router.oneshot(req).await.expect("oneshot");
     assert_eq!(resp.status(), StatusCode::OK);

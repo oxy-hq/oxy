@@ -23,11 +23,14 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value;
 
-use agentic_core::result::{CellValue, QueryResult, QueryRow};
+use agentic_core::result::{
+    CellValue, ColumnSpec, QueryResult, QueryRow, TypedRowError, TypedRowStream, TypedValue,
+};
 
+use crate::clickhouse_typed::{ch_type_to_typed, parse_ch_cell};
 use crate::connector::{
     ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, ResultSummary,
-    SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect,
+    SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect, normalize_sql,
 };
 
 // ── HTTP response types ────────────────────────────────────────────────────────
@@ -232,6 +235,7 @@ impl DatabaseConnector for ClickHouseConnector {
         sql: &str,
         sample_limit: u64,
     ) -> Result<ExecutionResult, ConnectorError> {
+        let sql = normalize_sql(sql);
         // 1. Total row count via subquery.
         let count_sql = format!("SELECT count() FROM ({sql})");
         let count_resp = self.http_query(&count_sql).await?;
@@ -270,7 +274,10 @@ impl DatabaseConnector for ClickHouseConnector {
         let mut col_stats: Vec<ColumnStats> = Vec::with_capacity(col_count);
         for (idx, col) in column_names.iter().enumerate() {
             let quoted = format!("\"{}\"", col.replace('"', "\\\""));
-            let col_type = column_types.get(idx).and_then(|t| t.as_deref()).unwrap_or("");
+            let col_type = column_types
+                .get(idx)
+                .and_then(|t| t.as_deref())
+                .unwrap_or("");
             // toFloat64OrNull only accepts String in ClickHouse. Route by type:
             // - Numeric: avg/stddevPop work directly on numeric columns and
             //   skip NULLs natively.
@@ -278,10 +285,7 @@ impl DatabaseConnector for ClickHouseConnector {
             //   NULL; avg/stddevPop then skip them.
             // - Other:   dates, UUIDs, etc. — emit NULL for mean/stddev.
             let (avg_expr, sd_expr) = match clickhouse_type_category(col_type) {
-                TypeCategory::Numeric => (
-                    format!("avg({quoted})"),
-                    format!("stddevPop({quoted})"),
-                ),
+                TypeCategory::Numeric => (format!("avg({quoted})"), format!("stddevPop({quoted})")),
                 TypeCategory::String => (
                     format!("avg(toFloat64OrNull({quoted}))"),
                     format!("stddevPop(toFloat64OrNull({quoted}))"),
@@ -365,6 +369,41 @@ impl DatabaseConnector for ClickHouseConnector {
                 columns: col_stats,
             },
         })
+    }
+
+    async fn execute_query_full(&self, sql: &str) -> Result<TypedRowStream, ConnectorError> {
+        let sql = normalize_sql(sql);
+        // One request: `SELECT * FROM (user_sql) FORMAT JSONCompact`.
+        // The response carries per-column `meta.type` strings (Nullable,
+        // LowCardinality, composites all included) and a row-major `data`
+        // array of JSON values, which `parse_ch_cell` decodes typed.
+        let full_sql = format!("SELECT * FROM ({sql})");
+        let resp = self.http_query(&full_sql).await?;
+
+        let columns: Vec<ColumnSpec> = resp
+            .meta
+            .iter()
+            .map(|m| ColumnSpec {
+                name: m.name.clone(),
+                data_type: ch_type_to_typed(m.r#type.as_deref().unwrap_or("")),
+            })
+            .collect();
+        let col_count = columns.len();
+
+        let typed_rows: Vec<Result<Vec<TypedValue>, TypedRowError>> = resp
+            .data
+            .iter()
+            .map(|row| {
+                let mut cells = Vec::with_capacity(col_count);
+                for (idx, col) in columns.iter().enumerate() {
+                    let v = row.get(idx).unwrap_or(&Value::Null);
+                    cells.push(parse_ch_cell(v, col)?);
+                }
+                Ok(cells)
+            })
+            .collect();
+
+        Ok(TypedRowStream::from_rows(columns, typed_rows))
     }
 
     fn introspect_schema(&self) -> Result<SchemaInfo, ConnectorError> {

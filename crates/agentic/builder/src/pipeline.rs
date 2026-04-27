@@ -125,15 +125,11 @@ pub fn start_pipeline(params: BuilderPipelineParams) -> PipelineHandle<BuilderEv
                 Some(Err(OrchestratorError::ResumeNotSupported)) => {
                     PipelineOutcome::Failed("resume not supported".into())
                 }
-                None => {
-                    let _ = cancel_event_tx
-                        .send(Event::Core(CoreEvent::Error {
-                            message: "cancelled by user".into(),
-                            trace_id: "".into(),
-                        }))
-                        .await;
-                    PipelineOutcome::Cancelled
-                }
+                // Skip emitting an Error event on cancel — the
+                // `PipelineOutcome::Cancelled` already drives state, and a DB
+                // event write during tear-down could race on tracing span
+                // refcounts.
+                None => PipelineOutcome::Cancelled,
             };
 
             drop(orchestrator);
@@ -249,15 +245,8 @@ pub fn resume_pipeline(
                 Some(Err(OrchestratorError::ResumeNotSupported)) => {
                     PipelineOutcome::Failed("resume not supported".into())
                 }
-                None => {
-                    let _ = cancel_event_tx
-                        .send(Event::Core(CoreEvent::Error {
-                            message: "cancelled by user".into(),
-                            trace_id: "".into(),
-                        }))
-                        .await;
-                    PipelineOutcome::Cancelled
-                }
+                // See `start_pipeline`: no extra Error event on cancel.
+                None => PipelineOutcome::Cancelled,
             };
 
             drop(orchestrator);

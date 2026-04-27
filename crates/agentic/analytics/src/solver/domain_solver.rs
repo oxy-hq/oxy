@@ -98,7 +98,14 @@ impl DomainSolver<AnalyticsDomain> for AnalyticsSolver {
                 }
             }
             "specifying" => {
-                execute_specifying_tool(name, params, &*self.catalog, &*connector).await
+                execute_specifying_tool(
+                    name,
+                    params,
+                    &*self.catalog,
+                    &self.connectors,
+                    &self.default_connector,
+                )
+                .await
             }
             "solving" => execute_solving_tool(name, params, &*connector).await,
             // NOTE: this fallback is never reached in production — the custom

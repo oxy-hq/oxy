@@ -15,24 +15,29 @@
 
 mod conversion;
 mod schema;
+mod typed;
 
 use async_trait::async_trait;
 use snowflake_api::{QueryResult as SnowflakeQueryResult, SnowflakeApi};
 
-use agentic_core::result::{CellValue, QueryResult, QueryRow};
+use agentic_core::result::{
+    CellValue, ColumnSpec, QueryResult, QueryRow, TypedRowError, TypedRowStream, TypedValue,
+};
 
+use crate::config::{SnowflakeAuth, SsoUrlCallback};
 use crate::connector::{
     ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, ResultSummary, SchemaInfo,
-    SqlDialect,
+    SqlDialect, normalize_sql,
 };
 
 use conversion::{arrow_to_cell, json_value_to_cell};
 use schema::{StatRow, build_multi_stat_sql, decode_stat_rows, extract_count, fetch_schema};
+use typed::{arrow_dtype_to_typed, arrow_to_typed};
 
 pub struct SnowflakeConnector {
     account: String,
     username: String,
-    password: String,
+    auth: SnowflakeAuth,
     role: Option<String>,
     warehouse: String,
     database: Option<String>,
@@ -45,24 +50,22 @@ impl SnowflakeConnector {
     pub async fn new(
         account: String,
         username: String,
-        password: String,
+        auth: SnowflakeAuth,
         role: Option<String>,
         warehouse: String,
         database: Option<String>,
         schema_str: Option<String>,
     ) -> Result<Self, ConnectorError> {
         // Authenticate once to validate credentials.
-        let api = SnowflakeApi::with_password_auth(
+        let api = build_api(
             &account,
-            Some(&warehouse),
+            &username,
+            &auth,
+            role.as_deref(),
+            &warehouse,
             database.as_deref(),
             schema_str.as_deref(),
-            &username,
-            role.as_deref(),
-            &password,
-        )
-        .map_err(|e| ConnectorError::ConnectionError(e.to_string()))?;
-
+        )?;
         api.authenticate()
             .await
             .map_err(|e| ConnectorError::ConnectionError(e.to_string()))?;
@@ -70,7 +73,7 @@ impl SnowflakeConnector {
         let cached_schema = fetch_schema(
             &account,
             &username,
-            &password,
+            &auth,
             role.as_deref(),
             &warehouse,
             database.as_deref(),
@@ -82,7 +85,7 @@ impl SnowflakeConnector {
         Ok(Self {
             account,
             username,
-            password,
+            auth,
             role,
             warehouse,
             database,
@@ -93,22 +96,65 @@ impl SnowflakeConnector {
 
     /// Create and authenticate a fresh [`SnowflakeApi`] for a single query.
     async fn connect(&self) -> Result<SnowflakeApi, ConnectorError> {
-        let api = SnowflakeApi::with_password_auth(
+        let api = build_api(
             &self.account,
-            Some(&self.warehouse),
+            &self.username,
+            &self.auth,
+            self.role.as_deref(),
+            &self.warehouse,
             self.database.as_deref(),
             self.schema_str.as_deref(),
-            &self.username,
-            self.role.as_deref(),
-            &self.password,
-        )
-        .map_err(|e| ConnectorError::ConnectionError(e.to_string()))?;
-
+        )?;
         api.authenticate()
             .await
             .map_err(|e| ConnectorError::ConnectionError(e.to_string()))?;
-
         Ok(api)
+    }
+}
+
+/// Build a [`SnowflakeApi`] from resolved credentials without authenticating.
+fn build_api(
+    account: &str,
+    username: &str,
+    auth: &SnowflakeAuth,
+    role: Option<&str>,
+    warehouse: &str,
+    database: Option<&str>,
+    schema_str: Option<&str>,
+) -> Result<SnowflakeApi, ConnectorError> {
+    match auth {
+        SnowflakeAuth::Password { password } => SnowflakeApi::with_password_auth(
+            account,
+            Some(warehouse),
+            database,
+            schema_str,
+            username,
+            role,
+            password,
+        )
+        .map_err(|e| ConnectorError::ConnectionError(e.to_string())),
+        SnowflakeAuth::Browser {
+            timeout_secs,
+            cache_dir,
+            sso_url_callback,
+        } => {
+            let callback = sso_url_callback.as_ref().map(|SsoUrlCallback(cb)| {
+                std::sync::Arc::clone(cb) as std::sync::Arc<dyn Fn(String) + Send + Sync>
+            });
+            SnowflakeApi::with_externalbrowser_auth_full(
+                account,
+                Some(warehouse),
+                database,
+                schema_str,
+                username,
+                role,
+                *timeout_secs,
+                true,
+                cache_dir.clone(),
+                callback,
+            )
+            .map_err(|e| ConnectorError::ConnectionError(e.to_string()))
+        }
     }
 }
 
@@ -125,6 +171,7 @@ impl DatabaseConnector for SnowflakeConnector {
         sql: &str,
         sample_limit: u64,
     ) -> Result<ExecutionResult, ConnectorError> {
+        let sql = normalize_sql(sql);
         let api = self.connect().await?;
 
         let sf_result = api
@@ -292,8 +339,148 @@ impl DatabaseConnector for SnowflakeConnector {
         })
     }
 
+    async fn execute_query_full(&self, sql: &str) -> Result<TypedRowStream, ConnectorError> {
+        let sql = normalize_sql(sql);
+        let api = self.connect().await?;
+        let sf_result = api
+            .exec(sql)
+            .await
+            .map_err(|e| ConnectorError::QueryFailed {
+                sql: sql.to_string(),
+                message: e.to_string(),
+            })?;
+
+        // Arrow is the common case — Snowflake's driver decodes to
+        // `Vec<RecordBatch>` directly. JSON fallback mirrors the existing
+        // `execute_query` behaviour (coerce everything through
+        // `json_value_to_cell`).
+        let (columns, typed_rows): (Vec<ColumnSpec>, Vec<Result<Vec<TypedValue>, TypedRowError>>) =
+            match sf_result {
+                SnowflakeQueryResult::Arrow(batches) => {
+                    let columns: Vec<ColumnSpec> = batches
+                        .first()
+                        .map(|b| {
+                            b.schema()
+                                .fields()
+                                .iter()
+                                .map(|f| ColumnSpec {
+                                    name: f.name().clone(),
+                                    data_type: arrow_dtype_to_typed(f.data_type()),
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let column_types: Vec<agentic_core::result::TypedDataType> =
+                        columns.iter().map(|c| c.data_type.clone()).collect();
+
+                    let mut rows: Vec<Result<Vec<TypedValue>, TypedRowError>> = Vec::new();
+                    for batch in &batches {
+                        for row_idx in 0..batch.num_rows() {
+                            let cells: Vec<TypedValue> = (0..batch.num_columns())
+                                .map(|col_idx| {
+                                    arrow_to_typed(
+                                        batch.column(col_idx).as_ref(),
+                                        row_idx,
+                                        &column_types[col_idx],
+                                    )
+                                })
+                                .collect();
+                            rows.push(Ok(cells));
+                        }
+                    }
+                    (columns, rows)
+                }
+                SnowflakeQueryResult::Json(json_rows) => {
+                    // JSON path: no column-type metadata, so everything is
+                    // `Text` (or `Null`) — matches the fidelity users already
+                    // get from the bounded-sample path.
+                    let columns: Vec<ColumnSpec> = json_rows
+                        .schema
+                        .iter()
+                        .map(|f| ColumnSpec {
+                            name: f.name.clone(),
+                            data_type: agentic_core::result::TypedDataType::Text,
+                        })
+                        .collect();
+                    let rows = json_rows
+                        .value
+                        .as_array()
+                        .map(|outer| {
+                            outer
+                                .iter()
+                                .filter_map(|r| r.as_array())
+                                .map(|vals| {
+                                    let cells = vals
+                                        .iter()
+                                        .map(|v| match v {
+                                            serde_json::Value::Null => TypedValue::Null,
+                                            serde_json::Value::String(s) => {
+                                                TypedValue::Text(s.clone())
+                                            }
+                                            other => TypedValue::Text(other.to_string()),
+                                        })
+                                        .collect();
+                                    Ok(cells)
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    (columns, rows)
+                }
+                SnowflakeQueryResult::Empty => (Vec::new(), Vec::new()),
+            };
+
+        Ok(TypedRowStream::from_rows(columns, typed_rows))
+    }
+
     fn introspect_schema(&self) -> Result<SchemaInfo, ConnectorError> {
         Ok(self.cached_schema.clone())
+    }
+
+    #[cfg(feature = "arrow")]
+    fn as_arrow(&self) -> Option<&dyn crate::connector::AsArrowConnector> {
+        Some(self)
+    }
+}
+
+// ── AsArrowConnector impl (feature = "arrow") ────────────────────────────────
+
+#[cfg(feature = "arrow")]
+#[async_trait]
+impl crate::connector::AsArrowConnector for SnowflakeConnector {
+    async fn execute_query_arrow(
+        &self,
+        sql: &str,
+    ) -> Result<crate::connector::ArrowQueryStream, ConnectorError> {
+        let sql = normalize_sql(sql);
+        let api = self.connect().await?;
+        let sf_result = api
+            .exec(sql)
+            .await
+            .map_err(|e| ConnectorError::QueryFailed {
+                sql: sql.to_string(),
+                message: e.to_string(),
+            })?;
+
+        match sf_result {
+            SnowflakeQueryResult::Arrow(batches) => {
+                let schema = batches.first().map(|b| b.schema()).ok_or_else(|| {
+                    ConnectorError::Other(
+                        "snowflake returned an Arrow result with zero batches".into(),
+                    )
+                })?;
+                Ok(crate::connector::ArrowQueryStream {
+                    schema,
+                    batches: Box::pin(futures::stream::iter(batches.into_iter().map(Ok))),
+                })
+            }
+            SnowflakeQueryResult::Json(_) => Err(ConnectorError::Other(
+                "snowflake returned a JSON result; Arrow path unavailable for this query".into(),
+            )),
+            SnowflakeQueryResult::Empty => Err(ConnectorError::Other(
+                "snowflake returned no rows; cannot infer Arrow schema".into(),
+            )),
+        }
     }
 }
 

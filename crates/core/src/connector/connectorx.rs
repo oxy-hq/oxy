@@ -78,7 +78,7 @@ impl Engine for ConnectorX {
             self.run_query_with_limit(query, self.dry_run_limit).await?;
         let file_path = format!("/tmp/{}.arrow", Uuid::new_v4());
         write_to_ipc(&record_batches, &file_path, &schema_ref)
-            .map_err(|err| connector_internal_error(WRITE_RESULT, err))?;
+            .map_err(|err| connector_internal_error(WRITE_RESULT, err.as_ref()))?;
         Ok(file_path)
     }
 
@@ -95,10 +95,10 @@ impl Engine for ConnectorX {
                 BIGQUERY_DIALECT => {
                     let mut destination = ArrowDestination::new();
                     let rt = Arc::new(tokio::runtime::Runtime::new().map_err(|err| {
-                        connector_internal_error(FAILED_TO_RUN_BLOCKING_TASK, err)
+                        connector_internal_error(FAILED_TO_RUN_BLOCKING_TASK, &err)
                     })?);
                     let source = BigQuerySource::new(rt, &conn_string, dry_run_limit)
-                        .map_err(|err| connector_internal_error(CREATE_CONN, err))?;
+                        .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
                     let queries = &[query.as_str()];
                     let dispatcher = Dispatcher::<_, _, BigQueryArrowTransport>::new(
                         source,
@@ -108,7 +108,7 @@ impl Engine for ConnectorX {
                     );
                     dispatcher
                         .run()
-                        .map_err(|err| connector_internal_error(EXECUTE_QUERY, err))?;
+                        .map_err(|err| connector_internal_error(EXECUTE_QUERY, &err))?;
                     Ok(destination)
                 }
                 _ => {

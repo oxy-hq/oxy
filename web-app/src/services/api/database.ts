@@ -2,6 +2,7 @@ import type {
   ConnectionTestEvent,
   CreateDatabaseConfigResponse,
   DatabaseInfo,
+  DatabaseSchema,
   DatabaseSyncResponse,
   InspectEvent,
   SchemaListResult,
@@ -18,6 +19,18 @@ import fetchSSE from "./fetchSSE";
 export type ExecuteSqlResponse = string[][] | { file_name: string };
 
 export class DatabaseService {
+  static async getDatabaseSchema(
+    projectId: string,
+    branchName: string,
+    dbName: string
+  ): Promise<DatabaseSchema> {
+    const response = await apiClient.get(
+      `/${projectId}/databases/${encodeURIComponent(dbName)}/schema`,
+      { params: { branch: branchName } }
+    );
+    return response.data;
+  }
+
   static async listDatabases(projectId: string, branchName: string): Promise<DatabaseInfo[]> {
     const response = await apiClient.get(`/${projectId}/databases`, {
       params: { branch: branchName }

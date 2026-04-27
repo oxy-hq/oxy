@@ -179,11 +179,6 @@ impl AnalyticsSolver {
         let thinking = self.thinking_for_state("specifying", ThinkingConfig::Disabled);
         let max_rounds = self.max_tool_rounds_for_state("specifying", 5) + resume_extra_rounds;
         let catalog = Arc::clone(&self.catalog);
-        let connector = self
-            .connectors
-            .get(&self.default_connector)
-            .cloned()
-            .expect("default connector must be registered");
         let human_input = Arc::clone(&self.human_input);
         let connectors = self.connectors.clone();
         let default_connector = self.default_connector.clone();
@@ -197,7 +192,6 @@ impl AnalyticsSolver {
                 &tools,
                 |name: String, params| {
                     let catalog = Arc::clone(&catalog);
-                    let connector = Arc::clone(&connector);
                     let human_input = Arc::clone(&human_input);
                     let connectors = connectors.clone();
                     let default_connector = default_connector.clone();
@@ -218,7 +212,14 @@ impl AnalyticsSolver {
                             )
                             .await
                         } else {
-                            execute_specifying_tool(&name, params, &*catalog, &*connector).await
+                            execute_specifying_tool(
+                                &name,
+                                params,
+                                &*catalog,
+                                &connectors,
+                                &default_connector,
+                            )
+                            .await
                         }
                     })
                 },
@@ -371,11 +372,6 @@ impl AnalyticsSolver {
         let thinking = self.thinking_for_state("specifying", ThinkingConfig::Disabled);
         let max_rounds = self.max_tool_rounds_for_state("specifying", 5) + resume_extra_rounds;
         let catalog = Arc::clone(&self.catalog);
-        let connector = self
-            .connectors
-            .get(&self.default_connector)
-            .cloned()
-            .expect("default connector must be registered");
         let human_input = Arc::clone(&self.human_input);
         let connectors = self.connectors.clone();
         let default_connector = self.default_connector.clone();
@@ -389,7 +385,6 @@ impl AnalyticsSolver {
                 &tools,
                 |name: String, params| {
                     let catalog = Arc::clone(&catalog);
-                    let connector = Arc::clone(&connector);
                     let human_input = Arc::clone(&human_input);
                     let connectors = connectors.clone();
                     let default_connector = default_connector.clone();
@@ -409,7 +404,14 @@ impl AnalyticsSolver {
                             )
                             .await
                         } else {
-                            execute_specifying_tool(&name, params, &*catalog, &*connector).await
+                            execute_specifying_tool(
+                                &name,
+                                params,
+                                &*catalog,
+                                &connectors,
+                                &default_connector,
+                            )
+                            .await
                         }
                     })
                 },

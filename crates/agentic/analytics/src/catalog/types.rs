@@ -84,6 +84,9 @@ pub struct SampleTarget {
     pub static_samples: Vec<String>,
     /// Semantic data type (e.g. `"string"`, `"date"`).
     pub data_type: Option<String>,
+    /// Connector/database name the view lives in (from `datasource:` in the
+    /// view YAML). `None` means "use the default connector".
+    pub datasource: Option<String>,
 }
 
 /// A resolved join path between two tables or views.

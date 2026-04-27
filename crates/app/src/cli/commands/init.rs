@@ -1,7 +1,8 @@
 use include_dir::{Dir, include_dir};
 use oxy::config::constants::OPENAI_API_KEY_VAR;
 use oxy::config::model::{
-    BigQuery, ClickHouse, Config, DatabaseType, DuckDB, DuckDBOptions, Mysql, Postgres, Redshift,
+    Airhouse, BigQuery, ClickHouse, Config, DatabaseType, DuckDB, DuckDBOptions, Mysql, Postgres,
+    Redshift,
 };
 use oxy::config::resolve_local_workspace_path;
 use oxy_shared::AzureModel;
@@ -111,6 +112,33 @@ fn collect_postgres_conf() -> Result<DatabaseType, InitError> {
     }))
 }
 
+fn collect_airhouse_conf() -> Result<DatabaseType, InitError> {
+    let host = prompt_with_default("Host", "localhost", None)?;
+    let port = prompt_with_default("Port", "5445", None)?;
+    let user = prompt_with_default("User", "admin", None)?;
+    let password = prompt_with_default("Password", "airhouse", None)?;
+    let database = prompt_with_default("Database", "airhouse", None)?;
+
+    if host.is_empty() || port.is_empty() || user.is_empty() || database.is_empty() {
+        return Err(InitError::ExtractionError(
+            REQUIRED_FIELDS_ERROR.to_string(),
+        ));
+    }
+
+    Ok(DatabaseType::Airhouse(Airhouse {
+        host: Some(host),
+        host_var: None,
+        port: Some(port),
+        port_var: None,
+        user: Some(user),
+        user_var: None,
+        password: Some(password),
+        database: Some(database),
+        database_var: None,
+        password_var: None,
+    }))
+}
+
 fn collect_redshift_conf() -> Result<DatabaseType, InitError> {
     let host = prompt_with_default("Host", "localhost", None)?;
     let port = prompt_with_default("Port", "5439", None)?;
@@ -206,10 +234,11 @@ fn choose_database_type() -> Result<DatabaseType, InitError> {
     println!("\t\t4. Redshift");
     println!("\t\t5. Mysql");
     println!("\t\t6. ClickHouse");
+    println!("\t\t7. Airhouse");
 
     loop {
-        let choice = prompt_with_default("Type (1 or 2 or ..<number>..)", "1", None)?;
-        let _ = match choice.trim() {
+        let choice = prompt_with_default("Type (1-7)", "1", None)?;
+        match choice.trim() {
             "1" => {
                 return Ok(DatabaseType::DuckDB(DuckDB {
                     options: DuckDBOptions::Local {
@@ -238,12 +267,13 @@ fn choose_database_type() -> Result<DatabaseType, InitError> {
                     dry_run_limit: None, // TODO: Implement this or left as None by default?
                 }));
             }
-            "3" => collect_postgres_conf(),
-            "4" => collect_redshift_conf(),
-            "5" => collect_mysql_conf(),
-            "6" => collect_clickhouse_conf(),
-            _ => Err(InitError::ExtractionError(INVALID_CHOICE.to_string())),
-        };
+            "3" => return collect_postgres_conf(),
+            "4" => return collect_redshift_conf(),
+            "5" => return collect_mysql_conf(),
+            "6" => return collect_clickhouse_conf(),
+            "7" => return collect_airhouse_conf(),
+            _ => eprintln!("{INVALID_CHOICE}"),
+        }
     }
 }
 

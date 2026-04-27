@@ -1,8 +1,8 @@
-//! DuckDB `Value` → `CellValue` conversion helpers.
+//! DuckDB `Value` → `CellValue` / `TypedValue` conversion helpers.
 
 use duckdb::types::{TimeUnit, Value};
 
-use agentic_core::result::CellValue;
+use agentic_core::result::{CellValue, TypedDataType, TypedValue};
 
 /// Convert days since Unix epoch (1970-01-01) to an ISO date string (YYYY-MM-DD).
 pub(super) fn epoch_days_to_iso(days: i32) -> String {
@@ -92,6 +92,105 @@ pub(super) fn duckdb_to_cell(v: Value) -> CellValue {
 ///
 /// `duckdb::Connection` uses `RefCell` internally and is not `Sync`.
 /// Wrapping it in a `Mutex` gives the `Sync` needed by
+
+/// Parse a DESCRIBE type string (e.g. `"INTEGER"`, `"DECIMAL(10,2)"`,
+/// `"TIMESTAMP_NS"`) into a [`TypedDataType`].
+///
+/// Unrecognized or parameterised complex types (`LIST`, `STRUCT`, `MAP`,
+/// `UNION`) fall through to [`TypedDataType::Unknown`]; callers should then
+/// stringify row values for those columns.
+pub(super) fn describe_type_to_typed(type_str: &str) -> TypedDataType {
+    let up = type_str.to_ascii_uppercase();
+    let trimmed = up.trim();
+
+    // DECIMAL(p,s) — parse precision / scale.
+    if let Some(rest) = trimmed
+        .strip_prefix("DECIMAL(")
+        .and_then(|s| s.strip_suffix(')'))
+    {
+        let mut parts = rest.split(',').map(str::trim);
+        let precision = parts
+            .next()
+            .and_then(|s| s.parse::<u8>().ok())
+            .unwrap_or(38);
+        let scale = parts.next().and_then(|s| s.parse::<i8>().ok()).unwrap_or(0);
+        return TypedDataType::Decimal { precision, scale };
+    }
+
+    match trimmed {
+        "BOOLEAN" | "BOOL" => TypedDataType::Bool,
+        "TINYINT" | "INT1" | "SMALLINT" | "INT2" | "INTEGER" | "INT" | "INT4" | "UTINYINT"
+        | "USMALLINT" => TypedDataType::Int32,
+        "BIGINT" | "INT8" | "UINTEGER" | "UBIGINT" => TypedDataType::Int64,
+        "HUGEINT" | "UHUGEINT" => TypedDataType::Decimal {
+            precision: 38,
+            scale: 0,
+        },
+        "FLOAT" | "REAL" | "FLOAT4" | "DOUBLE" | "FLOAT8" => TypedDataType::Float64,
+        "VARCHAR" | "CHAR" | "BPCHAR" | "TEXT" | "STRING" | "UUID" => TypedDataType::Text,
+        "BLOB" | "BYTEA" | "BINARY" | "VARBINARY" => TypedDataType::Bytes,
+        "DATE" => TypedDataType::Date,
+        "TIMESTAMP"
+        | "TIMESTAMP_S"
+        | "TIMESTAMP_MS"
+        | "TIMESTAMP_US"
+        | "TIMESTAMP_NS"
+        | "TIMESTAMPTZ"
+        | "TIMESTAMP WITH TIME ZONE"
+        | "DATETIME" => TypedDataType::Timestamp,
+        "JSON" => TypedDataType::Json,
+        _ => TypedDataType::Unknown,
+    }
+}
+
+/// Convert a `duckdb::types::Value` to a [`TypedValue`], preserving native
+/// types wherever [`TypedValue`] has a representation for them.
+///
+/// The `data_type` hint is used to steer DECIMAL-like HugeInt / UBigInt values
+/// and to format Date / Timestamp rendering, but the actual variant chosen is
+/// driven by the value itself — callers don't need a perfectly-matching spec.
+pub(super) fn duckdb_value_to_typed(v: Value, data_type: &TypedDataType) -> TypedValue {
+    match v {
+        Value::Null => TypedValue::Null,
+        Value::Boolean(b) => TypedValue::Bool(b),
+        Value::TinyInt(n) => TypedValue::Int32(n as i32),
+        Value::SmallInt(n) => TypedValue::Int32(n as i32),
+        Value::Int(n) => TypedValue::Int32(n),
+        Value::BigInt(n) => TypedValue::Int64(n),
+        Value::UTinyInt(n) => TypedValue::Int32(n as i32),
+        Value::USmallInt(n) => TypedValue::Int32(n as i32),
+        Value::UInt(n) => TypedValue::Int64(n as i64),
+        // u64 → i64 lossy; route through Decimal to preserve the full range.
+        Value::UBigInt(n) => match i64::try_from(n) {
+            Ok(v) => TypedValue::Int64(v),
+            Err(_) => TypedValue::Decimal(n.to_string()),
+        },
+        // i128 — no direct TypedValue; serialize as Decimal string.
+        Value::HugeInt(n) => TypedValue::Decimal(n.to_string()),
+        Value::Float(f) => TypedValue::Float64(f as f64),
+        Value::Double(f) => TypedValue::Float64(f),
+        Value::Decimal(d) => TypedValue::Decimal(d.to_string()),
+        Value::Text(s) => TypedValue::Text(s),
+        Value::Enum(s) => TypedValue::Text(s),
+        Value::Blob(b) => TypedValue::Bytes(b),
+        Value::Date32(days) => TypedValue::Date(days),
+        Value::Timestamp(unit, value) => {
+            let micros = match unit {
+                TimeUnit::Second => value.saturating_mul(1_000_000),
+                TimeUnit::Millisecond => value.saturating_mul(1_000),
+                TimeUnit::Microsecond => value,
+                TimeUnit::Nanosecond => value / 1_000,
+            };
+            TypedValue::Timestamp(micros)
+        }
+        // TIME-of-day, INTERVAL, and composite types (LIST, STRUCT, MAP, UNION)
+        // have no direct TypedValue — emit the driver's string rendering.
+        other => {
+            let _ = data_type; // hint reserved for future shape-aware rendering
+            TypedValue::Text(format!("{other:?}"))
+        }
+    }
+}
 
 pub(super) fn duckdb_to_cell_opt(v: Value) -> Option<CellValue> {
     match v {

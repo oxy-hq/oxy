@@ -887,7 +887,11 @@ pub async fn drive_with_coordinator(
     let root_task_id = run_id.clone();
 
     // Forward cancellation from RuntimeState's cancel_tx to the coordinator
-    // transport so the coordinator sees the root task as cancelled.
+    // transport so the coordinator sees the root task *and every descendant*
+    // as cancelled. `cancel_subtree` is required — if we only cancel the root
+    // while the pipeline is suspended on delegation, the builder/analytics
+    // child keeps running, eventually completes, and triggers a spurious
+    // parent resume.
     let cancel_forwarder = {
         let transport_cancel = transport.clone();
         let cancel_task_id = root_task_id.clone();
@@ -898,9 +902,9 @@ pub async fn drive_with_coordinator(
                     tracing::info!(
                         target: "coordinator",
                         task_id = %cancel_task_id,
-                        "cancel signal received, cancelling root task"
+                        "cancel signal received, cancelling task subtree"
                     );
-                    let _ = transport_cancel.cancel(&cancel_task_id).await;
+                    let _ = transport_cancel.cancel_subtree(&cancel_task_id).await;
                     break;
                 }
             }

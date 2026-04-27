@@ -696,6 +696,23 @@ pub async fn list_env_secrets(
                     pairs.push((v.clone(), format!("databases.{name}.database_var")));
                 }
             }
+            DatabaseType::Airhouse(ah) => {
+                if let Some(v) = &ah.password_var {
+                    pairs.push((v.clone(), format!("databases.{name}.password_var")));
+                }
+                if let Some(v) = &ah.host_var {
+                    pairs.push((v.clone(), format!("databases.{name}.host_var")));
+                }
+                if let Some(v) = &ah.user_var {
+                    pairs.push((v.clone(), format!("databases.{name}.user_var")));
+                }
+                if let Some(v) = &ah.port_var {
+                    pairs.push((v.clone(), format!("databases.{name}.port_var")));
+                }
+                if let Some(v) = &ah.database_var {
+                    pairs.push((v.clone(), format!("databases.{name}.database_var")));
+                }
+            }
             DatabaseType::Mysql(my) => {
                 if let Some(v) = &my.password_var {
                     pairs.push((v.clone(), format!("databases.{name}.password_var")));

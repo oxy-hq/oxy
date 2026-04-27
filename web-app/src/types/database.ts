@@ -35,6 +35,20 @@ export interface DatabaseInfo {
   synced: boolean;
 }
 
+export interface ColumnInfo {
+  name: string;
+  data_type: string;
+}
+
+export interface TableInfo {
+  name: string;
+  columns: ColumnInfo[];
+}
+
+export interface DatabaseSchema {
+  tables: TableInfo[];
+}
+
 export interface DatabaseSyncResponse {
   success: boolean;
   message: string;

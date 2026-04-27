@@ -13,6 +13,7 @@ mod global;
 mod openapi;
 mod protected;
 mod public;
+mod recovery;
 mod secrets;
 mod workspace;
 
@@ -105,9 +106,15 @@ mod router_split_tests {
 
     #[tokio::test]
     async fn local_router_does_not_expose_organizations() {
-        let router = api_router(ServeMode::Local, false, None, std::path::PathBuf::new())
-            .await
-            .expect("router built");
+        let router = api_router(
+            ServeMode::Local,
+            false,
+            None,
+            std::path::PathBuf::new(),
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+        .expect("router built");
         let req = Request::builder().uri("/orgs").body(Body::empty()).unwrap();
         let resp = router.oneshot(req).await.expect("oneshot");
         assert_eq!(
@@ -119,9 +126,15 @@ mod router_split_tests {
 
     #[tokio::test]
     async fn local_router_serves_health() {
-        let router = api_router(ServeMode::Local, false, None, std::path::PathBuf::new())
-            .await
-            .expect("router built");
+        let router = api_router(
+            ServeMode::Local,
+            false,
+            None,
+            std::path::PathBuf::new(),
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+        .expect("router built");
         // /live always returns 200 regardless of DB availability — confirms
         // that public routes are mounted on the local router.
         let req = Request::builder().uri("/live").body(Body::empty()).unwrap();
@@ -132,9 +145,15 @@ mod router_split_tests {
     #[tokio::test]
     async fn local_router_mounts_workspace_routes_under_nil_uuid() {
         use crate::server::serve_mode::LOCAL_WORKSPACE_ID;
-        let router = api_router(ServeMode::Local, false, None, std::path::PathBuf::new())
-            .await
-            .expect("router built");
+        let router = api_router(
+            ServeMode::Local,
+            false,
+            None,
+            std::path::PathBuf::new(),
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+        .expect("router built");
         let uri = format!("/{}/agents", LOCAL_WORKSPACE_ID);
         let req = Request::builder().uri(&uri).body(Body::empty()).unwrap();
         let resp = router.oneshot(req).await.expect("oneshot");
@@ -149,9 +168,15 @@ mod router_split_tests {
 
     #[tokio::test]
     async fn cloud_router_still_has_organizations_mounted() {
-        let router = api_router(ServeMode::Cloud, false, None, std::path::PathBuf::new())
-            .await
-            .expect("router built");
+        let router = api_router(
+            ServeMode::Cloud,
+            false,
+            None,
+            std::path::PathBuf::new(),
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+        .expect("router built");
         let req = Request::builder().uri("/orgs").body(Body::empty()).unwrap();
         let resp = router.oneshot(req).await.expect("oneshot");
         // Route is mounted → request reaches auth/handler, not the router's 404.

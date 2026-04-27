@@ -28,6 +28,7 @@ use super::protected::{
     apply_local_middleware, apply_middleware, build_local_protected_routes, build_protected_routes,
 };
 use super::public::build_public_routes;
+use super::recovery::{spawn_recovery, spawn_shutdown_hook};
 use super::{AppState, build_cors_layer};
 
 pub async fn api_router(
@@ -35,6 +36,7 @@ pub async fn api_router(
     enterprise: bool,
     observability: Option<std::sync::Arc<dyn oxy_observability::ObservabilityStore>>,
     startup_cwd: std::path::PathBuf,
+    shutdown_token: CancellationToken,
 ) -> Result<Router, OxyError> {
     let app_state = AppState {
         enterprise,
@@ -43,7 +45,9 @@ pub async fn api_router(
         observability,
         startup_cwd,
     };
-    let agentic_state = new_agentic_state().await?;
+    let agentic_state = new_agentic_state(shutdown_token, true).await?;
+    spawn_recovery(agentic_state.clone(), mode);
+    spawn_shutdown_hook(agentic_state.clone());
 
     let protected_routes = match mode {
         ServeMode::Cloud => {
@@ -62,6 +66,7 @@ pub async fn api_router(
 pub async fn internal_api_router(
     enterprise: bool,
     observability: Option<std::sync::Arc<dyn oxy_observability::ObservabilityStore>>,
+    shutdown_token: CancellationToken,
 ) -> Result<Router, OxyError> {
     let app_state = AppState {
         enterprise,
@@ -70,7 +75,11 @@ pub async fn internal_api_router(
         observability,
         startup_cwd: std::path::PathBuf::new(),
     };
-    let agentic_state = new_agentic_state().await?;
+    // `api_router` owns startup cleanup + recovery for the whole process;
+    // the internal router shares the same database state, so it skips both
+    // to avoid racing with the primary recovery task on the same runs.
+    let agentic_state = new_agentic_state(shutdown_token, false).await?;
+    spawn_shutdown_hook(agentic_state.clone());
 
     let protected_routes = build_protected_routes(app_state.clone(), agentic_state)
         .layer(middleware::from_fn(timeout_middleware))
@@ -81,15 +90,20 @@ pub async fn internal_api_router(
     Ok(finalize_router(app_routes, app_state))
 }
 
-async fn new_agentic_state() -> Result<Arc<AgenticState>, OxyError> {
+async fn new_agentic_state(
+    shutdown_token: CancellationToken,
+    run_cleanup: bool,
+) -> Result<Arc<AgenticState>, OxyError> {
     let db = oxy::database::client::establish_connection()
         .await
         .map_err(|e| OxyError::RuntimeError(format!("db connect failed: {e}")))?;
-    cleanup_stale_runs(&db).await.ok();
+    if run_cleanup {
+        cleanup_stale_runs(&db).await.ok();
+    }
     let thread_owner: Arc<dyn agentic_pipeline::platform::ThreadOwnerLookup> =
         Arc::new(crate::agentic_wiring::OxyThreadOwnerLookup::new(db.clone()));
     Ok(Arc::new(
-        AgenticState::new(CancellationToken::new(), db, thread_owner)
+        AgenticState::new(shutdown_token, db, thread_owner)
             .with_builder_test_runner(Arc::new(OxyTestRunner)),
     ))
 }

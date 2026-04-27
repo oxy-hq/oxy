@@ -15,7 +15,7 @@
 use async_trait::async_trait;
 use std::fmt;
 
-use agentic_core::result::{CellValue, QueryResult};
+use agentic_core::result::{CellValue, QueryResult, TypedRowError, TypedRowStream};
 
 // ── Dialect ───────────────────────────────────────────────────────────────────
 
@@ -143,6 +143,35 @@ impl fmt::Display for ConnectorError {
 
 impl std::error::Error for ConnectorError {}
 
+impl From<TypedRowError> for ConnectorError {
+    fn from(err: TypedRowError) -> Self {
+        ConnectorError::Other(err.to_string())
+    }
+}
+
+/// Strip trailing whitespace and semicolons from a SQL string.
+///
+/// Backends wrap user SQL in subqueries like `CREATE TEMP TABLE t AS ({sql})`
+/// or `SELECT ... FROM ({sql}) q`. A trailing `;` makes those statements
+/// syntactically invalid, so every backend should call this before wrapping.
+pub fn normalize_sql(sql: &str) -> &str {
+    sql.trim_end().trim_end_matches(';').trim_end()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_sql_strips_trailing_semicolon() {
+        assert_eq!(normalize_sql("SELECT 1;"), "SELECT 1");
+        assert_eq!(normalize_sql("SELECT 1 ;"), "SELECT 1");
+        assert_eq!(normalize_sql("SELECT 1;\n"), "SELECT 1");
+        assert_eq!(normalize_sql("SELECT 1"), "SELECT 1");
+        assert_eq!(normalize_sql("SELECT 1\nLIMIT 100;"), "SELECT 1\nLIMIT 100");
+    }
+}
+
 /// Abstraction over database/warehouse query execution.
 ///
 /// A single `execute_query` call returns bounded rows AND summary stats.
@@ -178,6 +207,45 @@ pub trait DatabaseConnector: Send + Sync {
         sample_limit: u64,
     ) -> Result<ExecutionResult, ConnectorError>;
 
+    /// Execute `sql` and return the full result as a row-oriented stream
+    /// with native column types preserved — no truncation, no stat
+    /// computation.
+    ///
+    /// This is the path used by callers that persist results to Parquet or
+    /// render them in a typed data grid (e.g. the Dev Portal SQL IDE).
+    /// Connectors that do not support full-row streaming return
+    /// `ConnectorError::Other("full streaming not supported")` via the
+    /// default implementation.
+    async fn execute_query_full(&self, sql: &str) -> Result<TypedRowStream, ConnectorError> {
+        let _ = sql;
+        Err(ConnectorError::Other(
+            "full row streaming not supported by this connector".into(),
+        ))
+    }
+
+    /// Opt-in Arrow zero-copy extension.
+    ///
+    /// Backends whose drivers natively produce Arrow (`DuckDbConnector`,
+    /// `SnowflakeConnector`) override this to return `Some(self)`. Consumers
+    /// that write Parquet can use the returned trait object to skip the
+    /// row → Arrow conversion step. Defaults to `None`; the caller then
+    /// falls back to [`execute_query_full`].
+    ///
+    /// [`execute_query_full`]: DatabaseConnector::execute_query_full
+    #[cfg(feature = "arrow")]
+    fn as_arrow(&self) -> Option<&dyn AsArrowConnector> {
+        None
+    }
+
+    /// Prepare for schema introspection.
+    ///
+    /// Connectors with lazy connections (e.g. Postgres) override this to open
+    /// the connection and pre-fetch the schema.  The default is a no-op for
+    /// connectors that connect eagerly at construction time.
+    async fn prepare_schema(&self) -> Result<(), ConnectorError> {
+        Ok(())
+    }
+
     /// Return a vendor-neutral description of the database schema.
     ///
     /// The default implementation returns an empty [`SchemaInfo`] so
@@ -187,4 +255,37 @@ pub trait DatabaseConnector: Send + Sync {
     fn introspect_schema(&self) -> Result<SchemaInfo, ConnectorError> {
         Ok(SchemaInfo::default())
     }
+}
+
+// ── Arrow extension ─────────────────────────────────────────────────────────
+
+/// Opt-in Arrow zero-copy extension for backends whose drivers natively produce
+/// Arrow record batches.
+///
+/// Consumers who need typed Parquet (e.g. the Dev Portal SQL IDE) first check
+/// [`DatabaseConnector::as_arrow`]; if it returns `Some`, they can pipe batches
+/// directly to a Parquet writer without the row → Arrow conversion that
+/// [`DatabaseConnector::execute_query_full`] would otherwise require.
+///
+/// Only compiled under the `arrow` feature so row-based backends (Postgres,
+/// MySQL, DOMO) don't pull in `arrow` transitively.
+#[cfg(feature = "arrow")]
+#[async_trait]
+pub trait AsArrowConnector: Send + Sync {
+    /// Execute `sql` and stream the full result as Arrow `RecordBatch`es.
+    async fn execute_query_arrow(&self, sql: &str) -> Result<ArrowQueryStream, ConnectorError>;
+}
+
+/// Full, strongly-typed query result as a stream of Arrow `RecordBatch`es.
+///
+/// Returned from [`AsArrowConnector::execute_query_arrow`]. The `'static`
+/// bound on the stream makes it easy to forward through tokio tasks and HTTP
+/// handlers without lifetime plumbing.
+#[cfg(feature = "arrow")]
+pub struct ArrowQueryStream {
+    /// Arrow schema for every batch in the stream.
+    pub schema: arrow::datatypes::SchemaRef,
+    /// Stream of record batches preserving input row order.
+    pub batches:
+        futures::stream::BoxStream<'static, Result<arrow::array::RecordBatch, ConnectorError>>,
 }

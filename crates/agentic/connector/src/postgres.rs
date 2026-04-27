@@ -1,29 +1,54 @@
 //! PostgreSQL connector implementation.
 //!
-//! Uses the temp-table pattern via `tokio_postgres`:
-//! 1. `CREATE TEMP TABLE _agentic_tmp AS ({sql})` — execute once.
-//! 2. Query `pg_attribute` to discover column names and types.
-//! 3. `SELECT COUNT(*) FROM _agentic_tmp` — total row count.
-//! 4. `SELECT "col1"::TEXT, "col2"::TEXT, ... FROM _agentic_tmp LIMIT n` — bounded sample.
-//! 5. Per-column: `COUNT(*)-COUNT(col), COUNT(DISTINCT col), MIN::TEXT, MAX::TEXT`
-//!    and optionally `AVG(col::DOUBLE PRECISION), STDDEV_POP(col::DOUBLE PRECISION)`.
-//! 6. `DROP TABLE IF EXISTS _agentic_tmp` — cleanup.
+//! Connection is **lazy**: `new()` only stores credentials; the first call to
+//! `execute_query` or `execute_query_full` opens the TCP connection and
+//! pre-fetches the schema.  This matches the old ConnectorX behaviour where
+//! a miss-configured database only surfaced an error at query time, not at
+//! connector-build time.
 //!
-//! Schema introspection queries `information_schema.columns`, filtering out
-//! system schemas.  The result is cached at construction time because
-//! `introspect_schema()` is synchronous.
+//! `execute_query` (analytics FSM) still uses the temp-table approach for
+//! bounded sampling + per-column statistics.  `execute_query_full` (IDE path)
+//! uses `prepare` + an inline cast subquery — no temp tables, no round-trips
+//! to `pg_attribute`.  Non-preparable statements (DDL, `SHOW`, `SET`) fall
+//! back to the simple-query protocol, returning all values as text.
 
 use std::collections::HashMap;
 
 use async_trait::async_trait;
 use tokio_postgres::{Client, NoTls};
 
-use agentic_core::result::{CellValue, QueryResult, QueryRow};
+use agentic_core::result::{
+    CellValue, ColumnSpec, QueryResult, QueryRow, TypedDataType, TypedRowError, TypedRowStream,
+    TypedValue,
+};
 
 use crate::connector::{
     ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, ResultSummary,
-    SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect,
+    SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect, normalize_sql,
 };
+use crate::postgres_typed::{decode_row, pg_typname_to_typed, select_expr_for_pg_type};
+
+// ── Error helpers ─────────────────────────────────────────────────────────────
+
+/// Extract a human-readable message from a `tokio_postgres` error.
+///
+/// For server-side errors (`Kind::Db`) the SQL-state code, server message, and
+/// any detail / hint strings are surfaced directly.  For transport / protocol
+/// errors the `Display` output is used as-is.
+fn pg_error_message(e: &tokio_postgres::Error) -> String {
+    if let Some(db) = e.as_db_error() {
+        let mut msg = format!("[{}] {}", db.code().code(), db.message());
+        if let Some(detail) = db.detail() {
+            msg.push_str(&format!(" — {detail}"));
+        }
+        if let Some(hint) = db.hint() {
+            msg.push_str(&format!(" (hint: {hint})"));
+        }
+        msg
+    } else {
+        e.to_string()
+    }
+}
 
 // ── Value helpers ─────────────────────────────────────────────────────────────
 
@@ -34,7 +59,9 @@ fn pg_text_to_cell(opt: Option<String>) -> CellValue {
     match opt {
         None => CellValue::Null,
         Some(s) => {
-            if let Ok(n) = s.parse::<f64>() {
+            if let Ok(n) = s.parse::<i64>() {
+                CellValue::Number(n as f64)
+            } else if let Ok(n) = s.parse::<f64>() {
                 CellValue::Number(n)
             } else {
                 CellValue::Text(s)
@@ -47,51 +74,85 @@ fn pg_text_to_cell(opt: Option<String>) -> CellValue {
 
 /// PostgreSQL-backed connector for the agentic analytics FSM.
 ///
-/// The Postgres client is not `Sync` by itself, but `tokio_postgres::Client`
-/// allows concurrent requests via internal message-passing.  We wrap it in
-/// a `tokio::sync::Mutex` so the connector satisfies `Send + Sync`.
+/// The client is created lazily on the first query so that a misconfigured
+/// database only surfaces an error at query time, not at connector-build time.
+/// The Mutex serialises concurrent queries; `tokio_postgres::Client` itself
+/// is not `Sync`.
 pub struct PostgresConnector {
-    client: tokio::sync::Mutex<Client>,
-    cached_schema: SchemaInfo,
+    config: tokio_postgres::Config,
+    /// `None` until the first query; `Some` after a successful connection.
+    client: tokio::sync::Mutex<Option<Client>>,
+    /// Populated after the first successful connection; empty until then.
+    cached_schema: std::sync::RwLock<SchemaInfo>,
+    /// Set when schema pre-fetch fails so `introspect_schema` can surface the error.
+    schema_error: std::sync::RwLock<Option<String>>,
 }
 
 impl PostgresConnector {
-    /// Connect to a PostgreSQL instance and pre-fetch the database schema.
+    /// Build a connector that will connect lazily on the first query.
     ///
-    /// The connection driver task is spawned on the current Tokio runtime.
-    pub async fn new(
-        host: &str,
-        port: u16,
-        user: &str,
-        password: &str,
-        database: &str,
-    ) -> Result<Self, ConnectorError> {
+    /// Never fails — connection errors surface when a query is first executed.
+    /// Schema is populated on the first successful connection and cached for
+    /// subsequent `introspect_schema` calls.
+    pub fn new(host: &str, port: u16, user: &str, password: &str, database: &str) -> Self {
         let mut config = tokio_postgres::Config::new();
         config.host(host);
         config.port(port);
         config.user(user);
         config.password(password);
         config.dbname(database);
-
-        let (client, connection) = config
-            .connect(NoTls)
-            .await
-            .map_err(|e| ConnectorError::ConnectionError(e.to_string()))?;
-
-        // Drive the connection in the background.
-        tokio::spawn(async move {
-            if let Err(e) = connection.await {
-                tracing::error!("postgres connection driver error: {e}");
-            }
-        });
-
-        let cached_schema = fetch_schema(&client).await?;
-
-        Ok(Self {
-            client: tokio::sync::Mutex::new(client),
-            cached_schema,
-        })
+        Self {
+            config,
+            client: tokio::sync::Mutex::new(None),
+            cached_schema: std::sync::RwLock::new(SchemaInfo::default()),
+            schema_error: std::sync::RwLock::new(None),
+        }
     }
+}
+
+// ── DatabaseConnector impl ────────────────────────────────────────────────────
+
+// ── Lazy-connection helper ────────────────────────────────────────────────────
+
+/// Open a `tokio_postgres` connection if `opt_client` is still `None`.
+///
+/// On success `*opt_client` is set to `Some(client)` and `schema_lock` is
+/// updated with the freshly-fetched schema.  Schema fetch failures are logged
+/// and recorded in `schema_error` so `introspect_schema` can surface them,
+/// but they do not prevent queries from running.
+async fn ensure_client_connected(
+    config: &tokio_postgres::Config,
+    opt_client: &mut Option<Client>,
+    schema_lock: &std::sync::RwLock<SchemaInfo>,
+    schema_error: &std::sync::RwLock<Option<String>>,
+) -> Result<(), ConnectorError> {
+    if opt_client.is_some() {
+        return Ok(());
+    }
+    let (client, connection) = config
+        .connect(NoTls)
+        .await
+        .map_err(|e| ConnectorError::ConnectionError(pg_error_message(&e)))?;
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            tracing::error!("postgres connection driver error: {e}");
+        }
+    });
+    match fetch_schema(&client).await {
+        Ok(schema) => {
+            if let Ok(mut g) = schema_lock.write() {
+                *g = schema;
+            }
+        }
+        Err(e) => {
+            tracing::warn!("postgres: schema prefetch failed ({e}); schema browsing unavailable");
+            if let Ok(mut g) = schema_error.write() {
+                *g = Some(e.to_string());
+            }
+        }
+    }
+    *opt_client = Some(client);
+    Ok(())
 }
 
 // ── DatabaseConnector impl ────────────────────────────────────────────────────
@@ -107,7 +168,16 @@ impl DatabaseConnector for PostgresConnector {
         sql: &str,
         sample_limit: u64,
     ) -> Result<ExecutionResult, ConnectorError> {
-        let client = self.client.lock().await;
+        let sql = normalize_sql(sql);
+        let mut guard = self.client.lock().await;
+        ensure_client_connected(
+            &self.config,
+            &mut *guard,
+            &self.cached_schema,
+            &self.schema_error,
+        )
+        .await?;
+        let client = guard.as_ref().unwrap();
 
         let tmp = "_agentic_tmp";
 
@@ -124,7 +194,7 @@ impl DatabaseConnector for PostgresConnector {
             .await
             .map_err(|e| ConnectorError::QueryFailed {
                 sql: sql.to_string(),
-                message: e.to_string(),
+                message: pg_error_message(&e),
             })?;
 
         // 3. Column names and types via pg_attribute.
@@ -144,7 +214,7 @@ impl DatabaseConnector for PostgresConnector {
                 .await
                 .map_err(|e| ConnectorError::QueryFailed {
                     sql: attr_sql.to_string(),
-                    message: e.to_string(),
+                    message: pg_error_message(&e),
                 })?;
 
         let column_names: Vec<String> = attr_rows.iter().map(|r| r.get::<_, String>(0)).collect();
@@ -158,7 +228,7 @@ impl DatabaseConnector for PostgresConnector {
                 .await
                 .map_err(|e| ConnectorError::QueryFailed {
                     sql: count_sql.clone(),
-                    message: e.to_string(),
+                    message: pg_error_message(&e),
                 })?;
         let total_row_count = count_row.get::<_, i64>(0) as u64;
 
@@ -178,7 +248,7 @@ impl DatabaseConnector for PostgresConnector {
                 let rows = client.query(&sample_sql, &[]).await.map_err(|e| {
                     ConnectorError::QueryFailed {
                         sql: sample_sql.clone(),
-                        message: e.to_string(),
+                        message: pg_error_message(&e),
                     }
                 })?;
 
@@ -209,7 +279,7 @@ impl DatabaseConnector for PostgresConnector {
             let basic_row = client.query_one(&basic_sql, &[]).await.map_err(|e| {
                 ConnectorError::QueryFailed {
                     sql: basic_sql.clone(),
-                    message: e.to_string(),
+                    message: pg_error_message(&e),
                 }
             })?;
 
@@ -263,8 +333,107 @@ impl DatabaseConnector for PostgresConnector {
         })
     }
 
+    async fn execute_query_full(&self, sql: &str) -> Result<TypedRowStream, ConnectorError> {
+        let sql = normalize_sql(sql);
+        let mut guard = self.client.lock().await;
+        ensure_client_connected(
+            &self.config,
+            &mut *guard,
+            &self.cached_schema,
+            &self.schema_error,
+        )
+        .await?;
+        let client = guard.as_ref().unwrap();
+
+        // Extended-protocol path: prepare the statement to get column type OIDs,
+        // then execute a cast subquery that avoids temp-table creation/teardown.
+        // Falls back to simple-query for DDL, DML, SHOW, and any statement the
+        // server refuses to prepare.
+        let stmt = match client.prepare(sql).await {
+            Ok(s) => s,
+            Err(_) => return execute_via_simple_query(&client, sql).await,
+        };
+
+        // No RowDescription → DDL or DML without RETURNING. Execute the
+        // statement and return an empty stream to signal success.
+        if stmt.columns().is_empty() {
+            client
+                .execute(&stmt, &[])
+                .await
+                .map_err(|e| ConnectorError::QueryFailed {
+                    sql: sql.to_string(),
+                    message: pg_error_message(&e),
+                })?;
+            return Ok(TypedRowStream::from_rows(vec![], vec![]));
+        }
+
+        // Derive column specs and per-column cast expressions from the
+        // statement descriptor — no pg_attribute round-trip needed.
+        let pg_typnames: Vec<String> = stmt
+            .columns()
+            .iter()
+            .map(|c| c.type_().name().to_string())
+            .collect();
+        let columns: Vec<ColumnSpec> = stmt
+            .columns()
+            .iter()
+            .zip(pg_typnames.iter())
+            .map(|(c, typname)| ColumnSpec {
+                name: c.name().to_string(),
+                data_type: pg_typname_to_typed(typname),
+            })
+            .collect();
+        let cast_exprs: Vec<String> = stmt
+            .columns()
+            .iter()
+            .zip(pg_typnames.iter())
+            .map(|(c, typname)| {
+                let quoted = format!("\"{}\"", c.name().replace('"', "\"\""));
+                select_expr_for_pg_type(&quoted, typname)
+            })
+            .collect();
+
+        // Inline subquery: no temp table, casts applied to the live result set.
+        let cast_sql = format!("SELECT {} FROM ({sql}) __q", cast_exprs.join(", "));
+        let rows = client.query(cast_sql.as_str(), &[]).await.map_err(|e| {
+            ConnectorError::QueryFailed {
+                sql: sql.to_string(),
+                message: pg_error_message(&e),
+            }
+        })?;
+
+        let typed_rows = rows
+            .iter()
+            .map(|r| decode_row(r, &columns))
+            .collect::<Vec<_>>();
+
+        Ok(TypedRowStream::from_rows(columns, typed_rows))
+    }
+
+    async fn prepare_schema(&self) -> Result<(), ConnectorError> {
+        let mut guard = self.client.lock().await;
+        ensure_client_connected(
+            &self.config,
+            &mut *guard,
+            &self.cached_schema,
+            &self.schema_error,
+        )
+        .await
+    }
+
     fn introspect_schema(&self) -> Result<SchemaInfo, ConnectorError> {
-        Ok(self.cached_schema.clone())
+        if let Ok(err_guard) = self.schema_error.read() {
+            if let Some(ref err) = *err_guard {
+                return Err(ConnectorError::ConnectionError(format!(
+                    "schema introspection failed: {err}"
+                )));
+            }
+        }
+        Ok(self
+            .cached_schema
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone())
     }
 }
 
@@ -280,7 +449,10 @@ async fn fetch_schema(client: &Client) -> Result<SchemaInfo, ConnectorError> {
         ORDER BY table_name, ordinal_position";
 
     let rows = client.query(schema_sql, &[]).await.map_err(|e| {
-        ConnectorError::ConnectionError(format!("schema introspection failed: {e}"))
+        ConnectorError::ConnectionError(format!(
+            "schema introspection failed: {}",
+            pg_error_message(&e)
+        ))
     })?;
 
     let mut map: HashMap<String, Vec<SchemaColumnInfo>> = HashMap::new();
@@ -304,6 +476,56 @@ async fn fetch_schema(client: &Client) -> Result<SchemaInfo, ConnectorError> {
 
     let join_keys = detect_join_keys(&tables);
     Ok(SchemaInfo { tables, join_keys })
+}
+
+// ── Simple-query fallback ─────────────────────────────────────────────────────
+
+/// Execute `sql` via the simple-query protocol, returning all column values as
+/// [`TypedValue::Text`].
+///
+/// Used as a fallback from [`PostgresConnector::execute_query_full`] when the
+/// server refuses to prepare the statement (DDL, `SHOW`, `SET`, etc.).
+async fn execute_via_simple_query(
+    client: &Client,
+    sql: &str,
+) -> Result<TypedRowStream, ConnectorError> {
+    use tokio_postgres::SimpleQueryMessage;
+
+    let messages = client
+        .simple_query(sql)
+        .await
+        .map_err(|e| ConnectorError::QueryFailed {
+            sql: sql.to_string(),
+            message: pg_error_message(&e),
+        })?;
+
+    let mut columns: Vec<ColumnSpec> = Vec::new();
+    let mut rows: Vec<Result<Vec<TypedValue>, TypedRowError>> = Vec::new();
+
+    for msg in messages {
+        if let SimpleQueryMessage::Row(row) = msg {
+            if columns.is_empty() {
+                columns = row
+                    .columns()
+                    .iter()
+                    .map(|c| ColumnSpec {
+                        name: c.name().to_string(),
+                        data_type: TypedDataType::Text,
+                    })
+                    .collect();
+            }
+            let n = columns.len();
+            let values = (0..n)
+                .map(|i| {
+                    row.get(i)
+                        .map_or(TypedValue::Null, |s| TypedValue::Text(s.to_string()))
+                })
+                .collect();
+            rows.push(Ok(values));
+        }
+    }
+
+    Ok(TypedRowStream::from_rows(columns, rows))
 }
 
 // ── Join key detection ────────────────────────────────────────────────────────

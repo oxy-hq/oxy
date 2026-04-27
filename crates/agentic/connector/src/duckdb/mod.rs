@@ -23,9 +23,11 @@ use slugify::slugify;
 
 use agentic_core::result::{CellValue, QueryResult, QueryRow};
 
+use agentic_core::result::{ColumnSpec, TypedRowError, TypedRowStream, TypedValue};
+
 use crate::connector::{
     ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, ResultSummary,
-    SchemaColumnInfo, SchemaInfo, SchemaTableInfo,
+    SchemaColumnInfo, SchemaInfo, SchemaTableInfo, normalize_sql,
 };
 
 // Re-export Connection so callers / integration tests can construct connections
@@ -70,8 +72,10 @@ pub enum TableSource {
 mod conversion;
 mod schema;
 
-use conversion::{duckdb_to_cell, duckdb_to_cell_opt};
-use schema::{describe_table, detect_join_keys, parse_summarize_cell};
+use conversion::{
+    describe_type_to_typed, duckdb_to_cell, duckdb_to_cell_opt, duckdb_value_to_typed,
+};
+use schema::{describe_query, describe_table, detect_join_keys, parse_summarize_cell};
 
 pub struct DuckDbConnector {
     conn: Mutex<Connection>,
@@ -185,6 +189,10 @@ impl DuckDbConnector {
                 .and_then(|s| s.to_str())
                 .unwrap_or("unnamed");
             let name = normalize_table_name(raw_stem);
+            let full_name = abs
+                .file_name()
+                .and_then(|s| s.to_str())
+                .map(|s| s.to_string().replace('"', "\"\""));
             let ext = abs
                 .extension()
                 .and_then(|e| e.to_str())
@@ -212,6 +220,22 @@ impl DuckDbConnector {
                     sql: create_sql.clone(),
                     message: e.to_string(),
                 })?;
+
+            // Also expose the file under its full name (e.g. `oxymart.csv`) so
+            // semantic-layer views that declare `table: "oxymart.csv"` resolve
+            // without falling through to DuckDB's file-replacement scan, which
+            // does not honor `file_search_path` for quoted identifiers.
+            if let Some(full) = full_name.as_deref()
+                && full != name
+            {
+                let alias_sql =
+                    format!(r#"CREATE OR REPLACE TEMP VIEW "{full}" AS SELECT * FROM "{name}""#);
+                conn.execute_batch(&alias_sql)
+                    .map_err(|e| ConnectorError::QueryFailed {
+                        sql: alias_sql.clone(),
+                        message: e.to_string(),
+                    })?;
+            }
 
             let columns =
                 describe_table(&conn, &name).map_err(|e| ConnectorError::QueryFailed {
@@ -271,11 +295,17 @@ impl DatabaseConnector for DuckDbConnector {
         crate::connector::SqlDialect::DuckDb
     }
 
+    #[cfg(feature = "arrow")]
+    fn as_arrow(&self) -> Option<&dyn crate::connector::AsArrowConnector> {
+        Some(self)
+    }
+
     async fn execute_query(
         &self,
         sql: &str,
         sample_limit: u64,
     ) -> Result<ExecutionResult, ConnectorError> {
+        let sql = normalize_sql(sql);
         let conn = self
             .conn
             .lock()
@@ -439,6 +469,60 @@ impl DatabaseConnector for DuckDbConnector {
         })
     }
 
+    async fn execute_query_full(&self, sql: &str) -> Result<TypedRowStream, ConnectorError> {
+        let sql = normalize_sql(sql);
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| ConnectorError::ConnectionError(format!("mutex poisoned: {e}")))?;
+
+        // DESCRIBE resolves column names + types at the logical plan level —
+        // no rows are fetched, no temp table needed.
+        let described = describe_query(&conn, sql).map_err(|e| ConnectorError::QueryFailed {
+            sql: format!("DESCRIBE ({sql})"),
+            message: e.to_string(),
+        })?;
+        let columns: Vec<ColumnSpec> = described
+            .iter()
+            .map(|(name, ty)| ColumnSpec {
+                name: name.clone(),
+                data_type: describe_type_to_typed(ty),
+            })
+            .collect();
+        let col_count = columns.len();
+        let column_types: Vec<_> = columns.iter().map(|c| c.data_type.clone()).collect();
+
+        let mut stmt = conn.prepare(sql).map_err(|e| ConnectorError::QueryFailed {
+            sql: sql.to_string(),
+            message: e.to_string(),
+        })?;
+
+        let rows_iter = stmt
+            .query_map([], |row| {
+                let mut cells = Vec::with_capacity(col_count);
+                for i in 0..col_count {
+                    let v: Value = row.get(i)?;
+                    cells.push(duckdb_value_to_typed(v, &column_types[i]));
+                }
+                Ok(cells)
+            })
+            .map_err(|e| ConnectorError::QueryFailed {
+                sql: sql.to_string(),
+                message: e.to_string(),
+            })?;
+
+        // Collect eagerly so we can release the Mutex and return a `'static` stream.
+        let mut rows: Vec<Result<Vec<TypedValue>, TypedRowError>> = Vec::new();
+        for row in rows_iter {
+            match row {
+                Ok(cells) => rows.push(Ok(cells)),
+                Err(e) => rows.push(Err(TypedRowError::DriverError(e.to_string()))),
+            }
+        }
+
+        Ok(TypedRowStream::from_rows(columns, rows))
+    }
+
     fn introspect_schema(&self) -> Result<SchemaInfo, ConnectorError> {
         let conn = self
             .conn
@@ -543,6 +627,45 @@ impl DatabaseConnector for DuckDbConnector {
         let join_keys = detect_join_keys(&tables);
 
         Ok(SchemaInfo { tables, join_keys })
+    }
+}
+
+// ── AsArrowConnector impl (feature = "arrow") ────────────────────────────────
+
+#[cfg(feature = "arrow")]
+#[async_trait]
+impl crate::connector::AsArrowConnector for DuckDbConnector {
+    async fn execute_query_arrow(
+        &self,
+        sql: &str,
+    ) -> Result<crate::connector::ArrowQueryStream, ConnectorError> {
+        let sql = normalize_sql(sql);
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| ConnectorError::ConnectionError(format!("mutex poisoned: {e}")))?;
+
+        let mut stmt = conn.prepare(sql).map_err(|e| ConnectorError::QueryFailed {
+            sql: sql.to_string(),
+            message: e.to_string(),
+        })?;
+        let arrow_iter = stmt
+            .query_arrow([])
+            .map_err(|e| ConnectorError::QueryFailed {
+                sql: sql.to_string(),
+                message: e.to_string(),
+            })?;
+        let schema = arrow_iter.get_schema();
+        // Collect eagerly; `Statement` borrows from the connection and the
+        // iterator cannot outlive the lock. This matches the eager collection
+        // strategy used by `execute_query_full`.
+        let batches: Vec<::arrow::array::RecordBatch> = arrow_iter.collect();
+        drop(stmt);
+
+        Ok(crate::connector::ArrowQueryStream {
+            schema,
+            batches: Box::pin(futures::stream::iter(batches.into_iter().map(Ok))),
+        })
     }
 }
 

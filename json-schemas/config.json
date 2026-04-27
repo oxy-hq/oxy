@@ -433,6 +433,84 @@
           }
         },
         {
+          "description": "Airhouse: Postgres-wire-protocol warehouse that speaks the DuckDB SQL dialect.\n\nConnection uses the same pgwire transport as `Postgres`, but queries are written in DuckDB syntax — so `Database::dialect()` returns `\"duckdb\"` for Airhouse and the connector layer hardcodes the `postgres://` scheme for transport.",
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "database": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "database_var": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "host": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "host_var": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "password_var": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "port": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "port_var": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "airhouse"
+              ]
+            },
+            "user": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "user_var": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        {
           "type": "object",
           "required": [
             "type"

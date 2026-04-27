@@ -284,6 +284,23 @@ impl CoordinatorTransport for DurableTransport {
 
         Ok(())
     }
+
+    async fn cancel_subtree(&self, root_task_id: &str) -> Result<(), TransportError> {
+        // Cancel the root's queue entry + token.
+        self.cancel(root_task_id).await?;
+
+        // Fire tokens for every descendant. Child ids are formatted as
+        // `{parent_id}.{counter}` by `Coordinator::handle_suspended`, so
+        // every descendant's task_id starts with `"{root_task_id}."`.
+        let prefix = format!("{root_task_id}.");
+        for entry in self.cancel_tokens.iter() {
+            if entry.key().starts_with(&prefix) {
+                entry.value().cancel();
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[async_trait]

@@ -13,7 +13,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 use agentic_connector::DatabaseConnector;
-use agentic_core::events::{CoreEvent, Event, EventStream};
+use agentic_core::events::{Event, EventStream};
 use agentic_core::human_input::SuspendedRunData;
 use agentic_core::orchestrator::{Orchestrator, OrchestratorError};
 use agentic_runtime::handle::{PipelineHandle, PipelineOutcome};
@@ -189,15 +189,12 @@ pub async fn start_pipeline(
                 Some(Err(OrchestratorError::ResumeNotSupported)) => {
                     PipelineOutcome::Failed("resume not supported".into())
                 }
-                None => {
-                    let _ = cancel_event_tx
-                        .send(Event::Core(CoreEvent::Error {
-                            message: "cancelled by user".into(),
-                            trace_id: "".into(),
-                        }))
-                        .await;
-                    PipelineOutcome::Cancelled
-                }
+                // On cancel, skip emitting a `CoreEvent::Error` — the
+                // `PipelineOutcome::Cancelled` downstream already drives the
+                // correct state transition, and an extra DB event write while
+                // the run is being torn down previously triggered tracing span
+                // refcount races in sqlx/sea-orm.
+                None => PipelineOutcome::Cancelled,
             };
 
             drop(orchestrator);
@@ -331,15 +328,8 @@ pub async fn resume_pipeline(
                 Some(Err(OrchestratorError::ResumeNotSupported)) => {
                     PipelineOutcome::Failed("resume not supported".into())
                 }
-                None => {
-                    let _ = cancel_event_tx
-                        .send(Event::Core(CoreEvent::Error {
-                            message: "cancelled by user".into(),
-                            trace_id: "".into(),
-                        }))
-                        .await;
-                    PipelineOutcome::Cancelled
-                }
+                // See `start_pipeline`: no extra Error event on cancel.
+                None => PipelineOutcome::Cancelled,
             };
 
             drop(orchestrator);

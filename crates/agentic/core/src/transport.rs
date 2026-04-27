@@ -71,6 +71,18 @@ pub trait CoordinatorTransport: Send + Sync + 'static {
 
     /// Signal cancellation of a specific task.
     async fn cancel(&self, task_id: &str) -> Result<(), TransportError>;
+
+    /// Signal cancellation of a task **and all of its descendants**.
+    ///
+    /// Descendant task ids are derived from the hierarchical `parent.child`
+    /// id format produced by the coordinator (e.g. `abc.1`, `abc.1.2`). An
+    /// implementation may match descendants by prefix on the set of live
+    /// cancellation tokens.
+    ///
+    /// Default implementation only cancels the root — override to propagate.
+    async fn cancel_subtree(&self, root_task_id: &str) -> Result<(), TransportError> {
+        self.cancel(root_task_id).await
+    }
 }
 
 // ── WorkerTransport ──────────────────────────────────────────────────────────
