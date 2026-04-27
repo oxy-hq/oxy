@@ -135,6 +135,14 @@ pub enum UiBlock<D: DomainEvents = ()> {
     LlmUsage {
         prompt_tokens: usize,
         output_tokens: usize,
+        /// Tokens written to the prompt cache (Anthropic only).
+        cache_creation_input_tokens: usize,
+        /// Tokens read from the prompt cache (Anthropic only).  All three
+        /// counters are disjoint — Anthropic's `input_tokens` is the
+        /// uncached remainder, NOT a superset.  Total prompt size is the
+        /// sum of all three; cache-hit ratio is
+        /// `cache_read / (prompt_tokens + cache_creation + cache_read)`.
+        cache_read_input_tokens: usize,
         duration_ms: u64,
         /// The model identifier used for this LLM call.
         model: String,
@@ -248,12 +256,22 @@ pub fn serialize_ui_block<D: DomainEvents>(block: &UiBlock<D>) -> (String, serde
         UiBlock::LlmUsage {
             prompt_tokens,
             output_tokens,
+            cache_creation_input_tokens,
+            cache_read_input_tokens,
             duration_ms,
             model,
             sub_spec_index,
         } => (
             "llm_usage".into(),
-            json!({ "prompt_tokens": prompt_tokens, "output_tokens": output_tokens, "duration_ms": duration_ms, "model": model, "sub_spec_index": sub_spec_index }),
+            json!({
+                "prompt_tokens": prompt_tokens,
+                "output_tokens": output_tokens,
+                "cache_creation_input_tokens": cache_creation_input_tokens,
+                "cache_read_input_tokens": cache_read_input_tokens,
+                "duration_ms": duration_ms,
+                "model": model,
+                "sub_spec_index": sub_spec_index,
+            }),
         ),
         UiBlock::Domain(e) => {
             let val = serde_json::to_value(e).unwrap_or(serde_json::Value::Null);

@@ -228,6 +228,7 @@ impl AnalyticsSolver {
                     response_schema: None,
                     max_tokens_override: self.max_tokens,
                     sub_spec_index: None,
+                    system_date_hint: Some(AnalyticsSolver::current_date_hint()),
                 },
             )
             .await

@@ -65,6 +65,8 @@ impl<D: DomainEvents> UiTransformState<D> {
             }
             CoreEvent::LlmEnd {
                 output_tokens,
+                cache_creation_input_tokens,
+                cache_read_input_tokens,
                 duration_ms,
                 model,
                 sub_spec_index,
@@ -74,6 +76,8 @@ impl<D: DomainEvents> UiTransformState<D> {
                 vec![UiBlock::LlmUsage {
                     prompt_tokens,
                     output_tokens,
+                    cache_creation_input_tokens,
+                    cache_read_input_tokens,
                     duration_ms,
                     model,
                     sub_spec_index,

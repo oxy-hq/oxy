@@ -252,6 +252,8 @@ fn llm_start_dropped_end_emits_usage() {
     let blocks = s.process(Event::Core(CoreEvent::LlmEnd {
         state: "s".into(),
         output_tokens: 50,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
         duration_ms: 1234,
         model: "test-model".into(),
         sub_spec_index: None,

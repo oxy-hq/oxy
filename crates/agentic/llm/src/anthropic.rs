@@ -71,17 +71,26 @@ impl AnthropicProvider {
     }
 }
 
-#[async_trait]
-impl LlmProvider for AnthropicProvider {
-    async fn stream(
+impl AnthropicProvider {
+    /// Build the JSON request body for `/v1/messages`.
+    ///
+    /// Pure helper — no HTTP, no I/O — so unit tests can inspect the wire
+    /// format directly.  Marks the system block and the last tool with
+    /// `cache_control: ephemeral` so Anthropic caches the prefix.  When
+    /// `system_date_suffix` is non-empty, it is appended as a second,
+    /// uncached system content block so the time-varying date string does
+    /// not invalidate the cached prefix.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn build_request_body(
         &self,
         system: &str,
+        system_date_suffix: &str,
         messages: &[Value],
         tools: &[ToolDef],
         thinking: &ThinkingConfig,
         response_schema: Option<&ResponseSchema>,
         max_tokens_override: Option<u32>,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<Chunk, LlmError>> + Send>>, LlmError> {
+    ) -> Value {
         let mut tools_json: Vec<Value> = tools
             .iter()
             .map(|t| {
@@ -105,11 +114,18 @@ impl LlmProvider for AnthropicProvider {
             _ => DEFAULT_MAX_TOKENS,
         });
 
+        // Mark the last message's last non-thinking content block with
+        // cache_control so Round N reads the prior conversation history
+        // (tool calls + tool results from Rounds 1..N-1) from cache instead
+        // of re-paying for it.  Uses Anthropic's third breakpoint slot.
+        let mut messages_owned: Vec<Value> = messages.to_vec();
+        Self::mark_last_message_for_caching(&mut messages_owned);
+
         let mut body = json!({
             "model": self.model,
             "max_tokens": max_tokens,
-            "system": system,
-            "messages": messages,
+            "system": Self::build_system_blocks(system, system_date_suffix),
+            "messages": messages_owned,
             "stream": true,
         });
 
@@ -136,6 +152,13 @@ impl LlmProvider for AnthropicProvider {
         }
 
         if !tools_json.is_empty() {
+            // Mark the last tool with cache_control so the system + tools
+            // prefix is cached.  Synthetic structured-response tools are
+            // appended deterministically per state, so the array stays
+            // byte-stable across rounds within one run_with_tools call.
+            if let Some(last) = tools_json.last_mut() {
+                last["cache_control"] = json!({"type": "ephemeral"});
+            }
             body["tools"] = json!(tools_json);
         }
 
@@ -157,6 +180,98 @@ impl LlmProvider for AnthropicProvider {
             ThinkingConfig::Disabled | ThinkingConfig::Effort(_) => {}
         }
 
+        body
+    }
+
+    /// Mark the last non-thinking content block of the last message with
+    /// `cache_control: ephemeral`.  No-op if `messages` is empty or the last
+    /// message has no cacheable content.
+    ///
+    /// `cache_control` on a `thinking` or `redacted_thinking` block is
+    /// rejected by the API, so the helper walks the last message's blocks
+    /// from the end and marks the first non-thinking entry it finds.  In
+    /// practice the last message is always a user/tool_result message
+    /// (assistant tool_use turns are followed by their tool_result reply),
+    /// so thinking blocks only appear earlier in the conversation — but the
+    /// guard is cheap insurance against malformed history.
+    ///
+    /// String-valued `content` is lifted to a one-block array so the marker
+    /// can be attached.
+    fn mark_last_message_for_caching(messages: &mut [Value]) {
+        let Some(last) = messages.last_mut() else {
+            return;
+        };
+        match last.get_mut("content") {
+            Some(Value::Array(blocks)) => {
+                for block in blocks.iter_mut().rev() {
+                    let ty = block.get("type").and_then(Value::as_str).unwrap_or("");
+                    if ty == "thinking" || ty == "redacted_thinking" {
+                        continue;
+                    }
+                    block["cache_control"] = json!({"type": "ephemeral"});
+                    return;
+                }
+            }
+            Some(Value::String(s)) => {
+                let text = std::mem::take(s);
+                last["content"] = json!([{
+                    "type": "text",
+                    "text": text,
+                    "cache_control": {"type": "ephemeral"}
+                }]);
+            }
+            _ => {}
+        }
+    }
+
+    /// Construct the `system` field as a content-blocks array.
+    ///
+    /// - When `system` is non-empty, the static prefix gets a
+    ///   `cache_control: ephemeral` breakpoint so Anthropic caches it.
+    /// - When `system_date_suffix` is non-empty, it is emitted as a second
+    ///   block *without* `cache_control` so daily date changes don't
+    ///   invalidate the cached static prefix.
+    fn build_system_blocks(system: &str, system_date_suffix: &str) -> Value {
+        let mut blocks: Vec<Value> = Vec::new();
+        if !system.is_empty() {
+            blocks.push(json!({
+                "type": "text",
+                "text": system,
+                "cache_control": {"type": "ephemeral"}
+            }));
+        }
+        if !system_date_suffix.is_empty() {
+            blocks.push(json!({
+                "type": "text",
+                "text": system_date_suffix
+            }));
+        }
+        Value::Array(blocks)
+    }
+}
+
+#[async_trait]
+impl LlmProvider for AnthropicProvider {
+    async fn stream(
+        &self,
+        system: &str,
+        system_date_suffix: &str,
+        messages: &[Value],
+        tools: &[ToolDef],
+        thinking: &ThinkingConfig,
+        response_schema: Option<&ResponseSchema>,
+        max_tokens_override: Option<u32>,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<Chunk, LlmError>> + Send>>, LlmError> {
+        let body = self.build_request_body(
+            system,
+            system_date_suffix,
+            messages,
+            tools,
+            thinking,
+            response_schema,
+            max_tokens_override,
+        );
+
         let mut req = self
             .client
             .post(&self.base_url)
@@ -164,9 +279,11 @@ impl LlmProvider for AnthropicProvider {
             .header("anthropic-version", ANTHROPIC_VERSION)
             .header("content-type", "application/json");
 
-        // Activate the extended-thinking beta so the API honours the
-        // `thinking` body parameter and streams thinking blocks.
-        if !matches!(effective_thinking, ThinkingConfig::Disabled) {
+        // Activate the extended-thinking beta whenever any thinking mode is
+        // requested (including `Effort`, which `build_request_body` maps to
+        // `Adaptive` in the body).  The mapping is centralised there; here we
+        // only need to know "is thinking on at all?".
+        if !matches!(thinking, ThinkingConfig::Disabled) {
             req = req.header("anthropic-beta", ANTHROPIC_THINKING_BETA);
         }
 
@@ -205,6 +322,8 @@ impl LlmProvider for AnthropicProvider {
             // Usage
             let mut input_tokens: usize = 0;
             let mut output_tokens: usize = 0;
+            let mut cache_creation_input_tokens: usize = 0;
+            let mut cache_read_input_tokens: usize = 0;
             let mut stop_reason = StopReason::EndTurn;
 
             let mut byte_stream = response.bytes_stream();
@@ -241,7 +360,16 @@ impl LlmProvider for AnthropicProvider {
 
                     match ev["type"].as_str().unwrap_or("") {
                         "message_start" => {
-                            input_tokens = ev["message"]["usage"]["input_tokens"]
+                            let usage = &ev["message"]["usage"];
+                            input_tokens = usage["input_tokens"].as_u64().unwrap_or(0) as usize;
+                            // Cache token fields are only present when prompt
+                            // caching engaged on this call.  Treat absence as 0.
+                            cache_creation_input_tokens = usage
+                                ["cache_creation_input_tokens"]
+                                .as_u64()
+                                .unwrap_or(0) as usize;
+                            cache_read_input_tokens = usage
+                                ["cache_read_input_tokens"]
                                 .as_u64()
                                 .unwrap_or(0) as usize;
                         }
@@ -334,9 +462,21 @@ impl LlmProvider for AnthropicProvider {
                         }
 
                         "message_delta" => {
-                            output_tokens = ev["usage"]["output_tokens"]
-                                .as_u64()
-                                .unwrap_or(0) as usize;
+                            let usage = &ev["usage"];
+                            output_tokens =
+                                usage["output_tokens"].as_u64().unwrap_or(0) as usize;
+                            // Anthropic occasionally re-reports cache tokens
+                            // here; take max so a later 0 doesn't clobber a
+                            // value seen at message_start.
+                            if let Some(v) = usage["cache_creation_input_tokens"].as_u64()
+                            {
+                                cache_creation_input_tokens =
+                                    cache_creation_input_tokens.max(v as usize);
+                            }
+                            if let Some(v) = usage["cache_read_input_tokens"].as_u64() {
+                                cache_read_input_tokens =
+                                    cache_read_input_tokens.max(v as usize);
+                            }
                             // Parse stop_reason: "end_turn", "max_tokens", or "tool_use".
                             if let Some(sr) = ev["delta"]["stop_reason"].as_str() {
                                 stop_reason = match sr {
@@ -348,7 +488,13 @@ impl LlmProvider for AnthropicProvider {
                         }
 
                         "message_stop" => {
-                            yield Ok(Chunk::Done(Usage { input_tokens, output_tokens, stop_reason }));
+                            yield Ok(Chunk::Done(Usage {
+                                input_tokens,
+                                output_tokens,
+                                cache_creation_input_tokens,
+                                cache_read_input_tokens,
+                                stop_reason,
+                            }));
                             break 'outer;
                         }
 

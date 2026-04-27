@@ -964,6 +964,7 @@ impl crate::llm::LlmProvider for ScriptedProvider {
     async fn stream(
         &self,
         _system: &str,
+        _system_date_suffix: &str,
         messages: &[serde_json::Value],
         _tools: &[agentic_core::tools::ToolDef],
         _thinking: &crate::llm::ThinkingConfig,

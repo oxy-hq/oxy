@@ -142,12 +142,23 @@ impl LlmProvider for OpenAiProvider {
     async fn stream(
         &self,
         system: &str,
+        system_date_suffix: &str,
         messages: &[Value],
         tools: &[ToolDef],
         thinking: &ThinkingConfig,
         response_schema: Option<&ResponseSchema>,
         _max_tokens_override: Option<u32>,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<Chunk, LlmError>> + Send>>, LlmError> {
+        // OpenAI has no notion of system content blocks, so the date suffix
+        // is concatenated onto the system string.  Acceptable since this
+        // provider doesn't participate in prompt caching.
+        let system_buf;
+        let system: &str = if system_date_suffix.is_empty() {
+            system
+        } else {
+            system_buf = format!("{system}\n{system_date_suffix}");
+            &system_buf
+        };
         // Build input items from the conversation history.
         // - Plain role messages get `"type": "message"` added.
         // - Arrays (from assistant_message) are flattened into individual items.
@@ -411,6 +422,7 @@ impl LlmProvider for OpenAiProvider {
                                         .as_u64()
                                         .unwrap_or(0) as usize,
                                     stop_reason: StopReason::EndTurn,
+                                    ..Default::default()
                                 };
                             }
                             // OpenAI: status "incomplete" with reason "max_output_tokens"

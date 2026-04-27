@@ -168,6 +168,7 @@ mod tests {
         async fn stream(
             &self,
             _system: &str,
+            _system_date_suffix: &str,
             _messages: &[Value],
             _tools: &[ToolDef],
             _thinking: &ThinkingConfig,

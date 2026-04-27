@@ -34,9 +34,16 @@ pub trait LlmProvider: Send + Sync {
     ///
     /// `max_tokens_override`, when `Some`, takes precedence over the
     /// provider's default (`ThinkingConfig`-derived) `max_tokens` value.
+    ///
+    /// `system_date_suffix`, when non-empty, is a dynamic addendum to the
+    /// system prompt that must NOT be part of the prompt-cache prefix.
+    /// Anthropic emits it as a separate uncached system content block;
+    /// other providers concatenate it onto the system string.
+    #[allow(clippy::too_many_arguments)]
     async fn stream(
         &self,
         system: &str,
+        system_date_suffix: &str,
         messages: &[Value],
         tools: &[ToolDef],
         thinking: &ThinkingConfig,

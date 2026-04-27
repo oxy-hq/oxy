@@ -192,6 +192,7 @@ impl LlmClient {
             .provider
             .stream(
                 system,
+                "",
                 &messages,
                 &[],
                 &ThinkingConfig::Disabled,
@@ -239,6 +240,7 @@ impl LlmClient {
             .provider
             .stream(
                 system,
+                "",
                 &messages,
                 &[],
                 &ThinkingConfig::Disabled,

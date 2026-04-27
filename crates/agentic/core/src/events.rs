@@ -112,6 +112,13 @@ pub enum CoreEvent {
     LlmEnd {
         state: String,
         output_tokens: usize,
+        /// Tokens written to the prompt cache on this round (Anthropic only).
+        /// Persisted rows from before caching support deserialise as 0.
+        #[serde(default)]
+        cache_creation_input_tokens: usize,
+        /// Tokens read from the prompt cache on this round (Anthropic only).
+        #[serde(default)]
+        cache_read_input_tokens: usize,
         duration_ms: u64,
         /// The model identifier used for this completion (e.g. `"claude-sonnet-4-6"`).
         model: String,

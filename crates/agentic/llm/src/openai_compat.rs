@@ -210,12 +210,24 @@ impl LlmProvider for OpenAiCompatProvider {
     async fn stream(
         &self,
         system: &str,
+        system_date_suffix: &str,
         messages: &[Value],
         tools: &[ToolDef],
         thinking: &ThinkingConfig,
         response_schema: Option<&ResponseSchema>,
         _max_tokens_override: Option<u32>,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<Chunk, LlmError>> + Send>>, LlmError> {
+        // OpenAI-compat has no system content blocks; concatenate the date
+        // suffix onto the system string.  This provider doesn't support
+        // prompt caching, so the lack of a separate uncached block is fine.
+        // Avoid an allocation when no suffix is set (mirrors openai.rs).
+        let system_buf;
+        let system: &str = if system_date_suffix.is_empty() {
+            system
+        } else {
+            system_buf = format!("{system}\n{system_date_suffix}");
+            &system_buf
+        };
         // Inject CoT prefix when thinking is enabled.
         let effective_system = match thinking {
             ThinkingConfig::Disabled => system.to_string(),
@@ -385,6 +397,7 @@ impl LlmProvider for OpenAiCompatProvider {
                             input_tokens: u["prompt_tokens"].as_u64().unwrap_or(0) as usize,
                             output_tokens: u["completion_tokens"].as_u64().unwrap_or(0) as usize,
                             stop_reason,
+                            ..Default::default()
                         };
                     }
 

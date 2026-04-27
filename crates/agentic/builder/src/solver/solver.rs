@@ -91,12 +91,8 @@ impl BuilderSolver {
 
     pub(crate) fn build_solving_system_prompt(&self) -> String {
         let root = self.project_root.to_string_lossy();
-        let now = chrono::Utc::now();
-        let current_datetime = now.format("%Y-%m-%d %H:%M:%S UTC").to_string();
         format!(
-            r#"Current date and time: {current_datetime}
-
-You are a copilot for an Oxy data project located at: {root}
+            r#"You are a copilot for an Oxy data project located at: {root}
 
 Oxy is a data platform. A project is a directory of YAML configuration files that define
 agents, workflows, semantic models, and data apps. You help users read, understand, and
@@ -154,18 +150,20 @@ Any text you output after the final tool call is wasted tokens and will be disca
     }
 
     pub(crate) fn build_interpreting_system_prompt(&self) -> String {
-        let now = chrono::Utc::now();
-        let current_datetime = now.format("%Y-%m-%d %H:%M:%S UTC").to_string();
-        format!(
-            r#"Current date and time: {current_datetime}
-
-You are the final response synthesizer for the Oxy builder agent.
+        r#"You are the final response synthesizer for the Oxy builder agent.
 You receive the user's original request and the full tool exchange log from the solving phase.
 Your job is to write a short, direct reply.
 State what was done and call out any notable outcome or follow-up the user must know.
 Skip listing every file, field, or test step unless something went wrong.
 No emoji. Do not invent results not present in the tool exchange log."#
-        )
+            .to_string()
+    }
+
+    /// Build the day-only date hint that is appended to the system prompt as
+    /// a separate, uncached content block.  Kept here so the format stays
+    /// in sync between Solving and Interpreting calls.
+    pub(crate) fn current_date_hint() -> String {
+        chrono::Utc::now().format("Today is %Y-%m-%d.").to_string()
     }
 
     pub(crate) fn build_initial_messages(
@@ -210,6 +208,7 @@ No emoji. Do not invent results not present in the tool exchange log."#
             response_schema: None,
             max_tokens_override: None,
             sub_spec_index: None,
+            system_date_hint: Some(Self::current_date_hint()),
         }
     }
 }

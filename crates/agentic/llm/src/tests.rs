@@ -168,6 +168,7 @@ impl LlmProvider for AnthropicMockProvider {
     async fn stream(
         &self,
         _system: &str,
+        _system_date_suffix: &str,
         messages: &[Value],
         _tools: &[ToolDef],
         _thinking: &ThinkingConfig,
@@ -229,6 +230,7 @@ impl LlmProvider for MockProvider {
     async fn stream(
         &self,
         _system: &str,
+        _system_date_suffix: &str,
         _messages: &[Value],
         _tools: &[ToolDef],
         _thinking: &ThinkingConfig,
@@ -402,6 +404,7 @@ async fn tool_call_round_then_final_text() {
                 response_schema: None,
                 max_tokens_override: None,
                 sub_spec_index: None,
+                system_date_hint: None,
             },
         )
         .await
@@ -483,6 +486,7 @@ async fn interleaved_thinking_emits_two_thinking_pairs() {
                 response_schema: None,
                 max_tokens_override: None,
                 sub_spec_index: None,
+                system_date_hint: None,
             },
         )
         .await
@@ -587,6 +591,7 @@ async fn max_tool_rounds_exceeded() {
                 response_schema: None,
                 max_tokens_override: None,
                 sub_spec_index: None,
+                system_date_hint: None,
             },
         )
         .await;
@@ -652,6 +657,7 @@ async fn thinking_raw_blocks_preserved_in_tool_continuation() {
                 response_schema: None,
                 max_tokens_override: None,
                 sub_spec_index: None,
+                system_date_hint: None,
             },
         )
         .await
@@ -683,6 +689,7 @@ fn each_state_can_have_its_own_thinking_config() {
         response_schema: None,
         max_tokens_override: None,
         sub_spec_index: None,
+        system_date_hint: None,
     };
     let solving = ToolLoopConfig {
         max_tool_rounds: 3,
@@ -691,6 +698,7 @@ fn each_state_can_have_its_own_thinking_config() {
         response_schema: None,
         max_tokens_override: None,
         sub_spec_index: None,
+        system_date_hint: None,
     };
     let interpreting = ToolLoopConfig {
         max_tool_rounds: 2,
@@ -699,6 +707,7 @@ fn each_state_can_have_its_own_thinking_config() {
         response_schema: None,
         max_tokens_override: None,
         sub_spec_index: None,
+        system_date_hint: None,
     };
 
     assert!(matches!(clarifying.thinking, ThinkingConfig::Disabled));
@@ -934,6 +943,7 @@ async fn real_tools_run_then_schema_tool_terminates_loop() {
                 }),
                 max_tokens_override: None,
                 sub_spec_index: None,
+                system_date_hint: None,
             },
         )
         .await
@@ -1080,6 +1090,7 @@ async fn anthropic_render_chart_tool_use_result_pairing() {
                 response_schema: None,
                 max_tokens_override: None,
                 sub_spec_index: None,
+                system_date_hint: None,
             },
         )
         .await
@@ -1244,6 +1255,7 @@ async fn anthropic_render_chart_with_thinking_tool_use_result_pairing() {
                 response_schema: None,
                 max_tokens_override: None,
                 sub_spec_index: None,
+                system_date_hint: None,
             },
         )
         .await
@@ -1345,6 +1357,7 @@ async fn anthropic_two_tool_calls_both_get_tool_results() {
                 response_schema: None,
                 max_tokens_override: None,
                 sub_spec_index: None,
+                system_date_hint: None,
             },
         )
         .await
@@ -1445,6 +1458,7 @@ async fn anthropic_multi_round_tool_calls_all_paired() {
                 response_schema: None,
                 max_tokens_override: None,
                 sub_spec_index: None,
+                system_date_hint: None,
             },
         )
         .await
@@ -1523,6 +1537,7 @@ async fn thinking_only_max_tokens_retries_with_doubled_budget() {
                 response_schema: None,
                 max_tokens_override: None,
                 sub_spec_index: None,
+                system_date_hint: None,
             },
         )
         .await
@@ -1578,6 +1593,7 @@ async fn thinking_only_max_tokens_exhausted_returns_error() {
                 response_schema: None,
                 max_tokens_override: None,
                 sub_spec_index: None,
+                system_date_hint: None,
             },
         )
         .await;
@@ -1652,6 +1668,7 @@ async fn ask_user_suspension_propagates_error() {
                 response_schema: None,
                 max_tokens_override: None,
                 sub_spec_index: None,
+                system_date_hint: None,
             },
         )
         .await;
@@ -1757,6 +1774,7 @@ async fn ask_user_suspension_after_tool_rounds_preserves_prior_context() {
                 response_schema: None,
                 max_tokens_override: None,
                 sub_spec_index: None,
+                system_date_hint: None,
             },
         )
         .await;
@@ -1848,6 +1866,7 @@ async fn ask_user_as_first_tool_call_resume_has_three_messages() {
                 response_schema: None,
                 max_tokens_override: None,
                 sub_spec_index: None,
+                system_date_hint: None,
             },
         )
         .await;
@@ -1998,6 +2017,7 @@ impl LlmProvider for OpenAiMockProvider {
     async fn stream(
         &self,
         _system: &str,
+        _system_date_suffix: &str,
         messages: &[Value],
         _tools: &[ToolDef],
         _thinking: &ThinkingConfig,
@@ -2191,6 +2211,7 @@ async fn openai_ask_user_resume_after_tool_round_has_matching_call_id() {
                 response_schema: None,
                 max_tokens_override: None,
                 sub_spec_index: None,
+                system_date_hint: None,
             },
         )
         .await;
@@ -2285,6 +2306,7 @@ async fn openai_ask_user_as_first_tool_call_has_matching_call_id() {
                 response_schema: None,
                 max_tokens_override: None,
                 sub_spec_index: None,
+                system_date_hint: None,
             },
         )
         .await;
@@ -2553,6 +2575,7 @@ async fn openai_batched_tools_with_ask_user_flushes_prior_results() {
                 response_schema: None,
                 max_tokens_override: None,
                 sub_spec_index: None,
+                system_date_hint: None,
             },
         )
         .await;
@@ -2653,6 +2676,7 @@ async fn anthropic_batched_tools_with_ask_user_flushes_prior_results() {
                 response_schema: None,
                 max_tokens_override: None,
                 sub_spec_index: None,
+                system_date_hint: None,
             },
         )
         .await;
@@ -2706,6 +2730,7 @@ async fn text_truncated_by_max_tokens_returns_max_tokens_reached() {
                 response_schema: None,
                 max_tokens_override: None,
                 sub_spec_index: None,
+                system_date_hint: None,
             },
         )
         .await;
@@ -2757,6 +2782,7 @@ async fn max_tokens_reached_prior_messages_contains_truncated_assistant_turn() {
                 response_schema: None,
                 max_tokens_override: None,
                 sub_spec_index: None,
+                system_date_hint: None,
             },
         )
         .await;
@@ -2870,6 +2896,7 @@ async fn tool_rounds_exhausted_returns_max_tool_rounds_reached() {
                 response_schema: None,
                 max_tokens_override: None,
                 sub_spec_index: None,
+                system_date_hint: None,
             },
         )
         .await;
@@ -2938,6 +2965,7 @@ async fn max_tool_rounds_prior_messages_excludes_current_tool_request() {
                 response_schema: None,
                 max_tokens_override: None,
                 sub_spec_index: None,
+                system_date_hint: None,
             },
         )
         .await;
@@ -2988,6 +3016,7 @@ async fn max_tokens_resume_via_build_continue_messages_is_valid() {
                 response_schema: None,
                 max_tokens_override: None,
                 sub_spec_index: None,
+                system_date_hint: None,
             },
         )
         .await;
@@ -3010,4 +3039,378 @@ async fn max_tokens_resume_via_build_continue_messages_is_valid() {
     let last = resume_msgs.last().unwrap();
     assert_eq!(last["role"].as_str(), Some("user"));
     assert_eq!(last["content"].as_str(), Some("Please continue."));
+}
+
+// ── Anthropic prompt-caching wire format ──────────────────────────────────
+
+/// `build_request_body` must mark the system content block with
+/// `cache_control: ephemeral` so Anthropic caches the system prefix.
+#[test]
+fn build_request_body_marks_system_with_cache_control() {
+    let provider = super::anthropic::AnthropicProvider::new("k", "claude-sonnet-4-6");
+    let body = provider.build_request_body(
+        "you are an assistant",
+        "",
+        &[],
+        &[],
+        &super::ThinkingConfig::Disabled,
+        None,
+        None,
+    );
+    let system = body["system"]
+        .as_array()
+        .expect("system field is a content-blocks array");
+    assert_eq!(
+        system.len(),
+        1,
+        "expected one system block when no date hint"
+    );
+    assert_eq!(system[0]["type"].as_str(), Some("text"));
+    assert_eq!(system[0]["text"].as_str(), Some("you are an assistant"));
+    assert_eq!(
+        system[0]["cache_control"],
+        json!({"type": "ephemeral"}),
+        "system block must carry cache_control"
+    );
+}
+
+/// When `system_date_suffix` is non-empty, the system field must contain
+/// two blocks: the first cached, the second uncached.  This lets the
+/// time-varying date string sit *after* the cache breakpoint.
+#[test]
+fn build_request_body_emits_two_system_blocks_when_date_suffix_set() {
+    let provider = super::anthropic::AnthropicProvider::new("k", "claude-sonnet-4-6");
+    let body = provider.build_request_body(
+        "static instructions",
+        "Today is 2026-04-25.",
+        &[],
+        &[],
+        &super::ThinkingConfig::Disabled,
+        None,
+        None,
+    );
+    let system = body["system"].as_array().expect("system is array");
+    assert_eq!(system.len(), 2, "expected static + date suffix blocks");
+    assert_eq!(
+        system[0]["text"].as_str(),
+        Some("static instructions"),
+        "first block is the static prefix"
+    );
+    assert_eq!(
+        system[0]["cache_control"],
+        json!({"type": "ephemeral"}),
+        "static prefix must carry cache_control"
+    );
+    assert_eq!(
+        system[1]["text"].as_str(),
+        Some("Today is 2026-04-25."),
+        "second block is the dynamic date suffix"
+    );
+    assert!(
+        system[1].get("cache_control").is_none(),
+        "date suffix must NOT carry cache_control — it would invalidate the prefix daily"
+    );
+}
+
+/// Only the LAST tool gets `cache_control`.  Setting it on every tool
+/// would consume one of Anthropic's four breakpoint slots per tool.
+#[test]
+fn build_request_body_marks_only_last_tool() {
+    use agentic_core::tools::ToolDef;
+    let tools = vec![
+        ToolDef {
+            name: "first".into(),
+            description: "first tool".into(),
+            parameters: json!({"type": "object", "properties": {}}),
+            strict: false,
+        },
+        ToolDef {
+            name: "second".into(),
+            description: "second tool".into(),
+            parameters: json!({"type": "object", "properties": {}}),
+            strict: false,
+        },
+    ];
+    let provider = super::anthropic::AnthropicProvider::new("k", "claude-sonnet-4-6");
+    let body = provider.build_request_body(
+        "system",
+        "",
+        &[],
+        &tools,
+        &super::ThinkingConfig::Disabled,
+        None,
+        None,
+    );
+    let tools_arr = body["tools"].as_array().expect("tools array present");
+    assert_eq!(tools_arr.len(), 2);
+    assert!(
+        tools_arr[0].get("cache_control").is_none(),
+        "first tool must NOT carry cache_control"
+    );
+    assert_eq!(
+        tools_arr[1]["cache_control"],
+        json!({"type": "ephemeral"}),
+        "last tool must carry cache_control"
+    );
+}
+
+/// When the system prompt is empty, no system block is emitted (and so no
+/// orphan `cache_control` slot is consumed).
+#[test]
+fn build_request_body_omits_system_block_when_empty_system() {
+    let provider = super::anthropic::AnthropicProvider::new("k", "claude-sonnet-4-6");
+    let body = provider.build_request_body(
+        "",
+        "",
+        &[],
+        &[],
+        &super::ThinkingConfig::Disabled,
+        None,
+        None,
+    );
+    let system = body["system"].as_array().expect("system is array");
+    assert!(system.is_empty(), "no system block when prompt is empty");
+}
+
+/// Edge case: empty static system but a non-empty date suffix.  The single
+/// emitted block is the date hint and must NOT carry `cache_control` — a
+/// daily-rotating cache breakpoint would burn one of Anthropic's four slots
+/// for nothing.
+#[test]
+fn build_request_body_emits_only_uncached_date_block_when_static_empty() {
+    let provider = super::anthropic::AnthropicProvider::new("k", "claude-sonnet-4-6");
+    let body = provider.build_request_body(
+        "",
+        "Today is 2026-04-25.",
+        &[],
+        &[],
+        &super::ThinkingConfig::Disabled,
+        None,
+        None,
+    );
+    let system = body["system"].as_array().expect("system is array");
+    assert_eq!(system.len(), 1, "expected just the date suffix block");
+    assert_eq!(system[0]["text"].as_str(), Some("Today is 2026-04-25."));
+    assert!(
+        system[0].get("cache_control").is_none(),
+        "date-only block must not carry cache_control"
+    );
+}
+
+/// `Usage` cache fields must round-trip through `CoreEvent::LlmEnd` so
+/// callers (frontend, tracing, DB) can compute hit ratios.  Uses the
+/// existing mock-provider plumbing instead of a real HTTP server.
+#[tokio::test]
+async fn cache_tokens_propagate_from_provider_to_llm_end_event() {
+    let provider = MockProvider::new(vec![vec![
+        Ok(Chunk::Text(String::new())),
+        Ok(Chunk::Text("hello".into())),
+        Ok(Chunk::Done(Usage {
+            input_tokens: 100,
+            output_tokens: 20,
+            cache_creation_input_tokens: 1234,
+            cache_read_input_tokens: 5678,
+            stop_reason: StopReason::EndTurn,
+        })),
+    ]]);
+    let client = LlmClient::with_provider(provider);
+
+    let (tx, rx) = mpsc::channel::<Event<()>>(64);
+    let events: Option<EventStream<()>> = Some(tx);
+
+    let _ = client
+        .run_with_tools::<(), _>(
+            "system prompt",
+            "hi",
+            &[],
+            |_, _| Box::pin(async { Ok(Value::Null) }),
+            &events,
+            ToolLoopConfig {
+                max_tool_rounds: 1,
+                state: "test".into(),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("run_with_tools should succeed");
+    drop(events);
+
+    let mut creation_seen = 0usize;
+    let mut read_seen = 0usize;
+    let mut llm_end_seen = false;
+    let mut rx = rx;
+    while let Some(ev) = rx.recv().await {
+        if let Event::Core(CoreEvent::LlmEnd {
+            cache_creation_input_tokens,
+            cache_read_input_tokens,
+            output_tokens,
+            ..
+        }) = ev
+        {
+            creation_seen = cache_creation_input_tokens;
+            read_seen = cache_read_input_tokens;
+            assert_eq!(output_tokens, 20);
+            llm_end_seen = true;
+        }
+    }
+    assert!(llm_end_seen, "expected at least one LlmEnd event");
+    assert_eq!(creation_seen, 1234);
+    assert_eq!(read_seen, 5678);
+}
+
+// ── Per-round message-level cache breakpoint ──────────────────────────────
+
+/// `build_request_body` must mark the last content block of the last
+/// message so Round N reads the growing tool_use / tool_result history
+/// from cache instead of re-paying for it every round.
+#[test]
+fn build_request_body_marks_last_message_block_with_cache_control() {
+    let messages = vec![json!({
+        "role": "user",
+        "content": [
+            {"type": "tool_result", "tool_use_id": "t1", "content": "row 1"},
+            {"type": "tool_result", "tool_use_id": "t2", "content": "row 2"},
+        ]
+    })];
+    let provider = super::anthropic::AnthropicProvider::new("k", "claude-sonnet-4-6");
+    let body = provider.build_request_body(
+        "system",
+        "",
+        &messages,
+        &[],
+        &super::ThinkingConfig::Disabled,
+        None,
+        None,
+    );
+    let blocks = body["messages"][0]["content"]
+        .as_array()
+        .expect("content remains an array");
+    assert!(
+        blocks[0].get("cache_control").is_none(),
+        "non-last block must NOT carry cache_control"
+    );
+    assert_eq!(
+        blocks[1]["cache_control"],
+        json!({"type": "ephemeral"}),
+        "last block must carry cache_control"
+    );
+}
+
+/// String-valued `content` (e.g. the initial user question) must be
+/// lifted to a one-element block array so the cache marker can attach.
+#[test]
+fn build_request_body_lifts_string_content_to_blocks_for_caching() {
+    let messages = vec![json!({"role": "user", "content": "what is 2+2?"})];
+    let provider = super::anthropic::AnthropicProvider::new("k", "claude-sonnet-4-6");
+    let body = provider.build_request_body(
+        "system",
+        "",
+        &messages,
+        &[],
+        &super::ThinkingConfig::Disabled,
+        None,
+        None,
+    );
+    let content = body["messages"][0]["content"]
+        .as_array()
+        .expect("string content was lifted to an array");
+    assert_eq!(content.len(), 1);
+    assert_eq!(content[0]["type"].as_str(), Some("text"));
+    assert_eq!(content[0]["text"].as_str(), Some("what is 2+2?"));
+    assert_eq!(content[0]["cache_control"], json!({"type": "ephemeral"}));
+}
+
+/// Critical guarantee: ONLY the last message gets a cache breakpoint.
+/// Marking earlier messages would silently exhaust Anthropic's 4-slot
+/// budget — already two slots are taken by system + last tool, leaving
+/// just one for the message tail.
+#[test]
+fn build_request_body_marks_only_last_message_not_earlier_ones() {
+    let messages = vec![
+        json!({"role": "user", "content": "initial question"}),
+        json!({
+            "role": "assistant",
+            "content": [{"type": "tool_use", "id": "t1", "name": "fn", "input": {}}]
+        }),
+        json!({
+            "role": "user",
+            "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "row"}]
+        }),
+    ];
+    let provider = super::anthropic::AnthropicProvider::new("k", "claude-sonnet-4-6");
+    let body = provider.build_request_body(
+        "sys",
+        "",
+        &messages,
+        &[],
+        &super::ThinkingConfig::Disabled,
+        None,
+        None,
+    );
+    // First message kept its string form (or, if lifted, would not carry
+    // cache_control on the lifted block).  Either way: no breakpoint.
+    let m0_content = &body["messages"][0]["content"];
+    if let Some(arr) = m0_content.as_array() {
+        for block in arr {
+            assert!(
+                block.get("cache_control").is_none(),
+                "msg[0] block must NOT carry cache_control: {block}"
+            );
+        }
+    } else {
+        assert!(
+            m0_content.is_string(),
+            "msg[0] should still be a plain string"
+        );
+    }
+    // Second message's tool_use block must NOT be marked.
+    let m1_block0 = &body["messages"][1]["content"][0];
+    assert!(
+        m1_block0.get("cache_control").is_none(),
+        "msg[1] block must NOT carry cache_control"
+    );
+    // Only the last message's last block should be marked.
+    let last_block = &body["messages"][2]["content"][0];
+    assert_eq!(
+        last_block["cache_control"],
+        json!({"type": "ephemeral"}),
+        "only the last message's last block must carry cache_control"
+    );
+}
+
+/// `cache_control` on a thinking block is rejected by the API, so the
+/// marker must skip over thinking entries and attach to the nearest
+/// non-thinking block (or no-op if none exists).
+#[test]
+fn build_request_body_skips_thinking_block_when_marking_last_message() {
+    // Hypothetical malformed-but-tolerated history: assistant turn ending
+    // in a thinking block.  The marker must skip the thinking and land on
+    // the text block before it.
+    let messages = vec![json!({
+        "role": "assistant",
+        "content": [
+            {"type": "text", "text": "let me think"},
+            {"type": "thinking", "thinking": "...", "signature": "sig"},
+        ]
+    })];
+    let provider = super::anthropic::AnthropicProvider::new("k", "claude-sonnet-4-6");
+    let body = provider.build_request_body(
+        "system",
+        "",
+        &messages,
+        &[],
+        &super::ThinkingConfig::Disabled,
+        None,
+        None,
+    );
+    let blocks = body["messages"][0]["content"].as_array().unwrap();
+    assert!(
+        blocks[1].get("cache_control").is_none(),
+        "thinking block must NEVER carry cache_control"
+    );
+    assert_eq!(
+        blocks[0]["cache_control"],
+        json!({"type": "ephemeral"}),
+        "marker falls back to the preceding non-thinking block"
+    );
 }

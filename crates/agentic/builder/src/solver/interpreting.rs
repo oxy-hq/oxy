@@ -54,6 +54,7 @@ impl BuilderSolver {
                     response_schema: None,
                     max_tokens_override: None,
                     sub_spec_index: None,
+                    system_date_hint: Some(BuilderSolver::current_date_hint()),
                 },
             )
             .await

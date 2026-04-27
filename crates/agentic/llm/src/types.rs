@@ -198,6 +198,13 @@ pub enum StopReason {
 pub struct Usage {
     pub input_tokens: usize,
     pub output_tokens: usize,
+    /// Tokens written to the prompt cache on this call (Anthropic only).
+    /// Charged at 1.25× base for 5m TTL.  Zero on providers without
+    /// caching support.
+    pub cache_creation_input_tokens: usize,
+    /// Tokens read from the prompt cache on this call (Anthropic only).
+    /// Charged at 0.1× base.  Zero on providers without caching support.
+    pub cache_read_input_tokens: usize,
     /// Why the model stopped; populated by provider stream parsers.
     pub stop_reason: StopReason,
 }
@@ -247,6 +254,11 @@ pub struct ToolLoopConfig {
     /// When inside a concurrent fan-out, identifies which sub-spec this
     /// tool loop belongs to.  Propagated to all emitted [`CoreEvent`]s.
     pub sub_spec_index: Option<usize>,
+    /// Optional dynamic system-prompt suffix that is excluded from the
+    /// prompt-cache prefix on Anthropic.  Used for time-varying content
+    /// like "Today is YYYY-MM-DD." that would otherwise invalidate every
+    /// cache hit.  Empty / `None` means no suffix is appended.
+    pub system_date_hint: Option<String>,
 }
 
 impl Default for ToolLoopConfig {
@@ -258,6 +270,7 @@ impl Default for ToolLoopConfig {
             response_schema: None,
             max_tokens_override: None,
             sub_spec_index: None,
+            system_date_hint: None,
         }
     }
 }

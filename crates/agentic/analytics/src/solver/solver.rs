@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use chrono::Utc;
-
 use agentic_connector::DatabaseConnector;
 use agentic_core::{
     events::EventStream,
@@ -288,6 +286,14 @@ impl AnalyticsSolver {
         self
     }
 
+    /// Day-only date hint that is appended to the system prompt as a
+    /// separate, uncached content block (Anthropic) or concatenated
+    /// (other providers).  Kept out of the cached prefix so cross-thread
+    /// runs can share the system+tools cache.
+    pub(crate) fn current_date_hint() -> String {
+        chrono::Utc::now().format("Today is %Y-%m-%d.").to_string()
+    }
+
     /// Build a composite system prompt for a given state.
     ///
     /// Composition order:
@@ -303,15 +309,7 @@ impl AnalyticsSolver {
         base: &str,
         dialect: Option<&str>,
     ) -> String {
-        let now = Utc::now();
-        let mut parts = vec![
-            base.to_string(),
-            format!(
-                "<current_datetime>\nToday's date: {}\nCurrent time: {} UTC\n</current_datetime>",
-                now.format("%Y-%m-%d"),
-                now.format("%H:%M:%S"),
-            ),
-        ];
+        let mut parts = vec![base.to_string()];
 
         match state {
             "clarifying" | "specifying" => {

@@ -150,6 +150,7 @@ impl LlmClient {
                     .provider
                     .stream(
                         system,
+                        config.system_date_hint.as_deref().unwrap_or(""),
                         &messages,
                         tools,
                         &config.thinking,
@@ -296,6 +297,8 @@ impl LlmClient {
                     prompt_tokens = usage.input_tokens as i64,
                     completion_tokens = usage.output_tokens as i64,
                     total_tokens = (usage.input_tokens + usage.output_tokens) as i64,
+                    cache_creation_tokens = usage.cache_creation_input_tokens as i64,
+                    cache_read_tokens = usage.cache_read_input_tokens as i64,
                     model = %self.provider.model_name(),
                     duration_ms = round_llm_ms,
                     stop_reason = %format!("{:?}", usage.stop_reason),
@@ -338,6 +341,8 @@ impl LlmClient {
                     CoreEvent::LlmEnd {
                         state: config.state.clone(),
                         output_tokens: usage.output_tokens,
+                        cache_creation_input_tokens: usage.cache_creation_input_tokens,
+                        cache_read_input_tokens: usage.cache_read_input_tokens,
                         duration_ms: round_llm_ms,
                         model: self.provider.model_name().to_string(),
                         sub_spec_index: ssi,

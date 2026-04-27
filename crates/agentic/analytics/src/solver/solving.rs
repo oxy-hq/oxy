@@ -244,6 +244,7 @@ impl AnalyticsSolver {
                     response_schema: Some(solve_response_schema()),
                     max_tokens_override: resume_max_tokens_override.or(self.max_tokens),
                     sub_spec_index: None,
+                    system_date_hint: Some(AnalyticsSolver::current_date_hint()),
                 },
             )
             .await
