@@ -76,6 +76,15 @@ mod m20260416_000001_add_status_and_error_to_workspaces;
 mod m20260416_000001_create_observability_tables;
 mod m20260416_000002_swap_workspace_repo_for_git_namespace;
 mod m20260416_000003_drop_branches_and_workspace_repos;
+// Legacy single-tenant Slack tables. The original CREATE migrations were
+// deleted when the universal multi-tenant Slack bot replaced them, but
+// dev/prod databases that had already applied them required the files
+// to remain on disk for SeaORM's startup integrity check (every row in
+// `seaql_migrations` must have a corresponding file). Restored verbatim
+// from commit ca9def9d7 — the drop migration below removes the tables.
+mod m20251114_000002_create_slack_channel_bindings_table;
+mod m20251114_000003_create_slack_user_identities_table;
+mod m20251114_000004_create_slack_conversation_contexts_table;
 mod m20260421_000001_drop_legacy_slack_tables;
 mod m20260421_000002_create_org_secrets;
 mod m20260421_000003_create_slack_installations;
@@ -168,6 +177,10 @@ impl MigratorTrait for Migrator {
             Box::new(m20260416_000002_swap_workspace_repo_for_git_namespace::Migration),
             Box::new(m20260416_000003_drop_branches_and_workspace_repos::Migration),
             Box::new(m20260416_000001_create_observability_tables::Migration),
+            // Legacy single-tenant Slack tables — see module-level comment above.
+            Box::new(m20251114_000002_create_slack_channel_bindings_table::Migration),
+            Box::new(m20251114_000003_create_slack_user_identities_table::Migration),
+            Box::new(m20251114_000004_create_slack_conversation_contexts_table::Migration),
             Box::new(m20260421_000001_drop_legacy_slack_tables::Migration),
             Box::new(m20260421_000002_create_org_secrets::Migration),
             Box::new(m20260421_000003_create_slack_installations::Migration),
