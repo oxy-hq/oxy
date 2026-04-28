@@ -65,7 +65,7 @@ export default function OnboardingPage() {
         ) : (
           <>
             <div className='flex flex-col items-center gap-2 text-center'>
-              <h1 className='font-semibold text-2xl tracking-tight'>Welcome to Oxy</h1>
+              <h1 className='font-semibold text-2xl tracking-tight'>Welcome to Oxygen</h1>
               <p className='text-muted-foreground text-sm'>
                 Create an organization for your team or join one you've been invited to.
               </p>

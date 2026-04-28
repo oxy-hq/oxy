@@ -566,7 +566,7 @@ pub async fn setup_github(
                     (entity::workspaces::WorkspaceStatus::Ready, None)
                 } else {
                     let msg = format!(
-                        "Repository '{}' does not appear to be an Oxy project — no config.yml found{}.",
+                        "Repository '{}' does not appear to be an Oxygen project — no config.yml found{}.",
                         clone_url,
                         if oxy_project_dir_clone != repo_dir {
                             format!(" in subdirectory '{}'", oxy_project_dir_clone.display())

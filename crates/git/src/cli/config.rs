@@ -16,7 +16,7 @@ pub async fn ensure_user_config() -> Result<(), OxyError> {
     if !name.status.success() {
         warn!("Git user.name is not configured. Setting default value.");
         let _ = Command::new("git")
-            .args(["config", "--global", "user.name", "Oxy User"])
+            .args(["config", "--global", "user.name", "Oxygen User"])
             .output()
             .await;
     }

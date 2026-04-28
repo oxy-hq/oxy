@@ -71,7 +71,7 @@ pub async fn load_slack_settings() -> Result<SlackSettings, OxyError> {
     let workspace_path = resolve_local_workspace_path().map_err(|e| {
         OxyError::ConfigurationError(format!(
             "Failed to find project config.yml: {}. \
-             Make sure to run Oxy from a directory with a config.yml file.",
+             Make sure to run Oxygen from a directory with a config.yml file.",
             e
         ))
     })?;
@@ -320,7 +320,7 @@ async fn execute_and_deliver_to_slack(
             let mrkdwn_content = markdown_to_mrkdwn(&final_markdown);
             let slack_text = if let Some(url) = oxy_app_url {
                 let deep_link = build_thread_deep_link(url, workspace_id, thread_id);
-                format!("{}\n\n<{}|View in Oxy>", mrkdwn_content, deep_link)
+                format!("{}\n\n<{}|View in Oxygen>", mrkdwn_content, deep_link)
             } else {
                 mrkdwn_content
             };

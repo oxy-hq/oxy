@@ -8,7 +8,7 @@ pub fn lookup_schema_def(provider: &dyn BuilderSchemaProvider) -> ToolDef {
     ToolDef {
         name: "lookup_schema",
         description: Box::leak(format!(
-            "Look up the JSON schema for a named Oxy object type. Returns the full JSON Schema describing all fields, types, and constraints. \
+            "Look up the JSON schema for a named Oxygen object type. Returns the full JSON Schema describing all fields, types, and constraints. \
              Supported types: {type_list}."
         ).into_boxed_str()),
         parameters: json!({
@@ -16,7 +16,7 @@ pub fn lookup_schema_def(provider: &dyn BuilderSchemaProvider) -> ToolDef {
             "properties": {
                 "object_name": {
                     "type": "string",
-                    "description": "Name of the Oxy object type to look up (e.g. 'AgentConfig', 'Workflow', 'Task', 'View', 'Dimension')"
+                    "description": "Name of the Oxygen object type to look up (e.g. 'AgentConfig', 'Workflow', 'Task', 'View', 'Dimension')"
                 }
             },
             "required": ["object_name"],

@@ -185,7 +185,7 @@ export default function WorkspaceCreator({
           label='02'
           icon={<BookOpen className='h-3.5 w-3.5' />}
           title='Demo Workspace'
-          description='Explore Oxy with pre-built sample data and example queries.'
+          description='Explore Oxygen with pre-built sample data and example queries.'
           onClick={handleDemo}
         />
         <OptionCard

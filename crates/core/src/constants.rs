@@ -7,7 +7,7 @@ pub const AUTOMATION_SAVED_DIR: &str = "automations/saved";
 pub const PROCEDURE_SAVED_DIR: &str = "procedures/saved";
 pub const OXY_ENCRYPTION_KEY_VAR: &str = "OXY_ENCRYPTION_KEY";
 pub const OXY_SDK_SYSTEM_PROMPT: &str = r#"
-# Oxy SDK Usage Instructions
+# Oxygen SDK Usage Instructions
 
 You are building a data application using the @oxy-hq/sdk to query Parquet data files.
 

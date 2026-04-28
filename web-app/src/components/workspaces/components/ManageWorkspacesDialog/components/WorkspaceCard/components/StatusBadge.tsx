@@ -20,7 +20,7 @@ export function StatusBadge({ isActive, isCloning, isErrored }: Props) {
     return (
       <span className='flex items-center gap-1.5 rounded-full bg-destructive/10 px-2.5 py-1 font-medium text-destructive text-xs'>
         <AlertTriangle className='size-2.5' />
-        Not an Oxy project
+        Not an Oxygen project
       </span>
     );
   }

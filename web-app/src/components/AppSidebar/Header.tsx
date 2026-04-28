@@ -25,8 +25,8 @@ export function Header({ isOnboarding = false }: { isOnboarding?: boolean }) {
       {/* Brand bar: logo + project switcher + collapse */}
       <div className='flex h-[52px] shrink-0 items-center gap-0 border-sidebar-border/50 border-b px-3'>
         <Link to={homeUri} className='flex shrink-0 items-center pr-2'>
-          <img src='/oxy-light.svg' alt='Oxy' className='dark:hidden' />
-          <img src='/oxy-dark.svg' alt='Oxy' className='hidden dark:block' />
+          <img src='/oxygen-light.svg' alt='Oxygen' className='dark:hidden' />
+          <img src='/oxygen-dark.svg' alt='Oxygen' className='hidden dark:block' />
         </Link>
 
         <div className='min-w-0 flex-1'>

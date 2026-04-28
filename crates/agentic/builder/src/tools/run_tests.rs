@@ -11,7 +11,7 @@ use super::utils::safe_path;
 pub fn run_tests_def() -> ToolDef {
     ToolDef {
         name: "run_tests",
-        description: "Run one or more Oxy test files (.test.yml) using the eval pipeline and return a summary of results (pass rate, errors). Provide a specific test file path to run a single suite, or omit to discover and run all test files in the project. Use this after proposing a test file to verify it works, or when the user asks to run tests.",
+        description: "Run one or more Oxygen test files (.test.yml) using the eval pipeline and return a summary of results (pass rate, errors). Provide a specific test file path to run a single suite, or omit to discover and run all test files in the project. Use this after proposing a test file to verify it works, or when the user asks to run tests.",
         parameters: json!({
             "type": "object",
             "properties": {

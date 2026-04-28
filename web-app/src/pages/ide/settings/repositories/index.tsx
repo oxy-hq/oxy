@@ -308,9 +308,9 @@ export default function RepositoriesPage() {
       <div className='customScrollbar min-h-0 flex-1 overflow-auto p-6'>
         <div className='mb-4'>
           <p className='text-muted-foreground text-sm'>
-            Link external repositories to surface their files alongside your Oxy project in the IDE.
-            Suitable for dbt projects, LookML repos, SQL model libraries, or any other data modeling
-            repo.
+            Link external repositories to surface their files alongside your Oxygen project in the
+            IDE. Suitable for dbt projects, LookML repos, SQL model libraries, or any other data
+            modeling repo.
           </p>
         </div>
 

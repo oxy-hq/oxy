@@ -90,7 +90,7 @@ async fn load_agent_config(
 /// Falls back to a default description if none is provided.
 fn extract_description(agent_config: &AgentConfig) -> String {
     if agent_config.description.is_empty() {
-        "An Oxy agent".to_string()
+        "An Oxygen agent".to_string()
     } else {
         agent_config.description.clone()
     }

@@ -618,7 +618,7 @@ pub async fn push_changes(
     let worktree = wm.config_manager.workspace_path();
     let commit_message = request
         .commit_message
-        .unwrap_or_else(|| "Auto-commit: Oxy changes".to_string());
+        .unwrap_or_else(|| "Auto-commit: Oxygen changes".to_string());
 
     match git_push(worktree, &commit_message, &ws).await {
         Ok(message) => Ok(ResponseJson(ProjectResponse {

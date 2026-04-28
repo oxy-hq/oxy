@@ -131,7 +131,7 @@ export default function WorkspacePreparing({
           <FileWarning className='size-6 text-warning' />
         </div>
         <div className='flex flex-col gap-1'>
-          <h3 className='font-semibold text-base'>Repository cloned, but not an Oxy project</h3>
+          <h3 className='font-semibold text-base'>Repository cloned, but not an Oxygen project</h3>
           <p className='max-w-sm text-muted-foreground text-sm'>
             No <code className='rounded bg-muted px-1 py-0.5 text-xs'>config.yml</code> was found at
             the workspace root. Open the IDE to add one.

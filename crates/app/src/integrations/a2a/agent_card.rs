@@ -139,7 +139,7 @@ impl AgentCardService {
         let mut card = AgentCard::new(
             agent_name,
             if agent_config.description.is_empty() {
-                format!("Oxy agent: {}", agent_name)
+                format!("Oxygen agent: {}", agent_name)
             } else {
                 agent_config.description.clone()
             },

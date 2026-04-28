@@ -32,7 +32,7 @@ const AgentMessage = ({ message, showAvatar, prompt, onArtifactClick }: AgentMes
         <div className='mt-2 flex items-start gap-2' data-testid='agent-loading-state'>
           <img
             className='h-8 w-8'
-            src={theme === "dark" ? "/oxy-loading-dark.gif" : "/oxy-loading.gif"}
+            src={theme === "dark" ? "/oxygen-loading-dark.gif" : "/oxygen-loading.gif"}
           />
           <div className='rounded-xl bg-muted px-4 py-2'>
             <p className='text-muted-foreground'>Agent is thinking...</p>
@@ -41,7 +41,7 @@ const AgentMessage = ({ message, showAvatar, prompt, onArtifactClick }: AgentMes
       )}
       {showAnswer && (
         <div className='flex w-full items-start' data-testid='agent-message-container'>
-          {showAvatar && <img className='h-8 w-8 rounded-full' src='/logo.svg' alt='Oxy' />}
+          {showAvatar && <img className='h-8 w-8 rounded-full' src='/logo.svg' alt='Oxygen' />}
           <div className='w-full flex-1'>
             <div
               className='flex w-full flex-col gap-2 overflow-x-auto shadow-sm'

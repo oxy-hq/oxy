@@ -4,7 +4,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/shadcn/
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useAuth } from "@/contexts/AuthContext";
 
-const DEFAULT_MESSAGE = "Auto-commit: Oxy changes";
+const DEFAULT_MESSAGE = "Auto-commit: Oxygen changes";
 
 interface CommitMessagePopoverProps {
   open: boolean;

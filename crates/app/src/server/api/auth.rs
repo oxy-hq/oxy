@@ -1295,10 +1295,10 @@ async fn send_magic_link_email(
 
     let magic_link_url = format!("{base_url}/auth/magic-link/callback?token={token}");
     let message = EmailMessage {
-        subject: "Sign in to Oxy".to_string(),
+        subject: "Sign in to Oxygen".to_string(),
         html_body: build_magic_link_email_html(&magic_link_url, to_email)?,
         text_body: format!(
-            "Your sign-in link for Oxy\n\nClick the link below to sign in. For security, this link expires in 15 minutes and can only be used once.\n\n{magic_link_url}\n\nThis link was requested for {to_email}. If you didn't request this, you can safely ignore this email — your account remains secure."
+            "Your sign-in link for Oxygen\n\nClick the link below to sign in. For security, this link expires in 15 minutes and can only be used once.\n\n{magic_link_url}\n\nThis link was requested for {to_email}. If you didn't request this, you can safely ignore this email — your account remains secure."
         ),
     };
 

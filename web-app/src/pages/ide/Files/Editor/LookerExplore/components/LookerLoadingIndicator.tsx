@@ -5,8 +5,8 @@ const OxyIcon = () => {
   return (
     <div className='flex h-9 w-9 items-center justify-center rounded-lg border bg-background p-1.5 shadow-sm'>
       <img
-        src={theme === "dark" ? "/oxy-dark.svg" : "/oxy-light.svg"}
-        alt='Oxy'
+        src={theme === "dark" ? "/oxygen-dark.svg" : "/oxygen-light.svg"}
+        alt='Oxygen'
         className='h-full w-full'
       />
     </div>

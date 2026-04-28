@@ -5,7 +5,7 @@ const STATUS_LABEL: Record<WorkspaceStatus, string> = {
   ready: "Ready",
   cloning: "Cloning…",
   failed: "Setup failed",
-  not_oxy_project: "Not an Oxy project"
+  not_oxy_project: "Not an Oxygen project"
 };
 
 const STATUS_CLASS: Record<WorkspaceStatus, string> = {

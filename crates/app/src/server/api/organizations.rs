@@ -1281,9 +1281,9 @@ async fn send_invitation_email(
     };
 
     let invite_url = format!("{base_url}/invite/{token}");
-    let subject = format!("You've been invited to {org_name} on Oxy");
+    let subject = format!("You've been invited to {org_name} on Oxygen");
     let text_body = format!(
-        "{inviter_name} ({inviter_email}) has invited you to join {org_name} on Oxy.\n\nAccept the invitation:\n{invite_url}\n\nThis invitation expires in 7 days. If you weren't expecting this, you can safely ignore this email."
+        "{inviter_name} ({inviter_email}) has invited you to join {org_name} on Oxygen.\n\nAccept the invitation:\n{invite_url}\n\nThis invitation expires in 7 days. If you weren't expecting this, you can safely ignore this email."
     );
     let message = EmailMessage {
         subject,

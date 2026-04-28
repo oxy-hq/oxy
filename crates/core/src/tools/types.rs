@@ -70,7 +70,7 @@ pub struct CreateV0AppParams {
     pub name: Option<String>,
     #[schemars(description = "
 Prompt to create or update the v0 app.
-Include tables when needed by include their file_path values (e.g., 'Use sales table at file_path: tables/0.parquet') so v0 can query them via Oxy SDK.
+Include tables when needed by include their file_path values (e.g., 'Use sales table at file_path: tables/0.parquet') so v0 can query them via Oxygen SDK.
 DO NOT use the csv path directly (e.g., 'Use sales table at /tmp/xyz/sales.csv') as it won't work.")]
     pub prompt: String,
 }

@@ -21,7 +21,7 @@ import { WorkspaceService as ProjectService } from "@/services/api/workspaces";
 import type { FileStatus } from "@/types/file";
 import { MergeConflictEditor } from "./MergeConflictEditor";
 
-const DEFAULT_MESSAGE = "Auto-commit: Oxy changes";
+const DEFAULT_MESSAGE = "Auto-commit: Oxygen changes";
 const MIN_PANEL_WIDTH = 420;
 const SPLIT_VIEW_MIN_WIDTH = 720;
 

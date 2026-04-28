@@ -1,6 +1,6 @@
 import type { FileStatus } from "@/types/file";
 
-const DEFAULT_MESSAGE = "Auto-commit: Oxy changes";
+const DEFAULT_MESSAGE = "Auto-commit: Oxygen changes";
 
 /** Generate a concise commit message from the changed file list. */
 export function generateFromDiff(files: FileStatus[]): string {

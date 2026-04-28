@@ -26,7 +26,7 @@ export function RepoSwitcher({ isReadOnly }: { isReadOnly: boolean }) {
   const selectedRepoData = isPrimary ? undefined : repos.find((r) => r.name === selectedRepo);
   const isCloning = selectedRepoData?.sync_status === "cloning";
   const label = isPrimary ? "Root" : selectedRepo;
-  const oxyLogo = theme === "dark" ? "/oxy-dark.svg" : "/oxy-light.svg";
+  const oxyLogo = theme === "dark" ? "/oxygen-dark.svg" : "/oxygen-light.svg";
 
   const handleRemove = (name: string) => {
     remove.mutate(name, {
@@ -55,7 +55,7 @@ export function RepoSwitcher({ isReadOnly }: { isReadOnly: boolean }) {
             {isCloning ? (
               <Loader2 className='h-3 w-3 shrink-0 animate-spin text-muted-foreground/60' />
             ) : isPrimary ? (
-              <img src={oxyLogo} alt='Oxy' className='h-3 w-3 shrink-0' />
+              <img src={oxyLogo} alt='Oxygen' className='h-3 w-3 shrink-0' />
             ) : (
               <GitFork className='h-3 w-3 shrink-0 text-muted-foreground/60' />
             )}
@@ -71,7 +71,7 @@ export function RepoSwitcher({ isReadOnly }: { isReadOnly: boolean }) {
             onClick={() => setSelectedRepo("primary")}
             className='flex items-center gap-2'
           >
-            <img src={oxyLogo} alt='Oxy' className='h-3.5 w-3.5 shrink-0' />
+            <img src={oxyLogo} alt='Oxygen' className='h-3.5 w-3.5 shrink-0' />
             <span className='flex-1'>Root</span>
             {isPrimary && <Check className='h-3 w-3 text-primary' />}
           </DropdownMenuItem>

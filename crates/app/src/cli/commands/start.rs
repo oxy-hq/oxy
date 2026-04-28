@@ -7,7 +7,10 @@ use oxy_shared::errors::OxyError;
 
 /// Start the database and web server
 pub async fn start_database_and_server(args: StartArgs) -> Result<(), OxyError> {
-    println!("{}", "=== Starting Oxy with Docker PostgreSQL ===\n".text());
+    println!(
+        "{}",
+        "=== Starting Oxygen with Docker PostgreSQL ===\n".text()
+    );
 
     // 1. Check container runtime availability
     println!("{}", "🔍 Checking container runtime availability...".text());
@@ -63,7 +66,7 @@ pub async fn start_database_and_server(args: StartArgs) -> Result<(), OxyError> 
     }
 
     // 6. Start the web server (runs on host, not in Docker)
-    println!("{}", "🚀 Starting Oxy server...".text());
+    println!("{}", "🚀 Starting Oxygen server...".text());
     start_server_and_web_app(args.serve).await?;
 
     // 7. Cleanup on exit (handled by graceful shutdown in serve.rs)

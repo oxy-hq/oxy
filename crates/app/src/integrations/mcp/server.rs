@@ -32,7 +32,7 @@ use super::variables::extract_meta_variables;
 impl ServerHandler for OxyMcpServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
-            instructions: Some("Oxy is the Data Agent Platform that brings intelligence to your structured enterprise data. Answer, build, and automate anything.".into()),
+            instructions: Some("Oxygen is the Data Agent Platform that brings intelligence to your structured enterprise data. Answer, build, and automate anything.".into()),
             capabilities: ServerCapabilities::builder().enable_tools().build(),
             ..Default::default()
         }

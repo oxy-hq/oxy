@@ -145,7 +145,7 @@ pub async fn create_secret(
             StatusCode::UNPROCESSABLE_ENTITY,
             axum::Json(json!({
                 "error": format!(
-                    "'{}' is a reserved environment variable name used by Oxy's infrastructure. \
+                    "'{}' is a reserved environment variable name used by Oxygen's infrastructure. \
                      Choose a different name for your secret.",
                     request.name
                 )

@@ -58,7 +58,7 @@ export function LocalWorkspaceSetupDialog() {
       >
         <DialogHeader>
           <DialogTitle className='font-semibold text-base'>
-            Welcome to Oxy — set up your workspace
+            Welcome to Oxygen — set up your workspace
           </DialogTitle>
         </DialogHeader>
 
@@ -79,7 +79,7 @@ export function LocalWorkspaceSetupDialog() {
               label='01'
               icon={<BookOpen className='h-3.5 w-3.5' />}
               title='Demo workspace'
-              description='Explore Oxy with a sample project including example agents and SQL.'
+              description='Explore Oxygen with a sample project including example agents and SQL.'
               onClick={handleDemo}
             />
             <OptionCard

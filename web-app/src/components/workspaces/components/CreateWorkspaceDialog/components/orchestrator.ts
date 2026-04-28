@@ -697,7 +697,7 @@ export function deriveMessages(state: OnboardingState): OnboardingMessage[] {
     id: "welcome",
     role: "assistant",
     content:
-      "Welcome to Oxy. I'll help you set up your workspace — connect your LLM, link your data warehouse, and build your first semantic layer.\n\nLet's get started.",
+      "Welcome to Oxygen. I'll help you set up your workspace — connect your LLM, link your data warehouse, and build your first semantic layer.\n\nLet's get started.",
     status: currentIdx > 0 ? "complete" : undefined
   });
 
@@ -1442,7 +1442,7 @@ export const MODEL_OPTIONS: Record<LlmProvider, ModelOption[]> = {
     {
       id: "gpt-4.1",
       label: "GPT-4.1",
-      description: "Well-tested with Oxy",
+      description: "Well-tested with Oxygen",
       modelRef: "gpt-4.1",
       vendor: "openai"
     }

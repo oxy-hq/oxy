@@ -29,7 +29,7 @@ export default function OnboardingHeader() {
         </Button>
       ) : (
         <div className='flex items-center gap-2'>
-          <img src={theme === "dark" ? "/oxy-dark.svg" : "/oxy-light.svg"} alt='Oxy' />
+          <img src={theme === "dark" ? "/oxygen-dark.svg" : "/oxygen-light.svg"} alt='Oxygen' />
           <span className='truncate text-sm'>Oxygen</span>
         </div>
       )}

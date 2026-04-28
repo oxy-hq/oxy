@@ -49,7 +49,7 @@ export default function DatabasesPage() {
           ) : (
             <>
               <Trash2 />
-              Reset Oxy State
+              Reset Oxygen State
             </>
           )}
         </Button>

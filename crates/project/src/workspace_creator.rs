@@ -153,7 +153,7 @@ static DEMO_DIST: Dir = include_dir!("$CARGO_MANIFEST_DIR/demo_project");
 
 /// Minimal contents written by `write_minimal_config_yml`. Shared between
 /// the cloud onboarding `setup_new` handler and local-mode setup.
-const MINIMAL_CONFIG_YML: &str = "# Oxy workspace configuration\n# Add your databases and agents here.\n\ndatabases: []\nmodels: []\n";
+const MINIMAL_CONFIG_YML: &str = "# Oxygen workspace configuration\n# Add your databases and agents here.\n\ndatabases: []\nmodels: []\n";
 
 /// Write a minimal `config.yml` into `dir`. Unconditional — callers check
 /// existence if they need skip-if-exists behavior.

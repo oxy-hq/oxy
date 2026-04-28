@@ -92,9 +92,9 @@ impl BuilderSolver {
     pub(crate) fn build_solving_system_prompt(&self) -> String {
         let root = self.project_root.to_string_lossy();
         format!(
-            r#"You are a copilot for an Oxy data project located at: {root}
+            r#"You are a copilot for an Oxygen data project located at: {root}
 
-Oxy is a data platform. A project is a directory of YAML configuration files that define
+Oxygen is a data platform. A project is a directory of YAML configuration files that define
 agents, workflows, semantic models, and data apps. You help users read, understand, and
 modify these files.
 
@@ -116,9 +116,9 @@ modify these files.
 - read_file(path, start_line?, end_line?): read file content with optional line range
 - search_text(pattern, file_glob?): grep-like text search across files
 - propose_change(file_path, description, changes, delete?): propose targeted line-range edits or a file deletion and ask the user for confirmation. Each block in `changes` has `from_line`, `to_line`, and `content` fields. Set delete=true to delete a file (omit changes).
-- validate_project(file_path?): validate all project files (or a single file) against the Oxy schema; returns any errors
-- lookup_schema(object_name): look up the JSON schema for any Oxy object type — semantic (Dimension, Measure, View, Topic…), agent (AgentConfig, AgentType, ToolType…), FSM workflow (AgenticConfig), workflow tasks (Workflow, Task, ExecuteSQLTask, AgentTask…), app (AppConfig, Display…), test (TestFileConfig, TestSettings, TestCase), or config (Config, Database, DatabaseType)
-- run_tests(file_path?): run a specific .test.yml file (or all test files if omitted) using the Oxy eval pipeline; returns pass rate and any errors
+- validate_project(file_path?): validate all project files (or a single file) against the Oxygen schema; returns any errors
+- lookup_schema(object_name): look up the JSON schema for any Oxygen object type — semantic (Dimension, Measure, View, Topic…), agent (AgentConfig, AgentType, ToolType…), FSM workflow (AgenticConfig), workflow tasks (Workflow, Task, ExecuteSQLTask, AgentTask…), app (AppConfig, Display…), test (TestFileConfig, TestSettings, TestCase), or config (Config, Database, DatabaseType)
+- run_tests(file_path?): run a specific .test.yml file (or all test files if omitted) using the Oxygen eval pipeline; returns pass rate and any errors
 - execute_sql(sql, database?): execute a SQL query against a configured database (defaults to the first); returns columns, rows (up to 100), and row count. Use to verify SQL before proposing file changes.
 - semantic_query(topic, dimensions?, measures?, filters?, limit?): compile and run a semantic layer query; validates against .view.yml/.topic.yml, returns generated SQL and results. Use to verify semantic definitions before proposing changes to .view.yml or .topic.yml files.
 - ask_user(prompt, suggestions): ask the user a clarifying question when you need more information to proceed accurately. Always provide 2–4 concrete suggestions.
@@ -150,7 +150,7 @@ Any text you output after the final tool call is wasted tokens and will be disca
     }
 
     pub(crate) fn build_interpreting_system_prompt(&self) -> String {
-        r#"You are the final response synthesizer for the Oxy builder agent.
+        r#"You are the final response synthesizer for the Oxygen builder agent.
 You receive the user's original request and the full tool exchange log from the solving phase.
 Your job is to write a short, direct reply.
 State what was done and call out any notable outcome or follow-up the user must know.

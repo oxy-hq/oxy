@@ -245,8 +245,8 @@ pub struct SlackSettings {
     #[garde(skip)]
     pub default_agent: String,
 
-    /// Base URL for the Oxy web app (for deep links back to app in Slack messages)
-    /// If not specified, "View in Oxy" links will not be included in responses
+    /// Base URL for the Oxygen web app (for deep links back to app in Slack messages)
+    /// If not specified, "View in Oxygen" links will not be included in responses
     #[serde(default)]
     #[garde(skip)]
     pub oxy_app_url: Option<String>,
@@ -3727,7 +3727,7 @@ fn default_create_v0_app_tool_system_instruction() -> String {
 }
 
 fn default_create_v0_app_tool_description() -> String {
-    "Use this when user wants to build interactive UIs, dashboards, or data visualizations. The app will be deployed and can query Oxy tables via SDK. Make sure to persist the execute sql in order to use it with Oxy SDK.".to_string()
+    "Use this when user wants to build interactive UIs, dashboards, or data visualizations. The app will be deployed and can query Oxygen tables via SDK. Make sure to persist the execute sql in order to use it with Oxygen SDK.".to_string()
 }
 
 fn default_github_repo() -> Option<String> {

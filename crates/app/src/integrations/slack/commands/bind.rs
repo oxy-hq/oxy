@@ -73,7 +73,7 @@ pub async fn handle_bind_command(
     Ok(format!(
         "✅ This channel is now bound to agent `{}`.\n\n\
         This overrides the default agent configuration.\n\
-        Mention @Oxy to interact with this agent.",
+        Mention @Oxygen to interact with this agent.",
         agent_id
     ))
 }

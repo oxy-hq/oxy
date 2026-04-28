@@ -1009,7 +1009,7 @@ function BlankOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHandl
       {/* Header */}
       <div className='flex items-center gap-2 border-border border-b px-4 py-2'>
         <div className='h-2 w-2 rounded-full bg-primary' />
-        <span className='font-medium text-sm'>Oxy Setup</span>
+        <span className='font-medium text-sm'>Oxygen Setup</span>
         <span className='flex-1 text-muted-foreground text-xs'>Setting up your workspace</span>
         {previousStep && (
           <button
@@ -1201,7 +1201,7 @@ function GithubOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHand
     <div className='flex h-full flex-col'>
       <div className='flex items-center gap-2 border-border border-b px-4 py-2'>
         <div className='h-2 w-2 rounded-full bg-primary' />
-        <span className='font-medium text-sm'>Oxy Setup</span>
+        <span className='font-medium text-sm'>Oxygen Setup</span>
         <span className='flex-1 text-muted-foreground text-xs'>Connecting your repository</span>
         {step !== "github_loading" && step !== "complete" && (
           <button

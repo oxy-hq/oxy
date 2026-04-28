@@ -5,7 +5,7 @@ use std::process::Command;
 
 /// Display status of Oxy services and Docker containers
 pub async fn show_status() -> Result<(), OxyError> {
-    println!("{}", "=== Oxy Service Status ===\n".text());
+    println!("{}", "=== Oxygen Service Status ===\n".text());
 
     // 1. Check Docker daemon status
     print_docker_daemon_status();
@@ -42,7 +42,7 @@ fn print_docker_daemon_status() {
             println!("  Status: {}", "Not Running".error());
             println!(
                 "  {}",
-                "→ Start Docker to use Oxy with local PostgreSQL".tertiary()
+                "→ Start Docker to use Oxygen with local PostgreSQL".tertiary()
             );
         }
         Err(_) => {

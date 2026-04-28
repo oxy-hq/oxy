@@ -210,8 +210,8 @@ export const GitHubOnboardingStep = ({ onBack, onDone, projectName }: Props) => 
             />
           </div>
           <p className='text-muted-foreground text-xs'>
-            Leave blank to use the repository root. For monorepos, enter the path to the Oxy project
-            folder.
+            Leave blank to use the repository root. For monorepos, enter the path to the Oxygen
+            project folder.
           </p>
         </div>
       )}
