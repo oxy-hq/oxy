@@ -2,11 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.42] - 2026-04-28
+
+### 🐛 Bug Fixes
+
+- Azure openai not working with new agentic workflow (#2189)
+
 ## [0.5.41] - 2026-04-27
 
 ### 🐛 Bug Fixes
 
 - Replace arduino/setup-protoc with apt for Protoc installation to avoid GitHub rate limits
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.41 (#2187)
 
 ## [0.5.40] - 2026-04-27
 
