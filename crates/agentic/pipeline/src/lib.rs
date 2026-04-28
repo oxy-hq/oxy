@@ -586,7 +586,10 @@ impl PipelineBuilder {
         // created the run via insert_run_with_parent.
         let source_type = "builder";
         if !skip_db_insert {
-            let metadata = serde_json::json!({ "agent_id": "__builder__" });
+            let metadata = serde_json::json!({
+                "agent_id": "__builder__",
+                "model": model,
+            });
             agentic_runtime::crud::insert_run(
                 db,
                 run_id,
@@ -656,18 +659,27 @@ impl PipelineBuilder {
 
 /// Resolve the builder domain's LLM client via the platform port.
 ///
-/// Preserves the legacy fallback: if no model config matches, default to
-/// `claude-sonnet-4-6` with the key read from `ANTHROPIC_API_KEY`.
+/// Tries the explicit model ref first, then the project's configured default.
+/// Never falls back to a hardcoded provider.
 async fn build_builder_llm_client(ctx: &dyn ProjectContext, model: Option<String>) -> LlmClient {
-    let model_name = model.unwrap_or_else(|| "claude-sonnet-4-6".to_string());
-    if let Some(info) = ctx.resolve_model(Some(&model_name), false).await {
+    // Try explicit model ref, then project default.
+    let info = if let Some(ref name) = model {
+        match ctx.resolve_model(Some(name), false).await {
+            Some(info) => Some(info),
+            None => ctx.resolve_model(None, false).await,
+        }
+    } else {
+        ctx.resolve_model(None, false).await
+    };
+    if let Some(info) = info {
         return platform::build_llm_client(&info);
     }
-    let api_key = ctx
-        .resolve_secret("ANTHROPIC_API_KEY")
-        .await
-        .unwrap_or_default();
-    LlmClient::with_model(api_key, model_name)
+    tracing::warn!(
+        model = ?model,
+        "builder: no LLM model resolved from project config; LLM calls will fail"
+    );
+    // Return a placeholder — the LLM call will fail with a clear error.
+    LlmClient::with_model("", model.unwrap_or_default())
 }
 
 // ── StartedPipeline (type-erased) ───────────────────────────────────────────

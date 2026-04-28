@@ -226,6 +226,12 @@ pub struct ResolvedModelInfo {
     /// Used to decide vendor precedence: when a ref is set the ref's vendor
     /// is preferred even if `llm.model` is also explicitly overridden.
     pub is_explicit_ref: bool,
+    /// Azure deployment ID (e.g. `"my-gpt4o-deployment"`). Present only for
+    /// Azure OpenAI models configured with `azure_deployment_id` in config.yml.
+    pub azure_deployment_id: Option<String>,
+    /// Azure API version (e.g. `"2025-03-01-preview"`). Present only for
+    /// Azure OpenAI models configured with `azure_api_version` in config.yml.
+    pub azure_api_version: Option<String>,
 }
 
 // ── BuildContext ──────────────────────────────────────────────────────────────
@@ -286,12 +292,40 @@ fn build_engine(cfg: &SemanticEngineConfig) -> Result<Box<dyn SemanticEngine>, C
 ///
 /// Extracted so it can be called both for the global client and for per-state
 /// model overrides (which inherit vendor, key, and base_url).
+///
+/// When `azure_deployment_id` and `azure_api_version` are both `Some`, the
+/// model is Azure OpenAI: `OpenAiCompatProvider` is used with the full Azure
+/// Chat Completions URL regardless of `vendor`.
 fn build_llm_client(
     vendor: &LlmVendor,
     api_key: &str,
     model: &str,
     base_url: Option<&str>,
+    azure_deployment_id: Option<&str>,
+    azure_api_version: Option<&str>,
 ) -> LlmClient {
+    if let (Some(deployment_id), Some(api_version), Some(base)) =
+        (azure_deployment_id, azure_api_version, base_url)
+    {
+        return LlmClient::with_provider(OpenAiCompatProvider::for_azure(
+            api_key,
+            model,
+            base,
+            deployment_id,
+            api_version,
+        ));
+    }
+    if azure_deployment_id.is_some() && azure_api_version.is_some() && base_url.is_none() {
+        tracing::warn!(
+            "Azure config has deployment_id and api_version set but no base_url; \
+             falling back to standard OpenAI."
+        );
+    } else if azure_deployment_id.is_some() != azure_api_version.is_some() {
+        tracing::warn!(
+            "Azure config is incomplete: both azure_deployment_id and azure_api_version must \
+             be set together. Falling back to standard OpenAI."
+        );
+    }
     match vendor {
         LlmVendor::Anthropic => LlmClient::with_model(api_key, model),
         LlmVendor::OpenAi => {
@@ -489,10 +523,21 @@ impl AgentConfig {
             .as_deref()
             .or(pmi.as_ref().and_then(|m| m.base_url.as_deref()));
 
-        let client = build_llm_client(effective_vendor, &api_key, &model, effective_base_url);
+        // Azure fields from the project model config (not overridable per-state).
+        let azure_deployment_id = pmi.as_ref().and_then(|m| m.azure_deployment_id.as_deref());
+        let azure_api_version = pmi.as_ref().and_then(|m| m.azure_api_version.as_deref());
+
+        let client = build_llm_client(
+            effective_vendor,
+            &api_key,
+            &model,
+            effective_base_url,
+            azure_deployment_id,
+            azure_api_version,
+        );
 
         // Build per-state clients for states that declare a `model:` override.
-        // Inherits vendor / api_key / base_url from the global config.
+        // Inherits vendor / api_key / base_url / azure config from the global config.
         let state_clients: std::collections::HashMap<String, LlmClient> = self
             .states
             .iter()
@@ -503,6 +548,8 @@ impl AgentConfig {
                         &api_key,
                         state_model,
                         effective_base_url,
+                        azure_deployment_id,
+                        azure_api_version,
                     );
                     (state_name.clone(), c)
                 })
@@ -559,6 +606,8 @@ impl AgentConfig {
                 &api_key,
                 override_model,
                 effective_base_url,
+                azure_deployment_id,
+                azure_api_version,
             );
             solver = solver.with_client_override(override_client);
         }

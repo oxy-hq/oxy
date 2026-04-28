@@ -605,22 +605,39 @@ async fn resolve_model_impl(
             let model_name = model.model_name().to_string();
             let key_var = model.key_var().map(|s| s.to_string());
 
-            let (vendor, base_url, extra_api_key) = match model {
-                Model::Anthropic { config: m } => (LlmVendor::Anthropic, m.api_url.clone(), None),
-                Model::OpenAI { config: m } => (LlmVendor::OpenAi, m.api_url.clone(), None),
-                Model::Ollama { config: m } => (
-                    LlmVendor::OpenAiCompat,
-                    Some(m.api_url.clone()),
-                    Some(m.api_key.clone()),
-                ),
-                Model::Google { .. } => {
-                    tracing::warn!(
-                        model = name,
-                        "Google/Gemini models are not yet supported in analytics agents"
-                    );
-                    return None;
-                }
-            };
+            let (vendor, base_url, extra_api_key, azure_deployment_id, azure_api_version) =
+                match model {
+                    Model::Anthropic { config: m } => {
+                        (LlmVendor::Anthropic, m.api_url.clone(), None, None, None)
+                    }
+                    Model::OpenAI { config: m } => {
+                        let (dep_id, api_ver) = m
+                            .azure
+                            .as_ref()
+                            .map(|a| {
+                                (
+                                    Some(a.azure_deployment_id.clone()),
+                                    Some(a.azure_api_version.clone()),
+                                )
+                            })
+                            .unwrap_or((None, None));
+                        (LlmVendor::OpenAi, m.api_url.clone(), None, dep_id, api_ver)
+                    }
+                    Model::Ollama { config: m } => (
+                        LlmVendor::OpenAiCompat,
+                        Some(m.api_url.clone()),
+                        Some(m.api_key.clone()),
+                        None,
+                        None,
+                    ),
+                    Model::Google { .. } => {
+                        tracing::warn!(
+                            model = name,
+                            "Google/Gemini models are not yet supported in analytics agents"
+                        );
+                        return None;
+                    }
+                };
 
             // Resolve api_key via secrets_manager first, env fallback. Ollama
             // carries its key inline via the config — honor that.
@@ -644,6 +661,8 @@ async fn resolve_model_impl(
                 api_key,
                 base_url,
                 is_explicit_ref,
+                azure_deployment_id,
+                azure_api_version,
             })
         }
         Err(e) => {

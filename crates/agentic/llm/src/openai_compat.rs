@@ -155,7 +155,7 @@ fn inject_cot(system: &str) -> String {
 // ── OpenAiCompatProvider ──────────────────────────────────────────────────────
 
 /// OpenAI Chat Completions API provider for OpenAI-compatible backends
-/// (Ollama, vLLM, LM Studio, etc.).
+/// (Ollama, vLLM, LM Studio, Azure OpenAI, etc.).
 ///
 /// Uses the `/v1/chat/completions` endpoint which is the de-facto standard for
 /// locally-hosted LLMs.  Supports:
@@ -170,9 +170,8 @@ fn inject_cot(system: &str) -> String {
 pub struct OpenAiCompatProvider {
     api_key: String,
     model: String,
-    /// Base URL of the Chat Completions endpoint, e.g.
-    /// `http://localhost:11434/v1` (Ollama) or `http://host:8000/v1` (vLLM).
-    base_url: String,
+    /// Full Chat Completions URL used for every request.
+    completions_url: String,
     client: reqwest::Client,
 }
 
@@ -188,20 +187,58 @@ impl OpenAiCompatProvider {
         base_url: impl Into<String>,
     ) -> Self {
         let mut base = base_url.into();
-        // Normalise: strip trailing slash.
         while base.ends_with('/') {
             base.pop();
         }
         Self {
             api_key: api_key.into(),
             model: model.into(),
-            base_url: base,
+            completions_url: format!("{base}/chat/completions"),
             client: reqwest::Client::new(),
         }
     }
 
-    fn completions_url(&self) -> String {
-        format!("{}/chat/completions", self.base_url)
+    /// Create a provider with an explicit full completions URL.
+    ///
+    /// Use this when the target endpoint cannot be expressed as `{base}/chat/completions`,
+    /// for example Azure OpenAI which requires a deployment path and `api-version` query
+    /// parameter: `https://{resource}.openai.azure.com/openai/deployments/{deployment}/chat/completions?api-version={ver}`.
+    pub fn with_completions_url(
+        api_key: impl Into<String>,
+        model: impl Into<String>,
+        completions_url: impl Into<String>,
+    ) -> Self {
+        Self {
+            api_key: api_key.into(),
+            model: model.into(),
+            completions_url: completions_url.into(),
+            client: reqwest::Client::new(),
+        }
+    }
+
+    /// Create a provider targeting an Azure OpenAI deployment.
+    ///
+    /// Constructs the full Chat Completions URL from the resource endpoint,
+    /// deployment name, and API version.  Trailing slashes on `base_url` are
+    /// normalised automatically.
+    pub fn for_azure(
+        api_key: impl Into<String>,
+        model: impl Into<String>,
+        base_url: impl Into<String>,
+        deployment_id: impl AsRef<str>,
+        api_version: impl AsRef<str>,
+    ) -> Self {
+        let mut base = base_url.into();
+        while base.ends_with('/') {
+            base.pop();
+        }
+        let url = format!(
+            "{}/openai/deployments/{}/chat/completions?api-version={}",
+            base,
+            deployment_id.as_ref(),
+            api_version.as_ref()
+        );
+        Self::with_completions_url(api_key, model, url)
     }
 }
 
@@ -301,10 +338,10 @@ impl LlmProvider for OpenAiCompatProvider {
             }
         }
 
-        let url = self.completions_url();
+        let url = &self.completions_url;
         let mut req = self
             .client
-            .post(&url)
+            .post(url.as_str())
             .header("content-type", "application/json");
 
         if !self.api_key.is_empty() {
@@ -546,5 +583,49 @@ impl LlmProvider for OpenAiCompatProvider {
 
     fn model_name(&self) -> &str {
         &self.model
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn for_azure_builds_correct_url() {
+        let p = OpenAiCompatProvider::for_azure(
+            "key",
+            "gpt-4",
+            "https://myresource.openai.azure.com",
+            "my-deployment",
+            "2024-05-01-preview",
+        );
+        assert_eq!(
+            p.completions_url,
+            "https://myresource.openai.azure.com/openai/deployments/my-deployment/chat/completions?api-version=2024-05-01-preview"
+        );
+    }
+
+    #[test]
+    fn for_azure_strips_trailing_slashes() {
+        let p = OpenAiCompatProvider::for_azure(
+            "key",
+            "gpt-4",
+            "https://myresource.openai.azure.com///",
+            "dep",
+            "2024-02-01",
+        );
+        assert_eq!(
+            p.completions_url,
+            "https://myresource.openai.azure.com/openai/deployments/dep/chat/completions?api-version=2024-02-01"
+        );
+    }
+
+    #[test]
+    fn new_strips_trailing_slashes() {
+        let p = OpenAiCompatProvider::new("key", "model", "http://localhost:11434/v1//");
+        assert_eq!(
+            p.completions_url,
+            "http://localhost:11434/v1/chat/completions"
+        );
     }
 }

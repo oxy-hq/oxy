@@ -42,7 +42,10 @@ impl ProviderKind {
 /// doesn't falsely blame the network for a known feature gap; callers can
 /// match on it to skip validation gracefully (e.g. the GitHub onboarding
 /// flow saves vendors it can't probe without verification).
-pub async fn validate_provider_key(provider: &str, api_key: &str) -> Result<(), KeyValidationError> {
+pub async fn validate_provider_key(
+    provider: &str,
+    api_key: &str,
+) -> Result<(), KeyValidationError> {
     match ProviderKind::from_str_ci(provider) {
         Some(ProviderKind::Anthropic) => oxy_anthropic::validate_api_key(api_key).await,
         Some(ProviderKind::OpenAI) => oxy_openai::validate_api_key(api_key).await,
@@ -56,9 +59,18 @@ mod tests {
 
     #[test]
     fn provider_kind_parses_known_names_case_insensitively() {
-        assert_eq!(ProviderKind::from_str_ci("anthropic"), Some(ProviderKind::Anthropic));
-        assert_eq!(ProviderKind::from_str_ci("Anthropic"), Some(ProviderKind::Anthropic));
-        assert_eq!(ProviderKind::from_str_ci("  OPENAI  "), Some(ProviderKind::OpenAI));
+        assert_eq!(
+            ProviderKind::from_str_ci("anthropic"),
+            Some(ProviderKind::Anthropic)
+        );
+        assert_eq!(
+            ProviderKind::from_str_ci("Anthropic"),
+            Some(ProviderKind::Anthropic)
+        );
+        assert_eq!(
+            ProviderKind::from_str_ci("  OPENAI  "),
+            Some(ProviderKind::OpenAI)
+        );
     }
 
     #[test]
@@ -70,7 +82,9 @@ mod tests {
     #[tokio::test]
     async fn validate_provider_key_marks_unknown_provider_unsupported() {
         use oxy_shared::KeyValidationErrorKind;
-        let err = validate_provider_key("gemini", "irrelevant").await.unwrap_err();
+        let err = validate_provider_key("gemini", "irrelevant")
+            .await
+            .unwrap_err();
         assert_eq!(err.kind, KeyValidationErrorKind::Unsupported);
         // The user message must not blame reachability — Gemini works fine,
         // we just don't have a probe for it yet.

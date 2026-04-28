@@ -116,8 +116,39 @@ pub async fn resolve_connectors(
 }
 
 /// Build an [`LlmClient`] from a [`ResolvedModelInfo`], dispatching on vendor.
+///
+/// Azure OpenAI models are detected via `azure_deployment_id` / `azure_api_version`
+/// and routed to [`OpenAiCompatProvider`] (Chat Completions) with the correct
+/// deployment URL, bypassing the Responses API used by [`OpenAiProvider`].
 pub fn build_llm_client(info: &ResolvedModelInfo) -> LlmClient {
     let api_key = info.api_key.as_deref().unwrap_or("");
+    if let (Some(deployment_id), Some(api_version), Some(base_url)) = (
+        info.azure_deployment_id.as_deref(),
+        info.azure_api_version.as_deref(),
+        info.base_url.as_deref(),
+    ) {
+        return LlmClient::with_provider(OpenAiCompatProvider::for_azure(
+            api_key,
+            &info.model,
+            base_url,
+            deployment_id,
+            api_version,
+        ));
+    }
+    if info.azure_deployment_id.is_some()
+        && info.azure_api_version.is_some()
+        && info.base_url.is_none()
+    {
+        tracing::warn!(
+            "Azure config has deployment_id and api_version set but no base_url; \
+             falling back to standard OpenAI."
+        );
+    } else if info.azure_deployment_id.is_some() != info.azure_api_version.is_some() {
+        tracing::warn!(
+            "Azure config is incomplete: both azure_deployment_id and azure_api_version must \
+             be set together. Falling back to standard OpenAI."
+        );
+    }
     match &info.vendor {
         LlmVendor::Anthropic => LlmClient::with_model(api_key, &info.model),
         LlmVendor::OpenAi => {

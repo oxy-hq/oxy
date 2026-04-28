@@ -101,8 +101,7 @@ async fn unique_display_name(
         .chain((2u32..=99).map(|i| format!("{base} {i}")))
         .collect();
 
-    let mut query =
-        Workspaces::find().filter(workspaces::Column::Name.is_in(candidates.clone()));
+    let mut query = Workspaces::find().filter(workspaces::Column::Name.is_in(candidates.clone()));
     query = match org_id {
         Some(id) => query.filter(workspaces::Column::OrgId.eq(id)),
         None => query.filter(workspaces::Column::OrgId.is_null()),
@@ -178,8 +177,7 @@ async fn register_project(
     // Reject duplicate names within the same org — each workspace must have a
     // unique display name relative to the org that owns it. Names in other orgs
     // don't conflict (each org has its own namespace).
-    let mut name_query =
-        Workspaces::find().filter(workspaces::Column::Name.eq(name));
+    let mut name_query = Workspaces::find().filter(workspaces::Column::Name.eq(name));
     name_query = match org_id {
         Some(id) => name_query.filter(workspaces::Column::OrgId.eq(id)),
         None => name_query.filter(workspaces::Column::OrgId.is_null()),
@@ -1578,5 +1576,4 @@ mod tests {
         assert!(!has_supported_extension("foo.json"));
         assert!(!has_supported_extension("notes.md"));
     }
-
 }
