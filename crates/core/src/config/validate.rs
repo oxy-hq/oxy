@@ -330,7 +330,6 @@ mod tests {
                 a2a: None,
                 protected_branches: None,
                 base_branch: None,
-                storage: None,
             },
             metadata: None,
         }

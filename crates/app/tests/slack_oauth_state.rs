@@ -12,7 +12,7 @@ use oxy::database::client::establish_connection;
 use oxy_app::integrations::slack::oauth::state::{
     CreateInstallState, CreateUserLinkState, OauthStateService, StateKind,
 };
-use sea_orm::{ActiveModelTrait, ActiveValue, EntityTrait};
+use sea_orm::{ActiveModelTrait, ActiveValue};
 use uuid::Uuid;
 
 fn db_unavailable() -> bool {

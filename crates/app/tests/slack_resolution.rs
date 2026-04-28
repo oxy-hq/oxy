@@ -12,7 +12,7 @@ use entity::{
 };
 use oxy::database::client::establish_connection;
 use oxy_app::integrations::slack::resolution::workspace_agent::Resolution;
-use sea_orm::{ActiveModelTrait, ActiveValue, EntityTrait};
+use sea_orm::{ActiveModelTrait, ActiveValue};
 use uuid::Uuid;
 
 fn db_unavailable() -> bool {
