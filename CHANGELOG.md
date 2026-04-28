@@ -2,12 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.44] - 2026-04-28
+
+### ⚙️ Miscellaneous Tasks
+
+- Rebrand "Oxy" to "Oxygen" across codebase (#2194)
+
 ## [0.5.43] - 2026-04-28
 
 ### 🐛 Bug Fixes
 
 - Issues with org switching / onboarding state leakage (#2188)
 - Scope secret update/delete to project_id (#2192)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.43 (#2193)
 
 ## [0.5.42] - 2026-04-28
 
