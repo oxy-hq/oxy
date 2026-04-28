@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useMemo, useReducer } from "react";
+import {
+  LEGACY_GLOBAL_KEY,
+  type PersistableState,
+  storageKey,
+  VALID_STEPS
+} from "@/libs/utils/onboardingStorage";
 import type {
   BuildPhase,
   ConnectionStatus,
   GithubSetup,
   LlmProvider,
   OnboardingMessage,
-  OnboardingMode,
   OnboardingRailState,
   OnboardingState,
   OnboardingStep,
@@ -1554,12 +1559,8 @@ function getWarehouseFields(type: WarehouseType) {
 
 // ── Hook ────────────────────────────────────────────────────────────────────
 
-const STORAGE_KEY = "oxy_onboarding_state";
-
-/** Fields safe to persist in localStorage (no credentials) */
-type PersistableState = Omit<OnboardingState, "llmApiKey" | "warehouseCredentials">;
-
 function saveState(state: OnboardingState) {
+  if (!state.workspaceId) return;
   try {
     const { llmApiKey: _, warehouseCredentials: __, ...safe } = state;
     // Persist only the schema skeleton — drop per-schema tables and transient
@@ -1575,51 +1576,34 @@ function saveState(state: OnboardingState) {
         loaded: false
       }))
     };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(persistable));
+    localStorage.setItem(storageKey(state.workspaceId), JSON.stringify(persistable));
   } catch {
     // localStorage may be unavailable
   }
 }
 
-const VALID_STEPS: ReadonlySet<OnboardingStep> = new Set<OnboardingStep>([
-  "welcome",
-  "llm_provider",
-  "llm_model",
-  "llm_key",
-  "warehouse_type",
-  "warehouse_credentials",
-  "connection_test",
-  "schema_discovery",
-  "table_selection",
-  "building",
-  "github_loading",
-  "github_llm_keys",
-  "github_warehouse_creds",
-  "github_connection_test",
-  "complete"
-]);
-
-function loadState(): OnboardingState {
+function loadState(workspaceId: string): OnboardingState {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return initialState;
+    localStorage.removeItem(LEGACY_GLOBAL_KEY);
+  } catch {
+    // ignore
+  }
+  if (!workspaceId) return initialState;
+  const fresh: OnboardingState = { ...initialState, workspaceId };
+  try {
+    const raw = localStorage.getItem(storageKey(workspaceId));
+    if (!raw) return fresh;
     const parsed = JSON.parse(raw) as PersistableState;
-    // Discard state from older schema versions: if `step` is missing, unknown,
-    // or not a string, start fresh rather than silently producing an invalid
-    // state machine transition.
+    if (parsed?.workspaceId !== workspaceId) return fresh;
     if (typeof parsed?.step !== "string" || !VALID_STEPS.has(parsed.step)) {
-      return initialState;
+      return fresh;
     }
-    // Don't resume into "building" without phaseRunIds — the runs may have been lost
+    // "building" without phaseRunIds means runs were lost — restart from selection
     if (parsed.step === "building" && !parsed.phaseRunIds) {
       return { ...initialState, ...parsed, step: "table_selection" };
     }
-    // A connection-test submission in flight doesn't survive a reload —
-    // there's no in-memory promise to tie the re-hydrated state back to,
-    // so we'd leave the form permanently stuck in "Testing connection…"
-    // with inputs disabled and no way forward. Reset the flag so the user
-    // can retry. `githubWarehouseError` / `llmKeyError` are left alone —
-    // they're just strings the user can read on reload.
+    // In-flight test submissions don't survive a reload — clear them so the
+    // form isn't permanently stuck in a disabled "Testing…" state.
     return {
       ...initialState,
       ...parsed,
@@ -1628,51 +1612,12 @@ function loadState(): OnboardingState {
       llmKeyTesting: false
     };
   } catch {
-    return initialState;
+    return fresh;
   }
 }
 
-/**
- * Replace any persisted onboarding state with a fresh state tagged with the
- * given workspace id. Call this when redirecting a newly-created workspace to
- * `/onboarding` so (a) stale state from a previously-onboarded workspace is
- * wiped, and (b) the home-page guard can detect in-progress onboarding for
- * this specific workspace.
- *
- * Pass `mode` to pick the flow variant. `"new"` (default) runs the full
- * blank-workspace flow. `"github"` runs the cloned-repo flow that only
- * collects secrets declared in `config.yml`.
- */
-export function initOnboardingStateForWorkspace(workspaceId: string, mode: OnboardingMode = "new") {
-  try {
-    // GitHub mode starts on `github_loading` so the page can immediately
-    // fetch the setup manifest without flashing the welcome screen.
-    const step: OnboardingStep = mode === "github" ? "github_loading" : "welcome";
-    const seeded: PersistableState = { ...initialState, workspaceId, mode, step };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded));
-  } catch {
-    // localStorage may be unavailable
-  }
-}
-
-/**
- * Returns true when the persisted onboarding state is tagged for this
- * workspace and the flow hasn't reached "complete" yet.
- */
-export function hasPendingOnboardingForWorkspace(workspaceId: string): boolean {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return false;
-    const parsed = JSON.parse(raw) as PersistableState;
-    if (parsed?.workspaceId !== workspaceId) return false;
-    return typeof parsed.step === "string" && parsed.step !== "complete";
-  } catch {
-    return false;
-  }
-}
-
-export function useOnboardingOrchestrator() {
-  const [state, dispatch] = useReducer(reducer, undefined, loadState);
+export function useOnboardingOrchestrator(workspaceId: string) {
+  const [state, dispatch] = useReducer(reducer, workspaceId, loadState);
 
   // Persist to localStorage on state changes. Debounced because dispatches
   // can burst during lazy table loads / per-schema expansion, and JSON

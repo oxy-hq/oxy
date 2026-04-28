@@ -1,6 +1,7 @@
 import type React from "react";
 import { createContext, useContext } from "react";
 import { redirectToHome } from "@/libs/utils";
+import { clearAllOnboardingState } from "@/libs/utils/onboardingStorage";
 import type { AuthConfigResponse, UserInfo } from "@/types/auth";
 
 interface AuthContextType {
@@ -37,6 +38,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children, authConfig
   const logout = () => {
     localStorage.removeItem("auth_token");
     localStorage.removeItem("user");
+    // Clear any in-flight wizard state so a different user signing in on the
+    // same browser doesn't inherit it (and so the same user can't be re-trapped
+    // in pending onboarding for a workspace they intentionally walked away from).
+    clearAllOnboardingState();
     sessionStorage.clear();
     redirectToHome();
   };

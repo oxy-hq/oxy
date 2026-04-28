@@ -15,8 +15,8 @@ import queryKeys from "@/hooks/api/queryKey";
 import { useAllWorkspaces } from "@/hooks/api/workspaces/useWorkspaces";
 import { cn } from "@/libs/shadcn/utils";
 import { setLastWorkspaceId } from "@/libs/utils/lastWorkspace";
+import { initOnboardingStateForWorkspace } from "@/libs/utils/onboardingStorage";
 import ROUTES from "@/libs/utils/routes";
-import { initOnboardingStateForWorkspace } from "./CreateWorkspaceDialog/components/orchestrator";
 
 const REDIRECT_SECONDS = 5;
 

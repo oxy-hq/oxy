@@ -14,14 +14,17 @@ import useOnboardingReadiness from "@/hooks/api/onboarding/useOnboardingReadines
 import { sseEventToUiBlock, useAnalyticsRun } from "@/hooks/useAnalyticsRun";
 import { useBuilderActivity } from "@/hooks/useBuilderActivity";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import {
+  clearOnboardingStateForWorkspace,
+  getPersistedStepForWorkspace,
+  initOnboardingStateForWorkspace
+} from "@/libs/utils/onboardingStorage";
 import { AnalyticsService, type HumanInputQuestion, type UiBlock } from "@/services/api/analytics";
 import { type OnboardingResetRequest, OnboardingService } from "@/services/api/onboarding";
 import OnboardingRightRail from "./OnboardingRightRail";
 import OnboardingThread from "./OnboardingThread";
 import {
   getPreviousStep,
-  hasPendingOnboardingForWorkspace,
-  initOnboardingStateForWorkspace,
   predictSecondAppTopic,
   useOnboardingOrchestrator,
   wantsSecondApp
@@ -39,13 +42,16 @@ import { useViewRunManager } from "./useViewRunManager";
 
 /** Top-level onboarding dispatcher. Onboarding is one-shot per workspace:
  *  once the workspace can answer questions — LLM key configured, at least
- *  one database, at least one public agent — redirect any visit away. This
- *  mirrors the home page's `setupComplete` signal so both surfaces agree on
- *  what "set up" means. The localStorage check preserves resume-mid-build:
- *  a user who reloaded with the wizard still in flight has a pending entry
- *  tagged for this workspace and stays on the wizard. */
+ *  one database, at least one public agent — redirect any visit away. */
 export default function AgenticSetupPage() {
   const { project } = useCurrentProjectBranch();
+  // Key the inner component by project.id so navigating between workspaces
+  // remounts the orchestrator with the correct workspace's persisted state
+  // — without this, useReducer keeps the previous workspace's state alive.
+  return <AgenticSetupForWorkspace key={project.id} workspaceId={project.id} />;
+}
+
+function AgenticSetupForWorkspace({ workspaceId }: { workspaceId: string }) {
   const {
     data: readiness,
     isPending: readinessPending,
@@ -65,12 +71,20 @@ export default function AgenticSetupPage() {
     refetch: refetchAgents
   } = useAgents();
 
-  const orchestrator = useOnboardingOrchestrator();
+  const orchestrator = useOnboardingOrchestrator(workspaceId);
 
-  const isPendingForThis = hasPendingOnboardingForWorkspace(project.id);
+  const persistedStep = getPersistedStepForWorkspace(workspaceId);
   const publicAgentCount = (agents ?? []).filter((a) => a.public).length;
   const isReady =
     readiness?.has_llm_key === true && (databases?.length ?? 0) > 0 && publicAgentCount > 0;
+  const shouldRedirectAway = isReady && persistedStep !== "building";
+
+  // Side effects belong in useEffect, not in the render body. Strict Mode
+  // would otherwise call this twice per mount; concurrent rendering may
+  // discard the render entirely while still leaving localStorage cleared.
+  useEffect(() => {
+    if (shouldRedirectAway) clearOnboardingStateForWorkspace(workspaceId);
+  }, [shouldRedirectAway, workspaceId]);
 
   if (readinessPending || databasesPending || agentsPending) {
     return (
@@ -109,7 +123,11 @@ export default function AgenticSetupPage() {
     );
   }
 
-  if (isReady && !isPendingForThis) {
+  // If the workspace is already set up, never show the wizard. Only exception
+  // is `step === "building"`: isReady can briefly flip true between agent and
+  // app phases while the user is actively watching the build, and we want to
+  // stay on the wizard until they reach "complete".
+  if (shouldRedirectAway) {
     return <Navigate to='..' replace />;
   }
 

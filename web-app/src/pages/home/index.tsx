@@ -1,14 +1,14 @@
 import { AlertCircle, ArrowRight, Database, GitFork, X } from "lucide-react";
 import { useState } from "react";
-import { Link, Navigate, useLocation } from "react-router-dom";
+import { Link, Navigate, useLocation, useParams } from "react-router-dom";
 import ChatPanel from "@/components/Chat/ChatPanel";
 import PageHeader from "@/components/PageHeader";
 import useSidebar from "@/components/ui/shadcn/sidebar-context";
-import { hasPendingOnboardingForWorkspace } from "@/components/workspaces/components/CreateWorkspaceDialog/components/orchestrator";
 import useAgents from "@/hooks/api/agents/useAgents";
 import useDatabases from "@/hooks/api/databases/useDatabases";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { cn } from "@/libs/shadcn/utils";
+import { hasPendingOnboardingForWorkspace } from "@/libs/utils/onboardingStorage";
 import ROUTES from "@/libs/utils/routes";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 
@@ -98,16 +98,19 @@ const Home = () => {
   const { data: agents = [], isSuccess: agentsLoaded } = useAgents();
   const { data: databases = [], isSuccess: dbLoaded } = useDatabases();
   const location = useLocation();
+  const { wsId: urlWsId } = useParams<{ wsId: string }>();
   const locationState = location.state as {
     prefillQuestion?: string;
     agentPath?: string;
     autoSubmit?: boolean;
   } | null;
 
-  // If onboarding is mid-flight for this workspace, bounce back to /onboarding
-  // instead of rendering the chat. This covers the case where a blank
-  // workspace was created but its agentic setup never reached "complete".
-  if (project?.id && hasPendingOnboardingForWorkspace(project.id)) {
+  // Bounce mid-flight workspace onboarding back to /onboarding. Gated on the
+  // URL wsId matching the loaded project — `useCurrentProjectBranch` reads
+  // from a Zustand store that lags one render behind workspace switches, so
+  // skipping this check would let the previous workspace's pending state
+  // hijack a fresh workspace's home (sends user to a different ws's wizard).
+  if (project?.id && project.id === urlWsId && hasPendingOnboardingForWorkspace(project.id)) {
     return <Navigate to='onboarding' replace />;
   }
 
