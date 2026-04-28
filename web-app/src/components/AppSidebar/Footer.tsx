@@ -1,6 +1,7 @@
 import { Check, HardDrive, LogOut, Plus, Settings, UserPlus } from "lucide-react";
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { toast } from "sonner";
 import OrgSettingsDialog, { type OrgSettingsTab } from "@/components/org/OrgSettingsDialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOrgs } from "@/hooks/api/organizations";
@@ -79,8 +80,23 @@ function CloudFooter() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<OrgSettingsTab>("general");
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const isAdmin = role === "owner" || role === "admin";
+
+  // After a successful Slack install, the backend redirects the browser
+  // to /<orgSlug>?slack_installed=ok. Detect the param, surface a toast,
+  // pop open the settings dialog on the Integration tab, and strip the
+  // param so a refresh doesn't re-fire the toast.
+  useEffect(() => {
+    if (searchParams.get("slack_installed") !== "ok") return;
+    toast.success("Slack connected");
+    setSettingsTab("integration");
+    setSettingsOpen(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete("slack_installed");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const openSettings = (tab: OrgSettingsTab) => {
     setSettingsTab(tab);

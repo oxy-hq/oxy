@@ -1,168 +1,127 @@
-//! Slack request signature verification
+//! Slack request signature verification.
 //!
-//! Implements HMAC-SHA256 verification as per Slack's security requirements:
-//! https://api.slack.com/authentication/verifying-requests-from-slack
+//! Spec: <https://api.slack.com/authentication/verifying-requests-from-slack>
+//! Signature base string is `v0:{timestamp}:{raw_body}`; HMAC-SHA256 keyed on
+//! the per-env signing secret. Timestamps older than 5 minutes are rejected
+//! (replay protection).
 
-use axum::body::Bytes;
-use axum::http::HeaderMap;
-use constant_time_eq::constant_time_eq;
 use hmac::{Hmac, KeyInit, Mac};
-use oxy_shared::errors::OxyError;
 use sha2::Sha256;
-use std::time::{SystemTime, UNIX_EPOCH};
 
-type HmacSha256 = Hmac<Sha256>;
+const MAX_TIMESTAMP_SKEW_SECS: i64 = 60 * 5;
 
-const SLACK_VERSION: &str = "v0";
-const MAX_TIMESTAMP_DIFF_SECONDS: u64 = 60 * 5; // 5 minutes
-
-/// Verify Slack request from HTTP headers and body
-///
-/// Extracts the timestamp and signature from headers and verifies the request.
-/// This is the main entry point for HTTP handlers.
-///
-/// # Arguments
-/// * `signing_secret` - Slack app signing secret
-/// * `headers` - HTTP request headers
-/// * `body` - Raw request body
 pub fn verify_request(
     signing_secret: &str,
-    headers: &HeaderMap,
-    body: &Bytes,
-) -> Result<(), OxyError> {
-    let timestamp = headers
-        .get("x-slack-request-timestamp")
-        .and_then(|v| v.to_str().ok())
-        .ok_or(OxyError::SlackSignatureInvalid)?;
+    timestamp_header: Option<&str>,
+    signature_header: Option<&str>,
+    raw_body: &[u8],
+    now_unix: i64,
+) -> Result<(), SignatureError> {
+    let ts = timestamp_header.ok_or(SignatureError::MissingHeaders)?;
+    let sig = signature_header.ok_or(SignatureError::MissingHeaders)?;
 
-    let signature = headers
-        .get("x-slack-signature")
-        .and_then(|v| v.to_str().ok())
-        .ok_or(OxyError::SlackSignatureInvalid)?;
-
-    verify_signature(signing_secret, timestamp, body, signature)
-}
-
-/// Verify Slack request signature
-///
-/// # Arguments
-/// * `signing_secret` - Slack app signing secret
-/// * `timestamp` - X-Slack-Request-Timestamp header value
-/// * `body` - Raw request body
-/// * `signature` - X-Slack-Signature header value
-///
-/// # Returns
-/// Ok(()) if signature is valid, Err otherwise
-pub fn verify_signature(
-    signing_secret: &str,
-    timestamp: &str,
-    body: &[u8],
-    signature: &str,
-) -> Result<(), OxyError> {
-    // Verify timestamp is recent (prevent replay attacks)
-    verify_timestamp(timestamp)?;
-
-    // Compute expected signature
-    let expected_signature = compute_signature(signing_secret, timestamp, body)?;
-
-    // Compare signatures using constant-time comparison to prevent timing attacks
-    if !constant_time_eq(signature.as_bytes(), expected_signature.as_bytes()) {
-        tracing::warn!("Slack signature verification failed");
-        return Err(OxyError::SlackSignatureInvalid);
+    let ts_num: i64 = ts.parse().map_err(|_| SignatureError::BadTimestamp)?;
+    if (now_unix - ts_num).abs() > MAX_TIMESTAMP_SKEW_SECS {
+        return Err(SignatureError::Replay);
     }
 
-    Ok(())
-}
+    let base = format!("v0:{ts}:");
+    let mut mac = Hmac::<Sha256>::new_from_slice(signing_secret.as_bytes())
+        .map_err(|_| SignatureError::BadKey)?;
+    mac.update(base.as_bytes());
+    mac.update(raw_body);
+    let expected = mac.finalize().into_bytes();
+    let expected_hex = hex::encode(expected);
+    let expected_header = format!("v0={expected_hex}");
 
-/// Verify timestamp is within acceptable range (prevent replay attacks)
-fn verify_timestamp(timestamp: &str) -> Result<(), OxyError> {
-    let request_timestamp: u64 = timestamp
-        .parse()
-        .map_err(|_| OxyError::SlackSignatureInvalid)?;
-
-    let current_timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|_| OxyError::SlackSignatureInvalid)?
-        .as_secs();
-
-    let diff = current_timestamp.abs_diff(request_timestamp);
-
-    if diff > MAX_TIMESTAMP_DIFF_SECONDS {
-        tracing::warn!(
-            "Slack request timestamp too old. Diff: {}s, Max: {}s",
-            diff,
-            MAX_TIMESTAMP_DIFF_SECONDS
-        );
-        return Err(OxyError::SlackSignatureInvalid);
+    if constant_time_eq(expected_header.as_bytes(), sig.as_bytes()) {
+        Ok(())
+    } else {
+        Err(SignatureError::Mismatch)
     }
-
-    Ok(())
 }
 
-/// Compute HMAC-SHA256 signature for Slack request
-fn compute_signature(
-    signing_secret: &str,
-    timestamp: &str,
-    body: &[u8],
-) -> Result<String, OxyError> {
-    // Build signature base string: v0:<timestamp>:<body>
-    let sig_base = format!("{}:{}:", SLACK_VERSION, timestamp);
-    let mut sig_base_bytes = sig_base.into_bytes();
-    sig_base_bytes.extend_from_slice(body);
-
-    // Compute HMAC-SHA256
-    let mut mac = HmacSha256::new_from_slice(signing_secret.as_bytes())
-        .map_err(|_| OxyError::SlackSignatureInvalid)?;
-    mac.update(&sig_base_bytes);
-    let result = mac.finalize();
-    let code_bytes = result.into_bytes();
-
-    // Format as "v0=<hex>"
-    Ok(format!("{}={}", SLACK_VERSION, hex::encode(code_bytes)))
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut acc = 0u8;
+    for i in 0..a.len() {
+        acc |= a[i] ^ b[i];
+    }
+    acc == 0
 }
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum SignatureError {
+    MissingHeaders,
+    BadTimestamp,
+    Replay,
+    BadKey,
+    Mismatch,
+}
+
+impl std::fmt::Display for SignatureError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::MissingHeaders => "missing X-Slack-Signature or X-Slack-Request-Timestamp",
+            Self::BadTimestamp => "timestamp is not an integer",
+            Self::Replay => "timestamp is too old (> 5 min skew)",
+            Self::BadKey => "signing key invalid",
+            Self::Mismatch => "signature mismatch",
+        })
+    }
+}
+impl std::error::Error for SignatureError {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hmac::{Hmac, KeyInit, Mac};
+    use sha2::Sha256;
 
-    #[test]
-    fn test_compute_signature() {
-        let signing_secret = "test_secret";
-        let timestamp = "1234567890";
-        let body = b"test_body";
-
-        let sig = compute_signature(signing_secret, timestamp, body).unwrap();
-        assert!(sig.starts_with("v0="));
-        assert_eq!(sig.len(), 3 + 64); // "v0=" + 64 hex chars
+    fn sign(secret: &str, ts: i64, body: &[u8]) -> String {
+        let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).unwrap();
+        mac.update(format!("v0:{ts}:").as_bytes());
+        mac.update(body);
+        format!("v0={}", hex::encode(mac.finalize().into_bytes()))
     }
 
     #[test]
-    fn test_verify_signature_valid() {
-        let signing_secret = "test_secret";
-        let timestamp = "1234567890";
-        let body = b"test_body";
-
-        let sig = compute_signature(signing_secret, timestamp, body).unwrap();
-
-        // This will fail timestamp check, but signature computation should work
-        let result = verify_signature(signing_secret, timestamp, body, &sig);
-        assert!(result.is_err()); // Fails due to old timestamp
+    fn valid_signature_accepted() {
+        let secret = "shh";
+        let ts = 1_700_000_000;
+        let body = b"payload=x";
+        let sig = sign(secret, ts, body);
+        assert!(verify_request(secret, Some(&ts.to_string()), Some(&sig), body, ts).is_ok());
     }
 
     #[test]
-    fn test_verify_signature_invalid() {
-        let signing_secret = "test_secret";
-        let timestamp = "1234567890";
-        let body = b"test_body";
-
-        let result = verify_signature(signing_secret, timestamp, body, "v0=invalid");
-        assert!(result.is_err());
+    fn missing_headers_rejected() {
+        let err = verify_request("shh", None, None, b"", 0).unwrap_err();
+        assert_eq!(err, SignatureError::MissingHeaders);
     }
 
     #[test]
-    fn test_verify_timestamp_old() {
-        let old_timestamp = "1234567890"; // Very old timestamp
-        let result = verify_timestamp(old_timestamp);
-        assert!(result.is_err());
+    fn replay_rejected() {
+        let secret = "shh";
+        let ts = 1_700_000_000;
+        let sig = sign(secret, ts, b"");
+        let err =
+            verify_request(secret, Some(&ts.to_string()), Some(&sig), b"", ts + 600).unwrap_err();
+        assert_eq!(err, SignatureError::Replay);
+    }
+
+    #[test]
+    fn bad_signature_rejected() {
+        let err = verify_request(
+            "shh",
+            Some("1700000000"),
+            Some("v0=deadbeef"),
+            b"",
+            1_700_000_000,
+        )
+        .unwrap_err();
+        assert_eq!(err, SignatureError::Mismatch);
     }
 }

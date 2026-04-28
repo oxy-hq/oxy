@@ -5,8 +5,11 @@ import type {
   ArtifactDoneContent,
   ArtifactStartedContent,
   ArtifactValueContent,
+  ChartContent,
   DataAppContent,
   Message,
+  ReasoningChunkContent,
+  ReasoningStartedContent,
   TextContent,
   UsageContent
 } from "@/types/chat";
@@ -32,9 +35,56 @@ export class MessageProcessor {
         return this.handleUsageContent(streamingMessage, answer.content);
       case "data_app":
         return this.handleDataApp(streamingMessage, answer.content);
+      case "reasoning_started":
+        return this.handleReasoningStarted(streamingMessage, answer.content);
+      case "reasoning_chunk":
+        return this.handleReasoningChunk(streamingMessage, answer.content);
+      case "reasoning_done":
+        return this.handleReasoningDone(streamingMessage);
+      case "chart":
+        return this.handleChart(streamingMessage, answer.content);
       default:
         return streamingMessage;
     }
+  }
+
+  /**
+   * Reasoning + chart events arrive as structured AnswerContent variants
+   * but the existing ReasoningPlugin / ChartPlugin only know how to read
+   * the markdown directive form (`:::reasoning…:::`, `:chart{…}`). Rather
+   * than rewrite the plugins, the processor *synthesizes* the directive
+   * into the message body — the plugins then render normally and stored
+   * markdown stays bit-identical to pre-refactor history.
+   */
+  private handleReasoningStarted(
+    streamingMessage: Message,
+    _content: ReasoningStartedContent
+  ): Message {
+    return {
+      ...streamingMessage,
+      content: `${streamingMessage.content}\n\n:::reasoning\n`
+    };
+  }
+
+  private handleReasoningChunk(streamingMessage: Message, content: ReasoningChunkContent): Message {
+    return {
+      ...streamingMessage,
+      content: streamingMessage.content + content.delta
+    };
+  }
+
+  private handleReasoningDone(streamingMessage: Message): Message {
+    return {
+      ...streamingMessage,
+      content: `${streamingMessage.content}\n:::\n\n`
+    };
+  }
+
+  private handleChart(streamingMessage: Message, content: ChartContent): Message {
+    return {
+      ...streamingMessage,
+      content: `${streamingMessage.content}\n\n:chart{chart_src=${content.chart_src}}\n\n`
+    };
   }
 
   private handleDataApp(streamingMessage: Message, content: DataAppContent): Message {

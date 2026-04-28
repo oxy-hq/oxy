@@ -1,107 +1,104 @@
-//! Assistant thread event handlers for Slack AI/Agent experience
+//! Handlers for Slack assistant thread lifecycle events.
 //!
-//! This module handles Slack's assistant-related events:
-//! - `assistant_thread_started`
-//! - `assistant_thread_context_changed`
+//! `AssistantThreadStarted` — sent when a user opens the Oxy bot in the
+//!   Slack AI sidebar. We clear any loading state and post a greeting.
 //!
-//! For v1, we provide minimal support: logging these events and optionally
-//! routing them through the Oxy chat pipeline if they contain user queries.
+//! `AssistantThreadContextChanged` — sent when context (e.g. the channel
+//!   the sidebar is anchored to) changes. No action needed for now.
 
-use crate::integrations::slack::events::execution::{
-    SlackChatRequest, execute_oxy_chat_for_slack, load_slack_settings,
-};
+use crate::integrations::slack::client::SlackClient;
+use entity::slack_installations::Model as InstallationRow;
 use oxy_shared::errors::OxyError;
-use uuid::Uuid;
 
-/// Handle `assistant_thread_started` event
-///
-/// This event is fired when a user starts a conversation with the assistant
-/// in Slack's agent/DM experience. If the event contains user query text,
-/// we treat it as a user message and route it through Oxy chat.
-pub async fn handle_assistant_thread_started(
-    team_id: &str,
-    channel_id: &str,
-    user_id: Option<&str>,
-    text: Option<&str>,
-    thread_ts: Option<&str>,
-    event_ts: &str,
-    assistant_thread: Option<&serde_json::Value>,
+/// Returns the welcome message text shown at the start of every assistant thread.
+pub fn welcome_message_text() -> &'static str {
+    "👋 Hi! I'm Oxygen — your data analytics assistant.\n\n\
+     Ask me anything about your data:\n\
+     • \"What was revenue last month?\"\n\
+     • \"Build a chart of daily active users\"\n\n\
+     Reply in this thread to follow up on any answer."
+}
+
+/// Starter prompts surfaced as clickable buttons in the assistant thread.
+const SUGGESTED_PROMPTS: &[(&str, &str)] = &[
+    (
+        "What's in my data?",
+        "Give me an overview of the tables and data available",
+    ),
+    (
+        "Trending metrics",
+        "What are the key metrics trending this week?",
+    ),
+    ("Recent activity", "Show me recent customer activity"),
+    ("Ask a question", "How many users signed up last month?"),
+];
+
+pub async fn started(
+    _installation: InstallationRow,
+    bot_token: String,
+    channel: Option<String>,
+    thread_ts: Option<String>,
 ) -> Result<(), OxyError> {
-    tracing::info!(
-        "Assistant thread started: team={}, channel={}, user={:?}, has_text={}",
-        team_id,
-        channel_id,
-        user_id,
-        text.is_some()
-    );
+    let (Some(channel), Some(thread_ts)) = (channel, thread_ts) else {
+        return Ok(());
+    };
+    let token = bot_token;
+    let client = SlackClient::new();
 
-    // Log assistant thread context if present
-    if let Some(thread_info) = assistant_thread {
-        tracing::debug!("Assistant thread context: {:?}", thread_info);
-    }
+    // Clear any loading indicator the sidebar may show.
+    let _ = client
+        .assistant_threads_set_status(&token, &channel, &thread_ts, "", None)
+        .await;
 
-    // If we have both user and text, treat this as a user message
-    if let (Some(user), Some(message_text)) = (user_id, text) {
-        if !message_text.trim().is_empty() {
-            tracing::info!("Routing assistant thread start with user query through Oxy chat");
+    // Post a welcome message explaining the usage pattern.
+    let post_result = client
+        .chat_post_message(&token, &channel, welcome_message_text(), Some(&thread_ts))
+        .await;
 
-            let slack_settings = load_slack_settings().await?;
-
-            execute_oxy_chat_for_slack(SlackChatRequest {
-                team_id: team_id.to_string(),
-                channel_id: channel_id.to_string(),
-                user_id: user.to_string(),
-                text: message_text.to_string(),
-                thread_ts: thread_ts.map(|s| s.to_string()),
-                event_ts: event_ts.to_string(),
-                workspace_id: Uuid::nil(),
-                agent_id: slack_settings.default_agent.clone(),
-                slack_settings,
-                is_dm: true,
-            })
-            .await?;
-        } else {
-            tracing::debug!("Assistant thread started with empty text, ignoring");
-        }
-    } else {
-        tracing::debug!(
-            "Assistant thread started without user/text (user={:?}, text={:?}), logging only",
-            user_id,
-            text
-        );
+    // Only set suggested prompts if the message posted successfully —
+    // Slack may reject the call if the thread isn't fully initialized yet.
+    if post_result.is_ok() {
+        let _ = client
+            .assistant_threads_set_suggested_prompts(
+                &token,
+                &channel,
+                &thread_ts,
+                SUGGESTED_PROMPTS,
+            )
+            .await;
     }
 
     Ok(())
 }
 
-/// Handle `assistant_thread_context_changed` event
-///
-/// This event is fired when the context of an assistant thread changes
-/// (e.g., user switches between threads). For v1, we simply log this event.
-pub async fn handle_assistant_thread_context_changed(
-    team_id: &str,
-    channel_id: &str,
-    user_id: Option<&str>,
-    thread_ts: Option<&str>,
-    _event_ts: &str,
-    assistant_thread: Option<&serde_json::Value>,
-) -> Result<(), OxyError> {
-    tracing::info!(
-        "Assistant thread context changed: team={}, channel={}, user={:?}, thread_ts={:?}",
-        team_id,
-        channel_id,
-        user_id,
-        thread_ts
-    );
+/// No action required when the assistant thread context changes.
+pub async fn context_changed(_installation: InstallationRow) -> Result<(), OxyError> {
+    Ok(())
+}
 
-    // Log assistant thread context if present
-    if let Some(thread_info) = assistant_thread {
-        tracing::debug!("New assistant thread context: {:?}", thread_info);
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn welcome_message_contains_oxy_and_revenue() {
+        let msg = welcome_message_text();
+        assert!(
+            msg.contains("Oxygen"),
+            "welcome message must mention Oxygen"
+        );
+        assert!(
+            msg.contains("revenue"),
+            "welcome message must include revenue example"
+        );
     }
 
-    // For v1, we don't take action on context changes, just log them
-    // Future enhancement: Could use this to switch Oxy sessions when user
-    // switches between conversation threads
-
-    Ok(())
+    #[test]
+    fn welcome_message_mentions_follow_up() {
+        let msg = welcome_message_text();
+        assert!(
+            msg.contains("follow up"),
+            "welcome message must teach thread iteration"
+        );
+    }
 }

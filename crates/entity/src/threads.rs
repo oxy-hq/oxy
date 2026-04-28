@@ -30,6 +30,8 @@ pub enum Relation {
     Logs,
     #[sea_orm(has_many = "super::messages::Entity")]
     Messages,
+    #[sea_orm(has_many = "super::slack_threads::Entity")]
+    SlackThreads,
     #[sea_orm(
         belongs_to = "super::workspaces::Entity",
         from = "Column::ProjectId",
@@ -75,6 +77,12 @@ impl Related<super::workspaces::Entity> for Entity {
 impl Related<super::users::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Users.def()
+    }
+}
+
+impl Related<super::slack_threads::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SlackThreads.def()
     }
 }
 

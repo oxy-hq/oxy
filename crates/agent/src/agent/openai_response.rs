@@ -355,10 +355,16 @@ impl OpenAIResponseExecutable {
                 }
                 ResponseStreamEvent::ResponseReasoningSummaryTextDelta(delta_event) => {
                     let reasoning_delta = &delta_event.delta;
+                    let reasoning_id =
+                        format!("{}-{}", delta_event.item_id, delta_event.summary_index);
                     execution_context
                         .write_chunk(Chunk {
                             key: Some(AGENT_SOURCE_CONTENT.to_string()),
-                            delta: Output::Text(reasoning_delta.to_string()),
+                            delta: Output::Reasoning {
+                                id: reasoning_id,
+                                delta: reasoning_delta.to_string(),
+                                is_done: false,
+                            },
                             finished: false,
                         })
                         .await
@@ -372,10 +378,9 @@ impl OpenAIResponseExecutable {
                         done_event.text.len()
                     );
 
-                    if reasoning_items_written.contains(&format!(
-                        "{}-{}",
-                        done_event.item_id, done_event.summary_index
-                    )) {
+                    let reasoning_id =
+                        format!("{}-{}", done_event.item_id, done_event.summary_index);
+                    if reasoning_items_written.contains(&reasoning_id) {
                         tracing::debug!(
                             "Finalizing reasoning summary output for item_id: {}",
                             done_event.item_id
@@ -383,7 +388,11 @@ impl OpenAIResponseExecutable {
                         execution_context
                             .write_chunk(Chunk {
                                 key: Some(AGENT_SOURCE_CONTENT.to_string()),
-                                delta: Output::Text("\n\n:::\n\n".to_string()),
+                                delta: Output::Reasoning {
+                                    id: reasoning_id,
+                                    delta: String::new(),
+                                    is_done: true,
+                                },
                                 finished: false,
                             })
                             .await
@@ -397,14 +406,17 @@ impl OpenAIResponseExecutable {
                         part_event.summary_index
                     );
 
-                    if reasoning_items_written.insert(format!(
-                        "{}-{}",
-                        part_event.item_id, part_event.summary_index
-                    )) {
+                    let reasoning_id =
+                        format!("{}-{}", part_event.item_id, part_event.summary_index);
+                    if reasoning_items_written.insert(reasoning_id.clone()) {
                         execution_context
                             .write_chunk(Chunk {
                                 key: Some(AGENT_SOURCE_CONTENT.to_string()),
-                                delta: Output::Text("\n\n:::reasoning\n".to_string()),
+                                delta: Output::Reasoning {
+                                    id: reasoning_id,
+                                    delta: String::new(),
+                                    is_done: false,
+                                },
                                 finished: false,
                             })
                             .await

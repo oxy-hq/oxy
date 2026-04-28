@@ -23,7 +23,6 @@ pub mod result_files;
 pub mod run;
 pub mod secrets;
 pub mod semantic;
-pub mod slack;
 pub mod task;
 pub mod test_file;
 pub mod test_project_run;

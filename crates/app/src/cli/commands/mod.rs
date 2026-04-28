@@ -17,7 +17,6 @@ mod status;
 use crate::cli::commands::mcp::{start_mcp_sse_server, start_mcp_stdio};
 use crate::cli::commands::migrate::migrate;
 use crate::cli::commands::run::{RunArgs, handle_run_command};
-use crate::server::service::agent::AgentCLIHandler;
 use crate::server::service::agent::run_agent;
 use crate::server::service::eval::EvalEventsHandler;
 use crate::server::service::eval::run_eval_with_tag;
@@ -960,11 +959,25 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 .await
                 .map_err(|e| OxyError::from(anyhow::anyhow!("Failed to create project: {e}")))?;
 
-            let _ = run_agent(
+            // `oxy ask` uses the same trait-shaped consumer pipeline as
+            // web + Slack: BlockHandler converts low-level events into
+            // structured `AnswerStream`, then `CliRenderer` (implementing
+            // `oxy::ClientRenderer`) prints them. Adding a new surface
+            // that mirrors `oxy ask` is "implement the trait", same as
+            // any other consumer.
+            let agent_path = project.config_manager.get_builder_agent_path().await?;
+            let (tx, rx) = tokio::sync::mpsc::channel::<::oxy::types::AnswerStream>(256);
+            let block_handler = crate::server::service::formatters::BlockHandler::new(tx);
+
+            let render_handle = tokio::spawn(async move {
+                ::oxy::render_stream(rx, crate::cli::render::CliRenderer::new()).await
+            });
+
+            let result = run_agent(
                 project.clone(),
-                &project.config_manager.get_builder_agent_path().await?,
+                &agent_path,
                 ask_args.question,
-                AgentCLIHandler::default(),
+                block_handler,
                 vec![],
                 None,
                 None,
@@ -973,7 +986,13 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 None, // No sandbox info from CLI
                 None, // No data_app_file_path from CLI
             )
-            .await?;
+            .await;
+
+            // Drop the agent's tx implicitly (via run_agent's BlockHandler
+            // going out of scope) so the renderer task exits its drain
+            // loop and finalize() runs.
+            let _ = render_handle.await;
+            result?;
         }
 
         Some(SubCommand::Seed(seed_args)) => {

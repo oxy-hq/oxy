@@ -1,5 +1,6 @@
-import { Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { CheckCircle2, Plus, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import AddGitNamespaceFlow from "@/components/GitNamespaceSelection/AddGitNamespaceFlow";
 import {
@@ -14,8 +15,13 @@ import {
   AlertDialogTrigger
 } from "@/components/ui/shadcn/alert-dialog";
 import { Button } from "@/components/ui/shadcn/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/tooltip";
 import { useDeleteGitNamespace } from "@/hooks/api/github/useDeleteGitNamespace";
 import { useGitHubNamespaces } from "@/hooks/api/github/useGitHubNamespaces";
+import queryKeys from "@/hooks/api/queryKey";
+import { useSlackDisconnect } from "@/hooks/api/slack/useSlackDisconnect";
+import { useSlackInstallation } from "@/hooks/api/slack/useSlackInstallation";
+import { SlackService } from "@/services/api/slack";
 import type { Organization } from "@/types/organization";
 
 const GithubIcon = ({ className }: { className?: string }) => (
@@ -24,16 +30,56 @@ const GithubIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
+// Full four-colour Slack logo — each arm segment gets its official brand colour.
+const SlackIcon = ({ size = 20 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox='0 0 24 24' aria-hidden='true'>
+    {/* Green — top-left vertical bar */}
+    <path
+      fill='#36C5F0'
+      d='M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52z'
+    />
+    <path
+      fill='#36C5F0'
+      d='M6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313z'
+    />
+    {/* Yellow — top-right horizontal bar */}
+    <path
+      fill='#2EB67D'
+      d='M8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834z'
+    />
+    <path
+      fill='#2EB67D'
+      d='M8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312z'
+    />
+    {/* Red — bottom-right vertical bar */}
+    <path
+      fill='#ECB22E'
+      d='M18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834z'
+    />
+    <path
+      fill='#ECB22E'
+      d='M17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312z'
+    />
+    {/* Blue — bottom-left horizontal bar */}
+    <path
+      fill='#E01E5A'
+      d='M15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52z'
+    />
+    <path
+      fill='#E01E5A'
+      d='M15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z'
+    />
+  </svg>
+);
+
 interface IntegrationSectionProps {
   org: Organization;
 }
 
-export default function IntegrationSection({ org }: IntegrationSectionProps) {
+function GitHubConnections({ org }: IntegrationSectionProps) {
   const { data: namespaces, isLoading } = useGitHubNamespaces(org.id);
   const deleteNamespace = useDeleteGitNamespace();
-
   const canManage = org.role === "owner" || org.role === "admin";
-
   const [addOpen, setAddOpen] = useState(false);
 
   const handleDelete = async (id: string, name: string) => {
@@ -50,12 +96,8 @@ export default function IntegrationSection({ org }: IntegrationSectionProps) {
     toast.success("GitHub connection added");
   };
 
-  if (isLoading) {
-    return <div className='py-8 text-center text-muted-foreground text-sm'>Loading...</div>;
-  }
-
   return (
-    <div className='space-y-6'>
+    <div className='space-y-3'>
       <div className='flex items-start justify-between gap-4'>
         <div className='space-y-1'>
           <h3 className='font-medium'>GitHub Connections</h3>
@@ -71,12 +113,14 @@ export default function IntegrationSection({ org }: IntegrationSectionProps) {
         )}
       </div>
 
-      {namespaces && namespaces.length > 0 ? (
+      {isLoading ? (
+        <div className='py-8 text-center text-muted-foreground text-sm'>Loading...</div>
+      ) : namespaces && namespaces.length > 0 ? (
         <div className='divide-y divide-border rounded-lg border border-border'>
           {namespaces.map((ns) => (
             <div key={ns.id} className='flex items-center gap-3 px-4 py-3'>
-              <div className='flex h-8 w-8 items-center justify-center rounded-full bg-muted'>
-                <GithubIcon className='h-4 w-4 text-muted-foreground' />
+              <div className='flex h-8 w-8 items-center justify-center rounded-full bg-foreground'>
+                <GithubIcon className='h-4 w-4 text-background' />
               </div>
               <div className='min-w-0 flex-1'>
                 <div className='truncate font-medium text-sm'>{ns.name}</div>
@@ -122,8 +166,8 @@ export default function IntegrationSection({ org }: IntegrationSectionProps) {
         </div>
       ) : (
         <div className='flex flex-col items-center justify-center gap-3 rounded-lg border border-border border-dashed py-10 text-center'>
-          <div className='flex h-10 w-10 items-center justify-center rounded-full bg-muted'>
-            <GithubIcon className='h-5 w-5 text-muted-foreground' />
+          <div className='flex h-10 w-10 items-center justify-center rounded-full bg-foreground'>
+            <GithubIcon className='h-5 w-5 text-background' />
           </div>
           <p className='text-muted-foreground text-sm'>No GitHub connections yet.</p>
           {canManage && (
@@ -141,6 +185,141 @@ export default function IntegrationSection({ org }: IntegrationSectionProps) {
         onOpenChange={setAddOpen}
         onConnected={handleConnected}
       />
+    </div>
+  );
+}
+
+function SlackConnection({ org }: IntegrationSectionProps) {
+  const { data, isLoading } = useSlackInstallation(org.id);
+  const disconnect = useSlackDisconnect(org.id);
+  const queryClient = useQueryClient();
+  const canManage = org.role === "owner" || org.role === "admin";
+  const [isInstalling, setIsInstalling] = useState(false);
+
+  // After kicking off OAuth in a new tab, refresh the installation status
+  // every time the original tab regains focus. The user authorizes Slack
+  // in the new tab, switches back to Oxygen, and the dialog flips to
+  // "Connected" without a manual refresh.
+  useEffect(() => {
+    if (!isInstalling) return;
+    const onFocus = () => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.slack.installation(org.id)
+      });
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [isInstalling, org.id, queryClient]);
+
+  // Once the installation flips to connected, stop listening. The inline
+  // "Connected" badge auto-flips here; the success toast is fired by the
+  // OAuth-tab landing (`AppSidebar/Footer.tsx`) after `?slack_installed=ok`,
+  // so re-firing it here would double-toast users who keep both tabs open.
+  useEffect(() => {
+    if (data?.connected && isInstalling) {
+      setIsInstalling(false);
+    }
+  }, [data?.connected, isInstalling]);
+
+  const handleInstall = async () => {
+    try {
+      const opened = await SlackService.startInstall(org.id);
+      if (!opened) {
+        toast.error("Allow popups for this site to install Slack.");
+        return;
+      }
+      setIsInstalling(true);
+    } catch {
+      toast.error("Failed to start Slack install");
+    }
+  };
+
+  const handleDisconnect = async () => {
+    try {
+      await disconnect.mutateAsync();
+      toast.success("Slack disconnected");
+    } catch {
+      toast.error("Failed to disconnect Slack");
+    }
+  };
+
+  return (
+    <div className='space-y-3'>
+      <div className='space-y-1'>
+        <h3 className='font-medium'>Slack</h3>
+        <p className='text-muted-foreground text-sm'>
+          Query Oxygen from Slack with @mentions, DMs, and App Home.
+        </p>
+      </div>
+
+      <div className='rounded-lg border border-border p-4'>
+        <div className='flex items-center justify-between gap-4'>
+          <div className='flex items-center gap-3'>
+            <div className='flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-background shadow-sm ring-1 ring-border'>
+              <SlackIcon size={20} />
+            </div>
+            <div className='min-w-0'>
+              {data?.connected ? (
+                // Slack workspace name lives in the tooltip — only one
+                // Slack workspace per Oxygen workspace, so showing it
+                // inline is redundant; the tooltip is enough for users
+                // who actually want to know which workspace it is.
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className='flex cursor-default items-center gap-2'>
+                      <CheckCircle2 className='h-3.5 w-3.5 shrink-0 text-primary' />
+                      <p className='font-medium text-sm decoration-muted-foreground/30 decoration-dotted underline-offset-4 hover:underline'>
+                        Connected
+                      </p>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>Workspace: {data.team_name ?? "Slack workspace"}</TooltipContent>
+                </Tooltip>
+              ) : (
+                <>
+                  <p className='font-medium text-sm'>Not connected</p>
+                  <p className='mt-0.5 text-muted-foreground text-xs'>
+                    Install the Oxygen Slack app to start querying from Slack.
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+
+          {canManage && (
+            <div className='flex shrink-0 items-center gap-2'>
+              {isLoading ? null : data?.connected ? (
+                <>
+                  <Button variant='outline' size='sm' onClick={handleInstall}>
+                    Reinstall
+                  </Button>
+                  <Button
+                    variant='destructive'
+                    size='sm'
+                    disabled={disconnect.isPending}
+                    onClick={handleDisconnect}
+                  >
+                    {disconnect.isPending ? "Disconnecting..." : "Disconnect"}
+                  </Button>
+                </>
+              ) : (
+                <Button size='sm' onClick={handleInstall}>
+                  Install to Slack
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function IntegrationSection({ org }: IntegrationSectionProps) {
+  return (
+    <div className='space-y-8'>
+      <GitHubConnections org={org} />
+      <SlackConnection org={org} />
     </div>
   );
 }

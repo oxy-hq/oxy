@@ -40,9 +40,6 @@ mod m20250924_015621_create_project_repos_and_update_projects;
 mod m20250929_081920_create_git_namespaces_table;
 mod m20251009_020233_add_run_variables_and_output;
 mod m20251104_015138_add_blocks_to_message;
-mod m20251114_000002_create_slack_channel_bindings_table;
-mod m20251114_000003_create_slack_user_identities_table;
-mod m20251114_000004_create_slack_conversation_contexts_table;
 mod m20251204_000001_create_a2a_tasks_table;
 mod m20251204_000002_create_a2a_messages_table;
 mod m20251204_000003_create_a2a_task_status_table;
@@ -79,6 +76,16 @@ mod m20260416_000001_add_status_and_error_to_workspaces;
 mod m20260416_000001_create_observability_tables;
 mod m20260416_000002_swap_workspace_repo_for_git_namespace;
 mod m20260416_000003_drop_branches_and_workspace_repos;
+mod m20260421_000001_drop_legacy_slack_tables;
+mod m20260421_000002_create_org_secrets;
+mod m20260421_000003_create_slack_installations;
+mod m20260421_000004_create_slack_user_links;
+mod m20260421_000005_create_slack_user_preferences;
+mod m20260421_000006_create_slack_threads;
+mod m20260421_000007_create_slack_oauth_states;
+mod m20260422_000001_create_slack_seen_events;
+mod m20260424_000001_create_slack_channel_defaults;
+mod m20260427_000001_slack_oauth_state_add_channel;
 
 pub struct Migrator;
 
@@ -129,9 +136,6 @@ impl MigratorTrait for Migrator {
             Box::new(m20251204_000002_create_a2a_messages_table::Migration),
             Box::new(m20251204_000003_create_a2a_task_status_table::Migration),
             Box::new(m20251204_000004_create_a2a_artifacts_table::Migration),
-            Box::new(m20251114_000002_create_slack_channel_bindings_table::Migration),
-            Box::new(m20251114_000003_create_slack_user_identities_table::Migration),
-            Box::new(m20251114_000004_create_slack_conversation_contexts_table::Migration),
             Box::new(m20251219_000001_add_user_id_to_runs::Migration),
             Box::new(m20260108_000001_drop_fk_runs_project_id::Migration),
             Box::new(m20260109_000001_add_sandbox_fields_to_threads::Migration),
@@ -164,6 +168,16 @@ impl MigratorTrait for Migrator {
             Box::new(m20260416_000002_swap_workspace_repo_for_git_namespace::Migration),
             Box::new(m20260416_000003_drop_branches_and_workspace_repos::Migration),
             Box::new(m20260416_000001_create_observability_tables::Migration),
+            Box::new(m20260421_000001_drop_legacy_slack_tables::Migration),
+            Box::new(m20260421_000002_create_org_secrets::Migration),
+            Box::new(m20260421_000003_create_slack_installations::Migration),
+            Box::new(m20260421_000004_create_slack_user_links::Migration),
+            Box::new(m20260421_000005_create_slack_user_preferences::Migration),
+            Box::new(m20260421_000006_create_slack_threads::Migration),
+            Box::new(m20260421_000007_create_slack_oauth_states::Migration),
+            Box::new(m20260422_000001_create_slack_seen_events::Migration),
+            Box::new(m20260424_000001_create_slack_channel_defaults::Migration),
+            Box::new(m20260427_000001_slack_oauth_state_add_channel::Migration),
         ]
     }
 }

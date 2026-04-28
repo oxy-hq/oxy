@@ -58,6 +58,12 @@ pub enum Relation {
     Secrets,
     #[sea_orm(has_many = "super::threads::Entity")]
     Threads,
+    #[sea_orm(has_many = "super::slack_installations::Entity")]
+    SlackInstallations,
+    #[sea_orm(has_many = "super::slack_user_links::Entity")]
+    SlackUserLinks,
+    #[sea_orm(has_many = "super::slack_oauth_states::Entity")]
+    SlackOauthStates,
 }
 
 impl Related<super::api_keys::Entity> for Entity {
@@ -87,6 +93,24 @@ impl Related<super::secrets::Entity> for Entity {
 impl Related<super::threads::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Threads.def()
+    }
+}
+
+impl Related<super::slack_installations::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SlackInstallations.def()
+    }
+}
+
+impl Related<super::slack_user_links::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SlackUserLinks.def()
+    }
+}
+
+impl Related<super::slack_oauth_states::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SlackOauthStates.def()
     }
 }
 

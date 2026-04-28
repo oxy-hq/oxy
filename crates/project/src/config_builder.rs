@@ -35,7 +35,7 @@ impl ConfigBuilder {
             builder_agent: None,
             workspace_path: repo_path.to_path_buf(),
             integrations: Vec::new(),
-            slack: None,
+            slack_legacy: None,
             mcp: None,
             a2a: None,
             protected_branches: None,

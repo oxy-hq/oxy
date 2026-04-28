@@ -7,6 +7,9 @@ use crate::{
     adapters::{runs::RunsManager, secrets::SecretsManager},
     config::ConfigManager,
     intent::IntentClassifier,
+    storage::{
+        BlobStorageChartImagePublisher, SharedChartImagePublisher, SharedChartImageRenderer,
+    },
 };
 use oxy_shared::errors::OxyError;
 
@@ -17,6 +20,11 @@ pub struct WorkspaceManager {
     pub secrets_manager: SecretsManager,
     pub runs_manager: Option<RunsManager>,
     pub intent_classifier: Option<Arc<IntentClassifier>>,
+    /// Chart image publisher, pre-assembled at workspace build time when both
+    /// a renderer is injected AND `storage` is configured. Resolving
+    /// AWS credentials and constructing the S3 client is not free, so we do it
+    /// once per workspace instead of on every call.
+    chart_image_publisher: Option<SharedChartImagePublisher>,
 }
 
 impl WorkspaceManager {
@@ -26,6 +34,7 @@ impl WorkspaceManager {
         secrets_manager: SecretsManager,
         runs_manager: Option<RunsManager>,
         intent_classifier: Option<Arc<IntentClassifier>>,
+        chart_image_publisher: Option<SharedChartImagePublisher>,
     ) -> Self {
         Self {
             workspace_id,
@@ -33,7 +42,33 @@ impl WorkspaceManager {
             secrets_manager,
             runs_manager,
             intent_classifier,
+            chart_image_publisher,
         }
+    }
+
+    /// Pre-assembled chart image publisher (see struct field doc). Returns
+    /// `None` when either no renderer was injected at build time or no
+    /// `storage` backend is configured — that is the default path in
+    /// which charts live on disk as JSON only.
+    pub fn chart_image_publisher(&self) -> Option<SharedChartImagePublisher> {
+        self.chart_image_publisher.clone()
+    }
+
+    /// Helper for [`super::WorkspaceBuilder`] — assemble a publisher from a
+    /// renderer and the storage config. Kept here so the assembly logic lives
+    /// alongside the field it populates.
+    pub(super) async fn build_chart_image_publisher(
+        renderer: Option<SharedChartImageRenderer>,
+        config_manager: &ConfigManager,
+    ) -> Result<Option<SharedChartImagePublisher>, OxyError> {
+        let Some(renderer) = renderer else {
+            return Ok(None);
+        };
+        let Some(storage) = config_manager.chart_image_blob_storage().await? else {
+            return Ok(None);
+        };
+        let publisher = BlobStorageChartImagePublisher::new(renderer, storage);
+        Ok(Some(Arc::new(publisher) as SharedChartImagePublisher))
     }
 
     pub async fn get_required_secrets(&self) -> Result<Option<Vec<String>>, OxyError> {

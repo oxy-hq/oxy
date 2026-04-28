@@ -6,6 +6,12 @@ pub const WORKFLOW_SAVED_FROM_QUERY_DIR: &str = "workflows/saved";
 pub const AUTOMATION_SAVED_DIR: &str = "automations/saved";
 pub const PROCEDURE_SAVED_DIR: &str = "procedures/saved";
 pub const OXY_ENCRYPTION_KEY_VAR: &str = "OXY_ENCRYPTION_KEY";
+pub const OXY_SLACK_CLIENT_ID_VAR: &str = "OXY_SLACK_CLIENT_ID";
+pub const OXY_SLACK_CLIENT_SECRET_VAR: &str = "OXY_SLACK_CLIENT_SECRET";
+pub const OXY_SLACK_SIGNING_SECRET_VAR: &str = "OXY_SLACK_SIGNING_SECRET";
+pub const OXY_SLACK_APP_BASE_URL_VAR: &str = "OXY_SLACK_APP_BASE_URL";
+pub const OXY_SLACK_ENABLED_VAR: &str = "OXY_SLACK_ENABLED";
+pub const OXY_SLACK_APP_LEVEL_TOKEN_VAR: &str = "OXY_SLACK_APP_LEVEL_TOKEN";
 pub const OXY_SDK_SYSTEM_PROMPT: &str = r#"
 # Oxygen SDK Usage Instructions
 

@@ -4,6 +4,8 @@
 consts = "consts"
 delt = "delt"
 AKS = "AKS"
+# "PNGs" is flagged because typos sees "PN" as a fragment; it is valid English.
+PN = "PN"
 
 [type.md]
 extend-ignore-re = [

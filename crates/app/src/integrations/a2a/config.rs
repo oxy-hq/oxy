@@ -108,13 +108,13 @@ impl A2aConfig {
         // Create a dummy ValidationContext for garde validation
         // A2A config doesn't need the full Oxy config for basic validation
         let dummy_config = oxy::config::model::Config {
-            slack: None,
             defaults: None,
             models: Vec::new(),
             databases: Vec::new(),
             builder_agent: None,
             workspace_path: workspace_path.cloned().unwrap_or_default(),
             integrations: Vec::new(),
+            slack_legacy: None,
             mcp: None,
             a2a: None,
             protected_branches: None,

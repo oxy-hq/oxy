@@ -230,10 +230,23 @@ export default defineConfig({
   clearScreen: false,
   server: {
     port: 5173,
+    // Accept requests from any *.trycloudflare.com subdomain so cloudflared
+    // quick tunnels (used for Slack webhook testing) aren't rejected.
+    allowedHosts: [".trycloudflare.com"],
     // https: {
     //   key: "../localhost+2-key.pem",
     //   cert: "../localhost+2.pem",
     // },
+    // Proxy everything the backend serves (all under /api/* — see
+    // crates/app/src/cli/commands/serve.rs where the api_router is nested
+    // under /api) so Slack webhooks, OAuth callbacks, and API calls routed
+    // through the dev tunnel all reach the Rust backend on :3000.
+    proxy: {
+      "/api": {
+        target: "http://localhost:3000",
+        changeOrigin: true
+      }
+    },
     // Enable faster dependency pre-bundling during development
     fs: {
       // Allow serving files from one level up to the project root

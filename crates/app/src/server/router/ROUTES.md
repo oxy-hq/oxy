@@ -45,7 +45,6 @@ GET    /auth/config
 POST   /auth/google  /auth/github  /auth/okta
 POST   /auth/magic-link/request  /auth/magic-link/verify
 GET    /user
-POST   /slack/events  /slack/commands
 ```
 
 ### ☁️ Global — cloud only

@@ -1,24 +1,21 @@
-//! Slack integration module for Oxy
-//!
-//! This module implements Slack HTTP Events API integration, allowing Oxy to:
-//! - Respond to @mentions in Slack channels
-//! - Handle slash commands (/oxy)
-//! - Manage channel-to-project bindings
-//! - Stream Oxy agent responses back to Slack
-//!
-//! Architecture:
-//! - Uses HTTP Events API (NOT Socket Mode)
-//! - Verifies Slack request signatures (signing secret loaded from config.yml)
-//! - Maps Slack channels to Oxy projects/agents
-//! - Reuses existing Oxy chat/prompt APIs and RBAC/filter logic
-//!
-//! HTTP handlers are in `crate::api::slack`.
+//! Multi-tenant Slack integration.
+//! See internal-docs/2026-04-21-universal-slack-bot-design.md
 
+pub mod blocks;
+pub mod chart_render;
 pub mod client;
-pub mod commands;
+pub mod config;
+pub mod error;
 pub mod events;
-pub mod mrkdwn;
+pub mod home;
+pub mod linking;
+pub mod oauth;
+pub mod pickers;
+pub mod render;
+pub mod resolution;
+pub mod scopes;
 pub mod services;
 pub mod signature;
+pub mod socket_mode;
 pub mod types;
-pub mod utils;
+pub mod webhooks;

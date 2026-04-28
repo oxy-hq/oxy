@@ -188,3 +188,23 @@ a2a:
 # Note: in single-workspace mode (`oxy serve --local`) the protected-branch
 # guard is disabled entirely — a single developer on their own checkout writes
 # directly to the current branch regardless of these settings.
+
+# ── Asset storage ──────────────────────────────────────────────────────────
+# Oxy persists generated assets (chart JSON today, more later) so the web app
+# and integrations can read them back. The default backend is local disk
+# under the project state directory — no config needed, you get that for
+# free when this section is omitted.
+#
+# Configure an S3 backend only when an integration (e.g. Slack unfurls)
+# needs the assets to be reachable at a public URL. AWS credentials are
+# resolved via the standard SDK credential chain (env vars, shared config,
+# IAM role) — do NOT put access keys in this file.
+#
+# storage:
+#   backend: s3                                # "local" (default) or "s3"
+#   s3:
+#     bucket: my-oxy-assets                    # required
+#     region: us-east-1                        # optional; SDK default otherwise
+#     prefix: charts                           # optional key prefix inside the bucket
+#     public_url_base: https://cdn.example.com # optional CDN; else virtual-hosted S3 URL
+#     acl: public-read                         # optional; leave unset if bucket has ACLs disabled

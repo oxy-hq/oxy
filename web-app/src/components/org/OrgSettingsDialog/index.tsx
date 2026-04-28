@@ -1,6 +1,6 @@
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import type { LucideIcon } from "lucide-react";
-import { Github, Settings as SettingsIcon, Users } from "lucide-react";
+import { Plug, Settings as SettingsIcon, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/shadcn/dialog";
 import { cn } from "@/libs/shadcn/utils";
@@ -22,7 +22,7 @@ interface OrgSettingsDialogProps {
 const NAV_ITEMS: { value: OrgSettingsTab; label: string; icon: LucideIcon }[] = [
   { value: "general", label: "General", icon: SettingsIcon },
   { value: "team", label: "Team", icon: Users },
-  { value: "integration", label: "Integration", icon: Github }
+  { value: "integration", label: "Integrations", icon: Plug }
 ];
 
 export default function OrgSettingsDialog({

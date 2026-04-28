@@ -234,6 +234,37 @@ impl BlockHandler {
             chunk.finished
         );
 
+        // Reasoning + chart outputs flow through structured AnswerContent
+        // events, not the legacy Text path. Dispatch and short-circuit.
+        match &chunk.delta {
+            Output::Reasoning { id, delta, is_done } => {
+                if *is_done {
+                    self.stream_dispatcher
+                        .send_reasoning_done(id, &source.kind)
+                        .await?;
+                } else if delta.is_empty() {
+                    self.stream_dispatcher
+                        .send_reasoning_started(id, &source.kind)
+                        .await?;
+                } else {
+                    self.stream_dispatcher
+                        .send_reasoning_chunk(id, delta.clone(), &source.kind)
+                        .await?;
+                }
+                return Ok(());
+            }
+            Output::Chart { chart_src } => {
+                self.block_manager
+                    .add_content(source, Content::Chart(chart_src.clone()))
+                    .await?;
+                self.stream_dispatcher
+                    .send_chart(chart_src.clone(), &source.kind)
+                    .await?;
+                return Ok(());
+            }
+            _ => {}
+        }
+
         if chunk.finished {
             // Process the final chunk
             if let Some(content) = self.block_manager.finalize_content(&chunk.delta)

@@ -91,17 +91,6 @@
       "items": {
         "$ref": "#/definitions/Repository"
       }
-    },
-    "slack": {
-      "default": null,
-      "anyOf": [
-        {
-          "$ref": "#/definitions/SlackSettings"
-        },
-        {
-          "type": "null"
-        }
-      ]
     }
   },
   "additionalProperties": false,
@@ -832,6 +821,13 @@
     "Defaults": {
       "type": "object",
       "properties": {
+        "agent": {
+          "description": "Default agent path (relative to the workspace root) used by callers that need to pick \"the\" agent without ambiguity — most notably the Slack integration when it has to dispatch a question against a workspace. When unset, the Slack handler falls back to the alphabetically-first agent.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "database": {
           "type": [
             "string",
@@ -1697,43 +1693,6 @@
           }
         }
       ]
-    },
-    "SlackSettings": {
-      "description": "Slack integration settings for project-level configuration",
-      "type": "object",
-      "required": [
-        "default_agent"
-      ],
-      "properties": {
-        "bot_token_var": {
-          "description": "Environment variable containing the bot token",
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "default_agent": {
-          "description": "Default agent to use for Slack DM conversations This is used when users message the bot directly via Slack's AI/Agent interface",
-          "type": "string"
-        },
-        "oxy_app_url": {
-          "description": "Base URL for the Oxy web app (for deep links back to app in Slack messages) If not specified, \"View in Oxy\" links will not be included in responses",
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "signing_secret_var": {
-          "description": "Environment variable containing the signing secret",
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      }
     }
   }
 }

@@ -22,6 +22,25 @@ pub enum Output {
     OmniQuery(OmniQueryParams),
     SemanticQuery(SemanticQuery),
     LookerQuery(LookerQuery),
+    /// A streaming reasoning token. Producers (the OpenAI Responses
+    /// adapter and equivalents) emit a `Reasoning` event for the start of
+    /// a reasoning span, every delta, and the close — letting consumers
+    /// open / fill / close a UI affordance without parsing markdown
+    /// fences out of `Text`.
+    Reasoning {
+        id: String,
+        delta: String,
+        is_done: bool,
+    },
+    /// A chart artifact emitted by the visualize tool. `chart_src` is the
+    /// canonical filename in the workspace charts directory (e.g.
+    /// `<uuid>.json`); the persistence layer turns this into a
+    /// `Content::Chart` whose `to_markdown` emits `:chart{chart_src=…}`
+    /// for stored history. The live stream surfaces it as a structured
+    /// `AnswerContent::Chart` event.
+    Chart {
+        chart_src: String,
+    },
 }
 
 impl Default for Output {
@@ -88,6 +107,8 @@ impl Output {
                 // this contains the params of looker query, not useful to return as data
                 Ok(Data::None)
             }
+            Output::Reasoning { .. } => Ok(Data::None),
+            Output::Chart { chart_src } => Ok(Data::Text(chart_src.clone())),
         }
     }
 
@@ -114,6 +135,13 @@ impl Output {
             Output::LookerQuery(looker_query_params) => {
                 serde_json::to_string_pretty(looker_query_params).unwrap_or_default()
             }
+            // Reasoning is transient — never persisted as part of a stored
+            // message body. Skip it in the markdown serialization.
+            Output::Reasoning { .. } => String::new(),
+            // Stored markdown round-trips charts back to the canonical
+            // `:chart{chart_src=…}` directive so existing markdown plugins
+            // (web app) keep parsing pre-refactor history correctly.
+            Output::Chart { chart_src } => format!(":chart{{chart_src={chart_src}}}"),
         }
     }
 
@@ -186,6 +214,19 @@ impl std::fmt::Display for Output {
                     .map_err(|_| std::fmt::Error)?;
                 write!(f, "{json}")
             }
+            Output::Reasoning { delta, .. } => write!(f, "{delta}"),
+            // The LLM sees this as the visualize tool's result. It MUST
+            // NOT contain the raw `:chart{…}` directive — if it did, the
+            // LLM would tend to copy the directive into its prose and the
+            // chart would be rendered twice (once via the structured event,
+            // once via the legacy markdown plugin parsing the LLM's text).
+            // Describe the outcome instead and tell the model to refer to
+            // the chart naturally.
+            Output::Chart { chart_src } => write!(
+                f,
+                "Chart `{chart_src}` rendered. Refer to it naturally in your reply — \
+                 the chart is displayed automatically; do not insert any markdown directive."
+            ),
         }
     }
 }
@@ -247,6 +288,14 @@ impl Object for Output {
                     .map_err(|_| std::fmt::Error)?;
                 write!(f, "{json}")
             }
+            Output::Reasoning { delta, .. } => write!(f, "{delta}"),
+            // See `impl Display for Output` above for the rationale on
+            // not surfacing the raw `:chart{…}` directive to the LLM.
+            Output::Chart { chart_src } => write!(
+                f,
+                "Chart `{chart_src}` rendered. Refer to it naturally in your reply — \
+                 the chart is displayed automatically; do not insert any markdown directive."
+            ),
         }
     }
 }

@@ -6,6 +6,7 @@ use std::{
 use crate::{
     config::{agent_config::AgenticConfig, constants::DATABASE_SEMANTIC_PATH},
     observability::events,
+    storage::{S3BlobStorage, S3BlobStorageConfig, SharedBlobStorage},
 };
 use oxy_shared::errors::OxyError;
 
@@ -68,6 +69,15 @@ impl ConfigManager {
 
     pub fn default_database_ref(&self) -> Option<&String> {
         self.config.defaults.as_ref().map(|d| d.database.as_ref())?
+    }
+
+    /// Path of the agent the workspace's `defaults.agent` points to
+    /// (relative to workspace root), when configured. Callers that need to
+    /// pick "the" agent without enumerating — primarily the Slack
+    /// integration — read this and fall back to alphabetical-first when
+    /// it's `None`.
+    pub fn default_agent_ref(&self) -> Option<&String> {
+        self.config.defaults.as_ref().and_then(|d| d.agent.as_ref())
     }
 
     /// Returns the configured protected branches, if any.
@@ -257,6 +267,48 @@ impl ConfigManager {
 
     pub async fn get_charts_dir(&self) -> Result<PathBuf, OxyError> {
         self.storage.get_charts_dir().await
+    }
+
+    /// Build the remote blob storage backend for assets from environment
+    /// variables. Returns `Ok(None)` when `OXY_STORAGE_BACKEND` is unset
+    /// or set to `local` — assets stay on local disk in that mode.
+    ///
+    /// Storage is a deployment-level concern (like `OXY_DATABASE_URL`) and
+    /// must not live in `config.yml` which is a per-workspace developer file.
+    ///
+    /// ## Environment variables
+    ///
+    /// | Variable | Required | Description |
+    /// |---|---|---|
+    /// | `OXY_STORAGE_BACKEND` | No | `s3` to enable S3; anything else (or absent) keeps local disk |
+    /// | `OXY_S3_BUCKET` | When S3 | S3 bucket name |
+    /// | `OXY_S3_REGION` | No | AWS region (uses SDK default when absent) |
+    /// | `OXY_S3_PREFIX` | No | Key prefix inside the bucket, e.g. `charts` |
+    /// | `OXY_S3_PUBLIC_URL_BASE` | No | CDN / public URL base, e.g. `https://cdn.example.com` |
+    /// | `OXY_S3_ACL` | No | Canned ACL, e.g. `public-read` |
+    ///
+    /// AWS credentials follow the standard SDK chain (env vars, shared config, IAM role).
+    pub(crate) async fn chart_image_blob_storage(
+        &self,
+    ) -> Result<Option<SharedBlobStorage>, OxyError> {
+        let backend = std::env::var("OXY_STORAGE_BACKEND").unwrap_or_default();
+        if backend.to_lowercase() != "s3" {
+            return Ok(None);
+        }
+        let bucket = std::env::var("OXY_S3_BUCKET").map_err(|_| {
+            OxyError::ConfigurationError(
+                "OXY_STORAGE_BACKEND=s3 requires OXY_S3_BUCKET to be set".to_string(),
+            )
+        })?;
+        let cfg = S3BlobStorageConfig {
+            bucket,
+            region: std::env::var("OXY_S3_REGION").ok(),
+            prefix: std::env::var("OXY_S3_PREFIX").ok(),
+            public_url_base: std::env::var("OXY_S3_PUBLIC_URL_BASE").ok(),
+            acl: std::env::var("OXY_S3_ACL").ok(),
+        };
+        let storage = S3BlobStorage::new(cfg).await?;
+        Ok(Some(Arc::new(storage) as SharedBlobStorage))
     }
 
     pub async fn get_exported_chart_dir(&self) -> Result<PathBuf, OxyError> {

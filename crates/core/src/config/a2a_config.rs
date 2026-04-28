@@ -108,13 +108,13 @@ impl A2aConfig {
         // Create a dummy ValidationContext for garde validation
         // A2A config doesn't need the full Oxy config for basic validation
         let dummy_config = crate::config::model::Config {
-            slack: None,
             defaults: None,
             models: Vec::new(),
             databases: Vec::new(),
             builder_agent: None,
             workspace_path: project_path.cloned().unwrap_or_default(),
             integrations: Vec::new(),
+            slack_legacy: None,
             mcp: None,
             a2a: None,
             protected_branches: None,
@@ -299,9 +299,9 @@ mod tests {
             workspace_path: PathBuf::default(),
             repositories: Vec::new(),
             integrations: Vec::new(),
+            slack_legacy: None,
             mcp: None,
             a2a: None,
-            slack: None,
             protected_branches: None,
             base_branch: None,
         };
@@ -335,7 +335,6 @@ mod tests {
     #[test]
     fn test_agent_name_validation() {
         let dummy_config = crate::config::model::Config {
-            slack: None,
             defaults: None,
             models: Vec::new(),
             databases: Vec::new(),
@@ -343,6 +342,7 @@ mod tests {
             workspace_path: PathBuf::default(),
             repositories: Vec::new(),
             integrations: Vec::new(),
+            slack_legacy: None,
             mcp: None,
             a2a: None,
             protected_branches: None,

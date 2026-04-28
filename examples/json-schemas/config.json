@@ -18,10 +18,21 @@
         }
       ]
     },
-    "builder_agent": {
+    "base_branch": {
+      "description": "Branch that new worktrees fork from when saving on a protected branch. Defaults to the currently checked-out branch (usually the default branch) when not set.  Use this when Oxy serves from a \"deployment\" branch but new work should fork from an \"integration\" branch (e.g. serve from `deploy`, fork new work from `main`).\n\nExample config.yml: base_branch: main",
       "type": [
         "string",
         "null"
+      ]
+    },
+    "builder_agent": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/BuilderAgentConfig"
+        },
+        {
+          "type": "null"
+        }
       ]
     },
     "databases": {
@@ -64,16 +75,22 @@
         "$ref": "#/definitions/Model"
       }
     },
-    "slack": {
-      "default": null,
-      "anyOf": [
-        {
-          "$ref": "#/definitions/SlackSettings"
-        },
-        {
-          "type": "null"
-        }
-      ]
+    "protected_branches": {
+      "description": "Branches that are protected: saving a file while on one of these branches will auto-create a new feature branch instead of writing directly. Defaults to [default_branch] (usually \"main\") when not set.\n\nExample config.yml: protected_branches: - main - develop",
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "repositories": {
+      "description": "External repositories (dbt, LookML, data models, etc.) to surface in the IDE.\n\nExample config.yml: repositories: - name: dbt-models path: ../my-dbt-project - name: lookml git_url: https://github.com/acme/lookml-repo branch: main",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Repository"
+      }
     }
   },
   "additionalProperties": false,
@@ -109,6 +126,27 @@
           }
         }
       }
+    },
+    "BuilderAgentConfig": {
+      "description": "Configuration for the built-in builder copilot agent.\n\nSupports two forms for backward compatibility: - **Path** (legacy): a string pointing to an `.agent.yml` file, e.g. `builder_agent: builder.agent.yml` - **Builtin** (new): just a model name, e.g. `builder_agent: { model: \"claude-sonnet-4-6\" }`",
+      "anyOf": [
+        {
+          "description": "Legacy: path to an external agent YAML file.",
+          "type": "string"
+        },
+        {
+          "description": "New: built-in copilot configured only with a model name.",
+          "type": "object",
+          "required": [
+            "model"
+          ],
+          "properties": {
+            "model": {
+              "type": "string"
+            }
+          }
+        }
+      ]
     },
     "Database": {
       "type": "object",
@@ -1142,6 +1180,47 @@
         }
       }
     },
+    "Repository": {
+      "description": "An external repository (dbt, LookML, data models, etc.) linked to an Oxy project. Either `path` or `git_url` must be set.",
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "branch": {
+          "description": "Branch to check out when cloning from `git_url`. Defaults to HEAD.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "git_namespace_id": {
+          "description": "GitHub namespace UUID used to get a fresh installation token for push. Set when the repo was linked via the GitHub App.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "git_url": {
+          "description": "Remote git URL to clone. Repo is cloned to `.repositories/{name}/`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Display name used as the path prefix `@{name}/` in the IDE.",
+          "type": "string"
+        },
+        "path": {
+          "description": "Local filesystem path, relative to the project root or absolute.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
     "Schema": {
       "description": "A JSON Schema.",
       "anyOf": [
@@ -1529,43 +1608,6 @@
           }
         }
       ]
-    },
-    "SlackSettings": {
-      "description": "Slack integration settings for project-level configuration",
-      "type": "object",
-      "required": [
-        "default_agent"
-      ],
-      "properties": {
-        "bot_token_var": {
-          "description": "Environment variable containing the bot token",
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "default_agent": {
-          "description": "Default agent to use for Slack DM conversations This is used when users message the bot directly via Slack's AI/Agent interface",
-          "type": "string"
-        },
-        "oxy_app_url": {
-          "description": "Base URL for the Oxy web app (for deep links back to app in Slack messages) If not specified, \"View in Oxy\" links will not be included in responses",
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "signing_secret_var": {
-          "description": "Environment variable containing the signing secret",
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      }
     }
   }
 }

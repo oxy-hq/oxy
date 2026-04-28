@@ -183,6 +183,11 @@ const integrationKeys = {
     [...integrationKeys.all, "looker", projectId, branchName] as const
 };
 
+const slackKeys = {
+  all: ["slack"] as const,
+  installation: (orgId: string) => [...slackKeys.all, "installation", orgId] as const
+};
+
 const testFileKeys = {
   all: ["testFile"] as const,
   list: (projectId: string, branchName: string) =>
@@ -265,6 +270,7 @@ const queryKeys = {
   artifact: artifactKeys,
   contextGraph: contextGraphKeys,
   integration: integrationKeys,
+  slack: slackKeys,
   trace: traceKeys,
   testFile: testFileKeys,
   testProjectRun: testProjectRunKeys,

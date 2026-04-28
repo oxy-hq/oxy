@@ -344,6 +344,11 @@ pub fn oxy_output_to_parts(output: &Output) -> Result<Vec<Part>, A2aError> {
             })?;
             Ok(vec![Part::Data(DataPart::new(json_value))])
         }
+        // Reasoning and chart outputs aren't part of the A2A surface — they
+        // belong to the live UI render layer (Slack image blocks, web chart
+        // plugin, …). A2A clients receive the persisted text/data parts
+        // only, so we drop them here.
+        Output::Reasoning { .. } | Output::Chart { .. } => Ok(vec![]),
     }
 }
 

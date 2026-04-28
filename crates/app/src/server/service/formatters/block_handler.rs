@@ -221,6 +221,46 @@ impl BlockHandler {
         source: &Source,
         chunk: &oxy::execute::types::Chunk,
     ) -> Result<(), OxyError> {
+        // Reasoning and chart outputs flow through dedicated structured
+        // events instead of the generic Text/persistence paths. Dispatch
+        // them here and short-circuit; the rest of this function handles
+        // the legacy Text/SQL/Table/Query flow.
+        match &chunk.delta {
+            Output::Reasoning { id, delta, is_done } => {
+                if *is_done {
+                    self.stream_dispatcher
+                        .send_reasoning_done(id, &source.kind)
+                        .await?;
+                } else if delta.is_empty() {
+                    // Empty delta on a non-done chunk = the "started"
+                    // signal. Producers can also call once with a
+                    // non-empty delta and we'll synthesize the started
+                    // event there.
+                    self.stream_dispatcher
+                        .send_reasoning_started(id, &source.kind)
+                        .await?;
+                } else {
+                    self.stream_dispatcher
+                        .send_reasoning_chunk(id, delta.clone(), &source.kind)
+                        .await?;
+                }
+                return Ok(());
+            }
+            Output::Chart { chart_src } => {
+                // Persist as Content::Chart so stored markdown round-trips
+                // back to `:chart{chart_src=…}` (web markdown plugins
+                // continue to render historical content unchanged).
+                self.block_manager
+                    .add_content(source, Content::Chart(chart_src.clone()))
+                    .await?;
+                self.stream_dispatcher
+                    .send_chart(chart_src.clone(), &source.kind)
+                    .await?;
+                return Ok(());
+            }
+            _ => {}
+        }
+
         if chunk.finished {
             // Process the final chunk
             if let Some(content) = self.block_manager.finalize_content(&chunk.delta)

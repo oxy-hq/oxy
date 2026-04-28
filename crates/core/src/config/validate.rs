@@ -325,11 +325,12 @@ mod tests {
                 workspace_path: project_path,
                 repositories: vec![],
                 integrations: vec![],
-                slack: None,
+                slack_legacy: None,
                 mcp: None,
                 a2a: None,
                 protected_branches: None,
                 base_branch: None,
+                storage: None,
             },
             metadata: None,
         }

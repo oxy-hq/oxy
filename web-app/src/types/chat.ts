@@ -180,6 +180,40 @@ export interface UsageContent {
   usage: Usage;
 }
 
+/**
+ * Reasoning span lifecycle. The agent emits ReasoningStarted on the first
+ * delta, a ReasoningChunk for every token, and ReasoningDone when the span
+ * closes. The MessageProcessor synthesizes the legacy `:::reasoning` /
+ * `:::` markdown directive from these so the existing ReasoningPlugin
+ * keeps rendering without changes.
+ */
+export interface ReasoningStartedContent {
+  type: "reasoning_started";
+  id: string;
+}
+
+export interface ReasoningChunkContent {
+  type: "reasoning_chunk";
+  id: string;
+  delta: string;
+}
+
+export interface ReasoningDoneContent {
+  type: "reasoning_done";
+  id: string;
+}
+
+/**
+ * A chart artifact emitted by the visualize tool. Replaces the legacy
+ * `:chart{chart_src=…}` text directive on the live stream. The
+ * MessageProcessor synthesizes the directive into the message body so
+ * the existing ChartPlugin renders it without changes.
+ */
+export interface ChartContent {
+  type: "chart";
+  chart_src: string;
+}
+
 export type AnswerContent =
   | TextContent
   | ArtifactStartedContent
@@ -187,7 +221,11 @@ export type AnswerContent =
   | ArtifactDoneContent
   | UsageContent
   | ErrorContent
-  | DataAppContent;
+  | DataAppContent
+  | ReasoningStartedContent
+  | ReasoningChunkContent
+  | ReasoningDoneContent
+  | ChartContent;
 
 export type Answer = {
   content: AnswerContent;

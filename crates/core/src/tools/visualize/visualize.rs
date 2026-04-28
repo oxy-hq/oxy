@@ -70,11 +70,28 @@ impl Executable<VisualizeParams> for VisualizeExecutable {
         file.write_all(chart_config.to_string().as_bytes())
             .map_err(|e| OxyError::RuntimeError(e.to_string()))?;
 
-        let output = Output::Text(format!(
-            "Use this markdown directive to render the chart \":chart{{chart_src={}}}\" directly in the final answer.",
-            file_name
-        ));
-
+        // Emit the structured chart event as a streaming chunk. This is
+        // what BlockHandler dispatches onto `AnswerContent::Chart` (see
+        // `service/formatters/block_handler.rs::handle_content_update`),
+        // which in turn drives `ClientRenderer::on_chart` for every
+        // surface. The persistence layer also reads it: `Content::Chart`
+        // round-trips back to `:chart{chart_src=…}` markdown so stored
+        // history is unchanged.
+        //
+        // Returning `Output::Chart` from `execute` alone is NOT enough —
+        // the agent's tool launcher hands it back to the LLM as a tool
+        // result but never writes a chunk; without this explicit write
+        // the chart-rendered surface never sees the event.
+        let output = Output::Chart {
+            chart_src: file_name,
+        };
+        execution_context
+            .write_chunk(Chunk {
+                key: None,
+                delta: output.clone(),
+                finished: true,
+            })
+            .await?;
         events::tool::tool_call_output(&output);
         Ok(output)
     }

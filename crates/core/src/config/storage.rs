@@ -222,6 +222,13 @@ impl ConfigStorage for LocalSource {
                 self.project_path.display()
             ))
         })?;
+        if config.slack_legacy.is_some() {
+            tracing::warn!(
+                "config.yml contains a `slack:` section which is no longer read. \
+                Slack is now configured per-org via OAuth. \
+                Please remove the `slack:` section from your config.yml."
+            );
+        }
         config.workspace_path = self.project_path.clone();
         Ok(config)
     }
@@ -236,7 +243,7 @@ impl ConfigStorage for LocalSource {
             databases: [].to_vec(),
             builder_agent: None,
             integrations: vec![],
-            slack: None,
+            slack_legacy: None,
             mcp: None,
             a2a: None,
             protected_branches: None,

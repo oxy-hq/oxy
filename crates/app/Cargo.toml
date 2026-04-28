@@ -125,6 +125,7 @@ minijinja = { workspace = true, features = ["loader"] }
 once_cell = { workspace = true }
 pulldown-cmark = { workspace = true }
 scopeguard = { workspace = true }
+tokio-tungstenite = { workspace = true }
 tokio-util = { workspace = true }
 tokio-stream = { workspace = true }
 include_dir = { workspace = true }

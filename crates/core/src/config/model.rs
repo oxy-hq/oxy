@@ -75,9 +75,12 @@ pub struct Config {
     #[garde(skip)]
     pub integrations: Vec<Integration>,
 
-    #[serde(default)]
-    #[garde(dive)]
-    pub slack: Option<SlackSettings>,
+    /// Legacy `slack:` section — tolerated for backward compatibility but no longer read.
+    /// Users should remove this from config.yml; Slack is now configured per-org via OAuth.
+    #[serde(default, skip_serializing, rename = "slack")]
+    #[garde(skip)]
+    #[schemars(skip)]
+    pub slack_legacy: Option<serde_yaml::Value>,
 
     /// Optional MCP configuration for exposing resources as tools
     /// If not specified, all agents and workflows are exposed by default
@@ -234,73 +237,6 @@ pub struct LookerExplore {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[garde(skip)]
     pub description: Option<String>,
-}
-
-/// Slack integration settings for project-level configuration
-#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
-#[garde(context(ValidationContext))]
-pub struct SlackSettings {
-    /// Default agent to use for Slack DM conversations
-    /// This is used when users message the bot directly via Slack's AI/Agent interface
-    #[garde(skip)]
-    pub default_agent: String,
-
-    /// Base URL for the Oxygen web app (for deep links back to app in Slack messages)
-    /// If not specified, "View in Oxygen" links will not be included in responses
-    #[serde(default)]
-    #[garde(skip)]
-    pub oxy_app_url: Option<String>,
-
-    /// Bot token for Slack API calls (direct value, not recommended for production)
-    #[serde(default)]
-    #[garde(skip)]
-    #[schemars(skip)]
-    pub bot_token: Option<String>,
-
-    /// Environment variable containing the bot token
-    #[serde(default)]
-    #[garde(skip)]
-    pub bot_token_var: Option<String>,
-
-    /// Signing secret for verifying Slack requests (direct value, not recommended for production)
-    #[serde(default)]
-    #[garde(skip)]
-    #[schemars(skip)]
-    pub signing_secret: Option<String>,
-
-    /// Environment variable containing the signing secret
-    #[serde(default)]
-    #[garde(skip)]
-    pub signing_secret_var: Option<String>,
-}
-
-impl SlackSettings {
-    /// Get the bot token, resolving from environment variable if needed
-    pub async fn get_bot_token(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
-        secret_manager
-            .resolve_config_value(
-                self.bot_token.as_deref(),
-                self.bot_token_var.as_deref(),
-                "Slack bot_token",
-                None,
-            )
-            .await
-    }
-
-    /// Get the signing secret, resolving from environment variable if needed
-    pub async fn get_signing_secret(
-        &self,
-        secret_manager: &SecretsManager,
-    ) -> Result<String, OxyError> {
-        secret_manager
-            .resolve_config_value(
-                self.signing_secret.as_deref(),
-                self.signing_secret_var.as_deref(),
-                "Slack signing_secret",
-                None,
-            )
-            .await
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, Validate)]
@@ -1087,6 +1023,20 @@ pub struct Defaults {
         }
     }))]
     pub database: Option<String>,
+
+    /// Default agent path (relative to the workspace root) used by callers
+    /// that need to pick "the" agent without ambiguity — most notably the
+    /// Slack integration when it has to dispatch a question against a
+    /// workspace. When unset, the Slack handler falls back to the
+    /// alphabetically-first agent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[garde(custom(|agent: &Option<String>, ctx: &ValidationContext| {
+        match agent {
+            Some(path) => validate_agent_exists(path.as_str(), ctx),
+            None => Ok(()),
+        }
+    }))]
+    pub agent: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Validate, Clone, JsonSchema)]
@@ -3727,7 +3677,7 @@ fn default_create_v0_app_tool_system_instruction() -> String {
 }
 
 fn default_create_v0_app_tool_description() -> String {
-    "Use this when user wants to build interactive UIs, dashboards, or data visualizations. The app will be deployed and can query Oxygen tables via SDK. Make sure to persist the execute sql in order to use it with Oxygen SDK.".to_string()
+    "Use this when user wants to build interactive UIs, dashboards, or data visualizations. The app will be deployed and can query Oxy tables via SDK. Make sure to persist the execute sql in order to use it with Oxy SDK.".to_string()
 }
 
 fn default_github_repo() -> Option<String> {

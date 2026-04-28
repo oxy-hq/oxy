@@ -32,7 +32,10 @@ exclude = [
 aes-gcm = { workspace = true }
 anyhow = { workspace = true }
 argon2 = { workspace = true }
-arrow = { workspace = true, features = ["json", "ipc"] } # arrow version has to comply with duckdb version
+arrow = { workspace = true, features = [
+  "json",
+  "ipc",
+] } # arrow version has to comply with duckdb version
 arrow57 = { package = "arrow", version = "=57.3.0", default-features = false } # used for lancedb interface (lancedb 0.27.x requires arrow 57)
 assert_cmd = { workspace = true }
 aws-config = { workspace = true, features = ["behavior-version-latest"] }
@@ -50,6 +53,7 @@ async-openai = { workspace = true, features = [
 ] }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
+aws-sdk-s3 = { workspace = true }
 axum = { workspace = true, features = ["macros", "http2"] }
 axum-server = { workspace = true }
 base64 = { workspace = true }
@@ -60,7 +64,12 @@ chrono-english = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 clickhouse = { workspace = true, features = ["rustls-tls"] }
 colored = { workspace = true }
-connectorx = { workspace = true, features = ["dst_arrow", "src_bigquery", "src_postgres", "src_mysql"] }
+connectorx = { workspace = true, features = [
+  "dst_arrow",
+  "src_bigquery",
+  "src_postgres",
+  "src_mysql",
+] }
 csv = { workspace = true }
 dirs = { workspace = true }
 dotenv = { workspace = true }
@@ -69,7 +78,11 @@ email_address = { workspace = true }
 entity = { workspace = true }
 omni = { workspace = true }
 oxy-looker = { workspace = true }
-oxy-observability = { workspace = true, features = ["duckdb", "postgres", "clickhouse"] }
+oxy-observability = { workspace = true, features = [
+  "duckdb",
+  "postgres",
+  "clickhouse",
+] }
 # oxy-config moved back into core/src/config to avoid circular dependency
 oxy-anthropic = { workspace = true }
 oxy-gemini = { workspace = true }
@@ -125,7 +138,13 @@ tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
 tower = { workspace = true }
-tower-http = { workspace = true, features = ["fs", "cors", "trace", "timeout", "compression-gzip"] }
+tower-http = { workspace = true, features = [
+  "fs",
+  "cors",
+  "trace",
+  "timeout",
+  "compression-gzip",
+] }
 tower-serve-static = { workspace = true }
 tqdm = { workspace = true }
 uuid = { workspace = true, features = ["v4", "serde"] }
@@ -134,7 +153,11 @@ secrecy = { workspace = true }
 fxhash = { workspace = true }
 deser-incomplete = { workspace = true }
 snowflake-api = { workspace = true }
-rmcp = { workspace = true, features = ["server", "transport-sse-server", "transport-io"] }
+rmcp = { workspace = true, features = [
+  "server",
+  "transport-sse-server",
+  "transport-io",
+] }
 serde_with = { workspace = true }
 # we use chrono::DateTimeWithTimeZone, which is not currently supported by utoipa
 # need to use this until this PR is released https://github.com/juhaku/utoipa/pull/1367
@@ -161,7 +184,11 @@ short-uuid = { workspace = true }
 rapidfuzz = { workspace = true }
 indexmap = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "json"] }
+tracing-subscriber = { workspace = true, features = [
+  "env-filter",
+  "fmt",
+  "json",
+] }
 tracing-appender = { workspace = true }
 tracing-log = { workspace = true }
 jsonschema = { workspace = true }

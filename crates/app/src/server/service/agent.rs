@@ -218,6 +218,17 @@ impl EventHandler for AgentCLIHandler {
                             std::io::stdout().flush().unwrap();
                         }
                     }
+                    Output::Reasoning { delta, is_done, .. } => {
+                        if is_done {
+                            println!("{delta}");
+                        } else {
+                            print!("{delta}");
+                            std::io::stdout().flush().unwrap();
+                        }
+                    }
+                    Output::Chart { chart_src } => {
+                        println!("{}", format!("[chart: {chart_src}]").primary());
+                    }
                     Output::Bool(_)
                     | Output::Prompt(_)
                     | Output::Documents(_)

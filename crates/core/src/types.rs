@@ -397,6 +397,26 @@ pub enum AnswerContent {
     Text {
         content: String,
     },
+    /// Begin a reasoning span. Renderers open the affordance now (Slack
+    /// drops to native streaming cursor; Web opens a collapsible panel)
+    /// and don't have to buffer to detect the first chunk.
+    ReasoningStarted {
+        id: String,
+    },
+    ReasoningChunk {
+        id: String,
+        delta: String,
+    },
+    ReasoningDone {
+        id: String,
+    },
+    /// A chart artifact emitted by the visualize tool. The `chart_src`
+    /// is the canonical filename (e.g. `<uuid>.json`) — the renderer is
+    /// responsible for turning it into a public URL or surface-specific
+    /// rendering.
+    Chart {
+        chart_src: String,
+    },
     ArtifactStarted {
         id: String,
         title: String,
@@ -447,6 +467,10 @@ pub enum Content {
     LookerQuery(LookerQuery),
     SandboxInfo(SandboxInfo),
     SemanticQuery(SemanticQuery),
+    /// A persisted reference to a chart file. `to_markdown` round-trips this
+    /// to the canonical `:chart{chart_src=…}` directive so stored thread
+    /// markdown remains parseable by the web markdown plugins.
+    Chart(String),
 }
 
 impl Content {
@@ -468,7 +492,65 @@ impl Content {
                 )
             }
             Content::SemanticQuery(_) => "".to_string(),
+            Content::Chart(chart_src) => format!(":chart{{chart_src={chart_src}}}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod content_to_markdown_tests {
+    use super::*;
+
+    #[test]
+    fn chart_serializes_to_canonical_directive() {
+        let content = Content::Chart("abc-123.json".to_string());
+        assert_eq!(content.to_markdown(), ":chart{chart_src=abc-123.json}");
+    }
+}
+
+#[cfg(test)]
+mod answer_content_serde_tests {
+    use super::*;
+
+    #[test]
+    fn reasoning_started_round_trip() {
+        let v = AnswerContent::ReasoningStarted {
+            id: "r1".to_string(),
+        };
+        let json = serde_json::to_value(&v).expect("serialize");
+        assert_eq!(json["type"], "reasoning_started");
+        assert_eq!(json["id"], "r1");
+    }
+
+    #[test]
+    fn reasoning_chunk_round_trip() {
+        let v = AnswerContent::ReasoningChunk {
+            id: "r1".to_string(),
+            delta: "hello".to_string(),
+        };
+        let json = serde_json::to_value(&v).expect("serialize");
+        assert_eq!(json["type"], "reasoning_chunk");
+        assert_eq!(json["id"], "r1");
+        assert_eq!(json["delta"], "hello");
+    }
+
+    #[test]
+    fn reasoning_done_round_trip() {
+        let v = AnswerContent::ReasoningDone {
+            id: "r1".to_string(),
+        };
+        let json = serde_json::to_value(&v).expect("serialize");
+        assert_eq!(json["type"], "reasoning_done");
+    }
+
+    #[test]
+    fn chart_round_trip() {
+        let v = AnswerContent::Chart {
+            chart_src: "abc.json".to_string(),
+        };
+        let json = serde_json::to_value(&v).expect("serialize");
+        assert_eq!(json["type"], "chart");
+        assert_eq!(json["chart_src"], "abc.json");
     }
 }
 
@@ -638,6 +720,9 @@ impl Block {
                     log_items.push(LogItem::info(format!(
                         "Semantic Query:\n```json\n{json}\n```\n"
                     )));
+                }
+                Content::Chart(chart_src) => {
+                    log_items.push(LogItem::info(format!("Chart: {chart_src}")));
                 }
             },
             BlockValue::Children { kind, children } => match kind {

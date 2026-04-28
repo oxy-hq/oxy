@@ -599,24 +599,6 @@ pub async fn list_env_secrets(
         }
     };
 
-    // Scan Slack settings
-    if let Some(slack) = &config.slack {
-        if let Some(var) = &slack.bot_token_var {
-            seen_vars.insert(var.clone());
-            env_secrets.push(make_entry(
-                var.clone(),
-                Some("slack.bot_token_var".to_string()),
-            ));
-        }
-        if let Some(var) = &slack.signing_secret_var {
-            seen_vars.insert(var.clone());
-            env_secrets.push(make_entry(
-                var.clone(),
-                Some("slack.signing_secret_var".to_string()),
-            ));
-        }
-    }
-
     // Scan integrations
     for integration in &config.integrations {
         match &integration.integration_type {

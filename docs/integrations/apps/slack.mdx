@@ -1,259 +1,182 @@
 ---
 title: Slack
-description: Connect Oxy to Slack to query your data through @mentions, slash commands, and DMs
+description: Query your data directly from Slack using @mentions, DMs, and the Oxygen assistant sidebar
 ---
 
-This guide explains how to connect Oxy to Slack. Once configured, users can interact with Oxy by:
-
-- **@mentioning** the Oxy bot in channels
-- Using the `/oxy` **slash command**
-- Sending **direct messages** to the Oxy bot
+The Oxygen Slack app lets your team ask data questions without leaving Slack. Mention `@Oxygen` in any channel or send it a direct message — it runs your query, streams the answer, and posts a formatted response with charts and a **View thread in Oxygen** link for the full conversation.
 
 ## Prerequisites
 
-Before you begin, you'll need:
+- An Oxygen Cloud account with at least one workspace configured
+- Owner or Admin role in the Oxygen org
+- Admin permissions in the target Slack workspace
 
-- An externally reachable HTTPS URL for your Oxy instance (e.g., `https://oxy.yourcompany.com`)
-- Admin rights for the Slack workspace you want to connect
-
-<Info>
-  For local development, you can use a tunneling service like
-  [ngrok](https://ngrok.com) to expose your local Oxy instance.
-</Info>
-
-## Setup
+## Installation
 
 <Steps>
-<Step title="Create a Slack app from the manifest">
+<Step title="Open Org Settings">
 
-1. Go to [Slack Apps](https://api.slack.com/apps) and click **Create New App**
-2. Select **From a manifest**
-3. Choose your target workspace and click **Next**
-4. Switch to the **YAML** tab
-5. Copy the manifest below, replacing `{{YOUR_OXY_BASE_URL}}` with your Oxy base URL (e.g., `https://oxy.yourcompany.com`):
-
-```yaml Slack App Manifest
-display_information:
-  name: Oxy AI
-  description: Ask Oxy anything
-  background_color: "#383838"
-features:
-  app_home:
-    home_tab_enabled: true
-    messages_tab_enabled: true
-    messages_tab_read_only_enabled: false
-  bot_user:
-    display_name: Oxy
-    always_online: false
-  slash_commands:
-    - command: /oxy
-      url: "{{YOUR_OXY_BASE_URL}}/api/slack/commands"
-      description: Ask Oxy
-      should_escape: false
-  assistant_view:
-    assistant_description: Ask Oxy anything about your data
-    suggested_prompts: []
-oauth_config:
-  scopes:
-    bot:
-      - app_mentions:read
-      - assistant:write
-      - channels:history
-      - channels:read
-      - chat:write
-      - commands
-      - groups:history
-      - im:history
-      - im:write
-      - users:read
-      - users:read.email
-settings:
-  event_subscriptions:
-    request_url: "{{YOUR_OXY_BASE_URL}}/api/slack/events"
-    bot_events:
-      - app_mention
-      - assistant_thread_context_changed
-      - assistant_thread_started
-      - message.channels
-      - message.groups
-      - message.im
-  org_deploy_enabled: false
-  socket_mode_enabled: false
-  token_rotation_enabled: false
-```
-
-6. Paste the modified manifest and click **Next**
-7. Review the scopes and click **Create**
+In the Oxygen web app, navigate to **Org Settings → Integrations**.
 
 </Step>
-<Step title="Add Slack configuration to config.yml">
+<Step title="Install to Slack">
 
-Add the `slack` section to your `config.yml`:
-
-```yaml config.yml
-slack:
-  default_agent: agents/my-agent.agent.yml
-  bot_token_var: SLACK_BOT_TOKEN
-  signing_secret_var: SLACK_SIGNING_SECRET
-```
-
-The `default_agent` is the Oxy agent that will respond to Slack @mentions and direct messages. Point this to an existing agent file in your project.
+Click **Install to Slack**. You are redirected to Slack's OAuth screen.
 
 </Step>
-<Step title="Copy the Signing Secret">
+<Step title="Authorise Oxygen">
 
-1. In the Slack app settings, go to **Basic Information**
-2. Under **App Credentials**, copy the **Signing Secret**
-3. Add the signing secret to your environment:
-
-```bash
-export SLACK_SIGNING_SECRET=your-signing-secret-here
-```
-
-Or add it to your `.env` file:
-
-```plaintext .env
-SLACK_SIGNING_SECRET=your-signing-secret-here
-```
-
-<Warning>
-  Never commit your `.env` file or expose credentials in version control.
-</Warning>
+Review the permissions and click **Allow**. Slack redirects you back to Oxygen. The Integrations tab confirms the connected workspace name.
 
 </Step>
-<Step title="Install the app to your workspace">
+<Step title="Invite the bot to a channel">
 
-1. In the left sidebar, go to **OAuth & Permissions**
-2. Under **OAuth Tokens**, click **Install to Workspace** and approve the permissions
-
-<Info>
-  If you're not a workspace admin, you'll see **Request to Install** instead. A
-  workspace admin will need to approve the request.
-</Info>
-
-3. Copy the **Bot User OAuth Token** (starts with `xoxb-`)
-4. Add the bot token to your environment:
-
-```bash
-export SLACK_BOT_TOKEN=xoxb-your-token-here
-```
-
-Or add it to your `.env` file:
-
-```plaintext .env
-SLACK_BOT_TOKEN=xoxb-your-token-here
-```
-
-5. Restart your Oxy instance to pick up the bot token
-
-</Step>
-<Step title="Test the integration">
-
-1. In Slack, invite the Oxy bot to a channel: `/invite @Oxy`
-2. Test with a mention: `@Oxy what can you help me with?`
-3. Or use the slash command: `/oxy hello`
+In Slack, type `/invite @Oxygen` in any channel where you want to use it. In DMs, no invite is needed — just open the Oxygen app and start typing.
 
 </Step>
 </Steps>
 
-## Enable the AI Agent Sidebar
-
-Slack provides a dedicated AI agent sidebar for chatting with assistants like Oxy. This needs to be enabled for users to access the DM experience.
-
-### For Workspace Admins
-
-To enable the Oxy agent for all members in your workspace:
-
-1. Click your **workspace name** in the sidebar
-2. Select **Tools & settings** → **Manage apps**
-3. Find and select the **Oxy AI** app
-4. Click **App settings**
-5. Next to **AI agent experience**, click **Edit**
-6. Choose **Enabled** to display the agent to all members
-7. Click **Save**
-
-### For Individual Users
-
-If not enabled workspace-wide, users can enable the agent in their personal preferences:
-
-1. Click your **profile picture** in the sidebar
-2. Select **Preferences**
-3. Go to the **Navigation** tab
-4. Under **App agents & assistants**, check **Show app agents**
-5. Check **Oxy** to display it in the sidebar
-
-<Frame>
-  <img
-    src="../../../images/slack-agent-preferences.png"
-    alt="Slack Preferences showing App agents & assistants settings"
-  />
-</Frame>
-
-Once enabled, click the agent icon in the top-right corner of Slack to open a chat with Oxy.
-
 <Info>
-  For more details, see [Slack's documentation on AI
-  apps](https://slack.com/help/articles/33076000248851-Understand-AI-apps-in-Slack).
+  Only **Owner** and **Admin** org roles can install or disconnect the Slack app. All members can use it once it is installed.
 </Info>
 
-## Configuration Options
+---
 
-| Option               | Required | Description                                                                               |
-| -------------------- | -------- | ----------------------------------------------------------------------------------------- |
-| `default_agent`      | Yes      | Path to the agent file used for Slack DM conversations and when no channel binding is set |
-| `bot_token_var`      | Yes      | Environment variable containing the Slack Bot User OAuth Token                            |
-| `signing_secret_var` | Yes      | Environment variable containing the Slack Signing Secret                                  |
-| `oxy_app_url`        | No       | Public URL of your Oxy instance. Enables "View in Oxy" links in Slack responses           |
+## Connecting Your Account
 
-### View in Oxy Links
+The first time you message `@Oxygen`, it checks whether your Slack email matches an existing Oxygen account in the org. If it does, you are linked automatically and your question runs immediately.
 
-When `oxy_app_url` is configured, agent responses in Slack will include a **"View in Oxy"** link. Clicking this link opens the conversation in the Oxy web app, where users can see:
+If automatic matching fails (different email, SSO, or guest account), Oxygen sends an ephemeral prompt only you can see:
 
-- SQL queries generated by the agent
-- Data tables and query results
-- Visualizations like charts
-- Other artifacts from the conversation
+> 🔗 **Connect your Oxygen account**  
+> To query your data from Slack, connect your Oxygen account first. This takes less than a minute.  
+> **[ Connect to Oxygen → ]**
 
-Since Oxy may run behind a reverse proxy, it cannot automatically determine its public URL. You must explicitly set `oxy_app_url` to the publicly accessible URL of your Oxy instance for these deep links to work correctly.
+Click the button, confirm in the browser, and Oxygen replies:
+
+> ✅ **You're connected!** Go back and ask your question — I'm ready.
+
+From then on, your Slack account is automatically linked. No further action needed.
 
 <Info>
-  If `oxy_app_url` is not set, responses will not include "View in Oxy" links.
+  If you don't complete the link, Oxygen shows the prompt again on your next message. Keep asking — the link stays open until you confirm it.
 </Info>
 
-### Example Configuration
+---
 
-```yaml config.yml
-slack:
-  default_agent: agents/analytics.agent.yml
-  bot_token_var: SLACK_BOT_TOKEN
-  signing_secret_var: SLACK_SIGNING_SECRET
-  oxy_app_url: https://oxy.yourcompany.com # Enables "View in Oxy" deep links
-```
+## Asking Questions
 
-## Channel Bindings
-
-By default, all channels use the `default_agent` specified in your config. You can bind specific channels to different agents using the `/oxy bind` command:
+### @Mention in a channel
 
 ```
-/oxy bind <agent_id>
+@Oxygen what was revenue last month broken down by region?
 ```
 
-For example:
+Oxygen replies in the same thread. Only you see workspace-picker prompts or error messages.
 
-```
-/oxy bind agents/sales.agent.yml
-```
+### Direct message
 
-To remove a binding and revert to the default agent:
+Open the Oxygen app in your DM list and type directly — no @mention needed. Follow-ups in the same DM thread continue the conversation automatically.
 
-```
-/oxy unbind
-```
+### AI Assistant sidebar
 
-## Troubleshooting
+Oxygen supports Slack's native AI Assistant sidebar. Click the sparkle icon in any channel header to open the assistant panel. Oxygen surfaces starter prompts when you begin a new thread.
 
-- **Can't find the Oxy agent in Slack**: Enable it in **Preferences** → **Navigation** → **App agents & assistants** (see [Enable the AI Agent Sidebar](#enable-the-ai-agent-sidebar))
-- **Bot doesn't respond**: Verify your `SLACK_BOT_TOKEN` and `SLACK_SIGNING_SECRET` are set correctly
-- **URL verification failed**: Ensure your Oxy instance is running and publicly accessible at the URL specified in the manifest. In your Slack app settings, go to **Event Subscriptions** and check that the Request URL shows "Verified". If not, click **Retry** to re-verify. This is often necessary after changing the request URL in the manifest or on that page.
-- **Permission errors**: Check that the bot has been invited to the channel with `/invite @Oxy`
-- **Signature verification failed**: Confirm the signing secret matches between Slack and your environment
+---
+
+## Selecting a Workspace
+
+If your org has multiple Oxygen workspaces, a picker appears the first time you ask in a channel:
+
+> **Select a workspace** ▾  
+> ☐ Set as default for this channel  
+> **[ Select ]**
+
+Checking **Set as default for this channel** skips the picker automatically for future questions in that channel. You can change or clear the default at any time from **Oxygen App Home → Settings**.
+
+---
+
+## Reading Responses
+
+Oxygen responses include:
+
+| Element | Description |
+|---------|-------------|
+| **Answer** | Prose streamed as the agent writes it |
+| **Charts** | Rendered inline when image hosting is configured; otherwise a link opens the chart in Oxygen |
+| **View thread in Oxygen →** | Opens the full conversation — SQL, data tables, follow-up history |
+| **Wrong workspace?** | Re-opens the workspace picker to re-run against a different workspace |
+
+---
+
+## Error Messages
+
+### "🔗 Connect your Oxygen account"
+
+Your Slack account is not linked yet. Click **Connect to Oxygen →** and confirm in the browser. See [Connecting Your Account](#connecting-your-account).
+
+### "You're no longer a member of this Oxygen org"
+
+Your Oxygen account was removed from the org after your Slack account was linked. Ask an org admin to re-invite you.
+
+### "No workspaces available"
+
+Your Oxygen account doesn't have access to any workspaces, or the org has none configured yet. Contact your Oxygen admin.
+
+### "Workspace X has no agents configured"
+
+The selected workspace has no `.agent.yml` files. Add at least one agent to the workspace and try again.
+
+### "Something went wrong"
+
+An unexpected server error occurred. If a **View thread in Oxygen →** button appears, click it to see what was partially computed. Retry after a moment. If the problem persists, check the Oxygen server logs.
+
+---
+
+## Chart Image Publishing (Optional)
+
+By default, charts generated by Oxygen are linked in Slack messages with a "View chart in Oxygen →" context line. To render charts **inline** as Slack image blocks, configure an S3 bucket that Slack's CDN can fetch from.
+
+Set the following environment variables on your Oxygen server:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `OXY_STORAGE_BACKEND` | Yes | Set to `s3` to enable S3 storage. Omit or set to anything else to keep local disk (no inline charts). |
+| `OXY_S3_BUCKET` | When S3 | S3 bucket name, e.g. `my-oxy-assets` |
+| `OXY_S3_REGION` | No | AWS region, e.g. `us-east-1`. Uses the SDK default when absent. |
+| `OXY_S3_PREFIX` | No | Key prefix inside the bucket, e.g. `charts` |
+| `OXY_S3_PUBLIC_URL_BASE` | No | CDN or public base URL, e.g. `https://cdn.example.com`. When unset, falls back to the virtual-hosted S3 URL. |
+| `OXY_S3_ACL` | No | Canned ACL, e.g. `public-read`. Omit when the bucket uses a bucket policy instead of ACLs. |
+
+AWS credentials follow the standard SDK chain (environment variables, shared config file, IAM role). No credentials need to be set explicitly when running on EC2/ECS with an appropriate IAM role.
+
+<Info>
+  The bucket must be publicly readable by Slack's CDN (either via a `public-read` ACL or a bucket policy). Oxygen uploads rendered PNGs and Slack fetches them when expanding the message.
+</Info>
+
+---
+
+## Disconnecting
+
+1. Go to **Org Settings → Integrations** in the Oxygen web app.
+2. Click **Disconnect** next to the Slack workspace.
+
+This revokes the bot token and removes all stored installation data. Existing Slack threads remain visible but the bot will no longer respond. To reconnect, follow the [Installation](#installation) steps again.
+
+---
+
+## Permissions
+
+Oxygen requests the following Slack scopes:
+
+| Scope | Purpose |
+|-------|---------|
+| `chat:write` | Post answers and ephemeral messages |
+| `app_mentions:read` | Receive @mention events |
+| `im:history` | Read DMs sent to Oxygen |
+| `im:write` | Send DM confirmations |
+| `assistant:write` | Use the AI Assistant sidebar |
+| `users:read.email` | Auto-match Slack accounts to Oxygen accounts by email |
+| `channels:history` | Read thread context for follow-up questions |
+
+Oxygen reads **only** messages directed at it (via @mention, DM, or the assistant sidebar). It does not monitor general channel history.

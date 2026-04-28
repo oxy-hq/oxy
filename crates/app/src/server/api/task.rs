@@ -136,6 +136,38 @@ impl EventHandler for TaskStream {
                         let _ = self.tx.send(message).await.map_err(|_| ());
                     }
                 }
+                Output::Reasoning { id, delta, is_done } => {
+                    let event_step = event.source.kind.to_string();
+                    let id = id.clone();
+                    let content = if *is_done {
+                        AnswerContent::ReasoningDone { id }
+                    } else if delta.is_empty() {
+                        AnswerContent::ReasoningStarted { id }
+                    } else {
+                        AnswerContent::ReasoningChunk {
+                            id,
+                            delta: delta.clone(),
+                        }
+                    };
+                    let message = AnswerStream {
+                        content,
+                        references: vec![],
+                        is_error: false,
+                        step: event_step,
+                    };
+                    let _ = self.tx.send(message).await.map_err(|_| ());
+                }
+                Output::Chart { chart_src } => {
+                    let message = AnswerStream {
+                        content: AnswerContent::Chart {
+                            chart_src: chart_src.clone(),
+                        },
+                        references: vec![],
+                        is_error: false,
+                        step: event.source.kind.to_string(),
+                    };
+                    let _ = self.tx.send(message).await.map_err(|_| ());
+                }
                 Output::Bool(_)
                 | Output::SQL(_)
                 | Output::Documents(_)

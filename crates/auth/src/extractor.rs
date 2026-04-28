@@ -50,6 +50,28 @@ where
     }
 }
 
+/// Like `AuthenticatedUserExtractor` but returns `None` instead of rejecting
+/// when the request is unauthenticated. Handlers that want to render different
+/// UI for logged-in vs logged-out users use this.
+#[derive(Clone)]
+pub struct OptionalAuthenticatedUser(pub Option<AuthenticatedUser>);
+
+impl<S> FromRequestParts<S> for OptionalAuthenticatedUser
+where
+    S: Send + Sync,
+{
+    type Rejection = std::convert::Infallible;
+
+    fn from_request_parts(
+        parts: &mut Parts,
+        _state: &S,
+    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
+        let result =
+            OptionalAuthenticatedUser(parts.extensions.get::<AuthenticatedUser>().cloned());
+        async move { Ok(result) }
+    }
+}
+
 /// Extension trait to extract authenticated user from request
 pub trait RequestUserExt {
     fn user(&self) -> Option<&AuthenticatedUser>;

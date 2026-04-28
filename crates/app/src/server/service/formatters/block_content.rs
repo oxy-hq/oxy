@@ -28,6 +28,12 @@ impl ContentProcessor {
             Output::SemanticQuery(semantic_query_params) => {
                 Some(Content::SemanticQuery(semantic_query_params.clone()))
             }
+            // Persist charts as `Content::Chart` so stored markdown
+            // round-trips back to `:chart{chart_src=…}` for the web app's
+            // markdown plugins (which still parse historical content).
+            Output::Chart { chart_src } => Some(Content::Chart(chart_src.clone())),
+            // Reasoning is transient — never persisted in the block tree.
+            Output::Reasoning { .. } => None,
             _ => None,
         }
     }
@@ -43,6 +49,14 @@ impl ContentProcessor {
             Output::Documents(_documents) => None,
             Output::OmniQuery(_omni_query_params) => None,
             Output::LookerQuery(_looker_query_params) => Some("".to_string()),
+            // Charts emit through structured `AnswerContent::Chart` events
+            // and are persisted via `output_to_content`. Their text
+            // representation is empty so we don't double-emit the
+            // directive on the live stream.
+            Output::Chart { .. } => Some(String::new()),
+            // Reasoning streams through `AnswerContent::ReasoningChunk`
+            // events; not part of the persistable text flow.
+            Output::Reasoning { .. } => None,
         }
     }
 

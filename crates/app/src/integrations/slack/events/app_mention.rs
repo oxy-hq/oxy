@@ -1,68 +1,101 @@
-//! App mention event handler - core Slack→Oxy synchronization flow
+//! Handler for Slack `app_mention` events.
+//!
+//! Called when a user @-mentions the bot in a public/private channel.
+//! Resolves the Oxy user (returning `SlackError::NotAuthenticated` if unlinked),
+//! then delegates to `run_or_prompt`. All Slack error reporting is owned by the
+//! `dispatch_user_event` wrapper in `webhooks/events.rs` — this handler never
+//! calls any Slack client method directly.
 
-use crate::integrations::slack::events::execution::{
-    SlackChatRequest, execute_oxy_chat_for_slack, load_slack_settings,
-};
-use crate::integrations::slack::services::ChannelBindingService;
-use crate::integrations::slack::utils::strip_bot_mention;
-use oxy_shared::errors::OxyError;
-use uuid::Uuid;
+use crate::integrations::slack::error::SlackError;
+use crate::integrations::slack::linking::magic_link::new_link_url;
+use crate::integrations::slack::resolution::entrypoint::run_or_prompt;
+use crate::integrations::slack::resolution::user::{ResolvedUser, resolve};
+use entity::slack_installations::Model as InstallationRow;
 
-/// Handle Slack app mention event
-///
-/// This is the core synchronization flow: @oxy mention → Oxy chat → Slack response
-pub async fn handle_app_mention(
-    team_id: &str,
-    channel_id: &str,
-    user_id: &str,
-    text: &str,
-    thread_ts: Option<&str>,
-    event_ts: &str,
-) -> Result<(), OxyError> {
-    tracing::info!(
-        "Handling app mention: team={}, channel={}, user={}",
-        team_id,
-        channel_id,
-        user_id
-    );
+pub async fn handle(
+    installation: InstallationRow,
+    bot_token: String,
+    user: String,
+    text: String,
+    channel: String,
+    thread_ts: Option<String>,
+    event_ts: String,
+) -> Result<(), SlackError> {
+    let effective_ts = thread_ts.unwrap_or_else(|| event_ts.clone());
+    let cleaned = strip_bot_mention(&text);
 
-    // Load Slack settings from config.yml
-    let slack_settings = load_slack_settings().await?;
-
-    // Check for channel binding (overrides defaults)
-    let binding = ChannelBindingService::find_binding(team_id, channel_id).await?;
-
-    let (workspace_id, agent_id) = if let Some(b) = binding {
-        // Channel is explicitly bound - use the binding
-        tracing::info!(
-            "Channel binding found: project={}, agent={}",
-            b.oxy_project_id,
-            b.default_agent_id
-        );
-        (b.oxy_project_id, b.default_agent_id)
-    } else {
-        // No binding - use defaults from config.yml
-        tracing::info!(
-            "No channel binding, using defaults: project=nil, agent={}",
-            slack_settings.default_agent
-        );
-        (Uuid::nil(), slack_settings.default_agent.clone())
+    let link = match resolve(&installation, &user).await? {
+        ResolvedUser::Linked(l) => l,
+        ResolvedUser::Unlinked => {
+            let connect_url = new_link_url(
+                &installation.slack_team_id,
+                &user,
+                Some(&channel),
+                Some(&effective_ts),
+            )
+            .await?;
+            return Err(SlackError::NotAuthenticated { connect_url });
+        }
     };
 
-    // Strip bot mention from text and execute
-    let cleaned_text = strip_bot_mention(text);
-
-    execute_oxy_chat_for_slack(SlackChatRequest {
-        team_id: team_id.to_string(),
-        channel_id: channel_id.to_string(),
-        user_id: user_id.to_string(),
-        text: cleaned_text,
-        thread_ts: thread_ts.map(|s| s.to_string()),
-        event_ts: event_ts.to_string(),
-        workspace_id,
-        agent_id,
-        slack_settings,
-        is_dm: false,
-    })
+    run_or_prompt(
+        installation,
+        bot_token,
+        link,
+        cleaned,
+        channel,
+        effective_ts,
+        false,
+    )
     .await
+}
+
+/// Strip the leading `<@BOT_ID>` mention from the message text.
+pub(crate) fn strip_bot_mention(text: &str) -> String {
+    let trimmed = text.trim_start();
+    if let Some(rest) = trimmed.strip_prefix("<@")
+        && let Some(end) = rest.find('>')
+    {
+        return rest[end + 1..].trim().to_string();
+    }
+    trimmed.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_bot_mention;
+
+    #[test]
+    fn strips_leading_bot_mention() {
+        assert_eq!(strip_bot_mention("<@U12345> what is MRR?"), "what is MRR?");
+    }
+
+    #[test]
+    fn handles_leading_whitespace() {
+        assert_eq!(strip_bot_mention("   <@U12345> hi"), "hi");
+    }
+
+    #[test]
+    fn strips_only_leading_mention() {
+        // Only the first mention is stripped; subsequent ones are preserved.
+        assert_eq!(strip_bot_mention("<@U12345> hi <@U99999>"), "hi <@U99999>");
+    }
+
+    #[test]
+    fn passes_through_without_mention() {
+        assert_eq!(strip_bot_mention("hello"), "hello");
+    }
+
+    #[test]
+    fn handles_malformed_mention() {
+        // No closing `>` — falls through without panicking.
+        let input = "<@ incomplete";
+        let result = strip_bot_mention(input);
+        assert_eq!(result, input.trim());
+    }
+
+    #[test]
+    fn handles_empty_string() {
+        assert_eq!(strip_bot_mention(""), "");
+    }
 }

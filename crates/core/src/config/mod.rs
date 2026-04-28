@@ -277,6 +277,13 @@ pub fn parse_config(config_path: &PathBuf, project_path: PathBuf) -> Result<Conf
     let result = serde_yaml::from_str::<Config>(&config_str);
     match result {
         Ok(mut config) => {
+            if config.slack_legacy.is_some() {
+                tracing::warn!(
+                    "config.yml contains a `slack:` section which is no longer read. \
+                    Slack is now configured per-org via OAuth. \
+                    Please remove the `slack:` section from your config.yml."
+                );
+            }
             config.workspace_path = project_path;
             let context = ValidationContext {
                 config: config.clone(),

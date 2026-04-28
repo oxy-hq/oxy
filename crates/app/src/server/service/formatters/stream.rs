@@ -110,4 +110,68 @@ impl StreamDispatcher {
             .map_err(|_| ());
         Ok(())
     }
+
+    pub async fn send_reasoning_started(&self, id: &str, step: &str) -> Result<(), OxyError> {
+        let _ = self
+            .sender
+            .send(AnswerStream {
+                content: AnswerContent::ReasoningStarted { id: id.to_string() },
+                references: vec![],
+                is_error: false,
+                step: step.to_string(),
+            })
+            .await
+            .map_err(|_| ());
+        Ok(())
+    }
+
+    pub async fn send_reasoning_chunk(
+        &self,
+        id: &str,
+        delta: String,
+        step: &str,
+    ) -> Result<(), OxyError> {
+        let _ = self
+            .sender
+            .send(AnswerStream {
+                content: AnswerContent::ReasoningChunk {
+                    id: id.to_string(),
+                    delta,
+                },
+                references: vec![],
+                is_error: false,
+                step: step.to_string(),
+            })
+            .await
+            .map_err(|_| ());
+        Ok(())
+    }
+
+    pub async fn send_reasoning_done(&self, id: &str, step: &str) -> Result<(), OxyError> {
+        let _ = self
+            .sender
+            .send(AnswerStream {
+                content: AnswerContent::ReasoningDone { id: id.to_string() },
+                references: vec![],
+                is_error: false,
+                step: step.to_string(),
+            })
+            .await
+            .map_err(|_| ());
+        Ok(())
+    }
+
+    pub async fn send_chart(&self, chart_src: String, step: &str) -> Result<(), OxyError> {
+        let _ = self
+            .sender
+            .send(AnswerStream {
+                content: AnswerContent::Chart { chart_src },
+                references: vec![],
+                is_error: false,
+                step: step.to_string(),
+            })
+            .await
+            .map_err(|_| ());
+        Ok(())
+    }
 }
