@@ -493,6 +493,7 @@ impl SecretManagerService {
         C: sea_orm::ConnectionTrait,
     {
         let secret = Secret::find()
+            .filter(secrets::Column::ProjectId.eq(self.project_id))
             .filter(secrets::Column::Name.eq(name))
             .filter(secrets::Column::IsActive.eq(true))
             .one(db)
@@ -544,6 +545,7 @@ impl SecretManagerService {
         C: sea_orm::ConnectionTrait,
     {
         let secret = Secret::find()
+            .filter(secrets::Column::ProjectId.eq(self.project_id))
             .filter(secrets::Column::Name.eq(name))
             .filter(secrets::Column::IsActive.eq(true))
             .one(db)
