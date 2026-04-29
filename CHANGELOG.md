@@ -2,11 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.45] - 2026-04-29
+
+### 🚀 Features
+
+- Universal slack bot with multiple tenants support (#2134)
+- *(s3)* Default to presigned URLs; drop ACL escape hatch (#2201)
+
+### 🐛 Bug Fixes
+
+- Remove unused import of EntityTrait in Slack tests
+- Add back some old migrations instead of removing them
+- *(slack)* Wire headless chart renderer so S3 env vars actually take effect
+- *(slack)* Bot goes silent when chart-publisher init fails (#2205)
+- Unify workspace onboarding for demo / github / blank (#2202)
+
 ## [0.5.44] - 2026-04-28
 
 ### ⚙️ Miscellaneous Tasks
 
 - Rebrand "Oxy" to "Oxygen" across codebase (#2194)
+- Release 0.5.44 (#2198)
 
 ## [0.5.43] - 2026-04-28
 
