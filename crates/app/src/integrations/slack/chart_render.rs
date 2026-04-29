@@ -6,16 +6,23 @@
 //! JSON → option transform the React `<Chart>` component does, then
 //! screenshot the result.
 //!
-//! ## Why no public URL today
+//! ## Two delivery paths
 //!
-//! Slack's CDN needs a publicly reachable URL to embed an image block,
-//! and reaching the developer's `localhost` requires an external tunnel
-//! (cloudflared/ngrok). Until that infrastructure is in place, the
-//! renderer is invoked **eagerly** on each `Chart` event: the PNG is
-//! produced on disk and the on-disk path is surfaced in a footer
-//! context block so you can `open` the file locally and validate
-//! the chart visually. No image block is emitted to Slack — there
-//! would be no URL Slack could fetch.
+//! 1. **S3-backed inline image (recommended)** — when `OXY_STORAGE_BACKEND=s3`
+//!    is configured, the [`HeadlessChromeChartRenderer`] in this module is
+//!    wired into [`oxy::adapters::workspace::WorkspaceBuilder`] via
+//!    `with_chart_image_renderer`. The Slack execution path builds a
+//!    `BlobStorageChartImagePublisher` from it, uploads each rendered PNG
+//!    to S3, and embeds a presigned GET URL as a Block Kit `image` block.
+//!    This is the production path.
+//!
+//! 2. **Local-disk fallback** — when no S3 publisher is configured (e.g.
+//!    local dev without S3), the eager render in
+//!    [`get_or_render_chart_png`] writes the PNG to the workspace state
+//!    dir and the Slack message surfaces the on-disk path in a footer
+//!    context block. Useful for inspecting the rendered output locally,
+//!    but Slack itself shows no inline image because it can't fetch
+//!    `localhost`.
 //!
 //! ## Renderer
 //!
@@ -28,14 +35,35 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+use async_trait::async_trait;
 use base64::Engine;
 use headless_chrome::Browser;
 use headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption;
 use oxy::adapters::workspace::resolve_workspace_path;
 use oxy::config::ConfigBuilder;
+use oxy::storage::ChartImageRenderer;
 use oxy_shared::errors::OxyError;
+use serde_json::Value;
 use tokio::sync::Mutex;
 use uuid::Uuid;
+
+/// `oxy::storage::ChartImageRenderer` impl that delegates to
+/// [`render_echarts_to_png`] in this module. Inject via
+/// `WorkspaceBuilder::with_chart_image_renderer` so the
+/// `BlobStorageChartImagePublisher` can wire it together with an
+/// `S3BlobStorage` and produce inline Slack image-block URLs.
+///
+/// The struct itself carries no state — the renderer is process-wide
+/// and serializes browser launches behind `RENDER_LOCK` below.
+#[derive(Debug, Default)]
+pub struct HeadlessChromeChartRenderer;
+
+#[async_trait]
+impl ChartImageRenderer for HeadlessChromeChartRenderer {
+    async fn render_png(&self, config: &Value) -> Result<Vec<u8>, OxyError> {
+        render_echarts_to_png(config).await
+    }
+}
 
 const RENDER_VIEWPORT_WIDTH: u32 = 1200;
 const RENDER_VIEWPORT_HEIGHT: u32 = 700;

@@ -189,10 +189,19 @@ pub async fn run_for_slack(req: SlackRunRequest) -> Result<(), SlackError> {
     let repo_path = resolve_workspace_path(req.workspace_id)
         .await
         .map_err(&internal)?;
+    // Inject the headless-Chromium chart renderer so
+    // `WorkspaceManager::build_chart_image_publisher` can pair it with an
+    // S3 backend (when `OXY_STORAGE_BACKEND=s3` is configured) and the
+    // Slack render path produces real Block Kit `image` blocks instead
+    // of falling back to the local-disk breadcrumb. Without this call
+    // the publisher is always None and S3 env vars have no effect.
+    let chart_renderer: oxy::storage::SharedChartImageRenderer =
+        std::sync::Arc::new(crate::integrations::slack::chart_render::HeadlessChromeChartRenderer);
     let workspace_manager = WorkspaceBuilder::new(req.workspace_id)
         .with_workspace_path_and_fallback_config(&repo_path)
         .await
         .map_err(&internal)?
+        .with_chart_image_renderer(chart_renderer)
         .try_with_intent_classifier()
         .await
         .build()
