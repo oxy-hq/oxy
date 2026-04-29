@@ -560,12 +560,14 @@ function deriveGithubMessages(state: OnboardingState): OnboardingMessage[] {
   const setup = state.githubSetup;
   const llmCursor = state.githubLlmKeyCursor ?? 0;
   const whCursor = state.githubWarehouseCursor ?? 0;
+  const isDemo = state.mode === "demo";
 
   messages.push({
     id: "welcome",
     role: "assistant",
-    content:
-      "Welcome back. Your repository is imported — I just need a few secrets from you before you can start asking questions. Skip anything you're not ready to set up yet.",
+    content: isDemo
+      ? "Welcome to your demo workspace. The sample agents, dashboards, and DuckDB data are already in place — I just need an LLM API key so the agents can answer questions about the data."
+      : "Welcome back. Your repository is imported — I just need a few secrets from you before you can start asking questions. Skip anything you're not ready to set up yet.",
     status: state.step === "github_loading" ? undefined : "complete"
   });
 
@@ -573,7 +575,9 @@ function deriveGithubMessages(state: OnboardingState): OnboardingMessage[] {
     messages.push({
       id: "github_loading",
       role: "assistant",
-      content: "Scanning config.yml to see what setup is needed…",
+      content: isDemo
+        ? "Setting up your demo workspace…"
+        : "Scanning config.yml to see what setup is needed…",
       status: "working"
     });
     return messages;
@@ -685,7 +689,10 @@ function humanizeWarehouseField(field: string, varName: string): string {
 // ── Messages derived from state ─────────────────────────────────────────────
 
 export function deriveMessages(state: OnboardingState): OnboardingMessage[] {
-  if (state.mode === "github") {
+  // `github` and `demo` share the same "scan config.yml, fill missing
+  // secrets" thread shape — `deriveGithubMessages` already branches on
+  // `state.mode === "demo"` for mode-specific copy.
+  if (state.mode === "github" || state.mode === "demo") {
     return deriveGithubMessages(state);
   }
 
@@ -1173,7 +1180,9 @@ function buildPhaseMilestones(
 // ── Right rail state derived from onboarding state ──────────────────────────
 
 export function deriveRailState(state: OnboardingState): OnboardingRailState {
-  if (state.mode === "github") {
+  // Demo reuses the github rail (LLM keys + warehouses milestone), since
+  // both flows derive their progress from `githubSetup`.
+  if (state.mode === "github" || state.mode === "demo") {
     return deriveGithubRailState(state);
   }
 

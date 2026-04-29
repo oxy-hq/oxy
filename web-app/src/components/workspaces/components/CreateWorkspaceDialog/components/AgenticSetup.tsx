@@ -17,6 +17,7 @@ import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import {
   clearOnboardingStateForWorkspace,
   getPersistedStepForWorkspace,
+  hasPendingOnboardingForWorkspace,
   initOnboardingStateForWorkspace
 } from "@/libs/utils/onboardingStorage";
 import { AnalyticsService, type HumanInputQuestion, type UiBlock } from "@/services/api/analytics";
@@ -77,7 +78,25 @@ function AgenticSetupForWorkspace({ workspaceId }: { workspaceId: string }) {
   const publicAgentCount = (agents ?? []).filter((a) => a.public).length;
   const isReady =
     readiness?.has_llm_key === true && (databases?.length ?? 0) > 0 && publicAgentCount > 0;
-  const shouldRedirectAway = isReady && persistedStep !== "building";
+
+  // Only redirect away when the user has *no* pending onboarding state.
+  // `isReady` can be true for a workspace whose own `key_var` secrets aren't
+  // set yet — e.g. the operator has `OPENAI_API_KEY` in the server env, which
+  // satisfies the readiness probe even though the cloned repo / demo
+  // `config.yml` still references `key_var`s the user hasn't filled in. If
+  // we redirected on `isReady` alone we would erase the state the user just
+  // started in `WorkspacePreparing` and they'd never see the wizard.
+  //
+  // The home page mirrors this contract from the other side: it redirects
+  // *to* onboarding whenever a pending state exists, so the two pages can
+  // never ping-pong — exactly one of them owns the user at a time.
+  //
+  // We still need a "you finished — get out of here" path for users who
+  // navigate back to /onboarding after completion, hence the
+  // `persistedStep` checks: explicit `complete`, or no state at all.
+  const isPending = hasPendingOnboardingForWorkspace(workspaceId);
+  const shouldRedirectAway =
+    isReady && !isPending && (persistedStep === undefined || persistedStep === "complete");
 
   // Side effects belong in useEffect, not in the render body. Strict Mode
   // would otherwise call this twice per mount; concurrent rendering may
@@ -131,7 +150,9 @@ function AgenticSetupForWorkspace({ workspaceId }: { workspaceId: string }) {
     return <Navigate to='..' replace />;
   }
 
-  if (orchestrator.state.mode === "github") {
+  // `github` and `demo` share the same flow — both start from a config.yml
+  // that already exists on disk and just need missing secrets filled in.
+  if (orchestrator.state.mode === "github" || orchestrator.state.mode === "demo") {
     return <GithubOnboardingPage orchestrator={orchestrator} />;
   }
   return <BlankOnboardingPage orchestrator={orchestrator} />;
@@ -1182,27 +1203,30 @@ function GithubOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHand
     };
   }, [orchestrator.state.githubSetup]);
 
+  const mode = orchestrator.state.mode ?? "github";
   const handleStartOverConfirmed = useCallback(async () => {
     if (projectId && resetManifest.secret_names.length > 0) {
       try {
         await OnboardingService.resetOnboarding(projectId, resetManifest);
       } catch (err) {
-        console.error("[onboarding] Failed to reset github onboarding secrets", err);
+        console.error("[onboarding] Failed to reset onboarding secrets", err);
         toast.error("Failed to fully reset onboarding. Some secrets may remain.");
       }
     }
-    initOnboardingStateForWorkspace(projectId, "github");
+    initOnboardingStateForWorkspace(projectId, mode);
     window.location.reload();
-  }, [projectId, resetManifest]);
+  }, [projectId, resetManifest, mode]);
 
   const railState = orchestrator.railState;
+  const headerSubtitle =
+    mode === "demo" ? "Setting up your demo workspace" : "Connecting your repository";
 
   return (
     <div className='flex h-full flex-col'>
       <div className='flex items-center gap-2 border-border border-b px-4 py-2'>
         <div className='h-2 w-2 rounded-full bg-primary' />
         <span className='font-medium text-sm'>Oxygen Setup</span>
-        <span className='flex-1 text-muted-foreground text-xs'>Connecting your repository</span>
+        <span className='flex-1 text-muted-foreground text-xs'>{headerSubtitle}</span>
         {step !== "github_loading" && step !== "complete" && (
           <button
             type='button'

@@ -16,6 +16,10 @@ export interface AgentInfo {
   name: string;
   path: string;
   public: boolean;
+  /** Model ref this agent resolves through. Absent on backends that don't
+   *  populate it (older builds) or for agents where the model can't be
+   *  resolved cheaply at listing time. */
+  model?: string;
 }
 
 type ToolType = ExecuteSQLTool | ValidateSQLTool | RetrievalConfig;

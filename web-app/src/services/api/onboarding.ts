@@ -54,9 +54,18 @@ export interface GithubSetupWarehouse {
   missing_vars: GithubSetupMissingVar[];
 }
 
+export interface GithubSetupModel {
+  name: string;
+  /** Null for keyless vendors (e.g. Ollama). */
+  key_var: string | null;
+}
+
 export interface GithubSetupResponse {
   missing_llm_key_vars: GithubSetupKeyVar[];
   warehouses: GithubSetupWarehouse[];
+  /** Lets callers map an agent's `model` to its `key_var`, so they can
+   *  decide whether a *specific* key is missing rather than any-of. */
+  models?: GithubSetupModel[];
 }
 
 export interface TestLlmKeyResponse {

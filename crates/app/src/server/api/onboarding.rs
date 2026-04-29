@@ -752,6 +752,17 @@ pub struct GithubSetupResponse {
     /// value before the connection can be tested. Warehouses whose `*_var`
     /// references all resolve are omitted.
     pub warehouses: Vec<GithubSetupWarehouse>,
+    /// Every model with its `key_var` — lets the frontend resolve an agent's
+    /// chosen `model` to a specific key_var rather than treating any-of-many
+    /// as the gap signal.
+    pub models: Vec<GithubSetupModel>,
+}
+
+#[derive(Serialize, Default, Debug, Clone)]
+pub struct GithubSetupModel {
+    pub name: String,
+    /// `None` for keyless vendors (Ollama).
+    pub key_var: Option<String>,
 }
 
 #[derive(Serialize, Default, Debug, Clone)]
@@ -840,9 +851,21 @@ pub async fn github_setup(
         }
     }
 
+    // All models, set or not — `missing_llm_key_vars` dedupes by var and
+    // can't be used to resolve a specific model -> key_var.
+    let models: Vec<GithubSetupModel> = config_manager
+        .models()
+        .iter()
+        .map(|model| GithubSetupModel {
+            name: model.name().to_string(),
+            key_var: model.key_var().map(|k| k.to_string()),
+        })
+        .collect();
+
     Ok(Json(GithubSetupResponse {
         missing_llm_key_vars,
         warehouses,
+        models,
     }))
 }
 

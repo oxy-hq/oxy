@@ -93,7 +93,8 @@ const appKeys = {
 
 const onboardingKeys = {
   all: ["onboarding"] as const,
-  readiness: (projectId: string) => [...onboardingKeys.all, "readiness", projectId] as const
+  readiness: (projectId: string) => [...onboardingKeys.all, "readiness", projectId] as const,
+  githubSetup: (projectId: string) => [...onboardingKeys.all, "githubSetup", projectId] as const
 };
 
 const apiKeyKeys = {

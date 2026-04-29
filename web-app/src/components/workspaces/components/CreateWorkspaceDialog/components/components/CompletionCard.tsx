@@ -59,7 +59,11 @@ export default function CompletionCard({
   // over deriving a label from the filename. In github mode it is the only
   // source of app paths (nothing is built).
   const { data: workspaceApps } = useApps(true, false, false);
-  const isGithub = mode === "github";
+  // Both `github` and `demo` start from a config.yml that ships agents +
+  // dashboards already on disk — no semantic-layer build, no warehouse
+  // summary. They only differ in the ready-state copy.
+  const isGithub = mode === "github" || mode === "demo";
+  const isDemo = mode === "demo";
 
   const viewFiles = createdFiles.filter((f) => f.endsWith(".view.yml"));
   const createdAppFiles = createdFiles.filter((f) => f.endsWith(".app.yml"));
@@ -112,9 +116,11 @@ export default function CompletionCard({
       <div className='flex flex-col gap-3'>
         <p className='font-medium text-sm'>Workspace ready</p>
         <p className='text-muted-foreground text-sm leading-relaxed'>
-          {isGithub
-            ? "Your repository is connected. You can start asking questions against the agents and dashboards that ship with it."
-            : `Connected ${warehouseName} and built ${summaryList}.`}
+          {isDemo
+            ? "Your demo workspace is set up. Try the sample agents and dashboards on the bundled DuckDB data."
+            : isGithub
+              ? "Your repository is connected. You can start asking questions against the agents and dashboards that ship with it."
+              : `Connected ${warehouseName} and built ${summaryList}.`}
         </p>
         <Button
           className='w-full justify-center gap-2'

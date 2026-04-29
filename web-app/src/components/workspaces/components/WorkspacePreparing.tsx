@@ -61,18 +61,15 @@ export default function WorkspacePreparing({
   const ws = workspaces?.find((w) => w.id === workspaceId);
   const status = ws?.status;
 
-  // Blank ("new") and GitHub-imported workspaces both drop the user into the
-  // agentic onboarding flow — blank walks the full model/warehouse/build arc,
-  // github mode only collects the secrets referenced by the cloned repo's
-  // config.yml. Demo workspaces skip onboarding since they ship with sample
-  // agents + data already configured.
+  // All three creation types funnel into the same agentic onboarding page —
+  // each variant takes a different path through it:
+  //   new:    full provider/model/warehouse/build arc.
+  //   github: collects only the secrets the cloned repo's config.yml needs.
+  //   demo:   collects only the LLM key (DuckDB needs no credentials, the
+  //           sample workspace already ships agents/apps/semantic layer).
   const goToWorkspace = useCallback(() => {
-    if (creationType === "new" || creationType === "github") {
-      initOnboardingStateForWorkspace(workspaceId, creationType);
-      navigate(ROUTES.ORG(orgSlug).WORKSPACE(workspaceId).ONBOARDING, { replace: true });
-      return;
-    }
-    navigate(ROUTES.ORG(orgSlug).WORKSPACE(workspaceId).HOME, { replace: true });
+    initOnboardingStateForWorkspace(workspaceId, creationType);
+    navigate(ROUTES.ORG(orgSlug).WORKSPACE(workspaceId).ONBOARDING, { replace: true });
   }, [creationType, navigate, orgSlug, workspaceId]);
 
   const [countdown, setCountdown] = useState(REDIRECT_SECONDS);

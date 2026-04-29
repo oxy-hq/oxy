@@ -662,11 +662,18 @@ export function useOnboardingActions(orchestrator: Orchestrator) {
     [projectId, orchestrator]
   );
 
-  // ── GitHub mode ────────────────────────────────────────────────────────────
+  // ── GitHub / Demo mode ─────────────────────────────────────────────────────
 
-  // Fetch the missing-secrets manifest for a cloned Oxy repo.
+  // Fetch the missing-secrets manifest for a cloned Oxy repo (or the demo
+  // workspace, which uses the same shape). DuckDB warehouses are filtered out
+  // because they're file-backed and don't take credentials — `password_var`
+  // entries on a DuckDB warehouse are seed-data noise we shouldn't prompt for.
   const fetchGithubSetup = useCallback(async () => {
-    const setup = await OnboardingService.getGithubSetup(projectId);
+    const raw = await OnboardingService.getGithubSetup(projectId);
+    const setup = {
+      ...raw,
+      warehouses: raw.warehouses.filter((w) => w.dialect.toLowerCase() !== "duckdb")
+    };
     orchestrator.setGithubSetup(setup);
     return setup;
   }, [projectId, orchestrator]);

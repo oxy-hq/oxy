@@ -22,12 +22,18 @@ export type OnboardingStep =
   | "complete";
 
 /**
- * Onboarding flow variant. `"new"` is the blank-workspace path (provider / model /
- * table selection / agentic build). `"github"` is for cloned Oxy repos that
- * already ship agents + apps + semantic layer — it only collects the missing
- * secrets and validates warehouse connectivity.
+ * Onboarding flow variant.
+ *
+ * - `"new"`: blank workspace — full provider / model / table selection /
+ *   agentic build.
+ * - `"github"`: cloned Oxy repo with existing agents + apps + semantic layer —
+ *   collects only the secrets the repo's `config.yml` references and validates
+ *   warehouse connectivity.
+ * - `"demo"`: pre-seeded sample workspace — same shape as `"github"` (everything
+ *   is already built, we just need an LLM key), but always uses DuckDB so
+ *   warehouse credentials don't need to be collected.
  */
-export type OnboardingMode = "new" | "github";
+export type OnboardingMode = "new" | "github" | "demo";
 
 /** Description of a single LLM API key the repo's config.yml references. */
 export interface GithubSetupKeyVar {

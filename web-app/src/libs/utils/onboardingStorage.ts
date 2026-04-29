@@ -48,7 +48,11 @@ export function initOnboardingStateForWorkspace(
 ): void {
   if (!workspaceId) return;
   try {
-    const step: OnboardingStep = mode === "github" ? "github_loading" : "welcome";
+    // Demo workspaces reuse the github flow's "inspect existing config.yml,
+    // collect missing secrets" shape — the only difference is that the demo
+    // is always DuckDB so the warehouse step is filtered out at fetch time.
+    const reusesGithubFlow = mode === "github" || mode === "demo";
+    const step: OnboardingStep = reusesGithubFlow ? "github_loading" : "welcome";
     const seeded: PersistableState = {
       step,
       workspaceId,

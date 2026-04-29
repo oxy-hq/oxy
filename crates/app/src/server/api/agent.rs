@@ -87,24 +87,60 @@ pub async fn check_builder_availability(
     }
 }
 
+/// Minimal subset of the analytics agentic.yml schema — we only need
+/// `llm.ref` to populate `AgentConfigResponse.model`. Avoids importing
+/// the full `agentic_analytics::AgentConfig` (which pulls solver build
+/// types) into this listing endpoint.
+#[derive(Deserialize)]
+struct AgenticAgentSnippet {
+    #[serde(default)]
+    llm: Option<AgenticAgentLlmSnippet>,
+}
+
+#[derive(Deserialize)]
+struct AgenticAgentLlmSnippet {
+    #[serde(default)]
+    r#ref: Option<String>,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AgentConfigResponse {
     pub name: String,
     pub public: bool,
     pub path: String,
+    /// Model ref this agent resolves through. Lets the home page tie a
+    /// readiness gap to the *agent the chat will actually use* rather than
+    /// to "any LLM key is missing".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 impl AgentConfigResponse {
     pub fn new(name: String, path: String, public: bool) -> Self {
-        Self { name, path, public }
+        Self {
+            name,
+            path,
+            public,
+            model: None,
+        }
     }
 
     pub fn from_config(config: AgentConfig, path: &str) -> Self {
-        Self::new(config.name.to_string(), path.to_string(), config.public)
+        Self {
+            name: config.name.to_string(),
+            path: path.to_string(),
+            public: config.public,
+            model: Some(config.model),
+        }
     }
 
     pub fn from_aw_config(config: AgenticConfig, path: &str) -> Self {
-        Self::new(config.name.to_string(), path.to_string(), config.public)
+        Self {
+            name: config.name.to_string(),
+            path: path.to_string(),
+            public: config.public,
+            model: Some(config.model),
+        }
     }
 }
 
@@ -174,9 +210,21 @@ pub async fn get_agents(
                         .trim_end_matches(".agentic.yaml")
                         .trim_end_matches(".agentic.yml")
                         .to_string();
-                    Ok::<AgentConfigResponse, anyhow::Error>(AgentConfigResponse::new(
-                        agent_id, path, true,
-                    ))
+                    // Read the file directly to extract `llm.ref` — the
+                    // analytics config has its own loader, but we only need
+                    // one field and parsing inline avoids pulling solver
+                    // build dependencies into the listing path.
+                    let abs_path = workspace_path.join(&path);
+                    let model_ref = tokio::fs::read_to_string(&abs_path)
+                        .await
+                        .ok()
+                        .and_then(|content| {
+                            serde_yaml::from_str::<AgenticAgentSnippet>(&content).ok()
+                        })
+                        .and_then(|snippet| snippet.llm.and_then(|l| l.r#ref));
+                    let mut resp = AgentConfigResponse::new(agent_id, path, true);
+                    resp.model = model_ref;
+                    Ok::<AgentConfigResponse, anyhow::Error>(resp)
                 } else {
                     let agent_config = config.resolve_agent(&path).await?;
                     Ok::<AgentConfigResponse, anyhow::Error>(AgentConfigResponse::from_config(
