@@ -243,7 +243,7 @@ async fn resolve_connector_impl(
             return None;
         }
     };
-    database_to_connector_config(&db, workspace_manager).await
+    database_to_connector_config(db, workspace_manager).await
 }
 
 /// Translate an already-resolved [`oxy::config::model::Database`] into an
@@ -489,10 +489,10 @@ pub async fn database_to_connector_config(
             {
                 // Merge legacy single `dataset` + multi `datasets` map keys.
                 let mut datasets: Vec<String> = bq.datasets.keys().cloned().collect();
-                if let Some(ref ds) = bq.dataset {
-                    if !datasets.contains(ds) {
-                        datasets.push(ds.clone());
-                    }
+                if let Some(ref ds) = bq.dataset
+                    && !datasets.contains(ds)
+                {
+                    datasets.push(ds.clone());
                 }
                 Some(ConnectorConfig::BigQuery(BigQueryConfig {
                     key_path,

@@ -77,11 +77,11 @@ pub async fn get_database_schema(
     let db = workspace_manager
         .config_manager
         .list_databases()
-        .into_iter()
+        .iter()
         .find(|d| d.name == database_name)
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    let cfg = database_to_connector_config(&db, &workspace_manager)
+    let cfg = database_to_connector_config(db, &workspace_manager)
         .await
         .ok_or(StatusCode::UNPROCESSABLE_ENTITY)?;
 
@@ -658,32 +658,31 @@ pub async fn test_database_connection(
         // Only Snowflake private-key auth still falls through to the legacy path.
         if let Some(mut cfg) = database_to_connector_config(db_config, &workspace_manager).await {
             // Wire up the SSO URL channel for Snowflake browser auth.
-            if let ConnectorConfig::Snowflake(ref mut sf_cfg) = cfg {
-                if let SnowflakeAuth::Browser {
+            if let ConnectorConfig::Snowflake(ref mut sf_cfg) = cfg
+                && let SnowflakeAuth::Browser {
                     ref mut sso_url_callback,
                     timeout_secs,
                     ..
                 } = sf_cfg.auth
-                {
-                    let (sso_tx, mut sso_rx) = mpsc::channel::<String>(1);
-                    let tx_sso = tx.clone();
-                    let timeout = timeout_secs;
-                    tokio::spawn(async move {
-                        if let Some(sso_url) = sso_rx.recv().await {
-                            let _ = tx_sso
-                                .send(ConnectionTestEvent::BrowserAuthRequired {
-                                    sso_url,
-                                    message: "Please complete authentication in your browser"
-                                        .to_string(),
-                                    timeout_secs: Some(timeout),
-                                })
-                                .await;
-                        }
-                    });
-                    *sso_url_callback = Some(SsoUrlCallback(std::sync::Arc::new(move |url| {
-                        let _ = sso_tx.try_send(url);
-                    })));
-                }
+            {
+                let (sso_tx, mut sso_rx) = mpsc::channel::<String>(1);
+                let tx_sso = tx.clone();
+                let timeout = timeout_secs;
+                tokio::spawn(async move {
+                    if let Some(sso_url) = sso_rx.recv().await {
+                        let _ = tx_sso
+                            .send(ConnectionTestEvent::BrowserAuthRequired {
+                                sso_url,
+                                message: "Please complete authentication in your browser"
+                                    .to_string(),
+                                timeout_secs: Some(timeout),
+                            })
+                            .await;
+                    }
+                });
+                *sso_url_callback = Some(SsoUrlCallback(std::sync::Arc::new(move |url| {
+                    let _ = sso_tx.try_send(url);
+                })));
             }
 
             let _ = tx

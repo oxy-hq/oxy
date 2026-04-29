@@ -152,7 +152,7 @@ fn decode_cell(row: &MySqlRow, idx: usize, col: &ColumnSpec) -> Result<TypedValu
                             // defensively.
                             Ok(Some(v)) => i32::try_from(v)
                                 .map(TypedValue::Int32)
-                                .or_else(|_| Ok(TypedValue::Int64(v as i64))),
+                                .or(Ok(TypedValue::Int64(v as i64))),
                             Ok(None) => Ok(TypedValue::Null),
                             Err(e) => Err(mapping_err(col, e)),
                         },

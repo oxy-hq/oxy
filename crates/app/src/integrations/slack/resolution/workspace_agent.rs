@@ -156,10 +156,20 @@ pub async fn resolve(
     }
 
     // 2. Honor user preferences if present and the workspace is still valid.
+    //    When the preference also pins an explicit `default_agent_path`,
+    //    use it verbatim — bypasses the filesystem-dependent
+    //    `pick_default_agent_path` so a saved preference keeps working
+    //    even when the workspace's repo isn't currently cloned locally.
     if let Some(prefs) = UserPreferencesService::get(user_link.id).await?
         && let Some(ws_id) = prefs.default_workspace_id
         && let Some(ws) = user_workspaces.iter().find(|w| w.id == ws_id)
     {
+        if let Some(agent_path) = prefs.default_agent_path.clone() {
+            return Ok(Resolution::Resolved {
+                workspace_id: ws.id,
+                agent_path,
+            });
+        }
         return resolve_for_workspace(ws).await;
     }
 
@@ -286,12 +296,26 @@ pub async fn list_agents(workspace_id: Uuid) -> Result<Vec<String>, OxyError> {
 /// Pick the preferred agent path for dispatching a Slack query against
 /// `workspace_id`. Honors `defaults.agent` from `config.yml` when set;
 /// falls back to the alphabetically-first agent otherwise.
-/// Returns `None` only when the workspace has no agents at all.
+/// Returns `None` when the workspace has no agents at all OR when the
+/// workspace's filesystem path can't be resolved (e.g. a workspace row
+/// pointing at a missing/uncloned repo). The latter intentionally
+/// short-circuits rather than failing the whole Slack message — the
+/// caller surfaces a `WorkspaceHasNoAgents` ephemeral, which is a more
+/// useful error than a raw `ConfigurationError` bubbling out.
 pub async fn pick_default_agent_path(workspace_id: Uuid) -> Result<Option<String>, OxyError> {
     let WorkspaceAgents {
         mut agents,
         default,
-    } = read_workspace_agents(workspace_id).await?;
+    } = match read_workspace_agents(workspace_id).await {
+        Ok(wa) => wa,
+        Err(e) => {
+            tracing::warn!(
+                %workspace_id,
+                "pick_default_agent_path: cannot read workspace agents, treating as empty: {e}"
+            );
+            return Ok(None);
+        }
+    };
     if default.is_some() {
         return Ok(default);
     }

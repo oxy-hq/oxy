@@ -172,7 +172,7 @@ impl DatabaseConnector for PostgresConnector {
         let mut guard = self.client.lock().await;
         ensure_client_connected(
             &self.config,
-            &mut *guard,
+            &mut guard,
             &self.cached_schema,
             &self.schema_error,
         )
@@ -338,7 +338,7 @@ impl DatabaseConnector for PostgresConnector {
         let mut guard = self.client.lock().await;
         ensure_client_connected(
             &self.config,
-            &mut *guard,
+            &mut guard,
             &self.cached_schema,
             &self.schema_error,
         )
@@ -351,7 +351,7 @@ impl DatabaseConnector for PostgresConnector {
         // server refuses to prepare.
         let stmt = match client.prepare(sql).await {
             Ok(s) => s,
-            Err(_) => return execute_via_simple_query(&client, sql).await,
+            Err(_) => return execute_via_simple_query(client, sql).await,
         };
 
         // No RowDescription → DDL or DML without RETURNING. Execute the
@@ -414,7 +414,7 @@ impl DatabaseConnector for PostgresConnector {
         let mut guard = self.client.lock().await;
         ensure_client_connected(
             &self.config,
-            &mut *guard,
+            &mut guard,
             &self.cached_schema,
             &self.schema_error,
         )
@@ -422,12 +422,12 @@ impl DatabaseConnector for PostgresConnector {
     }
 
     fn introspect_schema(&self) -> Result<SchemaInfo, ConnectorError> {
-        if let Ok(err_guard) = self.schema_error.read() {
-            if let Some(ref err) = *err_guard {
-                return Err(ConnectorError::ConnectionError(format!(
-                    "schema introspection failed: {err}"
-                )));
-            }
+        if let Ok(err_guard) = self.schema_error.read()
+            && let Some(ref err) = *err_guard
+        {
+            return Err(ConnectorError::ConnectionError(format!(
+                "schema introspection failed: {err}"
+            )));
         }
         Ok(self
             .cached_schema

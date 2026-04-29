@@ -145,7 +145,7 @@ async fn install_cross_org_conflict() {
 
     let msg = format!("{err}");
     assert!(
-        msg.contains("already connected to a different Oxy org"),
+        msg.contains("already connected to a different Oxygen org"),
         "error should mention cross-org conflict, got: {msg}"
     );
 }

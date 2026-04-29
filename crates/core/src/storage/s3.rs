@@ -1,5 +1,7 @@
+use std::time::Duration;
+
 use async_trait::async_trait;
-use aws_sdk_s3::{Client, primitives::ByteStream, types::ObjectCannedAcl};
+use aws_sdk_s3::{Client, presigning::PresigningConfig, primitives::ByteStream};
 use oxy_shared::errors::OxyError;
 
 use super::{BlobStorage, validate_key};
@@ -17,24 +19,33 @@ pub struct S3BlobStorageConfig {
     /// Optional key prefix. If set, every blob key is stored as
     /// `{prefix}/{key}`. Leading/trailing slashes are normalized away.
     pub prefix: Option<String>,
-    /// Optional base URL to use when constructing a public URL, e.g.
-    /// `https://cdn.example.com`. When unset, defaults to the virtual-hosted
-    /// S3 URL: `https://{bucket}.s3.{region}.amazonaws.com`.
+    /// Optional base URL for an externally-served public path, e.g.
+    /// `https://cdn.example.com`. When set, `public_url()` returns
+    /// `{base}/{object_key}` verbatim — used when a CDN (CloudFront,
+    /// Cloudflare, etc.) sits in front of the bucket and the operator
+    /// owns auth there. **Incompatible with private buckets.**
+    ///
+    /// When unset (the default), `public_url()` returns a presigned GET
+    /// URL valid for `presign_ttl`. This is the only mode that works for
+    /// SSE-KMS and "all public access blocked" buckets.
     pub public_url_base: Option<String>,
-    /// Optional canned ACL applied to every uploaded object. Most modern
-    /// buckets disable ACLs and rely on bucket policies instead, so this is
-    /// `None` by default. Set to `"public-read"` when the bucket allows it.
-    pub acl: Option<String>,
+    /// Time-to-live for presigned GET URLs returned by `public_url()`
+    /// when no `public_url_base` is configured.
+    ///
+    /// Note: presigned URLs signed by short-lived credentials (EKS Pod
+    /// Identity / IRSA) are valid for `min(ttl, ~remaining_credential_lifetime)`.
+    /// For Slack-style use cases (CDN fetches and caches within seconds),
+    /// any reasonable TTL is fine.
+    pub presign_ttl: Duration,
 }
 
 #[derive(Debug, Clone)]
 pub struct S3BlobStorage {
     client: Client,
     bucket: String,
-    region: String,
     prefix: Option<String>,
     public_url_base: Option<String>,
-    acl: Option<ObjectCannedAcl>,
+    presign_ttl: Duration,
 }
 
 impl S3BlobStorage {
@@ -46,22 +57,14 @@ impl S3BlobStorage {
         let sdk_config = loader.load().await;
         let client = Client::new(&sdk_config);
 
-        let region = config
-            .region
-            .clone()
-            .or_else(|| sdk_config.region().map(|r| r.as_ref().to_string()))
-            .unwrap_or_else(|| "us-east-1".to_string());
-
         let prefix = normalize_prefix(config.prefix.as_deref());
-        let acl = config.acl.as_deref().map(ObjectCannedAcl::from);
 
         Ok(Self {
             client,
             bucket: config.bucket,
-            region,
             prefix,
             public_url_base: config.public_url_base,
-            acl,
+            presign_ttl: config.presign_ttl,
         })
     }
 
@@ -86,43 +89,25 @@ fn join_with_prefix(prefix: Option<&str>, key: &str) -> String {
     }
 }
 
-/// Build the publicly reachable URL for an already-prefixed object key.
-/// When a `public_url_base` is configured we honour it (trimming a trailing
-/// slash so the caller can write the base either way). Otherwise we fall
-/// back to the virtual-hosted S3 URL derived from bucket + region.
-fn build_public_url(
-    public_url_base: Option<&str>,
-    bucket: &str,
-    region: &str,
-    object_key: &str,
-) -> String {
-    match public_url_base {
-        Some(base) => format!("{}/{}", base.trim_end_matches('/'), object_key),
-        None => format!("https://{bucket}.s3.{region}.amazonaws.com/{object_key}"),
-    }
-}
-
 #[async_trait]
 impl BlobStorage for S3BlobStorage {
     async fn put(&self, key: &str, data: Vec<u8>, content_type: &str) -> Result<(), OxyError> {
         validate_key(key)?;
         let object_key = self.object_key(key);
-        let mut request = self
-            .client
+        self.client
             .put_object()
             .bucket(&self.bucket)
             .key(&object_key)
             .content_type(content_type)
-            .body(ByteStream::from(data));
-        if let Some(acl) = self.acl.as_ref() {
-            request = request.acl(acl.clone());
-        }
-        request.send().await.map_err(|e| {
-            OxyError::RuntimeError(format!(
-                "Failed to upload {} to s3://{}/{}: {e}",
-                key, self.bucket, object_key
-            ))
-        })?;
+            .body(ByteStream::from(data))
+            .send()
+            .await
+            .map_err(|e| {
+                OxyError::RuntimeError(format!(
+                    "Failed to upload {} to s3://{}/{}: {e}",
+                    key, self.bucket, object_key
+                ))
+            })?;
         Ok(())
     }
 
@@ -151,15 +136,55 @@ impl BlobStorage for S3BlobStorage {
         Ok(bytes.into_bytes().to_vec())
     }
 
+    /// Return a URL the caller (Slack's CDN, a browser, etc.) can fetch.
+    ///
+    /// Two modes, picked at config time:
+    ///
+    /// 1. **`public_url_base` set** — returns `{base}/{object_key}` verbatim.
+    ///    This is the CDN/CloudFront path; the operator owns auth.
+    ///
+    /// 2. **`public_url_base` unset** (default) — returns a presigned GET URL
+    ///    valid for `presign_ttl`. This is the only mode that works for
+    ///    private buckets, SSE-KMS, and "all public access blocked".
+    ///    No extra IAM is required; the role that uploads also signs GETs.
+    ///
+    /// **Credential-expiry caveat**: when running under EKS Pod Identity /
+    /// IRSA / similar short-lived credential providers, the presigned URL
+    /// is valid for `min(presign_ttl, remaining_credential_lifetime)`.
+    /// In Slack-style flows where the CDN fetches once within seconds and
+    /// caches the bytes, this is a non-issue — but worth knowing if a
+    /// downstream caller stashes the URL for hours.
     async fn public_url(&self, key: &str) -> Result<Option<String>, OxyError> {
         validate_key(key)?;
         let object_key = self.object_key(key);
-        Ok(Some(build_public_url(
-            self.public_url_base.as_deref(),
-            &self.bucket,
-            &self.region,
-            &object_key,
-        )))
+
+        if let Some(base) = &self.public_url_base {
+            return Ok(Some(format!(
+                "{}/{}",
+                base.trim_end_matches('/'),
+                object_key
+            )));
+        }
+
+        let presigning = PresigningConfig::expires_in(self.presign_ttl).map_err(|e| {
+            OxyError::RuntimeError(format!("invalid presign TTL {:?}: {e}", self.presign_ttl))
+        })?;
+
+        let presigned = self
+            .client
+            .get_object()
+            .bucket(&self.bucket)
+            .key(&object_key)
+            .presigned(presigning)
+            .await
+            .map_err(|e| {
+                OxyError::RuntimeError(format!(
+                    "failed to presign s3://{}/{}: {e}",
+                    self.bucket, object_key
+                ))
+            })?;
+
+        Ok(Some(presigned.uri().to_string()))
     }
 }
 
@@ -188,31 +213,94 @@ mod tests {
         assert_eq!(join_with_prefix(Some("a/b"), "sub/x.png"), "a/b/sub/x.png");
     }
 
-    #[test]
-    fn build_public_url_uses_virtual_hosted_style_by_default() {
-        let url = build_public_url(None, "my-bucket", "us-east-1", "charts/x.png");
-        assert_eq!(
-            url,
-            "https://my-bucket.s3.us-east-1.amazonaws.com/charts/x.png"
+    /// Build an `S3BlobStorage` with stub static credentials so presigning
+    /// runs entirely offline (no network, no IMDS). The presign signature
+    /// is computed locally — only `put`/`get` need real AWS auth.
+    fn stub_storage(public_url_base: Option<&str>, prefix: Option<&str>) -> S3BlobStorage {
+        use aws_sdk_s3::config::{BehaviorVersion, Credentials, Region};
+        let conf = aws_sdk_s3::Config::builder()
+            .behavior_version(BehaviorVersion::latest())
+            .region(Region::new("us-east-1"))
+            .credentials_provider(Credentials::new(
+                "AKIATESTACCESSKEY",
+                "test_secret_access_key",
+                None,
+                None,
+                "test",
+            ))
+            .build();
+        S3BlobStorage {
+            client: Client::from_conf(conf),
+            bucket: "test-bucket".to_string(),
+            prefix: prefix.map(str::to_string),
+            public_url_base: public_url_base.map(str::to_string),
+            presign_ttl: Duration::from_secs(3600),
+        }
+    }
+
+    #[tokio::test]
+    async fn public_url_returns_presigned_url_by_default() {
+        let storage = stub_storage(None, None);
+        let url = storage
+            .public_url("chart.png")
+            .await
+            .expect("public_url ok")
+            .expect("url present");
+
+        // Virtual-hosted style with the bucket and region.
+        assert!(
+            url.starts_with("https://test-bucket.s3.us-east-1.amazonaws.com/chart.png?"),
+            "expected virtual-hosted style with query string, got: {url}"
+        );
+        // SigV4 marker — proves we actually presigned and didn't fall back
+        // to a plain URL.
+        assert!(
+            url.contains("X-Amz-Signature="),
+            "expected SigV4 signature in presigned URL, got: {url}"
+        );
+        assert!(
+            url.contains("X-Amz-Expires="),
+            "expected expiry in presigned URL, got: {url}"
         );
     }
 
-    #[test]
-    fn build_public_url_honours_configured_base_and_trims_trailing_slash() {
-        let with_slash =
-            build_public_url(Some("https://cdn.example.com/"), "b", "r", "charts/x.png");
-        let without_slash =
-            build_public_url(Some("https://cdn.example.com"), "b", "r", "charts/x.png");
-        assert_eq!(with_slash, "https://cdn.example.com/charts/x.png");
-        assert_eq!(without_slash, "https://cdn.example.com/charts/x.png");
+    #[tokio::test]
+    async fn public_url_honours_prefix_in_presigned_path() {
+        let storage = stub_storage(None, Some("charts"));
+        let url = storage
+            .public_url("foo.png")
+            .await
+            .expect("public_url ok")
+            .expect("url present");
+
+        assert!(
+            url.starts_with("https://test-bucket.s3.us-east-1.amazonaws.com/charts/foo.png?"),
+            "prefix should appear in object key path, got: {url}"
+        );
     }
 
-    #[test]
-    fn acl_round_trips_through_object_canned_acl() {
-        // Guard against a future aws-sdk-s3 update that silently routes a
-        // typo'd ACL string into `Unknown(_)` — catching it here is much
-        // cheaper than debugging a 400 from S3 in production.
-        let acl = ObjectCannedAcl::from("public-read");
-        assert_eq!(acl.as_str(), "public-read");
+    #[tokio::test]
+    async fn public_url_uses_cdn_base_when_set_and_skips_presigning() {
+        let storage = stub_storage(Some("https://cdn.example.com"), None);
+        let url = storage
+            .public_url("chart.png")
+            .await
+            .expect("public_url ok")
+            .expect("url present");
+
+        // Exactly `{base}/{key}` — no presigning, no query string.
+        assert_eq!(url, "https://cdn.example.com/chart.png");
+    }
+
+    #[tokio::test]
+    async fn public_url_trims_trailing_slash_on_cdn_base() {
+        let storage = stub_storage(Some("https://cdn.example.com/"), None);
+        let url = storage
+            .public_url("chart.png")
+            .await
+            .expect("public_url ok")
+            .expect("url present");
+
+        assert_eq!(url, "https://cdn.example.com/chart.png");
     }
 }
