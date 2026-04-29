@@ -112,11 +112,11 @@ pub(crate) async fn dispatch(cb: EventCallback) -> Result<(), oxy_shared::errors
             let ch = channel.clone();
             let u = user.clone();
             dispatch_user_event(
-                &client,
-                &bt,
-                &ch,
-                &effective_ts,
-                &u,
+                client.clone(),
+                bt,
+                ch,
+                effective_ts,
+                u,
                 crate::integrations::slack::events::app_mention::handle(
                     installation,
                     bot_token,
@@ -144,11 +144,11 @@ pub(crate) async fn dispatch(cb: EventCallback) -> Result<(), oxy_shared::errors
             let bt = bot_token.clone();
             let ch = channel.clone();
             dispatch_user_event(
-                &client,
-                &bt,
-                &ch,
-                &effective_ts,
-                &slack_user,
+                client.clone(),
+                bt,
+                ch,
+                effective_ts,
+                slack_user,
                 crate::integrations::slack::events::message::handle(
                     crate::integrations::slack::events::message::MessageArgs {
                         installation,
@@ -201,21 +201,25 @@ pub(crate) async fn dispatch(cb: EventCallback) -> Result<(), oxy_shared::errors
 ///
 /// This function never returns an error itself: errors in the error-surfacing
 /// path are logged and swallowed so the dispatch loop always 200s Slack.
-async fn dispatch_user_event(
-    client: &SlackClient,
-    bot_token: &str,
-    channel: &str,
-    thread_ts: &str,
-    slack_user_id: &str,
+///
+/// **Owned context** so this can move into a `tokio::spawn` from
+/// fire-and-forget callers (e.g. the workspace-picker submit handler).
+/// `SlackClient` is `Clone` (cheap — wraps `reqwest::Client`).
+pub(crate) async fn dispatch_user_event(
+    client: SlackClient,
+    bot_token: String,
+    channel: String,
+    thread_ts: String,
+    slack_user_id: String,
     fut: impl Future<Output = Result<(), SlackError>>,
 ) {
     let Err(e) = fut.await else {
         return;
     };
     tracing::warn!(
-        channel,
-        thread_ts,
-        slack_user_id,
+        channel = %channel,
+        thread_ts = %thread_ts,
+        slack_user_id = %slack_user_id,
         "slack user event error: {e}"
     );
     let blocks = e.to_blocks();
@@ -223,23 +227,21 @@ async fn dispatch_user_event(
     if e.is_ephemeral() {
         if let Err(post_err) = client
             .chat_post_ephemeral(
-                bot_token,
-                channel,
-                slack_user_id,
+                &bot_token,
+                &channel,
+                &slack_user_id,
                 blocks,
                 text,
-                Some(thread_ts),
+                Some(&thread_ts),
             )
             .await
         {
             tracing::warn!("dispatch_user_event: ephemeral post failed: {post_err}");
         }
-    } else {
-        if let Err(post_err) = client
-            .chat_post_message_with_blocks(bot_token, channel, text, Some(thread_ts), Some(blocks))
-            .await
-        {
-            tracing::warn!("dispatch_user_event: message post failed: {post_err}");
-        }
+    } else if let Err(post_err) = client
+        .chat_post_message_with_blocks(&bot_token, &channel, text, Some(&thread_ts), Some(blocks))
+        .await
+    {
+        tracing::warn!("dispatch_user_event: message post failed: {post_err}");
     }
 }

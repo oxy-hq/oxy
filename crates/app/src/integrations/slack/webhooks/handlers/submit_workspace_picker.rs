@@ -113,7 +113,21 @@ pub async fn handle(
         client.delete_via_response_url(url).await;
     }
 
-    // 9. Run the agent.
+    // 9. Run the agent. Errors surface back to the user via
+    // `dispatch_user_event` — without it, a failure inside the spawned
+    // task (e.g. workspace build erroring on a misconfigured S3 backend)
+    // would just log and the picker would go silent.
+    //
+    // We clone the dispatch context up front because the request struct
+    // moves the originals. Cloning `client` (rather than `SlackClient::new()`)
+    // keeps the connection pool shared instead of opening a second one.
+    let dispatch_ctx = (
+        client.clone(),
+        tenant.bot_token.clone(),
+        channel_id.clone(),
+        thread_ts.clone(),
+        slack_user_id.to_string(),
+    );
     let req = SlackRunRequest {
         installation: tenant.installation,
         bot_token: tenant.bot_token.clone(),
@@ -125,9 +139,16 @@ pub async fn handle(
         thread_ts,
     };
     tokio::spawn(async move {
-        if let Err(e) = run_for_slack(req).await {
-            tracing::error!("submit_workspace_picker: run_for_slack error: {e}");
-        }
+        let (client, bot_token, channel, thread_ts, user) = dispatch_ctx;
+        crate::integrations::slack::webhooks::events::dispatch_user_event(
+            client,
+            bot_token,
+            channel,
+            thread_ts,
+            user,
+            run_for_slack(req),
+        )
+        .await;
     });
 
     Ok(())

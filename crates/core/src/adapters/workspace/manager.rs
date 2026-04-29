@@ -57,6 +57,14 @@ impl WorkspaceManager {
     /// Helper for [`super::WorkspaceBuilder`] — assemble a publisher from a
     /// renderer and the storage config. Kept here so the assembly logic lives
     /// alongside the field it populates.
+    ///
+    /// Storage-config errors (missing `OXY_S3_BUCKET`, bad TTL, AWS
+    /// credential-chain failure, etc.) are **logged and downgraded** to
+    /// `Ok(None)` rather than propagating. The chart publisher is a
+    /// best-effort UX feature — surfacing inline image blocks in Slack
+    /// is nice-to-have, but a misconfigured S3 must never block agent
+    /// runs from completing. The fallback path (local-disk PNG +
+    /// "Chart rendered locally" breadcrumb) keeps the bot useful.
     pub(super) async fn build_chart_image_publisher(
         renderer: Option<SharedChartImageRenderer>,
         config_manager: &ConfigManager,
@@ -64,9 +72,25 @@ impl WorkspaceManager {
         let Some(renderer) = renderer else {
             return Ok(None);
         };
-        let Some(storage) = config_manager.chart_image_blob_storage().await? else {
-            return Ok(None);
+        let storage = match config_manager.chart_image_blob_storage().await {
+            Ok(Some(storage)) => storage,
+            Ok(None) => {
+                tracing::debug!(
+                    "chart_image_publisher: no remote storage configured (OXY_STORAGE_BACKEND unset or != 's3'); falling back to local-disk path"
+                );
+                return Ok(None);
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "chart_image_publisher: storage misconfigured, charts will fall back to local-disk path"
+                );
+                return Ok(None);
+            }
         };
+        tracing::info!(
+            "chart_image_publisher: wired with remote storage backend (renderer + S3); inline Slack image blocks enabled"
+        );
         let publisher = BlobStorageChartImagePublisher::new(renderer, storage);
         Ok(Some(Arc::new(publisher) as SharedChartImagePublisher))
     }
