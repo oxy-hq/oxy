@@ -74,9 +74,8 @@ pub async fn get_database_schema(
     }): Path<DatabaseSchemaPath>,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
 ) -> Result<Json<DatabaseSchemaResponse>, StatusCode> {
-    let db = workspace_manager
-        .config_manager
-        .list_databases()
+    let databases = workspace_manager.config_manager.list_databases();
+    let db = databases
         .iter()
         .find(|d| d.name == database_name)
         .ok_or(StatusCode::NOT_FOUND)?;
@@ -971,11 +970,11 @@ pub async fn inspect_schemas_handler(
                 );
                 return Err(StatusCode::BAD_REQUEST);
             }
-            &dbs[0]
+            dbs[0].clone()
         }
     };
 
-    match inspect_schemas(database, &config, &secrets_manager).await {
+    match inspect_schemas(&database, &config, &secrets_manager).await {
         Ok(result) => Ok(Json(result)),
         Err(e) => {
             tracing::error!("Schema discovery failed for {}: {}", database.name, e);
@@ -1015,11 +1014,11 @@ pub async fn inspect_schema_tables_handler(
             if dbs.len() != 1 {
                 return Err(StatusCode::BAD_REQUEST);
             }
-            &dbs[0]
+            dbs[0].clone()
         }
     };
 
-    match inspect_schema_tables(database, &params.schema, &config, &secrets_manager).await {
+    match inspect_schema_tables(&database, &params.schema, &config, &secrets_manager).await {
         Ok(result) => Ok(Json(result)),
         Err(e) => {
             tracing::error!(

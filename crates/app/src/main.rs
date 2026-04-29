@@ -255,6 +255,14 @@ fn main() {
                 );
                 exit(1);
             }
+            if let Err(e) = oxy_airform::tool::register_dbt_executor().await {
+                tracing::error!(error = %e, "Failed to register dbt tool executor");
+                eprintln!(
+                    "{}",
+                    format!("Failed to register dbt tool executor: {e}").error()
+                );
+                exit(1);
+            }
 
             let exit_code = match cli().await {
                 Ok(_) => 0,

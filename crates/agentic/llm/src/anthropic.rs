@@ -448,7 +448,7 @@ impl LlmProvider for AnthropicProvider {
                                 Some("tool_use") => {
                                     let input: Value =
                                         serde_json::from_str(&tool_args)
-                                            .unwrap_or(Value::Null);
+                                            .unwrap_or_else(|_| json!({}));
                                     yield Ok(Chunk::ToolCall(ToolCallChunk {
                                         id: tool_id.clone(),
                                         name: tool_name.clone(),

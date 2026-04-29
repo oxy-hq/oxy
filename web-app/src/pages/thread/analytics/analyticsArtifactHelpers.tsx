@@ -200,6 +200,19 @@ export function sqlArtifactFromExecuteSql(item: ArtifactItem): SqlArtifact | nul
   const rows = output?.rows as unknown[] | undefined;
   const database = typeof output?.database === "string" ? output.database : "";
 
+  let error: string | undefined;
+  if (output && output.ok === false) {
+    error = typeof output.error === "string" ? output.error : undefined;
+  } else if (!output && item.toolOutput) {
+    // Plain-text error (non-JSON tool output).
+    try {
+      const raw = JSON.parse(item.toolOutput);
+      if (typeof raw === "string") error = raw;
+    } catch {
+      // ignore
+    }
+  }
+
   return {
     id: item.id,
     name: "execute_sql",
@@ -210,7 +223,8 @@ export function sqlArtifactFromExecuteSql(item: ArtifactItem): SqlArtifact | nul
         database,
         sql_query: sql,
         result: rowsToTable(columns, rows),
-        is_result_truncated: false
+        is_result_truncated: false,
+        error
       }
     }
   };

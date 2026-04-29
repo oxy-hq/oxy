@@ -323,6 +323,18 @@ export type ProposedChangeBlock = {
   payload: { file_path: string; description: string; new_content: string; delete?: boolean };
 };
 
+export type FileChangedBlock = {
+  seq: number;
+  event_type: "file_changed";
+  payload: {
+    file_path: string;
+    description: string;
+    new_content: string;
+    old_content: string;
+    is_deletion: boolean;
+  };
+};
+
 // ── App-builder domain events ────────────────────────────────────────────────
 
 export type TaskPlanReadyBlock = {
@@ -435,6 +447,7 @@ export type UiBlock =
   | LlmUsageBlock
   | ToolUsedBlock
   | ProposedChangeBlock
+  | FileChangedBlock
   | RecoveryResumedBlock
   | DelegationStartedBlock
   | DelegationCompletedBlock;

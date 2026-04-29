@@ -1,0 +1,37 @@
+version: 2
+
+models:
+  - name: stg_customers
+    description: Cleaned customer data, one row per customer.
+    columns:
+      - name: customer_id
+        description: Primary key for customers.
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_orders
+    description: Cleaned order data, one row per order.
+    columns:
+      - name: order_id
+        description: Primary key for orders.
+        tests:
+          - not_null
+          - unique
+      - name: status
+        tests:
+          - accepted_values:
+              values: ["placed", "shipped", "completed", "return_pending", "returned"]
+
+  - name: stg_payments
+    description: Cleaned payment data, one row per payment.
+    columns:
+      - name: payment_id
+        description: Primary key for payments.
+        tests:
+          - not_null
+          - unique
+      - name: payment_method
+        tests:
+          - accepted_values:
+              values: ["credit_card", "coupon", "bank_transfer", "gift_card"]

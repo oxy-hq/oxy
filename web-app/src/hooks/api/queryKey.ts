@@ -216,6 +216,20 @@ const humanVerdictKeys = {
     [...humanVerdictKeys.all, "list", projectId, pathb64, runIndex] as const
 };
 
+const modelingKeys = {
+  all: ["modeling"] as const,
+  projects: (projectId: string, branchName: string) =>
+    [...modelingKeys.all, "projects", projectId, branchName] as const,
+  project: (projectId: string, modelingProjectName: string, branchName: string) =>
+    [...modelingKeys.all, "project", projectId, modelingProjectName, branchName] as const,
+  nodes: (projectId: string, modelingProjectName: string, branchName: string) =>
+    [...modelingKeys.all, "nodes", projectId, modelingProjectName, branchName] as const,
+  lineage: (projectId: string, modelingProjectName: string, branchName: string) =>
+    [...modelingKeys.all, "lineage", projectId, modelingProjectName, branchName] as const,
+  columnLineage: (projectId: string, modelingProjectName: string, branchName: string) =>
+    [...modelingKeys.all, "columnLineage", projectId, modelingProjectName, branchName] as const
+};
+
 const orgKeys = {
   all: ["org"] as const,
   list: () => [...orgKeys.all, "list"] as const,
@@ -277,6 +291,7 @@ const queryKeys = {
   testProjectRun: testProjectRunKeys,
   testRun: testRunKeys,
   humanVerdict: humanVerdictKeys,
+  modeling: modelingKeys,
   github: githubKeys
 };
 

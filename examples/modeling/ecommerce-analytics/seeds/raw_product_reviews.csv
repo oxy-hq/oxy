@@ -1,0 +1,301 @@
+id,user_id,product_id,rating,review_text,created_at
+1,244,24,4,Decent but could be better.,2024-06-16
+2,126,38,5,Broke after a week.,2023-11-04
+3,222,28,2,Terrible experience.,2024-03-03
+4,96,39,5,Highly recommend.,2023-07-16
+5,247,37,4,Highly recommend.,2024-07-29
+6,215,37,5,Works perfectly.,2024-02-28
+7,126,3,5,Five stars!,2023-09-16
+8,163,12,5,Broke after a week.,2024-07-12
+9,192,15,4,Would buy again.,2023-08-10
+10,196,13,3,Love it!,2024-04-12
+11,161,5,5,Five stars!,2023-08-21
+12,46,39,4,Perfect gift idea.,2024-09-17
+13,56,36,1,Good value for money.,2024-03-13
+14,69,31,4,Perfect gift idea.,2023-07-26
+15,184,50,4,Excellent quality.,2023-10-27
+16,249,12,5,Perfect gift idea.,2023-12-07
+17,157,27,3,Not what I expected.,2023-06-05
+18,83,28,3,Not what I expected.,2024-01-05
+19,227,48,4,Just okay.,2023-10-15
+20,33,42,2,Terrible experience.,2024-01-14
+21,118,8,4,Exactly as described.,2024-07-19
+22,44,13,3,Love it!,2023-11-05
+23,146,43,5,Exactly as described.,2024-02-01
+24,81,39,4,Works perfectly.,2023-06-18
+25,57,15,4,Terrible experience.,2023-10-13
+26,75,13,5,Amazing!,2023-09-20
+27,146,36,3,Solid purchase.,2024-01-11
+28,179,29,4,Meh.,2023-09-07
+29,131,41,4,Perfect gift idea.,2024-02-16
+30,5,45,2,Meh.,2024-08-26
+31,70,1,5,Poor quality.,2024-01-30
+32,12,35,5,Decent but could be better.,2024-06-15
+33,45,5,5,Exactly as described.,2023-10-19
+34,153,12,5,Amazing!,2023-12-05
+35,98,30,1,Exactly as described.,2023-11-23
+36,103,37,3,Works perfectly.,2024-10-11
+37,49,10,4,Five stars!,2024-09-03
+38,209,39,3,Just okay.,2023-12-07
+39,215,41,5,Terrible experience.,2024-01-16
+40,18,40,4,Fast shipping too.,2024-04-02
+41,194,1,4,Highly recommend.,2023-11-06
+42,109,37,5,Highly recommend.,2024-10-05
+43,66,43,4,Highly recommend.,2024-05-01
+44,4,35,4,Meh.,2023-09-26
+45,38,26,5,Good value for money.,2024-07-02
+46,71,50,5,Works perfectly.,2024-06-03
+47,177,39,4,Fast shipping too.,2024-04-06
+48,124,46,2,Five stars!,2024-06-28
+49,208,18,5,Five stars!,2024-08-11
+50,81,35,2,Just okay.,2024-04-24
+51,11,7,4,Great product!,2023-08-10
+52,107,20,3,Excellent quality.,2024-02-23
+53,38,12,4,Not what I expected.,2023-12-15
+54,28,23,3,Love it!,2024-03-08
+55,56,47,5,Meh.,2023-09-17
+56,219,31,3,Highly recommend.,2024-05-03
+57,193,23,4,Great product!,2024-06-16
+58,63,29,1,Terrible experience.,2024-09-03
+59,189,31,5,Decent but could be better.,2023-06-24
+60,168,41,4,Solid purchase.,2024-03-28
+61,69,48,5,Solid purchase.,2024-08-06
+62,221,50,3,Amazing!,2023-10-10
+63,91,16,4,Decent but could be better.,2023-12-03
+64,174,11,4,Love it!,2023-12-29
+65,195,3,3,Not what I expected.,2023-10-27
+66,114,10,5,Just okay.,2024-06-29
+67,191,7,5,Five stars!,2023-06-05
+68,4,11,5,Broke after a week.,2024-07-26
+69,246,14,4,Excellent quality.,2023-12-21
+70,126,50,3,Amazing!,2023-06-21
+71,62,4,3,Great product!,2024-09-25
+72,119,9,5,Good value for money.,2024-05-23
+73,60,5,5,Poor quality.,2024-08-27
+74,202,38,5,Solid purchase.,2024-08-02
+75,13,6,3,Poor quality.,2024-09-24
+76,110,12,4,Highly recommend.,2024-04-16
+77,23,19,4,Fast shipping too.,2023-07-05
+78,141,1,4,Solid purchase.,2024-02-26
+79,176,50,4,Five stars!,2023-10-03
+80,62,33,5,Poor quality.,2023-08-09
+81,96,7,5,Would buy again.,2024-08-05
+82,227,39,2,Highly recommend.,2024-02-13
+83,141,20,4,Highly recommend.,2023-06-15
+84,196,48,1,Fast shipping too.,2023-09-25
+85,219,44,4,Perfect gift idea.,2024-07-18
+86,214,46,5,Love it!,2023-08-31
+87,160,2,5,Exactly as described.,2024-02-20
+88,239,50,2,Poor quality.,2023-07-16
+89,8,45,2,Decent but could be better.,2023-08-11
+90,19,26,4,Meh.,2024-05-19
+91,169,29,5,Great product!,2024-04-06
+92,211,17,5,Just okay.,2024-04-03
+93,142,18,3,Not what I expected.,2024-06-04
+94,121,7,3,Excellent quality.,2023-06-22
+95,57,27,4,Terrible experience.,2024-07-10
+96,140,40,4,Great product!,2023-08-29
+97,46,29,5,Poor quality.,2024-03-28
+98,17,28,5,Decent but could be better.,2024-03-26
+99,214,39,5,Poor quality.,2023-07-09
+100,76,24,5,Decent but could be better.,2023-06-22
+101,172,46,5,Great product!,2023-10-26
+102,145,23,2,Terrible experience.,2023-07-30
+103,138,42,5,Fast shipping too.,2023-08-22
+104,149,4,3,Poor quality.,2024-04-02
+105,100,17,5,Poor quality.,2023-11-16
+106,88,8,4,Solid purchase.,2024-10-03
+107,171,31,2,Decent but could be better.,2023-08-31
+108,245,23,2,Would buy again.,2023-07-28
+109,112,13,3,Fast shipping too.,2024-07-15
+110,6,45,4,Five stars!,2024-09-22
+111,103,19,5,Solid purchase.,2023-09-11
+112,37,36,4,Excellent quality.,2023-10-21
+113,80,49,4,Terrible experience.,2024-09-03
+114,200,23,3,Solid purchase.,2024-05-25
+115,249,1,5,Good value for money.,2024-03-29
+116,14,25,4,Not what I expected.,2023-12-30
+117,97,18,3,Meh.,2024-07-18
+118,205,41,2,Decent but could be better.,2024-08-01
+119,207,47,4,Solid purchase.,2023-12-31
+120,90,34,5,Amazing!,2023-09-25
+121,38,1,4,Broke after a week.,2023-12-07
+122,79,32,5,Exactly as described.,2023-08-16
+123,69,29,5,Love it!,2024-05-24
+124,38,11,5,Terrible experience.,2023-10-10
+125,99,5,4,Decent but could be better.,2023-08-21
+126,184,8,5,Perfect gift idea.,2024-04-14
+127,33,12,4,Would buy again.,2024-09-26
+128,159,27,4,Poor quality.,2023-10-24
+129,223,26,4,Works perfectly.,2023-06-03
+130,217,43,5,Perfect gift idea.,2023-11-19
+131,54,18,4,Decent but could be better.,2023-09-29
+132,25,35,1,Terrible experience.,2024-06-16
+133,109,26,2,Love it!,2023-09-02
+134,13,30,5,Would buy again.,2023-10-03
+135,161,25,4,Terrible experience.,2024-01-20
+136,88,11,4,Meh.,2023-07-16
+137,187,1,5,Excellent quality.,2023-09-22
+138,87,1,3,Solid purchase.,2023-06-17
+139,103,46,5,Exactly as described.,2024-04-24
+140,185,21,5,Just okay.,2023-12-26
+141,19,40,2,Terrible experience.,2024-09-17
+142,21,1,5,Meh.,2023-10-08
+143,114,9,5,Broke after a week.,2024-08-22
+144,191,21,5,Just okay.,2024-01-31
+145,113,45,1,Five stars!,2024-04-30
+146,156,33,5,Love it!,2023-07-28
+147,134,28,3,Exactly as described.,2024-08-16
+148,211,2,3,Exactly as described.,2023-09-07
+149,244,49,4,Good value for money.,2023-06-27
+150,229,37,4,Great product!,2023-08-08
+151,241,22,4,Just okay.,2023-10-22
+152,52,50,5,Decent but could be better.,2024-02-08
+153,190,34,5,Great product!,2023-08-13
+154,94,32,4,Broke after a week.,2023-11-17
+155,226,15,4,Poor quality.,2024-05-06
+156,71,41,4,Good value for money.,2023-11-01
+157,40,3,4,Terrible experience.,2024-05-30
+158,147,7,4,Poor quality.,2023-11-18
+159,216,43,4,Five stars!,2024-06-26
+160,146,25,4,Broke after a week.,2024-05-21
+161,241,38,5,Meh.,2024-07-05
+162,213,25,5,Excellent quality.,2024-10-12
+163,189,16,4,Broke after a week.,2024-01-18
+164,20,9,3,Not what I expected.,2023-11-26
+165,114,41,4,Five stars!,2023-09-28
+166,148,44,3,Just okay.,2024-04-29
+167,97,50,5,Meh.,2024-04-23
+168,55,31,5,Terrible experience.,2024-07-08
+169,119,6,4,Just okay.,2023-09-12
+170,42,27,5,Love it!,2023-06-30
+171,70,3,5,Meh.,2024-08-04
+172,14,3,4,Amazing!,2024-06-12
+173,57,8,4,Amazing!,2023-07-09
+174,25,28,5,Terrible experience.,2024-06-13
+175,207,49,5,Solid purchase.,2024-06-13
+176,222,38,5,Decent but could be better.,2024-03-10
+177,38,25,3,Exactly as described.,2024-09-17
+178,5,24,3,Highly recommend.,2024-08-31
+179,137,6,5,Meh.,2023-06-09
+180,179,11,3,Love it!,2023-11-25
+181,174,15,3,Love it!,2023-08-29
+182,122,10,3,Terrible experience.,2024-01-29
+183,72,18,4,Works perfectly.,2023-06-04
+184,191,38,5,Not what I expected.,2023-08-07
+185,109,18,2,Perfect gift idea.,2024-09-15
+186,214,33,5,Poor quality.,2024-08-11
+187,119,47,3,Not what I expected.,2024-08-11
+188,190,33,5,Five stars!,2023-09-03
+189,180,7,5,Fast shipping too.,2024-05-03
+190,39,17,4,Amazing!,2023-10-28
+191,161,44,3,Amazing!,2024-02-24
+192,190,19,4,Works perfectly.,2024-08-14
+193,230,44,4,Not what I expected.,2024-08-11
+194,106,39,5,Not what I expected.,2023-12-02
+195,178,30,5,Solid purchase.,2024-05-01
+196,35,3,2,Exactly as described.,2023-06-16
+197,7,32,4,Not what I expected.,2024-07-27
+198,191,42,4,Excellent quality.,2024-06-21
+199,43,42,1,Decent but could be better.,2024-10-07
+200,248,27,5,Amazing!,2024-09-21
+201,212,42,3,Meh.,2023-06-23
+202,189,7,5,Exactly as described.,2023-07-18
+203,154,18,4,Perfect gift idea.,2023-09-21
+204,27,3,3,Works perfectly.,2023-10-06
+205,130,37,3,Would buy again.,2023-06-21
+206,116,22,5,Perfect gift idea.,2023-12-20
+207,58,17,5,Meh.,2024-09-26
+208,11,21,4,Love it!,2023-12-30
+209,211,40,4,Not what I expected.,2024-03-22
+210,218,6,4,Five stars!,2023-07-10
+211,136,23,4,Terrible experience.,2024-03-30
+212,143,15,3,Five stars!,2023-07-13
+213,206,28,3,Excellent quality.,2023-11-14
+214,1,7,5,Exactly as described.,2023-10-29
+215,165,19,5,Solid purchase.,2024-09-06
+216,10,17,3,Perfect gift idea.,2024-10-05
+217,177,1,5,Exactly as described.,2024-06-05
+218,22,18,3,Works perfectly.,2024-08-18
+219,149,3,5,Meh.,2024-01-17
+220,22,42,3,Would buy again.,2023-06-19
+221,104,36,4,Would buy again.,2024-06-29
+222,5,48,4,Just okay.,2024-03-10
+223,19,17,4,Love it!,2023-08-18
+224,183,39,3,Decent but could be better.,2024-07-24
+225,142,43,2,Amazing!,2024-03-21
+226,110,2,4,Perfect gift idea.,2024-09-08
+227,180,19,2,Love it!,2023-08-03
+228,142,26,4,Broke after a week.,2024-03-16
+229,51,10,4,Fast shipping too.,2023-09-30
+230,72,36,2,Highly recommend.,2023-09-29
+231,232,32,5,Works perfectly.,2024-03-30
+232,100,28,5,Terrible experience.,2024-04-29
+233,212,11,5,Good value for money.,2023-08-25
+234,4,9,3,Fast shipping too.,2024-07-19
+235,65,7,4,Fast shipping too.,2024-03-04
+236,222,25,5,Great product!,2024-07-11
+237,132,39,5,Terrible experience.,2024-06-15
+238,222,35,4,Amazing!,2024-07-01
+239,182,15,4,Poor quality.,2024-09-13
+240,25,5,4,Perfect gift idea.,2024-02-08
+241,96,31,4,Not what I expected.,2023-08-26
+242,104,43,4,Fast shipping too.,2023-10-16
+243,168,12,4,Fast shipping too.,2024-02-23
+244,122,36,2,Terrible experience.,2023-09-10
+245,60,47,2,Excellent quality.,2023-11-28
+246,102,49,4,Love it!,2023-09-04
+247,235,32,3,Poor quality.,2023-09-26
+248,171,42,5,Love it!,2023-06-09
+249,36,27,5,Solid purchase.,2023-09-02
+250,14,34,5,Would buy again.,2024-01-28
+251,220,48,3,Just okay.,2023-11-07
+252,93,17,2,Decent but could be better.,2024-06-07
+253,205,36,3,Solid purchase.,2024-10-03
+254,249,9,2,Broke after a week.,2024-01-23
+255,209,31,4,Perfect gift idea.,2023-12-31
+256,195,43,5,Solid purchase.,2023-09-06
+257,31,39,4,Broke after a week.,2024-02-03
+258,34,9,5,Highly recommend.,2024-07-14
+259,66,3,5,Decent but could be better.,2023-10-18
+260,116,30,4,Terrible experience.,2024-04-03
+261,209,43,3,Amazing!,2023-09-22
+262,192,47,5,Love it!,2024-06-21
+263,80,9,4,Amazing!,2024-02-10
+264,62,16,4,Great product!,2024-09-24
+265,223,34,3,Amazing!,2024-03-19
+266,162,1,5,Terrible experience.,2024-05-09
+267,207,43,4,Decent but could be better.,2024-10-12
+268,238,15,4,Not what I expected.,2023-09-26
+269,102,26,4,Love it!,2024-01-26
+270,130,49,5,Five stars!,2023-10-27
+271,81,43,4,Great product!,2024-07-07
+272,113,36,4,Broke after a week.,2024-03-23
+273,20,24,4,Decent but could be better.,2024-01-15
+274,35,4,4,Would buy again.,2023-10-20
+275,68,10,4,Just okay.,2024-06-27
+276,44,42,3,Solid purchase.,2023-09-18
+277,91,39,4,Amazing!,2024-05-02
+278,127,22,5,Excellent quality.,2024-08-01
+279,136,23,2,Good value for money.,2023-10-16
+280,34,16,4,Broke after a week.,2024-04-29
+281,90,14,5,Not what I expected.,2023-06-30
+282,190,12,3,Poor quality.,2023-09-29
+283,35,5,4,Broke after a week.,2024-03-29
+284,209,5,4,Highly recommend.,2023-10-11
+285,10,49,5,Not what I expected.,2024-06-12
+286,232,15,4,Exactly as described.,2024-02-27
+287,139,34,4,Would buy again.,2023-06-15
+288,46,12,3,Terrible experience.,2024-01-17
+289,205,28,5,Perfect gift idea.,2023-08-25
+290,205,40,5,Poor quality.,2023-12-21
+291,176,10,5,Terrible experience.,2024-07-18
+292,179,44,5,Excellent quality.,2023-11-19
+293,131,49,5,Amazing!,2023-12-08
+294,94,39,1,Highly recommend.,2024-04-27
+295,50,22,3,Would buy again.,2024-01-23
+296,150,22,4,Just okay.,2024-04-30
+297,24,43,5,Broke after a week.,2024-05-09
+298,153,50,3,Good value for money.,2024-09-16
+299,100,43,5,Good value for money.,2023-10-13
+300,239,46,3,Terrible experience.,2023-12-16

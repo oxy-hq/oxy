@@ -1378,6 +1378,66 @@
               ]
             }
           }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "description": {
+              "default": "Run dbt models to execute SQL transformations.",
+              "type": "string"
+            },
+            "full_refresh": {
+              "default": false,
+              "type": "boolean"
+            },
+            "name": {
+              "default": "dbt_run",
+              "type": "string"
+            },
+            "selector": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "dbt_run"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "description": {
+              "default": "Compile a dbt model and return the generated SQL.",
+              "type": "string"
+            },
+            "model": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "name": {
+              "default": "dbt_compile",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "dbt_compile"
+              ]
+            }
+          }
         }
       ]
     },

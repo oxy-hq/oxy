@@ -1,5 +1,17 @@
 // Re-export all API services for easy importing
 
+export type {
+  AnalyzeOutput,
+  ColumnLineageOutput,
+  CompileOutput,
+  LineageOutput,
+  ModelingProjectInfo,
+  NodeSummary,
+  RunOutput,
+  RunRequest,
+  TestOutput
+} from "@/types/modeling";
+
 export { AgentService } from "./agents";
 export type {
   AnalyticsRunSummary,
@@ -15,6 +27,7 @@ export { FileService } from "./files";
 export { GitHubApiService } from "./github";
 export { IntegrationService, type LookerExplore, type LookerIntegrationInfo } from "./integrations";
 export { ArtifactService, BuilderService, ChartService } from "./misc";
+export { ModelingService } from "./modeling";
 export { OnboardingService } from "./onboarding";
 export { OrganizationService } from "./organizations";
 export { RepositoryService } from "./repository";

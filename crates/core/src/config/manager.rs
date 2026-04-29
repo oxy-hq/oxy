@@ -1,6 +1,6 @@
 use std::{
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, RwLock},
 };
 
 use crate::{
@@ -23,6 +23,8 @@ use super::{
 pub struct ConfigManager {
     storage: Arc<ConfigSource>,
     config: Arc<Config>,
+    /// Runtime-registered databases (e.g. modeling outputs). Checked before static config.
+    runtime_databases: Arc<RwLock<Vec<Database>>>,
 }
 
 impl ConfigManager {
@@ -30,6 +32,7 @@ impl ConfigManager {
         Self {
             storage: Arc::new(storage),
             config: Arc::new(config),
+            runtime_databases: Arc::new(RwLock::new(Vec::new())),
         }
     }
 
@@ -53,18 +56,35 @@ impl ConfigManager {
         self.config.models.first().map(|m| m.name())
     }
 
-    pub fn resolve_database(&self, database_name: &str) -> Result<&Database, OxyError> {
-        let database = self
-            .config
+    /// Look up a database by name. Checks runtime-registered databases first,
+    /// then falls back to static config. Returns an owned clone.
+    pub fn resolve_database(&self, database_name: &str) -> Result<Database, OxyError> {
+        // Check runtime overlay first (e.g. modeling outputs registered after a run)
+        if let Ok(rt) = self.runtime_databases.read() {
+            if let Some(db) = rt.iter().find(|d| d.name == database_name) {
+                return Ok(db.clone());
+            }
+        }
+        // Fall back to static config
+        self.config
             .databases
             .iter()
             .find(|w| w.name == database_name)
+            .cloned()
             .ok_or_else(|| {
                 OxyError::ConfigurationError(format!(
                     "Database '{database_name}' not found in config"
                 ))
-            })?;
-        Ok(database)
+            })
+    }
+
+    /// Register a database at runtime (e.g. a modeling project output directory).
+    /// Replaces any existing runtime entry with the same name; static config entries are untouched.
+    pub fn add_runtime_database(&self, db: Database) {
+        if let Ok(mut rt) = self.runtime_databases.write() {
+            rt.retain(|d| d.name != db.name);
+            rt.push(db);
+        }
     }
 
     pub fn default_database_ref(&self) -> Option<&String> {
@@ -140,8 +160,25 @@ impl ConfigManager {
         self.storage.load_agentic_workflow_config(agent_name).await
     }
 
-    pub fn list_databases(&self) -> &[Database] {
-        self.config.databases.as_slice()
+    /// Returns all databases: static config entries plus any runtime-registered ones.
+    /// Runtime entries with the same name as a static entry take precedence (appear first).
+    pub fn list_databases(&self) -> Vec<Database> {
+        let runtime: Vec<Database> = self
+            .runtime_databases
+            .read()
+            .map(|rt| rt.clone())
+            .unwrap_or_default();
+        let runtime_names: std::collections::HashSet<String> =
+            runtime.iter().map(|d| d.name.clone()).collect();
+        let mut result = runtime;
+        result.extend(
+            self.config
+                .databases
+                .iter()
+                .filter(|d| !runtime_names.contains(&d.name))
+                .cloned(),
+        );
+        result
     }
 
     pub fn list_looker_integrations(&self) -> Vec<&super::model::Integration> {

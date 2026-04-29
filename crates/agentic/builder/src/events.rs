@@ -17,6 +17,20 @@ pub enum BuilderEvent {
         new_content: String,
     },
 
+    /// A file was actually written or deleted after the user accepted a proposal.
+    FileChanged {
+        /// Relative path (from project root) of the file that was changed.
+        file_path: String,
+        /// Human-readable description of what changed.
+        description: String,
+        /// Content of the file after the change; empty string for deletions.
+        new_content: String,
+        /// Content of the file before the change; empty string for new files.
+        old_content: String,
+        /// True when the file was deleted rather than written.
+        is_deletion: bool,
+    },
+
     /// A codebase tool was called (search/read).
     ToolUsed {
         /// Tool name (e.g. `"search_files"`, `"read_file"`, `"search_text"`).

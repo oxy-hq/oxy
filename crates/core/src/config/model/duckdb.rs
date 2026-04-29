@@ -217,6 +217,10 @@ pub enum DuckDBOptions {
         #[garde(length(min = 1))]
         file_search_path: String,
     },
+    File {
+        #[garde(length(min = 1))]
+        path: String,
+    },
     DuckLake(#[garde(dive)] DuckLakeConfig),
 }
 

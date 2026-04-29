@@ -1,0 +1,33 @@
+[package]
+name = "oxy-airform"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+airform-core = { workspace = true }
+airform-loader = { workspace = true }
+airform-parser = { workspace = true }
+airform-jinja = { workspace = true }
+airform-graph = { workspace = true }
+airform-compiler = { workspace = true }
+airform-analyzer = { workspace = true }
+airform-executor = { workspace = true }
+
+dirs = { workspace = true }
+async-trait = "0.1.89"
+anyhow = "1"
+jsonwebtoken = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+oxy = { path = "../core" }
+oxy-shared = { path = "../shared" }
+
+[dev-dependencies]
+tempfile = { workspace = true }

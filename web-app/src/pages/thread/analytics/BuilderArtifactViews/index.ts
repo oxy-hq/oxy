@@ -1,6 +1,7 @@
 export { AskUserView } from "./AskUserView";
 export { ExecuteSqlView } from "./ExecuteSqlView";
 export { LookupSchemaView } from "./LookupSchemaView";
+export { ManageDirectoryView } from "./ManageDirectoryView";
 export { ProposeChangeToolView } from "./ProposeChangeToolView";
 export { ReadFileView } from "./ReadFileView";
 export { RunTestsView } from "./RunTestsView";

@@ -6,10 +6,14 @@ interface UserMessageProps {
 }
 
 function getDisplayName(filePath: string) {
-  const fileName = filePath.split("/").pop() ?? filePath;
+  const parts = filePath.split("/");
+  const fileName = parts.pop() ?? filePath;
+  if (fileName === "dbt_project.yml" && parts.length > 0) {
+    return parts[parts.length - 1];
+  }
   return fileName
     .replace(/\.(procedure|workflow|automation|agent|aw|app|view|topic)\.(yml|yaml)$/, "")
-    .replace(/\.(yml|yaml)$/, "");
+    .replace(/\.(yml|yaml|sql)$/, "");
 }
 
 function renderWithMentions(content: string) {

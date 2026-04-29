@@ -99,7 +99,12 @@ function PanelContent({
   return (
     <div
       data-slot='panel-content'
-      className={cn("flex-1", scrollable && "overflow-auto", padding && "p-4", className)}
+      className={cn(
+        "flex-1",
+        scrollable ? "overflow-auto" : "overflow-hidden",
+        padding && "p-4",
+        className
+      )}
       {...props}
     />
   );

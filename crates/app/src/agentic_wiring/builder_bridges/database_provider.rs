@@ -48,11 +48,13 @@ impl BuilderDatabaseProvider for OxyBuilderDatabaseProvider {
                 ))
             })?;
 
-        let connector = agentic_connector::build_connector(cfg).map_err(|e| {
-            ToolError::Execution(format!(
-                "failed to build connector for database '{database_name}': {e}"
-            ))
-        })?;
+        let connector = agentic_connector::build_connector_async(cfg)
+            .await
+            .map_err(|e| {
+                ToolError::Execution(format!(
+                    "failed to build connector for database '{database_name}': {e}"
+                ))
+            })?;
 
         Ok(Arc::from(connector))
     }

@@ -268,6 +268,8 @@ impl AgentCardService {
                     ToolType::SaveAutomation(t) => {
                         (t.name.clone(), t.description.clone(), "save-automation")
                     }
+                    ToolType::DbtRun(t) => (t.name.clone(), t.description.clone(), "dbt"),
+                    ToolType::DbtCompile(t) => (t.name.clone(), t.description.clone(), "dbt"),
                 };
 
                 // Convert tool name to kebab-case for ID

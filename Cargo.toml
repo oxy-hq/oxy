@@ -31,6 +31,7 @@ members = [
   "crates/agentic/pipeline",
   "crates/agentic/runtime",
   "crates/agentic/workflow",
+  "crates/airform",
   "web-app",
 ]
 
@@ -62,6 +63,7 @@ oxy-llm = { path = "crates/infrastructure/llm/oxy-llm" }
 oxy-looker = { path = "crates/integration/looker" }
 oxy-observability = { path = "crates/observability" }
 oxy-ollama = { path = "crates/infrastructure/llm/ollama" }
+oxy-airform = { path = "crates/airform" }
 oxy-openai = { path = "crates/infrastructure/llm/openai" }
 oxy-project = { path = "crates/project" }
 oxy-semantic = { path = "crates/semantic" }
@@ -220,6 +222,16 @@ utoipa-swagger-ui = { git = "https://github.com/haitrr/utoipa.git", rev = "776f8
 wildcard = "0.3.0"
 wiremock = "0.6"
 xxhash-rust = "0.8"
+
+# Airform — dbt-compatible SQL transformation engine
+airform-core = { git = "https://github.com/oxy-hq/airform.git", rev = "ed9257e491eac1da54cde1bc2e4725c87241c4f7" }
+airform-loader = { git = "https://github.com/oxy-hq/airform.git", rev = "ed9257e491eac1da54cde1bc2e4725c87241c4f7" }
+airform-parser = { git = "https://github.com/oxy-hq/airform.git", rev = "ed9257e491eac1da54cde1bc2e4725c87241c4f7" }
+airform-jinja = { git = "https://github.com/oxy-hq/airform.git", rev = "ed9257e491eac1da54cde1bc2e4725c87241c4f7" }
+airform-graph = { git = "https://github.com/oxy-hq/airform.git", rev = "ed9257e491eac1da54cde1bc2e4725c87241c4f7" }
+airform-compiler = { git = "https://github.com/oxy-hq/airform.git", rev = "ed9257e491eac1da54cde1bc2e4725c87241c4f7" }
+airform-analyzer = { git = "https://github.com/oxy-hq/airform.git", rev = "ed9257e491eac1da54cde1bc2e4725c87241c4f7" }
+airform-executor = { git = "https://github.com/oxy-hq/airform.git", rev = "ed9257e491eac1da54cde1bc2e4725c87241c4f7" }
 
 [workspace.package]
 version = "0.5.45"

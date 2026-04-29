@@ -65,7 +65,7 @@ impl Connector {
     ) -> Result<Self, OxyError> {
         let database = config_manager.resolve_database(database_ref)?;
         Self::from_db(
-            database,
+            &database,
             config_manager,
             secrets_manager,
             dry_run_limit,
@@ -107,6 +107,13 @@ impl Connector {
                         DuckDBOptions::Local {
                             file_search_path: search_path,
                         },
+                        secrets_manager.clone(),
+                    ))
+                }
+                DuckDBOptions::File { path } => {
+                    let resolved = config_manager.resolve_file(path).await?;
+                    EngineType::DuckDB(DuckDB::new(
+                        DuckDBOptions::File { path: resolved },
                         secrets_manager.clone(),
                     ))
                 }

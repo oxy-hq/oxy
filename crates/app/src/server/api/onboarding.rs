@@ -834,7 +834,7 @@ pub async fn github_setup(
     // ── Warehouses ───────────────────────────────────────────────────────────
     let mut warehouses: Vec<GithubSetupWarehouse> = Vec::new();
     for database in config_manager.list_databases() {
-        let vars = collect_warehouse_vars(database);
+        let vars = collect_warehouse_vars(&database);
         let mut missing_vars: Vec<GithubSetupMissingVar> = Vec::new();
         for var in vars {
             if secret_manager.get_secret(&var.var_name).await.is_some() {
@@ -1026,7 +1026,7 @@ pub async fn reset_onboarding(
             Ok(database) => {
                 if let Some(password_var) = workspace_manager
                     .config_manager
-                    .get_database_password_var(database)
+                    .get_database_password_var(&database)
                 {
                     password_secrets.push(password_var);
                 }

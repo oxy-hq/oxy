@@ -5,10 +5,13 @@ use std::collections::HashMap;
 use agentic_core::BackTarget;
 use agentic_llm::InitialMessages;
 
-use crate::tools::{apply_change_blocks, delete_file, write_file_content};
+use crate::events::BuilderEvent;
+use crate::tools::{
+    apply_change_blocks, delete_file, execute_init_dbt_project, safe_path, write_file_content,
+};
 use crate::types::{BuilderDomain, BuilderError, BuilderSpec, ToolExchange};
 
-use super::super::solver::BuilderSolver;
+use super::super::solver::{BuilderSolver, emit_domain};
 use super::{ProposeChangePayload, extract_all_propose_changes};
 
 impl BuilderSolver {
@@ -187,6 +190,231 @@ impl BuilderSolver {
                             .collect();
 
                         (tool_exchanges, resume_answer)
+                    }
+                    Some("manage_directory") => {
+                        let answer_lower = resume.answer.to_lowercase();
+                        let accepting = answer_lower.contains("accept");
+
+                        let prompt_json: serde_json::Value =
+                            serde_json::from_str(&question).unwrap_or_default();
+                        let operation = prompt_json["operation"].as_str().unwrap_or("").to_string();
+                        let path = prompt_json["path"].as_str().unwrap_or("").to_string();
+
+                        let (tool_output, resume_answer) = if accepting {
+                            let apply_result: Result<(), String> = (async {
+                                match operation.as_str() {
+                                    "create" => {
+                                        let abs = safe_path(&self.project_root, &path)
+                                            .map_err(|e| e.to_string())?;
+                                        tokio::fs::create_dir_all(&abs)
+                                            .await
+                                            .map_err(|e| format!("failed to create '{path}': {e}"))
+                                    }
+                                    "delete" => {
+                                        let abs = safe_path(&self.project_root, &path)
+                                            .map_err(|e| e.to_string())?;
+                                        tokio::fs::remove_dir_all(&abs)
+                                            .await
+                                            .map_err(|e| format!("failed to delete '{path}': {e}"))
+                                    }
+                                    "rename" => {
+                                        let new_path = prompt_json["new_path"]
+                                            .as_str()
+                                            .unwrap_or("")
+                                            .to_string();
+                                        if new_path.is_empty() {
+                                            return Err(
+                                                "new_path is required for rename".to_string()
+                                            );
+                                        }
+                                        let abs = safe_path(&self.project_root, &path)
+                                            .map_err(|e| e.to_string())?;
+                                        let abs_new = safe_path(&self.project_root, &new_path)
+                                            .map_err(|e| e.to_string())?;
+                                        if let Some(parent) = abs_new.parent() {
+                                            tokio::fs::create_dir_all(parent).await.map_err(
+                                                |e| format!("failed to create parent dirs: {e}"),
+                                            )?;
+                                        }
+                                        tokio::fs::rename(&abs, &abs_new).await.map_err(|e| {
+                                            format!(
+                                                "failed to rename '{path}' to '{new_path}': {e}"
+                                            )
+                                        })
+                                    }
+                                    other => Err(format!("unknown operation '{other}'")),
+                                }
+                            })
+                            .await;
+
+                            match apply_result {
+                                Ok(()) => {
+                                    let output =
+                                        serde_json::json!({ "answer": "Accept" }).to_string();
+                                    let msg = format!(
+                                        "Directory operation '{operation}' on '{path}' completed successfully."
+                                    );
+                                    (output, msg)
+                                }
+                                Err(err) => {
+                                    let output =
+                                        serde_json::json!({ "answer": "Accept", "error": err })
+                                            .to_string();
+                                    let msg = format!(
+                                        "Directory operation '{operation}' on '{path}' failed: {err}"
+                                    );
+                                    (output, msg)
+                                }
+                            }
+                        } else {
+                            let output = serde_json::json!({ "answer": "Reject" }).to_string();
+                            let msg = format!(
+                                "The user rejected the directory operation '{operation}' on '{path}'."
+                            );
+                            (output, msg)
+                        };
+
+                        let exchange = ToolExchange {
+                            name: "manage_directory".to_string(),
+                            input: serde_json::json!({
+                                "operation": &operation,
+                                "path": &path,
+                            })
+                            .to_string(),
+                            output: tool_output,
+                        };
+                        (vec![exchange], resume_answer)
+                    }
+                    Some("init_dbt_project") => {
+                        let answer_lower = resume.answer.to_lowercase();
+                        let accepting = answer_lower.contains("accept");
+
+                        let prompt_json: serde_json::Value =
+                            serde_json::from_str(&question).unwrap_or_default();
+                        let project_name = prompt_json["project_name"]
+                            .as_str()
+                            .unwrap_or("")
+                            .to_string();
+
+                        if project_name.contains('/')
+                            || project_name.contains('\\')
+                            || project_name.contains("..")
+                        {
+                            tracing::warn!(
+                                "init_dbt_project resume: invalid project_name '{project_name}', rejecting"
+                            );
+                            return Err((
+                                BuilderError::Resume(format!(
+                                    "invalid project name: {project_name}"
+                                )),
+                                BackTarget::Solve(
+                                    BuilderSpec {
+                                        question: resume.data.original_input.clone(),
+                                        history: vec![],
+                                    },
+                                    Default::default(),
+                                ),
+                            ));
+                        }
+
+                        let project_root = format!("modeling/{project_name}");
+
+                        let tool_input = serde_json::json!({ "name": project_name }).to_string();
+
+                        let (tool_output, resume_answer) = if accepting {
+                            let params = serde_json::json!({ "name": project_name });
+                            let result = execute_init_dbt_project(&self.project_root, &params);
+                            match result {
+                                Ok(ref val) if val["ok"] == true => {
+                                    if let Some(files) = val["files"].as_array() {
+                                        for file in files {
+                                            let file_path =
+                                                file[0].as_str().unwrap_or("").to_string();
+                                            let new_content =
+                                                file[1].as_str().unwrap_or("").to_string();
+                                            let description =
+                                                file[2].as_str().unwrap_or("").to_string();
+                                            emit_domain(
+                                                &self.event_tx,
+                                                BuilderEvent::FileChanged {
+                                                    file_path,
+                                                    description,
+                                                    new_content,
+                                                    old_content: String::new(),
+                                                    is_deletion: false,
+                                                },
+                                            )
+                                            .await;
+                                        }
+                                    }
+                                    let output = serde_json::json!({
+                                        "ok": true,
+                                        "project_name": project_name,
+                                        "project_dir": project_root,
+                                    })
+                                    .to_string();
+                                    let msg = format!(
+                                        "dbt project '{project_name}' has been initialized successfully."
+                                    );
+                                    (output, msg)
+                                }
+                                Ok(val) => {
+                                    let error = val["error"]
+                                        .as_str()
+                                        .unwrap_or("unknown error")
+                                        .to_string();
+                                    emit_domain(
+                                        &self.event_tx,
+                                        BuilderEvent::ToolUsed {
+                                            tool_name: "init_dbt_project".into(),
+                                            summary: format!("error:{project_name}:{error}"),
+                                        },
+                                    )
+                                    .await;
+                                    let output = serde_json::json!({
+                                        "ok": false,
+                                        "error": error,
+                                    })
+                                    .to_string();
+                                    let msg = format!(
+                                        "Failed to initialize dbt project '{project_name}': {error}"
+                                    );
+                                    (output, msg)
+                                }
+                                Err(e) => {
+                                    let error = e.to_string();
+                                    emit_domain(
+                                        &self.event_tx,
+                                        BuilderEvent::ToolUsed {
+                                            tool_name: "init_dbt_project".into(),
+                                            summary: format!("error:{project_name}:{error}"),
+                                        },
+                                    )
+                                    .await;
+                                    let output = serde_json::json!({
+                                        "ok": false,
+                                        "error": error,
+                                    })
+                                    .to_string();
+                                    let msg = format!("Failed to initialize dbt project: {error}");
+                                    (output, msg)
+                                }
+                            }
+                        } else {
+                            let output =
+                                serde_json::json!({ "ok": false, "rejected": true }).to_string();
+                            let msg = format!(
+                                "The user rejected the initialization of dbt project '{project_name}'."
+                            );
+                            (output, msg)
+                        };
+
+                        let exchange = ToolExchange {
+                            name: "init_dbt_project".to_string(),
+                            input: tool_input,
+                            output: tool_output,
+                        };
+                        (vec![exchange], resume_answer)
                     }
                     _ => {
                         let exchange = ToolExchange {

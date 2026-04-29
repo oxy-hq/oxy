@@ -48,7 +48,7 @@ impl SemanticManager {
             Ok(datasets) => datasets,
             Err(err) => match err {
                 OxyError::IOError(_) => {
-                    self.sync(database, None).await?;
+                    self.sync(&database, None).await?;
                     self.storage.load_datasets(database_ref).await?
                 }
                 _ => {
@@ -268,7 +268,7 @@ impl SemanticManager {
                 }
             }
             None => {
-                let all_dbs = self.config.list_databases().to_vec();
+                let all_dbs = self.config.list_databases();
                 tracing::debug!(
                     "No filter provided, syncing all {} databases",
                     all_dbs.len()

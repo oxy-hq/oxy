@@ -19,6 +19,7 @@ use tracing::Instrument;
 use crate::database::BuilderDatabaseProvider;
 use crate::events::BuilderEvent;
 use crate::schema_provider::BuilderSchemaProvider;
+use crate::secrets::BuilderSecretsProvider;
 use crate::semantic::BuilderSemanticCompiler;
 use crate::solver::{BuilderSolver, build_builder_handlers};
 use crate::test_runner::BuilderTestRunner;
@@ -40,6 +41,9 @@ pub struct BuilderPipelineParams {
     /// tools (`propose_change`, `ask_user`). When set to
     /// [`AutoAcceptInputProvider`], changes are applied without suspension.
     pub human_input: Option<agentic_core::human_input::HumanInputHandle>,
+    /// Provides a [`SecretsManager`] for dbt tools that need to resolve
+    /// warehouse credentials (`run_dbt_models`, `test_dbt_models`).
+    pub secrets_provider: Option<Arc<dyn BuilderSecretsProvider>>,
 }
 
 /// Build the solver, create the orchestrator, and start the builder pipeline.
@@ -79,6 +83,9 @@ pub fn start_pipeline(params: BuilderPipelineParams) -> PipelineHandle<BuilderEv
     }
     if let Some(provider) = params.human_input {
         solver = solver.with_human_input(provider);
+    }
+    if let Some(provider) = params.secrets_provider {
+        solver = solver.with_secrets_provider(provider);
     }
 
     let (outcome_tx, outcome_rx) = mpsc::channel::<PipelineOutcome>(4);
@@ -189,6 +196,9 @@ pub fn resume_pipeline(
     }
     if let Some(provider) = params.human_input {
         solver = solver.with_human_input(provider);
+    }
+    if let Some(provider) = params.secrets_provider {
+        solver = solver.with_secrets_provider(provider);
     }
 
     let (outcome_tx, outcome_rx) = mpsc::channel::<PipelineOutcome>(4);

@@ -1,0 +1,8 @@
+book_id,title,author,genre,published_year,available_copies
+BK001,The Great Gatsby,F. Scott Fitzgerald,Fiction,1925,3
+BK002,sapiens,Yuval Noah Harari,Non-Fiction,2011,
+BK003,Dune,Frank Herbert,Sci-Fi,1965,2
+BK004,,George Orwell,Fiction,1949,1
+BK005,Educated,Tara Westover,Memoir,NULL,5
+BK006,Atomic Habits,James Clear,Self-Help,2018,abc
+BK003,Dune,Frank Herbert,Sci-Fi,1965,2

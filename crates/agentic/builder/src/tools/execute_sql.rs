@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use agentic_connector::ConnectorError;
 use agentic_core::tools::{ToolDef, ToolError};
 use serde_json::{Value, json};
 
@@ -18,6 +19,7 @@ pub fn execute_sql_def() -> ToolDef {
                       before proposing file changes. Use the optional 'database' parameter to \
                       specify which database to query by its name from config.yml (defaults to \
                       the first configured database). \
+                      Do NOT include a trailing semicolon in the query — it will cause a syntax error. \
                       Returns {ok, database, columns, rows, row_count} on success or \
                       {ok: false, error} on failure.",
         parameters: json!({
@@ -45,7 +47,8 @@ pub async fn execute_execute_sql(
 ) -> Result<Value, ToolError> {
     let sql = params["sql"]
         .as_str()
-        .ok_or_else(|| ToolError::BadParams("missing 'sql'".into()))?;
+        .ok_or_else(|| ToolError::BadParams("missing 'sql'".into()))?
+        .trim_end_matches(|c: char| c == ';' || c.is_whitespace());
 
     // Determine which database to use.
     let db_name = if let Some(name) = params["database"].as_str() {
@@ -60,16 +63,28 @@ pub async fn execute_execute_sql(
 
     let connector = db_provider.get_connector(&db_name).await?;
 
-    // Wrap in a subquery so the outer LIMIT applies regardless of the user's SQL.
-    let preview_sql = format!("SELECT * FROM ({sql}) AS _oxy_preview LIMIT {ROW_LIMIT}");
+    let query_result = tokio::time::timeout(QUERY_TIMEOUT, connector.execute_query(sql, ROW_LIMIT))
+        .await
+        .map_err(|_| ToolError::Execution("query timed out after 30 seconds".into()))?;
 
-    let result = tokio::time::timeout(
-        QUERY_TIMEOUT,
-        connector.execute_query(&preview_sql, ROW_LIMIT),
-    )
-    .await
-    .map_err(|_| ToolError::Execution("query timed out after 30 seconds".into()))?
-    .map_err(|e| ToolError::Execution(e.to_string()))?;
+    let result = match query_result {
+        Ok(r) => r,
+        Err(ConnectorError::QueryFailed { sql, message }) => {
+            return Ok(json!({
+                "ok": false,
+                "database": db_name,
+                "error": message,
+                "sql": sql,
+            }));
+        }
+        Err(e) => {
+            return Ok(json!({
+                "ok": false,
+                "database": db_name,
+                "error": e.to_string(),
+            }));
+        }
+    };
 
     let columns = &result.result.columns;
     let total_rows = result.result.rows.len();

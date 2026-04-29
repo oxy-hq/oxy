@@ -562,6 +562,7 @@ impl PipelineBuilder {
                 semantic_compiler: Some(bridges.semantic_compiler),
                 test_runner: self.builder_test_runner,
                 human_input: None,
+                secrets_provider: bridges.secrets_provider,
             },
             resume_data,
             answer,
@@ -647,6 +648,7 @@ impl PipelineBuilder {
             semantic_compiler: Some(bridges.semantic_compiler),
             test_runner: self.builder_test_runner,
             human_input: self.human_input,
+            secrets_provider: bridges.secrets_provider,
         });
 
         Ok(StartedPipeline {

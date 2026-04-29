@@ -104,6 +104,8 @@ impl ToolLauncher {
                     ToolType::SemanticQuery(t) => &t.name,
                     ToolType::LookerQuery(t) => &t.name,
                     ToolType::SaveAutomation(t) => &t.name,
+                    ToolType::DbtRun(t) => &t.name,
+                    ToolType::DbtCompile(t) => &t.name,
                 };
                 name == tool_name
             })

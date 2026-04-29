@@ -6,6 +6,28 @@ import { cn } from "@/libs/shadcn/utils";
 import type { HumanInputQuestion } from "@/services/api/analytics";
 import ProposeChangeDiff, { parseProposeChange } from "./ProposeChangeDiff";
 
+/** Returns a human-readable string from a prompt that may be raw JSON. */
+function parsePromptText(prompt: string): string {
+  try {
+    const parsed = JSON.parse(prompt);
+    if (parsed && typeof parsed.description === "string") return parsed.description;
+  } catch {
+    // not JSON
+  }
+  return prompt;
+}
+
+/** Returns true when the prompt is a structured backend JSON (has a `type` field).
+ *  These prompts use suggestion buttons only — no free-text input. */
+function isStructuredPrompt(prompt: string): boolean {
+  try {
+    const parsed = JSON.parse(prompt);
+    return parsed !== null && typeof parsed === "object" && typeof parsed.type === "string";
+  } catch {
+    return false;
+  }
+}
+
 interface SuspensionPromptProps {
   questions: HumanInputQuestion[];
   onAnswer: (text: string) => void;
@@ -116,7 +138,7 @@ const SuspensionPrompt = ({ questions, onAnswer, isAnswering }: SuspensionPrompt
 
       {/* Active question content */}
       <div className='space-y-3 p-3'>
-        <p className='font-medium text-sm'>{activeQuestion.prompt}</p>
+        <p className='font-medium text-sm'>{parsePromptText(activeQuestion.prompt)}</p>
 
         {activeQuestion.suggestions.length > 0 && (
           <div className='flex flex-wrap gap-2'>
@@ -140,38 +162,40 @@ const SuspensionPrompt = ({ questions, onAnswer, isAnswering }: SuspensionPrompt
           </div>
         )}
 
-        <div className='flex gap-2'>
-          <Textarea
-            value={answers[safeIndex]}
-            onChange={(e) => setAnswer(safeIndex, e.target.value)}
-            placeholder='Type your answer…'
-            className='min-h-[60px] flex-1 resize-none text-sm'
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                if (questions.length === 1) {
-                  submitAll();
-                } else {
-                  handleNextOrSubmit();
+        {!isStructuredPrompt(activeQuestion.prompt) && (
+          <div className='flex gap-2'>
+            <Textarea
+              value={answers[safeIndex]}
+              onChange={(e) => setAnswer(safeIndex, e.target.value)}
+              placeholder='Type your answer…'
+              className='min-h-[60px] flex-1 resize-none text-sm'
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  if (questions.length === 1) {
+                    submitAll();
+                  } else {
+                    handleNextOrSubmit();
+                  }
                 }
-              }
-            }}
-            disabled={isAnswering}
-          />
-          {questions.length === 1 ? (
-            <Button onClick={submitAll} disabled={isAnswering || !allFilled} className='self-end'>
-              Send
-            </Button>
-          ) : (
-            <Button
-              onClick={handleNextOrSubmit}
-              disabled={isNextOrSubmitDisabled}
-              className='self-end'
-            >
-              {nextOrSubmitLabel}
-            </Button>
-          )}
-        </div>
+              }}
+              disabled={isAnswering}
+            />
+            {questions.length === 1 ? (
+              <Button onClick={submitAll} disabled={isAnswering || !allFilled} className='self-end'>
+                Send
+              </Button>
+            ) : (
+              <Button
+                onClick={handleNextOrSubmit}
+                disabled={isNextOrSubmitDisabled}
+                className='self-end'
+              >
+                {nextOrSubmitLabel}
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Dot navigation */}

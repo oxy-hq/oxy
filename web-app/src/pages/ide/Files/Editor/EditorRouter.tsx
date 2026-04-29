@@ -5,6 +5,7 @@ import AgenticAnalyticsEditor from "./AgenticAnalytics";
 import AppEditor from "./App";
 import { useEditorContext } from "./contexts/useEditorContext";
 import DefaultEditor from "./Default";
+import MarkdownEditor from "./Markdown";
 import SqlEditor from "./Sql";
 import TestFileEditor from "./TestFile";
 import TopicEditor from "./Topic";
@@ -33,6 +34,8 @@ const EditorRouterComponent = () => {
       return <TopicEditor />;
     case FileType.TEST:
       return <TestFileEditor />;
+    case FileType.MARKDOWN:
+      return <MarkdownEditor />;
     default:
       return <DefaultEditor />;
   }

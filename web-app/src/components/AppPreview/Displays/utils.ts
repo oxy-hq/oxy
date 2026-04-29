@@ -1,11 +1,16 @@
-import {
-  DataType,
-  type Schema,
-  Struct,
-  type Table,
-  type Timestamp,
-  type TypeMap
-} from "apache-arrow";
+import { DataType, Struct, type Timestamp } from "apache-arrow";
+
+// Minimal structural interface for Apache Arrow Table/Schema so that the
+// version bundled by @duckdb/duckdb-wasm (v17) and our own (v21) are both
+// accepted without a hard type dependency on a specific Arrow release.
+interface ArrowSchema {
+  readonly fields: ReadonlyArray<{ readonly name: string; readonly type: DataType }>;
+}
+interface ArrowTable {
+  readonly schema: ArrowSchema;
+  toArray(): unknown[];
+}
+
 import dayjs from "dayjs";
 import timezone from "dayjs/plugin/timezone";
 import utc from "dayjs/plugin/utc";
@@ -31,7 +36,7 @@ const getArrowValue = (value: unknown): number | string | unknown => {
   return value;
 };
 
-export const getArrowColumnValues = (table: Table<TypeMap>, columnName: string) => {
+export const getArrowColumnValues = (table: ArrowTable, columnName: string) => {
   const fieldType = getArrowFieldType(columnName, table.schema);
   return table.toArray().map((row: unknown) => {
     const value = (row as Record<string, unknown>)[columnName];
@@ -556,9 +561,6 @@ export async function runSqlInDuckDB(sql: string): Promise<string> {
   return JSON.stringify(rows);
 }
 
-export const getArrowFieldType = (
-  fieldName: string,
-  schema: Schema<TypeMap>
-): DataType | undefined => {
-  return schema.fields.find((f) => (f as { name: string }).name === fieldName)?.type;
+export const getArrowFieldType = (fieldName: string, schema: ArrowSchema): DataType | undefined => {
+  return schema.fields.find((f) => f.name === fieldName)?.type;
 };

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import ErrorAlert from "@/components/ui/ErrorAlert";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/shadcn/tabs";
@@ -11,7 +12,7 @@ function formatMs(ms: number): string {
   return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
 }
 
-const TimingBar = ({ item }: { item: ArtifactItem }) => {
+export const TimingBar = ({ item }: { item: ArtifactItem }) => {
   const execMs = item.durationMs;
   const llmMs = item.llmDurationMs;
   if (execMs === undefined && llmMs === undefined) return null;
@@ -910,6 +911,1360 @@ export const CompileSemanticQueryView = ({ item }: { item: ArtifactItem }) => {
               {output.error}
             </p>
           )}
+        </div>
+      </div>
+      <TimingBar item={item} />
+    </div>
+  );
+};
+
+// ── TestDbtModelsView ─────────────────────────────────────────────────────────
+
+interface TestResult {
+  test_name?: string;
+  model_name?: string;
+  column_name?: string;
+  status?: string;
+  failures?: number;
+  duration_ms?: number;
+  message?: string;
+}
+
+export const TestDbtModelsView = ({ item }: { item: ArtifactItem }) => {
+  const input = parseToolJson<{ project?: string; selector?: string | null }>(item.toolInput);
+  const output = parseToolJson<{
+    ok?: boolean;
+    tests_run?: number;
+    passed?: number;
+    failed?: number;
+    results?: TestResult[];
+    error?: string;
+  }>(item.toolOutput);
+  const results = output?.results ?? [];
+
+  return (
+    <div className='flex h-full flex-col'>
+      <div className='flex-1 overflow-auto p-4'>
+        <div className='space-y-4'>
+          <div className='grid grid-cols-2 gap-2'>
+            <div className='rounded border bg-muted/30 px-2.5 py-2'>
+              <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>Project</p>
+              <p className='font-medium font-mono text-xs'>{input?.project ?? "—"}</p>
+            </div>
+            {input?.selector && (
+              <div className='rounded border bg-muted/30 px-2.5 py-2'>
+                <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>
+                  Selector
+                </p>
+                <p className='font-medium font-mono text-xs'>{input.selector}</p>
+              </div>
+            )}
+            {output?.tests_run !== undefined && (
+              <div className='rounded border bg-muted/30 px-2.5 py-2'>
+                <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>
+                  Tests Run
+                </p>
+                <p className='font-medium font-mono text-xs'>{output.tests_run}</p>
+              </div>
+            )}
+            {output?.passed !== undefined && (
+              <div className='rounded border bg-muted/30 px-2.5 py-2'>
+                <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>Passed</p>
+                <p className='font-medium font-mono text-success text-xs'>{output.passed}</p>
+              </div>
+            )}
+            {output?.failed !== undefined && (
+              <div className='rounded border bg-muted/30 px-2.5 py-2'>
+                <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>Failed</p>
+                <p
+                  className={`font-medium font-mono text-xs ${output.failed > 0 ? "text-destructive" : ""}`}
+                >
+                  {output.failed}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {output?.error && <ErrorAlert message={output.error} />}
+
+          {results.length > 0 && (
+            <div>
+              <p className='mb-1.5 font-medium text-muted-foreground text-xs'>
+                Results ({results.length})
+              </p>
+              <div className='space-y-1.5'>
+                {results.map((r, i) => {
+                  const isPass = r.status === "PASS";
+                  const isFail = r.status === "FAIL" || r.status === "ERROR";
+                  return (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: stable ordered list
+                    <div key={i} className='rounded border bg-muted/30 px-2.5 py-2'>
+                      <div className='flex items-start gap-2'>
+                        <div className='min-w-0 flex-1'>
+                          <p className='font-medium font-mono text-xs'>{r.test_name}</p>
+                          {(r.model_name || r.column_name) && (
+                            <p className='mt-0.5 font-mono text-[10px] text-muted-foreground'>
+                              {[r.model_name, r.column_name].filter(Boolean).join(".")}
+                            </p>
+                          )}
+                        </div>
+                        {r.status && (
+                          <span
+                            className={`shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] ${
+                              isPass
+                                ? "bg-success/10 text-success"
+                                : isFail
+                                  ? "bg-destructive/10 text-destructive"
+                                  : "bg-muted text-muted-foreground"
+                            }`}
+                          >
+                            {r.status}
+                          </span>
+                        )}
+                      </div>
+                      <div className='mt-0.5 flex gap-3 text-[11px] text-muted-foreground'>
+                        {r.failures !== undefined && r.failures > 0 && (
+                          <span className='text-destructive'>{r.failures} failures</span>
+                        )}
+                        {r.duration_ms !== undefined && <span>{r.duration_ms}ms</span>}
+                      </div>
+                      {r.message && isFail && (
+                        <p className='mt-1 text-[11px] text-destructive'>{r.message}</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+      <TimingBar item={item} />
+    </div>
+  );
+};
+
+// ── ListDbtNodesView ──────────────────────────────────────────────────────────
+
+interface DbtNode {
+  unique_id?: string;
+  name?: string;
+  resource_type?: string;
+  path?: string;
+  materialization?: string;
+  description?: string;
+}
+
+export const ListDbtNodesView = ({ item }: { item: ArtifactItem }) => {
+  const input = parseToolJson<{ project?: string }>(item.toolInput);
+  const output = parseToolJson<{
+    ok?: boolean;
+    count?: number;
+    nodes?: DbtNode[];
+    error?: string;
+  }>(item.toolOutput);
+  const nodes = output?.nodes ?? [];
+
+  const byType = nodes.reduce<Record<string, DbtNode[]>>((acc, n) => {
+    const t = n.resource_type ?? "other";
+    if (!acc[t]) acc[t] = [];
+    acc[t].push(n);
+    return acc;
+  }, {});
+  const types = Object.keys(byType).sort();
+  const [activeType, setActiveType] = useState(types[0] ?? null);
+
+  return (
+    <div className='flex h-full flex-col'>
+      <div className='flex-1 overflow-auto p-4'>
+        <div className='space-y-4'>
+          <div className='grid grid-cols-2 gap-2'>
+            <div className='rounded border bg-muted/30 px-2.5 py-2'>
+              <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>Project</p>
+              <p className='font-medium font-mono text-xs'>{input?.project ?? "—"}</p>
+            </div>
+            <div className='rounded border bg-muted/30 px-2.5 py-2'>
+              <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>Total</p>
+              <p className='font-medium font-mono text-xs'>{output?.count ?? nodes.length}</p>
+            </div>
+          </div>
+
+          {output?.error && <ErrorAlert message={output.error} />}
+
+          {types.length > 0 && (
+            <Tabs value={activeType ?? undefined} onValueChange={setActiveType}>
+              <TabsList variant='line' className='overflow-x-auto border-b'>
+                {types.map((t) => (
+                  <TabsTrigger key={t} value={t} className='text-xs'>
+                    {t}
+                    <span className='ml-1 rounded bg-muted px-1 py-0.5 text-[10px]'>
+                      {byType[t].length}
+                    </span>
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+              {types.map((t) => (
+                <TabsContent key={t} value={t} className='pt-2'>
+                  <div className='space-y-1'>
+                    {byType[t].map((n) => (
+                      <div
+                        key={n.unique_id ?? n.name}
+                        className='rounded border bg-muted/30 px-2.5 py-2'
+                      >
+                        <div className='flex items-center gap-2'>
+                          <span className='font-medium font-mono text-xs'>{n.name}</span>
+                          {n.materialization && (
+                            <span className='ml-auto rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground'>
+                              {n.materialization}
+                            </span>
+                          )}
+                        </div>
+                        {n.path && (
+                          <p className='mt-0.5 break-all font-mono text-[10px] text-muted-foreground'>
+                            {n.path}
+                          </p>
+                        )}
+                        {n.description && (
+                          <p className='mt-0.5 text-[11px] text-muted-foreground'>
+                            {n.description}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </TabsContent>
+              ))}
+            </Tabs>
+          )}
+        </div>
+      </div>
+      <TimingBar item={item} />
+    </div>
+  );
+};
+
+// ── GetDbtLineageView ─────────────────────────────────────────────────────────
+
+interface LineageNode {
+  unique_id?: string;
+  name?: string;
+  resource_type?: string;
+  description?: string;
+  path?: string;
+}
+
+interface LineageEdge {
+  source?: string;
+  target?: string;
+}
+
+export const GetDbtLineageView = ({ item }: { item: ArtifactItem }) => {
+  const input = parseToolJson<{ project?: string }>(item.toolInput);
+  const output = parseToolJson<{
+    ok?: boolean;
+    nodes?: LineageNode[];
+    edges?: LineageEdge[];
+    error?: string;
+  }>(item.toolOutput);
+  const nodes = output?.nodes ?? [];
+  const edges = output?.edges ?? [];
+
+  return (
+    <div className='flex h-full flex-col'>
+      <div className='flex-1 overflow-auto p-4'>
+        <div className='space-y-4'>
+          <div className='grid grid-cols-2 gap-2'>
+            <div className='rounded border bg-muted/30 px-2.5 py-2'>
+              <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>Project</p>
+              <p className='font-medium font-mono text-xs'>{input?.project ?? "—"}</p>
+            </div>
+            <div className='rounded border bg-muted/30 px-2.5 py-2'>
+              <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>Nodes</p>
+              <p className='font-medium font-mono text-xs'>{nodes.length}</p>
+            </div>
+            <div className='rounded border bg-muted/30 px-2.5 py-2'>
+              <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>Edges</p>
+              <p className='font-medium font-mono text-xs'>{edges.length}</p>
+            </div>
+          </div>
+
+          {output?.error && <ErrorAlert message={output.error} />}
+
+          {nodes.length > 0 && (
+            <div>
+              <p className='mb-1.5 font-medium text-muted-foreground text-xs'>
+                Nodes ({nodes.length})
+              </p>
+              <div className='space-y-1'>
+                {nodes.map((n) => (
+                  <div
+                    key={n.unique_id ?? n.name}
+                    className='flex items-center gap-2 rounded border bg-muted/30 px-2.5 py-1.5'
+                  >
+                    <span className='font-medium font-mono text-xs'>{n.name}</span>
+                    {n.resource_type && (
+                      <span className='ml-auto rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground'>
+                        {n.resource_type}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {edges.length > 0 && (
+            <div>
+              <p className='mb-1.5 font-medium text-muted-foreground text-xs'>
+                Edges ({edges.length})
+              </p>
+              <div className='overflow-hidden rounded border'>
+                <table className='w-full text-xs'>
+                  <thead>
+                    <tr className='bg-muted/50'>
+                      <th className='px-2.5 py-1.5 text-left font-medium text-muted-foreground'>
+                        Source
+                      </th>
+                      <th className='px-2.5 py-1.5 text-left font-medium text-muted-foreground'>
+                        Target
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {edges.map((e, i) => (
+                      // biome-ignore lint/suspicious/noArrayIndexKey: stable ordered list
+                      <tr key={i} className={i % 2 === 0 ? "bg-background" : "bg-muted/20"}>
+                        <td className='px-2.5 py-1 font-mono'>{e.source}</td>
+                        <td className='px-2.5 py-1 font-mono'>{e.target}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+      <TimingBar item={item} />
+    </div>
+  );
+};
+
+// ── CompileDbtModelView ───────────────────────────────────────────────────────
+
+interface CompiledNode {
+  name?: string;
+  unique_id?: string;
+  compiled_sql?: string;
+}
+
+interface CompileError {
+  node_id?: string;
+  message?: string;
+}
+
+export const CompileDbtModelView = ({ item }: { item: ArtifactItem }) => {
+  const input = parseToolJson<{ project?: string; model?: string }>(item.toolInput);
+  const isSingle = !!input?.model;
+
+  const output = parseToolJson<{
+    ok?: boolean;
+    // single-model shape
+    model?: string;
+    compiled_sql?: string;
+    // all-models shape
+    models_compiled?: number;
+    errors?: CompileError[];
+    nodes?: CompiledNode[];
+    error?: string;
+  }>(item.toolOutput);
+
+  const errors = output?.errors ?? [];
+  const nodes = output?.nodes ?? [];
+  const [nodeTab, setNodeTab] = useState(nodes[0]?.name ?? nodes[0]?.unique_id ?? null);
+
+  return (
+    <div className='flex h-full flex-col'>
+      <div className='flex-1 overflow-auto p-4'>
+        <div className='space-y-4'>
+          <div className='grid grid-cols-2 gap-2'>
+            <div className='rounded border bg-muted/30 px-2.5 py-2'>
+              <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>Project</p>
+              <p className='font-medium font-mono text-xs'>{input?.project ?? "—"}</p>
+            </div>
+            {isSingle ? (
+              <div className='rounded border bg-muted/30 px-2.5 py-2'>
+                <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>Model</p>
+                <p className='font-medium font-mono text-xs'>{input?.model}</p>
+              </div>
+            ) : (
+              output?.models_compiled !== undefined && (
+                <div className='rounded border bg-muted/30 px-2.5 py-2'>
+                  <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>
+                    Compiled
+                  </p>
+                  <p className='font-medium font-mono text-xs'>{output.models_compiled}</p>
+                </div>
+              )
+            )}
+          </div>
+
+          {output?.error && <ErrorAlert message={output.error} />}
+
+          {errors.length > 0 && (
+            <div>
+              <p className='mb-1.5 font-medium text-destructive text-xs'>
+                Errors ({errors.length})
+              </p>
+              <div className='space-y-1'>
+                {errors.map((e, i) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: stable ordered list
+                  <div
+                    key={i}
+                    className='rounded border border-destructive/30 bg-destructive/5 px-2.5 py-1.5'
+                  >
+                    {e.node_id && (
+                      <p className='mb-0.5 font-medium font-mono text-[11px]'>{e.node_id}</p>
+                    )}
+                    <p className='text-[11px] text-destructive'>{e.message}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Single model: show compiled SQL directly */}
+          {isSingle && output?.compiled_sql && (
+            <div>
+              <p className='mb-1.5 font-medium text-muted-foreground text-xs'>Compiled SQL</p>
+              <pre className='overflow-auto whitespace-pre-wrap rounded border bg-muted/50 p-3 font-mono text-[11px]'>
+                {output.compiled_sql}
+              </pre>
+            </div>
+          )}
+
+          {/* All models: tabbed SQL per node */}
+          {!isSingle && nodes.length > 0 && (
+            <div>
+              <p className='mb-1.5 font-medium text-muted-foreground text-xs'>
+                Models ({nodes.length})
+              </p>
+              <Tabs value={nodeTab ?? undefined} onValueChange={setNodeTab}>
+                <div className='overflow-x-auto border-b'>
+                  <TabsList variant='line'>
+                    {nodes.map((n) => {
+                      const key = n.name ?? n.unique_id ?? "";
+                      return (
+                        <TabsTrigger key={key} value={key} className='text-xs'>
+                          {n.name ?? n.unique_id}
+                        </TabsTrigger>
+                      );
+                    })}
+                  </TabsList>
+                </div>
+                {nodes.map((n) => {
+                  const key = n.name ?? n.unique_id ?? "";
+                  return (
+                    <TabsContent key={key} value={key} className='pt-2'>
+                      {n.compiled_sql ? (
+                        <pre className='overflow-auto whitespace-pre-wrap rounded border bg-muted/50 p-3 font-mono text-[11px]'>
+                          {n.compiled_sql}
+                        </pre>
+                      ) : (
+                        <p className='text-muted-foreground text-xs'>No SQL available.</p>
+                      )}
+                    </TabsContent>
+                  );
+                })}
+              </Tabs>
+            </div>
+          )}
+        </div>
+      </div>
+      <TimingBar item={item} />
+    </div>
+  );
+};
+
+// ── RunDbtModelsView ──────────────────────────────────────────────────────────
+
+export const RunDbtModelsView = ({ item }: { item: ArtifactItem }) => {
+  const input = parseToolJson<{ project?: string; selector?: string }>(item.toolInput);
+  const output = parseToolJson<{
+    ok?: boolean;
+    status?: string;
+    duration_ms?: number;
+    results?: Array<{
+      unique_id?: string;
+      name?: string;
+      status?: string;
+      duration_ms?: number;
+      rows_affected?: number;
+      message?: string;
+    }>;
+    error?: string;
+  }>(item.toolOutput);
+
+  const results = output?.results ?? [];
+  const successCount = results.filter(
+    (r) => r.status === "SUCCESS" || r.status === "success"
+  ).length;
+  const errorCount = results.filter((r) => r.status === "ERROR" || r.status === "error").length;
+  const skipCount = results.filter((r) => r.status === "SKIP" || r.status === "skip").length;
+
+  return (
+    <div className='flex h-full flex-col'>
+      <div className='flex-1 overflow-auto p-4'>
+        <div className='space-y-4'>
+          <div className='grid grid-cols-2 gap-2'>
+            <div className='rounded border bg-muted/30 px-2.5 py-2'>
+              <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>Project</p>
+              <p className='font-medium font-mono text-xs'>{input?.project ?? "—"}</p>
+            </div>
+            {input?.selector && (
+              <div className='rounded border bg-muted/30 px-2.5 py-2'>
+                <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>
+                  Selector
+                </p>
+                <p className='font-medium font-mono text-xs'>{input.selector}</p>
+              </div>
+            )}
+            {output?.duration_ms !== undefined && (
+              <div className='rounded border bg-muted/30 px-2.5 py-2'>
+                <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>
+                  Duration
+                </p>
+                <p className='font-medium font-mono text-xs'>{output.duration_ms}ms</p>
+              </div>
+            )}
+            {results.length > 0 && (
+              <div className='rounded border bg-muted/30 px-2.5 py-2'>
+                <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>Models</p>
+                <p className='font-medium font-mono text-xs'>
+                  {successCount > 0 && <span className='text-success'>{successCount} ok</span>}
+                  {errorCount > 0 && (
+                    <span className={successCount > 0 ? "· text-destructive" : "text-destructive"}>
+                      {errorCount} err
+                    </span>
+                  )}
+                  {skipCount > 0 && (
+                    <span className='text-muted-foreground'> · {skipCount} skip</span>
+                  )}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {output?.error && <ErrorAlert message={output.error} />}
+
+          {results.length > 0 && (
+            <div>
+              <p className='mb-1.5 font-medium text-muted-foreground text-xs'>
+                Results ({results.length})
+              </p>
+              <div className='space-y-1.5'>
+                {results.map((r, i) => {
+                  const isOk = r.status === "SUCCESS" || r.status === "success";
+                  const isSkip = r.status === "SKIP" || r.status === "skip";
+                  return (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: stable ordered list
+                    <div key={i} className='rounded border bg-muted/30 px-2.5 py-2'>
+                      <div className='flex items-center gap-2'>
+                        <span className='font-medium font-mono text-xs'>
+                          {r.name ?? r.unique_id}
+                        </span>
+                        {r.status && (
+                          <span
+                            className={`ml-auto rounded px-1.5 py-0.5 font-mono text-[10px] ${
+                              isOk
+                                ? "bg-success/10 text-success"
+                                : isSkip
+                                  ? "bg-muted text-muted-foreground"
+                                  : "bg-destructive/10 text-destructive"
+                            }`}
+                          >
+                            {r.status}
+                          </span>
+                        )}
+                      </div>
+                      <div className='mt-0.5 flex gap-3 text-[11px] text-muted-foreground'>
+                        {r.rows_affected != null && (
+                          <span>{r.rows_affected.toLocaleString()} rows</span>
+                        )}
+                        {r.duration_ms !== undefined && <span>{r.duration_ms}ms</span>}
+                      </div>
+                      {r.message && !isOk && !isSkip && (
+                        <p className='mt-1 text-[11px] text-destructive'>{r.message}</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+      <TimingBar item={item} />
+    </div>
+  );
+};
+
+// ── AnalyzeDbtProjectView ─────────────────────────────────────────────────────
+
+interface DbtDiagnostic {
+  kind?: string;
+  message?: string;
+}
+
+interface DbtContractViolation {
+  model?: string;
+  kind?: string;
+  message?: string;
+}
+
+interface DbtSchema {
+  name?: string;
+  columns?: Array<{ name?: string; data_type?: string; nullable?: boolean }>;
+}
+
+export const AnalyzeDbtProjectView = ({ item }: { item: ArtifactItem }) => {
+  const input = parseToolJson<{ project?: string }>(item.toolInput);
+  const output = parseToolJson<{
+    ok?: boolean;
+    models_analyzed?: number;
+    cached_count?: number;
+    diagnostics?: DbtDiagnostic[];
+    contract_violations?: DbtContractViolation[];
+    schemas?: DbtSchema[];
+    error?: string;
+  }>(item.toolOutput);
+
+  const diagnostics = output?.diagnostics ?? [];
+  const violations = output?.contract_violations ?? [];
+  const schemas = output?.schemas ?? [];
+  const defaultTab = schemas.length > 0 ? (schemas[0].name ?? "0") : null;
+  const [schemaTab, setSchemaTab] = useState(defaultTab);
+
+  const stats = [
+    { label: "Project", value: input?.project ?? "—" },
+    output?.models_analyzed !== undefined
+      ? { label: "Models Analyzed", value: String(output.models_analyzed) }
+      : null,
+    output?.cached_count !== undefined
+      ? { label: "Cached", value: String(output.cached_count) }
+      : null,
+    { label: "Diagnostics", value: String(diagnostics.length) },
+    { label: "Violations", value: String(violations.length) }
+  ].filter(Boolean) as { label: string; value: string }[];
+
+  const activeSchema = schemas.find((s, i) => (s.name ?? String(i)) === schemaTab) ?? schemas[0];
+
+  return (
+    <div className='flex h-full flex-col'>
+      {/* Fixed top: stats + errors + diagnostics + violations */}
+      <div className='shrink-0 space-y-3 p-4'>
+        <div className='grid grid-cols-2 gap-2'>
+          {stats.map((s) => (
+            <div key={s.label} className='rounded border bg-muted/30 px-2.5 py-2'>
+              <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>{s.label}</p>
+              <p className='font-medium font-mono text-xs'>{s.value}</p>
+            </div>
+          ))}
+        </div>
+
+        {output?.error && <ErrorAlert message={output.error} />}
+
+        {diagnostics.length > 0 && (
+          <div>
+            <p className='mb-1.5 font-medium text-muted-foreground text-xs'>
+              Diagnostics ({diagnostics.length})
+            </p>
+            <div className='max-h-32 space-y-1 overflow-y-auto'>
+              {diagnostics.map((d, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: stable ordered list
+                <div key={i} className='rounded border bg-muted/30 px-2.5 py-1.5'>
+                  {d.kind && (
+                    <span className='mr-1.5 rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground'>
+                      {d.kind}
+                    </span>
+                  )}
+                  <span className='text-xs'>{d.message}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {violations.length > 0 && (
+          <div>
+            <p className='mb-1.5 font-medium text-destructive text-xs'>
+              Contract Violations ({violations.length})
+            </p>
+            <div className='max-h-32 space-y-1 overflow-y-auto'>
+              {violations.map((v, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: stable ordered list
+                <div
+                  key={i}
+                  className='rounded border border-destructive/30 bg-destructive/5 px-2.5 py-1.5'
+                >
+                  {v.model && <p className='mb-0.5 font-medium font-mono text-[11px]'>{v.model}</p>}
+                  <p className='text-[11px] text-destructive'>{v.message}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {schemas.length > 0 && (
+          <p className='font-medium text-muted-foreground text-xs'>Schemas ({schemas.length})</p>
+        )}
+      </div>
+
+      {/* Schemas: fills remaining height, tab bar fixed + table scrolls */}
+      {schemas.length > 0 && (
+        <div className='flex min-h-0 flex-1 flex-col border-t'>
+          <div className='shrink-0 overflow-x-auto border-b'>
+            <div className='flex'>
+              {schemas.map((s, i) => {
+                const key = s.name ?? String(i);
+                const active = key === schemaTab;
+                return (
+                  <button
+                    key={key}
+                    type='button'
+                    onClick={() => setSchemaTab(key)}
+                    className={`shrink-0 px-3 py-1.5 text-xs transition-colors ${active ? "border-primary border-b-2 font-medium text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                  >
+                    {s.name ?? `schema-${i}`}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className='flex-1 overflow-auto'>
+            {activeSchema && (
+              <table className='w-full text-xs'>
+                <thead className='sticky top-0 z-10'>
+                  <tr className='bg-muted/50'>
+                    <th className='px-2.5 py-1.5 text-left font-medium text-muted-foreground'>
+                      Column
+                    </th>
+                    <th className='px-2.5 py-1.5 text-left font-medium text-muted-foreground'>
+                      Type
+                    </th>
+                    <th className='px-2.5 py-1.5 text-left font-medium text-muted-foreground'>
+                      Nullable
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(activeSchema.columns ?? []).map((c, ci) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: stable ordered list
+                    <tr key={ci} className={ci % 2 === 0 ? "bg-background" : "bg-muted/20"}>
+                      <td className='px-2.5 py-1 font-mono'>{c.name}</td>
+                      <td className='px-2.5 py-1 text-muted-foreground'>{c.data_type ?? "—"}</td>
+                      <td className='px-2.5 py-1 text-muted-foreground'>
+                        {c.nullable === true ? "yes" : c.nullable === false ? "no" : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      <TimingBar item={item} />
+    </div>
+  );
+};
+
+// ── GetDbtColumnLineageView ────────────────────────────────────────────────────
+
+interface ColumnLineageEdge {
+  source_node?: string;
+  source_column?: string;
+  target_node?: string;
+  target_column?: string;
+  dependency_type?: string;
+}
+
+export const GetDbtColumnLineageView = ({ item }: { item: ArtifactItem }) => {
+  const input = parseToolJson<{ project?: string }>(item.toolInput);
+  const output = parseToolJson<{ ok?: boolean; edges?: ColumnLineageEdge[]; error?: string }>(
+    item.toolOutput
+  );
+  const edges = output?.edges ?? [];
+
+  return (
+    <div className='flex h-full flex-col'>
+      <div className='flex-1 overflow-auto p-4'>
+        <div className='space-y-4'>
+          <div className='grid grid-cols-2 gap-2'>
+            <div className='rounded border bg-muted/30 px-2.5 py-2'>
+              <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>Project</p>
+              <p className='font-medium font-mono text-xs'>{input?.project ?? "—"}</p>
+            </div>
+            <div className='rounded border bg-muted/30 px-2.5 py-2'>
+              <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>Edges</p>
+              <p className='font-medium font-mono text-xs'>{edges.length}</p>
+            </div>
+          </div>
+
+          {output?.error && <ErrorAlert message={output.error} />}
+
+          {edges.length > 0 ? (
+            <div className='overflow-hidden rounded border'>
+              <table className='w-full text-xs'>
+                <thead>
+                  <tr className='bg-muted/50'>
+                    <th className='px-2.5 py-1.5 text-left font-medium text-muted-foreground'>
+                      Source
+                    </th>
+                    <th className='px-2.5 py-1.5 text-left font-medium text-muted-foreground'>
+                      Target
+                    </th>
+                    <th className='px-2.5 py-1.5 text-left font-medium text-muted-foreground'>
+                      Type
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {edges.map((e, i) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: stable ordered list
+                    <tr key={i} className={i % 2 === 0 ? "bg-background" : "bg-muted/20"}>
+                      <td className='px-2.5 py-1 font-mono'>
+                        {e.source_node}.{e.source_column}
+                      </td>
+                      <td className='px-2.5 py-1 font-mono'>
+                        {e.target_node}.{e.target_column}
+                      </td>
+                      <td className='px-2.5 py-1 text-muted-foreground'>
+                        {e.dependency_type ?? "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            item.toolOutput && (
+              <p className='text-muted-foreground text-xs'>No lineage edges found.</p>
+            )
+          )}
+        </div>
+      </div>
+      <TimingBar item={item} />
+    </div>
+  );
+};
+
+// ── ParseDbtProjectView ───────────────────────────────────────────────────────
+
+export const ParseDbtProjectView = ({ item }: { item: ArtifactItem }) => {
+  const input = parseToolJson<{ project?: string }>(item.toolInput);
+  const output = parseToolJson<{
+    ok?: boolean;
+    models?: number;
+    seeds?: number;
+    snapshots?: number;
+    tests?: number;
+    sources?: number;
+    nodes?: number;
+    edges?: number;
+    duration_ms?: number;
+    error?: string;
+  }>(item.toolOutput);
+
+  const stats = [
+    { label: "Project", value: input?.project ?? "—" },
+    output?.models !== undefined ? { label: "Models", value: String(output.models) } : null,
+    output?.seeds !== undefined ? { label: "Seeds", value: String(output.seeds) } : null,
+    output?.snapshots !== undefined
+      ? { label: "Snapshots", value: String(output.snapshots) }
+      : null,
+    output?.tests !== undefined ? { label: "Tests", value: String(output.tests) } : null,
+    output?.sources !== undefined ? { label: "Sources", value: String(output.sources) } : null,
+    output?.nodes !== undefined ? { label: "DAG Nodes", value: String(output.nodes) } : null,
+    output?.edges !== undefined ? { label: "DAG Edges", value: String(output.edges) } : null,
+    output?.duration_ms !== undefined
+      ? { label: "Duration", value: `${output.duration_ms}ms` }
+      : null
+  ].filter(Boolean) as { label: string; value: string }[];
+
+  return (
+    <div className='flex h-full flex-col'>
+      <div className='flex-1 overflow-auto p-4'>
+        <div className='space-y-4'>
+          <div className='grid grid-cols-2 gap-2'>
+            {stats.map((s) => (
+              <div key={s.label} className='rounded border bg-muted/30 px-2.5 py-2'>
+                <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>
+                  {s.label}
+                </p>
+                <p className='font-medium font-mono text-xs'>{s.value}</p>
+              </div>
+            ))}
+          </div>
+          {output?.error && <ErrorAlert message={output.error} />}
+        </div>
+      </div>
+      <TimingBar item={item} />
+    </div>
+  );
+};
+
+// ── SeedDbtProjectView ────────────────────────────────────────────────────────
+
+interface SeedResult {
+  unique_id?: string;
+  name?: string;
+  status?: string;
+  duration_ms?: number;
+  rows_affected?: number;
+  message?: string;
+}
+
+export const SeedDbtProjectView = ({ item }: { item: ArtifactItem }) => {
+  const input = parseToolJson<{ project?: string }>(item.toolInput);
+  const output = parseToolJson<{
+    ok?: boolean;
+    seeds_loaded?: number;
+    results?: SeedResult[];
+    error?: string;
+  }>(item.toolOutput);
+  const results = output?.results ?? [];
+
+  return (
+    <div className='flex h-full flex-col'>
+      <div className='flex-1 overflow-auto p-4'>
+        <div className='space-y-4'>
+          <div className='grid grid-cols-2 gap-2'>
+            <div className='rounded border bg-muted/30 px-2.5 py-2'>
+              <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>Project</p>
+              <p className='font-medium font-mono text-xs'>{input?.project ?? "—"}</p>
+            </div>
+            {output?.seeds_loaded !== undefined && (
+              <div className='rounded border bg-muted/30 px-2.5 py-2'>
+                <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>
+                  Seeds Loaded
+                </p>
+                <p className='font-medium font-mono text-xs'>{output.seeds_loaded}</p>
+              </div>
+            )}
+          </div>
+
+          {output?.error && <ErrorAlert message={output.error} />}
+
+          {results.length > 0 && (
+            <div>
+              <p className='mb-1.5 font-medium text-muted-foreground text-xs'>
+                Results ({results.length})
+              </p>
+              <div className='space-y-1.5'>
+                {results.map((r, i) => {
+                  const isOk =
+                    r.status === "SUCCESS" || r.status === "success" || r.status === "ok";
+                  return (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: stable ordered list
+                    <div key={i} className='rounded border bg-muted/30 px-2.5 py-2'>
+                      <div className='flex items-center gap-2'>
+                        <span
+                          className={
+                            isOk
+                              ? "font-medium font-mono text-xs"
+                              : "font-medium font-mono text-destructive text-xs"
+                          }
+                        >
+                          {r.name ?? r.unique_id}
+                        </span>
+                        {r.status && (
+                          <span
+                            className={`ml-auto rounded px-1.5 py-0.5 font-mono text-[10px] ${
+                              isOk
+                                ? "bg-success/10 text-success"
+                                : "bg-destructive/10 text-destructive"
+                            }`}
+                          >
+                            {r.status}
+                          </span>
+                        )}
+                      </div>
+                      <div className='mt-0.5 flex gap-3 text-[11px] text-muted-foreground'>
+                        {r.rows_affected != null && (
+                          <span>{r.rows_affected.toLocaleString()} rows</span>
+                        )}
+                        {r.duration_ms !== undefined && <span>{r.duration_ms}ms</span>}
+                      </div>
+                      {r.message && !isOk && (
+                        <p className='mt-1 text-[11px] text-destructive'>{r.message}</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+      <TimingBar item={item} />
+    </div>
+  );
+};
+
+// ── DebugDbtProjectView ───────────────────────────────────────────────────────
+
+export const DebugDbtProjectView = ({ item }: { item: ArtifactItem }) => {
+  const output = parseToolJson<{
+    ok?: boolean;
+    project_name?: string;
+    version?: string;
+    profile?: string;
+    has_profiles_yml?: boolean;
+    model_paths?: string[];
+    seed_paths?: string[];
+    model_count?: number;
+    seed_count?: number;
+    source_count?: number;
+    all_ok?: boolean;
+    issues?: string[];
+    error?: string;
+  }>(item.toolOutput);
+
+  const stats = [
+    output?.project_name ? { label: "Project", value: output.project_name } : null,
+    output?.version ? { label: "Version", value: output.version } : null,
+    output?.profile ? { label: "Profile", value: output.profile } : null,
+    output?.has_profiles_yml !== undefined
+      ? { label: "profiles.yml", value: output.has_profiles_yml ? "Found" : "Missing" }
+      : null,
+    output?.model_count !== undefined
+      ? { label: "Models", value: String(output.model_count) }
+      : null,
+    output?.seed_count !== undefined ? { label: "Seeds", value: String(output.seed_count) } : null,
+    output?.source_count !== undefined
+      ? { label: "Sources", value: String(output.source_count) }
+      : null
+  ].filter(Boolean) as { label: string; value: string }[];
+
+  const issues = output?.issues ?? [];
+
+  return (
+    <div className='flex h-full flex-col'>
+      <div className='flex-1 overflow-auto p-4'>
+        <div className='space-y-4'>
+          {output?.all_ok !== undefined && (
+            <div
+              className={`flex items-center gap-2 rounded border px-3 py-2 text-xs ${
+                output.all_ok
+                  ? "border-success/30 bg-success/5 text-success"
+                  : "border-destructive/30 bg-destructive/5 text-destructive"
+              }`}
+            >
+              <span>{output.all_ok ? "✓" : "✕"}</span>
+              <span className='font-medium'>
+                {output.all_ok ? "All checks passed" : "Issues found"}
+              </span>
+            </div>
+          )}
+
+          <div className='grid grid-cols-2 gap-2'>
+            {stats.map((s) => (
+              <div key={s.label} className='rounded border bg-muted/30 px-2.5 py-2'>
+                <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>
+                  {s.label}
+                </p>
+                <p className='font-medium font-mono text-xs'>{s.value}</p>
+              </div>
+            ))}
+          </div>
+
+          {output?.model_paths && output.model_paths.length > 0 && (
+            <div>
+              <p className='mb-1 font-medium text-muted-foreground text-xs'>Model Paths</p>
+              <div className='flex flex-wrap gap-1'>
+                {output.model_paths.map((p) => (
+                  <span key={p} className='rounded bg-muted px-2 py-0.5 font-mono text-xs'>
+                    {p}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {issues.length > 0 && (
+            <div>
+              <p className='mb-1.5 font-medium text-destructive text-xs'>
+                Issues ({issues.length})
+              </p>
+              <div className='space-y-1'>
+                {issues.map((issue, i) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: stable ordered list
+                  <p
+                    key={i}
+                    className='rounded border border-destructive/30 bg-destructive/5 px-2.5 py-1.5 text-[11px] text-destructive'
+                  >
+                    {issue}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {output?.error && <ErrorAlert message={output.error} />}
+        </div>
+      </div>
+      <TimingBar item={item} />
+    </div>
+  );
+};
+
+// ── CleanDbtProjectView ───────────────────────────────────────────────────────
+
+export const CleanDbtProjectView = ({ item }: { item: ArtifactItem }) => {
+  const input = parseToolJson<{ project?: string }>(item.toolInput);
+  const output = parseToolJson<{ ok?: boolean; cleaned?: string[]; error?: string }>(
+    item.toolOutput
+  );
+  const cleaned = output?.cleaned ?? [];
+
+  return (
+    <div className='flex h-full flex-col'>
+      <div className='flex-1 overflow-auto p-4'>
+        <div className='space-y-4'>
+          <div className='grid grid-cols-2 gap-2'>
+            <div className='rounded border bg-muted/30 px-2.5 py-2'>
+              <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>Project</p>
+              <p className='font-medium font-mono text-xs'>{input?.project ?? "—"}</p>
+            </div>
+            <div className='rounded border bg-muted/30 px-2.5 py-2'>
+              <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>Removed</p>
+              <p className='font-medium font-mono text-xs'>{cleaned.length}</p>
+            </div>
+          </div>
+
+          {output?.error && <ErrorAlert message={output.error} />}
+
+          {cleaned.length > 0 ? (
+            <div>
+              <p className='mb-1.5 font-medium text-muted-foreground text-xs'>Cleaned Paths</p>
+              <div className='space-y-1'>
+                {cleaned.map((p) => (
+                  <p key={p} className='rounded bg-muted/30 px-2.5 py-1.5 font-mono text-xs'>
+                    {p}
+                  </p>
+                ))}
+              </div>
+            </div>
+          ) : (
+            item.toolOutput && <p className='text-muted-foreground text-xs'>Nothing to clean.</p>
+          )}
+        </div>
+      </div>
+      <TimingBar item={item} />
+    </div>
+  );
+};
+
+// ── DocsGenerateDbtView ───────────────────────────────────────────────────────
+
+export const DocsGenerateDbtView = ({ item }: { item: ArtifactItem }) => {
+  const input = parseToolJson<{ project?: string }>(item.toolInput);
+  const output = parseToolJson<{
+    ok?: boolean;
+    manifest_path?: string;
+    nodes?: number;
+    sources?: number;
+    error?: string;
+  }>(item.toolOutput);
+
+  const stats = [
+    { label: "Project", value: input?.project ?? "—" },
+    output?.nodes !== undefined ? { label: "Nodes", value: String(output.nodes) } : null,
+    output?.sources !== undefined ? { label: "Sources", value: String(output.sources) } : null
+  ].filter(Boolean) as { label: string; value: string }[];
+
+  return (
+    <div className='flex h-full flex-col'>
+      <div className='flex-1 overflow-auto p-4'>
+        <div className='space-y-4'>
+          <div className='grid grid-cols-2 gap-2'>
+            {stats.map((s) => (
+              <div key={s.label} className='rounded border bg-muted/30 px-2.5 py-2'>
+                <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>
+                  {s.label}
+                </p>
+                <p className='font-medium font-mono text-xs'>{s.value}</p>
+              </div>
+            ))}
+          </div>
+          {output?.manifest_path && (
+            <div>
+              <p className='mb-1 font-medium text-muted-foreground text-xs'>Manifest Path</p>
+              <p className='break-all rounded bg-muted/30 px-2.5 py-1.5 font-mono text-xs'>
+                {output.manifest_path}
+              </p>
+            </div>
+          )}
+          {output?.error && <ErrorAlert message={output.error} />}
+        </div>
+      </div>
+      <TimingBar item={item} />
+    </div>
+  );
+};
+
+// ── FormatDbtSqlView ──────────────────────────────────────────────────────────
+
+export const FormatDbtSqlView = ({ item }: { item: ArtifactItem }) => {
+  const input = parseToolJson<{ project?: string; check?: boolean }>(item.toolInput);
+  const output = parseToolJson<{
+    ok?: boolean;
+    files_checked?: number;
+    files_changed?: number;
+    files?: string[];
+    error?: string;
+  }>(item.toolOutput);
+  const files = output?.files ?? [];
+  const isCheckMode = input?.check === true;
+
+  const stats = [
+    { label: "Project", value: input?.project ?? "—" },
+    { label: "Mode", value: isCheckMode ? "Check only" : "Format in place" },
+    output?.files_checked !== undefined
+      ? { label: "Files Checked", value: String(output.files_checked) }
+      : null,
+    output?.files_changed !== undefined
+      ? { label: "Files Changed", value: String(output.files_changed) }
+      : null
+  ].filter(Boolean) as { label: string; value: string }[];
+
+  return (
+    <div className='flex h-full flex-col'>
+      <div className='flex-1 overflow-auto p-4'>
+        <div className='space-y-4'>
+          <div className='grid grid-cols-2 gap-2'>
+            {stats.map((s) => (
+              <div key={s.label} className='rounded border bg-muted/30 px-2.5 py-2'>
+                <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>
+                  {s.label}
+                </p>
+                <p className='font-medium font-mono text-xs'>{s.value}</p>
+              </div>
+            ))}
+          </div>
+
+          {output?.error && <ErrorAlert message={output.error} />}
+
+          {files.length > 0 && (
+            <div>
+              <p className='mb-1.5 font-medium text-muted-foreground text-xs'>
+                {isCheckMode ? "Would change" : "Changed"} ({files.length})
+              </p>
+              <div className='space-y-1'>
+                {files.map((f) => (
+                  <p
+                    key={f}
+                    className='break-all rounded bg-muted/30 px-2.5 py-1.5 font-mono text-xs'
+                  >
+                    {f}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+      <TimingBar item={item} />
+    </div>
+  );
+};
+
+// ── InitDbtProjectView ────────────────────────────────────────────────────────
+
+const SCAFFOLD_FILES = [
+  { file: "dbt_project.yml", description: "dbt project configuration" },
+  { file: "profiles.yml", description: "Connection profiles (DuckDB)" },
+  { file: "README.md", description: "Project README" }
+];
+
+export const InitDbtProjectView = ({ item }: { item: ArtifactItem }) => {
+  const input = parseToolJson<{ name?: string }>(item.toolInput);
+  const output = parseToolJson<{
+    ok?: boolean;
+    rejected?: boolean;
+    project_name?: string;
+    project_dir?: string;
+    error?: string;
+  }>(item.toolOutput);
+
+  const projectName = output?.project_name ?? input?.name;
+  const projectDir = output?.project_dir;
+
+  const stats = [
+    projectName ? { label: "Project", value: projectName } : null,
+    projectDir ? { label: "Directory", value: projectDir } : null
+  ].filter(Boolean) as { label: string; value: string }[];
+
+  return (
+    <div className='flex h-full flex-col'>
+      <div className='flex-1 overflow-auto p-4'>
+        <div className='space-y-4'>
+          {output?.ok !== undefined && (
+            <div
+              className={`flex items-center gap-2 rounded border px-3 py-2 text-xs ${
+                output.ok
+                  ? "border-success/30 bg-success/5 text-success"
+                  : output.rejected
+                    ? "border-muted-foreground/30 bg-muted/30 text-muted-foreground"
+                    : "border-destructive/30 bg-destructive/5 text-destructive"
+              }`}
+            >
+              <span>{output.ok ? "✓" : "✕"}</span>
+              <span className='font-medium'>
+                {output.ok
+                  ? "dbt project created"
+                  : output.rejected
+                    ? "Cancelled"
+                    : "Failed to create dbt project"}
+              </span>
+            </div>
+          )}
+
+          {stats.length > 0 && (
+            <div className='grid grid-cols-1 gap-2'>
+              {stats.map((s) => (
+                <div key={s.label} className='rounded border bg-muted/30 px-2.5 py-2'>
+                  <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>
+                    {s.label}
+                  </p>
+                  <p className='break-all font-medium font-mono text-xs'>{s.value}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {output?.ok && (
+            <div>
+              <p className='mb-1.5 font-medium text-muted-foreground text-xs'>
+                Files created ({SCAFFOLD_FILES.length})
+              </p>
+              <div className='space-y-1'>
+                {SCAFFOLD_FILES.map(({ file, description }) => (
+                  <div
+                    key={file}
+                    className='flex items-center justify-between rounded bg-muted/30 px-2.5 py-1.5'
+                  >
+                    <span className='font-mono text-xs'>{file}</span>
+                    <span className='text-[10px] text-muted-foreground'>{description}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {output?.error && <ErrorAlert message={output.error} />}
         </div>
       </div>
       <TimingBar item={item} />

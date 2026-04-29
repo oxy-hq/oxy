@@ -17,6 +17,7 @@ pub mod local_setup;
 pub mod message;
 pub mod metrics;
 pub mod middlewares;
+pub mod modeling;
 pub mod onboarding;
 pub mod organizations;
 pub mod result_files;

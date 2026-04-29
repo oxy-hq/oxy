@@ -12,6 +12,7 @@ export enum FileType {
   VIEW = "view",
   TOPIC = "topic",
   TEST = "test",
+  MARKDOWN = "markdown",
   DEFAULT = "default"
 }
 
@@ -76,6 +77,11 @@ export const FILE_TYPE_CONFIGS: Record<FileType, FileTypeConfig> = {
     type: FileType.TOPIC,
     extensions: [".topic.yml", ".topic.yaml"],
     editorComponent: "TopicEditor"
+  },
+  [FileType.MARKDOWN]: {
+    type: FileType.MARKDOWN,
+    extensions: [".md", ".mdx"],
+    editorComponent: "MarkdownEditor"
   },
   [FileType.DEFAULT]: {
     type: FileType.DEFAULT,

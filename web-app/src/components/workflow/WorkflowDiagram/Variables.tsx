@@ -1,5 +1,8 @@
 import { DialogTitle } from "@radix-ui/react-dialog";
-import { createHeadlessForm, type JSONSchemaObjectType } from "@remoteoss/json-schema-form";
+import { createHeadlessForm } from "@remoteoss/json-schema-form";
+
+type FormErrors = Record<string, unknown>;
+
 import { useCallback, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { create } from "zustand";
@@ -32,7 +35,29 @@ export const useVariables = create<VariablesState>()((set) => ({
 }));
 
 type Props = {
-  schema: JSONSchemaObjectType;
+  schema: Parameters<typeof createHeadlessForm>[0];
+};
+
+const flattenFormErrors = (
+  errors: FormErrors,
+  prefix = ""
+): Record<string, { type: string; message: string }> => {
+  const result: Record<string, { type: string; message: string }> = {};
+  for (const [key, value] of Object.entries(errors)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (typeof value === "string") {
+      result[path] = { type: "validation", message: value };
+    } else if (Array.isArray(value)) {
+      value.forEach((item, i) => {
+        if (item && typeof item === "object") {
+          Object.assign(result, flattenFormErrors(item as FormErrors, `${path}.${i}`));
+        }
+      });
+    } else if (value && typeof value === "object") {
+      Object.assign(result, flattenFormErrors(value as FormErrors, path));
+    }
+  }
+  return result;
 };
 
 export function Variables({ schema }: Props) {
@@ -46,15 +71,11 @@ export function Variables({ schema }: Props) {
   );
   const resolver = useCallback(
     async (data: TData) => {
-      const result = handleValidation(data);
-      if (result.formErrors) {
-        const errors: Record<string, { type: string; message: string }> = {};
-        for (const [key, message] of Object.entries(result.formErrors as Record<string, string>)) {
-          errors[key] = { type: "validation", message };
-        }
-        return { values: {}, errors };
+      const result = handleValidation(data as Parameters<typeof handleValidation>[0]);
+      if (!result.formErrors) {
+        return { values: data, errors: {} };
       }
-      return { values: data, errors: {} };
+      return { values: {}, errors: flattenFormErrors(result.formErrors) };
     },
     [handleValidation]
   );
@@ -85,7 +106,7 @@ export function Variables({ schema }: Props) {
           <DialogTitle>Run Procedure With Variables</DialogTitle>
         </DialogHeader>
         <div className='flex h-full overflow-hidden'>
-          <div className='scrollbar-gutter-auto flex-1 overflow-auto'>
+          <div className='customScrollbar scrollbar-gutter-auto flex-1 overflow-auto'>
             <form
               id='workflow-variables-form'
               onSubmit={handleSubmit(async (data) => {

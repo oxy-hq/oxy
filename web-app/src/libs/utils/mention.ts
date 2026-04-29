@@ -4,7 +4,7 @@ import type { FileTreeModel } from "@/types/file";
 export function getCleanObjectName(fileName: string) {
   return fileName
     .replace(/\.(procedure|workflow|automation|agent|aw|app|view|topic)\.(yml|yaml)$/, "")
-    .replace(/\.(yml|yaml)$/, "");
+    .replace(/\.(yml|yaml|sql)$/, "");
 }
 
 export function flattenFiles(files: FileTreeModel[]): FileTreeModel[] {

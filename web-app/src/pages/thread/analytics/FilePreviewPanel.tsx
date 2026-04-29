@@ -5,6 +5,8 @@ import { Link } from "react-router-dom";
 import AppPreview from "@/components/AppPreview";
 import FileEditor from "@/components/FileEditor";
 import { FileEditorProvider } from "@/components/FileEditor/FileEditorContext";
+import { useFileEditorContext } from "@/components/FileEditor/useFileEditorContext";
+import Markdown from "@/components/Markdown";
 import { Panel, PanelContent, PanelHeader } from "@/components/ui/panel";
 import { Button } from "@/components/ui/shadcn/button";
 import { WorkflowPreview } from "@/components/workflow/WorkflowPreview";
@@ -18,6 +20,17 @@ import TopicEditor from "@/pages/ide/Files/Editor/Topic";
 import ViewEditor from "@/pages/ide/Files/Editor/View";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import { decodeFilePath, detectFileType, FileType } from "@/utils/fileTypes";
+
+const MarkdownFilePreview = () => {
+  const {
+    state: { content }
+  } = useFileEditorContext();
+  return (
+    <div className='h-full overflow-auto p-6'>
+      <Markdown>{content}</Markdown>
+    </div>
+  );
+};
 
 interface FilePreviewPanelProps {
   change: BuilderProposedChange;
@@ -75,6 +88,12 @@ const FileTypePreview = ({ filePath }: { filePath: string }) => {
         <MinimalEditorProvider pathb64={pathb64} fileType={FileType.TOPIC}>
           <TopicEditor />
         </MinimalEditorProvider>
+      );
+    case FileType.MARKDOWN:
+      return (
+        <FileEditorProvider pathb64={pathb64}>
+          <MarkdownFilePreview />
+        </FileEditorProvider>
       );
     default:
       return (

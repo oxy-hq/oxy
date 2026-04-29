@@ -406,6 +406,7 @@ pub async fn get_source_file(
     // Use DuckDB to read the file and re-serialize as Parquet bytes.
     // This is done on a blocking thread because DuckDB is synchronous.
     let parquet_bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
+        use df_interchange::Interchange;
         use duckdb::Connection;
         use parquet::arrow::arrow_writer::ArrowWriter;
 
@@ -419,8 +420,15 @@ pub async fn get_source_file(
             .prepare(&format!("SELECT * FROM '{full_path_escaped}'"))
             .map_err(|e| e.to_string())?;
         let arrow_stream = stmt.query_arrow([]).map_err(|e| e.to_string())?;
-        let schema = arrow_stream.get_schema();
-        let batches: Vec<_> = arrow_stream.collect();
+        let duckdb_batches: Vec<_> = arrow_stream.collect();
+
+        let batches = Interchange::from_arrow_58(duckdb_batches)
+            .and_then(|ic| ic.to_arrow_58())
+            .map_err(|e| e.to_string())?;
+        let schema = batches
+            .first()
+            .map(|b| b.schema())
+            .unwrap_or_else(|| std::sync::Arc::new(arrow::datatypes::Schema::empty()));
 
         let mut buf = Vec::new();
         let mut writer = ArrowWriter::try_new(&mut buf, schema, None).map_err(|e| e.to_string())?;

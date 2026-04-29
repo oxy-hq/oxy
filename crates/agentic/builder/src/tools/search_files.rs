@@ -14,7 +14,7 @@ pub fn search_files_def() -> ToolDef {
             "properties": {
                 "pattern": {
                     "type": "string",
-                    "description": "Glob pattern relative to the project root, e.g. '**/*.yml' or 'src/**/*.rs'"
+                    "description": "Glob pattern relative to the project root. Use '**/*' to match files recursively (e.g. 'generated/**/*' for all files under generated/, 'src/**/*.rs' for Rust files). Use '*' for a single directory level (e.g. 'agents/*.agent.yml'). NOTE: a bare trailing '**' like 'generated/**' does NOT match files — always append '/*' for recursive file search."
                 }
             },
             "required": ["pattern"],

@@ -851,7 +851,7 @@ fn build_dialect_map(
     let mut map = airlayer::DatasourceDialectMap::new();
     let databases = config_manager.list_databases();
 
-    for db in databases {
+    for db in &databases {
         let dialect_str = db.database_type.to_string();
         if let Some(dialect) = airlayer::Dialect::from_str(&dialect_str) {
             map.insert(&db.name, dialect);

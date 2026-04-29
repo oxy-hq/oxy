@@ -1,9 +1,0 @@
-tasks:
-  - name: example_task
-    type: execute_sql
-    sql_query: "SELECT 1 as test"
-    database: local
-
-display:
-  - type: markdown
-    content: "Test app"

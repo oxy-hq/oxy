@@ -90,6 +90,9 @@ const ROUTES = {
               METRIC: (metricName: string) =>
                 `${wsBase}/ide/observability/metrics/${encodeURIComponent(metricName)}`,
               EXECUTION_ANALYTICS: `${wsBase}/ide/observability/execution-analytics`
+            },
+            MODELING: {
+              ROOT: `${wsBase}/ide/modeling`
             }
           },
 

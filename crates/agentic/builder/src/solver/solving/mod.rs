@@ -28,6 +28,8 @@ pub(super) struct ProposeChangePayload {
     /// When present, written directly to avoid a TOCTOU re-read.
     #[serde(default)]
     new_content: Option<String>,
+    #[serde(default)]
+    description: String,
 }
 
 /// For each `propose_change` call in `prior_messages` whose `file_path` is NOT
@@ -183,6 +185,7 @@ impl BuilderSolver {
         let project_validator = self.project_validator.clone();
         let schema_provider = self.schema_provider.clone();
         let semantic_compiler = self.semantic_compiler.clone();
+        let secrets_provider = self.secrets_provider.clone();
         let exchanges_for_tools = Arc::clone(&exchanges);
 
         let result = self
@@ -200,6 +203,7 @@ impl BuilderSolver {
                     let project_validator = project_validator.clone();
                     let schema_provider = schema_provider.clone();
                     let semantic_compiler = semantic_compiler.clone();
+                    let secrets_provider = secrets_provider.clone();
                     let exchanges = Arc::clone(&exchanges_for_tools);
                     Box::pin(async move {
                         let result = dispatch_tool(
@@ -213,6 +217,7 @@ impl BuilderSolver {
                             project_validator.as_ref(),
                             schema_provider.as_ref(),
                             semantic_compiler.as_ref(),
+                            secrets_provider.as_ref(),
                         )
                         .await;
                         let mut guard = exchanges.lock().unwrap_or_else(|e| e.into_inner());

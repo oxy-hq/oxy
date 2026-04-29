@@ -32,6 +32,7 @@ pub use thread_owner::OxyThreadOwnerLookup;
 /// The returned [`BuilderBridges`] bundle is cheap to clone and can be
 /// reused across many pipeline builds for the same workspace.
 pub fn build_builder_bridges(project_ctx: Arc<OxyProjectContext>) -> BuilderBridges {
+    let secrets_manager = project_ctx.workspace_manager().secrets_manager.clone();
     BuilderBridges {
         db_provider: Arc::new(builder_bridges::OxyBuilderDatabaseProvider::new(
             project_ctx.clone(),
@@ -43,5 +44,8 @@ pub fn build_builder_bridges(project_ctx: Arc<OxyProjectContext>) -> BuilderBrid
         semantic_compiler: Arc::new(builder_bridges::OxyBuilderSemanticCompiler::new(
             project_ctx,
         )),
+        secrets_provider: Some(Arc::new(builder_bridges::OxyBuilderSecretsProvider::new(
+            secrets_manager,
+        ))),
     }
 }

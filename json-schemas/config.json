@@ -218,6 +218,17 @@
               }
             },
             {
+              "type": "object",
+              "required": [
+                "path"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string"
+                }
+              }
+            },
+            {
               "$ref": "#/definitions/DuckLakeConfig"
             }
           ],

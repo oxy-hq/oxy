@@ -10,7 +10,10 @@ export interface ContextGraphNode {
     | "automation"
     | "sql_query"
     | "agent"
-    | "entity";
+    | "entity"
+    | "dbt_model"
+    | "dbt_source"
+    | "dbt_seed";
   label: string;
   data: {
     name: string;

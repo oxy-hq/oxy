@@ -25,7 +25,11 @@ export const ReadFileView = ({ item }: { item: ArtifactItem }) => {
     output?.start_line !== undefined && output?.end_line !== undefined
       ? `${output.start_line}-${output.end_line}`
       : null;
-  const content = output?.content ?? "";
+  const raw = output?.content ?? "";
+  const content = raw
+    .split("\n")
+    .map((line) => line.replace(/^\d+ \| /, ""))
+    .join("\n");
 
   return (
     <div className='flex h-full min-h-0 flex-col p-4'>

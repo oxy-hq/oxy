@@ -1223,6 +1223,21 @@ pub struct Database {
 }
 
 impl Database {
+    pub fn database_type_name(&self) -> &'static str {
+        match &self.database_type {
+            DatabaseType::Bigquery(_) => "bigquery",
+            DatabaseType::DuckDB(_) => "duckdb",
+            DatabaseType::Snowflake(_) => "snowflake",
+            DatabaseType::Postgres(_) => "postgres",
+            DatabaseType::Redshift(_) => "redshift",
+            DatabaseType::Mysql(_) => "mysql",
+            DatabaseType::ClickHouse(_) => "clickhouse",
+            DatabaseType::DOMO(_) => "domo",
+            DatabaseType::MotherDuck(_) => "motherduck",
+            DatabaseType::Airhouse(_) => "airhouse",
+        }
+    }
+
     pub fn dialect(&self) -> String {
         match &self.database_type {
             DatabaseType::Bigquery(_) => "bigquery".to_owned(),
@@ -2675,6 +2690,28 @@ pub struct SaveAutomationTool {
 }
 
 #[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+pub struct DbtRunTool {
+    #[serde(default = "default_dbt_run_tool_name")]
+    pub name: String,
+    #[serde(default = "default_dbt_run_tool_description")]
+    pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selector: Option<String>,
+    #[serde(default)]
+    pub full_refresh: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
+pub struct DbtCompileTool {
+    #[serde(default = "default_dbt_compile_tool_name")]
+    pub name: String,
+    #[serde(default = "default_dbt_compile_tool_description")]
+    pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone)]
 pub struct ValidateSQLTool {
     #[serde(default = "default_validate_sql_name")]
     pub name: String,
@@ -3040,6 +3077,10 @@ pub enum ToolType {
     LookerQuery(LookerQueryTool),
     #[serde(rename = "save_automation")]
     SaveAutomation(SaveAutomationTool),
+    #[serde(rename = "dbt_run")]
+    DbtRun(DbtRunTool),
+    #[serde(rename = "dbt_compile")]
+    DbtCompile(DbtCompileTool),
 }
 
 impl From<ExecuteSQLTool> for ToolType {
@@ -3100,6 +3141,8 @@ impl ToolType {
             ToolType::SemanticQuery(tool) => &tool.name,
             ToolType::LookerQuery(tool) => &tool.name,
             ToolType::SaveAutomation(tool) => &tool.name,
+            ToolType::DbtRun(tool) => &tool.name,
+            ToolType::DbtCompile(tool) => &tool.name,
         }
     }
 
@@ -3478,6 +3521,8 @@ impl ToolType {
                     v0_api_key_var: tool.v0_api_key_var.clone(),
                 })
             }
+            ToolType::DbtRun(tool) => ToolType::DbtRun(tool.clone()),
+            ToolType::DbtCompile(tool) => ToolType::DbtCompile(tool.clone()),
             ToolType::SaveAutomation(tool) => {
                 renderer.register_template(&tool.description)?;
                 let rendered_description =
@@ -3767,6 +3812,22 @@ fn default_save_automation_tool_name() -> String {
 
 fn default_save_automation_tool_description() -> String {
     "Save the current analysis steps as a reusable procedure.".to_string()
+}
+
+fn default_dbt_run_tool_name() -> String {
+    "dbt_run".to_string()
+}
+
+fn default_dbt_run_tool_description() -> String {
+    "Run dbt models to execute SQL transformations.".to_string()
+}
+
+fn default_dbt_compile_tool_name() -> String {
+    "dbt_compile".to_string()
+}
+
+fn default_dbt_compile_tool_description() -> String {
+    "Compile a dbt model and return the generated SQL.".to_string()
 }
 
 fn default_tools() -> Vec<ToolType> {

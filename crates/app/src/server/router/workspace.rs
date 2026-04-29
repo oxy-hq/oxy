@@ -14,9 +14,9 @@ use agentic_http::{AgenticState, router as agentic_router};
 
 use crate::api::{
     agent, api_keys, app, artifacts, chart, data, data_repo, database, execution_analytics,
-    exported_chart, file, integration, local_setup, message, metrics, onboarding, result_files,
-    run, semantic, task, test_file, test_project_run, test_run, thread, traces, workflow,
-    workspace_members, workspaces,
+    exported_chart, file, integration, local_setup, message, metrics, modeling, onboarding,
+    result_files, run, semantic, task, test_file, test_project_run, test_run, thread, traces,
+    workflow, workspace_members, workspaces,
 };
 
 use super::AppState;
@@ -102,7 +102,8 @@ pub(super) fn build_workspace_routes(
             "/results/files/{file_id}",
             delete(result_files::delete_result_file),
         )
-        .nest("/analytics", agentic_router(agentic_state));
+        .nest("/analytics", agentic_router(agentic_state))
+        .nest("/modeling", modeling::build_modeling_routes());
 
     if include_git_features {
         router = router

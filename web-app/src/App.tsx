@@ -60,6 +60,7 @@ import QueryWorkspacePage from "./pages/ide/Database/QueryWorkspace";
 import FilesLayout from "./pages/ide/Files";
 import EditorPage from "./pages/ide/Files/Editor";
 import LookerExplorerPage from "./pages/ide/Files/Editor/LookerExplore";
+import ModelingPage from "./pages/ide/modeling";
 import ObservabilityLayout from "./pages/ide/observability";
 import ExecutionAnalytics from "./pages/ide/observability/execution-analytics";
 import SettingsLayout from "./pages/ide/settings";
@@ -261,6 +262,9 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
             <Route path='secrets' element={<SecretsPage />} />
             <Route path='members' element={<WorkspaceMembersPage />} />
           </Route>
+
+          {/* Data Modeling routes */}
+          <Route path='modeling' element={<ModelingPage />} />
 
           {/* Tests routes */}
           <Route path='tests' element={<TestsLayout />}>

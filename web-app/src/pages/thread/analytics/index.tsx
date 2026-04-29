@@ -40,6 +40,7 @@ import {
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import type {
   AnalyticsRunSummary,
+  FileChangedBlock,
   ProposedChangeBlock,
   ThinkingMode,
   UiBlock
@@ -255,6 +256,24 @@ const PastRunEntry = ({
     if (!isBuilder || run.status !== "done") return [];
     const events = run.ui_events ?? [];
     let counter = 0;
+    // Use file_changed events (emitted only on actual writes) for accurate past-run pills.
+    const fileChangedEvents = events.filter(
+      (ev): ev is FileChangedBlock => ev.event_type === "file_changed"
+    );
+    if (fileChangedEvents.length > 0) {
+      return fileChangedEvents.map((ev) => ({
+        kind: "proposed_change" as const,
+        id: `past-${run.run_id}-change-${counter++}`,
+        filePath: ev.payload.file_path,
+        description: ev.payload.description,
+        newContent: ev.payload.new_content,
+        oldContent: ev.payload.old_content,
+        isDeletion: ev.payload.is_deletion,
+        status: "accepted" as const
+      }));
+    }
+    // Legacy fallback: older runs without file_changed events — treat all proposed_change
+    // events as accepted (same as before).
     return events
       .filter((ev): ev is ProposedChangeBlock => ev.event_type === "proposed_change")
       .reduce<BuilderProposedChange[]>((acc, ev) => {

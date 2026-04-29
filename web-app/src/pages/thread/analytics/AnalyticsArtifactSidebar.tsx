@@ -12,21 +12,35 @@ import { extractDisplayBlockForSeq } from "@/hooks/useAnalyticsRun";
 import ProcedureRunDagPanel from "../agentic/ProcedureRunDagPanel";
 import { VERIFIED_TOOLTIP } from "../constants";
 import {
+  AnalyzeDbtProjectView,
   AskUserView,
   ChartSection,
+  CleanDbtProjectView,
   ColumnRangeView,
   ColumnValuesView,
+  CompileDbtModelView,
   CompileSemanticQueryView,
   CountRowsView,
+  DebugDbtProjectView,
+  DocsGenerateDbtView,
+  FormatDbtSqlView,
+  GetDbtColumnLineageView,
+  GetDbtLineageView,
   GetJoinPathView,
   GetMetricDefinitionView,
+  InitDbtProjectView,
+  ListDbtNodesView,
+  ParseDbtProjectView,
   ProcedureStepView,
   RawArtifactView,
   RenderChartView,
   ResolveSchemaView,
+  RunDbtModelsView,
   SampleColumnView,
   SearchCatalogView,
-  SearchProceduresView
+  SearchProceduresView,
+  SeedDbtProjectView,
+  TestDbtModelsView
 } from "./AnalyticsArtifactViews";
 import {
   sqlArtifactFromExecutePreview,
@@ -38,6 +52,7 @@ import {
 import {
   ExecuteSqlView,
   LookupSchemaView,
+  ManageDirectoryView,
   ProposeChangeToolView,
   ReadFileView,
   RunTestsView,
@@ -46,6 +61,7 @@ import {
   ValidateProjectView,
   VerifiedSemanticQueryView
 } from "./BuilderArtifactViews";
+import ListDbtProjectsView from "./ListDbtProjectsView";
 
 interface Props {
   item: ArtifactItem | SqlItem | ProcedureItem;
@@ -542,6 +558,262 @@ const AnalyticsArtifactSidebar = ({
         />
         <PanelContent scrollable={false} padding={false} className='min-h-0'>
           <ResolveSchemaView item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  // ── test_dbt_models ───────────────────────────────────────────────────────
+  if (item.toolName === "test_dbt_models") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Test dbt Models'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <TestDbtModelsView item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  // ── list_dbt_projects ─────────────────────────────────────────────────────
+  if (item.toolName === "list_dbt_projects") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='List dbt Projects'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <ListDbtProjectsView item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  // ── list_dbt_nodes ────────────────────────────────────────────────────────
+  if (item.toolName === "list_dbt_nodes") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='List dbt Nodes'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <ListDbtNodesView item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  // ── get_dbt_lineage ───────────────────────────────────────────────────────
+  if (item.toolName === "get_dbt_lineage") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='dbt Lineage'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <GetDbtLineageView item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  // ── compile_dbt_model ─────────────────────────────────────────────────────
+  if (item.toolName === "compile_dbt_model") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Compile dbt Model'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <CompileDbtModelView item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  // ── run_dbt_models ────────────────────────────────────────────────────────
+  if (item.toolName === "run_dbt_models") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Run dbt Models'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <RunDbtModelsView item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  // ── analyze_dbt_project ───────────────────────────────────────────────────
+  if (item.toolName === "analyze_dbt_project") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Analyze dbt Project'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <AnalyzeDbtProjectView key={item.id ?? item.toolName} item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  // ── get_dbt_column_lineage ────────────────────────────────────────────────
+  if (item.toolName === "get_dbt_column_lineage") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Column Lineage'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <GetDbtColumnLineageView item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  // ── parse_dbt_project ─────────────────────────────────────────────────────
+  if (item.toolName === "parse_dbt_project") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Parse dbt Project'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <ParseDbtProjectView item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  // ── seed_dbt_project ──────────────────────────────────────────────────────
+  if (item.toolName === "seed_dbt_project") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Seed dbt Project'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <SeedDbtProjectView item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  // ── debug_dbt_project ─────────────────────────────────────────────────────
+  if (item.toolName === "debug_dbt_project") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Debug dbt Project'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <DebugDbtProjectView item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  // ── clean_dbt_project ─────────────────────────────────────────────────────
+  if (item.toolName === "clean_dbt_project") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Clean dbt Project'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <CleanDbtProjectView item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  // ── docs_generate_dbt ─────────────────────────────────────────────────────
+  if (item.toolName === "docs_generate_dbt") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Generate dbt Docs'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <DocsGenerateDbtView item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  // ── format_dbt_sql ────────────────────────────────────────────────────────
+  if (item.toolName === "format_dbt_sql") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Format dbt SQL'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <FormatDbtSqlView item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  // ── manage_directory → directory operation view ───────────────────────────
+  if (item.toolName === "manage_directory") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Manage Directory'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <ManageDirectoryView item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
+  // ── init_dbt_project ──────────────────────────────────────────────────────
+  if (item.toolName === "init_dbt_project") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Init dbt Project'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <InitDbtProjectView item={item} />
         </PanelContent>
       </Panel>
     );

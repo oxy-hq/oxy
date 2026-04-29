@@ -243,7 +243,7 @@ async fn resolve_connector_impl(
             return None;
         }
     };
-    database_to_connector_config(db, workspace_manager).await
+    database_to_connector_config(&db, workspace_manager).await
 }
 
 /// Translate an already-resolved [`oxy::config::model::Database`] into an
@@ -280,6 +280,18 @@ pub async fn database_to_connector_config(
                 Some(ConnectorConfig::DuckDb(DuckDbConfig {
                     data_dir: path,
                     load_strategy: DuckDbLoadStrategy::View,
+                }))
+            }
+            DuckDBOptions::File { path } => {
+                let resolved = match workspace_manager.config_manager.resolve_file(path).await {
+                    Ok(p) => p,
+                    Err(e) => {
+                        tracing::warn!(db = %db.name, "DuckDB file: cannot resolve path: {e}");
+                        return None;
+                    }
+                };
+                Some(ConnectorConfig::DuckDbUrl(DuckDbUrlConfig {
+                    url: resolved,
                 }))
             }
             DuckDBOptions::DuckLake(ducklake_config) => {

@@ -2,6 +2,7 @@ import { Hammer, Loader2, Zap } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import useFileTree from "@/hooks/api/files/useFileTree";
+import useModelingProjects from "@/hooks/api/modeling/useModelingProjects";
 import useThread from "@/hooks/api/threads/useThread";
 import useThreadMutation from "@/hooks/api/threads/useThreadMutation";
 import useBuilderAvailable from "@/hooks/api/useBuilderAvailable";
@@ -39,7 +40,7 @@ function extractFileContext(pathname: string) {
 // --- Component ---
 
 export function BuilderDialog() {
-  const { isOpen, setIsOpen } = useBuilderDialog();
+  const { isOpen, setIsOpen, modelingSelection } = useBuilderDialog();
   const navigate = useNavigate();
   const location = useLocation();
   const { project } = useCurrentProjectBranch();
@@ -81,6 +82,7 @@ export function BuilderDialog() {
   }, [isOpen, isCheckingBuilder, isBuiltin, setIsOpen]);
 
   const { data: fileTreeData } = useFileTree(isOpen && isBuiltin);
+  const { data: modelingProjects } = useModelingProjects();
 
   const allFiles = useMemo(() => {
     if (!fileTreeData) return [];
@@ -89,6 +91,7 @@ export function BuilderDialog() {
 
   const fileContext = useMemo(() => extractFileContext(location.pathname), [location.pathname]);
   const fileDisplayName = fileContext?.displayName;
+  const isOnModelingPage = location.pathname.includes("/ide/modeling");
 
   // Extract thread ID if we're on a thread page
   const threadId = useMemo(() => {
@@ -142,10 +145,46 @@ export function BuilderDialog() {
 
   // Pre-fill @mention when dialog opens with file context or thread agent
   useEffect(() => {
-    if (isOpen && fileDisplayName && fileContext) {
+    if (isOpen && isOnModelingPage) {
+      if (modelingSelection) {
+        const project = modelingProjects?.find(
+          (p) => (p.folder_name || p.name) === modelingSelection.projectName
+        );
+        if (project) {
+          const folderName = project.folder_name || project.name;
+          const projectRelDir = `modeling/${folderName}`;
+          const mentionMap = new Map<string, string>();
+          const parts: string[] = [];
+          if (modelingSelection.node) {
+            const modelRoot = project.model_paths[0] ?? "models";
+            const nodePath = `${projectRelDir}/${modelRoot}/${modelingSelection.node.path}`;
+            const nodeDisplayName = modelingSelection.node.name.replace(/\.sql$/, "");
+            mentionMap.set(nodeDisplayName, nodePath);
+            parts.push(`@${nodeDisplayName}`);
+          } else {
+            mentionMap.set(project.name, `${projectRelDir}/dbt_project.yml`);
+            parts.push(`@${project.name}`);
+          }
+          placeCursorAtEndRef.current = true;
+          setMessage(`${parts.join(" ")} `);
+          setMentions(mentionMap);
+        }
+      }
+    } else if (isOpen && fileDisplayName && fileContext) {
+      const dbtProject = modelingProjects?.find(
+        (p) =>
+          fileContext.filePath.startsWith(`${p.project_dir}/`) ||
+          fileContext.filePath.startsWith(`modeling/${p.folder_name || p.name}/`)
+      );
+      const mentionMap = new Map([[fileDisplayName, fileContext.filePath]]);
+      if (dbtProject) {
+        const folderName = dbtProject.folder_name || dbtProject.name;
+        mentionMap.set(dbtProject.name, `modeling/${folderName}/dbt_project.yml`);
+      }
+      const msg = dbtProject ? `@${fileDisplayName} @${dbtProject.name} ` : `@${fileDisplayName} `;
       placeCursorAtEndRef.current = true;
-      setMessage(`@${fileDisplayName} `);
-      setMentions(new Map([[fileDisplayName, fileContext.filePath]]));
+      setMessage(msg);
+      setMentions(mentionMap);
     } else if (isOpen && threadData?.source && threadData.source !== "__builder__") {
       const agentFile = allFiles.find((f) => f.path === threadData.source);
       const displayName = agentFile
@@ -161,7 +200,16 @@ export function BuilderDialog() {
       setCursorPos(0);
       setMentions(new Map());
     }
-  }, [isOpen, fileDisplayName, fileContext, threadData, allFiles]);
+  }, [
+    isOpen,
+    isOnModelingPage,
+    fileDisplayName,
+    fileContext,
+    threadData,
+    allFiles,
+    modelingProjects,
+    modelingSelection
+  ]);
 
   const insertMention = (file: FileTreeModel) => {
     if (!activeMention) return;

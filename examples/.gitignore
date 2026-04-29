@@ -1,3 +1,4 @@
 .env
 .omni/**
 .semantics
+db.duckdb

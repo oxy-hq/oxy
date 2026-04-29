@@ -5,3 +5,13 @@ secrets:
     paths:
       - web-app/src/pages/create-workspace/steps/WarehouseStep/BigQueryForm.tsx
       - web-app/src/components/workspaces/components/CreateWorkspaceDialog/components/orchestrator.ts
+      # Test-only GCP service-account JSON literal inside `#[cfg(test)] mod tests`.
+      # Used by `test_bigquery_to_dbt_target_populates_fields` against a local
+      # mock OAuth2 server; never compiled into production binaries.
+      - crates/airform/src/adapter.rs
+
+  # Test-only RSA-2048 PKCS#8 key embedded in `#[cfg(test)] mod tests` for
+  # `test_bigquery_to_dbt_target_populates_fields`. Not used in production.
+  - id: private-key
+    paths:
+      - crates/airform/src/adapter.rs

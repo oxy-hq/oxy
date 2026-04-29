@@ -14,6 +14,7 @@ path = "src/main.rs"
 
 [dependencies]
 handlebars = { workspace = true }
+df-interchange = { workspace = true, features = ["arrow_56", "arrow_57"] }
 
 # Core functionality
 oxy = { workspace = true }
@@ -21,6 +22,7 @@ oxy-git = { workspace = true }
 oxy-llm = { workspace = true }
 oxy-observability = { workspace = true, features = ["duckdb", "postgres", "clickhouse"] }
 oxy-shared = { workspace = true }
+oxy-airform = { workspace = true }
 agentic-analytics = { workspace = true }
 agentic-builder = { workspace = true }
 agentic-connector = { workspace = true, features = [

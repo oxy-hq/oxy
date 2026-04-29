@@ -135,6 +135,7 @@ impl DomainSolver<BuilderDomain> for BuilderSolver {
                     self.project_validator.as_ref(),
                     self.schema_provider.as_ref(),
                     self.semantic_compiler.as_ref(),
+                    self.secrets_provider.as_ref(),
                 )
                 .await
             }

@@ -12,12 +12,18 @@ use crate::{
     database::BuilderDatabaseProvider,
     events::BuilderEvent,
     schema_provider::BuilderSchemaProvider,
+    secrets::BuilderSecretsProvider,
     semantic::BuilderSemanticCompiler,
     test_runner::BuilderTestRunner,
     tools::{
-        execute_execute_sql, execute_lookup_schema, execute_propose_change, execute_read_file,
-        execute_run_tests, execute_search_files, execute_search_text, execute_semantic_query,
-        execute_validate_project,
+        execute_analyze_dbt_project, execute_clean_dbt_project, execute_compile_dbt_model,
+        execute_debug_dbt_project, execute_docs_generate_dbt, execute_execute_sql,
+        execute_format_dbt_sql, execute_get_dbt_column_lineage, execute_get_dbt_lineage,
+        execute_init_dbt_project, execute_list_dbt_nodes, execute_list_dbt_projects,
+        execute_lookup_schema, execute_manage_directory, execute_parse_dbt_project,
+        execute_propose_change, execute_read_file, execute_run_dbt_models, execute_run_tests,
+        execute_search_files, execute_search_text, execute_seed_dbt_project,
+        execute_semantic_query, execute_test_dbt_models, execute_validate_project,
     },
     types::{BuilderSpec, ConversationTurn, ToolExchange},
     validator::BuilderProjectValidator,
@@ -35,6 +41,7 @@ pub struct BuilderSolver {
     pub(crate) project_validator: Option<Arc<dyn BuilderProjectValidator>>,
     pub(crate) schema_provider: Option<Arc<dyn BuilderSchemaProvider>>,
     pub(crate) semantic_compiler: Option<Arc<dyn BuilderSemanticCompiler>>,
+    pub(crate) secrets_provider: Option<Arc<dyn BuilderSecretsProvider>>,
 }
 
 impl BuilderSolver {
@@ -51,6 +58,7 @@ impl BuilderSolver {
             project_validator: None,
             schema_provider: None,
             semantic_compiler: None,
+            secrets_provider: None,
         }
     }
 
@@ -89,6 +97,11 @@ impl BuilderSolver {
         self
     }
 
+    pub fn with_secrets_provider(mut self, provider: Arc<dyn BuilderSecretsProvider>) -> Self {
+        self.secrets_provider = Some(provider);
+        self
+    }
+
     pub(crate) fn build_solving_system_prompt(&self) -> String {
         let root = self.project_root.to_string_lossy();
         format!(
@@ -116,12 +129,55 @@ modify these files.
 - read_file(path, start_line?, end_line?): read file content with optional line range
 - search_text(pattern, file_glob?): grep-like text search across files
 - propose_change(file_path, description, changes, delete?): propose targeted line-range edits or a file deletion and ask the user for confirmation. Each block in `changes` has `from_line`, `to_line`, and `content` fields. Set delete=true to delete a file (omit changes).
-- validate_project(file_path?): validate all project files (or a single file) against the Oxygen schema; returns any errors
-- lookup_schema(object_name): look up the JSON schema for any Oxygen object type — semantic (Dimension, Measure, View, Topic…), agent (AgentConfig, AgentType, ToolType…), FSM workflow (AgenticConfig), workflow tasks (Workflow, Task, ExecuteSQLTask, AgentTask…), app (AppConfig, Display…), test (TestFileConfig, TestSettings, TestCase), or config (Config, Database, DatabaseType)
-- run_tests(file_path?): run a specific .test.yml file (or all test files if omitted) using the Oxygen eval pipeline; returns pass rate and any errors
+- manage_directory(operation, path, description, new_path?): create, delete, or rename a directory and ask the user for confirmation. operation must be "create", "delete", or "rename". new_path is required for "rename". delete removes the directory and all its contents recursively.
+- validate_project(file_path?): validate all project files (or a single file) against the Oxy schema; returns any errors
+- lookup_schema(object_name): look up the JSON schema for any Oxy object type — semantic (Dimension, Measure, View, Topic…), agent (AgentConfig, AgentType, ToolType…), FSM workflow (AgenticConfig), workflow tasks (Workflow, Task, ExecuteSQLTask, AgentTask…), app (AppConfig, Display…), test (TestFileConfig, TestSettings, TestCase), or config (Config, Database, DatabaseType)
+- run_tests(file_path?): run a specific .test.yml file (or all test files if omitted) using the Oxy eval pipeline; returns pass rate and any errors
 - execute_sql(sql, database?): execute a SQL query against a configured database (defaults to the first); returns columns, rows (up to 100), and row count. Use to verify SQL before proposing file changes.
 - semantic_query(topic, dimensions?, measures?, filters?, limit?): compile and run a semantic layer query; validates against .view.yml/.topic.yml, returns generated SQL and results. Use to verify semantic definitions before proposing changes to .view.yml or .topic.yml files.
 - ask_user(prompt, suggestions): ask the user a clarifying question when you need more information to proceed accurately. Always provide 2–4 concrete suggestions.
+
+## Data transformation / modeling tools (airform / dbt)
+
+Oxy supports dbt-style data transformation projects under `modeling/`. Each project
+has a `dbt_project.yml`, SQL model files, and a `oxy.yml` file that maps dbt profile
+outputs to Oxy database names. These tools let you inspect, compile, run, and test models.
+
+IMPORTANT: All dbt/airform operations are handled entirely by Oxy through the tools below.
+Never tell the user to run `dbt` CLI commands (e.g. `dbt run`, `dbt test`, `dbt compile`,
+`dbt seed`, `dbt docs generate`) or install dbt. Use the built-in tools instead.
+
+Example of `oxy.yml`:
+```yaml
+mappings:
+  # mapping dbt target `dev` to oxy database `local`
+  dev: local
+```
+
+IMPORTANT: The dbt target type in `profiles.yml` (the `type:` field) must match the Oxy
+database type in `config.yml`. Mismatched types cause a `DatabaseTypeMismatch` error at
+run/test time. The valid pairings are:
+
+| dbt target `type:` | Required Oxy database type |
+|--------------------|---------------------------|
+| snowflake          | snowflake                 |
+| bigquery           | bigquery                  |
+| duckdb             | duckdb or motherduck      |
+| postgres           | postgres                  |
+| redshift           | redshift                  |
+| mysql              | mysql                     |
+| clickhouse         | clickhouse                |
+
+When creating or editing `oxy.yml`, always check both `profiles.yml` (for the dbt target
+type) and `config.yml` (for the Oxy database type) to confirm they are compatible before
+writing the mapping.
+
+- list_dbt_projects(): list all transformation projects in this workspace
+- list_dbt_nodes(project): list all models, seeds, tests, and sources with their SQL and column definitions
+- compile_dbt_model(project, model?): compile one model (or all) to final SQL, resolving `{{ ref() }}` and `{{ source() }}` macros
+- run_dbt_models(project, selector?): execute models and write Parquet outputs to the configured output directory
+- test_dbt_models(project, selector?): run dbt data-quality tests (not_null, unique, accepted_values, etc.)
+- get_dbt_lineage(project): return the directed dependency graph as nodes + edges
 
 ## Guidelines
 
@@ -140,6 +196,7 @@ modify these files.
 - Test files (.test.yml) must reference a valid target (an .agent.yml or .aw.yml file path relative to the project root)
 - Use lookup_schema(TestFileConfig) to see the full test file schema before writing tests
 - After writing a test file, use run_tests to execute it and report the results to the user
+- After making change on dbt project, compile and run the tests to confirm nothing is broken.
 
 ## CRITICAL INSTRUCTION
 
@@ -206,7 +263,7 @@ No emoji. Do not invent results not present in the tool exchange log."#
             state: "solving".to_string(),
             thinking: agentic_llm::ThinkingConfig::Disabled,
             response_schema: None,
-            max_tokens_override: None,
+            max_tokens_override: Some(16384),
             sub_spec_index: None,
             system_date_hint: Some(Self::current_date_hint()),
         }
@@ -231,6 +288,7 @@ pub(crate) async fn dispatch_tool(
     project_validator: Option<&Arc<dyn BuilderProjectValidator>>,
     schema_provider: Option<&Arc<dyn BuilderSchemaProvider>>,
     semantic_compiler: Option<&Arc<dyn BuilderSemanticCompiler>>,
+    secrets_provider: Option<&Arc<dyn BuilderSecretsProvider>>,
 ) -> Result<serde_json::Value, ToolError> {
     match name {
         "search_files" => {
@@ -339,6 +397,22 @@ pub(crate) async fn dispatch_tool(
             .await;
             result
         }
+        "manage_directory" => {
+            let path = params["path"].as_str().unwrap_or("").to_string();
+            let operation = params["operation"].as_str().unwrap_or("").to_string();
+            let result = execute_manage_directory(project_root, params, human_input.as_ref()).await;
+            if let Ok(_) = result {
+                emit_domain(
+                    event_tx,
+                    BuilderEvent::ToolUsed {
+                        tool_name: "manage_directory".into(),
+                        summary: format!("{operation} directory '{path}'"),
+                    },
+                )
+                .await;
+            }
+            result
+        }
         "ask_user" => agentic_core::tools::handle_ask_user(params, human_input.as_ref()),
         "lookup_schema" => {
             let provider = schema_provider
@@ -425,6 +499,309 @@ pub(crate) async fn dispatch_tool(
                 .await;
             }
             r
+        }
+        "list_dbt_projects" => {
+            let r = execute_list_dbt_projects(project_root, params);
+            if let Ok(ref v) = r {
+                let count = v["count"].as_u64().unwrap_or(0);
+                emit_domain(
+                    event_tx,
+                    BuilderEvent::ToolUsed {
+                        tool_name: "list_dbt_projects".into(),
+                        summary: format!("Found {count} dbt project(s)"),
+                    },
+                )
+                .await;
+            }
+            r
+        }
+        "list_dbt_nodes" => {
+            let r = execute_list_dbt_nodes(project_root, params);
+            if let Ok(ref v) = r {
+                let count = v["count"].as_u64().unwrap_or(0);
+                let project = params["project"].as_str().unwrap_or("");
+                emit_domain(
+                    event_tx,
+                    BuilderEvent::ToolUsed {
+                        tool_name: "list_dbt_nodes".into(),
+                        summary: format!("Listed {count} node(s) in '{project}'"),
+                    },
+                )
+                .await;
+            }
+            r
+        }
+        "compile_dbt_model" => {
+            let r = execute_compile_dbt_model(project_root, params);
+            if let Ok(ref v) = r {
+                let project = params["project"].as_str().unwrap_or("");
+                let summary = if let Some(model) = params["model"].as_str() {
+                    format!("Compiled model '{model}' in '{project}'")
+                } else {
+                    let n = v["models_compiled"].as_u64().unwrap_or(0);
+                    format!("Compiled {n} model(s) in '{project}'")
+                };
+                emit_domain(
+                    event_tx,
+                    BuilderEvent::ToolUsed {
+                        tool_name: "compile_dbt_model".into(),
+                        summary,
+                    },
+                )
+                .await;
+            }
+            r
+        }
+        "run_dbt_models" => {
+            let sm = secrets_provider.map(|p| p.secrets_manager().clone());
+            let r = execute_run_dbt_models(project_root, params, sm.as_ref()).await;
+            if let Ok(ref v) = r {
+                let project = params["project"].as_str().unwrap_or("");
+                let status = v["status"].as_str().unwrap_or("unknown");
+                let n = v["results"].as_array().map(|a| a.len()).unwrap_or(0);
+                emit_domain(
+                    event_tx,
+                    BuilderEvent::ToolUsed {
+                        tool_name: "run_dbt_models".into(),
+                        summary: format!("Ran {n} model(s) in '{project}' — {status}"),
+                    },
+                )
+                .await;
+            }
+            r
+        }
+        "test_dbt_models" => {
+            let sm = secrets_provider.map(|p| p.secrets_manager().clone());
+            let r = execute_test_dbt_models(project_root, params, sm.as_ref()).await;
+            if let Ok(ref v) = r {
+                let project = params["project"].as_str().unwrap_or("");
+                let passed = v["passed"].as_u64().unwrap_or(0);
+                let failed = v["failed"].as_u64().unwrap_or(0);
+                emit_domain(
+                    event_tx,
+                    BuilderEvent::ToolUsed {
+                        tool_name: "test_dbt_models".into(),
+                        summary: format!("Tests for '{project}': {passed} passed, {failed} failed"),
+                    },
+                )
+                .await;
+            }
+            r
+        }
+        "get_dbt_lineage" => {
+            let r = execute_get_dbt_lineage(project_root, params);
+            if let Ok(ref v) = r {
+                let project = params["project"].as_str().unwrap_or("");
+                let nodes = v["nodes"].as_array().map(|a| a.len()).unwrap_or(0);
+                let edges = v["edges"].as_array().map(|a| a.len()).unwrap_or(0);
+                emit_domain(
+                    event_tx,
+                    BuilderEvent::ToolUsed {
+                        tool_name: "get_dbt_lineage".into(),
+                        summary: format!("Lineage for '{project}': {nodes} nodes, {edges} edges"),
+                    },
+                )
+                .await;
+            }
+            r
+        }
+        "analyze_dbt_project" => {
+            let r = execute_analyze_dbt_project(project_root, params).await;
+            if let Ok(ref v) = r {
+                let project = params["project"].as_str().unwrap_or("");
+                let analyzed = v["models_analyzed"].as_u64().unwrap_or(0);
+                let violations = v["contract_violations"]
+                    .as_array()
+                    .map(|a| a.len())
+                    .unwrap_or(0);
+                emit_domain(
+                    event_tx,
+                    BuilderEvent::ToolUsed {
+                        tool_name: "analyze_dbt_project".into(),
+                        summary: format!(
+                            "Analyzed {analyzed} model(s) in '{project}' — {violations} contract violation(s)"
+                        ),
+                    },
+                )
+                .await;
+            }
+            r
+        }
+        "get_dbt_column_lineage" => {
+            let r = execute_get_dbt_column_lineage(project_root, params);
+            if let Ok(ref v) = r {
+                let project = params["project"].as_str().unwrap_or("");
+                let edges = v["edges"].as_array().map(|a| a.len()).unwrap_or(0);
+                emit_domain(
+                    event_tx,
+                    BuilderEvent::ToolUsed {
+                        tool_name: "get_dbt_column_lineage".into(),
+                        summary: format!("Column lineage for '{project}': {edges} edge(s)"),
+                    },
+                )
+                .await;
+            }
+            r
+        }
+        "parse_dbt_project" => {
+            let r = execute_parse_dbt_project(project_root, params);
+            if let Ok(ref v) = r {
+                let project = params["project"].as_str().unwrap_or("");
+                let models = v["models"].as_u64().unwrap_or(0);
+                let sources = v["sources"].as_u64().unwrap_or(0);
+                emit_domain(
+                    event_tx,
+                    BuilderEvent::ToolUsed {
+                        tool_name: "parse_dbt_project".into(),
+                        summary: format!(
+                            "Parsed '{project}': {models} model(s), {sources} source(s)"
+                        ),
+                    },
+                )
+                .await;
+            }
+            r
+        }
+        "seed_dbt_project" => {
+            let sm = secrets_provider.map(|p| p.secrets_manager().clone());
+            let r = execute_seed_dbt_project(project_root, params, sm.as_ref()).await;
+            if let Ok(ref v) = r {
+                let project = params["project"].as_str().unwrap_or("");
+                let loaded = v["seeds_loaded"].as_u64().unwrap_or(0);
+                emit_domain(
+                    event_tx,
+                    BuilderEvent::ToolUsed {
+                        tool_name: "seed_dbt_project".into(),
+                        summary: format!("Loaded {loaded} seed(s) in '{project}'"),
+                    },
+                )
+                .await;
+            }
+            r
+        }
+        "debug_dbt_project" => {
+            let r = execute_debug_dbt_project(project_root, params);
+            if let Ok(ref v) = r {
+                let project = params["project"].as_str().unwrap_or("");
+                let all_ok = v["all_ok"].as_bool().unwrap_or(false);
+                let status = if all_ok {
+                    "all checks passed"
+                } else {
+                    "issues found"
+                };
+                emit_domain(
+                    event_tx,
+                    BuilderEvent::ToolUsed {
+                        tool_name: "debug_dbt_project".into(),
+                        summary: format!("Debug '{project}': {status}"),
+                    },
+                )
+                .await;
+            }
+            r
+        }
+        "clean_dbt_project" => {
+            let r = execute_clean_dbt_project(project_root, params);
+            if let Ok(ref v) = r {
+                let project = params["project"].as_str().unwrap_or("");
+                let cleaned = v["cleaned"].as_array().map(|a| a.len()).unwrap_or(0);
+                emit_domain(
+                    event_tx,
+                    BuilderEvent::ToolUsed {
+                        tool_name: "clean_dbt_project".into(),
+                        summary: format!("Cleaned {cleaned} director(y/ies) in '{project}'"),
+                    },
+                )
+                .await;
+            }
+            r
+        }
+        "docs_generate_dbt" => {
+            let r = execute_docs_generate_dbt(project_root, params);
+            if let Ok(ref v) = r {
+                let project = params["project"].as_str().unwrap_or("");
+                let nodes = v["nodes"].as_u64().unwrap_or(0);
+                emit_domain(
+                    event_tx,
+                    BuilderEvent::ToolUsed {
+                        tool_name: "docs_generate_dbt".into(),
+                        summary: format!("Generated docs for '{project}': {nodes} node(s)"),
+                    },
+                )
+                .await;
+            }
+            r
+        }
+        "format_dbt_sql" => {
+            let r = execute_format_dbt_sql(project_root, params);
+            if let Ok(ref v) = r {
+                let project = params["project"].as_str().unwrap_or("");
+                let changed = v["files_changed"].as_u64().unwrap_or(0);
+                let checked = v["files_checked"].as_u64().unwrap_or(0);
+                emit_domain(
+                    event_tx,
+                    BuilderEvent::ToolUsed {
+                        tool_name: "format_dbt_sql".into(),
+                        summary: format!(
+                            "Formatted '{project}': {changed}/{checked} file(s) changed"
+                        ),
+                    },
+                )
+                .await;
+            }
+            r
+        }
+        "init_dbt_project" => {
+            let name = params["name"].as_str().unwrap_or("").to_string();
+
+            let prompt = serde_json::json!({
+                "type": "init_dbt_project",
+                "project_name": name,
+                "description": format!("Initialize new dbt project '{name}'")
+            })
+            .to_string();
+            let suggestions = vec!["Accept".to_string(), "Reject".to_string()];
+
+            match human_input.as_ref().request_sync(&prompt, &suggestions) {
+                Ok(_) => {
+                    let r = execute_init_dbt_project(project_root, params);
+                    if let Ok(ref val) = r {
+                        if val["ok"] == true {
+                            if let Some(files) = val["files"].as_array() {
+                                for file in files {
+                                    let file_path = file[0].as_str().unwrap_or("").to_string();
+                                    let new_content = file[1].as_str().unwrap_or("").to_string();
+                                    let description = file[2].as_str().unwrap_or("").to_string();
+                                    emit_domain(
+                                        event_tx,
+                                        BuilderEvent::FileChanged {
+                                            file_path,
+                                            description,
+                                            new_content,
+                                            old_content: String::new(),
+                                            is_deletion: false,
+                                        },
+                                    )
+                                    .await;
+                                }
+                            }
+                            emit_domain(
+                                event_tx,
+                                BuilderEvent::ToolUsed {
+                                    tool_name: "init_dbt_project".into(),
+                                    summary: format!("Initialized new project '{name}'"),
+                                },
+                            )
+                            .await;
+                        }
+                    }
+                    r
+                }
+                Err(()) => Err(ToolError::Suspended {
+                    prompt,
+                    suggestions,
+                }),
+            }
         }
         other => Err(ToolError::UnknownTool(other.to_string())),
     }

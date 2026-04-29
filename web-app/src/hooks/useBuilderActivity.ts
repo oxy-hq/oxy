@@ -66,6 +66,18 @@ export function useBuilderActivity(
           isDeletion: ev.payload.delete ?? isDeletion,
           status: decision
         });
+      } else if (ev.event_type === "file_changed") {
+        // file_changed events are emitted after user acceptance — always "accepted".
+        items.push({
+          kind: "proposed_change",
+          id: nextId("change"),
+          filePath: ev.payload.file_path,
+          description: ev.payload.description,
+          newContent: ev.payload.new_content,
+          oldContent: ev.payload.old_content,
+          isDeletion: ev.payload.is_deletion,
+          status: "accepted"
+        });
       }
     }
 

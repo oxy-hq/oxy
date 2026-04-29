@@ -348,6 +348,19 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                         .await
                         .map(|output| output.into())
                 }
+                ToolType::DbtRun(_) | ToolType::DbtCompile(_) => {
+                    if let Some(result) = global_registry()
+                        .execute(execution_context, tool_type, &input)
+                        .await?
+                    {
+                        Ok(result)
+                    } else {
+                        Err(OxyError::RuntimeError(
+                            "Dbt tool execution not available: No DbtToolExecutor registered."
+                                .to_string(),
+                        ))
+                    }
+                }
             };
 
             tracing::info!("Tool execution completed: {:?}", tool_ret);

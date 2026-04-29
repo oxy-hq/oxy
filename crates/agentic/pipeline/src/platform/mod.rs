@@ -23,7 +23,7 @@ use agentic_analytics::SharedMetricSink;
 use agentic_analytics::config::{LlmVendor, ResolvedModelInfo};
 use agentic_builder::{
     BuilderDatabaseProvider, BuilderProjectValidator, BuilderSchemaProvider,
-    BuilderSemanticCompiler,
+    BuilderSecretsProvider, BuilderSemanticCompiler,
 };
 use agentic_connector::ConnectorConfig;
 use agentic_llm::{LlmClient, OpenAiCompatProvider, OpenAiProvider};
@@ -98,6 +98,7 @@ pub struct BuilderBridges {
     pub project_validator: Arc<dyn BuilderProjectValidator>,
     pub schema_provider: Arc<dyn BuilderSchemaProvider>,
     pub semantic_compiler: Arc<dyn BuilderSemanticCompiler>,
+    pub secrets_provider: Option<Arc<dyn BuilderSecretsProvider>>,
 }
 
 /// Resolve a batch of database names to connector configs, skipping any

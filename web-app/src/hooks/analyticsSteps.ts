@@ -223,6 +223,19 @@ function createScope() {
     return undefined;
   };
 
+  /** Find ALL streaming artifact items whose toolName is in `names`. */
+  const findAllStreamingArtifactsByName = (
+    names: string[],
+    subSpecIndex?: number | null
+  ): ArtifactItem[] => {
+    const items = currentStep(subSpecIndex)?.items;
+    if (!items) return [];
+    return items.filter(
+      (item): item is ArtifactItem =>
+        item.kind === "artifact" && item.isStreaming && names.includes(item.toolName)
+    );
+  };
+
   /** Search completed steps in `result` for the last ask_user artifact and set its answer. */
   const updateAskUserAnswer = (answer: string) => {
     for (let i = result.length - 1; i >= 0; i--) {
@@ -236,6 +249,22 @@ function createScope() {
         }
       }
     }
+  };
+
+  /** Search completed steps in `result` for the last artifact with `toolName` and update its output. */
+  const updateCompletedArtifactOutput = (toolName: string, newOutput: string) => {
+    for (let i = result.length - 1; i >= 0; i--) {
+      const step = result[i];
+      if (step.kind !== "step") continue;
+      for (let j = step.items.length - 1; j >= 0; j--) {
+        const item = step.items[j];
+        if (item.kind === "artifact" && item.toolName === toolName) {
+          item.toolOutput = newOutput;
+          return true;
+        }
+      }
+    }
+    return false;
   };
 
   const completeStep = (
@@ -275,7 +304,9 @@ function createScope() {
     pushItem,
     findLastStreaming,
     findLastStreamingArtifactByName,
+    findAllStreamingArtifactsByName,
     updateAskUserAnswer,
+    updateCompletedArtifactOutput,
 
     // ── Step lifecycle ───────────────────────────────────────────────────────
     openStep(label: string, summary?: string, subSpecIndex?: number | null) {
@@ -703,10 +734,15 @@ export function buildAnalyticsSteps(events: UiBlock[]): StepOrGroup[] {
           prompt.startsWith("The analytics pipeline could not");
 
         if (!lastAwaitingIsDelegation) {
-          // Neither ask_user nor propose_change get a tool_result because the
-          // pipeline suspends before one is emitted.  Mark them as done here
+          // Neither ask_user, propose_change, nor init_dbt_project get a tool_result
+          // because the pipeline suspends before one is emitted. Mark them as done here
           // so the spinner stops.
-          for (const toolName of ["ask_user", "propose_change"]) {
+          for (const toolName of [
+            "ask_user",
+            "propose_change",
+            "init_dbt_project",
+            "manage_directory"
+          ]) {
             const artifact = scope.findLastStreamingArtifactByName(toolName);
             if (artifact) {
               artifact.toolOutput = JSON.stringify({ status: "awaiting_response" });
@@ -726,6 +762,26 @@ export function buildAnalyticsSteps(events: UiBlock[]): StepOrGroup[] {
         // has already been popped from stepStack into result.  Search there.
         if (ev.payload.answer) {
           scope.updateAskUserAnswer(ev.payload.answer);
+          scope.updateCompletedArtifactOutput(
+            "manage_directory",
+            JSON.stringify({ answer: ev.payload.answer })
+          );
+        }
+        break;
+      }
+      case "file_changed": {
+        // init_dbt_project suspends before emitting a tool_result, so its artifact
+        // toolOutput stays as {"status":"awaiting_response"} after resume.
+        // The first file_changed for a scaffold file (dbt_project.yml) signals
+        // success — update the artifact with the real output so the view can render.
+        if (ev.payload.file_path.endsWith("/dbt_project.yml")) {
+          const pathParts = ev.payload.file_path.split("/");
+          const projectName = pathParts[pathParts.length - 2] ?? "";
+          const projectDir = pathParts.slice(0, -1).join("/");
+          scope.updateCompletedArtifactOutput(
+            "init_dbt_project",
+            JSON.stringify({ ok: true, project_name: projectName, project_dir: projectDir })
+          );
         }
         break;
       }
@@ -857,6 +913,28 @@ export function buildAnalyticsSteps(events: UiBlock[]): StepOrGroup[] {
           d.answer = ev.payload.answer;
           d.error = ev.payload.error;
           d.isStreaming = false;
+        }
+        break;
+      }
+
+      // ── Builder tool_used: intercept init_dbt_project error signal ───────────
+      case "tool_used": {
+        // Error summaries from the init_dbt_project resume path are encoded as
+        // "error:<project_name>:<message>" so we can update the artifact output
+        // without a dedicated event type.
+        if (
+          ev.payload.tool_name === "init_dbt_project" &&
+          ev.payload.summary.startsWith("error:")
+        ) {
+          const parts = ev.payload.summary.split(":");
+          const errorMsg = parts.slice(2).join(":");
+          scope.updateCompletedArtifactOutput(
+            "init_dbt_project",
+            JSON.stringify({ ok: false, error: errorMsg })
+          );
+        } else {
+          const item = buildDomainItem(ev, scope.nextId);
+          if (item) scope.pushItem(item, ssi);
         }
         break;
       }

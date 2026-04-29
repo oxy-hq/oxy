@@ -2,6 +2,7 @@ use arrow::datatypes::SchemaRef;
 use arrow::json::ReaderBuilder;
 use arrow::json::reader::infer_json_schema;
 use arrow::record_batch::RecordBatch;
+use df_interchange::Interchange;
 use itertools::Itertools;
 use snowflake_api::{QueryResult, SnowflakeApi};
 use std::sync::Arc;
@@ -436,7 +437,14 @@ impl Engine for Snowflake {
                     "📊 Snowflake: Received Arrow result with {} batches",
                     batches.len()
                 );
-                record_batches = batches;
+                record_batches = Interchange::from_arrow_58(batches)
+                    .map_err(|err| {
+                        OxyError::DBError(format!("Failed to convert Arrow batches: {err}"))
+                    })?
+                    .to_arrow_58()
+                    .map_err(|err| {
+                        OxyError::DBError(format!("Failed to convert Arrow batches: {err}"))
+                    })?;
             }
             QueryResult::Json(json) => {
                 tracing::debug!("📄 Snowflake: Received JSON result, converting to Arrow...");

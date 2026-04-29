@@ -52,9 +52,6 @@ fn pg_error_message(e: &tokio_postgres::Error) -> String {
 
 // ── Value helpers ─────────────────────────────────────────────────────────────
 
-/// Parse a string cell from a TEXT-casted Postgres column into a [`CellValue`].
-///
-/// Attempts numeric parsing first; falls back to [`CellValue::Text`].
 fn pg_text_to_cell(opt: Option<String>) -> CellValue {
     match opt {
         None => CellValue::Null,

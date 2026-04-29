@@ -1,14 +1,17 @@
 import {
+  AlignLeft,
   BadgeCheck,
   BarChart2,
   BookOpen,
   Brain,
+  Bug,
   Check,
   ChevronRight,
   Database,
   FilePen,
   FileText,
   FlaskConical,
+  FolderPlus,
   FolderSearch,
   GitBranch,
   GitMerge,
@@ -17,11 +20,16 @@ import {
   Layers,
   Loader2,
   MessageSquare,
+  Network,
+  ScanSearch,
   Search,
   ShieldCheck,
+  Sprout,
   Table2,
   TextSearch,
-  Wrench
+  Trash2,
+  Wrench,
+  X
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/tooltip";
@@ -240,6 +248,7 @@ type ToolDisplay = {
   Icon: React.FC<React.SVGProps<SVGSVGElement>>;
   label: string;
   preview: string;
+  isError?: boolean;
 };
 
 function getToolDisplay(item: ArtifactItem): ToolDisplay {
@@ -425,6 +434,179 @@ function getToolDisplay(item: ArtifactItem): ToolDisplay {
       return { Icon: Database, label: "Execute SQL", preview: trunc(parts.join(" · ")) };
     }
 
+    // ── Airform / dbt tools ───────────────────────────────────────────────────
+    case "test_dbt_models": {
+      const project = typeof input?.project === "string" ? input.project : "?";
+      const output = tryParseJson(item.toolOutput ?? "");
+      const passed = typeof output?.passed === "number" ? output.passed : null;
+      const failed = typeof output?.failed === "number" ? output.failed : null;
+      const preview =
+        passed !== null || failed !== null
+          ? `${project} · ${passed ?? 0} pass · ${failed ?? 0} fail`
+          : project;
+      return { Icon: FlaskConical, label: "Test dbt Models", preview: trunc(preview) };
+    }
+
+    case "list_dbt_nodes": {
+      const project = typeof input?.project === "string" ? input.project : "?";
+      const output = tryParseJson(item.toolOutput ?? "");
+      const count = typeof output?.count === "number" ? output.count : null;
+      const preview = count !== null ? `${project} · ${count} nodes` : project;
+      return { Icon: Layers, label: "List dbt Nodes", preview: trunc(preview) };
+    }
+
+    case "get_dbt_lineage": {
+      const project = typeof input?.project === "string" ? input.project : "?";
+      const output = tryParseJson(item.toolOutput ?? "");
+      const nodeCount = Array.isArray(output?.nodes) ? output.nodes.length : null;
+      const preview = nodeCount !== null ? `${project} · ${nodeCount} nodes` : project;
+      return { Icon: GitBranch, label: "dbt Lineage", preview: trunc(preview) };
+    }
+
+    case "compile_dbt_model": {
+      const project = typeof input?.project === "string" ? input.project : "?";
+      const model = typeof input?.model === "string" ? input.model : null;
+      const output = tryParseJson(item.toolOutput ?? "");
+      const compiled = typeof output?.models_compiled === "number" ? output.models_compiled : null;
+      const preview = model
+        ? `${project} · ${model}`
+        : compiled !== null
+          ? `${project} · ${compiled} models`
+          : project;
+      return { Icon: GitBranch, label: "Compile dbt Model", preview: trunc(preview) };
+    }
+
+    case "run_dbt_models": {
+      const project = typeof input?.project === "string" ? input.project : "?";
+      const selector = typeof input?.selector === "string" ? input.selector : null;
+      const output = tryParseJson(item.toolOutput ?? "");
+      const results = Array.isArray(output?.results) ? output.results : [];
+      const errorCount = results.filter(
+        (r: Record<string, unknown>) => r.status === "ERROR"
+      ).length;
+      const successCount = results.filter(
+        (r: Record<string, unknown>) => r.status === "SUCCESS"
+      ).length;
+      const preview =
+        results.length > 0
+          ? `${project} · ${successCount} ok${errorCount > 0 ? ` · ${errorCount} err` : ""}`
+          : selector
+            ? `${project} · ${selector}`
+            : project;
+      return { Icon: Database, label: "Run dbt Models", preview: trunc(preview) };
+    }
+
+    case "analyze_dbt_project": {
+      const project = typeof input?.project === "string" ? input.project : "?";
+      const output = tryParseJson(item.toolOutput ?? "");
+      const modelsAnalyzed =
+        typeof output?.models_analyzed === "number" ? output.models_analyzed : null;
+      const preview = modelsAnalyzed !== null ? `${project} · ${modelsAnalyzed} models` : project;
+      return { Icon: ScanSearch, label: "Analyze dbt Project", preview: trunc(preview) };
+    }
+
+    case "get_dbt_column_lineage": {
+      const project = typeof input?.project === "string" ? input.project : "?";
+      const output = tryParseJson(item.toolOutput ?? "");
+      const edgeCount = Array.isArray(output?.edges) ? output.edges.length : null;
+      const preview = edgeCount !== null ? `${project} · ${edgeCount} edges` : project;
+      return { Icon: Network, label: "Column Lineage", preview: trunc(preview) };
+    }
+
+    case "parse_dbt_project": {
+      const project = typeof input?.project === "string" ? input.project : "?";
+      const output = tryParseJson(item.toolOutput ?? "");
+      const modelCount = typeof output?.models === "number" ? output.models : null;
+      const preview = modelCount !== null ? `${project} · ${modelCount} models` : project;
+      return { Icon: GitBranch, label: "Parse dbt Project", preview: trunc(preview) };
+    }
+
+    case "seed_dbt_project": {
+      const project = typeof input?.project === "string" ? input.project : "?";
+      const output = tryParseJson(item.toolOutput ?? "");
+      const seedsLoaded = typeof output?.seeds_loaded === "number" ? output.seeds_loaded : null;
+      const preview = seedsLoaded !== null ? `${project} · ${seedsLoaded} seeds` : project;
+      return { Icon: Sprout, label: "Seed dbt Project", preview: trunc(preview) };
+    }
+
+    case "debug_dbt_project": {
+      const project = typeof input?.project === "string" ? input.project : "?";
+      const output = tryParseJson(item.toolOutput ?? "");
+      const allOk = output?.all_ok === true;
+      const issues = Array.isArray(output?.issues) ? output.issues.length : null;
+      const status =
+        output !== null
+          ? allOk
+            ? "OK"
+            : issues !== null
+              ? `${issues} issues`
+              : "Issues found"
+          : null;
+      const preview = status ? `${project} · ${status}` : project;
+      return { Icon: Bug, label: "Debug dbt Project", preview: trunc(preview) };
+    }
+
+    case "clean_dbt_project": {
+      const project = typeof input?.project === "string" ? input.project : "?";
+      const output = tryParseJson(item.toolOutput ?? "");
+      const cleaned = Array.isArray(output?.cleaned) ? output.cleaned.length : null;
+      const preview = cleaned !== null ? `${project} · ${cleaned} removed` : project;
+      return { Icon: Trash2, label: "Clean dbt Project", preview: trunc(preview) };
+    }
+
+    case "docs_generate_dbt": {
+      const project = typeof input?.project === "string" ? input.project : "?";
+      const output = tryParseJson(item.toolOutput ?? "");
+      const nodes = typeof output?.nodes === "number" ? output.nodes : null;
+      const preview = nodes !== null ? `${project} · ${nodes} nodes` : project;
+      return { Icon: BookOpen, label: "Generate dbt Docs", preview: trunc(preview) };
+    }
+
+    case "format_dbt_sql": {
+      const project = typeof input?.project === "string" ? input.project : "?";
+      const isCheck = input?.check === true;
+      const output = tryParseJson(item.toolOutput ?? "");
+      const changed = typeof output?.files_changed === "number" ? output.files_changed : null;
+      const mode = isCheck ? "check" : "format";
+      const preview = changed !== null ? `${project} · ${changed} changed` : `${project} · ${mode}`;
+      return { Icon: AlignLeft, label: "Format dbt SQL", preview: trunc(preview) };
+    }
+
+    case "manage_directory": {
+      const operation = typeof input?.operation === "string" ? input.operation : "?";
+      const path = typeof input?.path === "string" ? input.path : "?";
+      const output = tryParseJson(item.toolOutput ?? "");
+      const isPending = output?.status === "awaiting_response";
+      const answer = typeof output?.answer === "string" ? output.answer.toLowerCase() : null;
+      let preview: string;
+      if (output === null || isPending) {
+        preview = `${operation} · ${path}`;
+      } else if (answer?.includes("accept")) {
+        preview = `${operation} · ${path} · done`;
+      } else if (answer?.includes("reject")) {
+        preview = `${operation} · ${path} · rejected`;
+      } else {
+        preview = `${operation} · ${path}`;
+      }
+      return { Icon: FolderPlus, label: "Manage Directory", preview: trunc(preview) };
+    }
+
+    case "init_dbt_project": {
+      const name = typeof input?.name === "string" ? input.name : "?";
+      const output = tryParseJson(item.toolOutput ?? "");
+      const isPending = output?.status === "awaiting_response";
+      let preview: string;
+      if (output === null || isPending) {
+        preview = name;
+      } else if (output.ok === true) {
+        preview = `${name} · created`;
+      } else {
+        preview = name;
+      }
+      const isError = output !== null && !isPending && output.ok !== true;
+      return { Icon: FolderPlus, label: "Init dbt Project", preview: trunc(preview), isError };
+    }
+
     // ── Domain event ──────────────────────────────────────────────────────────
     case "resolve_schema": {
       const tables = item.toolOutput ?? "Resolving schema…";
@@ -452,7 +634,7 @@ const ArtifactChild = ({
   item: ArtifactItem;
   onSelect: (item: SelectableItem) => void;
 }) => {
-  const { Icon, label, preview } = getToolDisplay(item);
+  const { Icon, label, preview, isError } = getToolDisplay(item);
 
   return (
     <button
@@ -460,16 +642,30 @@ const ArtifactChild = ({
       onClick={() => onSelect(item)}
       className='flex w-full items-center gap-1.5 py-0.5 text-left transition-opacity hover:opacity-70'
     >
-      <Icon className='h-3 w-3 shrink-0 text-muted-foreground' />
-      <span className='shrink-0 font-medium text-muted-foreground text-xs'>{label}</span>
-      <span className='flex-1 truncate text-muted-foreground/60 text-xs'>{preview}</span>
+      <Icon
+        className={`h-3 w-3 shrink-0 ${isError ? "text-destructive/70" : "text-muted-foreground"}`}
+      />
+      <span
+        className={`shrink-0 font-medium text-xs ${isError ? "text-destructive/80" : "text-muted-foreground"}`}
+      >
+        {label}
+      </span>
+      <span
+        className={`flex-1 truncate text-xs ${isError ? "text-destructive/60" : "text-muted-foreground/60"}`}
+      >
+        {preview}
+      </span>
       {item.isStreaming && <Loader2 className='h-3 w-3 shrink-0 animate-spin text-primary' />}
       {!item.isStreaming && item.durationMs !== undefined && (
         <span className='shrink-0 font-mono text-[10px] text-muted-foreground/60'>
           {formatMs(item.durationMs)}
         </span>
       )}
-      <ChevronRight className='h-3 w-3 shrink-0 text-muted-foreground' />
+      {isError ? (
+        <X className='h-3 w-3 shrink-0 text-destructive/70' />
+      ) : (
+        <ChevronRight className='h-3 w-3 shrink-0 text-muted-foreground' />
+      )}
     </button>
   );
 };

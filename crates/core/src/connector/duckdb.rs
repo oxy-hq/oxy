@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use arrow::array::RecordBatch;
 use arrow::datatypes::SchemaRef;
+use df_interchange::Interchange;
 use duckdb::Connection;
 use slugify::slugify;
 
@@ -81,6 +82,9 @@ impl DuckDB {
                     canonical_str,
                 );
                 conn
+            }
+            DuckDBOptions::File { path } => {
+                Connection::open(path).map_err(|err| connector_internal_error(CREATE_CONN, &err))?
             }
             DuckDBOptions::DuckLake(config) => {
                 let conn = Connection::open_in_memory()
@@ -213,9 +217,16 @@ impl Engine for DuckDB {
         let arrow_stream = stmt
             .query_arrow([])
             .map_err(|err| connector_internal_error(EXECUTE_QUERY, &err))?;
-        let schema = arrow_stream.get_schema();
-        let arrow_chunks = arrow_stream.collect();
-        tracing::debug!("Query results: {:?}", arrow_chunks);
+        let duckdb_chunks: Vec<_> = arrow_stream.collect();
+        tracing::debug!("Query results: {:?}", duckdb_chunks);
+        let arrow_chunks = Interchange::from_arrow_58(duckdb_chunks)
+            .map_err(|err| connector_internal_error(EXECUTE_QUERY, &err))?
+            .to_arrow_58()
+            .map_err(|err| connector_internal_error(EXECUTE_QUERY, &err))?;
+        let schema: SchemaRef = arrow_chunks
+            .first()
+            .map(|b| b.schema())
+            .unwrap_or_else(|| std::sync::Arc::new(arrow::datatypes::Schema::empty()));
         Ok((arrow_chunks, schema))
     }
 }

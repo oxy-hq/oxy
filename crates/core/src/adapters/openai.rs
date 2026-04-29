@@ -262,6 +262,8 @@ impl OpenAIToolConfig for &ToolType {
                 Err(_) => l.description.clone(),
             },
             ToolType::SaveAutomation(sr) => sr.description.clone(),
+            ToolType::DbtRun(d) => d.description.clone(),
+            ToolType::DbtCompile(d) => d.description.clone(),
         }
     }
 
@@ -281,6 +283,8 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::SemanticQuery(s) => s.name.clone(),
             ToolType::LookerQuery(l) => l.name.clone(),
             ToolType::SaveAutomation(sr) => sr.name.clone(),
+            ToolType::DbtRun(d) => d.name.clone(),
+            ToolType::DbtCompile(d) => d.name.clone(),
         }
     }
 
@@ -338,6 +342,8 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::SaveAutomation(_) => None,
             ToolType::EditDataApp(_) => None,
             ToolType::ReadDataApp(_) => None,
+            ToolType::DbtRun(_) => None,
+            ToolType::DbtCompile(_) => None,
         }
     }
 
@@ -357,6 +363,8 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::SemanticQuery(_) => "semantic_query".to_string(),
             ToolType::LookerQuery(_) => "looker_query".to_string(),
             ToolType::SaveAutomation(_) => "save_automation".to_string(),
+            ToolType::DbtRun(_) => "dbt_run".to_string(),
+            ToolType::DbtCompile(_) => "dbt_compile".to_string(),
         }
     }
 
@@ -402,6 +410,24 @@ impl OpenAIToolConfig for &ToolType {
             ToolType::SaveAutomation(_) => Ok(serde_json::json!(&schemars::schema_for!(
                 SaveAutomationParams
             ))),
+            ToolType::DbtRun(_) => Ok(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "selector": {
+                        "type": "string",
+                        "description": "dbt node selector (e.g. 'my_model', 'tag:daily', '+my_model')"
+                    }
+                }
+            })),
+            ToolType::DbtCompile(_) => Ok(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "model": {
+                        "type": "string",
+                        "description": "Name of the dbt model to compile"
+                    }
+                }
+            })),
         }
     }
 }

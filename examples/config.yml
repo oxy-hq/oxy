@@ -16,21 +16,19 @@ databases:
 
     # dry_run_limit: 1
 
-  - name: omni_bigquery
-    type: bigquery
-    # key_path: omni_bigquery.json
-    key_path: bigquery-sample.key # this is just here for placeholder
-    dataset: dbt_prod_fpx
-
   - name: local
     type: duckdb
     key_path: None
     dataset: .db/
+  
+  - name: duckdb_persistent
+    type: duckdb
+    path: db.duckdb
 
   - name: snowflake
     type: snowflake
     account: jla01554
-    username: jeffthebest
+    username: ryi
     password_var: SNOWFLAKE_PASSWORD
     warehouse: COMPUTE_WH
     database: DEMO_DB
@@ -62,7 +60,7 @@ databases:
 
   - name: clickhouse
     type: clickhouse
-    host: http://localhost:8123
+    host: localhost
     user: default
     password_var: CLICKHOUSE_PASSWORD
     database: default
@@ -133,6 +131,10 @@ models:
   - vendor: anthropic
     name: claude-sonnet-4-6
     model_ref: claude-sonnet-4-6
+    key_var: ANTHROPIC_API_KEY
+  - vendor: anthropic
+    name: claude-haiku-4-5
+    model_ref: claude-haiku-4-5
     key_var: ANTHROPIC_API_KEY
 
 defaults:
