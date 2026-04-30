@@ -589,6 +589,11 @@ function deriveGithubMessages(state: OnboardingState): OnboardingMessage[] {
 
   const totalLlmKeys = setup.missing_llm_key_vars.length;
   for (let i = 0; i < totalLlmKeys; i++) {
+    // While the LLM-key flow is active, only render completed prompts and the
+    // current cursor — never preview upcoming entries. Showing a bullet for
+    // the next key reads as though the assistant is requesting several keys
+    // at once, even though the input field only appears for the active one.
+    if (state.step === "github_llm_keys" && i > llmCursor) break;
     const keyVar = setup.missing_llm_key_vars[i];
     const isActive = state.step === "github_llm_keys" && i === llmCursor;
     const isPast = i < llmCursor || state.step !== "github_llm_keys";
@@ -626,6 +631,9 @@ function deriveGithubMessages(state: OnboardingState): OnboardingMessage[] {
 
   if (warehousesActive || state.step === "complete") {
     for (let i = 0; i < totalWarehouses; i++) {
+      // Same one-prompt-at-a-time rule as the LLM key loop above: while the
+      // warehouse step is active, don't pre-render upcoming credential forms.
+      if (warehousesActive && i > whCursor) break;
       const warehouse = setup.warehouses[i];
       const isActive = warehousesActive && i === whCursor;
       const isPast = i < whCursor || state.step === "complete";

@@ -3,10 +3,6 @@ defaults:
   database: local
   agent: default.agent.yml
 models:
-  - name: openai-4o-mini
-    vendor: openai
-    model_ref: gpt-4.1
-    key_var: OPENAI_API_KEY
   - vendor: anthropic
     name: claude-sonnet-4-6
     model_ref: claude-sonnet-4-6
