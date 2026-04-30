@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.46] - 2026-04-30
+
+### 🚀 Features
+
+- *(slack)* Add staging manifest for Oxygen Slack app
+- Airform integration (#2089)
+
+### 🐛 Bug Fixes
+
+- Better handling for rate limit and tool error (#2207)
+
+### 💼 Other
+
+- *(deps)* Bump crate-ci/typos from 1.45.1 to 1.45.2 (#2214)
+- *(deps)* Bump slackapi/slack-github-action from 3.0.1 to 3.0.2 (#2213)
+- *(deps-dev)* Bump the dev-npm-minor-dependencies group across 2 directories with 6 updates (#2215)
+
+### 🚜 Refactor
+
+- Workspace manager and remove chart image storage (s3) (#2217)
+
+### 📚 Documentation
+
+- Airform docs (#2211)
+
 ## [0.5.45] - 2026-04-29
 
 ### 🚀 Features
@@ -16,6 +41,10 @@ All notable changes to this project will be documented in this file.
 - *(slack)* Wire headless chart renderer so S3 env vars actually take effect
 - *(slack)* Bot goes silent when chart-publisher init fails (#2205)
 - Unify workspace onboarding for demo / github / blank (#2202)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.45 (#2199)
 
 ## [0.5.44] - 2026-04-28
 
