@@ -1,0 +1,173 @@
+---
+title: "Modeling"
+description: "Define layered SQL transformations inside your Oxy workspace using dbt project conventions"
+---
+
+# Modeling
+
+Oxy has a built-in SQL modeling layer that understands dbt project conventions. You can define, compile, and execute layered SQL models directly against any database already connected in `config.yml` — with no separate dbt CLI or Python environment required.
+
+Models live alongside your agents, procedures, and apps in the same workspace. Like everything else in Oxy, they are version-controlled YAML + SQL files that can be edited in the IDE, validated with `oxy validate`, and deployed through the standard Git workflow.
+
+## Project Layout
+
+Place each modeling project in a subdirectory of `modeling/`:
+
+```
+your-workspace/
+├── config.yml
+├── modeling/
+│   └── my_project/         # one folder per project
+│       ├── dbt_project.yml
+│       ├── profiles.yml    # or use ~/.dbt/profiles.yml
+│       ├── oxy.yml         # required — maps targets to Oxy databases
+│       ├── models/
+│       │   ├── staging/
+│       │   └── marts/
+│       └── seeds/
+├── agents/
+└── procedures/
+```
+
+Oxy auto-discovers every subdirectory of `modeling/` that contains a `dbt_project.yml`.
+
+## Configuration
+
+### `oxy.yml` (required)
+
+Create `oxy.yml` alongside `dbt_project.yml` to map each dbt target to an Oxy database:
+
+```yaml
+mappings:
+  dev: local_duckdb     # dbt target name → database name from config.yml
+  prod: warehouse_pg
+```
+
+- **Key** — the dbt target name as defined under `outputs:` in `profiles.yml`.
+- **Value** — the database name from `config.yml`.
+
+Every output listed in `profiles.yml` must have an entry in `mappings`. Oxy reports a clear error listing any unmapped targets on startup.
+
+### `profiles.yml`
+
+Standard dbt profiles work unchanged. Oxy reads the profile referenced by `dbt_project.yml` and uses the `target:` field to select the active output. Place `profiles.yml` in the project directory or in `~/.dbt/`.
+
+```yaml
+my_project:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: ':memory:'   # ignored at runtime — Oxy uses the mapped database path
+      threads: 4
+    prod:
+      type: postgres
+      host: "{{ env_var('PG_HOST') }}"
+      port: 5432
+      user: "{{ env_var('PG_USER') }}"
+      password: "{{ env_var('PG_PASS') }}"
+      dbname: analytics
+      schema: dbt_prod
+      threads: 4
+```
+
+The `type:` field must match the Oxy database type for the mapped target (see [Supported Databases](#supported-databases)).
+
+## Supported Databases
+
+| Database | `profiles.yml` type | Notes |
+|---|---|---|
+| Snowflake | `snowflake` | Password and key-pair auth |
+| BigQuery | `bigquery` | Service account key file |
+| DuckDB (file) | `duckdb` | Must use `path:` pointing to a `.db` file |
+| MotherDuck | `duckdb` | Uses `md:` connection string |
+| PostgreSQL | `postgres` | |
+| Redshift | `redshift` | Uses the Postgres wire protocol |
+| MySQL | `mysql` | |
+| ClickHouse | `clickhouse` | |
+
+**Not supported:** DuckDB directory sources (`file_search_path`), DuckLake, and Domo. DuckDB directory sources are read-only and cannot be used as a model output — use a DuckDB file database (`path: /path/to/file.db`) instead.
+
+## Using Models in Agents
+
+Expose modeling operations to an agent via tool configuration in your `.agent.yml`:
+
+```yaml
+name: my_agent
+model: claude-3-5-sonnet-latest
+system_prompt: |
+  You help users transform and analyze data.
+tools:
+  - type: dbt_run
+    selector: "tag:daily"   # optional node selector
+  - type: dbt_compile
+    model: stg_orders        # optional; omit to compile all models
+```
+
+### `dbt_run`
+
+Executes models against the configured database. Supports dbt node selectors:
+
+| Selector | Description |
+|---|---|
+| `tag:daily` | All models tagged `daily` |
+| `+my_model` | `my_model` and all its ancestors |
+| `my_model+` | `my_model` and all its descendants |
+| `my_model` | Exactly `my_model` |
+
+### `dbt_compile`
+
+Resolves Jinja templates and `ref()`/`source()` calls to plain SQL without executing anything. Useful for previewing generated SQL before a run.
+
+## Available Operations
+
+| Operation | Description |
+|---|---|
+| **run** | Compile and execute models in topological order |
+| **compile** | Resolve Jinja macros and `ref()`/`source()` calls to SQL |
+| **test** | Run schema and data tests |
+| **seed** | Load CSV seed files |
+| **parse** | Validate the project manifest and dependency graph |
+| **analyze** | Infer column schemas and detect contract violations |
+| **lineage** | Return node and edge lists for the full DAG |
+| **column_lineage** | Return column-level data lineage |
+| **docs generate** | Write `manifest.json` to the project `target/` directory |
+| **format** | Uppercase SQL keywords across all model files |
+| **clean** | Remove `target/` and `dbt_packages/` directories |
+| **debug** | Health-check the project (profiles, compilation) |
+| **init** | Scaffold a new project under `modeling/` |
+
+## Initialising a New Project
+
+```bash
+# Creates modeling/my_transforms/ with dbt_project.yml, profiles.yml, and README.md
+oxy airform init my_transforms
+```
+
+Then add `oxy.yml` and a matching database entry in `config.yml`:
+
+```yaml
+# config.yml (excerpt)
+databases:
+  - name: my_duckdb
+    type: duckdb
+    path: data/transforms.db
+```
+
+```yaml
+# modeling/my_transforms/oxy.yml
+mappings:
+  dev: my_duckdb
+```
+
+## Troubleshooting
+
+**`oxy.yml` not found** — `oxy.yml` must be present next to `dbt_project.yml` when running models through Oxy. Run `oxy airform debug` to confirm it is detected.
+
+**Unmapped dbt target** — Every key under `outputs:` in `profiles.yml` must appear in `oxy.yml mappings`. The error message lists which targets are missing.
+
+**Database type mismatch** — The `type:` in `profiles.yml` must match the Oxy database type for the mapped target (e.g. a `postgres` profile target mapped to a BigQuery Oxy database will be rejected).
+
+**DuckDB directory sources** — DuckDB databases configured with `file_search_path` are read-only and cannot be used as model output. Switch to a file-based DuckDB database (`path: /path/to/file.db`).
+
+**Profiles not found** — Oxy searches for `profiles.yml` in the project directory first, then in `~/.dbt/`. Ensure at least one exists.
