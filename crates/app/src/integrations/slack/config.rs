@@ -1,6 +1,7 @@
 use oxy::constants::{
-    OXY_SLACK_APP_BASE_URL_VAR, OXY_SLACK_APP_LEVEL_TOKEN_VAR, OXY_SLACK_CLIENT_ID_VAR,
-    OXY_SLACK_CLIENT_SECRET_VAR, OXY_SLACK_ENABLED_VAR, OXY_SLACK_SIGNING_SECRET_VAR,
+    OXY_SLACK_APP_BASE_URL_VAR, OXY_SLACK_APP_LEVEL_TOKEN_VAR, OXY_SLACK_CHART_UPLOAD_VAR,
+    OXY_SLACK_CLIENT_ID_VAR, OXY_SLACK_CLIENT_SECRET_VAR, OXY_SLACK_ENABLED_VAR,
+    OXY_SLACK_SIGNING_SECRET_VAR,
 };
 use std::sync::OnceLock;
 
@@ -92,6 +93,24 @@ impl SlackConfig {
             _ => None,
         }
     }
+}
+
+/// Whether chart PNGs are uploaded to Slack via `files.uploadV2`.
+///
+/// Read from `OXY_SLACK_CHART_UPLOAD` exactly once on first access and
+/// cached for the lifetime of the process — flipping the env var at
+/// runtime has no effect, matching how the rest of the Slack config
+/// behaves. Set to `1`/`true` in production deploys; defaults off so
+/// local dev keeps the on-disk PNG breadcrumb path.
+pub fn chart_upload_enabled() -> bool {
+    static CACHED: OnceLock<bool> = OnceLock::new();
+    *CACHED.get_or_init(|| {
+        std::env::var(OXY_SLACK_CHART_UPLOAD_VAR)
+            .ok()
+            .as_deref()
+            .map(|v| matches!(v.trim(), "1" | "true" | "True" | "TRUE"))
+            .unwrap_or(false)
+    })
 }
 
 #[cfg(test)]

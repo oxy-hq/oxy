@@ -7,6 +7,7 @@ pub const BOT_SCOPES: &[&str] = &[
     "chat:write",
     "chat:write.public",
     "channels:history",
+    "files:write",
     "groups:history",
     "im:history",
     "im:write",

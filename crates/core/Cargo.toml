@@ -53,7 +53,6 @@ async-openai = { workspace = true, features = [
 ] }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
-aws-sdk-s3 = { workspace = true }
 axum = { workspace = true, features = ["macros", "http2"] }
 axum-server = { workspace = true }
 base64 = { workspace = true }

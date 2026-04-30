@@ -5,7 +5,6 @@ use crate::{
     adapters::{runs::RunsManager, secrets::SecretsManager, workspace::manager::WorkspaceManager},
     config::{ConfigBuilder, ConfigManager},
     intent::{IntentClassifier, IntentConfig},
-    storage::SharedChartImageRenderer,
 };
 use oxy_shared::errors::OxyError;
 
@@ -16,7 +15,6 @@ pub struct WorkspaceBuilder {
     secrets_manager: Option<SecretsManager>,
     runs_manager: Option<RunsManager>,
     intent_classifier: Option<Arc<IntentClassifier>>,
-    chart_image_renderer: Option<SharedChartImageRenderer>,
 }
 
 impl WorkspaceBuilder {
@@ -27,7 +25,6 @@ impl WorkspaceBuilder {
             secrets_manager: None,
             runs_manager: None,
             intent_classifier: None,
-            chart_image_renderer: None,
         }
     }
 
@@ -67,14 +64,6 @@ impl WorkspaceBuilder {
         self
     }
 
-    /// Inject a chart image renderer (typically a headless-browser backed
-    /// implementation from the CLI crate). When unset, S3 chart image
-    /// publishing is disabled even if `storage` is configured.
-    pub fn with_chart_image_renderer(mut self, renderer: SharedChartImageRenderer) -> Self {
-        self.chart_image_renderer = Some(renderer);
-        self
-    }
-
     /// Try to create an intent classifier from environment variables.
     /// If the required environment variables (like OPENAI_API_KEY) are not set,
     /// this will silently skip and return self without a classifier.
@@ -107,21 +96,12 @@ impl WorkspaceBuilder {
             "Workspace ID is required".to_string(),
         ))?;
 
-        // Compute the chart image publisher eagerly so S3 client construction
-        // and AWS credential resolution happen exactly once per workspace.
-        let chart_image_publisher = WorkspaceManager::build_chart_image_publisher(
-            self.chart_image_renderer,
-            &config_manager,
-        )
-        .await?;
-
         Ok(WorkspaceManager::new(
             workspace_id,
             config_manager,
             secret_manager,
             self.runs_manager,
             self.intent_classifier,
-            chart_image_publisher,
         ))
     }
 }

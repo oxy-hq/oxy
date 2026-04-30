@@ -19,7 +19,6 @@ pub mod semantic;
 pub mod sentry_config;
 pub mod service;
 pub mod state_dir;
-pub mod storage;
 pub mod theme;
 pub mod tools;
 pub mod types;

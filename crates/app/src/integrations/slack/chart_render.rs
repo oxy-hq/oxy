@@ -6,25 +6,11 @@
 //! JSON → option transform the React `<Chart>` component does, then
 //! screenshot the result.
 //!
-//! ## Two delivery paths
-//!
-//! 1. **S3-backed inline image (recommended)** — when `OXY_STORAGE_BACKEND=s3`
-//!    is configured, the [`HeadlessChromeChartRenderer`] in this module is
-//!    wired into [`oxy::adapters::workspace::WorkspaceBuilder`] via
-//!    `with_chart_image_renderer`. The Slack execution path builds a
-//!    `BlobStorageChartImagePublisher` from it, uploads each rendered PNG
-//!    to S3, and embeds a presigned GET URL as a Block Kit `image` block.
-//!    This is the production path.
-//!
-//! 2. **Local-disk fallback** — when no S3 publisher is configured (e.g.
-//!    local dev without S3), the eager render in
-//!    [`get_or_render_chart_png`] writes the PNG to the workspace state
-//!    dir and the Slack message surfaces the on-disk path in a footer
-//!    context block. Useful for inspecting the rendered output locally,
-//!    but Slack itself shows no inline image because it can't fetch
-//!    `localhost`.
-//!
-//! ## Renderer
+//! [`get_or_render_chart_png`] caches PNG bytes alongside the chart JSON
+//! in the workspace state dir. The Slack render path takes those bytes
+//! and either uploads them to Slack via `files.uploadV2` (production —
+//! see [`crate::integrations::slack::render`]) or surfaces the cached
+//! path as a context-block breadcrumb (local dev).
 //!
 //! `render_echarts_to_png` builds an inline HTML page that loads echarts
 //! from a CDN, applies the same JSON → option transform that the web
@@ -35,35 +21,14 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use base64::Engine;
 use headless_chrome::Browser;
 use headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption;
 use oxy::adapters::workspace::resolve_workspace_path;
 use oxy::config::ConfigBuilder;
-use oxy::storage::ChartImageRenderer;
 use oxy_shared::errors::OxyError;
-use serde_json::Value;
 use tokio::sync::Mutex;
 use uuid::Uuid;
-
-/// `oxy::storage::ChartImageRenderer` impl that delegates to
-/// [`render_echarts_to_png`] in this module. Inject via
-/// `WorkspaceBuilder::with_chart_image_renderer` so the
-/// `BlobStorageChartImagePublisher` can wire it together with an
-/// `S3BlobStorage` and produce inline Slack image-block URLs.
-///
-/// The struct itself carries no state — the renderer is process-wide
-/// and serializes browser launches behind `RENDER_LOCK` below.
-#[derive(Debug, Default)]
-pub struct HeadlessChromeChartRenderer;
-
-#[async_trait]
-impl ChartImageRenderer for HeadlessChromeChartRenderer {
-    async fn render_png(&self, config: &Value) -> Result<Vec<u8>, OxyError> {
-        render_echarts_to_png(config).await
-    }
-}
 
 const RENDER_VIEWPORT_WIDTH: u32 = 1200;
 const RENDER_VIEWPORT_HEIGHT: u32 = 700;
@@ -124,23 +89,24 @@ async fn build_config_manager(workspace_id: Uuid) -> Result<oxy::config::ConfigM
         .await
 }
 
-/// Fetch the cached PNG for a chart, rendering it on the fly if absent.
-/// Concurrent callers race through `RENDER_LOCK` — the loser sees the
-/// freshly cached file on retry and skips rendering.
-pub async fn get_or_render_chart_png(
+/// Ensure the chart PNG exists on disk and return its path. Renders if
+/// absent. Concurrent callers race through `RENDER_LOCK` — the loser
+/// sees the freshly cached file on retry and skips rendering. Used by
+/// the dev path that only needs the path (no PNG bytes in memory).
+pub async fn ensure_chart_png_cached(
     workspace_id: Uuid,
     chart_json_filename: &str,
-) -> Result<Vec<u8>, OxyError> {
+) -> Result<PathBuf, OxyError> {
     let cache_path = cached_chart_png_path(workspace_id, chart_json_filename).await?;
-    if let Ok(bytes) = tokio::fs::read(&cache_path).await {
-        return Ok(bytes);
+    if tokio::fs::try_exists(&cache_path).await.unwrap_or(false) {
+        return Ok(cache_path);
     }
 
     let _lock = RENDER_LOCK.lock().await;
     // Re-check after acquiring the lock; another caller may have just
     // produced the file while we were queued.
-    if let Ok(bytes) = tokio::fs::read(&cache_path).await {
-        return Ok(bytes);
+    if tokio::fs::try_exists(&cache_path).await.unwrap_or(false) {
+        return Ok(cache_path);
     }
 
     let json_path = chart_json_path(workspace_id, chart_json_filename)
@@ -178,7 +144,24 @@ pub async fn get_or_render_chart_png(
         bytes = png.len(),
         "rendered chart PNG (lazy, cached for next request)"
     );
-    Ok(png)
+    Ok(cache_path)
+}
+
+/// Fetch the cached PNG bytes for a chart, rendering it on the fly if
+/// absent. Used by the upload path that needs the bytes for
+/// `files.uploadV2`. The dev path should call [`ensure_chart_png_cached`]
+/// instead — it only needs the on-disk path.
+pub async fn get_or_render_chart_png(
+    workspace_id: Uuid,
+    chart_json_filename: &str,
+) -> Result<Vec<u8>, OxyError> {
+    let cache_path = ensure_chart_png_cached(workspace_id, chart_json_filename).await?;
+    tokio::fs::read(&cache_path).await.map_err(|e| {
+        OxyError::RuntimeError(format!(
+            "failed to read cached chart PNG {}: {e}",
+            cache_path.display()
+        ))
+    })
 }
 
 /// Drive headless Chromium to render `config` (a simplified echarts spec

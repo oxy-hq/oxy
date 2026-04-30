@@ -17,6 +17,8 @@
 //!      footer card with a "View thread" deep-link. Slack auto-clears the
 //!      setStatus indicator when the bot posts a reply.
 
+use std::time::Duration;
+
 use base64::Engine;
 
 use crate::integrations::slack::blocks;
@@ -41,6 +43,11 @@ use oxy_shared::errors::OxyError;
 use sea_orm::EntityTrait;
 use tokio::sync::mpsc;
 use uuid::Uuid;
+
+/// Per-chart upload budget. Slack edge nodes typically respond in well
+/// under a second; a stuck multipart POST shouldn't block the rest of
+/// the queue or the post-message bookkeeping.
+const CHART_UPLOAD_TIMEOUT: Duration = Duration::from_secs(15);
 
 // ============================================================================
 // Public Types
@@ -182,37 +189,23 @@ pub async fn run_for_slack(req: SlackRunRequest) -> Result<(), SlackError> {
         );
     }
 
-    // Build the WorkspaceManager once here so we can extract the chart
-    // image publisher before spawning the agent task (which consumes the
-    // manager). Doing it here also means the S3 client is constructed once
-    // rather than once per request path.
     let repo_path = resolve_workspace_path(req.workspace_id)
         .await
         .map_err(&internal)?;
-    // Inject the headless-Chromium chart renderer so
-    // `WorkspaceManager::build_chart_image_publisher` can pair it with an
-    // S3 backend (when `OXY_STORAGE_BACKEND=s3` is configured) and the
-    // Slack render path produces real Block Kit `image` blocks instead
-    // of falling back to the local-disk breadcrumb. Without this call
-    // the publisher is always None and S3 env vars have no effect.
-    let chart_renderer: oxy::storage::SharedChartImageRenderer =
-        std::sync::Arc::new(crate::integrations::slack::chart_render::HeadlessChromeChartRenderer);
     let workspace_manager = WorkspaceBuilder::new(req.workspace_id)
         .with_workspace_path_and_fallback_config(&repo_path)
         .await
         .map_err(&internal)?
-        .with_chart_image_renderer(chart_renderer)
         .try_with_intent_classifier()
         .await
         .build()
         .await
         .map_err(&internal)?;
 
-    // Extract chart publishing resources before moving workspace_manager
-    // into the agent task. `get_charts_dir` is cheap — it just joins the
-    // state path — but it is async so we call it here.
-    let chart_image_publisher = workspace_manager.chart_image_publisher();
-    let charts_dir = workspace_manager.config_manager.get_charts_dir().await.ok();
+    // Resolved once at startup (see `SlackConfig`); flipping the env var
+    // mid-process is a no-op so production deployment semantics stay
+    // predictable.
+    let upload_charts = crate::integrations::slack::config::chart_upload_enabled();
 
     // Set up the block handler with a live channel for streaming.
     let (tx, rx) = mpsc::channel::<AnswerStream>(256);
@@ -239,6 +232,7 @@ pub async fn run_for_slack(req: SlackRunRequest) -> Result<(), SlackError> {
 
     // Drain the AnswerStream into `SlackRenderer`. Body is accumulated
     // locally and posted as a single `chat.postMessage` at the end.
+    // `finalize` runs the parallel chart-upload step.
     let renderer = SlackRenderer::new(
         &client,
         &bot_token,
@@ -246,11 +240,15 @@ pub async fn run_for_slack(req: SlackRunRequest) -> Result<(), SlackError> {
         &req.thread_ts,
         thread_url.clone(),
         req.workspace_id,
-        chart_image_publisher,
-        charts_dir,
+        upload_charts,
     );
-    let (body_markdown, chart_image_urls, chart_local_paths, attempted_chart_count) =
-        oxy::render_stream(rx, renderer).await;
+    let render_result = oxy::render_stream(rx, renderer).await;
+    let body_markdown = render_result.body;
+    let queued_charts = render_result.queued_charts;
+    let chart_local_paths = render_result.chart_local_paths;
+    // Render-side failures only — upload failures are tracked separately
+    // in the post-message upload loop and surfaced via a follow-up.
+    let failed_chart_count = render_result.failed_chart_count;
 
     // Await agent completion.
     let agent_result = agent_handle
@@ -294,35 +292,20 @@ pub async fn run_for_slack(req: SlackRunRequest) -> Result<(), SlackError> {
     };
 
     // Claude-style footer:
-    //   1. body section blocks
-    //   2. inline chart image blocks (one per published chart URL)
-    //   3. context block linking to the Oxy thread when charts were
-    //      attempted but no public image URL is available
-    //   4. divider
-    //   5. actions block with one "View thread" button (omitted when no URL)
-    //   6. context block: "Requested by @user · Oxy can make mistakes…"
+    //   1. body section blocks (prose only — charts come as auto-shared
+    //      thread replies after this message lands; see the upload loop
+    //      below)
+    //   2. local-disk breadcrumb context blocks (dev mode only)
+    //   3. divider
+    //   4. actions block with one "View thread" button (omitted when no URL)
+    //   5. context block: "Requested by @user · Oxy can make mistakes…"
     //
-    // Image blocks are inserted between the prose sections and the footer
-    // so they appear inline with the answer rather than below attribution.
-    // They require a publicly fetchable URL; when none is available
-    // (no `ChartImageRenderer` wired up, local-disk backend, etc.) we
-    // emit a single "View chart in Oxy" link instead — the Oxy thread
-    // page renders charts client-side via echarts, so the user can still
-    // see them, just not inline in Slack.
+    // Charts are deliberately NOT embedded as `slack_file` image blocks
+    // here. That looked tidier but Slack rejects the message when the
+    // referenced file isn't yet visible to the channel, dropping the
+    // prose text. The proven pattern (Datadog, Grafana) is to post the
+    // text first and auto-share each chart as a thread reply afterwards.
     let mut all_blocks: Vec<serde_json::Value> = body_blocks;
-
-    // Inline chart image blocks — emitted only when the publisher returned
-    // a public URL (S3 backend). Slack's `image` block: alt_text ≤ 2000
-    // chars, image_url ≤ 3000 chars, max 50 blocks per message.
-    if !agent_errored {
-        for url in &chart_image_urls {
-            all_blocks.push(serde_json::json!({
-                "type": "image",
-                "image_url": url,
-                "alt_text": "Chart",
-            }));
-        }
-    }
 
     // Local-render breadcrumbs: surface the on-disk PNG paths so a
     // developer running locally can `open` the file and validate the
@@ -345,18 +328,17 @@ pub async fn run_for_slack(req: SlackRunRequest) -> Result<(), SlackError> {
         }
     }
 
-    // Charts-fallback context: when at least one chart was emitted but
-    // produced no inline image (the typical state today), point users at
-    // the Oxy thread where the chart will render client-side.
-    let unrendered_charts = attempted_chart_count.saturating_sub(chart_image_urls.len());
+    // Render-time failure footer: charts that never produced bytes are
+    // surfaced via a "view in Oxygen" link in the prose message. Upload
+    // failures are handled in a follow-up post once we know the count.
     if !agent_errored
-        && unrendered_charts > 0
+        && failed_chart_count > 0
         && let Some(url) = thread_url.as_deref()
     {
-        let label = if unrendered_charts == 1 {
-            "📊 View chart in Oxygen →".to_string()
+        let label = if failed_chart_count == 1 {
+            "⚠️ Chart render failed — view in Oxygen →".to_string()
         } else {
-            format!("📊 View {unrendered_charts} charts in Oxygen →")
+            format!("⚠️ {failed_chart_count} chart renders failed — view in Oxygen →")
         };
         all_blocks.push(serde_json::json!({
             "type": "context",
@@ -416,6 +398,102 @@ pub async fn run_for_slack(req: SlackRunRequest) -> Result<(), SlackError> {
         .await
     {
         tracing::warn!("chat.postMessage failed: {e}");
+    }
+
+    // Charts get uploaded *after* the prose message so the thread reads
+    // text-first, then chart-by-chart. Each upload auto-shares into the
+    // thread (`channel_id` + `thread_ts` on `files.completeUploadExternal`),
+    // surfacing as a thread reply with the file inline.
+    //
+    // Sequential upload — Slack edge nodes are usually under a second per
+    // file, and parallel completion would scramble the file ordering in
+    // the thread (charts would arrive in network-completion order rather
+    // than the order the agent emitted them).
+    //
+    // Each upload is bounded by `CHART_UPLOAD_TIMEOUT` so a stuck
+    // multipart POST can't hold up the rest of the queue (or the
+    // ThreadContextService::update_last_ts that follows). On timeout we
+    // log, count it as a failure, and move on.
+    //
+    // The Slack file's title is derived from the user's question (the
+    // same logic that builds the Assistant thread title above). When the
+    // agent emits multiple charts in one answer, we suffix " (1 of N)"
+    // so each chart card is uniquely labeled instead of every entry just
+    // saying "Chart". Filename uses a slug of the question so the
+    // download experience matches the in-Slack label.
+    let chart_label_base = chart_label_from_question(&req.question);
+    let chart_filename_stem = chart_filename_stem_from_question(&req.question);
+    let total_charts = queued_charts.len();
+    let mut upload_failures: usize = 0;
+    if !agent_errored {
+        for (idx, chart) in queued_charts.into_iter().enumerate() {
+            let title = if total_charts > 1 {
+                format!("{chart_label_base} ({} of {total_charts})", idx + 1)
+            } else {
+                chart_label_base.clone()
+            };
+            let filename = if total_charts > 1 {
+                format!("{}-{}.png", chart_filename_stem, idx + 1)
+            } else {
+                format!("{chart_filename_stem}.png")
+            };
+            let chart_src = chart.chart_src;
+            let upload = client.files_upload_v2(
+                &bot_token,
+                &req.channel_id,
+                Some(&req.thread_ts),
+                &filename,
+                chart.png_bytes,
+                Some(&title),
+            );
+            match tokio::time::timeout(CHART_UPLOAD_TIMEOUT, upload).await {
+                Ok(Ok(_)) => {}
+                Ok(Err(e)) => {
+                    tracing::warn!(chart_src = %chart_src, "files.uploadV2 failed: {e}");
+                    upload_failures += 1;
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        chart_src = %chart_src,
+                        timeout_secs = CHART_UPLOAD_TIMEOUT.as_secs(),
+                        "files.uploadV2 timed out"
+                    );
+                    upload_failures += 1;
+                }
+            }
+        }
+
+        // Upload-failure follow-up: if any uploads failed, post a small
+        // context message in the same thread linking back to Oxygen so
+        // the user can still see the missing chart(s).
+        if upload_failures > 0
+            && let Some(url) = thread_url.as_deref()
+        {
+            let label = if upload_failures == 1 {
+                "⚠️ Chart upload failed — view in Oxygen →".to_string()
+            } else {
+                format!("⚠️ {upload_failures} chart uploads failed — view in Oxygen →")
+            };
+            let blocks = serde_json::json!([{
+                "type": "context",
+                "elements": [{
+                    "type": "mrkdwn",
+                    "text": format!("<{url}|{label}>"),
+                }],
+            }]);
+            if let Err(e) = client
+                .chat_post_message_with_blocks(
+                    &bot_token,
+                    &req.channel_id,
+                    "Some charts couldn't be uploaded",
+                    Some(&req.thread_ts),
+                    Some(blocks),
+                )
+                .await
+            {
+                tracing::warn!("upload-failure follow-up post failed: {e}");
+            }
+        }
     }
 
     ThreadContextService::update_last_ts(slack_thread_row.id, &req.thread_ts)
@@ -575,6 +653,52 @@ fn truncate(s: &str, max_len: usize) -> String {
     format!("{}...", &s[..boundary])
 }
 
+/// Build the human-readable Slack file title for a chart from the user's
+/// question. Caps at 80 chars (well under Slack's 250-char title limit
+/// but still scannable in the file card). Falls back to "Chart" when the
+/// question is empty / whitespace-only — every file must have a title.
+fn chart_label_from_question(question: &str) -> String {
+    let trimmed = question.trim();
+    if trimmed.is_empty() {
+        return "Chart".to_string();
+    }
+    truncate(trimmed, 80)
+}
+
+/// Build a filesystem-safe stem (no extension) for the chart download
+/// filename, derived from the user's question. Lowercases, replaces
+/// runs of non-alphanumerics with `-`, trims leading/trailing dashes,
+/// and caps at 60 chars. Returns `"chart"` for empty/whitespace-only
+/// questions or questions that contain no alphanumerics.
+fn chart_filename_stem_from_question(question: &str) -> String {
+    let mut out = String::with_capacity(question.len());
+    let mut last_was_dash = false;
+    for ch in question.chars() {
+        if ch.is_ascii_alphanumeric() {
+            for c in ch.to_lowercase() {
+                out.push(c);
+            }
+            last_was_dash = false;
+        } else if !last_was_dash && !out.is_empty() {
+            out.push('-');
+            last_was_dash = true;
+        }
+    }
+    let trimmed = out.trim_matches('-');
+    if trimmed.is_empty() {
+        return "chart".to_string();
+    }
+    let chars: Vec<char> = trimmed.chars().collect();
+    if chars.len() <= 60 {
+        return trimmed.to_string();
+    }
+    chars[..60]
+        .iter()
+        .collect::<String>()
+        .trim_end_matches('-')
+        .to_string()
+}
+
 #[cfg(test)]
 mod truncate_tests {
     use super::truncate;
@@ -606,5 +730,66 @@ mod truncate_tests {
     #[test]
     fn max_len_equal_to_char_count_returns_original() {
         assert_eq!(truncate("你好", 2), "你好");
+    }
+}
+
+#[cfg(test)]
+mod chart_label_tests {
+    use super::{chart_filename_stem_from_question, chart_label_from_question};
+
+    #[test]
+    fn label_uses_question_text_when_short() {
+        assert_eq!(
+            chart_label_from_question("Which store has the highest sales?"),
+            "Which store has the highest sales?"
+        );
+    }
+
+    #[test]
+    fn label_truncates_long_questions() {
+        let long = "a".repeat(200);
+        let label = chart_label_from_question(&long);
+        assert!(label.starts_with("aaa"));
+        assert!(label.ends_with("..."));
+        assert!(label.chars().count() <= 83); // 80 chars + "..."
+    }
+
+    #[test]
+    fn label_falls_back_to_chart_for_empty_question() {
+        assert_eq!(chart_label_from_question(""), "Chart");
+        assert_eq!(chart_label_from_question("   "), "Chart");
+    }
+
+    #[test]
+    fn filename_stem_slugifies_question() {
+        assert_eq!(
+            chart_filename_stem_from_question("Which store has the highest sales?"),
+            "which-store-has-the-highest-sales"
+        );
+    }
+
+    #[test]
+    fn filename_stem_collapses_runs_of_non_alphanumeric() {
+        assert_eq!(
+            chart_filename_stem_from_question("Hello,   world!!! 👋 foo"),
+            "hello-world-foo"
+        );
+    }
+
+    #[test]
+    fn filename_stem_caps_length_and_trims_trailing_dash() {
+        let q = "a".repeat(70) + " " + &"b".repeat(10);
+        let stem = chart_filename_stem_from_question(&q);
+        assert!(stem.chars().count() <= 60);
+        assert!(!stem.ends_with('-'));
+    }
+
+    #[test]
+    fn filename_stem_falls_back_for_alphanumeric_free_input() {
+        assert_eq!(chart_filename_stem_from_question(""), "chart");
+        assert_eq!(chart_filename_stem_from_question("   "), "chart");
+        assert_eq!(chart_filename_stem_from_question("???"), "chart");
+        // Non-ASCII alphanumerics are stripped (we only keep ASCII alnum).
+        assert_eq!(chart_filename_stem_from_question("你好"), "chart");
     }
 }

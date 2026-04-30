@@ -6,7 +6,6 @@ use std::{
 use crate::{
     config::{agent_config::AgenticConfig, constants::DATABASE_SEMANTIC_PATH},
     observability::events,
-    storage::{S3BlobStorage, S3BlobStorageConfig, SharedBlobStorage},
 };
 use oxy_shared::errors::OxyError;
 
@@ -306,49 +305,6 @@ impl ConfigManager {
         self.storage.get_charts_dir().await
     }
 
-    /// Build the remote blob storage backend for assets from environment
-    /// variables. Returns `Ok(None)` when `OXY_STORAGE_BACKEND` is unset
-    /// or set to `local` — assets stay on local disk in that mode.
-    ///
-    /// Storage is a deployment-level concern (like `OXY_DATABASE_URL`) and
-    /// must not live in `config.yml` which is a per-workspace developer file.
-    ///
-    /// ## Environment variables
-    ///
-    /// | Variable | Required | Description |
-    /// |---|---|---|
-    /// | `OXY_STORAGE_BACKEND` | No | `s3` to enable S3; anything else (or absent) keeps local disk |
-    /// | `OXY_S3_BUCKET` | When S3 | S3 bucket name |
-    /// | `OXY_S3_REGION` | No | AWS region (uses SDK default when absent) |
-    /// | `OXY_S3_PREFIX` | No | Key prefix inside the bucket, e.g. `charts` |
-    /// | `OXY_S3_PUBLIC_URL_BASE` | No | CDN base for already-public buckets (e.g. CloudFront). When unset (the default), the app generates **presigned GET URLs** instead — works with private buckets and SSE-KMS. |
-    /// | `OXY_S3_PRESIGN_TTL_SECONDS` | No | TTL for presigned URLs in seconds. Default `3600`. Must be a positive integer. Ignored when `OXY_S3_PUBLIC_URL_BASE` is set. |
-    ///
-    /// AWS credentials follow the standard SDK chain (env vars, shared config, IAM role).
-    pub(crate) async fn chart_image_blob_storage(
-        &self,
-    ) -> Result<Option<SharedBlobStorage>, OxyError> {
-        let backend = std::env::var("OXY_STORAGE_BACKEND").unwrap_or_default();
-        if backend.to_lowercase() != "s3" {
-            return Ok(None);
-        }
-        let bucket = std::env::var("OXY_S3_BUCKET").map_err(|_| {
-            OxyError::ConfigurationError(
-                "OXY_STORAGE_BACKEND=s3 requires OXY_S3_BUCKET to be set".to_string(),
-            )
-        })?;
-        let presign_ttl = parse_presign_ttl(std::env::var("OXY_S3_PRESIGN_TTL_SECONDS").ok())?;
-        let cfg = S3BlobStorageConfig {
-            bucket,
-            region: std::env::var("OXY_S3_REGION").ok(),
-            prefix: std::env::var("OXY_S3_PREFIX").ok(),
-            public_url_base: std::env::var("OXY_S3_PUBLIC_URL_BASE").ok(),
-            presign_ttl,
-        };
-        let storage = S3BlobStorage::new(cfg).await?;
-        Ok(Some(Arc::new(storage) as SharedBlobStorage))
-    }
-
     pub async fn get_exported_chart_dir(&self) -> Result<PathBuf, OxyError> {
         self.storage.get_exported_chart_dir().await
     }
@@ -530,112 +486,5 @@ impl ConfigManager {
 
         self.storage.write_config(&updated_config).await?;
         Ok(())
-    }
-}
-
-/// Parse `OXY_S3_PRESIGN_TTL_SECONDS` into a `Duration`, defaulting to
-/// 3600 seconds when the variable is absent. Rejects 0, negatives, and
-/// non-numeric values with `OxyError::ConfigurationError` so a typo in
-/// the env never silently produces a 0-second TTL or a misconfigured
-/// backend.
-///
-/// Also caps the value at AWS SigV4's hard upper bound of 7 days
-/// (604_800 seconds). Values above that are rejected at startup —
-/// without this check, `PresigningConfig::expires_in` would only error
-/// out at the first chart upload, surfacing a misconfiguration after
-/// the deploy looks healthy.
-fn parse_presign_ttl(raw: Option<String>) -> Result<std::time::Duration, OxyError> {
-    const DEFAULT_TTL_SECS: u64 = 3600;
-    /// AWS SigV4 hard limit. <https://docs.aws.amazon.com/AmazonS3/latest/userguide/ShareObjectPreSignedURL.html>
-    const MAX_TTL_SECS: u64 = 604_800;
-    let secs = match raw.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-        None => DEFAULT_TTL_SECS,
-        Some(s) => {
-            let parsed: u64 = s.parse().map_err(|_| {
-                OxyError::ConfigurationError(format!(
-                    "OXY_S3_PRESIGN_TTL_SECONDS must be a positive integer, got '{s}'"
-                ))
-            })?;
-            if parsed == 0 {
-                return Err(OxyError::ConfigurationError(
-                    "OXY_S3_PRESIGN_TTL_SECONDS must be > 0".to_string(),
-                ));
-            }
-            if parsed > MAX_TTL_SECS {
-                return Err(OxyError::ConfigurationError(format!(
-                    "OXY_S3_PRESIGN_TTL_SECONDS must be ≤ {MAX_TTL_SECS} (AWS SigV4 7-day cap), got {parsed}"
-                )));
-            }
-            parsed
-        }
-    };
-    Ok(std::time::Duration::from_secs(secs))
-}
-
-#[cfg(test)]
-mod presign_ttl_tests {
-    use super::parse_presign_ttl;
-
-    #[test]
-    fn defaults_to_one_hour_when_absent() {
-        let ttl = parse_presign_ttl(None).expect("default");
-        assert_eq!(ttl.as_secs(), 3600);
-    }
-
-    #[test]
-    fn defaults_to_one_hour_when_blank() {
-        let ttl = parse_presign_ttl(Some("   ".into())).expect("blank treated as default");
-        assert_eq!(ttl.as_secs(), 3600);
-    }
-
-    #[test]
-    fn accepts_positive_integer() {
-        let ttl = parse_presign_ttl(Some("900".into())).expect("900s");
-        assert_eq!(ttl.as_secs(), 900);
-    }
-
-    #[test]
-    fn rejects_zero() {
-        let err = parse_presign_ttl(Some("0".into())).expect_err("zero rejected");
-        assert!(err.to_string().contains("> 0"), "got: {err}");
-    }
-
-    #[test]
-    fn rejects_negative() {
-        // u64 parse rejects "-1" — we just assert it surfaces as ConfigurationError.
-        let err = parse_presign_ttl(Some("-1".into())).expect_err("negative rejected");
-        assert!(err.to_string().contains("positive integer"), "got: {err}");
-    }
-
-    #[test]
-    fn rejects_non_numeric() {
-        let err = parse_presign_ttl(Some("forever".into())).expect_err("non-numeric rejected");
-        assert!(err.to_string().contains("positive integer"), "got: {err}");
-    }
-
-    #[test]
-    fn rejects_overflow() {
-        // > u64::MAX → parse error → ConfigurationError. No overflow into
-        // a small TTL.
-        let err =
-            parse_presign_ttl(Some("99999999999999999999".into())).expect_err("overflow rejected");
-        assert!(err.to_string().contains("positive integer"), "got: {err}");
-    }
-
-    #[test]
-    fn accepts_seven_day_cap() {
-        // AWS SigV4's hard limit — exactly 7 days is allowed.
-        let ttl = parse_presign_ttl(Some("604800".into())).expect("7 days");
-        assert_eq!(ttl.as_secs(), 604_800);
-    }
-
-    #[test]
-    fn rejects_above_seven_day_cap() {
-        // One second past the 7-day cap would be silently accepted by us
-        // and only blow up at the first PresigningConfig::expires_in()
-        // call. Reject at startup so the misconfig fails fast.
-        let err = parse_presign_ttl(Some("604801".into())).expect_err("above cap rejected");
-        assert!(err.to_string().contains("604800"), "got: {err}");
-        assert!(err.to_string().contains("7-day"), "got: {err}");
     }
 }

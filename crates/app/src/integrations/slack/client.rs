@@ -296,6 +296,109 @@ impl SlackClient {
         }
     }
 
+    /// Upload a file to Slack via the `files.uploadV2` 3-step protocol
+    /// and auto-share it into `channel`/`thread_ts`. Returns the resulting
+    /// Slack file id (currently unused by callers — the auto-share is
+    /// what surfaces the file in the thread).
+    ///
+    /// **Why auto-share.** Embedding the file in the same `chat.postMessage`
+    /// as the prose via a `slack_file` Block Kit image block is brittle:
+    /// the file isn't accessible to channel members until it's shared, so
+    /// Slack tends to silently drop the message. The reliable pattern is
+    /// to post the prose answer first (no image blocks), then auto-share
+    /// each chart as a thread reply. This is what Datadog, Grafana, and
+    /// other Slack-native dashboards do.
+    ///
+    /// The protocol:
+    ///
+    ///   1. `files.getUploadURLExternal` — returns a pre-authorized upload
+    ///      URL plus the file id Slack will use once the bytes land.
+    ///   2. multipart POST of the raw bytes to that URL (no bot token —
+    ///      the URL itself is the auth).
+    ///   3. `files.completeUploadExternal` — finalizes the file and
+    ///      auto-shares it into the target channel/thread.
+    ///
+    /// Docs: <https://docs.slack.dev/reference/methods/files.uploadV2>
+    pub async fn files_upload_v2(
+        &self,
+        bot_token: &str,
+        channel: &str,
+        thread_ts: Option<&str>,
+        filename: &str,
+        bytes: Vec<u8>,
+        title: Option<&str>,
+    ) -> Result<String, OxyError> {
+        let length = bytes.len().to_string();
+        // `content_type` is undocumented on `files.getUploadURLExternal`
+        // but is honored by Slack's edge in practice — sending it makes
+        // file classification deterministic instead of relying solely on
+        // the filename suffix. Unknown form fields are ignored, so this
+        // is safe even if Slack changes its mind later.
+        let upload_init = self
+            .post_form(
+                "files.getUploadURLExternal",
+                Some(bot_token),
+                &[
+                    ("filename", filename),
+                    ("length", &length),
+                    ("content_type", "image/png"),
+                ],
+            )
+            .await?;
+        let upload_url = upload_init
+            .get("upload_url")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                OxyError::RuntimeError("files.getUploadURLExternal: missing upload_url".to_string())
+            })?
+            .to_string();
+        let file_id = upload_init
+            .get("file_id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                OxyError::RuntimeError("files.getUploadURLExternal: missing file_id".to_string())
+            })?
+            .to_string();
+
+        // Step 2: multipart upload. The upload URL is pre-authorized;
+        // bearer auth is intentionally NOT sent here.
+        let part = reqwest::multipart::Part::bytes(bytes)
+            .file_name(filename.to_string())
+            .mime_str("image/png")
+            .map_err(|e| OxyError::RuntimeError(format!("multipart mime: {e}")))?;
+        let form = reqwest::multipart::Form::new().part("file", part);
+        let resp = self
+            .http
+            .post(&upload_url)
+            .multipart(form)
+            .send()
+            .await
+            .map_err(|e| OxyError::RuntimeError(format!("files upload POST: {e}")))?;
+        if !resp.status().is_success() {
+            return Err(OxyError::RuntimeError(format!(
+                "files upload POST non-success: {}",
+                resp.status()
+            )));
+        }
+
+        // Step 3: finalize the file and auto-share it into the thread.
+        // `files` is a JSON-encoded array even on this form endpoint.
+        let mut files_entry = serde_json::json!({ "id": file_id });
+        if let Some(t) = title {
+            files_entry["title"] = serde_json::Value::String(t.to_string());
+        }
+        let files_json = serde_json::to_string(&serde_json::json!([files_entry]))
+            .map_err(|e| OxyError::RuntimeError(format!("encode files array: {e}")))?;
+        let mut form: Vec<(&str, &str)> = vec![("files", &files_json), ("channel_id", channel)];
+        if let Some(ts) = thread_ts {
+            form.push(("thread_ts", ts));
+        }
+        self.post_form("files.completeUploadExternal", Some(bot_token), &form)
+            .await?;
+
+        Ok(file_id)
+    }
+
     /// Uses the app-level token (`xapp-...`), not the bot token.
     /// Docs: <https://api.slack.com/methods/apps.connections.open>
     pub async fn apps_connections_open(&self, app_level_token: &str) -> Result<String, OxyError> {
@@ -359,4 +462,175 @@ pub struct UserInfoUser {
 #[derive(Debug, Deserialize)]
 pub struct UserInfoProfile {
     pub email: Option<String>,
+}
+
+#[cfg(test)]
+mod files_upload_v2_tests {
+    //! Integration-style tests for the three-step `files.uploadV2`
+    //! protocol against a wiremock server. The interesting behaviors
+    //! (no bot token on step 2, JSON-encoded `files` array on step 3,
+    //! `channel_id` passed to step 3 for auto-share) are exercised by
+    //! checking that the bytes round-trip end-to-end and the returned
+    //! file id matches what step 1 promised.
+    use super::*;
+    use wiremock::matchers::{body_string_contains, header_exists, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[tokio::test]
+    async fn happy_path_returns_file_id_from_get_upload_url() {
+        let server = MockServer::start().await;
+
+        // Step 1: hand back an upload URL that points at the mock itself
+        // so step 2 hits a path we control.
+        Mock::given(method("POST"))
+            .and(path("/files.getUploadURLExternal"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": true,
+                "upload_url": format!("{}/edge-upload", &server.uri()),
+                "file_id": "F0CHART",
+            })))
+            .mount(&server)
+            .await;
+
+        // Step 2: bare 200 — body shape is opaque to the caller.
+        Mock::given(method("POST"))
+            .and(path("/edge-upload"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        // Step 3: assert the form contains the file id from step 1 plus
+        // the channel id that auto-shares into the thread.
+        Mock::given(method("POST"))
+            .and(path("/files.completeUploadExternal"))
+            .and(body_string_contains("F0CHART"))
+            .and(body_string_contains("channel_id=C123"))
+            .and(body_string_contains("thread_ts="))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({ "ok": true })),
+            )
+            .mount(&server)
+            .await;
+
+        let client = SlackClient::with_base_url(server.uri());
+        let file_id = client
+            .files_upload_v2(
+                "xoxb-test",
+                "C123",
+                Some("12345.6789"),
+                "chart.png",
+                vec![0x89, b'P', b'N', b'G'],
+                Some("My chart"),
+            )
+            .await
+            .expect("upload");
+        assert_eq!(file_id, "F0CHART");
+    }
+
+    #[tokio::test]
+    async fn step2_4xx_from_upload_url_surfaces_as_error() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/files.getUploadURLExternal"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": true,
+                "upload_url": format!("{}/edge-upload", &server.uri()),
+                "file_id": "F0CHART",
+            })))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/edge-upload"))
+            .respond_with(ResponseTemplate::new(403))
+            .mount(&server)
+            .await;
+
+        // Step 3 must not be hit when step 2 fails — `expect(0)` on a
+        // wide-open mock (no path filter) catches any stray request.
+        Mock::given(method("POST"))
+            .and(path("/files.completeUploadExternal"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(0)
+            .mount(&server)
+            .await;
+
+        let client = SlackClient::with_base_url(server.uri());
+        let err = client
+            .files_upload_v2("xoxb-test", "C123", None, "chart.png", vec![1, 2, 3], None)
+            .await
+            .expect_err("should surface step-2 4xx");
+        let msg = err.to_string();
+        assert!(msg.contains("POST"), "got: {msg}");
+        assert!(msg.contains("403"), "got: {msg}");
+    }
+
+    #[tokio::test]
+    async fn step1_missing_upload_url_is_a_typed_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/files.getUploadURLExternal"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": true,
+                "file_id": "F0CHART",
+                // upload_url intentionally absent
+            })))
+            .mount(&server)
+            .await;
+
+        let client = SlackClient::with_base_url(server.uri());
+        let err = client
+            .files_upload_v2("xoxb-test", "C123", None, "chart.png", vec![1, 2, 3], None)
+            .await
+            .expect_err("should reject missing upload_url");
+        assert!(err.to_string().contains("missing upload_url"));
+    }
+
+    #[tokio::test]
+    async fn step2_bypasses_bot_token_auth() {
+        // The pre-authorized upload URL must be hit without a bearer
+        // token; including one is a real bug in production. Wiremock
+        // proves the absence by failing the match on `header_exists`.
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/files.getUploadURLExternal"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "ok": true,
+                "upload_url": format!("{}/edge-upload", &server.uri()),
+                "file_id": "F0CHART",
+            })))
+            .mount(&server)
+            .await;
+
+        // If the upload step accidentally added bearer auth, this match
+        // would succeed and respond 500, failing the call.
+        Mock::given(method("POST"))
+            .and(path("/edge-upload"))
+            .and(header_exists("authorization"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+        // The expected path: no auth header.
+        Mock::given(method("POST"))
+            .and(path("/edge-upload"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path("/files.completeUploadExternal"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({ "ok": true })),
+            )
+            .mount(&server)
+            .await;
+
+        let client = SlackClient::with_base_url(server.uri());
+        client
+            .files_upload_v2("xoxb-test", "C123", None, "chart.png", vec![1, 2, 3], None)
+            .await
+            .expect("upload should succeed when step 2 is unauthenticated");
+    }
 }

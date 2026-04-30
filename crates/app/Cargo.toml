@@ -200,3 +200,4 @@ assert_cmd = { workspace = true }
 serial_test = { workspace = true }
 oxy-test-utils = { workspace = true }
 tower = { version = "0.5.3", features = ["util"] }
+wiremock = { workspace = true }
