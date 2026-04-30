@@ -545,6 +545,7 @@ impl<D: Domain, S: DomainSolver<D> + 'static, Ev: DomainEvents> Orchestrator<D, 
                                         // the errors that caused the back-edge.
                                         run_ctx.retry_ctx = Some(RetryContext {
                                             attempt: retry_count,
+                                            rate_limit_attempt: 0,
                                             errors: errors.iter().map(|e| e.to_string()).collect(),
                                             previous_output: None,
                                         });

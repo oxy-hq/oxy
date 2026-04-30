@@ -10,8 +10,13 @@ use crate::domain::Domain;
 pub struct RetryContext {
     /// Error messages from the failed attempt.
     pub errors: Vec<String>,
-    /// How many times this target state has been entered so far.
+    /// How many times this target state has been entered due to transient errors.
     pub attempt: u32,
+    /// How many times this target state has been retried due to rate-limit (429)
+    /// responses.  Kept separate from `attempt` so the two budgets don't
+    /// interfere: burning rate-limit retries shouldn't exhaust the transient-error
+    /// budget and vice-versa.
+    pub rate_limit_attempt: u32,
     /// The previous output that failed (e.g. the SQL that had a syntax error).
     ///
     /// Only populated after the second failed attempt (`attempt >= 2`) to
@@ -41,8 +46,8 @@ pub struct RetryContext {
 /// [`ProblemState::Diagnosing`]: crate::state::ProblemState::Diagnosing
 /// [`ProblemState`]: crate::state::ProblemState
 impl RetryContext {
-    /// Produce the next RetryContext by incrementing the attempt counter and
-    /// appending a new error message.
+    /// Produce the next RetryContext by incrementing the transient-error attempt
+    /// counter and appending a new error message.
     pub fn advance(self, error: String) -> Self {
         Self {
             attempt: self.attempt + 1,
@@ -51,6 +56,23 @@ impl RetryContext {
                 e.push(error);
                 e
             },
+            rate_limit_attempt: self.rate_limit_attempt,
+            previous_output: self.previous_output,
+        }
+    }
+
+    /// Produce the next RetryContext by incrementing only the rate-limit attempt
+    /// counter.  The transient-error `attempt` field is intentionally left
+    /// unchanged so the two budgets remain independent.
+    pub fn advance_rate_limit(self, error: String) -> Self {
+        Self {
+            rate_limit_attempt: self.rate_limit_attempt + 1,
+            errors: {
+                let mut e = self.errors;
+                e.push(error);
+                e
+            },
+            attempt: self.attempt,
             previous_output: self.previous_output,
         }
     }

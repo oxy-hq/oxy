@@ -47,6 +47,10 @@ pub enum AnalyticsError {
         vendor_name: String,
         message: String,
     },
+    /// The LLM returned a rate-limit (429) response; the solver will retry with
+    /// exponential backoff.  This variant routes back to `Solving` so the retry
+    /// attempt counter is independent of the general transient-error budget.
+    RateLimitRetry(String),
 }
 
 impl std::fmt::Display for AnalyticsError {
@@ -121,6 +125,9 @@ impl std::fmt::Display for AnalyticsError {
                 message,
             } => {
                 write!(f, "vendor engine '{vendor_name}' error: {message}")
+            }
+            AnalyticsError::RateLimitRetry(msg) => {
+                write!(f, "rate limit exceeded (retrying): {msg}")
             }
         }
     }

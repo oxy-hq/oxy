@@ -140,6 +140,12 @@ pub(super) fn extract_all_propose_changes(
 /// recoverable errors.
 const MAX_SOLVE_RETRIES: u32 = 3;
 
+/// Maximum number of retries for rate-limit (429) responses.
+const MAX_RATE_LIMIT_RETRIES: u32 = 5;
+
+/// Base delay in seconds for rate-limit exponential backoff: `BASE * 2^attempt`.
+const RATE_LIMIT_BACKOFF_BASE_SECS: u64 = 5;
+
 impl BuilderSolver {
     pub(crate) async fn solve_impl(
         &mut self,
@@ -371,6 +377,56 @@ impl BuilderSolver {
                         },
                     },
                 ))
+            }
+            Err(LlmError::RateLimit(msg)) => {
+                let current_attempt = run_ctx
+                    .retry_ctx
+                    .as_ref()
+                    .map_or(0, |ctx| ctx.rate_limit_attempt);
+                if current_attempt >= MAX_RATE_LIMIT_RETRIES {
+                    let summary = format!(
+                        "Rate limit exceeded after {} retries — try again later or switch to a model with higher limits.",
+                        current_attempt
+                    );
+                    tracing::error!("builder solving rate limit exhausted: {msg}");
+                    <BuilderSolver as DomainSolver<BuilderDomain>>::store_suspension_data(
+                        self,
+                        SuspendedRunData {
+                            from_state: "solving".to_string(),
+                            original_input: spec.question.clone(),
+                            trace_id: String::new(),
+                            stage_data: Default::default(),
+                            question: summary.clone(),
+                            suggestions: vec![],
+                        },
+                    );
+                    Err((
+                        BuilderError::Llm(summary.clone()),
+                        BackTarget::Suspend {
+                            reason: SuspendReason::HumanInput {
+                                questions: vec![HumanInputQuestion {
+                                    prompt: summary,
+                                    suggestions: vec![],
+                                }],
+                            },
+                        },
+                    ))
+                } else {
+                    let delay_secs =
+                        RATE_LIMIT_BACKOFF_BASE_SECS * (1u64 << current_attempt).min(64);
+                    tracing::warn!(
+                        attempt = current_attempt + 1,
+                        delay_secs,
+                        "builder rate limited — backing off before retry"
+                    );
+                    tokio::time::sleep(std::time::Duration::from_secs(delay_secs)).await;
+                    let retry_ctx = run_ctx
+                        .retry_ctx
+                        .clone()
+                        .unwrap_or_default()
+                        .advance_rate_limit(msg.clone());
+                    Err((BuilderError::Llm(msg), BackTarget::Solve(spec, retry_ctx)))
+                }
             }
             Err(ref err @ (LlmError::Http(_) | LlmError::Auth(_))) => {
                 // Non-transient errors — retrying won't help.  Surface the

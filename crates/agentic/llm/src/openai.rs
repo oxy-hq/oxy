@@ -272,6 +272,10 @@ impl LlmProvider for OpenAiProvider {
             let text = response.text().await.unwrap_or_default();
             return Err(LlmError::Auth(text));
         }
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            let text = response.text().await.unwrap_or_default();
+            return Err(LlmError::RateLimit(text));
+        }
         if !status.is_success() {
             let text = response.text().await.unwrap_or_default();
             if let Ok(api_err) = serde_json::from_str::<ApiError>(&text) {

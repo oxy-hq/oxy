@@ -296,6 +296,7 @@ where
                                 None => RetryContext {
                                     errors: vec![err_msg],
                                     attempt: 1,
+                                    rate_limit_attempt: 0,
                                     previous_output: None,
                                 },
                             });

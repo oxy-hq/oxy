@@ -5,6 +5,8 @@ pub enum LlmError {
     Http(String),
     /// Authentication failure (bad or missing API key).
     Auth(String),
+    /// Rate limit exceeded (HTTP 429). Retrying after a backoff delay may succeed.
+    RateLimit(String),
     /// Response could not be parsed.
     Parse(String),
     /// The model produced thinking/reasoning but no text output — likely
@@ -58,6 +60,7 @@ impl std::fmt::Display for LlmError {
         match self {
             LlmError::Http(msg) => write!(f, "HTTP error: {msg}"),
             LlmError::Auth(msg) => write!(f, "auth error: {msg}"),
+            LlmError::RateLimit(msg) => write!(f, "rate limit exceeded: {msg}"),
             LlmError::Parse(msg) => write!(f, "parse error: {msg}"),
             LlmError::EmptyResponse { reason } => {
                 write!(f, "empty response from model: {reason}")

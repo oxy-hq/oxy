@@ -64,6 +64,7 @@ fn intent_for_recovery(
 /// | `ValueAnomaly` | other | **Fatal** |
 /// | `InvalidChartConfig` | Interpret | `Interpreting` (retry with error context) |
 /// | `InvalidChartConfig` | other | **Fatal** |
+/// | `RateLimitRetry` | any non-Suspend | back to the interrupted state |
 #[tracing::instrument(
     skip_all,
     fields(
@@ -150,5 +151,17 @@ pub(super) async fn diagnose_impl(
 
         // ── VendorError → fatal: vendor engine failed ─────────────────────
         AnalyticsError::VendorError { .. } => Err(error),
+
+        // ── RateLimitRetry → back to whichever state was rate-limited ────
+        AnalyticsError::RateLimitRetry(_) => match back {
+            BackTarget::Clarify(intent, _) => Ok(ProblemState::Clarifying(intent)),
+            BackTarget::Specify(intent, _) => Ok(ProblemState::Specifying(intent)),
+            BackTarget::Solve(spec, _) => Ok(ProblemState::Solving(spec)),
+            BackTarget::Execute(solution, _) => Ok(ProblemState::Executing(solution)),
+            BackTarget::Interpret(result, _) => Ok(ProblemState::Interpreting(result)),
+            BackTarget::Suspend { .. } => {
+                unreachable!("BackTarget::Suspend reached diagnose")
+            }
+        },
     }
 }

@@ -31,6 +31,13 @@ use super::{
     strip_json_fences,
 };
 
+/// Maximum number of rate-limit (429) retries before surfacing the failure to
+/// the user.
+const MAX_RATE_LIMIT_RETRIES: u32 = 5;
+
+/// Base delay in seconds for rate-limit exponential backoff: `BASE * 2^attempt`.
+const RATE_LIMIT_BACKOFF_BASE_SECS: u64 = 5;
+
 // ---------------------------------------------------------------------------
 // Prompt builder
 // ---------------------------------------------------------------------------
@@ -322,6 +329,52 @@ impl AnalyticsSolver {
                             }],
                         },
                     },
+                ));
+            }
+            Err(crate::llm::LlmError::RateLimit(msg)) => {
+                let current_attempt = retry_ctx.map_or(0, |ctx| ctx.rate_limit_attempt);
+                if current_attempt >= MAX_RATE_LIMIT_RETRIES {
+                    let summary = format!(
+                        "Rate limit exceeded after {} retries — try again later or switch to a model with higher limits.",
+                        current_attempt
+                    );
+                    tracing::error!("analytics solving rate limit exhausted: {msg}");
+                    self.store_suspension_data(SuspendedRunData {
+                        from_state: "solving".to_string(),
+                        original_input: spec.intent.raw_question.clone(),
+                        trace_id: String::new(),
+                        stage_data: Default::default(),
+                        question: summary.clone(),
+                        suggestions: vec![],
+                    });
+                    return Err((
+                        AnalyticsError::NeedsUserInput {
+                            prompt: summary.clone(),
+                        },
+                        BackTarget::Suspend {
+                            reason: SuspendReason::HumanInput {
+                                questions: vec![HumanInputQuestion {
+                                    prompt: summary,
+                                    suggestions: vec![],
+                                }],
+                            },
+                        },
+                    ));
+                }
+                let delay_secs = RATE_LIMIT_BACKOFF_BASE_SECS * (1u64 << current_attempt).min(64);
+                tracing::warn!(
+                    attempt = current_attempt + 1,
+                    delay_secs,
+                    "analytics rate limited — backing off before retry"
+                );
+                tokio::time::sleep(std::time::Duration::from_secs(delay_secs)).await;
+                let new_ctx = retry_ctx
+                    .cloned()
+                    .unwrap_or_default()
+                    .advance_rate_limit(msg.clone());
+                return Err((
+                    AnalyticsError::RateLimitRetry(msg),
+                    BackTarget::Solve(spec, new_ctx),
                 ));
             }
             Err(e) => {

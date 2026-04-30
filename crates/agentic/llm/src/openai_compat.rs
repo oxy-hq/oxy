@@ -273,14 +273,20 @@ impl LlmProvider for OpenAiCompatProvider {
 
         // Build the messages array in Chat Completions format.
         // The system prompt becomes a {"role":"system"} entry, followed by
-        // the conversation messages.  Messages that arrive here are already in
-        // OpenAI Chat Completions format (role/content or role/tool_calls).
+        // the conversation messages.  Messages that arrive here are normally in
+        // OpenAI Chat Completions format (role/content or role/tool_calls), but
+        // may contain Anthropic-format tool_use / tool_result blocks when the
+        // builder reconstructs conversation history — convert those on the fly.
         let mut chat_messages: Vec<Value> = Vec::new();
         if !effective_system.is_empty() {
             chat_messages.push(json!({"role": "system", "content": effective_system}));
         }
         for msg in messages {
-            chat_messages.push(msg.clone());
+            if let Some(converted) = convert_anthropic_tool_msg_to_chat(msg) {
+                chat_messages.extend(converted);
+            } else {
+                chat_messages.push(msg.clone());
+            }
         }
 
         // Build tools array (Chat Completions format).
@@ -358,6 +364,10 @@ impl LlmProvider for OpenAiCompatProvider {
         if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
             let text = response.text().await.unwrap_or_default();
             return Err(LlmError::Auth(text));
+        }
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            let text = response.text().await.unwrap_or_default();
+            return Err(LlmError::RateLimit(text));
         }
         if !status.is_success() {
             let text = response.text().await.unwrap_or_default();
@@ -583,6 +593,91 @@ impl LlmProvider for OpenAiCompatProvider {
 
     fn model_name(&self) -> &str {
         &self.model
+    }
+}
+
+/// Convert an Anthropic-format tool message to Chat Completions equivalents.
+///
+/// Handles two cases that appear when `build_initial_messages` injects
+/// conversation history in Anthropic format:
+///
+/// - `{"role":"assistant","content":[{"type":"tool_use",...}]}`
+///   → `{"role":"assistant","tool_calls":[...]}`
+///
+/// - `{"role":"user","content":[{"type":"tool_result",...}]}`
+///   → one `{"role":"tool","tool_call_id":...,"content":...}` per block
+///
+/// Returns `None` when the message is already in Chat Completions format.
+fn convert_anthropic_tool_msg_to_chat(msg: &Value) -> Option<Vec<Value>> {
+    let content = msg.get("content")?.as_array()?;
+
+    let has_tool_use = content
+        .iter()
+        .any(|b| b.get("type").and_then(|t| t.as_str()) == Some("tool_use"));
+    let has_tool_result = content
+        .iter()
+        .any(|b| b.get("type").and_then(|t| t.as_str()) == Some("tool_result"));
+
+    let dispatch = if has_tool_use {
+        "tool_use"
+    } else if has_tool_result {
+        "tool_result"
+    } else {
+        return None;
+    };
+
+    match dispatch {
+        "tool_use" => {
+            let tool_calls: Vec<Value> = content
+                .iter()
+                .filter(|b| b.get("type").and_then(|t| t.as_str()) == Some("tool_use"))
+                .map(|b| {
+                    json!({
+                        "id": b.get("id").and_then(|v| v.as_str()).unwrap_or(""),
+                        "type": "function",
+                        "function": {
+                            "name": b.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                            "arguments": b.get("input").map(|v| v.to_string()).unwrap_or_else(|| "{}".to_string())
+                        }
+                    })
+                })
+                .collect();
+            let text: String = content
+                .iter()
+                .filter(|b| b.get("type").and_then(|t| t.as_str()) == Some("text"))
+                .filter_map(|b| b.get("text").and_then(|v| v.as_str()))
+                .collect::<Vec<_>>()
+                .join("");
+            Some(vec![json!({
+                "role": "assistant",
+                "content": if text.is_empty() { Value::Null } else { Value::String(text) },
+                "tool_calls": tool_calls
+            })])
+        }
+        "tool_result" => {
+            let messages: Vec<Value> = content
+                .iter()
+                .filter(|b| b.get("type").and_then(|t| t.as_str()) == Some("tool_result"))
+                .map(|b| {
+                    let content_val = match b.get("content") {
+                        Some(Value::String(s)) => s.clone(),
+                        Some(Value::Array(blocks)) => blocks
+                            .iter()
+                            .filter_map(|b| b.get("text").and_then(|v| v.as_str()))
+                            .collect::<Vec<_>>()
+                            .join(""),
+                        _ => String::new(),
+                    };
+                    json!({
+                        "role": "tool",
+                        "tool_call_id": b.get("tool_use_id").and_then(|v| v.as_str()).unwrap_or(""),
+                        "content": content_val
+                    })
+                })
+                .collect();
+            Some(messages)
+        }
+        _ => None,
     }
 }
 
