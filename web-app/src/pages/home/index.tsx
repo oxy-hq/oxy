@@ -5,6 +5,7 @@ import ChatPanel from "@/components/Chat/ChatPanel";
 import PageHeader from "@/components/PageHeader";
 import useSidebar from "@/components/ui/shadcn/sidebar-context";
 import { Spinner } from "@/components/ui/shadcn/spinner";
+import { useAuth } from "@/contexts/AuthContext";
 import useAgents from "@/hooks/api/agents/useAgents";
 import useDatabases from "@/hooks/api/databases/useDatabases";
 import useGithubSetup from "@/hooks/api/onboarding/useGithubSetup";
@@ -77,6 +78,7 @@ const ProjectSetupToast = ({ gaps }: { gaps: SetupGap[] }) => {
 
 const Home = () => {
   const { open } = useSidebar();
+  const { isLocalMode } = useAuth();
   const { project } = useCurrentProjectBranch();
   const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   const location = useLocation();
@@ -89,11 +91,13 @@ const Home = () => {
 
   // The Zustand store lags one render behind workspace switches; gate every
   // query so we don't decide a redirect using the previous workspace's data.
-  const wsMatch = !!project?.id && project.id === urlWsId;
+  // In local mode there is no :wsId URL segment, so skip the URL check.
+  const wsMatch = !!project?.id && (isLocalMode || project.id === urlWsId);
 
-  // `github_setup` checks workspace secrets (env-var fallback doesn't count),
-  // so it correctly reports a missing key even when the operator has set the
-  // var process-side. The readiness endpoint can't distinguish those.
+  // In cloud mode `github_setup` checks only DB secrets, so a key set via an
+  // env var on the server is still reported missing — intentional, to prompt
+  // operators to configure it through the UI. In local mode the endpoint also
+  // checks env vars, so keys in .env are treated as present.
   const {
     data: githubSetup,
     isPending: setupPending,

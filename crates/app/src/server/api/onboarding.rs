@@ -1,4 +1,8 @@
-use axum::{Json, extract::Path, http::StatusCode};
+use axum::{
+    Json,
+    extract::{Path, State},
+    http::StatusCode,
+};
 use oxy::adapters::secrets::SecretsManager;
 use oxy::adapters::workspace::{resolve_workspace_path, workspace_root_path};
 use oxy::config::ConfigBuilder;
@@ -17,6 +21,7 @@ use crate::server::api::middlewares::role_guards::OrgAdmin;
 use crate::server::api::middlewares::workspace_context::{
     WorkspaceManagerExtractor, WorkspacePath,
 };
+use crate::server::router::AppState;
 
 /// Result returned by all three onboarding endpoints.
 #[derive(Serialize)]
@@ -803,12 +808,18 @@ pub struct GithubSetupMissingVar {
 /// GET /{workspace_id}/onboarding/github-setup — return the setup work needed
 /// before a GitHub-imported workspace can be queried. See `GithubSetupResponse`.
 pub async fn github_setup(
+    State(app_state): State<AppState>,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Path(WorkspacePath { workspace_id }): Path<WorkspacePath>,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
 ) -> Result<Json<GithubSetupResponse>, (StatusCode, String)> {
-    let secret_manager = SecretManagerService::new(workspace_id);
     let config_manager = &workspace_manager.config_manager;
+    // Cloud mode uses a DB-only SecretManagerService so that env vars set on
+    // the server don't silently suppress the "add key" prompt.
+    let db_secret_manager = SecretManagerService::new(workspace_id);
+    // Local mode uses the workspace's SecretsManager (DB + env fallback) so
+    // keys set in .env are treated as present, matching runtime behaviour.
+    let is_local = app_state.mode.is_local();
 
     // ── LLM keys ──────────────────────────────────────────────────────────────
     // Deduplicate by var name — two models sharing a key_var only surface once.
@@ -821,7 +832,18 @@ pub async fn github_setup(
         if !seen_llm_keys.insert(key_var.to_string()) {
             continue;
         }
-        if secret_manager.get_secret(key_var).await.is_some() {
+        let is_set = if is_local {
+            workspace_manager
+                .secrets_manager
+                .resolve_secret(key_var)
+                .await
+                .ok()
+                .flatten()
+                .is_some()
+        } else {
+            db_secret_manager.get_secret(key_var).await.is_some()
+        };
+        if is_set {
             continue;
         }
         missing_llm_key_vars.push(GithubSetupKeyVar {
@@ -837,7 +859,18 @@ pub async fn github_setup(
         let vars = collect_warehouse_vars(&database);
         let mut missing_vars: Vec<GithubSetupMissingVar> = Vec::new();
         for var in vars {
-            if secret_manager.get_secret(&var.var_name).await.is_some() {
+            let is_set = if is_local {
+                workspace_manager
+                    .secrets_manager
+                    .resolve_secret(&var.var_name)
+                    .await
+                    .ok()
+                    .flatten()
+                    .is_some()
+            } else {
+                db_secret_manager.get_secret(&var.var_name).await.is_some()
+            };
+            if is_set {
                 continue;
             }
             missing_vars.push(var);

@@ -1,4 +1,4 @@
-model: "gpt-5-mini-2025-08-07"
+model: openai-5.2
 type: routing
 reasoning:
   effort: low
