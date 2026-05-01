@@ -44,7 +44,7 @@ impl WorkflowAPILogger {
                 serde_json::from_value(log_item_json).unwrap();
             tokio::spawn(async move {
                 if let Err(e) = streaming_handler.append_output(&core_log_item).await {
-                    eprintln!("Failed to persist log item: {e}");
+                    tracing::warn!(error = %e, "Failed to persist log item");
                 }
             });
         }

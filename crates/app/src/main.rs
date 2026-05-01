@@ -17,7 +17,7 @@ static LOG_GUARD: OnceCell<tracing_appender::non_blocking::WorkerGuard> = OnceCe
 #[derive(Debug, Clone)]
 enum LogFormat {
     Local, // Human-readable format with colors for local development
-    Cloud, // Plain text format for Kubernetes/cloud (no ANSI, compact)
+    Cloud, // Structured JSON for Kubernetes/cloud log aggregators
 }
 
 impl LogFormat {
@@ -31,40 +31,42 @@ impl LogFormat {
     }
 }
 
-fn init_tracing_logging(log_to_stdout: bool, observability_enabled: bool) {
+fn init_tracing_logging(observability_enabled: bool) {
     let log_format = LogFormat::detect();
-    let is_cloud = matches!(log_format, LogFormat::Cloud);
 
-    // Default to WARN level for minimal output in both cloud and local
-    // Use OXY_LOG_LEVEL=info or OXY_LOG_LEVEL=debug for verbose output
-    let default_level = "warn";
-    let log_level = env::var("OXY_LOG_LEVEL")
+    // OXY_DEBUG=true: shortcut for debug-level logging. When set, it overrides
+    // OXY_LOG_LEVEL so developers get verbose oxy output without having to
+    // remember the env var name. Framework crates are still suppressed.
+    let debug_mode = env::var("OXY_DEBUG")
         .as_deref()
-        .unwrap_or(default_level)
-        .to_lowercase();
+        .unwrap_or("false")
+        .eq_ignore_ascii_case("true");
 
-    // In cloud environments, significantly reduce logging noise
-    // - Turn off HTTP request/response logs (we'll use TRACE level which won't be logged)
-    // - Turn off SQL query logs (they're extremely verbose)
-    // - Only show WARN+ for most crates
-    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        if is_cloud {
-            EnvFilter::new(&log_level)
-                .add_directive("tower_http=warn".parse().unwrap()) // Only log HTTP errors
-                .add_directive("sqlx=warn".parse().unwrap()) // Only log SQL errors
-                .add_directive("sea_orm=warn".parse().unwrap())
-                .add_directive("deser_incomplete=off".parse().unwrap())
-        } else {
-            // Local: more verbose for development
-            EnvFilter::new(&log_level)
-                .add_directive("tower_http::trace=info".parse().unwrap())
-                .add_directive("sqlx=warn".parse().unwrap())
-                .add_directive("sea_orm=warn".parse().unwrap())
-                .add_directive("deser_incomplete=off".parse().unwrap())
-        }
+    let log_level = if debug_mode {
+        "debug".to_string()
+    } else {
+        env::var("OXY_LOG_LEVEL")
+            .unwrap_or_else(|_| "warn".to_string())
+            .to_lowercase()
+    };
+
+    // Suppress known-noisy framework crates regardless of the requested log
+    // level. This keeps output actionable even at info/debug by hiding HTTP
+    // wire-level traces, raw SQL, and TLS protocol chatter. RUST_LOG bypasses
+    // all of this when set, giving experts a full escape hatch.
+    //
+    // Resolve directives once into a string so the stdout/file layers don't
+    // each re-read RUST_LOG and re-parse the directives. EnvFilter doesn't
+    // implement Clone, so we rebuild it from the same string for each layer.
+    let filter_directives = env::var("RUST_LOG").unwrap_or_else(|_| {
+        format!(
+            "{log_level},tower_http=warn,h2=warn,hyper=warn,reqwest=warn,\
+             sqlx=warn,sea_orm=warn,tonic=warn,rustls=warn,deser_incomplete=off"
+        )
     });
+    let make_filter = || EnvFilter::new(&filter_directives);
 
-    // Always log to file
+    // Always write to oxy.log for legacy customers who rely on that file.
     let log_file_path = std::path::Path::new(&get_state_dir()).join("oxy.log");
     let file_appender = tracing_appender::rolling::never(
         log_file_path.parent().unwrap(),
@@ -92,68 +94,65 @@ fn init_tracing_logging(log_to_stdout: bool, observability_enabled: bool) {
     // `.with(env_filter)` would drop info-level spans before they reached
     // any layer — the legacy OTel pipeline masked this, but the custom
     // SpanCollectorLayer must be kept isolated from console verbosity.
+    //
+    // `obs_layer`/`sentry_layer` are constructed inside each branch because
+    // `with_filter` pins the target Subscriber type, and the Local vs Cloud
+    // branches build different subscriber chains (Full vs Compact format).
+
     match log_format {
         LogFormat::Local => {
-            let stdout_layer = log_to_stdout.then(|| {
-                fmt::layer()
-                    .with_target(true)
-                    .with_level(true)
-                    .with_writer(std::io::stdout)
-                    .with_ansi(true)
-                    .with_filter(env_filter.clone())
-            });
+            // Console: colorized human-readable on stderr — stderr is the
+            // conventional channel for diagnostics so a CLI's stdout stays
+            // available for piped/captured program output.
+            let console_layer = fmt::layer()
+                .with_target(true)
+                .with_level(true)
+                .with_writer(std::io::stderr)
+                .with_ansi(true)
+                .with_filter(make_filter());
+            let file_layer = fmt::layer()
+                .with_target(true)
+                .with_level(true)
+                .with_writer(file_writer)
+                .with_ansi(false)
+                .with_filter(make_filter());
             let obs_layer =
                 obs_collector.map(|l| l.with_filter(oxy_observability::observability_filter()));
+            let sentry_layer = sentry::integrations::tracing::layer()
+                .with_filter(tracing_subscriber::filter::LevelFilter::WARN);
             tracing_subscriber::registry()
-                .with(
-                    // Sentry only needs warn+ to populate breadcrumbs and
-                    // capture error events. Filtering here avoids shipping
-                    // the full info-level span firehose to its span store.
-                    sentry::integrations::tracing::layer()
-                        .with_filter(tracing_subscriber::filter::LevelFilter::WARN),
-                )
-                .with(
-                    fmt::layer()
-                        .with_target(true)
-                        .with_level(true)
-                        .with_writer(file_writer)
-                        .with_ansi(false)
-                        .with_filter(env_filter),
-                )
-                .with(stdout_layer)
+                .with(sentry_layer)
+                .with(file_layer)
+                .with(console_layer)
                 .with(obs_layer)
                 .init();
         }
         LogFormat::Cloud => {
-            let stdout_layer = log_to_stdout.then(|| {
-                fmt::layer()
-                    .with_target(false)
-                    .with_level(true)
-                    .with_writer(std::io::stdout)
-                    .with_ansi(false)
-                    .compact()
-                    .with_filter(env_filter.clone())
-            });
+            // Console: structured JSON on stderr. Kubernetes/container
+            // runtimes capture both stdout and stderr, so cloud aggregators
+            // still pick this up while keeping stdout clean for any program
+            // output the binary may emit.
+            let console_layer = fmt::layer()
+                .json()
+                .with_current_span(true)
+                .with_span_list(false)
+                .with_writer(std::io::stderr)
+                .with_filter(make_filter());
+            let file_layer = fmt::layer()
+                .with_target(true)
+                .with_level(true)
+                .with_writer(file_writer)
+                .with_ansi(false)
+                .compact()
+                .with_filter(make_filter());
             let obs_layer =
                 obs_collector.map(|l| l.with_filter(oxy_observability::observability_filter()));
+            let sentry_layer = sentry::integrations::tracing::layer()
+                .with_filter(tracing_subscriber::filter::LevelFilter::WARN);
             tracing_subscriber::registry()
-                .with(
-                    // Sentry only needs warn+ to populate breadcrumbs and
-                    // capture error events. Filtering here avoids shipping
-                    // the full info-level span firehose to its span store.
-                    sentry::integrations::tracing::layer()
-                        .with_filter(tracing_subscriber::filter::LevelFilter::WARN),
-                )
-                .with(
-                    fmt::layer()
-                        .with_target(false)
-                        .with_level(true)
-                        .with_writer(file_writer)
-                        .with_ansi(false)
-                        .compact()
-                        .with_filter(env_filter),
-                )
-                .with(stdout_layer)
+                .with(sentry_layer)
+                .with(file_layer)
+                .with(console_layer)
                 .with(obs_layer)
                 .init();
         }
@@ -174,14 +173,8 @@ fn main() {
         );
     }
 
-    // Parse args early to check for log level override
+    // Parse args early to check for flags
     let args: Vec<String> = env::args().collect();
-
-    // Log to stdout only when OXY_DEBUG=true, otherwise always log to file
-    let log_to_stdout = env::var("OXY_DEBUG")
-        .as_deref()
-        .unwrap_or("false")
-        .eq_ignore_ascii_case("true");
 
     // Check if --enterprise flag is present (gates the observability UI/routes)
     let enterprise_enabled = args.iter().any(|a| a == "--enterprise");
@@ -234,7 +227,7 @@ fn main() {
             // `OXY_DATABASE_URL` set. `observability_boot::finalize()` is
             // called from `serve.rs` once the DB is ready to resolve the
             // backend and spawn the bridge task.
-            init_tracing_logging(log_to_stdout, observability_enabled);
+            init_tracing_logging(observability_enabled);
 
             // Register tool executors for workflow, agent, and semantic query tools
             // These registrations are critical - without them, workflow and agent tools won't work.

@@ -13,3 +13,4 @@ models:
 
 defaults:
   database: primary_database
+  agent: default.agent.yml

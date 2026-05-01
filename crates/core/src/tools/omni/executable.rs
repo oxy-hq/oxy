@@ -344,7 +344,7 @@ impl OmniQueryExecutable {
 
             // Create table with the file path
             let table = Table::with_reference(temp_file_path, reference, None, None);
-            tracing::info!("table output: {:?}", table.to_markdown());
+            tracing::debug!("table output: {:?}", table.to_markdown());
 
             Ok(Output::Table(table))
         } else {

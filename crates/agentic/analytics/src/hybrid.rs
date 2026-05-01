@@ -383,7 +383,7 @@ impl Catalog for HybridCatalog {
     fn try_compile(&self, intent: &AnalyticsIntent) -> Result<String, CatalogError> {
         match &self.semantic {
             None => {
-                eprintln!("[hybrid] no semantic catalog, returning TooComplex");
+                tracing::debug!("no semantic catalog, returning TooComplex");
                 Err(CatalogError::TooComplex(
                     "no semantic catalog available".into(),
                 ))

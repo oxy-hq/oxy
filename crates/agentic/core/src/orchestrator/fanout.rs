@@ -319,7 +319,7 @@ where
             }
             Err(join_err) => {
                 // Task panicked — shouldn't happen, but handle gracefully.
-                eprintln!("fanout task panicked: {join_err}");
+                tracing::error!(error = %join_err, "fanout task panicked");
             }
         }
     }

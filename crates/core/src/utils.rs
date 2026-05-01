@@ -387,7 +387,7 @@ pub fn create_sse_broadcast<T: std::fmt::Debug + Serialize + Clone>(
     mut receiver: tokio::sync::broadcast::Receiver<T>,
 ) -> impl futures::Stream<Item = Result<Event, axum::Error>> {
     stream! {
-        tracing::info!("SSE broadcast started with {} items", items.len());
+        tracing::debug!("SSE broadcast started with {} items", items.len());
         for item in items {
             match serde_json::to_string(&item) {
                 Ok(json_data) => {
@@ -410,7 +410,7 @@ pub fn create_sse_broadcast<T: std::fmt::Debug + Serialize + Clone>(
                 }
             }
         }
-        tracing::info!("SSE broadcast waiting for new items...");
+        tracing::debug!("SSE broadcast waiting for new items...");
         loop {
             let item = receiver.recv().await;
             if let Err(e) = item {
@@ -442,7 +442,7 @@ pub fn create_sse_broadcast<T: std::fmt::Debug + Serialize + Clone>(
             }
         }
 
-        tracing::info!("SSE broadcast ended, no more items to process.");
+        tracing::debug!("SSE broadcast ended, no more items to process.");
     }
 }
 

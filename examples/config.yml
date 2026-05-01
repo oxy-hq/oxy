@@ -139,15 +139,10 @@ models:
 
 defaults:
   database: local
+  agent: default.agent.yml
 
 builder_agent:
   model: claude-sonnet-4-6
-
-slack:
-  default_agent: agents/default.agent.yml
-  oxy_app_url: https://oxy.yourcompany.com # Optional: enables "View in Oxy" deep links in Slack responses
-  bot_token_var: SLACK_BOT_TOKEN # Environment variable containing the Slack bot token
-  signing_secret_var: SLACK_SIGNING_SECRET # Environment variable containing the Slack signing secret
 
 mcp:
   tools:

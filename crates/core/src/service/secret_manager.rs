@@ -335,14 +335,14 @@ impl SecretManagerService {
             project_id: Set(self.project_id),
         };
 
-        tracing::info!("Inserting new secret: {:?}", secret_model);
+        tracing::info!("Inserting new secret: {}", secret_model.name.as_ref());
 
         let saved_secret = secret_model.insert(db).await.map_err(|e| {
             tracing::error!("Failed to insert secret: {}", e);
             OxyError::Database(e.to_string())
         })?;
 
-        tracing::info!("Secret created successfully: {:?}", saved_secret);
+        tracing::info!("Secret created successfully: {}", saved_secret.name);
         // Invalidate cache for this secret
         self.invalidate_cache(&params.name).await;
 

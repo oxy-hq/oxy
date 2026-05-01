@@ -3,7 +3,6 @@ use oxy::config::{
     ConfigManager,
     model::{AgentContext, AgentContextType, SemanticModels},
 };
-use oxy::theme::StyledText;
 use std::{collections::HashMap, fs, sync::Arc};
 use tokio::runtime::Handle;
 
@@ -41,19 +40,14 @@ impl Object for Contexts {
                                             contents.push(content);
                                         }
                                         Err(e) => {
-                                            println!(
-                                                "{} {} {:?}",
-                                                "Error reading file context: ".warning(),
-                                                path.as_str(),
-                                                e
-                                            );
+                                            tracing::warn!(path = path.as_str(), error = %e, "Error reading file context");
                                         }
                                     }
                                 }
                                 Some(Value::from(contents))
                             }
                             Err(e) => {
-                                println!("{} {:?}", "Error expanding globs".warning(), e);
+                                tracing::warn!(error = %e, "Error expanding globs in file context");
                                 None
                             }
                         }
@@ -67,16 +61,12 @@ impl Object for Contexts {
                             Ok(content) => match serde_yaml::from_str::<SemanticModels>(&content) {
                                 Ok(semantic_model) => Some(Value::from_serialize(semantic_model)),
                                 Err(e) => {
-                                    println!(
-                                        "{} {:?}",
-                                        "Error deserializing semantic model".warning(),
-                                        e
-                                    );
+                                    tracing::warn!(error = %e, "Error deserializing semantic model");
                                     None
                                 }
                             },
                             Err(e) => {
-                                println!("{} {:?}", "Error reading semantic model".warning(), e);
+                                tracing::warn!(error = %e, "Error reading semantic model file");
                                 None
                             }
                         }

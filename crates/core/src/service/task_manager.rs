@@ -39,7 +39,7 @@ impl TaskManager {
         let join_handle = tokio::spawn(async move {
             task_fn(child_token).await;
             tokio::spawn(async move {
-                tracing::info!("Task {task_id} completed. Cleaning up...");
+                tracing::debug!("Task {task_id} completed. Cleaning up...");
                 tasks.write().await.remove(&task_id);
             });
         });
@@ -77,7 +77,7 @@ impl TaskManager {
         };
 
         self.tasks.write().await.insert(task_id.clone(), task);
-        tracing::info!("Registered task for thread: {task_id}");
+        tracing::debug!("Registered task for thread: {task_id}");
     }
 
     pub async fn cancel_task(&self, task_id: impl Into<String>) -> Result<bool, String> {
@@ -88,10 +88,10 @@ impl TaskManager {
             task.cancellation_token.cancel();
             let timeout = tokio::time::sleep(self.stop_timeout);
             let mut join_handle = task.join_handle;
-            tracing::info!("Sent cancellation signal for thread: {task_id}");
+            tracing::debug!("Sent cancellation signal for thread: {task_id}");
             tokio::select! {
                 _ = &mut join_handle => {
-                    tracing::info!("Task for thread: {task_id} has been cancelled successfully.");
+                    tracing::debug!("Task for thread: {task_id} has been cancelled successfully.");
                 }
                 _ = timeout => {
                     tracing::warn!("Task for thread: {task_id} did not complete in time, forcefully aborting...");
@@ -109,7 +109,7 @@ impl TaskManager {
     pub async fn remove_task(&self, task_id: impl Into<String>) {
         let task_id: String = task_id.into();
         self.tasks.write().await.remove(&task_id);
-        tracing::info!("Removed task for thread: {task_id}");
+        tracing::debug!("Removed task for thread: {task_id}");
     }
 }
 

@@ -721,7 +721,7 @@ impl StartedPipeline {
     ) {
         use agentic_core::delegation::TaskOutcome;
 
-        tracing::info!(target: "worker", run_id = %self.run_id, source_type = %self.source_type, "converting StartedPipeline into ExecutingTask");
+        tracing::debug!(target: "worker", run_id = %self.run_id, source_type = %self.source_type, "converting StartedPipeline into ExecutingTask");
         let (event_tx, event_rx) = mpsc::channel::<(String, serde_json::Value)>(256);
         let (outcome_tx, outcome_rx) = mpsc::channel::<TaskOutcome>(4);
         let cancel = tokio_util::sync::CancellationToken::new();
@@ -930,7 +930,7 @@ pub async fn drive_with_coordinator(
         let task_id = root_task_id.clone();
         tokio::spawn(async move {
             use agentic_core::transport::WorkerTransport;
-            tracing::info!(target: "worker", task_id = %task_id, "virtual worker started");
+            tracing::debug!(target: "worker", task_id = %task_id, "virtual worker started");
 
             // Forward cancellation from transport to the executing task,
             // mirroring what Worker::handle_task does for child tasks.
@@ -940,7 +940,7 @@ pub async fn drive_with_coordinator(
                 let task_id = task_id.clone();
                 async move {
                     cancel_token.cancelled().await;
-                    tracing::info!(target: "worker", task_id = %task_id, "cancellation forwarded to root task");
+                    tracing::debug!(target: "worker", task_id = %task_id, "cancellation forwarded to root task");
                     task_cancel.cancel();
                 }
             });
@@ -1007,7 +1007,7 @@ pub async fn drive_with_coordinator(
                                     agentic_core::delegation::TaskOutcome::Failed(_) => "Failed",
                                     agentic_core::delegation::TaskOutcome::Cancelled => "Cancelled",
                                 };
-                                tracing::info!(target: "worker", task_id = %task_id, outcome_type, "virtual worker forwarding outcome");
+                                tracing::debug!(target: "worker", task_id = %task_id, outcome_type, "virtual worker forwarding outcome");
                                 let is_terminal = matches!(
                                     outcome,
                                     agentic_core::delegation::TaskOutcome::Done { .. }
@@ -1068,9 +1068,9 @@ pub async fn drive_with_coordinator(
     });
 
     // Run the coordinator (blocks until all tasks complete).
-    tracing::info!(target: "coordinator", run_id = %run_id, "drive_with_coordinator: starting coordinator loop");
+    tracing::debug!(target: "coordinator", run_id = %run_id, "drive_with_coordinator: starting coordinator loop");
     coordinator.run().await;
-    tracing::info!(target: "coordinator", run_id = %run_id, "drive_with_coordinator: coordinator loop finished");
+    tracing::debug!(target: "coordinator", run_id = %run_id, "drive_with_coordinator: coordinator loop finished");
 
     // Wait for the bridge task to flush remaining events (including `done`)
     // to the DB before notifying subscribers and deregistering. Bounded by a

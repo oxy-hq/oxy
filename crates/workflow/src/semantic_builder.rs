@@ -460,9 +460,9 @@ impl SemanticQueryExecutable {
 
         let variables = input.task.variables.clone().unwrap_or_default();
 
-        tracing::info!("Resolving variables in SQL query: {:?}", variables);
+        tracing::debug!("Resolving variables in SQL query: {:?}", variables);
         sql_query = self.resolve_variables_in_sql(execution_context, sql_query, variables)?;
-        tracing::info!("SQL query after variable resolution: {}", sql_query);
+        tracing::debug!("SQL query after variable resolution: {}", sql_query);
 
         // Determine database from topic's views
         let database = self.determine_database_from_topic(&input)?;
@@ -643,7 +643,7 @@ impl SemanticQueryExecutable {
         .await?;
 
         // Execute SQL query
-        tracing::info!("Executing SQL query: {}", sql);
+        tracing::debug!("Executing SQL query: {}", sql);
         let (record_batches, schema_ref) = connector.run_query_and_load(sql).await?;
 
         // Generate a unique file path

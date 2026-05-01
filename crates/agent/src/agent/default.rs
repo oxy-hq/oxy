@@ -106,7 +106,7 @@ impl Executable<DefaultAgentInput> for DefaultAgentExecutable {
             agent_name,
             model_config.model_name()
         );
-        tracing::info!("System instructions: {}", system_instructions);
+        tracing::debug!("System instructions: {}", system_instructions);
 
         // Render all tool configurations with variables
         let mut rendered_tools = Vec::new();

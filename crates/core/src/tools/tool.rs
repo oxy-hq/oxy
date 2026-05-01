@@ -56,7 +56,7 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
     ) -> Result<Self::Response, OxyError> {
         events::tool::tool_call_input(&input);
         let (agent_name, tool_type, input) = input;
-        tracing::info!("Executing tool: {:?}", input);
+        tracing::debug!("Executing tool: {:?}", input);
         let artifact_id = uuid::Uuid::new_v4().to_string();
         let artifact_context =
             execution_context.with_child_source(artifact_id, ARTIFACT_SOURCE.to_string());
@@ -74,7 +74,7 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
 
             let artifact = tool_type.artifact();
             if let Some((title, kind)) = &artifact {
-                tracing::info!("Starting artifact: {} of kind {}", title, kind);
+                tracing::debug!("Starting artifact: {} of kind {}", title, kind);
                 artifact_context
                     .write_kind(EventKind::ArtifactStarted {
                         kind: kind.clone(),
@@ -363,7 +363,7 @@ impl Executable<(String, Option<ToolType>, ToolRawInput)> for ToolExecutable {
                 }
             };
 
-            tracing::info!("Tool execution completed: {:?}", tool_ret);
+            tracing::debug!("Tool execution completed: {:?}", tool_ret);
 
             // Write output to artifact_context if artifact exists
             if artifact.is_some() {

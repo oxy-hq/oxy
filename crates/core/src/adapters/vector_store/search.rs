@@ -21,13 +21,7 @@ pub async fn search_agent(
             let mut results = vec![];
             for retrieval in &default_agent.tools_config.tools {
                 if let ToolType::Retrieval(retrieval) = retrieval {
-                    println!(
-                        "{}",
-                        format!(
-                            "Searching using agent {} tool {} ...",
-                            &agent.name, retrieval.name
-                        )
-                    );
+                    tracing::info!(agent = %agent.name, tool = %retrieval.name, "Searching using agent tool");
                     let vector_store = VectorStore::from_retrieval(
                         config,
                         secrets_manager,
@@ -37,8 +31,7 @@ pub async fn search_agent(
                     .await?;
                     let documents = vector_store.search(query).await?;
                     for document in documents.iter() {
-                        println!("\n{}\n", format!("{:?}", document));
-                        println!("---");
+                        tracing::debug!(document = ?document, "Search result");
                     }
                     results.extend(documents);
                 }
@@ -46,10 +39,7 @@ pub async fn search_agent(
             results
         }
         AgentType::Routing(routing_agent) => {
-            println!(
-                "{}",
-                format!("Searching using routing agent {} ...", &agent.name)
-            );
+            tracing::info!(agent = %agent.name, "Searching using routing agent");
             let vector_store = VectorStore::from_routing_agent(
                 config,
                 secrets_manager,
@@ -60,8 +50,7 @@ pub async fn search_agent(
             .await?;
             let documents = vector_store.search(query).await?;
             for document in documents.iter() {
-                println!("\n{}\n", format!("{:?}", document));
-                println!("---");
+                tracing::debug!(document = ?document, "Search result");
             }
             documents
         }

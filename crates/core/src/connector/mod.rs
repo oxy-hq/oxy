@@ -93,7 +93,7 @@ impl Connector {
                 } else {
                     key_path_str
                 };
-                println!("BigQuery key path resolved: {}", key_path);
+                tracing::debug!(key_path = %key_path, "BigQuery key path resolved");
                 EngineType::ConnectorX(ConnectorX::new(
                     database.dialect(),
                     key_path,

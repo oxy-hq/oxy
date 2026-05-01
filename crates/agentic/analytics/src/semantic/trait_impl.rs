@@ -201,8 +201,9 @@ impl Catalog for SemanticCatalog {
                     .cloned()
                     .unwrap_or_default();
                 tracing::info!(
-                    "[try_compile] qualify_names FAILED for metrics: {:?} → unresolvable: {bad}",
-                    intent.metrics
+                    metrics = ?intent.metrics,
+                    unresolvable = %bad,
+                    "qualify_names failed"
                 );
                 CatalogError::UnresolvableMetric(bad)
             })?;
@@ -226,19 +227,20 @@ impl Catalog for SemanticCatalog {
                     .cloned()
                     .unwrap_or_default();
                 tracing::info!(
-                    "[try_compile] qualify_names FAILED for dimensions: {:?} → unresolvable: {bad}",
-                    intent.dimensions
+                    dimensions = ?intent.dimensions,
+                    unresolvable = %bad,
+                    "qualify_names failed"
                 );
                 CatalogError::UnresolvableDimension(bad)
             })?;
 
-        tracing::info!("[try_compile] qualified: measures={measures:?} dimensions={dimensions:?}");
+        tracing::debug!(?measures, ?dimensions, "qualified");
 
         // Parse intent filters into structured airlayer QueryFilters.
         // Filters that contain SQL functions or complex expressions cannot be
         // represented in airlayer's filter API, so we bail to TooComplex.
         let filters = self.parse_intent_filters(&intent.filters, &metric_views)?;
-        tracing::info!("[try_compile] parsed filters: {filters:?}");
+        tracing::debug!(?filters, "parsed filters");
 
         let request = airlayer::engine::query::QueryRequest {
             measures,
@@ -257,7 +259,7 @@ impl Catalog for SemanticCatalog {
         };
 
         let result = self.engine.compile_query(&request).map_err(|e| {
-            tracing::info!("[try_compile] airlayer compile_query FAILED: {e}");
+            tracing::debug!(error = %e, "airlayer compile_query failed");
             CatalogError::TooComplex(format!("airlayer compile error: {e}"))
         })?;
 

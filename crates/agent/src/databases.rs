@@ -9,7 +9,6 @@ use tokio::runtime::Handle;
 use oxy::adapters::secrets::SecretsManager;
 use oxy::config::ConfigManager;
 use oxy::semantic::SemanticManager;
-use oxy::theme::StyledText;
 
 #[derive(Debug, Clone)]
 pub struct DatabasesContext {
@@ -68,10 +67,7 @@ impl Object for DatabasesContext {
                             match rt.block_on(semantic_manager.load_database_info(database_key)) {
                                 Ok(info) => info,
                                 Err(e) => {
-                                    println!(
-                                        "{}",
-                                        format!("Failed to get database info: \n{e}\n").error()
-                                    );
+                                    tracing::error!(error = %e, "Failed to get database info");
                                     return None;
                                 }
                             };

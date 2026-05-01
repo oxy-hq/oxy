@@ -16,7 +16,6 @@ use oxy::{
         },
         writer::{BufWriter, EventHandler},
     },
-    theme::StyledText,
     utils::get_file_directories,
 };
 use oxy_shared::errors::OxyError;
@@ -143,29 +142,21 @@ fn export_execute_sql<P: AsRef<Path>>(
             };
 
             match result {
-                Ok(_) => println!(
-                    "{}",
-                    format!("Exported to {:?}", file_path.as_ref().display()).success()
-                ),
-                Err(e) => println!(
-                    "{}",
-                    format!(
-                        "Error exporting to {:?} for path '{}': {:?}",
-                        task_export.format,
-                        file_path.as_ref().display(),
-                        e
-                    )
-                    .warning()
+                Ok(_) => {
+                    tracing::info!(path = %file_path.as_ref().display(), "Exported successfully")
+                }
+                Err(e) => tracing::warn!(
+                    format = ?task_export.format,
+                    path = %file_path.as_ref().display(),
+                    error = %e,
+                    "Error exporting"
                 ),
             }
         }
-        Err(e) => println!(
-            "{}",
-            format!(
-                "Error creating directories for path '{}': {}",
-                task_export.path, e
-            )
-            .warning()
+        Err(e) => tracing::warn!(
+            path = %task_export.path,
+            error = %e,
+            "Error creating directories for export path"
         ),
     }
 }
@@ -214,19 +205,12 @@ fn export_formatter<P: AsRef<Path>>(task_output: &str, export_file_path: P) {
             let mut file = File::create(file_path).expect("Failed to create file");
             file.write_all(task_output.as_bytes())
                 .expect("Failed to write to file");
-            println!(
-                "{}",
-                format!("Exported to {:?}", file_path.display()).success()
-            )
+            tracing::info!(path = %file_path.display(), "Exported formatter output");
         }
-        Err(e) => println!(
-            "{}",
-            format!(
-                "Error creating directories for path '{}': {}",
-                export_file_path.as_ref().display(),
-                e
-            )
-            .warning()
+        Err(e) => tracing::warn!(
+            path = %export_file_path.as_ref().display(),
+            error = %e,
+            "Error creating directories for formatter export path"
         ),
     }
 }

@@ -150,7 +150,7 @@ impl V0Client {
                 )));
             }
         };
-        println!("v0 API Response: {}", response_text);
+        tracing::debug!(bytes = response_text.len(), "v0 API response received");
 
         // Parse the text into JSON
         serde_json::from_str::<CreateChatResponse>(&response_text)
@@ -207,7 +207,7 @@ impl V0Client {
                 )));
             }
         };
-        println!("v0 API Init Response: {}", response_text);
+        tracing::debug!(bytes = response_text.len(), "v0 API init response received");
 
         // Parse the text into JSON
         serde_json::from_str::<CreateChatResponse>(&response_text)

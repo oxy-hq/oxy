@@ -8,10 +8,8 @@ use crate::{
         agent_config::AgenticConfig,
         model::{AgentConfig, AgentType, RouteRetrievalConfig, ToolType, Workflow},
     },
-    theme::StyledText,
 };
 use futures::StreamExt;
-use indoc::formatdoc;
 use oxy_semantic::Topic;
 use oxy_shared::errors::OxyError;
 use serde::{Deserialize, Serialize};
@@ -108,25 +106,19 @@ pub async fn build_all_retrieval_objects(
     let mut all_objects = Vec::new();
 
     for agent_dir in config.list_agents().await? {
-        println!(
-            "{}",
-            format!("Building retrieval objects for agent: {:?}", agent_dir)
-        );
+        tracing::info!(agent = %agent_dir.display(), "Building retrieval objects for agent");
         let agent = config.resolve_agent(&agent_dir).await?;
         match &agent.r#type {
             AgentType::Default(default_agent) => {
-                println!("Processing DEFAULT agent: {}", agent.name);
                 for tool in &default_agent.tools_config.tools {
                     if let ToolType::Retrieval(retrieval) = tool {
                         let objects =
                             build_retrieval_objects_from_files(&retrieval.src, config).await?;
                         if !objects.iter().any(|o| !o.inclusions.is_empty()) {
-                            println!(
-                                "{}",
-                                format!(
-                                    "No inclusion records found for agent: {:?} tool: {}",
-                                    &agent.name, retrieval.name
-                                )
+                            tracing::warn!(
+                                agent = %agent.name,
+                                tool = %retrieval.name,
+                                "No inclusion records found for agent tool"
                             );
                             continue;
                         }
@@ -138,13 +130,7 @@ pub async fn build_all_retrieval_objects(
                 let objects =
                     build_retrieval_objects_from_routes(&routing_agent.routes, config).await?;
                 if !objects.iter().any(|o| !o.inclusions.is_empty()) {
-                    println!(
-                        "{}",
-                        format!(
-                            "No inclusion records found for routing agent: {:?}",
-                            &agent.name
-                        )
-                    );
+                    tracing::warn!(agent = %agent.name, "No inclusion records found for routing agent");
                     continue;
                 }
                 all_objects.extend(objects);
@@ -156,23 +142,11 @@ pub async fn build_all_retrieval_objects(
     for aw_dir in config.list_agentic_workflows().await? {
         let aw = config.resolve_agentic_workflow(&aw_dir).await?;
         if let Some(routing_config) = &aw.start.routing {
-            println!(
-                "{}",
-                format!(
-                    "Building retrieval objects for agentic workflow routing: {}",
-                    aw.name
-                )
-            );
+            tracing::info!(workflow = %aw.name, "Building retrieval objects for agentic workflow routing");
             let objects =
                 build_retrieval_objects_from_routes(&routing_config.routes, config).await?;
             if !objects.iter().any(|o| !o.inclusions.is_empty()) {
-                println!(
-                    "{}",
-                    format!(
-                        "No inclusion records found for agentic workflow routing: {:?}",
-                        &aw.name
-                    )
-                );
+                tracing::warn!(workflow = %aw.name, "No inclusion records found for agentic workflow routing");
                 continue;
             }
             all_objects.extend(objects);
@@ -196,11 +170,12 @@ pub async fn build_all_retrieval_objects(
         }
     }
 
-    let deduplicated_count = initial_count - deduplicated_objects.len();
-    if deduplicated_count > 0 {
-        println!(
-            "Deduplicated {} retrieval objects with duplicate source_identifiers from {} total objects",
-            deduplicated_count, initial_count
+    let duplicates_removed = initial_count - deduplicated_objects.len();
+    if duplicates_removed > 0 {
+        tracing::info!(
+            duplicates_removed,
+            total = initial_count,
+            "Deduplicated retrieval objects with duplicate source_identifiers"
         );
     }
 
@@ -215,14 +190,10 @@ pub async fn ingest_retrieval_objects(
     drop_all_tables: bool,
 ) -> Result<(), OxyError> {
     for agent_dir in config.list_agents().await? {
-        println!(
-            "{}",
-            format!("Building embeddings for agent: {:?}", agent_dir)
-        );
+        tracing::info!(agent = %agent_dir.display(), "Building embeddings for agent");
         let agent = config.resolve_agent(&agent_dir).await?;
         match &agent.r#type {
             AgentType::Default(default_agent) => {
-                println!("Processing DEFAULT agent: {}", agent.name);
                 for tool in &default_agent.tools_config.tools {
                     if let ToolType::Retrieval(retrieval) = tool {
                         let db = VectorStore::from_retrieval(
@@ -238,12 +209,10 @@ pub async fn ingest_retrieval_objects(
                         }
 
                         if !retrieval_objects.iter().any(|o| !o.inclusions.is_empty()) {
-                            println!(
-                                "{}",
-                                format!(
-                                    "No inclusion records found for agent: {:?} tool: {}",
-                                    &agent.name, retrieval.name
-                                )
+                            tracing::warn!(
+                                agent = %agent.name,
+                                tool = %retrieval.name,
+                                "No inclusion records found for agent tool"
                             );
                             continue;
                         }
@@ -268,13 +237,7 @@ pub async fn ingest_retrieval_objects(
                 let route_objects =
                     build_retrieval_objects_from_routes(&routing_agent.routes, config).await?;
                 if !route_objects.iter().any(|o| !o.inclusions.is_empty()) {
-                    println!(
-                        "{}",
-                        format!(
-                            "No inclusion records found for routing agent: {:?}",
-                            &agent.name
-                        )
-                    );
+                    tracing::warn!(agent = %agent.name, "No inclusion records found for routing agent");
                     continue;
                 }
                 db.ingest(&route_objects).await?;
@@ -286,13 +249,7 @@ pub async fn ingest_retrieval_objects(
     for aw_dir in config.list_agentic_workflows().await? {
         let aw = config.resolve_agentic_workflow(&aw_dir).await?;
         if let Some(routing_config) = &aw.start.routing {
-            println!(
-                "{}",
-                format!(
-                    "Building embeddings for agentic workflow routing: {}",
-                    aw.name
-                )
-            );
+            tracing::info!(workflow = %aw.name, "Building embeddings for agentic workflow routing");
             let model = config.resolve_model(&aw.model)?;
             let db = VectorStore::new(
                 config,
@@ -311,13 +268,7 @@ pub async fn ingest_retrieval_objects(
             let route_objects =
                 build_retrieval_objects_from_routes(&routing_config.routes, config).await?;
             if !route_objects.iter().any(|o| !o.inclusions.is_empty()) {
-                println!(
-                    "{}",
-                    format!(
-                        "No inclusion records found for agentic workflow routing: {:?}",
-                        &aw.name
-                    )
-                );
+                tracing::warn!(workflow = %aw.name, "No inclusion records found for agentic workflow routing");
                 continue;
             }
             db.ingest(&route_objects).await?;
@@ -345,26 +296,22 @@ fn build_retrieval_object(
 
     // If nothing to include, return an empty retrieval object to be filtered out upstream
     if inclusions.is_empty() {
-        println!(
-            "{}",
-            formatdoc!(
-                "⚠️  WARNING: No description or retrieval.include entries for {} source: {}",
-                metadata.source_type,
-                file_path
-            )
-            .warning()
+        tracing::warn!(
+            source_type = %metadata.source_type,
+            file = %file_path,
+            "No description or retrieval.include entries found — this source will be skipped"
         );
         return Ok(RetrievalObject {
             ..Default::default()
         });
     }
 
-    println!(
-        "Created {} inclusions and {} exclusions for {}: {}",
-        inclusions.len(),
-        exclusions.len(),
-        metadata.source_type,
-        file_path
+    tracing::debug!(
+        inclusions = inclusions.len(),
+        exclusions = exclusions.len(),
+        source_type = %metadata.source_type,
+        file = %file_path,
+        "Built retrieval object"
     );
 
     Ok(RetrievalObject {
@@ -383,10 +330,7 @@ async fn build_retrieval_objects_from_routes(
     let paths = config.resolve_glob(routes).await?;
 
     if paths.is_empty() {
-        println!(
-            "WARNING: No paths resolved from routing glob patterns: {:?}",
-            routes
-        );
+        tracing::warn!(patterns = ?routes, "No paths resolved from routing glob patterns");
         return Ok(vec![]);
     }
 
@@ -428,19 +372,17 @@ async fn build_retrieval_objects_from_routes(
 
     let all_objects: Vec<RetrievalObject> = objects_list;
 
-    println!(
-        "Routing object creation completed: {} objects created from {} paths",
-        all_objects.len(),
-        paths_len
+    tracing::info!(
+        objects = all_objects.len(),
+        paths = paths_len,
+        "Routing object creation completed"
     );
 
     if !all_objects.iter().any(|o| !o.inclusions.is_empty()) {
-        println!("WARNING: No inclusion records were created for routing. This may indicate:");
-        println!("  - All workflow/agent files have empty descriptions");
-        println!("  - Topic files have empty descriptions");
-        println!("  - SQL files contain no valid embeddable content");
-        println!("  - Database references in SQL files are invalid");
-        println!("  - File parsing failed for all files");
+        tracing::warn!(
+            "No inclusion records were created for routing — check that agent/workflow/topic \
+             files have non-empty descriptions and that SQL files reference valid databases"
+        );
     }
 
     Ok(all_objects)
@@ -452,7 +394,7 @@ async fn build_retrieval_objects_from_files(
 ) -> Result<Vec<RetrievalObject>, OxyError> {
     let files = config.resolve_glob(src).await?;
     if files.is_empty() {
-        println!("WARNING: No files found from glob patterns: {:?}", src);
+        tracing::warn!(patterns = ?src, "No files found from glob patterns");
         return Ok(vec![]);
     }
 
@@ -537,33 +479,34 @@ async fn sql_to_retrieval_object(
     // Filter inclusions by valid database references; keep exclusions as-is
     if let Some(database_ref) = parse_sql_source_type(&obj.source_type) {
         if let Err(e) = config.resolve_database(&database_ref) {
-            println!(
-                "WARNING: Invalid database reference '{}' in {}: {:?}. Dropping inclusions for this file",
-                database_ref, sql_path, e
+            tracing::warn!(
+                database = %database_ref,
+                file = %sql_path,
+                error = %e,
+                "Invalid database reference in SQL file — dropping inclusions"
             );
             obj.inclusions.clear();
         }
     } else if !obj.inclusions.is_empty() {
-        println!(
-            "WARNING: Could not parse database reference from source_type '{}' for inclusion(s) in {}. Dropping inclusions.",
-            obj.source_type, sql_path
+        tracing::warn!(
+            source_type = %obj.source_type,
+            file = %sql_path,
+            "Could not parse database reference from source_type — dropping inclusions"
         );
         obj.inclusions.clear();
     }
 
-    println!(
-        "Created {} inclusions and {} exclusions from SQL file: {}",
-        obj.inclusions.len(),
-        obj.exclusions.len(),
-        sql_path
+    tracing::debug!(
+        inclusions = obj.inclusions.len(),
+        exclusions = obj.exclusions.len(),
+        file = %sql_path,
+        "Built retrieval object from SQL file"
     );
 
     Ok(obj)
 }
 
 async fn topic_to_retrieval_object(topic_path: &str) -> Result<RetrievalObject, OxyError> {
-    tracing::info!("Processing topic file: {}", topic_path);
-
     let content = tokio::fs::read_to_string(topic_path).await.map_err(|e| {
         OxyError::ConfigurationError(format!("Failed to read topic file {}: {}", topic_path, e))
     })?;
@@ -575,10 +518,7 @@ async fn topic_to_retrieval_object(topic_path: &str) -> Result<RetrievalObject, 
     let metadata = RetrievalMetadata::from(&topic);
     let obj = build_retrieval_object(metadata, topic_path)?;
 
-    println!(
-        "Created retrieval object for topic: {} from file: {}",
-        topic.name, topic_path
-    );
+    tracing::debug!(topic = %topic.name, file = %topic_path, "Built retrieval object for topic");
 
     Ok(obj)
 }
@@ -588,11 +528,11 @@ async fn yaml_to_retrieval_object(yaml_path: &str) -> Result<RetrievalObject, Ox
     let metadata = RetrievalMetadata::from_yaml_str(&raw_content)?;
     let mut obj = build_retrieval_object(metadata, yaml_path)?;
     obj.context_content = raw_content;
-    println!(
-        "Created {} inclusions and {} exclusions from YAML file: {}",
-        obj.inclusions.len(),
-        obj.exclusions.len(),
-        yaml_path
+    tracing::debug!(
+        inclusions = obj.inclusions.len(),
+        exclusions = obj.exclusions.len(),
+        file = %yaml_path,
+        "Built retrieval object from YAML file"
     );
 
     Ok(obj)

@@ -1,7 +1,6 @@
-use indoc::formatdoc;
 use std::collections::{HashMap, HashSet};
 
-use crate::{adapters::vector_store::RetrievalObject, theme::StyledText};
+use crate::adapters::vector_store::RetrievalObject;
 use oxy_shared::errors::OxyError;
 
 use super::types::{
@@ -160,26 +159,12 @@ impl IndexBuilder {
                 .map(|var| format!("  • {}", var))
                 .collect::<String>();
             if !non_enum_var_names.is_empty() {
-                println!(
-                    "{}",
-                    formatdoc!(
-                        "⚠️  WARNING: Non-enum variables were detected in the retrieval config for
-                        {}:
-                        {}
-
-                        These variables will not be rendered at retrieval time and will
-                        likely reduce recall. Note that the workflow `description` is
-                        also used for retrieval, just like `retrieval.include` entries.
-                        
-                        It is recommended that you either reword the templates to avoid
-                        using non-enum variables or replace them with enums. Retrieval
-                        works well with enums because the full set of values is known.
-                        For regular variables, the best we know are sample or default
-                        values, which are often not sufficient for high recall.",
-                        retrieval_obj.source_identifier,
-                        formatted_non_enum_var_names,
-                    )
-                    .warning()
+                tracing::warn!(
+                    source = %retrieval_obj.source_identifier,
+                    variables = %formatted_non_enum_var_names,
+                    "Non-enum variables detected in retrieval config — these will not be \
+                     rendered at retrieval time and may reduce recall. Consider replacing \
+                     them with enum variables."
                 );
             }
 
