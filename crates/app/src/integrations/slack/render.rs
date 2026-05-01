@@ -20,6 +20,7 @@
 //!
 //! Reasoning events are dropped — Slack has no collapsible-reasoning UI.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use async_trait::async_trait;
@@ -32,6 +33,22 @@ use uuid::Uuid;
 use crate::integrations::slack::chart_render::{ensure_chart_png_cached, get_or_render_chart_png};
 use crate::integrations::slack::client::SlackClient;
 use crate::integrations::slack::events::artifact_filter::ArtifactFilter;
+
+/// One SQL-bearing artifact captured by `SlackRenderer`. Built for both
+/// `ExecuteSQL` (sql is on the kind itself) and `SemanticQuery` (sql
+/// arrives later via `on_artifact_value`). `events::execution` consumes
+/// these and uploads each as a `.sql` thread reply via `files.uploadV2`
+/// after the prose message lands — Slack renders the snippet collapsed
+/// with native SQL syntax highlighting. Other artifact kinds (`OmniQuery`,
+/// `LookerQuery`, `Workflow`, `Agent`, `SandboxApp`) are deliberately
+/// not captured today.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CapturedSqlArtifact {
+    pub title: String,
+    pub sql: String,
+    pub database: String,
+    pub is_verified: bool,
+}
 
 /// Status messages Slack rotates as the AI-assistant indicator. Pair with
 /// a non-empty `status` string in `setStatus` — an empty string clears
@@ -74,11 +91,17 @@ pub struct QueuedChart {
 ///   missing JSON). Upload-side failures live in a separate counter on
 ///   the orchestration side in `events::execution` so each surface gets
 ///   its own warning footer.
+/// * `captured_sql_artifacts` — `ExecuteSQL` and `SemanticQuery`
+///   artifacts captured from the agent stream. The caller in
+///   `events::execution` uploads each as a `.sql` thread reply via
+///   `files.uploadV2` after the prose message lands; Slack renders
+///   them as collapsible snippets with SQL syntax highlighting.
 pub struct SlackRenderResult {
     pub body: String,
     pub queued_charts: Vec<QueuedChart>,
     pub chart_local_paths: Vec<PathBuf>,
     pub failed_chart_count: usize,
+    pub captured_sql_artifacts: Vec<CapturedSqlArtifact>,
 }
 
 pub struct SlackRenderer<'a> {
@@ -101,6 +124,21 @@ pub struct SlackRenderer<'a> {
     /// missing chart JSON). Upload-side failures live on the
     /// orchestration side in `events::execution`.
     failed_chart_count: usize,
+    /// SQL-bearing artifacts captured for upload as `.sql` thread replies
+    /// (via `files.uploadV2` after the prose message lands). Populated
+    /// for `ExecuteSQL` (sql arrives on the kind when pre-configured in
+    /// YAML, or later via `on_artifact_value` for LLM-generated SQL) and
+    /// for `SemanticQuery` (sql always arrives later via `on_artifact_value`).
+    captured_sql_artifacts: Vec<CapturedSqlArtifact>,
+    /// Tracks SQL artifacts that have started but whose compiled SQL hasn't
+    /// arrived yet. Keyed by artifact id; populated in `on_artifact_started`
+    /// and drained in `on_artifact_value` when the matching populated value
+    /// event lands. Covers `SemanticQuery` (kind has no SQL) and the
+    /// LLM-generated `ExecuteSQL` path (kind carries `sql=""` when the
+    /// agent decides the query at runtime). Other kinds where the SQL
+    /// arrives via the value path (e.g. LookerQuery) can be added here
+    /// without changing the rendering pipeline.
+    pending_sql_artifacts: HashMap<String, (String, bool)>,
 }
 
 impl<'a> SlackRenderer<'a> {
@@ -130,6 +168,8 @@ impl<'a> SlackRenderer<'a> {
             queued_charts: Vec::new(),
             chart_local_paths: Vec::new(),
             failed_chart_count: 0,
+            captured_sql_artifacts: Vec::new(),
+            pending_sql_artifacts: HashMap::new(),
         }
     }
 }
@@ -199,18 +239,121 @@ impl<'a> ClientRenderer for SlackRenderer<'a> {
 
     async fn on_artifact_started(
         &mut self,
-        _id: &str,
-        _title: &str,
-        _kind: &ArtifactKind,
-        _is_verified: bool,
+        id: &str,
+        title: &str,
+        kind: &ArtifactKind,
+        is_verified: bool,
     ) {
-        // No-op: the directive path (`on_text` → `ArtifactFilter`) already
-        // renders inline subtext attribution; emitting here would double
-        // up. Once BlockHandler stops emitting the directive, move the
-        // inline placeholder here and delete `ArtifactFilter`.
+        // The inline subtext is still emitted via `on_text` → `ArtifactFilter`.
+        // Here we additionally capture SQL-bearing artifacts so `execution.rs`
+        // can upload each one as a `.sql` thread reply via `files.uploadV2`
+        // after the prose message lands.
+        match kind {
+            // `ExecuteSQL` carries `sql` and `database` on the kind, BUT the
+            // sql is only populated when the YAML pre-configures the query
+            // (via `sql:` in the tool config). For LLM-generated execute_sql
+            // calls — the common case — the kind arrives with `sql=""` and
+            // the actual query lands later via `ArtifactValue::ExecuteSQL`.
+            // Capture immediately if we already have it; otherwise stash
+            // and let `on_artifact_value` fill in the SQL.
+            ArtifactKind::ExecuteSQL { sql, database } if !sql.is_empty() => {
+                tracing::info!(
+                    artifact_id = id,
+                    title = title,
+                    "slack renderer: captured ExecuteSQL artifact (sql on kind)"
+                );
+                self.captured_sql_artifacts.push(CapturedSqlArtifact {
+                    title: title.to_string(),
+                    sql: sql.clone(),
+                    database: database.clone(),
+                    is_verified,
+                });
+            }
+            ArtifactKind::ExecuteSQL { .. } => {
+                tracing::info!(
+                    artifact_id = id,
+                    title = title,
+                    "slack renderer: pending ExecuteSQL (awaiting value)"
+                );
+                self.pending_sql_artifacts
+                    .insert(id.to_string(), (title.to_string(), is_verified));
+            }
+            // `SemanticQuery` kind is empty — the compiled SQL always arrives
+            // later via `ArtifactValue::SemanticQuery`. Stash title + verified
+            // flag keyed by artifact id; `on_artifact_value` pairs them up.
+            ArtifactKind::SemanticQuery {} => {
+                tracing::info!(
+                    artifact_id = id,
+                    title = title,
+                    "slack renderer: pending SemanticQuery (awaiting value)"
+                );
+                self.pending_sql_artifacts
+                    .insert(id.to_string(), (title.to_string(), is_verified));
+            }
+            // OmniQuery / LookerQuery / Workflow / Agent / SandboxApp are
+            // not rendered as inline blocks — see the "Deferred kinds"
+            // section in `internal-docs/2026-04-29-slack-artifact-rendering-design.md`.
+            other => {
+                tracing::info!(
+                    artifact_id = id,
+                    title = title,
+                    kind = %other,
+                    "slack renderer: artifact kind not captured"
+                );
+            }
+        }
     }
 
-    async fn on_artifact_value(&mut self, _id: &str, _value: &ArtifactValue) {}
+    async fn on_artifact_value(&mut self, id: &str, value: &ArtifactValue) {
+        // Both `ExecuteSQL` (LLM-generated path) and `SemanticQuery` tools
+        // emit multiple value events for one artifact: an early placeholder
+        // with `sql_query: ""` when the call begins, then later the
+        // populated value once the SQL is generated/compiled. Only the
+        // populated value is worth capturing — empty payloads are skipped
+        // without touching the pending entry, so we don't lose the title
+        // before the real SQL lands.
+        //
+        // Once we capture, `.remove(id)` drops the entry so later duplicate
+        // populated events (the tool tends to re-emit a few times as the
+        // query streams) won't push a second block. If the artifact ends
+        // without a non-empty SQL (compile error, validation_error), the
+        // entry is left in `pending_sql_artifacts` and naturally dropped
+        // when the renderer goes out of scope at end of run.
+        let (sql_query, database, kind_label) = match value {
+            ArtifactValue::ExecuteSQL(es) => (&es.sql_query, &es.database, "ExecuteSQL"),
+            ArtifactValue::SemanticQuery(sq) => (&sq.sql_query, &sq.database, "SemanticQuery"),
+            _ => return,
+        };
+        tracing::info!(
+            artifact_id = id,
+            kind = kind_label,
+            sql_len = sql_query.len(),
+            pending_match = self.pending_sql_artifacts.contains_key(id),
+            "slack renderer: received SQL artifact value"
+        );
+        if !sql_query.is_empty()
+            && let Some((title, is_verified)) = self.pending_sql_artifacts.remove(id)
+        {
+            tracing::info!(
+                artifact_id = id,
+                title = %title,
+                kind = kind_label,
+                "slack renderer: captured SQL artifact from value"
+            );
+            self.captured_sql_artifacts.push(CapturedSqlArtifact {
+                title,
+                sql: sql_query.clone(),
+                database: database.clone(),
+                is_verified,
+            });
+        }
+    }
+    /// `error` is intentionally ignored — a query that compiled but
+    /// failed at execution time is still worth uploading as a `.sql`
+    /// snippet so the user can read what was attempted, copy-edit, and
+    /// re-run. Surfacing the failure separately is the agent's job (it
+    /// posts the error in prose); the renderer's contract is just to
+    /// pass through whatever the artifact pipeline produced.
     async fn on_artifact_done(&mut self, _id: &str, _error: Option<&str>) {}
 
     // Step events are dropped: the run is presented as a single opaque
@@ -244,36 +387,11 @@ impl<'a> ClientRenderer for SlackRenderer<'a> {
             queued_charts: std::mem::take(&mut self.queued_charts),
             chart_local_paths: self.chart_local_paths,
             failed_chart_count: self.failed_chart_count,
+            captured_sql_artifacts: self.captured_sql_artifacts,
         }
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::integrations::slack::client::SlackClient;
-
-    fn make_renderer<'a>(client: &'a SlackClient, upload_charts: bool) -> SlackRenderer<'a> {
-        SlackRenderer::new(
-            client,
-            "token",
-            "C123",
-            "12345.6789",
-            None,
-            Uuid::nil(),
-            upload_charts,
-        )
-    }
-
-    #[tokio::test]
-    async fn finalize_returns_empty_state_with_no_events() {
-        // We can't call `on_chart` here — it needs a real workspace + Chromium.
-        let client = SlackClient::new();
-        let r = make_renderer(&client, false);
-        let result = r.finalize().await;
-        assert!(result.body.is_empty());
-        assert!(result.queued_charts.is_empty());
-        assert!(result.chart_local_paths.is_empty());
-        assert_eq!(result.failed_chart_count, 0);
-    }
-}
+#[path = "render_tests.rs"]
+mod tests;

@@ -265,8 +265,46 @@ impl SlackClient {
         Ok(())
     }
 
-    /// Open a Socket Mode WebSocket connection. Returns the WSS URL to connect to.
+    /// Replace the original message that triggered a block-action with a
+    /// new block payload, via Slack's `response_url` (pre-authenticated —
+    /// no bot token needed). Used by interactivity handlers that want to
+    /// transform the prompt into a "loading…" or "done" state without a
+    /// separate `chat.update` call (which would need the message ts).
     ///
+    /// Failures are logged-and-swallowed; failing to update the original
+    /// message is cosmetically bad but not functionally blocking — the
+    /// follow-up uploads / replies still happen.
+    pub async fn replace_via_response_url(
+        &self,
+        response_url: &str,
+        text: &str,
+        blocks: serde_json::Value,
+    ) {
+        let result = self
+            .http
+            .post(response_url)
+            .header("Content-Type", "application/json; charset=utf-8")
+            .json(&serde_json::json!({
+                "replace_original": true,
+                "text": text,
+                "blocks": blocks,
+            }))
+            .send()
+            .await;
+        match result {
+            Ok(resp) if resp.status().is_success() => {}
+            Ok(resp) => {
+                tracing::warn!(
+                    status = resp.status().as_u16(),
+                    "replace_via_response_url: non-success status"
+                );
+            }
+            Err(e) => {
+                tracing::warn!("replace_via_response_url: http error: {e}");
+            }
+        }
+    }
+
     /// Delete or replace the original message that triggered a block-action
     /// via Slack's `response_url` (pre-authenticated by Slack — no bot token
     /// needed). Posting `{"delete_original": true}` removes the picker from
@@ -327,6 +365,7 @@ impl SlackClient {
         filename: &str,
         bytes: Vec<u8>,
         title: Option<&str>,
+        content_type: &str,
     ) -> Result<String, OxyError> {
         let length = bytes.len().to_string();
         // `content_type` is undocumented on `files.getUploadURLExternal`
@@ -341,7 +380,7 @@ impl SlackClient {
                 &[
                     ("filename", filename),
                     ("length", &length),
-                    ("content_type", "image/png"),
+                    ("content_type", content_type),
                 ],
             )
             .await?;
@@ -364,7 +403,7 @@ impl SlackClient {
         // bearer auth is intentionally NOT sent here.
         let part = reqwest::multipart::Part::bytes(bytes)
             .file_name(filename.to_string())
-            .mime_str("image/png")
+            .mime_str(content_type)
             .map_err(|e| OxyError::RuntimeError(format!("multipart mime: {e}")))?;
         let form = reqwest::multipart::Form::new().part("file", part);
         let resp = self
@@ -521,6 +560,7 @@ mod files_upload_v2_tests {
                 "chart.png",
                 vec![0x89, b'P', b'N', b'G'],
                 Some("My chart"),
+                "image/png",
             )
             .await
             .expect("upload");
@@ -558,7 +598,15 @@ mod files_upload_v2_tests {
 
         let client = SlackClient::with_base_url(server.uri());
         let err = client
-            .files_upload_v2("xoxb-test", "C123", None, "chart.png", vec![1, 2, 3], None)
+            .files_upload_v2(
+                "xoxb-test",
+                "C123",
+                None,
+                "chart.png",
+                vec![1, 2, 3],
+                None,
+                "image/png",
+            )
             .await
             .expect_err("should surface step-2 4xx");
         let msg = err.to_string();
@@ -581,7 +629,15 @@ mod files_upload_v2_tests {
 
         let client = SlackClient::with_base_url(server.uri());
         let err = client
-            .files_upload_v2("xoxb-test", "C123", None, "chart.png", vec![1, 2, 3], None)
+            .files_upload_v2(
+                "xoxb-test",
+                "C123",
+                None,
+                "chart.png",
+                vec![1, 2, 3],
+                None,
+                "image/png",
+            )
             .await
             .expect_err("should reject missing upload_url");
         assert!(err.to_string().contains("missing upload_url"));
@@ -629,7 +685,15 @@ mod files_upload_v2_tests {
 
         let client = SlackClient::with_base_url(server.uri());
         client
-            .files_upload_v2("xoxb-test", "C123", None, "chart.png", vec![1, 2, 3], None)
+            .files_upload_v2(
+                "xoxb-test",
+                "C123",
+                None,
+                "chart.png",
+                vec![1, 2, 3],
+                None,
+                "image/png",
+            )
             .await
             .expect("upload should succeed when step 2 is unauthenticated");
     }

@@ -44,6 +44,14 @@ pub struct ArtifactFilter {
     /// Parsed attributes of the currently open artifact (populated on
     /// opener, consumed on closer).
     current_attrs: Option<ArtifactAttrs>,
+    /// True when the most recent thing emitted was a placeholder line.
+    /// Drives spacing in [`emit_text`] and [`emit_placeholder`] so that
+    /// back-to-back placeholders sit on adjacent `>` lines (Slack stacks
+    /// them into one grey blockquote block) while a placeholder followed
+    /// by prose gets a blank line between them — Slack mrkdwn would
+    /// otherwise render the next prose line visually attached to the
+    /// blockquote, looking like quoted continuation of the placeholder.
+    in_placeholder_run: bool,
 }
 
 /// Minimal parsed view of a `:::artifact{...}` opener — just the bits we
@@ -110,12 +118,14 @@ impl ArtifactFilter {
                         // received the full `artifact{` token for yet —
                         // hold them back unless we're finishing.
                         let safe_prefix = trailing_colon_boundary(&self.pending, at_end);
-                        out.push_str(&self.pending[..safe_prefix]);
+                        let text = self.pending[..safe_prefix].to_string();
                         self.pending.drain(..safe_prefix);
+                        Self::emit_text(&mut self.in_placeholder_run, out, &text);
                         return;
                     };
                     // Emit everything before the fence as normal text.
-                    out.push_str(&self.pending[..open_start]);
+                    let text = self.pending[..open_start].to_string();
+                    Self::emit_text(&mut self.in_placeholder_run, out, &text);
                     // Figure out the fence length (count the run of colons).
                     let fence_len = count_colons(&self.pending[open_start..]);
                     // Parse `artifact{...}` attributes from the opener so we
@@ -155,7 +165,7 @@ impl ArtifactFilter {
                     if let (Some(url), Some(attrs)) = (self.thread_url.as_deref(), attrs)
                         && let Some(placeholder) = render_placeholder(&attrs, url)
                     {
-                        out.push_str(&placeholder);
+                        Self::emit_placeholder(&mut self.in_placeholder_run, out, &placeholder);
                     }
                     // If the closer wasn't followed by a newline inside this
                     // chunk, arrange to eat one at the start of the next feed
@@ -168,6 +178,59 @@ impl ArtifactFilter {
                 }
             }
         }
+    }
+
+    /// Emit a placeholder line. Adds `\n\n` before to break out of any
+    /// preceding prose (or a no-op when the previous emit was also a
+    /// placeholder, since their `>` lines stack into one blockquote in
+    /// Slack mrkdwn). Always trails the placeholder with `\n` to end the
+    /// `>` line; the blank line *between* the placeholder and the next
+    /// prose is added by [`emit_text`] when it sees the run flag set.
+    fn emit_placeholder(in_run: &mut bool, out: &mut String, placeholder: &str) {
+        if !*in_run {
+            // First placeholder in a (possibly singleton) run. Force a
+            // paragraph break from the prose before — but only if there
+            // was prose before, i.e. the output isn't empty and doesn't
+            // already end with `\n\n`.
+            ensure_blank_line_at_end(out);
+        }
+        out.push_str(placeholder);
+        out.push('\n');
+        *in_run = true;
+    }
+
+    /// Emit ordinary streamed text. If the previous emit was a placeholder
+    /// run, prepend `\n` to ensure a blank line between the blockquote
+    /// and the prose — without that, Slack mrkdwn renders the prose as a
+    /// soft-break continuation of the `>` blockquote and it looks quoted.
+    fn emit_text(in_run: &mut bool, out: &mut String, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        if *in_run {
+            // Output already ends with `\n` (from the placeholder line
+            // terminator). Add one more to make a blank line.
+            if !text.starts_with('\n') {
+                out.push('\n');
+            }
+            *in_run = false;
+        }
+        out.push_str(text);
+    }
+}
+
+/// If `out` is non-empty, ensure it ends with `\n\n` (a blank line) so the
+/// next pushed line starts a new paragraph. Used before a placeholder run
+/// to detach it from preceding prose. Idempotent: trailing `\n` runs of
+/// length ≥2 are left alone.
+fn ensure_blank_line_at_end(out: &mut String) {
+    if out.is_empty() {
+        return;
+    }
+    // Count trailing `\n`s, top up to 2.
+    let trailing_newlines = out.bytes().rev().take_while(|&b| b == b'\n').count();
+    for _ in trailing_newlines..2 {
+        out.push('\n');
     }
 }
 
@@ -313,11 +376,14 @@ fn extract_space_delimited(body: &str, key: &str) -> Option<String> {
 /// - **Receded from prose**: wrapped in a `>` blockquote so Slack draws its
 ///   left border + slightly muted background — clearly secondary to the
 ///   agent's main response.
-/// - **Paragraph-isolated**: leading/trailing `\n\n` produce real paragraph
-///   breaks (single `\n` becomes a soft line break in Slack and just looks
-///   cramped against neighbouring prose).
 /// - **Subtext-styled**: italic, no bold, lowercase action text. The headline
 ///   call-to-action lives in the footer card; this is just a quiet pointer.
+///
+/// Whitespace: returns just the line content (`> 📎 _title_ ✓`) with no
+/// leading or trailing newlines. The caller ([`ArtifactFilter::emit_placeholder`])
+/// controls the surrounding spacing so back-to-back placeholders stack
+/// into one Slack blockquote block while a placeholder followed by prose
+/// gets a real blank line between them.
 ///
 /// Output uses GFM markdown — Slack's `chat.appendStream` `markdown_text`
 /// field accepts it: `[text](url)` for clickable links, `_text_` for italic.
@@ -328,7 +394,7 @@ fn render_placeholder(attrs: &ArtifactAttrs, _thread_url: &str) -> Option<String
     // direct-linking to individual tool-call results anyway.
     let title = attrs.title.as_deref()?;
     let verified = if attrs.is_verified { " ✓" } else { "" };
-    Some(format!("\n\n> 📎 _{title}_{verified}\n\n"))
+    Some(format!("> 📎 _{title}_{verified}"))
 }
 
 #[cfg(test)]
@@ -465,6 +531,64 @@ mod tests {
         // The raw directive must not leak.
         assert!(!out.contains(":::artifact"));
         assert!(!out.contains("sql body"));
+    }
+
+    #[test]
+    fn back_to_back_placeholders_share_a_single_newline_boundary() {
+        // Real-world flow from semantic-layer agents: multiple
+        // semantic_query tool calls arrive nearly back-to-back in the
+        // same answer, separated only by a `\n` between fences. The
+        // placeholder must not pad with `\n\n` on each side, or the
+        // pad on close-A's tail collides with the pad on open-B's
+        // head and produces 3-4 blank lines between the two `📎` lines.
+        // Single `\n` on each side gives one shared newline, which
+        // Slack mrkdwn renders as adjacent `>` lines collapsed into a
+        // single grey-bordered blockquote block.
+        let mut f = ArtifactFilter::with_thread_url("https://x".to_string());
+        let input = "intro\n\
+                     :::artifact{id=1 kind=semantic_query title=A is_verified=true}\nbody1\n:::\n\
+                     :::artifact{id=2 kind=semantic_query title=B is_verified=true}\nbody2\n:::\n\
+                     outro\n";
+        let out = f.feed(input);
+        // Both placeholders rendered.
+        assert!(out.contains("> 📎 _A_ ✓"), "missing A: {out:?}");
+        assert!(out.contains("> 📎 _B_ ✓"), "missing B: {out:?}");
+        // Critically: no blank line between them. Find the segment
+        // between the end of A's placeholder line and the start of B's,
+        // and assert it contains no `\n\n`.
+        let a_end = out.find("> 📎 _A_ ✓").unwrap() + "> 📎 _A_ ✓".len();
+        let b_start = out[a_end..].find("> 📎 _B_").unwrap();
+        let between = &out[a_end..a_end + b_start];
+        assert!(
+            !between.contains("\n\n"),
+            "extra blank line between placeholders: {between:?} (full: {out:?})"
+        );
+    }
+
+    #[test]
+    fn prose_after_placeholder_gets_a_blank_line_separator() {
+        // User-reported bug: prose immediately following an artifact
+        // placeholder rendered as soft-break continuation of the `>`
+        // blockquote in Slack mrkdwn (visually attached, looking
+        // quoted). Fix is to ensure a blank line — `\n\n` — between
+        // the placeholder line and the next prose, so Slack treats
+        // them as separate paragraphs.
+        let mut f = ArtifactFilter::with_thread_url("https://x".to_string());
+        let input = "Intro line\n\
+                     :::artifact{id=1 kind=execute_sql title=execute_sql is_verified=true}\nbody\n:::\n\
+                     The most recent date is October 26, 2012.\n";
+        let out = f.feed(input);
+        // Find the placeholder line and the prose that follows it.
+        let placeholder_end =
+            out.find("> 📎 _execute_sql_ ✓").unwrap() + "> 📎 _execute_sql_ ✓".len();
+        let prose_start = out[placeholder_end..].find("The most recent").unwrap();
+        let between = &out[placeholder_end..placeholder_end + prose_start];
+        // We want: end of placeholder line → blank line → prose start.
+        // Concretely, `between` should contain at least `\n\n`.
+        assert!(
+            between.contains("\n\n"),
+            "expected blank line between placeholder and following prose, got {between:?} (full: {out:?})"
+        );
     }
 
     #[test]

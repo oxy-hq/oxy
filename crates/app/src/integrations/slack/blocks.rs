@@ -110,27 +110,47 @@ pub fn pick_fallback_text(agent_errored: bool, final_markdown: &str) -> String {
 /// web UI for this conversation. Mirrors Claude's "View session" button
 /// — one primary CTA per response, no card chrome.
 pub fn build_view_thread_actions(thread_url: &str) -> serde_json::Value {
-    build_footer_actions(thread_url, None)
+    build_footer_actions(thread_url, None, None)
 }
 
-/// Footer actions block. Always emits "View thread"; emits a secondary
-/// "Wrong workspace?" button when `reopen_picker_question_b64` is `Some`.
+/// Footer actions block — one row of buttons. Order (left to right):
 ///
-/// The reopen button re-uses the existing workspace picker — clicking it
-/// posts the same ephemeral picker we show on first-message ambiguity,
-/// pre-loaded with the original question so submitting re-runs against
-/// the chosen workspace. Caller should pass `None` when the user has only
-/// one workspace to choose from (button would be dead clutter).
+/// 1. **"📎 View N SQL queries"** (when `view_sql` is `Some`) — Slack
+///    `style: "primary"` so it renders green, marking it as the
+///    interactive button on the row vs. the plain link buttons that
+///    follow. Click is routed to `webhooks::handlers::view_sql_artifacts`
+///    via the `slack_view_sql_artifacts` action_id; the button's `value`
+///    is the upload id keyed into `services::pending_sql_uploads`.
+/// 2. **"View thread"** — passive link to the Oxy web UI thread page.
+/// 3. **"Wrong workspace?"** (when `reopen_picker_question_b64` is `Some`)
+///    — re-opens the workspace picker pre-loaded with the original
+///    question. Caller passes `None` when there's only one workspace to
+///    choose from (button would be dead clutter).
+///
+/// Putting all three buttons in a single `actions` block puts them on the
+/// same visual row in Slack (wrapped if narrow). Distinguishing the SQL
+/// button by colour rather than by row position keeps the footer compact.
 pub fn build_footer_actions(
     thread_url: &str,
     reopen_picker_question_b64: Option<&str>,
+    view_sql: Option<(uuid::Uuid, usize)>,
 ) -> serde_json::Value {
-    let mut elements = vec![serde_json::json!({
+    let mut elements: Vec<serde_json::Value> = Vec::with_capacity(3);
+    if let Some((upload_id, count)) = view_sql {
+        elements.push(serde_json::json!({
+            "type": "button",
+            "action_id": "slack_view_sql_artifacts",
+            "style": "primary",
+            "text": {"type": "plain_text", "text": view_sql_button_label(count), "emoji": true},
+            "value": upload_id.to_string(),
+        }));
+    }
+    elements.push(serde_json::json!({
         "type": "button",
         "action_id": "slack_view_thread",
         "text": {"type": "plain_text", "text": "View thread"},
         "url": thread_url,
-    })];
+    }));
     if let Some(encoded) = reopen_picker_question_b64 {
         elements.push(serde_json::json!({
             "type": "button",
@@ -142,6 +162,32 @@ pub fn build_footer_actions(
     serde_json::json!({
         "type": "actions",
         "elements": elements,
+    })
+}
+
+fn view_sql_button_label(count: usize) -> String {
+    if count == 1 {
+        "📎 View 1 SQL query".to_string()
+    } else {
+        format!("📎 View {count} SQL queries")
+    }
+}
+
+/// SQL button alone in its own actions block — used only when the agent
+/// succeeded with captured SQL but `thread_url` is absent (Slack
+/// misconfigured / `app_base_url` unset). The common case puts the SQL
+/// button in the same row as "View thread" via [`build_footer_actions`];
+/// here there's no thread to link to so the button stands alone.
+pub fn build_view_sql_only_actions(upload_id: uuid::Uuid, count: usize) -> serde_json::Value {
+    serde_json::json!({
+        "type": "actions",
+        "elements": [{
+            "type": "button",
+            "action_id": "slack_view_sql_artifacts",
+            "style": "primary",
+            "text": {"type": "plain_text", "text": view_sql_button_label(count), "emoji": true},
+            "value": upload_id.to_string(),
+        }],
     })
 }
 
@@ -241,11 +287,12 @@ mod agent_display_name_tests {
 
 #[cfg(test)]
 mod footer_actions_tests {
-    use super::{build_footer_actions, build_view_thread_actions};
+    use super::{build_footer_actions, build_view_sql_only_actions, build_view_thread_actions};
+    use uuid::Uuid;
 
     #[test]
-    fn footer_emits_only_view_thread_when_no_reopen() {
-        let v = build_footer_actions("https://oxy.test/threads/abc", None);
+    fn footer_emits_only_view_thread_when_no_extras() {
+        let v = build_footer_actions("https://oxy.test/threads/abc", None, None);
         let elements = v["elements"].as_array().expect("elements array");
         assert_eq!(elements.len(), 1);
         assert_eq!(elements[0]["action_id"], "slack_view_thread");
@@ -254,7 +301,7 @@ mod footer_actions_tests {
 
     #[test]
     fn footer_emits_reopen_button_when_question_provided() {
-        let v = build_footer_actions("https://oxy.test/threads/abc", Some("aGVsbG8="));
+        let v = build_footer_actions("https://oxy.test/threads/abc", Some("aGVsbG8="), None);
         let elements = v["elements"].as_array().expect("elements array");
         assert_eq!(elements.len(), 2);
         assert_eq!(elements[0]["action_id"], "slack_view_thread");
@@ -264,6 +311,51 @@ mod footer_actions_tests {
         // Reopen button must NOT be styled "primary" — View thread stays the
         // dominant CTA.
         assert!(elements[1].get("style").is_none());
+    }
+
+    #[test]
+    fn footer_puts_sql_button_first_with_primary_style() {
+        // SQL button is the only interactive (server-side action) button on
+        // the row; ordering it first + styling primary marks it as the
+        // dominant CTA, with View thread / Wrong workspace? as plain links.
+        let upload_id = Uuid::new_v4();
+        let v = build_footer_actions(
+            "https://oxy.test/threads/abc",
+            Some("aGVsbG8="),
+            Some((upload_id, 3)),
+        );
+        let elements = v["elements"].as_array().expect("elements array");
+        assert_eq!(elements.len(), 3);
+        assert_eq!(elements[0]["action_id"], "slack_view_sql_artifacts");
+        assert_eq!(elements[0]["style"], "primary");
+        assert_eq!(elements[0]["text"]["text"], "📎 View 3 SQL queries");
+        assert_eq!(elements[0]["value"], upload_id.to_string());
+        assert_eq!(elements[1]["action_id"], "slack_view_thread");
+        assert!(elements[1].get("style").is_none());
+        assert_eq!(elements[2]["action_id"], "slack_reopen_picker");
+    }
+
+    #[test]
+    fn footer_singular_sql_button_label() {
+        let v = build_footer_actions(
+            "https://oxy.test/threads/abc",
+            None,
+            Some((Uuid::new_v4(), 1)),
+        );
+        let elements = v["elements"].as_array().unwrap();
+        assert_eq!(elements[0]["text"]["text"], "📎 View 1 SQL query");
+    }
+
+    #[test]
+    fn view_sql_only_actions_renders_single_primary_button() {
+        // Edge case: SQL button needs to stand alone when no thread URL.
+        let upload_id = Uuid::new_v4();
+        let v = build_view_sql_only_actions(upload_id, 2);
+        let elements = v["elements"].as_array().unwrap();
+        assert_eq!(elements.len(), 1);
+        assert_eq!(elements[0]["action_id"], "slack_view_sql_artifacts");
+        assert_eq!(elements[0]["style"], "primary");
+        assert_eq!(elements[0]["text"]["text"], "📎 View 2 SQL queries");
     }
 
     #[test]

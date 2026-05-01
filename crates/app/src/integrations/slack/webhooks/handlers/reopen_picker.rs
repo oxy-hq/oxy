@@ -108,6 +108,7 @@ mod tests {
             container: None,
             trigger_id: None,
             response_url: None,
+            message: None,
         }
     }
 

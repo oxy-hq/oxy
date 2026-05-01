@@ -44,10 +44,19 @@ use sea_orm::EntityTrait;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-/// Per-chart upload budget. Slack edge nodes typically respond in well
-/// under a second; a stuck multipart POST shouldn't block the rest of
-/// the queue or the post-message bookkeeping.
-const CHART_UPLOAD_TIMEOUT: Duration = Duration::from_secs(15);
+/// Per-file upload budget. Used by both chart PNG uploads and SQL
+/// artifact uploads — the same `files.uploadV2` shape, the same edge
+/// node behavior. Slack typically responds in well under a second;
+/// a stuck multipart POST shouldn't block the rest of the queue or
+/// the post-message bookkeeping.
+pub(crate) const FILE_UPLOAD_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// Cap on uploaded SQL `.sql` files per Slack message. Beyond this the
+/// inline `> 📎 _title_ ✓` placeholder in the prose marks each artifact
+/// regardless, and a follow-up "📎 N more queries — view in Oxygen →"
+/// context block is posted in the same thread (when a thread URL exists)
+/// so the overflow is visible to the user, not just to log readers.
+const MAX_SQL_ARTIFACTS_PER_MESSAGE: usize = 10;
 
 // ============================================================================
 // Public Types
@@ -249,6 +258,13 @@ pub async fn run_for_slack(req: SlackRunRequest) -> Result<(), SlackError> {
     // Render-side failures only — upload failures are tracked separately
     // in the post-message upload loop and surfaced via a follow-up.
     let failed_chart_count = render_result.failed_chart_count;
+    let captured_sql_artifacts = render_result.captured_sql_artifacts;
+    tracing::info!(
+        captured_count = captured_sql_artifacts.len(),
+        body_len = body_markdown.len(),
+        queued_charts = queued_charts.len(),
+        "slack run_for_slack: render_stream finished"
+    );
 
     // Await agent completion.
     let agent_result = agent_handle
@@ -292,19 +308,32 @@ pub async fn run_for_slack(req: SlackRunRequest) -> Result<(), SlackError> {
     };
 
     // Claude-style footer:
-    //   1. body section blocks (prose only — charts come as auto-shared
-    //      thread replies after this message lands; see the upload loop
-    //      below)
+    //   1. body section blocks (prose only — charts auto-share as thread
+    //      replies right after this message lands)
     //   2. local-disk breadcrumb context blocks (dev mode only)
-    //   3. divider
-    //   4. actions block with one "View thread" button (omitted when no URL)
-    //   5. context block: "Requested by @user · Oxy can make mistakes…"
+    //   3. render-failure context link (when a chart never produced bytes)
+    //   4. divider
+    //   5. footer actions row: [📎 View N SQL queries (primary, when SQL
+    //      artifacts exist)] [View thread] [Wrong workspace? (when user has
+    //      multiple workspaces)] — all in one actions block so they sit on
+    //      the same line; SQL button is `style: "primary"` so Slack renders
+    //      it green to mark it as the actionable button on the row.
+    //   6. context block: "Requested by @user · Oxy can make mistakes…"
     //
-    // Charts are deliberately NOT embedded as `slack_file` image blocks
-    // here. That looked tidier but Slack rejects the message when the
-    // referenced file isn't yet visible to the channel, dropping the
-    // prose text. The proven pattern (Datadog, Grafana) is to post the
-    // text first and auto-share each chart as a thread reply afterwards.
+    // Why the chart/SQL split is asymmetric:
+    //   • Charts upload immediately. They benefit from inline visibility —
+    //     a chart is the answer for visualization questions, hiding it
+    //     behind a click would defeat the purpose. They can't be
+    //     `slack_file` image blocks inline because Slack rejects messages
+    //     referencing un-shared files; auto-share-as-thread-reply is the
+    //     proven pattern (Datadog, Grafana).
+    //   • SQL queries are deferred behind a button. Most viewers in a
+    //     team channel don't want to scroll past a wall of SQL — the
+    //     analyst who asked the question does. Compiled semantic-layer
+    //     queries are especially long. Click → upload as `.sql` snippets
+    //     (collapsed by default, native syntax highlighting) gives the
+    //     same end-state for users who want it without spamming everyone
+    //     who doesn't.
     let mut all_blocks: Vec<serde_json::Value> = body_blocks;
 
     // Local-render breadcrumbs: surface the on-disk PNG paths so a
@@ -349,6 +378,38 @@ pub async fn run_for_slack(req: SlackRunRequest) -> Result<(), SlackError> {
         }));
     }
 
+    // SQL artifacts — defer the file uploads behind a "📎 View N SQL
+    // queries" button rather than auto-spamming the thread with up to 10
+    // `.sql` snippet replies. Stash the captured list in a process-local
+    // cache keyed by a synthetic upload id and pass that id into
+    // `build_footer_actions` below — the button rides on the same row
+    // as "View thread" so the footer stays a single line. Charts still
+    // upload immediately (right above) — the split is intentional:
+    // charts benefit from inline visibility, SQL is opt-in since most
+    // viewers in a team channel don't need to see the query.
+    let captured_sql_total = captured_sql_artifacts.len();
+    let sql_to_upload = captured_sql_total.min(MAX_SQL_ARTIFACTS_PER_MESSAGE);
+    let sql_overflow = captured_sql_total.saturating_sub(MAX_SQL_ARTIFACTS_PER_MESSAGE);
+    if sql_overflow > 0 {
+        tracing::warn!(
+            captured = captured_sql_total,
+            uploaded = sql_to_upload,
+            dropped = sql_overflow,
+            "sql artifact cap reached; some queries will not be uploaded even if the user clicks the button"
+        );
+    }
+    let view_sql: Option<(uuid::Uuid, usize)> = if !agent_errored && sql_to_upload > 0 {
+        let to_stash: Vec<_> = captured_sql_artifacts
+            .into_iter()
+            .take(sql_to_upload)
+            .collect();
+        let upload_id =
+            crate::integrations::slack::services::pending_sql_uploads::insert(to_stash).await;
+        Some((upload_id, sql_to_upload))
+    } else {
+        None
+    };
+
     if !all_blocks.is_empty() {
         all_blocks.push(serde_json::json!({ "type": "divider" }));
     }
@@ -374,7 +435,17 @@ pub async fn run_for_slack(req: SlackRunRequest) -> Result<(), SlackError> {
                     None
                 }
             };
-        all_blocks.push(blocks::build_footer_actions(url, reopen_q.as_deref()));
+        all_blocks.push(blocks::build_footer_actions(
+            url,
+            reopen_q.as_deref(),
+            view_sql,
+        ));
+    } else if let Some((upload_id, count)) = view_sql {
+        // Edge case: agent succeeded with SQL artifacts but no thread URL
+        // (Slack misconfigured / `app_base_url` unset). Render the SQL
+        // button standalone — the user can still pull the queries even
+        // though we have no Oxy thread to link to.
+        all_blocks.push(blocks::build_view_sql_only_actions(upload_id, count));
     }
     if !agent_errored {
         all_blocks.push(blocks::build_attribution_context(
@@ -410,7 +481,7 @@ pub async fn run_for_slack(req: SlackRunRequest) -> Result<(), SlackError> {
     // the thread (charts would arrive in network-completion order rather
     // than the order the agent emitted them).
     //
-    // Each upload is bounded by `CHART_UPLOAD_TIMEOUT` so a stuck
+    // Each upload is bounded by `FILE_UPLOAD_TIMEOUT` so a stuck
     // multipart POST can't hold up the rest of the queue (or the
     // ThreadContextService::update_last_ts that follows). On timeout we
     // log, count it as a failure, and move on.
@@ -445,8 +516,9 @@ pub async fn run_for_slack(req: SlackRunRequest) -> Result<(), SlackError> {
                 &filename,
                 chart.png_bytes,
                 Some(&title),
+                "image/png",
             );
-            match tokio::time::timeout(CHART_UPLOAD_TIMEOUT, upload).await {
+            match tokio::time::timeout(FILE_UPLOAD_TIMEOUT, upload).await {
                 Ok(Ok(_)) => {}
                 Ok(Err(e)) => {
                     tracing::warn!(chart_src = %chart_src, "files.uploadV2 failed: {e}");
@@ -455,7 +527,7 @@ pub async fn run_for_slack(req: SlackRunRequest) -> Result<(), SlackError> {
                 Err(_) => {
                     tracing::warn!(
                         chart_src = %chart_src,
-                        timeout_secs = CHART_UPLOAD_TIMEOUT.as_secs(),
+                        timeout_secs = FILE_UPLOAD_TIMEOUT.as_secs(),
                         "files.uploadV2 timed out"
                     );
                     upload_failures += 1;
@@ -496,6 +568,48 @@ pub async fn run_for_slack(req: SlackRunRequest) -> Result<(), SlackError> {
         }
     }
 
+    // SQL upload itself happens later, on user click — see the
+    // `view_sql_artifacts` interactivity handler. The button + cache
+    // entry are wired into the prose message above, before postMessage.
+
+    // Cap-overflow follow-up: when more than MAX_SQL_ARTIFACTS_PER_MESSAGE
+    // SQL artifacts were captured, we only upload the first cap-many. The
+    // inline `> 📎 _title_ ✓` placeholder still appears in the prose for
+    // every artifact, so users would see "12 placeholders, 10 .sql files"
+    // and reasonably wonder where the missing two went. A small context
+    // block linking to the Oxy thread closes the gap. Only posted when a
+    // thread URL is available — without it, there's nowhere to link.
+    if !agent_errored
+        && sql_overflow > 0
+        && let Some(url) = thread_url.as_deref()
+    {
+        let plural = if sql_overflow == 1 {
+            "query"
+        } else {
+            "queries"
+        };
+        let label = format!("📎 {sql_overflow} more {plural} — view in Oxygen →");
+        let blocks = serde_json::json!([{
+            "type": "context",
+            "elements": [{
+                "type": "mrkdwn",
+                "text": format!("<{url}|{label}>"),
+            }],
+        }]);
+        if let Err(e) = client
+            .chat_post_message_with_blocks(
+                &bot_token,
+                &req.channel_id,
+                "More SQL queries are available in Oxygen",
+                Some(&req.thread_ts),
+                Some(blocks),
+            )
+            .await
+        {
+            tracing::warn!("sql cap-overflow follow-up post failed: {e}");
+        }
+    }
+
     ThreadContextService::update_last_ts(slack_thread_row.id, &req.thread_ts)
         .await
         .map_err(&internal)?;
@@ -525,18 +639,32 @@ async fn fetch_org_slug(org_id: Uuid) -> Option<String> {
 /// fall back to the older `{base}/threads/{thread_id}` when the org slug
 /// can't be resolved (e.g. local-mode deployments, transient DB error)
 /// rather than building a link that's guaranteed to 404 in cloud mode.
+///
+/// The returned URL is later embedded into Slack mrkdwn link syntax
+/// `<url|label>`, which has no escape mechanism — a `|` inside the
+/// URL would break label parsing and the rendered link silently drops
+/// to plain text. Org slugs are validated to alphanumeric + dash on
+/// creation, so a `|` here would be a constraint-violation upstream.
+/// We strip any defensively (silently — a degraded link is better than
+/// a panicking webhook handler) and `debug_assert!` so a regression
+/// in slug validation surfaces in dev/test rather than production.
 async fn build_thread_url(
     base_url: &str,
     org_id: Uuid,
     workspace_id: Uuid,
     oxy_thread_id: Uuid,
 ) -> String {
-    match fetch_org_slug(org_id).await {
+    let url = match fetch_org_slug(org_id).await {
         Some(slug) => {
             format!("{base_url}/{slug}/workspaces/{workspace_id}/threads/{oxy_thread_id}")
         }
         None => format!("{base_url}/threads/{oxy_thread_id}"),
-    }
+    };
+    debug_assert!(
+        !url.contains('|'),
+        "thread URL must not contain '|' — Slack mrkdwn `<url|label>` has no escape: {url}"
+    );
+    url.replace('|', "")
 }
 
 // ============================================================================
@@ -699,6 +827,37 @@ fn chart_filename_stem_from_question(question: &str) -> String {
         .to_string()
 }
 
+/// Filename-safe slug for artifact titles. Preserves `_` (semantic-query
+/// tool names use it heavily — `query_retail_analytics`) and collapses
+/// any other non-alphanumeric run to a single `_`. Falls back to `query`
+/// for an empty input.
+pub(crate) fn sanitize_filename(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut last_was_underscore = false;
+    for ch in input.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' {
+            out.push(ch);
+            last_was_underscore = ch == '_';
+        } else if !last_was_underscore && !out.is_empty() {
+            out.push('_');
+            last_was_underscore = true;
+        }
+    }
+    let trimmed = out.trim_matches('_');
+    if trimmed.is_empty() {
+        return "query".to_string();
+    }
+    let chars: Vec<char> = trimmed.chars().collect();
+    if chars.len() <= 60 {
+        return trimmed.to_string();
+    }
+    chars[..60]
+        .iter()
+        .collect::<String>()
+        .trim_end_matches('_')
+        .to_string()
+}
+
 #[cfg(test)]
 mod truncate_tests {
     use super::truncate;
@@ -791,5 +950,77 @@ mod chart_label_tests {
         assert_eq!(chart_filename_stem_from_question("???"), "chart");
         // Non-ASCII alphanumerics are stripped (we only keep ASCII alnum).
         assert_eq!(chart_filename_stem_from_question("你好"), "chart");
+    }
+}
+
+#[cfg(test)]
+mod sanitize_filename_tests {
+    use super::sanitize_filename;
+
+    #[test]
+    fn preserves_underscores_in_semantic_query_names() {
+        // Semantic-query tool names use `_` heavily (e.g. `query_retail_analytics`,
+        // `query_store_performance`); the sanitizer must keep them verbatim.
+        assert_eq!(
+            sanitize_filename("query_retail_analytics"),
+            "query_retail_analytics"
+        );
+        assert_eq!(
+            sanitize_filename("query_store_performance"),
+            "query_store_performance"
+        );
+    }
+
+    #[test]
+    fn slugifies_titles_with_punctuation_and_spaces() {
+        // En-dash / em-dash, spaces, and other punctuation collapse to a
+        // single underscore — never a doubled `__`.
+        assert_eq!(
+            sanitize_filename("Top Stores — Weekly Sales"),
+            "Top_Stores_Weekly_Sales"
+        );
+        assert_eq!(
+            sanitize_filename("Sales by Region (2024)"),
+            "Sales_by_Region_2024"
+        );
+    }
+
+    #[test]
+    fn alphanumerics_pass_through_unchanged() {
+        assert_eq!(sanitize_filename("abc123"), "abc123");
+    }
+
+    #[test]
+    fn falls_back_to_query_for_empty_or_punctuation_only() {
+        assert_eq!(sanitize_filename(""), "query");
+        assert_eq!(sanitize_filename("   "), "query");
+        assert_eq!(sanitize_filename("!!!"), "query");
+    }
+
+    #[test]
+    fn strips_leading_and_trailing_underscores() {
+        // Punctuation at edges shouldn't leave `_` runs.
+        assert_eq!(sanitize_filename("  hello  "), "hello");
+        assert_eq!(sanitize_filename("---hi---"), "hi");
+    }
+
+    #[test]
+    fn collapses_runs_of_separators_to_one_underscore() {
+        assert_eq!(sanitize_filename("a   b   c"), "a_b_c");
+        assert_eq!(sanitize_filename("a---b"), "a_b");
+    }
+
+    #[test]
+    fn truncates_at_60_chars() {
+        let long = "a".repeat(80);
+        let out = sanitize_filename(&long);
+        assert_eq!(out.chars().count(), 60);
+    }
+
+    #[test]
+    fn non_ascii_alphanumerics_are_stripped() {
+        // We only keep ASCII alphanumerics; CJK chars are not preserved.
+        assert_eq!(sanitize_filename("你好"), "query");
+        assert_eq!(sanitize_filename("hello 你好 world"), "hello_world");
     }
 }

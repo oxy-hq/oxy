@@ -4,3 +4,4 @@ pub mod make_default;
 pub mod pick_workspace;
 pub mod reopen_picker;
 pub mod submit_workspace_picker;
+pub mod view_sql_artifacts;

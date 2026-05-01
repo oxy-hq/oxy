@@ -115,6 +115,14 @@ pub struct InteractivityPayload {
     pub trigger_id: Option<String>,
     #[serde(default)]
     pub response_url: Option<String>,
+    /// Original message that the action was triggered against. Slack
+    /// populates this for `block_actions` payloads with the full
+    /// message shape (including `blocks`). Handlers that update via
+    /// `response_url` need this to preserve unrelated blocks — sending
+    /// `replace_original: true` with only the new block wipes the
+    /// prose. Shape: `{ ts, text, blocks: [...], ... }`.
+    #[serde(default)]
+    pub message: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -129,7 +137,7 @@ pub struct InteractivityUser {
 pub struct InteractivityChannel {
     pub id: String,
 }
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct InteractivityAction {
     pub action_id: String,
     #[serde(default)]
@@ -137,7 +145,7 @@ pub struct InteractivityAction {
     #[serde(default)]
     pub selected_option: Option<SelectedOption>,
 }
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct SelectedOption {
     pub value: String,
 }

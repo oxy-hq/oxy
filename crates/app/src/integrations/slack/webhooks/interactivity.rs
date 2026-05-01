@@ -60,6 +60,9 @@ pub(crate) async fn dispatch_interactivity(payload: InteractivityPayload) {
             "slack_make_default" => handlers::make_default::handle(&payload, action).await,
             "slack_home_disconnect" => handlers::home_disconnect::handle(&payload).await,
             "slack_home_save_defaults" => handlers::home_save_defaults::handle(&payload).await,
+            "slack_view_sql_artifacts" => {
+                handlers::view_sql_artifacts::handle(&payload, action).await
+            }
             // View state / URL buttons — no server-side action needed.
             "slack_home_pick_workspace"
             | "slack_home_pick_agent"

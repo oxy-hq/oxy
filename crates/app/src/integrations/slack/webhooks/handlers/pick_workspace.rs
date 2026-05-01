@@ -242,6 +242,7 @@ mod tests {
             })),
             trigger_id: None,
             response_url: None,
+            message: None,
         };
 
         let (chan, ts) = extract_channel_and_thread(&payload).expect("should extract");
@@ -266,6 +267,7 @@ mod tests {
             })),
             trigger_id: None,
             response_url: None,
+            message: None,
         };
 
         let (chan, ts) = extract_channel_and_thread(&payload).expect("should extract");
@@ -288,6 +290,7 @@ mod tests {
             container: None,
             trigger_id: None,
             response_url: None,
+            message: None,
         };
 
         let result = extract_channel_and_thread(&payload);
