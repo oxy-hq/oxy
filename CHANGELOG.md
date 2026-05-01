@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.47] - 2026-05-01
+
+### 🐛 Bug Fixes
+
+- Home page false LLM key warning when secret is in env vars (#2218)
+
 ## [0.5.46] - 2026-04-30
 
 ### 🚀 Features
@@ -26,6 +32,10 @@ All notable changes to this project will be documented in this file.
 ### 📚 Documentation
 
 - Airform docs (#2211)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.46 (#2209)
 
 ## [0.5.45] - 2026-04-29
 
