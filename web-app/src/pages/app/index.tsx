@@ -23,7 +23,7 @@ const AppPage: React.FC = () => {
     <div className='flex h-full w-full flex-col'>
       <AppPageHeader path={path} onRun={handleRun} isRunning={isRunning} />
       <div className='flex w-full flex-1 items-start justify-center overflow-auto'>
-        <AppPreview appPath64={pathb64} runButton={false} />
+        <AppPreview key={pathb64} appPath64={pathb64} runButton={false} />
       </div>
     </div>
   );

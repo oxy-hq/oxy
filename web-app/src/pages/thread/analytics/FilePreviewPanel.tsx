@@ -76,7 +76,7 @@ const FileTypePreview = ({ filePath }: { filePath: string }) => {
     case FileType.AGENTIC_WORKFLOW:
       return <WorkflowPreview pathb64={pathb64} direction='vertical' />;
     case FileType.APP:
-      return <AppPreview appPath64={pathb64} runButton={false} />;
+      return <AppPreview key={pathb64} appPath64={pathb64} runButton={false} />;
     case FileType.VIEW:
       return (
         <MinimalEditorProvider pathb64={pathb64} fileType={FileType.VIEW}>

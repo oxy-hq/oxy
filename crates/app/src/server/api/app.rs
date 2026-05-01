@@ -219,26 +219,34 @@ pub async fn get_displays(
                 SQL::File { .. } => return None,
             };
 
-            // DuckLake databases use a PostgreSQL catalog + object-storage data files that
-            // are inaccessible from the browser — force server mode regardless of what the
-            // task YAML declares.
-            let is_ducklake = databases.iter().any(|db| {
+            // The browser can only execute a task client-side when its database is a
+            // local non-DuckLake DuckDB instance — that's the only backend the in-browser
+            // DuckDB WASM runtime can reproduce (source files served as Parquet via
+            // /apps/source/). Anything else (ClickHouse, Postgres, Snowflake, BigQuery,
+            // DuckLake's PostgreSQL catalog + object-storage layout) is unreachable from
+            // the browser, so we must mark those tasks server-mode regardless of what the
+            // YAML declares — otherwise the frontend optimistically attempts a WASM run,
+            // it fails, and a fallback `runApp` mutation flashes the centered loading
+            // overlay until the server returns.
+            let is_browser_runnable_database = databases.iter().any(|db| {
                 db.name == sql_task.database
                     && matches!(
                         &db.database_type,
-                        DatabaseType::DuckDB(d) if matches!(&d.options, DuckDBOptions::DuckLake(_))
+                        DatabaseType::DuckDB(d) if !matches!(&d.options, DuckDBOptions::DuckLake(_))
                     )
             });
             let source_files = extract_sql_source_files(&sql);
 
-            // DuckLake and explicit server-mode tasks always run on the backend.
-            // Tasks with source files can run client-side — the browser downloads a Parquet
-            // version of each source file via /apps/source/ and re-runs the SQL in DuckDB WASM.
-            let effective_mode = if is_ducklake || task.mode == AppTaskMode::Server {
-                AppTaskMode::Server
-            } else {
-                task.mode.clone()
-            };
+            // Tasks with source files (CSV/Parquet on disk) running against local DuckDB
+            // can stream client-side — the browser downloads a Parquet version of each
+            // source file and re-runs the SQL in DuckDB WASM. Everything else falls back
+            // to the server.
+            let effective_mode =
+                if !is_browser_runnable_database || task.mode == AppTaskMode::Server {
+                    AppTaskMode::Server
+                } else {
+                    task.mode.clone()
+                };
 
             Some((
                 task.name.clone(),
