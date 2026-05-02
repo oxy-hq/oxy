@@ -153,8 +153,34 @@ impl PipelineTaskExecutor {
             .ok_or_else(|| format!("workflow state not found for run {run_id}"))?;
 
         let expected_version = state.decision_version;
+
+        // Snapshot the result keys BEFORE the decide call so we can compute
+        // the delta afterward.  `state` is moved into `decide`, so we capture
+        // the keys while we still own it.
+        let pre_decide_keys: std::collections::HashSet<String> =
+            state.results.keys().cloned().collect();
+
         let decider = agentic_workflow::WorkflowDecider::new(None);
         let (new_state, decision) = decider.decide(state, pending_child_answer).await;
+
+        // Compute the new step result(s) added this decision. By design the
+        // decider produces at most one new key per call; the debug_assert
+        // guards against a future change that adds multiple keys, which would
+        // be silently truncated below and leave the DB row missing entries.
+        let new_entries: Vec<(&String, &serde_json::Value)> = new_state
+            .results
+            .iter()
+            .filter(|(k, _)| !pre_decide_keys.contains(*k))
+            .collect();
+        debug_assert!(
+            new_entries.len() <= 1,
+            "decide() added {} results in a single call; delta would drop all but one",
+            new_entries.len()
+        );
+        let result_delta: serde_json::Value = new_entries
+            .first()
+            .map(|(k, v)| serde_json::json!({ (*k): v }))
+            .unwrap_or(serde_json::json!({}));
 
         let events = decision_events(&decision).to_vec();
         let terminal = decision_terminal(&decision);
@@ -168,6 +194,7 @@ impl PipelineTaskExecutor {
                 decision_task_id,
                 expected_version,
                 new_state,
+                result_delta,
                 events,
                 attempt: 0,
                 terminal,
@@ -247,8 +274,11 @@ pub fn run_decision_task(
     use agentic_core::human_input::SuspendedRunData;
     use agentic_workflow::WorkflowDecision as D;
 
-    let (event_tx, event_rx) = mpsc::channel::<(String, Value)>(32);
-    let (outcome_tx, outcome_rx) = mpsc::channel::<TaskOutcome>(4);
+    // Larger buffers prevent the spawned task from blocking on channel sends
+    // when the coordinator is briefly busy, especially for DelegateParallel
+    // fan-outs that emit many events before returning a single outcome.
+    let (event_tx, event_rx) = mpsc::channel::<(String, Value)>(256);
+    let (outcome_tx, outcome_rx) = mpsc::channel::<TaskOutcome>(16);
     let cancel = CancellationToken::new();
 
     tokio::spawn(async move {

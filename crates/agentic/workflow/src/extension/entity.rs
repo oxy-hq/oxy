@@ -12,6 +12,10 @@ pub struct Model {
     pub trace_id: String,
     pub current_step: i32,
     pub results: Json,
+    /// Vestigial: always persisted as `{}` by `apply_result_delta_in_txn` and
+    /// reconstructed from `results` at load time (see `rebuild_render_context`
+    /// in `extension/mod.rs`). Kept on the schema for backward compatibility
+    /// with existing rows; do not write to it.
     pub render_context: Json,
     pub pending_children: Json,
     pub decision_version: i64,

@@ -224,9 +224,18 @@ impl WorkflowStepOrchestrator {
 
             match result {
                 Ok(output) => {
-                    // Merge result into context.
-                    self.results.insert(step_name.clone(), output.clone());
-                    self.update_render_context();
+                    // Merge result into context incrementally — only insert the
+                    // new key rather than rebuilding from all results, avoiding
+                    // O(S²) cloning as accumulated step outputs grow.
+                    let context_value = to_column_oriented(&output);
+                    self.results.insert(step_name.clone(), output);
+                    if let Some(obj) = self.render_context.as_object_mut() {
+                        obj.insert(step_name.clone(), context_value);
+                    } else {
+                        let mut map = serde_json::Map::new();
+                        map.insert(step_name.clone(), context_value);
+                        self.render_context = Value::Object(map);
+                    }
 
                     self.emit_event(
                         &event_tx,
@@ -619,13 +628,14 @@ impl WorkflowStepOrchestrator {
         }
 
         // Build a WorkflowStep for each loop iteration.
-        // Each iteration gets the loop variable injected into its render context.
+        // Snapshot the render context once so all iterations share the same
+        // base — each iteration only differs by its loop variable injection.
+        let base_context = self.render_context.clone();
         let targets: Vec<DelegationItem> = items
             .iter()
             .enumerate()
             .map(|(i, item)| {
-                // Inject loop variable into render context for this iteration.
-                let mut iter_context = self.render_context.clone();
+                let mut iter_context = base_context.clone();
                 if let Some(obj) = iter_context.as_object_mut() {
                     obj.insert(step_name.to_string(), json!({ "value": item, "index": i }));
                 }
@@ -704,23 +714,6 @@ impl WorkflowStepOrchestrator {
             question: format!("Executing step: {step_name}"),
             suggestions: vec![],
         }
-    }
-
-    fn update_render_context(&mut self) {
-        // Rebuild render context from accumulated results.
-        let mut ctx = if let Some(obj) = self.render_context.as_object() {
-            obj.clone()
-        } else {
-            serde_json::Map::new()
-        };
-        for (name, value) in &self.results {
-            // Convert row-oriented {columns, rows} to column-oriented
-            // {col_name: [val, ...]} for template access like
-            // {{ step_name.column_name[i] }}.
-            let context_value = to_column_oriented(value);
-            ctx.insert(name.clone(), context_value);
-        }
-        self.render_context = Value::Object(ctx);
     }
 
     /// Serialize orchestrator state for crash recovery.

@@ -7,6 +7,7 @@ use df_interchange::Interchange;
 use duckdb::Connection;
 use slugify::slugify;
 
+use super::duckdb_pool::{PoolKey, pool};
 use super::engine::Engine;
 use crate::adapters::secrets::SecretsManager;
 use crate::config::model::DuckDBOptions;
@@ -31,89 +32,179 @@ impl DuckDB {
         }
     }
 
+    /// Hand out a connection ready to run a query.
+    ///
+    /// For `Local` and `File` modes, the heavy work (opening the DB, loading
+    /// CSVs into tables, installing extensions) happens exactly once per
+    /// `(target, file mtimes)` key in [`super::duckdb_pool`]. Subsequent
+    /// calls return a cheap `try_clone()` that shares the cached database.
+    ///
+    /// For `DuckLake` mode the per-call attach statements are derived from
+    /// runtime secrets, so we keep the historical "fresh connection per
+    /// query" behavior to avoid serving stale credentials.
+    ///
+    /// The non-DuckLake paths are wrapped in [`tokio::task::spawn_blocking`]
+    /// because DuckDB's Rust binding is fully synchronous (statement
+    /// preparation, CSV scans, file mtime stats). Running them on the async
+    /// runtime would block worker threads — particularly painful on a
+    /// busy `oxy serve` process where one slow CSV import would stall every
+    /// other future on the same worker.
     pub async fn init_connection(&self) -> Result<Connection, OxyError> {
-        let conn = match &self.options {
+        match &self.options {
             DuckDBOptions::Local { file_search_path } => {
-                let canonical_dir = canonicalize_local_dir(file_search_path)?;
-                let files = collect_supported_files(&canonical_dir)?;
-                if files.is_empty() {
-                    return Err(OxyError::DBError(format!(
-                        "DuckDB directory '{}' contains no .csv or .parquet files. Add at least one supported file or point to a different directory.",
-                        canonical_dir.display()
-                    )));
-                }
-
-                let conn = Connection::open_in_memory()
-                    .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
-
-                let canonical_str = canonical_dir.display().to_string();
-                let dir_set_stmt = format!(
-                    "SET file_search_path = '{}';",
-                    escape_sql_string(&canonical_str)
-                );
-                conn.execute(&dir_set_stmt, [])
-                    .map_err(|err| connector_internal_error(SET_FILE_SEARCH_PATH, &err))?;
-                let temp_set_stmt = format!(
-                    "SET temp_directory = '{}';",
-                    escape_sql_string(&format!("{canonical_str}/tmp"))
-                );
-                conn.execute(&temp_set_stmt, [])
-                    .map_err(|err| connector_internal_error(SET_TEMP_DIRECTORY, &err))?;
-
-                for (stem, path) in files {
-                    let table_name = slugify!(&stem, separator = "_");
-                    let path_display = path.display().to_string();
-                    let create_stmt = format!(
-                        "CREATE TEMPORARY TABLE {} AS FROM '{}'",
-                        quote_sql_identifier(&table_name),
-                        escape_sql_string(&path_display)
-                    );
-                    tracing::info!(
-                        "Creating temporary table '{}' from file '{}'",
-                        table_name,
-                        path_display
-                    );
-                    conn.execute(&create_stmt, [])
-                        .map_err(|err| connector_internal_error(CREATE_TEMP_TABLE, &err))?;
-                }
-
-                tracing::debug!(
-                    "Initialized DuckDB with file search path '{}'",
-                    canonical_str,
-                );
-                conn
+                let path = file_search_path.clone();
+                tokio::task::spawn_blocking(move || checkout_local_blocking(&path))
+                    .await
+                    .map_err(|e| OxyError::DBError(format!("DuckDB checkout join error: {e}")))?
             }
             DuckDBOptions::File { path } => {
-                Connection::open(path).map_err(|err| connector_internal_error(CREATE_CONN, &err))?
+                let path = path.clone();
+                tokio::task::spawn_blocking(move || checkout_file_blocking(&path))
+                    .await
+                    .map_err(|e| OxyError::DBError(format!("DuckDB checkout join error: {e}")))?
             }
-            DuckDBOptions::DuckLake(config) => {
-                let conn = Connection::open_in_memory()
-                    .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
-                conn.execute("INSTALL ducklake", [])
-                    .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
-                conn.execute("LOAD ducklake", [])
-                    .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
-                conn.execute("INSTALL postgres", [])
-                    .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
-                conn.execute("LOAD postgres", [])
-                    .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
-                // Retrieve secrets and generate attach statements
-                let attach_stmt = config.to_duckdb_attach_stmt(&self.secrets_manager).await?;
-                tracing::info!("Executing DuckDB attach statement: {:?}", attach_stmt);
-                for stmt in attach_stmt {
-                    tracing::debug!("Executing DuckDB statement: {}", stmt);
-                    conn.execute(&stmt, [])
-                        .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
-                }
-                conn
-            }
+            DuckDBOptions::DuckLake(_) => self.init_ducklake().await,
+        }
+    }
+
+    async fn init_ducklake(&self) -> Result<Connection, OxyError> {
+        let DuckDBOptions::DuckLake(config) = &self.options else {
+            unreachable!("init_ducklake called with non-DuckLake options");
         };
-        conn.execute("INSTALL icu", [])
+        let conn = Connection::open_in_memory()
             .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
-        conn.execute("LOAD icu", [])
+        conn.execute("INSTALL ducklake", [])
             .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
+        conn.execute("LOAD ducklake", [])
+            .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
+        conn.execute("INSTALL postgres", [])
+            .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
+        conn.execute("LOAD postgres", [])
+            .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
+        // Retrieve secrets and generate attach statements
+        let attach_stmt = config.to_duckdb_attach_stmt(&self.secrets_manager).await?;
+        tracing::info!("Executing DuckDB attach statement: {:?}", attach_stmt);
+        for stmt in attach_stmt {
+            tracing::debug!("Executing DuckDB statement: {}", stmt);
+            conn.execute(&stmt, [])
+                .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
+        }
+        install_icu(&conn)?;
+        load_icu(&conn)?;
         Ok(conn)
     }
+}
+
+/// Synchronous body of [`DuckDB::init_connection`] for `Local` mode. Lives
+/// outside the async fn so it can run inside `spawn_blocking`.
+fn checkout_local_blocking(file_search_path: &str) -> Result<Connection, OxyError> {
+    let canonical_dir = canonicalize_local_dir(file_search_path)?;
+    let files = collect_supported_files(&canonical_dir)?;
+    if files.is_empty() {
+        return Err(OxyError::DBError(format!(
+            "DuckDB directory '{}' contains no .csv or .parquet files. Add at least one supported file or point to a different directory.",
+            canonical_dir.display()
+        )));
+    }
+
+    let key = PoolKey::local(canonical_dir.clone(), &files)?;
+    let canonical_str = canonical_dir.display().to_string();
+    let entry = pool().get_or_init(key, || {
+        let conn = init_local_db(&canonical_dir, &files)?;
+        // Re-run on every clone: cloned connections get a fresh session
+        // and don't inherit `file_search_path`, `temp_directory`, or the
+        // `LOAD icu` from the primary.
+        let setup = vec![
+            format!(
+                "SET file_search_path = '{}'",
+                escape_sql_string(&canonical_str)
+            ),
+            format!(
+                "SET temp_directory = '{}'",
+                escape_sql_string(&format!("{canonical_str}/tmp"))
+            ),
+            "LOAD icu".to_string(),
+        ];
+        Ok((conn, setup))
+    })?;
+    entry.checkout()
+}
+
+/// Synchronous body of [`DuckDB::init_connection`] for `File` mode.
+fn checkout_file_blocking(path: &str) -> Result<Connection, OxyError> {
+    let key = PoolKey::file(PathBuf::from(path))?;
+    let path_owned = path.to_owned();
+    let entry = pool().get_or_init(key, move || {
+        let conn = Connection::open(&path_owned)
+            .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
+        install_icu(&conn)?;
+        // `LOAD icu` is per-session; re-run on every clone.
+        Ok((conn, vec!["LOAD icu".to_string()]))
+    })?;
+    entry.checkout()
+}
+
+/// First-time initialization for a `Local` mode database. Builds an
+/// in-memory DuckDB pre-loaded with one regular (non-temporary) table per
+/// file in `dir` so cloned connections from the pool see them. Tables are
+/// `CREATE TABLE` rather than `CREATE TEMPORARY TABLE` because temp tables
+/// are session-local and would be invisible to cloned connections.
+fn init_local_db(
+    canonical_dir: &Path,
+    files: &[(String, PathBuf)],
+) -> Result<Connection, OxyError> {
+    let conn =
+        Connection::open_in_memory().map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
+
+    let canonical_str = canonical_dir.display().to_string();
+    let dir_set_stmt = format!(
+        "SET file_search_path = '{}';",
+        escape_sql_string(&canonical_str)
+    );
+    conn.execute(&dir_set_stmt, [])
+        .map_err(|err| connector_internal_error(SET_FILE_SEARCH_PATH, &err))?;
+    let temp_set_stmt = format!(
+        "SET temp_directory = '{}';",
+        escape_sql_string(&format!("{canonical_str}/tmp"))
+    );
+    conn.execute(&temp_set_stmt, [])
+        .map_err(|err| connector_internal_error(SET_TEMP_DIRECTORY, &err))?;
+
+    for (stem, path) in files {
+        let table_name = slugify!(stem, separator = "_");
+        let path_display = path.display().to_string();
+        let create_stmt = format!(
+            "CREATE TABLE {} AS FROM '{}'",
+            quote_sql_identifier(&table_name),
+            escape_sql_string(&path_display)
+        );
+        tracing::info!(
+            "Creating pooled table '{}' from file '{}'",
+            table_name,
+            path_display
+        );
+        conn.execute(&create_stmt, [])
+            .map_err(|err| connector_internal_error(CREATE_TEMP_TABLE, &err))?;
+    }
+
+    install_icu(&conn)?;
+    tracing::debug!(
+        "Initialized pooled DuckDB with file search path '{}'",
+        canonical_str,
+    );
+    Ok(conn)
+}
+
+fn install_icu(conn: &Connection) -> Result<(), OxyError> {
+    conn.execute("INSTALL icu", [])
+        .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
+    Ok(())
+}
+
+fn load_icu(conn: &Connection) -> Result<(), OxyError> {
+    conn.execute("LOAD icu", [])
+        .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
+    Ok(())
 }
 
 /// Escape single quotes for inclusion inside a DuckDB single-quoted string literal.

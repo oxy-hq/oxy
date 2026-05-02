@@ -136,6 +136,71 @@ pub async fn update_state_in_txn(
     Ok(result.rows_affected() == 1)
 }
 
+/// Update mutable workflow state using an incremental result delta.
+///
+/// Instead of overwriting the full `results` JSONB column, this merges only
+/// the single new step result via PostgreSQL's `||` operator.  For a workflow
+/// with S steps and an average result size of R bytes the old full-replace
+/// approach wrote 1+2+...+S × R ≈ O(S²·R) bytes total; this function writes
+/// O(S·R) — one new entry per step.
+///
+/// `result_delta` must be either:
+/// - A single-key JSON object `{"step_name": result}` when a new result was
+///   produced this decision, or
+/// - An empty object `{}` when no result changed (delegation/wait decisions).
+///
+/// `render_context` is always written as `'{}'` — it is derived from `results`
+/// at load time, so there is no need to persist it separately.
+pub async fn apply_result_delta_in_txn(
+    txn: &DatabaseTransaction,
+    run_id: &str,
+    expected_version: i64,
+    current_step: i32,
+    result_delta: Value,
+    pending_children: Value,
+) -> Result<bool, DbErr> {
+    use sea_orm::{ConnectionTrait, Statement};
+
+    // The SQL below uses `results || $2::jsonb`. Postgres' `||` operator
+    // requires both sides to be objects; passing an array or scalar would
+    // surface as an opaque runtime error. Reject early with a clear message.
+    if !result_delta.is_object() {
+        return Err(DbErr::Custom(format!(
+            "result_delta must be a JSON object, got: {result_delta:?}"
+        )));
+    }
+
+    let new_version = expected_version + 1;
+    let now = chrono::Utc::now();
+
+    let stmt = Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Postgres,
+        r#"
+        UPDATE agentic_workflow_state
+        SET current_step     = $1,
+            results          = results || $2::jsonb,
+            render_context   = '{}'::jsonb,
+            pending_children = $3,
+            decision_version = $4,
+            updated_at       = $5
+        WHERE run_id         = $6
+          AND decision_version = $7
+        "#,
+        [
+            current_step.into(),
+            result_delta.into(),
+            pending_children.into(),
+            new_version.into(),
+            now.into(),
+            run_id.into(),
+            expected_version.into(),
+        ],
+    );
+
+    let result = txn.execute(stmt).await?;
+    Ok(result.rows_affected() == 1)
+}
+
 /// Delete the state row (called when a workflow run is cleaned up).
 #[allow(dead_code)]
 pub async fn delete_state(db: &DatabaseConnection, run_id: &str) -> Result<(), DbErr> {

@@ -208,6 +208,7 @@ async fn continuing_commits_state_and_events_atomically() {
             decision_task_id: decision_task_id.clone(),
             expected_version: 0,
             new_state: state,
+            result_delta: json!({"step_sql": {"rows": 3}}),
             events,
             attempt: 0,
             terminal: DecisionTerminal::Continuing,
@@ -274,6 +275,7 @@ async fn complete_workflow_terminal_atomically_finalizes_run_and_queue() {
             decision_task_id: decision_task_id.clone(),
             expected_version: 0,
             new_state: state,
+            result_delta: json!({"step_fmt": {"text": "ok"}}),
             events,
             attempt: 0,
             terminal: DecisionTerminal::CompleteWorkflow {
@@ -314,6 +316,7 @@ async fn fail_workflow_terminal_atomically_marks_run_and_queue_failed() {
             decision_task_id: decision_task_id.clone(),
             expected_version: 0,
             new_state: state,
+            result_delta: json!({}),
             events: vec![(
                 "procedure_completed".into(),
                 json!({"success": false, "error": "boom"}),
@@ -377,6 +380,7 @@ async fn version_conflict_rolls_back_all_writes() {
             decision_task_id: decision_task_id.clone(),
             expected_version: 0,
             new_state: state,
+            result_delta: json!({"step_fmt": {"text": "x"}}),
             events: vec![("procedure_completed".into(), json!({"success": true}))],
             attempt: 0,
             terminal: DecisionTerminal::CompleteWorkflow {
@@ -436,6 +440,7 @@ async fn events_append_after_existing_coordinator_events() {
             decision_task_id,
             expected_version: 0,
             new_state: state,
+            result_delta: json!({}),
             events: vec![
                 (
                     "procedure_step_completed".into(),
@@ -470,6 +475,86 @@ async fn events_append_after_existing_coordinator_events() {
     );
 }
 
+/// Multi-step accumulation: each commit_decision passes a one-key delta;
+/// the persisted `results` column merges via `||` so all keys accumulate
+/// across decisions. This is the core optimization path — a regression that
+/// causes `||` to overwrite (or that drops keys somewhere upstream) would
+/// only surface at runtime as missing step outputs.
+#[tokio::test(flavor = "multi_thread")]
+async fn sequential_deltas_accumulate_in_results_column() {
+    let Some(db) = test_db().await else {
+        eprintln!("skipping: no DB available");
+        return;
+    };
+    let (run_id, mut state) = seed_run(&db).await;
+    let decision_task_id = run_id.clone();
+    seed_queue_row(&db, &decision_task_id, &run_id).await;
+
+    // First decision: fold step_sql.
+    state.current_step = 1;
+    state.results.insert("step_sql".into(), json!({"rows": 3}));
+    let outcome = commit_decision(
+        &db,
+        DecisionCommit {
+            run_id: run_id.clone(),
+            decision_task_id: decision_task_id.clone(),
+            expected_version: 0,
+            new_state: state.clone(),
+            result_delta: json!({"step_sql": {"rows": 3}}),
+            events: vec![],
+            attempt: 0,
+            terminal: DecisionTerminal::Continuing,
+        },
+    )
+    .await
+    .expect("first commit");
+    assert!(matches!(outcome, CommitOutcome::Committed));
+
+    // Reload and verify only step_sql is present.
+    let loaded = load_workflow_state(&db, &run_id).await.unwrap().unwrap();
+    assert_eq!(loaded.decision_version, 1);
+    assert!(loaded.results.contains_key("step_sql"));
+    assert!(!loaded.results.contains_key("step_fmt"));
+
+    // Second decision: fold step_fmt with delta containing only the new key.
+    // If `||` were overwriting instead of merging, step_sql would be lost.
+    let mut state2 = loaded;
+    state2.current_step = 2;
+    state2
+        .results
+        .insert("step_fmt".into(), json!({"text": "ok"}));
+    let outcome = commit_decision(
+        &db,
+        DecisionCommit {
+            run_id: run_id.clone(),
+            decision_task_id: decision_task_id.clone(),
+            expected_version: 1,
+            new_state: state2,
+            result_delta: json!({"step_fmt": {"text": "ok"}}),
+            events: vec![],
+            attempt: 0,
+            terminal: DecisionTerminal::Continuing,
+        },
+    )
+    .await
+    .expect("second commit");
+    assert!(matches!(outcome, CommitOutcome::Committed));
+
+    // Both keys must be present and untouched.
+    let final_state = load_workflow_state(&db, &run_id).await.unwrap().unwrap();
+    assert_eq!(final_state.decision_version, 2);
+    assert_eq!(final_state.current_step, 2);
+    assert_eq!(final_state.results.len(), 2);
+    assert_eq!(
+        final_state.results.get("step_sql"),
+        Some(&json!({"rows": 3}))
+    );
+    assert_eq!(
+        final_state.results.get("step_fmt"),
+        Some(&json!({"text": "ok"}))
+    );
+}
+
 /// Completion invariant: CompleteWorkflow with `current_step < tasks.len()`
 /// is rejected as a bug and rolls back. Without this, a decider with an
 /// off-by-one would strand the workflow with pending steps never running.
@@ -494,6 +579,7 @@ async fn complete_workflow_with_pending_steps_is_rejected() {
             decision_task_id: decision_task_id.clone(),
             expected_version: 0,
             new_state: state,
+            result_delta: json!({"step_sql": {"rows": 1}}),
             events: vec![],
             attempt: 0,
             terminal: DecisionTerminal::CompleteWorkflow {

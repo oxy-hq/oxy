@@ -27,12 +27,19 @@ use sea_orm::{
 use serde_json::Value;
 
 use super::WorkflowRunState;
-use super::crud::update_state_in_txn;
+use super::crud::apply_result_delta_in_txn;
 
 /// A single decision-boundary commit.
+///
+/// **Invariant:** `run_id == new_state.run_id`. Both fields exist because the
+/// commit writes to two tables (`agentic_run_events` keyed by `run_id`, and
+/// `agentic_workflow_state` keyed by `new_state.run_id`). Callsites must keep
+/// them in lockstep — a divergence would silently route events to the wrong
+/// run while the state update succeeds.
 #[derive(Debug)]
 pub struct DecisionCommit {
     /// Workflow run id — both the `agentic_runs.id` and `agentic_workflow_state.run_id`.
+    /// Must equal `new_state.run_id`.
     pub run_id: String,
     /// Queue task id for the decision worker's claim. Flipped to `completed`
     /// or `failed` only for terminal variants; left untouched on `Continuing`.
@@ -42,6 +49,14 @@ pub struct DecisionCommit {
     /// Post-decision state. Version is managed by the persistence layer; the
     /// decider does not set it.
     pub new_state: WorkflowRunState,
+    /// The single new step result produced by this decision, as a one-key JSON
+    /// object `{"step_name": result}`.  Pass `serde_json::json!({})` when this
+    /// decision did not produce a new result (delegation, wait-for-siblings).
+    ///
+    /// Used for an incremental JSONB merge (`results || delta`) so each decision
+    /// writes O(1 result) instead of O(all results), eliminating the O(S²) write
+    /// pattern that caused slowdowns for long and loop-heavy workflows.
+    pub result_delta: Value,
     /// Events to append to `agentic_run_events`. Assigned monotonic seqs
     /// starting at `max(seq) + 1` within the transaction.
     pub events: Vec<(String, Value)>,
@@ -86,22 +101,27 @@ pub async fn commit_decision(
     db: &DatabaseConnection,
     commit: DecisionCommit,
 ) -> Result<CommitOutcome, DbErr> {
+    debug_assert_eq!(
+        commit.run_id, commit.new_state.run_id,
+        "DecisionCommit.run_id must match new_state.run_id; \
+         divergence would route events to a different run than the state update"
+    );
     validate_invariants(&commit)?;
 
     let txn = db.begin().await?;
 
-    let state_json = serde_json::to_value(&commit.new_state.results)
-        .map_err(|e| DbErr::Custom(format!("serialize results: {e}")))?;
     let pending_json = serde_json::to_value(&commit.new_state.pending_children)
         .map_err(|e| DbErr::Custom(format!("serialize pending_children: {e}")))?;
 
-    let updated = update_state_in_txn(
+    // Use the incremental delta path: merge only the new step result via
+    // JSONB `||` rather than overwriting the full results map.  render_context
+    // is always written as `{}` because it is derived from results at load time.
+    let updated = apply_result_delta_in_txn(
         &txn,
         &commit.new_state.run_id,
         commit.expected_version,
         commit.new_state.current_step as i32,
-        state_json,
-        commit.new_state.render_context.clone(),
+        commit.result_delta,
         pending_json,
     )
     .await?;
@@ -153,29 +173,44 @@ async fn append_events_in_txn(
     let next_seq = next_seq_in_txn(txn, run_id).await?;
     let now = chrono::Utc::now().fixed_offset();
 
-    // Insert via raw SQL keyed by (run_id, seq) with ON CONFLICT DO NOTHING
-    // so a retried commit that racing workers both attempt is idempotent on
-    // the event table — the CAS on decision_version is the correctness gate.
-    let sql = "\
-        INSERT INTO agentic_run_events (run_id, seq, event_type, payload, attempt, created_at) \
-        VALUES ($1, $2, $3, $4, $5, $6) \
-        ON CONFLICT (run_id, seq) DO NOTHING";
+    // Build a single multi-row INSERT instead of one statement per event.
+    // For N events this reduces from N+1 round-trips (1 SELECT + N inserts)
+    // to exactly 2 (1 SELECT + 1 multi-row INSERT), which matters on
+    // high-latency connections and for long/nested workflows.
+    let mut param_groups: Vec<String> = Vec::with_capacity(events.len());
+    let mut values: Vec<sea_orm::Value> = Vec::with_capacity(events.len() * 6);
+    let mut p = 1usize;
+
     for (i, (event_type, payload)) in events.iter().enumerate() {
         let seq = next_seq + i as i64;
-        let stmt = Statement::from_sql_and_values(
-            sea_orm::DatabaseBackend::Postgres,
-            sql,
-            [
-                run_id.into(),
-                seq.into(),
-                event_type.as_str().into(),
-                payload.clone().into(),
-                attempt.into(),
-                now.into(),
-            ],
-        );
-        txn.execute(stmt).await?;
+        param_groups.push(format!(
+            "(${p}, ${}, ${}, ${}, ${}, ${})",
+            p + 1,
+            p + 2,
+            p + 3,
+            p + 4,
+            p + 5
+        ));
+        let row: [sea_orm::Value; 6] = [
+            run_id.into(),
+            seq.into(),
+            event_type.as_str().into(),
+            payload.clone().into(),
+            attempt.into(),
+            now.into(),
+        ];
+        values.extend(row);
+        p += 6;
     }
+
+    let sql = format!(
+        "INSERT INTO agentic_run_events (run_id, seq, event_type, payload, attempt, created_at) \
+         VALUES {} ON CONFLICT (run_id, seq) DO NOTHING",
+        param_groups.join(", ")
+    );
+
+    let stmt = Statement::from_sql_and_values(sea_orm::DatabaseBackend::Postgres, sql, values);
+    txn.execute(stmt).await?;
     Ok(())
 }
 

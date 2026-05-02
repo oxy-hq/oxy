@@ -102,13 +102,13 @@ impl WorkflowDecider {
                 return (state, WorkflowDecision::WaitForMoreChildren);
             }
 
-            // Step complete: emit event, rebuild render context, advance.
+            // Step complete: emit event, update render context, advance.
             let success = child.status == "done";
             fold_events.push((
                 "procedure_step_completed".to_string(),
                 json!({ "step": step_name, "success": success }),
             ));
-            update_render_context(&mut state);
+            update_render_context(&mut state, &step_name);
             state.current_step = child.step_index + 1;
         }
 
@@ -168,7 +168,7 @@ impl WorkflowDecider {
             StepKind::Inline => match execute_inline(&state, &task.task_type) {
                 Ok(output) => {
                     state.results.insert(step_name.clone(), output);
-                    update_render_context(&mut state);
+                    update_render_context(&mut state, &step_name);
                     events.push((
                         "procedure_step_completed".to_string(),
                         json!({ "step": step_name, "success": true }),
@@ -292,7 +292,7 @@ impl WorkflowDecider {
 
                 if items_arr.is_empty() {
                     state.results.insert(step_name.clone(), json!([]));
-                    update_render_context(&mut state);
+                    update_render_context(&mut state, &step_name);
                     events.push((
                         "procedure_step_completed".to_string(),
                         json!({ "step": step_name, "success": true }),
@@ -307,11 +307,14 @@ impl WorkflowDecider {
                     );
                 }
 
+                // Snapshot the render context once so all iterations share the
+                // same base — each iteration only differs by its loop variable.
+                let base_context = state.render_context.clone();
                 let delegation_items: Vec<DelegationItem> = items_arr
                     .iter()
                     .enumerate()
                     .map(|(i, item)| {
-                        let mut iter_context = state.render_context.clone();
+                        let mut iter_context = base_context.clone();
                         if let Some(obj) = iter_context.as_object_mut() {
                             obj.insert(
                                 step_name.clone(),
@@ -473,17 +476,23 @@ fn execute_conditional(
     }
 }
 
-fn update_render_context(state: &mut WorkflowRunState) {
-    let mut ctx = if let Some(obj) = state.render_context.as_object() {
-        obj.clone()
-    } else {
-        serde_json::Map::new()
+/// Insert a single completed step result into the render context.
+///
+/// Called instead of a full rebuild so that each step costs O(1) rather than
+/// O(accumulated_results), eliminating the O(S²) scaling that hit nested/loop
+/// workflows with many steps or large intermediate result sets.
+fn update_render_context(state: &mut WorkflowRunState, step_name: &str) {
+    let Some(value) = state.results.get(step_name) else {
+        return;
     };
-    for (name, value) in &state.results {
-        let context_value = to_column_oriented(value);
-        ctx.insert(name.clone(), context_value);
+    let context_value = to_column_oriented(value);
+    if let Some(obj) = state.render_context.as_object_mut() {
+        obj.insert(step_name.to_string(), context_value);
+    } else {
+        let mut map = serde_json::Map::new();
+        map.insert(step_name.to_string(), context_value);
+        state.render_context = Value::Object(map);
     }
-    state.render_context = Value::Object(ctx);
 }
 
 fn build_final_answer(state: &WorkflowRunState) -> String {

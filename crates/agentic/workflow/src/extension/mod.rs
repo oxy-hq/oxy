@@ -37,7 +37,10 @@ pub struct WorkflowRunState {
     pub current_step: usize,
     /// Step name → serialized OutputContainer result.
     pub results: HashMap<String, Value>,
-    /// Accumulated minijinja render context from prior steps.
+    /// Accumulated minijinja render context from prior steps. The DB column
+    /// is always `{}` and reconstructed from `results` at load time (see
+    /// `rebuild_render_context`); only the in-memory value is read by the
+    /// decider.
     pub render_context: Value,
     /// step_index (as string) → list of child task_ids still in flight.
     pub pending_children: HashMap<String, Vec<String>>,
@@ -53,9 +56,15 @@ impl TryFrom<entity::Model> for WorkflowRunState {
             serde_json::from_value(m.workflow_config).map_err(|e| DbErr::Custom(e.to_string()))?;
         let results: HashMap<String, Value> =
             serde_json::from_value(m.results).map_err(|e| DbErr::Custom(e.to_string()))?;
-        let render_context = m.render_context;
         let pending_children: HashMap<String, Vec<String>> =
             serde_json::from_value(m.pending_children).map_err(|e| DbErr::Custom(e.to_string()))?;
+
+        // Reconstruct render_context from step results rather than reading the
+        // DB column.  The `render_context` column is now always persisted as
+        // `{}` by commit_decision (see apply_result_delta_in_txn), making it a
+        // vestigial field.  Deriving it here keeps the hot-path writes O(1 new
+        // result) while still giving the decider a correct context on every load.
+        let render_context = rebuild_render_context(&results);
 
         Ok(Self {
             run_id: m.run_id,
@@ -71,6 +80,22 @@ impl TryFrom<entity::Model> for WorkflowRunState {
             decision_version: m.decision_version,
         })
     }
+}
+
+/// Build the minijinja render context from accumulated step results.
+///
+/// This is the same transformation that `update_render_context` applies
+/// incrementally during execution: convert each row-oriented result to
+/// column-oriented format and merge into an object keyed by step name.
+fn rebuild_render_context(results: &HashMap<String, Value>) -> Value {
+    let mut ctx = serde_json::Map::with_capacity(results.len());
+    for (name, value) in results {
+        ctx.insert(
+            name.clone(),
+            crate::step_orchestrator::to_column_oriented(value),
+        );
+    }
+    Value::Object(ctx)
 }
 
 // ── Facade functions ───────────────────────────────────────────────────────
@@ -107,9 +132,14 @@ pub async fn load_workflow_state(
 
 /// Persist updated workflow state with optimistic concurrency.
 ///
+/// **Prefer [`commit_decision`] in production code paths.** This function
+/// rewrites the entire `results` JSONB column on every call, producing the
+/// O(S²·R) write pattern that `commit_decision`'s incremental delta path
+/// was introduced to eliminate. It is retained for test scaffolding (e.g.
+/// simulating a racing worker that bumps `decision_version`).
+///
 /// Returns `Ok(true)` on success, `Ok(false)` if another worker raced ahead
 /// (version mismatch — caller should discard and retry from fresh state).
-/// Persist updated workflow state with optimistic concurrency.
 ///
 /// Uses `decision_version` as the expected version for the `WHERE` clause
 /// and increments it atomically. The decider does NOT modify `decision_version`

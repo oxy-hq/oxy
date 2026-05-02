@@ -59,7 +59,8 @@ async fn execute_sql(workspace: &dyn WorkspaceContext, cfg: &Value) -> Result<Va
         q.to_string()
     } else if let Some(path) = cfg.get("sql_file").and_then(|v| v.as_str()) {
         let full_path = workspace.workspace_path().join(path);
-        std::fs::read_to_string(&full_path)
+        tokio::fs::read_to_string(&full_path)
+            .await
             .map_err(|e| format!("failed to read SQL file {}: {e}", full_path.display()))?
     } else {
         return Err("execute_sql: need 'sql_query' or 'sql_file'".into());

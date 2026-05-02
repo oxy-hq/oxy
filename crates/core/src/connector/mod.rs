@@ -27,6 +27,7 @@ mod connectorx;
 mod constants;
 mod domo;
 mod duckdb;
+mod duckdb_pool;
 mod engine;
 mod motherduck;
 mod snowflake;
