@@ -9,9 +9,9 @@ rust-version.workspace = true
 authors.workspace = true
 
 [dependencies]
-agentic-analytics = { path = "../analytics" }
-agentic-builder = { path = "../builder" }
-agentic-connector = { path = "../connector", features = [
+agentic-analytics = { workspace = true }
+agentic-builder = { workspace = true }
+agentic-connector = { workspace = true, features = [
     "duckdb",
     "postgres",
     "airhouse",
@@ -19,12 +19,12 @@ agentic-connector = { path = "../connector", features = [
     "snowflake",
     "bigquery",
 ] }
-agentic-core = { path = "../core" }
-agentic-llm = { path = "../llm" }
-agentic-runtime = { path = "../runtime" }
-agentic-workflow = { path = "../workflow" }
-async-trait = "0.1"
-serde_yaml = "0.9"
+agentic-core = { workspace = true }
+agentic-llm = { workspace = true }
+agentic-runtime = { workspace = true }
+agentic-workflow = { workspace = true }
+async-trait = { workspace = true }
+serde_yaml = { workspace = true }
 
 sea-orm = { workspace = true }
 serde = { workspace = true }

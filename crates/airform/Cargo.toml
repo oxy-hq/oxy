@@ -15,8 +15,8 @@ airform-analyzer = { workspace = true }
 airform-executor = { workspace = true }
 
 dirs = { workspace = true }
-async-trait = "0.1.89"
-anyhow = "1"
+async-trait = { workspace = true }
+anyhow = { workspace = true }
 jsonwebtoken = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
@@ -26,8 +26,8 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 
-oxy = { path = "../core" }
-oxy-shared = { path = "../shared" }
+oxy = { workspace = true }
+oxy-shared = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

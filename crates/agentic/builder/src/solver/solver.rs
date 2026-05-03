@@ -401,7 +401,7 @@ pub(crate) async fn dispatch_tool(
             let path = params["path"].as_str().unwrap_or("").to_string();
             let operation = params["operation"].as_str().unwrap_or("").to_string();
             let result = execute_manage_directory(project_root, params, human_input.as_ref()).await;
-            if let Ok(_) = result {
+            if result.is_ok() {
                 emit_domain(
                     event_tx,
                     BuilderEvent::ToolUsed {
@@ -765,35 +765,35 @@ pub(crate) async fn dispatch_tool(
             match human_input.as_ref().request_sync(&prompt, &suggestions) {
                 Ok(_) => {
                     let r = execute_init_dbt_project(project_root, params);
-                    if let Ok(ref val) = r {
-                        if val["ok"] == true {
-                            if let Some(files) = val["files"].as_array() {
-                                for file in files {
-                                    let file_path = file[0].as_str().unwrap_or("").to_string();
-                                    let new_content = file[1].as_str().unwrap_or("").to_string();
-                                    let description = file[2].as_str().unwrap_or("").to_string();
-                                    emit_domain(
-                                        event_tx,
-                                        BuilderEvent::FileChanged {
-                                            file_path,
-                                            description,
-                                            new_content,
-                                            old_content: String::new(),
-                                            is_deletion: false,
-                                        },
-                                    )
-                                    .await;
-                                }
+                    if let Ok(ref val) = r
+                        && val["ok"] == true
+                    {
+                        if let Some(files) = val["files"].as_array() {
+                            for file in files {
+                                let file_path = file[0].as_str().unwrap_or("").to_string();
+                                let new_content = file[1].as_str().unwrap_or("").to_string();
+                                let description = file[2].as_str().unwrap_or("").to_string();
+                                emit_domain(
+                                    event_tx,
+                                    BuilderEvent::FileChanged {
+                                        file_path,
+                                        description,
+                                        new_content,
+                                        old_content: String::new(),
+                                        is_deletion: false,
+                                    },
+                                )
+                                .await;
                             }
-                            emit_domain(
-                                event_tx,
-                                BuilderEvent::ToolUsed {
-                                    tool_name: "init_dbt_project".into(),
-                                    summary: format!("Initialized new project '{name}'"),
-                                },
-                            )
-                            .await;
                         }
+                        emit_domain(
+                            event_tx,
+                            BuilderEvent::ToolUsed {
+                                tool_name: "init_dbt_project".into(),
+                                summary: format!("Initialized new project '{name}'"),
+                            },
+                        )
+                        .await;
                     }
                     r
                 }
