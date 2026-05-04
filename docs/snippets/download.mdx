@@ -30,9 +30,9 @@ export const DownloadLink = () => {
       }
 
       const linkMap = {
-        "windows_x64": "https://github.com/oxy-hq/oxy/releases/latest/download/oxy_x64.zip",
-        "macos_x64": "https://github.com/oxy-hq/oxy/releases/latest/download/oxy_x64.dmg",
-        "macos_arm": "https://github.com/oxy-hq/oxy/releases/latest/download/oxy_aarch64.dmg"
+        "windows_x64": "https://github.com/oxy-hq/oxygen/releases/latest/download/oxy_x64.zip",
+        "macos_x64": "https://github.com/oxy-hq/oxygen/releases/latest/download/oxy_x64.dmg",
+        "macos_arm": "https://github.com/oxy-hq/oxygen/releases/latest/download/oxy_aarch64.dmg"
       };
 
       const key = `${os}_${arch}`;
@@ -45,7 +45,7 @@ export const DownloadLink = () => {
       }
     }, 3);
 
-}
+  }
 
-return <div id="download-link-container"></div>;
+  return <div id="download-link-container"></div>;
 };

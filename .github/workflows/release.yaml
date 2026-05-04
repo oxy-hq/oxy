@@ -29,7 +29,7 @@ permissions:
   actions: read
 
 jobs:
-  # NOTE: Disabled building CLI here, as we now build in public-release.yaml in the public repo and in oxy-hq/oxy-internal-build
+  # NOTE: Disabled building CLI here, as we now build in public-release.yaml in the public repo and in oxy-hq/oxygen-internal-build
 
   # build-cli:
   #   concurrency:

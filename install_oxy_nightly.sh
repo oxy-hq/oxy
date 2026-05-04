@@ -1,6 +1,6 @@
 #!/bin/bash
 
-REPO="oxy-hq/oxy-nightly"
+REPO="oxy-hq/oxygen-nightly"
 
 if [ "$(id -u)" -eq 0 ]; then
 	INSTALL_DIR="/usr/local/bin"

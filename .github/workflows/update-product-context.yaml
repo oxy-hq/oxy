@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   update-product-context:
-    if: ${{ github.repository == 'oxy-hq/oxy-internal' }}
+    if: ${{ github.repository == 'oxy-hq/oxygen-internal' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -24,21 +24,21 @@ jobs:
           client-id: ${{ vars.ARGO_APP_CLIENT_ID }}
           private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
           repositories: |
-            oxy-internal
-            oxy-content
+            oxygen-internal
+            oxygen-content
 
-      - name: Checkout oxy-internal
+      - name: Checkout oxygen-internal
         uses: actions/checkout@v6
         with:
           fetch-depth: 1
           token: ${{ steps.app-token.outputs.token }}
 
-      - name: Checkout oxy-content
+      - name: Checkout oxygen-content
         uses: actions/checkout@v6
         with:
-          repository: oxy-hq/oxy-content
+          repository: oxy-hq/oxygen-content
           token: ${{ steps.app-token.outputs.token }}
-          path: oxy-content
+          path: oxygen-content
           fetch-depth: 1
 
       - name: Configure git
@@ -56,10 +56,10 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_args: >-
-            --allowedTools
-            "Read,Write,Edit,Glob,Grep,Bash(git:*),Bash(gh pr create:*),Bash(gh pr list:*),Bash(date:*),Bash(ls:*)"
+            --allowedTools "Read,Write,Edit,Glob,Grep,Bash(git:*),Bash(gh pr
+            create:*),Bash(gh pr list:*),Bash(date:*),Bash(ls:*)"
           prompt: |
-            You are maintaining the `product-context.md` file in oxy-hq/oxy-internal.
+            You are maintaining the `product-context.md` file in oxy-hq/oxygen-internal.
             This file is a living reference document that describes Oxy's product features,
             pages, components, bug areas, and design system. It is injected into every
             Claude API call to provide product context.
@@ -67,7 +67,7 @@ jobs:
             ## Your task
 
             Enrich `product-context.md` with critical information from recent changelogs
-            in the `oxy-content/changelog/` directory.
+            in the `oxygen-content/changelog/` directory.
 
             ## Steps
 
@@ -77,7 +77,7 @@ jobs:
 
             ### Step 2 — Read the 10 most recent changelogs
 
-            1. Use Glob to find all `oxy-content/changelog/*.mdx` files.
+            1. Use Glob to find all `oxygen-content/changelog/*.mdx` files.
             2. Sort by filename (date-based) and read the 10 most recent ones.
             3. Extract new features, renamed concepts, new pages/UI sections, new agent
                types, new API endpoints, new file extensions, new deployment modes,
@@ -126,9 +126,9 @@ jobs:
                - Push: `git push -u origin HEAD`
                - Create a PR:
                  ```
-                 gh pr create --repo oxy-hq/oxy-internal \
+                 gh pr create --repo oxy-hq/oxygen-internal \
                    --title "docs: update product-context.md from recent changelogs" \
-                   --body "Weekly automated update of product-context.md based on the 10 most recent entries in oxy-content/changelog/.
+                   --body "Weekly automated update of product-context.md based on the 10 most recent entries in oxygen-content/changelog/.
 
             **Review before merging** — verify that new entries are accurate, well-organized, and don't duplicate existing content."
                  ```

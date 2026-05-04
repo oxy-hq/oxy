@@ -6,15 +6,15 @@ Thank you for your interest in contributing to Oxy! We welcome contributions fro
 
 ### Reporting Issues
 
-If you encounter any issues or bugs, please report them by creating a new issue in the [GitHub Issues](https://github.com/oxy-hq/oxy/issues) section. Provide as much detail as possible, including steps to reproduce the issue and any relevant logs or screenshots.
+If you encounter any issues or bugs, please report them by creating a new issue in the [GitHub Issues](https://github.com/oxy-hq/oxygen/issues) section. Provide as much detail as possible, including steps to reproduce the issue and any relevant logs or screenshots.
 
 ### Feature Requests
 
-We are always looking to improve Oxy. If you have a feature request, please open a new issue in the [GitHub Issues](https://github.com/oxy-hq/oxy/issues) section and label it as a feature request. Describe the feature in detail and explain why it would be beneficial.
+We are always looking to improve Oxy. If you have a feature request, please open a new issue in the [GitHub Issues](https://github.com/oxy-hq/oxygen/issues) section and label it as a feature request. Describe the feature in detail and explain why it would be beneficial.
 
 ### Code Contributions
 
-1. **Fork the Repository**: Fork the [Oxy repository](https://github.com/oxy-hq/oxy) to your GitHub account.
+1. **Fork the Repository**: Fork the [Oxy repository](https://github.com/oxy-hq/oxygen) to your GitHub account.
 
 2. **Clone the Repository**: Clone your forked repository to your local machine.
 

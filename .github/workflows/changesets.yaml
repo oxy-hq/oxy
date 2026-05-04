@@ -23,7 +23,8 @@ defaults:
 
 jobs:
   changesets:
-    runs-on: ${{ github.repository == 'oxy-hq/oxy-internal' && 'ubuntu-slim' || 'ubuntu-latest' }}
+    runs-on: ${{ github.repository == 'oxy-hq/oxygen-internal' && 'ubuntu-slim' ||
+      'ubuntu-latest' }}
     outputs:
       changes: ${{ steps.changes.outputs.changes }}
       oxy: ${{ steps.changes.outputs.oxy }}

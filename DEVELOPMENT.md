@@ -11,7 +11,7 @@ This guide will help you set up your development environment for contributing to
 ## Clone the repository
 
 ```bash
-git clone https://github.com/oxy-hq/oxy.git
+git clone https://github.com/oxy-hq/oxygen.git
 cd oxy
 ```
 

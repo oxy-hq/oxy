@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/config.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxygen/refs/heads/main/json-schemas/config.json
 
 databases:
   - name: primary_database
@@ -101,7 +101,7 @@ models:
     key_var: OPENAI_API_KEY
     headers:
       # Direct header value
-      X-Custom-Client: "oxy-internal-client"
+      X-Custom-Client: "oxygen-internal-client"
       # Header value from environment variable (for sensitive data like API keys)
       X-API-Secret:
         env_var: OPENAI_CUSTOM_SECRET

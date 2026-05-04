@@ -1,6 +1,6 @@
 #!/bin/bash
 
-REPO="oxy-hq/oxy"
+REPO="oxy-hq/oxygen"
 
 if [ "$(id -u)" -eq 0 ]; then
 	INSTALL_DIR="/usr/local/bin"

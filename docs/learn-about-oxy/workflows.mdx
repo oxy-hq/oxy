@@ -69,7 +69,7 @@ This is particularly useful for:
 
 - **Workflow-level**: Add `consistency_prompt` at the workflow root to apply to all agent tasks
 - **Task-level**: Add `consistency_prompt` to a specific task to override the workflow prompt
-- **Default**: If not specified, uses the built-in evaluation prompt optimized for data analysis (view the [default prompt source](https://github.com/oxy-hq/oxy-internal/blob/main/crates/core/src/config/constants.rs#L52-L199))
+- **Default**: If not specified, uses the built-in evaluation prompt optimized for data analysis (view the [default prompt source](https://github.com/oxy-hq/oxygen-internal/blob/main/crates/core/src/config/constants.rs#L52-L199))
 
 **Available template variables:**
 
@@ -77,7 +77,7 @@ This is particularly useful for:
 - `{{ submission_2 }}` - Second output
 - `{{ task_description }}` - The task prompt
 
-**Note:** Custom prompts completely replace the default. To adapt the default for your domain, copy the [source](https://github.com/oxy-hq/oxy-internal/blob/main/crates/core/src/config/constants.rs#L52-L199) and modify the specific rules you need.
+**Note:** Custom prompts completely replace the default. To adapt the default for your domain, copy the [source](https://github.com/oxy-hq/oxygen-internal/blob/main/crates/core/src/config/constants.rs#L52-L199) and modify the specific rules you need.
 
 See the [Testing](/learn-about-oxy/testing#consistency-runs-in-workflow-agent-tasks) documentation for more details on consistency checking.
 

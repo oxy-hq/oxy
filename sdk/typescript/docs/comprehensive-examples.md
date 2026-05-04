@@ -1257,6 +1257,6 @@ interface OxyConfig {
 
 ## Support
 
-- **GitHub**: [dataframehq/oxy-internal](https://github.com/dataframehq/oxy-internal)
+- **GitHub**: [dataframehq/oxygen-internal](https://github.com/dataframehq/oxygen-internal)
 - **Documentation**: See [README.md](../README.md)
-- **Issues**: [GitHub Issues](https://github.com/dataframehq/oxy-internal/issues)
+- **Issues**: [GitHub Issues](https://github.com/dataframehq/oxygen-internal/issues)

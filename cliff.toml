@@ -44,7 +44,7 @@ postprocessors = [
 # output = "test.md"
 
 [git]
-# Only consider semver release tags. The public mirror (oxy-hq/oxy) carries
+# Only consider semver release tags. The public mirror (oxy-hq/oxygen) carries
 # per-commit `edge-main-*` / `nightly-main-*` tags from nightly/edge builds;
 # without this filter, git-cliff attributes commits to the nearest edge tag
 # and `--latest` produces near-empty release notes (only commits without an

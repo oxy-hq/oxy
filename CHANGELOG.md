@@ -1307,7 +1307,7 @@ All notable changes to this project will be documented in this file.
 
 ### ⚙️ Miscellaneous Tasks
 
-- Remove docs to unify at oxy-content repo (#1445)
+- Remove docs to unify at oxygen-content repo (#1445)
 - Update min consistency
 - Update deps
 - Enhance artifact handling and validation in workflows

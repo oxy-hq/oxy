@@ -30,7 +30,7 @@ The fastest way to get started with Oxy on Docker is to use the pre-built image 
 
 ```bash
 # Pull the latest Oxy Docker image
-docker pull ghcr.io/oxy-hq/oxy:latest
+docker pull ghcr.io/oxy-hq/oxygen:latest
 
 # Run Oxy with a mounted workspace
 docker run -d \
@@ -39,7 +39,7 @@ docker run -d \
   -v /path/to/your/workspace:/app \
   -e OPENAI_API_KEY=your-api-key \
   -e OXY_STATE_DIR=/var/lib/oxy/data \
-  ghcr.io/oxy-hq/oxy:latest
+  ghcr.io/oxy-hq/oxygen:latest
 ```
 
 ## Why Use Docker Compose?
@@ -60,7 +60,7 @@ The minimal setup runs Oxy and PostgreSQL together. Create a `docker-compose.yml
 ```yaml
 services:
   oxy:
-    image: ghcr.io/oxy-hq/oxy:latest
+    image: ghcr.io/oxy-hq/oxygen:latest
     container_name: oxy-demo
     ports:
       - "3000:3000"
@@ -177,7 +177,7 @@ flowchart TD
     version: '3'
     services:
       oxy:
-        image: ghcr.io/oxy-hq/oxy:latest
+        image: ghcr.io/oxy-hq/oxygen:latest
         container_name: oxy-instance
         ports:
           - "3000:3000"
@@ -274,7 +274,7 @@ services:
     restart: unless-stopped
 
   oxy:
-    image: ghcr.io/oxy-hq/oxy:latest
+    image: ghcr.io/oxy-hq/oxygen:latest
     container_name: oxy-instance
     ports:
       - "3000:3000"
@@ -328,7 +328,7 @@ Common environment variables to configure in your Oxy container:
 If you need to extend the official Oxy image with additional dependencies or configuration, you can create your own Dockerfile:
 
 ```dockerfile
-FROM ghcr.io/oxy-hq/oxy:latest
+FROM ghcr.io/oxy-hq/oxygen:latest
 
 # Add custom dependencies
 RUN apt-get update && apt-get install -y your-package

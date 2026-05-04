@@ -1,4 +1,4 @@
-# GitHub Copilot Code Review Instructions (oxy-internal)
+# GitHub Copilot Code Review Instructions (oxygen-internal)
 
 ## Review Philosophy
 

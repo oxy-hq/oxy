@@ -278,7 +278,7 @@ jobs:
           owner: ${{ github.repository_owner }}
           repositories: |
             oxy
-            oxy-internal
+            oxygen-internal
             oxy-nightly
 
       - name: Checkout repository
@@ -442,7 +442,7 @@ jobs:
           owner: ${{ github.repository_owner }}
           repositories: |
             oxy
-            oxy-internal
+            oxygen-internal
             oxy-nightly
 
       - name: Checkout repository

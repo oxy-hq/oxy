@@ -29,7 +29,7 @@ How it works:
   1. Generates git-cliff release notes for each version (auto-runs git cliff)
   2. Fetches PR descriptions for every #NNN reference via `gh`
   3. Calls Claude (local claude CLI or ANTHROPIC_API_KEY) with product-context.md,
-     oxy-content/CLAUDE.md, and DeepWiki hint (when using local claude CLI)
+     oxygen-content/CLAUDE.md, and DeepWiki hint (when using local claude CLI)
   4. Prints the generated MDX to stdout
 """
 
@@ -51,12 +51,12 @@ VERSIONS: list[str] = (
 )
 RELEASE_VERSION = VERSIONS[-1]  # latest version; used for single-version CI ops
 
-CONTENT_DIR = Path("oxy-content")
+CONTENT_DIR = Path("oxygen-content")
 CHANGELOG_DIR = CONTENT_DIR / "changelog"
 DOCS_JSON = CONTENT_DIR / "docs.json"
 PENDING_BRANCH = "pending-changelog"
 PENDING_LABEL = "pending-release"
-CONTENT_REPO = "oxy-hq/oxy-content"
+CONTENT_REPO = "oxy-hq/oxygen-content"
 
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
@@ -90,11 +90,11 @@ def git(*args):
 
 
 def get_writing_guide() -> str:
-    """Load oxy-content's CLAUDE.md; fall back to embedded rules if not present."""
+    """Load oxygen-content's CLAUDE.md; fall back to embedded rules if not present."""
     guide_path = CONTENT_DIR / "CLAUDE.md"
     if guide_path.exists():
         return guide_path.read_text()
-    # Embedded fallback for dry-run without a local oxy-content checkout
+    # Embedded fallback for dry-run without a local oxygen-content checkout
     return """
 Write user-facing MDX changelogs for Oxy (AI-powered data analytics platform).
 
@@ -121,7 +121,7 @@ Rules:
 
 
 def get_example_changelog() -> str:
-    """Return 1 recent published MDX from oxy-content as a concrete format example."""
+    """Return 1 recent published MDX from oxygen-content as a concrete format example."""
     files = sorted(CHANGELOG_DIR.glob("*.mdx"), reverse=True)
     for f in files[:5]:
         content = f.read_text().strip()
@@ -172,7 +172,7 @@ def build_prompt(
 
     deepwiki_block = (
         "\nIf you need deeper context on how a specific feature works, call the DeepWiki MCP tool:\n"
-        '  mcp__deepwiki__ask_question(repo="oxy-hq/oxy", question="...")\n'
+        '  mcp__deepwiki__ask_question(repo="oxy-hq/oxygen", question="...")\n'
         "Use it for any feature whose PR description leaves the user-facing impact unclear.\n"
         if include_deepwiki_hint
         else ""
@@ -445,7 +445,7 @@ def enrich_pr_body(pr_number: str, pr_body: str) -> str:
         try:
             raw = run([
                 "gh", "pr", "view", pr_number,
-                "--repo", "oxy-hq/oxy-internal",
+                "--repo", "oxy-hq/oxygen-internal",
                 "--json", "closingIssuesReferences",
             ])
             refs = json.loads(raw).get("closingIssuesReferences", [])
@@ -465,7 +465,7 @@ def enrich_pr_body(pr_number: str, pr_body: str) -> str:
             try:
                 raw = run([
                     "gh", "issue", "view", issue_num,
-                    "--repo", "oxy-hq/oxy-internal",
+                    "--repo", "oxy-hq/oxygen-internal",
                     "--json", "title,body",
                 ])
                 issue = json.loads(raw)
@@ -485,7 +485,7 @@ def enrich_pr_body(pr_number: str, pr_body: str) -> str:
         try:
             raw = run([
                 "gh", "pr", "view", pr_number,
-                "--repo", "oxy-hq/oxy-internal",
+                "--repo", "oxy-hq/oxygen-internal",
                 "--json", "commits",
             ])
             commits = json.loads(raw).get("commits", [])
@@ -537,7 +537,7 @@ def fetch_pr_context(cliff_notes: str) -> str:
                     "view",
                     num,
                     "--repo",
-                    "oxy-hq/oxy-internal",
+                    "oxy-hq/oxygen-internal",
                     "--json",
                     "number,title,body,labels",
                 ]

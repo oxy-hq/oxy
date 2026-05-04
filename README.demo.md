@@ -20,7 +20,7 @@ This is a minimal Docker Compose setup for running Oxy with PostgreSQL, designed
 
 ## What's Included
 
-- **Oxy Service**: Uses the official pre-built Docker image from `ghcr.io/oxy-hq/oxy`
+- **Oxy Service**: Uses the official pre-built Docker image from `ghcr.io/oxy-hq/oxygen`
 - **PostgreSQL**: A linked PostgreSQL 16 database for Oxy to connect to
 
 ## Volume Mounts

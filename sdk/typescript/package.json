@@ -44,11 +44,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/dataframehq/oxy-internal.git",
+    "url": "https://github.com/dataframehq/oxygen-internal.git",
     "directory": "sdk/typescript"
   },
   "bugs": {
-    "url": "https://github.com/dataframehq/oxy-internal/issues"
+    "url": "https://github.com/dataframehq/oxygen-internal/issues"
   },
   "homepage": "https://oxy.tech",
   "peerDependencies": {

@@ -34,7 +34,7 @@ export function startServer() {
 
 // Reset the dedicated test file to its original content
 export async function resetTestFile() {
-  // File should be in the examples directory of the oxy-internal project
+  // File should be in the examples directory of the oxygen-internal project
   const testFilePath = "../examples/test-file-for-e2e.txt";
   const originalContent = `# Test File for E2E Tests
 

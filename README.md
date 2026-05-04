@@ -9,7 +9,7 @@
 </div>
 
 > 📖 **Looking for up-to-date code documentation?**  
-> Check out our DeepWiki, which updates weekly with the latest code changes: [![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/oxy-hq/oxy)
+> Check out our DeepWiki, which updates weekly with the latest code changes: [![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/oxy-hq/oxygen)
 
 ## The Open-Source AI Data Analyst built for Speed and Precision 
 
@@ -35,7 +35,7 @@ bash <(curl -sSfL https://get.oxy.tech)
 #### Using Homebrew (macOS only)
 
 ```bash
-brew install oxy-hq/oxy/oxy
+brew install oxy-hq/oxygen/oxy
 ```
 
 #### Installing a Specific Version
@@ -73,7 +73,7 @@ bash <(curl -sSfL https://release.oxy.tech) --channel stable
 bash <(curl -sSfL https://release.oxy.tech) -c edge -n 20
 ```
 
-You can also browse releases directly on GitHub: [stable](https://github.com/oxy-hq/oxy/releases) | [edge](https://github.com/oxy-hq/oxy-nightly/releases).
+You can also browse releases directly on GitHub: [stable](https://github.com/oxy-hq/oxygen/releases) | [edge](https://github.com/oxy-hq/oxygen-nightly/releases).
 
 </details>
 

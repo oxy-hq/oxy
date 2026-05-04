@@ -467,7 +467,7 @@ MIT
 
 ## Support
 
-For issues and questions, please visit [GitHub Issues](https://github.com/dataframehq/oxy-internal/issues).
+For issues and questions, please visit [GitHub Issues](https://github.com/dataframehq/oxygen-internal/issues).
 
 ### Local development with v0 or cloud service
 

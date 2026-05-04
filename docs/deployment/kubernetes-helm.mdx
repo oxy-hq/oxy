@@ -126,7 +126,7 @@ Create a `values.yaml` file for customization:
 ```yaml
 # values.yaml
 app:
-  image: "ghcr.io/oxy-hq/oxy"
+  image: "ghcr.io/oxy-hq/oxygen"
   imageTag: "latest"
   replicaCount: 1
 
@@ -452,7 +452,7 @@ ingress:
 ```yaml
 # values.yaml — deployment-specific overrides
 app:
-  image: ghcr.io/oxy-hq/oxy
+  image: ghcr.io/oxy-hq/oxygen
   imageTag: "0.5.21"
   imagePullPolicy: IfNotPresent
   command: ["oxy", "serve", "--enterprise"]
@@ -508,7 +508,7 @@ The `oxy-start` chart runs PostgreSQL inside the pod using Docker-in-Docker. Thi
 ```yaml
 # oxy-start values.yaml
 app:
-  image: ghcr.io/oxy-hq/oxy
+  image: ghcr.io/oxy-hq/oxygen
   imageTag: "0.5.23"
   imagePullPolicy: IfNotPresent
 
@@ -743,4 +743,4 @@ kubectl port-forward svc/oxy-app 3000:80 -n oxy
 **App starts in readonly mode:**
 This is the default behavior when `gitSync.enabled=false`. Git setup will be handled by the app UI.
 
-For other issues, please view the logs or check pods status. File an issue at [GitHub Issues](https://github.com/oxy-hq/oxy/issues) if you need further assistance.
+For other issues, please view the logs or check pods status. File an issue at [GitHub Issues](https://github.com/oxy-hq/oxygen/issues) if you need further assistance.

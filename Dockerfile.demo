@@ -5,7 +5,7 @@
 # ---------------------------------------------------------------------------------
 
 # Pull the pre-built Oxy image from GitHub Container Registry
-FROM ghcr.io/oxy-hq/oxy:latest
+FROM ghcr.io/oxy-hq/oxygen:latest
 
 # Set working directory
 WORKDIR /app

@@ -449,7 +449,7 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
         serde_yaml::to_string(&config).map_err(|e| InitError::ExtractionError(e.to_string()))?;
 
     let content = format!(
-        "# yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/config.json\n{yaml}"
+        "# yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxygen/refs/heads/main/json-schemas/config.json\n{yaml}"
     );
 
     fs::write(config_path, content)?;

@@ -3,7 +3,7 @@ name: Clear cache
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 0 1 * *'
+    - cron: "0 0 1 * *"
 
 permissions:
   actions: write
@@ -14,7 +14,8 @@ defaults:
 
 jobs:
   clear-cache:
-    runs-on: ${{ github.repository == 'oxy-hq/oxy-internal' && 'ubuntu-slim' || 'ubuntu-latest' }}
+    runs-on: ${{ github.repository == 'oxy-hq/oxygen-internal' && 'ubuntu-slim' ||
+      'ubuntu-latest' }}
     steps:
       - name: Clear cache
         uses: actions/github-script@v9

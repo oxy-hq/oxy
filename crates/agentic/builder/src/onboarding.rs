@@ -421,7 +421,7 @@ Call `propose_change` exactly once, targeting `analytics.agentic.yml` at the pro
 This is the agentic analytics agent users will interact with to ask questions about their data. It runs a multi-step FSM pipeline (clarify → specify → generate SQL → execute → interpret) rather than a single LLM tool loop.
 
 ```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/agentic.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxygen/refs/heads/main/json-schemas/agentic.json
 llm:
   ref: {model_name}
 

@@ -674,7 +674,7 @@ fn compile_with_airlayer(
     // 1. Convert oxy-semantic views to airlayer views
     let airlayer_views: Vec<airlayer::View> = views.iter().map(convert_view_to_airlayer).collect();
 
-    // 2. Build datasource→dialect map from oxy-internal's config databases
+    // 2. Build datasource→dialect map from oxygen-internal's config databases
     let dialects = build_dialect_map(config_manager);
 
     // 3. Build airlayer SemanticLayer and engine
@@ -692,7 +692,7 @@ fn compile_with_airlayer(
 
     // 6. Substitute parameter placeholders with actual values.
     // Airlayer returns parameterized SQL (e.g. $1, ?, @p0) with a separate params vec,
-    // but oxy-internal's Engine trait only accepts raw SQL with no param binding.
+    // but oxygen-internal's Engine trait only accepts raw SQL with no param binding.
     let sql = substitute_params(&result.sql, &result.params);
 
     Ok(sql)
@@ -844,7 +844,7 @@ fn convert_measure_to_airlayer(measure: &oxy_semantic::Measure) -> airlayer::Mea
     }
 }
 
-/// Build a DatasourceDialectMap from the oxy-internal config databases.
+/// Build a DatasourceDialectMap from the oxygen-internal config databases.
 fn build_dialect_map(
     config_manager: &oxy::config::ConfigManager,
 ) -> airlayer::DatasourceDialectMap {
@@ -869,7 +869,7 @@ fn build_dialect_map(
     map
 }
 
-/// Build an airlayer QueryRequest from oxy-internal's SemanticQueryTask.
+/// Build an airlayer QueryRequest from oxygen-internal's SemanticQueryTask.
 fn build_airlayer_query(
     task: &SemanticQueryTask,
     topic_name: &str,

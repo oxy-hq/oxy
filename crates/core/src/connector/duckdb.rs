@@ -84,8 +84,8 @@ impl DuckDB {
 /// `spawn_blocking` to avoid blocking Tokio workers during `INSTALL`
 /// (which may fetch extensions from the network on first run).
 fn init_ducklake_blocking(attach_stmts: Vec<String>) -> Result<Connection, OxyError> {
-    let conn = Connection::open_in_memory()
-        .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
+    let conn =
+        Connection::open_in_memory().map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
     conn.execute("INSTALL ducklake", [])
         .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
     conn.execute("LOAD ducklake", [])

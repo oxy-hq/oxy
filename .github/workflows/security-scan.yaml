@@ -26,7 +26,7 @@ jobs:
     if: |
       (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release/')) &&
       (github.repository == 'oxy-hq/oxy' ||
-       (github.repository == 'oxy-hq/oxy-internal' && github.event_name == 'pull_request'))
+       (github.repository == 'oxy-hq/oxygen-internal' && github.event_name == 'pull_request'))
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -41,7 +41,8 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: "0"
           format: ${{ github.repository == 'oxy-hq/oxy' && 'sarif' || 'table' }}
-          output: ${{ github.repository == 'oxy-hq/oxy' && 'trivy-vuln-results.sarif' || 'trivy-vuln-results.txt' }}
+          output: ${{ github.repository == 'oxy-hq/oxy' && 'trivy-vuln-results.sarif' ||
+            'trivy-vuln-results.txt' }}
 
       - name: Publish vulnerability results to workflow summary
         if: github.repository != 'oxy-hq/oxy'
@@ -73,7 +74,7 @@ jobs:
     if: |
       (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release/')) &&
       (github.repository == 'oxy-hq/oxy' ||
-       (github.repository == 'oxy-hq/oxy-internal' && github.event_name == 'pull_request'))
+       (github.repository == 'oxy-hq/oxygen-internal' && github.event_name == 'pull_request'))
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -91,7 +92,8 @@ jobs:
           skip-files: "localhost+2-key.pem,localhost+2.pem,**/.env.example"
           trivyignores: .trivyignore.yaml
           format: ${{ github.repository == 'oxy-hq/oxy' && 'sarif' || 'table' }}
-          output: ${{ github.repository == 'oxy-hq/oxy' && 'trivy-secret-results.sarif' || 'trivy-secret-results.txt' }}
+          output: ${{ github.repository == 'oxy-hq/oxy' && 'trivy-secret-results.sarif' ||
+            'trivy-secret-results.txt' }}
 
       - name: Publish secret scan results to workflow summary
         if: github.repository != 'oxy-hq/oxy' && always()

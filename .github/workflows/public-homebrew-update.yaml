@@ -5,12 +5,13 @@ permissions:
 
 on:
   release:
-    types: [created, released, published]
+    types: [ created, released, published ]
 
 jobs:
   dispatch-event:
     runs-on: ubuntu-latest
-    if: github.repository == 'oxy-hq/oxy' && github.event.release.draft == false && github.event.release.prerelease == false
+    if: github.repository == 'oxy-hq/oxygen' && github.event.release.draft == false
+      && github.event.release.prerelease == false
     steps:
       - name: Check if release is latest
         id: check-latest
@@ -35,7 +36,7 @@ jobs:
         run: |
           curl -X POST -H "Accept: application/vnd.github.v3+json" \
           -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-          https://api.github.com/repos/oxy-hq/homebrew-oxy/dispatches \
+          https://api.github.com/repos/oxy-hq/homebrew-oxygen/dispatches \
           -d '{"event_type":"oxy_release"}'
 
       - uses: actions/create-github-app-token@v3
@@ -47,12 +48,12 @@ jobs:
           private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: |
-            oxy
-            homebrew-oxy
+            oxygen
+            homebrew-oxygen
 
       - name: Repository Dispatch
         uses: peter-evans/repository-dispatch@v4
         with:
           token: ${{ steps.app-token.outputs.token }}
-          repository: oxy-hq/homebrew-oxy
+          repository: oxy-hq/homebrew-oxygen
           event-type: oxy_release

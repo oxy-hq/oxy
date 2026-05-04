@@ -38,19 +38,19 @@ export const configureMonaco = (monaco: Monaco) => {
     schemas: [
       {
         fileMatch: ["**/*.app.yml", "**/*.app.yaml"],
-        uri: "https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/app.json"
+        uri: "https://raw.githubusercontent.com/oxy-hq/oxygen/refs/heads/main/json-schemas/app.json"
       },
       {
         fileMatch: ["**/*.agent.yml", "**/*.agent.yaml"],
-        uri: "https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/agent.json"
+        uri: "https://raw.githubusercontent.com/oxy-hq/oxygen/refs/heads/main/json-schemas/agent.json"
       },
       {
         fileMatch: ["**/*.workflow.yml", "**/*.workflow.yaml"],
-        uri: "https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/workflow.json"
+        uri: "https://raw.githubusercontent.com/oxy-hq/oxygen/refs/heads/main/json-schemas/workflow.json"
       },
       {
         fileMatch: ["**/config.yml", "**/config.yaml"],
-        uri: "https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/json-schemas/config.json"
+        uri: "https://raw.githubusercontent.com/oxy-hq/oxygen/refs/heads/main/json-schemas/config.json"
       }
     ]
   });

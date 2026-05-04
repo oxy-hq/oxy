@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   analyze:
-    if: ${{ github.repository == 'oxy-hq/oxy' }}
+    if: ${{ github.repository == 'oxy-hq/oxygen' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -33,8 +33,8 @@ jobs:
               overly broad permissions, unvalidated user data reaching SQL
           - category: test-coverage
             focus: >-
-              untested public APIs, missing edge-case tests, flaky test patterns,
-              code paths with no coverage
+              untested public APIs, missing edge-case tests, flaky test
+              patterns, code paths with no coverage
           - category: code-quality
             focus: >-
               missing error handling, inconsistent patterns vs established
@@ -53,7 +53,7 @@ jobs:
           prompt: |
             You are an automated code reviewer for the Oxy monorepo (Rust workspace + React/TypeScript frontend).
 
-            Repository: oxy-hq/oxy-internal
+            Repository: oxy-hq/oxygen-internal
             Branch: main
 
             Your task: analyze ONLY the category **${{ matrix.category }}** — ${{ matrix.focus }}.
@@ -87,7 +87,7 @@ jobs:
             // ✅ fix
             ```
 
-            [Fix this →](https://claude.ai/code?q=ENCODED_TASK&repo=oxy-hq/oxy-internal)
+            [Fix this →](https://claude.ai/code?q=ENCODED_TASK&repo=oxy-hq/oxygen-internal)
 
             Where ENCODED_TASK is a URL-encoded string like:
             "In path/to/file on branch main, line N has <problem>. <what to fix and how>."
@@ -112,7 +112,7 @@ jobs:
 
   create-issue:
     needs: analyze
-    if: ${{ github.repository == 'oxy-hq/oxy' && !cancelled() }}
+    if: ${{ github.repository == 'oxy-hq/oxygen' && !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -124,8 +124,8 @@ jobs:
           private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: |
-            oxy-internal
-            oxy
+            oxygen-internal
+            oxygen
 
       - uses: actions/download-artifact@v8
         with:
@@ -148,6 +148,6 @@ jobs:
           } > body.md
 
           gh issue create \
-            --repo oxy-hq/oxy-internal \
+            --repo oxy-hq/oxygen-internal \
             --title "Weekly Enhancement Suggestions — ${DATE}" \
             --body-file body.md 

@@ -1,6 +1,6 @@
 services:
   oxy:
-    image: ghcr.io/oxy-hq/oxy:latest
+    image: ghcr.io/oxy-hq/oxygen:latest
     container_name: oxy-demo
     ports:
       - "3000:3000"

@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # Configuration
-STABLE_REPO="oxy-hq/oxy"
-EDGE_REPO="oxy-hq/oxy-nightly"
+STABLE_REPO="oxy-hq/oxygen"
+EDGE_REPO="oxy-hq/oxygen-nightly"
 API_BASE="https://api.github.com/repos"
 
 # Defaults

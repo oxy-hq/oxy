@@ -27,7 +27,7 @@ This guide walks you through deploying Oxy on a cloud environment, from provisio
 There are several approaches to deploying Oxy:
 
 1. **Traditional Linux Setup** - Follow the step-by-step guide below to provision a machine, install dependencies, and configure each component manually.
-2. **Docker Deployment** - Use our [Docker image](https://github.com/oxy-hq/oxy/pkgs/container/oxy) for a containerized deployment that simplifies setup and maintenance. See the [Docker deployment guide](/deployment/docker) for details.
+2. **Docker Deployment** - Use our [Docker image](https://github.com/oxy-hq/oxygen/pkgs/container/oxy) for a containerized deployment that simplifies setup and maintenance. See the [Docker deployment guide](/deployment/docker) for details.
 3. **Kubernetes Deployment** - Deploy Oxy on Kubernetes clusters using our official Helm charts or raw YAML manifests. Choose from:
    - **[oxy-app Helm Chart](/deployment/kubernetes-helm)** - Standard deployment using `oxy serve` with an external PostgreSQL database. Recommended for most Kubernetes deployments.
    - **[oxy-start Helm Chart](/deployment/kubernetes-helm#oxy-start-self-contained-deployment)** - Self-contained deployment using `oxy start` with Docker-in-Docker. No external database required — ideal for single-tenant instances.
@@ -266,7 +266,7 @@ sudo ufw --force enable
 
 # ===== STEP 2: Install Oxy CLI =====
 echo "===== 2. Installing Oxy CLI ====="
-bash <(curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/oxy-hq/oxy/refs/heads/main/install_oxy.sh)
+bash <(curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/oxy-hq/oxygen/refs/heads/main/install_oxy.sh)
 
 # Set up Oxy system service
 cat <<EOF | sudo tee /etc/systemd/system/oxy.service

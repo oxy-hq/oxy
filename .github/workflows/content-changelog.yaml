@@ -45,7 +45,7 @@ jobs:
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             # Manual trigger: try to find the merged release PR by branch name
-            PR_NUMBER=$(gh pr list --repo oxy-hq/oxy-internal \
+            PR_NUMBER=$(gh pr list --repo oxy-hq/oxygen-internal \
               --state merged --head "release/${{ steps.version.outputs.version }}" \
               --json number --jq '.[0].number')
           else
@@ -62,28 +62,28 @@ jobs:
           client-id: ${{ vars.ARGO_APP_CLIENT_ID }}
           private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
           repositories: |
-            oxy-internal
-            oxy-content
+            oxygen-internal
+            oxygen-content
 
-      - name: Checkout oxy-internal
+      - name: Checkout oxygen-internal
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
-      - name: Checkout oxy-content
+      - name: Checkout oxygen-content
         uses: actions/checkout@v6
         with:
-          repository: oxy-hq/oxy-content
+          repository: oxy-hq/oxygen-content
           token: ${{ steps.app-token.outputs.token }}
-          path: oxy-content
+          path: oxygen-content
           fetch-depth: 0
 
-      - name: Configure git for oxy-content
+      - name: Configure git for oxygen-content
         run: |
           USER_ID=$(gh api "/users/${{ steps.app-token.outputs.app-slug }}[bot]" --jq .id)
-          git -C oxy-content config user.name "${{ steps.app-token.outputs.app-slug }}[bot]"
-          git -C oxy-content config user.email "${USER_ID}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com"
+          git -C oxygen-content config user.name "${{ steps.app-token.outputs.app-slug }}[bot]"
+          git -C oxygen-content config user.email "${USER_ID}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com"
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
@@ -95,7 +95,7 @@ jobs:
           # OVERRIDE_GITHUB_TOKEN internally). A step-level `env: GH_TOKEN:` does NOT
           # work — the action generates its own claude[bot] token via OIDC and sets
           # $GH_TOKEN from that inside the Claude runtime, overriding any step env.
-          # claude[bot] has no access to oxy-content, which is why `gh pr create` was
+          # claude[bot] has no access to oxygen-content, which is why `gh pr create` was
           # silently 404'ing while git push (remote extraheader) still succeeded.
           github_token: ${{ steps.app-token.outputs.token }}
           show_full_output: "true"
@@ -104,7 +104,7 @@ jobs:
           # inside quoted bodies). `Edit` is needed for modifying docs.json in place.
           claude_args: --allowedTools "Bash,Read,Write,Edit,Glob,Grep"
           prompt: |
-            Create a user-facing changelog draft in oxy-hq/oxy-content for Oxy release ${{ steps.version.outputs.version }}.
+            Create a user-facing changelog draft in oxy-hq/oxygen-content for Oxy release ${{ steps.version.outputs.version }}.
 
             There are two modes — pick the right one based on context:
 
@@ -119,13 +119,13 @@ jobs:
             ### Mode A: Read the release PR
 
             1. Fetch the release PR body:
-               `gh pr view ${{ steps.release-pr.outputs.number }} --repo oxy-hq/oxy-internal --json body --jq .body`
+               `gh pr view ${{ steps.release-pr.outputs.number }} --repo oxy-hq/oxygen-internal --json body --jq .body`
             2. Extract every PR number (#NNN) referenced in the body.
             3. For each PR, fetch details:
-               `gh pr view NNN --repo oxy-hq/oxy-internal --json number,title,body,labels,closingIssuesReferences`
+               `gh pr view NNN --repo oxy-hq/oxygen-internal --json number,title,body,labels,closingIssuesReferences`
             4. Skip PRs titled "chore: release" or that are purely CI/deps/chore.
             5. If a PR body is sparse (< 150 chars after stripping boilerplate), also fetch linked issues:
-               `gh issue view ISSUE_NUM --repo oxy-hq/oxy-internal --json title,body`
+               `gh issue view ISSUE_NUM --repo oxy-hq/oxygen-internal --json title,body`
 
             ### Mode B: Read CHANGELOG.md
 
@@ -135,10 +135,10 @@ jobs:
                Only the target version section matters — ignore everything else.
             4. From the target version section, extract every PR number (#NNN).
             5. For each PR, fetch details:
-               `gh pr view NNN --repo oxy-hq/oxy-internal --json number,title,body,labels,closingIssuesReferences`
+               `gh pr view NNN --repo oxy-hq/oxygen-internal --json number,title,body,labels,closingIssuesReferences`
             6. Skip PRs that are purely CI/deps/chore (titled "chore: release", dependency bumps, etc.).
             7. If a PR body is sparse (< 150 chars after stripping boilerplate), also fetch linked issues:
-               `gh issue view ISSUE_NUM --repo oxy-hq/oxy-internal --json title,body`
+               `gh issue view ISSUE_NUM --repo oxy-hq/oxygen-internal --json title,body`
 
             ---
 
@@ -147,8 +147,8 @@ jobs:
             1. Read `product-context.md` — it explains Oxy's product terminology, features, and
                which components exist. Use it to write descriptions that match how we talk about
                the product to users.
-            2. Read `oxy-content/CLAUDE.md` — follow its format and tone rules exactly.
-            3. Read the most recent existing MDX in `oxy-content/changelog/` as a concrete
+            2. Read `oxygen-content/CLAUDE.md` — follow its format and tone rules exactly.
+            3. Read the most recent existing MDX in `oxygen-content/changelog/` as a concrete
                format example to match precisely.
 
             ---
@@ -168,21 +168,21 @@ jobs:
 
             ---
 
-            ## Step 4 — Write to oxy-content
+            ## Step 4 — Write to oxygen-content
 
-            1. Write the MDX to `oxy-content/changelog/$(date +%Y-%m-%d).mdx`
-            2. In `oxy-content/docs.json`, prepend `"changelog/$(date +%Y-%m-%d)"` to the top
+            1. Write the MDX to `oxygen-content/changelog/$(date +%Y-%m-%d).mdx`
+            2. In `oxygen-content/docs.json`, prepend `"changelog/$(date +%Y-%m-%d)"` to the top
                of the "Recent Updates" `pages` array inside the "Changelog" tab.
 
             ---
 
-            ## Step 5 — Create or update the pending PR in oxy-content
+            ## Step 5 — Create or update the pending PR in oxygen-content
 
             Ensure the label exists:
-            `gh label create --repo oxy-hq/oxy-content pending-release --color 0075ca --description "Pending changelog draft" 2>/dev/null || true`
+            `gh label create --repo oxy-hq/oxygen-content pending-release --color 0075ca --description "Pending changelog draft" 2>/dev/null || true`
 
             Check for an open PR with that label:
-            `gh pr list --repo oxy-hq/oxy-content --label pending-release --state open --json number,headRefName --jq '.[0]'`
+            `gh pr list --repo oxy-hq/oxygen-content --label pending-release --state open --json number,headRefName --jq '.[0]'`
 
             **If a PR already exists:**
             - Fetch and checkout its branch
@@ -193,12 +193,12 @@ jobs:
 
             **If no open PR:**
             - Delete stale remote branch if present:
-              `git -C oxy-content push origin --delete pending-changelog 2>/dev/null || true`
+              `git -C oxygen-content push origin --delete pending-changelog 2>/dev/null || true`
             - Checkout main, pull, create branch `pending-changelog`
             - Commit and push
             - Create the PR:
               ```
-              gh pr create --repo oxy-hq/oxy-content \
+              gh pr create --repo oxy-hq/oxygen-content \
                 --title "chore: pending changelog ($(date +%Y-%m-%d))" \
                 --label pending-release \
                 --head pending-changelog \
