@@ -161,6 +161,14 @@ fn validate_invariants(commit: &DecisionCommit) -> Result<(), DbErr> {
     Ok(())
 }
 
+/// Returns `($start, $start+1, ..., $start+cols-1)` and advances the caller's
+/// counter by `cols`. The parentheses are included so callers can join groups
+/// with ", " and paste directly into a VALUES clause.
+fn build_row_placeholders(start: usize, cols: usize) -> String {
+    let params: Vec<String> = (start..start + cols).map(|n| format!("${n}")).collect();
+    format!("({})", params.join(", "))
+}
+
 async fn append_events_in_txn(
     txn: &DatabaseTransaction,
     run_id: &str,
@@ -183,14 +191,7 @@ async fn append_events_in_txn(
 
     for (i, (event_type, payload)) in events.iter().enumerate() {
         let seq = next_seq + i as i64;
-        param_groups.push(format!(
-            "(${p}, ${}, ${}, ${}, ${}, ${})",
-            p + 1,
-            p + 2,
-            p + 3,
-            p + 4,
-            p + 5
-        ));
+        param_groups.push(build_row_placeholders(p, 6));
         let row: [sea_orm::Value; 6] = [
             run_id.into(),
             seq.into(),
