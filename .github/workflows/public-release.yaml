@@ -277,7 +277,7 @@ jobs:
           private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: |
-            oxy
+            oxygen
             oxygen-internal
             oxy-nightly
 
@@ -441,7 +441,7 @@ jobs:
           private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: |
-            oxy
+            oxygen
             oxygen-internal
             oxy-nightly
 
