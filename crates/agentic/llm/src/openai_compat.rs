@@ -723,4 +723,103 @@ mod tests {
             "http://localhost:11434/v1/chat/completions"
         );
     }
+
+    // ── convert_anthropic_tool_msg_to_chat ────────────────────────────────────
+
+    #[test]
+    fn tool_use_assistant_produces_tool_calls_array() {
+        let msg = json!({
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "call_abc",
+                    "name": "execute_sql",
+                    "input": {"query": "SELECT 1"}
+                }
+            ]
+        });
+        let result = convert_anthropic_tool_msg_to_chat(&msg).expect("should convert");
+        assert_eq!(result.len(), 1);
+        let out = &result[0];
+        assert_eq!(out["role"], "assistant");
+        let tool_calls = out["tool_calls"].as_array().expect("tool_calls array");
+        assert_eq!(tool_calls.len(), 1);
+        assert_eq!(tool_calls[0]["id"], "call_abc");
+        assert_eq!(tool_calls[0]["type"], "function");
+        assert_eq!(tool_calls[0]["function"]["name"], "execute_sql");
+    }
+
+    #[test]
+    fn tool_result_string_content_produces_tool_message() {
+        let msg = json!({
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "call_abc",
+                    "content": "42 rows returned"
+                }
+            ]
+        });
+        let result = convert_anthropic_tool_msg_to_chat(&msg).expect("should convert");
+        assert_eq!(result.len(), 1);
+        let out = &result[0];
+        assert_eq!(out["role"], "tool");
+        assert_eq!(out["tool_call_id"], "call_abc");
+        assert_eq!(out["content"], "42 rows returned");
+    }
+
+    #[test]
+    fn tool_result_array_content_concatenates_text() {
+        let msg = json!({
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "call_xyz",
+                    "content": [
+                        {"type": "text", "text": "Hello, "},
+                        {"type": "text", "text": "world!"}
+                    ]
+                }
+            ]
+        });
+        let result = convert_anthropic_tool_msg_to_chat(&msg).expect("should convert");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0]["content"], "Hello, world!");
+        assert_eq!(result[0]["tool_call_id"], "call_xyz");
+    }
+
+    #[test]
+    fn mixed_text_and_tool_use_preserves_text_in_content() {
+        let msg = json!({
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "Let me run that query."},
+                {
+                    "type": "tool_use",
+                    "id": "call_def",
+                    "name": "execute_sql",
+                    "input": {"query": "SELECT 2"}
+                }
+            ]
+        });
+        let result = convert_anthropic_tool_msg_to_chat(&msg).expect("should convert");
+        assert_eq!(result.len(), 1);
+        let out = &result[0];
+        assert_eq!(out["role"], "assistant");
+        assert_eq!(out["content"], "Let me run that query.");
+        let tool_calls = out["tool_calls"].as_array().expect("tool_calls array");
+        assert_eq!(tool_calls[0]["id"], "call_def");
+    }
+
+    #[test]
+    fn plain_string_content_returns_none() {
+        let msg = json!({
+            "role": "assistant",
+            "content": "Just a plain text response."
+        });
+        assert!(convert_anthropic_tool_msg_to_chat(&msg).is_none());
+    }
 }
