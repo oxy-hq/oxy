@@ -71,28 +71,37 @@ impl DuckDB {
         let DuckDBOptions::DuckLake(config) = &self.options else {
             unreachable!("init_ducklake called with non-DuckLake options");
         };
-        let conn = Connection::open_in_memory()
-            .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
-        conn.execute("INSTALL ducklake", [])
-            .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
-        conn.execute("LOAD ducklake", [])
-            .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
-        conn.execute("INSTALL postgres", [])
-            .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
-        conn.execute("LOAD postgres", [])
-            .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
-        // Retrieve secrets and generate attach statements
-        let attach_stmt = config.to_duckdb_attach_stmt(&self.secrets_manager).await?;
-        tracing::info!("Executing DuckDB attach statement: {:?}", attach_stmt);
-        for stmt in attach_stmt {
-            tracing::debug!("Executing DuckDB statement: {}", stmt);
-            conn.execute(&stmt, [])
-                .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
-        }
-        install_icu(&conn)?;
-        load_icu(&conn)?;
-        Ok(conn)
+        // Async: fetch secrets before entering spawn_blocking.
+        let attach_stmts = config.to_duckdb_attach_stmt(&self.secrets_manager).await?;
+        tracing::info!("Executing DuckDB attach statements: {:?}", attach_stmts);
+        tokio::task::spawn_blocking(move || init_ducklake_blocking(attach_stmts))
+            .await
+            .map_err(|e| OxyError::DBError(format!("DuckDB ducklake join error: {e}")))?
     }
+}
+
+/// Synchronous body of [`DuckDB::init_ducklake`]. Runs inside
+/// `spawn_blocking` to avoid blocking Tokio workers during `INSTALL`
+/// (which may fetch extensions from the network on first run).
+fn init_ducklake_blocking(attach_stmts: Vec<String>) -> Result<Connection, OxyError> {
+    let conn = Connection::open_in_memory()
+        .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
+    conn.execute("INSTALL ducklake", [])
+        .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
+    conn.execute("LOAD ducklake", [])
+        .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
+    conn.execute("INSTALL postgres", [])
+        .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
+    conn.execute("LOAD postgres", [])
+        .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
+    for stmt in &attach_stmts {
+        tracing::debug!("Executing DuckDB statement: {}", stmt);
+        conn.execute(stmt, [])
+            .map_err(|err| connector_internal_error(CREATE_CONN, &err))?;
+    }
+    install_icu(&conn)?;
+    load_icu(&conn)?;
+    Ok(conn)
 }
 
 /// Synchronous body of [`DuckDB::init_connection`] for `Local` mode. Lives
