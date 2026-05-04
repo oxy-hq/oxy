@@ -89,8 +89,10 @@ impl AnalyticsSolver {
         intent: AnalyticsIntent,
         retry_ctx: Option<&RetryContext>,
     ) -> Result<Vec<QuerySpec>, (AnalyticsError, BackTarget<AnalyticsDomain>)> {
-        // Short-circuit: the LLM already selected a procedure during Ground.
-        // Skip LLM resolution entirely and hand the path straight to Executing.
+        // Short-circuit: the LLM already selected a procedure/workflow.
+        // Skip LLM resolution and hand the path straight to Executing.
+        // (SQL files are intercepted earlier in `build_specifying_handler`'s
+        // step-0 short-circuit and never reach this method.)
         if let Some(ref file_path) = intent.selected_procedure.clone() {
             return Ok(vec![QuerySpec {
                 intent,
@@ -293,6 +295,18 @@ impl AnalyticsSolver {
         retry_ctx: Option<&RetryContext>,
     ) -> Result<QueryRequestEnvelope, (AnalyticsError, BackTarget<AnalyticsDomain>)> {
         // Short-circuit: procedure already selected.
+        //
+        // In the live pipeline, `build_specifying_handler`'s step-0 short-
+        // circuit returns before this method is called when
+        // `selected_procedure` is set, so this arm is reachable only via
+        // direct unit-test calls. SQL files never reach here — they are
+        // always handled by step-0 in the handler.
+        //
+        // The empty `QueryRequestItem` returned here would fail the
+        // `envelope.specs.is_empty()` guard upstream if it were ever fed
+        // back into the LLM-driven path; producing a single empty item
+        // keeps the contract of "non-empty specs" intact for callers that
+        // bypass the handler.
         if intent.selected_procedure.is_some() {
             return Ok(QueryRequestEnvelope {
                 specs: vec![crate::types::QueryRequestItem {
@@ -914,7 +928,10 @@ impl AnalyticsSolver {
         let specs: Vec<QuerySpec> = specs
             .into_iter()
             .map(|mut spec| {
-                if !matches!(spec.solution_source, SolutionSource::Procedure { .. }) {
+                if !matches!(
+                    spec.solution_source,
+                    SolutionSource::Procedure { .. } | SolutionSource::SqlFile { .. }
+                ) {
                     spec.solution_source = SolutionSource::LlmWithSemanticContext;
                 }
                 spec.context = Some(query_ctx.clone());
@@ -973,7 +990,8 @@ impl AnalyticsSolver {
             }));
         }
 
-        // Procedure path: delegate to Executing (procedure runner handles it).
+        // Procedure/workflow path: delegate to Executing (coordinator handles it).
+        // SqlFile has precomputed SQL and is handled by the fast path above.
         if matches!(spec.solution_source, SolutionSource::Procedure { .. }) {
             return TransitionResult::ok(ProblemState::Executing(crate::AnalyticsSolution {
                 payload: SolutionPayload::Sql(String::new()),
@@ -1100,6 +1118,7 @@ fn build_translation_context(
 fn spec_source_label(source: &SolutionSource) -> String {
     match source {
         SolutionSource::Procedure { .. } => "Procedure".to_string(),
+        SolutionSource::SqlFile { .. } => "SqlFile".to_string(),
         _ => "Llm".to_string(),
     }
 }
@@ -1302,10 +1321,52 @@ pub(super) fn build_specifying_handler()
                     };
                     let retry_ctx = run_ctx.retry_ctx.clone();
 
-                    // ── 0. Procedure short-circuit ──────────────────────────────
-                    if intent.selected_procedure.is_some() {
-                        let file_path = intent.selected_procedure.clone().unwrap();
+                    // ── 0. Procedure/workflow/SQL file short-circuit ─────────────
+                    if let Some(ref file_path) = intent.selected_procedure.clone() {
                         let default_conn = solver.default_connector.clone();
+                        // SQL files are executed directly as verified queries.
+                        if file_path.extension().is_some_and(|e| e == "sql") {
+                            let sql = match tokio::fs::read_to_string(file_path).await {
+                                Ok(s) => s,
+                                Err(e) => {
+                                    // Fatal: a missing/unreadable verified SQL
+                                    // file is a user-actionable problem, not a
+                                    // SQL syntax error or something the LLM can
+                                    // recover from by retrying.
+                                    return TransitionResult::diagnosing(
+                                        ProblemState::Diagnosing {
+                                            error: crate::AnalyticsError::FileReadError {
+                                                file_path: file_path.display().to_string(),
+                                                message: e.to_string(),
+                                            },
+                                            back: agentic_core::back_target::BackTarget::Clarify(
+                                                intent,
+                                                Default::default(),
+                                            ),
+                                        },
+                                    );
+                                }
+                            };
+                            // Honor the optional `database:` annotation in the
+                            // SQL file's `/* oxy: ... */` header, falling back
+                            // to the agent's default connector when absent or
+                            // when the named connector isn't registered.
+                            let connector_name = crate::config::parse_oxy_comment_block(&sql)
+                                .and_then(|b| b.database)
+                                .filter(|db| solver.connectors.contains_key(db))
+                                .unwrap_or(default_conn);
+                            return TransitionResult::ok(ProblemState::Executing(
+                                crate::AnalyticsSolution {
+                                    payload: SolutionPayload::Sql(sql),
+                                    solution_source: crate::SolutionSource::SqlFile {
+                                        file_path: file_path.clone(),
+                                    },
+                                    connector_name,
+                                    semantic_query: None,
+                                },
+                            ));
+                        }
+                        // Procedure/workflow: delegate to coordinator.
                         return TransitionResult::ok(ProblemState::Executing(
                             crate::AnalyticsSolution {
                                 payload: SolutionPayload::Sql(String::new()),

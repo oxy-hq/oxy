@@ -140,23 +140,37 @@ tasks:
     assert_eq!(dbs, vec!["alpha", "beta"]);
 }
 
-// ── extract_sql_oxy_database ──────────────────────────────────────────────
+// ── parse_oxy_comment_block ───────────────────────────────────────────────
 
 #[test]
 fn sql_oxy_database_present() {
     let sql = "/*\n  oxy:\n    database: local\n    embed:\n      - How many stores\n*/\nSELECT COUNT(*) FROM stores;";
-    assert_eq!(extract_sql_oxy_database(sql), Some("local".to_string()));
+    let block = parse_oxy_comment_block(sql).unwrap();
+    assert_eq!(block.database, Some("local".to_string()));
 }
 
 #[test]
 fn sql_oxy_no_comment() {
-    assert_eq!(extract_sql_oxy_database("SELECT 1;"), None);
+    assert!(parse_oxy_comment_block("SELECT 1;").is_none());
 }
 
 #[test]
 fn sql_oxy_comment_without_database() {
     let sql = "/*\n  oxy:\n    embed:\n      - How many stores\n*/\nSELECT 1;";
-    assert_eq!(extract_sql_oxy_database(sql), None);
+    assert!(
+        parse_oxy_comment_block(sql)
+            .and_then(|b| b.database)
+            .is_none()
+    );
+}
+
+#[test]
+fn sql_oxy_description_and_database() {
+    let sql =
+        "/*\n  oxy:\n    description: \"Daily revenue\"\n    database: warehouse\n*/\nSELECT 1;";
+    let block = parse_oxy_comment_block(sql).unwrap();
+    assert_eq!(block.description, Some("Daily revenue".to_string()));
+    assert_eq!(block.database, Some("warehouse".to_string()));
 }
 
 // ── resolve_context — database inference ──────────────────────────────────

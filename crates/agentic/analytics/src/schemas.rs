@@ -62,7 +62,7 @@ pub fn triage_response_schema() -> ResponseSchema {
                 },
                 "selected_procedure_path": {
                     "type": ["string", "null"],
-                    "description": "If an available procedure directly answers the question, set this to its exact path string (e.g. 'workflows/sales/report.procedure.yml'). The pipeline will execute that procedure and skip SQL generation entirely. Set null when no procedure matches."
+                    "description": "If an available procedure/workflow/SQL file directly answers the question, set this to its exact path string (e.g. 'workflows/sales/report.procedure.yml' or 'example_sql/monthly_revenue.sql'). SQL files (.sql) are executed directly as verified queries and preferred over SQL generation. Set null when no match was found."
                 },
                 "missing_members": {
                     "type": "array",
@@ -138,7 +138,7 @@ pub fn clarify_response_schema() -> ResponseSchema {
                 },
                 "selected_procedure_path": {
                     "type": ["string", "null"],
-                    "description": "MUST be set when search_procedures returned any matching procedure. Copy the exact 'path' string from the tool result (e.g. 'workflows/sales/report.procedure.yml'). The pipeline will execute that procedure and skip SQL generation entirely. Set null ONLY when search_procedures returned an empty list or was not called."
+                    "description": "MUST be set when search_procedures returned any matching procedure, workflow, or SQL file. Copy the exact 'path' string from the tool result (e.g. 'workflows/sales/report.procedure.yml' or 'example_sql/monthly_revenue.sql'). SQL files are executed directly as verified queries. Set null ONLY when search_procedures returned an empty list or was not called."
                 }
             },
             "additionalProperties": false,

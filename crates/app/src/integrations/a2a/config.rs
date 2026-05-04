@@ -120,6 +120,7 @@ impl A2aConfig {
             protected_branches: None,
             base_branch: None,
             repositories: vec![],
+            admins: vec![],
         };
         let context = ValidationContext {
             config: dummy_config,

@@ -130,6 +130,13 @@ pub struct Config {
     #[serde(default, skip_serializing_if = "Vec::is_empty", alias = "data_repos")]
     #[garde(skip)]
     pub repositories: Vec<Repository>,
+
+    /// Deprecated: admin configuration is now set via the `OXY_OWNER` environment variable.
+    /// Kept for backward compatibility so existing configs don't silently break.
+    #[serde(default, skip_serializing)]
+    #[garde(skip)]
+    #[schemars(skip)]
+    pub admins: Vec<String>,
 }
 
 /// An external repository (dbt, LookML, data models, etc.) linked to an Oxy project.

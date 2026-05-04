@@ -66,10 +66,11 @@ pub(super) const SEARCH_CATALOG_DESC: &str = "Batch-search the semantic catalog 
      the question before attempting a semantic shortcut. Returns \
      {metrics: [{name, description}], dimensions: [{name, description, type}]}.";
 
-pub(super) const SEARCH_PROCEDURES_DESC: &str = "Search for existing procedure YAML files that match a query. \
-     Returns a list of {name, path, description} entries. \
+pub(super) const SEARCH_PROCEDURES_DESC: &str = "Search for existing procedure/workflow YAML files and verified SQL files \
+     that match a query. Returns a list of {name, path, description} entries. \
      Call this FIRST with key terms from the user's question. \
-     If any procedure directly answers the question, select it.";
+     If any entry directly answers the question, select it. \
+     SQL files (.sql) are executed directly as verified queries — prefer them when available.";
 
 pub(super) const SAMPLE_COLUMNS_DESC: &str = "Batch-sample multiple columns in one call. For each column, returns up \
      to 20 distinct non-null values plus statistics (row_count, distinct_count, \

@@ -152,6 +152,11 @@ pub(super) async fn diagnose_impl(
         // ── VendorError → fatal: vendor engine failed ─────────────────────
         AnalyticsError::VendorError { .. } => Err(error),
 
+        // ── FileReadError → fatal: pre-written SQL file is broken ─────────
+        // Pre-written SQL files are authoritative; if one can't even be read,
+        // retrying won't help — surface as a user-actionable error.
+        AnalyticsError::FileReadError { .. } => Err(error),
+
         // ── RateLimitRetry → back to whichever state was rate-limited ────
         AnalyticsError::RateLimitRetry(_) => match back {
             BackTarget::Clarify(intent, _) => Ok(ProblemState::Clarifying(intent)),

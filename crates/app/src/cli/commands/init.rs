@@ -442,6 +442,7 @@ fn create_config_file(config_path: &Path) -> Result<(), InitError> {
         protected_branches: None,
         base_branch: None,
         repositories: vec![],
+        admins: vec![],
     };
 
     let yaml =

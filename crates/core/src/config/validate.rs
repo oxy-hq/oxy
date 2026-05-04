@@ -330,6 +330,7 @@ mod tests {
                 a2a: None,
                 protected_branches: None,
                 base_branch: None,
+                admins: vec![],
             },
             metadata: None,
         }

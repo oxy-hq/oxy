@@ -33,8 +33,8 @@ export type SqlItem = {
   rowCount?: number;
   durationMs?: number;
   error?: string;
-  /** Which code path produced the SQL. "semantic" = compiled by airlayer. */
-  source?: "semantic" | "llm" | "vendor";
+  /** Which code path produced the SQL. "semantic" = compiled by airlayer. "verified_sql" = pre-written SQL file. */
+  source?: "semantic" | "llm" | "vendor" | "verified_sql";
   /** Structured semantic query attached when source === "semantic". */
   semanticQuery?: import("@/services/api/analytics").SemanticQueryPayload;
   isStreaming: boolean;

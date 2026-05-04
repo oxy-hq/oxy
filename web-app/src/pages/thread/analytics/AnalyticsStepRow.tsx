@@ -45,7 +45,7 @@ import type {
   TraceItem
 } from "@/hooks/analyticsSteps";
 import { cn } from "@/libs/shadcn/utils";
-import { VERIFIED_TOOLTIP } from "../constants";
+import { VERIFIED_SQL_FILE_TOOLTIP, VERIFIED_TOOLTIP } from "../constants";
 import BuilderDelegationCard from "./BuilderDelegationCard";
 import ProcedureDelegationCard from "./ProcedureDelegationCard";
 
@@ -144,6 +144,7 @@ interface ArtifactPillProps {
   icon: React.FC<React.SVGProps<SVGSVGElement>>;
   label: string;
   verified?: boolean;
+  verifiedTooltip?: string;
   onClick: () => void;
   variant?: "default" | "builder";
 }
@@ -152,6 +153,7 @@ const ArtifactPill = ({
   icon: Icon,
   label,
   verified,
+  verifiedTooltip = VERIFIED_TOOLTIP,
   onClick,
   variant = "default"
 }: ArtifactPillProps) => {
@@ -176,7 +178,7 @@ const ArtifactPill = ({
   return (
     <Tooltip>
       <TooltipTrigger asChild>{pill}</TooltipTrigger>
-      <TooltipContent side='top'>{VERIFIED_TOOLTIP}</TooltipContent>
+      <TooltipContent side='top'>{verifiedTooltip}</TooltipContent>
     </Tooltip>
   );
 };
@@ -677,8 +679,11 @@ const SqlChild = ({
   item: SqlItem;
   onSelect: (item: SelectableItem) => void;
 }) => {
-  const verified = item.source === "semantic";
-  const label = verified ? "Semantic Query" : "SQL Query";
+  const isSemantic = item.source === "semantic";
+  const isVerifiedSqlFile = item.source === "verified_sql";
+  const verified = isSemantic || isVerifiedSqlFile;
+  const label = isSemantic ? "Semantic Query" : isVerifiedSqlFile ? "Verified Query" : "SQL Query";
+  const verifiedTooltip = isVerifiedSqlFile ? VERIFIED_SQL_FILE_TOOLTIP : VERIFIED_TOOLTIP;
 
   return (
     <button
@@ -702,7 +707,7 @@ const SqlChild = ({
           <TooltipTrigger asChild>
             <BadgeCheck className='h-3.5 w-3.5 shrink-0 text-special' />
           </TooltipTrigger>
-          <TooltipContent side='top'>{VERIFIED_TOOLTIP}</TooltipContent>
+          <TooltipContent side='top'>{verifiedTooltip}</TooltipContent>
         </Tooltip>
       )}
       {item.isStreaming && <Loader2 className='h-3 w-3 shrink-0 animate-spin text-primary' />}
@@ -756,6 +761,7 @@ type PillInfo = {
   icon: React.FC<React.SVGProps<SVGSVGElement>>;
   label: string;
   verified?: boolean;
+  verifiedTooltip?: string;
   item: SelectableItem;
   variant?: "default" | "builder";
 };
@@ -767,14 +773,16 @@ function collectPills(items: TraceItem[]): PillInfo[] {
       const { Icon, label } = getToolDisplay(item);
       pills.push({ id: item.id, icon: Icon, label, item });
     } else if (item.kind === "sql") {
-      const verified = item.source === "semantic";
-      pills.push({
-        id: item.id,
-        icon: Database,
-        label: verified ? "Semantic Query" : "SQL Query",
-        verified,
-        item
-      });
+      const isSemantic = item.source === "semantic";
+      const isVerifiedSqlFile = item.source === "verified_sql";
+      const verified = isSemantic || isVerifiedSqlFile;
+      const label = isSemantic
+        ? "Semantic Query"
+        : isVerifiedSqlFile
+          ? "Verified Query"
+          : "SQL Query";
+      const verifiedTooltip = isVerifiedSqlFile ? VERIFIED_SQL_FILE_TOOLTIP : VERIFIED_TOOLTIP;
+      pills.push({ id: item.id, icon: Database, label, verified, verifiedTooltip, item });
     } else if (item.kind === "procedure") {
       pills.push({ id: item.id, icon: GitBranch, label: item.procedureName, item });
     } else if (item.kind === "builder_delegation") {
@@ -871,6 +879,7 @@ const AnalyticsStepRow = ({ step, onSelectArtifact, flat = false }: AnalyticsSte
                   icon={pill.icon}
                   label={pill.label}
                   verified={pill.verified}
+                  verifiedTooltip={pill.verifiedTooltip}
                   onClick={() => onSelectArtifact(pill.item)}
                   variant={pill.variant}
                 />

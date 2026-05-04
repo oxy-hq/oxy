@@ -153,6 +153,13 @@ pub enum SolutionSource {
     /// is skipped entirely; the Executing stage delegates to the external
     /// [`ProcedureRunner`](crate::procedure::ProcedureRunner).
     Procedure { file_path: PathBuf },
+    /// A `.sql` file from the agent context was matched by the user's question.
+    ///
+    /// `file_path` points to the `.sql` file on disk.  The SQL is read at
+    /// Specifying time and precomputed into the payload — Solving is skipped.
+    /// The Executing stage runs the SQL directly against the connector and
+    /// marks the result as verified (same badge as semantic layer queries).
+    SqlFile { file_path: PathBuf },
     /// A vendor semantic engine translated and executed the query natively.
     ///
     /// The string is the value returned by `SemanticEngine::vendor_name()` at

@@ -36,6 +36,8 @@ pub(crate) fn execution_type_for(source: &SolutionSource) -> (&'static str, bool
         SolutionSource::LlmWithSemanticContext => ("sql_generated", false),
         // Procedure solutions are intercepted before this code path runs.
         SolutionSource::Procedure { .. } => ("sql_generated", false),
+        // SQL file queries are pre-verified — badge them as verified.
+        SolutionSource::SqlFile { .. } => ("verified_sql", true),
     }
 }
 
@@ -113,6 +115,7 @@ impl AnalyticsSolver {
 
         let query_source = match &solution.solution_source {
             SolutionSource::SemanticLayer => QuerySource::Semantic,
+            SolutionSource::SqlFile { .. } => QuerySource::VerifiedSql,
             SolutionSource::VendorEngine(_) => QuerySource::Vendor,
             // Procedure solutions are intercepted by `build_executing_handler` before
             // `execute_solution` is ever called, so this arm is unreachable for that
@@ -532,6 +535,21 @@ pub(super) fn build_executing_handler()
                                     BackTarget::Interpret(result, hint)
                                 } else {
                                     match solution_source {
+                                        SolutionSource::SqlFile { .. } => {
+                                            // SQL file content is fixed — retrying
+                                            // Specify would re-execute the same
+                                            // file. Bounce to Clarify so the LLM
+                                            // can pick a different path.
+                                            let intent = run_ctx
+                                                .spec
+                                                .as_ref()
+                                                .map(|s| s.intent.clone())
+                                                .or_else(|| run_ctx.intent.clone())
+                                                .expect(
+                                                    "run_ctx.intent must be set before executing",
+                                                );
+                                            BackTarget::Clarify(intent, hint)
+                                        }
                                         SolutionSource::SemanticLayer
                                         | SolutionSource::Procedure { .. }
                                         | SolutionSource::VendorEngine(_) => {
@@ -588,6 +606,23 @@ pub(super) fn build_executing_handler()
                                 hint.previous_output = Some(format!("Failing SQL: {sql}"));
                             }
                             let back = match solution_source {
+                                SolutionSource::SqlFile { .. } => {
+                                    // Pre-written SQL files are authoritative — the
+                                    // file content won't change between attempts, so
+                                    // re-running Specify would just re-execute the
+                                    // same failing SQL. Route back to Clarify with
+                                    // the error so the LLM can either pick a
+                                    // different file or fall through to LLM SQL
+                                    // generation, instead of looping on the same
+                                    // file until the retry budget is exhausted.
+                                    let intent = run_ctx
+                                        .spec
+                                        .as_ref()
+                                        .map(|s| s.intent.clone())
+                                        .or_else(|| run_ctx.intent.clone())
+                                        .expect("run_ctx.intent must be set before executing");
+                                    BackTarget::Clarify(intent, hint)
+                                }
                                 SolutionSource::SemanticLayer
                                 | SolutionSource::Procedure { .. }
                                 | SolutionSource::VendorEngine(_) => {

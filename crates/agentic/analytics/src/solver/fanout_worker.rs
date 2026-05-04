@@ -198,7 +198,7 @@ impl<Ev: DomainEvents> FanoutWorker<AnalyticsDomain, Ev> for AnalyticsFanoutWork
         // than the generic `_events` parameter.
         let tx = &self.event_tx;
 
-        // ── Check for pre-computed skip (SemanticLayer / Procedure / VendorEngine) ──
+        // ── Check for pre-computed skip (SemanticLayer / SqlFile / Procedure / VendorEngine) ──
         let solution = match &spec.solution_source {
             SolutionSource::SemanticLayer => {
                 if let Some(payload) = spec.precomputed.clone() {
@@ -211,6 +211,15 @@ impl<Ev: DomainEvents> FanoutWorker<AnalyticsDomain, Ev> for AnalyticsFanoutWork
                 } else {
                     None
                 }
+            }
+            // SqlFile: precomputed SQL is always set at Specifying time.
+            SolutionSource::SqlFile { .. } => {
+                spec.precomputed.clone().map(|payload| AnalyticsSolution {
+                    payload,
+                    solution_source: spec.solution_source.clone(),
+                    connector_name: spec.connector_name.clone(),
+                    semantic_query: None,
+                })
             }
             SolutionSource::Procedure { file_path } => Some(AnalyticsSolution {
                 payload: SolutionPayload::Sql(String::new()),
@@ -415,6 +424,7 @@ impl AnalyticsFanoutWorker {
 
         let query_source = match &solution.solution_source {
             SolutionSource::SemanticLayer => QuerySource::Semantic,
+            SolutionSource::SqlFile { .. } => QuerySource::VerifiedSql,
             SolutionSource::VendorEngine(_) => QuerySource::Vendor,
             // NOTE: `Procedure` solutions *can* reach this fan-out worker (unlike the
             // serial `execute_solution` in executing.rs, which intercepts them first).

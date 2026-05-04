@@ -25,6 +25,10 @@ pub enum QuerySource {
     Llm,
     /// Produced by a vendor semantic engine (e.g. Omni, Looker, Cube).
     Vendor,
+    /// A pre-written SQL file from the agent context matched the question.
+    ///
+    /// The SQL is run verbatim — no LLM generation involved.
+    VerifiedSql,
 }
 
 /// Events emitted by analytics workers.

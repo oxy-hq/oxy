@@ -619,6 +619,327 @@ async fn specifying_handler_preserves_procedure_solution_source_when_selected_pr
     }
 }
 
+// ── SQL file (verified-query) path through the Specifying handler ─────────
+
+/// Write `content` to a fresh `.sql` file under a unique sub-directory of the
+/// system temp dir, returning its absolute path. The test owns cleanup.
+fn write_temp_sql(name: &str, content: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "oxy_sql_test_{}_{}",
+        std::process::id(),
+        // Cheap per-call uniqueness so concurrent tests don't collide.
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join(name);
+    std::fs::write(&path, content).unwrap();
+    path
+}
+
+/// Build a multi-connector solver with a named connector in addition to the
+/// default. Used to verify the SQL file `database:` annotation routes to a
+/// specific connector.
+fn make_solver_with_named_connector(name: &str) -> AnalyticsSolver {
+    use std::collections::HashMap;
+    use std::sync::Arc;
+    let mut connectors: HashMap<String, Arc<dyn agentic_connector::DatabaseConnector>> =
+        HashMap::new();
+    connectors.insert("default".to_string(), Arc::new(StubConnector));
+    connectors.insert(name.to_string(), Arc::new(StubConnector));
+    AnalyticsSolver::new_multi(
+        LlmClient::new("dummy"),
+        SemanticCatalog::empty(),
+        connectors,
+        "default".to_string(),
+    )
+}
+
+#[tokio::test]
+async fn specifying_handler_short_circuits_for_sql_file_with_oxy_block() {
+    let sql_content = "/*\n  oxy:\n    description: \"Daily revenue\"\n*/\nSELECT 1;";
+    let file_path = write_temp_sql("daily_revenue.sql", sql_content);
+
+    let intent = AnalyticsIntent {
+        selected_procedure: Some(file_path.clone()),
+        ..make_intent()
+    };
+
+    let mut solver = make_solver();
+    let handlers = build_analytics_handlers();
+    let execute_fn = std::sync::Arc::clone(
+        &handlers
+            .get("specifying")
+            .expect("specifying handler must exist")
+            .execute,
+    );
+    let run_ctx = make_run_ctx();
+    let memory = agentic_core::orchestrator::SessionMemory::new(0);
+
+    let result = execute_fn(
+        &mut solver,
+        ProblemState::Specifying(intent),
+        &None,
+        &run_ctx,
+        &memory,
+    )
+    .await;
+
+    match result.state_data {
+        ProblemState::Executing(solution) => {
+            assert_eq!(
+                solution.solution_source,
+                SolutionSource::SqlFile {
+                    file_path: file_path.clone()
+                },
+                "must carry SolutionSource::SqlFile",
+            );
+            assert!(
+                matches!(&solution.payload, SolutionPayload::Sql(s) if s == sql_content),
+                "must carry the file contents as precomputed SQL",
+            );
+            assert_eq!(
+                solution.connector_name, "default",
+                "must fall back to the default connector when no `database:` annotation is set",
+            );
+        }
+        other => panic!(
+            "expected ProblemState::Executing, got: {:?}",
+            std::mem::discriminant(&other)
+        ),
+    }
+
+    let _ = std::fs::remove_dir_all(file_path.parent().unwrap());
+}
+
+#[tokio::test]
+async fn specifying_handler_returns_file_read_error_for_missing_sql_file() {
+    let file_path = std::path::PathBuf::from("/nonexistent/path/missing_query.sql");
+    let intent = AnalyticsIntent {
+        selected_procedure: Some(file_path.clone()),
+        ..make_intent()
+    };
+
+    let mut solver = make_solver();
+    let handlers = build_analytics_handlers();
+    let execute_fn = std::sync::Arc::clone(
+        &handlers
+            .get("specifying")
+            .expect("specifying handler must exist")
+            .execute,
+    );
+    let run_ctx = make_run_ctx();
+    let memory = agentic_core::orchestrator::SessionMemory::new(0);
+
+    let result = execute_fn(
+        &mut solver,
+        ProblemState::Specifying(intent),
+        &None,
+        &run_ctx,
+        &memory,
+    )
+    .await;
+
+    match result.state_data {
+        ProblemState::Diagnosing { error, back } => {
+            assert!(
+                matches!(&error, AnalyticsError::FileReadError { file_path: fp, .. }
+                    if fp.contains("missing_query.sql")),
+                "expected FileReadError for missing SQL file, got: {error:?}",
+            );
+            assert!(
+                matches!(back, BackTarget::Clarify(_, _)),
+                "must hand the back-edge to Clarify so the LLM can recover",
+            );
+        }
+        other => panic!(
+            "expected ProblemState::Diagnosing, got: {:?}",
+            std::mem::discriminant(&other)
+        ),
+    }
+}
+
+#[tokio::test]
+async fn specifying_handler_routes_sql_file_to_database_from_oxy_annotation() {
+    let sql_content = "/*\n  oxy:\n    database: analytics_db\n*/\nSELECT 1;";
+    let file_path = write_temp_sql("by_db.sql", sql_content);
+
+    let intent = AnalyticsIntent {
+        selected_procedure: Some(file_path.clone()),
+        ..make_intent()
+    };
+
+    let mut solver = make_solver_with_named_connector("analytics_db");
+    let handlers = build_analytics_handlers();
+    let execute_fn = std::sync::Arc::clone(
+        &handlers
+            .get("specifying")
+            .expect("specifying handler must exist")
+            .execute,
+    );
+    let run_ctx = make_run_ctx();
+    let memory = agentic_core::orchestrator::SessionMemory::new(0);
+
+    let result = execute_fn(
+        &mut solver,
+        ProblemState::Specifying(intent),
+        &None,
+        &run_ctx,
+        &memory,
+    )
+    .await;
+
+    match result.state_data {
+        ProblemState::Executing(solution) => {
+            assert_eq!(
+                solution.connector_name, "analytics_db",
+                "must honor `database:` annotation when the named connector exists",
+            );
+        }
+        other => panic!(
+            "expected ProblemState::Executing, got: {:?}",
+            std::mem::discriminant(&other)
+        ),
+    }
+
+    let _ = std::fs::remove_dir_all(file_path.parent().unwrap());
+}
+
+#[tokio::test]
+async fn specifying_handler_falls_back_to_default_when_sql_oxy_db_unknown() {
+    let sql_content = "/*\n  oxy:\n    database: not_registered\n*/\nSELECT 1;";
+    let file_path = write_temp_sql("unknown_db.sql", sql_content);
+
+    let intent = AnalyticsIntent {
+        selected_procedure: Some(file_path.clone()),
+        ..make_intent()
+    };
+
+    let mut solver = make_solver();
+    let handlers = build_analytics_handlers();
+    let execute_fn = std::sync::Arc::clone(
+        &handlers
+            .get("specifying")
+            .expect("specifying handler must exist")
+            .execute,
+    );
+    let run_ctx = make_run_ctx();
+    let memory = agentic_core::orchestrator::SessionMemory::new(0);
+
+    let result = execute_fn(
+        &mut solver,
+        ProblemState::Specifying(intent),
+        &None,
+        &run_ctx,
+        &memory,
+    )
+    .await;
+
+    match result.state_data {
+        ProblemState::Executing(solution) => {
+            assert_eq!(
+                solution.connector_name, "default",
+                "must fall back to default when the annotated database is not registered",
+            );
+        }
+        other => panic!(
+            "expected ProblemState::Executing, got: {:?}",
+            std::mem::discriminant(&other)
+        ),
+    }
+
+    let _ = std::fs::remove_dir_all(file_path.parent().unwrap());
+}
+
+// ── SQL file failure routing through the Executing handler ────────────────
+
+#[tokio::test]
+async fn execute_handler_routes_sql_file_failure_to_clarify_not_specify() {
+    use agentic_core::{RunContext, SessionMemory};
+
+    let mut solver = make_solver();
+    let file_path = std::path::PathBuf::from("queries/broken.sql");
+    let solution = AnalyticsSolution {
+        payload: SolutionPayload::Sql("SELECT * FROM nope".to_string()),
+        solution_source: SolutionSource::SqlFile {
+            file_path: file_path.clone(),
+        },
+        connector_name: "default".to_string(),
+        semantic_query: None,
+    };
+
+    let handlers = build_analytics_handlers();
+    let execute_fn = std::sync::Arc::clone(
+        &handlers
+            .get("executing")
+            .expect("executing handler must exist")
+            .execute,
+    );
+    let run_ctx = RunContext {
+        intent: Some(make_intent()),
+        spec: Some(make_spec()),
+        retry_ctx: None,
+    };
+    let memory = SessionMemory::new(0);
+
+    let result = execute_fn(
+        &mut solver,
+        ProblemState::Executing(solution),
+        &None,
+        &run_ctx,
+        &memory,
+    )
+    .await;
+
+    match result.state_data {
+        ProblemState::Diagnosing { back, .. } => {
+            assert!(
+                matches!(back, BackTarget::Clarify(_, _)),
+                "SqlFile failures must route to Clarify (not Specify) so the LLM \
+                 can pick a different path instead of looping on the same file",
+            );
+        }
+        other => panic!(
+            "expected ProblemState::Diagnosing, got: {:?}",
+            std::mem::discriminant(&other)
+        ),
+    }
+}
+
+// ── FileReadError surfaces as fatal in diagnose ───────────────────────────
+
+#[tokio::test]
+async fn diagnose_file_read_error_is_fatal() {
+    let mut s = make_solver();
+    let err = AnalyticsError::FileReadError {
+        file_path: "queries/missing.sql".to_string(),
+        message: "No such file or directory".to_string(),
+    };
+    assert!(matches!(
+        s.diagnose(
+            err,
+            BackTarget::Clarify(make_intent(), Default::default()),
+            &make_run_ctx()
+        )
+        .await,
+        Err(AnalyticsError::FileReadError { .. })
+    ));
+}
+
+// ── execution_type_for tags SqlFile as verified ───────────────────────────
+
+#[test]
+fn execution_type_for_sql_file_is_verified() {
+    use crate::solver::executing::execution_type_for;
+    let (kind, is_verified) = execution_type_for(&SolutionSource::SqlFile {
+        file_path: std::path::PathBuf::from("queries/q.sql"),
+    });
+    assert_eq!(kind, "verified_sql");
+    assert!(is_verified);
+}
+
 // ── Prompt builder: session turns injection ───────────────────────────────
 
 fn make_completed_turn(

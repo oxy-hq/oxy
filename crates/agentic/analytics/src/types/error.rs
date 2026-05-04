@@ -51,6 +51,10 @@ pub enum AnalyticsError {
     /// exponential backoff.  This variant routes back to `Solving` so the retry
     /// attempt counter is independent of the general transient-error budget.
     RateLimitRetry(String),
+    /// A pre-written SQL file selected as the verified-query path could not be
+    /// read from disk (missing file, permission denied, etc.). Distinct from
+    /// `SyntaxError` because the file content was never even parsed.
+    FileReadError { file_path: String, message: String },
 }
 
 impl std::fmt::Display for AnalyticsError {
@@ -128,6 +132,9 @@ impl std::fmt::Display for AnalyticsError {
             }
             AnalyticsError::RateLimitRetry(msg) => {
                 write!(f, "rate limit exceeded (retrying): {msg}")
+            }
+            AnalyticsError::FileReadError { file_path, message } => {
+                write!(f, "failed to read SQL file '{file_path}': {message}")
             }
         }
     }

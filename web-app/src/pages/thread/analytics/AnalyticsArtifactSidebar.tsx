@@ -10,7 +10,7 @@ import type { ArtifactItem, ProcedureItem, SqlItem } from "@/hooks/analyticsStep
 import type { AnalyticsDisplayBlock, SseEvent } from "@/hooks/useAnalyticsRun";
 import { extractDisplayBlockForSeq } from "@/hooks/useAnalyticsRun";
 import ProcedureRunDagPanel from "../agentic/ProcedureRunDagPanel";
-import { VERIFIED_TOOLTIP } from "../constants";
+import { VERIFIED_SQL_FILE_TOOLTIP, VERIFIED_TOOLTIP } from "../constants";
 import {
   AnalyzeDbtProjectView,
   AskUserView,
@@ -93,18 +93,24 @@ const AnalyticsArtifactSidebar = ({
 
   // ── kind === "sql" (query_executed domain event) ──────────────────────────
   if (item.kind === "sql") {
-    const verified = item.source === "semantic";
+    const isSemantic = item.source === "semantic";
+    const isVerifiedSqlFile = item.source === "verified_sql";
+    const verified = isSemantic || isVerifiedSqlFile;
+    const label = isSemantic
+      ? "Semantic Query"
+      : isVerifiedSqlFile
+        ? "Verified Query"
+        : "SQL Query";
+    const verifiedTooltip = isVerifiedSqlFile ? VERIFIED_SQL_FILE_TOOLTIP : VERIFIED_TOOLTIP;
     const title = (
       <div className='flex min-w-0 items-center gap-1.5'>
-        <h3 className='truncate font-semibold text-sm'>
-          {verified ? "Semantic Query" : "SQL Query"}
-        </h3>
+        <h3 className='truncate font-semibold text-sm'>{label}</h3>
         {verified && (
           <Tooltip>
             <TooltipTrigger asChild>
               <BadgeCheck className='h-4 w-4 shrink-0 text-special' />
             </TooltipTrigger>
-            <TooltipContent side='bottom'>{VERIFIED_TOOLTIP}</TooltipContent>
+            <TooltipContent side='bottom'>{verifiedTooltip}</TooltipContent>
           </Tooltip>
         )}
       </div>

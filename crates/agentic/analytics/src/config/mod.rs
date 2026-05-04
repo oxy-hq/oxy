@@ -100,7 +100,8 @@ pub struct ResolvedContext {
     pub sql_examples: Vec<String>,
     /// `.md` documentation files to inject into Clarifying and Interpreting.
     pub domain_docs: Vec<String>,
-    /// `.procedure.yml` / `.procedure.yaml` files discovered via context globs.
+    /// `.procedure.yml`, `.procedure.yaml`, `.workflow.yml`, `.workflow.yaml`,
+    /// and `.sql` files discovered via context globs.
     ///
     /// When non-empty, the HTTP layer wires an `OxyProcedureRunner` initialised
     /// with these paths so the `search_procedures` tool can locate them without
@@ -166,33 +167,56 @@ fn extract_procedure_databases(content: &str) -> Vec<String> {
     databases
 }
 
-/// Extract the `database` value from the `oxy:` comment block in a SQL file.
+/// Parsed contents of the leading `/* oxy: ... */` comment block in a SQL file.
+///
+/// Both fields are optional; missing or empty values become `None`.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct OxyCommentBlock {
+    /// Human-readable description used by procedure search to rank the file.
+    pub description: Option<String>,
+    /// Logical connector name to execute the SQL against, overriding the
+    /// agent's default connector.
+    pub database: Option<String>,
+}
+
+/// Parse the leading `/* oxy: ... */` comment block of a SQL file.
 ///
 /// Recognises the format:
 /// ```sql
 /// /*
 ///   oxy:
+///     description: "Monthly revenue by region"
 ///     database: my_db
 /// */
 /// ```
-fn extract_sql_oxy_database(content: &str) -> Option<String> {
+///
+/// Returns `None` when the file has no leading comment block, or when the
+/// block doesn't contain an `oxy:` key. The returned [`OxyCommentBlock`] only
+/// carries fields that are present and non-empty.
+pub fn parse_oxy_comment_block(content: &str) -> Option<OxyCommentBlock> {
     let start = content.find("/*")?;
     let end_offset = content[start..].find("*/")?;
     let comment = &content[start + 2..start + end_offset];
 
     #[derive(serde::Deserialize)]
-    struct OxyBlock {
+    struct OxyInner {
+        description: Option<String>,
         database: Option<String>,
     }
     #[derive(serde::Deserialize)]
     struct OxyComment {
-        oxy: Option<OxyBlock>,
+        oxy: Option<OxyInner>,
     }
-    serde_yaml::from_str::<OxyComment>(comment)
-        .ok()
-        .and_then(|c| c.oxy)
-        .and_then(|o| o.database)
-        .filter(|s| !s.is_empty())
+    let inner = serde_yaml::from_str::<OxyComment>(comment).ok()?.oxy?;
+    let block = OxyCommentBlock {
+        description: inner.description.filter(|s| !s.is_empty()),
+        database: inner.database.filter(|s| !s.is_empty()),
+    };
+    if block == OxyCommentBlock::default() {
+        None
+    } else {
+        Some(block)
+    }
 }
 
 /// Push `name` into `list` if it is not already present.
@@ -373,7 +397,11 @@ impl AgentConfig {
                 let path = entry.map_err(|e| ConfigError::Io(e.into_error()))?;
                 let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
-                if name.ends_with(".procedure.yml") || name.ends_with(".procedure.yaml") {
+                if name.ends_with(".procedure.yml")
+                    || name.ends_with(".procedure.yaml")
+                    || name.ends_with(".workflow.yml")
+                    || name.ends_with(".workflow.yaml")
+                {
                     let content = std::fs::read_to_string(&path).map_err(ConfigError::Io)?;
                     for db in extract_procedure_databases(&content) {
                         push_unique(&mut ctx.referenced_databases, db);
@@ -390,10 +418,23 @@ impl AgentConfig {
                     ctx.semantic_files.push(path);
                 } else if path.extension().is_some_and(|e| e == "sql") {
                     let content = std::fs::read_to_string(&path).map_err(ConfigError::Io)?;
-                    if let Some(db) = extract_sql_oxy_database(&content) {
-                        push_unique(&mut ctx.referenced_databases, db);
+                    // A `/* oxy: ... */` header opts the SQL file in as a
+                    // verified query — searchable via `search_procedures` and
+                    // executed verbatim. Files without the header stay as
+                    // LLM style examples only, so users can drop reference
+                    // SQL into `context` without it becoming an authoritative
+                    // answer for some unrelated question.
+                    match parse_oxy_comment_block(&content) {
+                        Some(block) => {
+                            if let Some(db) = block.database {
+                                push_unique(&mut ctx.referenced_databases, db);
+                            }
+                            ctx.procedure_files.push(path);
+                        }
+                        None => {
+                            ctx.sql_examples.push(content);
+                        }
                     }
-                    ctx.sql_examples.push(content);
                 } else if path.extension().is_some_and(|e| e == "md") {
                     let content = std::fs::read_to_string(&path).map_err(ConfigError::Io)?;
                     ctx.domain_docs.push(content);

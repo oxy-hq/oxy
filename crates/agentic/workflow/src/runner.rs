@@ -117,6 +117,61 @@ fn phrase_fuzzy_matches(phrase_lower: &str, query_tokens: &[&str]) -> bool {
     })
 }
 
+/// Determines whether `path` is a searchable context file (procedure, workflow, or SQL).
+fn is_context_file(path: &Path) -> bool {
+    let name = path.to_string_lossy();
+    name.contains(".procedure.") || name.contains(".workflow.") || name.ends_with(".sql")
+}
+
+/// Extract the human-readable name and description for a context file.
+///
+/// For YAML files (procedure/workflow): parses the `name` and `description` fields.
+/// For SQL files: uses the file stem as name and the `oxy:` comment block description
+/// (if any) as description.
+fn extract_file_meta(path: &Path) -> (String, ProcedureMeta) {
+    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+    if path.extension().is_some_and(|e| e == "sql") {
+        // For SQL files, use the file stem (without extension) as the name.
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(file_name)
+            .to_string();
+        // Extract description from the oxy: comment block if present.
+        let description = std::fs::read_to_string(path)
+            .ok()
+            .and_then(|content| extract_sql_description(&content))
+            .unwrap_or_default();
+        let meta = ProcedureMeta {
+            description,
+            ..Default::default()
+        };
+        return (stem, meta);
+    }
+
+    // For .procedure.yml / .workflow.yml: strip the double extension.
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+    let name = stem
+        .strip_suffix(".procedure")
+        .or_else(|| stem.strip_suffix(".workflow"))
+        .unwrap_or(stem)
+        .to_string();
+    let meta: ProcedureMeta = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_yaml::from_str(&s).ok())
+        .unwrap_or_default();
+    (name, meta)
+}
+
+/// Extract a description string from the `oxy:` comment block in a SQL file.
+///
+/// Delegates to the shared parser in `agentic_analytics::config` so the
+/// `oxy:` comment block format has a single source of truth.
+fn extract_sql_description(content: &str) -> Option<String> {
+    agentic_analytics::config::parse_oxy_comment_block(content).and_then(|b| b.description)
+}
+
 fn filter_procedure_paths(
     paths: &[PathBuf],
     workspace_path: &Path,
@@ -127,20 +182,13 @@ fn filter_procedure_paths(
     // Split the query into lowercase tokens; empty tokens are dropped.
     let tokens: Vec<&str> = query_lower.split_whitespace().collect();
 
-    // Collect all procedure candidates, reading YAML metadata upfront so that
-    // description and retrieval config participate in filtering and scoring.
+    // Collect all procedure/workflow/SQL candidates, reading metadata upfront
+    // so that description and retrieval config participate in filtering/scoring.
     let mut scored: Vec<(f64, ProcedureRef)> = paths
         .iter()
-        .filter(|p| p.to_string_lossy().contains(".procedure."))
+        .filter(|p| is_context_file(p))
         .filter_map(|path| {
-            let stem = path.file_stem()?.to_str()?.to_string();
-            let name = stem.strip_suffix(".procedure").unwrap_or(&stem).to_string();
-
-            // Read and parse metadata before any filtering.
-            let meta: ProcedureMeta = std::fs::read_to_string(path)
-                .ok()
-                .and_then(|s| serde_yaml::from_str(&s).ok())
-                .unwrap_or_default();
+            let (name, meta) = extract_file_meta(path);
 
             // ── retrieval config: hard include / exclude gates ──────────────
             // These mirror the same semantics used across the rest of the Oxy
@@ -239,14 +287,27 @@ mod tests {
     }
 
     #[test]
-    fn non_procedure_files_are_excluded() {
+    fn non_context_files_are_excluded() {
+        let paths = vec![
+            make_path("monthly_revenue.workflow.yml"),
+            make_path("monthly_revenue.procedure.yml"),
+            make_path("monthly_revenue.agent.yml"),
+            make_path("monthly_revenue.view.yml"),
+        ];
+        let refs = filter_procedure_paths(&paths, Path::new("/project"), "");
+        // Only procedure and workflow files are returned; agent/view files are excluded.
+        assert_eq!(refs.len(), 2);
+        assert!(refs.iter().all(|r| r.name == "monthly_revenue"));
+    }
+
+    #[test]
+    fn workflow_files_are_included() {
         let paths = vec![
             make_path("monthly_revenue.workflow.yml"),
             make_path("monthly_revenue.procedure.yml"),
         ];
         let refs = filter_procedure_paths(&paths, Path::new("/project"), "");
-        assert_eq!(refs.len(), 1);
-        assert_eq!(refs[0].name, "monthly_revenue");
+        assert_eq!(refs.len(), 2);
     }
 
     #[test]
@@ -520,6 +581,56 @@ mod tests {
         );
         assert_eq!(refs.len(), 1, "procedure should be found for this query");
         assert_eq!(refs[0].name, "store-deep-dive-analysis");
+    }
+
+    // ── SQL file search ───────────────────────────────────────────────────────
+
+    #[test]
+    fn sql_file_is_included_in_search() {
+        let paths = vec![
+            make_path("monthly_revenue.sql"),
+            make_path("churn_rate.procedure.yml"),
+        ];
+        let refs = filter_procedure_paths(&paths, Path::new("/project"), "");
+        assert_eq!(refs.len(), 2);
+    }
+
+    #[test]
+    fn sql_file_uses_stem_as_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("monthly_revenue.sql");
+        std::fs::File::create(&file_path).unwrap();
+
+        let refs = filter_procedure_paths(&[file_path], dir.path(), "");
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].name, "monthly_revenue");
+    }
+
+    #[test]
+    fn sql_file_extracts_description_from_oxy_comment() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("revenue_by_region.sql");
+        let mut f = std::fs::File::create(&file_path).unwrap();
+        writeln!(
+            f,
+            "/*\noxy:\n  description: \"Monthly revenue broken down by region\"\n*/\nSELECT 1"
+        )
+        .unwrap();
+
+        let refs = filter_procedure_paths(&[file_path], dir.path(), "");
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].description, "Monthly revenue broken down by region");
+    }
+
+    #[test]
+    fn sql_file_matches_by_name_token() {
+        let paths = vec![
+            make_path("monthly_revenue.sql"),
+            make_path("churn_rate.sql"),
+        ];
+        let refs = filter_procedure_paths(&paths, Path::new("/project"), "revenue");
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].name, "monthly_revenue");
     }
 }
 
