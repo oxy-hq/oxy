@@ -2,13 +2,14 @@ name: Public Announce Releases to Slack
 
 on:
   workflow_run:
-    workflows: ["Public Release"]
+    workflows: [ "Public Release" ]
     types:
       - completed
 
 jobs:
   announce-to-slack:
-    if: github.repository == 'oxy-hq/oxy' && github.event.workflow_run.conclusion == 'success'
+    if: github.repository == 'oxy-hq/oxygen' && github.event.workflow_run.conclusion
+      == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -33,7 +34,7 @@ jobs:
               echo "channel=product-releases-prod"
               echo "emoji=:rocket:"
               echo "version=$BRANCH"
-              echo "release_repo=oxy-hq/oxy"
+              echo "release_repo=oxy-hq/oxygen"
             } >> "$GITHUB_OUTPUT"
           # Edge: scheduled builds or pushes to main
           elif [[ "$EVENT" == "schedule" || ( "$EVENT" == "push" && "$BRANCH" == "main" ) ]]; then
@@ -42,7 +43,7 @@ jobs:
               echo "channel=product-releases-dev"
               echo "emoji=:zap:"
               echo "version=edge-${SHA:0:7}"
-              echo "release_repo=oxy-hq/oxy-nightly"
+              echo "release_repo=oxy-hq/oxygen-nightly"
             } >> "$GITHUB_OUTPUT"
           else
             echo "type=skip" >> "$GITHUB_OUTPUT"
@@ -71,8 +72,8 @@ jobs:
       - name: Resolve previous reference
         id: prev
         if: >-
-          steps.build_info.outputs.type != 'skip'
-          && (steps.build_info.outputs.type != 'edge'
+          steps.build_info.outputs.type != 'skip' &&
+          (steps.build_info.outputs.type != 'edge'
               || steps.edge_check.outputs.published == 'true')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -132,8 +133,8 @@ jobs:
       - name: Build changelog
         id: changelog
         if: >-
-          steps.build_info.outputs.type != 'skip'
-          && (steps.build_info.outputs.type != 'edge'
+          steps.build_info.outputs.type != 'skip' &&
+          (steps.build_info.outputs.type != 'edge'
               || steps.edge_check.outputs.published == 'true')
         run: |
           TYPE="${{ steps.build_info.outputs.type }}"
@@ -218,8 +219,8 @@ jobs:
       - name: Build Slack message
         id: message
         if: >-
-          steps.build_info.outputs.type != 'skip'
-          && (steps.build_info.outputs.type != 'edge'
+          steps.build_info.outputs.type != 'skip' &&
+          (steps.build_info.outputs.type != 'edge'
               || steps.edge_check.outputs.published == 'true')
         run: |
           TYPE="${{ steps.build_info.outputs.type }}"
@@ -268,7 +269,7 @@ jobs:
             MESSAGE="${BREAKING_LINE}${CHANGELOG}
           ${CONTRIB_LINE}
           <${COMMIT_URL}|${SHORT_SHA}>${COMPARE_URL:+ · <${COMPARE_URL}|diff>} · <https://github.com/${RELEASE_REPO}/releases/tag/${VERSION}|release> · <${WORKFLOW_URL}|build>
-          \`bash <(curl --proto '=https' --tlsv1.2 -LsSf https://get.oxy.tech)\` · \`ghcr.io/oxy-hq/oxy:${VERSION}\`"
+          \`bash <(curl --proto '=https' --tlsv1.2 -LsSf https://get.oxy.tech)\` · \`ghcr.io/oxy-hq/oxygen:${VERSION}\`"
           else
             TITLE="$EMOJI \`$VERSION\`${PREV_SUFFIX}"
 
@@ -281,7 +282,7 @@ jobs:
             MESSAGE="${BREAKING_LINE}${CHANGES_LINE}
           ${CONTRIB_LINE}
           <${COMMIT_URL}|${SHORT_SHA}>${COMPARE_URL:+ · <${COMPARE_URL}|diff>} · <https://github.com/${RELEASE_REPO}/releases/tag/${VERSION}|release> · <${WORKFLOW_URL}|build>
-          \`bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)\` · \`ghcr.io/oxy-hq/oxy:${VERSION}\`"
+          \`bash <(curl --proto '=https' --tlsv1.2 -LsSf https://nightly.oxy.tech)\` · \`ghcr.io/oxy-hq/oxygen:${VERSION}\`"
           fi
 
           DELIM_T="EOF_$(uuidgen)"
@@ -297,8 +298,8 @@ jobs:
 
       - name: Send Slack notification
         if: >-
-          steps.build_info.outputs.type != 'skip'
-          && (steps.build_info.outputs.type == 'stable'
+          steps.build_info.outputs.type != 'skip' &&
+          (steps.build_info.outputs.type == 'stable'
               || steps.edge_check.outputs.published == 'true')
         uses: rtCamp/action-slack-notify@v2
         env:

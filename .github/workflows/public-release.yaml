@@ -61,7 +61,7 @@ jobs:
   # ============================================================================
   determine-build-type:
     if: |
-      github.repository == 'oxy-hq/oxy' &&
+      github.repository == 'oxy-hq/oxygen' &&
       !(github.event_name == 'push' &&
         github.ref == 'refs/heads/main' &&
         startsWith(github.event.head_commit.message, 'chore: release'))
@@ -98,7 +98,7 @@ jobs:
             VERSION="${{ github.ref_name }}"
             DISPLAY_NAME="Release ${VERSION}"
             SHOULD_BUILD="true"
-            RELEASE_REPO="oxy-hq/oxy"
+            RELEASE_REPO="oxy-hq/oxygen"
             DOCKER_TAG_PREFIX=""
             NEEDS_CHANGESETS="false"
             IS_STABLE="true"
@@ -113,7 +113,7 @@ jobs:
             fi
             DISPLAY_NAME="Release ${VERSION}"
             SHOULD_BUILD="true"
-            RELEASE_REPO="oxy-hq/oxy"
+            RELEASE_REPO="oxy-hq/oxygen"
             DOCKER_TAG_PREFIX=""
             NEEDS_CHANGESETS="false"
             IS_STABLE="true"
@@ -131,7 +131,7 @@ jobs:
               SHOULD_BUILD="defer"  # Will be determined by changesets
               NEEDS_CHANGESETS="true"
             fi
-            RELEASE_REPO="oxy-hq/oxy-nightly"
+            RELEASE_REPO="oxy-hq/oxygen-nightly"
             DOCKER_TAG_PREFIX="edge-"
             IS_STABLE="false"
             COMPAT_TAG="edge-main-${SHORT_SHA}"

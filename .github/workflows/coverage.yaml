@@ -26,7 +26,7 @@ defaults:
 jobs:
   changesets:
     uses: ./.github/workflows/changesets.yaml
-    if: github.repository == 'oxy-hq/oxy'
+    if: github.repository == 'oxy-hq/oxygen'
     name: Changesets
     permissions:
       contents: write
@@ -35,9 +35,10 @@ jobs:
 
   coverage:
     name: Code Coverage
-    needs: [changesets]
-    # Only run on oxy-hq/oxy main branch and when oxy code has changed
-    if: github.repository == 'oxy-hq/oxy' && github.ref == 'refs/heads/main' && needs.changesets.outputs.oxy == 'true'
+    needs: [ changesets ]
+    # Only run on oxy-hq/oxygen main branch and when oxy code has changed
+    if: github.repository == 'oxy-hq/oxygen' && github.ref == 'refs/heads/main' &&
+      needs.changesets.outputs.oxy == 'true'
     runs-on: "ubuntu-latest"
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -54,10 +55,8 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U admin -d default"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+          --health-cmd "pg_isready -U admin -d default" --health-interval 10s
+          --health-timeout 5s --health-retries 5
     steps:
       # - name: Free disk space
       #   uses: jlumbroso/free-disk-space@main

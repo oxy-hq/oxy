@@ -25,7 +25,7 @@ jobs:
     name: Trivy Dependency Vulnerability Scan
     if: |
       (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release/')) &&
-      (github.repository == 'oxy-hq/oxy' ||
+      (github.repository == 'oxy-hq/oxygen' ||
        (github.repository == 'oxy-hq/oxygen-internal' && github.event_name == 'pull_request'))
     runs-on: ubuntu-latest
     steps:
@@ -40,12 +40,12 @@ jobs:
           scanners: vuln
           severity: CRITICAL,HIGH
           exit-code: "0"
-          format: ${{ github.repository == 'oxy-hq/oxy' && 'sarif' || 'table' }}
-          output: ${{ github.repository == 'oxy-hq/oxy' && 'trivy-vuln-results.sarif' ||
-            'trivy-vuln-results.txt' }}
+          format: ${{ github.repository == 'oxy-hq/oxygen' && 'sarif' || 'table' }}
+          output: ${{ github.repository == 'oxy-hq/oxygen' && 'trivy-vuln-results.sarif'
+            || 'trivy-vuln-results.txt' }}
 
       - name: Publish vulnerability results to workflow summary
-        if: github.repository != 'oxy-hq/oxy'
+        if: github.repository != 'oxy-hq/oxygen'
         run: |
           if [[ -s trivy-vuln-results.txt ]]; then
             {
@@ -63,7 +63,7 @@ jobs:
           fi
 
       - name: Upload vulnerability results to GitHub Security tab
-        if: github.repository == 'oxy-hq/oxy'
+        if: github.repository == 'oxy-hq/oxygen'
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-vuln-results.sarif
@@ -73,7 +73,7 @@ jobs:
     name: Trivy Secret Scan
     if: |
       (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release/')) &&
-      (github.repository == 'oxy-hq/oxy' ||
+      (github.repository == 'oxy-hq/oxygen' ||
        (github.repository == 'oxy-hq/oxygen-internal' && github.event_name == 'pull_request'))
     runs-on: ubuntu-latest
     steps:
@@ -91,12 +91,12 @@ jobs:
           # .env.example files contain placeholder values, not real credentials.
           skip-files: "localhost+2-key.pem,localhost+2.pem,**/.env.example"
           trivyignores: .trivyignore.yaml
-          format: ${{ github.repository == 'oxy-hq/oxy' && 'sarif' || 'table' }}
-          output: ${{ github.repository == 'oxy-hq/oxy' && 'trivy-secret-results.sarif' ||
-            'trivy-secret-results.txt' }}
+          format: ${{ github.repository == 'oxy-hq/oxygen' && 'sarif' || 'table' }}
+          output: ${{ github.repository == 'oxy-hq/oxygen' && 'trivy-secret-results.sarif'
+            || 'trivy-secret-results.txt' }}
 
       - name: Publish secret scan results to workflow summary
-        if: github.repository != 'oxy-hq/oxy' && always()
+        if: github.repository != 'oxy-hq/oxygen' && always()
         run: |
           if [[ -s trivy-secret-results.txt ]]; then
             {
@@ -114,7 +114,7 @@ jobs:
           fi
 
       - name: Upload secret scan results to GitHub Security tab
-        if: github.repository == 'oxy-hq/oxy'
+        if: github.repository == 'oxy-hq/oxygen'
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-secret-results.sarif

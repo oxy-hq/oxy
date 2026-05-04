@@ -12,7 +12,7 @@ permissions:
 jobs:
   cleanup-old-nightly:
     name: Cleanup nightly releases and Docker tags older than 60 days
-    if: github.repository == 'oxy-hq/oxy'
+    if: github.repository == 'oxy-hq/oxygen'
     runs-on: ubuntu-latest
     steps:
       - name: Calculate cutoff date
@@ -34,15 +34,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           CUTOFF="${{ steps.cutoff.outputs.cutoff }}"
-          echo "Fetching releases from oxy-hq/oxy-nightly..."
-          gh api repos/oxy-hq/oxy-nightly/releases --paginate \
+          echo "Fetching releases from oxy-hq/oxygen-nightly..."
+          gh api repos/oxy-hq/oxygen-nightly/releases --paginate \
             | jq -r '.[] | "\(.tag_name) \(.id) \(.created_at)"' \
             | while read -r TAG ID CREATED; do
                 if [[ "$TAG" == nightly-* ]]; then
                   DATE_PART=$(echo "$TAG" | sed -E 's/^nightly-([0-9]{8}).*/\1/')
                   if [[ $DATE_PART =~ ^[0-9]{8}$ && "$DATE_PART" < "$CUTOFF" ]]; then
                     echo "Deleting release $TAG (id=$ID, created=$CREATED)"
-                    gh api -X DELETE repos/oxy-hq/oxy-nightly/releases/$ID || true
+                    gh api -X DELETE repos/oxy-hq/oxygen-nightly/releases/$ID || true
                   fi
                 fi
               done
