@@ -88,7 +88,14 @@ impl PoolKey {
             // File may not exist yet — DuckDB will create it on open. Use a
             // zero signature so subsequent calls hit the same key until the
             // file is actually created.
-            Err(_) => vec![(canonical.clone(), 0, 0)],
+            Err(e) => {
+                tracing::warn!(
+                    path = %canonical.display(),
+                    error = %e,
+                    "DuckDB pool: file-stat failed; pool invalidation disabled for this path until stat succeeds"
+                );
+                vec![(canonical.clone(), 0, 0)]
+            }
         };
         Ok(PoolKey {
             target: PoolTarget::File { path: canonical },
