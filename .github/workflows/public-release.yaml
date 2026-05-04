@@ -279,7 +279,7 @@ jobs:
           repositories: |
             oxygen
             oxygen-internal
-            oxy-nightly
+            oxygen-nightly
 
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -443,7 +443,7 @@ jobs:
           repositories: |
             oxygen
             oxygen-internal
-            oxy-nightly
+            oxygen-nightly
 
       - name: Checkout repository
         uses: actions/checkout@v6
