@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Context: the project is being rebranded from "oxy" to "oxygen", but the
-# existing GHCR images are published as `ghcr.io/oxy-hq/oxy[-semantic-engine]`.
-# This one-shot script publishes `oxygen[-semantic-engine]` aliases pointing
-# at the same image manifests so existing users can switch to the new name
-# without us re-releasing every version.
+# existing GHCR images are published as `ghcr.io/oxy-hq/oxy`. This one-shot
+# script publishes `oxygen` aliases pointing at the same image manifests so
+# existing users can switch to the new name without us re-releasing every
+# version.
 #
 # Mirrors the 10 most recent stable (semver) and 10 most recent edge-dated tags
-# from `oxy*` container packages to `oxygen*` aliases on ghcr.io/oxy-hq.
+# from the `oxy` container package to the `oxygen` alias on ghcr.io/oxy-hq.
 #
 # Uses `crane copy` so layers are not re-uploaded — only the manifest is
 # copied (cross-repo blob mount on the registry side). Arch-specific variants
@@ -31,7 +31,6 @@ DRY_RUN=0
 # source -> destination package name
 declare -a MAPPINGS=(
   "oxy:oxygen"
-  "oxy-semantic-engine:oxygen-semantic-engine"
 )
 
 run() {

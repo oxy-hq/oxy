@@ -10163,7 +10163,7 @@ dependencies = [
 
 [[package]]
 name = "oxy-billing"
-version = "0.5.46"
+version = "0.5.49"
 dependencies = [
  "axum",
  "chrono",

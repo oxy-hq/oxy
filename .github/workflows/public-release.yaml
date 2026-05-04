@@ -563,7 +563,7 @@ jobs:
         arch: [ linux/amd64, linux/arm64 ]
         target:
           - name: runtime
-            image: oxy
+            image: oxygen
             target: runtime
         include:
           - arch: linux/amd64
@@ -682,7 +682,7 @@ jobs:
           VERSION="${{ needs.determine-build-type.outputs.version }}"
           CHANNEL="${{ needs.determine-build-type.outputs.channel }}"
           DATE="${{ needs.determine-build-type.outputs.current_date }}"
-          IMAGE="ghcr.io/${{ github.repository_owner }}/oxy"
+          IMAGE="ghcr.io/${{ github.repository_owner }}/oxygen"
 
           if [ "$CHANNEL" = "stable" ]; then
             echo "ref=${IMAGE}:${VERSION}-amd64" >> $GITHUB_OUTPUT
@@ -738,7 +738,7 @@ jobs:
       matrix:
         target:
           - name: runtime
-            image: oxy
+            image: oxygen
     steps:
       - name: Check if should publish ${{ matrix.target.name }}
         id: should_publish
@@ -844,12 +844,12 @@ jobs:
             fi
 
             cat >> $GITHUB_STEP_SUMMARY << EOF
-          ### Oxy Runtime
-          - **Image:** \`ghcr.io/${{ github.repository_owner }}/oxy:${TAG}\`
+          ### Oxygen Runtime
+          - **Image:** \`ghcr.io/${{ github.repository_owner }}/oxygen:${TAG}\`
           - **Architectures:** linux/amd64, linux/arm64
           - **Pull:**
             \`\`\`bash
-            docker pull ghcr.io/${{ github.repository_owner }}/oxy:${TAG}
+            docker pull ghcr.io/${{ github.repository_owner }}/oxygen:${TAG}
             \`\`\`
 
           EOF
