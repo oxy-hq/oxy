@@ -225,19 +225,37 @@ async fn run_uploads(
     }
 }
 
+/// Block types we allow to pass through when re-posting the original message.
+/// Any block whose `type` is not in this list is silently dropped so that
+/// attacker-controlled payload content cannot inject arbitrary interactive
+/// elements (buttons, inputs, rich_text, …) back into the channel.
+const ALLOWED_BLOCK_TYPES: &[&str] = &["section", "context", "divider", "header", "image"];
+
 /// Pull the original message's `blocks` array out of a `block_actions`
-/// payload. Returns an empty Vec if the field is missing or malformed —
-/// the caller's `replace_view_button` will then degrade to "just the
-/// status block" rather than panicking. Slack always populates `message`
-/// for block_actions; the defensive empty fallback covers payload-shape
-/// regressions only.
+/// payload. Only blocks whose `type` is in [`ALLOWED_BLOCK_TYPES`] are
+/// returned; all others are silently dropped. Returns an empty Vec if the
+/// field is missing or malformed — the caller's `replace_view_button` will
+/// then degrade to "just the status block" rather than panicking. Slack
+/// always populates `message` for block_actions; the defensive empty
+/// fallback covers payload-shape regressions only.
 fn extract_message_blocks(payload: &InteractivityPayload) -> Vec<serde_json::Value> {
     payload
         .message
         .as_ref()
         .and_then(|m| m.get("blocks"))
         .and_then(|b| b.as_array())
-        .cloned()
+        .map(|blocks| {
+            blocks
+                .iter()
+                .filter(|b| {
+                    b.get("type")
+                        .and_then(|t| t.as_str())
+                        .map(|t| ALLOWED_BLOCK_TYPES.contains(&t))
+                        .unwrap_or(false)
+                })
+                .cloned()
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -395,14 +413,48 @@ mod tests {
             "text": "hi",
             "blocks": [
                 {"type": "section", "text": {"type": "mrkdwn", "text": "answer"}},
+                // actions blocks are not in the allowlist and must be dropped
                 {"type": "actions", "elements": [
                     {"type": "button", "action_id": "slack_view_sql_artifacts", "text": {"type": "plain_text", "text": "📎 View 2 SQL queries"}, "value": "abc"}
                 ]},
             ]
         }));
         let blocks = extract_message_blocks(&p);
-        assert_eq!(blocks.len(), 2);
+        // Only the section block survives; actions is stripped by the allowlist.
+        assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0]["type"], "section");
+    }
+
+    #[test]
+    fn extract_message_blocks_filters_disallowed_types() {
+        let mut p = payload_with_action(InteractivityAction {
+            action_id: "x".into(),
+            value: None,
+            selected_option: None,
+        });
+        p.message = Some(serde_json::json!({
+            "blocks": [
+                {"type": "section",  "text": {"type": "mrkdwn", "text": "ok"}},
+                {"type": "context",  "elements": []},
+                {"type": "divider"},
+                {"type": "header",   "text": {"type": "plain_text", "text": "h"}},
+                {"type": "image",    "image_url": "https://example.com/img.png", "alt_text": "img"},
+                {"type": "actions",  "elements": []},
+                {"type": "input",    "element": {}, "label": {}},
+                {"type": "rich_text","elements": []},
+                {"type": "video",    "alt_text": "v", "title": {}, "video_url": "https://v"},
+            ]
+        }));
+        let blocks = extract_message_blocks(&p);
+        let types: Vec<&str> = blocks
+            .iter()
+            .map(|b| b["type"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            types,
+            vec!["section", "context", "divider", "header", "image"],
+            "only allowlisted types should survive"
+        );
     }
 
     #[test]
