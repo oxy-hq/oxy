@@ -75,19 +75,21 @@ CREATE OR REPLACE SECRET s3_secret (
     SECRET '{}',
     REGION '{}'
 )",
-                    url_style,
-                    endpoint_url
-                        .clone()
-                        .unwrap_or(format!("s3.{}.amazonaws.com", region)),
+                    escape_sql_string(url_style),
+                    escape_sql_string(
+                        &endpoint_url
+                            .clone()
+                            .unwrap_or(format!("s3.{}.amazonaws.com", region))
+                    ),
                     use_ssl,
-                    key_id,
-                    secret_value,
-                    region
+                    escape_sql_string(key_id),
+                    escape_sql_string(&secret_value),
+                    escape_sql_string(region)
                 ))
             }
             S3StorageSecret::CredentialChain { chain, region } => {
                 let chain_stmt = if let Some(chain_str) = chain {
-                    format!("CHAIN '{}'", chain_str)
+                    format!("CHAIN '{}'", escape_sql_string(chain_str))
                 } else {
                     "".to_string()
                 };
@@ -99,7 +101,8 @@ CREATE OR REPLACE SECRET s3_secret (
     {},
     REGION '{}'
 )",
-                    chain_stmt, region
+                    chain_stmt,
+                    escape_sql_string(region)
                 ))
             }
         }
@@ -143,7 +146,10 @@ impl CatalogConfig {
     }
 
     fn to_duckdb_attach_params(&self) -> Vec<String> {
-        vec![format!("METADATA_SCHEMA '{}'", self.schema_name)]
+        vec![format!(
+            "METADATA_SCHEMA '{}'",
+            escape_sql_string(&self.schema_name)
+        )]
     }
 }
 
@@ -159,7 +165,10 @@ pub struct StorageConfig {
 
 impl StorageConfig {
     fn to_duckdb_attach_params(&self) -> Vec<String> {
-        vec![format!("DATA_PATH '{}'", self.data_path)]
+        vec![format!(
+            "DATA_PATH '{}'",
+            escape_sql_string(&self.data_path)
+        )]
     }
 }
 
@@ -246,4 +255,8 @@ fn default_catalog_path() -> ManagedSecret {
 
 fn default_url_style() -> String {
     "path".to_string()
+}
+
+fn escape_sql_string(s: &str) -> String {
+    s.replace('\'', "''")
 }
