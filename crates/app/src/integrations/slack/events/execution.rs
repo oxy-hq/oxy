@@ -12,7 +12,7 @@
 //!      arrives and only post the finished result at the end. Live token reveal
 //!      looked cramped against artifacts + chart placeholders, and Claude's
 //!      all-at-once finish reads better.
-//!   3. `chat.postMessage` delivers the final answer as a Block Kit payload:
+//!   3. `chat.postMessage` delivers the final answer as a single Block Kit payload:
 //!      section blocks for prose, image blocks for chart URLs, a divider, and a
 //!      footer card with a "View thread" deep-link. Slack auto-clears the
 //!      setStatus indicator when the bot posts a reply.
@@ -25,7 +25,7 @@ use crate::integrations::slack::blocks;
 use crate::integrations::slack::client::SlackClient;
 use crate::integrations::slack::config::SlackConfig;
 use crate::integrations::slack::error::SlackError;
-use crate::integrations::slack::render::SlackRenderer;
+use crate::integrations::slack::render::{CapturedSqlArtifact, QueuedChart, SlackRenderer};
 use crate::integrations::slack::resolution::thread_context::{
     CreateThreadContext, ThreadContextService,
 };
@@ -157,119 +157,163 @@ pub async fn run_for_slack(req: SlackRunRequest) -> Result<(), SlackError> {
         .await
         .map_err(&internal)?;
 
-    // Slack's AI-assistant indicator. Per docs:
-    //   <https://docs.slack.dev/reference/methods/assistant.threads.setStatus>
-    //
-    //   "An empty string in the status field will clear the status indicator."
-    //
-    // So `status` MUST be non-empty — passing "" silently clears the indicator
-    // and Slack falls back to its default "Thinking…" affordance, which was
-    // the bug we kept failing to diagnose. Slack renders this as
-    // "<App Name> <status>" (e.g. "OxyDev is working on your request…").
-    //
-    // `loading_messages` rotates over this static base. The list is kept
-    // short (3 entries) so it reads as ambient motion rather than a
-    // shuffly carousel — the plan-mode task block carries the real
-    // "where the agent is right now" signal.
-    //
-    // There is a hard 2-minute auto-clear timeout on the indicator: any
-    // agent run >2 min loses the indicator partway through. Refreshing
-    // periodically before that timeout would require a background task;
-    // not added yet — most runs are well under 2 min.
-    //
-    // No `chat.startStream` here: it's an unrelated streaming-text API
-    // and `chat.appendStream` activity actively clears the status. We
-    // post the final answer via `chat.postMessage` at the end, which
-    // also naturally clears the status (Slack auto-clears on app reply).
+    set_loading_status(&client, &bot_token, &req.channel_id, &req.thread_ts).await;
+
+    let workspace_manager = build_workspace_manager(req.workspace_id, &internal).await?;
+    let upload_charts = crate::integrations::slack::config::chart_upload_enabled();
+
+    let exec = run_agent_for_slack(
+        oxy_thread_id,
+        req.workspace_id,
+        workspace_manager,
+        &req.agent_path,
+        &req.question,
+        &req.channel_id,
+        &req.thread_ts,
+        thread_url.clone(),
+        memory,
+        upload_charts,
+        &client,
+        &bot_token,
+    )
+    .await
+    .map_err(&internal)?;
+
+    let (all_blocks, view_sql, sql_overflow) = build_message_blocks(
+        &exec,
+        thread_url.as_deref(),
+        &req.question,
+        req.installation.org_id,
+        &req.user_link.slack_user_id,
+        &req.agent_path,
+    )
+    .await;
+
+    let fallback_text = blocks::pick_fallback_text(exec.agent_errored, &exec.final_markdown);
     if let Err(e) = client
-        .assistant_threads_set_status(
+        .chat_post_message_with_blocks(
             &bot_token,
             &req.channel_id,
-            &req.thread_ts,
-            "is working on your request…",
-            Some(crate::integrations::slack::render::LOADING_MESSAGES),
+            &fallback_text,
+            Some(&req.thread_ts),
+            Some(serde_json::Value::Array(all_blocks)),
         )
         .await
     {
-        tracing::warn!(
-            channel = %req.channel_id,
-            thread_ts = %req.thread_ts,
-            "assistant.threads.setStatus failed: {e}"
-        );
+        tracing::warn!("chat.postMessage failed: {e}");
     }
 
-    let repo_path = resolve_workspace_path(req.workspace_id)
-        .await
-        .map_err(&internal)?;
-    let workspace_manager = WorkspaceBuilder::new(req.workspace_id)
-        .with_workspace_path_and_fallback_config(&repo_path)
-        .await
-        .map_err(&internal)?
-        .try_with_intent_classifier()
-        .await
-        .build()
+    let upload_failures = upload_charts_sequentially(
+        &client,
+        &bot_token,
+        &req.channel_id,
+        &req.thread_ts,
+        exec.queued_charts,
+        &req.question,
+        exec.agent_errored,
+    )
+    .await;
+
+    post_overflow_followups(
+        &client,
+        &bot_token,
+        &req.channel_id,
+        &req.thread_ts,
+        upload_failures,
+        sql_overflow,
+        view_sql,
+        thread_url.as_deref(),
+        exec.agent_errored,
+    )
+    .await;
+
+    ThreadContextService::update_last_ts(slack_thread_row.id, &req.thread_ts)
         .await
         .map_err(&internal)?;
 
-    // Resolved once at startup (see `SlackConfig`); flipping the env var
-    // mid-process is a no-op so production deployment semantics stay
-    // predictable.
-    let upload_charts = crate::integrations::slack::config::chart_upload_enabled();
+    Ok(())
+}
 
-    // Set up the block handler with a live channel for streaming.
+// ============================================================================
+// Focused helpers
+// ============================================================================
+
+/// Output produced by [`run_agent_for_slack`].
+struct AgentExecOutput {
+    /// Accumulated prose markdown from the renderer.
+    body_markdown: String,
+    /// Chart PNG blobs ready to upload.
+    queued_charts: Vec<QueuedChart>,
+    /// On-disk PNG paths for local-dev inspection.
+    chart_local_paths: Vec<std::path::PathBuf>,
+    /// Number of charts that failed to render (Chromium crash / empty bytes).
+    failed_chart_count: usize,
+    /// SQL/semantic-query artifacts captured during the run.
+    captured_sql_artifacts: Vec<CapturedSqlArtifact>,
+    /// Authoritative agent answer (may be an error message when `agent_errored`).
+    final_markdown: String,
+    /// True when the agent task returned an Err — prose becomes an error alert.
+    agent_errored: bool,
+}
+
+/// Build the workspace, spawn the agent, drain the stream, await completion,
+/// and persist the output. Returns a summary of everything the caller needs to
+/// assemble the Slack message.
+async fn run_agent_for_slack(
+    oxy_thread_id: Uuid,
+    workspace_id: Uuid,
+    workspace_manager: WorkspaceManager,
+    agent_path: &str,
+    question: &str,
+    channel_id: &str,
+    thread_ts: &str,
+    thread_url: Option<String>,
+    memory: Vec<Message>,
+    upload_charts: bool,
+    client: &SlackClient,
+    bot_token: &str,
+) -> Result<AgentExecOutput, OxyError> {
     let (tx, rx) = mpsc::channel::<AnswerStream>(256);
     let block_handler = BlockHandler::new(tx);
     let block_handler_reader = block_handler.get_reader();
 
-    // Run the agent concurrently.
-    let agent_path = req.agent_path.clone();
-    let question = req.question.clone();
-    let channel_id = req.channel_id.clone();
+    let agent_path_owned = agent_path.to_owned();
+    let question_owned = question.to_owned();
+    let channel_id_owned = channel_id.to_owned();
 
     let agent_handle = tokio::spawn(async move {
         execute_agent_inner(
             oxy_thread_id,
             workspace_manager,
-            &question,
-            &agent_path,
-            &channel_id,
+            &question_owned,
+            &agent_path_owned,
+            &channel_id_owned,
             memory,
             block_handler,
         )
         .await
     });
 
-    // Drain the AnswerStream into `SlackRenderer`. Body is accumulated
-    // locally and posted as a single `chat.postMessage` at the end.
-    // `finalize` runs the parallel chart-upload step.
     let renderer = SlackRenderer::new(
-        &client,
-        &bot_token,
-        &req.channel_id,
-        &req.thread_ts,
-        thread_url.clone(),
-        req.workspace_id,
+        client,
+        bot_token,
+        channel_id,
+        thread_ts,
+        thread_url,
+        workspace_id,
         upload_charts,
     );
     let render_result = oxy::render_stream(rx, renderer).await;
-    let body_markdown = render_result.body;
-    let queued_charts = render_result.queued_charts;
-    let chart_local_paths = render_result.chart_local_paths;
-    // Render-side failures only — upload failures are tracked separately
-    // in the post-message upload loop and surfaced via a follow-up.
-    let failed_chart_count = render_result.failed_chart_count;
-    let captured_sql_artifacts = render_result.captured_sql_artifacts;
     tracing::info!(
-        captured_count = captured_sql_artifacts.len(),
-        body_len = body_markdown.len(),
-        queued_charts = queued_charts.len(),
-        "slack run_for_slack: render_stream finished"
+        captured_count = render_result.captured_sql_artifacts.len(),
+        body_len = render_result.body.len(),
+        queued_charts = render_result.queued_charts.len(),
+        "slack run_agent_for_slack: render_stream finished"
     );
 
-    // Await agent completion.
     let agent_result = agent_handle
         .await
-        .map_err(|e| internal(OxyError::RuntimeError(format!("agent task panicked: {e}"))))?;
+        .map_err(|e| OxyError::RuntimeError(format!("agent task panicked: {e}")))?;
 
     let (final_markdown, agent_errored) = match agent_result {
         Ok(markdown) => (markdown, false),
@@ -281,7 +325,6 @@ pub async fn run_for_slack(req: SlackRunRequest) -> Result<(), SlackError> {
         }
     };
 
-    // Persist agent output + artifacts.
     if let Err(e) =
         conversation::persist_agent_output_from_blocks(oxy_thread_id, block_handler_reader).await
     {
@@ -293,57 +336,49 @@ pub async fn run_for_slack(req: SlackRunRequest) -> Result<(), SlackError> {
         tracing::warn!("Failed to update thread output: {}", e);
     }
 
-    // Build the body blocks (sections + chart links) from accumulated
-    // markdown. On error, swap the body for an alert block carrying the
-    // failure message.
-    let body_blocks = if agent_errored {
-        blocks::build_error_alert_blocks(&final_markdown)
+    Ok(AgentExecOutput {
+        body_markdown: render_result.body,
+        queued_charts: render_result.queued_charts,
+        chart_local_paths: render_result.chart_local_paths,
+        failed_chart_count: render_result.failed_chart_count,
+        captured_sql_artifacts: render_result.captured_sql_artifacts,
+        final_markdown,
+        agent_errored,
+    })
+}
+
+/// Assemble all Block Kit blocks for the `chat.postMessage` payload.
+///
+/// Returns `(blocks, view_sql, sql_overflow)`:
+/// - `blocks` — the full ordered block list ready to post
+/// - `view_sql` — optional `(upload_id, count)` stashed for the SQL button
+/// - `sql_overflow` — number of SQL artifacts beyond the cap (used for
+///   the follow-up "N more queries" post)
+async fn build_message_blocks(
+    exec: &AgentExecOutput,
+    thread_url: Option<&str>,
+    question: &str,
+    org_id: Uuid,
+    slack_user_id: &str,
+    agent_path: &str,
+) -> (Vec<serde_json::Value>, Option<(Uuid, usize)>, usize) {
+    // Body: error alert or prose sections.
+    let mut all_blocks: Vec<serde_json::Value> = if exec.agent_errored {
+        blocks::build_error_alert_blocks(&exec.final_markdown)
     } else {
-        let prose = if body_markdown.trim().is_empty() {
-            final_markdown.clone()
+        let prose = if exec.body_markdown.trim().is_empty() {
+            exec.final_markdown.clone()
         } else {
-            body_markdown.clone()
+            exec.body_markdown.clone()
         };
         blocks::build_body_blocks(&prose)
     };
 
-    // Claude-style footer:
-    //   1. body section blocks (prose only — charts auto-share as thread
-    //      replies right after this message lands)
-    //   2. local-disk breadcrumb context blocks (dev mode only)
-    //   3. render-failure context link (when a chart never produced bytes)
-    //   4. divider
-    //   5. footer actions row: [📎 View N SQL queries (primary, when SQL
-    //      artifacts exist)] [View thread] [Wrong workspace? (when user has
-    //      multiple workspaces)] — all in one actions block so they sit on
-    //      the same line; SQL button is `style: "primary"` so Slack renders
-    //      it green to mark it as the actionable button on the row.
-    //   6. context block: "Requested by @user · Oxy can make mistakes…"
-    //
-    // Why the chart/SQL split is asymmetric:
-    //   • Charts upload immediately. They benefit from inline visibility —
-    //     a chart is the answer for visualization questions, hiding it
-    //     behind a click would defeat the purpose. They can't be
-    //     `slack_file` image blocks inline because Slack rejects messages
-    //     referencing un-shared files; auto-share-as-thread-reply is the
-    //     proven pattern (Datadog, Grafana).
-    //   • SQL queries are deferred behind a button. Most viewers in a
-    //     team channel don't want to scroll past a wall of SQL — the
-    //     analyst who asked the question does. Compiled semantic-layer
-    //     queries are especially long. Click → upload as `.sql` snippets
-    //     (collapsed by default, native syntax highlighting) gives the
-    //     same end-state for users who want it without spamming everyone
-    //     who doesn't.
-    let mut all_blocks: Vec<serde_json::Value> = body_blocks;
-
-    // Local-render breadcrumbs: surface the on-disk PNG paths so a
-    // developer running locally can `open` the file and validate the
-    // chart visually. Slack itself can't fetch a localhost path, so
-    // this is a debug affordance, not a real preview. The path appears
-    // as a code-formatted snippet inside a context block — keeps it
-    // visually muted but copyable.
-    if !agent_errored {
-        for path in &chart_local_paths {
+    // Local-render breadcrumbs: on-disk PNG paths so a developer running
+    // locally can `open` the file and validate the chart visually. Slack
+    // itself can't fetch a localhost path — this is a debug affordance only.
+    if !exec.agent_errored {
+        for path in &exec.chart_local_paths {
             all_blocks.push(serde_json::json!({
                 "type": "context",
                 "elements": [{
@@ -357,50 +392,41 @@ pub async fn run_for_slack(req: SlackRunRequest) -> Result<(), SlackError> {
         }
     }
 
-    // Render-time failure footer: charts that never produced bytes are
-    // surfaced via a "view in Oxygen" link in the prose message. Upload
-    // failures are handled in a follow-up post once we know the count.
-    if !agent_errored
-        && failed_chart_count > 0
-        && let Some(url) = thread_url.as_deref()
+    // Render-failure footer: charts that never produced bytes are surfaced
+    // via a "view in Oxygen" link. Upload failures are handled separately
+    // in post_overflow_followups once we know the count.
+    if !exec.agent_errored
+        && exec.failed_chart_count > 0
+        && let Some(url) = thread_url
     {
-        let label = if failed_chart_count == 1 {
+        let label = if exec.failed_chart_count == 1 {
             "⚠️ Chart render failed — view in Oxygen →".to_string()
         } else {
-            format!("⚠️ {failed_chart_count} chart renders failed — view in Oxygen →")
+            format!("⚠️ {} chart renders failed — view in Oxygen →", exec.failed_chart_count)
         };
         all_blocks.push(serde_json::json!({
             "type": "context",
-            "elements": [{
-                "type": "mrkdwn",
-                "text": format!("<{url}|{label}>"),
-            }],
+            "elements": [{"type": "mrkdwn", "text": format!("<{url}|{label}>")}],
         }));
     }
 
-    // SQL artifacts — defer the file uploads behind a "📎 View N SQL
-    // queries" button rather than auto-spamming the thread with up to 10
-    // `.sql` snippet replies. Stash the captured list in a process-local
-    // cache keyed by a synthetic upload id and pass that id into
-    // `build_footer_actions` below — the button rides on the same row
-    // as "View thread" so the footer stays a single line. Charts still
-    // upload immediately (right above) — the split is intentional:
-    // charts benefit from inline visibility, SQL is opt-in since most
-    // viewers in a team channel don't need to see the query.
-    let captured_sql_total = captured_sql_artifacts.len();
-    let sql_to_upload = captured_sql_total.min(MAX_SQL_ARTIFACTS_PER_MESSAGE);
-    let sql_overflow = captured_sql_total.saturating_sub(MAX_SQL_ARTIFACTS_PER_MESSAGE);
+    // SQL artifacts: stash behind a deferred-upload button.
+    let captured_total = exec.captured_sql_artifacts.len();
+    let sql_to_upload = captured_total.min(MAX_SQL_ARTIFACTS_PER_MESSAGE);
+    let sql_overflow = captured_total.saturating_sub(MAX_SQL_ARTIFACTS_PER_MESSAGE);
     if sql_overflow > 0 {
         tracing::warn!(
-            captured = captured_sql_total,
+            captured = captured_total,
             uploaded = sql_to_upload,
             dropped = sql_overflow,
             "sql artifact cap reached; some queries will not be uploaded even if the user clicks the button"
         );
     }
-    let view_sql: Option<(uuid::Uuid, usize)> = if !agent_errored && sql_to_upload > 0 {
-        let to_stash: Vec<_> = captured_sql_artifacts
-            .into_iter()
+    let view_sql: Option<(Uuid, usize)> = if !exec.agent_errored && sql_to_upload > 0 {
+        let to_stash: Vec<_> = exec
+            .captured_sql_artifacts
+            .iter()
+            .cloned()
             .take(sql_to_upload)
             .collect();
         let upload_id =
@@ -413,195 +439,150 @@ pub async fn run_for_slack(req: SlackRunRequest) -> Result<(), SlackError> {
     if !all_blocks.is_empty() {
         all_blocks.push(serde_json::json!({ "type": "divider" }));
     }
-    if !agent_errored && let Some(url) = thread_url.as_deref() {
-        // Show "Wrong workspace?" alongside "View thread" only when the user
-        // actually has another workspace to switch to. The COUNT is cheap;
-        // failing it just suppresses the button (footer still renders).
-        let reopen_q =
-            match crate::integrations::slack::resolution::workspace_agent::count_org_workspaces(
-                req.installation.org_id,
-            )
-            .await
-            {
-                Ok(n) if n > 1 => {
-                    Some(base64::engine::general_purpose::STANDARD.encode(req.question.as_bytes()))
-                }
-                Ok(_) => None,
-                Err(e) => {
-                    tracing::warn!(
-                        org_id = %req.installation.org_id,
-                        "count_org_workspaces failed, hiding reopen-picker button: {e}"
-                    );
-                    None
-                }
-            };
-        all_blocks.push(blocks::build_footer_actions(
-            url,
-            reopen_q.as_deref(),
-            view_sql,
-        ));
+
+    // Footer: "View thread" + optional "Wrong workspace?" + optional SQL button.
+    if !exec.agent_errored && let Some(url) = thread_url {
+        let reopen_q = resolve_reopen_query(org_id, question).await;
+        all_blocks.push(blocks::build_footer_actions(url, reopen_q.as_deref(), view_sql));
     } else if let Some((upload_id, count)) = view_sql {
-        // Edge case: agent succeeded with SQL artifacts but no thread URL
-        // (Slack misconfigured / `app_base_url` unset). Render the SQL
-        // button standalone — the user can still pull the queries even
-        // though we have no Oxy thread to link to.
+        // No thread URL but SQL artifacts exist — render SQL button standalone.
         all_blocks.push(blocks::build_view_sql_only_actions(upload_id, count));
     }
-    if !agent_errored {
+
+    if !exec.agent_errored {
         all_blocks.push(blocks::build_attribution_context(
-            &req.user_link.slack_user_id,
-            &blocks::agent_display_name(&req.agent_path),
+            slack_user_id,
+            &blocks::agent_display_name(agent_path),
         ));
     }
-    let stop_blocks = serde_json::Value::Array(all_blocks);
 
-    // Final answer lands as a single chat.postMessage. Slack auto-clears
-    // the assistant.threads.setStatus indicator on app reply.
-    let fallback_text = blocks::pick_fallback_text(agent_errored, &final_markdown);
-    if let Err(e) = client
-        .chat_post_message_with_blocks(
-            &bot_token,
-            &req.channel_id,
-            &fallback_text,
-            Some(&req.thread_ts),
-            Some(stop_blocks),
-        )
-        .await
-    {
-        tracing::warn!("chat.postMessage failed: {e}");
+    (all_blocks, view_sql, sql_overflow)
+}
+
+/// Upload chart PNGs sequentially into the Slack thread, returning the number
+/// of failures. Sequential order preserves the agent's chart emission order
+/// (parallel completion would scramble it). Each upload is bounded by
+/// [`FILE_UPLOAD_TIMEOUT`].
+async fn upload_charts_sequentially(
+    client: &SlackClient,
+    bot_token: &str,
+    channel_id: &str,
+    thread_ts: &str,
+    queued_charts: Vec<QueuedChart>,
+    question: &str,
+    agent_errored: bool,
+) -> usize {
+    if agent_errored || queued_charts.is_empty() {
+        return 0;
     }
 
-    // Charts get uploaded *after* the prose message so the thread reads
-    // text-first, then chart-by-chart. Each upload auto-shares into the
-    // thread (`channel_id` + `thread_ts` on `files.completeUploadExternal`),
-    // surfacing as a thread reply with the file inline.
-    //
-    // Sequential upload — Slack edge nodes are usually under a second per
-    // file, and parallel completion would scramble the file ordering in
-    // the thread (charts would arrive in network-completion order rather
-    // than the order the agent emitted them).
-    //
-    // Each upload is bounded by `FILE_UPLOAD_TIMEOUT` so a stuck
-    // multipart POST can't hold up the rest of the queue (or the
-    // ThreadContextService::update_last_ts that follows). On timeout we
-    // log, count it as a failure, and move on.
-    //
-    // The Slack file's title is derived from the user's question (the
-    // same logic that builds the Assistant thread title above). When the
-    // agent emits multiple charts in one answer, we suffix " (1 of N)"
-    // so each chart card is uniquely labeled instead of every entry just
-    // saying "Chart". Filename uses a slug of the question so the
-    // download experience matches the in-Slack label.
-    let chart_label_base = chart_label_from_question(&req.question);
-    let chart_filename_stem = chart_filename_stem_from_question(&req.question);
-    let total_charts = queued_charts.len();
-    let mut upload_failures: usize = 0;
-    if !agent_errored {
-        for (idx, chart) in queued_charts.into_iter().enumerate() {
-            let title = if total_charts > 1 {
-                format!("{chart_label_base} ({} of {total_charts})", idx + 1)
-            } else {
-                chart_label_base.clone()
-            };
-            let filename = if total_charts > 1 {
-                format!("{}-{}.png", chart_filename_stem, idx + 1)
-            } else {
-                format!("{chart_filename_stem}.png")
-            };
-            let chart_src = chart.chart_src;
-            let upload = client.files_upload_v2(
-                &bot_token,
-                &req.channel_id,
-                Some(&req.thread_ts),
-                &filename,
-                chart.png_bytes,
-                Some(&title),
-                "image/png",
-            );
-            match tokio::time::timeout(FILE_UPLOAD_TIMEOUT, upload).await {
-                Ok(Ok(_)) => {}
-                Ok(Err(e)) => {
-                    tracing::warn!(chart_src = %chart_src, "files.uploadV2 failed: {e}");
-                    upload_failures += 1;
-                }
-                Err(_) => {
-                    tracing::warn!(
-                        chart_src = %chart_src,
-                        timeout_secs = FILE_UPLOAD_TIMEOUT.as_secs(),
-                        "files.uploadV2 timed out"
-                    );
-                    upload_failures += 1;
-                }
-            }
-        }
+    let chart_label_base = chart_label_from_question(question);
+    let chart_filename_stem = chart_filename_stem_from_question(question);
+    let total = queued_charts.len();
+    let mut failures: usize = 0;
 
-        // Upload-failure follow-up: if any uploads failed, post a small
-        // context message in the same thread linking back to Oxygen so
-        // the user can still see the missing chart(s).
-        if upload_failures > 0
-            && let Some(url) = thread_url.as_deref()
-        {
-            let label = if upload_failures == 1 {
-                "⚠️ Chart upload failed — view in Oxygen →".to_string()
-            } else {
-                format!("⚠️ {upload_failures} chart uploads failed — view in Oxygen →")
-            };
-            let blocks = serde_json::json!([{
-                "type": "context",
-                "elements": [{
-                    "type": "mrkdwn",
-                    "text": format!("<{url}|{label}>"),
-                }],
-            }]);
-            if let Err(e) = client
-                .chat_post_message_with_blocks(
-                    &bot_token,
-                    &req.channel_id,
-                    "Some charts couldn't be uploaded",
-                    Some(&req.thread_ts),
-                    Some(blocks),
-                )
-                .await
-            {
-                tracing::warn!("upload-failure follow-up post failed: {e}");
-            }
-        }
-    }
-
-    // SQL upload itself happens later, on user click — see the
-    // `view_sql_artifacts` interactivity handler. The button + cache
-    // entry are wired into the prose message above, before postMessage.
-
-    // Cap-overflow follow-up: when more than MAX_SQL_ARTIFACTS_PER_MESSAGE
-    // SQL artifacts were captured, we only upload the first cap-many. The
-    // inline `> 📎 _title_ ✓` placeholder still appears in the prose for
-    // every artifact, so users would see "12 placeholders, 10 .sql files"
-    // and reasonably wonder where the missing two went. A small context
-    // block linking to the Oxy thread closes the gap. Only posted when a
-    // thread URL is available — without it, there's nowhere to link.
-    if !agent_errored
-        && sql_overflow > 0
-        && let Some(url) = thread_url.as_deref()
-    {
-        let plural = if sql_overflow == 1 {
-            "query"
+    for (idx, chart) in queued_charts.into_iter().enumerate() {
+        let title = if total > 1 {
+            format!("{chart_label_base} ({} of {total})", idx + 1)
         } else {
-            "queries"
+            chart_label_base.clone()
         };
-        let label = format!("📎 {sql_overflow} more {plural} — view in Oxygen →");
+        let filename = if total > 1 {
+            format!("{}-{}.png", chart_filename_stem, idx + 1)
+        } else {
+            format!("{chart_filename_stem}.png")
+        };
+        let chart_src = chart.chart_src;
+        let upload = client.files_upload_v2(
+            bot_token,
+            channel_id,
+            Some(thread_ts),
+            &filename,
+            chart.png_bytes,
+            Some(&title),
+            "image/png",
+        );
+        match tokio::time::timeout(FILE_UPLOAD_TIMEOUT, upload).await {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => {
+                tracing::warn!(chart_src = %chart_src, "files.uploadV2 failed: {e}");
+                failures += 1;
+            }
+            Err(_) => {
+                tracing::warn!(
+                    chart_src = %chart_src,
+                    timeout_secs = FILE_UPLOAD_TIMEOUT.as_secs(),
+                    "files.uploadV2 timed out"
+                );
+                failures += 1;
+            }
+        }
+    }
+
+    failures
+}
+
+/// Post any needed follow-up context messages into the thread:
+/// - chart-upload failures ("⚠️ N chart uploads failed — view in Oxygen →")
+/// - SQL artifact cap overflow ("📎 N more queries — view in Oxygen →")
+///
+/// All errors are logged and swallowed; follow-up failures should never
+/// propagate as errors to the caller.
+async fn post_overflow_followups(
+    client: &SlackClient,
+    bot_token: &str,
+    channel_id: &str,
+    thread_ts: &str,
+    upload_failures: usize,
+    sql_overflow: usize,
+    view_sql: Option<(Uuid, usize)>,
+    thread_url: Option<&str>,
+    agent_errored: bool,
+) {
+    if agent_errored {
+        return;
+    }
+
+    // Chart-upload failure follow-up.
+    if upload_failures > 0 && let Some(url) = thread_url {
+        let label = if upload_failures == 1 {
+            "⚠️ Chart upload failed — view in Oxygen →".to_string()
+        } else {
+            format!("⚠️ {upload_failures} chart uploads failed — view in Oxygen →")
+        };
         let blocks = serde_json::json!([{
             "type": "context",
-            "elements": [{
-                "type": "mrkdwn",
-                "text": format!("<{url}|{label}>"),
-            }],
+            "elements": [{"type": "mrkdwn", "text": format!("<{url}|{label}>")}],
         }]);
         if let Err(e) = client
             .chat_post_message_with_blocks(
-                &bot_token,
-                &req.channel_id,
+                bot_token,
+                channel_id,
+                "Some charts couldn't be uploaded",
+                Some(thread_ts),
+                Some(blocks),
+            )
+            .await
+        {
+            tracing::warn!("upload-failure follow-up post failed: {e}");
+        }
+    }
+
+    // SQL cap-overflow follow-up: inline placeholders in prose already show all
+    // artifacts; this post closes the gap for the ones we won't upload.
+    if sql_overflow > 0 && view_sql.is_some() && let Some(url) = thread_url {
+        let plural = if sql_overflow == 1 { "query" } else { "queries" };
+        let label = format!("📎 {sql_overflow} more {plural} — view in Oxygen →");
+        let blocks = serde_json::json!([{
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": format!("<{url}|{label}>")}],
+        }]);
+        if let Err(e) = client
+            .chat_post_message_with_blocks(
+                bot_token,
+                channel_id,
                 "More SQL queries are available in Oxygen",
-                Some(&req.thread_ts),
+                Some(thread_ts),
                 Some(blocks),
             )
             .await
@@ -609,12 +590,85 @@ pub async fn run_for_slack(req: SlackRunRequest) -> Result<(), SlackError> {
             tracing::warn!("sql cap-overflow follow-up post failed: {e}");
         }
     }
+}
 
-    ThreadContextService::update_last_ts(slack_thread_row.id, &req.thread_ts)
+// ============================================================================
+// Setup helpers (keep run_for_slack thin)
+// ============================================================================
+
+/// Send the rotating "is working on your request…" indicator.
+///
+/// Slack's AI-assistant indicator rules:
+/// - Status MUST be non-empty; `""` silently clears the indicator.
+/// - There is a hard 2-minute auto-clear timeout — any run >2 min loses
+///   the indicator partway through.
+/// - `chat.appendStream` actively clears the status; we use `postMessage`
+///   at the end, which also auto-clears (Slack clears on app reply).
+async fn set_loading_status(
+    client: &SlackClient,
+    bot_token: &str,
+    channel_id: &str,
+    thread_ts: &str,
+) {
+    if let Err(e) = client
+        .assistant_threads_set_status(
+            bot_token,
+            channel_id,
+            thread_ts,
+            "is working on your request…",
+            Some(crate::integrations::slack::render::LOADING_MESSAGES),
+        )
         .await
-        .map_err(&internal)?;
+    {
+        tracing::warn!(
+            channel = %channel_id,
+            thread_ts = %thread_ts,
+            "assistant.threads.setStatus failed: {e}"
+        );
+    }
+}
 
-    Ok(())
+/// Build the `WorkspaceManager` for the given workspace.
+async fn build_workspace_manager<F>(
+    workspace_id: Uuid,
+    internal: &F,
+) -> Result<WorkspaceManager, SlackError>
+where
+    F: Fn(OxyError) -> SlackError,
+{
+    let repo_path = resolve_workspace_path(workspace_id)
+        .await
+        .map_err(internal)?;
+    WorkspaceBuilder::new(workspace_id)
+        .with_workspace_path_and_fallback_config(&repo_path)
+        .await
+        .map_err(internal)?
+        .try_with_intent_classifier()
+        .await
+        .build()
+        .await
+        .map_err(internal)
+}
+
+/// Return the base64-encoded question when the user's org has >1 workspace
+/// (used for the "Wrong workspace?" button). Returns `None` on single-workspace
+/// orgs or on query failure.
+async fn resolve_reopen_query(org_id: Uuid, question: &str) -> Option<String> {
+    match crate::integrations::slack::resolution::workspace_agent::count_org_workspaces(org_id)
+        .await
+    {
+        Ok(n) if n > 1 => {
+            Some(base64::engine::general_purpose::STANDARD.encode(question.as_bytes()))
+        }
+        Ok(_) => None,
+        Err(e) => {
+            tracing::warn!(
+                org_id = %org_id,
+                "count_org_workspaces failed, hiding reopen-picker button: {e}"
+            );
+            None
+        }
+    }
 }
 
 // ============================================================================
