@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.49] - 2026-05-04
+
+### ⚙️ Miscellaneous Tasks
+
+- Update 'oxy' to 'oxygen' (#2255)
+- Update repository references from 'oxy' to 'oxygen' in workflow files
+- Filter Slack block types to prevent injection attacks (#2245)
+
 ## [0.5.48] - 2026-05-04
 
 ### 🚀 Features
@@ -36,6 +44,7 @@ All notable changes to this project will be documented in this file.
 - Refactor SQL placeholder generation into reusable helper (#2242)
 - Escape SQL strings in DuckDB configuration (#2244)
 - Add tests for Anthropic tool message conversion (#2246)
+- Release 0.5.48 (#2224)
 
 ## [0.5.47] - 2026-05-01
 
@@ -1307,7 +1316,7 @@ All notable changes to this project will be documented in this file.
 
 ### ⚙️ Miscellaneous Tasks
 
-- Remove docs to unify at oxygen-content repo (#1445)
+- Remove docs to unify at oxy-content repo (#1445)
 - Update min consistency
 - Update deps
 - Enhance artifact handling and validation in workflows
