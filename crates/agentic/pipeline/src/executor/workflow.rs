@@ -164,19 +164,20 @@ impl PipelineTaskExecutor {
         let (new_state, decision) = decider.decide(state, pending_child_answer).await;
 
         // Compute the new step result(s) added this decision. By design the
-        // decider produces at most one new key per call; the debug_assert
-        // guards against a future change that adds multiple keys, which would
-        // be silently truncated below and leave the DB row missing entries.
+        // decider produces at most one new key per call. If more than one key
+        // is added the delta logic below would silently drop all but the first,
+        // so we reject the outcome with an error rather than corrupting state.
         let new_entries: Vec<(&String, &serde_json::Value)> = new_state
             .results
             .iter()
             .filter(|(k, _)| !pre_decide_keys.contains(*k))
             .collect();
-        debug_assert!(
-            new_entries.len() <= 1,
-            "decide() added {} results in a single call; delta would drop all but one",
-            new_entries.len()
-        );
+        if new_entries.len() > 1 {
+            return Err(format!(
+                "decide() added {} results in a single call; delta would drop all but one — data integrity violation for run {run_id}",
+                new_entries.len()
+            ));
+        }
         let result_delta: serde_json::Value = new_entries
             .first()
             .map(|(k, v)| serde_json::json!({ (*k): v }))
