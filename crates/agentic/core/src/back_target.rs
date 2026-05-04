@@ -137,3 +137,83 @@ impl<D: Domain> BackTarget<D> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::RetryContext;
+
+    fn ctx_with_output() -> RetryContext {
+        RetryContext {
+            errors: vec!["prior error".to_string()],
+            attempt: 2,
+            rate_limit_attempt: 1,
+            previous_output: Some("SELECT 1".to_string()),
+        }
+    }
+
+    #[test]
+    fn advance_rate_limit_increments_only_rate_limit_attempt() {
+        let ctx = ctx_with_output();
+        let before_attempt = ctx.attempt;
+        let before_rl = ctx.rate_limit_attempt;
+
+        let next = ctx.advance_rate_limit("429 error".to_string());
+
+        assert_eq!(next.rate_limit_attempt, before_rl + 1);
+        assert_eq!(next.attempt, before_attempt);
+    }
+
+    #[test]
+    fn advance_increments_only_attempt() {
+        let ctx = ctx_with_output();
+        let before_attempt = ctx.attempt;
+        let before_rl = ctx.rate_limit_attempt;
+
+        let next = ctx.advance("transient error".to_string());
+
+        assert_eq!(next.attempt, before_attempt + 1);
+        assert_eq!(next.rate_limit_attempt, before_rl);
+    }
+
+    #[test]
+    fn advance_rate_limit_appends_error() {
+        let ctx = ctx_with_output();
+        let prior_len = ctx.errors.len();
+
+        let next = ctx.advance_rate_limit("rate limit hit".to_string());
+
+        assert_eq!(next.errors.len(), prior_len + 1);
+        assert_eq!(next.errors.last().unwrap(), "rate limit hit");
+    }
+
+    #[test]
+    fn advance_appends_error() {
+        let ctx = ctx_with_output();
+        let prior_len = ctx.errors.len();
+
+        let next = ctx.advance("syntax error".to_string());
+
+        assert_eq!(next.errors.len(), prior_len + 1);
+        assert_eq!(next.errors.last().unwrap(), "syntax error");
+    }
+
+    #[test]
+    fn advance_rate_limit_preserves_previous_output() {
+        let ctx = ctx_with_output();
+        let expected = ctx.previous_output.clone();
+
+        let next = ctx.advance_rate_limit("429".to_string());
+
+        assert_eq!(next.previous_output, expected);
+    }
+
+    #[test]
+    fn advance_preserves_previous_output() {
+        let ctx = ctx_with_output();
+        let expected = ctx.previous_output.clone();
+
+        let next = ctx.advance("error".to_string());
+
+        assert_eq!(next.previous_output, expected);
+    }
+}
