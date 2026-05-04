@@ -11,14 +11,14 @@ authors.workspace = true
 [dependencies]
 agentic-core = { workspace = true }
 agentic-analytics = { workspace = true }
-agentic-connector = { path = "../connector", features = [
+agentic-connector = { workspace = true, features = [
     "duckdb", "postgres", "airhouse", "clickhouse", "snowflake", "bigquery"
 ] }
 airlayer = { git = "https://github.com/oxy-hq/airlayer.git", rev = "b8c734d" }
 omni = { workspace = true }
 oxy-looker = { workspace = true }
 chrono = { workspace = true }
-chrono-english = "0.1.8"
+chrono-english = { workspace = true }
 
 async-trait = { workspace = true }
 minijinja = { workspace = true }

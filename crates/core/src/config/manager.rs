@@ -59,10 +59,10 @@ impl ConfigManager {
     /// then falls back to static config. Returns an owned clone.
     pub fn resolve_database(&self, database_name: &str) -> Result<Database, OxyError> {
         // Check runtime overlay first (e.g. modeling outputs registered after a run)
-        if let Ok(rt) = self.runtime_databases.read() {
-            if let Some(db) = rt.iter().find(|d| d.name == database_name) {
-                return Ok(db.clone());
-            }
+        if let Ok(rt) = self.runtime_databases.read()
+            && let Some(db) = rt.iter().find(|d| d.name == database_name)
+        {
+            return Ok(db.clone());
         }
         // Fall back to static config
         self.config

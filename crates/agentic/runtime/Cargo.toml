@@ -9,11 +9,11 @@ rust-version.workspace = true
 authors.workspace = true
 
 [dependencies]
-agentic-core = { path = "../core" }
+agentic-core = { workspace = true }
 sea-orm = { workspace = true }
 sea-orm-migration = { workspace = true }
-async-trait = "0.1"
-chrono = { version = "0.4", features = ["serde"] }
+async-trait = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }

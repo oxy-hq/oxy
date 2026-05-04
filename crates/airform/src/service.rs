@@ -223,15 +223,15 @@ impl AirformService {
         let result = compiler.compile(&mut manifest, &graph, &ctx)?;
 
         let mut compiled_nodes = Vec::new();
-        for (_id, node) in &manifest.nodes {
-            if let ManifestNode::Model(m) = node {
-                if let Some(sql) = &m.compiled_sql {
-                    compiled_nodes.push(CompiledNodeInfo {
-                        unique_id: m.unique_id.clone(),
-                        name: m.name.clone(),
-                        compiled_sql: sql.trim().to_string(),
-                    });
-                }
+        for node in manifest.nodes.values() {
+            if let ManifestNode::Model(m) = node
+                && let Some(sql) = &m.compiled_sql
+            {
+                compiled_nodes.push(CompiledNodeInfo {
+                    unique_id: m.unique_id.clone(),
+                    name: m.name.clone(),
+                    compiled_sql: sql.trim().to_string(),
+                });
             }
         }
 
@@ -344,15 +344,15 @@ impl AirformService {
                 return Err(e);
             }
         };
-        if self.oxy.is_some() {
-            if let Err(e) = self.validate_db_mappings(&load_state) {
-                let _ = tx
-                    .send(RunStreamEvent::Error {
-                        message: e.to_string(),
-                    })
-                    .await;
-                return Err(e);
-            }
+        if self.oxy.is_some()
+            && let Err(e) = self.validate_db_mappings(&load_state)
+        {
+            let _ = tx
+                .send(RunStreamEvent::Error {
+                    message: e.to_string(),
+                })
+                .await;
+            return Err(e);
         }
         let engine = JinjaEngine::new();
         let mut manifest = match airform_parser::parse(&load_state, &engine) {
@@ -432,10 +432,10 @@ impl AirformService {
             if manifest.sources.contains_key(unique_id) {
                 continue;
             }
-            if let Some(ref sel) = selected {
-                if !sel.contains(unique_id) {
-                    continue;
-                }
+            if let Some(ref sel) = selected
+                && !sel.contains(unique_id)
+            {
+                continue;
             }
             let Some(node) = manifest.nodes.get(unique_id) else {
                 continue;
@@ -666,7 +666,7 @@ impl AirformService {
 
         let mut edge_set = std::collections::HashSet::new();
 
-        for (id, _) in &manifest.nodes {
+        for id in manifest.nodes.keys() {
             for parent_id in graph.parents(id) {
                 if edge_set.insert((parent_id.clone(), id.clone())) {
                     edges.push(LineageEdge {
@@ -692,7 +692,7 @@ impl AirformService {
             if let Some(d) = deps {
                 for source_call in &d.sources {
                     let suffix = format!(".{}.{}", source_call.source_name, source_call.table_name);
-                    for (source_id, _) in &manifest.sources {
+                    for source_id in manifest.sources.keys() {
                         if source_id.ends_with(&suffix)
                             && edge_set.insert((source_id.clone(), id.clone()))
                         {
@@ -1080,15 +1080,15 @@ impl AirformService {
                 let Ok(db) = oxy_ctx.config_manager.resolve_database(oxy_db_name) else {
                     continue;
                 };
-                if let oxy::config::model::DatabaseType::DuckDB(duckdb) = &db.database_type {
-                    if matches!(
+                if let oxy::config::model::DatabaseType::DuckDB(duckdb) = &db.database_type
+                    && matches!(
                         duckdb.options,
                         oxy::config::model::DuckDBOptions::Local { .. }
-                    ) {
-                        return Err(AirformIntegrationError::DuckDbLocalNotSupported {
-                            db_name: oxy_db_name.to_string(),
-                        });
-                    }
+                    )
+                {
+                    return Err(AirformIntegrationError::DuckDbLocalNotSupported {
+                        db_name: oxy_db_name.to_string(),
+                    });
                 }
                 let dbt_type = &dbt_target.adapter_type;
                 if !dbt_type_compatible_with_oxy(dbt_type, &db.database_type) {
@@ -1285,11 +1285,11 @@ fn format_sql_keywords(sql: &str) -> String {
                 let before_ok = out
                     .chars()
                     .next_back()
-                    .map_or(true, |c| !c.is_alphanumeric() && c != '_');
+                    .is_none_or(|c| !c.is_alphanumeric() && c != '_');
                 let after_ok = remaining[kw_len..]
                     .chars()
                     .next()
-                    .map_or(true, |c| !c.is_alphanumeric() && c != '_');
+                    .is_none_or(|c| !c.is_alphanumeric() && c != '_');
                 if before_ok && after_ok {
                     out.push_str(kw);
                     remaining = &remaining[kw_len..];

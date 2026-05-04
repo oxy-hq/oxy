@@ -44,7 +44,7 @@ export function LoopSequentialNode({ parentId, task, taskRun, loopRuns, expanded
   const childSpace = node.height - usedHeight;
   return (
     <>
-      {!!taskRun?.loopValue?.length && expanded ? (
+      {taskRun?.loopValue?.length && expanded ? (
         <NodeAppendix position={appendixPosition}>
           <p className='pb-2 text-muted-foreground text-sm'>Loop value</p>
           <Combobox
