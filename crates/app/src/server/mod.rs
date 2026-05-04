@@ -2,6 +2,7 @@
 
 pub mod api;
 pub mod builder_test_runner;
+pub mod feature_flags;
 pub mod router;
 pub mod serve_mode;
 pub mod service;

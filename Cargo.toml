@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "crates/a2a",
+  "crates/billing",
   "crates/agent",
   "crates/app",
   "crates/auth",
@@ -57,6 +58,7 @@ oxy = { path = "crates/core" }
 oxy-agent = { path = "crates/agent" }
 oxy-anthropic = { path = "crates/infrastructure/llm/anthropic" }
 oxy-auth = { path = "crates/auth" }
+oxy-billing = { path = "crates/billing" }
 oxy-gemini = { path = "crates/infrastructure/llm/gemini" }
 oxy-git = { path = "crates/git" }
 oxy-llm = { path = "crates/infrastructure/llm/oxy-llm" }

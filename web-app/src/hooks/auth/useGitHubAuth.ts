@@ -35,7 +35,7 @@ export const useGitHubAuth = (clientId: string) => {
       try {
         const result = await waitForGitHubCallback(popup, "auth");
         login(result.auth.token, result.auth.user);
-        navigate(handlePostLoginOrgs(result.auth.orgs));
+        navigate(handlePostLoginOrgs(result.auth.user, result.auth.orgs));
       } finally {
         sessionStorage.removeItem(GITHUB_STATE_KEY);
       }

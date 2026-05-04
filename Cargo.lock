@@ -10073,6 +10073,7 @@ dependencies = [
  "oxy-agent",
  "oxy-airform",
  "oxy-auth",
+ "oxy-billing",
  "oxy-git",
  "oxy-llm",
  "oxy-looker",
@@ -10157,6 +10158,27 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "oxy-billing"
+version = "0.5.46"
+dependencies = [
+ "axum",
+ "chrono",
+ "entity",
+ "hex",
+ "hmac 0.13.0",
+ "reqwest 0.12.28",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "url",
  "uuid",
 ]
 

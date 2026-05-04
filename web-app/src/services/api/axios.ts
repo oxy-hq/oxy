@@ -1,6 +1,7 @@
 import axios from "axios";
 import { toast } from "sonner";
 
+import { usePaywallStore } from "@/stores/usePaywallStore";
 import { apiBaseURL } from "../env";
 
 const publicAPIPaths = [
@@ -32,11 +33,20 @@ apiClient.interceptors.request.use(
 );
 
 // Flight-dedupe 403 toasts: bursts of parallel mutations shouldn't stack
-// multiple identical permission-denied toasts. State is scoped to this
-// closure so it isn't implicitly shared across other axios instances.
+// multiple identical permission-denied toasts.
 const makeResponseErrorHandler = () => {
   let last403At = 0;
-  return (error: { response?: { status?: number }; config?: { url?: string } }) => {
+  return (error: {
+    response?: {
+      status?: number;
+      data?: {
+        code?: string;
+        status?: "incomplete" | "unpaid" | "canceled";
+        contact_required?: boolean;
+      };
+    };
+    config?: { url?: string };
+  }) => {
     const status = error.response?.status;
     const url = error.config?.url ?? "";
 
@@ -52,6 +62,12 @@ const makeResponseErrorHandler = () => {
         last403At = now;
         toast.error("You don't have permission to do this.");
       }
+    }
+
+    if (status === 402 && error.response?.data?.code === "subscription_required") {
+      const billingStatus = error.response.data.status ?? "incomplete";
+      const contactRequired = error.response.data.contact_required !== false;
+      usePaywallStore.getState().show(billingStatus, contactRequired);
     }
 
     return Promise.reject(error);

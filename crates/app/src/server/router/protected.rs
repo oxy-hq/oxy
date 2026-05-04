@@ -14,6 +14,7 @@ use oxy_auth::middleware::{AuthState, auth_middleware};
 use oxy_shared::errors::OxyError;
 
 use crate::api::middlewares::local_context::local_context_middleware;
+use crate::api::middlewares::subscription_guard::workspace_subscription_guard_middleware;
 use crate::api::middlewares::timeout::timeout_middleware;
 use crate::api::middlewares::workspace_context::workspace_middleware;
 
@@ -27,9 +28,12 @@ pub(super) fn build_protected_routes(
 ) -> Router<AppState> {
     Router::new().merge(build_global_routes()).nest(
         "/{workspace_id}",
-        build_workspace_routes(app_state.clone(), agentic_state, true, false).layer(
-            middleware::from_fn_with_state(app_state, workspace_middleware),
-        ),
+        build_workspace_routes(app_state.clone(), agentic_state, true, false)
+            .layer(middleware::from_fn(workspace_subscription_guard_middleware))
+            .layer(middleware::from_fn_with_state(
+                app_state,
+                workspace_middleware,
+            )),
     )
 }
 

@@ -261,7 +261,32 @@ const coordinatorKeys = {
   queue: (projectId: string) => [...coordinatorKeys.all, "queue", projectId] as const
 };
 
+const billingKeys = {
+  all: ["billing"] as const,
+  org: (orgId: string) => [...billingKeys.all, "org", orgId] as const,
+  status: (orgId: string) => [...billingKeys.all, "status", orgId] as const,
+  invoices: (orgId: string) => [...billingKeys.all, "invoices", orgId] as const,
+  checkoutSession: (orgId: string, sessionId: string) =>
+    [...billingKeys.all, "checkoutSession", orgId, sessionId] as const
+};
+
+const adminBillingKeys = {
+  all: ["admin", "billing"] as const,
+  orgs: (status?: string) => [...adminBillingKeys.all, "orgs", status ?? "all"] as const,
+  prices: () => [...adminBillingKeys.all, "prices"] as const,
+  subscription: (orgId: string) => [...adminBillingKeys.all, "subscription", orgId] as const,
+  pendingCheckout: (orgId: string) => [...adminBillingKeys.all, "pendingCheckout", orgId] as const
+};
+
+const featureFlagKeys = {
+  all: ["admin", "feature-flags"] as const,
+  list: () => [...featureFlagKeys.all, "list"] as const
+};
+
 const queryKeys = {
+  billing: billingKeys,
+  adminBilling: adminBillingKeys,
+  featureFlags: featureFlagKeys,
   org: orgKeys,
   agent: agentKeys,
   builder: builderKeys,

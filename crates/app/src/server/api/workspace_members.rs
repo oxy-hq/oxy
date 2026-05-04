@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use axum::extract::{Json, Path};
 use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use chrono::Utc;
 use entity::org_members::OrgRole;
 use entity::prelude::{OrgMembers, Users, WorkspaceMembers};
@@ -159,16 +160,17 @@ pub async fn set_workspace_role_override(
         user_id,
     }): Path<WorkspaceMemberPath>,
     Json(body): Json<SetRoleRequest>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Result<Json<serde_json::Value>, Response> {
     if !matches!(org_membership.role, OrgRole::Owner | OrgRole::Admin) {
-        return Err(StatusCode::FORBIDDEN);
+        return Err(StatusCode::FORBIDDEN.into_response());
     }
 
-    let role = WorkspaceRole::from_str(&body.role).map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
+    let role = WorkspaceRole::from_str(&body.role)
+        .map_err(|_| StatusCode::UNPROCESSABLE_ENTITY.into_response())?;
 
     let db = establish_connection()
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())?;
 
     // Fetch the target user's org membership to check role hierarchy.
     let target_membership = if let Some(org_id) = workspace.org_id {
@@ -180,17 +182,18 @@ pub async fn set_workspace_role_override(
             .await
             .map_err(|e| {
                 tracing::error!("Failed to check target user org membership: {e}");
-                StatusCode::INTERNAL_SERVER_ERROR
+                StatusCode::INTERNAL_SERVER_ERROR.into_response()
             })?
     } else {
         None
     };
 
     let Some(target_membership) = target_membership else {
-        return Err(StatusCode::NOT_FOUND);
+        return Err(StatusCode::NOT_FOUND.into_response());
     };
 
-    validate_role_override(&org_membership, &target_membership, &role)?;
+    validate_role_override(&org_membership, &target_membership, &role)
+        .map_err(|s| s.into_response())?;
 
     // Check if override already exists
     use entity::workspace_members::Column as WmCol;
@@ -199,7 +202,7 @@ pub async fn set_workspace_role_override(
         .filter(WmCol::UserId.eq(user_id))
         .one(&db)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())?;
 
     if let Some(existing_member) = existing {
         // Update existing override
@@ -208,7 +211,7 @@ pub async fn set_workspace_role_override(
         active.updated_at = ActiveValue::Set(Utc::now().into());
         active.update(&db).await.map_err(|e| {
             tracing::error!("Failed to update workspace member override: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
         })?;
     } else {
         // Insert new override
@@ -222,7 +225,7 @@ pub async fn set_workspace_role_override(
         };
         new_member.insert(&db).await.map_err(|e| {
             tracing::error!("Failed to insert workspace member override: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
         })?;
     }
 

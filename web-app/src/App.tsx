@@ -33,6 +33,7 @@ import { ErrorBoundary } from "@/sentry";
 import { BuilderDialog } from "./components/BuilderDialog";
 import { FileQuickOpen } from "./components/FileQuickOpen";
 import OrgGuard from "./components/OrgGuard";
+import OwnerRedirect from "./components/OwnerRedirect";
 import ProtectedRoute from "./components/ProtectedRoute";
 import WorkspaceStatus from "./components/WorkspaceStatus";
 import AgenticSetupPage from "./components/workspaces/components/CreateWorkspaceDialog/components/AgenticSetup";
@@ -42,10 +43,15 @@ import { useWorkspace } from "./hooks/api/workspaces/useWorkspaces";
 import useAuthConfig from "./hooks/auth/useAuthConfig";
 import { LOCAL_WORKSPACE_ID } from "./libs/utils/constants";
 import { setLastWorkspaceId } from "./libs/utils/lastWorkspace";
+import AdminBillingQueue from "./pages/admin/AdminBillingQueue";
+import AdminFeatureFlags from "./pages/admin/AdminFeatureFlags";
+import AdminLayout from "./pages/admin/AdminLayout";
 import AppPage from "./pages/app";
 import GoogleCallback from "./pages/auth/GoogleCallback";
 import MagicLinkCallback from "./pages/auth/MagicLinkCallback";
 import OktaCallback from "./pages/auth/OktaCallback";
+import CheckoutCancelledPage from "./pages/billing/CheckoutCancelled";
+import CheckoutSuccessPage from "./pages/billing/CheckoutSuccess";
 import GitHubCallback from "./pages/github/callback";
 import InvitePage from "./pages/Invite";
 import IdePage from "./pages/ide";
@@ -370,27 +376,43 @@ const getCloudRouter = (authConfig: AuthConfigResponse) =>
             </ProtectedRoute>
           }
         >
-          {/* Top-level: smart dispatcher picks onboarding / last workspace / first workspace */}
-          <Route index element={<PostLoginDispatcher />} />
-          <Route path='onboarding' element={<OnboardingPage />} />
+          {/* Admin queue (OXY_OWNER-gated server-side) — sits outside
+              `OwnerRedirect` so owners can actually reach it. */}
+          <Route element={<AdminLayout />}>
+            <Route path='admin/billing/queue' element={<AdminBillingQueue />} />
+            <Route path='admin/feature-flags' element={<AdminFeatureFlags />} />
+          </Route>
 
-          {/* Org-scoped routes */}
-          <Route path=':orgSlug' element={<OrgGuard />}>
-            {/* Org onboarding (first workspace + optional invites) — no sidebar */}
-            <Route path='onboarding' element={<OrgOnboardingPage />} />
+          {/* User-facing routes — owners get bounced to the admin queue. */}
+          <Route element={<OwnerRedirect />}>
+            {/* Top-level: smart dispatcher picks onboarding / last workspace / first workspace */}
+            <Route index element={<PostLoginDispatcher />} />
+            <Route path='onboarding' element={<OnboardingPage />} />
 
-            {/* Org root picks a workspace and redirects into it */}
-            <Route index element={<OrgDispatcher />} />
+            {/* Org-scoped routes */}
+            <Route path=':orgSlug' element={<OrgGuard />}>
+              {/* Org onboarding (first workspace + optional invites) — no sidebar */}
+              <Route path='onboarding' element={<OrgOnboardingPage />} />
 
-            {/* Workspace-scoped routes */}
-            <Route
-              path='workspaces/:wsId/*'
-              element={
-                <SidebarProvider>
-                  <WorkspaceLayout />
-                </SidebarProvider>
-              }
-            />
+              {/* Stripe Checkout return URLs. The path includes `/billing/`,
+                  which is the `OrgGuard` paywall bypass — these pages
+                  render even while billing.status is `incomplete`. */}
+              <Route path='billing/checkout-success' element={<CheckoutSuccessPage />} />
+              <Route path='billing/checkout-cancelled' element={<CheckoutCancelledPage />} />
+
+              {/* Org root picks a workspace and redirects into it */}
+              <Route index element={<OrgDispatcher />} />
+
+              {/* Workspace-scoped routes */}
+              <Route
+                path='workspaces/:wsId/*'
+                element={
+                  <SidebarProvider>
+                    <WorkspaceLayout />
+                  </SidebarProvider>
+                }
+              />
+            </Route>
           </Route>
         </Route>
       </Route>

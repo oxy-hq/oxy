@@ -24,7 +24,7 @@ export const useVerifyMagicLink = () => {
     mutationFn: AuthService.verifyMagicLink,
     onSuccess: (data) => {
       login(data.token, data.user);
-      const destination = handlePostLoginOrgs(data.orgs);
+      const destination = handlePostLoginOrgs(data.user, data.orgs);
       navigate(destination, { replace: true });
     }
   });

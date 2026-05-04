@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Action needed: your Oxy subscription is past due</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f5;padding:48px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:520px;">
+
+          <!-- Card -->
+          <tr>
+            <td style="background-color:#ffffff;border-radius:16px;border:1px solid #e4e4e7;overflow:hidden;">
+
+              <!-- Top accent bar (amber for warning) -->
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="background-color:#d97706;height:4px;font-size:0;line-height:0;">&nbsp;</td>
+                </tr>
+              </table>
+
+              <!-- Card body -->
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:40px 44px 36px;">
+                <tr>
+                  <td style="padding-bottom:18px;">
+                    <h1 style="margin:0;font-size:26px;font-weight:700;color:#18181b;line-height:1.3;letter-spacing:-0.4px;">Your subscription is past due</h1>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding-bottom:24px;">
+                    <p style="margin:0;font-size:17px;color:#52525b;line-height:1.7;">
+                      The latest invoice for <strong style="color:#18181b;">{{org_name}}</strong> couldn&rsquo;t be charged. You have until <strong style="color:#18181b;">{{grace_ends_at_human}}</strong> to update the payment method &mdash; after that, write access will be paused until the invoice is paid.
+                    </p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding-bottom:32px;">
+                    <p style="margin:0;font-size:15px;color:#71717a;line-height:1.65;">
+                      Reads continue working during the grace window, and Stripe will keep retrying the charge in the background.
+                    </p>
+                  </td>
+                </tr>
+
+                <!-- CTA Button -->
+                <tr>
+                  <td style="padding-bottom:24px;">
+                    <table role="presentation" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="border-radius:8px;background-color:#18181b;">
+                          <a href="{{billing_url}}"
+                             style="display:inline-block;background-color:#18181b;color:#ffffff;text-decoration:none;font-size:16px;font-weight:600;padding:14px 32px;border-radius:8px;letter-spacing:0.01em;min-width:160px;text-align:center;">
+                            Update payment method &#8594;
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- URL fallback -->
+                <tr>
+                  <td style="padding-bottom:32px;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9f9f9;border-radius:8px;border:1px solid #e4e4e7;">
+                      <tr>
+                        <td style="padding:14px 16px;">
+                          <p style="margin:0 0 5px;font-size:12px;font-weight:600;color:#71717a;letter-spacing:0.05em;text-transform:uppercase;">Or copy this link</p>
+                          <p style="margin:0;font-size:13px;color:#18181b;word-break:break-all;font-family:'Courier New',Courier,monospace;line-height:1.5;">{{billing_url}}</p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- Recipient note -->
+                <tr>
+                  <td style="border-top:1px solid #e4e4e7;padding-top:24px;">
+                    <p style="margin:0;font-size:15px;color:#71717a;line-height:1.65;">
+                      You&rsquo;re receiving this as the owner of <strong style="color:#18181b;">{{org_name}}</strong>. If someone else handles billing, please forward this email.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td align="center" style="padding-top:24px;">
+              <p style="margin:0 0 4px;font-size:13px;color:#a1a1aa;">&#169; {{year}} Oxygen Intelligence &middot; Agentic Data Analytics</p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

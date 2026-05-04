@@ -1,8 +1,10 @@
+pub mod admin;
 pub mod agent;
 pub mod api_keys;
 pub mod app;
 pub mod artifacts;
 pub mod auth;
+pub mod billing;
 pub mod chart;
 pub mod data;
 pub mod data_repo;

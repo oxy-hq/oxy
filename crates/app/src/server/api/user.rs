@@ -8,7 +8,9 @@ use serde::Serialize;
 /// per-org, so they are intentionally omitted here — read them from
 /// `OrgInfo` in the login response or from `GET /orgs`. Workspace-scoped
 /// routes receive the resolved role via the `EffectiveWorkspaceRole`
-/// extractor.
+/// extractor. `is_owner` is the only system-wide flag — it mirrors the
+/// `OXY_OWNER` allow-list and lets the frontend route Oxy staff to the
+/// admin shell.
 #[derive(Serialize)]
 pub struct UserInfo {
     pub id: String,
@@ -16,6 +18,7 @@ pub struct UserInfo {
     pub name: String,
     pub picture: Option<String>,
     pub status: String,
+    pub is_owner: bool,
 }
 
 #[derive(Serialize)]
@@ -27,12 +30,14 @@ pub struct LogoutResponse {
 
 impl From<AuthenticatedUser> for UserInfo {
     fn from(user: AuthenticatedUser) -> Self {
+        let is_owner = crate::server::api::middlewares::oxy_owner_guard::is_oxy_owner(&user.email);
         Self {
             id: user.id.to_string(),
             email: user.email,
             name: user.name,
             picture: user.picture,
             status: user.status.as_str().to_string(),
+            is_owner,
         }
     }
 }

@@ -93,13 +93,16 @@ pub struct OrgInfo {
 }
 
 /// Global profile fields. Role / admin status are per-org and live on
-/// `OrgInfo` in the login response or on `GET /orgs`.
+/// `OrgInfo` in the login response or on `GET /orgs`. `is_owner` is the
+/// only system-wide flag — it reflects the `OXY_OWNER` allow-list (Oxy
+/// staff) and lets the frontend route owners straight to the admin shell.
 #[derive(Serialize)]
 pub struct UserInfo {
     pub id: String,
     pub email: String,
     pub name: String,
     pub picture: Option<String>,
+    pub is_owner: bool,
 }
 
 #[derive(Serialize)]
@@ -740,6 +743,7 @@ async fn finalize_login(
         email: user.email.clone(),
         name: user.name.clone(),
         picture: user.picture.clone(),
+        is_owner: crate::server::api::middlewares::oxy_owner_guard::is_oxy_owner(&user.email),
     };
 
     // Query org memberships for this user

@@ -169,6 +169,7 @@ pub async fn create_api_key(
     }
 
     let db = establish_connection().await?;
+
     let config = ApiKeyConfig::default();
 
     let create_request = CreateApiKeyParams {

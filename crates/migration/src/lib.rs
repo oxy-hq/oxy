@@ -76,6 +76,9 @@ mod m20260416_000001_add_status_and_error_to_workspaces;
 mod m20260416_000001_create_observability_tables;
 mod m20260416_000002_swap_workspace_repo_for_git_namespace;
 mod m20260416_000003_drop_branches_and_workspace_repos;
+mod m20260424_000001_create_org_billing;
+mod m20260424_000002_create_stripe_webhook_events;
+mod m20260430_000001_create_feature_flags;
 // Legacy single-tenant Slack tables. The original CREATE migrations were
 // deleted when the universal multi-tenant Slack bot replaced them, but
 // dev/prod databases that had already applied them required the files
@@ -177,6 +180,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260416_000002_swap_workspace_repo_for_git_namespace::Migration),
             Box::new(m20260416_000003_drop_branches_and_workspace_repos::Migration),
             Box::new(m20260416_000001_create_observability_tables::Migration),
+            Box::new(m20260424_000001_create_org_billing::Migration),
+            Box::new(m20260424_000002_create_stripe_webhook_events::Migration),
+            Box::new(m20260430_000001_create_feature_flags::Migration),
             // Legacy single-tenant Slack tables — see module-level comment above.
             Box::new(m20251114_000002_create_slack_channel_bindings_table::Migration),
             Box::new(m20251114_000003_create_slack_user_identities_table::Migration),

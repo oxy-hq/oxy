@@ -1,15 +1,16 @@
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import type { LucideIcon } from "lucide-react";
-import { Plug, Settings as SettingsIcon, Users } from "lucide-react";
+import { CreditCard, Plug, Settings as SettingsIcon, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/shadcn/dialog";
 import { cn } from "@/libs/shadcn/utils";
 import type { Organization, OrgRole } from "@/types/organization";
+import BillingSection from "./BillingSection";
 import GeneralSection from "./GeneralSection";
 import IntegrationSection from "./IntegrationSection";
 import TeamSection from "./TeamSection";
 
-export type OrgSettingsTab = "general" | "team" | "integration";
+export type OrgSettingsTab = "general" | "team" | "billing" | "integration";
 
 interface OrgSettingsDialogProps {
   open: boolean;
@@ -19,10 +20,18 @@ interface OrgSettingsDialogProps {
   defaultTab?: OrgSettingsTab;
 }
 
-const NAV_ITEMS: { value: OrgSettingsTab; label: string; icon: LucideIcon }[] = [
+interface NavItem {
+  value: OrgSettingsTab;
+  label: string;
+  icon: LucideIcon;
+  adminOnly?: boolean;
+}
+
+const NAV_ITEMS: NavItem[] = [
   { value: "general", label: "General", icon: SettingsIcon },
   { value: "team", label: "Team", icon: Users },
-  { value: "integration", label: "Integrations", icon: Plug }
+  { value: "billing", label: "Billing", icon: CreditCard, adminOnly: true },
+  { value: "integration", label: "Integration", icon: Plug }
 ];
 
 export default function OrgSettingsDialog({
@@ -32,13 +41,19 @@ export default function OrgSettingsDialog({
   viewerRole,
   defaultTab = "general"
 }: OrgSettingsDialogProps) {
-  const [tab, setTab] = useState<OrgSettingsTab>(defaultTab);
+  const isAdmin = viewerRole === "owner" || viewerRole === "admin";
+  const visibleNavItems = NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin);
+  const initialTab =
+    visibleNavItems.some((item) => item.value === defaultTab) && defaultTab
+      ? defaultTab
+      : "general";
+  const [tab, setTab] = useState<OrgSettingsTab>(initialTab);
 
   useEffect(() => {
     if (open) {
-      setTab(defaultTab);
+      setTab(initialTab);
     }
-  }, [open, defaultTab]);
+  }, [open, initialTab]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -53,7 +68,7 @@ export default function OrgSettingsDialog({
               <p className='truncate text-[11px] text-muted-foreground'>{org.name}</p>
             </div>
             <ul className='flex flex-col gap-1'>
-              {NAV_ITEMS.map((item) => {
+              {visibleNavItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = item.value === tab;
                 return (
@@ -80,6 +95,9 @@ export default function OrgSettingsDialog({
           <div className='flex-1 overflow-auto p-6'>
             {tab === "general" && <GeneralSection org={org} onClose={() => onOpenChange(false)} />}
             {tab === "team" && <TeamSection org={org} viewerRole={viewerRole} />}
+            {tab === "billing" && isAdmin && (
+              <BillingSection org={org} onClose={() => onOpenChange(false)} />
+            )}
             {tab === "integration" && <IntegrationSection org={org} />}
           </div>
         </div>

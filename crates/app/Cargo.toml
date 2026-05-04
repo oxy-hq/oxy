@@ -43,6 +43,7 @@ agentic-workflow = { workspace = true }
 airlayer = { git = "https://github.com/oxy-hq/airlayer.git", rev = "b8c734d" }
 oxy-agent = { workspace = true }
 oxy-auth = { workspace = true }
+oxy-billing = { workspace = true }
 oxy-project = { workspace = true }
 oxy-thread = { workspace = true }
 oxy-workflow = { workspace = true }

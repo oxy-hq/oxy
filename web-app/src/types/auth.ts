@@ -43,7 +43,10 @@ export interface OrgInfo {
 
 /**
  * Global profile fields. Role / admin status are per-org; read from the
- * `orgs` array in the login response or via `GET /orgs`.
+ * `orgs` array in the login response or via `GET /orgs`. `is_owner` is the
+ * one system-wide flag — it mirrors the backend `OXY_OWNER` allow-list and
+ * is used to route Oxy staff to the admin shell. The server still gates
+ * `/admin/*` independently, so this field is UX-only.
  */
 export interface UserInfo {
   id: string;
@@ -51,6 +54,7 @@ export interface UserInfo {
   name: string;
   picture?: string;
   status?: string;
+  is_owner: boolean;
 }
 
 export interface MessageResponse {

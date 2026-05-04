@@ -53,7 +53,9 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
 
     println!("serve: running database migrations");
     run_database_migrations(args.enterprise).await?;
-    println!("serve: migrations done, finding available port");
+    println!("serve: migrations done, initializing feature flags");
+    init_feature_flags().await?;
+    println!("serve: feature flags initialized, finding available port");
 
     // Now that OXY_DATABASE_URL is set (either externally for `oxy serve` or
     // by `oxy start` after booting Postgres), resolve the observability
@@ -205,7 +207,17 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     serve_application(app, internal_app, args, shutdown_token).await
 }
 
-async fn run_database_migrations(_enterprise: bool) -> Result<(), OxyError> {
+async fn init_feature_flags() -> Result<(), OxyError> {
+    let db = establish_connection()
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("Failed to connect to database: {}", e)))?;
+    crate::server::feature_flags::cache::init(&db)
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("feature flags init failed: {}", e)))?;
+    Ok(())
+}
+
+async fn run_database_migrations(enterprise: bool) -> Result<(), OxyError> {
     println!("migrations: establishing database connection (this builds the connection pool)");
     let db = establish_connection()
         .await

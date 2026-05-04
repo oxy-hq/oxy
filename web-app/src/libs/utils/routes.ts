@@ -15,6 +15,10 @@ const ROUTES = {
 
   INVITE: (token: string) => `/invite/${token}`,
 
+  ADMIN: {
+    BILLING_QUEUE: "/admin/billing/queue"
+  },
+
   // Org-scoped routes. Passing an empty `orgSlug` degrades to flat local-mode
   // paths (e.g. `/home` instead of `/acme/workspaces/<id>/home`) — in local
   // mode there's no org and a single implicit workspace, and every call site
@@ -29,6 +33,10 @@ const ROUTES = {
       MEMBERS: `${base}/members`,
       SETTINGS: `${base}/settings`,
       ONBOARDING: `${base}/onboarding`,
+      BILLING: {
+        CHECKOUT_SUCCESS: `${base}/billing/checkout-success`,
+        CHECKOUT_CANCELLED: `${base}/billing/checkout-cancelled`
+      },
 
       WORKSPACE: (wsId: string) => {
         const wsBase = isLocal ? "" : `${base}/workspaces/${wsId}`;

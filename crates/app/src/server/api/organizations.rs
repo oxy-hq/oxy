@@ -269,6 +269,23 @@ pub async fn create_org(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
+    // Eager-insert the org_billing row so the SubscriptionGuard always finds
+    // it. Status starts as `incomplete` — admin runs `provision_subscription`
+    // after the sales call to flip it Active.
+    let billing = entity::org_billing::ActiveModel {
+        id: ActiveValue::Set(Uuid::new_v4()),
+        org_id: ActiveValue::Set(org_id),
+        status: ActiveValue::Set(entity::org_billing::BillingStatus::Incomplete),
+        seats_paid: ActiveValue::Set(0),
+        created_at: ActiveValue::Set(now),
+        updated_at: ActiveValue::Set(now),
+        ..Default::default()
+    };
+    billing.insert(&txn).await.map_err(|e| {
+        tracing::error!("Failed to insert org_billing row: {e}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
     txn.commit().await.map_err(|e| {
         tracing::error!("Failed to commit transaction: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
@@ -687,6 +704,17 @@ pub async fn remove_member(
         tracing::error!("Failed to commit transaction: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+
+    // Sync Stripe seat quantity (decrement). Same best-effort pattern as
+    // accept_invitation — reconciliation catches any failure.
+    if let Ok(svc) = crate::api::billing::billing_service().await {
+        let org_id_bg = ctx.org.id;
+        tokio::spawn(async move {
+            if let Err(e) = svc.sync_seats(org_id_bg).await {
+                tracing::warn!(?e, ?org_id_bg, "sync_seats failed after remove_member");
+            }
+        });
+    }
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -1228,6 +1256,18 @@ pub async fn accept_invitation(
         tracing::error!("Failed to commit transaction: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+
+    // Sync the Stripe seat quantity to reflect the newly added member. Spawned
+    // so the user-facing request doesn't block on Stripe; the reconciliation
+    // loop is the safety net if this fails.
+    if let Ok(svc) = crate::api::billing::billing_service().await {
+        let org_id_bg = invitation.org_id;
+        tokio::spawn(async move {
+            if let Err(e) = svc.sync_seats(org_id_bg).await {
+                tracing::warn!(?e, ?org_id_bg, "sync_seats failed after accept_invitation");
+            }
+        });
+    }
 
     // Return org details.
     let org = Organizations::find_by_id(invitation.org_id)

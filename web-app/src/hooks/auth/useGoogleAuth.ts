@@ -19,7 +19,7 @@ export const useGoogleAuth = () => {
       // Clear state after successful authentication
       sessionStorage.removeItem(GOOGLE_STATE_KEY);
       login(data.token, data.user);
-      const destination = handlePostLoginOrgs(data.orgs);
+      const destination = handlePostLoginOrgs(data.user, data.orgs);
       navigate(destination);
     },
     onError: (error) => {

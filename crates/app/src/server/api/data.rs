@@ -8,8 +8,10 @@ use crate::server::service::retrieval::{ReindexInput, reindex};
 use agentic_pipeline::platform::ProjectContext;
 use axum::extract::{self, Path};
 use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use oxy::adapters::{session_filters::SessionFilters, workspace::manager::WorkspaceManager};
 use oxy::config::model::ConnectionOverrides;
+use oxy::execute::types::utils::record_batches_to_2d_array;
 use oxy_shared::errors::OxyError;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -156,8 +158,10 @@ pub async fn build_embeddings(
     Path(WorkspacePath {
         workspace_id: _workspace_id,
     }): Path<WorkspacePath>,
-) -> Result<extract::Json<EmbeddingsBuildResponse>, StatusCode> {
-    handle_omni_sync(&workspace_manager).await?;
+) -> Result<extract::Json<EmbeddingsBuildResponse>, Response> {
+    handle_omni_sync(&workspace_manager)
+        .await
+        .map_err(|e| StatusCode::from(e).into_response())?;
     let config_manager = workspace_manager.config_manager;
     let secret_manager = workspace_manager.secrets_manager;
     let drop_all_tables = false;

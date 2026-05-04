@@ -8,10 +8,11 @@ use axum::Router;
 use axum::middleware;
 use axum::routing::{delete, get, patch, post};
 
+use crate::api::billing;
 use crate::api::github::namespaces as github;
 use crate::api::github::{account, callback, installations};
-use crate::api::middlewares::org_context;
-use crate::api::{onboarding, organizations, user, workspaces};
+use crate::api::middlewares::{org_context, oxy_owner_guard, subscription_guard};
+use crate::api::{admin, onboarding, organizations, user, workspaces};
 
 use super::AppState;
 
@@ -26,6 +27,12 @@ pub(super) fn build_global_routes() -> Router<AppState> {
             post(organizations::accept_invitation),
         )
         .nest("/orgs/{org_id}", build_org_routes())
+        .nest(
+            "/admin",
+            admin::router().layer(middleware::from_fn(
+                oxy_owner_guard::oxy_owner_guard_middleware,
+            )),
+        )
         .nest("/user/github", build_user_github_routes())
     // NOTE: Slack webhook + OAuth-callback + magic-link routes are NOT
     // registered here. They must live in `public.rs` because the routes
@@ -40,7 +47,12 @@ pub(super) fn build_global_routes() -> Router<AppState> {
 }
 
 fn build_org_routes() -> Router<AppState> {
-    Router::new()
+    // Two sub-routers under the same `org_middleware`:
+    //   - `gated` covers everything that requires an active subscription
+    //     (members, invitations, onboarding, workspace CRUD, github)
+    //   - `bypass` covers `/billing/*`, the only org-scoped tree the user
+    //     can hit while paywalled (so they can subscribe / open the portal)
+    let gated = Router::new()
         .route("/", get(organizations::get_org))
         .route("/", patch(organizations::update_org))
         .route("/", delete(organizations::delete_org))
@@ -80,6 +92,14 @@ fn build_org_routes() -> Router<AppState> {
             get(crate::integrations::slack::oauth::status::get_status)
                 .delete(crate::integrations::slack::oauth::disconnect::disconnect),
         )
+        .layer(middleware::from_fn(
+            subscription_guard::subscription_guard_middleware,
+        ));
+
+    let bypass = Router::new().nest("/billing", billing::router());
+
+    gated
+        .merge(bypass)
         .layer(middleware::from_fn(org_context::org_middleware))
 }
 
