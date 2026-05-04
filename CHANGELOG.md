@@ -2,11 +2,50 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.48] - 2026-05-04
+
+### 🚀 Features
+
+- Use blockit to render sql aritfact (#2216)
+- Implement verfied queries (#2229)
+
+### 🐛 Bug Fixes
+
+- Web-app reset AppPreview state when switching between apps (#2227)
+
+### 🚜 Refactor
+
+- Replace println! and styled text with structured tracing logs (#2226)
+- DuckDB init_ducklake to use spawn_blocking (#2248)
+
+### ⚡ Performance
+
+- Optimize workflow state writes with incremental result deltas (#2228)
+
+### 🧪 Testing
+
+- Add unit tests for RetryContext advance methods (#2247)
+- Add concurrent init race condition test for DuckDBPool (#2252)
+
+### ⚙️ Miscellaneous Tasks
+
+- Prevent CI jobs from running on release chore commits
+- Weekly auto-fix 2026-05-03 (#2238)
+- Add logging for DuckDB pool file-stat failures (#2243)
+- Replace debug_assert with error handling for decider result validation (#2241)
+- Refactor SQL placeholder generation into reusable helper (#2242)
+- Escape SQL strings in DuckDB configuration (#2244)
+- Add tests for Anthropic tool message conversion (#2246)
+
 ## [0.5.47] - 2026-05-01
 
 ### 🐛 Bug Fixes
 
 - Home page false LLM key warning when secret is in env vars (#2218)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release 0.5.47 (#2222)
 
 ## [0.5.46] - 2026-04-30
 
