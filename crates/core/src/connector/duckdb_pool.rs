@@ -302,4 +302,64 @@ mod tests {
             "matching key must return the same Arc<PoolEntry>"
         );
     }
+
+    /// Verifies the race described in the `get_or_init` doc-comment: two
+    /// threads both miss the cache and run `init` concurrently for the same
+    /// `PoolTarget`. The second writer wins the slot, but the first caller's
+    /// `Arc<PoolEntry>` remains valid — its primary `Mutex` is intact and
+    /// `checkout()` must still succeed on the evicted entry.
+    #[test]
+    fn concurrent_init_for_same_target_leaves_one_slot() {
+        use std::sync::Barrier;
+        use std::thread;
+
+        let pool = Arc::new(DuckDBPool::default());
+        let dir = PathBuf::from("/tmp/duckdb-pool-concurrent-test");
+        let barrier = Arc::new(Barrier::new(2));
+
+        let pool1 = pool.clone();
+        let barrier1 = barrier.clone();
+        let dir1 = dir.clone();
+        let t1 = thread::spawn(move || {
+            let key = fake_local_key(&dir1);
+            pool1.get_or_init(key, move || {
+                // Wait until both threads are inside init before either
+                // proceeds to insert — this manufactures the race.
+                barrier1.wait();
+                dummy_entry()
+            })
+        });
+
+        let pool2 = pool.clone();
+        let barrier2 = barrier.clone();
+        let dir2 = dir.clone();
+        let t2 = thread::spawn(move || {
+            let key = fake_local_key(&dir2);
+            pool2.get_or_init(key, move || {
+                barrier2.wait();
+                dummy_entry()
+            })
+        });
+
+        let entry1 = t1.join().expect("thread 1 panicked").unwrap();
+        let entry2 = t2.join().expect("thread 2 panicked").unwrap();
+
+        // Exactly one slot must survive — the second writer's entry replaced
+        // the first, but the map must not hold duplicates.
+        assert_eq!(
+            pool.slots.lock().unwrap().len(),
+            1,
+            "pool must hold exactly one slot after a concurrent-init race"
+        );
+
+        // Both Arc<PoolEntry> values must still be usable. The evicted entry
+        // was removed from the map but its Arc refcount kept it alive. Its
+        // primary Mutex is untouched, so checkout() must not panic or error.
+        entry1
+            .checkout()
+            .expect("entry1 (possibly evicted) checkout failed after concurrent race");
+        entry2
+            .checkout()
+            .expect("entry2 (possibly evicted) checkout failed after concurrent race");
+    }
 }
