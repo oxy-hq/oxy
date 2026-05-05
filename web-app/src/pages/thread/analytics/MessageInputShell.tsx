@@ -1,7 +1,7 @@
 import { ArrowUp, CircleX } from "lucide-react";
 import type { ReactNode, RefObject } from "react";
+import { HighlightTextarea } from "@/components/ui/HighlightTextarea";
 import { Button } from "@/components/ui/shadcn/button";
-import { Textarea } from "@/components/ui/shadcn/textarea";
 
 interface MessageInputShellProps {
   value: string;
@@ -19,6 +19,7 @@ interface MessageInputShellProps {
   onClick?: (e: React.SyntheticEvent<HTMLTextAreaElement>) => void;
   aboveInput?: ReactNode;
   extraActions?: ReactNode;
+  highlight?: ReactNode;
 }
 
 const MessageInputShell = ({
@@ -36,7 +37,8 @@ const MessageInputShell = ({
   onSelect,
   onClick,
   aboveInput,
-  extraActions
+  extraActions,
+  highlight
 }: MessageInputShellProps) => {
   const isSendDisabled = sendDisabled ?? (!value.trim() || disabled);
 
@@ -67,7 +69,7 @@ const MessageInputShell = ({
       <div className='relative'>
         {aboveInput}
         <div className='overflow-hidden rounded-md border border-border bg-secondary transition-shadow focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50'>
-          <Textarea
+          <HighlightTextarea
             ref={textareaRef}
             value={value}
             onChange={onChange}
@@ -77,6 +79,7 @@ const MessageInputShell = ({
             placeholder={placeholder}
             className='h-14 max-h-20 resize-none overflow-y-auto rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0'
             disabled={disabled}
+            highlight={highlight}
           />
           <div className='flex items-center justify-end gap-2 border-border border-t bg-secondary px-2 py-1.5'>
             {extraActions}

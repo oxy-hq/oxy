@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/shadcn/button";
 import { Select, SelectContent, SelectTrigger, SelectValue } from "@/components/ui/shadcn/select";
 import { Spinner } from "@/components/ui/shadcn/spinner";
-import { Textarea } from "@/components/ui/shadcn/textarea";
+import { HighlightTextarea } from "@/components/ui/HighlightTextarea";
 import useFileTree from "@/hooks/api/files/useFileTree";
 import useThreadMutation from "@/hooks/api/threads/useThreadMutation";
 import useBuilderAvailable from "@/hooks/api/useBuilderAvailable";
@@ -12,6 +12,7 @@ import useAskAgent from "@/hooks/messaging/agent";
 import useAskTask from "@/hooks/messaging/task";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { useEnterSubmit } from "@/hooks/useEnterSubmit";
+import { useMentionHighlight } from "@/hooks/useMentionHighlight";
 import useRunWorkflowThread from "@/hooks/workflow/useRunWorkflowThread";
 import { cn } from "@/libs/shadcn/utils";
 import { flattenFiles, getActiveMention, getCleanObjectName } from "@/libs/utils/mention";
@@ -106,6 +107,7 @@ const ChatPanel = ({
   const [cursorPos, setCursorPos] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [mentions, setMentions] = useState<Map<string, string>>(new Map());
+  const [mentionDismissed, setMentionDismissed] = useState(false);
   const textareaElRef = useRef<HTMLTextAreaElement | null>(null);
   const { formRef, onKeyDown: enterSubmitKeyDown } = useEnterSubmit();
   const [mode, setMode] = useState<string>("ask");
@@ -127,7 +129,8 @@ const ChatPanel = ({
       .filter((f) => f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q))
       .slice(0, 8);
   }, [activeMention, allFiles]);
-  const showMentionPopup = activeMention !== null && mentionResults.length > 0;
+  const showMentionPopup = activeMention !== null && mentionResults.length > 0 && !mentionDismissed;
+  const mentionHighlight = useMentionHighlight(message, mentions);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset on result count change only
   useEffect(() => {
@@ -158,14 +161,6 @@ const ChatPanel = ({
     });
   };
 
-  const resolveInput = (text: string) => {
-    let resolved = text;
-    for (const [displayName, filePath] of mentions) {
-      resolved = resolved.replaceAll(`@${displayName}`, `<${filePath}>`);
-    }
-    return resolved;
-  };
-
   const handleTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (showMentionPopup) {
       if (e.key === "ArrowDown") {
@@ -185,6 +180,7 @@ const ChatPanel = ({
       }
       if (e.key === "Escape") {
         e.preventDefault();
+        setMentionDismissed(true);
         return;
       }
     }
@@ -222,6 +218,7 @@ const ChatPanel = ({
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setMessage(e.target.value);
     if (isBuildMode) setCursorPos(e.target.selectionStart ?? e.target.value.length);
+    setMentionDismissed(false);
   };
 
   const handleTextareaSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
@@ -231,7 +228,12 @@ const ChatPanel = ({
   const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (isPending) return;
-    const input = isBuildMode ? resolveInput(message) : message;
+    let input = message;
+    if (isBuildMode) {
+      for (const [displayName, filePath] of mentions) {
+        input = input.replaceAll(`@${displayName}`, `<@${filePath}|${displayName}>`);
+      }
+    }
     const title = getShortTitle(message);
 
     switch (mode) {
@@ -333,7 +335,7 @@ const ChatPanel = ({
           })}
         </div>
       )}
-      <Textarea
+      <HighlightTextarea
         ref={textareaRef}
         disabled={isPending}
         name='question'
@@ -343,8 +345,10 @@ const ChatPanel = ({
         onChange={handleTextareaChange}
         onSelect={handleTextareaSelect}
         onClick={handleTextareaSelect}
-        className='customScrollbar max-h-[200px] resize-none border-none bg-transparent px-0 shadow-none outline-none hover:border-none focus-visible:border-none focus-visible:shadow-none focus-visible:ring-0 focus-visible:ring-offset-0'
         placeholder={placeholder}
+        highlight={isBuildMode ? mentionHighlight : undefined}
+        overlayClassName='px-0 py-2 text-sm'
+        className='customScrollbar max-h-[200px] resize-none border-none bg-transparent px-0 shadow-none outline-none hover:border-none focus-visible:border-none focus-visible:shadow-none focus-visible:ring-0 focus-visible:ring-offset-0'
       />
 
       <div className='flex justify-between'>

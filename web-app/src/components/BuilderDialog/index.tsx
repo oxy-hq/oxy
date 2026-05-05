@@ -8,6 +8,7 @@ import useThreadMutation from "@/hooks/api/threads/useThreadMutation";
 import useBuilderAvailable from "@/hooks/api/useBuilderAvailable";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { useEnterSubmit } from "@/hooks/useEnterSubmit";
+import { useMentionHighlight } from "@/hooks/useMentionHighlight";
 import { cn } from "@/libs/shadcn/utils";
 import { flattenFiles, getActiveMention, getCleanObjectName } from "@/libs/utils/mention";
 import ROUTES from "@/libs/utils/routes";
@@ -19,8 +20,8 @@ import useBuilderDialog from "@/stores/useBuilderDialog";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { FileTreeModel } from "@/types/file";
 import { decodeFilePath, detectFileType } from "@/utils/fileTypes";
+import { HighlightTextarea } from "../ui/HighlightTextarea";
 import { Dialog, DialogContent } from "../ui/shadcn/dialog";
-import { Textarea } from "../ui/shadcn/textarea";
 
 // --- Helpers ---
 
@@ -53,7 +54,8 @@ export function BuilderDialog() {
   const [message, setMessage] = useState("");
   const [cursorPos, setCursorPos] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [mentions, setMentions] = useState<Map<string, string>>(new Map()); // displayName → filePath
+  const [mentions, setMentions] = useState<Map<string, string>>(new Map());
+  const [mentionDismissed, setMentionDismissed] = useState(false);
   const { formRef, onKeyDown: enterSubmitKeyDown } = useEnterSubmit();
   const { mutateAsync: sendAgenticMessage } = useAskAgentic();
   const textareaElRef = useRef<HTMLTextAreaElement | null>(null);
@@ -115,7 +117,7 @@ export function BuilderDialog() {
       .slice(0, 8);
   }, [activeMention, allFiles]);
 
-  const showMentionPopup = activeMention !== null && mentionResults.length > 0;
+  const showMentionPopup = activeMention !== null && mentionResults.length > 0 && !mentionDismissed;
 
   // Reset selected index when results change
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset on result count change only
@@ -222,7 +224,6 @@ export function BuilderDialog() {
     setMentions((prev) => new Map(prev).set(displayName, file.path));
     const newCursorPos = before.length + mention.length + 1;
     setCursorPos(newCursorPos);
-    // Restore focus and cursor
     if (insertMentionRafRef.current !== null) cancelAnimationFrame(insertMentionRafRef.current);
     insertMentionRafRef.current = requestAnimationFrame(() => {
       insertMentionRafRef.current = null;
@@ -261,19 +262,14 @@ export function BuilderDialog() {
     navigate(threadUri);
   });
 
-  const resolveInput = (text: string) => {
-    let resolved = text;
-    for (const [displayName, filePath] of mentions) {
-      resolved = resolved.replaceAll(`@${displayName}`, `<${filePath}>`);
-    }
-    return resolved;
-  };
-
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!message.trim() || !isAvailable || isCheckingBuilder) return;
 
-    const input = resolveInput(message);
+    let input = message;
+    for (const [displayName, filePath] of mentions) {
+      input = input.replaceAll(`@${displayName}`, `<@${filePath}|${displayName}>`);
+    }
     const title = getShortTitle(message);
 
     if (isBuiltin) {
@@ -321,7 +317,7 @@ export function BuilderDialog() {
       }
       if (e.key === "Escape") {
         e.preventDefault();
-        // Close mention popup by moving cursor, don't close dialog
+        setMentionDismissed(true);
         return;
       }
     }
@@ -359,12 +355,15 @@ export function BuilderDialog() {
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setMessage(e.target.value);
     setCursorPos(e.target.selectionStart ?? e.target.value.length);
+    setMentionDismissed(false);
   };
 
   const handleSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
     const target = e.target as HTMLTextAreaElement;
     setCursorPos(target.selectionStart ?? 0);
   };
+
+  const mentionHighlight = useMentionHighlight(message, mentions);
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
@@ -380,7 +379,7 @@ export function BuilderDialog() {
           <form ref={formRef} onSubmit={handleSubmit} className='flex flex-col'>
             {/* Top bar */}
             <div className='flex items-center gap-2 border-b px-3 py-2'>
-              <span className='inline-flex items-center gap-1 rounded-md bg-orange-500/15 px-2 py-0.5 font-medium text-orange-500 text-xs'>
+              <span className='inline-flex items-center gap-1 rounded-md bg-vis-orange/15 px-2 py-0.5 font-medium text-vis-orange text-xs'>
                 <Hammer className='size-3' />
                 Build
               </span>
@@ -399,7 +398,7 @@ export function BuilderDialog() {
             </div>
 
             {/* Textarea */}
-            <Textarea
+            <HighlightTextarea
               ref={textareaRef}
               autoFocus
               name='builder-input'
@@ -409,8 +408,10 @@ export function BuilderDialog() {
               onChange={handleChange}
               onSelect={handleSelect}
               onClick={handleSelect}
-              className='customScrollbar max-h-50 min-h-20 resize-none border-none bg-transparent px-3 py-3 text-sm shadow-none outline-none focus-visible:ring-0 focus-visible:ring-offset-0'
               placeholder='Describe what you want to build...'
+              className='customScrollbar max-h-50 min-h-20 resize-none border-none bg-transparent py-3 text-sm shadow-none outline-none focus-visible:ring-0 focus-visible:ring-offset-0'
+              highlight={mentionHighlight}
+              overlayClassName='px-3 py-3 text-sm'
             />
 
             {/* Mention autocomplete dropdown */}

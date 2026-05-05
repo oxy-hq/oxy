@@ -1,6 +1,7 @@
 import { Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import useFileTree from "@/hooks/api/files/useFileTree";
+import { useMentionHighlight } from "@/hooks/useMentionHighlight";
 import { cn } from "@/libs/shadcn/utils";
 import { flattenFiles, getActiveMention, getCleanObjectName } from "@/libs/utils/mention";
 import { getFileTypeIcon } from "@/pages/ide/Files/FilesSidebar/utils";
@@ -35,6 +36,7 @@ const BuilderMessageInput = ({
   const [cursorPos, setCursorPos] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [mentions, setMentions] = useState<Map<string, string>>(new Map());
+  const [mentionDismissed, setMentionDismissed] = useState(false);
   const textareaElRef = useRef<HTMLTextAreaElement | null>(null);
 
   const { data: fileTreeData } = useFileTree(enableFileMentions);
@@ -43,6 +45,8 @@ const BuilderMessageInput = ({
     if (!fileTreeData) return [];
     return flattenFiles(fileTreeData.primary);
   }, [fileTreeData]);
+
+  const mentionHighlight = useMentionHighlight(message, mentions);
 
   const activeMention = getActiveMention(message, cursorPos);
   const mentionResults = useMemo(() => {
@@ -57,7 +61,7 @@ const BuilderMessageInput = ({
       .slice(0, 8);
   }, [activeMention, allFiles]);
 
-  const showMentionPopup = activeMention !== null && mentionResults.length > 0;
+  const showMentionPopup = activeMention !== null && mentionResults.length > 0 && !mentionDismissed;
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset on result count change only
   useEffect(() => {
@@ -84,10 +88,11 @@ const BuilderMessageInput = ({
     });
   };
 
+  // Convert @label → [label](path) so the backend stores the label explicitly.
   const resolveInput = (text: string) => {
     let resolved = text;
     for (const [displayName, filePath] of mentions) {
-      resolved = resolved.replaceAll(`@${displayName}`, `<${filePath}>`);
+      resolved = resolved.replaceAll(`@${displayName}`, `<@${filePath}|${displayName}>`);
     }
     return resolved;
   };
@@ -119,6 +124,7 @@ const BuilderMessageInput = ({
       }
       if (e.key === "Escape") {
         e.preventDefault();
+        setMentionDismissed(true);
         return;
       }
     }
@@ -159,6 +165,7 @@ const BuilderMessageInput = ({
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setMessage(e.target.value);
     setCursorPos(e.target.selectionStart ?? e.target.value.length);
+    setMentionDismissed(false);
   };
 
   const handleSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
@@ -180,6 +187,7 @@ const BuilderMessageInput = ({
       textareaRef={textareaElRef}
       onSelect={handleSelect}
       onClick={handleSelect}
+      highlight={mentionHighlight}
       aboveInput={
         showMentionPopup ? (
           <div className='absolute right-0 bottom-full left-0 z-10 mb-1 max-h-52 overflow-y-auto rounded-md border bg-popover p-1 shadow-md'>

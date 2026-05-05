@@ -5,34 +5,22 @@ interface UserMessageProps {
   createdAt?: string;
 }
 
-function getDisplayName(filePath: string) {
-  const parts = filePath.split("/");
-  const fileName = parts.pop() ?? filePath;
-  if (fileName === "dbt_project.yml" && parts.length > 0) {
-    return parts[parts.length - 1];
-  }
-  return fileName
-    .replace(/\.(procedure|workflow|automation|agent|aw|app|view|topic)\.(yml|yaml)$/, "")
-    .replace(/\.(yml|yaml|sql)$/, "");
+function MentionChip({ label }: { label: string }) {
+  return (
+    <span className='inline-flex items-center rounded-md bg-vis-orange/15 px-1.5 py-0.5 font-medium text-vis-orange text-xs'>
+      @{label}
+    </span>
+  );
 }
 
 function renderWithMentions(content: string) {
-  const parts = content.split(/(<[^>]+>)/g);
-  return parts.map((part) => {
-    const match = part.match(/^<(.+)>$/);
+  const parts = content.split(/(<@[^|>]+\|[^>]+>)/g);
+  return parts.map((part, i) => {
+    const match = part.match(/^<@([^|>]+)\|([^>]+)>$/);
     if (match) {
-      const filePath = match[1];
-      const displayName = getDisplayName(filePath);
-      return (
-        <span
-          key={filePath}
-          className='inline-flex items-center rounded-md bg-orange-500/15 px-1.5 py-0.5 font-medium text-orange-400 text-xs'
-        >
-          @{displayName}
-        </span>
-      );
+      return <MentionChip key={i} label={match[2]} />;
     }
-    return part;
+    return <span key={i}>{part}</span>;
   });
 }
 
