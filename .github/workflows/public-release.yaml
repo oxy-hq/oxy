@@ -588,12 +588,16 @@ jobs:
             echo "Skipping $TARGET"
           fi
 
-      - name: Checkout code
+      - name: Checkout Dockerfile
         if: steps.should_build.outputs.should_build == 'true'
         uses: actions/checkout@v6
         with:
           ref: ${{ needs.determine-build-type.outputs.is_stable == 'true' &&
             needs.determine-build-type.outputs.version || github.sha }}
+          sparse-checkout: |
+            Dockerfile.prebuilt
+            .dockerignore
+          sparse-checkout-cone-mode: false
 
       - name: Download pre-built binary
         if: steps.should_build.outputs.should_build == 'true'
