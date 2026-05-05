@@ -223,7 +223,7 @@ impl Renderer {
                 err, &context
             ))
         })?;
-        tracing::info!(
+        tracing::debug!(
             "Evaluated expression: {} -> {:?} with context: {:?}",
             template,
             value,

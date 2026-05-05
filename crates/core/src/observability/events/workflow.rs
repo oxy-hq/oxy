@@ -25,10 +25,12 @@ pub mod run_workflow {
         );
     }
 
-    /// Record workflow output event (service layer - no metrics, just tracing)
+    /// Record workflow output event (service layer - no metrics, just tracing).
+    /// DEBUG level: the output payload is verbose and floods the console;
+    /// observability backends capture it independently.
     pub fn output(output: &crate::execute::types::OutputContainer) {
         event!(
-            Level::INFO,
+            Level::DEBUG,
             name = OUTPUT,
             is_visible = true,
             status = "success",
@@ -135,7 +137,7 @@ pub mod launcher {
             execution_context.finalize_metrics();
 
             event!(
-                Level::INFO,
+                Level::DEBUG,
                 name = OUTPUT,
                 is_visible = true,
                 status = "success",
@@ -180,7 +182,7 @@ pub mod task {
 
         pub fn output(task_name: &str, output: &crate::execute::types::OutputContainer) {
             event!(
-                Level::INFO,
+                Level::DEBUG,
                 name = OUTPUT,
                 is_visible = true,
                 status = "success",
@@ -211,7 +213,7 @@ pub mod task {
 
         pub fn input(agent_ref: &str, prompt: &str, consistency_run: usize) {
             event!(
-                Level::INFO,
+                Level::DEBUG,
                 name = INPUT,
                 is_visible = true,
                 agent_ref = %agent_ref,
@@ -222,7 +224,7 @@ pub mod task {
 
         pub fn output(agent_ref: &str, output: &crate::execute::types::OutputContainer) {
             event!(
-                Level::INFO,
+                Level::DEBUG,
                 name = OUTPUT,
                 is_visible = true,
                 status = "success",
@@ -255,7 +257,7 @@ pub mod task {
 
         pub fn render_input(task: &crate::config::model::SemanticQueryTask) {
             event!(
-                Level::INFO,
+                Level::DEBUG,
                 name = INPUT_RENDER,
                 is_visible = true,
                 task = %serde_json::to_string(task).unwrap_or_default()
@@ -264,7 +266,7 @@ pub mod task {
 
         pub fn render_output(rendered_task: &crate::config::model::SemanticQueryTask) {
             event!(
-                Level::INFO,
+                Level::DEBUG,
                 name = OUTPUT_RENDER,
                 is_visible = true,
                 status = "success",
@@ -274,7 +276,7 @@ pub mod task {
 
         pub fn map_input(task: &crate::config::model::SemanticQueryTask) {
             event!(
-                Level::INFO,
+                Level::DEBUG,
                 name = INPUT_MAP,
                 is_visible = true,
                 task = %serde_json::to_string(task).unwrap_or_default()
@@ -295,7 +297,7 @@ pub mod task {
 
         pub fn compile_input(topic: &str, query: &crate::service::types::SemanticQueryParams) {
             event!(
-                Level::INFO,
+                Level::DEBUG,
                 name = INPUT_COMPILE,
                 is_visible = true,
                 topic = %topic,
@@ -305,7 +307,7 @@ pub mod task {
 
         pub fn compile_output(sql: &str) {
             event!(
-                Level::INFO,
+                Level::DEBUG,
                 name = OUTPUT_COMPILE,
                 is_visible = true,
                 status = "success",
@@ -326,7 +328,7 @@ pub mod task {
 
         pub fn execute_output(output: &crate::execute::types::Output) {
             event!(
-                Level::INFO,
+                Level::DEBUG,
                 name = OUTPUT_EXECUTE,
                 is_visible = true,
                 status = "success",
@@ -336,7 +338,7 @@ pub mod task {
 
         pub fn execute_sql_input(database_ref: &str, sql: &str) {
             event!(
-                Level::INFO,
+                Level::DEBUG,
                 name = INPUT_EXECUTE_SQL,
                 is_visible = true,
                 database_ref = %database_ref,
@@ -367,7 +369,7 @@ pub mod task {
 
         pub fn map_input(task: &crate::config::model::ExecuteSQLTask) {
             event!(
-                Level::INFO,
+                Level::DEBUG,
                 name = INPUT_MAP,
                 is_visible = true,
                 database = %task.database,
@@ -377,7 +379,7 @@ pub mod task {
 
         pub fn map_output(sql: &str, database: &str) {
             event!(
-                Level::INFO,
+                Level::DEBUG,
                 name = OUTPUT_MAP,
                 is_visible = true,
                 status = "success",
@@ -400,7 +402,7 @@ pub mod task {
 
         pub fn map_input(task: &crate::config::model::OmniQueryTask) {
             event!(
-                Level::INFO,
+                Level::DEBUG,
                 name = INPUT_MAP,
                 is_visible = true,
                 integration = %task.integration,
@@ -437,7 +439,7 @@ pub mod task {
 
         pub fn map_input(task: &crate::config::model::LookerQueryTask) {
             event!(
-                Level::INFO,
+                Level::DEBUG,
                 name = INPUT_MAP,
                 is_visible = true,
                 integration = %task.integration,
@@ -467,7 +469,7 @@ pub mod task {
             params: &crate::config::model::LookerQueryParams,
         ) {
             event!(
-                Level::INFO,
+                Level::DEBUG,
                 name = INPUT_EXECUTE,
                 is_visible = true,
                 integration = %integration,
@@ -479,7 +481,7 @@ pub mod task {
 
         pub fn execute_output(output: &crate::execute::types::Output) {
             event!(
-                Level::INFO,
+                Level::DEBUG,
                 name = OUTPUT_EXECUTE,
                 is_visible = true,
                 status = "success",

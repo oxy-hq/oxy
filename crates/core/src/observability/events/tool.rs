@@ -37,20 +37,24 @@ pub const SEMANTIC_QUERY_COMPILE_TYPE: &str = "semantic_query";
 pub const SEMANTIC_QUERY_COMPILE_INPUT: &str = "semantic_query.compile.input";
 pub const SEMANTIC_QUERY_COMPILE_OUTPUT: &str = "semantic_query.compile.output";
 
-/// Log tool execution input
+/// Log tool execution input.
+///
+/// Emitted at DEBUG: the payload (full SQL, tool args, etc.) is verbose
+/// and floods the console at INFO. The observability backend captures
+/// it independently via `OXY_OBSERVABILITY_LOG_LEVEL` (default debug).
 pub fn input<T: serde::Serialize>(input: &T) {
     event!(
-        Level::INFO,
+        Level::DEBUG,
         name = INPUT,
         is_visible = true,
         input = %serde_json::to_string(&input).unwrap_or_default()
     );
 }
 
-/// Log tool execution output
+/// Log tool execution output. DEBUG for the same reason as [`input`].
 pub fn output<T: serde::Serialize>(output: &T) {
     event!(
-        Level::INFO,
+        Level::DEBUG,
         name = OUTPUT,
         is_visible = true,
         status = "success",
@@ -58,10 +62,10 @@ pub fn output<T: serde::Serialize>(output: &T) {
     );
 }
 
-/// Log individual tool call input
+/// Log individual tool call input. DEBUG for the same reason as [`input`].
 pub fn tool_call_input<T: serde::Serialize>(input: &T) {
     event!(
-        Level::INFO,
+        Level::DEBUG,
         name = TOOL_CALL_INPUT,
         is_visible = true,
         input = %serde_json::to_string(&input).unwrap_or_default()
@@ -88,10 +92,10 @@ pub fn tool_call_is_verified(is_verified: bool) {
     );
 }
 
-/// Log individual tool call output
+/// Log individual tool call output. DEBUG for the same reason as [`input`].
 pub fn tool_call_output<T: serde::Serialize>(output: &T) {
     event!(
-        Level::INFO,
+        Level::DEBUG,
         name = TOOL_CALL_OUTPUT,
         is_visible = true,
         status = "success",
@@ -110,28 +114,32 @@ pub fn tool_call_error(error: &str) {
     );
 }
 
-/// Record SQL execution for tracing and metrics collection
+/// Record SQL execution for tracing and metrics collection.
+///
+/// Metric recording is unconditional. The tracing event is DEBUG so the
+/// full SQL doesn't repeat in console logs at INFO — observability backends
+/// still capture it via their own filter.
 pub fn add_sql(execution_context: &ExecutionContext, sql: &str) {
     // Record SQL in metric context via ExecutionContext
     execution_context.record_sql(sql);
 
     // Emit tracing event
     event!(
-        Level::INFO,
+        Level::DEBUG,
         name = "tool.sql",
         is_visible = true,
         sql = %sql
     );
 }
 
-/// Log semantic query compile input and record explicit metrics
+/// Log semantic query compile input. DEBUG to keep payload off the console.
 pub fn semantic_query_compile_input(
     topic: &str,
     query: &crate::service::types::SemanticQueryParams,
 ) {
     // Emit tracing event
     event!(
-        Level::INFO,
+        Level::DEBUG,
         name = SEMANTIC_QUERY_COMPILE_INPUT,
         is_visible = true,
         topic = %topic,
@@ -141,7 +149,7 @@ pub fn semantic_query_compile_input(
 
 pub fn semantic_query_compile_output(sql: &str) {
     event!(
-        Level::INFO,
+        Level::DEBUG,
         name = SEMANTIC_QUERY_COMPILE_OUTPUT,
         is_visible = true,
         status = "success",

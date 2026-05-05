@@ -446,10 +446,7 @@ mod tests {
             ]
         }));
         let blocks = extract_message_blocks(&p);
-        let types: Vec<&str> = blocks
-            .iter()
-            .map(|b| b["type"].as_str().unwrap())
-            .collect();
+        let types: Vec<&str> = blocks.iter().map(|b| b["type"].as_str().unwrap()).collect();
         assert_eq!(
             types,
             vec!["section", "context", "divider", "header", "image"],

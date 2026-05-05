@@ -1,3 +1,4 @@
+use std::io::IsTerminal;
 use std::process::exit;
 
 use dotenv::dotenv;
@@ -104,11 +105,23 @@ fn init_tracing_logging(observability_enabled: bool) {
             // Console: colorized human-readable on stderr — stderr is the
             // conventional channel for diagnostics so a CLI's stdout stays
             // available for piped/captured program output.
+            //
+            // ANSI is enabled only when stderr is an interactive TTY. When
+            // stderr is captured (Docker/Podman logs, file redirect, journald,
+            // CI) the colors would otherwise leak in as `\x1b[2m...\x1b[0m`
+            // sequences and make the captured logs unreadable.
+            //
+            // `.compact()` drops the per-event repetition of the full span-
+            // chain breadcrumb (which embedded `oxy.sql=...` on every nested
+            // log line during SQL execution). Span field values are still
+            // recorded on the span itself so the observability backend can
+            // read them — only the visual repetition is suppressed.
             let console_layer = fmt::layer()
+                .compact()
                 .with_target(true)
                 .with_level(true)
                 .with_writer(std::io::stderr)
-                .with_ansi(true)
+                .with_ansi(std::io::stderr().is_terminal())
                 .with_filter(make_filter());
             let file_layer = fmt::layer()
                 .with_target(true)

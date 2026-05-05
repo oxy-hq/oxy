@@ -402,7 +402,10 @@ async fn build_message_blocks(
         let label = if exec.failed_chart_count == 1 {
             "⚠️ Chart render failed — view in Oxygen →".to_string()
         } else {
-            format!("⚠️ {} chart renders failed — view in Oxygen →", exec.failed_chart_count)
+            format!(
+                "⚠️ {} chart renders failed — view in Oxygen →",
+                exec.failed_chart_count
+            )
         };
         all_blocks.push(serde_json::json!({
             "type": "context",
@@ -441,9 +444,15 @@ async fn build_message_blocks(
     }
 
     // Footer: "View thread" + optional "Wrong workspace?" + optional SQL button.
-    if !exec.agent_errored && let Some(url) = thread_url {
+    if !exec.agent_errored
+        && let Some(url) = thread_url
+    {
         let reopen_q = resolve_reopen_query(org_id, question).await;
-        all_blocks.push(blocks::build_footer_actions(url, reopen_q.as_deref(), view_sql));
+        all_blocks.push(blocks::build_footer_actions(
+            url,
+            reopen_q.as_deref(),
+            view_sql,
+        ));
     } else if let Some((upload_id, count)) = view_sql {
         // No thread URL but SQL artifacts exist — render SQL button standalone.
         all_blocks.push(blocks::build_view_sql_only_actions(upload_id, count));
@@ -544,7 +553,9 @@ async fn post_overflow_followups(
     }
 
     // Chart-upload failure follow-up.
-    if upload_failures > 0 && let Some(url) = thread_url {
+    if upload_failures > 0
+        && let Some(url) = thread_url
+    {
         let label = if upload_failures == 1 {
             "⚠️ Chart upload failed — view in Oxygen →".to_string()
         } else {
@@ -570,8 +581,15 @@ async fn post_overflow_followups(
 
     // SQL cap-overflow follow-up: inline placeholders in prose already show all
     // artifacts; this post closes the gap for the ones we won't upload.
-    if sql_overflow > 0 && view_sql.is_some() && let Some(url) = thread_url {
-        let plural = if sql_overflow == 1 { "query" } else { "queries" };
+    if sql_overflow > 0
+        && view_sql.is_some()
+        && let Some(url) = thread_url
+    {
+        let plural = if sql_overflow == 1 {
+            "query"
+        } else {
+            "queries"
+        };
         let label = format!("📎 {sql_overflow} more {plural} — view in Oxygen →");
         let blocks = serde_json::json!([{
             "type": "context",

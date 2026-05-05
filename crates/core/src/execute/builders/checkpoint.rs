@@ -126,7 +126,7 @@ where
         )?;
         let manager = CheckpointBuilder::from_runs_manager(runs_manager).await?;
         let run_info = input.run_info();
-        tracing::info!("Running with run info: {:?}", run_info);
+        tracing::debug!("Running with run info: {:?}", run_info);
         // Build new execution context with the new receiver and checkpoint manager
         let response = {
             let checkpoint_context = match &execution_context.checkpoint {
@@ -243,7 +243,7 @@ where
         let events = handle.await??;
         let checkpoint_data: Option<CheckpointData<R>> = match &response {
             Ok(response) => {
-                tracing::info!(
+                tracing::debug!(
                     "Checkpoint created for replay_id: {}, hash: {}",
                     replay_id,
                     checkpoint_hash

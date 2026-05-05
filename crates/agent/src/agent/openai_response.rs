@@ -19,7 +19,9 @@ use async_openai::{
     types::responses::{CreateResponse, CreateResponseArgs, Reasoning, ReasoningSummary},
 };
 
-use crate::agent::openai::{AgentResponse, AgentResponseData, OpenAIExecutableResponse};
+use crate::agent::openai::{
+    AgentResponse, AgentResponseData, OpenAIExecutableResponse, classify_openai_error,
+};
 
 use oxy::{
     adapters::openai::OpenAIClient,
@@ -248,11 +250,7 @@ impl OpenAIResponseExecutable {
 
         while let Some(event) = event_stream.next().await.transpose().map_err(|err| {
             tracing::error!("Stream processing error: {err}");
-            if matches!(err, OpenAIError::StreamError(_)) {
-                backoff::Error::<OxyError>::transient(err.into())
-            } else {
-                backoff::Error::<OxyError>::Permanent(err.into())
-            }
+            classify_openai_error(err)
         })? {
             tracing::trace!("Received response event: {:?}", event);
             match event {
@@ -493,11 +491,7 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIResponseExecutable 
 
             let event_stream = responses.create_stream(request).await.map_err(|err| {
                 tracing::error!("Streaming request failed: {err}");
-                if matches!(err, OpenAIError::StreamError(_)) {
-                    backoff::Error::<OxyError>::transient(err.into())
-                } else {
-                    backoff::Error::<OxyError>::Permanent(err.into())
-                }
+                classify_openai_error(err)
             })?;
 
             self.process_stream(event_stream, execution_context).await

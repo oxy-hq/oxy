@@ -103,6 +103,47 @@ fn is_oss_model(model: &str) -> bool {
             && !model.starts_with("gemini"))
 }
 
+/// Convert an [`OpenAIError`] into a [`backoff::Error`] with appropriate
+/// transient/permanent classification for retry purposes.
+///
+/// Transient (worth retrying):
+/// - `StreamError` — SSE transport hiccups
+/// - `Reqwest` — TCP/TLS/connection-level failures (e.g. Azure connect timeouts)
+/// - `ApiError` whose HTTP code wasn't already retried by the SDK (best-effort:
+///   we keep these transient unless the type is `insufficient_quota` or the
+///   code marks the request as fundamentally invalid)
+pub(crate) fn classify_openai_error(err: OpenAIError) -> backoff::Error<OxyError> {
+    if is_transient_openai_error(&err) {
+        backoff::Error::transient(err.into())
+    } else {
+        backoff::Error::Permanent(err.into())
+    }
+}
+
+fn is_transient_openai_error(err: &OpenAIError) -> bool {
+    match err {
+        OpenAIError::StreamError(_) | OpenAIError::Reqwest(_) => true,
+        OpenAIError::ApiError(api_error) => {
+            // Default to transient: ApiError covers a wide range of failures
+            // (5xx, 429 retry-budget exhaustion, transient upstream issues),
+            // and the SDK's internal retry exhausting its own budget is itself
+            // a signal that another attempt — separated by oxy-level backoff —
+            // is reasonable. We only opt out for failure modes a retry can
+            // never fix:
+            //   - type "insufficient_quota": billing issue
+            //   - context_length_exceeded markers: prompt is too long
+            let permanent_type = api_error.r#type.as_deref() == Some("insufficient_quota");
+            let permanent_code = matches!(
+                api_error.code.as_deref(),
+                Some("context_length_exceeded") | Some("string_above_max_length")
+            );
+            !(permanent_type || permanent_code)
+        }
+        // Builder/JSON/IO/InvalidArgument errors are deterministic; retry is pointless.
+        _ => false,
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub enum OpenAIOrOSSExecutable {
     OpenAI(OpenAIExecutable),
@@ -377,11 +418,7 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
 
             let mut response = chat.create_stream(request).await.map_err(|err| {
                 tracing::error!("Streaming request failed: {err}");
-                if matches!(err, OpenAIError::StreamError(_)) {
-                    backoff::Error::<OxyError>::transient(err.into())
-                } else {
-                    backoff::Error::<OxyError>::Permanent(err.into())
-                }
+                classify_openai_error(err)
             })?;
 
             let mut content = String::new();
@@ -391,11 +428,7 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OpenAIExecutable {
 
             while let Some(response) = response.next().await.transpose().map_err(|err| {
                 tracing::error!("Stream processing error: {err}");
-                if matches!(err, OpenAIError::StreamError(_)) {
-                    backoff::Error::<OxyError>::transient(err.into())
-                } else {
-                    backoff::Error::<OxyError>::Permanent(err.into())
-                }
+                classify_openai_error(err)
             })? {
                 if let Some(usage_data) = response.usage {
                     events::llm::usage(
@@ -559,6 +592,44 @@ impl OSSExecutable {
             },
         }
     }
+
+    async fn execute_with_retry<F, Fut, T>(
+        &self,
+        func: F,
+        execution_context: &ExecutionContext,
+    ) -> Result<T, OxyError>
+    where
+        F: Fn() -> Fut + Send + Sync,
+        Fut: std::future::Future<Output = Result<T, backoff::Error<OxyError>>> + Send,
+    {
+        let func_with_log = || async {
+            match func().await {
+                Ok(response) => Ok(response),
+                Err(err) => {
+                    tracing::error!("OSS execution failed: {err}");
+                    execution_context
+                        .write_kind(EventKind::Error {
+                            message: "🔴 Error while calling LLM model. Retrying..."
+                                .primary()
+                                .to_string(),
+                        })
+                        .await?;
+                    Err(err)
+                }
+            }
+        };
+
+        backoff::future::retry_notify(
+            backoff::ExponentialBackoffBuilder::default()
+                .with_max_elapsed_time(Some(AGENT_RETRY_MAX_ELAPSED_TIME))
+                .build(),
+            func_with_log,
+            |err, duration| {
+                tracing::debug!("Retry after {:?}: {:?}", duration, err);
+            },
+        )
+        .await
+    }
 }
 
 #[async_trait::async_trait]
@@ -609,10 +680,19 @@ impl Executable<Vec<ChatCompletionRequestMessage>> for OSSExecutable {
         })?;
 
         // Use lenient types for better compatibility with OpenAI-compatible APIs (Groq, Mistral, etc.)
-        let response: LenientChatCompletionResponse =
-            chat.create_byot(request).await.map_err(|err| {
-                OxyError::RuntimeError(format!("Error in completion request: {err:?}"))
-            })?;
+        // Wrap the network call in retry to survive transient failures (TCP timeouts,
+        // SSL handshake failures, server-side 5xx). The SDK retries 5xx/429 internally
+        // but does not retry connection-level errors like Reqwest TCP timeouts.
+        let response: LenientChatCompletionResponse = self
+            .execute_with_retry(
+                || async {
+                    chat.create_byot(request.clone())
+                        .await
+                        .map_err(classify_openai_error)
+                },
+                execution_context,
+            )
+            .await?;
 
         if let Some(usage_data) = &response.usage {
             events::llm::usage(
@@ -782,4 +862,94 @@ pub fn build_openai_executable(
         reasoning_config,
         synthesize_mode,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_openai::error::ApiError;
+
+    fn api_error(r#type: Option<&str>, code: Option<&str>) -> OpenAIError {
+        OpenAIError::ApiError(ApiError {
+            message: "test".into(),
+            r#type: r#type.map(str::to_string),
+            param: None,
+            code: code.map(str::to_string),
+        })
+    }
+
+    fn assert_transient(err: OpenAIError, hint: &str) {
+        match classify_openai_error(err) {
+            backoff::Error::Transient { .. } => {}
+            backoff::Error::Permanent(_) => {
+                panic!("expected transient classification ({hint})")
+            }
+        }
+    }
+
+    fn assert_permanent(err: OpenAIError, hint: &str) {
+        match classify_openai_error(err) {
+            backoff::Error::Permanent(_) => {}
+            backoff::Error::Transient { .. } => {
+                panic!("expected permanent classification ({hint})")
+            }
+        }
+    }
+
+    /// Reqwest connection-level errors (TCP/TLS timeouts) must retry. This is the
+    /// regression that killed Azure-hosted OpenAI workflows on a single transient
+    /// connect timeout.
+    #[tokio::test]
+    async fn reqwest_errors_are_transient() {
+        // Build a real reqwest::Error by issuing an unresolvable request with
+        // an absurdly short timeout. The variant doesn't matter — we just need
+        // an OpenAIError::Reqwest(_) to feed the classifier.
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_millis(1))
+            .build()
+            .unwrap();
+        let err = client
+            .get("http://10.255.255.1:1") // non-routable
+            .send()
+            .await
+            .expect_err("connect should fail");
+        assert_transient(OpenAIError::Reqwest(err), "Reqwest TCP/TLS failure");
+    }
+
+    #[test]
+    fn api_5xx_is_transient_by_default() {
+        // Server-side error with no quota/length markers.
+        assert_transient(
+            api_error(Some("server_error"), Some("internal_error")),
+            "ApiError without permanent markers",
+        );
+    }
+
+    #[test]
+    fn insufficient_quota_is_permanent() {
+        assert_permanent(
+            api_error(Some("insufficient_quota"), None),
+            "billing failure should not retry",
+        );
+    }
+
+    #[test]
+    fn context_length_exceeded_is_permanent() {
+        assert_permanent(
+            api_error(None, Some("context_length_exceeded")),
+            "prompt too long should not retry",
+        );
+        assert_permanent(
+            api_error(None, Some("string_above_max_length")),
+            "string too long should not retry",
+        );
+    }
+
+    #[test]
+    fn invalid_argument_is_permanent() {
+        assert_permanent(
+            OpenAIError::InvalidArgument("bad request".into()),
+            "client-side validation",
+        );
+    }
 }
