@@ -39,12 +39,10 @@ interface Props {
 
 /**
  * The primary git actions cluster shown in the IDE header for the workspace
- * (non-linked-repo) flow. Renders a "Local mode" label when there is no git
- * repo; otherwise composes the branch pill, optional history popover, an
- * on-main "new branch" shortcut, and the state-driven primary CTA.
+ * (non-linked-repo) flow. Composes the branch pill, optional history popover,
+ * an on-main "new branch" shortcut, and the state-driven primary CTA.
  *
- * State derivations (`ctaState`, `showSplit`, `showOpenPr`) are computed
- * here so the parent only has to pass capability flags + raw revision data.
+ * Returns null when git capabilities are unavailable (local/non-git workspace).
  */
 export function GitActions({
   workspaceId,
@@ -71,11 +69,7 @@ export function GitActions({
   const { isLocalMode } = useAuth();
   const [isBranchPickerOpen, setIsBranchPickerOpen] = useState(false);
 
-  if (isLocalMode) return null;
-
-  if (!canCommit) {
-    return <div className='text-muted-foreground text-sm'>Local mode</div>;
-  }
+  if (isLocalMode || !canCommit) return null;
 
   const isBehind = revisionInfo?.sync_status === "behind";
   const isAhead = revisionInfo?.sync_status === "ahead";
