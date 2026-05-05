@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.50] - 2026-05-05
+
+### 🚀 Features
+
+- Add script to mirror 'oxy' container packages to 'oxygen' aliases
+- Stripe integration (#2166)
+- Improve mention (#2200)
+
+### 🐛 Bug Fixes
+
+- Retry transient OpenAI errors on OSS path and connection failures (#2260)
+- Remove confusing "Local mode" banner (#2261)
+- Web-app onboarding picker icon overflow + App2 dashboard not surfaced (#2262)
+
+### ⚙️ Miscellaneous Tasks
+
+- Update references from 'oxy' to 'oxygen' in workflows and scripts
+- Update references from 'oxy-nightly' to 'oxygen-nightly' in public release workflow
+
 ## [0.5.49] - 2026-05-04
 
 ### ⚙️ Miscellaneous Tasks
@@ -9,6 +28,8 @@ All notable changes to this project will be documented in this file.
 - Update 'oxy' to 'oxygen' (#2255)
 - Update repository references from 'oxy' to 'oxygen' in workflow files
 - Filter Slack block types to prevent injection attacks (#2245)
+- Release 0.5.49 (#2256)
+- Update repository references from 'oxy' to 'oxygen' in public release workflow
 
 ## [0.5.48] - 2026-05-04
 
