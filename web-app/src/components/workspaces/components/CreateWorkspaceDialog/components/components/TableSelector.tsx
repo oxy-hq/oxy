@@ -197,7 +197,7 @@ export default function TableSelector({
                         >
                           <div
                             className={cn(
-                              "flex h-4 w-4 items-center justify-center rounded border",
+                              "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
                               isSelected
                                 ? "border-primary bg-primary text-primary-foreground"
                                 : "border-muted-foreground/30"
@@ -222,10 +222,12 @@ export default function TableSelector({
                               </svg>
                             )}
                           </div>
-                          <Table2 className='h-3.5 w-3.5 text-muted-foreground' />
-                          <span className='text-sm'>{table.name}</span>
+                          <Table2 className='h-3.5 w-3.5 shrink-0 text-muted-foreground' />
+                          <span className='min-w-0 truncate text-sm' title={table.name}>
+                            {table.name}
+                          </span>
                           {columnCount > 0 && (
-                            <span className='text-muted-foreground text-xs'>
+                            <span className='shrink-0 text-muted-foreground text-xs'>
                               {columnCount} col{columnCount !== 1 ? "s" : ""}
                             </span>
                           )}

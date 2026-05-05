@@ -24,12 +24,7 @@ import { AnalyticsService, type HumanInputQuestion, type UiBlock } from "@/servi
 import { type OnboardingResetRequest, OnboardingService } from "@/services/api/onboarding";
 import OnboardingRightRail from "./OnboardingRightRail";
 import OnboardingThread from "./OnboardingThread";
-import {
-  getPreviousStep,
-  predictSecondAppTopic,
-  useOnboardingOrchestrator,
-  wantsSecondApp
-} from "./orchestrator";
+import { getPreviousStep, useOnboardingOrchestrator, wantsSecondApp } from "./orchestrator";
 import StartOverConfirmDialog from "./StartOverConfirmDialog";
 import type {
   GeneratedArtifact,
@@ -591,29 +586,29 @@ function BlankOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHandl
       changed = true;
     };
 
+    // The `propose_change` tool's tool_result body is just `{ answer: "Accept" }`
+    // — it doesn't carry `file_path`. The path lives on the SSE
+    // `proposed_change` / `file_changed` events emitted by the builder
+    // domain (`BuilderEvent::ProposedChange` / `BuilderEvent::FileChanged`),
+    // so we read `file_path` from those.
+    const collectFromEvent = (ev: { type: string; data: unknown }) => {
+      if (ev.type === "proposed_change" || ev.type === "file_changed") {
+        const fp = (ev.data as { file_path?: string })?.file_path;
+        if (fp) addIfNew(fp);
+      }
+    };
+
     // Scan hook run events (config, agent, app, app2)
     for (const run of [configRun, agentRun, appRun, app2Run]) {
       if (!("events" in run.state)) continue;
       for (const ev of run.state.events) {
-        if (ev.type === "tool_result") {
-          const data = ev.data as { name?: string; output?: unknown };
-          if (data?.name === "propose_change" && data?.output) {
-            const fp = extractFilePathFromOutput(data.output);
-            if (fp) addIfNew(fp);
-          }
-        }
+        collectFromEvent(ev);
       }
     }
 
     // Scan view run events
     for (const ev of viewRunManager.events) {
-      if (ev.type === "tool_result") {
-        const data = ev.data as { name?: string; output?: unknown };
-        if (data?.name === "propose_change" && data?.output) {
-          const fp = extractFilePathFromOutput(data.output);
-          if (fp) addIfNew(fp);
-        }
-      }
+      collectFromEvent(ev);
     }
 
     // Fallback for completed views
@@ -629,14 +624,12 @@ function BlankOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHandl
     if (ps.config === "done") addIfNew("config.yml");
     if (ps.agent === "done") addIfNew("analytics.agentic.yml");
     if (ps.app === "done") addIfNew("apps/overview.app.yml");
-    // Fallback filename for the deep-dive app mirrors the prompt's
-    // `apps/<topic_slug>.app.yml` convention, derived from the second topic
-    // alphabetically. If the tool_result event already reported the real
-    // path the `addIfNew` guard keeps that one.
-    if (ps.app2 === "done") {
-      const secondTopic = predictSecondAppTopic(selectedTables);
-      if (secondTopic) addIfNew(`apps/${secondTopic}.app.yml`);
-    }
+    // No synthesized fallback for app2 — its filename is unpredictable
+    // (single-topic deep-dive `apps/<topic>.app.yml` vs cross-topic
+    // `apps/<topic1>_<topic2>.app.yml`), so only trust the actual
+    // `proposed_change` event captured above. Synthesizing a guess
+    // would inject a fictional path that never resolves on disk and
+    // is not superseded by the real one (`addIfNew` is monotonic).
 
     if (changed) setAccumulatedArtifacts([...map.values()]);
   }, [
@@ -1324,22 +1317,6 @@ function inferArtifactType(filePath: string): GeneratedArtifact["type"] {
   return "config";
 }
 
-/** Extract file_path from a propose_change tool_result output (string or object). */
-function extractFilePathFromOutput(output: unknown): string | null {
-  if (typeof output === "object" && output !== null) {
-    return (output as { file_path?: string }).file_path ?? null;
-  }
-  if (typeof output === "string") {
-    try {
-      const parsed = JSON.parse(output);
-      return parsed?.file_path ?? null;
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-
 /** Derive the expected file list from completed phase statuses + selected tables. */
 function deriveCreatedFiles(
   selectedTables: string[],
@@ -1357,10 +1334,9 @@ function deriveCreatedFiles(
   }
   if (ps.agent === "done") files.push("analytics.agentic.yml");
   if (ps.app === "done") files.push("apps/overview.app.yml");
-  if (ps.app2 === "done") {
-    const secondTopic = predictSecondAppTopic(selectedTables);
-    if (secondTopic) files.push(`apps/${secondTopic}.app.yml`);
-  }
+  // app2 is intentionally omitted — its filename is unpredictable.
+  // The caller merges this list with `accumulatedArtifacts`, which already
+  // has the actual app2 path captured from the `proposed_change` event.
   return files;
 }
 
