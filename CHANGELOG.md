@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.51] - 2026-05-06
+
+### 🚀 Features
+
+- New demo_project, split demo_project into simple init template + internal_demo showcase (#2264)
+- Admin endpoint to resync org billing from Stripe (#2258)
+- Builder fixes and improvements (#2259)
+
+### 🐛 Bug Fixes
+
+- Update checkout step to use sparse checkout for Dockerfile
+
+### ⚙️ Miscellaneous Tasks
+
+- Update README banner (#2269)
+
 ## [0.5.50] - 2026-05-05
 
 ### 🚀 Features
@@ -20,6 +36,7 @@ All notable changes to this project will be documented in this file.
 
 - Update references from 'oxy' to 'oxygen' in workflows and scripts
 - Update references from 'oxy-nightly' to 'oxygen-nightly' in public release workflow
+- Release 0.5.50 (#2257)
 
 ## [0.5.49] - 2026-05-04
 
