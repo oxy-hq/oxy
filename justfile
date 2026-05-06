@@ -49,6 +49,10 @@ lint-backend:
 lint-frontend:
     pnpm lint
 
+# Validate inter-crate dependency rules (see internal-docs/backend-architecture.md)
+check-deps:
+    python3 scripts/check-deps.py
+
 # DRY up workspace Cargo.toml manifests by inheriting shared deps from workspace root
 autoinherit:
     @cargo autoinherit --version >/dev/null 2>&1 || cargo install cargo-autoinherit
@@ -69,6 +73,10 @@ fmt-check:
 # Run all tests with nextest
 test:
     cargo nextest run
+
+# Remove dangling test containers (Postgres/ClickHouse/MySQL) left by test runs
+clean-test-containers:
+    @docker ps -aq --filter "label=org.testcontainers.managed-by=testcontainers" | xargs -r docker rm -f
 
 # ── Dev servers ────────────────────────────────────────────────────────────────
 

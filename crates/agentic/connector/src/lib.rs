@@ -20,18 +20,9 @@ pub mod duckdb;
 pub mod postgres;
 
 /// Shared typed-row helpers used by the `postgres` backend's
-/// `execute_query_full`. Gated on `postgres` only — Airhouse uses the
-/// simple-query protocol and has its own path.
+/// `execute_query_full`. Gated on `postgres` only.
 #[cfg(feature = "postgres")]
 mod postgres_typed;
-
-#[cfg(feature = "airhouse")]
-pub mod airhouse;
-
-/// Typed-row helpers for the Airhouse backend's `execute_query_full`.
-/// Uses the simple-query (text) protocol + DuckDB-style DESCRIBE.
-#[cfg(feature = "airhouse")]
-mod airhouse_typed;
 
 #[cfg(feature = "mysql")]
 pub mod mysql;
@@ -84,9 +75,6 @@ pub use duckdb::{DuckDbConnection, DuckDbConnector, LoadStrategy, TableInfo, Tab
 
 #[cfg(feature = "postgres")]
 pub use postgres::PostgresConnector;
-
-#[cfg(feature = "airhouse")]
-pub use airhouse::AirhouseConnector;
 
 #[cfg(feature = "mysql")]
 pub use mysql::MysqlConnector;
@@ -216,13 +204,6 @@ pub async fn build_connector_async(
         #[cfg(feature = "postgres")]
         ConnectorConfig::Postgres(c) | ConnectorConfig::Redshift(c) => {
             let conn = PostgresConnector::new(&c.host, c.port, &c.user, &c.password, &c.database);
-            Ok(Box::new(conn))
-        }
-
-        #[cfg(feature = "airhouse")]
-        ConnectorConfig::Airhouse(c) => {
-            let conn =
-                AirhouseConnector::new(&c.host, c.port, &c.user, &c.password, &c.database).await?;
             Ok(Box::new(conn))
         }
 

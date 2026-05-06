@@ -440,6 +440,20 @@ pub struct Airhouse {
     pub database_var: Option<String>,
 }
 
+/// Airhouse with managed credentials. Empty by design — host, port, dbname,
+/// user, and password are sourced from oxy's per-user `airhouse_users` row.
+///
+/// **Currently safe only in local (`oxy start`) mode.** Resolution today
+/// picks the single active provisioned user, which is unambiguous only when
+/// there is exactly one user (the local-mode case). In cloud / multi-user
+/// deployments the connector layer does not yet have request-time user
+/// context, so a workspace with more than one provisioned Airhouse user will
+/// fail to build the connector with a `ConfigurationError`. Use the
+/// per-user `host`/`username`/`password_var` fields on `airhouse:` config
+/// instead until plumbing the requesting user lands.
+#[derive(Serialize, Deserialize, Debug, JsonSchema, Clone, Default)]
+pub struct AirhouseManaged {}
+
 impl Airhouse {
     pub async fn get_password(&self, secret_manager: &SecretsManager) -> Result<String, OxyError> {
         secret_manager
@@ -1189,6 +1203,13 @@ pub enum DatabaseType {
     Postgres(#[garde(dive)] Postgres),
     #[serde(rename = "airhouse")]
     Airhouse(#[garde(dive)] Airhouse),
+    /// Airhouse with credentials managed by oxy. The connector layer resolves
+    /// host, port, dbname, user, and password from the caller's
+    /// `airhouse_users` row + `org_secrets` entry — populated by the
+    /// per-user provisioning flow (Settings → Airhouse). No fields needed
+    /// on this variant; everything is sourced from oxy's database.
+    #[serde(rename = "airhouse_managed")]
+    AirhouseManaged(#[garde(skip)] AirhouseManaged),
     #[serde(rename = "redshift")]
     Redshift(#[garde(dive)] Redshift),
     #[serde(rename = "mysql")]
@@ -1209,6 +1230,7 @@ impl std::fmt::Display for DatabaseType {
             DatabaseType::Snowflake(_) => write!(f, "snowflake"),
             DatabaseType::Postgres(_) => write!(f, "postgres"),
             DatabaseType::Airhouse(_) => write!(f, "airhouse"),
+            DatabaseType::AirhouseManaged(_) => write!(f, "airhouse_managed"),
             DatabaseType::Redshift(_) => write!(f, "redshift"),
             DatabaseType::Mysql(_) => write!(f, "mysql"),
             DatabaseType::ClickHouse(_) => write!(f, "clickhouse"),
@@ -1242,6 +1264,7 @@ impl Database {
             DatabaseType::DOMO(_) => "domo",
             DatabaseType::MotherDuck(_) => "motherduck",
             DatabaseType::Airhouse(_) => "airhouse",
+            DatabaseType::AirhouseManaged(_) => "airhouse_managed",
         }
     }
 
@@ -1251,6 +1274,7 @@ impl Database {
             DatabaseType::DuckDB(_) => "duckdb".to_owned(),
             DatabaseType::Postgres(_) => "postgres".to_owned(),
             DatabaseType::Airhouse(_) => "duckdb".to_owned(),
+            DatabaseType::AirhouseManaged(_) => "duckdb".to_owned(),
             DatabaseType::Redshift(_) => "postgres".to_owned(),
             DatabaseType::Mysql(_) => "mysql".to_owned(),
             DatabaseType::ClickHouse(_) => "clickhouse".to_string(),

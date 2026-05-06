@@ -33,6 +33,8 @@ members = [
   "crates/agentic/runtime",
   "crates/agentic/workflow",
   "crates/airform",
+  "crates/airhouse",
+  "crates/platform",
   "web-app",
 ]
 
@@ -51,6 +53,7 @@ agentic-llm = { path = "crates/agentic/llm" }
 agentic-pipeline = { path = "crates/agentic/pipeline" }
 agentic-runtime = { path = "crates/agentic/runtime" }
 agentic-workflow = { path = "crates/agentic/workflow" }
+airhouse = { path = "crates/airhouse" }
 entity = { path = "crates/entity" }
 migration = { path = "crates/migration" }
 omni = { path = "crates/integration/omni" }
@@ -67,6 +70,7 @@ oxy-observability = { path = "crates/observability" }
 oxy-ollama = { path = "crates/infrastructure/llm/ollama" }
 oxy-airform = { path = "crates/airform" }
 oxy-openai = { path = "crates/infrastructure/llm/openai" }
+oxy-platform = { path = "crates/platform" }
 oxy-project = { path = "crates/project" }
 oxy-semantic = { path = "crates/semantic" }
 oxy-shared = { path = "crates/shared" }

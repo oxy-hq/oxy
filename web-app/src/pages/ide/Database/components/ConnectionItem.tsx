@@ -20,11 +20,16 @@ import { Button } from "@/components/ui/shadcn/button";
 import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/shadcn/sidebar";
 import useDatabaseSchema from "@/hooks/api/databases/useDatabaseSchema";
 import { cn } from "@/libs/shadcn/utils";
+import { AirhouseLogo } from "@/pages/ide/settings/components/AirhouseLogo";
 import type { DatabaseInfo } from "@/types/database";
 import { ConnectionSchemaContent } from "./ConnectionSchemaContent";
 
-const getDatabaseIcon = (dialect: string) => {
+const getDatabaseIcon = (dbType: string, dialect: string) => {
   const iconProps = { className: "h-4 w-4 text-muted-foreground" };
+
+  if (dbType === "airhouse" || dbType === "airhouse_managed") {
+    return <AirhouseLogo className='h-4 w-4' />;
+  }
 
   switch (dialect.toLowerCase()) {
     case "bigquery":
@@ -78,7 +83,7 @@ export const ConnectionItem: React.FC<ConnectionItemProps> = ({ database }) => {
         className='text-sidebar-foreground hover:bg-sidebar-accent'
       >
         <Chevron className='h-4 w-4' />
-        {getDatabaseIcon(database.dialect)}
+        {getDatabaseIcon(database.db_type, database.dialect)}
         <span className='flex-1 truncate'>{database.name}</span>
 
         {isError && !isFetching && (

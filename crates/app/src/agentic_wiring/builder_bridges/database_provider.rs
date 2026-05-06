@@ -8,8 +8,6 @@ use agentic_core::tools::ToolError;
 use agentic_workflow::WorkspaceContext;
 use async_trait::async_trait;
 
-use agentic_pipeline::platform::ProjectContext;
-
 use crate::agentic_wiring::OxyProjectContext;
 
 /// Bridges builder database operations to the platform `ProjectContext`.
@@ -38,24 +36,9 @@ impl BuilderDatabaseProvider for OxyBuilderDatabaseProvider {
         &self,
         database_name: &str,
     ) -> Result<Arc<dyn DatabaseConnector>, ToolError> {
-        let cfg = self
-            .project_ctx
-            .resolve_connector(database_name)
+        self.project_ctx
+            .build_connector_for(database_name)
             .await
-            .ok_or_else(|| {
-                ToolError::Execution(format!(
-                    "failed to resolve connector config for database '{database_name}'"
-                ))
-            })?;
-
-        let connector = agentic_connector::build_connector_async(cfg)
-            .await
-            .map_err(|e| {
-                ToolError::Execution(format!(
-                    "failed to build connector for database '{database_name}': {e}"
-                ))
-            })?;
-
-        Ok(Arc::from(connector))
+            .map_err(|e| ToolError::Execution(e.to_string()))
     }
 }

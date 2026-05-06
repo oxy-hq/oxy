@@ -1,3 +1,4 @@
+use crate::agentic_wiring::OxyProjectContext;
 use crate::agentic_wiring::project_ctx::database_to_connector_config;
 use crate::server::api::middlewares::role_guards::WorkspaceAdmin;
 use crate::server::api::middlewares::workspace_context::{
@@ -38,7 +39,11 @@ use utoipa::ToSchema;
 #[derive(Serialize, ToSchema)]
 pub struct DatabaseInfo {
     pub name: String,
+    /// SQL dialect used for query execution (e.g. `"duckdb"`, `"postgres"`).
     pub dialect: String,
+    /// Raw config type from `config.yml` (e.g. `"airhouse_managed"`, `"duckdb"`).
+    /// Use this for display (icons, labels) — `dialect` is for query engine selection.
+    pub db_type: String,
     pub datasets: HashMap<String, HashMap<String, SemanticModels>>,
     pub synced: bool,
 }
@@ -74,22 +79,19 @@ pub async fn get_database_schema(
     }): Path<DatabaseSchemaPath>,
     AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
 ) -> Result<Json<DatabaseSchemaResponse>, StatusCode> {
-    let databases = workspace_manager.config_manager.list_databases();
-    let db = databases
-        .iter()
-        .find(|d| d.name == database_name)
-        .ok_or(StatusCode::NOT_FOUND)?;
-
-    let cfg = database_to_connector_config(db, &workspace_manager)
-        .await
-        .ok_or(StatusCode::UNPROCESSABLE_ENTITY)?;
-
-    let connector = agentic_connector::build_connector_async(cfg)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to build connector for schema introspection: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    // `build_connector_for` dispatches both the config + `agentic-connector`
+    // path AND the host-built path (where airhouse lives), so this handler
+    // works uniformly for every database type. Resolution / build failures
+    // surface a 500 with the actual error logged — no more 422 swallowing.
+    let ctx = OxyProjectContext::new(workspace_manager.clone());
+    let connector = ctx.build_connector_for(&database_name).await.map_err(|e| {
+        tracing::error!(
+            "Failed to build connector for schema introspection of {}: {}",
+            database_name,
+            e
+        );
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     // Let lazy connectors (e.g. Postgres) open their connection and pre-fetch
     // schema before the synchronous introspect_schema() call below.
@@ -337,6 +339,7 @@ pub async fn list_databases(
         databases.push(DatabaseInfo {
             name: db.name.clone(),
             dialect: db.dialect(),
+            db_type: db.database_type.to_string(),
             datasets,
             synced,
         });
@@ -649,6 +652,51 @@ pub async fn test_database_connection(
                 message: "Creating connector...".to_string(),
             })
             .await;
+
+        // Airhouse types live outside `agentic-connector::ConnectorConfig`,
+        // so the `database_to_connector_config` fast path below returns None
+        // for them. Route through `OxyProjectContext::build_connector_for`
+        // instead — it knows about both paths and surfaces real errors.
+        if matches!(
+            db_config.database_type,
+            DatabaseType::Airhouse(_) | DatabaseType::AirhouseManaged(_)
+        ) {
+            let ctx = OxyProjectContext::new(workspace_manager.clone());
+            let outcome = async {
+                let connector = ctx
+                    .build_connector_for(&db_config.name)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                connector
+                    .execute_query("SELECT 1", 1)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok::<_, String>(())
+            }
+            .await;
+
+            let elapsed = start_time.elapsed().as_millis() as u64;
+            let event = match outcome {
+                Ok(()) => ConnectionTestEvent::Complete {
+                    result: TestDatabaseConnectionResponse {
+                        success: true,
+                        message: "Connection successful".to_string(),
+                        connection_time_ms: Some(elapsed),
+                        error_details: None,
+                    },
+                },
+                Err(err) => ConnectionTestEvent::Complete {
+                    result: TestDatabaseConnectionResponse {
+                        success: false,
+                        message: "Connection failed".to_string(),
+                        connection_time_ms: Some(elapsed),
+                        error_details: Some(err),
+                    },
+                },
+            };
+            let _ = tx.send(event).await;
+            return;
+        }
 
         // Fast path: drive the probe through `agentic-connector`.
         // For Snowflake browser auth we inject an SSO-URL callback so the

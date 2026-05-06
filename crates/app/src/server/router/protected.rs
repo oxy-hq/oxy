@@ -54,15 +54,21 @@ pub(super) fn apply_middleware(
 /// local mode is always `LOCAL_WORKSPACE_ID` (nil UUID) — clients hardcode it.
 ///
 /// `build_global_routes` (org + workspace CRUD) is intentionally omitted.
+/// However the per-user Airhouse routes ARE mounted here too: they're per-user
+/// + per-org and don't depend on workspace context. Local mode seeds a
+/// nil-UUID org with the local guest user as Owner, so the existing
+/// per-org provision flow works untouched.
 pub(super) fn build_local_protected_routes(
     app_state: AppState,
     agentic_state: Arc<AgenticState>,
 ) -> Router<AppState> {
-    Router::new().nest(
-        "/{workspace_id}",
-        build_workspace_routes(app_state, agentic_state, false, true)
-            .route_layer(middleware::from_fn(local_context_middleware)),
-    )
+    Router::new()
+        .merge(airhouse::api::router::<AppState>())
+        .nest(
+            "/{workspace_id}",
+            build_workspace_routes(app_state, agentic_state, false, true)
+                .route_layer(middleware::from_fn(local_context_middleware)),
+        )
 }
 
 pub(super) fn apply_local_middleware(

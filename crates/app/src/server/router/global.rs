@@ -26,6 +26,7 @@ pub(super) fn build_global_routes() -> Router<AppState> {
             "/invitations/{token}/accept",
             post(organizations::accept_invitation),
         )
+        .merge(airhouse::api::router::<AppState>())
         .nest("/orgs/{org_id}", build_org_routes())
         .nest(
             "/admin",

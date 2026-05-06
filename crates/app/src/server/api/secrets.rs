@@ -749,6 +749,10 @@ pub async fn list_env_secrets(
                 ));
             }
             DatabaseType::DuckDB(_) => {}
+            // Managed Airhouse has no `*_var` fields — credentials are
+            // sourced from oxy's own database via the per-user provisioning
+            // flow.
+            DatabaseType::AirhouseManaged(_) => {}
         }
         for (var, config_field) in pairs {
             if seen_vars.insert(var.clone()) {

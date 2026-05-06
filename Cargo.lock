@@ -301,7 +301,6 @@ dependencies = [
  "tokio",
  "tokio-postgres",
  "tracing",
- "uuid",
  "wiremock",
 ]
 
@@ -607,6 +606,35 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
  "walkdir",
+]
+
+[[package]]
+name = "airhouse"
+version = "0.5.50"
+dependencies = [
+ "agentic-connector",
+ "agentic-core",
+ "async-stream",
+ "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "chrono",
+ "entity",
+ "oxy-auth",
+ "oxy-platform",
+ "oxy-shared",
+ "rand 0.10.1",
+ "reqwest 0.12.28",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-postgres",
+ "tracing",
+ "uuid",
+ "wiremock",
 ]
 
 [[package]]
@@ -9788,6 +9816,7 @@ dependencies = [
  "a2a",
  "aes-gcm",
  "aho-corasick",
+ "airhouse",
  "anyhow",
  "apalis",
  "apalis-core",
@@ -9852,6 +9881,7 @@ dependencies = [
  "omni",
  "once_cell",
  "oxy-anthropic",
+ "oxy-auth",
  "oxy-gemini",
  "oxy-git",
  "oxy-llm",
@@ -9859,6 +9889,7 @@ dependencies = [
  "oxy-observability",
  "oxy-ollama",
  "oxy-openai",
+ "oxy-platform",
  "oxy-semantic",
  "oxy-shared",
  "oxy-test-utils",
@@ -10016,6 +10047,7 @@ dependencies = [
  "agentic-pipeline",
  "agentic-runtime",
  "agentic-workflow",
+ "airhouse",
  "airlayer",
  "anyhow",
  "apalis",
@@ -10116,6 +10148,8 @@ dependencies = [
  "tempfile",
  "terminal-light",
  "terminal_size",
+ "testcontainers",
+ "testcontainers-modules",
  "thiserror 2.0.18",
  "tokio",
  "tokio-stream",
@@ -10151,7 +10185,7 @@ dependencies = [
  "entity",
  "jsonwebtoken 10.3.0",
  "log",
- "oxy",
+ "oxy-platform",
  "oxy-shared",
  "sea-orm",
  "serde",
@@ -10286,6 +10320,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "oxy-platform"
+version = "0.5.50"
+dependencies = [
+ "aes-gcm",
+ "aws-config",
+ "aws-credential-types",
+ "aws-sigv4",
+ "base64 0.22.1",
+ "dirs 6.0.0",
+ "entity",
+ "oxy-shared",
+ "sea-orm",
+ "serial_test",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "oxy-project"
 version = "0.5.51"
 dependencies = [
@@ -10349,6 +10404,7 @@ dependencies = [
  "lancedb",
  "log",
  "oxy-semantic",
+ "reqwest 0.12.28",
  "schemars 0.8.22",
  "sea-orm",
  "secrecy",
@@ -10362,6 +10418,7 @@ dependencies = [
  "tracing",
  "utoipa",
  "uuid",
+ "wiremock",
 ]
 
 [[package]]

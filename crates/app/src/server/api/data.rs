@@ -3,7 +3,9 @@ use crate::server::api::middlewares::workspace_context::{
     WorkspaceManagerExtractor, WorkspacePath,
 };
 use crate::server::api::semantic::{ErrorResponse, ResultFormat, SemanticQueryResponse};
-use crate::server::api::typed_stream::{typed_stream_to_json_array, typed_stream_to_parquet};
+use crate::server::api::typed_stream::{
+    EMPTY_RESULT_SENTINEL, typed_stream_to_json_array, typed_stream_to_parquet,
+};
 use crate::server::service::retrieval::{ReindexInput, reindex};
 use agentic_pipeline::platform::ProjectContext;
 use axum::extract::{self, Path};
@@ -53,12 +55,27 @@ fn agentic_error_response(
     (
         StatusCode::BAD_REQUEST,
         extract::Json(ErrorResponse {
-            message: format!(
-                "SQL query execution failed on database '{}': {}",
-                payload.database, err
-            ),
+            message: user_facing_query_error(&err),
         }),
     )
+}
+
+/// Extract a clean user-facing message from a connector error.
+///
+/// Strips the internal `\nSQL: …` suffix (redundant — the user can see what
+/// they typed) and the `"query failed: db error: ERROR: "` prefix chain that
+/// tokio-postgres wraps around server errors.
+fn user_facing_query_error(err: &OxyError) -> String {
+    let raw = err.to_string();
+    // Drop the internal SQL echo that connector errors append.
+    let without_sql = raw.split("\nSQL:").next().unwrap_or(&raw);
+    // Unwrap the prefix chain added by tokio-postgres / connector wrappers.
+    let msg = without_sql
+        .trim_start_matches("query failed: db error: ERROR: ")
+        .trim_start_matches("db error: ERROR: ")
+        .trim_start_matches("query failed: ")
+        .trim();
+    msg.to_string()
 }
 
 /// Execute a SQL query through `agentic-connector` and shape the response
@@ -70,19 +87,7 @@ async fn run_via_agentic_connector(
     payload: &SQLParams,
 ) -> Result<SemanticQueryResponse, OxyError> {
     let ctx = OxyProjectContext::new(workspace_manager.clone());
-    let cfg = ctx
-        .resolve_connector(&payload.database)
-        .await
-        .ok_or_else(|| {
-            OxyError::RuntimeError(format!(
-                "could not resolve connector config for database '{}'",
-                payload.database
-            ))
-        })?;
-
-    let connector = agentic_connector::build_connector_async(cfg)
-        .await
-        .map_err(|e| OxyError::DBError(format!("failed to build connector: {e}")))?;
+    let connector = ctx.build_connector_for(&payload.database).await?;
 
     let stream = connector
         .execute_query_full(&payload.sql)
@@ -96,7 +101,13 @@ async fn run_via_agentic_connector(
     match result_format {
         ResultFormat::Parquet => {
             let file_name = typed_stream_to_parquet(stream, workspace_manager).await?;
-            Ok(SemanticQueryResponse::Parquet { file_name })
+            if file_name == EMPTY_RESULT_SENTINEL {
+                // DDL/DML or zero-column result — return empty JSON so the
+                // frontend shows an empty table instead of a broken Parquet read.
+                Ok(SemanticQueryResponse::Json(vec![]))
+            } else {
+                Ok(SemanticQueryResponse::Parquet { file_name })
+            }
         }
         ResultFormat::Json => {
             let data = typed_stream_to_json_array(stream).await?;

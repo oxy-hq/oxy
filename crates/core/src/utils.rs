@@ -1,23 +1,20 @@
 use std::path::{Path, PathBuf};
 
 use crate::config::model::Dimension;
-use crate::state_dir::get_state_dir;
-use crate::{constants::OXY_ENCRYPTION_KEY_VAR, theme::*};
+use crate::theme::*;
 use aes_gcm::aead::Aead;
 use aes_gcm::aead::OsRng;
 use aes_gcm::{AeadCore, Aes256Gcm, Key, KeyInit, Nonce};
 use arrow::array::RecordBatch;
 use async_stream::stream;
 use axum::response::sse::Event;
-use base64::engine::general_purpose;
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use base64::{Engine as _, engine::general_purpose};
 use csv::StringRecord;
 use duckdb::Connection;
 use futures::Stream;
 use oxy_shared::errors::OxyError;
 use serde::Serialize;
 use slugify::slugify;
-use std::fs;
 use syntect::{
     easy::HighlightLines,
     highlighting::{Style, ThemeSet},
@@ -31,74 +28,11 @@ use tokio_util::sync::CancellationToken;
 pub const MAX_DISPLAY_ROWS: usize = 100;
 pub const MAX_OUTPUT_LENGTH: usize = 1000;
 
-fn get_key_file_path() -> PathBuf {
-    get_state_dir().join("encryption_key.txt")
-}
-
-fn decode_key_from_string(key_str: &str) -> [u8; 32] {
-    let decoded = general_purpose::STANDARD
-        .decode(key_str)
-        .map_err(|e| OxyError::SecretManager(format!("Invalid encryption key format: {e}")))
-        .expect("Failed to decode encryption key");
-
-    if decoded.len() != 32 {
-        panic!(
-            "Invalid encryption key length: expected 32 bytes, got {}",
-            decoded.len()
-        );
-    }
-
-    let mut key = [0u8; 32];
-    key.copy_from_slice(&decoded);
-    key
-}
-
-/// Get the encryption key from environment variable
-/// Falls back to a development key for development (NOT secure for production)
-pub fn get_encryption_key() -> [u8; 32] {
-    // First try environment variable
-    if let Ok(key_str) = std::env::var(OXY_ENCRYPTION_KEY_VAR) {
-        return decode_key_from_string(&key_str);
-    }
-
-    // Try loading from file
-    let key_file_path = get_key_file_path();
-    if let Ok(key_str) = fs::read_to_string(&key_file_path) {
-        let key_str = key_str.trim();
-        if !key_str.is_empty() {
-            tracing::info!("Loading encryption key from file: {:?}", key_file_path);
-            return decode_key_from_string(key_str);
-        }
-    }
-
-    // Generate a new key and save it to file
-    let key = Aes256Gcm::generate_key(&mut OsRng);
-
-    // Ensure directory exists
-    if let Some(parent) = key_file_path.parent()
-        && let Err(e) = fs::create_dir_all(parent)
-    {
-        tracing::error!("Failed to create directory for encryption key: {}", e);
-    }
-    // Encode key as base64 string
-    let key_string = BASE64.encode(key);
-
-    // Save key to file
-    if let Err(e) = fs::write(&key_file_path, &key_string) {
-        tracing::error!("Failed to save encryption key to file: {}", e);
-    } else {
-        tracing::info!(
-            "Generated new encryption key and saved to: {:?}",
-            key_file_path
-        );
-    }
-
-    tracing::warn!(
-        "No encryption key found. Generated new key and saved to: {:?}",
-        key_file_path
-    );
-    key.into()
-}
+/// Re-export of [`oxy_platform::secrets::get_encryption_key`] for source
+/// compatibility — the implementation moved to the `oxy-platform` crate so
+/// `airhouse` and other leaf integrations can use it without pulling in the
+/// full `oxy` crate.
+pub use oxy_platform::secrets::get_encryption_key;
 
 pub fn truncate_with_ellipsis(s: &str, max_width: Option<usize>) -> String {
     // We should truncate at grapheme-boundary and compute character-widths,

@@ -1,9 +1,9 @@
 use crate::api_key_domain::{ApiKeyConfig, ApiKeyService, ValidatedApiKey};
+use crate::constants::DEFAULT_API_KEY_HEADER;
 use crate::types::Identity;
 use axum::http::HeaderMap;
 use entity::prelude::Users;
-use oxy::config::constants::DEFAULT_API_KEY_HEADER;
-use oxy::database::client::establish_connection;
+use oxy_platform::db::establish_connection;
 use oxy_shared::errors::OxyError;
 use sea_orm::{DatabaseConnection, EntityTrait};
 

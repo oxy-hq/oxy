@@ -20,7 +20,11 @@ df-interchange = { workspace = true, features = ["arrow_56", "arrow_57"] }
 oxy = { workspace = true }
 oxy-git = { workspace = true }
 oxy-llm = { workspace = true }
-oxy-observability = { workspace = true, features = ["duckdb", "postgres", "clickhouse"] }
+oxy-observability = { workspace = true, features = [
+    "duckdb",
+    "postgres",
+    "clickhouse",
+] }
 oxy-shared = { workspace = true }
 oxy-airform = { workspace = true }
 agentic-analytics = { workspace = true }
@@ -28,13 +32,13 @@ agentic-builder = { workspace = true }
 agentic-connector = { workspace = true, features = [
     "duckdb",
     "postgres",
-    "airhouse",
     "clickhouse",
     "snowflake",
     "bigquery",
     "mysql",
     "domo",
 ] }
+airhouse = { workspace = true, features = ["connector", "rest"] }
 agentic-core = { workspace = true }
 agentic-http = { workspace = true }
 agentic-pipeline = { workspace = true }
@@ -82,7 +86,11 @@ anyhow = { workspace = true }
 
 # Logging/Tracing
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "json"] }
+tracing-subscriber = { workspace = true, features = [
+    "env-filter",
+    "fmt",
+    "json",
+] }
 log = { workspace = true }
 
 # Web framework
@@ -185,7 +193,11 @@ oxy-looker = { workspace = true }
 migration = { workspace = true }
 
 # MCP
-rmcp = { workspace = true, features = ["server", "transport-sse-server", "transport-io"] }
+rmcp = { workspace = true, features = [
+    "server",
+    "transport-sse-server",
+    "transport-io",
+] }
 
 # Other dependencies from core that might be needed
 dotenv = { workspace = true }
@@ -202,3 +214,8 @@ serial_test = { workspace = true }
 oxy-test-utils = { workspace = true }
 tower = { version = "0.5.3", features = ["util"] }
 wiremock = { workspace = true }
+testcontainers = { version = "0.27", features = [
+    "blocking",
+    "reusable-containers",
+] }
+testcontainers-modules = { version = "0.15", features = ["postgres"] }

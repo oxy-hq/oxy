@@ -50,9 +50,11 @@ pub const OPENAI_API_KEY_VAR: &str = "OPENAI_API_KEY";
 pub const ANTHROPIC_API_KEY_VAR: &str = "ANTHROPIC_API_KEY";
 pub const GEMINI_API_KEY_VAR: &str = "GEMINI_API_KEY";
 
-pub const DEFAULT_API_KEY_HEADER: &str = "X-API-Key";
-pub const AUTHENTICATION_HEADER_KEY: &str = "authorization";
-pub const AUTHENTICATION_SECRET_KEY: &str = "authentication_secret";
+// Auth-related header + JWT-secret constants live in `oxy-auth` so that
+// crate has no `oxy` dependency. Re-exported here for source compatibility.
+pub use oxy_auth::constants::{
+    AUTHENTICATION_HEADER_KEY, AUTHENTICATION_SECRET_KEY, DEFAULT_API_KEY_HEADER,
+};
 
 pub const CONSISTENCY_PROMPT: &str = indoc::indoc! {"
     You are evaluating if two submissions are FACTUALLY CONSISTENT for data analysis purposes.

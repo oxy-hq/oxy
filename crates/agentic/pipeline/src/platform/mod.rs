@@ -25,10 +25,11 @@ use agentic_builder::{
     BuilderDatabaseProvider, BuilderProjectValidator, BuilderSchemaProvider,
     BuilderSecretsProvider, BuilderSemanticCompiler,
 };
-use agentic_connector::ConnectorConfig;
+use agentic_connector::{ConnectorConfig, DatabaseConnector};
 use agentic_llm::{LlmClient, OpenAiCompatProvider, OpenAiProvider};
 use agentic_workflow::WorkspaceContext;
 use async_trait::async_trait;
+use std::collections::HashMap;
 
 /// Project config access — connectors, models, secrets.
 ///
@@ -38,6 +39,19 @@ use async_trait::async_trait;
 #[async_trait]
 pub trait ProjectContext: Send + Sync {
     async fn resolve_connector(&self, db_name: &str) -> Option<ConnectorConfig>;
+
+    /// Return a connector instance the host built itself, when the database
+    /// type isn't representable as a [`ConnectorConfig`] variant in
+    /// `agentic-connector`. Hosts use this for backends whose driver lives in
+    /// a separate crate (e.g. `airhouse`). Default impl returns `None` so
+    /// existing adapters compile unchanged; resolution falls through to
+    /// [`Self::resolve_connector`].
+    async fn resolve_pre_built_connector(
+        &self,
+        _db_name: &str,
+    ) -> Option<Arc<dyn DatabaseConnector>> {
+        None
+    }
 
     async fn resolve_model(
         &self,
@@ -101,19 +115,31 @@ pub struct BuilderBridges {
     pub secrets_provider: Option<Arc<dyn BuilderSecretsProvider>>,
 }
 
-/// Resolve a batch of database names to connector configs, skipping any
-/// that fail to resolve.
+/// Result of resolving a batch of database names: configs that
+/// `agentic-connector` knows how to dispatch, plus host-built connector
+/// instances for backends whose drivers live outside `agentic-connector`.
+pub struct ResolvedConnectors {
+    pub configs: Vec<(String, ConnectorConfig)>,
+    pub pre_built: HashMap<String, Arc<dyn DatabaseConnector>>,
+}
+
+/// Resolve a batch of database names. For each name, the host's pre-built
+/// path is checked first (so a host can override the dispatch), then the
+/// config path. Names that resolve to neither are silently skipped.
 pub async fn resolve_connectors(
     db_names: &[String],
     ctx: &dyn ProjectContext,
-) -> Vec<(String, ConnectorConfig)> {
-    let mut configs = Vec::with_capacity(db_names.len());
+) -> ResolvedConnectors {
+    let mut configs = Vec::new();
+    let mut pre_built = HashMap::new();
     for name in db_names {
-        if let Some(cfg) = ctx.resolve_connector(name).await {
+        if let Some(conn) = ctx.resolve_pre_built_connector(name).await {
+            pre_built.insert(name.clone(), conn);
+        } else if let Some(cfg) = ctx.resolve_connector(name).await {
             configs.push((name.clone(), cfg));
         }
     }
-    configs
+    ResolvedConnectors { configs, pre_built }
 }
 
 /// Build an [`LlmClient`] from a [`ResolvedModelInfo`], dispatching on vendor.

@@ -20,6 +20,7 @@ use agentic_workflow::workspace::IntegrationConfig;
 use async_trait::async_trait;
 use oxy::adapters::workspace::manager::WorkspaceManager;
 use oxy::config::model::{DatabaseType, DuckDBOptions, IntegrationType, Model, SnowflakeAuthType};
+use oxy_shared::errors::OxyError;
 
 /// Adapter that exposes a [`WorkspaceManager`] as a [`ProjectContext`] and
 /// (for the workflow runner) an [`agentic_workflow::WorkspaceContext`].
@@ -45,6 +46,63 @@ impl OxyProjectContext {
         &self.workspace_manager
     }
 
+    /// Resolve and build a `DatabaseConnector` for `db_name`, surfacing the
+    /// real reason on failure (config missing, secret unresolved, host
+    /// unreachable, …) instead of collapsing every failure into `None`.
+    ///
+    /// This is the API non-agentic callers (e.g. the Dev Portal SQL IDE)
+    /// should reach for. Agentic-pipeline internals stay on
+    /// `agentic_pipeline::platform::resolve_connectors`, which uses the
+    /// `ProjectContext` trait's `Option`-returning methods and silently
+    /// skips databases that fail to resolve — fine for batch resolution
+    /// where individual failures shouldn't kill the whole pipeline, but
+    /// useless when a user typed a SQL query against a specific database
+    /// and wants to know why it didn't work.
+    ///
+    /// Dispatches the same way `resolve_pre_built_airhouse` +
+    /// `database_to_connector_config` would (so the routing stays in one
+    /// place), but propagates errors through `OxyError` instead of
+    /// dropping them on the floor.
+    pub async fn build_connector_for(
+        &self,
+        db_name: &str,
+    ) -> Result<Arc<dyn DatabaseConnector>, OxyError> {
+        let db = self
+            .workspace_manager
+            .config_manager
+            .resolve_database(db_name)
+            .map_err(|e| {
+                OxyError::ConfigurationError(format!(
+                    "database '{db_name}' not found in config.yml: {e}"
+                ))
+            })?;
+
+        // Airhouse types live outside `agentic-connector`'s vendor-neutral
+        // dispatcher; the helper builds them directly with full error
+        // propagation. Other types go through the config + dispatcher path.
+        match &db.database_type {
+            DatabaseType::Airhouse(_) | DatabaseType::AirhouseManaged(_) => {
+                build_airhouse_connector(&db, &self.workspace_manager).await
+            }
+            _ => {
+                let cfg = database_to_connector_config(&db, &self.workspace_manager)
+                    .await
+                    .ok_or_else(|| {
+                        OxyError::ConfigurationError(format!(
+                            "could not build connector config for database '{db_name}' (type {})",
+                            db.database_type_name()
+                        ))
+                    })?;
+                let built = agentic_connector::build_connector_async(cfg)
+                    .await
+                    .map_err(|e| {
+                        OxyError::DBError(format!("failed to build connector for '{db_name}': {e}"))
+                    })?;
+                Ok(Arc::from(built))
+            }
+        }
+    }
+
     /// Build connectors from workspace database configs. Called once lazily
     /// on first `WorkspaceContext::get_connector` invocation.
     async fn built_connectors(&self) -> &HashMap<String, Arc<dyn DatabaseConnector>> {
@@ -57,9 +115,10 @@ impl OxyProjectContext {
                     .iter()
                     .map(|db| db.name.clone())
                     .collect();
-                let configs = agentic_pipeline::platform::resolve_connectors(&db_names, self).await;
+                let resolved =
+                    agentic_pipeline::platform::resolve_connectors(&db_names, self).await;
                 let mut map = HashMap::new();
-                for (name, cfg) in configs {
+                for (name, cfg) in resolved.configs {
                     match agentic_connector::build_connector_async(cfg).await {
                         Ok(connector) => {
                             map.insert(name, Arc::from(connector));
@@ -74,6 +133,7 @@ impl OxyProjectContext {
                         }
                     }
                 }
+                map.extend(resolved.pre_built);
                 map
             })
             .await
@@ -84,6 +144,13 @@ impl OxyProjectContext {
 impl ProjectContext for OxyProjectContext {
     async fn resolve_connector(&self, db_name: &str) -> Option<ConnectorConfig> {
         resolve_connector_impl(db_name, &self.workspace_manager).await
+    }
+
+    async fn resolve_pre_built_connector(
+        &self,
+        db_name: &str,
+    ) -> Option<Arc<dyn DatabaseConnector>> {
+        resolve_pre_built_airhouse(db_name, &self.workspace_manager).await
     }
 
     async fn resolve_model(
@@ -343,37 +410,11 @@ pub async fn database_to_connector_config(
             }))
         }
 
-        DatabaseType::Airhouse(ah) => {
-            let host = ah
-                .get_host(&workspace_manager.secrets_manager)
-                .await
-                .unwrap_or_else(|_| "localhost".into());
-            let port: u16 = ah
-                .get_port(&workspace_manager.secrets_manager)
-                .await
-                .unwrap_or_else(|_| "5445".into())
-                .parse()
-                .unwrap_or(5445);
-            let user = ah
-                .get_user(&workspace_manager.secrets_manager)
-                .await
-                .unwrap_or_else(|_| "admin".into());
-            let password = ah
-                .get_password(&workspace_manager.secrets_manager)
-                .await
-                .unwrap_or_else(|_| "airhouse".into());
-            let database = ah
-                .get_database(&workspace_manager.secrets_manager)
-                .await
-                .unwrap_or_else(|_| "airhouse".into());
-            Some(ConnectorConfig::Airhouse(PostgresConfig {
-                host,
-                port,
-                user,
-                password,
-                database,
-            }))
-        }
+        // `Airhouse` and `AirhouseManaged` are handled by the host's
+        // `resolve_pre_built_connector` path — see `resolve_pre_built_airhouse`
+        // below — because the connector lives in the standalone `airhouse`
+        // crate, not in `agentic-connector::ConnectorConfig`.
+        DatabaseType::Airhouse(_) | DatabaseType::AirhouseManaged(_) => None,
 
         DatabaseType::Redshift(rds) => {
             let host = rds
@@ -594,6 +635,100 @@ fn extract_project_id_from_key(key_path: &str) -> Option<String> {
     let contents = std::fs::read_to_string(key_path).ok()?;
     let v: serde_json::Value = serde_json::from_str(&contents).ok()?;
     v.get("project_id")?.as_str().map(|s| s.to_string())
+}
+
+/// Pre-build an `airhouse::AirhouseConnector` for `airhouse` /
+/// `airhouse_managed` databases. Errors are swallowed into a warn log and
+/// returned as `None` because this is the agentic-pipeline path: a single
+/// failing database shouldn't kill batch resolution. Non-agentic callers
+/// (the SQL IDE, the builder bridge) use [`OxyProjectContext::build_connector_for`]
+/// instead, which propagates the same errors so the user sees what's wrong.
+async fn resolve_pre_built_airhouse(
+    db_name: &str,
+    workspace_manager: &WorkspaceManager,
+) -> Option<Arc<dyn DatabaseConnector>> {
+    let db = workspace_manager
+        .config_manager
+        .resolve_database(db_name)
+        .ok()?;
+    if !matches!(
+        db.database_type,
+        DatabaseType::Airhouse(_) | DatabaseType::AirhouseManaged(_)
+    ) {
+        return None;
+    }
+    match build_airhouse_connector(&db, workspace_manager).await {
+        Ok(conn) => Some(conn),
+        Err(e) => {
+            tracing::warn!(db = %db.name, "airhouse connector build failed: {e}");
+            None
+        }
+    }
+}
+
+/// Error-propagating airhouse connector builder. Used by both
+/// [`resolve_pre_built_airhouse`] (which discards the error) and
+/// [`OxyProjectContext::build_connector_for`] (which surfaces it). Keeps
+/// the per-`DatabaseType` arms in one place.
+async fn build_airhouse_connector(
+    db: &oxy::config::model::Database,
+    workspace_manager: &WorkspaceManager,
+) -> Result<Arc<dyn DatabaseConnector>, OxyError> {
+    let (host, port, user, password, database) = match &db.database_type {
+        DatabaseType::Airhouse(ah) => {
+            let host = ah
+                .get_host(&workspace_manager.secrets_manager)
+                .await
+                .unwrap_or_else(|_| "localhost".into());
+            let port: u16 = ah
+                .get_port(&workspace_manager.secrets_manager)
+                .await
+                .unwrap_or_else(|_| "5445".into())
+                .parse()
+                .unwrap_or(5445);
+            let user = ah
+                .get_user(&workspace_manager.secrets_manager)
+                .await
+                .unwrap_or_else(|_| "admin".into());
+            let password = ah
+                .get_password(&workspace_manager.secrets_manager)
+                .await
+                .unwrap_or_else(|_| "airhouse".into());
+            let database = ah
+                .get_database(&workspace_manager.secrets_manager)
+                .await
+                .unwrap_or_else(|_| "airhouse".into());
+            (host, port, user, password, database)
+        }
+        DatabaseType::AirhouseManaged(_) => {
+            // Connector building has no request-time user context today; fall
+            // back to single-row resolution (local-mode only). The error path
+            // here is the most common failure for `airhouse_managed`:
+            // "no provisioned user" or "AIRHOUSE_WIRE_HOST not set".
+            let creds = airhouse::resolve_managed_airhouse_credentials(None).await?;
+            (
+                creds.host,
+                creds.port,
+                creds.username,
+                creds.password,
+                creds.dbname,
+            )
+        }
+        other => {
+            return Err(OxyError::ConfigurationError(format!(
+                "build_airhouse_connector: unexpected database_type {other:?}"
+            )));
+        }
+    };
+
+    let conn = airhouse::AirhouseConnector::new(&host, port, &user, &password, &database)
+        .await
+        .map_err(|e| {
+            OxyError::DBError(format!(
+                "airhouse connector failed to connect to {host}:{port}/{database} as {user}: {e}"
+            ))
+        })?;
+    Ok(Arc::new(conn) as Arc<dyn DatabaseConnector>)
 }
 
 // ── Model translation ───────────────────────────────────────────────────────

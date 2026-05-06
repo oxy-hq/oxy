@@ -19,6 +19,7 @@ use crate::{
         model::{ConnectionOverride, ConnectionOverrides, Database, DatabaseType, DuckDBOptions},
     },
 };
+use airhouse::resolve_managed_airhouse_credentials;
 use oxy_shared::errors::OxyError;
 
 mod clickhouse;
@@ -150,6 +151,20 @@ impl Connector {
                     ah.get_host(secrets_manager).await?,
                     ah.get_port(secrets_manager).await?,
                     ah.get_database(secrets_manager).await?,
+                );
+                EngineType::ConnectorX(ConnectorX::new("postgres".to_string(), db_path, None))
+            }
+            DatabaseType::AirhouseManaged(_) => {
+                // Connector building has no request-time user context today;
+                // fall back to single-row resolution (local-mode only).
+                let resolved = resolve_managed_airhouse_credentials(None).await?;
+                let db_path = format!(
+                    "{}:{}@{}:{}/{}?cxprotocol=cursor",
+                    resolved.username,
+                    resolved.password,
+                    resolved.host,
+                    resolved.port,
+                    resolved.dbname,
                 );
                 EngineType::ConnectorX(ConnectorX::new("postgres".to_string(), db_path, None))
             }

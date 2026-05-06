@@ -107,7 +107,7 @@ pub async fn generate_auth_token(config: &IamConfig) -> Result<String, OxyError>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::database::auth_mode::SslMode;
+    use crate::db::auth_mode::SslMode;
     use serial_test::serial;
 
     // The token generator calls `aws_config::load_defaults`, which consults the

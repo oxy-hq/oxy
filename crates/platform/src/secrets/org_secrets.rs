@@ -4,8 +4,6 @@
 //! server's master key from `OXY_ENCRYPTION_KEY`. Each row carries a
 //! `key_version` byte; version 1 uses the current master key.
 
-use crate::database::client::establish_connection;
-use crate::utils::get_encryption_key;
 use aes_gcm::aead::{Aead, OsRng};
 use aes_gcm::{AeadCore, Aes256Gcm, Key, KeyInit, Nonce};
 use entity::org_secrets;
@@ -13,6 +11,9 @@ use entity::prelude::OrgSecrets;
 use oxy_shared::errors::OxyError;
 use sea_orm::{ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, QueryFilter};
 use uuid::Uuid;
+
+use crate::db::establish_connection;
+use crate::secrets::encryption::get_encryption_key;
 
 const CURRENT_KEY_VERSION: i16 = 1;
 

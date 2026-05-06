@@ -20,9 +20,6 @@ duckdb = ["dep:duckdb", "dep:slugify"]
 # Rust types inside `execute_query_full`.
 # `dep:serde_json` — for decoding JSON / JSONB columns.
 postgres = ["dep:tokio-postgres", "dep:chrono", "dep:serde_json"]
-# Airhouse speaks the Postgres wire protocol but with DuckDB semantics;
-# shares the `tokio-postgres` dep with `postgres` but is gated separately.
-airhouse = ["dep:tokio-postgres", "dep:serde_json", "dep:uuid"]
 
 clickhouse = ["dep:reqwest", "dep:serde_json", "dep:serde"]
 # MySQL via sqlx-mysql. `chrono` + `serde_json` decode DATE / DATETIME /
@@ -88,9 +85,6 @@ base64 = { workspace = true, optional = true }
 
 # MySQL
 sqlx = { workspace = true, optional = true }
-
-# Airhouse — unique temp table names per execute_query_full invocation
-uuid = { workspace = true, optional = true }
 
 [dev-dependencies]
 duckdb = { workspace = true }

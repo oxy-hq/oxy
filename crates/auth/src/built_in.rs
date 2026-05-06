@@ -1,4 +1,6 @@
-use oxy::config::constants::{AUTHENTICATION_HEADER_KEY, AUTHENTICATION_SECRET_KEY};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use crate::constants::{AUTHENTICATION_HEADER_KEY, AUTHENTICATION_SECRET_KEY};
 use oxy_shared::errors::OxyError;
 
 use crate::{api_key_infra::authenticate_header, authenticator::Authenticator, types::Identity};
@@ -11,6 +13,26 @@ struct Claims {
     email: String,
     exp: usize,
     iat: usize,
+}
+
+/// Process-wide flag toggled by the host (typically `oxy-app` at startup,
+/// after parsing the OxyConfig) to tell `BuiltInAuthenticator` whether any
+/// auth provider is configured. Defaults to `false` so zero-config installs
+/// keep working in guest mode without the host having to call this.
+///
+/// This indirection exists so `oxy-auth` does not depend on the `oxy` crate
+/// (the parsed OxyConfig lives there). Host calls
+/// [`set_auth_configured`] once after config load.
+static AUTH_CONFIGURED: AtomicBool = AtomicBool::new(false);
+
+/// Tell `BuiltInAuthenticator` whether at least one auth provider (Google,
+/// Okta, magic link, …) is configured. Call once at startup from the host.
+pub fn set_auth_configured(value: bool) {
+    AUTH_CONFIGURED.store(value, Ordering::Relaxed);
+}
+
+fn auth_configured() -> bool {
+    AUTH_CONFIGURED.load(Ordering::Relaxed)
 }
 
 pub struct BuiltInAuthenticator;
@@ -34,13 +56,7 @@ impl Authenticator for BuiltInAuthenticator {
         // Check if any authentication methods are configured.
         // If YES: enforce authentication.
         // If NO: use guest user (backward compatibility for zero-config local installs).
-        let has_auth_configured = oxy::config::oxy::get_oxy_config()
-            .ok()
-            .and_then(|config| config.authentication)
-            .map(|auth| auth.google.is_some() || auth.okta.is_some() || auth.magic_link.is_some())
-            .unwrap_or(false);
-
-        if !has_auth_configured {
+        if !auth_configured() {
             return Ok(Identity {
                 picture: None,
                 name: Some("Local User".to_string()),

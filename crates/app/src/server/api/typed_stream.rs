@@ -51,11 +51,26 @@ const BATCH_SIZE: usize = 10_000;
 /// | `Decimal { .. }`       | `Utf8` (canonical decimal string — no loss)   |
 /// | `Json`                 | `Utf8` (JSON re-serialized)                   |
 /// | `Unknown`              | `Utf8`                                        |
+/// Sentinel returned when a query has no column schema (DDL/DML or zero-column
+/// SELECT). The caller should surface this as an empty result rather than
+/// attempting to read a Parquet file — DuckDB WASM rejects schema-less files.
+pub const EMPTY_RESULT_SENTINEL: &str = "__empty__";
+
 pub async fn typed_stream_to_parquet(
     stream: TypedRowStream,
     workspace_manager: &WorkspaceManager,
 ) -> Result<String, OxyError> {
     let TypedRowStream { columns, mut rows } = stream;
+
+    // No column schema means DDL/DML or a connector that couldn't describe the
+    // result set. Writing a zero-column Parquet file would break DuckDB WASM
+    // ("Need at least one non-root column"). Signal an empty result instead.
+    if columns.is_empty() {
+        // Drain the row stream so the connector can clean up.
+        while rows.next().await.is_some() {}
+        return Ok(EMPTY_RESULT_SENTINEL.to_string());
+    }
+
     let arrow_schema: Arc<Schema> = Arc::new(build_arrow_schema(&columns));
 
     let results_dir = workspace_manager
@@ -96,6 +111,7 @@ pub async fn typed_stream_to_parquet(
 
     let col_count = columns.len();
     let mut buffer: Vec<Vec<TypedValue>> = Vec::with_capacity(BATCH_SIZE);
+    let mut sent_any_batch = false;
 
     while let Some(row) = rows.next().await {
         let row = row.map_err(|e| OxyError::DBError(format!("row stream: {e}")))?;
@@ -113,12 +129,24 @@ pub async fn typed_stream_to_parquet(
                 .send(batch)
                 .map_err(|_| OxyError::RuntimeError("parquet writer task terminated".into()))?;
             buffer.clear();
+            sent_any_batch = true;
         }
     }
     if !buffer.is_empty() {
         let batch = build_record_batch(&arrow_schema, &columns, &buffer)?;
         batch_tx
             .send(batch)
+            .map_err(|_| OxyError::RuntimeError("parquet writer task terminated".into()))?;
+        sent_any_batch = true;
+    }
+    if !sent_any_batch {
+        // Zero rows: write an empty RecordBatch so the Parquet file contains at
+        // least one row group. DuckDB WASM's parquet_scan cannot infer the schema
+        // from a file with no row groups and throws "Need at least one non-root
+        // column in the file".
+        let empty = RecordBatch::new_empty(arrow_schema.clone());
+        batch_tx
+            .send(empty)
             .map_err(|_| OxyError::RuntimeError("parquet writer task terminated".into()))?;
     }
     // Drop sender so the blocking writer sees EOF and calls close().

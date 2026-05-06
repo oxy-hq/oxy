@@ -13,6 +13,11 @@ export type {
 } from "@/types/modeling";
 
 export { AgentService } from "./agents";
+export {
+  type AirhouseConnectionInfo,
+  type AirhouseCredentials,
+  AirhouseService
+} from "./airhouse";
 export type {
   AnalyticsRunSummary,
   CreateAnalyticsRunRequest,

@@ -97,10 +97,13 @@ oxy-ollama = { workspace = true }
 oxy-openai = { workspace = true }
 oxy-semantic = { workspace = true }
 oxy-shared = { workspace = true }
+oxy-platform = { workspace = true }
 # Cannot add oxy-agent, oxy-workflow, etc. here due to circular dependency
 # They depend on oxy, so oxy cannot depend on them
 # Use them via CLI crate instead
 a2a = { workspace = true }
+oxy-auth = { workspace = true }
+airhouse = { workspace = true, features = ["credentials"] }
 enum_dispatch = { workspace = true }
 futures = { workspace = true }
 garde = { workspace = true, features = ["full"] }

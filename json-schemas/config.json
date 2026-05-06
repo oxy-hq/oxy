@@ -511,6 +511,21 @@
           }
         },
         {
+          "description": "Airhouse with credentials managed by oxy. The connector layer resolves host, port, dbname, user, and password from the caller's `airhouse_users` row + `org_secrets` entry — populated by the per-user provisioning flow (Settings → Airhouse). No fields needed on this variant; everything is sourced from oxy's database.",
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "airhouse_managed"
+              ]
+            }
+          }
+        },
+        {
           "type": "object",
           "required": [
             "type"

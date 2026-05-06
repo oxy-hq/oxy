@@ -71,6 +71,7 @@ import ObservabilityLayout from "./pages/ide/observability";
 import ExecutionAnalytics from "./pages/ide/observability/execution-analytics";
 import SettingsLayout from "./pages/ide/settings";
 import ActivityLogsPage from "./pages/ide/settings/activity-logs";
+import AirhouseSettingsPage from "./pages/ide/settings/airhouse";
 import ApiKeysPage from "./pages/ide/settings/api-keys";
 import DatabasesPage from "./pages/ide/settings/databases";
 import WorkspaceMembersPage from "./pages/ide/settings/members";
@@ -267,6 +268,7 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
             <Route path='api-keys' element={<ApiKeysPage />} />
             <Route path='secrets' element={<SecretsPage />} />
             <Route path='members' element={<WorkspaceMembersPage />} />
+            <Route path='airhouse' element={<AirhouseSettingsPage />} />
           </Route>
 
           {/* Data Modeling routes */}

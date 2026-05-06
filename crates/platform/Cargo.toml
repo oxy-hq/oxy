@@ -1,0 +1,38 @@
+[package]
+name = "oxy-platform"
+description = "Platform glue: database connection pooling + encrypted org secret store"
+version.workspace = true
+documentation.workspace = true
+publish.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+
+[dependencies]
+# Errors + entity types are platform-shared.
+oxy-shared = { workspace = true }
+entity = { workspace = true }
+
+# Database
+sea-orm = { workspace = true }
+sqlx = { workspace = true, features = ["runtime-tokio-rustls", "postgres"] }
+
+# Encryption
+aes-gcm = { workspace = true }
+base64 = { workspace = true }
+
+# AWS RDS IAM auth
+aws-config = { workspace = true, features = ["behavior-version-latest"] }
+aws-credential-types = { workspace = true }
+aws-sigv4 = { workspace = true }
+url = { workspace = true }
+
+# Async + utilities
+tokio = { workspace = true, features = ["sync", "time", "rt", "macros"] }
+tracing = { workspace = true }
+uuid = { workspace = true }
+dirs = { workspace = true }
+
+[dev-dependencies]
+serial_test = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

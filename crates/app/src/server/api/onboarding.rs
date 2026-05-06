@@ -990,6 +990,10 @@ fn collect_warehouse_vars(database: &oxy::config::model::Database) -> Vec<Github
         DatabaseType::DuckDB(_) => {
             // No credentials.
         }
+        DatabaseType::AirhouseManaged(_) => {
+            // No credentials in config.yml — they live in oxy's per-user
+            // `airhouse_users` row.
+        }
     }
     out
 }

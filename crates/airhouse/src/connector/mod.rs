@@ -5,7 +5,7 @@
 //!
 //! 1. Reports `SqlDialect::DuckDb` so solvers generate DuckDB-flavoured SQL.
 //! 2. Uses the **simple query protocol** (`simple_query`) for every server call
-//!    instead of the extended/prepared-statement protocol that [`PostgresConnector`]
+//!    instead of the extended/prepared-statement protocol that `PostgresConnector`
 //!    uses. Airhouse's extended-protocol column metadata is not fully compatible
 //!    with `tokio_postgres` (row-index access fails with "invalid column `0`"),
 //!    so we stick to `simple_query` which returns every value as a text string
@@ -22,24 +22,24 @@
 //! over an untrusted network without adding TLS.** A `tls: bool` field in the
 //! config is the tracked follow-up for operators who need transport encryption.
 
+mod typed;
+
 use std::collections::HashMap;
 use std::sync::Arc;
-
-use uuid::Uuid;
 
 use async_trait::async_trait;
 use tokio_postgres::{Client, NoTls, SimpleQueryMessage};
 
+use agentic_connector::{
+    ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, ResultSummary,
+    SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect, normalize_sql,
+};
 use agentic_core::result::{
     BoxedRowStream, CellValue, ColumnSpec, QueryResult, QueryRow, TypedRowError, TypedRowStream,
     TypedValue,
 };
 
-use crate::airhouse_typed::{describe_type_to_typed, parse_cell};
-use crate::connector::{
-    ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, ResultSummary,
-    SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect, normalize_sql,
-};
+use self::typed::{describe_type_to_typed, parse_cell};
 
 // ── Value helpers ─────────────────────────────────────────────────────────────
 
@@ -122,6 +122,52 @@ impl DatabaseConnector for AirhouseConnector {
         sample_limit: u64,
     ) -> Result<ExecutionResult, ConnectorError> {
         let sql = normalize_sql(sql);
+
+        match classify(sql) {
+            // DDL/DML: execute directly, return empty results.
+            StatementKind::DdlDml => {
+                return self
+                    .client
+                    .lock()
+                    .await
+                    .simple_query(sql)
+                    .await
+                    .map(|_| ExecutionResult {
+                        result: QueryResult {
+                            columns: vec![],
+                            rows: vec![],
+                            total_row_count: 0,
+                            truncated: false,
+                        },
+                        summary: ResultSummary {
+                            row_count: 0,
+                            columns: vec![],
+                        },
+                    })
+                    .map_err(|e| ConnectorError::QueryFailed {
+                        sql: sql.to_string(),
+                        message: e.to_string(),
+                    });
+            }
+            // Statement-form (SHOW, EXPLAIN, …): execute directly, capture
+            // all rows verbatim with text columns. Cannot be wrapped in
+            // `CREATE TEMP TABLE … AS (…)` or `SELECT … FROM (…)`.
+            StatementKind::Statement => {
+                let messages = self
+                    .client
+                    .lock()
+                    .await
+                    .simple_query(sql)
+                    .await
+                    .map_err(|e| ConnectorError::QueryFailed {
+                        sql: sql.to_string(),
+                        message: e.to_string(),
+                    })?;
+                return Ok(execution_result_from_messages(&messages, sample_limit));
+            }
+            StatementKind::Subquery => {}
+        }
+
         let client = self.client.lock().await;
         let tmp = "_agentic_tmp";
 
@@ -317,36 +363,54 @@ impl DatabaseConnector for AirhouseConnector {
 
     async fn execute_query_full(&self, sql: &str) -> Result<TypedRowStream, ConnectorError> {
         let sql = normalize_sql(sql);
-        let tmp = format!("_agentic_typed_{}", Uuid::new_v4().simple());
-        const PAGE_SIZE: usize = 1_000;
 
-        // 1. Create temp table + introspect column types (one locked block).
+        match classify(sql) {
+            // DDL/DML: execute directly, no row stream.
+            StatementKind::DdlDml => {
+                return self
+                    .client
+                    .lock()
+                    .await
+                    .simple_query(sql)
+                    .await
+                    .map(|_| TypedRowStream::from_rows(vec![], vec![]))
+                    .map_err(|e| ConnectorError::QueryFailed {
+                        sql: sql.to_string(),
+                        message: e.to_string(),
+                    });
+            }
+            // Statement-form (SHOW, EXPLAIN, …): execute directly, capture
+            // all rows in one shot with text columns. Cannot be wrapped in
+            // `DESCRIBE (…)` or `SELECT … FROM (…)` for introspection.
+            StatementKind::Statement => {
+                let messages = self
+                    .client
+                    .lock()
+                    .await
+                    .simple_query(sql)
+                    .await
+                    .map_err(|e| ConnectorError::QueryFailed {
+                        sql: sql.to_string(),
+                        message: e.to_string(),
+                    })?;
+                return Ok(typed_row_stream_from_messages(&messages));
+            }
+            StatementKind::Subquery => {}
+        }
+
+        // Subquery DQL: introspect column types via DESCRIBE (no temp table),
+        // then page through rows using a subquery wrapper.
+        let describe_sql = format!("DESCRIBE {sql}");
         let columns = {
             let client = self.client.lock().await;
-
-            let _ = client
-                .simple_query(&format!("DROP TABLE IF EXISTS {tmp}"))
-                .await;
-
-            let create_sql = format!("CREATE TEMP TABLE {tmp} AS ({sql})");
-            client
-                .simple_query(&create_sql)
-                .await
-                .map_err(|e| ConnectorError::QueryFailed {
-                    sql: sql.to_string(),
-                    message: e.to_string(),
-                })?;
-
-            let describe_sql = format!("DESCRIBE {tmp}");
-            let describe_messages = client.simple_query(&describe_sql).await.map_err(|e| {
+            let messages = client.simple_query(&describe_sql).await.map_err(|e| {
                 ConnectorError::QueryFailed {
                     sql: describe_sql.clone(),
                     message: e.to_string(),
                 }
             })?;
-
-            let mut columns: Vec<ColumnSpec> = Vec::new();
-            for msg in &describe_messages {
+            let mut cols: Vec<ColumnSpec> = Vec::new();
+            for msg in &messages {
                 if let SimpleQueryMessage::Row(row) = msg {
                     let name = row
                         .get("column_name")
@@ -356,25 +420,19 @@ impl DatabaseConnector for AirhouseConnector {
                         })?
                         .to_string();
                     let ty_str = row.get("column_type").unwrap_or_default();
-                    columns.push(ColumnSpec {
+                    cols.push(ColumnSpec {
                         name,
                         data_type: describe_type_to_typed(ty_str),
                     });
                 }
             }
-            columns
-            // lock released here
+            cols
         };
 
         if columns.is_empty() {
-            let client = self.client.lock().await;
-            let _ = client
-                .simple_query(&format!("DROP TABLE IF EXISTS {tmp}"))
-                .await;
-            return Ok(TypedRowStream::from_rows(columns, vec![]));
+            return Ok(TypedRowStream::from_rows(vec![], vec![]));
         }
 
-        // 2. Build the cast SELECT once; the stream owns it.
         let cast_cols: String = columns
             .iter()
             .map(|c| {
@@ -384,21 +442,18 @@ impl DatabaseConnector for AirhouseConnector {
             .collect::<Vec<_>>()
             .join(", ");
 
-        // 3. LIMIT/OFFSET stream: re-acquires the lock per page. Avoids SQL
-        //    cursor syntax which DuckDB's pgwire server doesn't reliably support
-        //    via the simple-query protocol.
+        const PAGE_SIZE: usize = 1_000;
         let client_arc = Arc::clone(&self.client);
         let columns_for_stream = columns.clone();
+        let owned_sql = sql.to_string();
         let stream: BoxedRowStream = Box::pin(async_stream::stream! {
             let columns = columns_for_stream;
             let mut offset = 0usize;
-
             loop {
                 let client = client_arc.lock().await;
                 let page_sql = format!(
-                    "SELECT {cast_cols} FROM {tmp} LIMIT {PAGE_SIZE} OFFSET {offset}"
+                    "SELECT {cast_cols} FROM ({owned_sql}) AS _q LIMIT {PAGE_SIZE} OFFSET {offset}"
                 );
-
                 match client.simple_query(&page_sql).await {
                     Err(e) => {
                         yield Err(TypedRowError::DriverError(e.to_string()));
@@ -414,24 +469,14 @@ impl DatabaseConnector for AirhouseConnector {
                                 _ => None,
                             })
                             .collect();
-
                         let fetched = batch.len();
                         for row in batch {
                             yield row;
                         }
-
                         if fetched < PAGE_SIZE {
-                            // Last page — drop lock and clean up.
-                            drop(client);
-                            let cleanup = client_arc.lock().await;
-                            let _ = cleanup
-                                .simple_query(&format!("DROP TABLE IF EXISTS {tmp}"))
-                                .await;
                             break;
                         }
-
                         offset += fetched;
-                        // Lock released here between pages.
                     }
                 }
             }
@@ -445,6 +490,43 @@ impl DatabaseConnector for AirhouseConnector {
 
     fn introspect_schema(&self) -> Result<SchemaInfo, ConnectorError> {
         Ok(self.cached_schema.clone())
+    }
+}
+
+/// What shape of statement is this — for picking the right execution path?
+///
+/// Three categories matter to the airhouse connector:
+///
+/// - `Subquery`: `SELECT` / `WITH` / `FROM` / `TABLE` / `VALUES`. Pure
+///   relational expressions that can be wrapped in `CREATE TEMP TABLE AS
+///   (…)`, `DESCRIBE (…)`, and `SELECT … FROM (…)`. Goes through the
+///   typed/paged path.
+/// - `Statement`: `SHOW` / `SUMMARIZE` / `DESCRIBE` / `EXPLAIN` / `PIVOT` /
+///   `UNPIVOT`. Top-level DuckDB statements that **return rows** but are
+///   **not** subquery-able — `DESCRIBE SHOW` and `SELECT * FROM (SHOW)` both
+///   error in DuckDB. Executed directly, all columns surfaced as `Text`.
+/// - `DdlDml`: `CREATE` / `INSERT` / `UPDATE` / `DELETE` / `ALTER` / `DROP` /
+///   anything else. Executed directly, returns no rows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StatementKind {
+    Subquery,
+    Statement,
+    DdlDml,
+}
+
+fn classify(sql: &str) -> StatementKind {
+    let first = sql
+        .trim_start()
+        .split_ascii_whitespace()
+        .next()
+        .unwrap_or("")
+        .to_ascii_uppercase();
+    match first.as_str() {
+        "SELECT" | "WITH" | "FROM" | "TABLE" | "VALUES" => StatementKind::Subquery,
+        "SHOW" | "SUMMARIZE" | "DESCRIBE" | "EXPLAIN" | "PIVOT" | "UNPIVOT" => {
+            StatementKind::Statement
+        }
+        _ => StatementKind::DdlDml,
     }
 }
 
@@ -466,6 +548,117 @@ fn parse_airhouse_row(
         cells.push(cell);
     }
     Ok(cells)
+}
+
+// ── Statement-form helpers ──────────────────────────────────────────────────
+//
+// `SHOW`, `EXPLAIN`, etc. return rows but cannot be wrapped in DESCRIBE or a
+// subquery. The connector executes them directly via `simple_query` and
+// these helpers shape the result. Column names come from the wire response;
+// types are unknown so every cell is surfaced as `Text`.
+
+fn collect_column_names(messages: &[SimpleQueryMessage]) -> Vec<String> {
+    messages
+        .iter()
+        .find_map(|m| {
+            if let SimpleQueryMessage::Row(r) = m {
+                Some(
+                    r.columns()
+                        .iter()
+                        .map(|c| c.name().to_string())
+                        .collect::<Vec<_>>(),
+                )
+            } else {
+                None
+            }
+        })
+        .unwrap_or_default()
+}
+
+fn execution_result_from_messages(
+    messages: &[SimpleQueryMessage],
+    sample_limit: u64,
+) -> ExecutionResult {
+    let columns = collect_column_names(messages);
+
+    let all_rows: Vec<QueryRow> = messages
+        .iter()
+        .filter_map(|m| match m {
+            SimpleQueryMessage::Row(r) => {
+                let cells = columns
+                    .iter()
+                    .map(|c| text_to_cell(r.get(c.as_str())))
+                    .collect();
+                Some(QueryRow(cells))
+            }
+            _ => None,
+        })
+        .collect();
+
+    let total_row_count = all_rows.len() as u64;
+    let truncated = total_row_count > sample_limit;
+    let sample_rows = if truncated {
+        all_rows.into_iter().take(sample_limit as usize).collect()
+    } else {
+        all_rows
+    };
+
+    // Statement-form results don't have a meaningful per-column statistics
+    // story (no types, no aggregation semantics). Emit empty stats; the
+    // sample rows + column names are the useful payload.
+    let col_stats = columns
+        .iter()
+        .map(|name| ColumnStats {
+            name: name.clone(),
+            data_type: None,
+            null_count: 0,
+            distinct_count: None,
+            min: None,
+            max: None,
+            mean: None,
+            std_dev: None,
+        })
+        .collect();
+
+    ExecutionResult {
+        result: QueryResult {
+            columns,
+            rows: sample_rows,
+            total_row_count,
+            truncated,
+        },
+        summary: ResultSummary {
+            row_count: total_row_count,
+            columns: col_stats,
+        },
+    }
+}
+
+fn typed_row_stream_from_messages(messages: &[SimpleQueryMessage]) -> TypedRowStream {
+    let column_names = collect_column_names(messages);
+    let columns: Vec<ColumnSpec> = column_names
+        .iter()
+        .map(|name| ColumnSpec {
+            name: name.clone(),
+            data_type: agentic_core::result::TypedDataType::Text,
+        })
+        .collect();
+
+    let rows: Vec<Result<Vec<TypedValue>, TypedRowError>> = messages
+        .iter()
+        .filter_map(|m| match m {
+            SimpleQueryMessage::Row(r) => Some(Ok(column_names
+                .iter()
+                .map(|c| match r.get(c.as_str()) {
+                    None => TypedValue::Null,
+                    Some(text) => TypedValue::Text(text.to_string()),
+                })
+                .collect())),
+            _ => None,
+        })
+        .collect();
+
+    TypedRowStream::from_rows(columns, rows)
 }
 
 // ── Schema pre-fetch ──────────────────────────────────────────────────────────
@@ -543,4 +736,57 @@ fn detect_join_keys(tables: &[SchemaTableInfo]) -> Vec<(String, String, String)>
         }
     }
     keys
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{StatementKind, classify};
+
+    #[test]
+    fn select_family_is_subquery() {
+        for sql in [
+            "SELECT 1",
+            "  select 1",
+            "WITH t AS (SELECT 1) SELECT * FROM t",
+            "FROM t SELECT *",
+            "TABLE t",
+            "VALUES (1, 2)",
+        ] {
+            assert_eq!(classify(sql), StatementKind::Subquery, "sql: {sql}");
+        }
+    }
+
+    #[test]
+    fn duckdb_result_producing_keywords_are_statement_form() {
+        // These return rows but cannot be wrapped in `(…)` — DESCRIBE / temp
+        // table / subquery wrappings all reject them. Need to be executed
+        // directly via the `Statement` path.
+        for sql in [
+            "SHOW TABLES",
+            "show databases",
+            "SHOW SCHEMAS",
+            "SUMMARIZE my_table",
+            "DESCRIBE my_table",
+            "EXPLAIN SELECT 1",
+            "PIVOT t ON year USING sum(amount)",
+            "UNPIVOT t ON a, b",
+        ] {
+            assert_eq!(classify(sql), StatementKind::Statement, "sql: {sql}");
+        }
+    }
+
+    #[test]
+    fn ddl_dml_is_ddldml() {
+        for sql in [
+            "CREATE TABLE t (id INT)",
+            "INSERT INTO t VALUES (1)",
+            "UPDATE t SET id = 2",
+            "DELETE FROM t",
+            "DROP TABLE t",
+            "ALTER TABLE t ADD COLUMN c INT",
+            "",
+        ] {
+            assert_eq!(classify(sql), StatementKind::DdlDml, "sql: {sql}");
+        }
+    }
 }

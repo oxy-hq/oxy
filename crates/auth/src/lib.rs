@@ -10,6 +10,7 @@ pub mod api_key_domain;
 pub mod api_key_infra;
 pub mod authenticator;
 pub mod built_in;
+pub mod constants;
 pub mod extractor;
 pub mod middleware;
 pub mod types;

@@ -20,6 +20,7 @@ import { FEATURES } from "@/libs/features";
 import ROUTES from "@/libs/utils/routes";
 import { SidebarHeader } from "@/pages/ide/components/SidebarHeader";
 import useCurrentOrg from "@/stores/useCurrentOrg";
+import { AirhouseLogo } from "./components/AirhouseLogo";
 import { VersionBadge } from "./VersionBadge";
 
 const SettingsSidebar: React.FC<{
@@ -79,6 +80,20 @@ const SettingsSidebar: React.FC<{
                 <Link to={ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.SETTINGS.API_KEYS}>
                   <Key className='h-4 w-4' />
                   <span>API Keys</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                isActive={
+                  location.pathname ===
+                  ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.SETTINGS.AIRHOUSE
+                }
+              >
+                <Link to={ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.SETTINGS.AIRHOUSE}>
+                  <AirhouseLogo className='h-4 w-4' />
+                  <span>Airhouse</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>

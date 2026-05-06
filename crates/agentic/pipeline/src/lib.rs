@@ -357,9 +357,9 @@ impl PipelineBuilder {
                 }
             }
         }
-        let connector_configs =
-            platform::resolve_connectors(&effective_databases, &*self.platform).await;
-        let connectors = agentic_connector::build_named_connectors(connector_configs).await;
+        let resolved = platform::resolve_connectors(&effective_databases, &*self.platform).await;
+        let mut connectors = agentic_connector::build_named_connectors(resolved.configs).await;
+        connectors.extend(resolved.pre_built);
 
         // Procedure runner.
         let procedure_runner: Option<Arc<dyn agentic_analytics::ProcedureRunner>> = {
@@ -458,9 +458,9 @@ impl PipelineBuilder {
                 }
             }
         }
-        let connector_configs =
-            platform::resolve_connectors(&effective_databases, &*self.platform).await;
-        let connectors = agentic_connector::build_named_connectors(connector_configs).await;
+        let resolved = platform::resolve_connectors(&effective_databases, &*self.platform).await;
+        let mut connectors = agentic_connector::build_named_connectors(resolved.configs).await;
+        connectors.extend(resolved.pre_built);
 
         // Procedure runner.
         let procedure_runner: Option<Arc<dyn agentic_analytics::ProcedureRunner>> = {
@@ -1302,8 +1302,9 @@ pub async fn run_agentic_eval(
             }
         }
     }
-    let connector_configs = platform::resolve_connectors(&effective_databases, &*platform).await;
-    let connectors = agentic_connector::build_named_connectors(connector_configs).await;
+    let resolved = platform::resolve_connectors(&effective_databases, &*platform).await;
+    let mut connectors = agentic_connector::build_named_connectors(resolved.configs).await;
+    connectors.extend(resolved.pre_built);
     ctx.extra_default_connector = effective_databases
         .iter()
         .find(|name| connectors.contains_key(*name))

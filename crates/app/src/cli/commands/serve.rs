@@ -51,6 +51,30 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
         ));
     }
 
+    // Fail fast if Airhouse vars are partially set.
+    {
+        use airhouse::{AirhouseConfig, REQUIRED_VARS};
+        match AirhouseConfig::from_env() {
+            AirhouseConfig::Enabled(cfg) => {
+                tracing::info!(
+                    base_url = %cfg.base_url,
+                    wire_host = %cfg.wire_host,
+                    wire_port = cfg.wire_port,
+                    "Airhouse integration enabled"
+                );
+            }
+            AirhouseConfig::Disabled => {
+                tracing::info!("Airhouse integration not configured");
+            }
+            AirhouseConfig::Misconfigured => {
+                return Err(OxyError::RuntimeError(format!(
+                    "Airhouse integration is partially configured — set ALL of the following or NONE:\n  {}",
+                    REQUIRED_VARS.join(", ")
+                )));
+            }
+        }
+    }
+
     println!("serve: running database migrations");
     run_database_migrations(args.enterprise).await?;
     println!("serve: migrations done, initializing feature flags");
@@ -70,6 +94,19 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
     let auth_configured = std::env::var("GOOGLE_CLIENT_ID").is_ok()
         || std::env::var("OKTA_CLIENT_ID").is_ok()
         || std::env::var("MAGIC_LINK_SECRET").is_ok();
+
+    // Tell `oxy-auth`'s built-in authenticator whether at least one provider
+    // is configured in the parsed OxyConfig. Reads the YAML, not just the env
+    // vars above (the YAML check is what `BuiltInAuthenticator` historically
+    // used). Lifted here so `oxy-auth` can stay free of an `oxy` dep.
+    {
+        let yaml_provider = oxy::config::oxy::get_oxy_config()
+            .ok()
+            .and_then(|c| c.authentication)
+            .map(|a| a.google.is_some() || a.okta.is_some() || a.magic_link.is_some())
+            .unwrap_or(false);
+        oxy_auth::built_in::set_auth_configured(yaml_provider);
+    }
 
     // Ensure `$OXY_STATE_DIR/workspaces/` exists, migrating the legacy
     // "projects" directory on first boot. The canonical on-disk layout is
@@ -112,6 +149,15 @@ pub async fn start_server_and_web_app(args: ServeArgs) -> Result<(), OxyError> {
                     e
                 );
             }
+        }
+        // Seed the local-mode organization + guest membership so the per-org
+        // Airhouse provision flow works without a real org picker. Best-effort:
+        // failures are logged but don't block startup (Airhouse may not even
+        // be configured).
+        if let Err(e) =
+            airhouse::ensure_local_org_seeded(crate::server::serve_mode::LOCAL_WORKSPACE_ID).await
+        {
+            tracing::warn!("local-mode org seeding failed: {e}");
         }
         ServeMode::Local
     } else {
@@ -247,6 +293,14 @@ async fn run_database_migrations(enterprise: bool) -> Result<(), OxyError> {
         .await
         .map_err(|e| OxyError::RuntimeError(format!("workflow migrations failed: {}", e)))?;
     println!("migrations: workflow migrations complete");
+
+    // Run airhouse migrations (separate tracking table). The wrapper pre-stamps
+    // `seaql_migrations_airhouse` from the central tracking table so existing
+    // deployments don't re-run migrations whose tables already exist.
+    airhouse::migration::up(&db)
+        .await
+        .map_err(|e| OxyError::RuntimeError(format!("airhouse migrations failed: {}", e)))?;
+    println!("migrations: airhouse migrations complete");
 
     // Observability schema (DuckDB / Postgres / ClickHouse) is initialized by
     // the backend itself during `*Storage::open()` in `main.rs`, so no separate

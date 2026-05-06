@@ -30,7 +30,10 @@ export interface SemanticModels {
 
 export interface DatabaseInfo {
   name: string;
+  /** SQL dialect for query execution (`"duckdb"`, `"postgres"`, …). */
   dialect: string;
+  /** Raw config type from config.yml (`"airhouse_managed"`, `"duckdb"`, …). Use for icons/labels. */
+  db_type: string;
   datasets: Record<string, Record<string, SemanticModels>>;
   synced: boolean;
 }

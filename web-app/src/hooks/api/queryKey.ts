@@ -261,6 +261,11 @@ const coordinatorKeys = {
   queue: (projectId: string) => [...coordinatorKeys.all, "queue", projectId] as const
 };
 
+const airhouseKeys = {
+  all: ["airhouse"] as const,
+  connection: (workspaceId: string) => [...airhouseKeys.all, "connection", workspaceId] as const
+};
+
 const billingKeys = {
   all: ["billing"] as const,
   org: (orgId: string) => [...billingKeys.all, "org", orgId] as const,
@@ -284,6 +289,7 @@ const featureFlagKeys = {
 };
 
 const queryKeys = {
+  airhouse: airhouseKeys,
   billing: billingKeys,
   adminBilling: adminBillingKeys,
   featureFlags: featureFlagKeys,

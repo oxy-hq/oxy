@@ -1,17 +1,17 @@
 //! Row-oriented typed conversion helpers for the Airhouse backend.
 //!
 //! Airhouse speaks the PostgreSQL wire protocol but rejects the extended
-//! (prepared-statement) protocol that [`crate::postgres`] relies on. Every
-//! driver call therefore goes through `simple_query` — which returns every
-//! value as a text string. This module maps a DuckDB `DESCRIBE` type string
-//! to a [`TypedDataType`] and parses the text cell into a [`TypedValue`]
+//! (prepared-statement) protocol that the regular postgres connector relies on.
+//! Every driver call therefore goes through `simple_query` — which returns
+//! every value as a text string. This module maps a DuckDB `DESCRIBE` type
+//! string to a [`TypedDataType`] and parses the text cell into a [`TypedValue`]
 //! according to that type.
 //!
 //! The DuckDB type-string parser is intentionally duplicated from the
-//! `duckdb` backend (`crates/agentic/connector/src/duckdb/conversion.rs`)
-//! rather than imported. Airhouse is compiled without `duckdb`, so sharing
-//! would require a cross-feature module. The helper is ~50 lines and has no
-//! runtime dependencies; the duplication is preferable to the coupling.
+//! `duckdb` backend in `agentic-connector` rather than imported. Airhouse is
+//! compiled without `duckdb`, so sharing would require a cross-feature module.
+//! The helper is ~50 lines and has no runtime dependencies; the duplication is
+//! preferable to the coupling.
 
 use agentic_core::result::{ColumnSpec, TypedDataType, TypedRowError, TypedValue};
 

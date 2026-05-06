@@ -291,6 +291,9 @@ pub async fn create_org(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
+    // Airhouse provisioning is explicit only — the user triggers it from the
+    // Settings → Airhouse page via POST /api/airhouse/me/provision.
+
     Ok(Json(org_response(&org, &OrgRole::Owner)))
 }
 
@@ -448,6 +451,15 @@ pub async fn delete_org(OrgOwner(ctx): OrgOwner) -> Result<StatusCode, StatusCod
         tracing::error!("DB connection error: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+
+    // Deprovision before delete so we hit Airhouse with the local row still
+    // present. The FK is ON DELETE CASCADE, so even if this fails the local
+    // row is cleaned up by the org delete below.
+    if let Some(provisioner) = airhouse::provisioner_for(db.clone())
+        && let Err(e) = provisioner.deprovision(ctx.org.id).await
+    {
+        tracing::warn!(org_id = %ctx.org.id, "airhouse tenant deprovisioning failed: {e}");
+    }
 
     Organizations::delete_by_id(ctx.org.id)
         .exec(&db)

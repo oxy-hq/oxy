@@ -193,8 +193,6 @@ pub enum ConnectorConfig {
     Postgres(PostgresConfig),
     /// Redshift (Postgres-compatible wire protocol).
     Redshift(PostgresConfig),
-    /// Airhouse: Postgres wire protocol, DuckDB SQL dialect.
-    Airhouse(PostgresConfig),
     /// MySQL / MariaDB.
     Mysql(MysqlConfig),
     /// DOMO via its REST query API.

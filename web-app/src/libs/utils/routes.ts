@@ -73,7 +73,8 @@ const ROUTES = {
               ACTIVITY_LOGS: `${wsBase}/ide/settings/activity-logs`,
               API_KEYS: `${wsBase}/ide/settings/api-keys`,
               SECRETS: `${wsBase}/ide/settings/secrets`,
-              MEMBERS: `${wsBase}/ide/settings/members`
+              MEMBERS: `${wsBase}/ide/settings/members`,
+              AIRHOUSE: `${wsBase}/ide/settings/airhouse`
             },
             TESTS: {
               ROOT: `${wsBase}/ide/tests`,
