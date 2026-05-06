@@ -13,11 +13,13 @@ use crate::server::router::AppState;
 /// Endpoints:
 ///   - GET    /admin/orgs?status=...
 ///   - GET    /admin/billing/prices
+///   - GET    /admin/orgs/{org_id}/billing/subscription
 ///   - POST   /admin/orgs/{org_id}/billing/provision-subscription
 ///   - POST   /admin/orgs/{org_id}/billing/provision-checkout
 ///   - GET    /admin/orgs/{org_id}/billing/checkout
 ///   - POST   /admin/orgs/{org_id}/billing/checkout/resend
 ///   - POST   /admin/orgs/{org_id}/billing/checkout/cancel
+///   - POST   /admin/orgs/{org_id}/billing/resync
 ///   - GET    /admin/feature-flags
 ///   - PATCH  /admin/feature-flags/{key}
 pub(crate) fn router() -> Router<AppState> {

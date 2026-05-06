@@ -13,10 +13,11 @@ use uuid::Uuid;
 use crate::errors::BillingError;
 use crate::service::BillingService;
 use crate::service::dto::{
-    AdminOrgRow, AdminPriceDto, AdminSubscriptionDetail, AdminSubscriptionItem,
+    AdminOrgRow, AdminPriceDto, AdminSubscriptionDetail, AdminSubscriptionItem, BillingNotification,
 };
 use crate::service::helpers::format::{format_amount_display, format_price_label};
 use crate::service::helpers::mappers::{map_latest_invoice, map_subscription_item};
+use crate::service::stripe_shapes::StripeSubscription;
 
 impl BillingService {
     /// Admin queue: orgs filterable by status.
@@ -99,6 +100,47 @@ impl BillingService {
             items,
             latest_invoice: map_latest_invoice(&sub["latest_invoice"]),
         })
+    }
+
+    /// Admin: re-sync the subscription with Stripe. Recovers from missed
+    /// webhooks or member-change events that didn't land.
+    ///
+    /// When `sync_seats` is true:
+    /// 1. Push local member count up to Stripe so its seat quantity is
+    ///    correct (`sync_seats` — no-op if already in sync).
+    /// 2. Re-fetch the subscription and re-apply the snapshot.
+    ///
+    /// When `sync_seats` is false: only step 2 runs (Stripe → DB mirror only).
+    ///
+    /// Order matters when both run: pushing seats first means the snapshot we
+    /// mirror back reflects the post-correction Stripe state, not the stale
+    /// quantity.
+    ///
+    /// Returns any `BillingNotification`s produced by the snapshot apply
+    /// (e.g. past-due email) so the caller can dispatch them — same contract
+    /// as `apply_event` for webhooks.
+    pub async fn admin_resync_subscription(
+        &self,
+        org_id: Uuid,
+        sync_seats: bool,
+    ) -> Result<Vec<BillingNotification>, BillingError> {
+        let row = self.load_billing(org_id).await?;
+        let sub_id = row
+            .stripe_subscription_id
+            .ok_or(BillingError::NoSubscription)?;
+        if sync_seats {
+            self.sync_seats(org_id).await?;
+        }
+        let raw = self.fetch_subscription_with_items(&sub_id, false).await?;
+        let sub: StripeSubscription = serde_json::from_value(raw).map_err(|err| {
+            tracing::error!(
+                ?err,
+                %sub_id,
+                "failed to deserialize Stripe subscription in admin resync"
+            );
+            BillingError::MalformedStripeResponse
+        })?;
+        self.apply_subscription_snapshot(org_id, &sub).await
     }
 
     /// List active recurring Prices on the Stripe account for the admin

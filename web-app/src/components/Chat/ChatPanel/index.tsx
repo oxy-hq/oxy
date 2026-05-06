@@ -1,10 +1,10 @@
 import { ArrowUp, Hammer, MessageCircleQuestion, Play, Zap } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { HighlightTextarea } from "@/components/ui/HighlightTextarea";
 import { Button } from "@/components/ui/shadcn/button";
 import { Select, SelectContent, SelectTrigger, SelectValue } from "@/components/ui/shadcn/select";
 import { Spinner } from "@/components/ui/shadcn/spinner";
-import { HighlightTextarea } from "@/components/ui/HighlightTextarea";
 import useFileTree from "@/hooks/api/files/useFileTree";
 import useThreadMutation from "@/hooks/api/threads/useThreadMutation";
 import useBuilderAvailable from "@/hooks/api/useBuilderAvailable";

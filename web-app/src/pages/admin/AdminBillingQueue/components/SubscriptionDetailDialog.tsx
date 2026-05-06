@@ -1,4 +1,5 @@
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, RefreshCw } from "lucide-react";
+import { useState } from "react";
 import SubscriptionItemsList from "@/components/billing/SubscriptionItemsList";
 import { Badge } from "@/components/ui/shadcn/badge";
 import { Button } from "@/components/ui/shadcn/button";
@@ -17,6 +18,7 @@ import type {
   AdminSubscriptionDetail,
   LatestInvoiceSummary
 } from "@/services/api/billing";
+import ResyncConfirmDialog from "./ResyncConfirmDialog";
 
 interface Props {
   org: AdminOrgRow;
@@ -24,44 +26,63 @@ interface Props {
 }
 
 export default function SubscriptionDetailDialog({ org, onClose }: Props) {
-  const { data, isLoading, error } = useAdminSubscription(org.id);
+  const { data, isLoading, error, refetch } = useAdminSubscription(org.id);
+  const [resyncOpen, setResyncOpen] = useState(false);
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className='max-w-xl'>
-        <DialogHeader>
-          <DialogTitle>Subscription — {org.name}</DialogTitle>
-        </DialogHeader>
+    <>
+      <Dialog open onOpenChange={(open) => !open && onClose()}>
+        <DialogContent className='max-w-xl'>
+          <DialogHeader>
+            <DialogTitle>Subscription — {org.name}</DialogTitle>
+          </DialogHeader>
 
-        {isLoading ? (
-          <div className='flex items-center gap-2 text-muted-foreground text-sm'>
-            <Spinner /> Loading subscription…
-          </div>
-        ) : error ? (
-          <div className='text-destructive text-sm'>
-            {error instanceof Error ? error.message : "Failed to load subscription."}
-          </div>
-        ) : data ? (
-          <SubscriptionDetailBody detail={data} />
-        ) : null}
-
-        <DialogFooter>
-          {data ? (
-            <Button asChild variant='outline'>
-              <a
-                href={stripeDashboardUrl(data)}
-                target='_blank'
-                rel='noopener noreferrer'
-                className='gap-1'
-              >
-                Open in Stripe <ExternalLink className='h-3.5 w-3.5' />
-              </a>
-            </Button>
+          {isLoading ? (
+            <div className='flex items-center gap-2 text-muted-foreground text-sm'>
+              <Spinner /> Loading subscription…
+            </div>
+          ) : error ? (
+            <div className='text-destructive text-sm'>
+              {error instanceof Error ? error.message : "Failed to load subscription."}
+            </div>
+          ) : data ? (
+            <SubscriptionDetailBody detail={data} />
           ) : null}
-          <Button onClick={onClose}>Close</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+
+          <DialogFooter>
+            {data ? (
+              <>
+                <Button variant='outline' onClick={() => setResyncOpen(true)} className='gap-1'>
+                  <RefreshCw className='h-3.5 w-3.5' />
+                  Resync from Stripe
+                </Button>
+                <Button asChild variant='outline'>
+                  <a
+                    href={stripeDashboardUrl(data)}
+                    target='_blank'
+                    rel='noopener noreferrer'
+                    className='gap-1'
+                  >
+                    Open in Stripe <ExternalLink className='h-3.5 w-3.5' />
+                  </a>
+                </Button>
+              </>
+            ) : null}
+            <Button onClick={onClose}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <ResyncConfirmDialog
+        orgId={org.id}
+        orgName={org.name}
+        open={resyncOpen}
+        onOpenChange={setResyncOpen}
+        onSuccess={() => {
+          refetch();
+        }}
+      />
+    </>
   );
 }
 

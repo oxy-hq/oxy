@@ -26,6 +26,7 @@ use uuid::Uuid;
 
 use crate::emails::billing_checkout::{CheckoutEmail, EmailSendOutcome, send_checkout_email};
 use crate::server::api::billing::handlers::billing_service;
+use crate::server::api::billing::notify;
 use crate::server::router::AppState;
 
 #[derive(Deserialize)]
@@ -57,6 +58,7 @@ pub(crate) fn router() -> Router<AppState> {
             "/orgs/{org_id}/billing/checkout/cancel",
             post(cancel_checkout),
         )
+        .route("/orgs/{org_id}/billing/resync", post(resync_subscription))
 }
 
 pub async fn list_orgs(
@@ -112,6 +114,64 @@ pub async fn get_subscription(
         }
         Err(err) => {
             tracing::error!(?err, ?org_id, "admin_subscription_detail failed");
+            Err(error_body(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "internal_error",
+                None,
+            ))
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub(crate) struct ResyncRequest {
+    /// If true (default), push local member count up to Stripe before
+    /// mirroring its state back into `org_billing`. Set to false for a
+    /// pull-only resync that won't change Stripe's seat quantity.
+    #[serde(default = "default_true")]
+    pub sync_seats: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+pub(crate) async fn resync_subscription(
+    Path(org_id): Path<Uuid>,
+    body: Option<Json<ResyncRequest>>,
+) -> Result<StatusCode, Response> {
+    let svc = billing_service()
+        .await
+        .map_err(IntoResponse::into_response)?;
+    let sync_seats = body.map(|Json(r)| r.sync_seats).unwrap_or(true);
+    match svc.admin_resync_subscription(org_id, sync_seats).await {
+        Ok(notifications) => {
+            notify::dispatch(notifications, svc.public_url().to_string());
+            Ok(StatusCode::NO_CONTENT)
+        }
+        Err(BillingError::NoSubscription) => {
+            Err(error_body(StatusCode::NOT_FOUND, "no_subscription", None))
+        }
+        Err(BillingError::OrgBillingMissing(_)) => Err(error_body(
+            StatusCode::NOT_FOUND,
+            "org_billing_missing",
+            None,
+        )),
+        Err(BillingError::Stripe { status, body }) => {
+            tracing::error!(
+                stripe_status = status,
+                stripe_body = %body,
+                ?org_id,
+                "stripe rejected admin resync"
+            );
+            Err(error_body(
+                StatusCode::BAD_GATEWAY,
+                "stripe_error",
+                Some(extract_stripe_message(&body).unwrap_or(body)),
+            ))
+        }
+        Err(err) => {
+            tracing::error!(?err, ?org_id, "admin_resync_subscription failed");
             Err(error_body(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "internal_error",

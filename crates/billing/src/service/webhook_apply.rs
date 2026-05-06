@@ -314,7 +314,10 @@ impl BillingService {
     /// Persist subscription state. Identifies the seat item by cached id when
     /// available, falls back to shortest-recurring-interval heuristic on the
     /// first webhook (before `provision_subscription` UPDATE has landed).
-    async fn apply_subscription_snapshot(
+    ///
+    /// `pub(super)` so the admin resync endpoint can re-apply a freshly
+    /// fetched subscription when a webhook was missed.
+    pub(super) async fn apply_subscription_snapshot(
         &self,
         org_id: Uuid,
         sub: &StripeSubscription,

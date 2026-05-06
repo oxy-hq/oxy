@@ -242,6 +242,14 @@ export class AdminBillingService {
   static async cancelCheckout(orgId: string): Promise<void> {
     await apiClient.post(`/admin/orgs/${orgId}/billing/checkout/cancel`);
   }
+
+  static async resyncSubscription(orgId: string, body: ResyncSubscriptionRequest): Promise<void> {
+    await apiClient.post(`/admin/orgs/${orgId}/billing/resync`, body);
+  }
+}
+
+export interface ResyncSubscriptionRequest {
+  sync_seats: boolean;
 }
 
 function isAxios404(err: unknown): boolean {

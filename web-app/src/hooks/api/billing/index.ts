@@ -12,3 +12,4 @@ export {
   useResendCheckoutEmail
 } from "./useProvisionCheckout";
 export { useProvisionSubscription } from "./useProvisionSubscription";
+export { useResyncAdminSubscription } from "./useResyncAdminSubscription";
