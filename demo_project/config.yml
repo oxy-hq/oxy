@@ -16,26 +16,8 @@ databases:
   - name: local
     dataset: .db/
     type: duckdb
-  - name: training
-    dataset: .training_data/
-    type: duckdb
-  # Airhouse: Postgres wire protocol, DuckDB SQL dialect.
-  - name: airhouse
-    type: airhouse
-    host: "localhost"
-    port: "5445"
-    user: "airhouse"
-    password_var: AIRHOUSE_PASSWORD
-    database: "airhouse"
-  # - name: ducklake
-  #   type: duckdb
-  #   s3_secret_type: config
-  #   key_id: minioadmin
-  #   secret: DUCKLAKE_S3_SECRET
-  #   endpoint_url: localhost:9002
-  #   data_path: s3://ducklake/
-  #   catalog_path: DUCKLAKE_CATALOG_PATH
-  #   schema_name: ducklake
 
+# Built-in copilot for chat Build mode (Cmd+I). Just a model reference;
+# the platform supplies the system prompt and tools.
 builder_agent:
   model: claude-sonnet-4-6

@@ -7,7 +7,9 @@ llm:
     model: claude-opus-4-6
     thinking: adaptive
 context:
+  - ./semantics/**/*
   - ./sales_semantics/**/*
+  - ./airhouse_semantics/**/*
   - ./workflows/**/*.procedure.yml
   - ./example_sql/*.sql
 states:

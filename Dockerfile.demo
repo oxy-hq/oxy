@@ -1,6 +1,8 @@
 # ---------------------------------------------------------------------------------
 # Dockerfile.demo - Lightweight demo deployment using pre-built image
-# This pulls the latest Oxy image and adds the demo_project for quick deployments
+# This pulls the latest Oxy image and adds the internal_demo project (full
+# kitchen sink: oxymart sales, training, airhouse, builder, v0) for the
+# internal capability showcase deployed at fly.io.
 # Build time: ~30 seconds (vs 20+ minutes building from source)
 # ---------------------------------------------------------------------------------
 
@@ -10,20 +12,21 @@ FROM ghcr.io/oxy-hq/oxygen:latest
 # Set working directory
 WORKDIR /app
 
-# Copy demo_project with all data and configurations
-COPY demo_project/ /app/demo_project/
+# Copy internal_demo with all data and configurations
+COPY internal_demo/ /app/internal_demo/
 
-# Set environment variables for demo project
-ENV OXY_WORK_DIR=/app/demo_project
+# Set environment variables for internal demo project
+ENV OXY_WORK_DIR=/app/internal_demo
 ENV OXY_STATE_DIR=/var/lib/oxy/data
 
 # Ensure proper permissions
 RUN mkdir -p ${OXY_STATE_DIR} && \
-    chown -R root:root /app/demo_project ${OXY_STATE_DIR}
+    chown -R root:root /app/internal_demo ${OXY_STATE_DIR}
 
 # Volume is already defined in base image
 # Entrypoint (tini) is already defined in base image
 # Port 3000 is already exposed in base image
 
-# Start Oxy server from demo_project directory
+# Start Oxy server from internal_demo directory
 CMD ["sh", "-c", "cd ${OXY_WORK_DIR} && oxy serve --host 0.0.0.0 --port ${PORT:-3000} --internal-host 0.0.0.0"]
+

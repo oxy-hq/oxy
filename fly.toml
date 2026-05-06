@@ -6,7 +6,7 @@ app = 'oxy-demo'
 primary_region = 'iad'
 
 [build]
-  # Use the demo Dockerfile that includes demo_project
+  # Use the demo Dockerfile that includes the internal_demo project
   dockerfile = 'Dockerfile.demo'
 
 [env]
@@ -14,8 +14,8 @@ primary_region = 'iad'
   OXY_LOG_LEVEL = 'info'
   PORT = '3000'
 
-  # Working directory with demo project
-  OXY_WORK_DIR = '/app/demo_project'
+  # Working directory with the internal showcase project (full kitchen sink)
+  OXY_WORK_DIR = '/app/internal_demo'
 
   # State directory for databases and cached data
   OXY_STATE_DIR = '/var/lib/oxy/data'

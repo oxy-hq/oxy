@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/oxy-hq/oxygen/refs/heads/main/json-schemas/config.json
+defaults:
+  database: local
+  agent: default.agent.yml
+models:
+  - vendor: anthropic
+    name: claude-sonnet-4-6
+    model_ref: claude-sonnet-4-6
+    key_var: ANTHROPIC_API_KEY
+  - vendor: anthropic
+    name: claude
+    model_ref: claude-sonnet-4-6
+    key_var: ANTHROPIC_API_KEY
+
+databases:
+  - name: local
+    dataset: .db/
+    type: duckdb
+  - name: training
+    dataset: .training_data/
+    type: duckdb
+  # Airhouse: Postgres wire protocol, DuckDB SQL dialect.
+  - name: airhouse
+    type: airhouse
+    host: "localhost"
+    port: "5445"
+    user: "airhouse"
+    password_var: AIRHOUSE_PASSWORD
+    database: "airhouse"
+  # - name: ducklake
+  #   type: duckdb
+  #   s3_secret_type: config
+  #   key_id: minioadmin
+  #   secret: DUCKLAKE_S3_SECRET
+  #   endpoint_url: localhost:9002
+  #   data_path: s3://ducklake/
+  #   catalog_path: DUCKLAKE_CATALOG_PATH
+  #   schema_name: ducklake
+
+builder_agent:
+  model: claude-sonnet-4-6
