@@ -688,7 +688,7 @@ jobs:
       - name: Send Slack notification
         if: failure() && steps.run-playwright.outcome == 'failure' && github.event_name
           == 'push' && github.repository == 'oxy-hq/oxygen'
-        uses: slackapi/slack-github-action@v3.0.2
+        uses: slackapi/slack-github-action@v3.0.3
         with:
           method: chat.postMessage
           token: ${{ secrets.SLACK_BOT_TOKEN }}
