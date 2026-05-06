@@ -114,13 +114,15 @@ impl<D: DomainEvents> UiTransformState<D> {
                 llm_duration_ms,
                 sub_spec_index,
             } => {
+                let parsed_input = serde_json::from_str::<serde_json::Value>(&input)
+                    .unwrap_or(serde_json::Value::Null);
                 let mut blocks = vec![UiBlock::ToolCall {
                     name: name.clone(),
                     input,
                     llm_duration_ms,
                     sub_spec_index,
                 }];
-                if let Some(summary) = (self.tool_summary_fn)(&name) {
+                if let Some(summary) = (self.tool_summary_fn)(&name, &parsed_input) {
                     blocks.push(UiBlock::StepSummaryUpdate { summary });
                 }
                 blocks
@@ -130,11 +132,13 @@ impl<D: DomainEvents> UiTransformState<D> {
                 name,
                 output,
                 duration_ms,
+                is_error,
                 sub_spec_index,
             } => vec![UiBlock::ToolResult {
                 name,
                 output,
                 duration_ms,
+                is_error,
                 sub_spec_index,
             }],
 

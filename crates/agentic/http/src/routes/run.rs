@@ -80,8 +80,11 @@ pub async fn create_run(
     if let Some(runner) = state.builder_test_runner.clone() {
         builder = builder.test_runner(runner);
     }
+    if let Some(runner) = state.builder_app_runner.clone() {
+        builder = builder.app_runner(runner);
+    }
 
-    // Onboarding auto-accepts all propose_change tool calls — no HITL.
+    // Onboarding auto-accepts all file_change tool calls — no HITL.
     if body.auto_accept {
         builder = builder.human_input(Arc::new(AutoAcceptInputProvider));
     }
@@ -136,6 +139,7 @@ pub async fn create_run(
     let runtime_state = state.runtime.clone();
     let schema_cache = Some(state.schema_cache.clone());
     let builder_test_runner = state.builder_test_runner.clone();
+    let builder_app_runner = state.builder_app_runner.clone();
     tokio::spawn(async move {
         agentic_pipeline::drive_with_coordinator(
             started,
@@ -147,6 +151,7 @@ pub async fn create_run(
             Some(bridges),
             schema_cache,
             builder_test_runner,
+            builder_app_runner,
         )
         .await;
     });
@@ -385,6 +390,9 @@ pub async fn answer_run(
     if let Some(runner) = state.builder_test_runner.clone() {
         builder = builder.test_runner(runner);
     }
+    if let Some(runner) = state.builder_app_runner.clone() {
+        builder = builder.app_runner(runner);
+    }
 
     // Persist an input_resolved event so the SSE stream (and page reloads)
     // can see that the suspension was resolved. The trace_id matches the
@@ -438,6 +446,7 @@ pub async fn answer_run(
     let runtime_state = state.runtime.clone();
     let schema_cache = Some(state.schema_cache.clone());
     let builder_test_runner = state.builder_test_runner.clone();
+    let builder_app_runner = state.builder_app_runner.clone();
     tokio::spawn(async move {
         agentic_pipeline::drive_with_coordinator(
             started,
@@ -449,6 +458,7 @@ pub async fn answer_run(
             Some(bridges),
             schema_cache,
             builder_test_runner,
+            builder_app_runner,
         )
         .await;
     });

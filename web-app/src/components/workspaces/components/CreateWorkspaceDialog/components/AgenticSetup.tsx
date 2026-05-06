@@ -288,13 +288,13 @@ function BlankOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHandl
   const appReconnect = appRun.reconnect;
   const app2Reconnect = app2Run.reconnect;
   const shouldBuildApp2 = useMemo(() => wantsSecondApp(selectedTables), [selectedTables]);
-  // Config file is "written" when the config run's propose_change tool returns,
+  // Config file is "written" when the config run's file_change tool returns,
   // even if the LLM continues generating summary text. The phase completion
   // tracking effect below will mark config as "done" so phase 2 can start.
   const configFileWritten = useMemo(() => {
     if (configRun.state.tag !== "running" && configRun.state.tag !== "suspended") return false;
     return configRun.state.events.some(
-      (ev) => ev.type === "tool_result" && (ev.data as { name?: string }).name === "propose_change"
+      (ev) => ev.type === "tool_result" && (ev.data as { name?: string }).name === "file_change"
     );
   }, [configRun.state]);
   const configDone = phaseStatuses?.config === "done" || phaseStatuses?.config === "failed";
@@ -368,7 +368,7 @@ function BlankOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHandl
     }
   }, []);
 
-  // ── Auto-accept propose_change suspensions for config, agent, app ──────────
+  // ── Auto-accept file_change suspensions for config, agent, app ──────────
   const configAnswer = configRun.answer;
   useEffect(() => {
     if (step === "building" && configRun.state.tag === "suspended" && !configRun.isAnswering) {
@@ -457,7 +457,7 @@ function BlankOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHandl
       setPhaseStatus("config", "failed");
       setBuildError(configRun.state.message);
     }
-    // Config file written (propose_change accepted) but run still streaming —
+    // Config file written (file_change accepted) but run still streaming —
     // mark as done so phase 2 can start and the rail/messages update.
     if (configFileWritten && phaseStatuses?.config === "running") {
       setPhaseStatus("config", "done");
@@ -1284,7 +1284,7 @@ function isAutoAcceptSuspension(questions: HumanInputQuestion[]): boolean {
   return questions.some((q) => {
     try {
       const parsed = JSON.parse(q.prompt);
-      return parsed.type === "propose_change";
+      return parsed.type === "file_change";
     } catch {
       return q.suggestions?.some(
         (s) => s.toLowerCase() === "accept" || s.toLowerCase() === "reject"

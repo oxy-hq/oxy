@@ -7,8 +7,8 @@ type ToolRunEvent = {
   data: unknown;
 };
 
-type ProposeChangePayload = {
-  type: "propose_change";
+type FileChangePayload = {
+  type: "file_change" | "write_file" | "edit_file" | "delete_file";
   file_path: string;
   old_content: string;
   new_content: string;
@@ -16,14 +16,18 @@ type ProposeChangePayload = {
   delete?: boolean;
 };
 
-function parseProposeChangePrompt(prompt: string): ProposeChangePayload | null {
+const FILE_CHANGE_TYPES = new Set(["file_change", "write_file", "edit_file", "delete_file"]);
+
+function parseFileChangePrompt(prompt: string): FileChangePayload | null {
   try {
     const parsed = JSON.parse(prompt);
-    if (parsed?.type === "propose_change") {
-      return parsed as ProposeChangePayload;
+    if (parsed !== null && typeof parsed === "object" && FILE_CHANGE_TYPES.has(parsed.type)) {
+      const payload = parsed as FileChangePayload;
+      if (payload.type === "delete_file") payload.delete = true;
+      return payload;
     }
   } catch {
-    // not a propose_change prompt
+    // not a file-change prompt
   }
   return null;
 }
@@ -50,14 +54,14 @@ function languageFromPath(filePath: string): string {
   return map[ext] ?? "plaintext";
 }
 
-function findProposeChangePayload(
+function findFileChangePayload(
   input: {
     file_path?: string;
     description?: string;
     delete?: boolean;
   } | null,
   runEvents: ToolRunEvent[]
-): ProposeChangePayload | null {
+): FileChangePayload | null {
   if (!input?.file_path || !input.description) return null;
 
   return (
@@ -69,7 +73,7 @@ function findProposeChangePayload(
           ?.questions;
         return questions ?? [];
       })
-      .map((question) => parseProposeChangePrompt(question.prompt))
+      .map((question) => parseFileChangePrompt(question.prompt))
       .find(
         (payload) =>
           payload &&
@@ -79,7 +83,7 @@ function findProposeChangePayload(
   );
 }
 
-function getProposeChangeState(
+function getFileChangeState(
   input: {
     file_path?: string;
     description?: string;
@@ -97,7 +101,7 @@ function getProposeChangeState(
     const questions = (event.data as { questions?: Array<{ prompt: string }> } | undefined)
       ?.questions;
     return (questions ?? [])
-      .map((question) => parseProposeChangePrompt(question.prompt))
+      .map((question) => parseFileChangePrompt(question.prompt))
       .some(
         (payload) =>
           payload &&
@@ -117,7 +121,64 @@ function getProposeChangeState(
   return resolved ? "accepted" : "pending";
 }
 
-export const ProposeChangeToolView = ({
+const DIFF_CONTEXT_LINES = 5;
+
+function computeDiffSnippet(
+  oldContent: string,
+  newContent: string
+): {
+  oldSnippet: string;
+  newSnippet: string;
+  startLine: number;
+  endLine: number;
+  totalLines: number;
+} {
+  const oldLines = oldContent.split("\n");
+  const newLines = newContent.split("\n");
+  const maxLen = Math.max(oldLines.length, newLines.length);
+
+  let firstChange = -1;
+  let lastChange = -1;
+  for (let i = 0; i < maxLen; i++) {
+    if (oldLines[i] !== newLines[i]) {
+      if (firstChange === -1) firstChange = i;
+      lastChange = i;
+    }
+  }
+
+  if (firstChange === -1) {
+    return {
+      oldSnippet: oldContent,
+      newSnippet: newContent,
+      startLine: 1,
+      endLine: oldLines.length,
+      totalLines: oldLines.length
+    };
+  }
+
+  const start = Math.max(0, firstChange - DIFF_CONTEXT_LINES);
+  const end = Math.min(oldLines.length, lastChange + DIFF_CONTEXT_LINES + 1);
+  return {
+    oldSnippet: oldLines.slice(start, end).join("\n"),
+    newSnippet: newLines.slice(start, end).join("\n"),
+    startLine: start + 1,
+    endLine: end,
+    totalLines: oldLines.length
+  };
+}
+
+function extractToolErrorMessage(toolOutput: string | undefined): string | null {
+  if (!toolOutput) return null;
+  try {
+    const parsed = JSON.parse(toolOutput);
+    if (typeof parsed === "string") return parsed;
+  } catch {
+    // not JSON
+  }
+  return null;
+}
+
+export const FileChangeToolView = ({
   item,
   runEvents = []
 }: {
@@ -128,17 +189,34 @@ export const ProposeChangeToolView = ({
     file_path?: string;
     description?: string;
     delete?: boolean;
+    old_string?: string;
+    new_string?: string;
   }>(item.toolInput);
 
-  const payload = findProposeChangePayload(input, runEvents);
+  const payload = findFileChangePayload(input, runEvents);
   const filePath = payload?.file_path ?? input?.file_path ?? "?";
   const description = payload?.description ?? input?.description ?? "";
   const isDelete = payload?.delete ?? input?.delete ?? false;
-  const oldContent = payload?.old_content ?? "";
-  const newContent = payload?.new_content ?? "";
+  const oldContent = payload?.old_content ?? input?.old_string ?? "";
+  const newContent = payload?.new_content ?? input?.new_string ?? "";
   const action = isDelete ? "Delete" : oldContent ? "Update" : "Create";
-  const changeState = getProposeChangeState(input, runEvents);
-  const stateLabel = changeState === "accepted" ? "Accepted" : "Awaiting confirmation";
+  const isUpdate = !isDelete && !!oldContent && !!newContent;
+  const { oldSnippet, newSnippet, startLine, endLine, totalLines } = isUpdate
+    ? computeDiffSnippet(oldContent, newContent)
+    : {
+        oldSnippet: oldContent,
+        newSnippet: newContent,
+        startLine: 1,
+        endLine: oldContent.split("\n").length,
+        totalLines: oldContent.split("\n").length
+      };
+  const changeState = getFileChangeState(input, runEvents);
+  const toolError = item.isError ? extractToolErrorMessage(item.toolOutput) : null;
+  const stateLabel = toolError
+    ? "Error"
+    : changeState === "accepted"
+      ? "Accepted"
+      : "Awaiting confirmation";
 
   return (
     <div className='flex h-full min-h-0 flex-col p-4'>
@@ -165,21 +243,37 @@ export const ProposeChangeToolView = ({
           </div>
         )}
 
-        <div className='flex min-h-0 flex-1 flex-col'>
-          <p className='mb-1.5 font-medium text-muted-foreground text-xs'>Diff</p>
+        <div className='flex min-h-0 flex-1 flex-col gap-2'>
+          <div className='flex items-baseline gap-2'>
+            <p className='font-medium text-muted-foreground text-xs'>Diff</p>
+            {isUpdate && totalLines > 0 && (
+              <p className='text-muted-foreground text-xs'>
+                lines {startLine}–{endLine} of {totalLines}
+              </p>
+            )}
+          </div>
+          {toolError && (
+            <div className='rounded-md border border-destructive/50 bg-destructive/5 p-3'>
+              <p className='text-destructive text-xs'>Edit failed</p>
+            </div>
+          )}
           {filePath !== "?" ? (
             <div className='min-h-0 flex-1 overflow-hidden rounded-md border border-border'>
               <BaseMonacoEditor
-                value={isDelete ? "" : newContent}
-                original={oldContent}
+                value={isDelete ? "" : newSnippet}
+                original={oldSnippet}
                 language={languageFromPath(filePath)}
                 diffMode
                 options={{ renderSideBySide: false, readOnly: true }}
+                originalEditorOptions={{ lineNumbers: "off" }}
+                modifiedEditorOptions={{
+                  lineNumbers: isUpdate && startLine > 1 ? (n) => String(n + startLine - 1) : "on"
+                }}
               />
             </div>
-          ) : (
+          ) : !toolError ? (
             <p className='text-muted-foreground text-xs'>No diff available.</p>
-          )}
+          ) : null}
         </div>
       </div>
     </div>

@@ -31,6 +31,7 @@ pub use agentic_analytics::AnalyticsRunMeta;
 pub use agentic_analytics::SchemaCatalog as AnalyticsSchemaCatalog;
 pub use agentic_analytics::extension::AnalyticsMigrator;
 pub use agentic_analytics::{AnalyticsMetricSink, SharedMetricSink};
+pub use agentic_builder::BuilderAppRunner as BuilderAppRunnerTrait;
 pub use agentic_builder::BuilderTestRunner as BuilderTestRunnerTrait;
 pub use agentic_builder::onboarding;
 pub use agentic_core::human_input::{
@@ -84,6 +85,7 @@ pub struct PipelineBuilder {
     thinking_mode: ThinkingMode,
     schema_cache: Option<Arc<Mutex<HashMap<String, SchemaCatalog>>>>,
     builder_test_runner: Option<Arc<dyn BuilderTestRunner>>,
+    builder_app_runner: Option<Arc<dyn agentic_builder::BuilderAppRunner>>,
     /// When set, use this run_id and skip the DB `insert_run` call.
     /// Used for delegation children where the coordinator already created
     /// the run via `insert_run_with_parent`.
@@ -136,6 +138,7 @@ impl PipelineBuilder {
             thinking_mode: ThinkingMode::Auto,
             schema_cache: None,
             builder_test_runner: None,
+            builder_app_runner: None,
             existing_run_id: None,
             human_input: None,
             builder_llm_override: None,
@@ -217,6 +220,12 @@ impl PipelineBuilder {
     /// Set builder test runner.
     pub fn test_runner(mut self, runner: Arc<dyn BuilderTestRunner>) -> Self {
         self.builder_test_runner = Some(runner);
+        self
+    }
+
+    /// Set builder app runner.
+    pub fn app_runner(mut self, runner: Arc<dyn agentic_builder::BuilderAppRunner>) -> Self {
+        self.builder_app_runner = Some(runner);
         self
     }
 
@@ -561,6 +570,7 @@ impl PipelineBuilder {
                 schema_provider: Some(bridges.schema_provider),
                 semantic_compiler: Some(bridges.semantic_compiler),
                 test_runner: self.builder_test_runner,
+                app_runner: self.builder_app_runner,
                 human_input: None,
                 secrets_provider: bridges.secrets_provider,
             },
@@ -647,6 +657,7 @@ impl PipelineBuilder {
             schema_provider: Some(bridges.schema_provider),
             semantic_compiler: Some(bridges.semantic_compiler),
             test_runner: self.builder_test_runner,
+            app_runner: self.builder_app_runner,
             human_input: self.human_input,
             secrets_provider: bridges.secrets_provider,
         });
@@ -848,6 +859,7 @@ pub async fn drive_with_coordinator(
     builder_bridges: Option<BuilderBridges>,
     schema_cache: Option<Arc<Mutex<HashMap<String, agentic_analytics::SchemaCatalog>>>>,
     builder_test_runner: Option<Arc<dyn agentic_builder::BuilderTestRunner>>,
+    builder_app_runner: Option<Arc<dyn agentic_builder::BuilderAppRunner>>,
 ) {
     use agentic_core::transport::{CoordinatorTransport, WorkerTransport};
     use agentic_runtime::coordinator::Coordinator;
@@ -869,6 +881,7 @@ pub async fn drive_with_coordinator(
         builder_bridges,
         schema_cache,
         builder_test_runner,
+        builder_app_runner,
         db: db.clone(),
         state: Some(state.clone()),
     });

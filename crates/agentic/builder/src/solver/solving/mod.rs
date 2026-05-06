@@ -10,7 +10,7 @@ use agentic_llm::{LlmError, LlmOutput};
 use agentic_core::orchestrator::RunContext;
 
 use crate::{
-    tools::{ChangeBlock, all_tools, apply_blocks_to_content, safe_path},
+    tools::{all_tools, apply_edit, safe_path},
     types::{BuilderDomain, BuilderError, BuilderSolution, BuilderSpec, ToolExchange},
 };
 
@@ -18,100 +18,186 @@ use super::solver::{BuilderSolver, dispatch_tool, make_resume_stage_data, record
 use agentic_core::solver::DomainSolver;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub(super) struct ProposeChangePayload {
-    file_path: String,
+pub(super) struct WriteFileArgs {
+    pub file_path: String,
+    pub content: String,
     #[serde(default)]
-    changes: Option<Vec<ChangeBlock>>,
-    #[serde(default)]
-    delete: bool,
-    /// Pre-computed file content stored in the suspended prompt JSON.
-    /// When present, written directly to avoid a TOCTOU re-read.
-    #[serde(default)]
-    new_content: Option<String>,
-    #[serde(default)]
-    description: String,
+    pub description: String,
 }
 
-/// For each `propose_change` call in `prior_messages` whose `file_path` is NOT
-/// already covered by the suspended `prompt` (i.e. already has a pre-computed
-/// `new_content`), read the file and apply the change blocks **now** (at
-/// suspension time) so that [`resume_initial_messages`] can write the exact
-/// pre-computed content without a TOCTOU re-read.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub(super) struct EditFileArgs {
+    pub file_path: String,
+    pub old_string: String,
+    pub new_string: String,
+    #[serde(default)]
+    pub replace_all: bool,
+    #[serde(default)]
+    pub description: String,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub(super) struct DeleteFileArgs {
+    pub file_path: String,
+    #[serde(default)]
+    pub description: String,
+}
+
+pub(super) enum WriteOp {
+    Write(WriteFileArgs),
+    Edit(EditFileArgs),
+    Delete(DeleteFileArgs),
+}
+
+/// Content computed for a single batched write op (all non-first ops in a turn).
+struct PrecomputedOpContent {
+    op_type: &'static str,
+    description: String,
+    old_content: String,
+    new_content: String,
+}
+
+/// Pre-compute old/new content for every write op in `prior_messages` that is NOT
+/// the suspended (first) op.  Returns an ordered list of `(file_path, content)`.
 ///
-/// Returns a map from `file_path` → `new_content`.  Delete proposals are
-/// skipped (no content to pre-compute).
-async fn precompute_batch_changes(
+/// Multiple ops on the same file are preserved in order.  Each op's `old_content`
+/// is the projected output of the previous op on that file (chained), so that when
+/// the user accepts them sequentially the content is consistent.
+///
+/// - `write_file`: new_content = args.content
+/// - `edit_file`:  new_content = apply_edit(current_content, old_string, new_string)
+/// - `delete_file`: new_content = ""
+async fn precompute_batch_ops(
     workspace_root: &Path,
     prior_messages: &[serde_json::Value],
     suspended_prompt: &str,
-) -> HashMap<String, String> {
-    let suspended_file: Option<String> =
-        serde_json::from_str::<serde_json::Value>(suspended_prompt)
-            .ok()
-            .and_then(|v| v["file_path"].as_str().map(String::from));
+) -> Vec<(String, PrecomputedOpContent)> {
+    let suspended_parsed = serde_json::from_str::<serde_json::Value>(suspended_prompt).ok();
+    let suspended_file: Option<String> = suspended_parsed
+        .as_ref()
+        .and_then(|v| v["file_path"].as_str().map(String::from));
 
-    let mut result = HashMap::new();
-    for payload in extract_all_propose_changes(prior_messages) {
-        if payload.delete {
-            continue;
+    // Seed the chain with the suspended op's projected new_content so that
+    // subsequent ops on the same file compute against the right base.
+    let mut file_states: HashMap<String, String> = HashMap::new();
+    if let (Some(fp), Some(nc)) = (
+        suspended_file.clone(),
+        suspended_parsed
+            .as_ref()
+            .and_then(|v| v["new_content"].as_str().map(String::from)),
+    ) {
+        file_states.insert(fp, nc);
+    }
+
+    let mut result = Vec::new();
+    let mut seen_suspended = false;
+    for op in extract_all_write_ops(prior_messages) {
+        let file_path = match &op {
+            WriteOp::Write(a) => a.file_path.clone(),
+            WriteOp::Edit(a) => a.file_path.clone(),
+            WriteOp::Delete(a) => a.file_path.clone(),
+        };
+        if !seen_suspended && suspended_file.as_deref() == Some(file_path.as_str()) {
+            seen_suspended = true;
+            continue; // first op — info comes from suspended_prompt
         }
-        if suspended_file.as_deref() == Some(payload.file_path.as_str()) {
-            continue; // already stored in the suspended prompt JSON
-        }
-        if result.contains_key(&payload.file_path) {
-            continue; // deduplicate
-        }
-        if let Some(blocks) = &payload.changes {
-            let abs = match safe_path(workspace_root, &payload.file_path) {
-                Ok(p) => p,
-                Err(_) => continue,
-            };
-            let old_content = tokio::fs::read_to_string(&abs).await.unwrap_or_default();
-            if let Ok(new_content) = apply_blocks_to_content(&old_content, blocks) {
-                result.insert(payload.file_path, new_content);
+        let abs = match safe_path(workspace_root, &file_path) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        // Use chained state if a prior op already projected content for this file.
+        let old_content = file_states
+            .get(&file_path)
+            .cloned()
+            .unwrap_or_else(|| String::new());
+        let old_content = if old_content.is_empty() {
+            tokio::fs::read_to_string(&abs).await.unwrap_or_default()
+        } else {
+            old_content
+        };
+        let (op_type, description, new_content) = match &op {
+            WriteOp::Write(a) => ("write_file", a.description.clone(), a.content.clone()),
+            WriteOp::Edit(a) => {
+                let nc = match apply_edit(&old_content, &a.old_string, &a.new_string, a.replace_all)
+                {
+                    Ok(edited) => edited,
+                    Err(err) => {
+                        tracing::warn!(
+                            file = %file_path,
+                            "precompute_batch_ops: edit_file old_string not found, keeping original content: {err}"
+                        );
+                        old_content.clone()
+                    }
+                };
+                ("edit_file", a.description.clone(), nc)
             }
-        }
+            WriteOp::Delete(a) => ("delete_file", a.description.clone(), String::new()),
+        };
+        file_states.insert(file_path.clone(), new_content.clone());
+        result.push((
+            file_path,
+            PrecomputedOpContent {
+                op_type,
+                description,
+                old_content,
+                new_content,
+            },
+        ));
     }
     result
 }
 
-/// Extract all `propose_change` payloads from the most recent assistant turn.
-/// Handles all three provider message formats:
+/// Extract all `write_file`, `edit_file`, and `delete_file` calls from the most
+/// recent assistant turn. Handles all three provider message formats:
 /// - Anthropic: `{"role":"assistant","content":[{"type":"tool_use",...}]}`
 /// - OpenAI Responses API: `[{"type":"function_call","name":...,"arguments":...}]`
 /// - OpenAI Chat Completions: `{"role":"assistant","tool_calls":[...]}`
-///
-/// Unlike `find_all_unmatched_tool_ids`, this does not filter by matched status.
-/// `propose_change` always suspends immediately, so no call in the last turn
-/// will ever have a result yet — all of them need to be applied.
-pub(super) fn extract_all_propose_changes(
-    prior_messages: &[serde_json::Value],
-) -> Vec<ProposeChangePayload> {
+pub(super) fn extract_all_write_ops(prior_messages: &[serde_json::Value]) -> Vec<WriteOp> {
     let mut result = Vec::new();
 
-    let parse_args = |args: &str| serde_json::from_str::<ProposeChangePayload>(args).ok();
+    let parse_op = |name: &str, args: &serde_json::Value| -> Option<WriteOp> {
+        match name {
+            "write_file" => serde_json::from_value::<WriteFileArgs>(args.clone())
+                .ok()
+                .map(WriteOp::Write),
+            "edit_file" => serde_json::from_value::<EditFileArgs>(args.clone())
+                .ok()
+                .map(WriteOp::Edit),
+            "delete_file" => serde_json::from_value::<DeleteFileArgs>(args.clone())
+                .ok()
+                .map(WriteOp::Delete),
+            _ => None,
+        }
+    };
+    let parse_op_str = |name: &str, args_str: &str| -> Option<WriteOp> {
+        let args: serde_json::Value = serde_json::from_str(args_str).ok()?;
+        parse_op(name, &args)
+    };
 
     for m in prior_messages.iter().rev() {
         // Anthropic: role:"assistant", content array with tool_use blocks.
         if m["role"].as_str() == Some("assistant") {
             if let Some(blocks) = m["content"].as_array() {
                 for block in blocks {
-                    if block["type"].as_str() == Some("tool_use")
-                        && block["name"].as_str() == Some("propose_change")
-                        && let Ok(payload) =
-                            serde_json::from_value::<ProposeChangePayload>(block["input"].clone())
-                    {
-                        result.push(payload);
+                    if block["type"].as_str() == Some("tool_use") {
+                        if let Some(name) = block["name"].as_str() {
+                            if let Some(op) = parse_op(name, &block["input"]) {
+                                result.push(op);
+                            }
+                        }
                     }
                 }
             }
             // OpenAI Chat Completions: tool_calls array.
             if let Some(tool_calls) = m["tool_calls"].as_array() {
                 for tc in tool_calls {
-                    if tc["function"]["name"].as_str() == Some("propose_change")
-                        && let Some(p) = tc["function"]["arguments"].as_str().and_then(parse_args)
-                    {
-                        result.push(p);
+                    if let (Some(name), Some(args_str)) = (
+                        tc["function"]["name"].as_str(),
+                        tc["function"]["arguments"].as_str(),
+                    ) {
+                        if let Some(op) = parse_op_str(name, args_str) {
+                            result.push(op);
+                        }
                     }
                 }
             }
@@ -120,11 +206,14 @@ pub(super) fn extract_all_propose_changes(
         // OpenAI Responses API: Value::Array of flat function_call items.
         if let Some(items) = m.as_array() {
             for item in items {
-                if item["type"].as_str() == Some("function_call")
-                    && item["name"].as_str() == Some("propose_change")
-                    && let Some(p) = item["arguments"].as_str().and_then(parse_args)
-                {
-                    result.push(p);
+                if item["type"].as_str() == Some("function_call") {
+                    if let (Some(name), Some(args_str)) =
+                        (item["name"].as_str(), item["arguments"].as_str())
+                    {
+                        if let Some(op) = parse_op_str(name, args_str) {
+                            result.push(op);
+                        }
+                    }
                 }
             }
             if !result.is_empty() {
@@ -192,6 +281,7 @@ impl BuilderSolver {
         let schema_provider = self.schema_provider.clone();
         let semantic_compiler = self.semantic_compiler.clone();
         let secrets_provider = self.secrets_provider.clone();
+        let app_runner = self.app_runner.clone();
         let exchanges_for_tools = Arc::clone(&exchanges);
 
         let result = self
@@ -210,6 +300,7 @@ impl BuilderSolver {
                     let schema_provider = schema_provider.clone();
                     let semantic_compiler = semantic_compiler.clone();
                     let secrets_provider = secrets_provider.clone();
+                    let app_runner = app_runner.clone();
                     let exchanges = Arc::clone(&exchanges_for_tools);
                     Box::pin(async move {
                         let result = dispatch_tool(
@@ -224,6 +315,7 @@ impl BuilderSolver {
                             schema_provider.as_ref(),
                             semantic_compiler.as_ref(),
                             secrets_provider.as_ref(),
+                            app_runner.as_ref(),
                         )
                         .await;
                         let mut guard = exchanges.lock().unwrap_or_else(|e| e.into_inner());
@@ -248,12 +340,30 @@ impl BuilderSolver {
                 prior_messages,
             }) => {
                 let tool_exchanges = exchanges.lock().unwrap_or_else(|e| e.into_inner()).clone();
-                // Pre-compute new_content for every batched propose_change call in
-                // this turn whose file isn't already covered by the suspended prompt.
-                // Stored in stage_data so resume can write exact content without a
-                // TOCTOU re-read (adjacent gap to the TODO at the apply loop below).
-                let batch_precomputed =
-                    precompute_batch_changes(&self.project_root, &prior_messages, &prompt).await;
+                // Pre-compute old/new content for every batched write op that
+                // was NOT the suspended (first) op.  Stored in stage_data so
+                // resume can apply each file without a TOCTOU re-read.
+                let batch_ops =
+                    precompute_batch_ops(&self.project_root, &prior_messages, &prompt).await;
+
+                // Build pending_op_prompts from the precomputed ops (already in LLM
+                // turn order, suspended op excluded).  Multiple ops on the same file
+                // are preserved — content is chained so each op sees the previous
+                // op's projected output as its old_content.
+                let pending_op_prompts: Vec<String> = batch_ops
+                    .iter()
+                    .map(|(file_path, content)| {
+                        serde_json::json!({
+                            "type": content.op_type,
+                            "file_path": file_path,
+                            "old_content": content.old_content,
+                            "new_content": content.new_content,
+                            "description": content.description,
+                        })
+                        .to_string()
+                    })
+                    .collect();
+
                 let mut stage_data = make_resume_stage_data(
                     &spec,
                     &prior_messages,
@@ -262,9 +372,10 @@ impl BuilderSolver {
                     &suggestions,
                     &tool_exchanges,
                 );
-                if !batch_precomputed.is_empty() {
-                    stage_data["precomputed_changes"] =
-                        serde_json::to_value(&batch_precomputed).unwrap_or_default();
+                if !pending_op_prompts.is_empty() {
+                    stage_data["pending_op_prompts"] =
+                        serde_json::to_value(&pending_op_prompts).unwrap_or_default();
+                    stage_data["op_results"] = serde_json::json!([]);
                 }
                 <BuilderSolver as DomainSolver<BuilderDomain>>::store_suspension_data(
                     self,
@@ -514,6 +625,7 @@ impl BuilderSolver {
             history: spec.history,
             draft_text: output.text,
             tool_exchanges,
+            prior_messages: output.prior_messages,
         }
     }
 }

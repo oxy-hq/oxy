@@ -51,12 +51,13 @@ import {
 } from "./analyticsArtifactHelpers";
 import {
   ExecuteSqlView,
+  FileChangeToolView,
   LookupSchemaView,
   ManageDirectoryView,
-  ProposeChangeToolView,
   ReadFileView,
   RunTestsView,
   SearchFilesView,
+  SearchTextView,
   SemanticQueryView,
   ValidateProjectView,
   VerifiedSemanticQueryView
@@ -267,6 +268,21 @@ const AnalyticsArtifactSidebar = ({
     );
   }
 
+  if (item.toolName === "search_text") {
+    return (
+      <Panel>
+        <PanelHeader
+          title='Search Text'
+          subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
+          onClose={onClose}
+        />
+        <PanelContent scrollable={false} padding={false} className='min-h-0'>
+          <SearchTextView item={item} />
+        </PanelContent>
+      </Panel>
+    );
+  }
+
   if (item.toolName === "preview_data") {
     const sqlArtifact = sqlArtifactFromPreviewData(item);
     return (
@@ -343,16 +359,29 @@ const AnalyticsArtifactSidebar = ({
     );
   }
 
-  if (item.toolName === "propose_change") {
+  if (
+    item.toolName === "file_change" ||
+    item.toolName === "write_file" ||
+    item.toolName === "edit_file" ||
+    item.toolName === "delete_file"
+  ) {
+    const title =
+      item.toolName === "write_file"
+        ? "Write File"
+        : item.toolName === "edit_file"
+          ? "Edit File"
+          : item.toolName === "delete_file"
+            ? "Delete File"
+            : "File Change";
     return (
       <Panel>
         <PanelHeader
-          title='Proposed Change'
+          title={title}
           subtitle={item.durationMs !== undefined ? `${item.durationMs}ms` : undefined}
           onClose={onClose}
         />
         <PanelContent scrollable={false} padding={false} className='min-h-0'>
-          <ProposeChangeToolView item={item} runEvents={runEvents} />
+          <FileChangeToolView item={item} runEvents={runEvents} />
         </PanelContent>
       </Panel>
     );
@@ -386,13 +415,15 @@ const AnalyticsArtifactSidebar = ({
           <div className='shrink-0'>
             <SemanticQueryView item={item} />
           </div>
-          <div className='min-h-0 flex-1'>
-            {sqlArtifact ? (
+          {sqlArtifact ? (
+            <div className='min-h-0 flex-1'>
               <SqlArtifactPanel artifact={sqlArtifact} />
-            ) : (
-              <RawArtifactView item={item} />
-            )}
-          </div>
+            </div>
+          ) : isRunning ? (
+            <div className='flex items-center justify-center p-4'>
+              <Spinner />
+            </div>
+          ) : null}
         </PanelContent>
       </Panel>
     );

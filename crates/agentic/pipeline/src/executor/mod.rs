@@ -30,6 +30,7 @@ pub struct PipelineTaskExecutor {
     pub builder_bridges: Option<BuilderBridges>,
     pub schema_cache: Option<Arc<Mutex<HashMap<String, SchemaCatalog>>>>,
     pub builder_test_runner: Option<Arc<dyn BuilderTestRunner>>,
+    pub builder_app_runner: Option<Arc<dyn agentic_builder::BuilderAppRunner>>,
     pub db: DatabaseConnection,
     /// Runtime state for registering answer channels (needed by workflow
     /// orchestrator tasks so the coordinator can resume them via answer channel
@@ -203,7 +204,7 @@ impl PipelineTaskExecutor {
             builder = builder.existing_run(run_id);
         }
 
-        // Auto-accept propose_change when builder runs as a delegation child
+        // Auto-accept file_change when builder runs as a delegation child
         // (existing_run_id is set → the coordinator created this task).
         if is_builder_agent(agent_id) && existing_run_id.is_some() {
             builder = builder.human_input(std::sync::Arc::new(
@@ -216,6 +217,9 @@ impl PipelineTaskExecutor {
         }
         if let Some(runner) = &self.builder_test_runner {
             builder = builder.test_runner(runner.clone());
+        }
+        if let Some(runner) = &self.builder_app_runner {
+            builder = builder.app_runner(runner.clone());
         }
 
         let started = builder
@@ -264,6 +268,9 @@ impl PipelineTaskExecutor {
         }
         if let Some(runner) = &self.builder_test_runner {
             builder = builder.test_runner(runner.clone());
+        }
+        if let Some(runner) = &self.builder_app_runner {
+            builder = builder.app_runner(runner.clone());
         }
         if let Some(tid) = run.thread_id {
             builder = builder.thread(tid);

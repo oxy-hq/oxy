@@ -202,8 +202,10 @@ impl AnalyticsSolver {
                         // ask_user intercepted before generic dispatcher — see resuming.rs.
                         if name == "ask_user" {
                             handle_ask_user(&params, human_input.as_ref())
+                                .map(|v| Box::new(v) as Box<dyn agentic_core::tools::ToolOutput>)
                         } else if name == "search_catalog" {
                             execute_clarifying_tool(&name, params, &*catalog)
+                                .map(|v| Box::new(v) as Box<dyn agentic_core::tools::ToolOutput>)
                         } else if name == "list_tables" || name == "describe_table" {
                             execute_database_lookup_tool(
                                 &name,
@@ -213,6 +215,7 @@ impl AnalyticsSolver {
                                 &schema_cache,
                             )
                             .await
+                            .map(|v| Box::new(v) as Box<dyn agentic_core::tools::ToolOutput>)
                         } else {
                             execute_specifying_tool(
                                 &name,
@@ -222,6 +225,7 @@ impl AnalyticsSolver {
                                 &default_connector,
                             )
                             .await
+                            .map(|v| Box::new(v) as Box<dyn agentic_core::tools::ToolOutput>)
                         }
                     })
                 },
@@ -407,8 +411,10 @@ impl AnalyticsSolver {
                     Box::pin(async move {
                         if name == "ask_user" {
                             handle_ask_user(&params, human_input.as_ref())
+                                .map(|v| Box::new(v) as Box<dyn agentic_core::tools::ToolOutput>)
                         } else if name == "search_catalog" {
                             execute_clarifying_tool(&name, params, &*catalog)
+                                .map(|v| Box::new(v) as Box<dyn agentic_core::tools::ToolOutput>)
                         } else if name == "list_tables" || name == "describe_table" {
                             execute_database_lookup_tool(
                                 &name,
@@ -418,6 +424,7 @@ impl AnalyticsSolver {
                                 &schema_cache,
                             )
                             .await
+                            .map(|v| Box::new(v) as Box<dyn agentic_core::tools::ToolOutput>)
                         } else {
                             execute_specifying_tool(
                                 &name,
@@ -427,6 +434,7 @@ impl AnalyticsSolver {
                                 &default_connector,
                             )
                             .await
+                            .map(|v| Box::new(v) as Box<dyn agentic_core::tools::ToolOutput>)
                         }
                     })
                 },
@@ -726,6 +734,7 @@ impl AnalyticsSolver {
                             }))
                             .unwrap_or_default(),
                             duration_ms: compile_duration_ms,
+                            is_error: false,
                             sub_spec_index: None,
                         },
                     )
@@ -787,6 +796,7 @@ impl AnalyticsSolver {
                                 }))
                                 .unwrap_or_default(),
                                 duration_ms: compile_duration_ms,
+                                is_error: false,
                                 sub_spec_index: None,
                             },
                         )
@@ -821,6 +831,7 @@ impl AnalyticsSolver {
                                 }))
                                 .unwrap_or_default(),
                                 duration_ms: compile_duration_ms,
+                                is_error: false,
                                 sub_spec_index: None,
                             },
                         )
@@ -851,6 +862,7 @@ impl AnalyticsSolver {
                             }))
                             .unwrap_or_default(),
                             duration_ms: compile_duration_ms,
+                            is_error: false,
                             sub_spec_index: None,
                         },
                     )

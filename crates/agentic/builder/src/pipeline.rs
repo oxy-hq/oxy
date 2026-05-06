@@ -16,6 +16,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
+use crate::app_runner::BuilderAppRunner;
 use crate::database::BuilderDatabaseProvider;
 use crate::events::BuilderEvent;
 use crate::schema_provider::BuilderSchemaProvider;
@@ -37,8 +38,9 @@ pub struct BuilderPipelineParams {
     pub schema_provider: Option<Arc<dyn BuilderSchemaProvider>>,
     pub semantic_compiler: Option<Arc<dyn BuilderSemanticCompiler>>,
     pub test_runner: Option<Arc<dyn BuilderTestRunner>>,
+    pub app_runner: Option<Arc<dyn BuilderAppRunner>>,
     /// Override the default [`DeferredInputProvider`] for human-in-the-loop
-    /// tools (`propose_change`, `ask_user`). When set to
+    /// tools (`file_change`, `ask_user`). When set to
     /// [`AutoAcceptInputProvider`], changes are applied without suspension.
     pub human_input: Option<agentic_core::human_input::HumanInputHandle>,
     /// Provides a [`SecretsManager`] for dbt tools that need to resolve
@@ -80,6 +82,9 @@ pub fn start_pipeline(params: BuilderPipelineParams) -> PipelineHandle<BuilderEv
     }
     if let Some(runner) = params.test_runner {
         solver = solver.with_test_runner(runner);
+    }
+    if let Some(runner) = params.app_runner {
+        solver = solver.with_app_runner(runner);
     }
     if let Some(provider) = params.human_input {
         solver = solver.with_human_input(provider);
@@ -194,6 +199,9 @@ pub fn resume_pipeline(
     if let Some(runner) = params.test_runner {
         solver = solver.with_test_runner(runner);
     }
+    if let Some(runner) = params.app_runner {
+        solver = solver.with_app_runner(runner);
+    }
     if let Some(provider) = params.human_input {
         solver = solver.with_human_input(provider);
     }
@@ -211,7 +219,7 @@ pub fn resume_pipeline(
 
     let join = tokio::spawn(
         async move {
-            // Emit synthetic ToolResult for propose_change so the LLM sees the
+            // Emit synthetic ToolResult for file_change so the LLM sees the
             // user's accept/reject decision when the orchestrator resumes.
             if let Some((tool_name, output)) =
                 resumed_builder_tool_result(&resume_data.question, &answer, &project_root)
@@ -221,6 +229,7 @@ pub fn resume_pipeline(
                         name: tool_name,
                         output,
                         duration_ms: 0,
+                        is_error: false,
                         sub_spec_index: None,
                     }))
                     .await;
@@ -278,7 +287,7 @@ pub fn resume_pipeline(
 // ── Resume helpers ──────────────────────────────────────────────────────────
 
 #[derive(serde::Deserialize)]
-struct ProposeChangeSuspension {
+struct FileChangeSuspension {
     #[serde(rename = "type")]
     kind: String,
     #[serde(default)]
@@ -305,15 +314,15 @@ fn is_within_project(base_dir: &std::path::Path, file_path: &str) -> bool {
     normalized.starts_with(base_dir)
 }
 
-/// Generate a synthetic tool result for a `propose_change` resumption so
+/// Generate a synthetic tool result for a `file_change` resumption so
 /// the LLM sees the user's accept/reject decision.
 fn resumed_builder_tool_result(
     question: &str,
     answer: &str,
     base_dir: &std::path::Path,
 ) -> Option<(String, String)> {
-    let suspension: ProposeChangeSuspension = serde_json::from_str(question).ok()?;
-    if suspension.kind != "propose_change" {
+    let suspension: FileChangeSuspension = serde_json::from_str(question).ok()?;
+    if suspension.kind != "file_change" {
         return None;
     }
 
@@ -321,7 +330,7 @@ fn resumed_builder_tool_result(
     if !file_path.is_empty() && !is_within_project(base_dir, file_path) {
         tracing::warn!(
             file_path,
-            "rejected propose_change with path outside project root"
+            "rejected file_change with path outside project root"
         );
         return None;
     }
@@ -340,5 +349,5 @@ fn resumed_builder_tool_result(
             .to_string()
     };
 
-    Some(("propose_change".to_string(), output))
+    Some(("file_change".to_string(), output))
 }

@@ -66,8 +66,12 @@ impl LlmClient {
             Value,
         ) -> std::pin::Pin<
             Box<
-                dyn std::future::Future<Output = Result<Value, agentic_core::tools::ToolError>>
-                    + Send,
+                dyn std::future::Future<
+                        Output = Result<
+                            Box<dyn agentic_core::tools::ToolOutput>,
+                            agentic_core::tools::ToolError,
+                        >,
+                    > + Send,
             >,
         >,
     {
@@ -400,6 +404,7 @@ impl LlmClient {
                     raw_content_blocks: raw_blocks,
                     structured_response: Some(structured),
                     tool_calls: all_tool_calls,
+                    prior_messages: messages,
                 });
             }
 
@@ -509,6 +514,7 @@ impl LlmClient {
                     raw_content_blocks: raw_blocks,
                     structured_response,
                     tool_calls: all_tool_calls,
+                    prior_messages: messages,
                 });
             }
 
@@ -549,7 +555,7 @@ impl LlmClient {
 
             // Execute tools and collect results.
             let mut tool_results: Vec<(String, String, bool)> = Vec::new();
-            for tc in &tool_calls {
+            for (tool_idx, tc) in tool_calls.iter().enumerate() {
                 all_tool_calls.push((tc.name.clone(), tc.input.clone()));
                 emit_core(
                     events,
@@ -586,6 +592,25 @@ impl LlmClient {
                         }
                     }
 
+                    // Emit ToolCall events for tools that follow the suspended
+                    // tool in this round — they were part of the LLM response
+                    // but will not be executed this turn, so announce them now
+                    // so the reasoning trace shows the full set of tool calls.
+                    for remaining_tc in &tool_calls[tool_idx + 1..] {
+                        all_tool_calls
+                            .push((remaining_tc.name.clone(), remaining_tc.input.clone()));
+                        emit_core(
+                            events,
+                            CoreEvent::ToolCall {
+                                name: remaining_tc.name.clone(),
+                                input: remaining_tc.input.to_string(),
+                                llm_duration_ms: round_llm_ms,
+                                sub_spec_index: ssi,
+                            },
+                        )
+                        .await;
+                    }
+
                     // LlmEnd was already emitted for this round above.
                     return Err(LlmError::Suspended {
                         prompt: prompt.clone(),
@@ -594,23 +619,31 @@ impl LlmClient {
                     });
                 }
 
-                let (content_str, is_error) = match exec_result {
-                    Ok(v) => (v.to_string(), false),
-                    Err(e) => (e.to_string(), true),
+                let (llm_str, event_str, is_error) = match exec_result {
+                    Ok(v) => {
+                        let agent_text = v.to_agent_text();
+                        let structured = v.to_value().to_string();
+                        (agent_text, structured, false)
+                    }
+                    Err(e) => {
+                        let s = e.to_string();
+                        (s.clone(), s, true)
+                    }
                 };
 
                 emit_core(
                     events,
                     CoreEvent::ToolResult {
                         name: tc.name.clone(),
-                        output: content_str.clone(),
+                        output: event_str,
                         duration_ms: tool_ms,
+                        is_error,
                         sub_spec_index: ssi,
                     },
                 )
                 .await;
 
-                tool_results.push((tc.id.clone(), content_str, is_error));
+                tool_results.push((tc.id.clone(), llm_str, is_error));
             }
 
             for msg in self.provider.tool_result_messages(&tool_results) {

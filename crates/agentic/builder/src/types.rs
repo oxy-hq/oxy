@@ -49,6 +49,10 @@ pub struct BuilderSolution {
     pub history: Vec<ConversationTurn>,
     pub draft_text: String,
     pub tool_exchanges: Vec<ToolExchange>,
+    /// Full provider-native message history from the solving phase.
+    /// Passed to the interpreting call so it sees the complete, unabridged context.
+    #[serde(default)]
+    pub prior_messages: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,6 +61,9 @@ pub struct BuilderResult {
     pub history: Vec<ConversationTurn>,
     pub draft_text: String,
     pub tool_exchanges: Vec<ToolExchange>,
+    /// Full provider-native message history from the solving phase.
+    #[serde(default)]
+    pub prior_messages: Vec<serde_json::Value>,
 }
 
 impl From<BuilderSolution> for BuilderResult {
@@ -66,6 +73,7 @@ impl From<BuilderSolution> for BuilderResult {
             history: solution.history,
             draft_text: solution.draft_text,
             tool_exchanges: solution.tool_exchanges,
+            prior_messages: solution.prior_messages,
         }
     }
 }

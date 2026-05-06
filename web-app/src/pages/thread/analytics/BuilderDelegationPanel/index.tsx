@@ -1,7 +1,7 @@
 import { Hammer, Loader2, Maximize2, Sparkles, X } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { Dialog, DialogContent } from "@/components/ui/shadcn/dialog";
-import type { BuilderProposedChange } from "@/hooks/useBuilderActivity";
+import type { BuilderFileChange } from "@/hooks/useBuilderActivity";
 import { useBuilderActivity } from "@/hooks/useBuilderActivity";
 
 import AnalyticsReasoningTrace from "../AnalyticsReasoningTrace";
@@ -31,12 +31,10 @@ export default function BuilderDelegationPanel({
 
   // Show the most-recent proposed change (pending first, then last of any status).
   const pendingChange = activityItems
-    .filter(
-      (i): i is BuilderProposedChange => i.kind === "proposed_change" && i.status === "pending"
-    )
+    .filter((i): i is BuilderFileChange => i.kind === "file_changed" && i.status === "pending")
     .at(-1);
   const lastChange = activityItems
-    .filter((i): i is BuilderProposedChange => i.kind === "proposed_change")
+    .filter((i): i is BuilderFileChange => i.kind === "file_changed")
     .at(-1);
   const change = pendingChange ?? lastChange;
 

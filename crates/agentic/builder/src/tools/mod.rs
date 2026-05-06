@@ -3,10 +3,13 @@
 //! - `search_files`          — glob pattern search across the project directory
 //! - `read_file`             — read file content (optionally by line range)
 //! - `search_text`           — grep-like text search across the codebase
-//! - `propose_change`        — propose a file change, suspend for user confirmation
+//! - `write_file`            — create a new file or fully overwrite an existing one (HITL-gated)
+//! - `edit_file`             — exact-string replacement in an existing file (HITL-gated)
+//! - `delete_file`           — delete an existing file (HITL-gated)
 //! - `manage_directory`      — create, delete, or rename a directory with user confirmation
 //! - `validate_project`      — validate project files against schema using the oxy config validator
 //! - `run_tests`             — run one or more `.test.yml` files using the oxy eval pipeline
+//! - `run_app`               — execute a .app.yml data app and return per-task results (bypass cache)
 //! - `execute_sql`           — run a SQL query against a configured database
 //! - `semantic_query`        — compile and execute a semantic layer query
 //! - `list_dbt_projects`     — list all airform/dbt projects in the workspace
@@ -28,43 +31,47 @@
 //! All file-system operations are sandboxed to the project root.
 
 mod airform;
+mod delete_file;
+mod edit_file;
 mod execute_sql;
 mod lookup_schema;
 mod manage_directory;
-mod propose_change;
 mod read_file;
+mod run_app;
 mod run_tests;
 mod search_files;
 mod search_text;
 mod semantic_query;
 mod utils;
 mod validate_project;
+mod write_file;
 
 use agentic_core::tools::ToolDef;
 
 use crate::schema_provider::BuilderSchemaProvider;
 pub use airform::{
-    execute_analyze_dbt_project, execute_clean_dbt_project, execute_compile_dbt_model,
-    execute_debug_dbt_project, execute_docs_generate_dbt, execute_format_dbt_sql,
-    execute_get_dbt_column_lineage, execute_get_dbt_lineage, execute_init_dbt_project,
-    execute_list_dbt_nodes, execute_list_dbt_projects, execute_parse_dbt_project,
-    execute_run_dbt_models, execute_seed_dbt_project, execute_test_dbt_models,
+    execute_analyze_dbt_project, execute_clean_dbt_project, execute_compile_dbt_model_all,
+    execute_compile_dbt_model_single, execute_debug_dbt_project, execute_docs_generate_dbt,
+    execute_format_dbt_sql, execute_get_dbt_column_lineage, execute_get_dbt_lineage,
+    execute_init_dbt_project, execute_list_dbt_nodes, execute_list_dbt_projects,
+    execute_parse_dbt_project, execute_run_dbt_models, execute_seed_dbt_project,
+    execute_test_dbt_models,
 };
 
+pub use delete_file::execute_delete_file;
+pub use edit_file::{apply_edit, execute_edit_file};
 pub use execute_sql::execute_execute_sql;
 pub use lookup_schema::execute_lookup_schema;
 pub use manage_directory::execute_manage_directory;
-pub use propose_change::{
-    ChangeBlock, apply_blocks_to_content, apply_change_blocks, delete_file, execute_propose_change,
-    write_file_content,
-};
 pub use read_file::execute_read_file;
+pub use run_app::{execute_run_app, run_app_def};
 pub use run_tests::execute_run_tests;
 pub use search_files::execute_search_files;
 pub use search_text::execute_search_text;
 pub use semantic_query::execute_semantic_query;
-pub use utils::safe_path;
+pub use utils::{hitl_confirm, remove_file, safe_path, write_file_content};
 pub use validate_project::execute_validate_project;
+pub use write_file::execute_write_file;
 
 /// All tools available to the builder copilot.
 pub fn all_tools(schema_provider: &dyn BuilderSchemaProvider) -> Vec<ToolDef> {
@@ -72,10 +79,13 @@ pub fn all_tools(schema_provider: &dyn BuilderSchemaProvider) -> Vec<ToolDef> {
         search_files::search_files_def(),
         read_file::read_file_def(),
         search_text::search_text_def(),
-        propose_change::propose_change_def(),
+        write_file::write_file_def(),
+        edit_file::edit_file_def(),
+        delete_file::delete_file_def(),
         validate_project::validate_project_def(),
         lookup_schema::lookup_schema_def(schema_provider),
         run_tests::run_tests_def(),
+        run_app::run_app_def(),
         execute_sql::execute_sql_def(),
         semantic_query::semantic_query_def(),
         airform::list_dbt_projects_def(),

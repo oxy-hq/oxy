@@ -217,7 +217,9 @@ impl AnalyticsSolver {
                     let sets = result_sets_for_tool.clone();
                     let charts = valid_charts_for_tool.clone();
                     Box::pin(async move {
-                        execute_interpreting_tool(&name, params, &tx, &sets, &charts).await
+                        execute_interpreting_tool(&name, params, &tx, &sets, &charts)
+                            .await
+                            .map(|v| Box::new(v) as Box<dyn agentic_core::tools::ToolOutput>)
                     })
                 },
                 &self.event_tx,

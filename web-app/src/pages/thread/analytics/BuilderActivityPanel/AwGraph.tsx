@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 
-import type { BuilderProposedChange } from "@/hooks/useBuilderActivity";
+import type { BuilderFileChange } from "@/hooks/useBuilderActivity";
 import { GenericGraph } from "./GenericGraph";
 import { type AwConfig, diffAwTransitions } from "./types";
 
@@ -9,7 +9,7 @@ export const AwGraph = ({
   oldAw,
   newAw
 }: {
-  change: BuilderProposedChange;
+  change: BuilderFileChange;
   oldAw: AwConfig | null;
   newAw: AwConfig;
 }) => {

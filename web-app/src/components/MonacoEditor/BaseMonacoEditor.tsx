@@ -14,7 +14,7 @@ export interface BaseMonacoEditorOptions {
   readOnly?: boolean;
   readOnlyMessage?: { value: string };
   fontSize?: number;
-  lineNumbers?: "on" | "off" | "relative" | "interval";
+  lineNumbers?: "on" | "off" | "relative" | "interval" | ((lineNumber: number) => string);
   wordWrap?: "on" | "off" | "wordWrapColumn" | "bounded";
   wrappingStrategy?: "simple" | "advanced";
   tabSize?: number;
@@ -37,6 +37,11 @@ export interface BaseMonacoEditorProps {
   diffMode?: boolean;
   original?: string;
   splitView?: boolean;
+  onDiffMount?: (editor: editor.IStandaloneDiffEditor) => void;
+  // Per-editor option overrides applied after every updateOptions call,
+  // so they survive @monaco-editor/react's internal option re-applications.
+  originalEditorOptions?: BaseMonacoEditorOptions;
+  modifiedEditorOptions?: BaseMonacoEditorOptions;
 }
 
 const defaultOptions: BaseMonacoEditorOptions = {
@@ -72,10 +77,27 @@ export default function BaseMonacoEditor({
   isLoading = false,
   diffMode = false,
   original,
-  splitView = true
+  splitView = true,
+  onDiffMount,
+  originalEditorOptions,
+  modifiedEditorOptions
 }: BaseMonacoEditorProps) {
   const mergedOptions = { ...defaultOptions, ...options };
   const diffEditorRef = useRef<editor.IStandaloneDiffEditor | null>(null);
+  const originalEditorOptionsRef = useRef(originalEditorOptions);
+  const modifiedEditorOptionsRef = useRef(modifiedEditorOptions);
+
+  // Keep refs in sync so the patched updateOptions always uses the latest values.
+  useEffect(() => {
+    originalEditorOptionsRef.current = originalEditorOptions;
+    modifiedEditorOptionsRef.current = modifiedEditorOptions;
+    if (diffEditorRef.current) {
+      if (originalEditorOptions)
+        diffEditorRef.current.getOriginalEditor().updateOptions(originalEditorOptions);
+      if (modifiedEditorOptions)
+        diffEditorRef.current.getModifiedEditor().updateOptions(modifiedEditorOptions);
+    }
+  }, [originalEditorOptions, modifiedEditorOptions]);
 
   // Imperatively toggle renderSideBySide — bypasses @monaco-editor/react's
   // options-tracking which can miss updates in React 19 concurrent rendering.
@@ -115,10 +137,27 @@ export default function BaseMonacoEditor({
               loading={<LoadingSpinner />}
               onMount={(e) => {
                 diffEditorRef.current = e;
+
+                // Patch updateOptions so per-editor overrides survive every
+                // subsequent call made by @monaco-editor/react's own effects.
+                if (originalEditorOptions || modifiedEditorOptions) {
+                  const _updateOptions = e.updateOptions.bind(e);
+                  e.updateOptions = (newOptions) => {
+                    _updateOptions(newOptions);
+                    if (originalEditorOptionsRef.current) {
+                      e.getOriginalEditor().updateOptions(originalEditorOptionsRef.current);
+                    }
+                    if (modifiedEditorOptionsRef.current) {
+                      e.getModifiedEditor().updateOptions(modifiedEditorOptionsRef.current);
+                    }
+                  };
+                }
+
                 // Set renderSideBySide immediately on mount — the options prop
                 // alone is unreliable because Monaco initialises async and may
                 // ignore the value set during createDiffEditor.
                 e.updateOptions({ renderSideBySide: splitView });
+                onDiffMount?.(e);
                 // Re-apply after the Sheet open animation (~500ms) completes.
                 // Monaco auto-switches to inline mode when the container is
                 // narrow during the animation; this overrides that once the

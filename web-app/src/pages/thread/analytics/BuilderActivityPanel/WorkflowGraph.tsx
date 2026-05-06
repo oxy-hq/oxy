@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { BuilderProposedChange } from "@/hooks/useBuilderActivity";
+import type { BuilderFileChange } from "@/hooks/useBuilderActivity";
 import { GenericGraph } from "./GenericGraph";
 import { diffWorkflowTasks, type WorkflowConfig, workflowKind } from "./types";
 
@@ -9,7 +9,7 @@ export const WorkflowGraph = ({
   oldWf,
   newWf
 }: {
-  change: BuilderProposedChange;
+  change: BuilderFileChange;
   oldWf: WorkflowConfig | null;
   newWf: WorkflowConfig;
 }) => {

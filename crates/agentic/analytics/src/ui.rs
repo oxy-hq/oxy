@@ -26,7 +26,7 @@ pub fn analytics_step_summary(state: &str) -> Option<String> {
 ///
 /// Pass this function to
 /// [`UiTransformState::with_tool_summary_fn`](agentic_core::UiTransformState::with_tool_summary_fn).
-pub fn analytics_tool_summary(tool: &str) -> Option<String> {
+pub fn analytics_tool_summary(tool: &str, _input: &serde_json::Value) -> Option<String> {
     let s = match tool {
         "search_catalog" => "Searching catalog",
         "search_procedures" => "Searching procedures",

@@ -149,6 +149,7 @@ async fn test_workflow_decision_executor_arm_returns_done() {
         builder_bridges: None,
         schema_cache: None,
         builder_test_runner: None,
+        builder_app_runner: None,
         db: db.clone(),
         state: None,
     };
@@ -1245,6 +1246,7 @@ async fn test_recovery_processes_stuck_needs_resume_analytics_run() {
         db.clone(),
         state,
         platform,
+        None,
         None,
         None,
         None,

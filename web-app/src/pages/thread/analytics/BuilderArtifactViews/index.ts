@@ -1,11 +1,12 @@
 export { AskUserView } from "./AskUserView";
 export { ExecuteSqlView } from "./ExecuteSqlView";
+export { FileChangeToolView } from "./FileChangeToolView";
 export { LookupSchemaView } from "./LookupSchemaView";
 export { ManageDirectoryView } from "./ManageDirectoryView";
-export { ProposeChangeToolView } from "./ProposeChangeToolView";
 export { ReadFileView } from "./ReadFileView";
 export { RunTestsView } from "./RunTestsView";
 export { SearchFilesView } from "./SearchFilesView";
+export { SearchTextView } from "./SearchTextView";
 export { SemanticQueryView } from "./SemanticQueryView";
 export { ValidateProjectView } from "./ValidateProjectView";
 export { VerifiedSemanticQueryView } from "./VerifiedSemanticQueryView";

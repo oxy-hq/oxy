@@ -14,10 +14,12 @@ The solver runs a single LLM tool loop in the Solving phase. Tools let the LLM r
 
 | Tool | What it does |
 | ------ | ------------- |
-| `search_files` | Glob pattern search |
-| `read_file` | Read file content (with optional line range) |
-| `search_text` | Regex search across project files |
-| `propose_change` | Propose file change/deletion — **suspends for user confirmation** |
+| `search_files` | Glob pattern search (sorted by mtime, newest first) |
+| `read_file` | Read file content (offset/limit params, raw output) |
+| `search_text` | Regex search across project files (glob/output_mode params) |
+| `write_file` | Create or fully overwrite a file — **suspends for user confirmation** |
+| `edit_file` | Exact-string replacement (old_string/new_string) — **suspends for user confirmation** |
+| `delete_file` | Delete a file — **suspends for user confirmation** |
 | `validate_project` | Validate against Oxy YAML schemas |
 | `lookup_schema` | Retrieve JSON schema for any Oxy object type |
 | `run_tests` | Execute `.test.yml` evaluation files |
@@ -27,7 +29,9 @@ The solver runs a single LLM tool loop in the Solving phase. Tools let the LLM r
 
 ## Suspension / HITL
 
-`propose_change` triggers a suspension (HITL). The user sees the proposed file content and can accept or reject. The facade emits a synthetic `ToolResult` event on resume so SSE replay shows the decision.
+`write_file`, `edit_file`, and `delete_file` each trigger a suspension (HITL). The user sees the proposed file change and can accept or reject. The facade emits a synthetic `ToolResult` event on resume so SSE replay shows the decision.
+
+If the LLM batches multiple write ops in a single turn, all are applied on the first resume: `edit_file` ops have their `new_content` pre-computed at suspension time (stored in `stage_data["precomputed_edits"]`) to avoid TOCTOU races.
 
 ## Events
 

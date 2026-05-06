@@ -353,7 +353,11 @@ impl AnalyticsFanoutWorker {
                 &tools,
                 |name: String, params| {
                     let connector = Arc::clone(&connector);
-                    Box::pin(async move { execute_solving_tool(&name, params, &*connector).await })
+                    Box::pin(async move {
+                        execute_solving_tool(&name, params, &*connector)
+                            .await
+                            .map(|v| Box::new(v) as Box<dyn agentic_core::tools::ToolOutput>)
+                    })
                 },
                 &self.event_tx,
                 ToolLoopConfig {

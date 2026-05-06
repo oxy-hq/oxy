@@ -183,7 +183,7 @@ fn tool_call_without_summary_fn_emits_one_block() {
 
 #[test]
 fn tool_call_with_summary_fn_emits_summary_update() {
-    let mut s: UiTransformState<()> = UiTransformState::new().with_tool_summary_fn(|tool| {
+    let mut s: UiTransformState<()> = UiTransformState::new().with_tool_summary_fn(|tool, _| {
         if tool == "list_metrics" {
             Some("Checking available metrics".into())
         } else {
@@ -206,7 +206,7 @@ fn tool_call_with_summary_fn_emits_summary_update() {
 
 #[test]
 fn tool_call_no_match_in_summary_fn_emits_one_block() {
-    let mut s: UiTransformState<()> = UiTransformState::new().with_tool_summary_fn(|_| None);
+    let mut s: UiTransformState<()> = UiTransformState::new().with_tool_summary_fn(|_, _| None);
     let blocks = s.process(Event::Core(CoreEvent::ToolCall {
         name: "unknown_tool".into(),
         input: "{}".into(),

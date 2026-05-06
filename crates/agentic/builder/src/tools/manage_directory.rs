@@ -6,7 +6,7 @@ use agentic_core::{
 };
 use serde_json::{Value, json};
 
-use super::utils::safe_path;
+use super::utils::{hitl_confirm, safe_path};
 
 pub fn manage_directory_def() -> ToolDef {
     ToolDef {
@@ -37,7 +37,7 @@ pub fn manage_directory_def() -> ToolDef {
                     "description": "Human-readable explanation of why this directory change is needed."
                 }
             },
-            "required": ["operation", "path", "description"]
+            "required": ["operation", "path", "new_path", "description"]
         }),
         strict: false,
         ..Default::default()
@@ -105,26 +105,16 @@ pub async fn execute_manage_directory(
                 "type": "manage_directory",
                 "operation": "create",
                 "path": path,
-                "description": description
+                "description": description,
             })
             .to_string();
-            let suggestions = vec!["Accept".to_string(), "Reject".to_string()];
-            match provider.request_sync(&prompt, &suggestions) {
-                Ok(answer) => {
-                    if answer.to_lowercase().contains("accept") {
-                        tokio::fs::create_dir_all(&abs).await.map_err(|e| {
-                            ToolError::Execution(format!(
-                                "failed to create directory '{path}': {e}"
-                            ))
-                        })?;
-                    }
-                    Ok(json!({ "answer": answer }))
-                }
-                Err(()) => Err(ToolError::Suspended {
-                    prompt,
-                    suggestions,
-                }),
+            let answer = hitl_confirm(provider, prompt)?;
+            if answer.to_lowercase().contains("accept") {
+                tokio::fs::create_dir_all(&abs).await.map_err(|e| {
+                    ToolError::Execution(format!("failed to create directory '{path}': {e}"))
+                })?;
             }
+            Ok(json!({ "answer": answer }))
         }
         "delete" => {
             if !abs.exists() {
@@ -141,26 +131,16 @@ pub async fn execute_manage_directory(
                 "operation": "delete",
                 "path": path,
                 "description": description,
-                "contents_preview": contents
+                "contents_preview": contents,
             })
             .to_string();
-            let suggestions = vec!["Accept".to_string(), "Reject".to_string()];
-            match provider.request_sync(&prompt, &suggestions) {
-                Ok(answer) => {
-                    if answer.to_lowercase().contains("accept") {
-                        tokio::fs::remove_dir_all(&abs).await.map_err(|e| {
-                            ToolError::Execution(format!(
-                                "failed to delete directory '{path}': {e}"
-                            ))
-                        })?;
-                    }
-                    Ok(json!({ "answer": answer }))
-                }
-                Err(()) => Err(ToolError::Suspended {
-                    prompt,
-                    suggestions,
-                }),
+            let answer = hitl_confirm(provider, prompt)?;
+            if answer.to_lowercase().contains("accept") {
+                tokio::fs::remove_dir_all(&abs).await.map_err(|e| {
+                    ToolError::Execution(format!("failed to delete directory '{path}': {e}"))
+                })?;
             }
+            Ok(json!({ "answer": answer }))
         }
         "rename" => {
             let new_path = params["new_path"]
@@ -180,33 +160,23 @@ pub async fn execute_manage_directory(
                 "operation": "rename",
                 "path": path,
                 "new_path": new_path,
-                "description": description
+                "description": description,
             })
             .to_string();
-            let suggestions = vec!["Accept".to_string(), "Reject".to_string()];
-            match provider.request_sync(&prompt, &suggestions) {
-                Ok(answer) => {
-                    if answer.to_lowercase().contains("accept") {
-                        if let Some(parent) = abs_new.parent() {
-                            tokio::fs::create_dir_all(parent).await.map_err(|e| {
-                                ToolError::Execution(format!(
-                                    "failed to create parent directories for '{new_path}': {e}"
-                                ))
-                            })?;
-                        }
-                        tokio::fs::rename(&abs, &abs_new).await.map_err(|e| {
-                            ToolError::Execution(format!(
-                                "failed to rename '{path}' to '{new_path}': {e}"
-                            ))
-                        })?;
-                    }
-                    Ok(json!({ "answer": answer }))
+            let answer = hitl_confirm(provider, prompt)?;
+            if answer.to_lowercase().contains("accept") {
+                if let Some(parent) = abs_new.parent() {
+                    tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                        ToolError::Execution(format!(
+                            "failed to create parent directories for '{new_path}': {e}"
+                        ))
+                    })?;
                 }
-                Err(()) => Err(ToolError::Suspended {
-                    prompt,
-                    suggestions,
-                }),
+                tokio::fs::rename(&abs, &abs_new).await.map_err(|e| {
+                    ToolError::Execution(format!("failed to rename '{path}' to '{new_path}': {e}"))
+                })?;
             }
+            Ok(json!({ "answer": answer }))
         }
         other => Err(ToolError::BadParams(format!(
             "unknown operation '{other}', expected one of: create, delete, rename"

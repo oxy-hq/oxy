@@ -123,22 +123,22 @@ impl DomainSolver<BuilderDomain> for BuilderSolver {
         params: serde_json::Value,
     ) -> Result<serde_json::Value, ToolError> {
         match state {
-            "solving" => {
-                super::solver::dispatch_tool(
-                    name,
-                    &params,
-                    &self.project_root,
-                    &self.event_tx,
-                    self.test_runner.clone(),
-                    self.human_input.clone(),
-                    self.db_provider.as_ref(),
-                    self.project_validator.as_ref(),
-                    self.schema_provider.as_ref(),
-                    self.semantic_compiler.as_ref(),
-                    self.secrets_provider.as_ref(),
-                )
-                .await
-            }
+            "solving" => super::solver::dispatch_tool(
+                name,
+                &params,
+                &self.project_root,
+                &self.event_tx,
+                self.test_runner.clone(),
+                self.human_input.clone(),
+                self.db_provider.as_ref(),
+                self.project_validator.as_ref(),
+                self.schema_provider.as_ref(),
+                self.semantic_compiler.as_ref(),
+                self.secrets_provider.as_ref(),
+                self.app_runner.as_ref(),
+            )
+            .await
+            .map(|v| v.to_value()),
             _ => Err(ToolError::UnknownTool(format!(
                 "no tools for state '{state}'"
             ))),

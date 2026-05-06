@@ -8,6 +8,31 @@
 
 use serde_json::Value;
 
+// ── ToolOutput ────────────────────────────────────────────────────────────────
+
+/// The result of a tool execution, carrying both a structured representation
+/// (for the frontend / event stream) and an agent-friendly plain-text form
+/// (sent back to the LLM as the tool result content).
+///
+/// Implement this trait on typed output structs to control exactly what the LLM
+/// sees. [`Value`] implements it as a backward-compatible fallback (both methods
+/// use the JSON serialization).
+pub trait ToolOutput: Send + Sync {
+    /// Plain-text description of the result returned to the LLM.
+    fn to_agent_text(&self) -> String;
+    /// Structured [`Value`] emitted in `CoreEvent::ToolResult` for the frontend.
+    fn to_value(&self) -> Value;
+}
+
+impl ToolOutput for Value {
+    fn to_agent_text(&self) -> String {
+        self.to_string()
+    }
+    fn to_value(&self) -> Value {
+        self.clone()
+    }
+}
+
 // ── ToolDef ───────────────────────────────────────────────────────────────────
 
 /// Describes a single tool that the LLM may invoke during a pipeline stage.

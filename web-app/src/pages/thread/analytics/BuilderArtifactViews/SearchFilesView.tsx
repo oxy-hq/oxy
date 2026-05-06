@@ -1,14 +1,9 @@
 import type { ArtifactItem } from "@/hooks/analyticsSteps";
 import { parseToolJson } from "../analyticsArtifactHelpers";
 
-type SearchFileMatch = {
-  path?: string;
-  size_bytes?: number;
-};
-
 export const SearchFilesView = ({ item }: { item: ArtifactItem }) => {
   const input = parseToolJson<{ pattern?: string }>(item.toolInput);
-  const output = parseToolJson<{ files?: SearchFileMatch[]; count?: number }>(item.toolOutput);
+  const output = parseToolJson<{ files?: string[]; count?: number }>(item.toolOutput);
   const files = output?.files ?? [];
 
   return (
@@ -32,16 +27,8 @@ export const SearchFilesView = ({ item }: { item: ArtifactItem }) => {
           {files.length > 0 ? (
             <div className='min-h-0 flex-1 space-y-2 overflow-auto rounded border bg-muted/20 p-3'>
               {files.map((file) => (
-                <div
-                  key={`${file.path ?? "file"}-${file.size_bytes ?? 0}`}
-                  className='rounded border bg-background px-3 py-2'
-                >
-                  <p className='break-all font-medium font-mono text-xs'>{file.path ?? "?"}</p>
-                  {file.size_bytes !== undefined && (
-                    <p className='mt-1 text-[11px] text-muted-foreground'>
-                      {file.size_bytes.toLocaleString()} bytes
-                    </p>
-                  )}
+                <div key={file} className='rounded border bg-background px-3 py-2'>
+                  <p className='break-all font-medium font-mono text-xs'>{file}</p>
                 </div>
               ))}
             </div>

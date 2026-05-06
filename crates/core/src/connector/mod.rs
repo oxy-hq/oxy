@@ -27,6 +27,7 @@ mod connectorx;
 mod constants;
 mod domo;
 mod duckdb;
+pub use duckdb::checkout_file_connection;
 mod duckdb_pool;
 mod engine;
 mod motherduck;

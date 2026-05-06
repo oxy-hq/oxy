@@ -1,0 +1,11 @@
+id,customer_id,shipping_address_id,order_date,status,total_amount,shipping_cost,tax_amount
+1,1,1,2024-01-15,completed,45.50,5.99,3.64
+2,2,2,2024-01-16,completed,78.25,7.50,6.26
+3,1,1,2024-01-18,processing,32.75,5.99,2.62
+4,3,3,2024-01-20,completed,156.80,12.99,12.54
+5,2,4,2024-01-22,shipped,89.40,8.50,7.15
+6,4,5,2024-01-25,completed,67.30,6.75,5.38
+7,5,6,2024-01-28,processing,124.60,10.25,9.97
+8,3,3,2024-02-01,completed,203.45,15.50,16.28
+9,1,7,2024-02-03,shipped,95.75,9.25,7.66
+10,6,8,2024-02-05,completed,178.90,13.75,14.31

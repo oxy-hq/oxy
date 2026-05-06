@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { BuilderProposedChange } from "@/hooks/useBuilderActivity";
+import type { BuilderFileChange } from "@/hooks/useBuilderActivity";
 import { GenericGraph } from "./GenericGraph";
 import { diffTopicViews, type TopicConfig } from "./types";
 
@@ -9,7 +9,7 @@ export const SemanticTopicGraph = ({
   oldTopic,
   newTopic
 }: {
-  change: BuilderProposedChange;
+  change: BuilderFileChange;
   oldTopic: TopicConfig | null;
   newTopic: TopicConfig;
 }) => {

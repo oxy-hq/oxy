@@ -542,14 +542,14 @@ function renderInputBlock(
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Check if a suspension question is a propose_change that should be auto-accepted */
+/** Check if a suspension question is a file_change that should be auto-accepted */
 function isAutoAcceptableQuestion(
   questions: Array<{ prompt: string; suggestions?: string[] }>
 ): boolean {
   return questions.some((q) => {
     try {
       const parsed = JSON.parse(q.prompt);
-      return parsed.type === "propose_change";
+      return parsed.type === "file_change";
     } catch {
       return q.suggestions?.some(
         (s) => s.toLowerCase() === "accept" || s.toLowerCase() === "reject"

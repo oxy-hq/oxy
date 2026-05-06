@@ -228,6 +228,11 @@ pub struct LlmOutput {
     /// Lets callers inspect tool-use side-effects after the loop without
     /// resorting to `Arc<Mutex>` captures inside the tool executor closure.
     pub tool_calls: Vec<(String, Value)>,
+    /// Full provider-native message history at loop completion (user + all
+    /// tool_use/tool_result rounds + final assistant turn). Can be passed
+    /// directly to the next LLM call as `InitialMessages::Messages` to give
+    /// it full, unabridged context of everything that happened.
+    pub prior_messages: Vec<Value>,
 }
 
 // ── Tool loop configuration ───────────────────────────────────────────────────

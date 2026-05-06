@@ -10,7 +10,7 @@ import {
   Table,
   Workflow
 } from "lucide-react";
-import type { BuilderProposedChange } from "@/hooks/useBuilderActivity";
+import type { BuilderFileChange } from "@/hooks/useBuilderActivity";
 import { cn } from "@/libs/shadcn/utils";
 import { detectFileType, FILE_TYPE_CONFIGS, FileType } from "@/utils/fileTypes";
 
@@ -56,8 +56,8 @@ const getStemName = (filePath: string): string => {
 };
 
 interface AcceptedChangePillsProps {
-  changes: BuilderProposedChange[];
-  onSelect: (change: BuilderProposedChange) => void;
+  changes: BuilderFileChange[];
+  onSelect: (change: BuilderFileChange) => void;
   selectedId?: string;
 }
 

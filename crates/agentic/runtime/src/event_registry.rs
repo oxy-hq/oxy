@@ -24,8 +24,8 @@ pub type RowProcessor = Arc<dyn Fn(&str, &Value) -> Option<Vec<(String, Value)>>
 /// Summary function: maps a state name to an optional one-line summary.
 pub type SummaryFn = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
 
-/// Tool summary function: maps a tool name to an optional step summary update.
-pub type ToolSummaryFn = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
+/// Tool summary function: maps a tool name and its input params to an optional step summary update.
+pub type ToolSummaryFn = Arc<dyn Fn(&str, &serde_json::Value) -> Option<String> + Send + Sync>;
 
 /// Filter that determines whether a domain event should accumulate into
 /// `StepEnd` metadata. Receives the `event_type` string.
@@ -82,12 +82,13 @@ impl EventRegistry {
         } else {
             Box::new(|_| None)
         };
-        let tool_summary_fn: Box<dyn Fn(&str) -> Option<String> + Send> = if let Some(d) = domain {
-            let f = d.tool_summary_fn.clone();
-            Box::new(move |s| f(s))
-        } else {
-            Box::new(|_| None)
-        };
+        let tool_summary_fn: Box<dyn Fn(&str, &serde_json::Value) -> Option<String> + Send> =
+            if let Some(d) = domain {
+                let f = d.tool_summary_fn.clone();
+                Box::new(move |s, input| f(s, input))
+            } else {
+                Box::new(|_, _| None)
+            };
         let domain_processor = domain.map(|d| d.processor.clone());
         let accumulation_filter = domain.and_then(|d| d.should_accumulate.clone());
 
@@ -330,7 +331,7 @@ mod tests {
                     }
                 }),
                 summary_fn: Arc::new(|_| None),
-                tool_summary_fn: Arc::new(|_| None),
+                tool_summary_fn: Arc::new(|_, _| None),
                 should_accumulate: None,
             },
         );
@@ -349,7 +350,7 @@ mod tests {
             DomainHandler {
                 processor: Arc::new(|_, _| None), // always returns None
                 summary_fn: Arc::new(|_| None),
-                tool_summary_fn: Arc::new(|_| None),
+                tool_summary_fn: Arc::new(|_, _| None),
                 should_accumulate: None,
             },
         );
@@ -388,7 +389,7 @@ mod tests {
                         None
                     }
                 }),
-                tool_summary_fn: Arc::new(|_| None),
+                tool_summary_fn: Arc::new(|_, _| None),
                 should_accumulate: None,
             },
         );
@@ -414,7 +415,7 @@ mod tests {
                     }
                 }),
                 summary_fn: Arc::new(|_| None),
-                tool_summary_fn: Arc::new(|_| None),
+                tool_summary_fn: Arc::new(|_, _| None),
                 should_accumulate: None,
             },
         );
@@ -447,7 +448,7 @@ mod tests {
                     Some(vec![(event_type.to_string(), payload.clone())])
                 }),
                 summary_fn: Arc::new(|_| None),
-                tool_summary_fn: Arc::new(|_| None),
+                tool_summary_fn: Arc::new(|_, _| None),
                 // Only `keep_me` events accumulate.
                 should_accumulate: Some(Arc::new(|et| et == "keep_me")),
             },

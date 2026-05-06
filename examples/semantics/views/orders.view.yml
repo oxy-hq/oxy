@@ -1,7 +1,7 @@
 name: orders
 description: Customer orders with shipping and payment information
 datasource: local
-table: "{{variables.orders_table}}.csv"
+table: "orders.csv"
 entities:
 - name: order
   type: primary

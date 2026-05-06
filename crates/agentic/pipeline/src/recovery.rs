@@ -27,6 +27,7 @@ pub async fn recover_active_runs(
     builder_bridges: Option<BuilderBridges>,
     schema_cache: Option<Arc<Mutex<HashMap<String, agentic_analytics::SchemaCatalog>>>>,
     builder_test_runner: Option<Arc<dyn agentic_builder::BuilderTestRunner>>,
+    builder_app_runner: Option<Arc<dyn agentic_builder::BuilderAppRunner>>,
 ) -> usize {
     // Pre-pass: clean up stale queue entries from the previous server lifetime.
     // Tasks "claimed" by now-dead workers get re-queued or dead-lettered.
@@ -61,6 +62,7 @@ pub async fn recover_active_runs(
             builder_bridges.clone(),
             schema_cache.clone(),
             builder_test_runner.clone(),
+            builder_app_runner.clone(),
         )
         .await
         {
@@ -88,6 +90,7 @@ async fn recover_single_run(
     builder_bridges: Option<BuilderBridges>,
     schema_cache: Option<Arc<Mutex<HashMap<String, agentic_analytics::SchemaCatalog>>>>,
     builder_test_runner: Option<Arc<dyn agentic_builder::BuilderTestRunner>>,
+    builder_app_runner: Option<Arc<dyn agentic_builder::BuilderAppRunner>>,
 ) -> Result<(), String> {
     use agentic_core::transport::{CoordinatorTransport, WorkerTransport};
 
@@ -97,6 +100,7 @@ async fn recover_single_run(
         builder_bridges,
         schema_cache,
         builder_test_runner,
+        builder_app_runner,
         db: db.clone(),
         state: Some(state.clone()),
     });

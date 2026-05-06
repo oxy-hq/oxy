@@ -1,4 +1,4 @@
-import type { BuilderProposedChange } from "@/hooks/useBuilderActivity";
+import type { BuilderFileChange } from "@/hooks/useBuilderActivity";
 import { AgentGraph } from "./AgentGraph";
 import { AwGraph } from "./AwGraph";
 import { DataAppGraph } from "./DataAppGraph";
@@ -18,7 +18,7 @@ import {
 import { WorkflowGraph } from "./WorkflowGraph";
 
 export interface ChangeVisualizationProps {
-  change: BuilderProposedChange;
+  change: BuilderFileChange;
 }
 
 const ChangeVisualization = ({ change }: ChangeVisualizationProps) => {

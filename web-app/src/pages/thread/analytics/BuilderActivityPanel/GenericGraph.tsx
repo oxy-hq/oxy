@@ -13,7 +13,7 @@ import ELK from "elkjs";
 import { CheckCircle2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import type { BuilderProposedChange } from "@/hooks/useBuilderActivity";
+import type { BuilderFileChange } from "@/hooks/useBuilderActivity";
 import { cn } from "@/libs/shadcn/utils";
 import useTheme from "@/stores/useTheme";
 import { elkEdgeTypes } from "./ElkRoutedEdge";
@@ -169,7 +169,7 @@ const nodeTypes = {
 // ── GenericGraph ──────────────────────────────────────────────────────────────
 
 export interface GenericGraphProps {
-  change: BuilderProposedChange;
+  change: BuilderFileChange;
   graphLabel: string;
   rootLabel: string;
   rootTitle: string;

@@ -8,7 +8,7 @@ export interface CreateAnalyticsRunRequest {
   question: string;
   thread_id?: string;
   thinking_mode?: ThinkingMode;
-  /** When true, the backend auto-accepts all propose_change tool calls. */
+  /** When true, the backend auto-accepts all file_change tool calls. */
   auto_accept?: boolean;
 }
 
@@ -317,10 +317,16 @@ export type ToolUsedBlock = {
   payload: { tool_name: string; summary: string };
 };
 
-export type ProposedChangeBlock = {
+export type FileChangePendingBlock = {
   seq: number;
-  event_type: "proposed_change";
-  payload: { file_path: string; description: string; new_content: string; delete?: boolean };
+  event_type: "file_change_pending";
+  payload: {
+    file_path: string;
+    description: string;
+    new_content: string;
+    old_content: string;
+    delete?: boolean;
+  };
 };
 
 export type FileChangedBlock = {
@@ -446,7 +452,7 @@ export type UiBlock =
   | SemanticShortcutResolvedBlock
   | LlmUsageBlock
   | ToolUsedBlock
-  | ProposedChangeBlock
+  | FileChangePendingBlock
   | FileChangedBlock
   | RecoveryResumedBlock
   | DelegationStartedBlock

@@ -13,7 +13,7 @@ import ELK from "elkjs";
 import { CheckCircle2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import type { BuilderProposedChange } from "@/hooks/useBuilderActivity";
+import type { BuilderFileChange } from "@/hooks/useBuilderActivity";
 import { cn } from "@/libs/shadcn/utils";
 import useTheme from "@/stores/useTheme";
 import { elkEdgeTypes } from "./ElkRoutedEdge";
@@ -160,7 +160,7 @@ export const SemanticViewGraph = ({
   oldView,
   newView
 }: {
-  change: BuilderProposedChange;
+  change: BuilderFileChange;
   oldView: SemanticView | null;
   newView: SemanticView;
 }) => {

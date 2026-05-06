@@ -10,8 +10,8 @@ export type BuilderToolActivity = {
   summary: string;
 };
 
-export type BuilderProposedChange = {
-  kind: "proposed_change";
+export type BuilderFileChange = {
+  kind: "file_changed";
   id: string;
   filePath: string;
   description: string;
@@ -22,7 +22,7 @@ export type BuilderProposedChange = {
   status: "pending" | "accepted" | "rejected";
 };
 
-export type BuilderActivityItem = BuilderToolActivity | BuilderProposedChange;
+export type BuilderActivityItem = BuilderToolActivity | BuilderFileChange;
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
@@ -30,7 +30,7 @@ export type BuilderActivityItem = BuilderToolActivity | BuilderProposedChange;
  * Derives an ordered list of builder activity items from the SSE event stream.
  *
  * @param events        The full UiBlock event list for a run.
- * @param changeDecisions  Map from `proposed_change` event seq → accept/reject decision.
+ * @param changeDecisions  Map from `file_changed` event seq → accept/reject decision.
  */
 export function useBuilderActivity(
   events: UiBlock[],
@@ -38,39 +38,43 @@ export function useBuilderActivity(
 ): BuilderActivityItem[] {
   return useMemo(() => {
     const items: BuilderActivityItem[] = [];
-    let counter = 0;
-    const nextId = (prefix: string) => `builder-${prefix}-${counter++}`;
 
     for (const ev of events) {
       if (ev.event_type === "tool_used") {
         items.push({
           kind: "tool_used",
-          id: nextId("tool"),
+          id: `builder-tool-${ev.seq}`,
           toolName: ev.payload.tool_name,
           summary: ev.payload.summary
         });
-      } else if (ev.event_type === "proposed_change") {
-        // Try to pair with the subsequent awaiting_input to extract old_content.
+      } else if (ev.event_type === "file_change_pending") {
         // Check explicit decisions first, then fall back to scanning events
         // for input_resolved (handles page reload / hydration).
         const decision =
           changeDecisions.get(ev.seq) ?? extractChangeDecision(events, ev.seq) ?? "pending";
-        const { oldContent, isDeletion } = extractProposedChangeMetadata(events, ev.seq);
+        // old_content is now included directly in the event payload; fall back
+        // to extractFileChangedMetadata for backwards-compat with older runs.
+        const oldContent =
+          ev.payload.old_content !== undefined && ev.payload.old_content !== ""
+            ? ev.payload.old_content
+            : extractFileChangedMetadata(events, ev.seq).oldContent;
+        const isDeletion =
+          ev.payload.delete ?? extractFileChangedMetadata(events, ev.seq).isDeletion;
         items.push({
-          kind: "proposed_change",
-          id: nextId("change"),
+          kind: "file_changed",
+          id: `builder-change-${ev.seq}`,
           filePath: ev.payload.file_path,
           description: ev.payload.description,
           newContent: ev.payload.new_content,
           oldContent,
-          isDeletion: ev.payload.delete ?? isDeletion,
+          isDeletion,
           status: decision
         });
       } else if (ev.event_type === "file_changed") {
         // file_changed events are emitted after user acceptance — always "accepted".
         items.push({
-          kind: "proposed_change",
-          id: nextId("change"),
+          kind: "file_changed",
+          id: `builder-change-${ev.seq}`,
           filePath: ev.payload.file_path,
           description: ev.payload.description,
           newContent: ev.payload.new_content,
@@ -88,10 +92,10 @@ export function useBuilderActivity(
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
- * Finds the `awaiting_input` event that follows a `proposed_change` event and
+ * Finds the `awaiting_input` event that follows a `file_changed` event and
  * parses metadata from its JSON prompt. Returns defaults on failure.
  */
-export function extractProposedChangeMetadata(
+export function extractFileChangedMetadata(
   events: UiBlock[],
   afterSeq: number
 ): { oldContent: string; isDeletion: boolean } {
@@ -101,10 +105,15 @@ export function extractProposedChangeMetadata(
       const prompt = ev.payload.questions[0]?.prompt ?? "";
       try {
         const parsed = JSON.parse(prompt);
-        if (parsed?.type === "propose_change") {
+        if (
+          parsed?.type === "file_change" ||
+          parsed?.type === "write_file" ||
+          parsed?.type === "edit_file" ||
+          parsed?.type === "delete_file"
+        ) {
           return {
             oldContent: typeof parsed.old_content === "string" ? parsed.old_content : "",
-            isDeletion: parsed.delete === true
+            isDeletion: parsed.delete === true || parsed.type === "delete_file"
           };
         }
       } catch {
@@ -117,11 +126,11 @@ export function extractProposedChangeMetadata(
 }
 
 export function extractOldContent(events: UiBlock[], afterSeq: number): string {
-  return extractProposedChangeMetadata(events, afterSeq).oldContent;
+  return extractFileChangedMetadata(events, afterSeq).oldContent;
 }
 
 /**
- * Finds the `input_resolved` event that follows a `proposed_change` event
+ * Finds the `input_resolved` event that follows a `file_changed` event
  * and determines whether the change was accepted or rejected based on the answer.
  */
 export function extractChangeDecision(

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 
 use airform_core::DbtTarget;
 use airform_executor::{
@@ -17,6 +18,7 @@ use oxy::config::model::{
     BigQuery, ClickHouse, Database, DatabaseType, DuckDB, DuckDBOptions, MotherDuck, Mysql,
     Postgres, Redshift, Snowflake,
 };
+use oxy::connector::checkout_file_connection;
 
 use crate::config::OxyProjectConfig;
 use crate::error::AirformIntegrationError;
@@ -39,7 +41,27 @@ pub async fn build_adapter_from_db(
         }
         DatabaseType::DuckDB(duckdb) => {
             let target = duckdb_to_dbt_target(duckdb, config_manager, target_schema).await?;
-            Ok(Box::new(DuckDbAdapter::from_target(&target)?))
+            // For file-backed DuckDB, reuse the process-wide pool connection
+            // rather than opening a fresh `duckdb_database` handle. Two
+            // independent handles on the same file in the same process bypass
+            // OS advisory locking and cause SIGSEGV in DuckDB's native code.
+            let path_str = target
+                .extra
+                .get("path")
+                .and_then(|v| v.as_str())
+                .unwrap_or(":memory:");
+            let adapter = if path_str != ":memory:" {
+                let conn = tokio::task::spawn_blocking({
+                    let path = path_str.to_owned();
+                    move || checkout_file_connection(&path)
+                })
+                .await
+                .map_err(|e| anyhow::anyhow!("spawn_blocking panicked: {e}"))??;
+                DuckDbAdapter::from_connection(conn, path_str)
+            } else {
+                DuckDbAdapter::from_target(&target)?
+            };
+            Ok(Box::new(adapter))
         }
         DatabaseType::Postgres(pg) => {
             let target = postgres_to_dbt_target(pg, secrets_manager, target_schema).await?;

@@ -8,13 +8,16 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "event_type", rename_all = "snake_case")]
 pub enum BuilderEvent {
     /// The LLM is proposing a file change and waiting for user confirmation.
-    ProposedChange {
+    FileChangePending {
         /// Relative path (from project root) of the file to be changed.
         file_path: String,
         /// Human-readable description of the change.
         description: String,
         /// The new content that will be written if the user accepts.
         new_content: String,
+        /// Current file content before the change; empty string for new files.
+        #[serde(default)]
+        old_content: String,
     },
 
     /// A file was actually written or deleted after the user accepted a proposal.
@@ -26,8 +29,10 @@ pub enum BuilderEvent {
         /// Content of the file after the change; empty string for deletions.
         new_content: String,
         /// Content of the file before the change; empty string for new files.
+        #[serde(default)]
         old_content: String,
         /// True when the file was deleted rather than written.
+        #[serde(default)]
         is_deletion: bool,
     },
 

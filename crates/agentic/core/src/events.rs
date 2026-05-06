@@ -163,6 +163,8 @@ pub enum CoreEvent {
         name: String,
         output: String,
         duration_ms: u64,
+        #[serde(default)]
+        is_error: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         sub_spec_index: Option<usize>,
     },

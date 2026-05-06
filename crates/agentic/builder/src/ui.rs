@@ -15,12 +15,24 @@ pub fn builder_step_summary(state: &str) -> Option<String> {
 }
 
 /// Map a builder tool name to a user-friendly step summary.
-pub fn builder_tool_summary(tool: &str) -> Option<String> {
+pub fn builder_tool_summary(tool: &str, input: &serde_json::Value) -> Option<String> {
+    // Tools that ask the LLM to supply a human-readable `description` field —
+    // use it directly so the summary reflects exactly what the LLM intends to do.
+    if matches!(tool, "write_file" | "edit_file" | "delete_file") {
+        if let Some(desc) = input["description"].as_str().filter(|s| !s.is_empty()) {
+            return Some(desc.to_string());
+        }
+    }
+
     let s = match tool {
         "search_files" => "Searching files",
         "read_file" => "Reading a file",
         "search_text" => "Searching file contents",
-        "propose_change" => "Making a file change",
+        "file_change" => "Making a file change",
+        "write_file" => "Writing a file",
+        "edit_file" => "Editing a file",
+        "delete_file" => "Deleting a file",
+        "manage_directory" => "Managing a directory",
         "validate_project" => "Validating objects",
         "lookup_schema" => "Looking up schema details",
         "run_tests" => "Running tests",

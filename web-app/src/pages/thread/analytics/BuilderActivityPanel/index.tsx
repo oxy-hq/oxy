@@ -1,14 +1,13 @@
 /**
  * BuilderActivityPanel — opens when the agent proposes a file change.
  *
- * Visualizes the proposed change structurally: for semantic view files it
- * renders dimensions & measures with field-level diffs highlighted.
- * For other files it shows a generic diff summary.
+ * When multiple files are changed in one LLM turn, shows tabs so the user
+ * can review each diff before accepting or rejecting all of them.
  */
 import { Sparkles, X } from "lucide-react";
-import { useEffect } from "react";
-
-import type { BuilderActivityItem, BuilderProposedChange } from "@/hooks/useBuilderActivity";
+import { useEffect, useState } from "react";
+import type { BuilderActivityItem, BuilderFileChange } from "@/hooks/useBuilderActivity";
+import { cn } from "@/libs/shadcn/utils";
 
 import ChangeVisualization from "./ChangeVisualization";
 
@@ -29,16 +28,25 @@ const BuilderActivityPanel = ({
   isSuspended,
   onClose
 }: BuilderActivityPanelProps) => {
-  // Show the most-recent pending change; fall back to last change of any status.
-  const pendingChange = items
-    .filter(
-      (i): i is BuilderProposedChange => i.kind === "proposed_change" && i.status === "pending"
-    )
-    .at(-1);
-  const lastChange = items
-    .filter((i): i is BuilderProposedChange => i.kind === "proposed_change")
-    .at(-1);
-  const change = pendingChange ?? lastChange;
+  const pendingChanges = items.filter(
+    (i): i is BuilderFileChange => i.kind === "file_changed" && i.status === "pending"
+  );
+  // Fall back to last change of any status when nothing is pending.
+  const displayChanges =
+    pendingChanges.length > 0
+      ? pendingChanges
+      : items.filter((i): i is BuilderFileChange => i.kind === "file_changed").slice(-1);
+
+  const [activeIndex, setActiveIndex] = useState(0);
+  const safeIndex = Math.min(activeIndex, Math.max(0, displayChanges.length - 1));
+  const change = displayChanges[safeIndex] ?? null;
+
+  // Reset tab to the last item when new pending changes arrive.
+  useEffect(() => {
+    if (pendingChanges.length > 0) {
+      setActiveIndex(pendingChanges.length - 1);
+    }
+  }, [pendingChanges.length]);
 
   useEffect(() => {
     if (change?.status === "accepted") onClose();
@@ -55,7 +63,7 @@ const BuilderActivityPanel = ({
       {/* Header */}
       <div className='flex shrink-0 items-center justify-between border-b px-4 py-3'>
         <div className='min-w-0 flex-1'>
-          <h3 className='font-semibold text-sm'>Proposed Change</h3>
+          <h3 className='font-semibold text-sm'>File Change</h3>
           <p className='mt-0.5 text-[11px] text-muted-foreground'>{subtitle}</p>
         </div>
         <button
@@ -67,6 +75,27 @@ const BuilderActivityPanel = ({
           <X className='h-4 w-4' />
         </button>
       </div>
+
+      {/* Tab strip — only shown when there are 2+ display changes */}
+      {displayChanges.length > 1 && (
+        <div className='flex shrink-0 items-center gap-1 overflow-x-auto border-border border-b px-2 py-1.5'>
+          {displayChanges.map((c, i) => (
+            <button
+              key={c.id}
+              type='button'
+              onClick={() => setActiveIndex(i)}
+              className={cn(
+                "shrink-0 rounded px-2.5 py-1 font-mono text-xs transition-colors",
+                i === safeIndex
+                  ? "bg-accent text-foreground"
+                  : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+              )}
+            >
+              {c.filePath.split("/").pop() ?? c.filePath}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Change visualization */}
       {change ? (

@@ -3,7 +3,7 @@ import { parseToolJson } from "../analyticsArtifactHelpers";
 
 export const ReadFileView = ({ item }: { item: ArtifactItem }) => {
   const input = parseToolJson<{
-    path?: string;
+    file_path: string;
     start_line?: number;
     end_line?: number;
   }>(item.toolInput);
@@ -16,11 +16,7 @@ export const ReadFileView = ({ item }: { item: ArtifactItem }) => {
     truncated?: boolean;
   }>(item.toolOutput);
 
-  const filePath = input?.path ?? "?";
-  const requestedRange =
-    input?.start_line !== undefined || input?.end_line !== undefined
-      ? `${input?.start_line ?? 1}-${input?.end_line ?? "end"}`
-      : "start-end";
+  const filePath = input?.file_path;
   const returnedRange =
     output?.start_line !== undefined && output?.end_line !== undefined
       ? `${output.start_line}-${output.end_line}`
@@ -38,10 +34,6 @@ export const ReadFileView = ({ item }: { item: ArtifactItem }) => {
           <div className='col-span-2 rounded border bg-muted/30 px-2.5 py-2'>
             <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>Path</p>
             <p className='break-all font-medium font-mono text-xs'>{filePath}</p>
-          </div>
-          <div className='rounded border bg-muted/30 px-2.5 py-2'>
-            <p className='text-[10px] text-muted-foreground uppercase tracking-wide'>Requested</p>
-            <p className='font-medium font-mono text-xs'>{requestedRange}</p>
           </div>
           {returnedRange && (
             <div className='rounded border bg-muted/30 px-2.5 py-2'>

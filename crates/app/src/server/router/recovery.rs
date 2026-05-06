@@ -13,9 +13,9 @@
 use std::sync::Arc;
 
 use agentic_http::AgenticState;
-use agentic_pipeline::BuilderTestRunnerTrait;
 use agentic_pipeline::platform::{BuilderBridges, PlatformContext};
 use agentic_pipeline::recovery::recover_active_runs;
+use agentic_pipeline::{BuilderAppRunnerTrait, BuilderTestRunnerTrait};
 use agentic_runtime::state::RuntimeState;
 use oxy::adapters::workspace::builder::WorkspaceBuilder;
 use sea_orm::{DatabaseConnection, EntityTrait};
@@ -59,9 +59,19 @@ pub(super) fn spawn_recovery(agentic_state: Arc<AgenticState>, mode: ServeMode) 
     let schema_cache = Some(agentic_state.schema_cache.clone());
     let builder_test_runner: Option<Arc<dyn BuilderTestRunnerTrait>> =
         agentic_state.builder_test_runner.clone();
+    let builder_app_runner: Option<Arc<dyn BuilderAppRunnerTrait>> =
+        agentic_state.builder_app_runner.clone();
 
     tokio::spawn(async move {
-        let recovered = run_recovery(&db, runtime, schema_cache, builder_test_runner, mode).await;
+        let recovered = run_recovery(
+            &db,
+            runtime,
+            schema_cache,
+            builder_test_runner,
+            builder_app_runner,
+            mode,
+        )
+        .await;
         if recovered > 0 {
             tracing::info!(
                 target: "recovery",
@@ -86,12 +96,29 @@ pub(super) async fn run_recovery(
         >,
     >,
     builder_test_runner: Option<Arc<dyn BuilderTestRunnerTrait>>,
+    builder_app_runner: Option<Arc<dyn BuilderAppRunnerTrait>>,
     mode: ServeMode,
 ) -> usize {
     match mode {
-        ServeMode::Local => recover_local(db, runtime, schema_cache, builder_test_runner).await,
+        ServeMode::Local => {
+            recover_local(
+                db,
+                runtime,
+                schema_cache,
+                builder_test_runner,
+                builder_app_runner,
+            )
+            .await
+        }
         ServeMode::Cloud => {
-            recover_all_workspaces(db, runtime, schema_cache, builder_test_runner).await
+            recover_all_workspaces(
+                db,
+                runtime,
+                schema_cache,
+                builder_test_runner,
+                builder_app_runner,
+            )
+            .await
         }
     }
 }
@@ -107,6 +134,7 @@ async fn recover_local(
         >,
     >,
     builder_test_runner: Option<Arc<dyn BuilderTestRunnerTrait>>,
+    builder_app_runner: Option<Arc<dyn BuilderAppRunnerTrait>>,
 ) -> usize {
     let cwd = match std::env::current_dir() {
         Ok(p) => p,
@@ -154,6 +182,7 @@ async fn recover_local(
         bridges,
         schema_cache,
         builder_test_runner,
+        builder_app_runner,
     )
     .await
 }
@@ -169,6 +198,7 @@ async fn recover_all_workspaces(
         >,
     >,
     builder_test_runner: Option<Arc<dyn BuilderTestRunnerTrait>>,
+    builder_app_runner: Option<Arc<dyn BuilderAppRunnerTrait>>,
 ) -> usize {
     let workspaces = match entity::workspaces::Entity::find().all(db).await {
         Ok(ws) => ws,
@@ -227,6 +257,7 @@ async fn recover_all_workspaces(
             bridges,
             schema_cache.clone(),
             builder_test_runner.clone(),
+            builder_app_runner.clone(),
         )
         .await;
 

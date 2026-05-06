@@ -2,8 +2,8 @@ import Markdown from "@/components/Markdown";
 import BaseMonacoEditor from "@/components/MonacoEditor/BaseMonacoEditor";
 import { Button } from "@/components/ui/shadcn/button";
 
-export interface ProposeChangePayload {
-  type: "propose_change";
+export interface FileChangePayload {
+  type: "file_change" | "write_file" | "edit_file" | "delete_file";
   file_path: string;
   old_content: string;
   new_content: string;
@@ -11,10 +11,17 @@ export interface ProposeChangePayload {
   delete?: boolean;
 }
 
-export function parseProposeChange(prompt: string): ProposeChangePayload | null {
+const FILE_CHANGE_TYPES = new Set(["file_change", "write_file", "edit_file", "delete_file"]);
+
+export function parseFileChange(prompt: string): FileChangePayload | null {
   try {
     const parsed = JSON.parse(prompt);
-    if (parsed?.type === "propose_change") return parsed as ProposeChangePayload;
+    if (parsed === null || typeof parsed !== "object") return null;
+    if (FILE_CHANGE_TYPES.has(parsed.type)) {
+      const payload = parsed as FileChangePayload;
+      if (payload.type === "delete_file") payload.delete = true;
+      return payload;
+    }
   } catch {
     // not JSON
   }
@@ -43,19 +50,14 @@ export function languageFromPath(filePath: string): string {
   return map[ext] ?? "plaintext";
 }
 
-interface ProposeChangeDiffProps {
-  payload: ProposeChangePayload;
+interface FileChangeDiffProps {
+  payload: FileChangePayload;
   suggestions: string[];
   onAnswer: (text: string) => void;
   isAnswering: boolean;
 }
 
-const ProposeChangeDiff = ({
-  payload,
-  suggestions,
-  onAnswer,
-  isAnswering
-}: ProposeChangeDiffProps) => {
+const FileChangeDiff = ({ payload, suggestions, onAnswer, isAnswering }: FileChangeDiffProps) => {
   return (
     <div className='space-y-3'>
       <div>
@@ -107,4 +109,4 @@ const ProposeChangeDiff = ({
   );
 };
 
-export default ProposeChangeDiff;
+export default FileChangeDiff;

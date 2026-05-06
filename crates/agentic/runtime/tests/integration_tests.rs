@@ -390,7 +390,7 @@ async fn test_registry_processes_builder_domain_events() {
         ),
         (
             2,
-            "proposed_change".to_string(),
+            "file_change_pending".to_string(),
             json!({"file_path": "config.yml", "description": "Update DB", "new_content": "..."})
                 .to_string(),
             0,
@@ -428,8 +428,8 @@ async fn test_registry_processes_builder_domain_events() {
         event_types
     );
     assert!(
-        event_types.contains(&"proposed_change"),
-        "missing proposed_change: {:?}",
+        event_types.contains(&"file_change_pending"),
+        "missing file_change_pending: {:?}",
         event_types
     );
     assert!(

@@ -31,17 +31,17 @@ import {
   uiBlockToSseEvent,
   useAnalyticsRun
 } from "@/hooks/useAnalyticsRun";
-import type { BuilderProposedChange } from "@/hooks/useBuilderActivity";
+import type { BuilderFileChange } from "@/hooks/useBuilderActivity";
 import {
   extractChangeDecision,
-  extractProposedChangeMetadata,
+  extractFileChangedMetadata,
   useBuilderActivity
 } from "@/hooks/useBuilderActivity";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import type {
   AnalyticsRunSummary,
   FileChangedBlock,
-  ProposedChangeBlock,
+  FileChangePendingBlock,
   ThinkingMode,
   UiBlock
 } from "@/services/api/analytics";
@@ -54,10 +54,10 @@ import AnalyticsArtifactSidebar from "./AnalyticsArtifactSidebar";
 import AnalyticsReasoningTrace from "./AnalyticsReasoningTrace";
 import BuilderActivityPanel from "./BuilderActivityPanel";
 import BuilderDelegationPanel from "./BuilderDelegationPanel";
+import { parseFileChange } from "./FileChangeDiff";
 import FilePreviewPanel from "./FilePreviewPanel";
 import Header from "./Header";
 import MessageInputShell from "./MessageInputShell";
-import { parseProposeChange } from "./ProposeChangeDiff";
 import SuspensionPrompt from "./SuspensionPrompt";
 
 /** The fixed key used as the data reference inside agentic Display configs. */
@@ -182,8 +182,8 @@ interface RunEntryProps {
   isRunning: boolean;
   isBuilder?: boolean;
   onSelectArtifact: (item: SelectableItem) => void;
-  acceptedChanges?: BuilderProposedChange[];
-  onSelectChange?: (change: BuilderProposedChange) => void;
+  acceptedChanges?: BuilderFileChange[];
+  onSelectChange?: (change: BuilderFileChange) => void;
   selectedChangeId?: string;
   children?: ReactNode;
 }
@@ -238,9 +238,9 @@ const PastRunEntry = ({
     blocks: AnalyticsDisplayBlock[],
     runEvents: SseEvent[]
   ) => void;
-  onSelectChange?: (change: BuilderProposedChange) => void;
+  onSelectChange?: (change: BuilderFileChange) => void;
   selectedChangeId?: string;
-  capturedChanges?: BuilderProposedChange[];
+  capturedChanges?: BuilderFileChange[];
 }) => {
   const isBuilder = run.agent_id === "__builder__";
   const runSseEvents = useMemo(() => (run.ui_events ?? []).map(uiBlockToSseEvent), [run.ui_events]);
@@ -251,7 +251,7 @@ const PastRunEntry = ({
   );
   // Use changes captured at run-end when available (current session); fall back
   // to server ui_events so pills survive a page reload.
-  const acceptedChanges = useMemo((): BuilderProposedChange[] => {
+  const acceptedChanges = useMemo((): BuilderFileChange[] => {
     if (capturedChanges) return capturedChanges;
     if (!isBuilder || run.status !== "done") return [];
     const events = run.ui_events ?? [];
@@ -262,7 +262,7 @@ const PastRunEntry = ({
     );
     if (fileChangedEvents.length > 0) {
       return fileChangedEvents.map((ev) => ({
-        kind: "proposed_change" as const,
+        kind: "file_changed" as const,
         id: `past-${run.run_id}-change-${counter++}`,
         filePath: ev.payload.file_path,
         description: ev.payload.description,
@@ -272,16 +272,16 @@ const PastRunEntry = ({
         status: "accepted" as const
       }));
     }
-    // Legacy fallback: older runs without file_changed events — treat all proposed_change
+    // Legacy fallback: older runs without file_changed events — treat all file_change_pending
     // events as accepted (same as before).
     return events
-      .filter((ev): ev is ProposedChangeBlock => ev.event_type === "proposed_change")
-      .reduce<BuilderProposedChange[]>((acc, ev) => {
+      .filter((ev): ev is FileChangePendingBlock => ev.event_type === "file_change_pending")
+      .reduce<BuilderFileChange[]>((acc, ev) => {
         const decision = extractChangeDecision(events, ev.seq);
         if (decision !== "accepted") return acc;
-        const { oldContent, isDeletion } = extractProposedChangeMetadata(events, ev.seq);
+        const { oldContent, isDeletion } = extractFileChangedMetadata(events, ev.seq);
         acc.push({
-          kind: "proposed_change" as const,
+          kind: "file_changed" as const,
           id: `past-${run.run_id}-change-${counter++}`,
           filePath: ev.payload.file_path,
           description: ev.payload.description,
@@ -351,14 +351,14 @@ const AnalyticsThread = ({ thread }: Props) => {
   const [changeDecisions, setChangeDecisions] = useState<Map<number, "accepted" | "rejected">>(
     () => new Map()
   );
-  const [selectedFileChange, setSelectedFileChange] = useState<BuilderProposedChange | null>(null);
+  const [selectedFileChange, setSelectedFileChange] = useState<BuilderFileChange | null>(null);
   const [selectedDelegation, setSelectedDelegation] = useState<BuilderDelegationItem | null>(null);
   const [selectedDisplayBlocks, setSelectedDisplayBlocks] = useState<AnalyticsDisplayBlock[]>([]);
   // Accepted changes captured per-run when a run reaches terminal state, so they
   // survive the live→PastRunEntry transition (streamingEvents clears on reset).
-  const [capturedRunChanges, setCapturedRunChanges] = useState<
-    Map<string, BuilderProposedChange[]>
-  >(() => new Map());
+  const [capturedRunChanges, setCapturedRunChanges] = useState<Map<string, BuilderFileChange[]>>(
+    () => new Map()
+  );
   const [autoApprove, setAutoApprove] = useState(
     () => localStorage.getItem("builder_auto_approve") === "true"
   );
@@ -385,7 +385,7 @@ const AnalyticsThread = ({ thread }: Props) => {
   stateRef.current = state;
   // Track latest accepted changes so the isTerminal effect can capture them
   // before streamingEvents is cleared by reset().
-  const liveAcceptedChangesRef = useRef<BuilderProposedChange[]>([]);
+  const liveAcceptedChangesRef = useRef<BuilderFileChange[]>([]);
 
   const {
     data: allRuns = [],
@@ -523,14 +523,18 @@ const AnalyticsThread = ({ thread }: Props) => {
   const isStreaming = state.tag === "running" || state.tag === "suspended";
   const runExists = isStreaming || isTerminal;
 
-  // Auto-open the builder panel only when a change is proposed (agent suspended).
-  // Also dismiss any open file preview so the suspension prompt takes focus.
+  // Auto-open the builder panel only when a file change is proposed (agent suspended).
+  // Suspensions for manage_directory, ask_user, etc. are handled inline — don't open
+  // the panel for those. Also skip when auto-approve is on.
   useEffect(() => {
-    if (isBuilder && state.tag === "suspended") {
-      setBuilderPanelOpen(true);
-      setSelectedFileChange(null);
-    }
-  }, [isBuilder, state.tag]);
+    if (!isBuilder || state.tag !== "suspended") return;
+    if (autoApprove) return;
+    const isFileChange =
+      state.questions.length === 1 && !!parseFileChange(state.questions[0].prompt);
+    if (!isFileChange) return;
+    setBuilderPanelOpen(true);
+    setSelectedFileChange(null);
+  }, [isBuilder, state, autoApprove]);
   // Exclude the active run from history while it is being streamed / transitioning to
   // PastRunEntry to avoid rendering it twice (once live, once via allRuns).
   const activeRunId = state.tag !== "idle" && "runId" in state && state.runId ? state.runId : null;
@@ -584,14 +588,21 @@ const AnalyticsThread = ({ thread }: Props) => {
   const handleAnswer = useCallback(
     (text: string) => {
       if (isBuilder && state.tag === "suspended") {
-        // Find the proposed_change event paired with the current suspension.
-        // streamingEvents are UiBlock[] with event_type/seq fields.
-        const proposedChange = [...streamingEvents]
-          .reverse()
-          .find((ev) => ev.event_type === "proposed_change");
-        if (proposedChange) {
+        // Mark only file_change_pending events that haven't been decided yet —
+        // sequential suspension prompts one file at a time so earlier decisions
+        // must not be overwritten by the answer to a later file.
+        const pendingSeqs = streamingEvents
+          .filter((ev) => ev.event_type === "file_change_pending")
+          .map((ev) => ev.seq);
+        if (pendingSeqs.length > 0) {
           const decision = text.toLowerCase().includes("accept") ? "accepted" : "rejected";
-          setChangeDecisions((prev) => new Map(prev).set(proposedChange.seq, decision));
+          setChangeDecisions((prev) => {
+            const next = new Map(prev);
+            for (const seq of pendingSeqs) {
+              if (!prev.has(seq)) next.set(seq, decision);
+            }
+            return next;
+          });
           if (decision === "accepted") {
             setBuilderPanelOpen(false);
           }
@@ -602,15 +613,24 @@ const AnalyticsThread = ({ thread }: Props) => {
     [isBuilder, state.tag, streamingEvents, answer]
   );
 
-  // Auto-approve proposed changes when the toggle is enabled.
+  // Auto-approve proposed changes and directory operations when the toggle is enabled.
   useEffect(() => {
     if (!autoApprove || state.tag !== "suspended") return;
-    if (state.questions.length === 1 && parseProposeChange(state.questions[0].prompt)) {
-      handleAnswer(ACCEPT_ANSWER);
-    }
+    if (state.questions.length !== 1) return;
+    const prompt = state.questions[0].prompt;
+    const isAutoApprovable = (() => {
+      if (parseFileChange(prompt)) return true;
+      try {
+        const parsed = JSON.parse(prompt);
+        return parsed?.type === "manage_directory";
+      } catch {
+        return false;
+      }
+    })();
+    if (isAutoApprovable) handleAnswer(ACCEPT_ANSWER);
   }, [autoApprove, state, handleAnswer]);
 
-  const handleSelectFileChange = useCallback((change: BuilderProposedChange) => {
+  const handleSelectFileChange = useCallback((change: BuilderFileChange) => {
     setSelectedFileChange((prev) => (prev?.id === change.id ? null : change));
     setSelectedArtifact(null);
     setBuilderPanelOpen(false);
@@ -619,12 +639,24 @@ const AnalyticsThread = ({ thread }: Props) => {
   const liveAcceptedChanges = useMemo(
     () =>
       builderActivityItems.filter(
-        (i): i is BuilderProposedChange => i.kind === "proposed_change" && i.status === "accepted"
+        (i): i is BuilderFileChange => i.kind === "file_changed" && i.status === "accepted"
       ),
     [builderActivityItems]
   );
   // Keep ref in sync so the isTerminal effect can read current value without a dep.
   liveAcceptedChangesRef.current = liveAcceptedChanges;
+
+  // When the builder writes a newer version of the file currently open in the preview
+  // panel, update selectedFileChange so FilePreviewPanel remounts with fresh content.
+  useEffect(() => {
+    if (!selectedFileChange) return;
+    const latestForFile = [...liveAcceptedChanges]
+      .reverse()
+      .find((c) => c.filePath === selectedFileChange.filePath);
+    if (latestForFile && latestForFile.id !== selectedFileChange.id) {
+      setSelectedFileChange(latestForFile);
+    }
+  }, [liveAcceptedChanges, selectedFileChange]);
 
   const handleSelectArtifact = useCallback(
     (item: SelectableItem, blocks: AnalyticsDisplayBlock[] = [], runEvents: SseEvent[] = []) => {
@@ -834,6 +866,7 @@ const AnalyticsThread = ({ thread }: Props) => {
             <ResizableHandle withHandle />
             <ResizablePanel defaultSize={50} minSize={20} maxSize={70}>
               <FilePreviewPanel
+                key={selectedFileChange.id}
                 change={selectedFileChange}
                 onClose={() => setSelectedFileChange(null)}
               />

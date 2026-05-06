@@ -10,7 +10,7 @@ import Markdown from "@/components/Markdown";
 import { Panel, PanelContent, PanelHeader } from "@/components/ui/panel";
 import { Button } from "@/components/ui/shadcn/button";
 import { WorkflowPreview } from "@/components/workflow/WorkflowPreview";
-import type { BuilderProposedChange } from "@/hooks/useBuilderActivity";
+import type { BuilderFileChange } from "@/hooks/useBuilderActivity";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
@@ -33,7 +33,7 @@ const MarkdownFilePreview = () => {
 };
 
 interface FilePreviewPanelProps {
-  change: BuilderProposedChange;
+  change: BuilderFileChange;
   onClose: () => void;
 }
 

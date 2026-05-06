@@ -10,7 +10,7 @@ import { getFileTypeIcon } from "@/pages/ide/Files/FilesSidebar/utils";
 import type { HumanInputQuestion } from "@/services/api/analytics";
 import type { FileTreeModel } from "@/types/file";
 import { detectFileType } from "@/utils/fileTypes";
-import ProposeChangeDiff, { parseProposeChange } from "./ProposeChangeDiff";
+import FileChangeDiff, { parseFileChange } from "./FileChangeDiff";
 
 /** Returns a human-readable string from a prompt that may be raw JSON. */
 function parsePromptText(prompt: string): string {
@@ -242,13 +242,13 @@ const SuspensionPrompt = ({ questions, onAnswer, isAnswering }: SuspensionPrompt
     }
   };
 
-  // Single propose_change question → render the diff UI instead of the card.
+  // Single file_change question → render the diff UI instead of the card.
   if (questions.length === 1) {
-    const payload = parseProposeChange(questions[0].prompt);
+    const payload = parseFileChange(questions[0].prompt);
     if (payload) {
       return (
         <div className='rounded-lg border border-border bg-muted/30 p-4'>
-          <ProposeChangeDiff
+          <FileChangeDiff
             payload={payload}
             suggestions={questions[0].suggestions}
             onAnswer={onAnswer}

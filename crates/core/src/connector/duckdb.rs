@@ -139,6 +139,20 @@ fn checkout_local_blocking(file_search_path: &str) -> Result<Connection, OxyErro
     entry.checkout()
 }
 
+/// Check out a connection to a DuckDB file database from the process-wide
+/// pool, initialising it if this is the first call for `path`.
+///
+/// The returned connection shares the same underlying `duckdb_database`
+/// handle as every other connection checked out from the pool for this path.
+/// Callers (e.g. the airform integration) must use this instead of opening a
+/// fresh `Connection::open(path)` to avoid having two independent
+/// `duckdb_database` handles on the same file in the same process — a
+/// situation that bypasses OS advisory locking and causes SIGSEGV in
+/// DuckDB's native code.
+pub fn checkout_file_connection(path: &str) -> Result<Connection, OxyError> {
+    checkout_file_blocking(path)
+}
+
 /// Synchronous body of [`DuckDB::init_connection`] for `File` mode.
 fn checkout_file_blocking(path: &str) -> Result<Connection, OxyError> {
     let key = PoolKey::file(PathBuf::from(path))?;

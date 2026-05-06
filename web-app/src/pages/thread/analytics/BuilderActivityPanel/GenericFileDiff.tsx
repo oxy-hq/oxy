@@ -1,11 +1,11 @@
 import { CheckCircle2, X } from "lucide-react";
 import { useMemo } from "react";
 
-import type { BuilderProposedChange } from "@/hooks/useBuilderActivity";
+import type { BuilderFileChange } from "@/hooks/useBuilderActivity";
 import { cn } from "@/libs/shadcn/utils";
 import { computeLineDiff } from "./graphUtils";
 
-export const GenericFileDiff = ({ change }: { change: BuilderProposedChange }) => {
+export const GenericFileDiff = ({ change }: { change: BuilderFileChange }) => {
   const filename = change.filePath.split("/").pop() ?? change.filePath;
   const dir = change.filePath.includes("/")
     ? change.filePath.slice(0, change.filePath.lastIndexOf("/"))

@@ -39,7 +39,7 @@ function toolLabel(name: string): string {
 function getProposedFiles(step: AnalyticsStep): string[] {
   const files: string[] = [];
   for (const item of step.items) {
-    if (item.kind !== "artifact" || item.toolName !== "propose_change") continue;
+    if (item.kind !== "artifact" || item.toolName !== "file_change") continue;
     try {
       const input = JSON.parse(item.toolInput);
       if (input?.file_path) files.push(input.file_path as string);
@@ -53,7 +53,7 @@ function getProposedFiles(step: AnalyticsStep): string[] {
 function getToolCounts(step: AnalyticsStep): Array<{ label: string; count: number }> {
   const counts = new Map<string, number>();
   for (const item of step.items) {
-    if (item.kind !== "artifact" || item.toolName === "propose_change") continue;
+    if (item.kind !== "artifact" || item.toolName === "file_change") continue;
     const label = toolLabel(item.toolName);
     counts.set(label, (counts.get(label) ?? 0) + 1);
   }

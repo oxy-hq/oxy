@@ -1,7 +1,10 @@
 use agentic_core::back_target::BackTarget;
 use agentic_core::tools::ToolError;
 use agentic_llm::{InitialMessages, ThinkingConfig, ToolLoopConfig};
+use serde_json::json;
 
+use crate::schema_provider::EmptySchemaProvider;
+use crate::tools::all_tools;
 use crate::types::{BuilderAnswer, BuilderDomain, BuilderError, BuilderResult};
 
 use super::solver::BuilderSolver;
@@ -11,39 +14,64 @@ impl BuilderSolver {
         &mut self,
         result: BuilderResult,
     ) -> Result<BuilderAnswer, (BuilderError, BackTarget<BuilderDomain>)> {
-        let tool_summary = if result.tool_exchanges.is_empty() {
-            "No tools were used in the solving phase.".to_string()
+        let (initial_messages, tools) = if !result.prior_messages.is_empty() {
+            // Pass the full native conversation (tool_use + tool_result blocks) so
+            // the interpreter sees everything that happened without any summarisation.
+            // We append a final user turn asking for the synthesis, and include the
+            // solving tool definitions so the provider accepts the prior tool_use blocks.
+            let mut msgs = result.prior_messages.clone();
+            msgs.push(json!({
+                "role": "user",
+                "content": format!(
+                    "The solving phase is complete. Write the final user-facing reply for this request: \"{}\"",
+                    result.question
+                )
+            }));
+            let schema = EmptySchemaProvider;
+            let tools = all_tools(&schema);
+            (InitialMessages::Messages(msgs), tools)
         } else {
-            result
-                .tool_exchanges
-                .iter()
-                .map(|exchange| {
-                    format!(
-                        "- {}({}) => {}",
-                        exchange.name, exchange.input, exchange.output
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("\n")
+            // Fallback for runs that predate prior_messages (e.g. resumed from old suspension).
+            let tool_summary = if result.tool_exchanges.is_empty() {
+                "No tools were used in the solving phase.".to_string()
+            } else {
+                result
+                    .tool_exchanges
+                    .iter()
+                    .map(|exchange| {
+                        format!(
+                            "- {}({}) => {}",
+                            exchange.name, exchange.input, exchange.output
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            };
+            let user_prompt = if result.tool_exchanges.is_empty() && !result.draft_text.is_empty() {
+                format!(
+                    "User request:\n{}\n\nSolving phase response:\n{}\n\nWrite the final user-facing reply based on the solving phase response above.",
+                    result.question, result.draft_text
+                )
+            } else {
+                format!(
+                    "User request:\n{}\n\nTool exchanges:\n{}\n\nWrite the final user-facing reply based on the tool exchanges above.",
+                    result.question, tool_summary
+                )
+            };
+            (InitialMessages::User(user_prompt), Vec::new())
         };
 
-        let user_prompt = format!(
-            "User request:\n{}\n\nTool exchanges:\n{}\n\nWrite the final user-facing reply based on the tool exchanges above.",
-            result.question, tool_summary
-        );
-
-        let tools = Vec::new();
         match self
             .client
             .run_with_tools(
                 &self.build_interpreting_system_prompt(),
-                InitialMessages::User(user_prompt),
+                initial_messages,
                 &tools,
                 |_name, _params| {
                     Box::pin(async move {
-                        Err::<serde_json::Value, ToolError>(ToolError::UnknownTool(
-                            "interpreting has no tools".to_string(),
-                        ))
+                        Err::<Box<dyn agentic_core::tools::ToolOutput>, ToolError>(
+                            ToolError::UnknownTool("interpreting has no tools".to_string()),
+                        )
                     })
                 },
                 &self.event_tx,

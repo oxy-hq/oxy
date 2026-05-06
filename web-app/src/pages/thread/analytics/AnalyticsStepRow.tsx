@@ -334,7 +334,7 @@ function getToolDisplay(item: ArtifactItem): ToolDisplay {
     }
 
     // ── Builder tools ──────────────────────────────────────────────────────────
-    case "propose_change": {
+    case "file_change": {
       const filePath = typeof input?.file_path === "string" ? input.file_path : "?";
       const isDelete = input?.delete === true;
       const hasOldContent = typeof input?.old_content === "string";
@@ -348,6 +348,36 @@ function getToolDisplay(item: ArtifactItem): ToolDisplay {
         ? `${action} ${trunc(filePath, 30)} · ${status}`
         : `${action} ${trunc(filePath, 40)}`;
       return { Icon: FilePen, label: "Propose Change", preview };
+    }
+
+    case "write_file": {
+      const filePath =
+        typeof input?.file_path === "string"
+          ? input.file_path
+          : typeof input?.path === "string"
+            ? input.path
+            : "?";
+      return { Icon: FilePen, label: "Write File", preview: trunc(filePath) };
+    }
+
+    case "edit_file": {
+      const filePath =
+        typeof input?.file_path === "string"
+          ? input.file_path
+          : typeof input?.path === "string"
+            ? input.path
+            : "?";
+      return { Icon: FilePen, label: "Edit File", preview: trunc(filePath) };
+    }
+
+    case "delete_file": {
+      const filePath =
+        typeof input?.file_path === "string"
+          ? input.file_path
+          : typeof input?.path === "string"
+            ? input.path
+            : "?";
+      return { Icon: Trash2, label: "Delete File", preview: trunc(filePath) };
     }
 
     case "read_file": {

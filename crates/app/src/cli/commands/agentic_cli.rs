@@ -235,6 +235,7 @@ async fn cmd_run(args: RunArgs) -> Result<(), OxyError> {
             Some(bridges_for_delegation),
             None,
             None,
+            None,
         )
         .await;
     });
@@ -584,7 +585,7 @@ fn render_event_pretty(event_type: &str, payload: &Value) {
             let summary = payload["summary"].as_str().unwrap_or("");
             println!("  🔧 {} — {}", name.secondary(), summary);
         }
-        "proposed_change" => {
+        "file_change_pending" => {
             let path = payload["file_path"].as_str().unwrap_or("?");
             let desc = payload["description"].as_str().unwrap_or("");
             println!("  📝 {} — {}", path.info(), desc);

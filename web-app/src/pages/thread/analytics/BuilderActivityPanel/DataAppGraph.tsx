@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { BuilderProposedChange } from "@/hooks/useBuilderActivity";
+import type { BuilderFileChange } from "@/hooks/useBuilderActivity";
 import { GenericGraph } from "./GenericGraph";
 import { type DataApp, diffAppDisplays, diffAppTasks } from "./types";
 
@@ -9,7 +9,7 @@ export const DataAppGraph = ({
   oldApp,
   newApp
 }: {
-  change: BuilderProposedChange;
+  change: BuilderFileChange;
   oldApp: DataApp | null;
   newApp: DataApp;
 }) => {

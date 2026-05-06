@@ -155,7 +155,7 @@ models:
 
 Your task: **update config.yml** with the required configuration.
 
-Use the propose_change tool for the file you modify.
+Use the file_change tool for the file you modify.
 
 ---
 
@@ -167,7 +167,7 @@ Read the existing config.yml first. Then propose changes to ensure it has:
 
 Do NOT create any other files. Only update config.yml.
 
-Call `propose_change` **exactly once** for config.yml. Do not call it a second time — no revisions, no re-drafts. If the file already has content, use `from_line: 1, to_line: <current line count>` in your change block to replace it fully; never use `from_line: 1, to_line: 1` with multi-line content on a non-empty file (that will duplicate existing lines).
+Call `file_change` **exactly once** for config.yml. Do not call it a second time — no revisions, no re-drafts. If the file already has content, use `from_line: 1, to_line: <current line count>` in your change block to replace it fully; never use `from_line: 1, to_line: 1` with multi-line content on a non-empty file (that will duplicate existing lines).
 
 After proposing the change, STOP — do NOT write a summary or explanation."#,
         )
@@ -225,7 +225,7 @@ Understand column names, types, and cardinality."#
 
 Your task: **create two files** — a `.view.yml` and a matching `.topic.yml` — for table `{table}`.
 
-Use the propose_change tool for each file you create.
+Use the file_change tool for each file you create.
 
 ---
 
@@ -285,7 +285,7 @@ views:
 
 Topics are what the analytics agent and dashboards query against — every view needs a matching topic.
 
-Call `propose_change` **exactly once** per file (once for the view, once for the topic). For each file use a single change block with `from_line: 1, to_line: 1` and the full file contents. Do not call `propose_change` again for the same file — no revisions, no re-drafts.
+Call `file_change` **exactly once** per file (once for the view, once for the topic). For each file use a single change block with `from_line: 1, to_line: 1` and the full file contents. Do not call `file_change` again for the same file — no revisions, no re-drafts.
 
 After proposing both files, STOP — do NOT write a summary, explanation, or any follow-up text."#,
         )
@@ -326,7 +326,7 @@ models:
 
 Your task for this step: **inspect the tables and create the semantic layer**.
 
-Use the propose_change tool for each file you create or modify.
+Use the file_change tool for each file you create or modify.
 
 ---
 
@@ -406,7 +406,7 @@ After proposing each file, STOP — do NOT write a summary or explanation."#,
 
 Your task for this step: **create the default agentic analytics agent**.
 
-Use the propose_change tool ONCE to create `analytics.agentic.yml`.
+Use the file_change tool ONCE to create `analytics.agentic.yml`.
 
 ---
 
@@ -416,7 +416,7 @@ Read at least one `.topic.yml` and one `.view.yml` from `semantics/` so you can 
 
 ## Step 2: Create analytics.agentic.yml
 
-Call `propose_change` exactly once, targeting `analytics.agentic.yml` at the project root. The `content` argument must be the file body below **verbatim** — do not duplicate it, do not wrap it in another document, do not append a second copy.
+Call `file_change` exactly once, targeting `analytics.agentic.yml` at the project root. The `content` argument must be the file body below **verbatim** — do not duplicate it, do not wrap it in another document, do not append a second copy.
 
 This is the agentic analytics agent users will interact with to ask questions about their data. It runs a multi-step FSM pipeline (clarify → specify → generate SQL → execute → interpret) rather than a single LLM tool loop.
 
@@ -447,7 +447,7 @@ Rules:
 - `context` globs are resolved relative to the file's directory and wire `.view.yml` / `.topic.yml` / `.app.yml` / `.sql` into the pipeline context.
 - Do NOT create an `.agent.yml` file — the legacy classic-agent format is no longer used for onboarding.
 
-After the single `propose_change` call, STOP — do NOT call `propose_change` again for this file, and do NOT write a summary or explanation."#,
+After the single `file_change` call, STOP — do NOT call `file_change` again for this file, and do NOT write a summary or explanation."#,
         )
     }
 
@@ -471,7 +471,7 @@ This is the first artifact the user sees after onboarding, so every block must e
    - **Date or datetime dimension** for the trend chart. If none exists, skip the trend chart entirely — do not try to invent a time axis.
    - **Entity dimension** for the ranking tables — the highest-cardinality *business identifier* (store name, product, customer, sku, city, region, title). This is what "top performers" / "bottom performers" rank.
 3. Decide whether a fourth block is worth it using the "Fourth-block decision" rules below. It is *fine* — often better — to ship three strong blocks than four mixed ones.
-4. Call `propose_change` **exactly once** to create `apps/overview.app.yml`. Use a single change block with `from_line: 1, to_line: 1` and the full file contents. Do not call `propose_change` again — no revisions, no re-drafts, no second calls.
+4. Call `file_change` **exactly once** to create `apps/overview.app.yml`. Use a single change block with `from_line: 1, to_line: 1` and the full file contents. Do not call `file_change` again — no revisions, no re-drafts, no second calls.
 
 ## Required blocks (in order)
 
@@ -637,7 +637,7 @@ This phase only runs when the workspace has multiple topics, so you can assume a
 3. From that view, pick:
    - **Primary metric (ONE measure)** — prefer a sum/average over a raw count when available. Used across both tasks so the dashboard stays coherent.
    - **Entity dimension** — the highest-cardinality *business identifier* (name, title, id with a human label). This is what "top performers" ranks.
-4. Call `propose_change` **exactly once** to create `apps/<topic_slug>.app.yml`. Use a single change block with `from_line: 1, to_line: 1` and the full file contents. Do not call `propose_change` again — no revisions, no re-drafts, no second calls.
+4. Call `file_change` **exactly once** to create `apps/<topic_slug>.app.yml`. Use a single change block with `from_line: 1, to_line: 1` and the full file contents. Do not call `file_change` again — no revisions, no re-drafts, no second calls.
 
 ### Dimensions NOT to use as the entity dimension
 
@@ -852,11 +852,11 @@ mod tests {
     }
 
     #[test]
-    fn agent_prompt_tells_builder_to_use_propose_change() {
+    fn agent_prompt_tells_builder_to_use_file_change() {
         let prompt = ctx_with(OnboardingBuildStep::Agent).build_prompt();
         assert!(
-            prompt.contains("propose_change"),
-            "prompt should instruct the builder to use the propose_change tool"
+            prompt.contains("file_change"),
+            "prompt should instruct the builder to use the file_change tool"
         );
     }
 

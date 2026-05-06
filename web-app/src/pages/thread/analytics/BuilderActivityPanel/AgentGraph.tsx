@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 
-import type { BuilderProposedChange } from "@/hooks/useBuilderActivity";
+import type { BuilderFileChange } from "@/hooks/useBuilderActivity";
 import { GenericGraph } from "./GenericGraph";
 import { type AgentConfig, diffAgentItems } from "./types";
 
@@ -9,7 +9,7 @@ export const AgentGraph = ({
   oldAgent,
   newAgent
 }: {
-  change: BuilderProposedChange;
+  change: BuilderFileChange;
   oldAgent: AgentConfig | null;
   newAgent: AgentConfig;
 }) => {

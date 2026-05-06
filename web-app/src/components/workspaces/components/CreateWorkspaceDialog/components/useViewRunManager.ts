@@ -24,7 +24,7 @@ export interface ViewRunTimingSnapshot {
 
 /**
  * Manages parallel semantic view builder runs with concurrency cap.
- * Each run opens its own SSE connection, auto-accepts propose_change
+ * Each run opens its own SSE connection, auto-accepts file_change
  * suspensions, and reports completion/failure via callbacks.
  */
 export function useViewRunManager(
@@ -315,7 +315,7 @@ async function runSingleView(
           data: parsed
         } as SseEvent;
 
-        // Report all trace-relevant events (llm_usage, tool_call, proposed_change, etc.)
+        // Report all trace-relevant events (llm_usage, tool_call, file_changed, etc.)
         // Skip control events that aren't useful for the reasoning trace.
         if (msg.event !== "done" && msg.event !== "error" && msg.event !== "awaiting_input") {
           onNewEvents([event]);
@@ -333,7 +333,7 @@ async function runSingleView(
           settle(() => resolve("cancelled"));
         }
 
-        // Handle suspensions: auto-accept propose_change, treat fatal errors as failure
+        // Handle suspensions: auto-accept file_change, treat fatal errors as failure
         if (msg.event === "awaiting_input") {
           const questions =
             (parsed as { questions?: Array<{ prompt: string; suggestions?: string[] }> })
@@ -341,7 +341,7 @@ async function runSingleView(
           const isAutoAcceptable = questions.some((q) => {
             try {
               const p = JSON.parse(q.prompt);
-              return p.type === "propose_change";
+              return p.type === "file_change";
             } catch {
               return q.suggestions?.some(
                 (s) => s.toLowerCase() === "accept" || s.toLowerCase() === "reject"

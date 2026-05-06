@@ -17,6 +17,8 @@ export type ArtifactItem = {
   toolName: string;
   toolInput: string;
   toolOutput?: string;
+  /** True when the tool returned an error (is_error=true in the tool_result event). */
+  isError?: boolean;
   /** Tool execution time in ms (time spent inside the tool, excluding LLM). */
   durationMs?: number;
   /** LLM inference time for the round that produced this tool call (ms). */
@@ -714,6 +716,7 @@ export function buildAnalyticsSteps(events: UiBlock[]): StepOrGroup[] {
         const a = scope.findLastStreaming<ArtifactItem>("artifact", ssi);
         if (a) {
           a.toolOutput = JSON.stringify(ev.payload.output ?? "");
+          a.isError = (ev.payload as { is_error?: boolean }).is_error === true;
           a.durationMs = ev.payload.duration_ms;
           a.isStreaming = false;
         }
@@ -734,12 +737,14 @@ export function buildAnalyticsSteps(events: UiBlock[]): StepOrGroup[] {
           prompt.startsWith("The analytics pipeline could not");
 
         if (!lastAwaitingIsDelegation) {
-          // Neither ask_user, propose_change, nor init_dbt_project get a tool_result
-          // because the pipeline suspends before one is emitted. Mark them as done here
+          // These tools suspend before a tool_result is emitted. Mark them as done here
           // so the spinner stops.
           for (const toolName of [
             "ask_user",
-            "propose_change",
+            "file_change",
+            "write_file",
+            "edit_file",
+            "delete_file",
             "init_dbt_project",
             "manage_directory"
           ]) {

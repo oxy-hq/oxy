@@ -4,11 +4,12 @@ use std::sync::Arc;
 use agentic_core::{
     events::{Event, EventStream},
     human_input::{DeferredInputProvider, HumanInputHandle, ResumeInput, SuspendedRunData},
-    tools::ToolError,
+    tools::{ToolError, ToolOutput},
 };
 use agentic_llm::{InitialMessages, LlmClient, ToolLoopConfig};
 
 use crate::{
+    app_runner::BuilderAppRunner,
     database::BuilderDatabaseProvider,
     events::BuilderEvent,
     schema_provider::BuilderSchemaProvider,
@@ -16,14 +17,15 @@ use crate::{
     semantic::BuilderSemanticCompiler,
     test_runner::BuilderTestRunner,
     tools::{
-        execute_analyze_dbt_project, execute_clean_dbt_project, execute_compile_dbt_model,
-        execute_debug_dbt_project, execute_docs_generate_dbt, execute_execute_sql,
-        execute_format_dbt_sql, execute_get_dbt_column_lineage, execute_get_dbt_lineage,
-        execute_init_dbt_project, execute_list_dbt_nodes, execute_list_dbt_projects,
-        execute_lookup_schema, execute_manage_directory, execute_parse_dbt_project,
-        execute_propose_change, execute_read_file, execute_run_dbt_models, execute_run_tests,
-        execute_search_files, execute_search_text, execute_seed_dbt_project,
-        execute_semantic_query, execute_test_dbt_models, execute_validate_project,
+        execute_analyze_dbt_project, execute_clean_dbt_project, execute_compile_dbt_model_all,
+        execute_compile_dbt_model_single, execute_debug_dbt_project, execute_delete_file,
+        execute_docs_generate_dbt, execute_edit_file, execute_execute_sql, execute_format_dbt_sql,
+        execute_get_dbt_column_lineage, execute_get_dbt_lineage, execute_init_dbt_project,
+        execute_list_dbt_nodes, execute_list_dbt_projects, execute_lookup_schema,
+        execute_manage_directory, execute_parse_dbt_project, execute_read_file, execute_run_app,
+        execute_run_dbt_models, execute_run_tests, execute_search_files, execute_search_text,
+        execute_seed_dbt_project, execute_semantic_query, execute_test_dbt_models,
+        execute_validate_project, execute_write_file,
     },
     types::{BuilderSpec, ConversationTurn, ToolExchange},
     validator::BuilderProjectValidator,
@@ -42,6 +44,7 @@ pub struct BuilderSolver {
     pub(crate) schema_provider: Option<Arc<dyn BuilderSchemaProvider>>,
     pub(crate) semantic_compiler: Option<Arc<dyn BuilderSemanticCompiler>>,
     pub(crate) secrets_provider: Option<Arc<dyn BuilderSecretsProvider>>,
+    pub(crate) app_runner: Option<Arc<dyn BuilderAppRunner>>,
 }
 
 impl BuilderSolver {
@@ -59,6 +62,7 @@ impl BuilderSolver {
             schema_provider: None,
             semantic_compiler: None,
             secrets_provider: None,
+            app_runner: None,
         }
     }
 
@@ -102,6 +106,11 @@ impl BuilderSolver {
         self
     }
 
+    pub fn with_app_runner(mut self, runner: Arc<dyn BuilderAppRunner>) -> Self {
+        self.app_runner = Some(runner);
+        self
+    }
+
     pub(crate) fn build_solving_system_prompt(&self) -> String {
         let root = self.project_root.to_string_lossy();
         format!(
@@ -126,13 +135,16 @@ modify these files.
 ## Available tools
 
 - search_files(pattern): find files by glob pattern (e.g. "agents/*.agent.yml", "**/*.view.yml", "**/*.test.yml")
-- read_file(path, start_line?, end_line?): read file content with optional line range
-- search_text(pattern, file_glob?): grep-like text search across files
-- propose_change(file_path, description, changes, delete?): propose targeted line-range edits or a file deletion and ask the user for confirmation. Each block in `changes` has `from_line`, `to_line`, and `content` fields. Set delete=true to delete a file (omit changes).
+- read_file(file_path, offset?, limit?): read file content; offset is the 1-indexed line to start from, limit is the max number of lines to return
+- search_text(pattern, glob?, output_mode?): grep-like text search; output_mode is "content" (default, file:line:text), "files_with_matches", or "count"
+- write_file(file_path, content, description): create a new file or fully overwrite an existing one. Use for new files or when replacing the entire content. HITL-gated.
+- edit_file(file_path, old_string, new_string, description, replace_all?): replace an exact string in an existing file. old_string must match character-for-character including whitespace. Fails if old_string is not found. Set replace_all=true to replace all occurrences. Prefer this over write_file for targeted edits. HITL-gated.
+- delete_file(file_path, description): delete an existing file. HITL-gated.
 - manage_directory(operation, path, description, new_path?): create, delete, or rename a directory and ask the user for confirmation. operation must be "create", "delete", or "rename". new_path is required for "rename". delete removes the directory and all its contents recursively.
 - validate_project(file_path?): validate all project files (or a single file) against the Oxy schema; returns any errors
 - lookup_schema(object_name): look up the JSON schema for any Oxy object type — semantic (Dimension, Measure, View, Topic…), agent (AgentConfig, AgentType, ToolType…), FSM workflow (AgenticConfig), workflow tasks (Workflow, Task, ExecuteSQLTask, AgentTask…), app (AppConfig, Display…), test (TestFileConfig, TestSettings, TestCase), or config (Config, Database, DatabaseType)
 - run_tests(file_path?): run a specific .test.yml file (or all test files if omitted) using the Oxy eval pipeline; returns pass rate and any errors
+- run_app(file_path, params?): execute a .app.yml data app and return per-task results (success, row count, sample rows, error). Always runs fresh — bypasses the result cache. Use after editing an app file to verify all tasks execute without error.
 - execute_sql(sql, database?): execute a SQL query against a configured database (defaults to the first); returns columns, rows (up to 100), and row count. Use to verify SQL before proposing file changes.
 - semantic_query(topic, dimensions?, measures?, filters?, limit?): compile and run a semantic layer query; validates against .view.yml/.topic.yml, returns generated SQL and results. Use to verify semantic definitions before proposing changes to .view.yml or .topic.yml files.
 - ask_user(prompt, suggestions): ask the user a clarifying question when you need more information to proceed accurately. Always provide 2–4 concrete suggestions.
@@ -153,6 +165,19 @@ mappings:
   # mapping dbt target `dev` to oxy database `local`
   dev: local
 ```
+
+IMPORTANT: Responsibility split across the three config files:
+- `oxy.yml` mappings handle **connection routing only** — they map a dbt target name to an
+  Oxy database name defined in `config.yml` (e.g. `dev: local`).
+- `config.yml` owns **all connection credentials and adapter settings** (host, user, password,
+  warehouse, key file, etc.). This is the authoritative source for database connections.
+- `profiles.yml` owns **output schema configuration only**: the active `target:` name and the
+  `schema:` (or `dataset:` for BigQuery) field that controls where model output is written.
+  It does NOT contain credentials — those come from `config.yml` via the `oxy.yml` mapping.
+
+When a user asks to configure a dbt project connection, edit the credentials in `config.yml`
+and add the target→database mapping in `oxy.yml`. Only edit `profiles.yml` to change the
+output schema or default target.
 
 IMPORTANT: The dbt target type in `profiles.yml` (the `type:` field) must match the Oxy
 database type in `config.yml`. Mismatched types cause a `DatabaseTypeMismatch` error at
@@ -179,15 +204,145 @@ writing the mapping.
 - test_dbt_models(project, selector?): run dbt data-quality tests (not_null, unique, accepted_values, etc.)
 - get_dbt_lineage(project): return the directed dependency graph as nodes + edges
 
+## DBMS compatibility
+
+SQL dialects differ significantly. Always check `profiles.yml` for the active `type:` before writing model SQL.
+
+**Schema / table referencing**
+- DuckDB: omit the schema prefix — write `FROM my_table`, never `FROM public.my_table`. DuckDB's in-memory context registers tables without a schema qualifier.
+- PostgreSQL: use explicit `schema.table` references (e.g. `FROM public.orders`) when the search path is not guaranteed.
+- BigQuery: use three-part names — `project.dataset.table` — or two-part `dataset.table` when a default project is set.
+- Snowflake: use `database.schema.table`; fall back to `schema.table` when the database is set in the connection.
+
+**Function portability — known gaps and substitutes**
+
+| Function | DuckDB | BigQuery | PostgreSQL | Snowflake |
+|----------|--------|----------|------------|-----------|
+| `INITCAP` | NOT available — use `regexp_replace(lower(col), '(^|[^a-zA-Z])([a-z])', '\1' || upper('\2'))` or write a macro | `INITCAP(col)` | `INITCAP(col)` | `INITCAP(col)` |
+| `STRING_AGG` | `string_agg(col, sep)` | `STRING_AGG(col, sep)` | `string_agg(col, sep)` | `LISTAGG(col, sep)` |
+| `DATE_TRUNC` | `date_trunc('month', col)` | `DATE_TRUNC(col, MONTH)` — note reversed arg order | `date_trunc('month', col)` | `DATE_TRUNC('month', col)` |
+| `EPOCH` extraction | `epoch(col)` or `extract(epoch FROM col)` | `UNIX_SECONDS(col)` | `extract(epoch FROM col)` | `DATE_PART('epoch', col)` |
+| `GENERATE_SERIES` | `generate_series(start, stop, step)` | `GENERATE_ARRAY(start, stop)` | `generate_series(start, stop, step)` | not built-in |
+| `TYPEOF` / type inspection | `typeof(col)` | n/a | `pg_typeof(col)` | `TYPEOF(col)` |
+
+**Type casting in DuckDB**
+DuckDB requires explicit casts inside `CASE`/`WHEN` branches and string operations when operand types differ.
+- Always cast to `VARCHAR` before concatenation: `CAST(col AS VARCHAR) || ' suffix'`
+- Inside a `CASE` expression, all `THEN` branches must return the same type; use `CAST(... AS VARCHAR)` on every branch when mixing types.
+- Use `TRY_CAST(col AS INTEGER)` to return `NULL` on conversion failure instead of raising an error.
+
+## Troubleshooting common errors
+
+**`function does not exist` / `Unknown function`**
+1. Identify the dialect from `profiles.yml type:`.
+2. Check the portability table above for a substitute.
+3. If no built-in substitute exists, write a dbt macro in `macros/` (e.g. `macros/initcap.sql`) and call it with `{{ initcap(col) }}`.
+4. After fixing, recompile with `compile_dbt_model` to confirm the error is gone before running.
+
+**`explicit type cast required` / type mismatch**
+1. Wrap the offending column: `CAST(col AS VARCHAR)` for string ops, or the target numeric type for arithmetic.
+2. In DuckDB `CASE`/`WHEN`, cast every `THEN` branch to a common type.
+3. For date arithmetic, use `col::DATE` (DuckDB/Postgres) or `CAST(col AS DATE)` (portable) rather than relying on implicit coercion.
+
+**`relation does not exist` / `Table not found`**
+1. Check that the seed CSV is present in `seeds/` and run `seed_dbt_project` before building models that reference it.
+2. Verify `{{ ref('model_name') }}` spelling matches the `.sql` filename exactly (case-sensitive on some platforms).
+3. Run `parse_dbt_project` to confirm all DAG nodes resolved without errors.
+
+## File naming and directory conventions
+
+Follow this layout strictly so automation and scripts can rely on predictable paths:
+
+```
+modeling/<project>/
+  seeds/           # raw CSV inputs — filename becomes the seed name, e.g. seeds/raw_books.csv → ref('raw_books')
+  models/
+    staging/       # one-to-one cleaning models, prefix: stg_  (e.g. stg_books.sql)
+    marts/         # aggregated/business models, prefix: fct_ or dim_  (e.g. fct_orders.sql)
+  macros/          # reusable Jinja macros
+  tests/           # custom data tests
+  schema.yml       # column descriptions and dbt tests
+  dbt_project.yml
+  profiles.yml
+  oxy.yml
+```
+
+- Name seeds after the raw source: `raw_<entity>.csv` → `raw_<entity>` seed → `stg_<entity>.sql` staging model.
+- All raw CSVs that models depend on must exist as seeds in `seeds/`. Never reference a CSV path directly in model SQL.
+- Use lowercase snake_case for all file and model names.
+
+## Reusable cleaning model template
+
+When creating a `stg_<entity>.sql` model, start from this pattern and adapt to the actual columns:
+
+```sql
+WITH source AS (
+    SELECT * FROM {{ ref('raw_<entity>') }}
+),
+cleaned AS (
+    SELECT
+        -- deduplicate on natural key
+        ROW_NUMBER() OVER (PARTITION BY id ORDER BY updated_at DESC) AS row_num,
+
+        -- normalize dates: coerce empty string / NULL to NULL, then cast
+        CASE
+            WHEN TRIM(CAST(event_date AS VARCHAR)) = '' THEN NULL
+            ELSE TRY_CAST(event_date AS DATE)
+        END AS event_date,
+
+        -- coalesce NULLs to safe defaults
+        COALESCE(CAST(quantity AS INTEGER), 0) AS quantity,
+        COALESCE(TRIM(CAST(name AS VARCHAR)), 'unknown') AS name
+    FROM source
+)
+SELECT * EXCLUDE (row_num) FROM cleaned WHERE row_num = 1
+```
+
+Replace `id`, `updated_at`, and column names to match the actual seed schema. Remove sections that don't apply.
+
+## No manual data change policy
+
+Never suggest editing raw CSV files, running UPDATE statements against source tables, or modifying data outside a dbt model to work around a data quality issue. Always:
+1. Fix the issue in a staging model (type cast, COALESCE, dedup, filter).
+2. If the raw CSV itself has structural errors (wrong delimiter, encoding), ask the user to fix the file and re-seed — do not suggest rewriting data rows manually.
+
+## Model dependency order
+
+Before building models, verify the dependency chain is intact:
+1. Run `parse_dbt_project` — confirm all nodes resolve and there are no DAG errors.
+2. Run `seed_dbt_project` — load all seed CSVs before running any model that uses `{{ ref('raw_...') }}`.
+3. Run `run_dbt_models` with a selector starting from the most upstream model first (or omit selector to run all in dependency order).
+4. Run `test_dbt_models` after a successful run to catch data-quality regressions.
+
+When a user asks to build a specific model, always check its lineage with `get_dbt_lineage` first and ensure upstream seeds and models are present before running.
+
+## SQL testing after transformation
+
+After any model change:
+1. Use `compile_dbt_model` to inspect the final SQL before running.
+2. Use `run_dbt_models` then `test_dbt_models` to execute dbt schema tests (`not_null`, `unique`, `accepted_values`).
+3. Use `execute_sql` for ad-hoc spot checks, e.g.:
+   - NULL audit: `SELECT COUNT(*) FROM <model> WHERE <key_col> IS NULL`
+   - Duplicate check: `SELECT <key>, COUNT(*) FROM <model> GROUP BY 1 HAVING COUNT(*) > 1`
+   - Range check: `SELECT MIN(amount), MAX(amount), AVG(amount) FROM <model>`
+4. Report any rows that fail these checks to the user before declaring the model clean.
+
+## Schema evolution guidance
+
+When raw CSV columns change or cleaning logic is updated:
+1. Run `analyze_dbt_project` to detect contract violations — columns declared in `schema.yml` that are missing or type-mismatched in the actual output.
+2. Update `schema.yml` column definitions to match the new output schema.
+3. Check downstream models with `get_dbt_lineage` — identify all models that `{{ ref() }}` the changed model and review whether their column references are still valid.
+4. Run the full test suite with `test_dbt_models` after any schema change to surface broken assumptions early.
+
 ## Guidelines
 
 - Restrict emoji usages.
 - Always read config.yml first to understand available databases and models before making changes
 - Read the relevant files before proposing any changes — never guess at existing content
-- Always use propose_change before writing, modifying, or deleting any file — never assume permission
-- Use targeted line-range blocks when proposing a change — specify only the lines that change, not the whole file
-- To create a new file, pass a single block with from_line=1, to_line=1 and the full content as `content`
-- Use propose_change with delete=true to delete a file
+- Always use write_file, edit_file, or delete_file before writing, modifying, or deleting any file — never assume permission
+- Prefer edit_file for targeted changes; use write_file only when creating a new file or replacing the entire content
+- Use delete_file to delete a file
 - Use file paths relative to the project root in all tool calls and responses
 - When proposing changes, explain what you are changing and why
 - After a change is accepted, run validate_project on the modified file to confirm it is schema-valid
@@ -196,6 +351,7 @@ writing the mapping.
 - Test files (.test.yml) must reference a valid target (an .agent.yml or .aw.yml file path relative to the project root)
 - Use lookup_schema(TestFileConfig) to see the full test file schema before writing tests
 - After writing a test file, use run_tests to execute it and report the results to the user
+- After writing or editing a .app.yml file, use run_app to verify all tasks execute without error
 - After making change on dbt project, compile and run the tests to confirm nothing is broken.
 
 ## CRITICAL INSTRUCTION
@@ -212,7 +368,8 @@ You receive the user's original request and the full tool exchange log from the 
 Your job is to write a short, direct reply.
 State what was done and call out any notable outcome or follow-up the user must know.
 Skip listing every file, field, or test step unless something went wrong.
-No emoji. Do not invent results not present in the tool exchange log."#
+No emoji. Do not invent results not present in the tool exchange log.
+Do not call any tools."#
             .to_string()
     }
 
@@ -289,7 +446,8 @@ pub(crate) async fn dispatch_tool(
     schema_provider: Option<&Arc<dyn BuilderSchemaProvider>>,
     semantic_compiler: Option<&Arc<dyn BuilderSemanticCompiler>>,
     secrets_provider: Option<&Arc<dyn BuilderSecretsProvider>>,
-) -> Result<serde_json::Value, ToolError> {
+    app_runner: Option<&Arc<dyn BuilderAppRunner>>,
+) -> Result<Box<dyn ToolOutput>, ToolError> {
     match name {
         "search_files" => {
             let r = execute_search_files(project_root, params);
@@ -307,7 +465,7 @@ pub(crate) async fn dispatch_tool(
                 )
                 .await;
             }
-            r
+            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
         }
         "read_file" => {
             let r = execute_read_file(project_root, params).await;
@@ -319,13 +477,13 @@ pub(crate) async fn dispatch_tool(
                         tool_name: "read_file".into(),
                         summary: format!(
                             "Read '{}' ({lines} lines)",
-                            params["path"].as_str().unwrap_or("")
+                            params["file_path"].as_str().unwrap_or("")
                         ),
                     },
                 )
                 .await;
             }
-            r
+            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
         }
         "search_text" => {
             let r = execute_search_text(project_root, params).await;
@@ -343,7 +501,7 @@ pub(crate) async fn dispatch_tool(
                 )
                 .await;
             }
-            r
+            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
         }
         "validate_project" => {
             let validator = project_validator.ok_or_else(|| {
@@ -369,33 +527,83 @@ pub(crate) async fn dispatch_tool(
                 )
                 .await;
             }
-            r
+            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
         }
-        "propose_change" => {
+        "write_file" => {
             let file_path = params["file_path"].as_str().unwrap_or("").to_string();
             let description = params["description"].as_str().unwrap_or("").to_string();
-            let result = execute_propose_change(project_root, params, human_input.as_ref()).await;
-            // new_content is computed inside execute_propose_change (by applying the
-            // change blocks) and embedded in the suspended prompt JSON. Extract it here
-            // so the frontend can visualize the diff via the proposed_change event.
-            let new_content = if let Err(ToolError::Suspended { ref prompt, .. }) = result {
-                serde_json::from_str::<serde_json::Value>(prompt)
+            let result = execute_write_file(project_root, params, human_input.as_ref()).await;
+            if let Err(ToolError::Suspended { ref prompt, .. }) = result {
+                let (new_content, old_content) = serde_json::from_str::<serde_json::Value>(prompt)
                     .ok()
-                    .and_then(|v| v["new_content"].as_str().map(String::from))
-                    .unwrap_or_default()
-            } else {
-                String::new()
-            };
-            emit_domain(
-                event_tx,
-                BuilderEvent::ProposedChange {
-                    file_path,
-                    description,
-                    new_content,
-                },
-            )
-            .await;
-            result
+                    .map(|v| {
+                        (
+                            v["new_content"].as_str().unwrap_or("").to_string(),
+                            v["old_content"].as_str().unwrap_or("").to_string(),
+                        )
+                    })
+                    .unwrap_or_default();
+                emit_domain(
+                    event_tx,
+                    BuilderEvent::FileChangePending {
+                        file_path,
+                        description,
+                        new_content,
+                        old_content,
+                    },
+                )
+                .await;
+            }
+            result.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+        }
+        "edit_file" => {
+            let file_path = params["file_path"].as_str().unwrap_or("").to_string();
+            let description = params["description"].as_str().unwrap_or("").to_string();
+            let result = execute_edit_file(project_root, params, human_input.as_ref()).await;
+            if let Err(ToolError::Suspended { ref prompt, .. }) = result {
+                let (new_content, old_content) = serde_json::from_str::<serde_json::Value>(prompt)
+                    .ok()
+                    .map(|v| {
+                        (
+                            v["new_content"].as_str().unwrap_or("").to_string(),
+                            v["old_content"].as_str().unwrap_or("").to_string(),
+                        )
+                    })
+                    .unwrap_or_default();
+                emit_domain(
+                    event_tx,
+                    BuilderEvent::FileChangePending {
+                        file_path,
+                        description,
+                        new_content,
+                        old_content,
+                    },
+                )
+                .await;
+            }
+            result.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+        }
+        "delete_file" => {
+            let file_path = params["file_path"].as_str().unwrap_or("").to_string();
+            let description = params["description"].as_str().unwrap_or("").to_string();
+            let result = execute_delete_file(project_root, params, human_input.as_ref()).await;
+            if let Err(ToolError::Suspended { ref prompt, .. }) = result {
+                let old_content = serde_json::from_str::<serde_json::Value>(prompt)
+                    .ok()
+                    .and_then(|v| v["old_content"].as_str().map(String::from))
+                    .unwrap_or_default();
+                emit_domain(
+                    event_tx,
+                    BuilderEvent::FileChangePending {
+                        file_path,
+                        description,
+                        new_content: String::new(),
+                        old_content,
+                    },
+                )
+                .await;
+            }
+            result.map(|v| Box::new(v) as Box<dyn ToolOutput>)
         }
         "manage_directory" => {
             let path = params["path"].as_str().unwrap_or("").to_string();
@@ -411,9 +619,10 @@ pub(crate) async fn dispatch_tool(
                 )
                 .await;
             }
-            result
+            result.map(|v| Box::new(v) as Box<dyn ToolOutput>)
         }
-        "ask_user" => agentic_core::tools::handle_ask_user(params, human_input.as_ref()),
+        "ask_user" => agentic_core::tools::handle_ask_user(params, human_input.as_ref())
+            .map(|v| Box::new(v) as Box<dyn ToolOutput>),
         "lookup_schema" => {
             let provider = schema_provider
                 .ok_or_else(|| ToolError::Execution("schema provider is not configured".into()))?;
@@ -429,7 +638,7 @@ pub(crate) async fn dispatch_tool(
                 )
                 .await;
             }
-            r
+            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
         }
         "run_tests" => match test_runner {
             Some(runner) => {
@@ -453,7 +662,7 @@ pub(crate) async fn dispatch_tool(
                     )
                     .await;
                 }
-                r
+                r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
             }
             None => Err(ToolError::Execution(
                 "test runner is not configured for this builder instance".into(),
@@ -476,7 +685,7 @@ pub(crate) async fn dispatch_tool(
                 )
                 .await;
             }
-            r
+            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
         }
         "semantic_query" => {
             let provider = db_provider.ok_or_else(|| {
@@ -498,193 +707,199 @@ pub(crate) async fn dispatch_tool(
                 )
                 .await;
             }
-            r
+            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
         }
         "list_dbt_projects" => {
             let r = execute_list_dbt_projects(project_root, params);
             if let Ok(ref v) = r {
-                let count = v["count"].as_u64().unwrap_or(0);
                 emit_domain(
                     event_tx,
                     BuilderEvent::ToolUsed {
                         tool_name: "list_dbt_projects".into(),
-                        summary: format!("Found {count} dbt project(s)"),
+                        summary: format!("Found {} dbt project(s)", v.projects.len()),
                     },
                 )
                 .await;
             }
-            r
+            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
         }
         "list_dbt_nodes" => {
             let r = execute_list_dbt_nodes(project_root, params);
             if let Ok(ref v) = r {
-                let count = v["count"].as_u64().unwrap_or(0);
-                let project = params["project"].as_str().unwrap_or("");
                 emit_domain(
                     event_tx,
                     BuilderEvent::ToolUsed {
                         tool_name: "list_dbt_nodes".into(),
-                        summary: format!("Listed {count} node(s) in '{project}'"),
+                        summary: format!("Listed {} node(s) in '{}'", v.nodes.len(), v.project),
                     },
                 )
                 .await;
             }
-            r
+            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
         }
         "compile_dbt_model" => {
-            let r = execute_compile_dbt_model(project_root, params);
-            if let Ok(ref v) = r {
-                let project = params["project"].as_str().unwrap_or("");
-                let summary = if let Some(model) = params["model"].as_str() {
-                    format!("Compiled model '{model}' in '{project}'")
-                } else {
-                    let n = v["models_compiled"].as_u64().unwrap_or(0);
-                    format!("Compiled {n} model(s) in '{project}'")
-                };
-                emit_domain(
-                    event_tx,
-                    BuilderEvent::ToolUsed {
-                        tool_name: "compile_dbt_model".into(),
-                        summary,
-                    },
-                )
-                .await;
+            let project_name = params["project"].as_str().unwrap_or("");
+            if let Some(model) = params["model"].as_str().filter(|s| !s.is_empty()) {
+                let r = execute_compile_dbt_model_single(project_root, project_name, model);
+                if r.is_ok() {
+                    emit_domain(
+                        event_tx,
+                        BuilderEvent::ToolUsed {
+                            tool_name: "compile_dbt_model".into(),
+                            summary: format!("Compiled model '{model}' in '{project_name}'"),
+                        },
+                    )
+                    .await;
+                }
+                r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+            } else {
+                let r = execute_compile_dbt_model_all(project_root, project_name);
+                if let Ok(ref v) = r {
+                    emit_domain(
+                        event_tx,
+                        BuilderEvent::ToolUsed {
+                            tool_name: "compile_dbt_model".into(),
+                            summary: format!(
+                                "Compiled {} model(s) in '{project_name}'",
+                                v.models_compiled
+                            ),
+                        },
+                    )
+                    .await;
+                }
+                r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
             }
-            r
         }
         "run_dbt_models" => {
             let sm = secrets_provider.map(|p| p.secrets_manager().clone());
             let r = execute_run_dbt_models(project_root, params, sm.as_ref()).await;
             if let Ok(ref v) = r {
-                let project = params["project"].as_str().unwrap_or("");
-                let status = v["status"].as_str().unwrap_or("unknown");
-                let n = v["results"].as_array().map(|a| a.len()).unwrap_or(0);
                 emit_domain(
                     event_tx,
                     BuilderEvent::ToolUsed {
                         tool_name: "run_dbt_models".into(),
-                        summary: format!("Ran {n} model(s) in '{project}' — {status}"),
+                        summary: format!(
+                            "Ran {} model(s) in '{}' — {}",
+                            v.results.len(),
+                            v.project,
+                            v.status
+                        ),
                     },
                 )
                 .await;
             }
-            r
+            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
         }
         "test_dbt_models" => {
             let sm = secrets_provider.map(|p| p.secrets_manager().clone());
             let r = execute_test_dbt_models(project_root, params, sm.as_ref()).await;
             if let Ok(ref v) = r {
-                let project = params["project"].as_str().unwrap_or("");
-                let passed = v["passed"].as_u64().unwrap_or(0);
-                let failed = v["failed"].as_u64().unwrap_or(0);
                 emit_domain(
                     event_tx,
                     BuilderEvent::ToolUsed {
                         tool_name: "test_dbt_models".into(),
-                        summary: format!("Tests for '{project}': {passed} passed, {failed} failed"),
+                        summary: format!(
+                            "Tests for '{}': {} passed, {} failed",
+                            v.project, v.passed, v.failed
+                        ),
                     },
                 )
                 .await;
             }
-            r
+            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
         }
         "get_dbt_lineage" => {
             let r = execute_get_dbt_lineage(project_root, params);
             if let Ok(ref v) = r {
-                let project = params["project"].as_str().unwrap_or("");
-                let nodes = v["nodes"].as_array().map(|a| a.len()).unwrap_or(0);
-                let edges = v["edges"].as_array().map(|a| a.len()).unwrap_or(0);
                 emit_domain(
                     event_tx,
                     BuilderEvent::ToolUsed {
                         tool_name: "get_dbt_lineage".into(),
-                        summary: format!("Lineage for '{project}': {nodes} nodes, {edges} edges"),
+                        summary: format!(
+                            "Lineage for '{}': {} nodes, {} edges",
+                            v.project,
+                            v.nodes.len(),
+                            v.edges.len()
+                        ),
                     },
                 )
                 .await;
             }
-            r
+            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
         }
         "analyze_dbt_project" => {
             let r = execute_analyze_dbt_project(project_root, params).await;
             if let Ok(ref v) = r {
-                let project = params["project"].as_str().unwrap_or("");
-                let analyzed = v["models_analyzed"].as_u64().unwrap_or(0);
-                let violations = v["contract_violations"]
-                    .as_array()
-                    .map(|a| a.len())
-                    .unwrap_or(0);
                 emit_domain(
                     event_tx,
                     BuilderEvent::ToolUsed {
                         tool_name: "analyze_dbt_project".into(),
                         summary: format!(
-                            "Analyzed {analyzed} model(s) in '{project}' — {violations} contract violation(s)"
+                            "Analyzed {} model(s) in '{}' — {} contract violation(s)",
+                            v.models_analyzed,
+                            v.project,
+                            v.contract_violations.len()
                         ),
                     },
                 )
                 .await;
             }
-            r
+            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
         }
         "get_dbt_column_lineage" => {
             let r = execute_get_dbt_column_lineage(project_root, params);
             if let Ok(ref v) = r {
-                let project = params["project"].as_str().unwrap_or("");
-                let edges = v["edges"].as_array().map(|a| a.len()).unwrap_or(0);
                 emit_domain(
                     event_tx,
                     BuilderEvent::ToolUsed {
                         tool_name: "get_dbt_column_lineage".into(),
-                        summary: format!("Column lineage for '{project}': {edges} edge(s)"),
+                        summary: format!(
+                            "Column lineage for '{}': {} edge(s)",
+                            v.project,
+                            v.edges.len()
+                        ),
                     },
                 )
                 .await;
             }
-            r
+            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
         }
         "parse_dbt_project" => {
             let r = execute_parse_dbt_project(project_root, params);
             if let Ok(ref v) = r {
-                let project = params["project"].as_str().unwrap_or("");
-                let models = v["models"].as_u64().unwrap_or(0);
-                let sources = v["sources"].as_u64().unwrap_or(0);
                 emit_domain(
                     event_tx,
                     BuilderEvent::ToolUsed {
                         tool_name: "parse_dbt_project".into(),
                         summary: format!(
-                            "Parsed '{project}': {models} model(s), {sources} source(s)"
+                            "Parsed '{}': {} model(s), {} source(s)",
+                            v.project, v.models, v.sources
                         ),
                     },
                 )
                 .await;
             }
-            r
+            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
         }
         "seed_dbt_project" => {
             let sm = secrets_provider.map(|p| p.secrets_manager().clone());
             let r = execute_seed_dbt_project(project_root, params, sm.as_ref()).await;
             if let Ok(ref v) = r {
-                let project = params["project"].as_str().unwrap_or("");
-                let loaded = v["seeds_loaded"].as_u64().unwrap_or(0);
                 emit_domain(
                     event_tx,
                     BuilderEvent::ToolUsed {
                         tool_name: "seed_dbt_project".into(),
-                        summary: format!("Loaded {loaded} seed(s) in '{project}'"),
+                        summary: format!("Loaded {} seed(s) in '{}'", v.seeds_loaded, v.project),
                     },
                 )
                 .await;
             }
-            r
+            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
         }
         "debug_dbt_project" => {
             let r = execute_debug_dbt_project(project_root, params);
             if let Ok(ref v) = r {
-                let project = params["project"].as_str().unwrap_or("");
-                let all_ok = v["all_ok"].as_bool().unwrap_or(false);
-                let status = if all_ok {
+                let status = if v.all_ok {
                     "all checks passed"
                 } else {
                     "issues found"
@@ -693,63 +908,61 @@ pub(crate) async fn dispatch_tool(
                     event_tx,
                     BuilderEvent::ToolUsed {
                         tool_name: "debug_dbt_project".into(),
-                        summary: format!("Debug '{project}': {status}"),
+                        summary: format!("Debug '{}': {status}", v.project_name),
                     },
                 )
                 .await;
             }
-            r
+            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
         }
         "clean_dbt_project" => {
             let r = execute_clean_dbt_project(project_root, params);
             if let Ok(ref v) = r {
-                let project = params["project"].as_str().unwrap_or("");
-                let cleaned = v["cleaned"].as_array().map(|a| a.len()).unwrap_or(0);
                 emit_domain(
                     event_tx,
                     BuilderEvent::ToolUsed {
                         tool_name: "clean_dbt_project".into(),
-                        summary: format!("Cleaned {cleaned} director(y/ies) in '{project}'"),
-                    },
-                )
-                .await;
-            }
-            r
-        }
-        "docs_generate_dbt" => {
-            let r = execute_docs_generate_dbt(project_root, params);
-            if let Ok(ref v) = r {
-                let project = params["project"].as_str().unwrap_or("");
-                let nodes = v["nodes"].as_u64().unwrap_or(0);
-                emit_domain(
-                    event_tx,
-                    BuilderEvent::ToolUsed {
-                        tool_name: "docs_generate_dbt".into(),
-                        summary: format!("Generated docs for '{project}': {nodes} node(s)"),
-                    },
-                )
-                .await;
-            }
-            r
-        }
-        "format_dbt_sql" => {
-            let r = execute_format_dbt_sql(project_root, params);
-            if let Ok(ref v) = r {
-                let project = params["project"].as_str().unwrap_or("");
-                let changed = v["files_changed"].as_u64().unwrap_or(0);
-                let checked = v["files_checked"].as_u64().unwrap_or(0);
-                emit_domain(
-                    event_tx,
-                    BuilderEvent::ToolUsed {
-                        tool_name: "format_dbt_sql".into(),
                         summary: format!(
-                            "Formatted '{project}': {changed}/{checked} file(s) changed"
+                            "Cleaned {} director(y/ies) in '{}'",
+                            v.cleaned.len(),
+                            v.project
                         ),
                     },
                 )
                 .await;
             }
-            r
+            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+        }
+        "docs_generate_dbt" => {
+            let r = execute_docs_generate_dbt(project_root, params);
+            if let Ok(ref v) = r {
+                emit_domain(
+                    event_tx,
+                    BuilderEvent::ToolUsed {
+                        tool_name: "docs_generate_dbt".into(),
+                        summary: format!("Generated docs for '{}': {} node(s)", v.project, v.nodes),
+                    },
+                )
+                .await;
+            }
+            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+        }
+        "format_dbt_sql" => {
+            let r = execute_format_dbt_sql(project_root, params);
+            if let Ok(ref v) = r {
+                emit_domain(
+                    event_tx,
+                    BuilderEvent::ToolUsed {
+                        tool_name: "format_dbt_sql".into(),
+                        summary: format!(
+                            "Formatted '{}': {}/{} file(s) changed",
+                            v.project, v.files_changed, v.files_checked
+                        ),
+                    },
+                )
+                .await;
+            }
+            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
         }
         "init_dbt_project" => {
             let name = params["name"].as_str().unwrap_or("").to_string();
@@ -765,26 +978,19 @@ pub(crate) async fn dispatch_tool(
             match human_input.as_ref().request_sync(&prompt, &suggestions) {
                 Ok(_) => {
                     let r = execute_init_dbt_project(project_root, params);
-                    if let Ok(ref val) = r
-                        && val["ok"] == true
-                    {
-                        if let Some(files) = val["files"].as_array() {
-                            for file in files {
-                                let file_path = file[0].as_str().unwrap_or("").to_string();
-                                let new_content = file[1].as_str().unwrap_or("").to_string();
-                                let description = file[2].as_str().unwrap_or("").to_string();
-                                emit_domain(
-                                    event_tx,
-                                    BuilderEvent::FileChanged {
-                                        file_path,
-                                        description,
-                                        new_content,
-                                        old_content: String::new(),
-                                        is_deletion: false,
-                                    },
-                                )
-                                .await;
-                            }
+                    if let Ok(ref val) = r {
+                        for (file_path, new_content, description) in &val.files {
+                            emit_domain(
+                                event_tx,
+                                BuilderEvent::FileChanged {
+                                    file_path: file_path.clone(),
+                                    description: description.clone(),
+                                    new_content: new_content.clone(),
+                                    old_content: String::new(),
+                                    is_deletion: false,
+                                },
+                            )
+                            .await;
                         }
                         emit_domain(
                             event_tx,
@@ -795,7 +1001,7 @@ pub(crate) async fn dispatch_tool(
                         )
                         .await;
                     }
-                    r
+                    r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
                 }
                 Err(()) => Err(ToolError::Suspended {
                     prompt,
@@ -803,6 +1009,31 @@ pub(crate) async fn dispatch_tool(
                 }),
             }
         }
+        "run_app" => match app_runner {
+            Some(runner) => {
+                let file_path = params["file_path"].as_str().unwrap_or("").to_string();
+                let r = execute_run_app(project_root, params, runner.clone()).await;
+                if let Ok(ref v) = r {
+                    let tasks_run = v["tasks_run"].as_u64().unwrap_or(0);
+                    let succeeded = v["tasks_succeeded"].as_u64().unwrap_or(0);
+                    let failed = v["tasks_failed"].as_u64().unwrap_or(0);
+                    emit_domain(
+                        event_tx,
+                        BuilderEvent::ToolUsed {
+                            tool_name: "run_app".into(),
+                            summary: format!(
+                                "Ran app '{file_path}' — {tasks_run} task(s), {succeeded} succeeded, {failed} failed"
+                            ),
+                        },
+                    )
+                    .await;
+                }
+                r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+            }
+            None => Err(ToolError::Execution(
+                "app runner is not configured for this builder instance".into(),
+            )),
+        },
         other => Err(ToolError::UnknownTool(other.to_string())),
     }
 }
@@ -817,14 +1048,14 @@ pub(crate) fn record_tool_exchange(
     exchanges: &mut Vec<ToolExchange>,
     name: &str,
     params: &serde_json::Value,
-    result: &Result<serde_json::Value, ToolError>,
+    result: &Result<Box<dyn ToolOutput>, ToolError>,
 ) {
     if matches!(result, Err(ToolError::Suspended { .. })) {
         return;
     }
 
     let output = match result {
-        Ok(value) => value.to_string(),
+        Ok(value) => value.to_value().to_string(),
         Err(err) => err.to_string(),
     };
     exchanges.push(ToolExchange {

@@ -9,7 +9,7 @@ use super::*;
 use tokio::sync::mpsc;
 
 use agentic_core::events::{CoreEvent, Event, EventStream};
-use agentic_core::tools::ToolDef;
+use agentic_core::tools::{ToolDef, ToolOutput};
 
 // ── Anthropic message validation helper ───────────────────────────────────
 
@@ -315,7 +315,7 @@ async fn thinking_then_text_emits_correct_events() {
             "system",
             "user",
             &[],
-            |_, _| Box::pin(async { Ok(Value::Null) }),
+            |_, _| Box::pin(async { Ok(Box::new(Value::Null) as Box<dyn ToolOutput>) }),
             &events,
             ToolLoopConfig {
                 state: "solving".into(),
@@ -394,7 +394,7 @@ async fn tool_call_round_then_final_text() {
             &[],
             |name: String, _| {
                 executed.push(name);
-                Box::pin(async { Ok(json!({"valid": true})) })
+                Box::pin(async { Ok(Box::new(json!({"valid": true})) as Box<dyn ToolOutput>) })
             },
             &events,
             ToolLoopConfig {
@@ -477,7 +477,7 @@ async fn interleaved_thinking_emits_two_thinking_pairs() {
             "system",
             "user",
             &[],
-            |_, _| Box::pin(async { Ok(json!([])) }),
+            |_, _| Box::pin(async { Ok(Box::new(json!([])) as Box<dyn ToolOutput>) }),
             &events,
             ToolLoopConfig {
                 max_tool_rounds: 5,
@@ -528,7 +528,7 @@ async fn stream_error_emits_llm_end_before_propagating() {
             "system",
             "user",
             &[],
-            |_, _| Box::pin(async { Ok(Value::Null) }),
+            |_, _| Box::pin(async { Ok(Box::new(Value::Null) as Box<dyn ToolOutput>) }),
             &events,
             ToolLoopConfig {
                 state: "solving".into(),
@@ -582,7 +582,7 @@ async fn max_tool_rounds_exceeded() {
             "system",
             "user",
             &[],
-            |_, _| Box::pin(async { Ok(json!([])) }),
+            |_, _| Box::pin(async { Ok(Box::new(json!([])) as Box<dyn ToolOutput>) }),
             &None,
             ToolLoopConfig {
                 max_tool_rounds: 3,
@@ -648,7 +648,7 @@ async fn thinking_raw_blocks_preserved_in_tool_continuation() {
             "system",
             "user",
             &[],
-            |_, _| Box::pin(async { Ok(json!({"valid": true})) }),
+            |_, _| Box::pin(async { Ok(Box::new(json!({"valid": true})) as Box<dyn ToolOutput>) }),
             &None,
             ToolLoopConfig {
                 max_tool_rounds: 5,
@@ -747,7 +747,7 @@ async fn slow_consumer_does_not_panic() {
             "system",
             "user",
             &[],
-            |_, _| Box::pin(async { Ok(Value::Null) }),
+            |_, _| Box::pin(async { Ok(Box::new(Value::Null) as Box<dyn ToolOutput>) }),
             &events,
             ToolLoopConfig {
                 state: "solving".into(),
@@ -801,7 +801,7 @@ async fn structured_response_anthropic_schema_tool_intercepted() {
             &[],
             |_: String, _| {
                 tool_executor_called = true;
-                Box::pin(async { Ok(Value::Null) })
+                Box::pin(async { Ok(Box::new(Value::Null) as Box<dyn ToolOutput>) })
             },
             &None,
             ToolLoopConfig {
@@ -860,7 +860,7 @@ async fn structured_response_openai_text_path_populates_structured_response() {
             "system",
             "user",
             &[],
-            |_, _| Box::pin(async { Ok(Value::Null) }),
+            |_, _| Box::pin(async { Ok(Box::new(Value::Null) as Box<dyn ToolOutput>) }),
             &None,
             ToolLoopConfig {
                 state: "solving".into(),
@@ -930,7 +930,7 @@ async fn real_tools_run_then_schema_tool_terminates_loop() {
                 } else {
                     panic!("unexpected tool call: {name}");
                 };
-                Box::pin(async move { Ok(result) })
+                Box::pin(async move { Ok(Box::new(result) as Box<dyn ToolOutput>) })
             },
             &None,
             ToolLoopConfig {
@@ -974,7 +974,7 @@ async fn no_response_schema_gives_none_structured_response() {
             "system",
             "user",
             &[],
-            |_, _| Box::pin(async { Ok(Value::Null) }),
+            |_, _| Box::pin(async { Ok(Box::new(Value::Null) as Box<dyn ToolOutput>) }),
             &None,
             ToolLoopConfig {
                 state: "interpreting".into(),
@@ -1079,7 +1079,9 @@ async fn anthropic_render_chart_tool_use_result_pairing() {
                     .unwrap_or("unknown")
                     .to_string();
                 Box::pin(async move {
-                    Ok(json!({"chart_url": format!("https://charts.internal/render?type={ct}")}))
+                    Ok(Box::new(
+                        json!({"chart_url": format!("https://charts.internal/render?type={ct}")}),
+                    ) as Box<dyn ToolOutput>)
                 })
             },
             &None,
@@ -1244,7 +1246,10 @@ async fn anthropic_render_chart_with_thinking_tool_use_result_pairing() {
             }],
             |_, _| {
                 Box::pin(async {
-                    Ok(json!({"chart_url": "https://charts.internal/render?type=bar"}))
+                    Ok(
+                        Box::new(json!({"chart_url": "https://charts.internal/render?type=bar"}))
+                            as Box<dyn ToolOutput>,
+                    )
                 })
             },
             &None,
@@ -1347,7 +1352,7 @@ async fn anthropic_two_tool_calls_both_get_tool_results() {
             }],
             |name: String, _| {
                 calls.push(name);
-                Box::pin(async { Ok(json!({"chart_url": "ok"})) })
+                Box::pin(async { Ok(Box::new(json!({"chart_url": "ok"})) as Box<dyn ToolOutput>) })
             },
             &None,
             ToolLoopConfig {
@@ -1449,7 +1454,9 @@ async fn anthropic_multi_round_tool_calls_all_paired() {
                 parameters: json!({"type": "object"}),
                 ..Default::default()
             }],
-            |_, _| Box::pin(async { Ok(json!({"chart_url": "ok"})) }),
+            |_, _| {
+                Box::pin(async { Ok(Box::new(json!({"chart_url": "ok"})) as Box<dyn ToolOutput>) })
+            },
             &None,
             ToolLoopConfig {
                 max_tool_rounds: 5,
@@ -1528,7 +1535,7 @@ async fn thinking_only_max_tokens_retries_with_doubled_budget() {
             "system",
             "user",
             &[],
-            |_, _| Box::pin(async { Ok(Value::Null) }),
+            |_, _| Box::pin(async { Ok(Box::new(Value::Null) as Box<dyn ToolOutput>) }),
             &None,
             ToolLoopConfig {
                 max_tool_rounds: 5,
@@ -1584,7 +1591,7 @@ async fn thinking_only_max_tokens_exhausted_returns_error() {
             "system",
             "user",
             &[],
-            |_, _| Box::pin(async { Ok(Value::Null) }),
+            |_, _| Box::pin(async { Ok(Box::new(Value::Null) as Box<dyn ToolOutput>) }),
             &None,
             ToolLoopConfig {
                 max_tool_rounds: 1,
@@ -1656,7 +1663,7 @@ async fn ask_user_suspension_propagates_error() {
                             suggestions,
                         })
                     } else {
-                        Ok(json!({"ok": true}))
+                        Ok(Box::new(json!({"ok": true})) as Box<dyn ToolOutput>)
                     }
                 })
             },
@@ -1762,7 +1769,10 @@ async fn ask_user_suspension_after_tool_rounds_preserves_prior_context() {
                         })
                     } else {
                         // dry_run succeeds
-                        Ok(json!({"columns": ["revenue"], "rows": [["1000"]]}))
+                        Ok(
+                            Box::new(json!({"columns": ["revenue"], "rows": [["1000"]]}))
+                                as Box<dyn ToolOutput>,
+                        )
                     }
                 })
             },
@@ -1854,7 +1864,7 @@ async fn ask_user_as_first_tool_call_resume_has_three_messages() {
                             suggestions,
                         })
                     } else {
-                        Ok(json!({"ok": true}))
+                        Ok(Box::new(json!({"ok": true})) as Box<dyn ToolOutput>)
                     }
                 })
             },
@@ -2199,7 +2209,10 @@ async fn openai_ask_user_resume_after_tool_round_has_matching_call_id() {
                             suggestions,
                         })
                     } else {
-                        Ok(json!({"columns": ["revenue"], "rows": [["1000"]]}))
+                        Ok(
+                            Box::new(json!({"columns": ["revenue"], "rows": [["1000"]]}))
+                                as Box<dyn ToolOutput>,
+                        )
                     }
                 })
             },
@@ -2294,7 +2307,7 @@ async fn openai_ask_user_as_first_tool_call_has_matching_call_id() {
                             suggestions,
                         })
                     } else {
-                        Ok(json!({"ok": true}))
+                        Ok(Box::new(json!({"ok": true})) as Box<dyn ToolOutput>)
                     }
                 })
             },
@@ -2397,21 +2410,21 @@ fn find_suspended_tool_id_anthropic_format() {
     );
 }
 
-/// Unit test: `find_suspended_tool_id` finds `propose_change` (not just `ask_user`).
-/// This is the builder-pipeline regression — the suspended tool is `propose_change`,
+/// Unit test: `find_suspended_tool_id` finds `file_change` (not just `ask_user`).
+/// This is the builder-pipeline regression — the suspended tool is `file_change`,
 /// so the old name-based search returned None and fell back to "ask_user_0".
 #[test]
-fn find_suspended_tool_id_finds_propose_change() {
+fn find_suspended_tool_id_finds_file_change() {
     use super::client::find_suspended_tool_id;
 
-    // Simulate: one search_files call (matched) followed by a propose_change (unmatched).
+    // Simulate: one search_files call (matched) followed by a file_change (unmatched).
     let messages = vec![
         json!({"role": "user", "content": "test"}),
         json!({
             "role": "assistant",
             "content": [
                 {"type": "tool_use", "id": "toolu_search", "name": "search_files", "input": {}},
-                {"type": "tool_use", "id": "toolu_propose", "name": "propose_change", "input": {}}
+                {"type": "tool_use", "id": "toolu_propose", "name": "file_change", "input": {}}
             ]
         }),
         json!({
@@ -2424,37 +2437,37 @@ fn find_suspended_tool_id_finds_propose_change() {
     assert_eq!(
         find_suspended_tool_id(&messages),
         Some("toolu_propose".to_string()),
-        "must return propose_change id, not None",
+        "must return file_change id, not None",
     );
 }
 
-/// Regression test: when the LLM calls multiple `propose_change` tools in a
+/// Regression test: when the LLM calls multiple `file_change` tools in a
 /// single batch (e.g. one per view file), the tool loop suspends on the FIRST
 /// one.  `find_suspended_tool_id` must return the FIRST unmatched tool_use ID,
 /// not the last — otherwise the resumed request has earlier tool_uses without
 /// results and Anthropic rejects with
 /// "tool_use ids were found without tool_result blocks immediately after".
 #[test]
-fn find_suspended_tool_id_batched_propose_change_returns_first() {
+fn find_suspended_tool_id_batched_file_change_returns_first() {
     use super::client::find_suspended_tool_id;
 
-    // All three propose_change calls are in one assistant turn; none have
+    // All three file_change calls are in one assistant turn; none have
     // results yet (the first one suspended before any results were flushed).
     let messages = vec![
         json!({"role": "user", "content": "build the semantic layer"}),
         json!({
             "role": "assistant",
             "content": [
-                {"type": "tool_use", "id": "toolu_pc1", "name": "propose_change", "input": {"file_path": "semantics/view1.view.yml"}},
-                {"type": "tool_use", "id": "toolu_pc2", "name": "propose_change", "input": {"file_path": "semantics/view2.view.yml"}},
-                {"type": "tool_use", "id": "toolu_pc3", "name": "propose_change", "input": {"file_path": "semantics/view3.view.yml"}}
+                {"type": "tool_use", "id": "toolu_pc1", "name": "file_change", "input": {"file_path": "semantics/view1.view.yml"}},
+                {"type": "tool_use", "id": "toolu_pc2", "name": "file_change", "input": {"file_path": "semantics/view2.view.yml"}},
+                {"type": "tool_use", "id": "toolu_pc3", "name": "file_change", "input": {"file_path": "semantics/view3.view.yml"}}
             ]
         }),
     ];
     assert_eq!(
         find_suspended_tool_id(&messages),
         Some("toolu_pc1".to_string()),
-        "must return the FIRST propose_change id (the one that actually suspended)",
+        "must return the FIRST file_change id (the one that actually suspended)",
     );
 }
 
@@ -2463,7 +2476,7 @@ fn find_suspended_tool_id_batched_propose_change_returns_first() {
 /// Validates that the resulting messages satisfy Anthropic's constraint that
 /// all `tool_use` IDs have matching `tool_result` blocks.
 #[test]
-fn build_resume_messages_batched_propose_change_all_ids_resolved() {
+fn build_resume_messages_batched_file_change_all_ids_resolved() {
     let captured = Arc::new(Mutex::new(Vec::new()));
     let client =
         LlmClient::with_provider(AnthropicMockProvider::new(vec![], Arc::clone(&captured)));
@@ -2473,9 +2486,9 @@ fn build_resume_messages_batched_propose_change_all_ids_resolved() {
         json!({
             "role": "assistant",
             "content": [
-                {"type": "tool_use", "id": "toolu_pc1", "name": "propose_change", "input": {"file_path": "v1.view.yml"}},
-                {"type": "tool_use", "id": "toolu_pc2", "name": "propose_change", "input": {"file_path": "v2.view.yml"}},
-                {"type": "tool_use", "id": "toolu_pc3", "name": "propose_change", "input": {"file_path": "v3.view.yml"}}
+                {"type": "tool_use", "id": "toolu_pc1", "name": "file_change", "input": {"file_path": "v1.view.yml"}},
+                {"type": "tool_use", "id": "toolu_pc2", "name": "file_change", "input": {"file_path": "v2.view.yml"}},
+                {"type": "tool_use", "id": "toolu_pc3", "name": "file_change", "input": {"file_path": "v3.view.yml"}}
             ]
         }),
     ];
@@ -2563,7 +2576,10 @@ async fn openai_batched_tools_with_ask_user_flushes_prior_results() {
                             suggestions,
                         })
                     } else {
-                        Ok(json!({"columns": ["revenue"], "rows": [["1000"]]}))
+                        Ok(
+                            Box::new(json!({"columns": ["revenue"], "rows": [["1000"]]}))
+                                as Box<dyn ToolOutput>,
+                        )
                     }
                 })
             },
@@ -2664,7 +2680,10 @@ async fn anthropic_batched_tools_with_ask_user_flushes_prior_results() {
                             suggestions,
                         })
                     } else {
-                        Ok(json!({"columns": ["revenue"], "rows": [["1000"]]}))
+                        Ok(
+                            Box::new(json!({"columns": ["revenue"], "rows": [["1000"]]}))
+                                as Box<dyn ToolOutput>,
+                        )
                     }
                 })
             },
@@ -2721,7 +2740,7 @@ async fn text_truncated_by_max_tokens_returns_max_tokens_reached() {
             "system",
             "user",
             &[],
-            |_, _| Box::pin(async { Ok(Value::Null) }),
+            |_, _| Box::pin(async { Ok(Box::new(Value::Null) as Box<dyn ToolOutput>) }),
             &None,
             ToolLoopConfig {
                 max_tool_rounds: 5,
@@ -2773,7 +2792,7 @@ async fn max_tokens_reached_prior_messages_contains_truncated_assistant_turn() {
             "system",
             "user question",
             &[],
-            |_, _| Box::pin(async { Ok(Value::Null) }),
+            |_, _| Box::pin(async { Ok(Box::new(Value::Null) as Box<dyn ToolOutput>) }),
             &None,
             ToolLoopConfig {
                 max_tool_rounds: 5,
@@ -2887,7 +2906,7 @@ async fn tool_rounds_exhausted_returns_max_tool_rounds_reached() {
                 parameters: json!({"type": "object"}),
                 ..Default::default()
             }],
-            |_, _| Box::pin(async { Ok(json!({})) }),
+            |_, _| Box::pin(async { Ok(Box::new(json!({})) as Box<dyn ToolOutput>) }),
             &None,
             ToolLoopConfig {
                 max_tool_rounds: 2,
@@ -2956,7 +2975,7 @@ async fn max_tool_rounds_prior_messages_excludes_current_tool_request() {
                 parameters: json!({"type": "object"}),
                 ..Default::default()
             }],
-            |_, _| Box::pin(async { Ok(json!({})) }),
+            |_, _| Box::pin(async { Ok(Box::new(json!({})) as Box<dyn ToolOutput>) }),
             &None,
             ToolLoopConfig {
                 max_tool_rounds: 1,
@@ -3007,7 +3026,7 @@ async fn max_tokens_resume_via_build_continue_messages_is_valid() {
             "system",
             "original question",
             &[],
-            |_, _| Box::pin(async { Ok(Value::Null) }),
+            |_, _| Box::pin(async { Ok(Box::new(Value::Null) as Box<dyn ToolOutput>) }),
             &None,
             ToolLoopConfig {
                 max_tool_rounds: 5,
@@ -3223,7 +3242,7 @@ async fn cache_tokens_propagate_from_provider_to_llm_end_event() {
             "system prompt",
             "hi",
             &[],
-            |_, _| Box::pin(async { Ok(Value::Null) }),
+            |_, _| Box::pin(async { Ok(Box::new(Value::Null) as Box<dyn ToolOutput>) }),
             &events,
             ToolLoopConfig {
                 max_tool_rounds: 1,

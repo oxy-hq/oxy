@@ -27,7 +27,7 @@ pub struct CreateRunRequest {
     /// config) instead of using `question` directly.
     #[serde(default)]
     pub onboarding_context: Option<agentic_pipeline::onboarding::OnboardingContext>,
-    /// When true, the solver auto-accepts all `propose_change` tool calls
+    /// When true, the solver auto-accepts all `file_change` tool calls
     /// without suspending for human input. Used by the onboarding flow where
     /// file changes are always accepted automatically.
     #[serde(default)]

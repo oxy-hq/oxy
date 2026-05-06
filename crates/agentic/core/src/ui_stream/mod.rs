@@ -90,6 +90,7 @@ pub enum UiBlock<D: DomainEvents = ()> {
         name: String,
         output: String,
         duration_ms: u64,
+        is_error: bool,
         sub_spec_index: Option<usize>,
     },
 
@@ -214,10 +215,11 @@ pub fn serialize_ui_block<D: DomainEvents>(block: &UiBlock<D>) -> (String, serde
             name,
             output,
             duration_ms,
+            is_error,
             sub_spec_index,
         } => (
             "tool_result".into(),
-            json!({ "name": name, "output": output, "duration_ms": duration_ms, "sub_spec_index": sub_spec_index }),
+            json!({ "name": name, "output": output, "duration_ms": duration_ms, "is_error": is_error, "sub_spec_index": sub_spec_index }),
         ),
         UiBlock::TextDelta {
             token,
@@ -310,9 +312,9 @@ pub fn serialize_ui_block<D: DomainEvents>(block: &UiBlock<D>) -> (String, serde
 pub struct UiTransformState<D: DomainEvents> {
     /// Converts a lower-cased state name to an optional one-line summary.
     pub(super) summary_fn: Box<dyn Fn(&str) -> Option<String> + Send>,
-    /// Converts a tool name to an optional enriched step summary emitted as
-    /// [`UiBlock::StepSummaryUpdate`] alongside the tool call.
-    pub(super) tool_summary_fn: Box<dyn Fn(&str) -> Option<String> + Send>,
+    /// Converts a tool name and its input params to an optional enriched step
+    /// summary emitted as [`UiBlock::StepSummaryUpdate`] alongside the tool call.
+    pub(super) tool_summary_fn: Box<dyn Fn(&str, &serde_json::Value) -> Option<String> + Send>,
     /// Label of the most recent `StepStart`, echoed in the matching `StepEnd`.
     pub(super) current_label: String,
     /// How many sub-specs were expected in the current fan-out (`FanOut` event).
@@ -344,7 +346,7 @@ impl<D: DomainEvents> UiTransformState<D> {
     pub fn new() -> Self {
         Self {
             summary_fn: Box::new(|_| None),
-            tool_summary_fn: Box::new(|_| None),
+            tool_summary_fn: Box::new(|_, _| None),
             current_label: String::new(),
             fan_out_total: None,
             sub_specs_done: 0,
@@ -370,7 +372,7 @@ impl<D: DomainEvents> UiTransformState<D> {
     /// frontend's current step summary with a more specific description.
     pub fn with_tool_summary_fn(
         mut self,
-        f: impl Fn(&str) -> Option<String> + Send + 'static,
+        f: impl Fn(&str, &serde_json::Value) -> Option<String> + Send + 'static,
     ) -> Self {
         self.tool_summary_fn = Box::new(f);
         self

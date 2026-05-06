@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 
-import type { BuilderProposedChange } from "@/hooks/useBuilderActivity";
+import type { BuilderFileChange } from "@/hooks/useBuilderActivity";
 import { GenericGraph } from "./GenericGraph";
 import { diffTestCases, type TestFileConfig } from "./types";
 
@@ -9,7 +9,7 @@ export const TestGraph = ({
   oldTest,
   newTest
 }: {
-  change: BuilderProposedChange;
+  change: BuilderFileChange;
   oldTest: TestFileConfig | null;
   newTest: TestFileConfig;
 }) => {

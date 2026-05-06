@@ -136,6 +136,7 @@ impl AnalyticsSolver {
                     Box::pin(async move {
                         if name == "ask_user" {
                             handle_ask_user(&params, human_input.as_ref())
+                                .map(|v| Box::new(v) as Box<dyn agentic_core::tools::ToolOutput>)
                         } else if name == "search_procedures" {
                             let query = params["query"].as_str().unwrap_or("").to_string();
                             let refs = match procedure_runner.as_ref() {
@@ -152,15 +153,18 @@ impl AnalyticsSolver {
                                     })
                                 })
                                 .collect();
-                            Ok(serde_json::json!({ "procedures": items }))
+                            Ok(Box::new(serde_json::json!({ "procedures": items }))
+                                as Box<dyn agentic_core::tools::ToolOutput>)
                         } else if name == "search_catalog" {
                             execute_clarifying_tool(&name, params, &*catalog)
+                                .map(|v| Box::new(v) as Box<dyn agentic_core::tools::ToolOutput>)
                         } else if name == "propose_semantic_query" {
                             let confidence = params["confidence"].as_f64().unwrap_or(0.0) as f32;
                             let item: QueryRequestItem =
                                 serde_json::from_value(params).unwrap_or_default();
                             *proposed_query.lock().expect("poisoned") = Some((item, confidence));
-                            Ok(serde_json::json!({ "status": "accepted" }))
+                            Ok(Box::new(serde_json::json!({ "status": "accepted" }))
+                                as Box<dyn agentic_core::tools::ToolOutput>)
                         } else {
                             Err(ToolError::UnknownTool(name))
                         }
@@ -473,7 +477,12 @@ impl AnalyticsSolver {
                 &[],
                 |_name: String, _params| {
                     Box::pin(async {
-                        Err(ToolError::UnknownTool("no tools in general inquiry".into()))
+                        Err::<
+                            Box<dyn agentic_core::tools::ToolOutput>,
+                            agentic_core::tools::ToolError,
+                        >(ToolError::UnknownTool(
+                            "no tools in general inquiry".into(),
+                        ))
                     })
                 },
                 &self.event_tx,

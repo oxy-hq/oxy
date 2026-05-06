@@ -64,7 +64,7 @@ impl HumanInputProvider for AutoAcceptProvider {
 /// Always accepts immediately — returns `Ok("Accept")` for every prompt.
 ///
 /// Used when a builder agent runs as a delegation child so that
-/// `propose_change` tool calls are applied without user interaction.
+/// `file_change` tool calls are applied without user interaction.
 pub struct AutoAcceptInputProvider;
 
 impl HumanInputProvider for AutoAcceptInputProvider {
@@ -133,10 +133,8 @@ mod tests {
     #[test]
     fn auto_accept_returns_ok_accept() {
         let provider = AutoAcceptInputProvider;
-        let result = provider.request_sync(
-            "propose_change json...",
-            &["Accept".into(), "Reject".into()],
-        );
+        let result =
+            provider.request_sync("file_change json...", &["Accept".into(), "Reject".into()]);
         assert_eq!(result, Ok("Accept".to_string()));
     }
 
