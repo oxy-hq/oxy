@@ -145,8 +145,16 @@ export default function ProvisionSubscriptionDialog({ org, onClose, onSuccess }:
 
   const submitting = provisionInvoice.isPending || provisionCheckout.isPending;
   const disabled = !formValid || submitting;
-  const flatPrices = useMemo(() => prices.filter((p) => p.billing_scheme === "per_unit"), [prices]);
-  const allPricesAdded = flatPrices.length > 0 && flatPrices.length === items.length;
+  const supportedPrices = useMemo(
+    () =>
+      prices.filter(
+        (p) =>
+          p.billing_scheme === "per_unit" ||
+          (p.billing_scheme === "tiered" && p.tiers_mode === "graduated")
+      ),
+    [prices]
+  );
+  const allPricesAdded = supportedPrices.length > 0 && supportedPrices.length === items.length;
 
   return (
     <>
@@ -194,15 +202,17 @@ export default function ProvisionSubscriptionDialog({ org, onClose, onSuccess }:
                   size='sm'
                   onClick={() => setPickerOpen(true)}
                   className='w-full'
-                  disabled={flatPrices.length === 0 || allPricesAdded}
+                  disabled={supportedPrices.length === 0 || allPricesAdded}
                 >
                   <Plus className='mr-1 h-3.5 w-3.5' />
                   {allPricesAdded ? "All prices added" : "Add price"}
                 </Button>
 
-                {flatPrices.length === 0 ? (
+                {supportedPrices.length === 0 ? (
                   <div className='space-y-1 pt-1 text-muted-foreground text-xs'>
-                    <p>No active flat (per-unit) recurring prices on the Stripe account.</p>
+                    <p>
+                      No active recurring per-unit or graduated-tiered prices on the Stripe account.
+                    </p>
                     <Button
                       type='button'
                       variant='link'
@@ -284,7 +294,7 @@ export default function ProvisionSubscriptionDialog({ org, onClose, onSuccess }:
 
       <PricePickerDialog
         open={pickerOpen}
-        prices={prices}
+        prices={supportedPrices}
         excludePriceIds={selectedPriceIds}
         onPick={addPrice}
         onOpenChange={setPickerOpen}

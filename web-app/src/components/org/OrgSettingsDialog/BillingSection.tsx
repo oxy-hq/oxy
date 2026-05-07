@@ -1,5 +1,5 @@
 import { Sparkles } from "lucide-react";
-import SubscriptionItemsList from "@/components/billing/SubscriptionItemsList";
+import { SubscriptionItemsList } from "@/components/billing/SubscriptionItemsList";
 import { Button } from "@/components/ui/shadcn/button";
 import { useBillingInvoices, useCreatePortalSession, useOrgBilling } from "@/hooks/api/billing";
 import type { BillingStatusId, Invoice } from "@/services/api/billing";

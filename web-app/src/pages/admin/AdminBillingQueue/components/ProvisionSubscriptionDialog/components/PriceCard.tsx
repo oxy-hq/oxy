@@ -1,4 +1,5 @@
 import { X } from "lucide-react";
+import { PriceTierBreakdown } from "@/components/billing/PriceTierBreakdown";
 import { Button } from "@/components/ui/shadcn/button";
 import { Card } from "@/components/ui/shadcn/card";
 import { Checkbox } from "@/components/ui/shadcn/checkbox";
@@ -42,6 +43,10 @@ export function PriceCard({ price, isSeatSync, onSeatSyncToggle, onRemove }: Pri
           <X className='size-4' />
         </Button>
       </div>
+
+      {price.tiers && price.tiers.length > 0 ? (
+        <PriceTierBreakdown tiers={price.tiers} currency={price.currency} />
+      ) : null}
 
       <div className='mt-3 flex items-center gap-2 border-t pt-3'>
         <Checkbox

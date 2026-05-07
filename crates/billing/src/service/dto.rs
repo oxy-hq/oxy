@@ -23,7 +23,10 @@ pub struct InvoiceDto {
 pub struct AdminPriceDto {
     pub id: String,
     pub nickname: Option<String>,
-    pub unit_amount: i64,
+    /// Per-unit amount in the smallest currency unit. `None` for tiered
+    /// prices — Stripe returns `unit_amount: null` and the real amounts
+    /// live in `tiers[]`. Read `amount_display` for a render-ready string.
+    pub unit_amount: Option<i64>,
     pub currency: String,
     pub interval: String,
     pub product_name: Option<String>,
@@ -31,8 +34,39 @@ pub struct AdminPriceDto {
     /// Pre-formatted price string for display. Handles tiered prices where
     /// `unit_amount` alone is `null` and the real amounts live in `tiers[]`.
     pub amount_display: String,
+    #[serde(flatten)]
+    pub shape: PriceShape,
+}
+
+/// Stripe billing-scheme metadata shared by `AdminPriceDto` and
+/// `AdminSubscriptionItem`. Flattened on the wire so the JSON shape is
+/// unchanged: `billing_scheme`, `tiers_mode`, and `tiers` sit at the top
+/// level of each DTO exactly as before.
+#[derive(Debug, Clone, Serialize)]
+pub struct PriceShape {
     /// Stripe billing scheme: `per_unit` (flat) or `tiered`.
     pub billing_scheme: String,
+    /// Stripe tiers mode when `billing_scheme = tiered`: `graduated` or
+    /// `volume`. `None` for `per_unit` prices.
+    pub tiers_mode: Option<String>,
+    /// Full tier breakdown for tiered prices, in Stripe order. `None` for
+    /// `per_unit` prices. Lets the UI render a per-tier table rather than
+    /// the single-line `amount_display`.
+    pub tiers: Option<Vec<AdminPriceTierDto>>,
+}
+
+/// One row of a tiered price's bracket table.
+#[derive(Debug, Clone, Serialize)]
+pub struct AdminPriceTierDto {
+    /// Inclusive upper bound for this tier's quantity. `None` is the
+    /// final unlimited tier (Stripe returns `up_to: "inf"` or null).
+    pub up_to: Option<u64>,
+    /// Per-unit amount in the smallest currency unit. `None` when no
+    /// per-unit charge applies for this tier.
+    pub unit_amount: Option<i64>,
+    /// One-time flat amount applied when this tier is reached. `None`
+    /// when no flat fee applies.
+    pub flat_amount: Option<i64>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -93,7 +127,10 @@ pub struct AdminSubscriptionItem {
     pub quantity: u64,
     pub price_id: String,
     pub price_nickname: Option<String>,
-    pub unit_amount: i64,
+    /// Per-unit amount in the smallest currency unit. `None` for tiered
+    /// prices — Stripe returns `unit_amount: null` and tier brackets carry
+    /// the real amounts. Read `amount_display` for a render-ready string.
+    pub unit_amount: Option<i64>,
     pub currency: String,
     pub interval: Option<String>,
     pub product_name: Option<String>,
@@ -102,6 +139,8 @@ pub struct AdminSubscriptionItem {
     /// Pre-formatted price string. Falls back to first-tier amounts when the
     /// underlying Stripe price uses tiered billing (`unit_amount` is null).
     pub amount_display: String,
+    #[serde(flatten)]
+    pub shape: PriceShape,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]

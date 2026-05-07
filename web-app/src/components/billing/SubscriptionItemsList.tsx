@@ -1,3 +1,4 @@
+import { PriceTierBreakdown } from "@/components/billing/PriceTierBreakdown";
 import type { AdminSubscriptionItem } from "@/services/api/billing";
 
 interface Props {
@@ -5,7 +6,7 @@ interface Props {
   showItemPeriods?: boolean;
 }
 
-export default function SubscriptionItemsList({ items, showItemPeriods = false }: Props) {
+export function SubscriptionItemsList({ items, showItemPeriods = false }: Props) {
   if (items.length === 0) {
     return <div className='text-muted-foreground text-sm'>No items.</div>;
   }
@@ -18,9 +19,15 @@ export default function SubscriptionItemsList({ items, showItemPeriods = false }
             <div className='text-muted-foreground text-xs'>×{item.quantity}</div>
           </div>
           <div className='text-muted-foreground text-xs'>
-            {item.amount_display}
-            {item.interval ? ` / ${item.interval}` : ""}
+            {item.tiers && item.tiers.length > 0
+              ? item.interval
+                ? `Tiered / ${item.interval}`
+                : "Tiered"
+              : `${item.amount_display}${item.interval ? ` / ${item.interval}` : ""}`}
           </div>
+          {item.tiers && item.tiers.length > 0 ? (
+            <PriceTierBreakdown tiers={item.tiers} currency={item.currency} />
+          ) : null}
           {showItemPeriods &&
           (item.current_period_start != null || item.current_period_end != null) ? (
             <div className='mt-1 text-muted-foreground text-xs'>

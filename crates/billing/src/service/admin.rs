@@ -16,7 +16,9 @@ use crate::service::dto::{
     AdminOrgRow, AdminPriceDto, AdminSubscriptionDetail, AdminSubscriptionItem, BillingNotification,
 };
 use crate::service::helpers::format::{format_amount_display, format_price_label};
-use crate::service::helpers::mappers::{map_latest_invoice, map_subscription_item};
+use crate::service::helpers::mappers::{
+    map_latest_invoice, map_price_shape, map_subscription_item,
+};
 use crate::service::stripe_shapes::StripeSubscription;
 
 impl BillingService {
@@ -145,6 +147,12 @@ impl BillingService {
 
     /// List active recurring Prices on the Stripe account for the admin
     /// provisioning dropdown.
+    ///
+    /// TODO: paginate. Stripe's max page size is 100; we currently fetch a
+    /// single page, so accounts with more than 100 active recurring prices
+    /// silently lose the tail. Now that graduated-tiered prices are also in
+    /// scope, the catalogue grows faster — paginate via `starting_after`
+    /// cursor or expose a search endpoint before this becomes a problem.
     pub async fn list_admin_prices(&self) -> Result<Vec<AdminPriceDto>, BillingError> {
         let raw: JsonValue = self
             .client
@@ -162,7 +170,7 @@ impl BillingService {
         for p in data {
             let id = p["id"].as_str().unwrap_or_default().to_string();
             let nickname = p["nickname"].as_str().map(str::to_string);
-            let unit_amount = p["unit_amount"].as_i64().unwrap_or(0);
+            let unit_amount = p["unit_amount"].as_i64();
             let currency = p["currency"].as_str().unwrap_or("usd").to_string();
             let interval = p["recurring"]["interval"]
                 .as_str()
@@ -171,10 +179,6 @@ impl BillingService {
             let product_name = p["product"]["name"].as_str().map(str::to_string);
             let amount_display = format_amount_display(p, unit_amount, &currency);
             let label = format_price_label(&nickname, &amount_display, &interval);
-            let billing_scheme = p["billing_scheme"]
-                .as_str()
-                .unwrap_or("per_unit")
-                .to_string();
             out.push(AdminPriceDto {
                 id,
                 nickname,
@@ -184,7 +188,7 @@ impl BillingService {
                 product_name,
                 label,
                 amount_display,
-                billing_scheme,
+                shape: map_price_shape(p),
             });
         }
         Ok(out)

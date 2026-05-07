@@ -21,12 +21,13 @@ pub(in crate::service) fn format_money(amount: i64, currency: &str) -> String {
 }
 
 /// Build a human-readable amount string. For tiered prices Stripe leaves the
-/// top-level `unit_amount` null, so fall back to the first tier's
-/// `unit_amount` + `flat_amount`. Multi-tier prices show the first tier with
-/// a `Tiered (from …)` prefix so admins can still tell prices apart.
+/// top-level `unit_amount` null (so callers pass `None`), and we fall back to
+/// the first tier's `unit_amount` + `flat_amount`. Multi-tier prices show the
+/// first tier with a `Tiered (from …)` prefix so admins can still tell prices
+/// apart.
 pub(in crate::service) fn format_amount_display(
     price: &JsonValue,
-    unit_amount: i64,
+    unit_amount: Option<i64>,
     currency: &str,
 ) -> String {
     let billing_scheme = price["billing_scheme"].as_str().unwrap_or("per_unit");
@@ -53,7 +54,7 @@ pub(in crate::service) fn format_amount_display(
         }
         return "Tiered pricing".to_string();
     }
-    format_money(unit_amount, currency)
+    format_money(unit_amount.unwrap_or(0), currency)
 }
 
 #[cfg(test)]
@@ -100,13 +101,21 @@ mod tests {
     #[test]
     fn amount_display_per_unit_uses_unit_amount() {
         let p = json!({"billing_scheme": "per_unit"});
-        assert_eq!(format_amount_display(&p, 2500, "usd"), "$25.00 USD");
+        assert_eq!(format_amount_display(&p, Some(2500), "usd"), "$25.00 USD");
     }
 
     #[test]
     fn amount_display_missing_billing_scheme_treated_as_per_unit() {
         let p = json!({});
-        assert_eq!(format_amount_display(&p, 100, "usd"), "$1.00 USD");
+        assert_eq!(format_amount_display(&p, Some(100), "usd"), "$1.00 USD");
+    }
+
+    #[test]
+    fn amount_display_per_unit_with_none_renders_zero() {
+        // Defensive: a per_unit price arriving without unit_amount is malformed,
+        // but we render $0.00 rather than panic.
+        let p = json!({"billing_scheme": "per_unit"});
+        assert_eq!(format_amount_display(&p, None, "usd"), "$0.00 USD");
     }
 
     // ---- format_amount_display: tiered ----
@@ -117,7 +126,7 @@ mod tests {
             "billing_scheme": "tiered",
             "tiers": [{"unit_amount": 500, "flat_amount": 0}],
         });
-        assert_eq!(format_amount_display(&p, 0, "usd"), "$5.00 USD/unit");
+        assert_eq!(format_amount_display(&p, None, "usd"), "$5.00 USD/unit");
     }
 
     #[test]
@@ -126,7 +135,7 @@ mod tests {
             "billing_scheme": "tiered",
             "tiers": [{"unit_amount": 0, "flat_amount": 5000}],
         });
-        assert_eq!(format_amount_display(&p, 0, "usd"), "$50.00 USD");
+        assert_eq!(format_amount_display(&p, None, "usd"), "$50.00 USD");
     }
 
     #[test]
@@ -136,7 +145,7 @@ mod tests {
             "tiers": [{"unit_amount": 500, "flat_amount": 5000}],
         });
         assert_eq!(
-            format_amount_display(&p, 0, "usd"),
+            format_amount_display(&p, None, "usd"),
             "$5.00 USD/unit + $50.00 USD"
         );
     }
@@ -153,7 +162,7 @@ mod tests {
             ],
         });
         assert_eq!(
-            format_amount_display(&p, 0, "usd"),
+            format_amount_display(&p, None, "usd"),
             "Tiered (from $5.00 USD/unit)"
         );
     }
@@ -162,7 +171,7 @@ mod tests {
     fn amount_display_tiered_with_no_tier_data_falls_back_to_label() {
         // tiers array missing entirely (Stripe didn't expand `tiers` field).
         let p = json!({"billing_scheme": "tiered"});
-        assert_eq!(format_amount_display(&p, 0, "usd"), "Tiered pricing");
+        assert_eq!(format_amount_display(&p, None, "usd"), "Tiered pricing");
     }
 
     #[test]
@@ -173,6 +182,6 @@ mod tests {
             "billing_scheme": "tiered",
             "tiers": [{"unit_amount": 0, "flat_amount": 0}],
         });
-        assert_eq!(format_amount_display(&p, 0, "usd"), "Tiered pricing");
+        assert_eq!(format_amount_display(&p, None, "usd"), "Tiered pricing");
     }
 }

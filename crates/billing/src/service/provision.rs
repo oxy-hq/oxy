@@ -17,8 +17,7 @@ use crate::service::dto::{ProvisionItem, ProvisionRequest, ProvisionResponse};
 use crate::service::helpers::extract::{extract_item_id_for_price, extract_period};
 use crate::service::helpers::mappers::map_latest_invoice;
 use crate::service::helpers::pricing::{
-    push_subscription_items, require_active_recurring, require_flat_billing,
-    require_matching_intervals, split_provision_items,
+    push_subscription_items, split_provision_items, validate_prices,
 };
 
 impl BillingService {
@@ -130,11 +129,13 @@ impl BillingService {
     }
 
     /// Validate seat + flat prices for both provision flows. Each price must
-    /// be active recurring and `per_unit` (flat) — tiered pricing would
-    /// silently change invoice math at the wrong layer. When
-    /// `enforce_matching_intervals` is true (Checkout flow), every flat item
-    /// must share the seat's interval — Stripe Checkout rejects mixed
-    /// intervals even with `billing_mode=flexible`.
+    /// be active recurring and use a supported pricing mode: `per_unit`
+    /// (flat) or `tiered` + `tiers_mode=graduated`. Volume tiering charges
+    /// every unit at one tier's rate, which doesn't compose with the
+    /// seat-included platform-fee pattern. When `enforce_matching_intervals`
+    /// is true (Checkout flow), every flat item must share the seat's
+    /// interval — Stripe Checkout rejects mixed intervals even with
+    /// `billing_mode=flexible`.
     pub(super) async fn validate_provision_prices(
         &self,
         seat_item: &ProvisionItem,
@@ -142,22 +143,21 @@ impl BillingService {
         enforce_matching_intervals: bool,
     ) -> Result<(), BillingError> {
         let seat_price = self.fetch_price(&seat_item.price_id).await?;
-        require_active_recurring(&seat_price, &seat_item.price_id)?;
-        require_flat_billing(&seat_price, &seat_item.price_id)?;
+        let mut fetched: Vec<(JsonValue, String)> = Vec::with_capacity(flat_items.len());
         for flat in flat_items {
-            let flat_price = self.fetch_price(&flat.price_id).await?;
-            require_active_recurring(&flat_price, &flat.price_id)?;
-            require_flat_billing(&flat_price, &flat.price_id)?;
-            if enforce_matching_intervals {
-                require_matching_intervals(
-                    &seat_price,
-                    &seat_item.price_id,
-                    &flat_price,
-                    &flat.price_id,
-                )?;
-            }
+            fetched.push((
+                self.fetch_price(&flat.price_id).await?,
+                flat.price_id.clone(),
+            ));
         }
-        Ok(())
+        let flat_refs: Vec<(&JsonValue, &str)> =
+            fetched.iter().map(|(p, id)| (p, id.as_str())).collect();
+        validate_prices(
+            &seat_price,
+            &seat_item.price_id,
+            &flat_refs,
+            enforce_matching_intervals,
+        )
     }
 
     pub(super) async fn fetch_price(&self, id: &str) -> Result<JsonValue, BillingError> {

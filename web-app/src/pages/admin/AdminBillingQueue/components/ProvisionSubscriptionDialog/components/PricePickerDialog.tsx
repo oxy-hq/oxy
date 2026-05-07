@@ -37,8 +37,7 @@ export function PricePickerDialog({
   onOpenChange
 }: PricePickerDialogProps) {
   const excluded = new Set(excludePriceIds);
-  const flatPrices = prices.filter((p) => p.billing_scheme === "per_unit");
-  const available = flatPrices.filter((p) => !excluded.has(p.id));
+  const available = prices.filter((p) => !excluded.has(p.id));
   const groups = groupPrices(available);
 
   return (
@@ -51,9 +50,11 @@ export function PricePickerDialog({
       <CommandInput placeholder='Search prices…' />
       <CommandList>
         <CommandEmpty>
-          {flatPrices.length === 0
-            ? "No active flat (per-unit) recurring prices on the Stripe account."
-            : "All prices already added."}
+          {prices.length === 0
+            ? "No active recurring per-unit or graduated-tiered prices on the Stripe account."
+            : available.length === 0
+              ? "All prices already added."
+              : "No matching prices."}
         </CommandEmpty>
         {groups.map(([productName, items]) => (
           <CommandGroup key={productName} heading={productName}>

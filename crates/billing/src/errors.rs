@@ -22,8 +22,10 @@ pub enum BillingError {
     PriceInactive(String),
     #[error("price {0} is not recurring")]
     PriceNotRecurring(String),
-    #[error("price {0} is not a flat (per_unit) price")]
-    PriceNotFlat(String),
+    #[error(
+        "price {0} uses an unsupported pricing mode (only per_unit or tiered/graduated are allowed)"
+    )]
+    UnsupportedPricingMode(String),
     #[error(
         "billing intervals do not match: seat price {seat_price_id} is {seat_interval}, price {other_price_id} is {other_interval}"
     )]

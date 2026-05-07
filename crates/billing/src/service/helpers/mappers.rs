@@ -3,7 +3,9 @@
 use entity::org_billing::BillingStatus;
 use serde_json::Value as JsonValue;
 
-use crate::service::dto::{AdminSubscriptionItem, LatestInvoiceSummary};
+use crate::service::dto::{
+    AdminPriceTierDto, AdminSubscriptionItem, LatestInvoiceSummary, PriceShape,
+};
 use crate::service::helpers::format::format_amount_display;
 
 /// Return `None` when `value` is missing/null OR is just an unexpanded ID
@@ -53,7 +55,7 @@ pub(in crate::service) fn map_latest_invoice(value: &JsonValue) -> Option<Latest
 
 pub(in crate::service) fn map_subscription_item(item: &JsonValue) -> AdminSubscriptionItem {
     let price = &item["price"];
-    let unit_amount = price["unit_amount"].as_i64().unwrap_or(0);
+    let unit_amount = price["unit_amount"].as_i64();
     let currency = price["currency"].as_str().unwrap_or("usd").to_string();
     let amount_display = format_amount_display(price, unit_amount, &currency);
     AdminSubscriptionItem {
@@ -68,7 +70,39 @@ pub(in crate::service) fn map_subscription_item(item: &JsonValue) -> AdminSubscr
         current_period_start: item["current_period_start"].as_i64(),
         current_period_end: item["current_period_end"].as_i64(),
         amount_display,
+        shape: map_price_shape(price),
     }
+}
+
+/// Extract the `billing_scheme` / `tiers_mode` / `tiers` triple from a Stripe
+/// Price object. Same logic for both `AdminPriceDto` (catalogue listing) and
+/// `AdminSubscriptionItem` (live subscription view), so it lives in one place.
+pub(in crate::service) fn map_price_shape(price: &JsonValue) -> PriceShape {
+    PriceShape {
+        billing_scheme: price["billing_scheme"]
+            .as_str()
+            .unwrap_or("per_unit")
+            .to_string(),
+        tiers_mode: price["tiers_mode"].as_str().map(str::to_string),
+        tiers: map_price_tiers(&price["tiers"]),
+    }
+}
+
+/// Map Stripe's `tiers` array to our DTO. Stripe encodes the unlimited
+/// final tier with `up_to: "inf"` (a string), which `as_u64` rejects —
+/// we only treat numeric `up_to` as bounded; everything else (string,
+/// null, missing) collapses to `None` (= unlimited).
+pub(in crate::service) fn map_price_tiers(value: &JsonValue) -> Option<Vec<AdminPriceTierDto>> {
+    let arr = value.as_array()?;
+    Some(
+        arr.iter()
+            .map(|t| AdminPriceTierDto {
+                up_to: t["up_to"].as_u64(),
+                unit_amount: t["unit_amount"].as_i64(),
+                flat_amount: t["flat_amount"].as_i64(),
+            })
+            .collect(),
+    )
 }
 
 /// Stripe subscription `status` strings → our `BillingStatus`.
@@ -167,5 +201,86 @@ mod tests {
         assert_eq!(mapped.currency, "usd");
         assert_eq!(mapped.auto_advance, Some(true));
         assert_eq!(mapped.created, Some(1_700_000_000));
+    }
+
+    // ---- map_price_tiers ----
+
+    #[test]
+    fn map_price_tiers_returns_none_for_missing_tiers_array() {
+        // per_unit prices have no tiers field — must yield None, not an empty Vec.
+        assert!(map_price_tiers(&JsonValue::Null).is_none());
+        assert!(map_price_tiers(&json!({})).is_none());
+    }
+
+    #[test]
+    fn map_price_tiers_treats_inf_up_to_as_unlimited() {
+        // Stripe encodes the trailing tier as `up_to: "inf"` (string).
+        let raw = json!([
+            {"up_to": 10, "unit_amount": 0, "flat_amount": 5_000_000},
+            {"up_to": "inf", "unit_amount": 100_000, "flat_amount": null},
+        ]);
+        let tiers = map_price_tiers(&raw).unwrap();
+        assert_eq!(tiers.len(), 2);
+        assert_eq!(tiers[0].up_to, Some(10));
+        assert_eq!(tiers[0].unit_amount, Some(0));
+        assert_eq!(tiers[0].flat_amount, Some(5_000_000));
+        assert_eq!(tiers[1].up_to, None);
+        assert_eq!(tiers[1].unit_amount, Some(100_000));
+        assert_eq!(tiers[1].flat_amount, None);
+    }
+
+    // ---- map_subscription_item ----
+
+    #[test]
+    fn map_subscription_item_extracts_tier_breakdown_for_tiered_price() {
+        // For tiered prices Stripe returns unit_amount: null on the price and
+        // populates the tiers array — the mapper must surface both billing
+        // metadata and the tier rows so the UI can render the tier table.
+        let item = json!({
+            "id": "si_1",
+            "quantity": 1,
+            "current_period_start": 1_700_000_000,
+            "current_period_end": 1_702_592_000,
+            "price": {
+                "id": "price_1",
+                "nickname": "Pro tiered",
+                "unit_amount": null,
+                "currency": "usd",
+                "billing_scheme": "tiered",
+                "tiers_mode": "graduated",
+                "recurring": { "interval": "month" },
+                "product": { "name": "Pro" },
+                "tiers": [
+                    {"up_to": 10, "unit_amount": 0, "flat_amount": 5_000_000},
+                    {"up_to": "inf", "unit_amount": 100_000, "flat_amount": null},
+                ],
+            },
+        });
+        let mapped = map_subscription_item(&item);
+        assert_eq!(mapped.shape.billing_scheme, "tiered");
+        assert_eq!(mapped.shape.tiers_mode.as_deref(), Some("graduated"));
+        let tiers = mapped.shape.tiers.expect("tiered price must produce tiers");
+        assert_eq!(tiers.len(), 2);
+        assert_eq!(tiers[0].up_to, Some(10));
+        assert_eq!(tiers[1].up_to, None);
+    }
+
+    #[test]
+    fn map_subscription_item_per_unit_price_has_no_tiers() {
+        let item = json!({
+            "id": "si_2",
+            "quantity": 3,
+            "price": {
+                "id": "price_2",
+                "unit_amount": 1500,
+                "currency": "usd",
+                "billing_scheme": "per_unit",
+                "recurring": { "interval": "month" },
+            },
+        });
+        let mapped = map_subscription_item(&item);
+        assert_eq!(mapped.shape.billing_scheme, "per_unit");
+        assert!(mapped.shape.tiers_mode.is_none());
+        assert!(mapped.shape.tiers.is_none());
     }
 }

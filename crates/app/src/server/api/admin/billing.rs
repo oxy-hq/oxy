@@ -369,10 +369,12 @@ fn map_provision_error(org_id: Uuid, err: BillingError) -> Response {
             "price_not_recurring",
             Some(format!("Price {id} is not recurring")),
         ),
-        BillingError::PriceNotFlat(id) => error_body(
+        BillingError::UnsupportedPricingMode(id) => error_body(
             StatusCode::BAD_REQUEST,
-            "price_not_flat",
-            Some(format!("Price {id} is not a flat (per-unit) price.")),
+            "unsupported_pricing_mode",
+            Some(format!(
+                "Price {id} uses an unsupported pricing mode. Only per-unit or graduated tiered prices are allowed."
+            )),
         ),
         err @ BillingError::MismatchedBillingInterval { .. } => error_body(
             StatusCode::BAD_REQUEST,

@@ -80,13 +80,18 @@ export interface AdminSubscriptionItem {
   quantity: number;
   price_id: string;
   price_nickname: string | null;
-  unit_amount: number;
+  /** `null` for tiered prices — read `amount_display` for a render-ready string. */
+  unit_amount: number | null;
   currency: string;
   interval: string | null;
   product_name: string | null;
   current_period_start: number | null;
   current_period_end: number | null;
   amount_display: string;
+  billing_scheme: "per_unit" | "tiered" | string;
+  tiers_mode: "graduated" | "volume" | null;
+  /** Tier breakdown for tiered prices. `null` for per_unit. */
+  tiers: AdminPriceTierDto[] | null;
 }
 
 export interface AdminSubscriptionDetail {
@@ -118,16 +123,29 @@ export interface LatestInvoiceSummary {
   next_payment_attempt: number | null;
 }
 
+export interface AdminPriceTierDto {
+  /** Inclusive upper bound for this tier's quantity. `null` = unlimited (final tier). */
+  up_to: number | null;
+  /** Per-unit amount in the smallest currency unit. `null` when no per-unit charge applies. */
+  unit_amount: number | null;
+  /** One-time flat amount applied when this tier is reached. `null` when no flat fee. */
+  flat_amount: number | null;
+}
+
 export interface AdminPriceDto {
   id: string;
   nickname: string | null;
-  unit_amount: number;
+  /** `null` for tiered prices — read `amount_display` for a render-ready string. */
+  unit_amount: number | null;
   currency: string;
   interval: "month" | "year" | string;
   product_name: string | null;
   label: string;
   amount_display: string;
   billing_scheme: "per_unit" | "tiered" | string;
+  tiers_mode: "graduated" | "volume" | null;
+  /** Tier breakdown for tiered prices. `null` for per_unit. */
+  tiers: AdminPriceTierDto[] | null;
 }
 
 export type ProvisionItemRole = "seat" | "flat";

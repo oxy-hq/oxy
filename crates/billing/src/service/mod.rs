@@ -37,7 +37,7 @@ mod stripe_shapes;
 mod webhook_apply;
 
 pub use dto::{
-    AdminOrgRow, AdminPriceDto, AdminSubscriptionDetail, AdminSubscriptionItem,
+    AdminOrgRow, AdminPriceDto, AdminPriceTierDto, AdminSubscriptionDetail, AdminSubscriptionItem,
     BillingNotification, CheckoutCreated, CheckoutSessionInfo, InvoiceDto, LatestInvoiceSummary,
     LookupOutcome, ProvisionCheckoutOutcome, ProvisionCheckoutRequest, ProvisionItem,
     ProvisionItemRole, ProvisionRequest, ProvisionResponse, SubscriptionOverview,
