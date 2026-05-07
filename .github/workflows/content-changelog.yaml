@@ -153,61 +153,109 @@ jobs:
 
             ---
 
-            ## Step 3 — Write the MDX
+            ## Step 3 — Set up the oxygen-content branch and detect existing draft
 
-            Write a single cohesive, user-facing changelog entry for ${{ steps.version.outputs.version }}.
-            - Use `date +%Y-%m-%d` for today's date in the filename and `date` frontmatter field
-            - Author: "Luong Vo (luong@oxy.tech)"
-            - Immediately after the closing `---` of the frontmatter, add an MDX comment:
-              `{/* versions: ${{ steps.version.outputs.version }} */}`
-              Do NOT use HTML comments (`<!-- -->`), they are invalid in MDX.
-            - **User-facing only**: Focus on features, meaningful bug fixes, and performance improvements
-              that a data analyst or business user would notice. Skip: internal refactors, CI/build
-              changes, dependency bumps, test-only changes, chore tasks.
-            - No image markdown — screenshots are added by the human reviewer.
-
-            ---
-
-            ## Step 4 — Write to oxygen-content
-
-            1. Write the MDX to `oxygen-content/changelog/$(date +%Y-%m-%d).mdx`
-            2. In `oxygen-content/docs.json`, prepend `"changelog/$(date +%Y-%m-%d)"` to the top
-               of the "Recent Updates" `pages` array inside the "Changelog" tab.
-
-            ---
-
-            ## Step 5 — Create or update the pending PR in oxygen-content
+            **Always do this BEFORE writing any MDX file.** The target filename depends
+            on whether a pending PR already exists; pick the wrong path and we end up
+            with multiple files in the same PR instead of one cohesive entry.
 
             Ensure the label exists:
             `gh label create --repo oxy-hq/oxygen-content pending-release --color 0075ca --description "Pending changelog draft" 2>/dev/null || true`
 
-            Check for an open PR with that label:
+            Check for an open pending PR:
             `gh pr list --repo oxy-hq/oxygen-content --label pending-release --state open --json number,headRefName --jq '.[0]'`
 
-            **If a PR already exists:**
-            - Fetch and checkout its branch
-            - Read the existing .mdx; merge the new content in (synthesize — no duplicate sections)
-            - Update the `{/* versions: ... */}` comment to include ${{ steps.version.outputs.version }}
-            - Commit and push
-            - Update the PR body to append ${{ steps.version.outputs.version }} to included versions
+            **If a pending PR already exists → MODE = update:**
+            - Capture its `number` as **PR_NUMBER** and its `headRefName` as **PR_BRANCH**.
+            - Fetch and checkout that branch:
+              `git -C oxygen-content fetch origin "$PR_BRANCH" && git -C oxygen-content checkout "$PR_BRANCH"`
+            - Find the single changelog .mdx file modified on this branch vs. main:
+              `git -C oxygen-content diff main --name-only -- changelog/ | grep '\.mdx$' | head -n1`
+              The first match is your **TARGET_FILE** (path relative to `oxygen-content/`).
+            - Read its full content into **EXISTING_DRAFT**.
+            - You will UPDATE this file in place — do NOT create a new dated file, even
+              if today's date differs from the existing filename.
 
-            **If no open PR:**
-            - Delete stale remote branch if present:
+            **If no pending PR exists → MODE = create:**
+            - Delete any stale remote branch:
               `git -C oxygen-content push origin --delete pending-changelog 2>/dev/null || true`
-            - Checkout main, pull, create branch `pending-changelog`
-            - Commit and push
-            - Create the PR:
-              ```
-              gh pr create --repo oxy-hq/oxygen-content \
-                --title "chore: pending changelog ($(date +%Y-%m-%d))" \
-                --label pending-release \
-                --head pending-changelog \
-                --base main \
-                --body "Changelog draft auto-generated from release notes.
+            - `git -C oxygen-content checkout main && git -C oxygen-content pull origin main && git -C oxygen-content checkout -b pending-changelog`
+            - **TARGET_FILE** = `changelog/$(date +%Y-%m-%d).mdx`
+            - **EXISTING_DRAFT** is empty.
 
-              **Included releases:** ${{ steps.version.outputs.version }}
+            ---
 
-              > Review and curate before merging.
-              > Add screenshots to \`changelog/images/$(date +%Y-%m-%d)/\` where helpful.
-              > Claude may have missed details or over-included internal changes."
-              ```
+            ## Step 4 — Write the MDX
+
+            Write a single cohesive, user-facing changelog entry covering ${{ steps.version.outputs.version }}.
+
+            **If MODE = update — merge into EXISTING_DRAFT, keep one file:**
+            - Output is written back to TARGET_FILE. Do NOT create a new dated file.
+            - Append new features as new `####` subsections under the existing `### New Features` heading. Do not duplicate features already covered.
+            - Add new fixes/improvements under the existing `### Platform Improvements` heading.
+            - Update frontmatter `title` / `description` / `slug` / `sidebarTitle` only if the new release adds significant new top-level features.
+            - Update the `{/* versions: ... */}` MDX comment to include ${{ steps.version.outputs.version }} alongside any versions already listed.
+            - Keep the existing `date` frontmatter field and the existing filename unchanged — do NOT bump them to today's date.
+
+            **If MODE = create — write a fresh entry:**
+            - Use `date +%Y-%m-%d` for today's date in the filename and `date` frontmatter field.
+            - Immediately after the closing `---` of the frontmatter, add an MDX comment:
+              `{/* versions: ${{ steps.version.outputs.version }} */}`
+              Do NOT use HTML comments (`<!-- -->`), they are invalid in MDX.
+
+            **Both modes:**
+            - Author: "Luong Vo (luong@oxy.tech)"
+            - **User-facing only**: focus on features, meaningful bug fixes, and performance
+              improvements a data analyst or business user would notice. Skip internal refactors,
+              CI/build changes, dependency bumps, test-only changes, and chore tasks.
+            - No image markdown — screenshots are added by the human reviewer.
+
+            Write the final content to `oxygen-content/<TARGET_FILE>`, overwriting it.
+
+            ---
+
+            ## Step 5 — Update docs.json (create mode only)
+
+            **If MODE = create**: In `oxygen-content/docs.json`, prepend `"changelog/$(date +%Y-%m-%d)"`
+            to the top of the "Recent Updates" `pages` array inside the "Changelog" tab.
+
+            **If MODE = update**: Do NOT modify `docs.json` — the existing entry already points at TARGET_FILE.
+
+            ---
+
+            ## Step 6 — Commit, push, and create/update the PR
+
+            **If MODE = update:**
+            ```
+            git -C oxygen-content add <TARGET_FILE>
+            git -C oxygen-content commit -m "chore: add release ${{ steps.version.outputs.version }} to changelog draft"
+            git -C oxygen-content push
+            ```
+            Then append the new version to the existing PR body:
+            ```
+            CURRENT_BODY=$(gh pr view "$PR_NUMBER" --repo oxy-hq/oxygen-content --json body --jq .body)
+            gh pr edit "$PR_NUMBER" --repo oxy-hq/oxygen-content --body "${CURRENT_BODY}
+            - ${{ steps.version.outputs.version }}"
+            ```
+
+            **If MODE = create:**
+            ```
+            git -C oxygen-content add <TARGET_FILE> docs.json
+            git -C oxygen-content commit -m "chore: changelog draft for release ${{ steps.version.outputs.version }}"
+            git -C oxygen-content push -u origin pending-changelog
+            ```
+            Then create the PR:
+            ```
+            gh pr create --repo oxy-hq/oxygen-content \
+              --title "chore: pending changelog ($(date +%Y-%m-%d))" \
+              --label pending-release \
+              --head pending-changelog \
+              --base main \
+              --body "Changelog draft auto-generated from release notes.
+
+            **Included releases:** ${{ steps.version.outputs.version }}
+
+            > Review and curate before merging.
+            > Add screenshots to \`changelog/images/$(date +%Y-%m-%d)/\` where helpful.
+            > Claude may have missed details or over-included internal changes."
+            ```
