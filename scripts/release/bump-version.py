@@ -20,12 +20,38 @@ Version bump rules (conventional commits):
 import subprocess
 import re
 import sys
+import tomllib
+from pathlib import Path
 
 DRY_RUN = "--dry-run" in sys.argv
 
 
 def run(cmd):
     return subprocess.run(cmd, capture_output=True, text=True, check=True).stdout.strip()
+
+
+def workspace_member_names() -> list[str]:
+    """Return package names of workspace members that inherit version from the workspace.
+
+    Reads `[workspace] members = [...]` from the root Cargo.toml, then inspects each member's
+    Cargo.toml. A member is included only if it uses `version.workspace = true` — crates with
+    hardcoded versions track their own release cadence and must not be touched.
+    """
+    with open("Cargo.toml", "rb") as f:
+        root = tomllib.load(f)
+    members = root.get("workspace", {}).get("members", [])
+    names: list[str] = []
+    for m in members:
+        path = Path(m) / "Cargo.toml"
+        if not path.exists():
+            continue
+        with open(path, "rb") as f:
+            crate = tomllib.load(f)
+        package = crate.get("package", {})
+        version = package.get("version")
+        if isinstance(version, dict) and version.get("workspace") is True:
+            names.append(package["name"])
+    return names
 
 
 try:
@@ -71,16 +97,18 @@ if not DRY_RUN:
     with open("Cargo.toml", "w") as f:
         f.write(content)
 
-    # Update workspace crate versions in Cargo.lock.
-    # Entries look like: name = "oxy"\nversion = "0.5.35"
-    # We replace the old version only on lines immediately following a workspace crate name.
+    # Update workspace crate versions in Cargo.lock by enumerating members rather than
+    # matching `latest_tag`. A feature branch that lands after a release can carry stale
+    # versions in Cargo.lock (e.g. airhouse/oxy-platform sat at 0.5.50 in #2266 because the
+    # branch predated the 0.5.51 bump); a tag-anchored regex would silently skip those.
     with open("Cargo.lock") as f:
         lockfile = f.read()
-    lockfile = re.sub(
-        rf'(name = "[^"]+"\nversion = "){re.escape(latest_tag)}"',
-        rf'\g<1>{new_version}"',
-        lockfile,
-    )
+    for name in workspace_member_names():
+        lockfile = re.sub(
+            rf'(name = "{re.escape(name)}"\nversion = ")[^"]+"',
+            rf'\g<1>{new_version}"',
+            lockfile,
+        )
     with open("Cargo.lock", "w") as f:
         f.write(lockfile)
 

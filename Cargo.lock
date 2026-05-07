@@ -610,7 +610,7 @@ dependencies = [
 
 [[package]]
 name = "airhouse"
-version = "0.5.50"
+version = "0.5.51"
 dependencies = [
  "agentic-connector",
  "agentic-core",
@@ -10321,7 +10321,7 @@ dependencies = [
 
 [[package]]
 name = "oxy-platform"
-version = "0.5.50"
+version = "0.5.51"
 dependencies = [
  "aes-gcm",
  "aws-config",
