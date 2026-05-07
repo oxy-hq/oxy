@@ -1,6 +1,6 @@
 import { AlertCircle, ArrowRight, Database, GitFork, Key, Lock, X } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Link, Navigate, useLocation, useParams } from "react-router-dom";
+import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import ChatPanel from "@/components/Chat/ChatPanel";
 import PageHeader from "@/components/PageHeader";
 import useSidebar from "@/components/ui/shadcn/sidebar-context";
@@ -15,6 +15,7 @@ import { hasPendingOnboardingForWorkspace } from "@/libs/utils/onboardingStorage
 import ROUTES from "@/libs/utils/routes";
 import { getAgentNameFromPath } from "@/libs/utils/string";
 import useCurrentOrg from "@/stores/useCurrentOrg";
+import useSettingsDialog from "@/stores/useSettingsDialog";
 
 const getGreeting = () => {
   const hour = new Date().getHours();
@@ -26,7 +27,7 @@ const getGreeting = () => {
 interface SetupGap {
   icon: typeof Database;
   label: string;
-  to: string;
+  action: () => void;
   cta: string;
 }
 
@@ -61,13 +62,14 @@ const ProjectSetupToast = ({ gaps }: { gaps: SetupGap[] }) => {
                 <gap.icon className='h-3 w-3 shrink-0' />
                 <span className='truncate'>{gap.label}</span>
               </div>
-              <Link
-                to={gap.to}
+              <button
+                type='button'
+                onClick={gap.action}
                 className='flex shrink-0 items-center gap-1 whitespace-nowrap font-medium text-primary text-xs hover:underline'
               >
                 {gap.cta}
                 <ArrowRight className='h-3 w-3' />
-              </Link>
+              </button>
             </div>
           ))}
         </div>
@@ -82,6 +84,8 @@ const Home = () => {
   const { project } = useCurrentProjectBranch();
   const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
   const location = useLocation();
+  const navigate = useNavigate();
+  const openSettings = useSettingsDialog((s) => s.open);
   const { wsId: urlWsId } = useParams<{ wsId: string }>();
   const locationState = location.state as {
     prefillQuestion?: string;
@@ -195,14 +199,14 @@ const Home = () => {
 
   // Surface gaps as a toast rather than redirecting — the wizard is one-shot
   // and ends in a dead-end "complete" state, and the user just came from
-  // there. Links go straight to the Secrets page.
+  // there. Each gap opens the relevant Settings section or navigates.
   const gaps: SetupGap[] = [];
   if (!anyApiError) {
     if (llmKeyMissingForAgent) {
       gaps.push({
         icon: Key,
         label: llmGapLabel,
-        to: routes.IDE.SETTINGS.SECRETS,
+        action: () => openSettings("workspace.secrets"),
         cta: "Add key"
       });
     }
@@ -214,7 +218,7 @@ const Home = () => {
           warehousesNeedingCreds.length === 1
             ? `Missing credentials for ${names}`
             : "Missing warehouse credentials",
-        to: routes.IDE.SETTINGS.SECRETS,
+        action: () => openSettings("workspace.secrets"),
         cta: "Add credentials"
       });
     }
@@ -222,7 +226,7 @@ const Home = () => {
       gaps.push({
         icon: Database,
         label: "No database connection",
-        to: routes.IDE.SETTINGS.DATABASES,
+        action: () => openSettings("workspace.databases"),
         cta: "Configure"
       });
     }
@@ -230,7 +234,7 @@ const Home = () => {
       gaps.push({
         icon: GitFork,
         label: "No agents configured",
-        to: routes.IDE.ROOT,
+        action: () => navigate(routes.IDE.ROOT),
         cta: "Open IDE"
       });
     }

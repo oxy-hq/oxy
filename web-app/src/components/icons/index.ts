@@ -1,4 +1,5 @@
 import AgentIcon from "./AgentIcon";
+import { AirhouseLogo } from "./AirhouseLogo";
 import AnthropicIcon from "./AnthropicIcon";
 import BigQueryIcon from "./BigQueryIcon";
 import ClickHouseIcon from "./ClickHouseIcon";
@@ -13,6 +14,7 @@ import SnowflakeIcon from "./SnowflakeIcon";
 
 export {
   AgentIcon,
+  AirhouseLogo,
   AnthropicIcon,
   BigQueryIcon,
   ClickHouseIcon,

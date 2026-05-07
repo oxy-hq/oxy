@@ -1,4 +1,4 @@
-import { Activity, Database, Folder, GitBranch, Radio, Settings, ShieldCheck } from "lucide-react";
+import { Activity, Database, Folder, GitBranch, Radio, ShieldCheck } from "lucide-react";
 import type React from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/shadcn/button";
@@ -14,7 +14,6 @@ enum SidebarViewMode {
   COORDINATOR = "coordinator",
   OBSERVABILITY = "observability",
   DATABASE = "database",
-  SETTINGS = "settings",
   MODELING = "modeling"
 }
 
@@ -33,9 +32,6 @@ const getViewModeFromPath = (pathname: string, filesRoot: string): SidebarViewMo
   }
   if (pathname.includes("/ide/database")) {
     return SidebarViewMode.DATABASE;
-  }
-  if (pathname.includes("/ide/settings")) {
-    return SidebarViewMode.SETTINGS;
   }
   if (pathname.includes("/ide/modeling")) {
     return SidebarViewMode.MODELING;
@@ -70,9 +66,6 @@ const Sidebar: React.FC = () => {
         break;
       case SidebarViewMode.TESTS:
         navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.TESTS.ROOT);
-        break;
-      case SidebarViewMode.SETTINGS:
-        navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.SETTINGS.DATABASES);
         break;
       case SidebarViewMode.MODELING:
         navigate(ROUTES.ORG(orgSlug).WORKSPACE(projectId).IDE.MODELING.ROOT);
@@ -173,21 +166,6 @@ const Sidebar: React.FC = () => {
           )}
         >
           <GitBranch className='h-4 w-4' />
-        </Button>
-
-        <Button
-          variant='ghost'
-          size='icon'
-          onClick={() => handleNavigate(SidebarViewMode.SETTINGS)}
-          tooltip={{ content: "Settings", side: "right" }}
-          className={cn(
-            "h-8 w-8",
-            currentViewMode === SidebarViewMode.SETTINGS
-              ? "bg-sidebar-accent text-sidebar-accent-foreground"
-              : "opacity-60 hover:opacity-100"
-          )}
-        >
-          <Settings className='h-4 w-4' />
         </Button>
       </div>
     </div>

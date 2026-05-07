@@ -69,14 +69,6 @@ import LookerExplorerPage from "./pages/ide/Files/Editor/LookerExplore";
 import ModelingPage from "./pages/ide/modeling";
 import ObservabilityLayout from "./pages/ide/observability";
 import ExecutionAnalytics from "./pages/ide/observability/execution-analytics";
-import SettingsLayout from "./pages/ide/settings";
-import ActivityLogsPage from "./pages/ide/settings/activity-logs";
-import AirhouseSettingsPage from "./pages/ide/settings/airhouse";
-import ApiKeysPage from "./pages/ide/settings/api-keys";
-import DatabasesPage from "./pages/ide/settings/databases";
-import WorkspaceMembersPage from "./pages/ide/settings/members";
-import RepositoriesPage from "./pages/ide/settings/repositories";
-import SecretsPage from "./pages/ide/settings/secrets";
 import TestsLayout from "./pages/ide/tests";
 import TestFileDetailPage from "./pages/ide/tests/TestFileDetailPage";
 import TestsDashboardPage from "./pages/ide/tests/TestsDashboardPage";
@@ -258,17 +250,6 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
           {/* Database routes */}
           <Route path='database' element={<DatabaseLayout />}>
             <Route index element={<QueryWorkspacePage />} />
-          </Route>
-
-          {/* Settings routes */}
-          <Route path='settings' element={<SettingsLayout />}>
-            <Route path='databases' element={<DatabasesPage />} />
-            <Route path='repositories' element={<RepositoriesPage />} />
-            <Route path='activity-logs' element={<ActivityLogsPage />} />
-            <Route path='api-keys' element={<ApiKeysPage />} />
-            <Route path='secrets' element={<SecretsPage />} />
-            <Route path='members' element={<WorkspaceMembersPage />} />
-            <Route path='airhouse' element={<AirhouseSettingsPage />} />
           </Route>
 
           {/* Data Modeling routes */}

@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import React from "react";
 import {
+  AirhouseLogo,
   BigQueryIcon,
   ClickHouseIcon,
   DuckDBIcon,
@@ -20,7 +21,6 @@ import { Button } from "@/components/ui/shadcn/button";
 import { SidebarMenuButton, SidebarMenuItem } from "@/components/ui/shadcn/sidebar";
 import useDatabaseSchema from "@/hooks/api/databases/useDatabaseSchema";
 import { cn } from "@/libs/shadcn/utils";
-import { AirhouseLogo } from "@/pages/ide/settings/components/AirhouseLogo";
 import type { DatabaseInfo } from "@/types/database";
 import { ConnectionSchemaContent } from "./ConnectionSchemaContent";
 

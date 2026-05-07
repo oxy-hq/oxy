@@ -2,12 +2,13 @@ import { Check, HardDrive, LogOut, Plus, Settings, UserPlus } from "lucide-react
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import OrgSettingsDialog, { type OrgSettingsTab } from "@/components/org/OrgSettingsDialog";
+import SettingsDialog from "@/components/settings/SettingsDialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOrgs } from "@/hooks/api/organizations";
 import { cn } from "@/libs/shadcn/utils";
 import ROUTES from "@/libs/utils/routes";
 import useCurrentOrg from "@/stores/useCurrentOrg";
+import useSettingsDialog, { type SettingsSection } from "@/stores/useSettingsDialog";
 import type { UserInfo } from "@/types/auth";
 import type { Organization } from "@/types/organization";
 import { UserAvatar } from "../UserAvatar";
@@ -43,6 +44,7 @@ function useLocalUserInfo(): UserInfo | null {
 }
 
 function LocalModeFooter() {
+  const openSettingsDialog = useSettingsDialog((s) => s.open);
   return (
     <div className='border-sidebar-border/50 border-t p-2'>
       <div className='flex items-center gap-2.5 rounded-md px-2 py-2 text-left group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0'>
@@ -57,6 +59,15 @@ function LocalModeFooter() {
             Running against local config
           </span>
         </div>
+        <Button
+          variant='ghost'
+          size='icon'
+          onClick={() => openSettingsDialog("workspace.databases")}
+          tooltip='Settings'
+          className='h-7 w-7 shrink-0 group-data-[collapsible=icon]:hidden'
+        >
+          <Settings className='h-4 w-4' />
+        </Button>
       </div>
     </div>
   );
@@ -64,10 +75,12 @@ function LocalModeFooter() {
 
 export function Footer() {
   const { isLocalMode } = useAuth();
-  if (isLocalMode) {
-    return <LocalModeFooter />;
-  }
-  return <CloudFooter />;
+  return (
+    <>
+      {isLocalMode ? <LocalModeFooter /> : <CloudFooter />}
+      <SettingsDialog />
+    </>
+  );
 }
 
 function CloudFooter() {
@@ -75,14 +88,10 @@ function CloudFooter() {
   const { logout } = useAuth();
   const currentUser = useLocalUserInfo();
   const { org: currentOrg } = useCurrentOrg();
-  const role = useCurrentOrg((s) => s.role);
   const { data: orgs } = useOrgs();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<OrgSettingsTab>("general");
+  const openSettingsDialog = useSettingsDialog((s) => s.open);
   const [searchParams, setSearchParams] = useSearchParams();
-
-  const isAdmin = role === "owner" || role === "admin";
 
   // After a successful Slack install, the backend redirects the browser
   // to /<orgSlug>?slack_installed=ok. Detect the param, surface a toast,
@@ -91,16 +100,14 @@ function CloudFooter() {
   useEffect(() => {
     if (searchParams.get("slack_installed") !== "ok") return;
     toast.success("Slack connected");
-    setSettingsTab("integration");
-    setSettingsOpen(true);
+    openSettingsDialog("organization.integration");
     const next = new URLSearchParams(searchParams);
     next.delete("slack_installed");
     setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams]);
+  }, [searchParams, setSearchParams, openSettingsDialog]);
 
-  const openSettings = (tab: OrgSettingsTab) => {
-    setSettingsTab(tab);
-    setSettingsOpen(true);
+  const openSettings = (section: SettingsSection) => {
+    openSettingsDialog(section);
     setMenuOpen(false);
   };
 
@@ -157,18 +164,24 @@ function CloudFooter() {
                   <span className='truncate text-[11px] text-muted-foreground'>{statsLabel}</span>
                 </div>
               </div>
-              {isAdmin && (
-                <div className='flex gap-1.5 px-2 pb-2'>
-                  <Button variant='outline' size='sm' onClick={() => openSettings("general")}>
-                    <Settings />
-                    Settings
-                  </Button>
-                  <Button variant='outline' size='sm' onClick={() => openSettings("team")}>
-                    <UserPlus />
-                    Invite members
-                  </Button>
-                </div>
-              )}
+              <div className='flex gap-1.5 px-2 pb-2'>
+                <Button
+                  variant='outline'
+                  size='sm'
+                  onClick={() => openSettings("organization.general")}
+                >
+                  <Settings />
+                  Settings
+                </Button>
+                <Button
+                  variant='outline'
+                  size='sm'
+                  onClick={() => openSettings("organization.members")}
+                >
+                  <UserPlus />
+                  Invite members
+                </Button>
+              </div>
               <DropdownMenuSeparator />
             </>
           )}
@@ -227,16 +240,6 @@ function CloudFooter() {
           )}
         </DropdownMenuContent>
       </DropdownMenu>
-
-      {displayOrg && role && (
-        <OrgSettingsDialog
-          open={settingsOpen}
-          onOpenChange={setSettingsOpen}
-          org={displayOrg}
-          viewerRole={role}
-          defaultTab={settingsTab}
-        />
-      )}
     </div>
   );
 }

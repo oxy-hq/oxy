@@ -3,6 +3,7 @@
 # Local-only development coordination artifacts
 SESSION_HANDOFF.md
 .claude/settings.local.json
+.superpowers/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

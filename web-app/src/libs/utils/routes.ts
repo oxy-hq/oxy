@@ -44,7 +44,6 @@ const ROUTES = {
           ROOT: wsBase,
           HOME: `${wsBase}/home`,
           NEW: `${wsBase}/new`,
-          REQUIRED_SECRETS: `${wsBase}/ide/settings/secrets`,
 
           THREADS: `${wsBase}/threads`,
           THREAD: (threadId: string) => `${wsBase}/threads/${threadId}`,
@@ -65,16 +64,6 @@ const ROUTES = {
             },
             DATABASE: {
               ROOT: `${wsBase}/ide/database`
-            },
-            SETTINGS: {
-              ROOT: `${wsBase}/ide/settings`,
-              DATABASES: `${wsBase}/ide/settings/databases`,
-              REPOSITORIES: `${wsBase}/ide/settings/repositories`,
-              ACTIVITY_LOGS: `${wsBase}/ide/settings/activity-logs`,
-              API_KEYS: `${wsBase}/ide/settings/api-keys`,
-              SECRETS: `${wsBase}/ide/settings/secrets`,
-              MEMBERS: `${wsBase}/ide/settings/members`,
-              AIRHOUSE: `${wsBase}/ide/settings/airhouse`
             },
             TESTS: {
               ROOT: `${wsBase}/ide/tests`,
