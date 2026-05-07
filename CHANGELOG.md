@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.52] - 2026-05-07
+
+### 🚀 Features
+
+- Airhouse onboarding (#2219)
+- Billing allow tiered prices in provisioning (#2263)
+- Enhance version bump script to read workspace member versions from Cargo.toml
+- Update content changelog workflow to handle existing drafts and streamline PR creation
+- Unified settings dialog (#2270)
+
+### 🐛 Bug Fixes
+
+- Web-app redirect immediately when deleting current workspace (#2271)
+
+### 💼 Other
+
+- *(deps)* Bump slackapi/slack-github-action from 3.0.2 to 3.0.3 (#2277)
+- *(deps)* Bump fpicalausa/remove-stale-branches from 2.4.0 to 2.6.1 (#2276)
+- *(deps-dev)* Bump lint-staged from 16.4.0 to 17.0.2 in the dev-npm-major-dependencies group across 1 directory (#2283)
+- *(deps)* Bump the prod-npm-minor-dependencies group across 2 directories with 11 updates (#2279)
+
+### ⚙️ Miscellaneous Tasks
+
+- Update dependencies in TypeScript SDK and web app
+
 ## [0.5.51] - 2026-05-06
 
 ### 🚀 Features
@@ -17,6 +42,7 @@ All notable changes to this project will be documented in this file.
 ### ⚙️ Miscellaneous Tasks
 
 - Update README banner (#2269)
+- Release 0.5.51 (#2266)
 
 ## [0.5.50] - 2026-05-05
 
