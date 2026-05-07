@@ -28,7 +28,7 @@ export const ConnectionDetails: React.FC<ConnectionDetailsProps> = ({
         <CopyableField label='Host' value={connection.host} />
         <CopyableField label='Port' value={String(connection.port)} />
         <CopyableField label='Database' value={connection.dbname} />
-        <CopyableField label='Username' value={connection.username} />
+        <CopyableField label='Role' value={connection.role} />
       </CardContent>
       <CardFooter className='flex flex-col items-start gap-2'>
         <Button

@@ -23,18 +23,19 @@ use agentic_core::result::{
 };
 
 use crate::connector::{
-    ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, ResultSummary,
-    SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect, normalize_sql,
+    ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, QueryFailedDetails,
+    ResultSummary, SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect, normalize_sql,
 };
 use crate::postgres_typed::{decode_row, pg_typname_to_typed, select_expr_for_pg_type};
 
 // ── Error helpers ─────────────────────────────────────────────────────────────
 
-/// Extract a human-readable message from a `tokio_postgres` error.
+/// Flatten a `tokio_postgres` error into a single human-readable string.
 ///
-/// For server-side errors (`Kind::Db`) the SQL-state code, server message, and
-/// any detail / hint strings are surfaced directly.  For transport / protocol
-/// errors the `Display` output is used as-is.
+/// Used at sites that don't carry the originating SQL (e.g. transport / TLS
+/// failures, schema introspection). Query-execution sites should use
+/// [`pg_query_failed`] so SQLSTATE / DETAIL / HINT / POSITION reach the
+/// caller as separate fields.
 fn pg_error_message(e: &tokio_postgres::Error) -> String {
     if let Some(db) = e.as_db_error() {
         let mut msg = format!("[{}] {}", db.code().code(), db.message());
@@ -47,6 +48,35 @@ fn pg_error_message(e: &tokio_postgres::Error) -> String {
         msg
     } else {
         e.to_string()
+    }
+}
+
+/// Build a structured [`QueryFailedDetails`] from a `tokio_postgres` error.
+///
+/// For server-side errors the SQLSTATE, message, DETAIL, HINT, and POSITION
+/// each land in their own field so the IDE can render them as a structured
+/// block (and highlight the offending token via `position`). Transport-level
+/// errors only populate `message`.
+fn pg_query_failed(sql: &str, e: &tokio_postgres::Error) -> QueryFailedDetails {
+    let sql = sql.to_string();
+    if let Some(db) = e.as_db_error() {
+        QueryFailedDetails {
+            sql,
+            message: db.message().to_string(),
+            code: Some(db.code().code().to_string()),
+            detail: db.detail().map(|s| s.to_string()),
+            hint: db.hint().map(|s| s.to_string()),
+            position: db.position().and_then(|p| match p {
+                tokio_postgres::error::ErrorPosition::Original(n) => Some(*n),
+                tokio_postgres::error::ErrorPosition::Internal { .. } => None,
+            }),
+        }
+    } else {
+        QueryFailedDetails {
+            sql,
+            message: e.to_string(),
+            ..Default::default()
+        }
     }
 }
 
@@ -189,10 +219,7 @@ impl DatabaseConnector for PostgresConnector {
         client
             .execute(&create_sql, &[])
             .await
-            .map_err(|e| ConnectorError::QueryFailed {
-                sql: sql.to_string(),
-                message: pg_error_message(&e),
-            })?;
+            .map_err(|e| ConnectorError::QueryFailed(pg_query_failed(sql, &e)))?;
 
         // 3. Column names and types via pg_attribute.
         let attr_sql = "\
@@ -205,59 +232,46 @@ impl DatabaseConnector for PostgresConnector {
               AND NOT a.attisdropped \
             ORDER BY a.attnum";
 
-        let attr_rows =
-            client
-                .query(attr_sql, &[])
-                .await
-                .map_err(|e| ConnectorError::QueryFailed {
-                    sql: attr_sql.to_string(),
-                    message: pg_error_message(&e),
-                })?;
+        let attr_rows = client.query(attr_sql, &[]).await.map_err(|e| {
+            ConnectorError::query_failed(attr_sql.to_string(), pg_error_message(&e))
+        })?;
 
         let column_names: Vec<String> = attr_rows.iter().map(|r| r.get::<_, String>(0)).collect();
         let column_types: Vec<String> = attr_rows.iter().map(|r| r.get::<_, String>(1)).collect();
 
         // 4. Total row count.
         let count_sql = format!("SELECT COUNT(*) FROM {tmp}");
-        let count_row =
-            client
-                .query_one(&count_sql, &[])
-                .await
-                .map_err(|e| ConnectorError::QueryFailed {
-                    sql: count_sql.clone(),
-                    message: pg_error_message(&e),
-                })?;
+        let count_row = client
+            .query_one(&count_sql, &[])
+            .await
+            .map_err(|e| ConnectorError::query_failed(count_sql.clone(), pg_error_message(&e)))?;
         let total_row_count = count_row.get::<_, i64>(0) as u64;
 
         // 5. Sample rows — cast every column to TEXT so we can decode uniformly.
         let col_count = column_names.len();
-        let sample_rows: Vec<QueryRow> =
-            if col_count == 0 {
-                Vec::new()
-            } else {
-                let cast_cols: String = column_names
-                    .iter()
-                    .map(|c| format!("\"{}\"::TEXT", c.replace('"', "\"\"")))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let sample_sql = format!("SELECT {cast_cols} FROM {tmp} LIMIT {sample_limit}");
+        let sample_rows: Vec<QueryRow> = if col_count == 0 {
+            Vec::new()
+        } else {
+            let cast_cols: String = column_names
+                .iter()
+                .map(|c| format!("\"{}\"::TEXT", c.replace('"', "\"\"")))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let sample_sql = format!("SELECT {cast_cols} FROM {tmp} LIMIT {sample_limit}");
 
-                let rows = client.query(&sample_sql, &[]).await.map_err(|e| {
-                    ConnectorError::QueryFailed {
-                        sql: sample_sql.clone(),
-                        message: pg_error_message(&e),
-                    }
-                })?;
+            let rows = client.query(&sample_sql, &[]).await.map_err(|e| {
+                ConnectorError::query_failed(sample_sql.clone(), pg_error_message(&e))
+            })?;
 
-                rows.iter()
-                    .map(|r| {
-                        let cells = (0..col_count)
-                            .map(|i| pg_text_to_cell(r.get::<_, Option<String>>(i)))
-                            .collect();
-                        QueryRow(cells)
-                    })
-                    .collect()
-            };
+            rows.iter()
+                .map(|r| {
+                    let cells = (0..col_count)
+                        .map(|i| pg_text_to_cell(r.get::<_, Option<String>>(i)))
+                        .collect();
+                    QueryRow(cells)
+                })
+                .collect()
+        };
 
         // 6. Per-column stats.
         let mut col_stats: Vec<ColumnStats> = Vec::with_capacity(col_count);
@@ -274,10 +288,7 @@ impl DatabaseConnector for PostgresConnector {
                  FROM {tmp}"
             );
             let basic_row = client.query_one(&basic_sql, &[]).await.map_err(|e| {
-                ConnectorError::QueryFailed {
-                    sql: basic_sql.clone(),
-                    message: pg_error_message(&e),
-                }
+                ConnectorError::query_failed(basic_sql.clone(), pg_error_message(&e))
             })?;
 
             let null_count = basic_row.get::<_, i64>(0) as u64;
@@ -357,10 +368,7 @@ impl DatabaseConnector for PostgresConnector {
             client
                 .execute(&stmt, &[])
                 .await
-                .map_err(|e| ConnectorError::QueryFailed {
-                    sql: sql.to_string(),
-                    message: pg_error_message(&e),
-                })?;
+                .map_err(|e| ConnectorError::QueryFailed(pg_query_failed(sql, &e)))?;
             return Ok(TypedRowStream::from_rows(vec![], vec![]));
         }
 
@@ -392,12 +400,10 @@ impl DatabaseConnector for PostgresConnector {
 
         // Inline subquery: no temp table, casts applied to the live result set.
         let cast_sql = format!("SELECT {} FROM ({sql}) __q", cast_exprs.join(", "));
-        let rows = client.query(cast_sql.as_str(), &[]).await.map_err(|e| {
-            ConnectorError::QueryFailed {
-                sql: sql.to_string(),
-                message: pg_error_message(&e),
-            }
-        })?;
+        let rows = client
+            .query(cast_sql.as_str(), &[])
+            .await
+            .map_err(|e| ConnectorError::QueryFailed(pg_query_failed(sql, &e)))?;
 
         let typed_rows = rows
             .iter()
@@ -491,10 +497,7 @@ async fn execute_via_simple_query(
     let messages = client
         .simple_query(sql)
         .await
-        .map_err(|e| ConnectorError::QueryFailed {
-            sql: sql.to_string(),
-            message: pg_error_message(&e),
-        })?;
+        .map_err(|e| ConnectorError::QueryFailed(pg_query_failed(sql, &e)))?;
 
     let mut columns: Vec<ColumnSpec> = Vec::new();
     let mut rows: Vec<Result<Vec<TypedValue>, TypedRowError>> = Vec::new();

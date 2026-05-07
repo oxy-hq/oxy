@@ -502,9 +502,28 @@ impl SchemaLoader {
         config: &ConfigManager,
         secrets_manager: &SecretsManager,
     ) -> Result<Self, OxyError> {
+        // System-side schema load has no user / workspace context —
+        // `airhouse_managed` can't mint here. Bail with the canonical
+        // friendly message before `from_db` produces its low-level
+        // ConfigurationError.
+        crate::connector::reject_airhouse_managed_for_system_path(
+            config,
+            &database.name,
+            "Schema loading",
+        )?;
         let connector = Arc::new(
-            Connector::from_database(&database.name, config, secrets_manager, None, None, None)
-                .await?,
+            Connector::from_database(
+                &database.name,
+                config,
+                secrets_manager,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await?,
         );
         Ok(SchemaLoader {
             database: database.clone(),

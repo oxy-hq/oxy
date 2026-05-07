@@ -300,7 +300,7 @@ async fn execute_query_full_reports_query_errors() {
         .await
         .expect_err("unknown table must error");
     match err {
-        agentic_connector::ConnectorError::QueryFailed { .. } => {}
+        agentic_connector::ConnectorError::QueryFailed(_) => {}
         other => panic!("expected QueryFailed, got {other:?}"),
     }
 }

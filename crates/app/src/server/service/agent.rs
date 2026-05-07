@@ -98,6 +98,7 @@ pub async fn ask_adhoc(
         Some(ExecutionSource::Internal), // Internal/programmatic call
         None,                            // No sandbox_info
         None,                            // No data_app_file_path
+        None,                            // Internal call → conservative Reader for airhouse_managed
     )
     .await
     {
@@ -271,6 +272,12 @@ pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
     source: Option<ExecutionSource>,
     sandbox_info: Option<oxy::execute::types::event::SandboxInfo>,
     data_app_file_path: Option<String>,
+    // `effective_role`: submitter's effective workspace role, when known.
+    // Authenticated API handlers should extract `EffectiveWorkspaceRole`
+    // and pass it here so airhouse_managed SQL steps mint at the user's
+    // actual role. CLI / A2A / Slack / MCP entry points pass `None` and
+    // accept the conservative Reader default.
+    effective_role: Option<entity::workspace_members::WorkspaceRole>,
 ) -> Result<OutputContainer, OxyError> {
     let agent_ref_str = agent_ref.as_ref().to_string_lossy().to_string();
     let project_path_str = workspace
@@ -346,6 +353,7 @@ pub async fn run_agent<P: AsRef<Path>, H: EventHandler + Send + 'static>(
         .with_connections(connections)
         .with_sandbox_info(sandbox_info.clone())
         .with_data_app_file_path(data_app_file_path.clone())
+        .with_effective_role(effective_role)
         .with_workspace(workspace)
         .await?
         .launch(
@@ -374,8 +382,10 @@ pub async fn run_agentic_workflow<P: AsRef<Path>, H: EventHandler + Send + 'stat
     prompt: String,
     event_handler: H,
     memory: Vec<Message>,
+    effective_role: Option<entity::workspace_members::WorkspaceRole>,
 ) -> Result<OutputContainer, OxyError> {
     AgentLauncher::new()
+        .with_effective_role(effective_role)
         .with_workspace(workspace_manager)
         .await?
         .launch_agentic_workflow(

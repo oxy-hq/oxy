@@ -340,10 +340,7 @@ impl DatabaseConnector for MysqlConnector {
         sqlx::query(&format!("CREATE TEMPORARY TABLE {tmp} AS ({sql})"))
             .execute(&mut *conn)
             .await
-            .map_err(|e| ConnectorError::QueryFailed {
-                sql: sql.to_string(),
-                message: e.to_string(),
-            })?;
+            .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
 
         // 3. Column names / types from information_schema — scoped to
         //    `_agentic_tmp` in the current DB.
@@ -357,10 +354,7 @@ impl DatabaseConnector for MysqlConnector {
             .bind(tmp)
             .fetch_all(&mut *conn)
             .await
-            .map_err(|e| ConnectorError::QueryFailed {
-                sql: info_sql.to_string(),
-                message: e.to_string(),
-            })?;
+            .map_err(|e| ConnectorError::query_failed(info_sql.to_string(), e.to_string()))?;
         let column_names: Vec<String> = info_rows.iter().map(|(n, _)| n.clone()).collect();
         let column_types: Vec<String> = info_rows.iter().map(|(_, t)| t.clone()).collect();
 
@@ -370,10 +364,7 @@ impl DatabaseConnector for MysqlConnector {
             .fetch_one(&mut *conn)
             .await
             .map(|n| n as u64)
-            .map_err(|e| ConnectorError::QueryFailed {
-                sql: count_sql.clone(),
-                message: e.to_string(),
-            })?;
+            .map_err(|e| ConnectorError::query_failed(count_sql.clone(), e.to_string()))?;
 
         // 5. Sample rows — cast every column to CHAR.
         let col_count = column_names.len();
@@ -389,10 +380,7 @@ impl DatabaseConnector for MysqlConnector {
             let rows = sqlx::query(&sample_sql)
                 .fetch_all(&mut *conn)
                 .await
-                .map_err(|e| ConnectorError::QueryFailed {
-                    sql: sample_sql.clone(),
-                    message: e.to_string(),
-                })?;
+                .map_err(|e| ConnectorError::query_failed(sample_sql.clone(), e.to_string()))?;
             rows.iter()
                 .map(|r| {
                     let cells = (0..col_count)
@@ -434,10 +422,7 @@ impl DatabaseConnector for MysqlConnector {
             let stats_row = sqlx::query(&stats_sql)
                 .fetch_one(&mut *conn)
                 .await
-                .map_err(|e| ConnectorError::QueryFailed {
-                    sql: stats_sql.clone(),
-                    message: e.to_string(),
-                })?;
+                .map_err(|e| ConnectorError::query_failed(stats_sql.clone(), e.to_string()))?;
 
             column_names
                 .iter()
@@ -528,10 +513,7 @@ impl DatabaseConnector for MysqlConnector {
             Err(_) => {
                 return match sqlx::query(sql).execute(&self.pool).await {
                     Ok(_) => Ok(TypedRowStream::from_rows(vec![], vec![])),
-                    Err(e) => Err(ConnectorError::QueryFailed {
-                        sql: sql.to_string(),
-                        message: e.to_string(),
-                    }),
+                    Err(e) => Err(ConnectorError::query_failed(sql.to_string(), e.to_string())),
                 };
             }
         };
@@ -539,12 +521,10 @@ impl DatabaseConnector for MysqlConnector {
         let mysql_cols = stmt.columns();
         if mysql_cols.is_empty() {
             // Statement prepared but returns no result set (e.g. DML).
-            sqlx::query(sql).execute(&self.pool).await.map_err(|e| {
-                ConnectorError::QueryFailed {
-                    sql: sql.to_string(),
-                    message: e.to_string(),
-                }
-            })?;
+            sqlx::query(sql)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
             return Ok(TypedRowStream::from_rows(vec![], vec![]));
         }
 

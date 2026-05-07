@@ -44,6 +44,9 @@ impl Executable<SQLInput> for ValidateSQLExecutable {
             None,
             execution_context.filters.clone(),
             execution_context.connections.clone(),
+            execution_context.user_id,
+            Some(execution_context.workspace.workspace_id),
+            execution_context.effective_role.clone(),
         )
         .await?;
         let result = match connector.explain_query(&input.sql).await {

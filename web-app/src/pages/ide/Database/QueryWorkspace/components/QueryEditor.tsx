@@ -22,10 +22,41 @@ import { buttonVariants } from "@/components/ui/shadcn/utils/button-variants";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
 import { cn } from "@/libs/shadcn/utils";
 import { DatabaseService } from "@/services/api";
-import useDatabaseClient from "@/stores/useDatabaseClient";
+import useDatabaseClient, { type SqlExecutionError } from "@/stores/useDatabaseClient";
 
 interface QueryEditorProps {
   onSave: () => void;
+}
+
+/**
+ * Pull a structured `SqlExecutionError` out of an axios error body, or return
+ * `undefined` when the response doesn't carry one (network failures,
+ * non-SQL endpoints).
+ *
+ * Uses index access on a `Record<string, unknown>` rather than lodash `get`
+ * because lodash's typed `get` overload narrows untyped data to `never` when
+ * fed an `unknown` input — fine at runtime, but the field reads below come
+ * back as `never` and trip the type checker.
+ */
+function parseSqlExecutionError(error: unknown): SqlExecutionError | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const response = (error as Record<string, unknown>).response;
+  if (!response || typeof response !== "object") return undefined;
+  const data = (response as Record<string, unknown>).data;
+  if (!data || typeof data !== "object") return undefined;
+  const fields = data as Record<string, unknown>;
+
+  const message = fields.message;
+  if (typeof message !== "string" || message.length === 0) return undefined;
+
+  return {
+    message,
+    code: typeof fields.code === "string" ? fields.code : undefined,
+    detail: typeof fields.detail === "string" ? fields.detail : undefined,
+    hint: typeof fields.hint === "string" ? fields.hint : undefined,
+    position: typeof fields.position === "number" ? fields.position : undefined,
+    sql: typeof fields.sql === "string" ? fields.sql : undefined
+  };
 }
 
 export default function QueryEditor({ onSave }: QueryEditorProps) {
@@ -93,16 +124,11 @@ export default function QueryEditor({ onSave }: QueryEditorProps) {
 
       toast.success(`Query executed in ${executionTime.toFixed(0)}ms`);
     } catch (error) {
-      const rawError =
-        get(error, "response.data.error") ||
-        get(error, "response.data.message") ||
-        get(error, "message") ||
-        "Query execution failed";
-
-      const messageMatch = rawError.match?.(/"message":\s*"([^"]+)"/);
-      const errorMessage = messageMatch ? messageMatch[1] : rawError;
-
-      setTabError(activeTab.id, errorMessage);
+      const details = parseSqlExecutionError(error);
+      const fallback =
+        get(error, "response.data.error") || get(error, "message") || "Query execution failed";
+      const message = details?.message ?? fallback;
+      setTabError(activeTab.id, message, details);
     }
   }, [activeTab, project.id, branchName, setTabExecuting, setTabResults, setTabError]);
 

@@ -79,6 +79,9 @@ impl Executable<SQLInput> for SQLExecutable {
                 input.dry_run_limit,
                 execution_context.filters.clone(),
                 execution_context.connections.clone(),
+                execution_context.user_id,
+                Some(execution_context.workspace.workspace_id),
+                execution_context.effective_role.clone(),
             )
             .await?;
             let file_path = connector.run_query(&input.sql).await?;

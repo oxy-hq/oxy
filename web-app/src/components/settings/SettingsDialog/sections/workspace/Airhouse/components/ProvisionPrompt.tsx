@@ -8,9 +8,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/shadcn
 import { Input } from "@/components/ui/shadcn/input";
 import { Label } from "@/components/ui/shadcn/label";
 
-// Mirrors the backend validate_tenant_name regex:
-// starts with [a-z], body [a-z0-9_-], 1-63 chars total.
-const TENANT_NAME_RE = /^[a-z][a-z0-9_-]{0,61}[a-z0-9]$|^[a-z]$/;
+// Mirrors the backend `validate_tenant_name` (crates/airhouse/src/provisioner.rs):
+// starts with [a-z], body [a-z0-9_-]*, 1-63 chars total. The previous form
+// rejected trailing `-`/`_` even though the backend accepts them, so users
+// hit a frontend-only validation message that didn't match what the API
+// would have allowed.
+const TENANT_NAME_RE = /^[a-z][a-z0-9_-]{0,62}$/;
 
 function validateTenantName(name: string): string | null {
   if (!name) return "Tenant name is required.";
@@ -20,8 +23,15 @@ function validateTenantName(name: string): string | null {
 }
 
 function errorMessage(err: unknown): string {
-  if (isAxiosError(err) && err.response?.status === 422) {
-    return "Invalid tenant name — it must start with a lowercase letter and contain only lowercase letters, digits, hyphens, or underscores (1-63 chars).";
+  if (isAxiosError(err)) {
+    switch (err.response?.status) {
+      case 409:
+        return "That tenant name is already taken on the Airhouse server. Pick a different one.";
+      case 422:
+        return "Invalid tenant name — it must start with a lowercase letter and contain only lowercase letters, digits, hyphens, or underscores (1-63 chars).";
+      default:
+        break;
+    }
   }
   return "Provisioning failed. The Airhouse server may be unreachable — try again in a moment or contact an administrator.";
 }
@@ -54,9 +64,10 @@ export const ProvisionPrompt: React.FC<ProvisionPromptProps> = ({
         <AirhouseLogo className='h-6' />
         <CardTitle>Set up your Airhouse connection</CardTitle>
         <p className='text-muted-foreground text-sm'>
-          You don't have an Airhouse user in this workspace yet. Choose a tenant name and click
-          below to provision one. This creates an Airhouse tenant and user, generates a password,
-          and prepares your connection details. You can copy the password from this page afterwards.
+          This workspace isn't connected to an Airhouse tenant yet. Pick a tenant name and click
+          below to provision one. After that, every member of the workspace mints their own
+          short-lived database credential on demand — passwords are issued per request and never
+          stored on the server.
         </p>
       </CardHeader>
       <CardContent className='space-y-4'>

@@ -140,6 +140,7 @@ pub async fn workspace_middleware(
                 query.branch.as_deref(),
                 workspace_id,
                 branch_id,
+                user.id,
                 &mut request,
             )
             .await?;
@@ -292,6 +293,7 @@ async fn try_attach_workspace_manager(
     branch_name: Option<&str>,
     workspace_id: Uuid,
     branch_id: Uuid,
+    user_id: Uuid,
     request: &mut Request<axum::body::Body>,
 ) -> Result<(), StatusCode> {
     // Branch name is validated inside `effective_workspace_path`. The helper
@@ -368,9 +370,16 @@ async fn try_attach_workspace_manager(
         ),
     }
 
-    let project_ctx = std::sync::Arc::new(crate::agentic_wiring::OxyProjectContext::new(
-        workspace_manager.clone(),
-    ));
+    let mut ctx = crate::agentic_wiring::OxyProjectContext::new(workspace_manager.clone())
+        .with_subject(user_id);
+    // The effective role was inserted into extensions by `authorize_workspace`
+    // a few lines up; thread it through so the airhouse_managed builder can
+    // mint with the user's mapped airhouse role.
+    if let Some(EffectiveWorkspaceRole(role)) = request.extensions().get::<EffectiveWorkspaceRole>()
+    {
+        ctx = ctx.with_role(role.clone());
+    }
+    let project_ctx = std::sync::Arc::new(ctx);
     let platform: std::sync::Arc<dyn agentic_pipeline::platform::PlatformContext> =
         project_ctx.clone();
     let bridges = crate::agentic_wiring::build_builder_bridges(project_ctx);

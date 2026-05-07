@@ -69,12 +69,16 @@ pub async fn execute_execute_sql(
 
     let result = match query_result {
         Ok(r) => r,
-        Err(ConnectorError::QueryFailed { sql, message }) => {
+        Err(ConnectorError::QueryFailed(d)) => {
             return Ok(json!({
                 "ok": false,
                 "database": db_name,
-                "error": message,
-                "sql": sql,
+                "error": d.message,
+                "sql": d.sql,
+                "code": d.code,
+                "detail": d.detail,
+                "hint": d.hint,
+                "position": d.position,
             }));
         }
         Err(e) => {

@@ -18,6 +18,7 @@ use agentic_pipeline::platform::ProjectContext;
 use agentic_workflow::WorkspaceContext;
 use agentic_workflow::workspace::IntegrationConfig;
 use async_trait::async_trait;
+use entity::workspace_members::WorkspaceRole;
 use oxy::adapters::workspace::manager::WorkspaceManager;
 use oxy::config::model::{DatabaseType, DuckDBOptions, IntegrationType, Model, SnowflakeAuthType};
 use oxy_shared::errors::OxyError;
@@ -31,6 +32,15 @@ use oxy_shared::errors::OxyError;
 /// before handing the context around.
 pub struct OxyProjectContext {
     workspace_manager: WorkspaceManager,
+    /// Oxy user id of the requester, when known. Threaded into
+    /// `airhouse_managed` credential resolution so each query runs as that
+    /// user's provisioned Airhouse role. `None` falls back to single-row
+    /// resolution (local-mode only).
+    subject: Option<uuid::Uuid>,
+    /// Effective workspace role of the requester. Determines the Airhouse
+    /// role any minted credential carries (Owner→admin, Admin→writer,
+    /// Member/Viewer→reader). `None` outside HTTP-handled paths.
+    role: Option<WorkspaceRole>,
     connectors: tokio::sync::OnceCell<HashMap<String, Arc<dyn DatabaseConnector>>>,
 }
 
@@ -38,12 +48,39 @@ impl OxyProjectContext {
     pub fn new(workspace_manager: WorkspaceManager) -> Self {
         Self {
             workspace_manager,
+            subject: None,
+            role: None,
             connectors: tokio::sync::OnceCell::new(),
         }
     }
 
+    /// Attach the requesting user's id. The HTTP workspace middleware sets
+    /// this from `AuthenticatedUserExtractor`; background paths (scheduler,
+    /// schema crawl) leave it unset.
+    pub fn with_subject(mut self, subject: uuid::Uuid) -> Self {
+        self.subject = Some(subject);
+        self
+    }
+
+    /// Attach the requesting user's effective workspace role. The HTTP
+    /// workspace middleware sets this from `EffectiveWorkspaceRole`;
+    /// background paths leave it unset (the airhouse path then mints with
+    /// admin via `mint_for_system`).
+    pub fn with_role(mut self, role: WorkspaceRole) -> Self {
+        self.role = Some(role);
+        self
+    }
+
     pub fn workspace_manager(&self) -> &WorkspaceManager {
         &self.workspace_manager
+    }
+
+    pub fn subject(&self) -> Option<uuid::Uuid> {
+        self.subject
+    }
+
+    pub fn role(&self) -> Option<WorkspaceRole> {
+        self.role.clone()
     }
 
     /// Resolve and build a `DatabaseConnector` for `db_name`, surfacing the
@@ -82,7 +119,13 @@ impl OxyProjectContext {
         // propagation. Other types go through the config + dispatcher path.
         match &db.database_type {
             DatabaseType::Airhouse(_) | DatabaseType::AirhouseManaged(_) => {
-                build_airhouse_connector(&db, &self.workspace_manager).await
+                build_airhouse_connector(
+                    &db,
+                    &self.workspace_manager,
+                    self.subject,
+                    self.role.clone(),
+                )
+                .await
             }
             _ => {
                 let cfg = database_to_connector_config(&db, &self.workspace_manager)
@@ -150,7 +193,13 @@ impl ProjectContext for OxyProjectContext {
         &self,
         db_name: &str,
     ) -> Option<Arc<dyn DatabaseConnector>> {
-        resolve_pre_built_airhouse(db_name, &self.workspace_manager).await
+        resolve_pre_built_airhouse(
+            db_name,
+            &self.workspace_manager,
+            self.subject,
+            self.role.clone(),
+        )
+        .await
     }
 
     async fn resolve_model(
@@ -646,6 +695,8 @@ fn extract_project_id_from_key(key_path: &str) -> Option<String> {
 async fn resolve_pre_built_airhouse(
     db_name: &str,
     workspace_manager: &WorkspaceManager,
+    subject: Option<uuid::Uuid>,
+    role: Option<WorkspaceRole>,
 ) -> Option<Arc<dyn DatabaseConnector>> {
     let db = workspace_manager
         .config_manager
@@ -657,7 +708,7 @@ async fn resolve_pre_built_airhouse(
     ) {
         return None;
     }
-    match build_airhouse_connector(&db, workspace_manager).await {
+    match build_airhouse_connector(&db, workspace_manager, subject, role).await {
         Ok(conn) => Some(conn),
         Err(e) => {
             tracing::warn!(db = %db.name, "airhouse connector build failed: {e}");
@@ -673,6 +724,8 @@ async fn resolve_pre_built_airhouse(
 async fn build_airhouse_connector(
     db: &oxy::config::model::Database,
     workspace_manager: &WorkspaceManager,
+    subject: Option<uuid::Uuid>,
+    role: Option<WorkspaceRole>,
 ) -> Result<Arc<dyn DatabaseConnector>, OxyError> {
     let (host, port, user, password, database) = match &db.database_type {
         DatabaseType::Airhouse(ah) => {
@@ -701,18 +754,7 @@ async fn build_airhouse_connector(
             (host, port, user, password, database)
         }
         DatabaseType::AirhouseManaged(_) => {
-            // Connector building has no request-time user context today; fall
-            // back to single-row resolution (local-mode only). The error path
-            // here is the most common failure for `airhouse_managed`:
-            // "no provisioned user" or "AIRHOUSE_WIRE_HOST not set".
-            let creds = airhouse::resolve_managed_airhouse_credentials(None).await?;
-            (
-                creds.host,
-                creds.port,
-                creds.username,
-                creds.password,
-                creds.dbname,
-            )
+            mint_airhouse_managed_creds(workspace_manager, subject, role).await?
         }
         other => {
             return Err(OxyError::ConfigurationError(format!(
@@ -729,6 +771,77 @@ async fn build_airhouse_connector(
             ))
         })?;
     Ok(Arc::new(conn) as Arc<dyn DatabaseConnector>)
+}
+
+/// Mint an ephemeral wire-protocol credential for an `airhouse_managed`
+/// database via the SA-backed broker. Returns the
+/// (host, port, username, password, dbname) tuple ready for the connector
+/// constructor.
+///
+/// HTTP-handled paths arrive here with both `subject` (the requesting user
+/// id, threaded by the workspace middleware) and `role` (the effective
+/// workspace role) populated; the broker mints with the matching airhouse
+/// role per the standard mapping. Background paths (scheduler, schema
+/// crawl, agentic background runs) leave `subject = None` and fall through
+/// to `mint_for_system` with a `system:workspace:<uuid>:agentic-bg`
+/// audit subject.
+async fn mint_airhouse_managed_creds(
+    workspace_manager: &WorkspaceManager,
+    subject: Option<uuid::Uuid>,
+    role: Option<WorkspaceRole>,
+) -> Result<(String, u16, String, String, String), OxyError> {
+    let workspace_id = workspace_manager.workspace_id;
+    let endpoint = airhouse::wire_endpoint().ok_or_else(|| {
+        OxyError::ConfigurationError(
+            "airhouse_managed: AIRHOUSE_WIRE_HOST is not configured; the airhouse \
+             integration must be enabled (set AIRHOUSE_BASE_URL, AIRHOUSE_ADMIN_TOKEN, \
+             AIRHOUSE_WIRE_HOST, AIRHOUSE_WIRE_PORT)"
+                .into(),
+        )
+    })?;
+    let broker = airhouse::token_broker().ok_or_else(|| {
+        OxyError::ConfigurationError(
+            "airhouse_managed: token broker not initialised; check the airhouse env \
+             vars (AIRHOUSE_BASE_URL / AIRHOUSE_ADMIN_TOKEN / AIRHOUSE_WIRE_HOST)"
+                .into(),
+        )
+    })?;
+
+    let cred = match subject {
+        Some(uid) => {
+            let airhouse_role = role
+                .map(airhouse::airhouse_role_for)
+                // No effective role in scope (e.g. handler that didn't extract
+                // EffectiveWorkspaceRole). Default to reader — least-privilege.
+                .unwrap_or(airhouse::UserRole::Reader);
+            broker
+                .mint_for_user(
+                    workspace_id,
+                    uid,
+                    airhouse_role,
+                    airhouse::DEFAULT_INTERNAL_TTL,
+                )
+                .await
+                .map_err(OxyError::from)?
+        }
+        None => broker
+            .mint_for_system(
+                workspace_id,
+                airhouse::SystemPurpose::AgenticBackground,
+                airhouse::UserRole::Admin,
+                airhouse::DEFAULT_INTERNAL_TTL,
+            )
+            .await
+            .map_err(OxyError::from)?,
+    };
+
+    Ok((
+        endpoint.host,
+        endpoint.port,
+        cred.username,
+        cred.password,
+        cred.tenant,
+    ))
 }
 
 // ── Model translation ───────────────────────────────────────────────────────

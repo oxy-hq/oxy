@@ -40,6 +40,11 @@ pub struct AgentLauncher {
     sandbox_info: Option<SandboxInfo>,
     /// Data app file path for tools that need to read/write data apps
     data_app_file_path: Option<String>,
+    /// Submitter's effective workspace role. Threaded into ExecutionContext so
+    /// `airhouse_managed` mints carry the right airhouse role rather than
+    /// always defaulting to least-privilege Reader. `None` for unauthenticated
+    /// or system-side launches (CLI evals, schema crawls).
+    effective_role: Option<entity::workspace_members::WorkspaceRole>,
 }
 
 impl Default for AgentLauncher {
@@ -60,7 +65,20 @@ impl AgentLauncher {
             a2a_context_id: None,
             sandbox_info: None,
             data_app_file_path: None,
+            effective_role: None,
         }
+    }
+
+    /// Carry the submitter's effective workspace role into the run.
+    /// `airhouse_managed` SQL steps mint at the matching airhouse role
+    /// (Owner→Admin, Admin→Writer, Member/Viewer→Reader). Unauthenticated
+    /// callers can leave this as `None` and accept the Reader default.
+    pub fn with_effective_role(
+        mut self,
+        effective_role: Option<entity::workspace_members::WorkspaceRole>,
+    ) -> Self {
+        self.effective_role = effective_role;
+        self
     }
 
     pub fn with_filters(mut self, filters: impl Into<Option<SessionFilters>>) -> Self {
@@ -175,6 +193,7 @@ impl AgentLauncher {
             .with_connections(self.connections.clone())
             .with_sandbox_info(self.sandbox_info.clone())
             .with_data_app_file_path(self.data_app_file_path.clone())
+            .with_effective_role(self.effective_role.clone())
             .build()?;
 
         let config_manager = execution_context.workspace.config_manager.clone();

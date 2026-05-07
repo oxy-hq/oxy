@@ -216,10 +216,7 @@ impl DuckDbConnector {
             };
 
             conn.execute_batch(&create_sql)
-                .map_err(|e| ConnectorError::QueryFailed {
-                    sql: create_sql.clone(),
-                    message: e.to_string(),
-                })?;
+                .map_err(|e| ConnectorError::query_failed(create_sql.clone(), e.to_string()))?;
 
             // Also expose the file under its full name (e.g. `oxymart.csv`) so
             // semantic-layer views that declare `table: "oxymart.csv"` resolve
@@ -231,17 +228,12 @@ impl DuckDbConnector {
                 let alias_sql =
                     format!(r#"CREATE OR REPLACE TEMP VIEW "{full}" AS SELECT * FROM "{name}""#);
                 conn.execute_batch(&alias_sql)
-                    .map_err(|e| ConnectorError::QueryFailed {
-                        sql: alias_sql.clone(),
-                        message: e.to_string(),
-                    })?;
+                    .map_err(|e| ConnectorError::query_failed(alias_sql.clone(), e.to_string()))?;
             }
 
-            let columns =
-                describe_table(&conn, &name).map_err(|e| ConnectorError::QueryFailed {
-                    sql: format!("DESCRIBE \"{name}\""),
-                    message: e.to_string(),
-                })?;
+            let columns = describe_table(&conn, &name).map_err(|e| {
+                ConnectorError::query_failed(format!("DESCRIBE \"{name}\""), e.to_string())
+            })?;
 
             loaded_tables.push(TableInfo {
                 name,
@@ -315,34 +307,24 @@ impl DatabaseConnector for DuckDbConnector {
 
         // 1. Create the temp table once from the user's query.
         conn.execute_batch(&format!("DROP TABLE IF EXISTS {tmp};"))
-            .map_err(|e| ConnectorError::QueryFailed {
-                sql: sql.to_string(),
-                message: e.to_string(),
-            })?;
+            .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
 
         conn.execute_batch(&format!("CREATE OR REPLACE TEMP TABLE {tmp} AS ({sql});"))
-            .map_err(|e| ConnectorError::QueryFailed {
-                sql: sql.to_string(),
-                message: e.to_string(),
-            })?;
+            .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
 
         // 2. Total row count.
         let total_row_count: u64 = {
             let count_sql = format!("SELECT COUNT(*) FROM {tmp}");
             conn.query_row(&count_sql, [], |row| row.get::<_, i64>(0))
-                .map_err(|e| ConnectorError::QueryFailed {
-                    sql: count_sql,
-                    message: e.to_string(),
-                })? as u64
+                .map_err(|e| ConnectorError::query_failed(count_sql, e.to_string()))?
+                as u64
         };
 
         // 3a. Column names — use DESCRIBE on the temp table because duckdb-rs
         //     requires the statement to be executed before column_count()
         //     and column_names() are available, and we need them first.
-        let described = describe_table(&conn, tmp).map_err(|e| ConnectorError::QueryFailed {
-            sql: format!("DESCRIBE {tmp}"),
-            message: e.to_string(),
-        })?;
+        let described = describe_table(&conn, tmp)
+            .map_err(|e| ConnectorError::query_failed(format!("DESCRIBE {tmp}"), e.to_string()))?;
         let column_names: Vec<String> = described.iter().map(|(name, _)| name.clone()).collect();
         let column_types: Vec<String> = described.iter().map(|(_, ty)| ty.clone()).collect();
 
@@ -352,10 +334,7 @@ impl DatabaseConnector for DuckDbConnector {
             let sample_sql = format!("SELECT * FROM {tmp} LIMIT {sample_limit}");
             let mut stmt = conn
                 .prepare(&sample_sql)
-                .map_err(|e| ConnectorError::QueryFailed {
-                    sql: sample_sql.clone(),
-                    message: e.to_string(),
-                })?;
+                .map_err(|e| ConnectorError::query_failed(sample_sql.clone(), e.to_string()))?;
 
             stmt.query_map([], |row| {
                 let cells = (0..col_count)
@@ -363,15 +342,9 @@ impl DatabaseConnector for DuckDbConnector {
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(QueryRow(cells))
             })
-            .map_err(|e| ConnectorError::QueryFailed {
-                sql: sample_sql.clone(),
-                message: e.to_string(),
-            })?
+            .map_err(|e| ConnectorError::query_failed(sample_sql.clone(), e.to_string()))?
             .collect::<Result<Vec<_>, duckdb::Error>>()
-            .map_err(|e| ConnectorError::QueryFailed {
-                sql: sample_sql,
-                message: e.to_string(),
-            })?
+            .map_err(|e| ConnectorError::query_failed(sample_sql, e.to_string()))?
         };
 
         // 4. Per-column stats. Each column's query is best-effort: a
@@ -478,9 +451,8 @@ impl DatabaseConnector for DuckDbConnector {
 
         // DESCRIBE resolves column names + types at the logical plan level —
         // no rows are fetched, no temp table needed.
-        let described = describe_query(&conn, sql).map_err(|e| ConnectorError::QueryFailed {
-            sql: format!("DESCRIBE ({sql})"),
-            message: e.to_string(),
+        let described = describe_query(&conn, sql).map_err(|e| {
+            ConnectorError::query_failed(format!("DESCRIBE ({sql})"), e.to_string())
         })?;
         let columns: Vec<ColumnSpec> = described
             .iter()
@@ -492,10 +464,9 @@ impl DatabaseConnector for DuckDbConnector {
         let col_count = columns.len();
         let column_types: Vec<_> = columns.iter().map(|c| c.data_type.clone()).collect();
 
-        let mut stmt = conn.prepare(sql).map_err(|e| ConnectorError::QueryFailed {
-            sql: sql.to_string(),
-            message: e.to_string(),
-        })?;
+        let mut stmt = conn
+            .prepare(sql)
+            .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
 
         let rows_iter = stmt
             .query_map([], |row| {
@@ -506,10 +477,7 @@ impl DatabaseConnector for DuckDbConnector {
                 }
                 Ok(cells)
             })
-            .map_err(|e| ConnectorError::QueryFailed {
-                sql: sql.to_string(),
-                message: e.to_string(),
-            })?;
+            .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
 
         // Collect eagerly so we can release the Mutex and return a `'static` stream.
         let mut rows: Vec<Result<Vec<TypedValue>, TypedRowError>> = Vec::new();
@@ -645,16 +613,12 @@ impl crate::connector::AsArrowConnector for DuckDbConnector {
             .lock()
             .map_err(|e| ConnectorError::ConnectionError(format!("mutex poisoned: {e}")))?;
 
-        let mut stmt = conn.prepare(sql).map_err(|e| ConnectorError::QueryFailed {
-            sql: sql.to_string(),
-            message: e.to_string(),
-        })?;
+        let mut stmt = conn
+            .prepare(sql)
+            .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
         let arrow_iter = stmt
             .query_arrow([])
-            .map_err(|e| ConnectorError::QueryFailed {
-                sql: sql.to_string(),
-                message: e.to_string(),
-            })?;
+            .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
         let schema = arrow_iter.get_schema();
         // Collect eagerly; `Statement` borrows from the connection and the
         // iterator cannot outlive the lock. This matches the eager collection

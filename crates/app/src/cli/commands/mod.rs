@@ -1,4 +1,5 @@
 mod a2a;
+mod admin;
 mod agentic_cli;
 pub mod clean;
 pub mod export_chart;
@@ -282,6 +283,12 @@ enum SubCommand {
     /// Supports analytics and builder domains. Use --json for LLM-readable output.
     /// Requires OXY_DATABASE_URL to be set.
     Agentic(agentic_cli::AgenticArgs),
+    /// Operator-only administration commands.
+    ///
+    /// Hosts deployment-wide actions like Airhouse SA rotation. These are
+    /// not reachable through the user-facing API; reserve them for ops
+    /// runbook flows.
+    Admin(admin::AdminArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -602,6 +609,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
             SubCommand::Intent(_) => "intent",
             SubCommand::ExportChart(_) => "export-chart",
             SubCommand::Agentic(_) => "agentic",
+            SubCommand::Admin(_) => "admin",
         };
 
         sentry_config::add_breadcrumb(
@@ -985,6 +993,7 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
                 Some(crate::server::service::agent::ExecutionSource::Cli),
                 None, // No sandbox info from CLI
                 None, // No data_app_file_path from CLI
+                None, // CLI: no per-user role context, airhouse_managed defaults to Reader
             )
             .await;
 
@@ -1016,6 +1025,10 @@ pub async fn cli() -> Result<(), Box<dyn Error>> {
 
         Some(SubCommand::Agentic(agentic_args)) => {
             agentic_cli::handle_agentic_command(agentic_args).await?;
+        }
+
+        Some(SubCommand::Admin(admin_args)) => {
+            admin::handle_admin_command(admin_args).await?;
         }
 
         None => {

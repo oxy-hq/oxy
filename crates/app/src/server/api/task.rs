@@ -199,6 +199,10 @@ impl EventHandler for TaskStream {
 
 struct TaskExecutor {
     workspace_manager: WorkspaceManager,
+    /// Submitter's effective workspace role; threaded into `run_agent` /
+    /// `run_agentic_workflow` so airhouse_managed mints carry the
+    /// caller's role rather than the conservative Reader default.
+    effective_role: Option<entity::workspace_members::WorkspaceRole>,
 }
 
 #[async_trait]
@@ -236,6 +240,7 @@ impl ChatHandler for TaskExecutor {
                     context.user_question.clone(),
                     task_stream,
                     context.memory.clone(),
+                    self.effective_role.clone(),
                 )
                 .await
             }
@@ -258,6 +263,7 @@ impl ChatHandler for TaskExecutor {
                     }),
                     context.sandbox_info()?,
                     data_app_file_path,
+                    self.effective_role.clone(),
                 )
                 .await
             }
@@ -300,10 +306,14 @@ pub async fn ask_task(
     Path((workspace_id, id)): Path<(Uuid, String)>,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    crate::server::api::middlewares::workspace_context::EffectiveWorkspaceRole(effective_role): crate::server::api::middlewares::workspace_context::EffectiveWorkspaceRole,
     extract::Json(payload): extract::Json<AskTaskRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let execution_manager = ChatService::new().await?;
-    let executor = TaskExecutor { workspace_manager };
+    let executor = TaskExecutor {
+        workspace_manager,
+        effective_role: Some(effective_role),
+    };
 
     execution_manager
         .execute_request(id, payload, executor, user.id, workspace_id)

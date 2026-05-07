@@ -1621,10 +1621,7 @@ mod duckdb_integration {
             conn.execute_batch(&format!(
                 "CREATE OR REPLACE TEMP TABLE _agentic_tmp AS ({sql})"
             ))
-            .map_err(|e| ConnectorError::QueryFailed {
-                sql: sql.to_string(),
-                message: e.to_string(),
-            })?;
+            .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
 
             let total: u64 = conn
                 .query_row("SELECT COUNT(*) FROM _agentic_tmp", [], |r| r.get(0))

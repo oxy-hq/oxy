@@ -1,22 +1,26 @@
 use crate::agentic_wiring::OxyProjectContext;
 use crate::server::api::middlewares::workspace_context::{
-    WorkspaceManagerExtractor, WorkspacePath,
+    EffectiveWorkspaceRole, WorkspaceManagerExtractor, WorkspacePath,
 };
-use crate::server::api::semantic::{ErrorResponse, ResultFormat, SemanticQueryResponse};
+use crate::server::api::semantic::{ResultFormat, SemanticQueryResponse};
 use crate::server::api::typed_stream::{
     EMPTY_RESULT_SENTINEL, typed_stream_to_json_array, typed_stream_to_parquet,
 };
 use crate::server::service::retrieval::{ReindexInput, reindex};
+use agentic_connector::{ConnectorError, QueryFailedDetails};
 use agentic_pipeline::platform::ProjectContext;
 use axum::extract::{self, Path};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use entity::workspace_members::WorkspaceRole;
 use oxy::adapters::{session_filters::SessionFilters, workspace::manager::WorkspaceManager};
 use oxy::config::model::ConnectionOverrides;
 use oxy::execute::types::utils::record_batches_to_2d_array;
+use oxy_auth::extractor::AuthenticatedUserExtractor;
 use oxy_shared::errors::OxyError;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Clone, ToSchema)]
 pub struct SQLParams {
@@ -40,42 +44,132 @@ pub struct EmbeddingsBuildResponse {
     pub message: String,
 }
 
-/// Render an `OxyError` from [`run_via_agentic_connector`] as the (status,
-/// body) tuple the handlers return on failure.
+/// Structured error body returned by the SQL execute endpoints.
+///
+/// `message` is always populated. The remaining fields are surfaced when the
+/// underlying connector returned a `ConnectorError::QueryFailed` whose driver
+/// exposes vendor metadata (Postgres SQLSTATE / DETAIL / HINT / POSITION). The
+/// IDE renders these as a structured block; older clients can keep displaying
+/// `message` alone.
+#[derive(Serialize, ToSchema)]
+pub struct SqlErrorResponse {
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub position: Option<u32>,
+    /// The SQL the connector reported as failing. May differ from the input
+    /// (e.g. agentic temp-table wrapping); kept here so the IDE can highlight
+    /// the right span when `position` is set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sql: Option<String>,
+}
+
+/// Internal error type that preserves connector-level structure on the way
+/// from `run_via_agentic_connector` to `agentic_error_response`.
+enum SqlExecuteError {
+    Connector(ConnectorError),
+    Other(OxyError),
+}
+
+impl From<OxyError> for SqlExecuteError {
+    fn from(e: OxyError) -> Self {
+        Self::Other(e)
+    }
+}
+
+impl SqlExecuteError {
+    fn debug_string(&self) -> String {
+        match self {
+            Self::Connector(e) => format!("{e:?}"),
+            Self::Other(e) => format!("{e:?}"),
+        }
+    }
+}
+
+/// Shape an `SqlExecuteError` into a (status, body) pair. Structured fields
+/// from `ConnectorError::QueryFailed(details)` propagate; everything else
+/// degrades to a single-line `message`.
 fn agentic_error_response(
     payload: &SQLParams,
-    err: OxyError,
-) -> (StatusCode, extract::Json<ErrorResponse>) {
+    err: SqlExecuteError,
+) -> (StatusCode, extract::Json<SqlErrorResponse>) {
     tracing::error!(
         database = %payload.database,
         sql = %truncate_sql_for_log(&payload.sql),
-        error.debug = ?err,
+        error.debug = %err.debug_string(),
         "SQL query execution failed"
     );
-    (
-        StatusCode::BAD_REQUEST,
-        extract::Json(ErrorResponse {
-            message: user_facing_query_error(&err),
-        }),
-    )
-}
 
-/// Extract a clean user-facing message from a connector error.
-///
-/// Strips the internal `\nSQL: …` suffix (redundant — the user can see what
-/// they typed) and the `"query failed: db error: ERROR: "` prefix chain that
-/// tokio-postgres wraps around server errors.
-fn user_facing_query_error(err: &OxyError) -> String {
-    let raw = err.to_string();
-    // Drop the internal SQL echo that connector errors append.
-    let without_sql = raw.split("\nSQL:").next().unwrap_or(&raw);
-    // Unwrap the prefix chain added by tokio-postgres / connector wrappers.
-    let msg = without_sql
-        .trim_start_matches("query failed: db error: ERROR: ")
-        .trim_start_matches("db error: ERROR: ")
-        .trim_start_matches("query failed: ")
-        .trim();
-    msg.to_string()
+    // Status: 400 only for genuine user-side query errors (bad SQL,
+    // missing columns, etc.). Upstream-unreachable (`ConnectionError`)
+    // becomes 502 so the IDE shows a "warehouse is down" surface
+    // distinguishable from "your SQL is wrong"; everything else
+    // (decoder errors, internal driver bugs) is 500.
+    let (status, body) = match err {
+        SqlExecuteError::Connector(ConnectorError::QueryFailed(d)) => {
+            let QueryFailedDetails {
+                sql,
+                message,
+                code,
+                detail,
+                hint,
+                position,
+            } = d;
+            (
+                StatusCode::BAD_REQUEST,
+                SqlErrorResponse {
+                    message,
+                    code,
+                    detail,
+                    hint,
+                    position,
+                    // Echo SQL only when it differs from what the user submitted —
+                    // most of the time it's identical and would be noise.
+                    sql: if sql != payload.sql { Some(sql) } else { None },
+                },
+            )
+        }
+        SqlExecuteError::Connector(ConnectorError::ConnectionError(msg)) => (
+            StatusCode::BAD_GATEWAY,
+            SqlErrorResponse {
+                message: format!("connection error: {msg}"),
+                code: None,
+                detail: None,
+                hint: None,
+                position: None,
+                sql: None,
+            },
+        ),
+        SqlExecuteError::Connector(ConnectorError::Other(msg)) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            SqlErrorResponse {
+                message: msg,
+                code: None,
+                detail: None,
+                hint: None,
+                position: None,
+                sql: None,
+            },
+        ),
+        SqlExecuteError::Other(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            SqlErrorResponse {
+                message: e.to_string(),
+                code: None,
+                detail: None,
+                hint: None,
+                position: None,
+                sql: None,
+            },
+        ),
+    };
+
+    (status, extract::Json(body))
 }
 
 /// Execute a SQL query through `agentic-connector` and shape the response
@@ -84,15 +178,19 @@ fn user_facing_query_error(err: &OxyError) -> String {
 /// is now the single path for every Dev Portal query.
 async fn run_via_agentic_connector(
     workspace_manager: &WorkspaceManager,
+    user_id: Uuid,
+    role: WorkspaceRole,
     payload: &SQLParams,
-) -> Result<SemanticQueryResponse, OxyError> {
-    let ctx = OxyProjectContext::new(workspace_manager.clone());
+) -> Result<SemanticQueryResponse, SqlExecuteError> {
+    let ctx = OxyProjectContext::new(workspace_manager.clone())
+        .with_subject(user_id)
+        .with_role(role);
     let connector = ctx.build_connector_for(&payload.database).await?;
 
     let stream = connector
         .execute_query_full(&payload.sql)
         .await
-        .map_err(|e| OxyError::DBError(e.to_string()))?;
+        .map_err(SqlExecuteError::Connector)?;
 
     let result_format = payload
         .result_format
@@ -100,7 +198,9 @@ async fn run_via_agentic_connector(
         .unwrap_or(&ResultFormat::Json);
     match result_format {
         ResultFormat::Parquet => {
-            let file_name = typed_stream_to_parquet(stream, workspace_manager).await?;
+            let file_name = typed_stream_to_parquet(stream, workspace_manager)
+                .await
+                .map_err(SqlExecuteError::Other)?;
             if file_name == EMPTY_RESULT_SENTINEL {
                 // DDL/DML or zero-column result — return empty JSON so the
                 // frontend shows an empty table instead of a broken Parquet read.
@@ -110,7 +210,9 @@ async fn run_via_agentic_connector(
             }
         }
         ResultFormat::Json => {
-            let data = typed_stream_to_json_array(stream).await?;
+            let data = typed_stream_to_json_array(stream)
+                .await
+                .map_err(SqlExecuteError::Other)?;
             Ok(SemanticQueryResponse::Json(data))
         }
     }
@@ -140,23 +242,27 @@ fn truncate_sql_for_log(sql: &str) -> String {
 
 pub async fn execute_sql(
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
     Path(WorkspacePath {
         workspace_id: _workspace_id,
     }): Path<WorkspacePath>,
     extract::Json(payload): extract::Json<SQLParams>,
-) -> Result<extract::Json<SemanticQueryResponse>, (StatusCode, extract::Json<ErrorResponse>)> {
-    run_via_agentic_connector(&workspace_manager, &payload)
+) -> Result<extract::Json<SemanticQueryResponse>, (StatusCode, extract::Json<SqlErrorResponse>)> {
+    run_via_agentic_connector(&workspace_manager, user.id, role, &payload)
         .await
         .map(extract::Json)
         .map_err(|e| agentic_error_response(&payload, e))
 }
 
 pub async fn execute_sql_query(
-    extractor: WorkspaceManagerExtractor,
+    workspace: WorkspaceManagerExtractor,
+    user: AuthenticatedUserExtractor,
+    role: EffectiveWorkspaceRole,
     path: Path<WorkspacePath>,
     payload: extract::Json<SQLParams>,
-) -> Result<extract::Json<SemanticQueryResponse>, (StatusCode, extract::Json<ErrorResponse>)> {
-    execute_sql(extractor, path, payload).await
+) -> Result<extract::Json<SemanticQueryResponse>, (StatusCode, extract::Json<SqlErrorResponse>)> {
+    execute_sql(workspace, user, role, path, payload).await
 }
 
 // TODO: may want to rename this and the `reindex()` function below as we're doing more

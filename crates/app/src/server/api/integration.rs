@@ -137,6 +137,7 @@ fn build_execution_context(workspace_manager: WorkspaceManager) -> ExecutionCont
         connections: None,
         sandbox_info: None,
         user_id: None,
+        effective_role: None,
         metric_context: None,
         data_app_file_path: None,
     }

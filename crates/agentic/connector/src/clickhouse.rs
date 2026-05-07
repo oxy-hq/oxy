@@ -194,31 +194,27 @@ async fn http_query(
         .body(body.clone())
         .send()
         .await
-        .map_err(|e| ConnectorError::QueryFailed {
-            sql: sql.to_string(),
-            message: e.to_string(),
-        })?;
+        .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
 
     if !response.status().is_success() {
         let status = response.status();
         let text = response.text().await.unwrap_or_default();
-        return Err(ConnectorError::QueryFailed {
-            sql: sql.to_string(),
-            message: format!("HTTP {status}: {text}"),
-        });
+        return Err(ConnectorError::query_failed(
+            sql.to_string(),
+            format!("HTTP {status}: {text}"),
+        ));
     }
 
     let text = response
         .text()
         .await
-        .map_err(|e| ConnectorError::QueryFailed {
-            sql: sql.to_string(),
-            message: e.to_string(),
-        })?;
+        .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
 
-    serde_json::from_str::<ChResponse>(&text).map_err(|e| ConnectorError::QueryFailed {
-        sql: sql.to_string(),
-        message: format!("JSON parse error: {e}\nResponse: {text}"),
+    serde_json::from_str::<ChResponse>(&text).map_err(|e| {
+        ConnectorError::query_failed(
+            sql.to_string(),
+            format!("JSON parse error: {e}\nResponse: {text}"),
+        )
     })
 }
 

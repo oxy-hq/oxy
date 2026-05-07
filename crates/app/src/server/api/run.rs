@@ -153,6 +153,7 @@ pub async fn create_workflow_run(
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    crate::server::api::middlewares::workspace_context::EffectiveWorkspaceRole(effective_role): crate::server::api::middlewares::workspace_context::EffectiveWorkspaceRole,
     extract::Json(payload): extract::Json<CreateRunRequest>,
 ) -> Result<extract::Json<CreateRunResponse>, StatusCode> {
     let decoded_path = BASE64_STANDARD
@@ -261,6 +262,7 @@ pub async fn create_workflow_run(
                         user_id,
                     }),
                     Some(user.id),
+                    Some(effective_role),
                 )
             };
             tokio::select! {

@@ -149,9 +149,25 @@ pub async fn inspect_database(
     secrets_manager: &SecretsManager,
     progress_tx: Option<mpsc::Sender<InspectEvent>>,
 ) -> Result<InspectionResult, OxyError> {
+    crate::connector::reject_airhouse_managed_for_system_path(
+        config,
+        &database.name,
+        "Schema inspection",
+    )?;
     let start = Instant::now();
     let connector = Arc::new(
-        Connector::from_database(&database.name, config, secrets_manager, None, None, None).await?,
+        Connector::from_database(
+            &database.name,
+            config,
+            secrets_manager,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await?,
     );
 
     if let Some(tx) = &progress_tx {
@@ -221,9 +237,25 @@ pub async fn inspect_schemas(
     config: &ConfigManager,
     secrets_manager: &SecretsManager,
 ) -> Result<SchemaListResult, OxyError> {
+    crate::connector::reject_airhouse_managed_for_system_path(
+        config,
+        &database.name,
+        "Schema inspection",
+    )?;
     let start = Instant::now();
     let connector = Arc::new(
-        Connector::from_database(&database.name, config, secrets_manager, None, None, None).await?,
+        Connector::from_database(
+            &database.name,
+            config,
+            secrets_manager,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await?,
     );
 
     let queries = build_schema_summary_queries(database)?;
@@ -271,9 +303,25 @@ pub async fn inspect_schema_tables(
     config: &ConfigManager,
     secrets_manager: &SecretsManager,
 ) -> Result<SchemaTablesResult, OxyError> {
+    crate::connector::reject_airhouse_managed_for_system_path(
+        config,
+        &database.name,
+        "Schema inspection",
+    )?;
     let start = Instant::now();
     let connector = Arc::new(
-        Connector::from_database(&database.name, config, secrets_manager, None, None, None).await?,
+        Connector::from_database(
+            &database.name,
+            config,
+            secrets_manager,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await?,
     );
 
     let query = build_schema_tables_query(database, schema_name)?;

@@ -384,6 +384,7 @@ pub async fn ask_agent_preview(
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    crate::server::api::middlewares::workspace_context::EffectiveWorkspaceRole(effective_role): crate::server::api::middlewares::workspace_context::EffectiveWorkspaceRole,
     extract::Json(payload): extract::Json<AskAgentRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let decoded_path = BASE64_STANDARD.decode(pathb64).map_err(|e| {
@@ -450,6 +451,7 @@ pub async fn ask_agent_preview(
             }),
             payload.sandbox_info,
             None, // No data_app_file_path from preview
+            Some(effective_role),
         )
         .await;
 
@@ -561,6 +563,7 @@ pub async fn ask_agent_sync(
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    crate::server::api::middlewares::workspace_context::EffectiveWorkspaceRole(effective_role): crate::server::api::middlewares::workspace_context::EffectiveWorkspaceRole,
     extract::Json(payload): extract::Json<AskAgentNonStreamingRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
     // Mirror ask_agent_preview behavior but return a single aggregated response
@@ -631,6 +634,7 @@ pub async fn ask_agent_sync(
             }),
             None,
             None, // No data_app_file_path from sync
+            Some(effective_role),
         )
         .await;
 
@@ -776,11 +780,21 @@ impl ChatExecutionRequest for AskThreadRequest {
 
 struct AgentExecutor {
     workspace_manager: WorkspaceManager,
+    /// Effective workspace role of the user submitting the chat. Threaded
+    /// into `run_agent` so airhouse_managed SQL steps inside the agent
+    /// pipeline mint at the user's role rather than always Reader.
+    effective_role: Option<entity::workspace_members::WorkspaceRole>,
 }
 
 impl AgentExecutor {
-    pub fn new(workspace_manager: WorkspaceManager) -> Self {
-        Self { workspace_manager }
+    pub fn new(
+        workspace_manager: WorkspaceManager,
+        effective_role: Option<entity::workspace_members::WorkspaceRole>,
+    ) -> Self {
+        Self {
+            workspace_manager,
+            effective_role,
+        }
     }
 }
 
@@ -818,6 +832,7 @@ impl ChatHandler for AgentExecutor {
             }),
             context.sandbox_info()?,
             None, // No data_app_file_path from agent chat
+            self.effective_role.clone(),
         )
         .await;
 
@@ -883,10 +898,11 @@ pub async fn ask_agent(
     Path((workspace_id, id)): Path<(Uuid, String)>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    crate::server::api::middlewares::workspace_context::EffectiveWorkspaceRole(effective_role): crate::server::api::middlewares::workspace_context::EffectiveWorkspaceRole,
     extract::Json(payload): extract::Json<AskThreadRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let execution_manager = ChatService::new().await?;
-    let executor = AgentExecutor::new(workspace_manager);
+    let executor = AgentExecutor::new(workspace_manager, Some(effective_role));
 
     execution_manager
         .execute_request(id, payload, executor, user.id, workspace_id)

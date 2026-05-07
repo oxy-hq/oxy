@@ -15,7 +15,7 @@ export type {
 export { AgentService } from "./agents";
 export {
   type AirhouseConnectionInfo,
-  type AirhouseCredentials,
+  type AirhouseEphemeralToken,
   AirhouseService
 } from "./airhouse";
 export type {

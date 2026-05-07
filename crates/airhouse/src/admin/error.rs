@@ -8,6 +8,12 @@ pub enum AirhouseError {
     AlreadyExists(String),
     #[error("not found: {0}")]
     NotFound(String),
+    #[error("unauthorized: {0}")]
+    Unauthorized(String),
+    #[error("forbidden: {0}")]
+    Forbidden(String),
+    #[error("rate limited: {0}")]
+    RateLimited(String),
     #[error("provisioning failed: {0}")]
     Provisioning(String),
     #[error("transport error: {0}")]

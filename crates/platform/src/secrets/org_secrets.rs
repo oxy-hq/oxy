@@ -4,8 +4,6 @@
 //! server's master key from `OXY_ENCRYPTION_KEY`. Each row carries a
 //! `key_version` byte; version 1 uses the current master key.
 
-use aes_gcm::aead::{Aead, OsRng};
-use aes_gcm::{AeadCore, Aes256Gcm, Key, KeyInit, Nonce};
 use entity::org_secrets;
 use entity::prelude::OrgSecrets;
 use oxy_shared::errors::OxyError;
@@ -13,7 +11,7 @@ use sea_orm::{ActiveModelTrait, ActiveValue, ColumnTrait, EntityTrait, QueryFilt
 use uuid::Uuid;
 
 use crate::db::establish_connection;
-use crate::secrets::encryption::get_encryption_key;
+use crate::secrets::envelope;
 
 const CURRENT_KEY_VERSION: i16 = 1;
 
@@ -91,30 +89,12 @@ impl OrgSecretsService {
 }
 
 fn encrypt(plaintext: &str) -> Result<Vec<u8>, OxyError> {
-    let key_bytes = get_encryption_key();
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key_bytes));
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-    let ciphertext = cipher
-        .encrypt(&nonce, plaintext.as_bytes())
-        .map_err(|e| OxyError::SecretManager(format!("encrypt failed: {e}")))?;
-    let mut out = Vec::with_capacity(12 + ciphertext.len());
-    out.extend_from_slice(&nonce);
-    out.extend_from_slice(&ciphertext);
-    Ok(out)
+    envelope::seal(plaintext.as_bytes())
 }
 
 fn decrypt(blob: &[u8]) -> Result<String, OxyError> {
-    if blob.len() < 12 + 16 {
-        return Err(OxyError::SecretManager("ciphertext too short".into()));
-    }
-    let (nonce_bytes, ct) = blob.split_at(12);
-    let key_bytes = get_encryption_key();
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key_bytes));
-    let nonce = Nonce::from_slice(nonce_bytes);
-    let plaintext = cipher
-        .decrypt(nonce, ct)
-        .map_err(|e| OxyError::SecretManager(format!("decrypt failed: {e}")))?;
-    String::from_utf8(plaintext)
+    let bytes = envelope::open(blob)?;
+    String::from_utf8(bytes)
         .map_err(|e| OxyError::SecretManager(format!("non-utf8 plaintext: {e}")))
 }
 

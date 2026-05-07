@@ -113,6 +113,7 @@ async fn execute_via_chat_service(
             chat_request.question,
             handler,
             vec![],
+            None, // A2A: no per-user role; airhouse_managed defaults to Reader
         )
         .await
     } else {
@@ -132,6 +133,7 @@ async fn execute_via_chat_service(
             }),
             None,
             None, // No data_app_file_path from A2A
+            None, // A2A: no per-user role; airhouse_managed defaults to Reader
         )
         .await
     };

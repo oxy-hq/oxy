@@ -229,6 +229,14 @@ pub async fn set_workspace_role_override(
         })?;
     }
 
+    // Effective workspace role just changed for this user; their cached
+    // airhouse credential carries the OLD role. Revoke it so the next mint
+    // produces a credential under the new role and the old one stops
+    // authenticating immediately.
+    if let Some(broker) = airhouse::token_broker() {
+        broker.revoke_user_across_roles(workspace.id, user_id).await;
+    }
+
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
@@ -276,12 +284,23 @@ pub async fn remove_workspace_role_override(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    if let Some(member) = existing {
+    let removed = if let Some(member) = existing {
         let active: entity::workspace_members::ActiveModel = member.into();
         active.delete(&db).await.map_err(|e| {
             tracing::error!("Failed to delete workspace member override: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
+        true
+    } else {
+        false
+    };
+
+    // The user's effective workspace role just reverted to the org-derived
+    // value, which may not equal whatever the override was. Revoke any
+    // cached airhouse credential so the role downgrade takes effect now,
+    // not at the token's TTL.
+    if removed && let Some(broker) = airhouse::token_broker() {
+        broker.revoke_user_across_roles(workspace.id, user_id).await;
     }
 
     Ok(Json(serde_json::json!({ "ok": true })))

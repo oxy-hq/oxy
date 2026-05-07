@@ -37,6 +37,23 @@ export interface TableColumn {
   primaryKey?: boolean;
 }
 
+/**
+ * Structured details for a failed SQL execution as returned by the
+ * `/sql/query` endpoint. `message` is always present; the remaining fields
+ * are populated when the underlying connector exposes vendor metadata
+ * (Postgres SQLSTATE / DETAIL / HINT / POSITION).
+ */
+export interface SqlExecutionError {
+  message: string;
+  code?: string;
+  detail?: string;
+  hint?: string;
+  /** 1-based character offset into the failing SQL. */
+  position?: number;
+  /** Echoed only when the connector executed a different SQL than the user typed. */
+  sql?: string;
+}
+
 export interface QueryTab {
   id: string;
   name: string;
@@ -48,6 +65,12 @@ export interface QueryTab {
   results?: QueryResult;
   isExecuting?: boolean;
   error?: string;
+  /**
+   * Structured SQL execution error. Set alongside `error` for query failures
+   * so the IDE can render a structured block (SQLSTATE badge, hint, detail,
+   * position) without sacrificing the plain-text fallback.
+   */
+  errorDetails?: SqlExecutionError;
 }
 
 export interface QueryResult {
@@ -81,7 +104,7 @@ interface DatabaseClientState {
   // Query execution
   setTabExecuting: (id: string, isExecuting: boolean) => void;
   setTabResults: (id: string, results: QueryResult | undefined) => void;
-  setTabError: (id: string, error: string | undefined) => void;
+  setTabError: (id: string, error: string | undefined, details?: SqlExecutionError) => void;
 
   // Sync with external file editors
   getTabByPath: (path: string) => QueryTab | undefined;
@@ -214,7 +237,9 @@ const useDatabaseClientStore = create<DatabaseClientState>()(
       // Query execution
       setTabExecuting: (id, isExecuting) => {
         set((state) => ({
-          tabs: state.tabs.map((t) => (t.id === id ? { ...t, isExecuting, error: undefined } : t))
+          tabs: state.tabs.map((t) =>
+            t.id === id ? { ...t, isExecuting, error: undefined, errorDetails: undefined } : t
+          )
         }));
       },
 
@@ -224,9 +249,11 @@ const useDatabaseClientStore = create<DatabaseClientState>()(
         }));
       },
 
-      setTabError: (id, error) => {
+      setTabError: (id, error, details) => {
         set((state) => ({
-          tabs: state.tabs.map((t) => (t.id === id ? { ...t, error, isExecuting: false } : t))
+          tabs: state.tabs.map((t) =>
+            t.id === id ? { ...t, error, errorDetails: details, isExecuting: false } : t
+          )
         }));
       },
 
@@ -256,7 +283,8 @@ const useDatabaseClientStore = create<DatabaseClientState>()(
           ...t,
           results: undefined,
           isExecuting: false,
-          error: undefined
+          error: undefined,
+          errorDetails: undefined
         })),
         activeConnectionId: state.activeConnectionId,
         activeTabId: state.activeTabId

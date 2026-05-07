@@ -137,7 +137,7 @@ mod duckdb {
             .execute_query("SELECT * FROM nonexistent_table_xyz", 100)
             .await
             .unwrap_err();
-        assert!(matches!(err, ConnectorError::QueryFailed { .. }));
+        assert!(matches!(err, ConnectorError::QueryFailed(_)));
     }
 
     #[tokio::test]
@@ -561,7 +561,7 @@ mod duckdb {
             .execute_query_full("SELECT * FROM does_not_exist")
             .await
             .expect_err("unknown table must error");
-        assert!(matches!(err, ConnectorError::QueryFailed { .. }));
+        assert!(matches!(err, ConnectorError::QueryFailed(_)));
     }
 
     #[tokio::test]

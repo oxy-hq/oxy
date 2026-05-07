@@ -261,6 +261,7 @@ async fn handle_workflow_file(
             None,
             Some(ExecutionSource::Cli),
             None, // No authenticated user in CLI context
+            None, // CLI: no per-user role; airhouse_managed defaults to Reader
         )
         .await?;
     } else if retry {
@@ -275,6 +276,7 @@ async fn handle_workflow_file(
             None,
             Some(ExecutionSource::Cli),
             None, // No authenticated user in CLI context
+            None, // CLI: no per-user role; airhouse_managed defaults to Reader
         )
         .await?;
     } else {
@@ -289,6 +291,7 @@ async fn handle_workflow_file(
             None,
             Some(ExecutionSource::Cli),
             None, // No authenticated user in CLI context
+            None, // CLI: no per-user role; airhouse_managed defaults to Reader
         )
         .await?;
     }
@@ -345,6 +348,7 @@ async fn handle_agent_file(file_path: &PathBuf, question: Option<String>) -> Res
         Some(ExecutionSource::Cli),
         None, // No sandbox info from CLI
         None, // No data_app_file_path from CLI
+        None, // CLI has no per-user role context — airhouse_managed defaults to Reader
     )
     .await?;
     Ok(())
@@ -367,6 +371,7 @@ async fn handle_agentic_workflow_file(
         question,
         AgentCLIHandler::default(),
         vec![],
+        None, // CLI has no per-user role context — airhouse_managed defaults to Reader
     )
     .await?;
     Ok(())
@@ -408,8 +413,26 @@ async fn handle_sql_file(
     // Print colored SQL and execute query
     print_colored_sql(&query);
     let secrets_manager = SecretsManager::from_environment()?;
-    let connector =
-        Connector::from_database(&database, config, &secrets_manager, None, None, None).await?;
+    // CLI runs as the local guest with no per-user identity. Catch the
+    // airhouse_managed case here so the user sees a single friendly
+    // message instead of the verbose ConfigurationError out of `from_db`.
+    oxy::connector::reject_airhouse_managed_for_system_path(
+        config,
+        &database,
+        "Running queries from the CLI against",
+    )?;
+    let connector = Connector::from_database(
+        &database,
+        config,
+        &secrets_manager,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .await?;
     let (datasets, schema) = match dry_run {
         false => connector.run_query_and_load(&query).await,
         true => connector.dry_run(&query).await,

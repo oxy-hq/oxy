@@ -1,17 +1,18 @@
 //! End-to-end integration test for the Airhouse onboarding lifecycle.
 //!
-//! Exercises:
-//!   1. provision tenant (TenantProvisioner)
-//!   2. create user (UserProvisioner)
-//!   3. fetch connection info via the HTTP `/airhouse/me/connection` endpoint
-//!   4. fetch credentials via the HTTP `/airhouse/me/credentials` endpoint
-//!      (verifies the one-time-show flow flips state)
-//!   5. deprovision user (UserProvisioner)
-//!   6. deprovision tenant (TenantProvisioner)
+//! Exercises (post Phase-5, ephemeral-only):
+//!   1. pre-provision: GET /connection returns `is_provisioned: false`.
+//!   2. POST /provision provisions tenant + service account (no per-user
+//!      airhouse_users row).
+//!   3. GET /connection returns `is_provisioned: true` with role + dbname.
+//!   4. GET /credentials mints a fresh ephemeral via the broker — username,
+//!      password, expires_at. The broker cache returns the same credential
+//!      on a subsequent in-window call.
+//!   5. DELETE /tokens/{username} revokes the ephemeral.
+//!   6. TenantProvisioner.deprovision tears down tenant + SA.
 //!
-//! Plus two error-mapping tests:
-//!   - 409 on create-tenant → provisioner adopts the existing remote tenant
-//!   - 404 on delete-user   → deprovision still succeeds (idempotent)
+//! Plus an error-mapping test: 409 on create-tenant → provisioner adopts the
+//! existing remote tenant.
 //!
 //! Postgres is provided by testcontainers; the Airhouse admin API is stubbed
 //! with wiremock and matchers verify the auth header, path, and body shape.
@@ -20,16 +21,15 @@
 //!   cargo nextest run -p oxy-app --test airhouse_lifecycle
 
 use airhouse::api::handlers as airhouse_me;
+use airhouse::entity::Tenants as AirhouseTenants;
 use airhouse::entity::tenants as airhouse_tenants;
-use airhouse::entity::users::{self as airhouse_users, AirhouseUserStatus};
-use airhouse::entity::{Tenants as AirhouseTenants, Users as AirhouseUsers};
-use airhouse::{AirhouseAdminClient, AirhouseError, TenantProvisioner, UserProvisioner};
+use airhouse::{AirhouseAdminClient, TenantProvisioner};
 use axum::Router;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::Response;
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use base64::Engine as _;
 use base64::engine::general_purpose;
 use chrono::Utc;
@@ -46,7 +46,7 @@ use sea_orm::{
 use serde_json::{Value, json};
 use tower::ServiceExt;
 use uuid::Uuid;
-use wiremock::matchers::{body_partial_json, header, method, path, path_regex};
+use wiremock::matchers::{header, method, path, path_regex};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 const ADMIN_TOKEN: &str = "test-admin-token";
@@ -278,7 +278,20 @@ fn build_router(user: AuthenticatedUser) -> Router {
             get(airhouse_me::get_credentials),
         )
         .route("/airhouse/me/provision", post(airhouse_me::provision))
+        .route(
+            "/airhouse/me/tokens/{username}",
+            delete(airhouse_me::revoke_token),
+        )
         .layer(middleware::from_fn(auth_inject_layer(user)))
+}
+
+async fn delete_request(router: &Router, path_str: &str) -> StatusCode {
+    let req = Request::builder()
+        .method("DELETE")
+        .uri(path_str)
+        .body(Body::empty())
+        .unwrap();
+    router.clone().oneshot(req).await.expect("oneshot").status()
 }
 
 async fn send_json(
@@ -323,12 +336,11 @@ async fn full_lifecycle_provision_to_deprovision() {
     let db = test_db().await;
     let server = MockServer::start().await;
     set_airhouse_env(&server);
-    let (workspace_id, user_id, auth) = seed_user_and_workspace(&db, "alice").await;
+    let (workspace_id, _user_id, auth) = seed_user_and_workspace(&db, "alice").await;
 
-    // POST /admin/v1/tenants — must carry the bearer token and a body with
-    // ONLY {id}. The new Airhouse API rejects any extra fields like bucket
-    // or prefix; the response still surfaces them, but they come from the
-    // server's `[storage]` config now, not from us.
+    // POST /admin/v1/tenants — body must carry only {id}; airhouse rejects
+    // bucket/prefix in the request and resolves them server-side from
+    // [storage] config.
     Mock::given(method("POST"))
         .and(path("/admin/v1/tenants"))
         .and(header("authorization", &*format!("Bearer {ADMIN_TOKEN}")))
@@ -354,35 +366,6 @@ async fn full_lifecycle_provision_to_deprovision() {
         .mount(&server)
         .await;
 
-    // POST /admin/v1/tenants/{tenant}/users
-    Mock::given(method("POST"))
-        .and(path_regex(r"^/admin/v1/tenants/[^/]+/users$"))
-        .and(header("authorization", &*format!("Bearer {ADMIN_TOKEN}")))
-        .and(body_partial_json(json!({ "role": "admin" })))
-        .respond_with(move |req: &wiremock::Request| {
-            let body: Value = serde_json::from_slice(&req.body).unwrap();
-            assert!(
-                body["password"].as_str().is_some_and(|p| !p.is_empty()),
-                "password must be a non-empty plaintext string in the request"
-            );
-            let tenant_id = req
-                .url
-                .path()
-                .trim_start_matches("/admin/v1/tenants/")
-                .trim_end_matches("/users")
-                .to_string();
-            ResponseTemplate::new(201).set_body_json(json!({
-                "id": Uuid::new_v4().to_string(),
-                "tenant_id": tenant_id,
-                "username": body["username"],
-                "role": body["role"],
-                "created_at": "2026-04-29T10:01:00Z",
-            }))
-        })
-        .expect(1)
-        .mount(&server)
-        .await;
-
     // GET /admin/v1/tenants/{tenant} — reconcile on re-provision.
     Mock::given(method("GET"))
         .and(path_regex(r"^/admin/v1/tenants/[^/]+$"))
@@ -402,16 +385,7 @@ async fn full_lifecycle_provision_to_deprovision() {
         .mount(&server)
         .await;
 
-    // DELETE /admin/v1/tenants/{tenant}/users/{username}
-    Mock::given(method("DELETE"))
-        .and(path_regex(r"^/admin/v1/tenants/[^/]+/users/[^/]+$"))
-        .and(header("authorization", &*format!("Bearer {ADMIN_TOKEN}")))
-        .respond_with(ResponseTemplate::new(204))
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    // DELETE /admin/v1/tenants/{tenant}
+    // DELETE /admin/v1/tenants/{tenant} — final deprovision.
     Mock::given(method("DELETE"))
         .and(path_regex(r"^/admin/v1/tenants/[^/]+$"))
         .and(header("authorization", &*format!("Bearer {ADMIN_TOKEN}")))
@@ -420,21 +394,106 @@ async fn full_lifecycle_provision_to_deprovision() {
         .mount(&server)
         .await;
 
+    // GET /admin/v1/service-accounts — orphan check on first provision; the
+    // second provision call short-circuits via the local row's SA fields.
+    Mock::given(method("GET"))
+        .and(path("/admin/v1/service-accounts"))
+        .and(header("authorization", &*format!("Bearer {ADMIN_TOKEN}")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    // POST /admin/v1/service-accounts — provisioner mints exactly one SA per
+    // tenant on first provision.
+    Mock::given(method("POST"))
+        .and(path("/admin/v1/service-accounts"))
+        .and(header("authorization", &*format!("Bearer {ADMIN_TOKEN}")))
+        .respond_with(move |req: &wiremock::Request| {
+            let body: Value = serde_json::from_slice(&req.body).unwrap();
+            ResponseTemplate::new(201).set_body_json(json!({
+                "id": format!("sa_{}", Uuid::new_v4().simple()),
+                "name": body["name"],
+                "tenant_id": body["tenant_id"],
+                "max_role": body["max_role"],
+                "max_ttl_secs": body["max_ttl_secs"],
+                "created_at": "2026-05-07T10:00:00Z",
+                "revoked_at": null,
+                "last_used_at": null,
+                "bearer": format!("ahsa_{}", Uuid::new_v4().simple()),
+            }))
+        })
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    // DELETE /admin/v1/service-accounts/{id} — deprovision revokes the SA
+    // before deleting the tenant.
+    Mock::given(method("DELETE"))
+        .and(path_regex(r"^/admin/v1/service-accounts/[^/]+$"))
+        .and(header("authorization", &*format!("Bearer {ADMIN_TOKEN}")))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    // POST /admin/v1/tenants/{tenant}/tokens — broker mints a fresh
+    // ephemeral. We expect exactly one mint despite two GET /credentials
+    // calls because the broker cache is fresh on the second call (TTL is
+    // well past the 60s refresh buffer).
+    let mint_username = format!("eph_{}", Uuid::new_v4().simple());
+    let mint_username_for_resp = mint_username.clone();
+    Mock::given(method("POST"))
+        .and(path_regex(r"^/admin/v1/tenants/[^/]+/tokens$"))
+        .respond_with(move |req: &wiremock::Request| {
+            let tenant = req
+                .url
+                .path()
+                .trim_start_matches("/admin/v1/tenants/")
+                .trim_end_matches("/tokens")
+                .to_string();
+            let body: Value = serde_json::from_slice(&req.body).unwrap();
+            ResponseTemplate::new(201).set_body_json(json!({
+                "username": mint_username_for_resp,
+                "password": format!("tk_{}", Uuid::new_v4().simple()),
+                "tenant": tenant,
+                "role": body["role"],
+                "expires_at": (chrono::Utc::now() + chrono::Duration::hours(24)).to_rfc3339(),
+                "service_account_id": "sa_test",
+            }))
+        })
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    // DELETE /admin/v1/tenants/{tenant}/tokens/{username} — user-initiated
+    // revoke of the minted ephemeral.
+    Mock::given(method("DELETE"))
+        .and(path_regex(r"^/admin/v1/tenants/[^/]+/tokens/[^/]+$"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+
     let router = build_router(auth);
 
-    // Pre-provision: GET /connection must 404.
-    let (status, _) = get_json(
+    // ── 1. pre-provision: /connection returns is_provisioned=false ───────
+    let (status, body) = get_json(
         &router,
         &format!("/airhouse/me/connection?workspace_id={workspace_id}"),
     )
     .await;
-    assert_eq!(
-        status,
-        StatusCode::NOT_FOUND,
-        "must 404 before provisioning"
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["is_provisioned"], false);
+    assert_eq!(body["host"], "airhouse.test");
+    assert_eq!(body["port"], 5445);
+    assert_eq!(body["role"], "admin");
+    assert!(
+        body.get("username").is_none() || body["username"].is_null(),
+        "ephemeral-only flow must not surface a stable username on /connection"
     );
 
-    // ── 1+2. provision tenant + user via the HTTP endpoint ─────────────
+    // ── 2. provision tenant + SA via the HTTP endpoint ──────────────────
     let (status, body) = post_json(
         &router,
         &format!("/airhouse/me/provision?workspace_id={workspace_id}"),
@@ -444,9 +503,8 @@ async fn full_lifecycle_provision_to_deprovision() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["host"], "airhouse.test");
     assert_eq!(body["port"], 5445);
-    assert_eq!(body["password_not_yet_shown"], true);
+    assert_eq!(body["is_provisioned"], true);
     let tenant_id = body["dbname"].as_str().expect("dbname").to_string();
-    let username = body["username"].as_str().expect("username").to_string();
 
     let tenant_row = AirhouseTenants::find()
         .filter(airhouse_tenants::Column::WorkspaceId.eq(workspace_id))
@@ -455,8 +513,13 @@ async fn full_lifecycle_provision_to_deprovision() {
         .unwrap()
         .expect("local tenant row written by provision");
     assert_eq!(tenant_row.airhouse_tenant_id, tenant_id);
+    assert!(
+        tenant_row.service_account_id.is_some(),
+        "SA fields populated on provision"
+    );
 
-    // Idempotency: a second POST must NOT call Airhouse again.
+    // Idempotency: a second POST must NOT call Airhouse for tenant-create
+    // again (the .expect(1) on /tenants would catch it).
     let (status, body) = post_json(
         &router,
         &format!("/airhouse/me/provision?workspace_id={workspace_id}"),
@@ -464,65 +527,62 @@ async fn full_lifecycle_provision_to_deprovision() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["username"], username);
+    assert_eq!(body["is_provisioned"], true);
 
-    // ── 3. fetch connection info via API ─────────────────────────────────
+    // ── 3. /connection now reports provisioned ───────────────────────────
     let (status, body) = get_json(
         &router,
         &format!("/airhouse/me/connection?workspace_id={workspace_id}"),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["host"], "airhouse.test");
     assert_eq!(body["dbname"], tenant_id);
-    assert_eq!(body["username"].as_str().unwrap(), username);
-    assert_eq!(body["password_not_yet_shown"], true);
+    assert_eq!(body["is_provisioned"], true);
 
-    // ── 4. fetch credentials — password persists across calls ────────────
+    // ── 4. /credentials mints fresh; cache hits on second call ───────────
     let (status, creds1) = get_json(
         &router,
         &format!("/airhouse/me/credentials?workspace_id={workspace_id}"),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
+    let first_username = creds1["username"]
+        .as_str()
+        .filter(|s| s.starts_with("eph_"))
+        .expect("ephemeral username on first call")
+        .to_string();
     let first_pw = creds1["password"]
         .as_str()
-        .filter(|p| !p.is_empty())
-        .expect("first credentials call must include the password")
+        .filter(|p| p.starts_with("tk_"))
+        .expect("ephemeral password on first call")
         .to_string();
-    assert_eq!(creds1["password_already_revealed"], false);
+    assert!(creds1["expires_at"].is_string(), "expires_at on response");
+    assert_eq!(creds1["dbname"], tenant_id);
 
+    // Second call within the broker's freshness window MUST return the same
+    // cached credential — wiremock's .expect(1) on /tokens enforces it.
     let (status, creds2) = get_json(
         &router,
         &format!("/airhouse/me/credentials?workspace_id={workspace_id}"),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        creds2["username"].as_str().unwrap(),
+        first_username,
+        "broker cache should return same credential within freshness window"
+    );
     assert_eq!(creds2["password"].as_str().unwrap(), first_pw);
-    assert_eq!(creds2["password_already_revealed"], true);
 
-    let (status, body) = get_json(
+    // ── 5. user-initiated revoke ─────────────────────────────────────────
+    let status = delete_request(
         &router,
-        &format!("/airhouse/me/connection?workspace_id={workspace_id}"),
+        &format!("/airhouse/me/tokens/{first_username}?workspace_id={workspace_id}"),
     )
     .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["password_not_yet_shown"], false);
+    assert_eq!(status, StatusCode::NO_CONTENT);
 
-    // ── 5. delete user ────────────────────────────────────────────────────
-    let user_prov = UserProvisioner::new(db.clone(), admin_client(&server));
-    user_prov
-        .deprovision(user_id, workspace_id)
-        .await
-        .expect("deprovision user");
-    let local_users = AirhouseUsers::find()
-        .filter(airhouse_users::Column::WorkspaceId.eq(workspace_id))
-        .all(&db)
-        .await
-        .unwrap();
-    assert!(local_users.is_empty(), "local user row must be cleared");
-
-    // ── 6. delete tenant ──────────────────────────────────────────────────
+    // ── 6. tenant deprovision ────────────────────────────────────────────
     let tenant_prov = TenantProvisioner::new(db.clone(), admin_client(&server));
     tenant_prov
         .deprovision(workspace_id)
@@ -538,12 +598,19 @@ async fn full_lifecycle_provision_to_deprovision() {
 
 // ── error-mapping: 409 on create-tenant ─────────────────────────────────────
 
+/// HTTP `POST /airhouse/me/provision` against an already-taken tenant
+/// name surfaces 409 Conflict to the user. Silent adoption was the
+/// previous behaviour; it could have granted cross-workspace data
+/// access if two users picked the same name. Operators recover the
+/// rare legitimate "this workspace's own remote tenant exists but the
+/// local row was wiped" case via the runbook (delete remote, retry).
 #[tokio::test]
-async fn create_tenant_409_is_adopted() {
+async fn create_tenant_409_returns_conflict() {
     set_test_encryption_key();
     let db = test_db().await;
     let server = MockServer::start().await;
-    let (workspace_id, _user_id, _auth) = seed_user_and_workspace(&db, "preexisting").await;
+    set_airhouse_env(&server);
+    let (workspace_id, _user_id, auth) = seed_user_and_workspace(&db, "preexisting").await;
 
     Mock::given(method("POST"))
         .and(path("/admin/v1/tenants"))
@@ -553,108 +620,45 @@ async fn create_tenant_409_is_adopted() {
         .mount(&server)
         .await;
 
-    Mock::given(method("GET"))
-        .and(path_regex(r"^/admin/v1/tenants/[^/]+$"))
-        .and(header("authorization", &*format!("Bearer {ADMIN_TOKEN}")))
-        .respond_with(move |req: &wiremock::Request| {
-            let id = req.url.path().rsplit('/').next().unwrap().to_string();
-            ResponseTemplate::new(200).set_body_json(json!({
-                "id": id,
-                "pg_url": "postgres://internal",
-                "bucket": "test-bucket",
-                "prefix": format!("tenants/{id}"),
-                "role": format!("airhouse_tenant_{id}"),
-                "status": "active",
-                "created_at": "2026-04-29T10:00:00Z",
-            }))
-        })
-        .expect(1)
-        .mount(&server)
-        .await;
+    // No SA mocks — the provisioner must reject before
+    // ensure_service_account_for_workspace fires. wiremock would log
+    // unmatched requests if the rejection slipped.
 
-    let prov = TenantProvisioner::new(db.clone(), admin_client(&server));
-    let rec = prov
-        .provision(workspace_id, "preexisting".to_string())
-        .await
-        .expect("409 must be mapped to adoption, not propagated as an error");
-    assert_eq!(rec.bucket, "test-bucket");
+    let router = build_router(auth);
+    let (status, _body) = post_json(
+        &router,
+        &format!("/airhouse/me/provision?workspace_id={workspace_id}"),
+        "preexisting",
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::CONFLICT,
+        "name collision must surface as 409 Conflict"
+    );
 
+    // We must NOT write a Failed local row that points at the colliding
+    // tenant name. If we did, the next provision call would hit
+    // `reconcile_existing` first, see the stale row pointing at the
+    // foreign tenant, and adopt it — exactly the cross-workspace data
+    // leak that returning 409 was designed to prevent.
     let local = AirhouseTenants::find()
         .filter(airhouse_tenants::Column::WorkspaceId.eq(workspace_id))
         .one(&db)
         .await
-        .unwrap()
-        .expect("local row must be written even when the remote tenant pre-existed");
-    assert_eq!(local.airhouse_tenant_id, rec.id);
-}
-
-// ── error-mapping: 404 on delete-user ───────────────────────────────────────
-
-#[tokio::test]
-async fn delete_user_404_is_idempotent() {
-    set_test_encryption_key();
-    let db = test_db().await;
-    let server = MockServer::start().await;
-    let (workspace_id, user_id, _auth) = seed_user_and_workspace(&db, "deleted").await;
-
-    // Pre-seed an active local user row pointing at a tenant that exists locally.
-    let now = Utc::now().fixed_offset();
-    let tenant_row_id = Uuid::new_v4();
-    airhouse_tenants::ActiveModel {
-        id: ActiveValue::Set(tenant_row_id),
-        workspace_id: ActiveValue::Set(workspace_id),
-        airhouse_tenant_id: ActiveValue::Set("acme-zzz".into()),
-        bucket: ActiveValue::Set("test-bucket".into()),
-        prefix: ActiveValue::Set(Some("tenants/acme-zzz".into())),
-        status: ActiveValue::Set(airhouse::entity::tenants::TenantStatus::Active),
-        created_at: ActiveValue::Set(now),
-    }
-    .insert(&db)
-    .await
-    .unwrap();
-
-    let local_user_id = Uuid::new_v4();
-    airhouse_users::ActiveModel {
-        id: ActiveValue::Set(local_user_id),
-        tenant_row_id: ActiveValue::Set(tenant_row_id),
-        workspace_id: ActiveValue::Set(workspace_id),
-        oxy_user_id: ActiveValue::Set(user_id),
-        username: ActiveValue::Set("ghost".into()),
-        role: ActiveValue::Set(airhouse::entity::users::AirhouseUserRole::Reader),
-        password_secret_id: ActiveValue::Set(None),
-        password_revealed_at: ActiveValue::Set(None),
-        status: ActiveValue::Set(AirhouseUserStatus::Active),
-        created_at: ActiveValue::Set(now),
-    }
-    .insert(&db)
-    .await
-    .unwrap();
-
-    Mock::given(method("DELETE"))
-        .and(path("/admin/v1/tenants/acme-zzz/users/ghost"))
-        .and(header("authorization", &*format!("Bearer {ADMIN_TOKEN}")))
-        .respond_with(ResponseTemplate::new(404))
-        .expect(2)
-        .mount(&server)
-        .await;
-
-    let raw_result = admin_client(&server).delete_user("acme-zzz", "ghost").await;
-    match raw_result {
-        Ok(deleted) => assert!(!deleted, "404 must surface as Ok(false)"),
-        Err(e) => panic!("404 on delete_user should not propagate as an error: {e:?}"),
-    }
-
-    let prov = UserProvisioner::new(db.clone(), admin_client(&server));
-    prov.deprovision(user_id, workspace_id)
-        .await
-        .expect("404 from delete_user must not break deprovision");
-    let remaining = AirhouseUsers::find()
-        .filter(airhouse_users::Column::WorkspaceId.eq(workspace_id))
-        .all(&db)
-        .await
         .unwrap();
-    assert!(remaining.is_empty(), "local user row must be cleared");
+    assert!(
+        local.is_none(),
+        "no local row should be written on a name-collision 409; \
+         leaving one would let a future provision call silently adopt \
+         the foreign tenant"
+    );
 }
+
+// (404-on-delete-user adoption test removed in Phase 5 — there is no
+// per-user airhouse user anymore. UserProvisioner-specific behaviour is
+// covered by `airhouse_user_provisioner.rs` until Phase 6 deletes the
+// provisioner entirely.)
 
 // ── provision endpoint: 503 when Airhouse is not configured ─────────────────
 
@@ -720,11 +724,4 @@ async fn provision_returns_422_for_invalid_tenant_name() {
     )
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
-}
-
-// ── unused-import guard ──────────────────────────────────────────────────────
-
-#[allow(dead_code)]
-fn _ensure_error_in_scope() -> Option<AirhouseError> {
-    None
 }

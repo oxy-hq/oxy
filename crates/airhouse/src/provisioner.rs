@@ -1,4 +1,5 @@
-use chrono::Utc;
+use chrono::{DateTime, FixedOffset, Utc};
+use oxy_platform::secrets::envelope;
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
 };
@@ -6,9 +7,17 @@ use thiserror::Error;
 use tracing::{info, instrument, warn};
 use uuid::Uuid;
 
-use crate::admin::{AirhouseAdminClient, AirhouseError, TenantRecord};
+use crate::admin::{AirhouseAdminClient, AirhouseError, TenantRecord, UserRole};
 use crate::entity::Tenants as AirhouseTenants;
 use crate::entity::tenants::{self as airhouse_tenants, TenantStatus};
+
+/// Default `max_role` and `max_ttl_secs` for SAs minted on tenant
+/// provisioning. The TTL matches the airhouse system cap
+/// (`SYSTEM_MAX_TTL_SECS = 86400`); anything longer is rejected with 400 by
+/// the Admin API. Role is `admin` so the broker can mint any role
+/// (Owner→admin, Admin→writer, Member→reader) under it without re-rotating.
+const SA_MAX_ROLE: UserRole = UserRole::Admin;
+const SA_MAX_TTL_SECS: i32 = 24 * 60 * 60;
 
 #[derive(Debug, Error)]
 pub enum ProvisionerError {
@@ -22,8 +31,31 @@ pub enum ProvisionerError {
     Db(#[from] sea_orm::DbErr),
     #[error("airhouse error: {0}")]
     Airhouse(#[from] AirhouseError),
-    #[error("airhouse tenant {0} disappeared after create")]
-    MissingAfterAdopt(String),
+    #[error("envelope crypto failed: {0}")]
+    Crypto(String),
+    #[error("airhouse tenant for workspace {0} has no service account; provision it first")]
+    TenantHasNoServiceAccount(Uuid),
+    #[error("airhouse tenant name {0:?} is already taken; pick a different name")]
+    TenantNameTaken(String),
+}
+
+/// Result of a successful [`TenantProvisioner::rotate_service_account`]
+/// call. The new SA is already in `airhouse_tenants`; the old one was
+/// revoked airhouse-side as part of the rotation.
+#[derive(Debug, Clone)]
+pub struct RotatedServiceAccount {
+    pub workspace_id: Uuid,
+    pub old_sa_id: String,
+    pub new_sa_id: String,
+    pub rotated_at: DateTime<FixedOffset>,
+}
+
+/// Deterministic Airhouse SA name for a given tenant. Letting the name be
+/// derivable means we can find and revoke an orphan SA from a previous
+/// failed provision (its bearer is unrecoverable, so re-mint is the only
+/// option).
+pub fn service_account_name_for(tenant_id: &str) -> String {
+    format!("oxy-tenant-{tenant_id}")
 }
 
 pub struct TenantProvisioner {
@@ -37,7 +69,10 @@ impl TenantProvisioner {
     }
 
     /// Idempotent: re-running with the same `workspace_id` returns the existing
-    /// tenant without contacting Airhouse again.
+    /// tenant without contacting Airhouse again. Also ensures a service
+    /// account is provisioned for the tenant — used by the broker to mint
+    /// per-user ephemeral credentials. SA provisioning is lazy so rows that
+    /// predate the SA migration pick one up on the next call.
     #[instrument(skip(self), fields(workspace_id = %workspace_id, tenant_name = %tenant_name))]
     pub async fn provision(
         &self,
@@ -52,13 +87,22 @@ impl TenantProvisioner {
             .one(&self.db)
             .await?;
 
-        match existing_local {
-            Some(local) => self.reconcile_existing(&local).await,
-            None => self.create_or_adopt(workspace_id, &tenant_name).await,
-        }
+        let remote = match existing_local {
+            Some(local) => self.reconcile_existing(&local).await?,
+            None => self.create_or_adopt(workspace_id, &tenant_name).await?,
+        };
+
+        self.ensure_service_account_for_workspace(workspace_id)
+            .await?;
+        Ok(remote)
     }
 
     /// Idempotent: succeeds whether the local row or the remote tenant exist.
+    ///
+    /// Best-effort SA revocation runs first so an orphaned SA doesn't survive
+    /// a tenant deletion. Failures here are logged but do not block tenant
+    /// deletion — the SA's tenant_id will still resolve to the deleted
+    /// tenant on Airhouse's side, but that's recoverable on next provision.
     #[instrument(skip(self), fields(workspace_id = %workspace_id))]
     pub async fn deprovision(&self, workspace_id: Uuid) -> Result<(), ProvisionerError> {
         let local = AirhouseTenants::find()
@@ -69,6 +113,12 @@ impl TenantProvisioner {
             info!("no local tenant row; deprovision is a no-op");
             return Ok(());
         };
+
+        if let Some(sa_id) = &local.service_account_id
+            && let Err(e) = self.client.revoke_service_account(sa_id).await
+        {
+            warn!(sa_id = %sa_id, "failed to revoke airhouse SA during deprovision: {e}");
+        }
 
         // Airhouse delete_tenant is itself idempotent (returns 204 in both cases).
         self.client.delete_tenant(&local.airhouse_tenant_id).await?;
@@ -116,14 +166,29 @@ impl TenantProvisioner {
                 Ok(remote)
             }
             Err(AirhouseError::AlreadyExists(msg)) => {
-                warn!(tenant_name, msg, "airhouse 409 — adopting existing tenant");
-                let remote =
-                    self.client.get_tenant(tenant_name).await?.ok_or_else(|| {
-                        ProvisionerError::MissingAfterAdopt(tenant_name.to_string())
-                    })?;
-                self.insert_local_row(workspace_id, &remote, TenantStatus::Active)
-                    .await?;
-                Ok(remote)
+                // Refuse to silently adopt a tenant that already exists on
+                // the airhouse side — that path could grant this workspace
+                // access to another workspace's data if two users picked
+                // the same name. Surface a typed error so the REST handler
+                // can return 409 and the UI can ask the user for a fresh
+                // name. Operators can recover the rare "this workspace's
+                // own remote tenant exists but the local row was wiped"
+                // case via the runbook (delete the remote tenant, then
+                // re-provision under the same name).
+                //
+                // Critically we do NOT write a Failed local row for the
+                // collided name. If we did, the next `provision()` call
+                // would hit `reconcile_existing` first, see the Failed row
+                // pointing at the foreign tenant id, and adopt it —
+                // exactly the cross-workspace data leak this branch is
+                // designed to prevent. `ensure_service_account_for_workspace`
+                // would then revoke the legitimate SA on the other
+                // workspace's tenant.
+                warn!(
+                    tenant_name,
+                    msg, "airhouse rejected create with 409 — name already taken"
+                );
+                Err(ProvisionerError::TenantNameTaken(tenant_name.to_string()))
             }
             Err(e) => {
                 let _ = self
@@ -148,6 +213,8 @@ impl TenantProvisioner {
             prefix: ActiveValue::Set(remote.prefix.clone()),
             status: ActiveValue::Set(status),
             created_at: ActiveValue::Set(Utc::now().fixed_offset()),
+            // SA fields are populated by ensure_service_account_for_workspace.
+            ..Default::default()
         };
         row.insert(&self.db).await?;
         Ok(())
@@ -169,6 +236,7 @@ impl TenantProvisioner {
             prefix: ActiveValue::Set(None),
             status: ActiveValue::Set(TenantStatus::Failed),
             created_at: ActiveValue::Set(Utc::now().fixed_offset()),
+            ..Default::default()
         };
         row.insert(&self.db).await.map(|_| ())
     }
@@ -180,6 +248,171 @@ impl TenantProvisioner {
             ..Default::default()
         };
         row.update(&self.db).await.map(|_| ())
+    }
+
+    /// Ensure the tenant for `workspace_id` has a usable SA. Idempotent.
+    ///
+    /// "Usable" means the local row carries both `service_account_id` and
+    /// `bearer_ciphertext`. If either is missing — either because this row
+    /// predates the SA migration or because a previous provision crashed
+    /// between SA mint and DB persist — we mint a fresh SA. Before minting
+    /// we list remote SAs by deterministic name and revoke any orphan: its
+    /// bearer is unrecoverable (Airhouse only stores the hash) so reuse is
+    /// impossible.
+    #[instrument(skip(self), fields(workspace_id = %workspace_id))]
+    async fn ensure_service_account_for_workspace(
+        &self,
+        workspace_id: Uuid,
+    ) -> Result<(), ProvisionerError> {
+        let local = AirhouseTenants::find()
+            .filter(airhouse_tenants::Column::WorkspaceId.eq(workspace_id))
+            .one(&self.db)
+            .await?
+            .ok_or(ProvisionerError::WorkspaceNotFound(workspace_id))?;
+
+        if local.service_account_id.is_some() && local.bearer_ciphertext.is_some() {
+            return Ok(());
+        }
+
+        let sa_name = service_account_name_for(&local.airhouse_tenant_id);
+
+        // Adoption-by-revocation: a previous failed provision may have left
+        // an SA on the remote side. We can't recover its bearer, so revoke
+        // before minting fresh.
+        //
+        // TODO: this scans every SA in the airhouse deployment. Should be
+        // server-side filtered by tenant once airhouse exposes
+        // `GET /tenants/{tid}/service-accounts` or
+        // `GET /service-accounts?name=...`. The unfiltered list also lets
+        // a separate deployment that picked the same SA name appear here
+        // (we filter by exact name match before revoking, so we wouldn't
+        // delete the wrong row, but the scan grows linearly with the
+        // global SA count).
+        let sas = self.client.list_service_accounts().await?;
+        if let Some(orphan) = sas
+            .into_iter()
+            .find(|sa| sa.name == sa_name && sa.revoked_at.is_none())
+        {
+            warn!(
+                sa_id = %orphan.id,
+                sa_name = %sa_name,
+                "found orphan airhouse SA from previous provision; revoking before re-minting"
+            );
+            self.client.revoke_service_account(&orphan.id).await?;
+        }
+
+        let created = self
+            .client
+            .create_service_account(
+                &sa_name,
+                &local.airhouse_tenant_id,
+                SA_MAX_ROLE,
+                SA_MAX_TTL_SECS,
+            )
+            .await?;
+        let sa_id = created.record.id.clone();
+        let max_role = created.record.max_role.clone();
+        let max_ttl_secs = created.record.max_ttl_secs;
+
+        let bearer_ciphertext = envelope::seal(created.bearer.as_bytes())
+            .map_err(|e| ProvisionerError::Crypto(e.to_string()))?;
+
+        let now = Utc::now().fixed_offset();
+        let mut active: airhouse_tenants::ActiveModel = local.into();
+        active.service_account_id = ActiveValue::Set(Some(sa_id.clone()));
+        active.bearer_ciphertext = ActiveValue::Set(Some(bearer_ciphertext));
+        active.bearer_max_role = ActiveValue::Set(Some(max_role));
+        active.bearer_max_ttl_secs = ActiveValue::Set(Some(max_ttl_secs));
+        active.sa_created_at = ActiveValue::Set(Some(now));
+        active.update(&self.db).await?;
+
+        info!(workspace_id = %workspace_id, sa_id = %sa_id, "provisioned airhouse SA");
+        Ok(())
+    }
+
+    /// Rotate the service account for `workspace_id`. Used as the
+    /// bearer-leak response — call this when an SA bearer is suspected
+    /// compromised.
+    ///
+    /// Flow:
+    /// 1. Revoke the old SA airhouse-side. New mints with the old bearer
+    ///    immediately fail with 401; the broker then loads the new bearer
+    ///    on its next cache-miss mint.
+    /// 2. Create a fresh SA under the same deterministic name.
+    /// 3. Atomic-ish DB swap: update `service_account_id`,
+    ///    `bearer_ciphertext`, `sa_rotated_at` on the tenants row.
+    ///
+    /// Outstanding ephemerals already minted under the old SA continue to
+    /// authenticate via SCRAM (their `cp_users` rows aren't touched);
+    /// they expire on their own. Fresh mints route through the new SA
+    /// once step 3 commits.
+    ///
+    /// Multi-replica caveat: in-memory broker caches in other replicas
+    /// hold the old bearer until the cached credential expires (24h max).
+    /// A mint attempted by another replica between steps 1 and 3 will
+    /// fail with 401 — small operational hiccup, not a security gap.
+    #[instrument(skip(self), fields(workspace_id = %workspace_id))]
+    pub async fn rotate_service_account(
+        &self,
+        workspace_id: Uuid,
+    ) -> Result<RotatedServiceAccount, ProvisionerError> {
+        let local = AirhouseTenants::find()
+            .filter(airhouse_tenants::Column::WorkspaceId.eq(workspace_id))
+            .one(&self.db)
+            .await?
+            .ok_or(ProvisionerError::WorkspaceNotFound(workspace_id))?;
+        let old_sa_id = local
+            .service_account_id
+            .clone()
+            .ok_or(ProvisionerError::TenantHasNoServiceAccount(workspace_id))?;
+
+        info!(workspace_id = %workspace_id, old_sa_id = %old_sa_id, "rotating airhouse SA");
+
+        // Step 1: revoke old. Idempotent on the airhouse side — a 204 is
+        // returned even when the SA was already revoked.
+        self.client.revoke_service_account(&old_sa_id).await?;
+
+        // Step 2: create new SA under the same deterministic name. The
+        // airhouse-side `service_accounts` table doesn't unique on name,
+        // and the previous SA is now revoked (filtered out by
+        // `find_active_service_account_by_bearer`), so reusing the name
+        // is safe.
+        let sa_name = service_account_name_for(&local.airhouse_tenant_id);
+        let created = self
+            .client
+            .create_service_account(
+                &sa_name,
+                &local.airhouse_tenant_id,
+                SA_MAX_ROLE,
+                SA_MAX_TTL_SECS,
+            )
+            .await?;
+        let new_sa_id = created.record.id.clone();
+
+        let bearer_ciphertext = envelope::seal(created.bearer.as_bytes())
+            .map_err(|e| ProvisionerError::Crypto(e.to_string()))?;
+        let now = Utc::now().fixed_offset();
+
+        // Step 3: persist.
+        let mut active: airhouse_tenants::ActiveModel = local.into();
+        active.service_account_id = ActiveValue::Set(Some(new_sa_id.clone()));
+        active.bearer_ciphertext = ActiveValue::Set(Some(bearer_ciphertext));
+        active.sa_rotated_at = ActiveValue::Set(Some(now));
+        active.update(&self.db).await?;
+
+        info!(
+            workspace_id = %workspace_id,
+            old_sa_id = %old_sa_id,
+            new_sa_id = %new_sa_id,
+            "rotated airhouse SA"
+        );
+
+        Ok(RotatedServiceAccount {
+            workspace_id,
+            old_sa_id,
+            new_sa_id,
+            rotated_at: now,
+        })
     }
 }
 

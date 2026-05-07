@@ -23,11 +23,11 @@ connector = [
     "dep:tokio",
     "dep:tracing",
 ]
-# Minimal: the `airhouse_managed` credentials resolver, the airhouse-owned
-# entity models (Sea-ORM `Serialize`/`Deserialize` derives → `serde`), and
-# the airhouse migrator. Pulled in by `oxy` core to handle
-# `DatabaseType::AirhouseManaged` in its legacy connector dispatch and to
-# run airhouse migrations on startup.
+# Minimal: the airhouse-owned entity for `airhouse_tenants` (Sea-ORM
+# `Serialize`/`Deserialize` derives → `serde`) plus the airhouse migrator.
+# Pulled in by `oxy` core to run airhouse migrations on startup; the legacy
+# `airhouse_managed` credential resolver was removed in Phase 6 of the SA
+# migration.
 credentials = [
     "dep:oxy-platform",
     "dep:oxy-shared",

@@ -55,6 +55,12 @@ pub struct ExecutionContext {
     pub sandbox_info: Option<SandboxInfo>,
     /// User ID for the execution context (for run isolation)
     pub user_id: Option<uuid::Uuid>,
+    /// Effective workspace role for the run's submitter, when known. Used by
+    /// `airhouse_managed` to mint a credential at the user's actual role
+    /// (Owner/Admin → write-capable airhouse role, Member/Viewer → reader)
+    /// instead of always defaulting to least-privilege Reader. `None` for
+    /// background runs and CLI/system paths that have no per-user identity.
+    pub effective_role: Option<entity::workspace_members::WorkspaceRole>,
     /// Metric collection context for tracking usage data
     /// Flows through nested agent/workflow executions via tokio::spawn
     pub metric_context: Option<SharedMetricCtx>,
@@ -81,6 +87,7 @@ impl ExecutionContext {
             connections: None,
             sandbox_info: None,
             user_id,
+            effective_role: None,
             metric_context: None,
             data_app_file_path: None,
         }
@@ -101,6 +108,7 @@ impl ExecutionContext {
             connections: self.connections.clone(),
             sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
+            effective_role: self.effective_role.clone(),
             metric_context: self.metric_context.clone(),
             data_app_file_path: self.data_app_file_path.clone(),
         }
@@ -117,6 +125,7 @@ impl ExecutionContext {
             connections: self.connections.clone(),
             sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
+            effective_role: self.effective_role.clone(),
             metric_context: self.metric_context.clone(),
             data_app_file_path: self.data_app_file_path.clone(),
         }
@@ -134,6 +143,7 @@ impl ExecutionContext {
                 connections: self.connections.clone(),
                 sandbox_info: self.sandbox_info.clone(),
                 user_id: self.user_id,
+                effective_role: self.effective_role.clone(),
                 metric_context: self.metric_context.clone(),
                 data_app_file_path: self.data_app_file_path.clone(),
             }
@@ -148,6 +158,7 @@ impl ExecutionContext {
                 connections: self.connections.clone(),
                 sandbox_info: self.sandbox_info.clone(),
                 user_id: self.user_id,
+                effective_role: self.effective_role.clone(),
                 metric_context: self.metric_context.clone(),
                 data_app_file_path: self.data_app_file_path.clone(),
             }
@@ -165,6 +176,7 @@ impl ExecutionContext {
             connections: self.connections.clone(),
             sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
+            effective_role: self.effective_role.clone(),
             metric_context: self.metric_context.clone(),
             data_app_file_path: self.data_app_file_path.clone(),
         }
@@ -181,6 +193,7 @@ impl ExecutionContext {
             connections: self.connections.clone(),
             sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
+            effective_role: self.effective_role.clone(),
             metric_context: self.metric_context.clone(),
             data_app_file_path: self.data_app_file_path.clone(),
         }
@@ -199,6 +212,7 @@ impl ExecutionContext {
             connections: self.connections.clone(),
             sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
+            effective_role: self.effective_role.clone(),
             metric_context: self.metric_context.clone(),
             data_app_file_path: self.data_app_file_path.clone(),
         }
@@ -215,6 +229,7 @@ impl ExecutionContext {
             connections: self.connections.clone(),
             sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
+            effective_role: self.effective_role.clone(),
             metric_context: self.metric_context.clone(),
             data_app_file_path: self.data_app_file_path.clone(),
         }
@@ -231,6 +246,32 @@ impl ExecutionContext {
             connections: self.connections.clone(),
             sandbox_info: self.sandbox_info.clone(),
             user_id,
+            effective_role: self.effective_role.clone(),
+            metric_context: self.metric_context.clone(),
+            data_app_file_path: self.data_app_file_path.clone(),
+        }
+    }
+
+    /// Override the effective workspace role for this run. Used when an
+    /// authenticated request enters from a handler that has resolved
+    /// `EffectiveWorkspaceRole`; the value flows from there into
+    /// `Connector::from_db` so airhouse_managed credentials get minted at
+    /// the right airhouse role rather than always defaulting to Reader.
+    pub fn with_effective_role(
+        &self,
+        effective_role: Option<entity::workspace_members::WorkspaceRole>,
+    ) -> Self {
+        ExecutionContext {
+            source: self.source.clone(),
+            writer: self.writer.clone(),
+            renderer: self.renderer.clone(),
+            workspace: self.workspace.clone(),
+            checkpoint: self.checkpoint.clone(),
+            filters: self.filters.clone(),
+            connections: self.connections.clone(),
+            sandbox_info: self.sandbox_info.clone(),
+            user_id: self.user_id,
+            effective_role,
             metric_context: self.metric_context.clone(),
             data_app_file_path: self.data_app_file_path.clone(),
         }
@@ -248,6 +289,7 @@ impl ExecutionContext {
             connections: self.connections.clone(),
             sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
+            effective_role: self.effective_role.clone(),
             metric_context: Some(metric_context),
             data_app_file_path: self.data_app_file_path.clone(),
         }
@@ -278,6 +320,7 @@ impl ExecutionContext {
             connections: self.connections.clone(),
             sandbox_info: self.sandbox_info.clone(),
             user_id: self.user_id,
+            effective_role: self.effective_role.clone(),
             metric_context: child_ctx,
             data_app_file_path: self.data_app_file_path.clone(),
         }
@@ -452,6 +495,7 @@ pub struct ExecutionContextBuilder {
     connections: Option<ConnectionOverrides>,
     sandbox_info: Option<SandboxInfo>,
     user_id: Option<uuid::Uuid>,
+    effective_role: Option<entity::workspace_members::WorkspaceRole>,
     metric_context: Option<SharedMetricCtx>,
     data_app_file_path: Option<String>,
 }
@@ -474,6 +518,7 @@ impl ExecutionContextBuilder {
             connections: None,
             sandbox_info: None,
             user_id: None,
+            effective_role: None,
             metric_context: None,
             data_app_file_path: None,
         }
@@ -533,6 +578,17 @@ impl ExecutionContextBuilder {
         self
     }
 
+    /// Effective workspace role for the run's submitter. Threaded into
+    /// `Connector::from_db` so airhouse_managed mints carry the right
+    /// airhouse role rather than the conservative Reader default.
+    pub fn with_effective_role(
+        mut self,
+        effective_role: Option<entity::workspace_members::WorkspaceRole>,
+    ) -> Self {
+        self.effective_role = effective_role;
+        self
+    }
+
     pub fn with_metric_context(mut self, metric_context: SharedMetricCtx) -> Self {
         self.metric_context = Some(metric_context);
         self
@@ -570,6 +626,7 @@ impl ExecutionContextBuilder {
             connections: self.connections,
             sandbox_info: self.sandbox_info,
             user_id: self.user_id,
+            effective_role: self.effective_role.clone(),
             metric_context: self.metric_context,
             data_app_file_path: self.data_app_file_path,
         })

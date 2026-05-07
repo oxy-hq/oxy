@@ -72,12 +72,23 @@ impl From<TenantRecordRaw> for TenantRecord {
 }
 
 /// Role granted to an Airhouse tenant user.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UserRole {
     Reader,
     Writer,
     Admin,
+}
+
+impl UserRole {
+    /// String form used by Airhouse on the wire and in audit fields.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            UserRole::Reader => "reader",
+            UserRole::Writer => "writer",
+            UserRole::Admin => "admin",
+        }
+    }
 }
 
 /// A user within an Airhouse tenant.
@@ -88,4 +99,54 @@ pub struct UserRecord {
     pub username: String,
     pub role: String,
     pub created_at: DateTime<Utc>,
+}
+
+/// A registered Airhouse service account. Returned by list / create endpoints
+/// — the raw bearer is never included here; it appears once on
+/// [`CreatedServiceAccount`] at create time only.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ServiceAccountRecord {
+    pub id: String,
+    pub name: String,
+    pub tenant_id: String,
+    pub max_role: String,
+    pub max_ttl_secs: i32,
+    pub created_at: DateTime<Utc>,
+    pub revoked_at: Option<DateTime<Utc>>,
+    pub last_used_at: Option<DateTime<Utc>>,
+}
+
+/// Response from [`crate::AirhouseAdminClient::create_service_account`]. The
+/// `bearer` is the only handle to this SA — Airhouse persists only its hash,
+/// so a lost bearer cannot be recovered, only rotated. Treat it like a
+/// platform secret; pass it straight into your secret manager.
+#[derive(Debug, Clone)]
+pub struct CreatedServiceAccount {
+    pub record: ServiceAccountRecord,
+    pub bearer: String,
+}
+
+/// Raw (server-generated) ephemeral wire-protocol credential returned by the
+/// mint endpoint. Username and password are opaque — pass them straight to a
+/// pgwire client. Past `expires_at` the same credential stops authenticating
+/// with `28P01` and the caller should mint a fresh one.
+#[derive(Debug, Clone, Deserialize)]
+pub struct EphemeralCredential {
+    pub username: String,
+    pub password: String,
+    pub tenant: String,
+    pub role: String,
+    pub expires_at: DateTime<Utc>,
+    pub service_account_id: String,
+}
+
+/// Auth selector for the per-token revoke endpoint.
+///
+/// Airhouse accepts either the deployment's admin token (revokes any
+/// credential in any tenant) or the SA bearer that originally issued the
+/// credential (revokes only what that SA minted). Other SA bearers get 403.
+#[derive(Debug, Clone)]
+pub enum TokenAuth<'a> {
+    Admin,
+    ServiceAccount(&'a str),
 }

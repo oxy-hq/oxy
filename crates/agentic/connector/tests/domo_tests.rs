@@ -168,8 +168,8 @@ async fn execute_query_full_surfaces_http_errors() {
         .await
         .expect_err("500 must surface as QueryFailed");
     match err {
-        agentic_connector::ConnectorError::QueryFailed { message, .. } => {
-            assert!(message.contains("500"));
+        agentic_connector::ConnectorError::QueryFailed(d) => {
+            assert!(d.message.contains("500"));
         }
         other => panic!("expected QueryFailed, got {other:?}"),
     }

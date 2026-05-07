@@ -277,6 +277,7 @@ pub async fn run_workflow(
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    crate::server::api::middlewares::workspace_context::EffectiveWorkspaceRole(effective_role): crate::server::api::middlewares::workspace_context::EffectiveWorkspaceRole,
     extract::Json(request): extract::Json<RunWorkflowRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let decoded_path = BASE64_STANDARD
@@ -311,6 +312,7 @@ pub async fn run_workflow(
                 user_id,
             }),
             None, // No authenticated user for this endpoint
+            Some(effective_role),
         )
         .await;
         if let Err(e) = rs {
@@ -373,7 +375,9 @@ async fn ensure_workflow_thread_unlocked(
 )]
 pub async fn run_workflow_thread(
     Path((_workspace_id, id)): Path<(Uuid, String)>,
+    AuthenticatedUserExtractor(caller): AuthenticatedUserExtractor,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    crate::server::api::middlewares::workspace_context::EffectiveWorkspaceRole(effective_role): crate::server::api::middlewares::workspace_context::EffectiveWorkspaceRole,
 ) -> Result<impl IntoResponse, StatusCode> {
     let config_manager = workspace_manager.config_manager.clone();
 
@@ -443,7 +447,22 @@ pub async fn run_workflow_thread(
 
     let connection_clone = connection.clone();
     let thread_clone = thread.clone();
-    let thread_user_id = thread.user_id;
+
+    // Identity model for the run: the *caller* is the actor, even if the
+    // thread row is owned by a different user. This avoids the cross-user
+    // mismatch that the prior code introduced — passing the thread owner
+    // as `user_id` while honoring the caller's `EffectiveWorkspaceRole`
+    // produced an airhouse cache entry keyed `(workspace, owner, caller_role)`
+    // and an audit row attributed to the owner for an action the caller
+    // triggered. Use the caller's id everywhere so:
+    //   - the airhouse mint subject + role match each other and match the
+    //     caller's actual permissions,
+    //   - the `oxy.user.id` tracing field reflects who pushed the button,
+    //   - the audit trail upstream points at the right person.
+    // The thread's own `user_id` column stays unchanged; it's "who created
+    // this thread", which is metadata about the thread, not an identity for
+    // the run.
+    let caller_id = caller.id;
 
     let _ = tokio::spawn(async move {
         let result = service::run_workflow(
@@ -455,12 +474,10 @@ pub async fn run_workflow_thread(
             None,
             Some(crate::service::agent::ExecutionSource::WebApi {
                 thread_id: thread_clone.id.to_string(),
-                user_id: thread_clone
-                    .user_id
-                    .map(|u| u.to_string())
-                    .unwrap_or_else(|| "unknown".to_string()),
+                user_id: caller_id.to_string(),
             }),
-            thread_user_id,
+            Some(caller_id),
+            Some(effective_role),
         )
         .await;
 
@@ -555,7 +572,9 @@ pub struct RunWorkflowThreadRequest {
 )]
 pub async fn run_workflow_thread_sync(
     Path((_workspace_id, id)): Path<(Uuid, String)>,
+    AuthenticatedUserExtractor(caller): AuthenticatedUserExtractor,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    crate::server::api::middlewares::workspace_context::EffectiveWorkspaceRole(effective_role): crate::server::api::middlewares::workspace_context::EffectiveWorkspaceRole,
     timeout_config: TimeoutConfig,
     extract::Json(request): extract::Json<RunWorkflowThreadRequest>,
 ) -> Result<extract::Json<RunWorkflowThreadSyncResponse>, StatusCode> {
@@ -637,7 +656,10 @@ pub async fn run_workflow_thread_sync(
     let workflow_ref_clone = workflow_ref.clone();
     let filters = request.filters;
     let connections = request.connections;
-    let thread_user_id = thread.user_id;
+    // Caller-as-actor identity model — see the comment on run_workflow_thread.
+    // The thread's `user_id` column stays untouched (it's "who created this
+    // thread"); the run is attributed to whoever pressed the button.
+    let caller_id = caller.id;
 
     let mut workflow_task = tokio::spawn(async move {
         let result = service::run_workflow(
@@ -649,12 +671,10 @@ pub async fn run_workflow_thread_sync(
             connections,
             Some(crate::service::agent::ExecutionSource::WebApi {
                 thread_id: thread_clone.id.to_string(),
-                user_id: thread_clone
-                    .user_id
-                    .map(|u| u.to_string())
-                    .unwrap_or_else(|| "unknown".to_string()),
+                user_id: caller_id.to_string(),
             }),
-            thread_user_id,
+            Some(caller_id),
+            Some(effective_role),
         )
         .await;
 
@@ -905,6 +925,7 @@ pub async fn run_workflow_sync(
     Path((_workspace_id, pathb64)): Path<(Uuid, String)>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
+    crate::server::api::middlewares::workspace_context::EffectiveWorkspaceRole(effective_role): crate::server::api::middlewares::workspace_context::EffectiveWorkspaceRole,
     timeout_config: TimeoutConfig,
     extract::Json(request): extract::Json<RunWorkflowRequest>,
 ) -> Result<extract::Json<RunWorkflowSyncResponse>, StatusCode> {
@@ -996,6 +1017,7 @@ pub async fn run_workflow_sync(
                     user_id,
                 }),
                 Some(user.id),
+                Some(effective_role),
             )
             .await;
 

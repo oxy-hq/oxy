@@ -6,6 +6,7 @@
 //! `OXY_ENCRYPTION_KEY` env var with a dev-friendly file fallback.
 
 mod encryption;
+pub mod envelope;
 mod org_secrets;
 
 pub use encryption::get_encryption_key;

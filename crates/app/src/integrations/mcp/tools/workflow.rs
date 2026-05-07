@@ -168,6 +168,7 @@ pub async fn run_workflow_tool(
             session_id: None, // MCP doesn't have session tracking yet
         }),
         None, // No authenticated user in MCP context
+        None, // MCP: no per-user role; airhouse_managed defaults to Reader
     )
     .await
     .map_err(|e| rmcp::ErrorData::internal_error(format!("Failed to run workflow: {e}"), None))?;

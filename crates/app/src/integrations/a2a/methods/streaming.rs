@@ -199,6 +199,7 @@ pub async fn handle_send_streaming_message(
                 prompt,
                 event_handler,
                 memory,
+                None, // A2A streaming: no per-user role; defaults to Reader
             )
             .await
         } else {
@@ -218,6 +219,7 @@ pub async fn handle_send_streaming_message(
                 }),
                 None,
                 None, // No data_app_file_path from A2A streaming
+                None, // A2A streaming: no per-user role; defaults to Reader
             )
             .await
         };

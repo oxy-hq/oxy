@@ -31,8 +31,8 @@ use async_trait::async_trait;
 use tokio_postgres::{Client, NoTls, SimpleQueryMessage};
 
 use agentic_connector::{
-    ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, ResultSummary,
-    SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect, normalize_sql,
+    ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, QueryFailedDetails,
+    ResultSummary, SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect, normalize_sql,
 };
 use agentic_core::result::{
     BoxedRowStream, CellValue, ColumnSpec, QueryResult, QueryRow, TypedRowError, TypedRowStream,
@@ -40,6 +40,40 @@ use agentic_core::result::{
 };
 
 use self::typed::{describe_type_to_typed, parse_cell};
+
+// ── Error helpers ─────────────────────────────────────────────────────────────
+
+/// Build a structured [`QueryFailedDetails`] from a `tokio_postgres` error.
+///
+/// Airhouse speaks pgwire, so `as_db_error()` carries DuckDB's error message
+/// alongside the SQLSTATE-equivalent code (and, when available, `DETAIL` /
+/// `HINT` / `POSITION`). Surfacing those as separate fields lets the IDE
+/// render the error as a structured block. Mirrors the postgres connector's
+/// `pg_query_failed`; intentionally duplicated to avoid making the helper
+/// public on `agentic-connector` (which would force its `postgres` feature
+/// onto every consumer).
+fn airhouse_query_failed(sql: &str, e: &tokio_postgres::Error) -> QueryFailedDetails {
+    let sql = sql.to_string();
+    if let Some(db) = e.as_db_error() {
+        QueryFailedDetails {
+            sql,
+            message: db.message().to_string(),
+            code: Some(db.code().code().to_string()),
+            detail: db.detail().map(|s| s.to_string()),
+            hint: db.hint().map(|s| s.to_string()),
+            position: db.position().and_then(|p| match p {
+                tokio_postgres::error::ErrorPosition::Original(n) => Some(*n),
+                tokio_postgres::error::ErrorPosition::Internal { .. } => None,
+            }),
+        }
+    } else {
+        QueryFailedDetails {
+            sql,
+            message: e.to_string(),
+            ..Default::default()
+        }
+    }
+}
 
 // ── Value helpers ─────────────────────────────────────────────────────────────
 
@@ -62,6 +96,40 @@ fn text_to_cell(opt: Option<&str>) -> CellValue {
 
 fn quote_ident(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
+}
+
+/// Format a `tokio_postgres::Error` so the SQLSTATE + server message
+/// (when present) survive the trip into `ConnectorError::ConnectionError`.
+///
+/// `Display` on `tokio_postgres::Error` collapses to terse strings like
+/// `"connection error"` / `"db error"` which throws away the server's
+/// `ErrorResponse` payload — exactly the bit operators need to debug
+/// SCRAM mismatches, missing tenants, or transport failures. This walks
+/// the source chain instead.
+fn format_pg_error(e: &tokio_postgres::Error) -> String {
+    use std::error::Error;
+
+    if let Some(db_err) = e.as_db_error() {
+        // Server-sent ErrorResponse: SQLSTATE + message is the actionable
+        // bit. Include the high-level kind so operators can tell whether
+        // the error was raised during connect, a query, etc.
+        return format!(
+            "{} [SQLSTATE {}] {}",
+            e,
+            db_err.code().code(),
+            db_err.message()
+        );
+    }
+    // No DbError → typically a transport / IO failure. Concatenate the
+    // source chain so the underlying io::Error message shows up.
+    let mut out = e.to_string();
+    let mut src: Option<&dyn Error> = e.source();
+    while let Some(next) = src {
+        out.push_str(": ");
+        out.push_str(&next.to_string());
+        src = next.source();
+    }
+    out
 }
 
 // ── Connector ─────────────────────────────────────────────────────────────────
@@ -91,7 +159,7 @@ impl AirhouseConnector {
         let (client, connection) = config
             .connect(NoTls)
             .await
-            .map_err(|e| ConnectorError::ConnectionError(e.to_string()))?;
+            .map_err(|e| ConnectorError::ConnectionError(format_pg_error(&e)))?;
 
         tokio::spawn(async move {
             if let Err(e) = connection.await {
@@ -144,10 +212,7 @@ impl DatabaseConnector for AirhouseConnector {
                             columns: vec![],
                         },
                     })
-                    .map_err(|e| ConnectorError::QueryFailed {
-                        sql: sql.to_string(),
-                        message: e.to_string(),
-                    });
+                    .map_err(|e| ConnectorError::QueryFailed(airhouse_query_failed(sql, &e)));
             }
             // Statement-form (SHOW, EXPLAIN, …): execute directly, capture
             // all rows verbatim with text columns. Cannot be wrapped in
@@ -159,10 +224,7 @@ impl DatabaseConnector for AirhouseConnector {
                     .await
                     .simple_query(sql)
                     .await
-                    .map_err(|e| ConnectorError::QueryFailed {
-                        sql: sql.to_string(),
-                        message: e.to_string(),
-                    })?;
+                    .map_err(|e| ConnectorError::QueryFailed(airhouse_query_failed(sql, &e)))?;
                 return Ok(execution_result_from_messages(&messages, sample_limit));
             }
             StatementKind::Subquery => {}
@@ -181,21 +243,14 @@ impl DatabaseConnector for AirhouseConnector {
         client
             .simple_query(&create_sql)
             .await
-            .map_err(|e| ConnectorError::QueryFailed {
-                sql: sql.to_string(),
-                message: e.to_string(),
-            })?;
+            .map_err(|e| ConnectorError::QueryFailed(airhouse_query_failed(sql, &e)))?;
 
         // 2. Column names + types via DuckDB's DESCRIBE.
         let describe_sql = format!("DESCRIBE {tmp}");
-        let describe_messages =
-            client
-                .simple_query(&describe_sql)
-                .await
-                .map_err(|e| ConnectorError::QueryFailed {
-                    sql: describe_sql.clone(),
-                    message: e.to_string(),
-                })?;
+        let describe_messages = client
+            .simple_query(&describe_sql)
+            .await
+            .map_err(|e| ConnectorError::query_failed(describe_sql.clone(), e.to_string()))?;
 
         let mut column_names: Vec<String> = Vec::new();
         let mut column_types: Vec<String> = Vec::new();
@@ -203,9 +258,11 @@ impl DatabaseConnector for AirhouseConnector {
             if let SimpleQueryMessage::Row(row) = msg {
                 let name = row
                     .get("column_name")
-                    .ok_or_else(|| ConnectorError::QueryFailed {
-                        sql: describe_sql.clone(),
-                        message: "DESCRIBE row missing column_name".to_string(),
+                    .ok_or_else(|| {
+                        ConnectorError::query_failed(
+                            describe_sql.clone(),
+                            "DESCRIBE row missing column_name".to_string(),
+                        )
                     })?
                     .to_string();
                 let ty = row.get("column_type").unwrap_or_default().to_string();
@@ -217,14 +274,10 @@ impl DatabaseConnector for AirhouseConnector {
 
         // 3. Total row count.
         let count_sql = format!("SELECT COUNT(*) AS n FROM {tmp}");
-        let count_messages =
-            client
-                .simple_query(&count_sql)
-                .await
-                .map_err(|e| ConnectorError::QueryFailed {
-                    sql: count_sql.clone(),
-                    message: e.to_string(),
-                })?;
+        let count_messages = client
+            .simple_query(&count_sql)
+            .await
+            .map_err(|e| ConnectorError::query_failed(count_sql.clone(), e.to_string()))?;
         let total_row_count = count_messages
             .iter()
             .find_map(|m| match m {
@@ -247,12 +300,10 @@ impl DatabaseConnector for AirhouseConnector {
                 .join(", ");
             let sample_sql = format!("SELECT {cast_cols} FROM {tmp} LIMIT {sample_limit}");
 
-            let messages = client.simple_query(&sample_sql).await.map_err(|e| {
-                ConnectorError::QueryFailed {
-                    sql: sample_sql.clone(),
-                    message: e.to_string(),
-                }
-            })?;
+            let messages = client
+                .simple_query(&sample_sql)
+                .await
+                .map_err(|e| ConnectorError::query_failed(sample_sql.clone(), e.to_string()))?;
 
             let mut rows = Vec::new();
             for msg in &messages {
@@ -292,14 +343,10 @@ impl DatabaseConnector for AirhouseConnector {
                 .collect::<Vec<_>>()
                 .join(", ");
             let stats_sql = format!("SELECT {exprs} FROM {tmp}");
-            let stats_messages =
-                client
-                    .simple_query(&stats_sql)
-                    .await
-                    .map_err(|e| ConnectorError::QueryFailed {
-                        sql: stats_sql.clone(),
-                        message: e.to_string(),
-                    })?;
+            let stats_messages = client
+                .simple_query(&stats_sql)
+                .await
+                .map_err(|e| ConnectorError::query_failed(stats_sql.clone(), e.to_string()))?;
             let stats_row = stats_messages.iter().find_map(|m| match m {
                 SimpleQueryMessage::Row(r) => Some(r),
                 _ => None,
@@ -374,10 +421,7 @@ impl DatabaseConnector for AirhouseConnector {
                     .simple_query(sql)
                     .await
                     .map(|_| TypedRowStream::from_rows(vec![], vec![]))
-                    .map_err(|e| ConnectorError::QueryFailed {
-                        sql: sql.to_string(),
-                        message: e.to_string(),
-                    });
+                    .map_err(|e| ConnectorError::QueryFailed(airhouse_query_failed(sql, &e)));
             }
             // Statement-form (SHOW, EXPLAIN, …): execute directly, capture
             // all rows in one shot with text columns. Cannot be wrapped in
@@ -389,34 +433,34 @@ impl DatabaseConnector for AirhouseConnector {
                     .await
                     .simple_query(sql)
                     .await
-                    .map_err(|e| ConnectorError::QueryFailed {
-                        sql: sql.to_string(),
-                        message: e.to_string(),
-                    })?;
+                    .map_err(|e| ConnectorError::QueryFailed(airhouse_query_failed(sql, &e)))?;
                 return Ok(typed_row_stream_from_messages(&messages));
             }
             StatementKind::Subquery => {}
         }
 
         // Subquery DQL: introspect column types via DESCRIBE (no temp table),
-        // then page through rows using a subquery wrapper.
+        // then page through rows using a subquery wrapper. A failed DESCRIBE
+        // here is the user's query failing — surface their SQL (not the
+        // `DESCRIBE` wrapper) so the structured error block points at the
+        // statement they actually typed.
         let describe_sql = format!("DESCRIBE {sql}");
         let columns = {
             let client = self.client.lock().await;
-            let messages = client.simple_query(&describe_sql).await.map_err(|e| {
-                ConnectorError::QueryFailed {
-                    sql: describe_sql.clone(),
-                    message: e.to_string(),
-                }
-            })?;
+            let messages = client
+                .simple_query(&describe_sql)
+                .await
+                .map_err(|e| ConnectorError::QueryFailed(airhouse_query_failed(sql, &e)))?;
             let mut cols: Vec<ColumnSpec> = Vec::new();
             for msg in &messages {
                 if let SimpleQueryMessage::Row(row) = msg {
                     let name = row
                         .get("column_name")
-                        .ok_or_else(|| ConnectorError::QueryFailed {
-                            sql: describe_sql.clone(),
-                            message: "DESCRIBE row missing column_name".to_string(),
+                        .ok_or_else(|| {
+                            ConnectorError::query_failed(
+                                describe_sql.clone(),
+                                "DESCRIBE row missing column_name".to_string(),
+                            )
                         })?
                         .to_string();
                     let ty_str = row.get("column_type").unwrap_or_default();
@@ -677,7 +721,10 @@ async fn fetch_schema(client: &Client) -> Result<SchemaInfo, ConnectorError> {
         ORDER BY table_name, ordinal_position";
 
     let messages = client.simple_query(schema_sql).await.map_err(|e| {
-        ConnectorError::ConnectionError(format!("airhouse schema introspection failed: {e}"))
+        ConnectorError::ConnectionError(format!(
+            "airhouse schema introspection failed: {}",
+            format_pg_error(&e)
+        ))
     })?;
 
     let mut map: HashMap<String, Vec<SchemaColumnInfo>> = HashMap::new();

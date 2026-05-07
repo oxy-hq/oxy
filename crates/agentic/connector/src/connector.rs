@@ -123,18 +123,68 @@ pub struct ExecutionResult {
     pub summary: ResultSummary,
 }
 
+/// Structured details for a failed query. Connectors that have access to
+/// vendor-specific metadata (SQLSTATE, hints, position) populate the optional
+/// fields; bare driver errors are surfaced via [`ConnectorError::query_failed`]
+/// and leave the extras empty.
+#[derive(Debug, Default, Clone)]
+pub struct QueryFailedDetails {
+    /// The SQL that produced the error. Echoed back to clients so chained
+    /// connector layers (e.g. agentic temp-table wrapping) don't hide what
+    /// was actually executed.
+    pub sql: String,
+    /// Required human-readable error message.
+    pub message: String,
+    /// Vendor error code or SQLSTATE if the driver exposes one
+    /// (Postgres `42703`, Snowflake `100072`, MySQL `1054`, …).
+    pub code: Option<String>,
+    /// Additional context lines from the server (Postgres `DETAIL`, etc.).
+    pub detail: Option<String>,
+    /// Server-side suggestion (Postgres `HINT`).
+    pub hint: Option<String>,
+    /// 1-based character offset into `sql` where the error was detected
+    /// (Postgres `POSITION`). UI uses this to highlight the offending token.
+    pub position: Option<u32>,
+}
+
 /// Errors from connector operations.
 #[derive(Debug)]
 pub enum ConnectorError {
-    QueryFailed { sql: String, message: String },
+    QueryFailed(QueryFailedDetails),
     ConnectionError(String),
     Other(String),
+}
+
+impl ConnectorError {
+    /// Build a [`ConnectorError::QueryFailed`] from just the SQL and a
+    /// message. Connectors that can extract richer metadata should construct
+    /// `QueryFailed(QueryFailedDetails { … })` directly.
+    pub fn query_failed(sql: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::QueryFailed(QueryFailedDetails {
+            sql: sql.into(),
+            message: message.into(),
+            ..Default::default()
+        })
+    }
 }
 
 impl fmt::Display for ConnectorError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::QueryFailed { sql, message } => write!(f, "query failed: {message}\nSQL: {sql}"),
+            Self::QueryFailed(d) => {
+                if let Some(code) = &d.code {
+                    write!(f, "query failed: [{code}] {}", d.message)?;
+                } else {
+                    write!(f, "query failed: {}", d.message)?;
+                }
+                if let Some(detail) = &d.detail {
+                    write!(f, " — {detail}")?;
+                }
+                if let Some(hint) = &d.hint {
+                    write!(f, " (hint: {hint})")?;
+                }
+                write!(f, "\nSQL: {}", d.sql)
+            }
             Self::ConnectionError(msg) => write!(f, "connection error: {msg}"),
             Self::Other(msg) => write!(f, "{msg}"),
         }

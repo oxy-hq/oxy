@@ -75,10 +75,22 @@ pub async fn local_context_middleware(
         .extensions_mut()
         .insert(EffectiveWorkspaceRole(WorkspaceRole::Owner));
 
+    let user_id = local_user_id(&request);
     if resolved_path.is_some() {
-        attach_workspace_manager(&mut request, &workspace).await?;
+        attach_workspace_manager(&mut request, &workspace, user_id).await?;
     }
     Ok(next.run(request).await)
+}
+
+/// Read the local-mode authenticated user's id from request extensions.
+/// `auth_middleware` runs before this middleware in guest-only mode and
+/// inserts an [`oxy_auth::types::AuthenticatedUser`] for the local seed user;
+/// returns `None` if it didn't (e.g. a never-authenticated request path).
+fn local_user_id(request: &Request<axum::body::Body>) -> Option<Uuid> {
+    request
+        .extensions()
+        .get::<oxy_auth::types::AuthenticatedUser>()
+        .map(|u| u.id)
 }
 
 /// Builds the `WorkspaceManager` and inserts it into request extensions.
@@ -87,6 +99,7 @@ pub async fn local_context_middleware(
 async fn attach_workspace_manager(
     request: &mut Request<axum::body::Body>,
     workspace_row: &WorkspaceModel,
+    user_id: Option<Uuid>,
 ) -> Result<(), StatusCode> {
     let effective_path = effective_workspace_path(workspace_row, None)
         .await
@@ -148,9 +161,16 @@ async fn attach_workspace_manager(
         Err(e) => tracing::debug!("local_context: enum index initialization skipped: {}", e),
     }
 
-    let project_ctx = std::sync::Arc::new(crate::agentic_wiring::OxyProjectContext::new(
-        workspace_manager.clone(),
-    ));
+    let mut ctx = crate::agentic_wiring::OxyProjectContext::new(workspace_manager.clone());
+    if let Some(uid) = user_id {
+        ctx = ctx.with_subject(uid);
+    }
+    // Local mode is a single-user deployment where the seeded guest is
+    // unconditionally the workspace Owner — there is no UI for switching
+    // roles in local mode. Setting `Owner` here lets `airhouse_managed`
+    // mints carry `admin` role for local queries.
+    ctx = ctx.with_role(WorkspaceRole::Owner);
+    let project_ctx = std::sync::Arc::new(ctx);
     let platform: std::sync::Arc<dyn agentic_pipeline::platform::PlatformContext> =
         project_ctx.clone();
     let bridges = crate::agentic_wiring::build_builder_bridges(project_ctx);

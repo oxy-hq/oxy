@@ -2,7 +2,7 @@ use crate::agentic_wiring::OxyProjectContext;
 use crate::agentic_wiring::project_ctx::database_to_connector_config;
 use crate::server::api::middlewares::role_guards::WorkspaceAdmin;
 use crate::server::api::middlewares::workspace_context::{
-    WorkspaceManagerExtractor, WorkspacePath,
+    EffectiveWorkspaceRole, WorkspaceManagerExtractor, WorkspacePath,
 };
 use crate::{
     cli::commands::clean::{clean_all, clean_cache, clean_database_folder, clean_vectors},
@@ -77,13 +77,16 @@ pub async fn get_database_schema(
         workspace_id: _,
         database_name,
     }): Path<DatabaseSchemaPath>,
-    AuthenticatedUserExtractor(_user): AuthenticatedUserExtractor,
+    AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
 ) -> Result<Json<DatabaseSchemaResponse>, StatusCode> {
     // `build_connector_for` dispatches both the config + `agentic-connector`
     // path AND the host-built path (where airhouse lives), so this handler
     // works uniformly for every database type. Resolution / build failures
     // surface a 500 with the actual error logged — no more 422 swallowing.
-    let ctx = OxyProjectContext::new(workspace_manager.clone());
+    let ctx = OxyProjectContext::new(workspace_manager.clone())
+        .with_subject(user.id)
+        .with_role(role);
     let connector = ctx.build_connector_for(&database_name).await.map_err(|e| {
         tracing::error!(
             "Failed to build connector for schema introspection of {}: {}",
@@ -581,6 +584,7 @@ pub async fn test_database_connection(
     WorkspaceManagerExtractor(workspace_manager): WorkspaceManagerExtractor,
     Path(WorkspacePath { workspace_id: _ }): Path<WorkspacePath>,
     AuthenticatedUserExtractor(user): AuthenticatedUserExtractor,
+    EffectiveWorkspaceRole(role): EffectiveWorkspaceRole,
     Json(request): Json<TestDatabaseConnectionRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let (tx, rx) = mpsc::channel::<ConnectionTestEvent>(100);
@@ -612,6 +616,8 @@ pub async fn test_database_connection(
         return Err(StatusCode::BAD_REQUEST);
     }
 
+    let user_id = user.id;
+    let user_role = role.clone();
     tokio::spawn(async move {
         let start_time = std::time::Instant::now();
 
@@ -661,7 +667,9 @@ pub async fn test_database_connection(
             db_config.database_type,
             DatabaseType::Airhouse(_) | DatabaseType::AirhouseManaged(_)
         ) {
-            let ctx = OxyProjectContext::new(workspace_manager.clone());
+            let ctx = OxyProjectContext::new(workspace_manager.clone())
+                .with_subject(user_id)
+                .with_role(user_role.clone());
             let outcome = async {
                 let connector = ctx
                     .build_connector_for(&db_config.name)
@@ -830,6 +838,14 @@ pub async fn test_database_connection(
             } else {
                 None
             },
+            // Connection-test path; airhouse_managed flows through
+            // build_connector_for above, not here, so subject /
+            // workspace_id / effective_role are intentionally None —
+            // `from_db` will refuse with a typed error if anyone reaches
+            // this branch with airhouse_managed.
+            None,
+            None,
+            None,
         )
         .await
         {

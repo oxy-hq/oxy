@@ -318,10 +318,7 @@ pub(super) async fn fetch_schema(
     let result = api
         .exec(&schema_sql)
         .await
-        .map_err(|e| ConnectorError::QueryFailed {
-            sql: schema_sql.clone(),
-            message: e.to_string(),
-        })?;
+        .map_err(|e| ConnectorError::query_failed(schema_sql.clone(), e.to_string()))?;
 
     let mut map: HashMap<String, Vec<SchemaColumnInfo>> = HashMap::new();
 

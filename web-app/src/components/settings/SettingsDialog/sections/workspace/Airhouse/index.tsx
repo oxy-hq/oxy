@@ -1,19 +1,14 @@
 import { isAxiosError } from "axios";
 import type React from "react";
-import { useState } from "react";
 import { toast } from "sonner";
 import { AirhouseLogo } from "@/components/icons";
 import useAddAirhouseToConfig from "@/hooks/api/airhouse/useAddAirhouseToConfig";
 import useAirhouseConnection from "@/hooks/api/airhouse/useAirhouseConnection";
 import useProvisionAirhouse from "@/hooks/api/airhouse/useProvisionAirhouse";
-import useRevealAirhouseCredentials from "@/hooks/api/airhouse/useRevealAirhouseCredentials";
-import useRotateAirhousePassword from "@/hooks/api/airhouse/useRotateAirhousePassword";
-import type { AirhouseCredentials } from "@/services/api";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 import SectionHeader from "../../../components/SectionHeader";
 import { ConnectionDetails } from "./components/ConnectionDetails";
-import { CredentialsReveal } from "./components/CredentialsReveal";
-import { ExampleSnippets } from "./components/ExampleSnippets";
 import { ProvisionPrompt } from "./components/ProvisionPrompt";
 
 function statusFromError(err: unknown): number | undefined {
@@ -22,42 +17,18 @@ function statusFromError(err: unknown): number | undefined {
 
 const Airhouse: React.FC = () => {
   const { workspace } = useCurrentWorkspace();
+  const orgRole = useCurrentOrg((s) => s.role);
   const workspaceId = workspace?.id;
   const { data: connection, isLoading, error } = useAirhouseConnection(workspaceId);
-  const reveal = useRevealAirhouseCredentials(workspaceId);
-  const rotate = useRotateAirhousePassword(workspaceId);
   const provision = useProvisionAirhouse(workspaceId);
   const addToConfig = useAddAirhouseToConfig();
-  const [shownPassword, setShownPassword] = useState<string | null>(null);
-  const [passwordAlreadyRevealed, setPasswordAlreadyRevealed] = useState(false);
 
-  const handleReveal = async () => {
-    try {
-      const result: AirhouseCredentials = await reveal.mutateAsync();
-      if (result.password) {
-        setShownPassword(result.password);
-        setPasswordAlreadyRevealed(result.password_already_revealed);
-      }
-    } catch {
-      // Error surfaced inline via `reveal.error` in <CredentialsReveal/>.
-    }
-  };
-
-  const handleRotate = async () => {
-    try {
-      await rotate.mutateAsync();
-      // After rotation the secret has been replaced and `password_revealed_at`
-      // is null again. Pull the new password down via the existing reveal hook
-      // so we surface it inline without forcing the user to click twice.
-      const after: AirhouseCredentials = await reveal.mutateAsync();
-      if (after.password) {
-        setShownPassword(after.password);
-        setPasswordAlreadyRevealed(false);
-      }
-    } catch {
-      // Error surfaced inline via `rotate.error` / `reveal.error`.
-    }
-  };
+  // Provisioning creates a tenant-wide resource and a service account; only
+  // org Owner/Admin should be able to do it. Non-admins still see the page
+  // and the read-only connection details once provisioning is done — they
+  // just can't trigger the initial setup. Local-mode is unaffected since the
+  // seeded local guest is always Owner.
+  const canProvision = orgRole === "owner" || orgRole === "admin";
 
   const handleProvision = async (tenantName: string) => {
     try {
@@ -95,7 +66,15 @@ const Airhouse: React.FC = () => {
         </p>
       );
     }
-    if (!connection || status === 404) {
+    if (!connection?.is_provisioned) {
+      if (!canProvision) {
+        return (
+          <p className='text-muted-foreground text-sm'>
+            Airhouse hasn't been provisioned for this workspace yet. Ask an Owner or Admin to
+            complete setup.
+          </p>
+        );
+      }
       return (
         <ProvisionPrompt
           onProvision={handleProvision}
@@ -112,25 +91,11 @@ const Airhouse: React.FC = () => {
       );
     }
     return (
-      <>
-        <ConnectionDetails
-          connection={connection}
-          onAddToConfig={handleAddToConfig}
-          isAddingToConfig={addToConfig.isPending}
-        />
-        <CredentialsReveal
-          passwordAlreadyRevealed={passwordAlreadyRevealed}
-          shownPassword={shownPassword}
-          isRevealing={reveal.isPending}
-          isRotating={rotate.isPending}
-          revealError={reveal.error}
-          rotateError={rotate.error}
-          onReveal={handleReveal}
-          onRotate={handleRotate}
-          onDismissPassword={() => setShownPassword(null)}
-        />
-        <ExampleSnippets connection={connection} password={shownPassword} />
-      </>
+      <ConnectionDetails
+        connection={connection}
+        onAddToConfig={handleAddToConfig}
+        isAddingToConfig={addToConfig.isPending}
+      />
     );
   };
 

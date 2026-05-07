@@ -41,6 +41,10 @@ pub struct WorkflowLauncher {
     filters: Option<SessionFilters>,
     connections: Option<ConnectionOverrides>,
     controls: HashMap<String, serde_json::Value>,
+    /// Submitter's effective workspace role. Threaded into ExecutionContext
+    /// so `airhouse_managed` mints inside workflow steps carry the right
+    /// airhouse role rather than always defaulting to least-privilege Reader.
+    effective_role: Option<entity::workspace_members::WorkspaceRole>,
 }
 
 impl Default for WorkflowLauncher {
@@ -57,6 +61,7 @@ impl WorkflowLauncher {
             filters: None,
             connections: None,
             controls: HashMap::new(),
+            effective_role: None,
         }
     }
 
@@ -72,6 +77,17 @@ impl WorkflowLauncher {
 
     pub fn with_controls(mut self, controls: HashMap<String, serde_json::Value>) -> Self {
         self.controls = controls;
+        self
+    }
+
+    /// Carry the submitter's effective workspace role into every step.
+    /// `airhouse_managed` SQL steps mint at the matching airhouse role.
+    /// `None` retains the conservative Reader default.
+    pub fn with_effective_role(
+        mut self,
+        effective_role: Option<entity::workspace_members::WorkspaceRole>,
+    ) -> Self {
+        self.effective_role = effective_role;
         self
     }
 
@@ -154,6 +170,7 @@ impl WorkflowLauncher {
             })
             .with_filters(self.filters.clone())
             .with_connections(self.connections.clone())
+            .with_effective_role(self.effective_role.clone())
             .build()?;
 
         let config_manager = execution_context.workspace.config_manager.clone();

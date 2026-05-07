@@ -177,10 +177,7 @@ impl DatabaseConnector for SnowflakeConnector {
         let sf_result = api
             .exec(sql)
             .await
-            .map_err(|e| ConnectorError::QueryFailed {
-                sql: sql.to_string(),
-                message: e.to_string(),
-            })?;
+            .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
 
         // Decode rows and column names from the Snowflake result.
         let (column_names, column_types, mut sample_rows) = match sf_result {
@@ -260,14 +257,10 @@ impl DatabaseConnector for SnowflakeConnector {
             col_stats = Vec::new();
             let count_sql = format!("SELECT COUNT(*) FROM ({sql})");
             let count_api = self.connect().await?;
-            let count_result =
-                count_api
-                    .exec(&count_sql)
-                    .await
-                    .map_err(|e| ConnectorError::QueryFailed {
-                        sql: count_sql.clone(),
-                        message: e.to_string(),
-                    })?;
+            let count_result = count_api
+                .exec(&count_sql)
+                .await
+                .map_err(|e| ConnectorError::query_failed(count_sql.clone(), e.to_string()))?;
             total_row_count = extract_count(count_result);
         } else {
             let types: Vec<Option<&str>> = column_names
@@ -277,14 +270,10 @@ impl DatabaseConnector for SnowflakeConnector {
                 .collect();
             let stats_sql = build_multi_stat_sql(&column_names, &types, sql);
             let stats_api = self.connect().await?;
-            let stats_result =
-                stats_api
-                    .exec(&stats_sql)
-                    .await
-                    .map_err(|e| ConnectorError::QueryFailed {
-                        sql: stats_sql.clone(),
-                        message: e.to_string(),
-                    })?;
+            let stats_result = stats_api
+                .exec(&stats_sql)
+                .await
+                .map_err(|e| ConnectorError::query_failed(stats_sql.clone(), e.to_string()))?;
 
             let mut slots: Vec<Option<StatRow>> = (0..col_count).map(|_| None).collect();
             let mut total_from_stats: u64 = 0;
@@ -345,10 +334,7 @@ impl DatabaseConnector for SnowflakeConnector {
         let sf_result = api
             .exec(sql)
             .await
-            .map_err(|e| ConnectorError::QueryFailed {
-                sql: sql.to_string(),
-                message: e.to_string(),
-            })?;
+            .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
 
         // Arrow is the common case — Snowflake's driver decodes to
         // `Vec<RecordBatch>` directly. JSON fallback mirrors the existing
@@ -457,10 +443,7 @@ impl crate::connector::AsArrowConnector for SnowflakeConnector {
         let sf_result = api
             .exec(sql)
             .await
-            .map_err(|e| ConnectorError::QueryFailed {
-                sql: sql.to_string(),
-                message: e.to_string(),
-            })?;
+            .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
 
         match sf_result {
             SnowflakeQueryResult::Arrow(batches) => {

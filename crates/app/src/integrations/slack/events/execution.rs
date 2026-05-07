@@ -824,6 +824,7 @@ async fn execute_agent_inner(
         }),
         None,
         None,
+        None, // Slack: no per-user oxy-role mapping; airhouse_managed defaults to Reader
     )
     .await?;
 

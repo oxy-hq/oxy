@@ -2,15 +2,15 @@
 //!
 //! Loads the four `AIRHOUSE_*` env vars into a [`AirhouseConfig`] tri-state
 //! (Enabled / Disabled / Misconfigured) and provides factory functions for
-//! constructing a [`crate::TenantProvisioner`] / [`crate::UserProvisioner`]
-//! when the integration is enabled.
+//! constructing a [`crate::TenantProvisioner`] / the SA-backed
+//! [`crate::AirhouseTokenBroker`] when the integration is enabled.
 
 use std::sync::OnceLock;
 use uuid::Uuid;
 
 use crate::admin::AirhouseAdminClient;
+use crate::broker::AirhouseTokenBroker;
 use crate::provisioner::TenantProvisioner;
-use crate::user_provisioner::UserProvisioner;
 
 // ── Env var names ─────────────────────────────────────────────────────────────
 
@@ -170,11 +170,20 @@ pub fn provisioner_for(db: sea_orm::DatabaseConnection) -> Option<TenantProvisio
     Some(TenantProvisioner::new(db, client))
 }
 
-/// Build a `UserProvisioner` for the given DB connection if Airhouse is enabled.
-pub fn user_provisioner_for(db: sea_orm::DatabaseConnection) -> Option<UserProvisioner> {
+/// Process-wide [`AirhouseTokenBroker`]. The broker holds an in-memory
+/// credential cache keyed by `(workspace_id, subject, role)`; sharing one
+/// instance across the app is what makes the cache work — fresh instances
+/// would mint per call. Returns `None` when the integration is disabled
+/// or misconfigured.
+pub fn token_broker() -> Option<&'static AirhouseTokenBroker> {
+    static BROKER: OnceLock<AirhouseTokenBroker> = OnceLock::new();
     let cfg = AirhouseConfig::cached().as_runtime()?;
-    let client = AirhouseAdminClient::new(cfg.base_url.clone(), cfg.admin_token.clone());
-    Some(UserProvisioner::new(db, client))
+    Some(BROKER.get_or_init(|| {
+        AirhouseTokenBroker::new(AirhouseAdminClient::new(
+            cfg.base_url.clone(),
+            cfg.admin_token.clone(),
+        ))
+    }))
 }
 
 #[cfg(test)]

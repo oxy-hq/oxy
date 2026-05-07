@@ -61,8 +61,8 @@ pub use config::{
 // ── Trait re-exports ──────────────────────────────────────────────────────────
 
 pub use connector::{
-    ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, ResultSummary,
-    SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect, normalize_sql,
+    ColumnStats, ConnectorError, DatabaseConnector, ExecutionResult, QueryFailedDetails,
+    ResultSummary, SchemaColumnInfo, SchemaInfo, SchemaTableInfo, SqlDialect, normalize_sql,
 };
 
 #[cfg(feature = "arrow")]
@@ -137,10 +137,7 @@ pub fn build_connector(cfg: ConnectorConfig) -> Result<Box<dyn DatabaseConnector
                     .map_err(|e| ConnectorError::ConnectionError(e.to_string()))?;
                 for stmt in &c.init_statements {
                     conn.execute_batch(stmt)
-                        .map_err(|e| ConnectorError::QueryFailed {
-                            sql: stmt.clone(),
-                            message: e.to_string(),
-                        })?;
+                        .map_err(|e| ConnectorError::query_failed(stmt.clone(), e.to_string()))?;
                 }
                 Ok(Box::new(DuckDbConnector::new(conn)))
             }

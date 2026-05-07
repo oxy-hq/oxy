@@ -19,7 +19,6 @@ use crate::{
         model::{ConnectionOverride, ConnectionOverrides, Database, DatabaseType, DuckDBOptions},
     },
 };
-use airhouse::resolve_managed_airhouse_credentials;
 use oxy_shared::errors::OxyError;
 
 mod clickhouse;
@@ -57,6 +56,36 @@ pub struct Connector {
     engine: EngineType,
 }
 
+/// Return a friendly error if `database_ref` resolves to an
+/// `airhouse_managed` database. Use this from system-side entry points
+/// (schema inspection, connection-test, CLI runs) that don't carry user
+/// or workspace context — without this guard those callers hit the
+/// verbose `Connector::from_db` ConfigurationError instead.
+///
+/// Non-airhouse_managed refs return `Ok(())` and the caller proceeds
+/// normally. An unknown `database_ref` also returns `Ok(())` so the
+/// caller's own resolver gets to produce the canonical "not found"
+/// error.
+pub fn reject_airhouse_managed_for_system_path(
+    config_manager: &ConfigManager,
+    database_ref: &str,
+    operation: &str,
+) -> Result<(), OxyError> {
+    let Ok(db) = config_manager.resolve_database(database_ref) else {
+        return Ok(());
+    };
+    if matches!(db.database_type, DatabaseType::AirhouseManaged(_)) {
+        return Err(OxyError::ConfigurationError(format!(
+            "{operation} of airhouse_managed databases is not supported here — \
+             this entry point doesn't carry the per-user identity that the \
+             credential broker needs. Run the equivalent action inside an \
+             `oxy serve` session (the IDE Database panel and agent runs \
+             both work)."
+        )));
+    }
+    Ok(())
+}
+
 impl Connector {
     pub async fn from_database(
         database_ref: &str,
@@ -65,6 +94,9 @@ impl Connector {
         dry_run_limit: Option<u64>,
         filters: Option<SessionFilters>,
         connections: Option<ConnectionOverrides>,
+        subject: Option<uuid::Uuid>,
+        workspace_id: Option<uuid::Uuid>,
+        effective_role: Option<entity::workspace_members::WorkspaceRole>,
     ) -> Result<Self, OxyError> {
         let database = config_manager.resolve_database(database_ref)?;
         Self::from_db(
@@ -75,10 +107,33 @@ impl Connector {
             filters,
             connections.and_then(|c| c.get(database_ref).cloned()),
             None, // No SSO URL sender for regular operations
+            subject,
+            workspace_id,
+            effective_role,
         )
         .await
     }
 
+    /// Build a `Connector` from a fully-resolved [`Database`] config.
+    ///
+    /// `subject` is the oxy user id for whom the connector is being built.
+    /// `workspace_id` is the workspace whose airhouse tenant the broker
+    /// should mint against. Both are required for `airhouse_managed`; if
+    /// either is `None` and the database resolves to `airhouse_managed`,
+    /// the call returns a `ConfigurationError` explaining what was missing.
+    /// All other backends ignore them.
+    ///
+    /// `effective_role` is the user's resolved workspace role. Only
+    /// consulted by the `airhouse_managed` arm: it picks the airhouse role
+    /// for the minted credential via [`airhouse::airhouse_role_for`]
+    /// (Owner→Admin, Admin→Writer, Member/Viewer→Reader). When `None`,
+    /// the arm conservatively defaults to **Reader** — meaning any DDL/DML
+    /// (`INSERT` / `UPDATE` / `CREATE` / `DROP`) issued through this
+    /// connector will fail with a permission-denied at the database, even
+    /// for an Owner. Threading the real role from `ExecutionContext` is
+    /// the supported way to grant write access to Procedure / Workflow /
+    /// agent SQL steps; the IDE Database panel does this automatically
+    /// via `OxyProjectContext::build_connector_for`.
     pub async fn from_db(
         database: &Database,
         config_manager: &ConfigManager,
@@ -87,6 +142,9 @@ impl Connector {
         filters: Option<SessionFilters>,
         connections: Option<ConnectionOverride>,
         sso_url_sender: Option<tokio::sync::mpsc::Sender<String>>,
+        subject: Option<uuid::Uuid>,
+        workspace_id: Option<uuid::Uuid>,
+        effective_role: Option<entity::workspace_members::WorkspaceRole>,
     ) -> Result<Self, OxyError> {
         let engine = match &database.database_type {
             DatabaseType::Bigquery(bigquery) => {
@@ -155,16 +213,69 @@ impl Connector {
                 EngineType::ConnectorX(ConnectorX::new("postgres".to_string(), db_path, None))
             }
             DatabaseType::AirhouseManaged(_) => {
-                // Connector building has no request-time user context today;
-                // fall back to single-row resolution (local-mode only).
-                let resolved = resolve_managed_airhouse_credentials(None).await?;
+                // `airhouse_managed` mints a fresh ephemeral credential for
+                // every connector build via the SA-backed broker. The
+                // broker needs `(workspace_id, subject)` to key the cache
+                // and pick the right tenant; if either is missing we can't
+                // mint, so refuse with a typed error rather than silently
+                // falling back to a less-privileged path.
+                //
+                // Role: pick the airhouse role from `effective_role` when
+                // the caller threaded one through (agent / workflow runs
+                // entered via authenticated handlers do this), else fall
+                // back to least-privilege Reader. Reader denies DDL/DML at
+                // the database, so write-capable Procedure / Workflow
+                // steps require the caller to populate `effective_role`
+                // — see the doc on `from_db` for how.
+                let airhouse_role = effective_role
+                    .map(airhouse::airhouse_role_for)
+                    .unwrap_or(airhouse::UserRole::Reader);
+                let workspace_id = workspace_id.ok_or_else(|| {
+                    OxyError::ConfigurationError(
+                        "airhouse_managed requires a workspace context; no workspace_id was \
+                         threaded into Connector::from_db. This typically means the caller \
+                         needs to pass `Some(execution_context.workspace.workspace_id)`."
+                            .into(),
+                    )
+                })?;
+                let subject = subject.ok_or_else(|| {
+                    OxyError::ConfigurationError(
+                        "airhouse_managed requires a user identity; no subject (oxy user id) \
+                         was threaded into Connector::from_db. This typically means the caller \
+                         needs to pass `execution_context.user_id` — agent / workflow runs are \
+                         expected to populate it."
+                            .into(),
+                    )
+                })?;
+
+                let endpoint = airhouse::wire_endpoint().ok_or_else(|| {
+                    OxyError::ConfigurationError(
+                        "airhouse_managed: AIRHOUSE_WIRE_HOST is not configured; the airhouse \
+                         integration must be enabled (set AIRHOUSE_BASE_URL, \
+                         AIRHOUSE_ADMIN_TOKEN, AIRHOUSE_WIRE_HOST, AIRHOUSE_WIRE_PORT)"
+                            .into(),
+                    )
+                })?;
+                let broker = airhouse::token_broker().ok_or_else(|| {
+                    OxyError::ConfigurationError(
+                        "airhouse_managed: token broker not initialised; airhouse env vars \
+                         (AIRHOUSE_BASE_URL / AIRHOUSE_ADMIN_TOKEN / AIRHOUSE_WIRE_HOST) are \
+                         required"
+                            .into(),
+                    )
+                })?;
+                let cred = broker
+                    .mint_for_user(
+                        workspace_id,
+                        subject,
+                        airhouse_role,
+                        airhouse::DEFAULT_INTERNAL_TTL,
+                    )
+                    .await
+                    .map_err(OxyError::from)?;
                 let db_path = format!(
                     "{}:{}@{}:{}/{}?cxprotocol=cursor",
-                    resolved.username,
-                    resolved.password,
-                    resolved.host,
-                    resolved.port,
-                    resolved.dbname,
+                    cred.username, cred.password, endpoint.host, endpoint.port, cred.tenant,
                 );
                 EngineType::ConnectorX(ConnectorX::new("postgres".to_string(), db_path, None))
             }

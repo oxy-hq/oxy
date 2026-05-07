@@ -103,7 +103,7 @@ oxy-platform = { workspace = true }
 # Use them via CLI crate instead
 a2a = { workspace = true }
 oxy-auth = { workspace = true }
-airhouse = { workspace = true, features = ["credentials"] }
+airhouse = { workspace = true, features = ["admin"] }
 enum_dispatch = { workspace = true }
 futures = { workspace = true }
 garde = { workspace = true, features = ["full"] }

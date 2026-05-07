@@ -188,6 +188,12 @@ pub async fn run_workflow<P: AsRef<Path>, L: WorkflowLogger + 'static>(
     connections: Option<ConnectionOverrides>,
     source: Option<crate::service::agent::ExecutionSource>,
     user_id: Option<uuid::Uuid>,
+    // `effective_role`: submitter's effective workspace role. Authenticated
+    // workflow HTTP handlers extract `EffectiveWorkspaceRole` and pass it
+    // here so airhouse_managed mints inside the workflow's SQL steps carry
+    // the user's role rather than the conservative Reader default. CLI / A2A
+    // entry points pass `None`.
+    effective_role: Option<entity::workspace_members::WorkspaceRole>,
 ) -> Result<OutputContainer, OxyError> {
     workflow_events::run_workflow::input(
         &path.as_ref().to_string_lossy(),
@@ -236,6 +242,7 @@ pub async fn run_workflow<P: AsRef<Path>, L: WorkflowLogger + 'static>(
     let result = WorkflowLauncher::new()
         .with_filters(filters)
         .with_connections(connections)
+        .with_effective_role(effective_role)
         .with_workspace(workspace_manager)
         .await?
         .launch(
@@ -275,6 +282,8 @@ pub async fn run_workflow_v2<P: AsRef<Path>, H: EventHandler + Send + Sync + 'st
     connections: Option<ConnectionOverrides>,
     source: Option<crate::service::agent::ExecutionSource>,
     user_id: Option<uuid::Uuid>,
+    // See `run_workflow` above for `effective_role` semantics.
+    effective_role: Option<entity::workspace_members::WorkspaceRole>,
 ) -> Result<OutputContainer, OxyError> {
     workflow_events::run_workflow::input(
         &path.as_ref().to_string_lossy(),
@@ -323,6 +332,7 @@ pub async fn run_workflow_v2<P: AsRef<Path>, H: EventHandler + Send + Sync + 'st
     let result = WorkflowLauncher::new()
         .with_filters(filters)
         .with_connections(connections)
+        .with_effective_role(effective_role)
         .with_workspace(workspace_manager)
         .await?
         .launch(

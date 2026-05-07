@@ -163,6 +163,7 @@ pub async fn run_agent_tool(
                 }),
                 None,
                 None, // No data_app_file_path from MCP
+                None, // MCP: no per-user oxy-role mapping; airhouse_managed defaults to Reader
             )
             .await
             .map_err(|e| {

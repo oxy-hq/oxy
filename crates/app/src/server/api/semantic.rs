@@ -87,6 +87,7 @@ pub async fn execute_semantic_query(
         connections: payload.connections,
         sandbox_info: None,
         user_id: None,
+        effective_role: None,
         metric_context: None,
         data_app_file_path: None,
     };
@@ -225,6 +226,7 @@ pub async fn compile_semantic_query(
         connections: payload.connections,
         sandbox_info: None,
         user_id: None,
+        effective_role: None,
         metric_context: None,
         data_app_file_path: None,
     };

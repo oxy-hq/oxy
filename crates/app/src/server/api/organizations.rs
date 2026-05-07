@@ -452,13 +452,41 @@ pub async fn delete_org(OrgOwner(ctx): OrgOwner) -> Result<StatusCode, StatusCod
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    // Deprovision before delete so we hit Airhouse with the local row still
-    // present. The FK is ON DELETE CASCADE, so even if this fails the local
-    // row is cleaned up by the org delete below.
-    if let Some(provisioner) = airhouse::provisioner_for(db.clone())
-        && let Err(e) = provisioner.deprovision(ctx.org.id).await
-    {
-        tracing::warn!(org_id = %ctx.org.id, "airhouse tenant deprovisioning failed: {e}");
+    // Deprovision each of the org's workspaces before deleting the org.
+    // The airhouse_tenants table is keyed by workspace_id (since the
+    // m20260430 rebind), so passing org.id to deprovision was a no-op
+    // and the SAs leaked. The FK to workspaces is ON DELETE CASCADE so
+    // the local rows would still get cleaned up by the org delete below,
+    // but the airhouse-side service accounts wouldn't be revoked. This
+    // loop hits airhouse with each workspace's SA before we drop the
+    // local data.
+    if let Some(provisioner) = airhouse::provisioner_for(db.clone()) {
+        let workspace_ids: Vec<Uuid> = match workspaces::Entity::find()
+            .filter(workspaces::Column::OrgId.eq(ctx.org.id))
+            .select_only()
+            .column(workspaces::Column::Id)
+            .into_tuple()
+            .all(&db)
+            .await
+        {
+            Ok(ids) => ids,
+            Err(e) => {
+                tracing::warn!(
+                    org_id = %ctx.org.id,
+                    "failed to list workspaces for airhouse deprovision: {e}"
+                );
+                Vec::new()
+            }
+        };
+        for workspace_id in workspace_ids {
+            if let Err(e) = provisioner.deprovision(workspace_id).await {
+                tracing::warn!(
+                    org_id = %ctx.org.id,
+                    workspace_id = %workspace_id,
+                    "airhouse tenant deprovisioning failed: {e}"
+                );
+            }
+        }
     }
 
     Organizations::delete_by_id(ctx.org.id)
@@ -600,10 +628,43 @@ pub async fn update_member_role(
         })?
         .ok_or(StatusCode::NOT_FOUND)?;
 
+    // Collect workspace ids inside the transaction so the broker revoke
+    // operates on a stable snapshot of the org's workspaces at commit time.
+    let org_workspace_ids: Vec<Uuid> = Workspaces::find()
+        .filter(workspaces::Column::OrgId.eq(ctx.org.id))
+        .select_only()
+        .column(workspaces::Column::Id)
+        .into_tuple()
+        .all(&txn)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to list org workspaces: {e}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
     txn.commit().await.map_err(|e| {
         tracing::error!("Failed to commit transaction: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+
+    // Role change → the airhouse role of every outstanding credential the
+    // user holds (Owner→Admin, Admin→Writer, Member→Reader) is now wrong.
+    // Drain the in-process cache and revoke each cached credential remotely
+    // so the OLD role stops authenticating immediately, before the next
+    // mint produces a credential under the NEW role. Best-effort; the 24h
+    // TTL is the absolute ceiling.
+    //
+    // Each per-workspace revoke is independent (separate cache key, separate
+    // upstream tenant), so fan them out concurrently — the prior sequential
+    // loop made the role-change request take O(workspaces) network RTTs.
+    if let Some(broker) = airhouse::token_broker() {
+        futures::future::join_all(
+            org_workspace_ids
+                .iter()
+                .map(|workspace_id| broker.revoke_user_across_roles(*workspace_id, target_user_id)),
+        )
+        .await;
+    }
 
     Ok(Json(MemberResponse {
         id: updated.id,
@@ -676,7 +737,7 @@ pub async fn remove_member(
 
     // Remove workspace-level role overrides for this user scoped to workspaces
     // in this org, so a re-invite doesn't silently reactivate stale overrides.
-    {
+    let org_workspace_ids: Vec<Uuid> = {
         use entity::prelude::{WorkspaceMembers, Workspaces};
         use entity::workspace_members::Column as WsMemberCol;
         use entity::workspaces::Column as WorkspaceCol;
@@ -696,7 +757,7 @@ pub async fn remove_member(
         if !workspace_ids.is_empty() {
             WorkspaceMembers::delete_many()
                 .filter(WsMemberCol::UserId.eq(target_user_id))
-                .filter(WsMemberCol::WorkspaceId.is_in(workspace_ids))
+                .filter(WsMemberCol::WorkspaceId.is_in(workspace_ids.clone()))
                 .exec(&txn)
                 .await
                 .map_err(|e| {
@@ -704,7 +765,9 @@ pub async fn remove_member(
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
         }
-    }
+
+        workspace_ids
+    };
 
     let active: org_members::ActiveModel = target.into();
     active.delete(&txn).await.map_err(|e| {
@@ -716,6 +779,23 @@ pub async fn remove_member(
         tracing::error!("Failed to commit transaction: {e}");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+
+    // The user is gone from this org — every cached credential belongs to a
+    // role they no longer hold. Drop the cache AND remotely revoke each
+    // cached credential so they can't keep authenticating with a token
+    // they grabbed minutes before being removed. Older mints that have
+    // already rotated out of the cache rely on the 24h TTL ceiling
+    // (closing that gap requires either an airhouse list endpoint or
+    // local mint-row tracking). Fan out concurrently — each workspace's
+    // revoke hits a different upstream tenant.
+    if let Some(broker) = airhouse::token_broker() {
+        futures::future::join_all(
+            org_workspace_ids
+                .iter()
+                .map(|workspace_id| broker.revoke_user_across_roles(*workspace_id, target_user_id)),
+        )
+        .await;
+    }
 
     // Sync Stripe seat quantity (decrement). Same best-effort pattern as
     // accept_invitation — reconciliation catches any failure.

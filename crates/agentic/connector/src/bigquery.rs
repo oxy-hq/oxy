@@ -102,10 +102,7 @@ impl DatabaseConnector for BigQueryConnector {
             .job()
             .query(&self.project_id, request)
             .await
-            .map_err(|e| ConnectorError::QueryFailed {
-                sql: sql.to_string(),
-                message: e.to_string(),
-            })?;
+            .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
 
         // 2. Column names and types from the response schema.
         let fields_ref = response.schema.as_ref().and_then(|s| s.fields.as_ref());
@@ -153,10 +150,7 @@ impl DatabaseConnector for BigQueryConnector {
             .job()
             .query(&self.project_id, count_request)
             .await
-            .map_err(|e| ConnectorError::QueryFailed {
-                sql: count_sql.clone(),
-                message: e.to_string(),
-            })?;
+            .map_err(|e| ConnectorError::query_failed(count_sql.clone(), e.to_string()))?;
 
         let mut count_rs =
             gcp_bigquery_client::model::query_response::ResultSet::new_from_query_response(
@@ -281,10 +275,7 @@ impl DatabaseConnector for BigQueryConnector {
             .job()
             .query(&self.project_id, request)
             .await
-            .map_err(|e| ConnectorError::QueryFailed {
-                sql: sql.to_string(),
-                message: e.to_string(),
-            })?;
+            .map_err(|e| ConnectorError::query_failed(sql.to_string(), e.to_string()))?;
 
         // Build `ColumnSpec`s directly from the BigQuery field schema
         // (preserves REPEATED mode + RECORD nesting via the type mapper).
