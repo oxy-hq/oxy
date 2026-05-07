@@ -137,7 +137,7 @@ export const useAllWorkspaces = (orgIdOverride?: string) => {
   const orgId = orgIdOverride ?? storeOrgId;
 
   return useQuery<WorkspaceSummary[]>({
-    queryKey: [...queryKeys.workspaces.list(), orgId],
+    queryKey: queryKeys.workspaces.listByOrg(orgId),
     queryFn: () => {
       if (!orgId) return Promise.resolve([]);
       return WorkspaceService.listAllWorkspaces(orgId);
@@ -152,20 +152,42 @@ export const useAllWorkspaces = (orgIdOverride?: string) => {
   });
 };
 
+type DeleteWorkspaceVars = { orgId: string; id: string; deleteFiles?: boolean };
+type DeleteWorkspaceContext = {
+  previous: WorkspaceSummary[] | undefined;
+  listKey: ReturnType<typeof queryKeys.workspaces.listByOrg>;
+};
+
 export const useDeleteWorkspace = () => {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      orgId,
-      id,
-      deleteFiles
-    }: {
-      orgId: string;
-      id: string;
-      deleteFiles?: boolean;
-    }) => WorkspaceService.deleteWorkspace(orgId, id, deleteFiles),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.list() });
+  return useMutation<void, Error, DeleteWorkspaceVars, DeleteWorkspaceContext>({
+    mutationFn: ({ orgId, id, deleteFiles }) =>
+      WorkspaceService.deleteWorkspace(orgId, id, deleteFiles),
+    // Synchronous onMutate: setQueryData runs before `mutate()` returns
+    // control to the caller, so a `navigate()` immediately after `mutate(...)`
+    // mounts OrgDispatcher with the workspace already removed from cache.
+    onMutate: ({ orgId, id }) => {
+      const listKey = queryKeys.workspaces.listByOrg(orgId);
+      const previous = queryClient.getQueryData<WorkspaceSummary[]>(listKey);
+      if (previous) {
+        queryClient.setQueryData<WorkspaceSummary[]>(
+          listKey,
+          previous.filter((w) => w.id !== id)
+        );
+      }
+      // Cancel any in-flight list refetch so it can't overwrite the
+      // optimistic update before the server confirms. Fire-and-forget:
+      // awaiting would defeat onMutate's synchronous timing.
+      void queryClient.cancelQueries({ queryKey: listKey });
+      return { previous, listKey };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(context.listKey, context.previous);
+      }
+    },
+    onSettled: (_data, _err, { orgId }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspaces.listByOrg(orgId) });
     }
   });
 };

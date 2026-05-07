@@ -6,6 +6,7 @@ import ErrorAlert from "@/components/ui/ErrorAlert";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/shadcn/dialog";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useAllWorkspaces, useDeleteWorkspace } from "@/hooks/api/workspaces/useWorkspaces";
+import { clearLastWorkspaceId } from "@/libs/utils/lastWorkspace";
 import ROUTES from "@/libs/utils/routes";
 import type { WorkspaceSummary } from "@/services/api/workspaces";
 import useCurrentOrg from "@/stores/useCurrentOrg";
@@ -39,23 +40,25 @@ export function ManageWorkspacesDialog({ open, onClose }: Props) {
   const handleDelete = (workspace: WorkspaceSummary) => {
     if (!workspace.org_id) return;
     const isCurrent = workspace.id === currentWorkspace?.id;
+
+    // The mutation's onMutate synchronously removes this workspace from the
+    // cached list, so the navigate below mounts OrgDispatcher with an
+    // already-trimmed list and it picks a different workspace instead of
+    // looping back to the just-deleted one.
     deleteWorkspace(
       { orgId: workspace.org_id, id: workspace.id, deleteFiles: true },
       {
-        onSuccess: () => {
-          if (isCurrent) {
-            onClose();
-            // OrgDispatcher at /:orgSlug picks another workspace or routes to
-            // onboarding if none remain. Without this, we leave the user on a
-            // URL pointing to a now-deleted workspace.
-            navigate(ROUTES.ORG(orgSlug).ROOT);
-          }
-        },
         onError: () => {
           toast.error("Failed to delete workspace. Please try again.");
         }
       }
     );
+
+    if (isCurrent) {
+      clearLastWorkspaceId(workspace.org_id);
+      onClose();
+      navigate(ROUTES.ORG(orgSlug).ROOT);
+    }
   };
 
   return (

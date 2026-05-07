@@ -152,6 +152,7 @@ const userKeys = {
 const workspaceKeys = {
   all: ["workspace"] as const,
   list: () => [...workspaceKeys.all, "list"] as const,
+  listByOrg: (orgId: string | undefined) => [...workspaceKeys.list(), orgId] as const,
   item: (workspaceId: string) => [...workspaceKeys.all, "item", workspaceId] as const,
   branches: (workspaceId: string) => [...workspaceKeys.all, "branches", workspaceId] as const,
 
