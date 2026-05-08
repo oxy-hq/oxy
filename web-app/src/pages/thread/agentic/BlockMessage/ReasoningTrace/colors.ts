@@ -58,31 +58,31 @@ export const STEP_COLOR_TEXT: Record<string, string> = {
 };
 
 export const STEP_COLOR_BG: Record<string, string> = {
-  plan: "bg-node-plan/8",
-  route: "bg-node-plan/8",
-  semantic_query: "bg-node-query/8",
-  looker_query: "bg-node-query/8",
-  query: "bg-node-query/8",
-  insight: "bg-node-agent/8",
-  visualize: "bg-node-query/8",
-  end: "bg-node-formatter/8",
-  subflow: "bg-node-plan/8",
-  save_automation: "bg-node-plan/8",
-  build_app: "bg-node-plan/8",
-  idle: "bg-muted/8"
+  plan: "bg-node-plan/12",
+  route: "bg-node-plan/12",
+  semantic_query: "bg-node-query/12",
+  looker_query: "bg-node-query/12",
+  query: "bg-node-query/12",
+  insight: "bg-node-agent/12",
+  visualize: "bg-node-query/12",
+  end: "bg-node-formatter/12",
+  subflow: "bg-node-plan/12",
+  save_automation: "bg-node-plan/12",
+  build_app: "bg-node-plan/12",
+  idle: "bg-muted/12"
 };
 
 export const STEP_COLOR_BORDER: Record<string, string> = {
-  plan: "border-node-plan/30",
-  route: "border-node-plan/30",
-  semantic_query: "border-node-query/30",
-  looker_query: "border-node-query/30",
-  query: "border-node-query/30",
-  insight: "border-node-agent/30",
-  visualize: "border-node-query/30",
-  end: "border-node-formatter/30",
-  subflow: "border-node-plan/30",
-  save_automation: "border-node-plan/30",
-  build_app: "border-node-plan/30",
-  idle: "border-muted-foreground/30"
+  plan: "border-node-plan/50",
+  route: "border-node-plan/50",
+  semantic_query: "border-node-query/50",
+  looker_query: "border-node-query/50",
+  query: "border-node-query/50",
+  insight: "border-node-agent/50",
+  visualize: "border-node-query/50",
+  end: "border-node-formatter/50",
+  subflow: "border-node-plan/50",
+  save_automation: "border-node-plan/50",
+  build_app: "border-node-plan/50",
+  idle: "border-muted-foreground/50"
 };

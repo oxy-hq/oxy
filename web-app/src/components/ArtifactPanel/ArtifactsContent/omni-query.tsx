@@ -1,6 +1,7 @@
 import { Editor } from "@monaco-editor/react";
 import SqlResultsTable from "@/components/sql/SqlResultsTable";
 import { Spinner } from "@/components/ui/shadcn/spinner";
+import useTheme from "@/stores/useTheme";
 import type { OmniQueryArtifact } from "@/types/artifact";
 
 type Props = {
@@ -23,6 +24,8 @@ const getCleanOmniObject = (value: OmniQueryArtifact["content"]["value"]) => {
 };
 
 const OmniQueryArtifactPanel = ({ artifact }: Props) => {
+  const theme = useTheme((s) => s.theme);
+  const monacoTheme = theme === "dark" ? "vs-dark" : "vs";
   return (
     <div className='flex h-full flex-col'>
       {/* Omni Query JSON Section */}
@@ -31,7 +34,7 @@ const OmniQueryArtifactPanel = ({ artifact }: Props) => {
         <Editor
           height='200px'
           width='100%'
-          theme='vs-dark'
+          theme={monacoTheme}
           defaultValue={JSON.stringify(getCleanOmniObject(artifact.content.value), null, 2)}
           language='json'
           value={JSON.stringify(getCleanOmniObject(artifact.content.value), null, 2)}
@@ -54,7 +57,7 @@ const OmniQueryArtifactPanel = ({ artifact }: Props) => {
         <Editor
           height='100%'
           width='100%'
-          theme='vs-dark'
+          theme={monacoTheme}
           defaultValue={artifact.content.value.sql}
           language='sql'
           value={artifact.content.value.sql}

@@ -90,7 +90,9 @@ export const NodeHeader = ({
       }}
     >
       <div className='flex min-w-0 items-center'>
-        <div className='flex items-center justify-center rounded-md bg-special p-2'>{taskIcon}</div>
+        <div className='flex items-center justify-center rounded-md bg-oxy-blue-500/20 p-2 text-oxy-blue-500 dark:text-oxy-blue-200'>
+          {taskIcon}
+        </div>
       </div>
       <div className='flex min-w-0 flex-1 items-center'>
         <div className='flex min-w-0 flex-1 flex-col gap-1'>

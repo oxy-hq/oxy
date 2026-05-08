@@ -69,7 +69,7 @@ function ContextGraphInner({ data }: ContextGraphProps) {
         proOptions={{ hideAttribution: true }}
         style={{ width: "100%", height: "100%", background: "var(--background)" }}
       >
-        <Background color='var(--muted-foreground)' variant={BackgroundVariant.Dots} />
+        <Background color='var(--ring)' variant={BackgroundVariant.Dots} />
         <GraphControlPanel
           nodes={data.nodes}
           edges={data.edges}

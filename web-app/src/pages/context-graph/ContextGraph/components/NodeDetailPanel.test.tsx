@@ -25,7 +25,8 @@ vi.mock("react-syntax-highlighter", () => ({
 }));
 
 vi.mock("react-syntax-highlighter/dist/esm/styles/prism", () => ({
-  oneDark: {}
+  oneDark: {},
+  oneLight: {}
 }));
 
 vi.mock("@/components/ui/panel", () => ({

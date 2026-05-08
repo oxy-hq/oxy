@@ -248,7 +248,7 @@ export function AddDatabaseForm({ onSuccess, onCancel }: AddDatabaseFormProps) {
                         onClick={() => handleTypeChange(index, option.type)}
                         className={cn(
                           "px-8 py-4",
-                          warehouseType === option.type && "border-primary"
+                          warehouseType === option.type && "border-border-strong bg-muted"
                         )}
                       >
                         {option.icon}

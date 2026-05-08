@@ -9,30 +9,17 @@ import {
   Workflow as WorkflowIcon
 } from "lucide-react";
 
-export const BORDER_COLORS: Record<string, string> = {
-  agent: "var(--graph-agent-border)",
-  procedure: "var(--graph-procedure-border)",
-  workflow: "var(--graph-procedure-border)",
-  app: "var(--graph-app-border)",
-  automation: "var(--graph-automation-border)",
-  topic: "var(--graph-automation-border)",
-  view: "var(--graph-view-border)",
-  sql_query: "var(--graph-sql-query-border)",
-  table: "var(--graph-table-border)",
-  entity: "var(--graph-entity-border)"
-};
-
-export const BG_COLORS: Record<string, string> = {
-  agent: "var(--graph-agent-bg)",
-  procedure: "var(--graph-procedure-bg)",
-  workflow: "var(--graph-procedure-bg)",
-  app: "var(--graph-app-bg)",
-  automation: "var(--graph-automation-bg)",
-  topic: "var(--graph-automation-bg)",
-  view: "var(--graph-view-bg)",
-  sql_query: "var(--graph-sql-query-bg)",
-  table: "var(--graph-table-bg)",
-  entity: "var(--graph-entity-bg)"
+export const NODE_TYPE_CLASSES: Record<string, string> = {
+  agent: "bg-graph-agent-bg border-graph-agent-border text-graph-agent-border",
+  procedure: "bg-graph-procedure-bg border-graph-procedure-border text-graph-procedure-border",
+  workflow: "bg-graph-procedure-bg border-graph-procedure-border text-graph-procedure-border",
+  app: "bg-graph-app-bg border-graph-app-border text-graph-app-border",
+  automation: "bg-graph-automation-bg border-graph-automation-border text-graph-automation-border",
+  topic: "bg-graph-automation-bg border-graph-automation-border text-graph-automation-border",
+  view: "bg-graph-view-bg border-graph-view-border text-graph-view-border",
+  sql_query: "bg-graph-sql-query-bg border-graph-sql-query-border text-graph-sql-query-border",
+  table: "bg-graph-table-bg border-graph-table-border text-graph-table-border",
+  entity: "bg-graph-entity-bg border-graph-entity-border text-graph-entity-border"
 };
 
 export const HANDLE_STYLE_HIDDEN = {

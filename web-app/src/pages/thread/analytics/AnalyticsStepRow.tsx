@@ -135,10 +135,10 @@ function stepColors(label: string): Colors {
 // ── Artifact pill ────────────────────────────────────────────────────────────
 
 const PILL_CLASS =
-  "flex shrink-0 items-center gap-1 rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground max-w-[120px]";
+  "flex shrink-0 items-center gap-1 rounded bg-muted-foreground/10 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground max-w-[120px]";
 
 const VERIFIED_PILL_CLASS =
-  "flex shrink-0 items-center gap-1 rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 font-mono text-[11px] text-primary transition-colors hover:bg-primary/20 max-w-[140px]";
+  "flex shrink-0 items-center gap-1 rounded bg-muted-foreground/10 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground max-w-[140px]";
 
 interface ArtifactPillProps {
   icon: React.FC<React.SVGProps<SVGSVGElement>>;
@@ -166,12 +166,14 @@ const ArtifactPill = ({
       }}
       className={cn(
         verified ? VERIFIED_PILL_CLASS : PILL_CLASS,
-        variant === "builder" && "text-special hover:text-special/80"
+        variant === "builder" && "text-oxy-blue-600 hover:text-oxy-blue-700"
       )}
     >
       <Icon className='h-3 w-3 shrink-0' />
       <span className='truncate'>{label}</span>
-      {verified && <BadgeCheck className='h-3.5 w-3.5 shrink-0 text-special' />}
+      {verified && (
+        <BadgeCheck className='h-3.5 w-3.5 shrink-0 text-oxy-blue-600 dark:text-oxy-blue-500' />
+      )}
     </button>
   );
   if (!verified) return pill;
@@ -735,7 +737,7 @@ const SqlChild = ({
       {verified && (
         <Tooltip>
           <TooltipTrigger asChild>
-            <BadgeCheck className='h-3.5 w-3.5 shrink-0 text-special' />
+            <BadgeCheck className='h-3.5 w-3.5 shrink-0 text-oxy-blue-600 dark:text-oxy-blue-500' />
           </TooltipTrigger>
           <TooltipContent side='top'>{verifiedTooltip}</TooltipContent>
         </Tooltip>
@@ -852,10 +854,10 @@ const AnalyticsStepRow = ({ step, onSelectArtifact, flat = false }: AnalyticsSte
             flat
               ? "py-0.5"
               : cn(
-                  "rounded-md border px-3 py-1.5",
+                  "cursor-pointer rounded-md border px-3 py-1.5",
                   isRunning
                     ? cn("border-l-2", colors.border, "bg-secondary/80")
-                    : "border-transparent bg-card/50 hover:bg-card"
+                    : "border-transparent hover:bg-muted dark:hover:bg-muted/50"
                 )
           )}
         >
@@ -878,18 +880,17 @@ const AnalyticsStepRow = ({ step, onSelectArtifact, flat = false }: AnalyticsSte
                 {step.summary || step.label}
               </span>
             </div>
-            {isRunning && <Loader2 className='h-3 w-3 shrink-0 animate-spin text-primary' />}
-            {isDone && <Check className='h-3 w-3 shrink-0 text-primary' />}
-            {hasError && <span className='shrink-0 text-destructive text-xs'>Error</span>}
+            {isRunning && <Loader2 className='h-3 w-3 shrink-0 animate-spin text-info' />}
+            {isDone && <Check className='h-3 w-3 shrink-0 text-status-success-text' />}
+            {hasError && (
+              <span className='shrink-0 font-medium text-destructive text-xs'>Error</span>
+            )}
             {isDone && step.llmUsage && (
               <Tooltip>
                 <TooltipTrigger asChild onClick={(e) => e.stopPropagation()}>
                   <Info className='h-3 w-3 shrink-0 cursor-pointer text-muted-foreground/50 hover:text-muted-foreground' />
                 </TooltipTrigger>
-                <TooltipContent
-                  side='left'
-                  className='max-w-xs bg-popover p-2 text-popover-foreground'
-                >
+                <TooltipContent side='left' className='max-w-xs'>
                   <LlmUsageTooltip usage={step.llmUsage} />
                 </TooltipContent>
               </Tooltip>

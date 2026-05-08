@@ -296,7 +296,7 @@ const LookerExplorerPage = () => {
 
   return (
     <div className='flex h-full flex-1 flex-col'>
-      <div className='flex min-h-10 items-center border-border border-b bg-editor-background px-2 py-1'>
+      <div className='flex min-h-10 items-center border-border border-b bg-background px-2 py-1'>
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>

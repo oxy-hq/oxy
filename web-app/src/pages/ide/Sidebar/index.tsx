@@ -1,6 +1,7 @@
 import { Activity, Database, Folder, GitBranch, Radio, ShieldCheck } from "lucide-react";
 import type React from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/shadcn/button";
 import { useAuth } from "@/contexts/AuthContext";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
@@ -167,6 +168,9 @@ const Sidebar: React.FC = () => {
         >
           <GitBranch className='h-4 w-4' />
         </Button>
+      </div>
+      <div className='mt-auto flex flex-col items-center px-1 py-2'>
+        <ThemeToggle align='start' side='right' className='opacity-60 hover:opacity-100' />
       </div>
     </div>
   );

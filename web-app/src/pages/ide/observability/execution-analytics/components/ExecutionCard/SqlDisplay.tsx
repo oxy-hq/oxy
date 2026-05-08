@@ -1,8 +1,8 @@
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { Button } from "@/components/ui/shadcn/button";
+import usePrismTheme from "@/hooks/usePrismTheme";
 
 interface SqlDisplayProps {
   sql: string;
@@ -16,6 +16,7 @@ export default function SqlDisplay({
   isPreview = false
 }: SqlDisplayProps) {
   const [copied, setCopied] = useState(false);
+  const prismTheme = usePrismTheme();
 
   const copyToClipboard = async () => {
     await navigator.clipboard.writeText(sql);
@@ -28,7 +29,7 @@ export default function SqlDisplay({
       <div className='pt-1 pb-1'>
         <SyntaxHighlighter
           language='sql'
-          style={oneDark}
+          style={prismTheme}
           customStyle={{
             margin: "0",
             borderRadius: "0.5rem",
@@ -56,7 +57,7 @@ export default function SqlDisplay({
       </div>
       <SyntaxHighlighter
         language='sql'
-        style={oneDark}
+        style={prismTheme}
         customStyle={{
           margin: 0,
           borderRadius: "0.5rem",

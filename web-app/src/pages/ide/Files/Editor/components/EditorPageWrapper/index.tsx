@@ -94,7 +94,7 @@ const EditorPageWrapper = ({
 
   const renderEditor = () => (
     <div
-      className={cn("flex min-h-0 flex-col overflow-hidden bg-editor-background")}
+      className={cn("flex min-h-0 flex-col overflow-hidden bg-background")}
       style={{ width: "100%", height: "100%" }}
     >
       {customEditor ? customEditor : <FileEditor className={customEditor ? "hidden" : ""} />}

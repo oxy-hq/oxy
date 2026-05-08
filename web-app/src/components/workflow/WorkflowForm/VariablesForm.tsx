@@ -14,12 +14,15 @@ import {
 import { FieldError } from "@/components/ui/shadcn/field";
 import { Label } from "@/components/ui/shadcn/label";
 import { Spinner } from "@/components/ui/shadcn/spinner";
+import useTheme from "@/stores/useTheme";
 import type { WorkflowFormData } from "./index";
 
 export const VariablesForm: React.FC = () => {
   const { setValue, watch } = useFormContext<WorkflowFormData>();
   const [isJsonValid, setIsJsonValid] = useState(true);
   const [jsonError, setJsonError] = useState<string>("");
+  const theme = useTheme((s) => s.theme);
+  const monacoTheme = theme === "dark" ? "vs-dark" : "vs";
 
   const currentVariables = watch("variables") || "";
 
@@ -159,7 +162,7 @@ export const VariablesForm: React.FC = () => {
           <Editor
             height='300px'
             width='100%'
-            theme='vs-dark'
+            theme={monacoTheme}
             language='json'
             value={variableStr || ""}
             loading={<Spinner className='text-code-primary' />}

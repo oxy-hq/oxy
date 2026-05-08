@@ -1,8 +1,8 @@
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { Button } from "@/components/ui/shadcn/button";
+import usePrismTheme from "@/hooks/usePrismTheme";
 import { deepParseJson } from "../../../trace/components/utils";
 
 interface OutputDisplayProps {
@@ -12,6 +12,7 @@ interface OutputDisplayProps {
 
 export default function DataDisplay({ value, label }: OutputDisplayProps) {
   const [copied, setCopied] = useState(false);
+  const prismTheme = usePrismTheme();
 
   const copyToClipboard = async () => {
     await navigator.clipboard.writeText(value);
@@ -43,7 +44,7 @@ export default function DataDisplay({ value, label }: OutputDisplayProps) {
       {isJson ? (
         <SyntaxHighlighter
           language='json'
-          style={oneDark}
+          style={prismTheme}
           customStyle={{
             margin: 0,
             borderRadius: "0.5rem",

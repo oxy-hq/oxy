@@ -68,9 +68,9 @@ const AgentsDropdown = ({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
-          variant='ghost'
+          variant='outline'
           size='sm'
-          className='h-8 gap-2 border-none bg-input/30 px-3 shadow-none'
+          className='h-8 gap-2 px-3'
           disabled={isPending || disabled}
           data-testid='agent-selector-button'
         >

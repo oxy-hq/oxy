@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
+import { cn } from "./libs/shadcn/utils.ts";
 import { initSentry } from "./sentry";
 import useTheme from "./stores/useTheme.ts";
 
@@ -10,18 +11,18 @@ initSentry();
 const queryClient = new QueryClient();
 
 export const AppWrapper = () => {
-  const { theme } = useTheme();
+  const theme = useTheme((state) => state.theme);
 
   useEffect(() => {
-    document.body.classList.add(theme);
+    document.body.classList.toggle("dark", theme === "dark");
+    return () => document.body.classList.remove("dark");
   }, [theme]);
 
   return (
     <div
       id='app-root'
-      className={`root ${theme}`}
+      className={cn("root font-inter", theme === "dark" && "dark")}
       lang='en'
-      data-theme-variant='new'
       data-theme={theme}
     >
       <QueryClientProvider client={queryClient}>

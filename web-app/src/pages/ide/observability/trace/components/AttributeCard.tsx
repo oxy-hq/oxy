@@ -1,10 +1,10 @@
 import { Check, Copy, Maximize2 } from "lucide-react";
 import { useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { Button } from "@/components/ui/shadcn/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/shadcn/dialog";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/shadcn/toggle-group";
+import usePrismTheme from "@/hooks/usePrismTheme";
 import { deepParseJson } from "./utils";
 
 interface AttributeCardProps {
@@ -16,6 +16,7 @@ export function AttributeCard({ name, value }: AttributeCardProps) {
   const [copied, setCopied] = useState(false);
   const [showRaw, setShowRaw] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+  const prismTheme = usePrismTheme();
 
   const handleCopy = () => {
     navigator.clipboard.writeText(value);
@@ -89,7 +90,7 @@ export function AttributeCard({ name, value }: AttributeCardProps) {
           {!showRaw && isJson ? (
             <SyntaxHighlighter
               language='json'
-              style={oneDark}
+              style={prismTheme}
               className='m-0! bg-card! p-4! font-mono text-sm [&>code]:bg-transparent!'
               showLineNumbers
             >
@@ -141,7 +142,7 @@ export function AttributeCard({ name, value }: AttributeCardProps) {
             {!showRaw && isJson ? (
               <SyntaxHighlighter
                 language='json'
-                style={oneDark}
+                style={prismTheme}
                 className='m-0! bg-card! p-4! font-mono text-sm [&>code]:bg-transparent!'
                 showLineNumbers
               >

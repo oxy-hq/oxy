@@ -1,13 +1,13 @@
 import { Pencil } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import ErrorAlert from "@/components/ui/ErrorAlert";
 import { Panel, PanelContent, PanelHeader } from "@/components/ui/panel";
 import { Button } from "@/components/ui/shadcn/button";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import useFile from "@/hooks/api/files/useFile";
 import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
+import usePrismTheme from "@/hooks/usePrismTheme";
 import { encodeBase64 } from "@/libs/encoding";
 import ROUTES from "@/libs/utils/routes";
 import useCurrentOrg from "@/stores/useCurrentOrg";
@@ -32,6 +32,7 @@ export function NodeDetailPanel({ node, onClose }: NodeDetailPanelProps) {
   const { project } = useCurrentProjectBranch();
   const navigate = useNavigate();
   const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
+  const prismTheme = usePrismTheme();
 
   const pathb64 = node?.data.path ? encodeBase64(node.data.path) : "";
   const isFileNode = node ? FILE_NODE_TYPES.has(node.type) : false;
@@ -109,7 +110,7 @@ export function NodeDetailPanel({ node, onClose }: NodeDetailPanelProps) {
             {!isLoading && content && (
               <SyntaxHighlighter
                 language={getLanguage(node)}
-                style={oneDark}
+                style={prismTheme}
                 PreTag='div'
                 className='rounded-lg! text-xs!'
                 lineProps={{ style: { wordBreak: "break-all", whiteSpace: "pre-wrap" } }}

@@ -369,7 +369,7 @@ export function BuilderDialog() {
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className='top-[30%] max-w-150 translate-y-0 gap-0 overflow-hidden border-white/10 bg-popover/50 p-0 shadow-[0_8px_60px_rgba(0,0,0,0.5),0_0_0_1px_rgba(255,255,255,0.08),0_0_30px_-4px_color-mix(in_srgb,var(--primary)_15%,transparent)] backdrop-blur-2xl'
+        className='top-[30%] max-w-150 translate-y-0 gap-0 overflow-hidden border-white/10 bg-popover p-0 shadow-[0_8px_60px_rgba(0,0,0,0.5),0_0_0_1px_rgba(255,255,255,0.08),0_0_30px_-4px_color-mix(in_srgb,var(--primary)_15%,transparent)] backdrop-blur-2xl dark:bg-popover/50'
       >
         {!isAvailable && !isCheckingBuilder ? (
           <div className='p-6 text-center text-muted-foreground text-sm'>

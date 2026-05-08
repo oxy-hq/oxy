@@ -2,7 +2,7 @@ import { cx } from "class-variance-authority";
 import type React from "react";
 import type { ReactNode } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import usePrismTheme from "@/hooks/usePrismTheme";
 
 type CodeBlockProps = {
   children?: ReactNode;
@@ -11,6 +11,7 @@ type CodeBlockProps = {
 
 const CodeBlock: React.FC<CodeBlockProps> = ({ children, className }) => {
   const match = /language-(\w+)/.exec(className || "");
+  const prismTheme = usePrismTheme();
   return match ? (
     <SyntaxHighlighter
       className={cx(
@@ -18,7 +19,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ children, className }) => {
         className
       )}
       language={match ? match[1] : undefined}
-      style={oneDark}
+      style={prismTheme}
       PreTag='div'
       lineProps={{ style: { wordBreak: "break-all", whiteSpace: "pre-wrap" } }}
       wrapLines={true}
@@ -28,7 +29,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ children, className }) => {
   ) : (
     <code
       className={cx(
-        "border! rounded-lg! border-border! bg-editor-background! px-1.5 py-0.5 font-mono text-xs",
+        "border! rounded-lg! border-border! bg-muted! px-1.5 py-0.5 font-mono text-xs",
         className
       )}
     >

@@ -1,0 +1,69 @@
+/* ============================================================================
+   Shadcn theme — typography utility classes
+
+   Semantic text classes matching the canonical Oxygen scale. Use these
+   instead of bare Tailwind text-* when you want the named design-system step.
+
+   Scale is compact and technical:
+     display 36 · h1 24 · h2 20 · h3 16 · body 14 · small 12 · button 14
+     label 11 (uppercase + 0.04em tracking) · code 13
+
+   Weights: only 400 (body/small/code) or 500 (everything from h3 up).
+============================================================================ */
+
+.t-display {
+  font-family: var(--font-inter);
+  font-size: var(--type-display-size);
+  font-weight: var(--type-display-weight);
+  line-height: var(--type-display-lh);
+}
+.t-h1 {
+  font-family: var(--font-inter);
+  font-size: var(--type-h1-size);
+  font-weight: var(--type-h1-weight);
+  line-height: var(--type-h1-lh);
+}
+.t-h2 {
+  font-family: var(--font-inter);
+  font-size: var(--type-h2-size);
+  font-weight: var(--type-h2-weight);
+  line-height: var(--type-h2-lh);
+}
+.t-h3 {
+  font-family: var(--font-inter);
+  font-size: var(--type-h3-size);
+  font-weight: var(--type-h3-weight);
+  line-height: var(--type-h3-lh);
+}
+.t-body {
+  font-family: var(--font-inter);
+  font-size: var(--type-body-size);
+  font-weight: var(--type-body-weight);
+  line-height: var(--type-body-lh);
+}
+.t-small {
+  font-family: var(--font-inter);
+  font-size: var(--type-small-size);
+  font-weight: var(--type-small-weight);
+  line-height: var(--type-small-lh);
+}
+.t-button {
+  font-family: var(--font-inter);
+  font-size: var(--type-button-size);
+  font-weight: var(--type-button-weight);
+  line-height: var(--type-button-lh);
+}
+.t-label {
+  font-family: var(--font-inter);
+  font-size: var(--type-label-size);
+  font-weight: var(--type-label-weight);
+  line-height: var(--type-label-lh);
+  letter-spacing: var(--type-label-spacing);
+  text-transform: uppercase;
+}
+.t-code {
+  font-family: var(--font-geist-mono);
+  font-size: var(--type-code-size);
+  font-weight: var(--type-code-weight);
+  line-height: var(--type-code-lh);
+}

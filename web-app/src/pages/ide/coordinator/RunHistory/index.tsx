@@ -1,4 +1,12 @@
-import { ChevronLeft, ChevronRight, Circle, RefreshCw, Square, XCircle } from "lucide-react";
+import {
+  CheckCircle,
+  ChevronLeft,
+  ChevronRight,
+  Circle,
+  RefreshCw,
+  Square,
+  XCircle
+} from "lucide-react";
 import type React from "react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -36,7 +44,7 @@ const statusConfig: Record<string, { label: string; className: string; icon: Rea
   {
     running: { label: "Running", className: "text-primary", icon: RefreshCw },
     suspended: { label: "Suspended", className: "text-warning", icon: Circle },
-    done: { label: "Done", className: "text-emerald-500", icon: Circle },
+    done: { label: "Done", className: "text-success", icon: CheckCircle },
     failed: { label: "Failed", className: "text-destructive", icon: XCircle },
     cancelled: { label: "Cancelled", className: "text-muted-foreground", icon: Square }
   };

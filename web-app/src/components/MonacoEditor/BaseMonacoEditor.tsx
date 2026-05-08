@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { configureMonaco } from "@/components/FileEditor/monacoConfig";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { cn } from "@/libs/shadcn/utils";
+import useTheme from "@/stores/useTheme";
 
 export interface BaseMonacoEditorOptions {
   minimap?: { enabled: boolean };
@@ -26,7 +27,7 @@ export interface BaseMonacoEditorProps {
   onChange?: (value: string) => void;
   onMount?: (editor: editor.IStandaloneCodeEditor, monaco: Monaco) => void;
   language?: string;
-  theme?: "github-dark" | "vs-dark" | "light";
+  theme?: "github-dark" | "vs-dark" | "vs" | "light";
   height?: string;
   width?: string;
   className?: string;
@@ -68,7 +69,7 @@ export default function BaseMonacoEditor({
   onChange,
   onMount,
   language = "plaintext",
-  theme = "github-dark",
+  theme,
   height = "100%",
   width = "100%",
   className,
@@ -84,6 +85,8 @@ export default function BaseMonacoEditor({
 }: BaseMonacoEditorProps) {
   const mergedOptions = { ...defaultOptions, ...options };
   const diffEditorRef = useRef<editor.IStandaloneDiffEditor | null>(null);
+  const resolvedTheme = useTheme((s) => s.theme);
+  const activeTheme = theme ?? (resolvedTheme === "dark" ? "github-dark" : "vs");
   const originalEditorOptionsRef = useRef(originalEditorOptions);
   const modifiedEditorOptionsRef = useRef(modifiedEditorOptions);
 
@@ -128,7 +131,7 @@ export default function BaseMonacoEditor({
           {diffMode && original !== undefined ? (
             <DiffEditor
               beforeMount={configureMonaco}
-              theme={theme}
+              theme={activeTheme}
               height={height}
               width={width}
               original={original}
@@ -178,7 +181,7 @@ export default function BaseMonacoEditor({
             <Editor
               beforeMount={configureMonaco}
               path={path}
-              theme={theme}
+              theme={activeTheme}
               height={height}
               width={width}
               defaultValue={value}

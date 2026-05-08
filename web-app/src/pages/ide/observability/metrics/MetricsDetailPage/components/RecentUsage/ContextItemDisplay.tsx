@@ -1,8 +1,8 @@
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { Button } from "@/components/ui/shadcn/button";
+import usePrismTheme from "@/hooks/usePrismTheme";
 import { cn } from "@/libs/shadcn/utils";
 import type { ContextItem, SemanticContent } from "@/services/api/metrics";
 import { CONTEXT_TYPE_CONFIG } from "../../constants";
@@ -15,6 +15,7 @@ interface ContextItemDisplayProps {
 
 export default function ContextItemDisplay({ item, metricName }: ContextItemDisplayProps) {
   const [copied, setCopied] = useState(false);
+  const prismTheme = usePrismTheme();
   const config = CONTEXT_TYPE_CONFIG[item.type] || CONTEXT_TYPE_CONFIG.question;
   const isSQL = item.type === "sql" || item.type === "SQL";
   const isSemantic = item.type === "semantic";
@@ -106,7 +107,7 @@ export default function ContextItemDisplay({ item, metricName }: ContextItemDisp
       {isSQL ? (
         <SyntaxHighlighter
           language='sql'
-          style={oneDark}
+          style={prismTheme}
           customStyle={{
             margin: 0,
             borderRadius: "0.5rem",

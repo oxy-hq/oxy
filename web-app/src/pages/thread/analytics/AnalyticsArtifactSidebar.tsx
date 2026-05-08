@@ -9,6 +9,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/shadcn/
 import type { ArtifactItem, ProcedureItem, SqlItem } from "@/hooks/analyticsSteps";
 import type { AnalyticsDisplayBlock, SseEvent } from "@/hooks/useAnalyticsRun";
 import { extractDisplayBlockForSeq } from "@/hooks/useAnalyticsRun";
+import useTheme from "@/stores/useTheme";
 import ProcedureRunDagPanel from "../agentic/ProcedureRunDagPanel";
 import { VERIFIED_SQL_FILE_TOOLTIP, VERIFIED_TOOLTIP } from "../constants";
 import {
@@ -79,6 +80,8 @@ const AnalyticsArtifactSidebar = ({
   isRunning = false,
   onClose
 }: Props) => {
+  const theme = useTheme((s) => s.theme);
+  const monacoTheme = theme === "dark" ? "vs-dark" : "vs";
   // ── kind === "procedure" → full DAG panel ─────────────────────────────────
   if (item.kind === "procedure") {
     return (
@@ -109,7 +112,7 @@ const AnalyticsArtifactSidebar = ({
         {verified && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <BadgeCheck className='h-4 w-4 shrink-0 text-special' />
+              <BadgeCheck className='h-4 w-4 shrink-0 text-oxy-blue-600 dark:text-oxy-blue-500' />
             </TooltipTrigger>
             <TooltipContent side='bottom'>{verifiedTooltip}</TooltipContent>
           </Tooltip>
@@ -135,7 +138,7 @@ const AnalyticsArtifactSidebar = ({
                 <Editor
                   height='100%'
                   width='100%'
-                  theme='vs-dark'
+                  theme={monacoTheme}
                   defaultValue={item.sql}
                   language='sql'
                   value={item.sql}

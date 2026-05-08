@@ -39,12 +39,7 @@ export function WorkspaceRow({
           ) : null}
         </button>
       </TooltipTrigger>
-      <TooltipContent
-        className='max-w-64 bg-card p-3'
-        arrowClassName='bg-card fill-card'
-        side='right'
-        sideOffset={8}
-      >
+      <TooltipContent className='max-w-64' side='right' sideOffset={8}>
         <WorkspaceTooltipContent workspace={workspace} />
       </TooltipContent>
     </Tooltip>

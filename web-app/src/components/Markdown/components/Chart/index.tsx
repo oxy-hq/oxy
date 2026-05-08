@@ -1,6 +1,7 @@
 import { useAutoAnimate } from "@formkit/auto-animate/react";
 import type { EChartsOption } from "echarts";
 import { ErrorBoundary } from "react-error-boundary";
+import { createCategoricalPalette } from "@/components/AppPreview/Displays/hooks/chartOptions";
 import { Echarts } from "@/components/Echarts";
 import useChart from "@/hooks/api/useChart";
 import useTheme from "@/stores/useTheme";
@@ -58,6 +59,7 @@ const Chart = (props: ChartProps) => {
     (isDarkMode ? "oklch(0.708 0 0)" : "oklch(0.556 0 0)");
 
   const options: EChartsOption = {
+    color: createCategoricalPalette(),
     darkMode: isDarkMode,
     tooltip: {},
     xAxis: config.xAxis

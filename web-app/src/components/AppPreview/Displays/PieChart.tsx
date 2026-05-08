@@ -23,7 +23,7 @@ export const PieChart = ({
     async ({ display, connection, fileName, isDarkMode }: ChartBuilderParams<PieChartDisplay>) => {
       // Explicit `value_format` wins; otherwise infer from the value column name.
       const valueFormat = display.value_format ?? inferCurrencyFormat(display.value);
-      const baseOptions = createPieChartOptions(isDarkMode, valueFormat);
+      const baseOptions = createPieChartOptions(isDarkMode, valueFormat, true);
 
       const pieData = await getPieChartData(connection, fileName, display.name, display.value);
 

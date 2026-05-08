@@ -68,7 +68,7 @@ const MessageInputShell = ({
       )}
       <div className='relative'>
         {aboveInput}
-        <div className='overflow-hidden rounded-md border border-border bg-secondary transition-shadow focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50'>
+        <div className='overflow-hidden rounded-md border border-border bg-background shadow-md transition-shadow focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50'>
           <HighlightTextarea
             ref={textareaRef}
             value={value}
@@ -81,7 +81,7 @@ const MessageInputShell = ({
             disabled={disabled}
             highlight={highlight}
           />
-          <div className='flex items-center justify-end gap-2 border-border border-t bg-secondary px-2 py-1.5'>
+          <div className='flex items-center justify-end gap-2 border-border border-t bg-background px-2 py-1.5'>
             {extraActions}
             {isLoading ? (
               <Button

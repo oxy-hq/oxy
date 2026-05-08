@@ -36,7 +36,7 @@ const EditorHeader = ({ filePath, actions, prefixAction }: HeaderProps) => {
   return (
     <div
       className={cn(
-        "flex min-h-[40px] flex-col items-start justify-between gap-4 border-border border-b bg-editor-background px-2 py-1 md:flex-row md:items-center"
+        "flex min-h-[40px] flex-col items-start justify-between gap-4 border-border border-b bg-background px-2 py-1 md:flex-row md:items-center"
       )}
     >
       {prefixAction}

@@ -6,6 +6,7 @@ import {
   type ChartBuilderParams,
   createAxisTooltipFormatter,
   createBaseChartOptions,
+  createSingleSeriesPalette,
   createXYAxisOptions,
   getSeriesData,
   getSeriesValues,
@@ -75,6 +76,7 @@ export const BarChart = ({
       return {
         ...baseOptions,
         ...xyAxisOptions,
+        ...(display.series ? {} : { color: createSingleSeriesPalette() }),
         ...(tooltipFormatter
           ? {
               tooltip: {

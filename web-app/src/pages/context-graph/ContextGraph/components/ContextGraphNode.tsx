@@ -1,11 +1,6 @@
 import { Handle, type NodeProps, Position } from "@xyflow/react";
-import {
-  BG_COLORS,
-  BORDER_COLORS,
-  HANDLE_STYLE_HIDDEN,
-  HANDLE_STYLE_VISIBLE,
-  ICONS
-} from "../constants";
+import { cn } from "@/libs/shadcn/utils";
+import { HANDLE_STYLE_HIDDEN, HANDLE_STYLE_VISIBLE, ICONS, NODE_TYPE_CLASSES } from "../constants";
 
 export function ContextGraphNode({ data }: NodeProps) {
   const { label, type, opacity, showLeftHandle, showRightHandle } = data as {
@@ -15,7 +10,6 @@ export function ContextGraphNode({ data }: NodeProps) {
     showLeftHandle?: boolean;
     showRightHandle?: boolean;
   };
-  const borderColor = BORDER_COLORS[type];
   const nodeOpacity = opacity ?? 1;
 
   return (
@@ -40,15 +34,13 @@ export function ContextGraphNode({ data }: NodeProps) {
         style={showRightHandle ? HANDLE_STYLE_VISIBLE : HANDLE_STYLE_HIDDEN}
       />
       <div
-        className='flex cursor-pointer items-center gap-2 rounded-md px-3 py-1.5 transition-shadow hover:opacity-90'
-        style={{
-          border: `1.5px solid ${borderColor}`,
-          background: BG_COLORS[type],
-          color: borderColor
-        }}
+        className={cn(
+          "flex cursor-pointer items-center gap-2 rounded-md border-[1.5px] px-3 py-1.5 transition-shadow hover:opacity-90",
+          NODE_TYPE_CLASSES[type]
+        )}
       >
         {ICONS[type]}
-        <span className='whitespace-nowrap font-medium text-foreground text-xs'>{label}</span>
+        <span className='t-small whitespace-nowrap font-medium text-foreground'>{label}</span>
       </div>
     </div>
   );

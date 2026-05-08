@@ -44,7 +44,7 @@ const AgentMessage = ({ message, showAvatar, prompt, onArtifactClick }: AgentMes
           {showAvatar && <img className='h-8 w-8 rounded-full' src='/logo.svg' alt='Oxygen' />}
           <div className='w-full flex-1'>
             <div
-              className='flex w-full flex-col gap-2 overflow-x-auto shadow-sm'
+              className='flex w-full flex-col gap-2 overflow-x-auto'
               data-testid='agent-message-content'
             >
               <ThreadSteps steps={steps} isLoading={isStreaming} />

@@ -50,11 +50,7 @@ const WorkflowsDropdown = ({ onSelect, workflow, disabled = false }: Props) => {
       }}
       disabled={isLoading || disabled}
     >
-      <SelectTrigger
-        size='sm'
-        className='w-auto border-none shadow-none'
-        data-testid='workflow-selector-button'
-      >
+      <SelectTrigger size='sm' className='w-auto' data-testid='workflow-selector-button'>
         {isLoading ? <Spinner /> : <SelectValue placeholder='Select procedure' />}
       </SelectTrigger>
       <SelectContent>

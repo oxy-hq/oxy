@@ -58,7 +58,7 @@ const EditorTab = ({ pathb64 }: { pathb64?: string }) => {
             </div>
           )}
         </TabsContent>
-        <TabsContent value='editor' className='flex flex-1 flex-col bg-editor-background'>
+        <TabsContent value='editor' className='flex flex-1 flex-col bg-background'>
           <EditorPageWrapper
             pathb64={pathb64 ?? ""}
             pageContentClassName='md:flex-row flex-col'

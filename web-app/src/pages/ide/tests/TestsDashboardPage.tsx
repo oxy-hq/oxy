@@ -313,7 +313,7 @@ const VerdictDonutChart: React.FC<{
           {
             value: 1,
             name: "Not run",
-            color: resolveColor("--muted")
+            color: resolveColor("--zinc-300")
           }
         ];
 
@@ -321,7 +321,7 @@ const VerdictDonutChart: React.FC<{
     if (!chartRef.current) return;
     const chart = getInstanceByDom(chartRef.current);
     const options: EChartsOption = {
-      tooltip: { trigger: "item", formatter: "{b}: {c} ({d}%)" },
+      tooltip: { trigger: "item", formatter: "{b}: {c} ({d}%)", appendToBody: true },
       series: [
         {
           type: "pie",
@@ -1614,60 +1614,18 @@ const TestFileCard: React.FC<TestFileCardProps> = ({
 
   const fileState = useMemo(() => {
     let running = 0,
-      completed = 0,
-      passing = 0,
-      failing = 0;
+      completed = 0;
     for (let i = 0; i < caseCount; i++) {
       const cs = store.caseMap.get(createCaseKey(projectId, branchName, pathb64, i));
       if (cs?.state === EvalEventState.Started || cs?.state === EvalEventState.Progress) running++;
-      if (cs?.result || cs?.error) {
-        completed++;
-        if (cs.error) failing++;
-        else if (cs.result) {
-          const { passing: p, total: t } = getConsistency(cs.result.metrics);
-          if (t > 0 && p === t) passing++;
-          else if (t > 0) failing++;
-        }
-      }
+      if (cs?.result || cs?.error) completed++;
     }
-    const isRunning = running > 0;
-    let verdict: CaseVerdict = "not_run";
-    if (isRunning) verdict = "running";
-    else if (completed > 0) {
-      if (failing === 0 && passing > 0) verdict = "pass";
-      else if (passing === 0 && failing > 0) verdict = "fail";
-      else if (passing > 0 && failing > 0) verdict = "flaky";
-    }
-    return { running, completed, verdict, isRunning };
+    return { completed, isRunning: running > 0 };
   }, [projectId, branchName, pathb64, caseCount, store.caseMap]);
-
-  // Border accent: historical verdict takes precedence over live verdict when not running
-  const displayVerdict = fileState.isRunning
-    ? "running"
-    : selectedRunIndex !== null && historicalRun
-      ? historicalRun.cases.every((c) => c.verdict === "pass")
-        ? "pass"
-        : historicalRun.cases.every((c) => c.verdict === "fail")
-          ? "fail"
-          : historicalRun.cases.length > 0
-            ? "flaky"
-            : fileState.verdict
-      : fileState.verdict;
-
-  const borderClass =
-    displayVerdict === "pass"
-      ? "border-l-4 border-l-green-500"
-      : displayVerdict === "fail"
-        ? "border-l-4 border-l-red-500"
-        : displayVerdict === "flaky"
-          ? "border-l-4 border-l-yellow-500"
-          : displayVerdict === "running"
-            ? "border-l-4 border-l-blue-500"
-            : "";
 
   return (
     <Collapsible>
-      <div className={`rounded-lg border ${borderClass}`}>
+      <div className='rounded-lg border'>
         <CollapsibleTrigger className='flex w-full items-center justify-between px-4 py-3 hover:bg-muted/50'>
           <div className='flex items-center gap-3 text-left'>
             {fileState.isRunning && <Spinner className='text-primary' />}

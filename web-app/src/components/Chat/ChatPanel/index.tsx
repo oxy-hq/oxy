@@ -305,7 +305,7 @@ const ChatPanel = ({
     <form
       ref={formRef}
       onSubmit={handleFormSubmit}
-      className='relative mx-auto flex w-full max-w-[672px] flex-col gap-1 rounded-md border bg-secondary p-2'
+      className='relative mx-auto flex w-full max-w-[672px] flex-col gap-1 rounded-md border bg-background p-2'
     >
       {showMentionPopup && (
         <div className='absolute right-0 bottom-full left-0 z-10 mb-1 max-h-52 overflow-y-auto rounded-md border bg-popover p-1 shadow-md'>
@@ -354,7 +354,7 @@ const ChatPanel = ({
       <div className='flex justify-between'>
         <div className='flex items-center justify-center'>
           <Select value={mode} onValueChange={setMode}>
-            <SelectTrigger size='sm' className='border-none bg-transparent'>
+            <SelectTrigger size='sm'>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

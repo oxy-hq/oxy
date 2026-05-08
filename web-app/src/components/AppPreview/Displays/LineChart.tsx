@@ -6,6 +6,7 @@ import {
   type ChartBuilderParams,
   createAxisTooltipFormatter,
   createBaseChartOptions,
+  createSingleSeriesPalette,
   createXYAxisOptions,
   getSeriesData,
   getSeriesValues,
@@ -83,6 +84,7 @@ export const LineChart = ({
       return {
         ...baseOptions,
         ...xyAxisOptions,
+        ...(display.series ? {} : { color: createSingleSeriesPalette() }),
         tooltip: tooltipOptions,
         series
       };

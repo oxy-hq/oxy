@@ -1,5 +1,5 @@
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import usePrismTheme from "@/hooks/usePrismTheme";
 import CollapsibleSection from "./CollapsibleSection";
 
 interface SqlDisplayProps {
@@ -8,6 +8,7 @@ interface SqlDisplayProps {
 }
 
 const SqlDisplay = ({ sql, defaultOpen = false }: SqlDisplayProps) => {
+  const prismTheme = usePrismTheme();
   if (!sql) return null;
 
   return (
@@ -15,7 +16,7 @@ const SqlDisplay = ({ sql, defaultOpen = false }: SqlDisplayProps) => {
       <div className='[&_pre]:!my-0 text-xs [&_pre]:max-h-[300px] [&_pre]:overflow-auto'>
         <SyntaxHighlighter
           language='sql'
-          style={oneDark}
+          style={prismTheme}
           wrapLines={true}
           customStyle={{ margin: 0, borderRadius: "0.5rem" }}
           lineProps={{

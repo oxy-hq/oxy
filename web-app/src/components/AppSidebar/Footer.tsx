@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import SettingsDialog from "@/components/settings/SettingsDialog";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOrgs } from "@/hooks/api/organizations";
 import { cn } from "@/libs/shadcn/utils";
@@ -47,7 +48,7 @@ function LocalModeFooter() {
   const openSettingsDialog = useSettingsDialog((s) => s.open);
   return (
     <div className='border-sidebar-border/50 border-t p-2'>
-      <div className='flex items-center gap-2.5 rounded-md px-2 py-2 text-left group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0'>
+      <div className='flex items-center gap-2 rounded-md px-2 py-2 text-left group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0'>
         <div className='flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground'>
           <HardDrive className='h-4 w-4' />
         </div>
@@ -59,6 +60,7 @@ function LocalModeFooter() {
             Running against local config
           </span>
         </div>
+        <ThemeToggle className='shrink-0 text-sidebar-foreground/60 hover:text-sidebar-foreground' />
         <Button
           variant='ghost'
           size='icon'
@@ -125,12 +127,12 @@ function CloudFooter() {
   };
 
   return (
-    <div className='border-sidebar-border/50 border-t p-2'>
+    <div className='flex items-center gap-1 border-sidebar-border/50 border-t p-2 group-data-[collapsible=icon]:flex-col'>
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
           <Button
             variant='ghost'
-            className='flex h-auto w-full items-center gap-2.5 px-2 py-1.5 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0'
+            className='flex h-auto min-w-0 flex-1 items-center gap-2.5 px-2 py-1.5 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0'
           >
             <UserAvatar
               name={name}
@@ -240,6 +242,8 @@ function CloudFooter() {
           )}
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <ThemeToggle className='shrink-0 text-sidebar-foreground/60 hover:text-sidebar-foreground' />
     </div>
   );
 }

@@ -1,0 +1,140 @@
+/* ============================================================================
+   Shadcn theme — mode-independent primitives
+
+   Palettes, fonts, type scale, chart primary palette, and component sizing
+   tokens that don't flip with theme. Imported once from index.css.
+============================================================================ */
+
+@font-face {
+  font-family: "Inter";
+  src:
+    url("/fonts/Inter-VariableFont.woff2") format("woff2"),
+    url("/fonts/Inter-VariableFont.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* ─── Oxy-Blue — single brand hue ────────────────────────────────────── */
+  --oxy-blue-50: #ebedff;
+  --oxy-blue-100: #d7dcff;
+  --oxy-blue-200: #aeb9ff;
+  --oxy-blue-300: #8696ff;
+  --oxy-blue-400: #5d73ff;
+  --oxy-blue-500: #3550ff; /* brand */
+  --oxy-blue-600: #2a40cc;
+  --oxy-blue-700: #203099;
+  --oxy-blue-800: #152066;
+  --oxy-blue-900: #0b1033;
+  --oxy-blue-950: #05081a;
+
+  /* Brand blue scale — legacy alias retained for existing consumers */
+  --blue-100: #d7dcff;
+  --blue-200: #aeb9ff;
+  --blue-300: #8696ff;
+  --blue-400: #5d73ff;
+  --blue-500: #3550ff;
+  --blue-600: #2a40cc;
+  --blue-700: #203099;
+  --blue-800: #152066;
+  --blue-900: #0b1033;
+
+  /* ─── Zinc — neutral ladder ──────────────────────────────────────────── */
+  --zinc-50: #fafafa;
+  --zinc-100: #f4f4f5;
+  --zinc-200: #e4e4e7;
+  --zinc-300: #d4d4d8;
+  --zinc-400: #a1a1aa;
+  --zinc-500: #71717a;
+  --zinc-600: #52525b;
+  --zinc-700: #3f3f46;
+  --zinc-800: #27272a;
+  --zinc-900: #18181b;
+  --zinc-950: #09090b;
+
+  /* ─── Secondary palette — 300/500/700 only ──────────────────────────── */
+  --purple-300: #d8b4fe;
+  --purple-500: #a855f7;
+  --purple-700: #7e22ce;
+  --pink-300: #f9a8d4;
+  --pink-500: #ec4899;
+  --pink-700: #be185d;
+  --red-300: #fca5a5;
+  --red-500: #ef4444;
+  --red-700: #b91c1c;
+  --amber-300: #fcd34d;
+  --amber-500: #f59e0b;
+  --amber-700: #b45309;
+  --orange-300: #fdba74;
+  --orange-500: #f97316;
+  --orange-700: #c2410c;
+  --green-300: #86efac;
+  --green-500: #22c55e;
+  --green-700: #15803d;
+  --sky-300: #7dd3fc;
+  --sky-500: #0ea5e9;
+  --sky-700: #0369a1;
+  --indigo-300: #a5b4fc;
+  --indigo-500: #6366f1;
+  --indigo-700: #4338ca;
+
+  /* ─── Typography (mode-independent) ──────────────────────────────────── */
+  --font-inter: "Inter", system-ui, -apple-system, sans-serif;
+  --font-geist-mono: "GeistMono", "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-sans:
+    "GeistSans", "GeistSans Fallback", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
+    "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+
+  --type-display-size: 36px;
+  --type-display-weight: 500;
+  --type-display-lh: 1.2;
+  --type-h1-size: 24px;
+  --type-h1-weight: 500;
+  --type-h1-lh: 1.3;
+  --type-h2-size: 20px;
+  --type-h2-weight: 500;
+  --type-h2-lh: 1.4;
+  --type-h3-size: 16px;
+  --type-h3-weight: 500;
+  --type-h3-lh: 1.4;
+  --type-body-size: 14px;
+  --type-body-weight: 400;
+  --type-body-lh: 1.5;
+  --type-small-size: 12px;
+  --type-small-weight: 400;
+  --type-small-lh: 1.5;
+  --type-button-size: 14px;
+  --type-button-weight: 500;
+  --type-button-lh: 1.3;
+  --type-label-size: 11px;
+  --type-label-weight: 500;
+  --type-label-lh: 1.3;
+  --type-label-spacing: 0.04em;
+  --type-code-size: 13px;
+  --type-code-weight: 400;
+  --type-code-lh: 1.6;
+
+  /* ─── Data viz primary palette ──────────────────────────────────────── */
+  --chart-primary: var(--oxy-blue-500);
+  --chart-secondary: var(--oxy-blue-400);
+  --chart-tertiary: var(--oxy-blue-700);
+
+  /* ─── Component sizing (radii + paddings) ───────────────────────────── */
+  --radius: 0.625rem;
+  --btn-radius: 6px;
+  --btn-padding-y: 6px;
+  --btn-padding-x: 14px;
+  --input-radius: 6px;
+  --input-padding-y: 8px;
+  --input-padding-x: 12px;
+  --badge-radius: 9999px;
+  --badge-padding-y: 2px;
+  --badge-padding-x: 8px;
+  --card-radius: 8px;
+  --card-padding: 16px;
+  --code-radius: 4px;
+  --code-padding-y: 4px;
+  --code-padding-x: 8px;
+  --tooltip-radius: 6px;
+}

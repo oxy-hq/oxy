@@ -25,13 +25,8 @@ function SelectItemWithDetail({ children, detail, ...props }: SelectItemWithDeta
           {children}
         </SelectItem>
       </TooltipTrigger>
-      <TooltipContent
-        side='right'
-        className='max-w-56 bg-card p-3'
-        arrowClassName='bg-card fill-card'
-        onPointerDownOutside={() => setOpen(false)}
-      >
-        <p className='font-medium text-card-foreground text-sm'>{detail.title}</p>
+      <TooltipContent side='right' className='max-w-56' onPointerDownOutside={() => setOpen(false)}>
+        <p className='font-medium text-sm'>{detail.title}</p>
         <p className='mt-1 text-muted-foreground text-xs'>{detail.description}</p>
       </TooltipContent>
     </Tooltip>

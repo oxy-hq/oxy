@@ -3,9 +3,26 @@ import { resolveColor, resolveColorWithAlpha } from "@/components/Echarts/resolv
 import type { DisplayFormat } from "@/types/app";
 import { formatValue } from "../utils";
 
+const categoricalPalette = (): string[] => [
+  resolveColor("--chart-1"),
+  resolveColor("--chart-2"),
+  resolveColor("--chart-3"),
+  resolveColor("--chart-4"),
+  resolveColor("--chart-5")
+];
+
+const sequentialPalette = (): string[] => [
+  resolveColor("--chart-seq-1"),
+  resolveColor("--chart-seq-2"),
+  resolveColor("--chart-seq-3"),
+  resolveColor("--chart-seq-4"),
+  resolveColor("--chart-seq-5")
+];
+
 export const createBaseChartOptions = (isDarkMode = false): EChartsOption => {
   const axisColor = resolveColor("--muted-foreground");
   return {
+    color: categoricalPalette(),
     darkMode: isDarkMode,
     tooltip: {
       trigger: "axis",
@@ -18,6 +35,12 @@ export const createBaseChartOptions = (isDarkMode = false): EChartsOption => {
     grid: { containLabel: true, bottom: 40 }
   };
 };
+
+export const createSingleSeriesPalette = (): string[] => [resolveColor("--chart-primary")];
+
+export const createCategoricalPalette = categoricalPalette;
+
+export const createSequentialPalette = sequentialPalette;
 
 export const createXYAxisOptions = (
   xData: (string | number)[],
@@ -97,9 +120,11 @@ export const createAxisTooltipFormatter = (yFormat?: DisplayFormat) => {
 
 export const createPieChartOptions = (
   isDarkMode = false,
-  valueFormat?: DisplayFormat
+  valueFormat?: DisplayFormat,
+  sequential = false
 ): EChartsOption => ({
   ...createBaseChartOptions(isDarkMode),
+  color: sequential ? sequentialPalette() : categoricalPalette(),
   tooltip: {
     trigger: "item",
     formatter: (params: unknown) => {

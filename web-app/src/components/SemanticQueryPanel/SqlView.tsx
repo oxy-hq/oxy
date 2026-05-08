@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import ErrorAlert from "@/components/ui/ErrorAlert";
+import usePrismTheme from "@/hooks/usePrismTheme";
 
 interface SqlViewProps {
   generatedSql: string;
@@ -11,6 +11,7 @@ interface SqlViewProps {
 }
 
 const SqlView = ({ generatedSql, sqlError, loading, loadingIndicator }: SqlViewProps) => {
+  const prismTheme = usePrismTheme();
   return (
     <div className='h-full overflow-auto p-4'>
       {(() => {
@@ -25,7 +26,7 @@ const SqlView = ({ generatedSql, sqlError, loading, loadingIndicator }: SqlViewP
           return (
             <SyntaxHighlighter
               language='sql'
-              style={oneDark}
+              style={prismTheme}
               customStyle={{ margin: 0, borderRadius: "0.5rem" }}
               className='font-mono text-xs'
             >

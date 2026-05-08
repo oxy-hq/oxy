@@ -1,7 +1,7 @@
 import { cn } from "@/libs/shadcn/utils";
 import type { Step } from "@/pages/thread/agentic/ArtifactSidebar/ArtifactBlockRenderer/SubGroupReasoningPanel/Reasoning";
 import type { Block } from "@/services/types";
-import { STEP_COLOR_BORDER, STEP_COLOR_DOT, STEP_COLOR_TEXT } from "../colors";
+import { STEP_COLOR_DOT, STEP_COLOR_TEXT } from "../colors";
 import ArtifactPill from "./ArtifactPill";
 import { ARTIFACT_TYPES, getArtifactLabel, stripUuids } from "./helpers";
 
@@ -65,12 +65,7 @@ const ExpandedDetails = ({
         expanded ? "max-h-40 opacity-100" : "max-h-0 opacity-0"
       )}
     >
-      <div
-        className={cn(
-          "mt-1 mb-2 ml-8 border-l-2 pl-3 text-muted-foreground text-sm leading-relaxed",
-          STEP_COLOR_BORDER[stepType]
-        )}
-      >
+      <div className='mt-1 mb-2 ml-8 pl-3 text-muted-foreground text-sm leading-relaxed'>
         {step.objective && <p>{stripUuids(step.objective)}</p>}
         {step.error && <p className='mt-1 text-destructive'>{step.error}</p>}
 

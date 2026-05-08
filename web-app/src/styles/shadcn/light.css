@@ -1,0 +1,224 @@
+/* ============================================================================
+   Shadcn theme — light mode (default)
+
+   Applied under :root with no class needed. Defines all semantic tokens
+   (shadcn surfaces + oxygen surfaces, text, status, brand, syntax, components)
+   for light mode. Dark mode opts in via `.dark` — see dark.css.
+============================================================================ */
+
+:root {
+  /* ─── Shadcn core surfaces ──────────────────────────────────────────── */
+  --background: #ffffff;
+  --foreground: #0a0a0a;
+  --card: #ffffff;
+  --card-foreground: #0a0a0a;
+  --popover: #ffffff;
+  --popover-foreground: #0a0a0a;
+
+  --primary: var(--zinc-900);
+  --primary-foreground: var(--zinc-50);
+  --secondary: #f5f5f5;
+  --secondary-foreground: #171717;
+  --muted: var(--zinc-200);
+  --muted-foreground: var(--zinc-600);
+  --accent: #f5f5f5;
+  --accent-foreground: #171717;
+  --destructive: #e7000b;
+  --destructive-foreground: #ffffff;
+  --border: var(--zinc-300);
+  --input: #e5e5e5;
+  --ring: #a1a1a1;
+
+  --chart-1: #f54900;
+  --chart-2: #009689;
+  --chart-3: #104e64;
+  --chart-4: #ffb900;
+  --chart-5: #fe9a00;
+
+  --warning: #eab308;
+  --success: #22c55e;
+  --success-foreground: #ffffff;
+  --info: #3b82f6;
+  --info-foreground: #ffffff;
+  --error: #ef4444;
+
+  /* ─── Sidebar ───────────────────────────────────────────────────────── */
+  --sidebar: #fafafa;
+  --sidebar-background: #fafafa;
+  --sidebar-foreground: #3f3f46;
+  --sidebar-primary: #18181b;
+  --sidebar-primary-foreground: #fafafa;
+  --sidebar-accent: color-mix(in srgb, var(--zinc-200) 50%, transparent);
+  --sidebar-accent-foreground: #18181b;
+  --sidebar-border: #e5e7eb;
+  --sidebar-ring: #3b82f6;
+
+  /* ─── Misc shadcn extensions ────────────────────────────────────────── */
+  --card-accent: rgba(244, 244, 245, 1);
+  --code-primary: rgba(171, 178, 191, 1);
+  --accent-main-000: rgba(48, 92, 197, 1);
+  --button-hover: rgba(58, 113, 214, 0.1);
+  --editor-background: var(--zinc-50);
+  --special: var(--oxy-blue-500);
+
+  --node-query: #00aa6f;
+  --node-agent: #e89960;
+  --node-formatter: #6363c6;
+  --node-plan: #238ea9;
+  --node-insight: #bf9752;
+
+  /* Visualization palette — observability charts, metrics, spans */
+  --vis-purple: #a855f7;
+  --vis-cyan: #06b6d4;
+  --vis-orange: #f97316;
+  --vis-violet: #8b5cf6;
+
+  /* Rank badges (gold / silver / bronze) */
+  --rank-gold: #eab308;
+  --rank-gold-foreground: #422006;
+  --rank-silver: #94a3b8;
+  --rank-silver-foreground: #020617;
+  --rank-bronze: #d97706;
+  --rank-bronze-foreground: #451a03;
+
+  /* Search / text highlight */
+  --highlight: #eab308;
+  --highlight-foreground: #fde68a;
+
+  /* Sequential brand-blue palette — 5 stops, light → dark on white surface */
+  --chart-seq-1: var(--oxy-blue-200);
+  --chart-seq-2: var(--oxy-blue-400);
+  --chart-seq-3: var(--oxy-blue-500);
+  --chart-seq-4: var(--oxy-blue-700);
+  --chart-seq-5: var(--oxy-blue-900);
+
+  /* Context graph node colors (light mode) */
+  --graph-agent-bg: #fee2e2;
+  --graph-agent-border: #fca5a5;
+  --graph-procedure-bg: #ffedd5;
+  --graph-procedure-border: #fdba74;
+  --graph-app-bg: #d1fae5;
+  --graph-app-border: #6ee7b7;
+  --graph-automation-bg: #f3e8ff;
+  --graph-automation-border: #d8b4fe;
+  --graph-view-bg: #dcfce7;
+  --graph-view-border: #86efac;
+  --graph-sql-query-bg: #fef3c7;
+  --graph-sql-query-border: #fcd34d;
+  --graph-table-bg: #dbeafe;
+  --graph-table-border: #93c5fd;
+  --graph-entity-bg: #fce7f3;
+  --graph-entity-border: #f9a8d4;
+
+  /* Merge conflict action button colors */
+  --conflict-mine: #34d399;
+  --conflict-both: #a78bfa;
+  --conflict-theirs: #60a5fa;
+  --conflict-ignore: rgba(255, 255, 255, 0.35);
+
+  /* ─── Oxygen — Surfaces ─────────────────────────────────────────────── */
+  --surface: #ffffff;
+  --surface-raised: var(--zinc-100);
+  --surface-subtle: var(--zinc-100);
+
+  /* ─── Oxygen — Borders ──────────────────────────────────────────────── */
+  --border-strong: color-mix(in srgb, var(--zinc-400) 50%, transparent);
+
+  /* ─── Oxygen — Text ladder (high contrast on light) ─────────────────── */
+  --text: var(--zinc-950);
+  --text-muted: var(--zinc-600);
+  --text-disabled: var(--zinc-400);
+  --text-reverse: var(--zinc-50);
+
+  /* ─── Oxygen — Status (700 hues for AA contrast on white) ───────────── */
+  --status-success: var(--green-700);
+  --status-success-bg: color-mix(in srgb, var(--green-500) 14%, transparent);
+  --status-success-text: var(--green-700);
+  --status-warning: var(--amber-700);
+  --status-warning-bg: color-mix(in srgb, var(--amber-500) 18%, transparent);
+  --status-warning-text: var(--amber-700);
+  --status-error: var(--red-700);
+  --status-error-bg: color-mix(in srgb, var(--red-500) 12%, transparent);
+  --status-error-text: var(--red-700);
+  --status-neutral: var(--zinc-600);
+  --status-neutral-bg: color-mix(in srgb, var(--zinc-500) 18%, transparent);
+  --status-neutral-text: var(--zinc-600);
+
+  /* ─── Oxygen — Brand accent (exact hex preserved) ───────────────────── */
+  --brand: var(--oxy-blue-500);
+  --brand-hover: var(--oxy-blue-600);
+  --brand-subtle: color-mix(in srgb, var(--oxy-blue-500) 10%, transparent);
+
+  /* ─── Oxygen — Syntax roles (darker shades on light ground) ─────────── */
+  --syn-keyword: var(--oxy-blue-600);
+  --syn-identifier: var(--zinc-900);
+  --syn-string: var(--purple-700);
+  --syn-number: var(--green-700);
+  --syn-punctuation: var(--zinc-500);
+  --syn-comment: var(--zinc-500);
+
+  /* ─── Oxygen — Chart aliases ────────────────────────────────────────── */
+  --chart-pass: var(--status-success);
+  --chart-fail: var(--status-error);
+  --chart-grid: var(--border);
+  --chart-label: var(--text-muted);
+
+  /* ─── Oxygen — Buttons (primary becomes near-black on light) ────────── */
+  --btn-primary-bg: var(--zinc-900);
+  --btn-primary-bg-hover: var(--zinc-800);
+  --btn-primary-text: var(--zinc-50);
+  --btn-secondary-bg: var(--surface);
+  --btn-secondary-bg-hover: var(--zinc-100);
+  --btn-secondary-text: var(--zinc-950);
+  --btn-secondary-border: var(--zinc-200);
+  --btn-ghost-bg: transparent;
+  --btn-ghost-bg-hover: var(--zinc-100);
+  --btn-ghost-text: var(--zinc-950);
+  --btn-destructive-bg: var(--red-500);
+  /* Pure white, not --zinc-50 (#fafafa): deliberate contrast bump on red. */
+  --btn-destructive-text: #ffffff;
+
+  /* ─── Oxygen — Input ────────────────────────────────────────────────── */
+  --input-bg: var(--surface);
+  --input-bg-focus: var(--surface);
+  --input-border: var(--zinc-200);
+  --input-border-focus: var(--zinc-300);
+  --input-border-error: var(--status-error);
+  --input-text: var(--zinc-950);
+  --input-placeholder: var(--text-muted);
+
+  /* ─── Oxygen — Badge ────────────────────────────────────────────────── */
+  --badge-success-bg: var(--status-success-bg);
+  --badge-success-text: var(--status-success);
+  --badge-warning-bg: var(--status-warning-bg);
+  --badge-warning-text: var(--status-warning);
+  --badge-error-bg: var(--status-error-bg);
+  --badge-error-text: var(--status-error);
+  --badge-neutral-bg: var(--status-neutral-bg);
+  --badge-neutral-text: var(--status-neutral);
+
+  /* ─── Oxygen — Card ─────────────────────────────────────────────────── */
+  --card-bg: var(--surface);
+  --card-border: var(--border);
+
+  /* ─── Oxygen — Navigation / Sidebar ─────────────────────────────────── */
+  --nav-bg: var(--surface);
+  --nav-item-text: var(--text-muted);
+  --nav-item-text-active: var(--text);
+  --nav-item-bg-active: var(--zinc-100);
+  --nav-item-bg-hover: var(--zinc-100);
+  --nav-icon-active: var(--oxy-blue-500);
+
+  /* ─── Oxygen — Code (inverted; inline stays brand blue) ─────────────── */
+  --code-bg: var(--zinc-100);
+  --code-text: var(--oxy-blue-500);
+  --code-text-highlight: var(--zinc-900);
+  --code-border: var(--zinc-200);
+
+  /* ─── Oxygen — Tooltip (dark tooltip floats over light canvas) ──────── */
+  --tooltip-bg: var(--zinc-900);
+  --tooltip-text: var(--zinc-50);
+  --tooltip-border: var(--zinc-800);
+
+  color-scheme: light;
+}

@@ -7,9 +7,19 @@
  * temporary DOM element and reads back the computed `rgb(...)` value.
  */
 export const resolveColor = (cssVarName: string): string => {
-  const raw = getComputedStyle(document.body).getPropertyValue(cssVarName).trim();
-  const match = raw.match(/[\d.]+/g);
-  if (!match || match.length < 3) return raw;
+  // Apply the variable to a hidden probe so the browser resolves var(),
+  // color-mix(), hex, named colors, etc. into a normalized rgb(...)/rgba(...)
+  // string. Reading the raw property value would return whatever literal is
+  // in the stylesheet — e.g. `#f5f5f5`, which the digit-only regex below
+  // misparses as rgb(5, 5, 5).
+  const probe = document.createElement("div");
+  probe.style.color = `var(${cssVarName})`;
+  probe.style.display = "none";
+  document.body.appendChild(probe);
+  const computed = getComputedStyle(probe).color;
+  document.body.removeChild(probe);
+  const match = computed.match(/[\d.]+/g);
+  if (!match || match.length < 3) return computed;
   const [r, g, b] = match.map(Number);
   return `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`;
 };

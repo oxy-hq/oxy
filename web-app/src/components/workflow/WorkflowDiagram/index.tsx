@@ -76,7 +76,7 @@ const WorkflowDiagram: React.FC<WorkflowDiagramProps> = ({ workflowId, runId, wo
       >
         <Controls showInteractive={false} />
         <Background
-          color='var(--muted-foreground)'
+          color='var(--border)'
           bgColor='var(--background)'
           variant={BackgroundVariant.Dots}
         />

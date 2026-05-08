@@ -315,7 +315,7 @@ const PastRunEntry = ({
               );
             })}
           {runAnswer && (
-            <div className='rounded-lg border border-border bg-card p-4'>
+            <div>
               <Markdown>{runAnswer}</Markdown>
             </div>
           )}
@@ -753,7 +753,7 @@ const AnalyticsThread = ({ thread }: Props) => {
                           );
                         })}
                         {state.answer && (
-                          <div className='rounded-lg border border-border bg-card p-4'>
+                          <div>
                             <Markdown>{state.answer}</Markdown>
                           </div>
                         )}
