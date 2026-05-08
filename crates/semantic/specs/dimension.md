@@ -181,14 +181,14 @@ dimensions:
     type: number
     description: "Total order amount before discounts"
     expr: order_amount
-    samples: [129.99, 89.50, 234.75]
+    samples: ["129.99", "89.50", "234.75"]
     synonyms: ["total", "amount", "order_total"]
 
   - name: is_first_order
     type: boolean
     description: "Whether this is the customer's first order"
     expr: is_first_order
-    samples: [true, false, true]
+    samples: ["true", "false"]
     synonyms: ["first_order", "is_new_customer"]
 
   - name: shipping_method

@@ -20,22 +20,26 @@ The solver runs a single LLM tool loop in the Solving phase. Tools let the LLM r
 | `write_file` | Create or fully overwrite a file — **suspends for user confirmation** |
 | `edit_file` | Exact-string replacement (old_string/new_string) — **suspends for user confirmation** |
 | `delete_file` | Delete a file — **suspends for user confirmation** |
+| `manage_directory` | Create / delete / rename a directory — **suspends for user confirmation** |
 | `validate_project` | Validate against Oxy YAML schemas |
+| `lookup_reference` | Load a domain reference card (semantic-layer / app-builder / agent-builder / agentic-builder) |
 | `lookup_schema` | Retrieve JSON schema for any Oxy object type |
 | `run_tests` | Execute `.test.yml` evaluation files |
+| `run_app` | Execute every task in a `.app.yml` end-to-end (smoke test, optional control params) |
 | `execute_sql` | Run SQL against configured databases |
 | `semantic_query` | Compile and run semantic layer queries |
 | `ask_user` | Generic clarification prompt |
 
 ## Suspension / HITL
 
-`write_file`, `edit_file`, and `delete_file` each trigger a suspension (HITL). The user sees the proposed file change and can accept or reject. The facade emits a synthetic `ToolResult` event on resume so SSE replay shows the decision.
+`write_file`, `edit_file`, `delete_file`, and `manage_directory` each trigger a suspension (HITL). The user sees the proposed file change and can accept or reject. The facade emits a synthetic `ToolResult` event on resume so SSE replay shows the decision.
 
 If the LLM batches multiple write ops in a single turn, all are applied on the first resume: `edit_file` ops have their `new_content` pre-computed at suspension time (stored in `stage_data["precomputed_edits"]`) to avoid TOCTOU races.
 
 ## Events
 
-- `BuilderEvent::ProposedChange` — file path, description, new content
+- `BuilderEvent::FileChangePending` — file path, description, new content, old content (emitted at suspension)
+- `BuilderEvent::FileChanged` — file path, description, new content, old content, is_deletion (emitted on resume after the change is applied)
 - `BuilderEvent::ToolUsed` — tool name, one-line summary
 
 ## Key Exports
@@ -44,6 +48,8 @@ If the LLM batches multiple write ops in a single turn, all are applied on the f
 - `start_pipeline(BuilderPipelineParams)` → `PipelineHandle<BuilderEvent>`
 - `event_handler()` → `DomainHandler` for EventRegistry registration
 - `BuilderTestRunner` — trait for running test files (injected by `oxy-app`)
+- `BuilderAppRunner` — trait for running `.app.yml` files end-to-end (injected by `oxy-app`)
+- `KnowledgeCard` — typed reference-card enum, exposed to the solver as cached prefix or via `lookup_reference`
 - `ConversationTurn` / `ToolExchange` — thread history types
 
 ## Rules

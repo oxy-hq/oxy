@@ -248,7 +248,15 @@ impl BuilderSolver {
                 Some(p) => p.as_ref(),
                 None => &default_schema,
             };
-        let tools = all_tools(schema_ref);
+        let mut tools = all_tools(schema_ref);
+        // Per-phase pruning: onboarding sets an allowlist so dbt /
+        // search_text / run_tests / manage_directory and other tools
+        // irrelevant to the artifact being authored aren't surfaced to
+        // the LLM.  Reduces tool-selection noise and trims ~3-5K tokens
+        // off the cached prefix per onboarding phase.
+        if let Some(allowlist) = self.tool_allowlist.as_ref() {
+            tools.retain(|t| allowlist.iter().any(|name| name == t.name));
+        }
         let (current_initial, prior_tool_exchanges, resume_max_tokens_override) =
             match self.resume_data.take() {
                 Some(resume) => {
@@ -294,6 +302,7 @@ impl BuilderSolver {
                     let workspace_root = workspace_root.clone();
                     let event_tx = event_tx.clone();
                     let test_runner = test_runner.clone();
+                    let app_runner = app_runner.clone();
                     let human_input = human_input.clone();
                     let db_provider = db_provider.clone();
                     let project_validator = project_validator.clone();
@@ -309,13 +318,13 @@ impl BuilderSolver {
                             &workspace_root,
                             &event_tx,
                             test_runner,
+                            app_runner,
                             human_input,
                             db_provider.as_ref(),
                             project_validator.as_ref(),
                             schema_provider.as_ref(),
                             semantic_compiler.as_ref(),
                             secrets_provider.as_ref(),
-                            app_runner.as_ref(),
                         )
                         .await;
                         let mut guard = exchanges.lock().unwrap_or_else(|e| e.into_inner());
@@ -325,7 +334,7 @@ impl BuilderSolver {
                 },
                 &self.event_tx,
                 {
-                    let mut config = BuilderSolver::solving_loop_config();
+                    let mut config = self.solving_loop_config();
                     config.max_tokens_override = resume_max_tokens_override;
                     config
                 },

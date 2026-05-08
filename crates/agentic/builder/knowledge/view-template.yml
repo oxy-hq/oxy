@@ -1,0 +1,98 @@
+# Vendored from oxy-hq/skills @ 303763a
+# Source: skills/oxy-semantic-layer/view-template.yml
+# Do not edit by hand — edit the skills repo and re-run scripts/sync-skills.sh.
+
+# Oxy View Template
+# Copy this template and fill in the details for your data model
+
+name: my_view_name
+description: "Brief business-friendly description of what this view represents"
+datasource: "database_name"  # Must match name in config.yml
+table: "schema_name.table_name"
+
+entities:
+  # Primary entity - the main subject of this view (required)
+  - name: primary_entity_name
+    type: primary
+    description: "What this entity represents"
+    key: primary_key_dimension_name  # Must reference a dimension name below
+
+  # Foreign entities - references to other views (optional)
+  # - name: related_entity_name
+  #   type: foreign
+  #   description: "Related entity from another view"
+  #   key: foreign_key_dimension_name
+
+dimensions:
+  # Key dimensions (for entity relationships)
+  - name: primary_key_dimension
+    type: string
+    description: "Primary key description"
+    expr: primary_key_column
+
+  # Regular dimensions (filterable/groupable attributes)
+  - name: dimension_name
+    type: string  # string|number|date|datetime|boolean
+    description: "Business-friendly description"
+    expr: column_name_or_sql_expression
+    samples: ["example1", "example2"]  # Optional, helps with understanding
+    synonyms: ["alternative name", "abbreviation"]  # Optional, for natural language
+
+  # Date dimensions
+  - name: created_date
+    type: date
+    description: "Date record was created"
+    expr: created_at
+
+  # Calculated dimensions
+  - name: year
+    type: number
+    description: "Year extracted from date"
+    expr: "EXTRACT(YEAR FROM created_at)"
+    synonyms: ["year"]
+
+  # Boolean dimensions
+  - name: is_active
+    type: boolean
+    description: "Whether record is active"
+    expr: status = 'active'
+    samples: ["true", "false"]   # samples are ALWAYS strings, even for boolean/number dimensions
+
+measures:
+  # Count measures
+  - name: total_records
+    type: count
+    description: "Total number of records"
+    synonyms: ["record count", "total"]
+
+  # Sum measures
+  - name: total_amount
+    type: sum
+    description: "Sum of all amounts"
+    expr: amount_column
+    synonyms: ["total", "sum"]
+
+  # Average measures
+  - name: average_amount
+    type: average
+    description: "Average amount per record"
+    expr: amount_column
+    synonyms: ["avg amount", "mean"]
+
+  # Filtered measures
+  - name: filtered_total
+    type: sum
+    description: "Sum of amounts for specific condition"
+    expr: amount_column
+    filters:
+      - expr: "{{status}} = 'completed'"
+
+  # Custom measures
+  - name: custom_calculation
+    type: custom
+    description: "Custom SQL calculation"
+    expr: |
+      CASE
+        WHEN condition THEN calculation
+        ELSE other_calculation
+      END

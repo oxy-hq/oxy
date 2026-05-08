@@ -321,8 +321,16 @@ function CreatedFilesSection({
           ?.replace(/\.(view|topic|app)\.yml$/, "") ?? a.filePath
     )
   );
-  const completed = expectedFiles.filter((f) => createdNames.has(f.name)).length;
-  const firstPendingIdx = expectedFiles.findIndex((f) => !createdNames.has(f.name));
+  // App2 is matched by category, not literal name: any `apps/*.app.yml`
+  // other than `apps/overview.app.yml` counts as completing it. The actual
+  // filename is unpredictable (single-topic vs cross-topic JOIN dashboard).
+  const hasNonOverviewApp = artifacts.some(
+    (a) => a.filePath.startsWith("apps/") && a.filePath !== "apps/overview.app.yml"
+  );
+  const isExpectedDone = (f: ExpectedFile): boolean =>
+    f.type === "app2" ? hasNonOverviewApp : createdNames.has(f.name);
+  const completed = expectedFiles.filter(isExpectedDone).length;
+  const firstPendingIdx = expectedFiles.findIndex((f) => !isExpectedDone(f));
 
   return (
     <div className='mt-1'>
@@ -346,7 +354,7 @@ function CreatedFilesSection({
       {open && (
         <div className='mt-2 flex flex-col gap-1.5 pl-5'>
           {expectedFiles.map((expected, i) => {
-            const isDone = createdNames.has(expected.name);
+            const isDone = isExpectedDone(expected);
             const isActive = !isDone && i === firstPendingIdx;
             // Key includes type + index because tables from different schemas
             // can share the same short name, which would otherwise collide.
@@ -370,7 +378,9 @@ function CreatedFilesSection({
                 >
                   {expected.name}
                 </span>
-                <span className='shrink-0 text-muted-foreground text-xs'>{expected.type}</span>
+                <span className='shrink-0 text-muted-foreground text-xs'>
+                  {expected.type === "app2" ? "app" : expected.type}
+                </span>
               </div>
             );
           })}

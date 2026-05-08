@@ -1,0 +1,55 @@
+# Vendored from oxy-hq/skills @ 303763a
+# Source: skills/oxy-semantic-layer/topic-template.yml
+# Do not edit by hand — edit the skills repo and re-run scripts/sync-skills.sh.
+
+# Oxy Topic Template
+# Topics organize views by business domain
+# Best practice: Create one topic per view
+
+name: my_topic_name
+description: "Business domain description - what questions can this topic answer?"
+base_view: primary_view_name  # The main view for this topic
+views:
+  - view_name_1
+  # - view_name_2  # Add more views if they're related
+
+# Optional: Apply default filters to all queries in this topic
+# Default filters use AND logic with user-provided filters
+# default_filters:
+#   # Equals filter
+#   - field: table_name.column_name
+#     eq:
+#       value: "active"
+#
+#   # Not equals filter
+#   - field: table_name.status
+#     neq:
+#       value: "deleted"
+#
+#   # In array filter (exclude multiple values)
+#   - field: table_name.status
+#     not_in:
+#       values: ["cancelled", "test", "archived"]
+#
+#   # Greater than or equal filter
+#   - field: table_name.amount
+#     gte:
+#       value: 0
+#
+#   # Date range filter
+#   - field: table_name.created_date
+#     in_date_range:
+#       from: "90 days ago"
+#       to: "now"
+
+# Available operators:
+# - eq: equals (value: "x")
+# - neq: not equals (value: "x")
+# - gt: greater than (value: 100)
+# - gte: greater than or equal (value: 100)
+# - lt: less than (value: 1000)
+# - lte: less than or equal (value: 1000)
+# - in: in array (values: ["a", "b", "c"])
+# - not_in: not in array (values: ["x", "y"])
+# - in_date_range: within date range (from: "date", to: "date")
+# - not_in_date_range: outside date range (from: "date", to: "date")

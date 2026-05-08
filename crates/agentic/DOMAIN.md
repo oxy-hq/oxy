@@ -318,15 +318,20 @@ const SKIP_STATES: &[&str] = &["clarifying", "specifying", "executing"];
 | `search_files` | glob pattern search | No |
 | `read_file` | read content (optional line range) | No |
 | `search_text` | regex across project | No |
-| `propose_change` | propose file edit/deletion | **Yes** |
+| `write_file` | create or fully overwrite a file | **Yes** |
+| `edit_file` | exact-string replacement in an existing file | **Yes** |
+| `delete_file` | delete a file | **Yes** |
+| `manage_directory` | create / delete / rename a directory | **Yes** |
 | `validate_project` | validate Oxy YAML | No |
+| `lookup_reference` | load a domain reference card | No |
 | `lookup_schema` | JSON schema for Oxy types | No |
 | `run_tests` | execute .test.yml files | No |
+| `run_app` | execute every task in a `.app.yml` end-to-end | No |
 | `execute_sql` | run SQL against connectors | No |
 | `semantic_query` | airlayer compile + execute | No |
 | `ask_user` | generic clarification | **Yes** |
 
-**HITL via `propose_change`**: Emits `ProposedChange { file_path, description, new_content }`, returns `BackTarget::Suspend`. User accepts/rejects via HTTP; on resume, a synthetic `ToolResult` event is emitted so SSE replay shows the user's decision.
+**HITL via the file-write tools**: `write_file`, `edit_file`, and `delete_file` all suspend under the shared `file_change` suspension kind. The solver emits `BuilderEvent::FileChangePending { file_path, description, new_content, old_content }` and returns `BackTarget::Suspend`. User accepts/rejects via HTTP; on resume the facade applies the change (writing `new_content` for `write_file` / `edit_file`, deleting for `delete_file`), emits `BuilderEvent::FileChanged`, and emits a synthetic `ToolResult` event so SSE replay shows the user's decision. When the LLM batches multiple writes in a single turn, the facade pre-computes each `edit_file`'s `new_content` at suspension time (stored in `stage_data["precomputed_edits"]`) to avoid TOCTOU races.
 
 **No extension table** — builder stores only the generic `agentic_runs.metadata` JSONB.
 

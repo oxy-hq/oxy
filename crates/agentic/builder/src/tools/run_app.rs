@@ -12,9 +12,12 @@ use super::utils::safe_path;
 pub fn run_app_def() -> ToolDef {
     ToolDef {
         name: "run_app",
-        description: "Execute a .app.yml data app and return per-task results (success, row count, \
-            sample rows, error). Always runs fresh — bypasses the result cache. Use after editing \
-            an app file to verify all tasks execute without error.",
+        description: "Execute every task in a `*.app.yml` end-to-end (the same path the dashboard \
+            renders) and return per-task results (success, row count, sample rows, error). Always \
+            runs fresh — bypasses the result cache. Use after writing or editing an `.app.yml` \
+            to catch runtime SQL errors that schema validation misses (malformed JOINs, \
+            dialect-specific type mismatches, missing `ON` clauses), and as the smoke test that \
+            onboarding's App / App2 phases run before declaring done.",
         parameters: json!({
             "type": "object",
             "properties": {
@@ -23,13 +26,14 @@ pub fn run_app_def() -> ToolDef {
                     "description": "Path to a .app.yml file, relative to the project root (e.g. 'examples/sales.app.yml')."
                 },
                 "params_json": {
-                    "type": "string",
-                    "description": "Optional JSON object string of control parameter values to inject (e.g. '{\"start_date\":\"2024-01-01\"}'). Omit or pass '{}' to use control defaults."
+                    "type": ["string", "null"],
+                    "description": "Optional JSON object string of control parameter values to inject (e.g. '{\"start_date\":\"2024-01-01\"}'). Omit or pass '{}' / null to use control defaults."
                 }
             },
             "required": ["file_path", "params_json"],
             "additionalProperties": false
         }),
+        strict: false,
         ..Default::default()
     }
 }

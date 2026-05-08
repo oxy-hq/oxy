@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use agentic_analytics::SchemaCatalog;
-use agentic_builder::BuilderTestRunner;
+use agentic_builder::{BuilderAppRunner, BuilderTestRunner};
 use agentic_core::delegation::{TaskAssignment, TaskSpec};
 use agentic_runtime::worker::{ExecutingTask, TaskExecutor};
 use async_trait::async_trait;
@@ -30,7 +30,7 @@ pub struct PipelineTaskExecutor {
     pub builder_bridges: Option<BuilderBridges>,
     pub schema_cache: Option<Arc<Mutex<HashMap<String, SchemaCatalog>>>>,
     pub builder_test_runner: Option<Arc<dyn BuilderTestRunner>>,
-    pub builder_app_runner: Option<Arc<dyn agentic_builder::BuilderAppRunner>>,
+    pub builder_app_runner: Option<Arc<dyn BuilderAppRunner>>,
     pub db: DatabaseConnection,
     /// Runtime state for registering answer channels (needed by workflow
     /// orchestrator tasks so the coordinator can resume them via answer channel

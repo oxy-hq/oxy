@@ -586,13 +586,13 @@ function BlankOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHandl
       changed = true;
     };
 
-    // The `propose_change` tool's tool_result body is just `{ answer: "Accept" }`
-    // — it doesn't carry `file_path`. The path lives on the SSE
-    // `proposed_change` / `file_changed` events emitted by the builder
-    // domain (`BuilderEvent::ProposedChange` / `BuilderEvent::FileChanged`),
-    // so we read `file_path` from those.
+    // The HITL-gated write/edit/delete tool_result bodies are just
+    // `{ answer: "Accept" }` — they don't carry `file_path`. The path lives
+    // on the SSE `file_change_pending` / `file_changed` events emitted by
+    // the builder domain (`BuilderEvent::FileChangePending` /
+    // `BuilderEvent::FileChanged`), so we read `file_path` from those.
     const collectFromEvent = (ev: { type: string; data: unknown }) => {
-      if (ev.type === "proposed_change" || ev.type === "file_changed") {
+      if (ev.type === "file_change_pending" || ev.type === "file_changed") {
         const fp = (ev.data as { file_path?: string })?.file_path;
         if (fp) addIfNew(fp);
       }
@@ -627,8 +627,8 @@ function BlankOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHandl
     // No synthesized fallback for app2 — its filename is unpredictable
     // (single-topic deep-dive `apps/<topic>.app.yml` vs cross-topic
     // `apps/<topic1>_<topic2>.app.yml`), so only trust the actual
-    // `proposed_change` event captured above. Synthesizing a guess
-    // would inject a fictional path that never resolves on disk and
+    // file-change event captured above. Synthesizing a guess would
+    // inject a fictional path that never resolves on disk and
     // is not superseded by the real one (`addIfNew` is monotonic).
 
     if (changed) setAccumulatedArtifacts([...map.values()]);
@@ -1336,7 +1336,7 @@ function deriveCreatedFiles(
   if (ps.app === "done") files.push("apps/overview.app.yml");
   // app2 is intentionally omitted — its filename is unpredictable.
   // The caller merges this list with `accumulatedArtifacts`, which already
-  // has the actual app2 path captured from the `proposed_change` event.
+  // has the actual app2 path captured from the file-change event.
   return files;
 }
 

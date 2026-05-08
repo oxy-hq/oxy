@@ -1,7 +1,6 @@
 //! HTTP server and API endpoints
 
 pub mod api;
-pub mod builder_app_runner;
 pub mod builder_test_runner;
 pub mod feature_flags;
 pub mod router;

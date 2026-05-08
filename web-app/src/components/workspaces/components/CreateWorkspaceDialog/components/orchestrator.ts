@@ -23,17 +23,21 @@ import type {
 // ── Topic / second-app prediction ───────────────────────────────────────────
 //
 // Each selected table becomes one `.view.yml` + one `.topic.yml`, and the
-// topic name is the short (post-`.`) table name. The builder picks topics
-// alphabetically, so we can predict which topic each app will cover:
+// topic name is the short (post-`.`) table name. App naming convention:
 //
-// - Overview (always) → always named `apps/overview.app.yml`.
-// - Second deep-dive → only built when ≥ 2 topics exist, and its filename is
-//   `apps/<topic>.app.yml` where <topic> is the SECOND topic alphabetically.
-//   The frontend labels / expected-file entries reflect that predicted topic
-//   so the UI never shows a generic "Detail Dashboard" placeholder.
-//
-// These helpers are exported so the hooks/components share a single source
-// of truth for the gate + display names.
+// - Overview (always) → `apps/overview.app.yml`. The App phase picks the
+//   most data-rich topic via profiling, so the topic *backing* the overview
+//   is not known up front — but the filename is always `overview`.
+// - Second deep-dive → only emitted when ≥ 2 topics exist. Filename is
+//   either `apps/<topic1>_<topic2>.app.yml` (cross-topic JOIN dashboard
+//   when an FK overlap exists) OR `apps/<topic>.app.yml` (single-topic
+//   deep-dive on the first non-overview topic alphabetically). The frontend
+//   cannot reliably predict the slug, so completion matching uses the
+//   "any non-overview .app.yml" rule (see `OnboardingRightRail`'s
+//   `CreatedFilesSection`). The helpers below are still exported because
+//   they're useful as a *display fallback* — labels show the predicted
+//   topic name while the file is being written, then swap to the real
+//   `title:` once the artifact is read.
 
 /** Short table name: the segment after the last dot. */
 function shortTableName(table: string): string {
@@ -46,9 +50,15 @@ function sortedTopicSlugs(tables: string[]): string[] {
 }
 
 /**
- * Predict the topic slug the deep-dive dashboard will cover, or `undefined`
- * when the workspace has fewer than 2 topics (in which case no second app
- * is built).
+ * Best-effort guess at the topic slug the deep-dive dashboard will cover,
+ * used only as a *display fallback* for labels while the file is being
+ * written. The backend may emit either a single-topic or cross-topic
+ * dashboard with a filename we can't predict from the table list alone, so
+ * this is never used for completion matching — see `CreatedFilesSection`
+ * for the actual "any non-overview .app.yml" rule.
+ *
+ * Returns `undefined` when the workspace has fewer than 2 topics, in which
+ * case no second app is built.
  */
 export function predictSecondAppTopic(tables: string[]): string | undefined {
   const sorted = sortedTopicSlugs(tables);
@@ -1170,9 +1180,10 @@ function buildPhaseMilestones(
   ];
 
   // Surface the deep-dive milestone only when we have enough topic variety
-  // to warrant a second dashboard. Labelling it with the topic name (e.g.
-  // "Customers Dashboard") sets the user's expectation that this is a
-  // specific business concept, not a generic "detail" view.
+  // to warrant a second dashboard. The label is a *display fallback* — the
+  // backend may emit a cross-topic JOIN dashboard with a different slug,
+  // so the predicted name is just the best guess until the real `title:`
+  // can be read off the artifact.
   const secondTopic = predictSecondAppTopic(state.selectedTables);
   if (secondTopic) {
     milestones.push({
@@ -1294,9 +1305,12 @@ export function deriveRailState(state: OnboardingState): OnboardingRailState {
 
   // Build expected file list: config + views + agent + app(s).
   //
-  // The second app's name matches the topic slug the builder will pick
-  // (second topic alphabetically), so the `apps/<topic>.app.yml` artifact
-  // reported on completion cleanly matches this entry's `name`.
+  // The second app's filename is unpredictable — App2 may emit a single-topic
+  // deep-dive (`apps/<topic>.app.yml`) or a cross-topic JOIN dashboard
+  // (`apps/<topic1>_<topic2>.app.yml`). We tag the expected entry as `"app2"`
+  // so `CreatedFilesSection` matches it against any non-overview `.app.yml`
+  // artifact regardless of slug. The `name` is just a display label —
+  // `humanizeTopicSlug(predicted)` while we wait for the real `title:`.
   const secondAppTopic = predictSecondAppTopic(state.selectedTables);
   const expectedFiles: import("./types").ExpectedFile[] =
     state.selectedTables.length > 0
@@ -1308,7 +1322,9 @@ export function deriveRailState(state: OnboardingState): OnboardingRailState {
           }),
           { name: "analytics.agentic.yml", type: "agentic" },
           { name: "overview", type: "app" as const },
-          ...(secondAppTopic ? [{ name: secondAppTopic, type: "app" as const }] : [])
+          ...(secondAppTopic
+            ? [{ name: humanizeTopicSlug(secondAppTopic), type: "app2" as const }]
+            : [])
         ]
       : [];
 

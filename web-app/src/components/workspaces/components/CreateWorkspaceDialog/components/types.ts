@@ -318,9 +318,20 @@ export interface GeneratedArtifact {
   type: "view" | "topic" | "app" | "agent" | "agentic" | "config";
 }
 
+/**
+ * The `"app2"` value is an expected-file-only marker (not a real artifact
+ * type). Onboarding's App2 phase emits either `apps/<topic>.app.yml` for a
+ * single-topic deep-dive or `apps/<topic1>_<topic2>.app.yml` for a
+ * cross-topic JOIN dashboard, and the frontend can't predict which slug
+ * will be picked. Tagging the expected entry as `"app2"` lets the right
+ * rail match it against any non-overview `.app.yml` artifact rather than
+ * a literal filename. See `CreatedFilesSection` for the matching logic.
+ */
+export type ExpectedFileType = GeneratedArtifact["type"] | "app2";
+
 export interface ExpectedFile {
   name: string;
-  type: GeneratedArtifact["type"];
+  type: ExpectedFileType;
 }
 
 export interface OnboardingRailState {

@@ -12,6 +12,7 @@ use crate::{
     app_runner::BuilderAppRunner,
     database::BuilderDatabaseProvider,
     events::BuilderEvent,
+    prompts::{KnowledgeCard, reference_context, with_reference},
     schema_provider::BuilderSchemaProvider,
     secrets::BuilderSecretsProvider,
     semantic::BuilderSemanticCompiler,
@@ -21,11 +22,12 @@ use crate::{
         execute_compile_dbt_model_single, execute_debug_dbt_project, execute_delete_file,
         execute_docs_generate_dbt, execute_edit_file, execute_execute_sql, execute_format_dbt_sql,
         execute_get_dbt_column_lineage, execute_get_dbt_lineage, execute_init_dbt_project,
-        execute_list_dbt_nodes, execute_list_dbt_projects, execute_lookup_schema,
-        execute_manage_directory, execute_parse_dbt_project, execute_read_file, execute_run_app,
-        execute_run_dbt_models, execute_run_tests, execute_search_files, execute_search_text,
-        execute_seed_dbt_project, execute_semantic_query, execute_test_dbt_models,
-        execute_validate_project, execute_write_file,
+        execute_list_dbt_nodes, execute_list_dbt_projects, execute_lookup_reference,
+        execute_lookup_schema, execute_manage_directory, execute_parse_dbt_project,
+        execute_read_file, execute_run_app, execute_run_dbt_models, execute_run_tests,
+        execute_search_files, execute_search_text, execute_seed_dbt_project,
+        execute_semantic_query, execute_test_dbt_models, execute_validate_project,
+        execute_write_file,
     },
     types::{BuilderSpec, ConversationTurn, ToolExchange},
     validator::BuilderProjectValidator,
@@ -36,6 +38,7 @@ pub struct BuilderSolver {
     pub(crate) project_root: PathBuf,
     pub(crate) event_tx: Option<EventStream<BuilderEvent>>,
     pub(crate) test_runner: Option<Arc<dyn BuilderTestRunner>>,
+    pub(crate) app_runner: Option<Arc<dyn BuilderAppRunner>>,
     pub(crate) human_input: HumanInputHandle,
     pub(crate) suspension_data: Option<SuspendedRunData>,
     pub(crate) resume_data: Option<ResumeInput>,
@@ -44,7 +47,20 @@ pub struct BuilderSolver {
     pub(crate) schema_provider: Option<Arc<dyn BuilderSchemaProvider>>,
     pub(crate) semantic_compiler: Option<Arc<dyn BuilderSemanticCompiler>>,
     pub(crate) secrets_provider: Option<Arc<dyn BuilderSecretsProvider>>,
-    pub(crate) app_runner: Option<Arc<dyn BuilderAppRunner>>,
+    pub(crate) knowledge_cards: Vec<KnowledgeCard>,
+    /// When true, [`interpret_impl`] short-circuits to an empty answer
+    /// without invoking the LLM.  Set by the onboarding flow because the
+    /// UI collapses the per-phase reasoning trace and shows CTAs instead
+    /// of the synthesized summary, so the Interpreting LLM call is dead
+    /// weight.  Default `false` for the interactive chat builder, which
+    /// surfaces the summary to the user.
+    pub(crate) skip_interpreting: bool,
+    /// When `Some`, only tools whose names appear in the allowlist are
+    /// surfaced to the LLM during the solving phase.  Used by onboarding
+    /// to drop dbt / search_text / run_tests / manage_directory and the
+    /// 15+ irrelevant tools off the per-phase tool list.  Default
+    /// `None` exposes the full tool set (the chat-builder behavior).
+    pub(crate) tool_allowlist: Option<Vec<String>>,
 }
 
 impl BuilderSolver {
@@ -54,6 +70,7 @@ impl BuilderSolver {
             project_root,
             event_tx: None,
             test_runner: None,
+            app_runner: None,
             human_input: Arc::new(DeferredInputProvider),
             suspension_data: None,
             resume_data: None,
@@ -62,7 +79,9 @@ impl BuilderSolver {
             schema_provider: None,
             semantic_compiler: None,
             secrets_provider: None,
-            app_runner: None,
+            knowledge_cards: Vec::new(),
+            skip_interpreting: false,
+            tool_allowlist: None,
         }
     }
 
@@ -96,6 +115,11 @@ impl BuilderSolver {
         self
     }
 
+    pub fn with_app_runner(mut self, runner: Arc<dyn BuilderAppRunner>) -> Self {
+        self.app_runner = Some(runner);
+        self
+    }
+
     pub fn with_human_input(mut self, provider: HumanInputHandle) -> Self {
         self.human_input = provider;
         self
@@ -106,15 +130,36 @@ impl BuilderSolver {
         self
     }
 
-    pub fn with_app_runner(mut self, runner: Arc<dyn BuilderAppRunner>) -> Self {
-        self.app_runner = Some(runner);
+    /// Pre-populate the cached system prefix with the given reference
+    /// cards.  Empty (the default) keeps the prefix at index + rules
+    /// only and relies on the `lookup_reference` tool for depth.
+    pub fn with_knowledge_cards(mut self, cards: Vec<KnowledgeCard>) -> Self {
+        self.knowledge_cards = cards;
+        self
+    }
+
+    /// Skip the Interpreting LLM call after Solving completes.  Used by
+    /// onboarding because the UI collapses the trace.  See the field
+    /// doc on [`BuilderSolver::skip_interpreting`].
+    pub fn with_skip_interpreting(mut self, skip: bool) -> Self {
+        self.skip_interpreting = skip;
+        self
+    }
+
+    /// Restrict the tools exposed to the LLM during solving to the
+    /// given allowlist.  Tool names in the list that don't match a
+    /// real tool are silently ignored.  Default unrestricted.
+    pub fn with_tool_allowlist(mut self, names: Vec<String>) -> Self {
+        self.tool_allowlist = Some(names);
         self
     }
 
     pub(crate) fn build_solving_system_prompt(&self) -> String {
-        let root = self.project_root.to_string_lossy();
-        format!(
-            r#"You are a copilot for an Oxygen data project located at: {root}
+        // Project root is intentionally omitted: it varies per workspace and would
+        // make the cached system prefix unique per project. The path is emitted
+        // separately as part of the uncached system suffix (see `solving_loop_config`).
+        let task = String::from(
+            r#"You are a copilot for an Oxygen data project.
 
 Oxygen is a data platform. A project is a directory of YAML configuration files that define
 agents, workflows, semantic models, and data apps. You help users read, understand, and
@@ -142,6 +187,7 @@ modify these files.
 - delete_file(file_path, description): delete an existing file. HITL-gated.
 - manage_directory(operation, path, description, new_path?): create, delete, or rename a directory and ask the user for confirmation. operation must be "create", "delete", or "rename". new_path is required for "rename". delete removes the directory and all its contents recursively.
 - validate_project(file_path?): validate all project files (or a single file) against the Oxy schema; returns any errors
+- lookup_reference(card_name): load a domain reference card with the rules and file shape for a given YAML type. Card names: `semantic-layer` (.view.yml + .topic.yml), `app-builder` (.app.yml), `agent-builder` (classic .agent.yml), `agentic-builder` (.agentic.yml). Call this before authoring or modifying any of those file types if you have not already loaded the card in this conversation.
 - lookup_schema(object_name): look up the JSON schema for any Oxy object type — semantic (Dimension, Measure, View, Topic…), agent (AgentConfig, AgentType, ToolType…), FSM workflow (AgenticConfig), workflow tasks (Workflow, Task, ExecuteSQLTask, AgentTask…), app (AppConfig, Display…), test (TestFileConfig, TestSettings, TestCase), or config (Config, Database, DatabaseType)
 - run_tests(file_path?): run a specific .test.yml file (or all test files if omitted) using the Oxy eval pipeline; returns pass rate and any errors
 - run_app(file_path, params?): execute a .app.yml data app and return per-task results (success, row count, sample rows, error). Always runs fresh — bypasses the result cache. Use after editing an app file to verify all tasks execute without error.
@@ -358,8 +404,15 @@ When raw CSV columns change or cleaning logic is updated:
 
 After your last tool call, output NOTHING. No summary, no confirmation, no closing message.
 A separate step reads your tool results and writes the reply to the user.
-Any text you output after the final tool call is wasted tokens and will be discarded."#
-        )
+Any text you output after the final tool call is wasted tokens and will be discarded."#,
+        );
+
+        // Append domain-knowledge context: always the index + cross-
+        // cutting rules, plus any cards this run has been pre-populated
+        // with (per onboarding phase, set via `with_knowledge_cards`).
+        // Interactive runs default to an empty card list and rely on
+        // the `lookup_reference` tool for depth.
+        with_reference(&reference_context(&self.knowledge_cards), &task)
     }
 
     pub(crate) fn build_interpreting_system_prompt(&self) -> String {
@@ -378,6 +431,18 @@ Do not call any tools."#
     /// in sync between Solving and Interpreting calls.
     pub(crate) fn current_date_hint() -> String {
         chrono::Utc::now().format("Today is %Y-%m-%d.").to_string()
+    }
+
+    /// Per-call uncached system suffix: project root + day-only date hint.
+    /// The project root is workspace-specific, so keeping it out of the
+    /// cached system prefix is what lets the prefix actually be reused
+    /// across workspaces and across calls.
+    pub(crate) fn system_suffix(&self) -> String {
+        format!(
+            "Project root: {root}\n\n{date}",
+            root = self.project_root.display(),
+            date = Self::current_date_hint(),
+        )
     }
 
     pub(crate) fn build_initial_messages(
@@ -414,7 +479,7 @@ Do not call any tools."#
         InitialMessages::Messages(messages)
     }
 
-    pub(crate) fn solving_loop_config() -> ToolLoopConfig {
+    pub(crate) fn solving_loop_config(&self) -> ToolLoopConfig {
         ToolLoopConfig {
             max_tool_rounds: 30,
             state: "solving".to_string(),
@@ -422,7 +487,7 @@ Do not call any tools."#
             response_schema: None,
             max_tokens_override: Some(16384),
             sub_spec_index: None,
-            system_date_hint: Some(Self::current_date_hint()),
+            system_date_hint: Some(self.system_suffix()),
         }
     }
 }
@@ -440,13 +505,13 @@ pub(crate) async fn dispatch_tool(
     project_root: &Path,
     event_tx: &Option<EventStream<BuilderEvent>>,
     test_runner: Option<Arc<dyn BuilderTestRunner>>,
+    app_runner: Option<Arc<dyn BuilderAppRunner>>,
     human_input: HumanInputHandle,
     db_provider: Option<&Arc<dyn BuilderDatabaseProvider>>,
     project_validator: Option<&Arc<dyn BuilderProjectValidator>>,
     schema_provider: Option<&Arc<dyn BuilderSchemaProvider>>,
     semantic_compiler: Option<&Arc<dyn BuilderSemanticCompiler>>,
     secrets_provider: Option<&Arc<dyn BuilderSecretsProvider>>,
-    app_runner: Option<&Arc<dyn BuilderAppRunner>>,
 ) -> Result<Box<dyn ToolOutput>, ToolError> {
     match name {
         "search_files" => {
@@ -623,6 +688,21 @@ pub(crate) async fn dispatch_tool(
         }
         "ask_user" => agentic_core::tools::handle_ask_user(params, human_input.as_ref())
             .map(|v| Box::new(v) as Box<dyn ToolOutput>),
+        "lookup_reference" => {
+            let r = execute_lookup_reference(params);
+            if let Ok(ref v) = r {
+                let card_name = v["card_name"].as_str().unwrap_or("");
+                emit_domain(
+                    event_tx,
+                    BuilderEvent::ToolUsed {
+                        tool_name: "lookup_reference".into(),
+                        summary: format!("Loaded reference: '{card_name}'"),
+                    },
+                )
+                .await;
+            }
+            r.map(|v| Box::new(v) as Box<dyn ToolOutput>)
+        }
         "lookup_schema" => {
             let provider = schema_provider
                 .ok_or_else(|| ToolError::Execution("schema provider is not configured".into()))?;
@@ -1084,4 +1164,111 @@ pub(crate) fn make_resume_stage_data(
         "suggestions": suggestions,
         "tool_exchanges": tool_exchanges,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn solver_with_root(root: &str) -> BuilderSolver {
+        BuilderSolver::new(LlmClient::new("test-key"), PathBuf::from(root))
+    }
+
+    #[test]
+    fn solving_system_prompt_is_workspace_independent() {
+        // The cached system prefix must be byte-stable across workspaces so a
+        // single Anthropic prompt-cache entry covers every project. Embedding
+        // `project_root` in the prefix would defeat that — the path now lives
+        // in the uncached `system_suffix` instead.
+        let a = solver_with_root("/tmp/project-a").build_solving_system_prompt();
+        let b = solver_with_root("/tmp/project-b").build_solving_system_prompt();
+        assert_eq!(a, b, "solving system prompt must not vary by workspace");
+        assert!(
+            !a.contains("/tmp/project-a"),
+            "project root leaked into cached prefix"
+        );
+    }
+
+    #[test]
+    fn system_suffix_carries_project_root_and_date() {
+        let suffix = solver_with_root("/tmp/proj").system_suffix();
+        assert!(suffix.contains("Project root: /tmp/proj"));
+        assert!(suffix.contains("Today is "));
+    }
+
+    #[test]
+    fn solving_system_prompt_with_cards_is_workspace_independent() {
+        // The byte-stability guarantee must hold for a phase-specific
+        // prefix too: the cached entry for a given card set must match
+        // across workspaces.
+        let cards = vec![KnowledgeCard::SemanticLayer];
+        let a = solver_with_root("/tmp/project-a")
+            .with_knowledge_cards(cards.clone())
+            .build_solving_system_prompt();
+        let b = solver_with_root("/tmp/project-b")
+            .with_knowledge_cards(cards)
+            .build_solving_system_prompt();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn solving_prompt_mentions_lookup_reference() {
+        let prompt = solver_with_root("/tmp/proj").build_solving_system_prompt();
+        assert!(
+            prompt.contains("lookup_reference"),
+            "available-tools list must mention lookup_reference"
+        );
+    }
+
+    #[test]
+    fn solving_prompt_default_is_index_only() {
+        // No cards passed → cached prefix must NOT carry the full
+        // semantic-layer card body.  The unique sentence is something
+        // only the semantic-layer card body says.
+        let prompt = solver_with_root("/tmp/proj").build_solving_system_prompt();
+        assert!(prompt.contains("## Reference cards"));
+        assert!(prompt.contains("## Cross-cutting rules"));
+        assert!(
+            !prompt.contains("Cross-view joins happen by matching entity names"),
+            "default solver prefix should not include the full semantic-layer card body"
+        );
+    }
+
+    #[test]
+    fn solving_prompt_with_semantic_layer_includes_card() {
+        let prompt = solver_with_root("/tmp/proj")
+            .with_knowledge_cards(vec![KnowledgeCard::SemanticLayer])
+            .build_solving_system_prompt();
+        assert!(prompt.contains("## Semantic layer reference"));
+        assert!(prompt.contains("entities:"));
+        assert!(prompt.contains("base_view:"));
+    }
+
+    #[test]
+    fn skip_interpreting_default_is_false() {
+        let solver = solver_with_root("/tmp/proj");
+        assert!(!solver.skip_interpreting);
+    }
+
+    #[test]
+    fn with_skip_interpreting_sets_flag() {
+        let solver = solver_with_root("/tmp/proj").with_skip_interpreting(true);
+        assert!(solver.skip_interpreting);
+    }
+
+    #[test]
+    fn tool_allowlist_default_is_unrestricted() {
+        let solver = solver_with_root("/tmp/proj");
+        assert!(solver.tool_allowlist.is_none());
+    }
+
+    #[test]
+    fn with_tool_allowlist_sets_filter() {
+        let solver = solver_with_root("/tmp/proj")
+            .with_tool_allowlist(vec!["write_file".into(), "read_file".into()]);
+        assert_eq!(
+            solver.tool_allowlist.as_deref(),
+            Some(&["write_file".to_string(), "read_file".to_string()][..])
+        );
+    }
 }

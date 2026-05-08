@@ -8,8 +8,9 @@
 //! - `delete_file`           — delete an existing file (HITL-gated)
 //! - `manage_directory`      — create, delete, or rename a directory with user confirmation
 //! - `validate_project`      — validate project files against schema using the oxy config validator
+//! - `lookup_reference`      — load a domain reference card (semantic-layer/app-builder/agent-builder/agentic-builder)
 //! - `run_tests`             — run one or more `.test.yml` files using the oxy eval pipeline
-//! - `run_app`               — execute a .app.yml data app and return per-task results (bypass cache)
+//! - `run_app`               — execute every task in a `.app.yml` end-to-end with optional control params (smoke test, bypasses cache)
 //! - `execute_sql`           — run a SQL query against a configured database
 //! - `semantic_query`        — compile and execute a semantic layer query
 //! - `list_dbt_projects`     — list all airform/dbt projects in the workspace
@@ -34,6 +35,7 @@ mod airform;
 mod delete_file;
 mod edit_file;
 mod execute_sql;
+mod lookup_reference;
 mod lookup_schema;
 mod manage_directory;
 mod read_file;
@@ -61,6 +63,7 @@ pub use airform::{
 pub use delete_file::execute_delete_file;
 pub use edit_file::{apply_edit, execute_edit_file};
 pub use execute_sql::execute_execute_sql;
+pub use lookup_reference::execute_lookup_reference;
 pub use lookup_schema::execute_lookup_schema;
 pub use manage_directory::execute_manage_directory;
 pub use read_file::execute_read_file;
@@ -83,6 +86,7 @@ pub fn all_tools(schema_provider: &dyn BuilderSchemaProvider) -> Vec<ToolDef> {
         edit_file::edit_file_def(),
         delete_file::delete_file_def(),
         validate_project::validate_project_def(),
+        lookup_reference::lookup_reference_def(),
         lookup_schema::lookup_schema_def(schema_provider),
         run_tests::run_tests_def(),
         run_app::run_app_def(),

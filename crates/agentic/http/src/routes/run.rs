@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use agentic_pipeline::PipelineBuilder;
 use agentic_pipeline::platform::{BuilderBridges, PlatformContext};
-use agentic_pipeline::{AutoAcceptInputProvider, LlmClient, OpenAiProvider};
+use agentic_pipeline::{AutoAcceptInputProvider, BuilderLlmMetadata, LlmClient, OpenAiProvider};
 
 use crate::{
     db, sse,
@@ -29,6 +29,22 @@ use super::{AnswerRequest, CreateRunRequest, CreateRunResponse, RunIdPath, Think
 /// Cap on the number of tables an onboarding request may supply — guards
 /// against pathological LLM prompts and request-size blowups.
 const MAX_ONBOARDING_TABLES: usize = 50;
+
+/// Construct the onboarding-flow `LlmClient`. Used at create time and on
+/// cold resume so both code paths produce a byte-identical client.
+async fn build_onboarding_llm_client(
+    platform: &dyn PlatformContext,
+    vendor: &str,
+    model_ref: &str,
+    key_var: &str,
+) -> LlmClient {
+    let api_key = platform.resolve_secret(key_var).await.unwrap_or_default();
+    if vendor == "openai" {
+        LlmClient::with_provider(OpenAiProvider::new(&api_key, model_ref))
+    } else {
+        LlmClient::with_model(api_key, model_ref.to_string())
+    }
+}
 
 pub async fn create_run(
     Extension(state): Extension<Arc<AgenticState>>,
@@ -68,11 +84,35 @@ pub async fn create_run(
         body.question.clone()
     };
 
+    // Onboarding phases declare which reference cards their prompt
+    // needs pre-populated; interactive (no onboarding context) runs
+    // default to no cards and rely on the `lookup_reference` tool.
+    let knowledge_cards = body
+        .onboarding_context
+        .as_ref()
+        .map(|ctx| ctx.knowledge_cards())
+        .unwrap_or_default();
+
+    // Onboarding also declares a per-phase tool allowlist (drops dbt /
+    // search_text / run_tests etc.) and skips the Interpreting LLM
+    // call (the UI surfaces CTAs in place of the synthesized summary).
+    let tool_allowlist = body
+        .onboarding_context
+        .as_ref()
+        .map(|ctx| ctx.tool_allowlist());
+    let skip_interpreting = body.onboarding_context.is_some();
+
     let mut builder = PipelineBuilder::new(platform.clone())
         .with_builder_bridges(bridges.clone())
         .question(&question)
         .thinking_mode(body.thinking_mode)
-        .schema_cache(Arc::clone(&state.schema_cache));
+        .schema_cache(Arc::clone(&state.schema_cache))
+        .knowledge_cards(knowledge_cards)
+        .skip_interpreting(skip_interpreting);
+
+    if let Some(allowlist) = tool_allowlist {
+        builder = builder.tool_allowlist(allowlist);
+    }
 
     if let Some(tid) = thread_id_uuid {
         builder = builder.thread(tid);
@@ -92,22 +132,23 @@ pub async fn create_run(
     // During onboarding the chosen model may not be in config.yml yet (the
     // builder agent is about to write it). When onboarding_context carries a
     // model_config, build the LlmClient directly and override the pipeline's
-    // default resolution.
+    // default resolution. Also persist the (vendor, model_ref, key_var)
+    // tuple via with_builder_llm_metadata so a cold resume (server restart
+    // mid-onboarding) can rebuild an identical client.
     if let Some(mc) = body
         .onboarding_context
         .as_ref()
         .and_then(|ctx| ctx.model_config.as_ref())
     {
-        let api_key = platform
-            .resolve_secret(&mc.key_var)
-            .await
-            .unwrap_or_default();
-        let client = if mc.vendor == "openai" {
-            LlmClient::with_provider(OpenAiProvider::new(&api_key, &mc.model_ref))
-        } else {
-            LlmClient::with_model(api_key, mc.model_ref.clone())
-        };
-        builder = builder.with_builder_llm_client(client);
+        let client =
+            build_onboarding_llm_client(&*platform, &mc.vendor, &mc.model_ref, &mc.key_var).await;
+        builder = builder
+            .with_builder_llm_client(client)
+            .with_builder_llm_metadata(BuilderLlmMetadata {
+                vendor: mc.vendor.clone(),
+                model_ref: mc.model_ref.clone(),
+                key_var: mc.key_var.clone(),
+            });
     }
 
     builder = if body.domain.as_deref() == Some("builder") {
@@ -348,7 +389,7 @@ pub async fn answer_run(
             }
         }
     }
-    let run = run.unwrap();
+    let run = run.expect("loop only breaks when task_status == awaiting_input");
 
     let source_type = run.source_type.as_deref().unwrap_or("analytics");
 
@@ -378,11 +419,56 @@ pub async fn answer_run(
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
+    // Restore the cached-prefix card set so the resumed solver builds
+    // a system prefix byte-identical to the create-time one — anything
+    // else would defeat the prompt cache on the resume turn.
+    let knowledge_cards: Vec<agentic_pipeline::KnowledgeCard> = run
+        .metadata
+        .as_ref()
+        .and_then(|m| m.get("knowledge_cards"))
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| {
+                    v.as_str()
+                        .and_then(agentic_pipeline::KnowledgeCard::from_slug)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Same for skip_interpreting and tool_allowlist — both must match
+    // the create-time values for cache stability on the resume turn,
+    // and skip_interpreting in particular changes terminal behavior
+    // (empty answer text vs. synthesized summary).
+    let skip_interpreting = run
+        .metadata
+        .as_ref()
+        .and_then(|m| m.get("skip_interpreting"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let tool_allowlist: Option<Vec<String>> = run
+        .metadata
+        .as_ref()
+        .and_then(|m| m.get("tool_allowlist"))
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        });
+
     // Rebuild the pipeline and drive it.
     let mut builder = PipelineBuilder::new(platform.clone())
         .with_builder_bridges(bridges.clone())
         .question(&run.question)
-        .schema_cache(Arc::clone(&state.schema_cache));
+        .schema_cache(Arc::clone(&state.schema_cache))
+        .knowledge_cards(knowledge_cards)
+        .skip_interpreting(skip_interpreting);
+
+    if let Some(allowlist) = tool_allowlist {
+        builder = builder.tool_allowlist(allowlist);
+    }
 
     if let Some(tid) = run.thread_id {
         builder = builder.thread(tid);
@@ -392,6 +478,37 @@ pub async fn answer_run(
     }
     if let Some(runner) = state.builder_app_runner.clone() {
         builder = builder.app_runner(runner);
+    }
+
+    // Cold-resume of an onboarding builder run: rebuild the same LlmClient
+    // create_run constructed, since the chosen model may not be in
+    // config.yml yet (the run was suspended mid-Config-phase, before the
+    // file was written). Without this, the resumed solver falls through to
+    // `resolve_model` against an incomplete config and ends up calling the
+    // LLM with an empty API key.
+    let onboarding_vendor = run
+        .metadata
+        .as_ref()
+        .and_then(|m| m.get("onboarding_vendor"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let onboarding_model_ref = run
+        .metadata
+        .as_ref()
+        .and_then(|m| m.get("onboarding_model_ref"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let onboarding_key_var = run
+        .metadata
+        .as_ref()
+        .and_then(|m| m.get("onboarding_key_var"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    if let (Some(vendor), Some(model_ref), Some(key_var)) =
+        (onboarding_vendor, onboarding_model_ref, onboarding_key_var)
+    {
+        let client = build_onboarding_llm_client(&*platform, &vendor, &model_ref, &key_var).await;
+        builder = builder.with_builder_llm_client(client);
     }
 
     // Persist an input_resolved event so the SSE stream (and page reloads)

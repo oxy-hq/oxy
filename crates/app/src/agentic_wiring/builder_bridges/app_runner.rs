@@ -1,11 +1,21 @@
-//! Implements [`BuilderAppRunner`] for the builder copilot by delegating to
-//! the Oxy app service.  Lives in `oxy-app` so it can access `AppService`
-//! without creating a circular dependency in the lower crates.
+//! `BuilderAppRunner` implementation backed by Oxy's `AppService`.
+//!
+//! Backs the `run_app` tool. Onboarding's App / App2 phases call `run_app`
+//! after `write_file` so a malformed-SQL dashboard never reaches the user
+//! as a blank screen. Schema validation (`validate_project`) only catches
+//! structural YAML errors; this runner exercises the full task pipeline
+//! (`AppService::run`) so dialect-specific runtime SQL errors surface
+//! during the build, not at first dashboard load.
+//!
+//! Mirrors [`crate::server::builder_test_runner::OxyTestRunner`]: a stateless
+//! singleton that rebuilds a `WorkspaceManager` from the workspace_root the
+//! tool dispatch passes in, so a single instance can serve every workspace.
 
 use std::collections::HashMap;
 use std::path::Path;
 
 use agentic_builder::BuilderAppRunner;
+use async_trait::async_trait;
 use oxy::adapters::workspace::builder::WorkspaceBuilder;
 use oxy::execute::types::{Data, DataContainer};
 use serde_json::{Value, json};
@@ -15,11 +25,13 @@ use crate::server::service::app::AppService;
 const MAX_SAMPLE_ROWS: usize = 10;
 const MAX_LIST_ITEMS: usize = 20;
 
-/// [`BuilderAppRunner`] that executes `.app.yml` files via the Oxy app service.
-pub struct OxyAppRunner;
+/// Runs `*.app.yml` files end-to-end via `AppService::run` and returns a
+/// JSON summary of the executed tasks.  Errors propagate verbatim so the
+/// builder agent can read the dialect-specific message and propose a fix.
+pub struct OxyBuilderAppRunner;
 
-#[async_trait::async_trait]
-impl BuilderAppRunner for OxyAppRunner {
+#[async_trait]
+impl BuilderAppRunner for OxyBuilderAppRunner {
     async fn run_app(
         &self,
         workspace_root: &Path,
@@ -45,6 +57,18 @@ impl BuilderAppRunner for OxyAppRunner {
     }
 }
 
+/// Summarize the executed app's output container.
+///
+/// At the top level, `AppService::run` returns a `DataContainer::Map`
+/// keyed by task name.  We surface a `tasks` array (per-task summary) plus
+/// `tasks_run` / `tasks_succeeded` / `tasks_failed` aggregate counts so
+/// the builder solver can render a meaningful "X tasks, Y succeeded, Z
+/// failed" line.  `WorkflowLauncher::launch_tasks` is fail-fast: if any
+/// task errors the entire run returns `Err` (handled in `run_app` above),
+/// so reaching this function means every task at least produced output —
+/// the success / failure breakdown reflects whether each task's data
+/// summary reports `status: "ok"` (typical for tables / text / bool) vs
+/// `status: "no_data"` (an empty `Data::None` result).
 fn summarize_data_container(container: &DataContainer) -> Value {
     match container {
         DataContainer::Map(map) => {
@@ -57,7 +81,18 @@ fn summarize_data_container(container: &DataContainer) -> Value {
                     })
                 })
                 .collect();
-            json!({ "tasks": tasks })
+            let tasks_run = tasks.len() as u64;
+            let tasks_succeeded = tasks
+                .iter()
+                .filter(|t| t["result"]["status"].as_str() == Some("ok"))
+                .count() as u64;
+            let tasks_failed = tasks_run - tasks_succeeded;
+            json!({
+                "tasks": tasks,
+                "tasks_run": tasks_run,
+                "tasks_succeeded": tasks_succeeded,
+                "tasks_failed": tasks_failed,
+            })
         }
         DataContainer::List(items) => {
             let summarized: Vec<Value> = items
@@ -75,7 +110,6 @@ fn summarize_data_container(container: &DataContainer) -> Value {
 fn summarize_data(data: &Data) -> Value {
     match data {
         Data::Table(table_data) => {
-            // Use the pre-serialized JSON when available (populated at write time).
             if let Some(json_str) = table_data.json.as_deref() {
                 if let Ok(Value::Array(rows)) = serde_json::from_str::<Value>(json_str) {
                     let total_rows = rows.len();
@@ -87,7 +121,6 @@ fn summarize_data(data: &Data) -> Value {
                     });
                 }
             }
-            // Fallback: no inline JSON — report row count as unknown.
             json!({ "status": "ok", "note": "table written to parquet (no inline sample)" })
         }
         Data::Text(text) => json!({ "status": "ok", "text": text }),

@@ -1,0 +1,317 @@
+name: Skills reconcile
+
+# Keeps the authored reference cards under
+# crates/agentic/builder/knowledge/ aligned with their upstream sources
+# in oxy-hq/skills. The cards condense upstream `SKILL.md` /
+# `QUICK-REFERENCE.md` content; "drift" here means the local card has
+# fallen behind upstream (or a PR has just introduced drift).
+#
+# Two jobs, gated on event type:
+#
+# - `check` (pull_request): lightweight read-only check. Runs the drift
+#   script and posts a status report to $GITHUB_STEP_SUMMARY. Always
+#   exits 0 — drift can be intentional and resolved separately, so
+#   the PR isn't blocked. Catches the case where a PR hand-edits a
+#   card or sync script in a way that breaks the source-of-truth
+#   chain.
+#
+# - `reconcile` (schedule + workflow_dispatch): heavy weekly run.
+#   Mints an Argo App token, checks out oxy-hq/skills, and drives
+#   anthropics/claude-code-action@v1 through detect → re-condense →
+#   bump SHA → re-vendor → verify → open-PR. Never auto-merges; the
+#   cards are opinionated prose and review-by-default is the design.
+#
+# See:
+#   - crates/agentic/builder/knowledge/README.md (drift + provenance)
+#   - scripts/check-skills-drift.sh (the underlying check)
+#   - scripts/sync-skills.sh        (verbatim YAML vendoring)
+#   - .github/workflows/update-product-context.yaml (precedent)
+
+on:
+  schedule:
+    - cron: "0 10 * * 1" # Mon 10:00 UTC
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "crates/agentic/builder/knowledge/**"
+      - "scripts/check-skills-drift.sh"
+      - "scripts/sync-skills.sh"
+      - ".github/workflows/skills-reconcile.yaml"
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  check:
+    if: github.event_name == 'pull_request' && github.repository == 'oxy-hq/oxygen-internal'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Run skills drift check
+        env:
+          # secrets.GITHUB_TOKEN lifts the unauthenticated 60-req/hr
+          # rate limit to 1000-req/hr, plenty of headroom.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          OUT=$(bash scripts/check-skills-drift.sh 2>&1)
+          STATUS=$?
+          echo "$OUT"
+          {
+            echo "## Skills drift report"
+            echo
+            echo '```'
+            echo "$OUT"
+            echo '```'
+            if [ "$STATUS" -eq 0 ]; then
+              echo
+              echo "All knowledge cards are reconciled against \`oxy-hq/skills@main\`."
+            elif [ "$STATUS" -eq 1 ]; then
+              echo
+              echo "Drift detected. The weekly \`reconcile\` job will pick this up;"
+              echo "see \`crates/agentic/builder/knowledge/README.md\` for the manual"
+              echo "reconcile workflow if you want to resolve sooner."
+            else
+              echo
+              echo "Drift script failed with exit ${STATUS} (infrastructure error)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Informational only — the PR isn't blocked by drift.
+          exit 0
+
+  reconcile:
+    if: github.event_name != 'pull_request' && github.repository == 'oxy-hq/oxygen-internal'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/create-github-app-token@v3
+        name: Create GitHub App Token
+        id: app-token
+        with:
+          client-id: ${{ vars.ARGO_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ARGO_APP_PRIVATE_KEY }}
+          # Token must cover write access to oxygen-internal (PR creation)
+          # and read access to oxy-hq/skills (vendoring + content read).
+          # Adding `skills` here requires the Argo GitHub App to be
+          # installed on oxy-hq/skills with at least Contents: Read.
+          repositories: |
+            oxygen-internal
+            skills
+
+      - name: Checkout oxygen-internal
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Checkout oxy-hq/skills
+        uses: actions/checkout@v6
+        with:
+          repository: oxy-hq/skills
+          token: ${{ steps.app-token.outputs.token }}
+          path: skills-upstream
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          USER_ID=$(gh api "/users/${{ steps.app-token.outputs.app-slug }}[bot]" --jq .id)
+          git config user.name "${{ steps.app-token.outputs.app-slug }}[bot]"
+          git config user.email "${USER_ID}+${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com"
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      - name: Reconcile skills drift
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          # `SKILLS_DIR` is consumed by scripts/sync-skills.sh; default is
+          # `../skills` which doesn't fit the Actions checkout layout.
+          SKILLS_DIR: ${{ github.workspace }}/skills-upstream
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: >-
+            --allowedTools
+            "Read,Write,Edit,Glob,Grep,Bash(git:*),Bash(gh pr create:*),Bash(gh pr list:*),Bash(./scripts/sync-skills.sh *),Bash(./scripts/check-skills-drift.sh *),Bash(date:*),Bash(ls:*)"
+          prompt: |
+            You are reconciling drift between this repo's vendored skills
+            knowledge module and the upstream `oxy-hq/skills` repo. Your
+            task is detect-and-react: when an upstream change has touched a
+            file the local cards condense from, refresh the local cards to
+            absorb the change, then open a PR for human review.
+
+            ## Layout
+
+            - `crates/agentic/builder/knowledge/*.md` — authored reference
+              cards. Each carries YAML frontmatter:
+
+              ```yaml
+              ---
+              source:
+                - oxy-hq/skills/skills/<skill>/SKILL.md
+                - oxy-hq/skills/skills/<skill>/QUICK-REFERENCE.md
+              reconciled-at: <full-sha-on-skills@main>
+              ---
+              ```
+
+            - `crates/agentic/builder/knowledge/*.yml` — verbatim YAML
+              templates copied from upstream by `scripts/sync-skills.sh`.
+            - `${SKILLS_DIR}` — a fresh checkout of `oxy-hq/skills@main`.
+              Use it to read upstream content at the latest SHA.
+
+            ## Steps
+
+            ### Step 1 — Detect drift
+
+            Run `bash scripts/check-skills-drift.sh` (with `GH_TOKEN`
+            already exported). It prints a status table and exits:
+            - `0` if every card source is current → STOP HERE, exit
+              cleanly without committing or opening a PR.
+            - `1` if any source is `BEHIND` → continue.
+            - `2` on infrastructure error → STOP, surface the error in
+              the workflow log and exit.
+
+            ### Step 2 — Resolve current upstream SHA
+
+            Read the upstream HEAD SHA from the skills checkout:
+
+            ```bash
+            git -C "${SKILLS_DIR}" rev-parse HEAD
+            ```
+
+            Call this `NEW_SHA`. All bumped `reconciled-at:` values must
+            equal this SHA.
+
+            ### Step 3 — For each card with `BEHIND` sources
+
+            The drift script's output lists each `<card>` <- <source path>`
+            row. For every card that has at least one `BEHIND` row:
+
+            1. Read the local card body in
+               `crates/agentic/builder/knowledge/<card>.md`. The frontmatter
+               at the top declares `source:` paths and the current
+               `reconciled-at:` SHA.
+            2. For each `source:` path, read the corresponding file in
+               `${SKILLS_DIR}/<repo-relative-path>` (the `oxy-hq/skills/`
+               prefix in `source:` maps to the root of `${SKILLS_DIR}`).
+            3. Diff the upstream content against what the card already
+               covers. New rules, new tables, new examples that the card
+               doesn't yet mention need to be condensed in.
+            4. **Preserve local-only sections.** Some content in cards is
+               oxygen-internal-specific or was added locally for runtime
+               reasons (the `lookup_reference` tool, onboarding-only
+               orchestration, optimisation flags like `skip_interpreting`).
+               Don't drop these on re-condense. When in doubt, keep — the
+               next reviewer will trim.
+            5. **Keep the card under ~200 lines** (`README.md` notes the
+               soft guideline). If a re-condense pushes it well past that,
+               note it in the PR body so the reviewer can decide whether
+               to split or further trim.
+            6. Bump the card's `reconciled-at:` field in the YAML
+               frontmatter to `NEW_SHA`. Do not change `source:` or `note:`
+               unless an upstream rename moved the source path.
+
+            ### Step 4 — Refresh verbatim templates
+
+            If any source file under `oxy-hq/skills/skills/<skill>/` ends
+            with `-template.yml` (i.e. matches a vendored template), run:
+
+            ```bash
+            SKILLS_PIN="${NEW_SHA}" bash scripts/sync-skills.sh
+            ```
+
+            The script vendors the templates with a fresh
+            `# Vendored from oxy-hq/skills @ <sha>` header and bumps the
+            `Last synced:` line in
+            `crates/agentic/builder/knowledge/README.md`. If no template
+            files are listed in any card's `source:` paths and the drift
+            output doesn't mention a `*-template.yml` file directly, you
+            can skip this step.
+
+            ### Step 5 — Verify
+
+            Re-run `bash scripts/check-skills-drift.sh`. It should exit
+            `0` (all current). If it still reports drift after your edits,
+            STOP and surface a clear diagnostic — do NOT open a PR with a
+            still-broken state.
+
+            ### Step 6 — Check for an existing reconcile PR
+
+            Multiple weeks of unmerged reconcile PRs accumulating is noisy.
+            Before pushing a new branch, check whether one is already open:
+
+            ```bash
+            EXISTING=$(gh pr list --repo oxy-hq/oxygen-internal \
+                       --search "head:skills-reconcile/" \
+                       --state open --json number --jq '.[0].number // empty')
+            ```
+
+            - If `$EXISTING` is non-empty, an open reconcile PR already
+              covers a previous drift cycle. STOP — do not open a duplicate.
+              Surface the existing PR number in the workflow log so a human
+              can reconcile (rebase + close the old one, or fold the new
+              changes into it manually) on the next pass.
+            - If `$EXISTING` is empty, proceed to Step 7.
+
+            ### Step 7 — Commit and open PR
+
+            Branch off main (the workflow already cloned `main`):
+
+            ```bash
+            BRANCH="skills-reconcile/$(date -u +%Y-%m-%d)"
+            git checkout -b "${BRANCH}"
+            git add crates/agentic/builder/knowledge/ scripts/
+            git commit -m "chore(skills): reconcile knowledge cards with oxy-hq/skills@${NEW_SHA:0:8}"
+            git push -u origin "${BRANCH}"
+            ```
+
+            Open a PR. The body must list:
+            - Each reconciled card (filename + which sources changed).
+            - The previous `reconciled-at:` SHA → new `NEW_SHA`.
+            - A link to the upstream commit range:
+              `https://github.com/oxy-hq/skills/compare/<old-sha>...<NEW_SHA>`
+              (use the most behind card's previous `reconciled-at:` for
+              `<old-sha>`).
+            - A note that the PR awaits human review — the cards are
+              opinionated prose and the design is review-by-default.
+
+            Use `gh pr create` with this exact shape:
+
+            ```bash
+            gh pr create --repo oxy-hq/oxygen-internal \
+              --title "chore(skills): reconcile knowledge cards with skills@$(echo "${NEW_SHA}" | cut -c1-8)" \
+              --body "..."
+            ```
+
+            DO NOT merge the PR. DO NOT enable auto-merge. The card prose
+            requires human review by design.
+
+            ### Step 8 — If nothing changed
+
+            If after re-condensing, the only change is `reconciled-at:`
+            bumps (i.e. the upstream commits modified files but the prose
+            you'd write hasn't shifted because the card already covered
+            those rules), still open the PR — the reviewer should be
+            aware that the upstream moved and the cards have been
+            re-validated. Note in the body that the bump is acknowledgement,
+            not new content.
+
+            ## Constraints
+
+            - No broad shell access. Allowed bash patterns are limited to
+              `git`, `gh pr create`, `gh pr list`, the two scripts under
+              `./scripts/`, `date`, and `ls`.
+            - Don't push to any branch other than the
+              `skills-reconcile/<date>` branch you created.
+            - Don't merge the PR.
+            - Don't add or remove `source:` paths in card frontmatter
+              unless an upstream file was renamed; if it was, surface that
+              clearly in the PR body.
+            - Don't touch oxygen-internal-specific files outside
+              `crates/agentic/builder/knowledge/` and the two scripts —
+              those drive the reconcile workflow itself, not the cards.

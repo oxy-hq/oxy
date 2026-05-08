@@ -19,6 +19,7 @@ use tracing::Instrument;
 use crate::app_runner::BuilderAppRunner;
 use crate::database::BuilderDatabaseProvider;
 use crate::events::BuilderEvent;
+use crate::prompts::KnowledgeCard;
 use crate::schema_provider::BuilderSchemaProvider;
 use crate::secrets::BuilderSecretsProvider;
 use crate::semantic::BuilderSemanticCompiler;
@@ -38,6 +39,8 @@ pub struct BuilderPipelineParams {
     pub schema_provider: Option<Arc<dyn BuilderSchemaProvider>>,
     pub semantic_compiler: Option<Arc<dyn BuilderSemanticCompiler>>,
     pub test_runner: Option<Arc<dyn BuilderTestRunner>>,
+    /// Optional runner for executing `*.app.yml` files end-to-end. Backs the
+    /// `run_app` tool used to verify apps work at runtime.
     pub app_runner: Option<Arc<dyn BuilderAppRunner>>,
     /// Override the default [`DeferredInputProvider`] for human-in-the-loop
     /// tools (`file_change`, `ask_user`). When set to
@@ -46,6 +49,21 @@ pub struct BuilderPipelineParams {
     /// Provides a [`SecretsManager`] for dbt tools that need to resolve
     /// warehouse credentials (`run_dbt_models`, `test_dbt_models`).
     pub secrets_provider: Option<Arc<dyn BuilderSecretsProvider>>,
+    /// Reference cards to pre-populate into the cached system prefix.
+    /// Empty (the default) keeps the prefix at index + rules only and
+    /// relies on the `lookup_reference` tool for depth.  Onboarding
+    /// phases pass cards relevant to the artifact being authored.
+    pub knowledge_cards: Vec<KnowledgeCard>,
+    /// Skip the Interpreting LLM call after Solving completes.  Set
+    /// `true` for onboarding (the UI collapses the per-phase trace and
+    /// surfaces CTAs); leave `false` for the chat builder which shows
+    /// the synthesized summary to the user.
+    pub skip_interpreting: bool,
+    /// When `Some`, restrict the tool list exposed to the LLM during
+    /// solving to the named tools.  `None` exposes the full tool set.
+    /// Onboarding sets a per-phase allowlist so dbt / search_text /
+    /// run_tests etc. aren't surfaced to phases that don't need them.
+    pub tool_allowlist: Option<Vec<String>>,
 }
 
 /// Build the solver, create the orchestrator, and start the builder pipeline.
@@ -66,8 +84,13 @@ pub fn start_pipeline(params: BuilderPipelineParams) -> PipelineHandle<BuilderEv
     let cancel_event_tx = event_stream.clone();
 
     let project_root = params.project_root;
-    let mut solver =
-        BuilderSolver::new(params.client, project_root.clone()).with_events(event_stream.clone());
+    let mut solver = BuilderSolver::new(params.client, project_root.clone())
+        .with_events(event_stream.clone())
+        .with_knowledge_cards(params.knowledge_cards)
+        .with_skip_interpreting(params.skip_interpreting);
+    if let Some(allowlist) = params.tool_allowlist {
+        solver = solver.with_tool_allowlist(allowlist);
+    }
     if let Some(provider) = params.db_provider {
         solver = solver.with_db_provider(provider);
     }
@@ -182,8 +205,13 @@ pub fn resume_pipeline(
     let resume_event_tx = event_stream.clone();
 
     let project_root = params.project_root;
-    let mut solver =
-        BuilderSolver::new(params.client, project_root.clone()).with_events(event_stream.clone());
+    let mut solver = BuilderSolver::new(params.client, project_root.clone())
+        .with_events(event_stream.clone())
+        .with_knowledge_cards(params.knowledge_cards)
+        .with_skip_interpreting(params.skip_interpreting);
+    if let Some(allowlist) = params.tool_allowlist {
+        solver = solver.with_tool_allowlist(allowlist);
+    }
     if let Some(provider) = params.db_provider {
         solver = solver.with_db_provider(provider);
     }

@@ -1,0 +1,126 @@
+# Vendored from oxy-hq/skills @ 303763a
+# Source: skills/oxy-agentic-builder/agentic-template.yml
+# Do not edit by hand — edit the skills repo and re-run scripts/sync-skills.sh.
+
+# Oxy `.agentic.yml` template
+#
+# Defines a multi-step FSM agent that turns a natural-language question into
+# a grounded query, runs it, and explains the result. Use this template when
+# you want a chat agent backed by the semantic layer rather than a single-call
+# `.agent.yml` tool-loop.
+#
+# Filename convention: <stem>.agentic.yml at the project root or under any
+# subdirectory. The stem becomes the agent_id (e.g. `analytics.agentic.yml`
+# is referenced as `analytics`).
+#
+# Validate with: oxy validate --file path/to/this.agentic.yml
+
+# ── Global system instructions ───────────────────────────────────────────────
+# Injected into every LLM call across all pipeline states. Use it for the
+# stable persona, dialect quirks, currency/locale conventions, and anything
+# every state needs to know. Per-state overrides go under `states:` below.
+instructions: |
+  You are a revenue analytics assistant for Acme Corp.
+  Always report currency in USD and dates in ISO 8601.
+  Prefer measures defined in the semantic layer over raw aggregations.
+
+# ── Connectors ───────────────────────────────────────────────────────────────
+# Names from `config.yml`'s `databases:` list. The HTTP layer resolves them
+# to live connectors at runtime; you do NOT inline credentials here.
+databases:
+  - warehouse
+
+# ── Context globs ────────────────────────────────────────────────────────────
+# Resolved relative to this file's directory. Buckets by extension:
+#   .view.yml / .topic.yml  → semantic catalog
+#   .sql                    → example queries injected into the Solving prompt
+#   .md                     → domain docs injected into Clarifying / Interpreting
+#   .procedure.yml          → discoverable via the `search_procedures` tool
+context:
+  - ./semantics/**/*.view.yml
+  - ./semantics/**/*.topic.yml
+  - ./example_sql/*.sql
+  - ./docs/glossary.md
+  - ./procedures/**/*.procedure.yml
+
+# ── LLM configuration ────────────────────────────────────────────────────────
+# `ref` points at a model entry in config.yml; vendor, api_key, and base_url
+# are inherited from that entry. Any field set here overrides the inherited
+# value.
+llm:
+  ref: claude-sonnet-4-6
+  max_tokens: 8192
+  # Optional: alternative preset activated by the UI's "extended thinking"
+  # toggle. Inherits the rest of the llm: section.
+  extended_thinking:
+    model: claude-opus-4-6
+    thinking: adaptive
+
+# ── Global thinking config ───────────────────────────────────────────────────
+# Applies to every state unless overridden under `states:`. Accepts the
+# shorthands "adaptive" / "disabled" / "effort:low|medium|high", or an
+# explicit { budget_tokens: N } map.
+thinking: adaptive
+
+# ── Per-state overrides ──────────────────────────────────────────────────────
+# Pipeline stages (fixed by the runtime — do NOT invent new state names):
+#   clarifying   — triage the question, resolve metrics/dimensions
+#   specifying   — ground intent into a query spec, resolve joins
+#   solving      — generate SQL (skipped when semantic layer compiled it)
+#   executing    — run the query, validate results
+#   interpreting — turn results into natural-language answer + chart
+#   diagnosing   — back-edge taken when a validator fails
+#
+# Each block accepts: instructions, thinking, max_retries, model.
+states:
+  clarifying:
+    instructions: |
+      "Last quarter" means the most recent completed fiscal quarter.
+      "MRR" is the `monthly_recurring_revenue` measure on the `revenue` view.
+    model: claude-haiku-4-5         # cheap/fast model for triage
+    max_retries: 3
+  specifying:
+    max_retries: 5
+  solving:
+    instructions: Prefer CTEs over subqueries; alias every aggregate.
+    thinking:
+      budget_tokens: 10000
+    model: claude-opus-4-6           # powerful model for SQL generation
+    max_retries: 3
+  interpreting:
+    thinking: disabled               # interpretation is straightforward
+
+# ── Validation rules (optional) ──────────────────────────────────────────────
+# When this section is omitted, every built-in rule runs with default
+# parameters. Use it to disable specific rules or tune their thresholds.
+# Stages: `specified` (post-Specifying), `solvable` (post-Solving),
+# `solved` (post-Executing).
+validation:
+  rules:
+    solvable:
+      - name: sql_syntax
+        enabled: true
+        dialect: postgresql          # generic | ansi | postgresql | mysql
+                                     # | bigquery | duckdb | snowflake
+    solved:
+      - name: outlier_detection
+        enabled: true
+        threshold_sigma: 5.0
+        min_rows: 4
+      - name: null_ratio_check
+        enabled: true
+        threshold: 0.5
+      - name: duplicate_row_check
+        enabled: true
+        max_duplicate_ratio: 0.1
+
+# ── Optional vendor semantic engine ──────────────────────────────────────────
+# Delegates query compilation to Cube or Looker instead of the internal path.
+# Omit this section to use Oxy's bundled semantic layer (the default and most
+# common case).
+#
+# semantic_engine:
+#   vendor: cube                     # cube | looker
+#   base_url: https://cube.example.com
+#   api_token: "${CUBE_API_TOKEN}"   # ${VAR} placeholders fail fast at startup
+#                                    # if the env var is unset

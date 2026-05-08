@@ -129,13 +129,13 @@ impl DomainSolver<BuilderDomain> for BuilderSolver {
                 &self.project_root,
                 &self.event_tx,
                 self.test_runner.clone(),
+                self.app_runner.clone(),
                 self.human_input.clone(),
                 self.db_provider.as_ref(),
                 self.project_validator.as_ref(),
                 self.schema_provider.as_ref(),
                 self.semantic_compiler.as_ref(),
                 self.secrets_provider.as_ref(),
-                self.app_runner.as_ref(),
             )
             .await
             .map(|v| v.to_value()),

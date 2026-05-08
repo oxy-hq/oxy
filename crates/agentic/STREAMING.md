@@ -52,7 +52,7 @@ Events are split into two layers:
 
 **`DomainEvents`** trait — domain enum types. Concrete impls:
 - `AnalyticsEvent` ([analytics/src/events.rs](analytics/src/events.rs)): `TriageCompleted`, `IntentClarified`, `SpecResolved`, `SemanticShortcutAttempted/Resolved`, `QueryGenerated`, `QueryExecuted`, `AnalysisComplete`, `ProposedChart`, `ProcedureStarted/StepStarted/Completed`, `ToolUsed`
-- `BuilderEvent` ([builder/src/events.rs](builder/src/events.rs)): `ProposedChange`, `ToolUsed`
+- `BuilderEvent` ([builder/src/events.rs](builder/src/events.rs)): `FileChangePending`, `FileChanged`, `ToolUsed`
 
 **Unified wrapper**:
 ```rust
@@ -286,7 +286,7 @@ UI blocks emitted by the `StreamProcessor`:
 | `tool_result` | `ToolResult` | Tool name, serialized output |
 | `chart_proposal` | `ProposedChart` (analytics) | Chart type, config, result ref |
 | `query_result` | `QueryExecuted` (analytics) | Rows, columns, metadata |
-| `proposed_change` | `ProposedChange` (builder) | File path, diff preview |
+| `file_change_pending` | `FileChangePending` (builder) | File path, description, new + old content for diff preview |
 | `awaiting_input` | `AwaitingHumanInput` | Prompt + suggestions |
 | `sub_spec_event` | Any event with `sub_spec_index` | Wrapped event tagged to a fan-out branch |
 | `done` | `Done` | Final answer |

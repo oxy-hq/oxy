@@ -31,7 +31,7 @@ Three-layer design — each layer has strict dependency rules:
 | `runtime` | Run lifecycle, persistence, event streaming | `RuntimeState`, `PipelineHandle`, `EventRegistry`, `StreamProcessor`, entity models |
 | `pipeline` | Pipeline setup, config resolution, type erasure | `PipelineBuilder`, `StartedPipeline`, `ThinkingMode` |
 | `analytics` | Analytics solver, semantic layer, extension table | `AnalyticsSolver`, `AnalyticsEvent`, `SchemaCatalog`, `AnalyticsMigrator` |
-| `builder` | Builder solver, file tools, propose_change | `BuilderSolver`, `BuilderEvent`, `BuilderTestRunner` |
+| `builder` | Builder solver, file tools (write/edit/delete), HITL suspensions | `BuilderSolver`, `BuilderEvent`, `BuilderTestRunner`, `BuilderAppRunner` |
 | `connector` | Database backends | `DatabaseConnector`, `ConnectorConfig`, `SchemaInfo` |
 | `llm` | LLM provider abstraction | `LlmClient`, `LlmProvider`, `ThinkingConfig` |
 | `http` | Axum route handlers | `AgenticState`, `router()`, route handlers |

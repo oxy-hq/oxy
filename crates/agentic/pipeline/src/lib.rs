@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 
 use agentic_analytics::SchemaCatalog;
 use agentic_analytics::config::AgentConfig;
-use agentic_builder::BuilderTestRunner;
+use agentic_builder::{BuilderAppRunner, BuilderTestRunner};
 use agentic_runtime::event_registry::EventRegistry;
 use agentic_runtime::handle::{PipelineHandle, PipelineOutcome};
 use agentic_runtime::state::RuntimeState;
@@ -33,6 +33,7 @@ pub use agentic_analytics::extension::AnalyticsMigrator;
 pub use agentic_analytics::{AnalyticsMetricSink, SharedMetricSink};
 pub use agentic_builder::BuilderAppRunner as BuilderAppRunnerTrait;
 pub use agentic_builder::BuilderTestRunner as BuilderTestRunnerTrait;
+pub use agentic_builder::KnowledgeCard;
 pub use agentic_builder::onboarding;
 pub use agentic_core::human_input::{
     AutoAcceptInputProvider, HumanInputHandle, HumanInputProvider,
@@ -85,7 +86,7 @@ pub struct PipelineBuilder {
     thinking_mode: ThinkingMode,
     schema_cache: Option<Arc<Mutex<HashMap<String, SchemaCatalog>>>>,
     builder_test_runner: Option<Arc<dyn BuilderTestRunner>>,
-    builder_app_runner: Option<Arc<dyn agentic_builder::BuilderAppRunner>>,
+    builder_app_runner: Option<Arc<dyn BuilderAppRunner>>,
     /// When set, use this run_id and skip the DB `insert_run` call.
     /// Used for delegation children where the coordinator already created
     /// the run via `insert_run_with_parent`.
@@ -96,11 +97,38 @@ pub struct PipelineBuilder {
     /// Override the default LLM client for the builder domain. Used by the
     /// onboarding flow where the chosen model is not yet in `config.yml`.
     builder_llm_override: Option<LlmClient>,
+    /// Onboarding-only LLM metadata persisted into run metadata so a cold
+    /// resume (server restart while suspended mid-onboarding) can rebuild
+    /// the same client. None for non-onboarding runs.
+    builder_llm_metadata: Option<BuilderLlmMetadata>,
+    /// Reference cards to pre-populate in the builder solver's cached
+    /// system prefix.  Set per onboarding phase by the HTTP route;
+    /// empty for interactive builder runs (which rely on the
+    /// `lookup_reference` tool).
+    builder_knowledge_cards: Vec<KnowledgeCard>,
+    /// Skip the Interpreting LLM call after Solving completes.  Set
+    /// for onboarding runs whose UI collapses the trace.
+    builder_skip_interpreting: bool,
+    /// Restrict the builder solver's tool list to the named tools.
+    /// Set per onboarding phase to drop irrelevant tools (dbt, etc.).
+    builder_tool_allowlist: Option<Vec<String>>,
 }
 
 enum Domain {
     Analytics { agent_id: String },
     Builder { model: Option<String> },
+}
+
+/// Onboarding-flow LLM metadata. Persisted into the run's `metadata` JSON
+/// at create time so a cold resume can reconstruct the same `LlmClient`
+/// — crucial because mid-onboarding the chosen model isn't yet in
+/// `config.yml`, so the normal `resolve_model` lookup would fail and the
+/// resumed run would call the LLM with an empty API key.
+#[derive(Debug, Clone)]
+pub struct BuilderLlmMetadata {
+    pub vendor: String,
+    pub model_ref: String,
+    pub key_var: String,
 }
 
 /// Error from pipeline building.
@@ -142,6 +170,10 @@ impl PipelineBuilder {
             existing_run_id: None,
             human_input: None,
             builder_llm_override: None,
+            builder_llm_metadata: None,
+            builder_knowledge_cards: Vec::new(),
+            builder_skip_interpreting: false,
+            builder_tool_allowlist: None,
         }
     }
 
@@ -166,6 +198,42 @@ impl PipelineBuilder {
     /// the correct vendor/provider and API key.
     pub fn with_builder_llm_client(mut self, client: LlmClient) -> Self {
         self.builder_llm_override = Some(client);
+        self
+    }
+
+    /// Persist onboarding-only LLM metadata (vendor / model_ref / key_var)
+    /// into the run's `metadata` JSON so a cold resume can reconstruct an
+    /// identical `LlmClient` via [`with_builder_llm_client`]. Only meaningful
+    /// for the onboarding flow — non-onboarding builder runs leave this
+    /// unset and rely on `resolve_model` against the project's `config.yml`.
+    pub fn with_builder_llm_metadata(mut self, meta: BuilderLlmMetadata) -> Self {
+        self.builder_llm_metadata = Some(meta);
+        self
+    }
+
+    /// Pre-populate the builder solver's cached system prefix with
+    /// the given reference cards.  Called by the HTTP route when the
+    /// request carries an `OnboardingContext`; cards come from
+    /// `OnboardingContext::knowledge_cards()`.
+    pub fn knowledge_cards(mut self, cards: Vec<KnowledgeCard>) -> Self {
+        self.builder_knowledge_cards = cards;
+        self
+    }
+
+    /// Skip the builder's Interpreting LLM call.  Set for onboarding
+    /// runs (the UI collapses the per-phase trace and shows CTAs in
+    /// place of the synthesized summary).
+    pub fn skip_interpreting(mut self, skip: bool) -> Self {
+        self.builder_skip_interpreting = skip;
+        self
+    }
+
+    /// Restrict the builder's tool list to the named tools.  Called
+    /// by the HTTP route when the request carries an
+    /// `OnboardingContext`; the allowlist comes from
+    /// `OnboardingContext::tool_allowlist()`.
+    pub fn tool_allowlist(mut self, names: Vec<String>) -> Self {
+        self.builder_tool_allowlist = Some(names);
         self
     }
 
@@ -223,8 +291,8 @@ impl PipelineBuilder {
         self
     }
 
-    /// Set builder app runner.
-    pub fn app_runner(mut self, runner: Arc<dyn agentic_builder::BuilderAppRunner>) -> Self {
+    /// Set builder app runner — backs the `run_app` tool.
+    pub fn app_runner(mut self, runner: Arc<dyn BuilderAppRunner>) -> Self {
         self.builder_app_runner = Some(runner);
         self
     }
@@ -519,7 +587,7 @@ impl PipelineBuilder {
     }
 
     async fn resume_builder(
-        self,
+        mut self,
         db: &DatabaseConnection,
         run_id: &str,
         model: Option<String>,
@@ -533,8 +601,15 @@ impl PipelineBuilder {
             )
         })?;
 
-        // Resolve model + API key (same as start_builder).
-        let client = build_builder_llm_client(&*self.platform, model).await;
+        // Resolve model + API key, honouring an explicit override (onboarding
+        // cold-resume rebuilds the override from persisted metadata before
+        // calling .resume(), and we MUST use that here; falling through to
+        // `build_builder_llm_client` would call the LLM with an empty key
+        // because the onboarding model isn't yet in config.yml).
+        let client = match self.builder_llm_override.take() {
+            Some(c) => c,
+            None => build_builder_llm_client(&*self.platform, model).await,
+        };
 
         // Thread history.
         let history: Vec<agentic_builder::ConversationTurn> = if let Some(tid) = self.thread_id {
@@ -573,6 +648,9 @@ impl PipelineBuilder {
                 app_runner: self.builder_app_runner,
                 human_input: None,
                 secrets_provider: bridges.secrets_provider,
+                knowledge_cards: self.builder_knowledge_cards,
+                skip_interpreting: self.builder_skip_interpreting,
+                tool_allowlist: self.builder_tool_allowlist,
             },
             resume_data,
             answer,
@@ -597,10 +675,39 @@ impl PipelineBuilder {
         // created the run via insert_run_with_parent.
         let source_type = "builder";
         if !skip_db_insert {
-            let metadata = serde_json::json!({
+            let knowledge_card_slugs: Vec<&str> = self
+                .builder_knowledge_cards
+                .iter()
+                .map(|c| c.slug())
+                .collect();
+            let mut metadata = serde_json::json!({
                 "agent_id": "__builder__",
                 "model": model,
+                "knowledge_cards": knowledge_card_slugs,
+                "skip_interpreting": self.builder_skip_interpreting,
+                "tool_allowlist": self.builder_tool_allowlist,
             });
+            // Persist onboarding LLM metadata so cold-resume (server restart
+            // mid-onboarding, before `config.yml` is written) can rebuild the
+            // same LlmClient. Without these, a resumed run falls back to
+            // `resolve_model` against a config.yml that doesn't yet contain
+            // the onboarding-chosen model and ends up calling the LLM with
+            // an empty API key.
+            if let Some(meta) = &self.builder_llm_metadata {
+                let m = metadata.as_object_mut().expect("json! produces an object");
+                m.insert(
+                    "onboarding_vendor".into(),
+                    serde_json::Value::String(meta.vendor.clone()),
+                );
+                m.insert(
+                    "onboarding_model_ref".into(),
+                    serde_json::Value::String(meta.model_ref.clone()),
+                );
+                m.insert(
+                    "onboarding_key_var".into(),
+                    serde_json::Value::String(meta.key_var.clone()),
+                );
+            }
             agentic_runtime::crud::insert_run(
                 db,
                 run_id,
@@ -660,6 +767,9 @@ impl PipelineBuilder {
             app_runner: self.builder_app_runner,
             human_input: self.human_input,
             secrets_provider: bridges.secrets_provider,
+            knowledge_cards: self.builder_knowledge_cards,
+            skip_interpreting: self.builder_skip_interpreting,
+            tool_allowlist: self.builder_tool_allowlist,
         });
 
         Ok(StartedPipeline {

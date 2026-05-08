@@ -235,12 +235,23 @@ export default function OnboardingThread({
     // (see test `app_prompt_produces_overview_file`). If that path moves,
     // this fallback silently kicks in.
     const appLabel = labelForAppPath(appsByPath, "apps/overview.app.yml", "Starter dashboard");
+    // App2's filename is unpredictable (single-topic vs cross-topic JOIN),
+    // so we find the first non-overview app on disk and read its title.
+    // While the file is still being written, fall back to the alphabetical
+    // second-topic guess for a hint label.
     const secondTopic = includeApp2 ? predictSecondAppTopic(state.selectedTables) : undefined;
     const app2Fallback = secondTopic
       ? `${humanizeTopicSlug(secondTopic)} dashboard`
       : "Deep-dive dashboard";
-    const app2Label = secondTopic
-      ? labelForAppPath(appsByPath, `apps/${secondTopic}.app.yml`, app2Fallback)
+    const app2Path = includeApp2
+      ? Array.from(appsByPath.keys()).find(
+          (p) => p.startsWith("apps/") && p !== "apps/overview.app.yml"
+        )
+      : undefined;
+    const app2Label = includeApp2
+      ? app2Path
+        ? labelForAppPath(appsByPath, app2Path, app2Fallback)
+        : app2Fallback
       : app2Fallback;
 
     const jobs: BuildJob[] = [

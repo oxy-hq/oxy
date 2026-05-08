@@ -14,6 +14,17 @@ impl BuilderSolver {
         &mut self,
         result: BuilderResult,
     ) -> Result<BuilderAnswer, (BuilderError, BackTarget<BuilderDomain>)> {
+        // Short-circuit for onboarding: the UI collapses the trace and
+        // surfaces CTAs in place of the synthesized summary, so the
+        // Interpreting LLM call is dead weight.  Return an empty answer
+        // immediately and skip the round-trip.
+        if self.skip_interpreting {
+            return Ok(BuilderAnswer {
+                text: String::new(),
+                tool_exchanges: result.tool_exchanges,
+            });
+        }
+
         let (initial_messages, tools) = if !result.prior_messages.is_empty() {
             // Pass the full native conversation (tool_use + tool_result blocks) so
             // the interpreter sees everything that happened without any summarisation.
@@ -82,7 +93,7 @@ impl BuilderSolver {
                     response_schema: None,
                     max_tokens_override: None,
                     sub_spec_index: None,
-                    system_date_hint: Some(BuilderSolver::current_date_hint()),
+                    system_date_hint: Some(self.system_suffix()),
                 },
             )
             .await
