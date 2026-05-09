@@ -50,5 +50,11 @@ jobs:
 
             Provide detailed feedback using inline comments for specific issues.
 
+            Comment formatting rules:
+            - Always wrap issue/PR references in backticks (e.g. `#1234`, `oxy-hq/oxy-internal#1234`).
+              Bare `#1234` auto-creates GitHub cross-references that pollute the linked issue/PR
+              with noisy backlinks. Same rule for `GH-1234`, `@username` mentions you don't want
+              to ping, and commit SHAs you don't want auto-linked.
+
           claude_args: |
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
