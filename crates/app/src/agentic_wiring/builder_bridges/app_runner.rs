@@ -110,16 +110,16 @@ fn summarize_data_container(container: &DataContainer) -> Value {
 fn summarize_data(data: &Data) -> Value {
     match data {
         Data::Table(table_data) => {
-            if let Some(json_str) = table_data.json.as_deref() {
-                if let Ok(Value::Array(rows)) = serde_json::from_str::<Value>(json_str) {
-                    let total_rows = rows.len();
-                    let sample: Vec<Value> = rows.into_iter().take(MAX_SAMPLE_ROWS).collect();
-                    return json!({
-                        "status": "ok",
-                        "total_rows": total_rows,
-                        "sample_rows": sample,
-                    });
-                }
+            if let Some(json_str) = table_data.json.as_deref()
+                && let Ok(Value::Array(rows)) = serde_json::from_str::<Value>(json_str)
+            {
+                let total_rows = rows.len();
+                let sample: Vec<Value> = rows.into_iter().take(MAX_SAMPLE_ROWS).collect();
+                return json!({
+                    "status": "ok",
+                    "total_rows": total_rows,
+                    "sample_rows": sample,
+                });
             }
             json!({ "status": "ok", "note": "table written to parquet (no inline sample)" })
         }

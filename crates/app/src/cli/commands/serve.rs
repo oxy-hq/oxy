@@ -263,7 +263,7 @@ async fn init_feature_flags() -> Result<(), OxyError> {
     Ok(())
 }
 
-async fn run_database_migrations(enterprise: bool) -> Result<(), OxyError> {
+async fn run_database_migrations(_enterprise: bool) -> Result<(), OxyError> {
     println!("migrations: establishing database connection (this builds the connection pool)");
     let db = establish_connection()
         .await

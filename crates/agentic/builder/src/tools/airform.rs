@@ -543,7 +543,7 @@ impl ToolOutput for DbtColumnLineageOutput {
             self.edges.len()
         );
         if !self.edges.is_empty() {
-            out.push_str("\n");
+            out.push('\n');
             for e in &self.edges {
                 out.push_str(&format!(
                     "  {}.{} → {}.{} ({})\n",
@@ -626,7 +626,7 @@ impl ToolOutput for SeedDbtProjectOutput {
             self.seeds_loaded, self.project
         );
         if !self.results.is_empty() {
-            out.push_str("\n");
+            out.push('\n');
             for r in &self.results {
                 let tick = if r.status == "success" { "✓" } else { "✗" };
                 let rows = r
@@ -1324,7 +1324,7 @@ pub fn execute_compile_dbt_model_all(
     svc.compile_project()
         .map(|output| CompileAllOutput {
             project: project_name.to_string(),
-            models_compiled: output.models_compiled as usize,
+            models_compiled: output.models_compiled,
             errors: output
                 .errors
                 .into_iter()
@@ -1392,9 +1392,9 @@ pub async fn execute_test_dbt_models(
         .await
         .map(|output| TestDbtModelsOutput {
             project: project_name.to_string(),
-            tests_run: output.tests_run as usize,
-            passed: output.passed as usize,
-            failed: output.failed as usize,
+            tests_run: output.tests_run,
+            passed: output.passed,
+            failed: output.failed,
             results: output
                 .results
                 .into_iter()
@@ -1458,8 +1458,8 @@ pub async fn execute_analyze_dbt_project(
         .await
         .map(|output| AnalyzeDbtProjectOutput {
             project: project_name.to_string(),
-            models_analyzed: output.models_analyzed as usize,
-            cached_count: output.cached_count as usize,
+            models_analyzed: output.models_analyzed,
+            cached_count: output.cached_count,
             diagnostics: output
                 .diagnostics
                 .into_iter()
@@ -1559,7 +1559,7 @@ pub async fn execute_seed_dbt_project(
         .await
         .map(|o| SeedDbtProjectOutput {
             project: project_name.to_string(),
-            seeds_loaded: o.seeds_loaded as usize,
+            seeds_loaded: o.seeds_loaded,
             results: o
                 .results
                 .into_iter()

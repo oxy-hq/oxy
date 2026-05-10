@@ -106,10 +106,10 @@ impl BillingService {
             .await?;
         for row in rows {
             let count = self.member_count(row.org_id).await?;
-            if count as i32 != row.seats_paid {
-                if let Err(e) = self.sync_seats(row.org_id).await {
-                    tracing::warn!(?e, org_id = ?row.org_id, "seat reconcile failed");
-                }
+            if count as i32 != row.seats_paid
+                && let Err(e) = self.sync_seats(row.org_id).await
+            {
+                tracing::warn!(?e, org_id = ?row.org_id, "seat reconcile failed");
             }
         }
         Ok(())

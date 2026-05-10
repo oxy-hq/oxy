@@ -15,7 +15,6 @@ use axum::response::{IntoResponse, Response};
 use entity::workspace_members::WorkspaceRole;
 use oxy::adapters::{session_filters::SessionFilters, workspace::manager::WorkspaceManager};
 use oxy::config::model::ConnectionOverrides;
-use oxy::execute::types::utils::record_batches_to_2d_array;
 use oxy_auth::extractor::AuthenticatedUserExtractor;
 use oxy_shared::errors::OxyError;
 use serde::{Deserialize, Serialize};
