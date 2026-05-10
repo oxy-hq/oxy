@@ -38,6 +38,18 @@ members = [
   "web-app",
 ]
 
+exclude = [
+  "examples",
+  "docs",
+  "tests",
+  "scripts",
+  "assets",
+  "oss",
+  "json-schemas",
+  "semantics",
+  "sdk",
+]
+
 default-members = ["crates/app"]
 resolver = "2"
 
