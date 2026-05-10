@@ -429,8 +429,8 @@ async fn build_message_blocks(
         let to_stash: Vec<_> = exec
             .captured_sql_artifacts
             .iter()
-            .cloned()
             .take(sql_to_upload)
+            .cloned()
             .collect();
         let upload_id =
             crate::integrations::slack::services::pending_sql_uploads::insert(to_stash).await;

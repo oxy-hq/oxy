@@ -36,16 +36,15 @@ pub fn verify_signature(
     let expected = mac.finalize().into_bytes();
 
     for s in sigs {
-        if let Ok(got) = hex::decode(s) {
-            if got.len() == expected.len()
-                && got
-                    .iter()
-                    .zip(expected.iter())
-                    .fold(0u8, |a, (x, y)| a | (x ^ y))
-                    == 0
-            {
-                return Ok(());
-            }
+        if let Ok(got) = hex::decode(s)
+            && got.len() == expected.len()
+            && got
+                .iter()
+                .zip(expected.iter())
+                .fold(0u8, |a, (x, y)| a | (x ^ y))
+                == 0
+        {
+            return Ok(());
         }
     }
     Err(BillingError::InvalidSignature)

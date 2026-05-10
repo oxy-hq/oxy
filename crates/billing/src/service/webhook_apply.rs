@@ -375,27 +375,27 @@ impl BillingService {
         txn.commit().await?;
 
         let mut notifications = Vec::new();
-        if transition.send_admin_email {
-            if let Some(grace_ends_at) = transition.grace_ends_at {
-                match self.lookup_owner(org_id).await {
-                    Ok(Some((org_name, org_slug, owner_email))) => {
-                        notifications.push(BillingNotification::PastDueEntered {
-                            org_id,
-                            org_name,
-                            org_slug,
-                            owner_email,
-                            grace_ends_at,
-                        });
-                    }
-                    Ok(None) => {
-                        tracing::warn!(
-                            ?org_id,
-                            "past_due email skipped: org has no owner with an email"
-                        );
-                    }
-                    Err(e) => {
-                        tracing::warn!(?e, ?org_id, "past_due email skipped: owner lookup failed");
-                    }
+        if transition.send_admin_email
+            && let Some(grace_ends_at) = transition.grace_ends_at
+        {
+            match self.lookup_owner(org_id).await {
+                Ok(Some((org_name, org_slug, owner_email))) => {
+                    notifications.push(BillingNotification::PastDueEntered {
+                        org_id,
+                        org_name,
+                        org_slug,
+                        owner_email,
+                        grace_ends_at,
+                    });
+                }
+                Ok(None) => {
+                    tracing::warn!(
+                        ?org_id,
+                        "past_due email skipped: org has no owner with an email"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(?e, ?org_id, "past_due email skipped: owner lookup failed");
                 }
             }
         }

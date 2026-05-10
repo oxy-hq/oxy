@@ -2,7 +2,6 @@ import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/pris
 
 import useTheme from "@/stores/useTheme";
 
-const usePrismTheme = () =>
-  useTheme((s) => s.theme) === "dark" ? oneDark : oneLight;
+const usePrismTheme = () => (useTheme((s) => s.theme) === "dark" ? oneDark : oneLight);
 
 export default usePrismTheme;

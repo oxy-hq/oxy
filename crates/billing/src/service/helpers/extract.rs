@@ -15,10 +15,10 @@ pub(in crate::service) fn pick_seat_item<'a>(
     cached_id: &Option<String>,
     items: &'a [StripeSubscriptionItem],
 ) -> Result<&'a StripeSubscriptionItem, BillingError> {
-    if let Some(cached) = cached_id {
-        if let Some(found) = items.iter().find(|i| i.id == *cached) {
-            return Ok(found);
-        }
+    if let Some(cached) = cached_id
+        && let Some(found) = items.iter().find(|i| i.id == *cached)
+    {
+        return Ok(found);
     }
     // Items provisioned by us carry `metadata.oxy_role = "seat"` — set in
     // `provision_subscription` (direct API) and `create_checkout_session`

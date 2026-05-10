@@ -109,7 +109,7 @@ async fn precompute_batch_ops(
         let old_content = file_states
             .get(&file_path)
             .cloned()
-            .unwrap_or_else(|| String::new());
+            .unwrap_or_else(String::new);
         let old_content = if old_content.is_empty() {
             tokio::fs::read_to_string(&abs).await.unwrap_or_default()
         } else {
@@ -179,12 +179,11 @@ pub(super) fn extract_all_write_ops(prior_messages: &[serde_json::Value]) -> Vec
         if m["role"].as_str() == Some("assistant") {
             if let Some(blocks) = m["content"].as_array() {
                 for block in blocks {
-                    if block["type"].as_str() == Some("tool_use") {
-                        if let Some(name) = block["name"].as_str() {
-                            if let Some(op) = parse_op(name, &block["input"]) {
-                                result.push(op);
-                            }
-                        }
+                    if block["type"].as_str() == Some("tool_use")
+                        && let Some(name) = block["name"].as_str()
+                        && let Some(op) = parse_op(name, &block["input"])
+                    {
+                        result.push(op);
                     }
                 }
             }
@@ -194,10 +193,9 @@ pub(super) fn extract_all_write_ops(prior_messages: &[serde_json::Value]) -> Vec
                     if let (Some(name), Some(args_str)) = (
                         tc["function"]["name"].as_str(),
                         tc["function"]["arguments"].as_str(),
-                    ) {
-                        if let Some(op) = parse_op_str(name, args_str) {
-                            result.push(op);
-                        }
+                    ) && let Some(op) = parse_op_str(name, args_str)
+                    {
+                        result.push(op);
                     }
                 }
             }
@@ -206,14 +204,12 @@ pub(super) fn extract_all_write_ops(prior_messages: &[serde_json::Value]) -> Vec
         // OpenAI Responses API: Value::Array of flat function_call items.
         if let Some(items) = m.as_array() {
             for item in items {
-                if item["type"].as_str() == Some("function_call") {
-                    if let (Some(name), Some(args_str)) =
+                if item["type"].as_str() == Some("function_call")
+                    && let (Some(name), Some(args_str)) =
                         (item["name"].as_str(), item["arguments"].as_str())
-                    {
-                        if let Some(op) = parse_op_str(name, args_str) {
-                            result.push(op);
-                        }
-                    }
+                    && let Some(op) = parse_op_str(name, args_str)
+                {
+                    result.push(op);
                 }
             }
             if !result.is_empty() {
