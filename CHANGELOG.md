@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.53] - 2026-05-10
+
+### 🚀 Features
+
+- Airhouse sa integration (#2274)
+- Integrate Oxygen design system token layer (#2157)
+- *(builder)* On-demand reference cards + onboarding quality + perf (#2234)
+- Enhance comment formatting rules for Claude Code Review
+
+### ⚙️ Miscellaneous Tasks
+
+- Remove daily edge build schedule and adjust concurrency settings in public release workflow
+- Weekly auto-fix 2026-05-10 (#2304)
+- Update workspace exclude list to improve bundle size
+
 ## [0.5.52] - 2026-05-07
 
 ### 🚀 Features
@@ -26,6 +41,7 @@ All notable changes to this project will be documented in this file.
 ### ⚙️ Miscellaneous Tasks
 
 - Update dependencies in TypeScript SDK and web app
+- Release 0.5.52 (#2272)
 
 ## [0.5.51] - 2026-05-06
 
