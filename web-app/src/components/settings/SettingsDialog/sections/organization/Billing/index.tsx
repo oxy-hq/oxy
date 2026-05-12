@@ -2,8 +2,11 @@ import { Sparkles } from "lucide-react";
 import { SubscriptionItemsList } from "@/components/billing/SubscriptionItemsList";
 import { Button } from "@/components/ui/shadcn/button";
 import { useBillingInvoices, useCreatePortalSession, useOrgBilling } from "@/hooks/api/billing";
-import type { BillingStatusId, Invoice } from "@/services/api/billing";
+import type { BillingStatusId } from "@/services/api/billing";
 import type { Organization } from "@/types/organization";
+import { BillingSkeleton } from "./components/BillingSkeleton";
+import { InvoicesSkeleton } from "./components/InvoicesSkeleton";
+import { InvoicesTable } from "./components/InvoicesTable";
 
 interface BillingSectionProps {
   org: Organization;
@@ -13,16 +16,16 @@ interface BillingSectionProps {
 export default function BillingSection({ org }: BillingSectionProps) {
   const { data: billing, isLoading } = useOrgBilling(org.id);
   const portal = useCreatePortalSession(org.id);
-  const { data: invoices } = useBillingInvoices(
-    org.id,
-    Boolean(billing && billing.status === "active")
-  );
+  const isActive = Boolean(billing && billing.status === "active");
+  const { data: invoices, isLoading: isLoadingInvoices } = useBillingInvoices(org.id, isActive);
 
   if (isLoading || !billing) {
-    return <div className='py-8 text-center text-muted-foreground'>Loading billing…</div>;
+    return <BillingSkeleton />;
   }
 
   const showPortalButton = billing.status === "active" || billing.status === "past_due";
+  const hasInvoices = invoices && invoices.length > 0;
+  const showInvoicesSection = isActive && (isLoadingInvoices || hasInvoices);
 
   return (
     <div className='space-y-8'>
@@ -58,57 +61,13 @@ export default function BillingSection({ org }: BillingSectionProps) {
         </section>
       ) : null}
 
-      {invoices && invoices.length > 0 && (
+      {showInvoicesSection ? (
         <section className='space-y-3'>
           <h3 className='font-semibold text-sm'>Invoices</h3>
-          <InvoicesTable invoices={invoices} />
+          {isLoadingInvoices ? <InvoicesSkeleton /> : <InvoicesTable invoices={invoices ?? []} />}
         </section>
-      )}
+      ) : null}
     </div>
-  );
-}
-
-function InvoicesTable({ invoices }: { invoices: Invoice[] }) {
-  return (
-    <table className='w-full text-sm'>
-      <thead className='border-b text-muted-foreground'>
-        <tr>
-          <th className='px-3 py-2 text-left font-normal text-xs'>Date</th>
-          <th className='px-3 py-2 text-left font-normal text-xs'>Due</th>
-          <th className='px-3 py-2 text-right font-normal text-xs'>Total</th>
-          <th className='px-3 py-2 text-left font-normal text-xs'>Status</th>
-          <th className='px-3 py-2 text-right font-normal text-xs'>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {invoices.map((inv) => (
-          <tr key={inv.id} className='border-b last:border-0'>
-            <td className='px-3 py-3 text-sm'>{formatDate(inv.period_start)}</td>
-            <td className='px-3 py-3 text-muted-foreground text-sm'>
-              {formatDate(inv.period_end)}
-            </td>
-            <td className='px-3 py-3 text-right text-sm'>
-              {formatAmount(inv.amount_paid || inv.amount_due, inv.currency)}
-            </td>
-            <td className='px-3 py-3 text-sm capitalize'>{inv.status}</td>
-            <td className='px-3 py-3 text-right'>
-              {inv.hosted_invoice_url ? (
-                <a
-                  className='text-primary text-sm hover:underline'
-                  href={inv.hosted_invoice_url}
-                  target='_blank'
-                  rel='noreferrer'
-                >
-                  View
-                </a>
-              ) : (
-                <span className='text-muted-foreground text-sm'>—</span>
-              )}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
   );
 }
 
@@ -166,26 +125,10 @@ function statusLine(billing: {
   return "";
 }
 
-function formatDate(ts: number | null): string {
-  if (!ts) return "—";
-  return new Date(ts * 1000).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric"
-  });
-}
-
 function formatDateIso(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
     year: "numeric"
-  });
-}
-
-function formatAmount(amountCents: number, currency: string): string {
-  return (amountCents / 100).toLocaleString(undefined, {
-    style: "currency",
-    currency: currency.toUpperCase()
   });
 }
