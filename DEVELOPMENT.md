@@ -23,7 +23,7 @@ cd oxy
 cargo build
 ```
 
-2. Install Node.js dependencies:
+1. Install Node.js dependencies:
 
 ```bash
 pnpm install
@@ -51,23 +51,9 @@ cargo test -- --nocapture
 
 ## Seed Test Data
 
-Use the `seed` command to populate your database with test users:
+The `seed` command is **deprecated**. It was built for an older data model and may not align with current org/project-aware flows.
 
-```bash
-# Create test users
-cargo run -- seed users # or seed full
-
-# Clear all test data when done
-cargo run -- seed clear
-```
-
-The seeding system creates these test users:
-
-| Email                     | Name        |
-| ------------------------- | ----------- |
-| `alice.smith@company.com` | Alice Smith |
-| `bob.johnson@company.com` | Bob Johnson |
-| `guest@oxy.local`         | Guest User  |
+For development testing, prefer creating test data through normal app workflows.
 
 In development mode, if no authentication headers are provided, the system defaults to `guest@oxy.local`:
 

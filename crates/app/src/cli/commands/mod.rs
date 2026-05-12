@@ -431,25 +431,24 @@ pub struct SeedArgs {
 
 #[derive(Parser, Debug)]
 pub enum SeedAction {
-    /// Create test users for development environment
+    /// [DEPRECATED] Create legacy test users for development environment
     ///
-    /// Generates 3 test users including guest@oxy.local for
-    /// local authentication testing and development.
+    /// Legacy helper that predates org/project-aware data flows.
+    /// Prefer creating data through normal app workflows.
     Users,
-    /// Create sample threads for existing test users
+    /// [DEPRECATED] Create legacy sample threads for existing test users
     ///
-    /// Generates 1000 sample analysis threads per test user
-    /// with realistic SQL queries and responses.
+    /// Legacy helper that may not match current org/project models.
+    /// Prefer creating data through normal app workflows.
     Threads,
-    /// Clear all test data (users and threads)
+    /// [DEPRECATED] Clear legacy test data (users and threads)
     ///
-    /// Removes all test users and their associated threads
-    /// to reset the development database to a clean state.
+    /// Legacy cleanup helper for old seed data only.
     Clear,
-    /// Full seed - create users and sample threads
+    /// [DEPRECATED] Full legacy seed (users + sample threads)
     ///
-    /// Complete seeding process that creates test users
-    /// and generates sample threads for comprehensive testing.
+    /// Legacy helper that predates org/project-aware data flows.
+    /// Prefer creating data through normal app workflows.
     Full,
 }
 
@@ -1529,6 +1528,12 @@ async fn handle_check_for_updates() -> Result<(), OxyError> {
 
 async fn handle_seed_command(seed_args: SeedArgs) -> Result<(), OxyError> {
     use seed::*;
+
+    println!(
+        "{} {}",
+        "⚠️".warning(),
+        "`oxy seed` is deprecated and may not match the current org/project data model. Prefer creating test data through normal app workflows.".warning()
+    );
 
     match seed_args.action {
         SeedAction::Users => {
