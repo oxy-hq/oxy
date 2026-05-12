@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/shadcn/button";
+import { useAuth } from "@/contexts/AuthContext";
 import { useCreatePortalSession, useOrgBillingStatus } from "@/hooks/api/billing";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 
@@ -14,7 +15,9 @@ export function BillingBanner() {
   const orgId = useCurrentOrg((s) => s.org?.id);
   const role = useCurrentOrg((s) => s.role);
   const isAdmin = role === "owner" || role === "admin";
-  const { data: billing } = useOrgBillingStatus(orgId ?? "", Boolean(orgId));
+  const { authConfig } = useAuth();
+  const billingEnabled = authConfig.billing_enabled;
+  const { data: billing } = useOrgBillingStatus(orgId ?? "", billingEnabled && Boolean(orgId));
   const portal = useCreatePortalSession(orgId ?? "");
 
   if (!billing) return null;

@@ -88,4 +88,10 @@ export interface AuthConfigResponse {
    * Always present — server serializes the bool unconditionally.
    */
   observability_enabled: boolean;
+  /**
+   * Mirror of the backend `billing` feature flag. When false the FE hides
+   * the org Billing settings tab and the admin Billing queue renders a
+   * "Billing is disabled" notice instead of calling endpoints that 503.
+   */
+  billing_enabled: boolean;
 }

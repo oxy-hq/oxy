@@ -41,6 +41,8 @@ interface NavItem {
   icon: NavIcon;
   adminOnly?: boolean;
   featureFlag?: keyof typeof FEATURES;
+  /** When set, only render this item if the matching authConfig flag is true. */
+  requiresBilling?: boolean;
 }
 
 interface NavGroup {
@@ -54,7 +56,13 @@ const CLOUD_NAV: NavGroup[] = [
     items: [
       { value: "organization.general", label: "General", icon: SettingsIcon },
       { value: "organization.members", label: "Members", icon: Users },
-      { value: "organization.billing", label: "Billing", icon: CreditCard, adminOnly: true },
+      {
+        value: "organization.billing",
+        label: "Billing",
+        icon: CreditCard,
+        adminOnly: true,
+        requiresBilling: true
+      },
       { value: "organization.integration", label: "Integration", icon: Plug }
     ]
   },
@@ -92,12 +100,13 @@ const LOCAL_NAV: NavGroup[] = [
 
 export default function SettingsDialog() {
   const { isOpen, section, open, close } = useSettingsDialog();
-  const { isLocalMode } = useAuth();
+  const { isLocalMode, authConfig } = useAuth();
   const { org } = useCurrentOrg();
   const role = useCurrentOrg((s) => s.role);
   const { workspace } = useCurrentWorkspace();
 
   const isAdmin = role === "owner" || role === "admin";
+  const billingEnabled = authConfig.billing_enabled;
 
   const groupSubtitle = (groupLabel: string): string | undefined => {
     if (groupLabel === "Organization") return org?.name;
@@ -120,7 +129,9 @@ export default function SettingsDialog() {
       subtitle: groupSubtitle(g.label),
       items: g.items.filter(
         (i) =>
-          (!i.featureFlag || FEATURES[i.featureFlag]) && (!i.adminOnly || isLocalMode || isAdmin)
+          (!i.featureFlag || FEATURES[i.featureFlag]) &&
+          (!i.adminOnly || isLocalMode || isAdmin) &&
+          (!i.requiresBilling || billingEnabled)
       )
     }))
     .filter((g) => g.items.length > 0);

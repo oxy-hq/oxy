@@ -3,6 +3,7 @@ import { Navigate, Outlet, useLocation, useParams } from "react-router-dom";
 import { BillingBanner } from "@/components/billing/BillingBanner";
 import { PaywallScreen } from "@/components/billing/PaywallScreen";
 import { Spinner } from "@/components/ui/shadcn/spinner";
+import { useAuth } from "@/contexts/AuthContext";
 import { useOrgBillingStatus } from "@/hooks/api/billing";
 import { useOrgs } from "@/hooks/api/organizations";
 import { setLastOrgSlug } from "@/libs/utils/lastWorkspace";
@@ -24,13 +25,15 @@ export default function OrgGuard() {
   const location = useLocation();
   const { data: orgs, isPending } = useOrgs();
   const { org: currentOrg, role, setOrg, clearOrg } = useCurrentOrg();
+  const { authConfig } = useAuth();
+  const billingEnabled = authConfig.billing_enabled;
 
   const matchedOrg = orgs?.find((o) => o.slug === orgSlug);
   const hasWorkspaces = (matchedOrg?.workspace_count ?? 0) > 0;
 
   const { data: billing, isPending: billingPending } = useOrgBillingStatus(
     matchedOrg?.id ?? "",
-    Boolean(matchedOrg),
+    billingEnabled && Boolean(matchedOrg),
     // While the org is in the past_due grace window we render BillingBanner,
     // not the paywall. The 402 axios interceptor still flips the paywall
     // store on the first blocked request, but a refetch here closes the
@@ -100,7 +103,7 @@ export default function OrgGuard() {
   // requests that hit `SubscriptionGuard` → 402 before `PaywallScreen`
   // mounts. Most visible after `POST /orgs` lands the user on
   // `/{slug}/onboarding` with the new (Incomplete) org.
-  if (!onBillingPath && !billing && billingPending) {
+  if (billingEnabled && !onBillingPath && !billing && billingPending) {
     return (
       <div className='flex h-full w-full items-center justify-center'>
         <Spinner className='size-6' />

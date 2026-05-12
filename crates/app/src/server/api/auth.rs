@@ -205,6 +205,10 @@ pub struct AuthConfigResponse {
     /// "local" when the server is running `oxy serve --local`, "cloud" otherwise.
     /// Frontend uses this to pick a route tree.
     pub mode: &'static str,
+    /// Mirror of the backend `billing` feature flag. When false the FE hides
+    /// the org Billing settings tab and the admin Billing queue surfaces a
+    /// "Billing is disabled" notice instead of a misleading empty state.
+    pub billing_enabled: bool,
 }
 
 #[derive(Serialize)]
@@ -248,6 +252,7 @@ pub async fn get_config(
     let github_client_id = std::env::var("GITHUB_CLIENT_ID").ok();
 
     let observability_enabled = app_state.observability.is_some();
+    let billing_enabled = crate::server::feature_flags::is_enabled("billing");
 
     if !auth_enabled || app_state.internal {
         return Ok(Json(AuthConfigResponse {
@@ -259,6 +264,7 @@ pub async fn get_config(
             observability_enabled,
             github: github_client_id.map(|client_id| GitHubAuthConfig { client_id }),
             mode: app_state.mode.label(),
+            billing_enabled,
         }));
     }
 
@@ -283,6 +289,7 @@ pub async fn get_config(
         observability_enabled,
         github: github_client_id.map(|client_id| GitHubAuthConfig { client_id }),
         mode: app_state.mode.label(),
+        billing_enabled,
     };
 
     Ok(Json(config))
@@ -1353,6 +1360,7 @@ mod mode_field_tests {
             observability_enabled: false,
             github: None,
             mode: ServeMode::Local.label(),
+            billing_enabled: false,
         };
         let json = serde_json::to_value(&response).expect("serialize");
         assert_eq!(json["mode"], "local");
@@ -1369,6 +1377,7 @@ mod mode_field_tests {
             observability_enabled: false,
             github: None,
             mode: ServeMode::Cloud.label(),
+            billing_enabled: false,
         };
         let json = serde_json::to_value(&response).expect("serialize");
         assert_eq!(json["mode"], "cloud");
