@@ -19,133 +19,16 @@ Using Oxygen, users can automate data Q&A and reporting, and accelerate building
 
 Oxygen integrates natively with your existing data stack - data warehouses, ELT tools, semantic layers, and BI tools. Oxygen also comes with its own data tools for a zero-config experience. 
 
-To learn more, read our [docs](https://oxy.tech/docs).
+To learn more, read our [docs](https://oxy.tech/docs) or contact us via github issues or [contact form](https://form.typeform.com/to/hQlOTpzW).
 
 ### Quickstart
 
-To install Oxygen from binary, run the following command (Mac, Linux, WSL):
+From this repository, start the demo project locally:
 
 ```bash
-bash <(curl -sSfL https://get.oxy.tech)
+cd demo_project
+oxy start --local
 ```
 
-<details>
-<summary>Alternative Installation Methods</summary>
-
-#### Using Homebrew (macOS only)
-
-```bash
-brew install oxy-hq/oxygen/oxy
-```
-
-#### Installing a Specific Version
-
-```bash
-OXY_VERSION="0.1.0" bash <(curl -sSfL https://get.oxy.tech)
-```
-
-#### Installing Edge Builds
-
-To install the latest edge build (built from main branch):
-
-```bash
-bash <(curl -sSfL https://nightly.oxy.tech)
-```
-
-To install a specific edge version:
-
-```bash
-OXY_VERSION=edge-7cbf0a5 bash <(curl -sSfL https://nightly.oxy.tech)
-```
-
-#### Browsing Available Releases
-
-To list all available releases across stable and edge channels:
-
-```bash
-bash <(curl -sSfL https://release.oxy.tech)
-```
-
-Filter by channel or adjust the number of results:
-
-```bash
-bash <(curl -sSfL https://release.oxy.tech) --channel stable
-bash <(curl -sSfL https://release.oxy.tech) -c edge -n 20
-```
-
-You can also browse releases directly on GitHub: [stable](https://github.com/oxy-hq/oxygen/releases) | [edge](https://github.com/oxy-hq/oxygen-nightly/releases).
-
-</details>
-
-To verify the installation, run:
-
-```bash
-oxy --version
-```
-
-## Quick Deploy
-
-Deploy the complete Oxygen demo application with one click:
-
-This deployment includes:
-
-- ✅ Complete Oxygen application (Rust backend + React frontend)
-- ✅ Demo retail analytics project with Oxygenmart dataset
-- ✅ Pre-configured workflows and data apps
-- ✅ Persistent storage for databases
-- ✅ Free tier available
-
-### Deployment Steps
-
-1. **Prerequisites**: Install the [Fly CLI](https://fly.io/docs/hands-on/install-flyctl/)
-
-   ```bash
-   curl -L https://fly.io/install.sh | sh
-   ```
-
-2. **Login to Fly.io**:
-
-   ```bash
-   fly auth login
-   ```
-
-3. **Deploy**:
-
-   ```bash
-   fly launch
-   ```
-
-   Follow the prompts to:
-   - Choose your app name and region
-   - Create a persistent volume for data storage
-   - The deployment will automatically use `Dockerfile.demo` with the demo_project included
-
-4. **Set your API key** (required for AI features):
-
-   ```bash
-   fly secrets set OPENAI_API_KEY=sk-your-key-here
-   ```
-
-5. **Access your app**:
-
-   ```bash
-   fly open
-   ```
-
-Your Oxygen instance will be live at `https://your-app-name.fly.dev` with the complete demo project ready to explore!
-
-## Database
-
-Oxygen uses PostgreSQL for all deployments. For local development, an embedded PostgreSQL instance starts automatically - no setup required!
-
-For production deployments, configure an external PostgreSQL database:
-
-```bash
-export OXY_DATABASE_URL=postgresql://user:password@host:port/database
-```
-
-See [DEVELOPMENT.md](DEVELOPMENT.md#database) for more details about database configuration and migration.
-
----
-
-See our [docs](https://oxy.tech/docs) on how to modify the agent file, seed it with context, run tests, and create workflows.
+## Development
+See [DEVELOPMENT.md](DEVELOPMENT.md) for more details about database configuration and migration.

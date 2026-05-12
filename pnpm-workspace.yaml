@@ -1,5 +1,18 @@
 packages:
   - web-app
   - sdk/typescript
-ignoredBuiltDependencies:
-  - '@tailwindcss/oxide'
+peerDependencyRules:
+  allowedVersions:
+    '@typescript-eslint/parser>typescript': '6'
+    '@typescript-eslint/eslint-plugin>typescript': '6'
+    '@typescript-eslint/utils>typescript': '6'
+    '@typescript-eslint/type-utils>typescript': '6'
+    '@typescript-eslint/project-service>typescript': '6'
+    '@typescript-eslint/tsconfig-utils>typescript': '6'
+    '@typescript-eslint/typescript-estree>typescript': '6'
+    vite-plugin-node-polyfills>vite: '8'
+allowBuilds:
+  '@sentry/cli': false
+  '@swc/core': false
+  '@tailwindcss/oxide': false
+  esbuild: false

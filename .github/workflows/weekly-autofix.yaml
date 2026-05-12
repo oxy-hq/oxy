@@ -53,7 +53,7 @@ jobs:
           sudo apt-get install -y protobuf-compiler
           protoc --version
 
-      - uses: pnpm/action-setup@v5
+      - uses: pnpm/action-setup@v6
         with:
           run_install: false
 
@@ -116,7 +116,8 @@ jobs:
             --allowedTools "Read,Edit,Glob,Grep"
 
       - name: Cargo clippy --fix
-        run: cargo clippy --fix --allow-dirty --allow-staged --broken-code --workspace
+        run:
+          cargo clippy --fix --allow-dirty --allow-staged --broken-code --workspace
           --lib
 
       - name: Cargo fmt
@@ -135,7 +136,8 @@ jobs:
         with:
           token: ${{ steps.app-token.outputs.token }}
           branch: autofix/weekly-${{ github.run_id }}
-          commit-message: "chore(${{ steps.date.outputs.value }}): weekly clippy fix,
+          commit-message:
+            "chore(${{ steps.date.outputs.value }}): weekly clippy fix,
             rustfmt, frontend format, workspace dep consolidation"
           title: "chore: weekly auto-fix ${{ steps.date.outputs.value }}"
           body: |
