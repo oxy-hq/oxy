@@ -2,7 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.5.53] - 2026-05-10
+## [0.5.54] - 2026-05-12
+
+### 🚀 Features
+
+- Web-app mobile usability and fix bugs (#2299)
+
+### 🐛 Bug Fixes
+
+- Web-app billing settings loading state (#2296)
+- Surface billing feature flag in admin UI (#2295)
+
+### 📚 Documentation
+
+- Update product-context.md from recent changelogs (#2307)
+- Update DEVELOPMENT.md to clarify HTTPS setup for local development and remove outdated sections
+- Update DEVELOPMENT.md
+
+### ⚙️ Miscellaneous Tasks
+
+- Clean up formatting and comments in Claude Code Review workflow
+- Update CI workflows and configurations, remove demo README and Fly configuration
+- Update README, bump turbo version in package.json and pnpm-lock.yaml, and fix turbo schema URL
+
+## [0.5.53] - 2026-05-11
 
 ### 🚀 Features
 
@@ -16,6 +39,7 @@ All notable changes to this project will be documented in this file.
 - Remove daily edge build schedule and adjust concurrency settings in public release workflow
 - Weekly auto-fix 2026-05-10 (#2304)
 - Update workspace exclude list to improve bundle size
+- Release 0.5.53 (#2293)
 
 ## [0.5.52] - 2026-05-07
 
