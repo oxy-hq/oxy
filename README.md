@@ -2,14 +2,9 @@
 
 <p align="center">
 <a href="#license"><img src="https://img.shields.io/badge/License-Apache--2.0-blue" alt="License"></a>
-</p>
-
-<div align="center">
 <a href="https://oxy.tech/docs" title="Go to project documentation"><img src="https://img.shields.io/badge/view-Documentation-blue?style=for-the-badge" alt="view - Documentation"></a>
-</div>
-
-> 📖 **Looking for up-to-date code documentation?**  
-> Check out our DeepWiki, which updates weekly with the latest code changes: [![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/oxy-hq/oxygen)
+<a href="https://deepwiki.com/oxy-hq/oxygen" title="DeepWiki"><img src="https://deepwiki.com/badge.svg" alt="DeepWiki"></a>
+</p>
 
 ## The Open-Source AI Data Analyst built for Speed and Precision 
 
