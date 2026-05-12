@@ -8,20 +8,22 @@ which component a bug affects. The more specific, the better.
 
 ## Product Overview
 
-Oxy is an AI-powered data analytics platform that lets teams query databases,
-build automated reports, and visualize data through natural language. Users
-connect data sources (DuckDB, PostgreSQL, BigQuery, Snowflake, ClickHouse,
-warehouses, semantic layer, Looker), ask questions in a chat interface where
-AI agents generate and execute SQL, then view streamed results. Teams can also
-define reusable multi-step Procedures (YAML-based automation, formerly called
-Workflows/Automations), build configuration-driven Data Apps (dashboards with
-charts, tables, and interactive controls), and directly edit all project files
-in a built-in Developer Portal IDE with SQL IDE and Git integration.
+Oxy (user-facing brand: **Oxygen**) is an AI-powered data analytics platform
+that lets teams query databases, build automated reports, and visualize data
+through natural language. Users connect data sources (DuckDB, PostgreSQL,
+BigQuery, Snowflake, ClickHouse, Airhouse, warehouses, semantic layer, Looker),
+ask questions in a chat interface where AI agents generate and execute SQL,
+then view streamed results. Teams can also define reusable multi-step
+Procedures (YAML-based automation, formerly called Workflows/Automations),
+build configuration-driven Data Apps (dashboards with charts, tables, and
+interactive controls), author dbt-style SQL transformations natively via
+Airform, and directly edit all project files in a built-in Developer Portal
+IDE with SQL IDE, Modeling, and Git integration.
 
 Oxy supports three deployment modes:
 - **Local** (`oxy start`) — PostgreSQL auto-managed in Docker, single workspace
 - **Remote** (`oxy serve --local`) — Single fixed workspace on a VM/container, embedded PostgreSQL
-- **Cloud / Multi-workspace** (`oxy serve`) — Multi-tenant platform with multi-organization support, GitHub-based workspace import, role-based access control, and magic link authentication
+- **Cloud / Multi-workspace** (`oxy serve`) — Multi-tenant platform with multi-organization support, GitHub-based workspace import, role-based access control, magic link authentication, and per-seat Stripe billing
 
 ---
 
@@ -33,14 +35,16 @@ Oxy supports three deployment modes:
 - **Workflows** (`/workflows/:id`) — Displays a YAML-defined workflow as a visual node diagram. Users click Run to execute it; step status is shown on each node (pending → running → success/failure). Output logs and result blocks appear below the diagram.
 - **Apps** (`/apps/:id`) — Runs a YAML-configured Data App automatically on load. Renders a dashboard composed of: Markdown blocks, Data Tables, Line Charts, Bar Charts, Pie Charts, interactive Controls (select dropdowns, date pickers, toggles), and multi-column Row layouts. Controls inject values into SQL via Jinja `controls` context and trigger re-execution of dependent tasks. Results are cached by parameter hash; use `?refresh` to force re-execution.
 - **Developer Portal / IDE** (`/ide`, `/ide/:filePath`) — Monaco-based code editor for all Oxy project files. Sidebar sections:
-  - **Files** — raw file tree (folders: `workflows/`, `agents/`, `example_sql/`, `generated/`; root files: `config.yml`, etc.)
+  - **Files** — raw file tree (folders: `workflows/`, `agents/`, `example_sql/`, `generated/`, `modeling/`; root files: `config.yml`, etc.)
   - **Objects** — files grouped by type: Agents, Procedures (Workflows), Semantic Layer, Apps
   - **Database / SQL IDE** — Multi-tab SQL editor with schema browser, Cmd/Ctrl+Enter execution, database connection management, and Parquet-backed result tables with paging/sorting
-  - **Settings** — Secrets panel (LLM API keys always visible, scans `key_var` and credential vars from config)
+  - **Modeling** — Browse dbt-style SQL projects (one per `modeling/<project>/` directory) powered by Airform. Run, test, seed, compile, analyze, and generate docs for dbt models; inspect streaming `NodeStarted`/`NodeCompleted` events; explore model-level and column-level lineage graphs. Supports Snowflake, BigQuery, and DuckDB.
+  - **Settings** — Opens the Unified Settings Dialog (see below). Secrets panel within it always shows LLM API keys and scans `key_var` and credential vars from config.
   - **Observability** — Version badge with build metadata (commit hash, timestamp). Configurable observability backends (DuckDB, PostgreSQL, or ClickHouse) for storing tracing and performance data; a setup banner appears when none is configured.
   - A **Pull** button appears in the header when the active branch is behind the remote, allowing one-click sync without opening a terminal.
   - Supports open, edit, save (with unsaved-changes indicator), breadcrumb navigation, undo/redo, and Git workflow (branch protection, merge conflict resolution, branch-aware file operations). In local project mode, files can be saved directly on the main branch with deployment to a separate branch.
   - **Readonly mode** — `oxy serve --readonly` disables all file modifications via API (405 responses), reflected in UI.
+- **Unified Settings Dialog** — A Notion-style modal that replaces the older split between the org settings modal and `/ide/settings/*` pages. Groups organization-level settings (members, billing, security) and workspace-level settings (data sources, secrets, observability, repo linking) under one grouped sidebar. In local mode, organization-only sections are hidden so the sidebar shows only what applies to a single-workspace deployment. Entry points are wired from the app sidebar footer, the IDE Settings tab, database sidebar "Add database" links, and home-page setup gaps.
 - **Agent Testing** (`/tests`) — Test dashboard for managing and executing agent test suites:
   - **Test files** (`*.agent.test.yml` / `*.aw.test.yml`) with LLM-as-judge correctness evaluation
   - Run individual tests or all tests project-wide with tag filtering and accuracy thresholds
@@ -48,7 +52,7 @@ Oxy supports three deployment modes:
   - Pass rate history, consistency metrics, and per-run detail views
 - **Looker Explore** — Browse Looker data models from the Dev Portal semantic layer. Compile queries to SQL, browse dimensions/measures. Requires `oxy looker sync` (auto-triggered by `oxy build`).
 - **Context Graph** (`/context-graph`) — Visual graph showing relationships between data objects (agents, tables, semantic views, workflows). Provides an overview of how project entities connect.
-- **Organization Management** (multi-workspace mode) — Oxy supports multiple organizations, each with separate workspaces, members, and data sources. **Post-login onboarding** guides new users through accepting pending invitations, creating a new organization, or joining an existing one; workspace creation steps through GitHub, demo, and blank workspace types. A **workspace dispatcher** automatically opens the most recently used workspace in the selected org after login. **Bulk invitations** allow owners to invite multiple members in a single action.
+- **Organization Management** (multi-workspace mode) — Oxy supports multiple organizations, each with separate workspaces, members, and data sources. **Post-login onboarding** uses a single unified flow (`AgenticSetupPage`) across demo, GitHub, and blank workspace types, with up to four dismissible status rows on the home page (missing LLM key / warehouse credentials / no databases / no agents) replacing forced redirects back into the wizard. A **workspace dispatcher** automatically opens the most recently used workspace in the selected org after login. **Bulk invitations** allow owners to invite multiple members in a single action. Admins manage **per-seat Stripe billing** (self-serve checkout, billing portal for payment methods, invoices, subscriptions) directly from the settings dialog; admin tooling supports manual subscription resync and graduated tiered pricing.
 - **Workspace Management** (multi-workspace mode) — Import repositories from GitHub, switch workspaces, invite members with role-based access (Owner/Admin/Member). Owner set via `OXY_OWNER` env var.
 - **Sidebar** (persistent) — Navigation links (Home, Threads, Context Graph, Developer Portal), recent thread list, workflow shortcuts, and app shortcuts. In multi-workspace mode, the user menu contains an **organization switcher** showing the current org's member and workspace counts, and lets users switch between orgs or create new ones.
 
@@ -62,7 +66,12 @@ Oxy supports three deployment modes:
   - **Analytics agent** — Clarify → specify metrics/dimensions → generate SQL → execute → interpret results. Supports extended thinking toggle, per-state model overrides, time-aware queries, and verified query badges for semantic layer queries.
   - **App builder agent** — Generates a complete `.app.yml` Data App from natural language description.
   - Both support **human-in-the-loop suspension**: the agent pauses mid-pipeline to ask the user a clarifying question, then resumes via `POST /analytics/runs/:id/answer`.
-- **Builder Agent** — A copilot agent (Build mode in chat) that reads, modifies, and creates project files through an AI pipeline. Sends targeted line edits rather than full file replacements. Toggled with `Cmd+I`.
+- **Builder Agent** — A copilot agent (Build mode in chat) that reads, modifies, and creates project files through an AI pipeline. Sends targeted line edits rather than full file replacements. Toggled with `Cmd+I`. Carries a `run_app` tool to execute a Data App by path and feed structured results back as context, plus 15+ dbt-aware tools (`run_dbt_models`, `test_dbt_models`, `compile_dbt_model`, `get_dbt_lineage`, `init_dbt_project`, etc.) for scaffolding and managing dbt projects. When a single response edits multiple files, the UI shows one sequential confirm/reject prompt per file; rejecting one file does not block the others.
+- **Verified Queries** — Pre-written `.sql` files in the workspace are auto-discovered by the analytics agent and executed as-is when they match a user's question, bypassing LLM SQL generation entirely. Results are flagged as verified in the analytics pipeline and surface a **Verified** badge in the UI (also shown for semantic-layer queries).
+- **SQL Modeling (Airform)** — dbt-compatible transformations native to Oxy via [Airform](https://github.com/oxy-hq/airform). Projects live under `modeling/<project>/` with an `oxy.yml` mapping dbt profile targets to Oxy database connections (Oxy validates dialect compatibility before running). Lifecycle commands (run/test/seed/compile/analyze/docs) are available from both the IDE Modeling area and Builder agent chat. Execution streams `NodeStarted`/`NodeCompleted` events over SSE.
+- **Universal Slack Bot** — A single, shared multi-tenant Slack app that any organization can connect via OAuth — no per-customer app installations. Each Slack team links to one Oxy organization; users pick the workspace and agent per-thread via a Block Kit interface. Slack accounts are matched to Oxy users by email with magic-link fallback for unmatched users. Bot tokens are encrypted per-organization. SQL queries executed by agents render as native inline code blocks in Slack messages on successful runs (long queries are truncated with a link to the full thread). Chart images are uploaded directly to Slack via `files.uploadV2`, with optional S3 presigned URL fallback (`OXY_S3_PRESIGN_TTL_SECONDS`, `OXY_S3_PUBLIC_URL_BASE`) for CDN serving.
+- **Airhouse Integration** — A first-class Oxy connector. Local-mode startup seeds the local organization, workspace, and user membership idempotently so provisioning works in development. The connector distinguishes DDL/DML (CREATE/INSERT/UPDATE) — executed directly — from SELECT-family queries — wrapped in subqueries. Server startup validates that all required Airhouse env vars are set together and fails fast if a subset is provided.
+- **@Mention** — A cross-surface mention system available in the home Chat Panel (Ask and Build modes), the Builder Dialog and follow-up input, and inside agentic suspension answers. A shared highlight component renders orange tokens uniformly across inputs; backspace deletes a mention as a single atomic token; Escape reliably dismisses the suggestion popup.
 - **Thread** — A persisted conversation (question + agent responses). Created when the user first submits from the Home page; accessible from the sidebar or Threads list.
 - **Agent Message / Artifact** — Within a thread, agent responses contain free-text (`agent-response-text`) and structured artifacts (`agent-artifact`). The `execute_sql` artifact kind shows the SQL query the agent ran.
 - **Procedure (formerly Workflow/Automation)** — A multi-step automation defined in `.procedure.yml` (also accepts `.workflow.yml` and `.automation.yml` for backward compatibility). Steps are visualized as diagram nodes with colored status borders (emerald = success). Supports step replay (re-execute from a specific step forward). Task types include SQL execution, `looker_query`, and more. Triggered from the procedure page (Run button) or from chat (Workflow mode).
@@ -107,6 +116,20 @@ Oxy supports three deployment modes:
 - **Snowflake column stats** — Numeric and date columns in Snowflake can fail during schema discovery with a type-casting error, causing the schema browser to show incomplete or no metadata for those columns.
 - **Agentic agent validation errors** — Misconfigured `.agentic.yml` files can surface as generic error banners at runtime. Run `oxy validate` before deployment and check IDE schema hints to catch root-cause issues early.
 - **Agentic runs in local mode** — Agentic analytics runs under `oxy serve --local` have historically had server-side errors; this deployment combination deserves explicit end-to-end testing after changes to the agentic pipeline.
+- **App switching shows stale data** — Navigating between two apps in the same workspace can show "No data found" on every chart/table if the `AppPreview` component retains the previous app's task results. Verify display blocks reset between apps without a manual refresh.
+- **DuckDB concurrent init** — Two concurrent `duckdb_database` handles opening the same file have caused SIGSEGV crashes. The DuckDB pool now serializes initialization, but any new code that opens DuckDB outside the pool must respect this constraint.
+- **HITL events on batched writes** — `FileChangePending` events must fire for every file in a batched Builder write, only when the pipeline is actually suspended. Missed events silently skip approvals; spurious events cause stale UI state. Builder change IDs must be stable across re-edits so the frontend doesn't hold stale references.
+- **Multi-org switching** — Clicking a different organization in the sidebar can race between URL and app state, silently failing or bouncing back. Onboarding state must be stored per-workspace (not in a shared browser key) and cleared on logout so it does not leak across workspaces or sessions.
+- **Per-agent LLM key readiness** — The home page readiness check must resolve which LLM provider the *currently selected agent* uses and only flag missing keys for that provider. In local mode it must also read environment-variable secrets (e.g. `OPENAI_API_KEY` in `.env`); otherwise the chat panel gets disabled with a false "LLM key not set" warning. Cloud mode reads from the workspace secrets store, not server env vars.
+- **LLM rate limits and connect failures** — HTTP 429 responses from Anthropic/OpenAI/OpenAI-compatible providers are retried with exponential backoff; if retries are exhausted, the run suspends with a clear rate-limit message. Transient connect/TLS timeouts to OpenAI/Azure OpenAI are also retried automatically with a 2-minute budget; permanent errors (`insufficient_quota`, `context_length_exceeded`, oversized input) fail fast. Regressions here typically surface as runs that die on a single transient failure.
+- **Workspace deletion redirect** — Deleting the current workspace must redirect immediately by optimistically removing it from the cache and clearing the persisted last-workspace ID; otherwise the dispatcher routes back to the deleted workspace.
+- **Onboarding completion summary** — Multi-topic onboarding produces multiple Data Apps (overview + topic dashboards). The "Workspace ready" summary must list every generated app file with one EXPLORE button per dashboard, not just the overview.
+- **@Mention input edge cases** — Cursor placement after selecting a mention, atomic backspace deletion, Escape dismissal, highlight alignment during horizontal scroll on long lines, and mention popups inside agentic suspension answers (no stale cursor when navigating between suspended questions) are all known fragile interactions.
+- **Slack chart publishing** — If S3/chart-renderer init fails (bad credentials, unreachable AWS endpoint), the bot must fall back to text-only responses and log a warning, not silently drop the user's workspace-picker submission. Private S3 buckets and SSE-KMS encryption require presigned URLs; misconfigured TTL or `OXY_S3_PUBLIC_URL_BASE` can produce broken/expired image links.
+- **Slack block injection** — The webhook handler that re-posts source messages must strictly allowlist block kinds (`section`, `context`, `divider`, `header`, `image`) and drop interactive types (`actions`, `input`, `rich_text`, `video`) so attackers cannot inject buttons/inputs via crafted source messages.
+- **DuckDB SQL injection** — User-provided strings embedded in DuckDB configuration SQL (S3 secrets, catalog schema names, storage paths) must be escaped against single-quote injection.
+- **Secret cross-project leakage** — Secret lookups must always filter by project; a missing project filter can expose secrets across projects in multi-project deployments.
+- **Azure OpenAI agentic compatibility** — Azure OpenAI deployments route through the OSS execution path and have a history of compatibility issues with the agentic pipeline. After changes to the agentic LLM layer, exercise an Azure OpenAI agent end-to-end.
 
 ---
 
@@ -149,6 +172,8 @@ Oxy supports three deployment modes:
 | `.topic.yml` | Semantic Topic | Semantic layer topic definition |
 | `.agent.test.yml` | Agent Test | Test suite for classic agents |
 | `.aw.test.yml` | Agentic Test | Test suite for agentic workflows |
+| `.sql` | Verified Query | Pre-written SQL auto-discovered by the analytics agent; executed as-is when matched to a question, surfaced as a Verified result |
+| `oxy.yml` (under `modeling/<project>/`) | Modeling Project Config | Maps dbt profile targets to Oxy database connections for an Airform-managed dbt project |
 
 ---
 
