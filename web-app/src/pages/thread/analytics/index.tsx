@@ -13,6 +13,7 @@ import {
   ResizablePanel,
   ResizablePanelGroup
 } from "@/components/ui/shadcn/resizable";
+import useSidebar from "@/components/ui/shadcn/sidebar-context";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import type {
   ArtifactItem,
@@ -339,6 +340,7 @@ const PastRunEntry = ({
 
 const AnalyticsThread = ({ thread }: Props) => {
   const { project, branchName } = useCurrentProjectBranch();
+  const { isMobile } = useSidebar();
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [followUpQuestion, setFollowUpQuestion] = useState("");
@@ -386,6 +388,9 @@ const AnalyticsThread = ({ thread }: Props) => {
   // Track latest accepted changes so the isTerminal effect can capture them
   // before streamingEvents is cleared by reset().
   const liveAcceptedChangesRef = useRef<BuilderFileChange[]>([]);
+  // Track which terminal runs have already auto-opened the file preview so we
+  // don't re-trigger when the user navigates away from the preview manually.
+  const autoOpenedRunIdRef = useRef<string | null>(null);
 
   const {
     data: allRuns = [],
@@ -466,13 +471,6 @@ const AnalyticsThread = ({ thread }: Props) => {
             type: "all"
           });
         }
-      }
-      // Auto-open the preview for the last accepted change (skip deletions — file no longer exists).
-      const lastChange = [...liveAcceptedChangesRef.current].reverse().find((c) => !c.isDeletion);
-      if (lastChange) {
-        setSelectedFileChange(lastChange);
-        setSelectedArtifact(null);
-        setBuilderPanelOpen(false);
       }
     }
   }, [isTerminal, queryClient, project.id, branchName, thread.id]);
@@ -646,6 +644,24 @@ const AnalyticsThread = ({ thread }: Props) => {
   // Keep ref in sync so the isTerminal effect can read current value without a dep.
   liveAcceptedChangesRef.current = liveAcceptedChanges;
 
+  // Auto-open the file preview for the last accepted change once the run
+  // terminates. Re-evaluates as `liveAcceptedChanges` grows so we catch
+  // accepted file_changed events that arrive a tick after the run-done event.
+  // Guarded by run id so the preview isn't re-forced open after the user
+  // manually closes it.
+  const currentRunId = "runId" in state ? state.runId : null;
+  useEffect(() => {
+    if (!isTerminal) return;
+    if (!currentRunId || autoOpenedRunIdRef.current === currentRunId) return;
+    const lastChange = [...liveAcceptedChanges].reverse().find((c) => !c.isDeletion);
+    if (!lastChange) return;
+    autoOpenedRunIdRef.current = currentRunId;
+    setSelectedFileChange(lastChange);
+    setSelectedArtifact(null);
+    setSelectedDelegation(null);
+    setBuilderPanelOpen(false);
+  }, [isTerminal, liveAcceptedChanges, currentRunId]);
+
   // When the builder writes a newer version of the file currently open in the preview
   // panel, update selectedFileChange so FilePreviewPanel remounts with fresh content.
   useEffect(() => {
@@ -681,7 +697,7 @@ const AnalyticsThread = ({ thread }: Props) => {
     <div className='flex h-full flex-col'>
       <Header thread={thread} />
 
-      <ResizablePanelGroup direction='horizontal' className='flex-1'>
+      <ResizablePanelGroup direction={isMobile ? "vertical" : "horizontal"} className='flex-1'>
         <ResizablePanel
           defaultSize={
             isBuilder && builderPanelOpen

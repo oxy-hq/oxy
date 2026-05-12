@@ -29,10 +29,10 @@ export const DatabaseRow: React.FC<DatabaseTableRowProps> = ({ database }) => {
 
   return (
     <TableRow>
-      <TableCell className='font-medium'>
+      <TableCell data-label='Database' className='font-medium'>
         <DatabaseInfo database={database} />
       </TableCell>
-      <TableCell>
+      <TableCell data-label='Datasets'>
         <DatasetInfo datasets={database.datasets} />
       </TableCell>
       <TableCell className='max-w-md'>

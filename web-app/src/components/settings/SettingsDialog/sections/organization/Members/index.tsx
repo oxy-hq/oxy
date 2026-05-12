@@ -14,6 +14,7 @@ import {
 import { useOrgInvitations, useOrgMembers, useRevokeInvitation } from "@/hooks/api/organizations";
 import useCurrentUser from "@/hooks/api/users/useCurrentUser";
 import type { Organization, OrgRole } from "@/types/organization";
+import TableWrapper from "../../../../components/TableWrapper";
 import SectionHeader from "../../../components/SectionHeader";
 import { InviteDialog } from "./components/InviteDialog";
 import { MemberRowActions } from "./components/MemberRowActions";
@@ -120,7 +121,7 @@ export default function TeamSection({ org, viewerRole }: TeamSectionProps) {
           )}
         </div>
       ) : (
-        <div className='overflow-hidden rounded-md border'>
+        <TableWrapper>
           <Table>
             <TableHeader>
               <TableRow>
@@ -136,7 +137,7 @@ export default function TeamSection({ org, viewerRole }: TeamSectionProps) {
 
                 return (
                   <TableRow key={member.id}>
-                    <TableCell className='px-4 py-3'>
+                    <TableCell data-label='Member' className='px-4 py-3 max-md:px-0 max-md:py-0'>
                       <div className='flex items-center gap-3'>
                         <div className='flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted font-medium text-sm'>
                           {member.name?.[0]?.toUpperCase() ?? "?"}
@@ -154,10 +155,13 @@ export default function TeamSection({ org, viewerRole }: TeamSectionProps) {
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell className='w-32 px-4 py-3'>
+                    <TableCell
+                      data-label='Role'
+                      className='w-32 px-4 py-3 max-md:w-auto max-md:px-0 max-md:py-0'
+                    >
                       <RoleBadge role={member.role} />
                     </TableCell>
-                    <TableCell className='w-12 px-2 py-3 text-right'>
+                    <TableCell className='w-12 px-2 py-3 text-right max-md:w-auto max-md:px-0 max-md:py-0'>
                       <MemberRowActions
                         member={member}
                         orgId={orgId}
@@ -171,7 +175,7 @@ export default function TeamSection({ org, viewerRole }: TeamSectionProps) {
               })}
             </TableBody>
           </Table>
-        </div>
+        </TableWrapper>
       )}
 
       {canManage && pendingInvitations.length > 0 && (

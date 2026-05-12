@@ -11,7 +11,7 @@ import {
   Settings as SettingsIcon,
   Users
 } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { AirhouseLogo } from "@/components/icons";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/shadcn/dialog";
 import { useAuth } from "@/contexts/AuthContext";
@@ -20,18 +20,9 @@ import { cn } from "@/libs/shadcn/utils";
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 import useSettingsDialog, { type SettingsSection } from "@/stores/useSettingsDialog";
+import { ActiveSection } from "./components/ActiveSection";
+import { MobileSettingsView } from "./components/MobileSettingsView";
 import { VersionBadge } from "./components/VersionBadge";
-import Billing from "./sections/organization/Billing";
-import General from "./sections/organization/General";
-import Integration from "./sections/organization/Integration";
-import OrgMembers from "./sections/organization/Members";
-import ActivityLogs from "./sections/workspace/ActivityLogs";
-import Airhouse from "./sections/workspace/Airhouse";
-import ApiKeys from "./sections/workspace/ApiKeys";
-import Databases from "./sections/workspace/Databases";
-import WorkspaceMembers from "./sections/workspace/Members";
-import Repositories from "./sections/workspace/Repositories";
-import Secrets from "./sections/workspace/Secrets";
 
 type NavIcon = LucideIcon | React.ComponentType<{ className?: string }>;
 
@@ -107,6 +98,13 @@ export default function SettingsDialog() {
 
   const isAdmin = role === "owner" || role === "admin";
   const billingEnabled = authConfig.billing_enabled;
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
+
+  // Always land on the section list when the dialog opens on mobile, so users
+  // see all available config groups instead of being dropped into one section.
+  useEffect(() => {
+    if (!isOpen) setMobileDetailOpen(false);
+  }, [isOpen]);
 
   const groupSubtitle = (groupLabel: string): string | undefined => {
     if (groupLabel === "Organization") return org?.name;
@@ -153,13 +151,39 @@ export default function SettingsDialog() {
 
   if (visibleGroups.length === 0) return null;
 
+  const activeItem = allItems.find((i) => i.value === activeSection);
+  const activeLabel = activeItem?.label ?? "Settings";
+
   return (
     <Dialog open={isOpen} onOpenChange={(v) => !v && close()}>
-      <DialogContent className='max-w-5xl overflow-hidden p-0 sm:max-w-5xl' showCloseButton={false}>
+      <DialogContent
+        className='top-0 left-0 h-[100svh] w-screen max-w-none translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-none p-0 sm:top-1/2 sm:left-1/2 sm:h-[min(720px,90vh)] sm:max-w-5xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg'
+        showCloseButton={false}
+      >
         <VisuallyHidden>
           <DialogTitle>Settings</DialogTitle>
         </VisuallyHidden>
-        <div className='flex h-[min(720px,90vh)]'>
+
+        <MobileSettingsView
+          visibleGroups={visibleGroups}
+          activeSection={activeSection}
+          activeLabel={activeLabel}
+          detailOpen={mobileDetailOpen}
+          onOpenSection={(section) => {
+            open(section);
+            setMobileDetailOpen(true);
+          }}
+          onBackToList={() => setMobileDetailOpen(false)}
+          org={org}
+          role={role}
+          isAdmin={isAdmin}
+          workspace={workspace}
+          isLocalMode={isLocalMode}
+          close={close}
+        />
+
+        {/* Desktop layout — side nav + content */}
+        <div className='hidden h-full min-h-0 min-w-0 md:flex'>
           <nav className='flex w-60 shrink-0 flex-col gap-4 overflow-y-auto border-sidebar-border border-r bg-sidebar p-3'>
             {visibleGroups.map((group) => (
               <div key={group.label} className='flex flex-col gap-1'>
@@ -202,27 +226,16 @@ export default function SettingsDialog() {
             </div>
           </nav>
 
-          <div className='flex-1 overflow-auto p-6'>
-            {org && role && activeSection === "organization.general" && (
-              <General org={org} onClose={close} />
-            )}
-            {org && role && activeSection === "organization.members" && (
-              <OrgMembers org={org} viewerRole={role} />
-            )}
-            {org && role && activeSection === "organization.billing" && isAdmin && (
-              <Billing org={org} onClose={close} />
-            )}
-            {org && activeSection === "organization.integration" && <Integration org={org} />}
-
-            {workspace && activeSection === "workspace.members" && <WorkspaceMembers />}
-            {workspace && activeSection === "workspace.databases" && <Databases />}
-            {workspace && activeSection === "workspace.airhouse" && <Airhouse />}
-            {workspace && activeSection === "workspace.repositories" && <Repositories />}
-            {workspace && activeSection === "workspace.api_keys" && <ApiKeys />}
-            {workspace && activeSection === "workspace.secrets" && (isLocalMode || isAdmin) && (
-              <Secrets />
-            )}
-            {workspace && activeSection === "workspace.activity_logs" && <ActivityLogs />}
+          <div className='min-h-0 min-w-0 flex-1 overflow-auto p-6'>
+            <ActiveSection
+              activeSection={activeSection}
+              org={org}
+              role={role}
+              isAdmin={isAdmin}
+              workspace={workspace}
+              isLocalMode={isLocalMode}
+              close={close}
+            />
           </div>
         </div>
       </DialogContent>

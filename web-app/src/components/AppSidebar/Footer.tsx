@@ -2,8 +2,8 @@ import { Check, HardDrive, LogOut, Plus, Settings, UserPlus } from "lucide-react
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import SettingsDialog from "@/components/settings/SettingsDialog";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import useSidebar from "@/components/ui/shadcn/sidebar-context";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOrgs } from "@/hooks/api/organizations";
 import { cn } from "@/libs/shadcn/utils";
@@ -46,6 +46,11 @@ function useLocalUserInfo(): UserInfo | null {
 
 function LocalModeFooter() {
   const openSettingsDialog = useSettingsDialog((s) => s.open);
+  const { isMobile, setOpenMobile } = useSidebar();
+  const handleOpenSettings = () => {
+    if (isMobile) setOpenMobile(false);
+    openSettingsDialog("workspace.databases");
+  };
   return (
     <div className='border-sidebar-border/50 border-t p-2'>
       <div className='flex items-center gap-2 rounded-md px-2 py-2 text-left group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0'>
@@ -64,8 +69,9 @@ function LocalModeFooter() {
         <Button
           variant='ghost'
           size='icon'
-          onClick={() => openSettingsDialog("workspace.databases")}
-          tooltip='Settings'
+          onClick={handleOpenSettings}
+          tooltip='Workspace settings'
+          aria-label='Workspace settings'
           className='h-7 w-7 shrink-0 group-data-[collapsible=icon]:hidden'
         >
           <Settings className='h-4 w-4' />
@@ -77,12 +83,7 @@ function LocalModeFooter() {
 
 export function Footer() {
   const { isLocalMode } = useAuth();
-  return (
-    <>
-      {isLocalMode ? <LocalModeFooter /> : <CloudFooter />}
-      <SettingsDialog />
-    </>
-  );
+  return isLocalMode ? <LocalModeFooter /> : <CloudFooter />;
 }
 
 function CloudFooter() {
@@ -93,6 +94,7 @@ function CloudFooter() {
   const { data: orgs } = useOrgs();
   const [menuOpen, setMenuOpen] = useState(false);
   const openSettingsDialog = useSettingsDialog((s) => s.open);
+  const { isMobile, setOpenMobile } = useSidebar();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // After a successful Slack install, the backend redirects the browser
@@ -109,6 +111,7 @@ function CloudFooter() {
   }, [searchParams, setSearchParams, openSettingsDialog]);
 
   const openSettings = (section: SettingsSection) => {
+    if (isMobile) setOpenMobile(false);
     openSettingsDialog(section);
     setMenuOpen(false);
   };
@@ -193,7 +196,13 @@ function CloudFooter() {
               <Tooltip key={org.id} delayDuration={300}>
                 <TooltipTrigger asChild>
                   <DropdownMenuItem
-                    onClick={() => handleSwitchOrg(org)}
+                    onSelect={(e) => {
+                      // preventDefault skips Radix's auto-close animation; the
+                      // navigate below unmounts the tree cleanly so no body
+                      // pointer-events lock leaks onto the destination page.
+                      e.preventDefault();
+                      handleSwitchOrg(org);
+                    }}
                     className={cn(
                       "flex cursor-pointer items-center gap-2",
                       currentOrg?.id === org.id && "bg-muted"
@@ -218,8 +227,11 @@ function CloudFooter() {
             ))}
             <DropdownMenuItem
               className='cursor-pointer'
-              onClick={() => {
-                setMenuOpen(false);
+              onSelect={(e) => {
+                // preventDefault skips Radix's auto-close so the menu unmounts
+                // via the navigate instead — no leaking body pointer-events
+                // lock on the destination page.
+                e.preventDefault();
                 navigate(ROUTES.ONBOARDING);
               }}
             >

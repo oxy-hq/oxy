@@ -3,7 +3,6 @@ import { useMemo, useState } from "react";
 import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import ChatPanel from "@/components/Chat/ChatPanel";
 import PageHeader from "@/components/PageHeader";
-import useSidebar from "@/components/ui/shadcn/sidebar-context";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useAuth } from "@/contexts/AuthContext";
 import useAgents from "@/hooks/api/agents/useAgents";
@@ -79,7 +78,6 @@ const ProjectSetupToast = ({ gaps }: { gaps: SetupGap[] }) => {
 };
 
 const Home = () => {
-  const { open } = useSidebar();
   const { isLocalMode } = useAuth();
   const { project } = useCurrentProjectBranch();
   const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
@@ -244,12 +242,14 @@ const Home = () => {
 
   return (
     <div className='flex h-full flex-col'>
-      {!open && <PageHeader />}
+      <PageHeader />
       <ProjectSetupToast gaps={gaps} />
-      <div className='flex h-full flex-col items-center justify-center gap-10 px-4'>
-        <p className='text-center text-3xl'>{greeting}! How can I assist you?</p>
+      <div className='flex h-full flex-col items-center justify-center gap-6 px-4 sm:gap-10'>
+        <p className='text-balance text-center text-xl sm:text-3xl'>
+          {greeting}! How can I assist you?
+        </p>
 
-        <div className='flex w-full max-w-4xl flex-col items-center gap-3 pb-40'>
+        <div className='flex w-full max-w-4xl flex-col items-center gap-3 pb-16 sm:pb-40'>
           {shouldDisableChat && (
             <p className='text-center text-muted-foreground/50 text-xs'>
               Complete the setup steps above to start chatting.

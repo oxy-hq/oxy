@@ -1,4 +1,4 @@
-import { Check, Copy, Maximize2, Minimize2 } from "lucide-react";
+import { Check, Copy, FoldVertical, Maximize2, Minimize2, UnfoldVertical } from "lucide-react";
 import React from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import EmptyState from "@/components/ui/EmptyState";
@@ -29,6 +29,8 @@ interface WorkflowOutputProps {
   onArtifactClick?: (id: string) => void;
   workflowId: string;
   runId?: string;
+  isFullScreen?: boolean;
+  onToggleFullScreen?: () => void;
 }
 
 const WorkflowOutput: React.FC<WorkflowOutputProps> = ({
@@ -37,7 +39,9 @@ const WorkflowOutput: React.FC<WorkflowOutputProps> = ({
   logs,
   workflowId,
   runId,
-  onArtifactClick
+  onArtifactClick,
+  isFullScreen = false,
+  onToggleFullScreen
 }) => {
   const [showLogs, setShowLogs] = React.useState(true);
   const [allExpanded, setAllExpanded] = React.useState(false);
@@ -57,28 +61,48 @@ const WorkflowOutput: React.FC<WorkflowOutputProps> = ({
   const handleCopyAll = async () => handleCopy(getAllContent(logs));
 
   const actions =
-    logs.length > 0 ? (
+    logs.length > 0 || onToggleFullScreen ? (
       <>
-        <Button
-          variant='ghost'
-          size='icon'
-          className='h-7 w-7'
-          onClick={handleToggleAll}
-          title={allExpanded ? "Collapse all" : "Expand all"}
-          aria-label={allExpanded ? "Collapse all" : "Expand all"}
-        >
-          {allExpanded ? <Minimize2 className='h-4 w-4' /> : <Maximize2 className='h-4 w-4' />}
-        </Button>
-        <Button
-          variant='ghost'
-          size='icon'
-          className='h-7 w-7'
-          onClick={handleCopyAll}
-          title='Copy all outputs'
-          aria-label='Copy all outputs'
-        >
-          {copied ? <Check className='h-4 w-4 text-success' /> : <Copy className='h-4 w-4' />}
-        </Button>
+        {logs.length > 0 && (
+          <>
+            <Button
+              variant='ghost'
+              size='icon'
+              className='h-7 w-7'
+              onClick={handleToggleAll}
+              title={allExpanded ? "Collapse all rows" : "Expand all rows"}
+              aria-label={allExpanded ? "Collapse all rows" : "Expand all rows"}
+            >
+              {allExpanded ? (
+                <FoldVertical className='h-4 w-4' />
+              ) : (
+                <UnfoldVertical className='h-4 w-4' />
+              )}
+            </Button>
+            <Button
+              variant='ghost'
+              size='icon'
+              className='h-7 w-7'
+              onClick={handleCopyAll}
+              title='Copy all outputs'
+              aria-label='Copy all outputs'
+            >
+              {copied ? <Check className='h-4 w-4 text-success' /> : <Copy className='h-4 w-4' />}
+            </Button>
+          </>
+        )}
+        {onToggleFullScreen && (
+          <Button
+            variant='ghost'
+            size='icon'
+            className='h-7 w-7'
+            onClick={onToggleFullScreen}
+            title={isFullScreen ? "Exit full screen" : "Full screen"}
+            aria-label={isFullScreen ? "Exit full screen" : "Full screen"}
+          >
+            {isFullScreen ? <Minimize2 className='h-4 w-4' /> : <Maximize2 className='h-4 w-4' />}
+          </Button>
+        )}
       </>
     ) : undefined;
 

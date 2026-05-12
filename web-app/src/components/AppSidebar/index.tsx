@@ -1,10 +1,11 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import {
   Sidebar as ShadcnSidebar,
   SidebarGroup,
   SidebarMenu
 } from "@/components/ui/shadcn/sidebar";
+import useSidebar from "@/components/ui/shadcn/sidebar-context";
 import { Apps } from "./Apps";
 import { Footer } from "./Footer";
 import { Header } from "./Header";
@@ -16,6 +17,16 @@ export function AppSidebar() {
   const isOnboarding = location.pathname.includes("/onboarding");
   const [isScrolled, setIsScrolled] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const { isMobile, openMobile, setOpenMobile } = useSidebar();
+
+  // On mobile, close the sidebar sheet whenever the user navigates so they
+  // see the destination page instead of staying behind the open sheet.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: react to pathname only
+  useEffect(() => {
+    if (isMobile && openMobile) {
+      setOpenMobile(false);
+    }
+  }, [location.pathname]);
 
   const handleScroll = useCallback(() => {
     if (scrollRef.current) {

@@ -27,8 +27,9 @@ const ArtifactPanelContainer = ({ selectedIds, onSelect, messages }: Props) => {
 
   return (
     <>
-      <Separator orientation='vertical' />
-      <div className='h-full flex-1 overflow-hidden'>
+      {/* Hide the divider on mobile — the panel renders as a full-screen overlay there. */}
+      <Separator orientation='vertical' className='hidden md:block' />
+      <div className='absolute inset-0 z-20 h-full overflow-hidden bg-background md:static md:flex-1'>
         <ArtifactPanel
           selectedArtifactIds={selectedIds}
           artifactStreamingData={artifactStreamingData}

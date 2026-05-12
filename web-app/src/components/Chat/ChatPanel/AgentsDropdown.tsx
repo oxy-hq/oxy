@@ -70,7 +70,7 @@ const AgentsDropdown = ({
         <Button
           variant='outline'
           size='sm'
-          className='h-8 gap-2 px-3'
+          className='h-8 min-w-0 max-w-full gap-2 px-3'
           disabled={isPending || disabled}
           data-testid='agent-selector-button'
         >
@@ -79,15 +79,15 @@ const AgentsDropdown = ({
           ) : (
             <>
               {agentSelected?.name.includes("routing") ? (
-                <Route className='size-4' />
+                <Route className='size-4 shrink-0' />
               ) : (
-                <Bot className='size-4' />
+                <Bot className='size-4 shrink-0' />
               )}
-              <span>{agentSelected?.name ?? "Select agent"}</span>
+              <span className='truncate'>{agentSelected?.name ?? "Select agent"}</span>
               {thinkingMode === "extended_thinking" && (
-                <span className='text-muted-foreground text-xs'>Extended</span>
+                <span className='hidden text-muted-foreground text-xs md:inline'>Extended</span>
               )}
-              <ChevronDown className='opacity-50' />
+              <ChevronDown className='shrink-0 opacity-50' />
             </>
           )}
         </Button>

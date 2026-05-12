@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useOrgs } from "@/hooks/api/organizations";
 import useCurrentUser from "@/hooks/api/users/useCurrentUser";
 import ROUTES from "@/libs/utils/routes";
+import useCurrentOrg from "@/stores/useCurrentOrg";
 import useTheme from "@/stores/useTheme";
 
 export default function OnboardingHeader() {
@@ -13,7 +14,19 @@ export default function OnboardingHeader() {
   const { logout } = useAuth();
   const { data: currentUser } = useCurrentUser();
   const { data: orgs } = useOrgs();
+  const previousOrgSlug = useCurrentOrg((s) => s.org?.slug);
   const hasAnyWorkspace = !!orgs?.some((o) => (o.workspace_count ?? 0) > 0);
+
+  // Prefer the org the user was on before entering the new-org flow so "Back"
+  // returns them there. Falls back to root, which lets PostLoginDispatcher
+  // pick a workspace when no previous org is tracked.
+  const handleBack = () => {
+    if (previousOrgSlug) {
+      navigate(ROUTES.ORG(previousOrgSlug).ROOT);
+    } else {
+      navigate(ROUTES.ROOT);
+    }
+  };
 
   return (
     <div className='flex items-center justify-between gap-2 p-6 font-medium'>
@@ -21,7 +34,7 @@ export default function OnboardingHeader() {
         <Button
           variant='ghost'
           size='sm'
-          onClick={() => navigate(ROUTES.ROOT)}
+          onClick={handleBack}
           className='-ml-2 gap-1 text-muted-foreground hover:text-foreground'
         >
           <ChevronLeft className='size-4' />

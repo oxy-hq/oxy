@@ -88,7 +88,7 @@ const AgentThread = ({ thread, refetchThread }: AgentThreadProps) => {
     <div className='flex h-full flex-col overflow-hidden'>
       <ThreadHeader thread={thread} />
 
-      <div className='flex w-full flex-1 items-center justify-center overflow-hidden'>
+      <div className='relative flex w-full flex-1 items-center justify-center overflow-hidden'>
         <div className='flex h-full w-full flex-1 flex-col overflow-hidden'>
           <div className='relative w-full flex-1 overflow-hidden'>
             <div ref={scrollContainerRef} className='h-full w-full overflow-auto'>

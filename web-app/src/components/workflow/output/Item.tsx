@@ -2,6 +2,7 @@ import { Check, ChevronDown, ChevronRight, Copy } from "lucide-react";
 import { useCallback } from "react";
 import Markdown from "@/components/Markdown";
 import { Button } from "@/components/ui/shadcn/button";
+import useSidebar from "@/components/ui/shadcn/sidebar-context";
 import { cn } from "@/libs/shadcn/utils";
 import type { LogItem } from "@/services/types";
 import { useCopyTimeout } from "./useCopyTimeout";
@@ -35,6 +36,8 @@ const OutputItem = ({
   onToggleExpanded
 }: OutputItemProps) => {
   const { copied, handleCopy: copyToClipboard } = useCopyTimeout();
+  const { isMobile } = useSidebar();
+  const depthPadding = depth > 0 ? `${depth * (isMobile ? 12 : 24)}px` : undefined;
 
   const handleCopy = useCallback(
     async (e: React.MouseEvent) => {
@@ -50,7 +53,7 @@ const OutputItem = ({
     return (
       <div
         className='group w-full'
-        style={{ paddingLeft: depth > 0 ? `${depth * 24}px` : undefined }}
+        style={{ paddingLeft: depthPadding }}
         data-testid='workflow-output-item'
       >
         <div
@@ -87,9 +90,7 @@ const OutputItem = ({
   return (
     <div
       className='group relative'
-      style={{
-        paddingLeft: depth > 0 ? `${depth * 24}px` : undefined
-      }}
+      style={{ paddingLeft: depthPadding }}
       data-testid='workflow-output-item'
     >
       <Markdown onArtifactClick={onArtifactClick}>{log.content}</Markdown>

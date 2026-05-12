@@ -30,10 +30,12 @@ const FanOutGroupRow = ({ group, onSelectArtifact }: FanOutGroupRowProps) => {
       {/* Card navigation header */}
       <div className='flex items-center gap-2 border-border border-b px-3 py-1.5'>
         <Layers className='h-3 w-3 shrink-0 text-muted-foreground' />
-        <span className='flex-1 text-muted-foreground text-sm'>{group.total} parallel queries</span>
-        {group.isStreaming && <Spinner className='size-3 text-primary' />}
+        <span className='min-w-0 flex-1 truncate text-muted-foreground text-sm'>
+          {group.total} parallel queries
+        </span>
+        {group.isStreaming && <Spinner className='size-3 shrink-0 text-primary' />}
 
-        <div className='flex items-center gap-1'>
+        <div className='flex shrink-0 items-center gap-1'>
           <button
             type='button'
             onClick={() => setActiveIndex((i) => Math.max(0, i - 1))}
@@ -155,7 +157,11 @@ const TraceHeader = ({
   const isComplete = !isStreaming;
 
   return (
-    <button type='button' onClick={onToggle} className='flex w-full items-center gap-2'>
+    <button
+      type='button'
+      onClick={onToggle}
+      className='flex w-full flex-wrap items-center gap-x-2 gap-y-1'
+    >
       <ChevronDown
         className={cn(
           "h-3 w-3 shrink-0 text-muted-foreground transition-transform",
@@ -163,17 +169,19 @@ const TraceHeader = ({
         )}
       />
       {!isComplete && <Spinner className='size-3 shrink-0 text-primary' />}
-      <span className='font-medium text-muted-foreground text-sm'>Reasoning trace</span>
-      <span className='ml-auto flex items-center gap-2 font-mono text-muted-foreground text-xs'>
+      <span className='shrink-0 font-medium text-muted-foreground text-sm'>Reasoning trace</span>
+      <span className='ml-auto flex min-w-0 flex-wrap items-center justify-end gap-x-2 font-mono text-muted-foreground text-xs'>
         {llmCalls > 0 && (
           <>
-            <span>
+            <span className='truncate'>
               {llmCalls} LLM {llmCalls === 1 ? "call" : "calls"} · {formatDuration(llmTotalMs)}
             </span>
-            <span>·</span>
+            <span aria-hidden='true'>·</span>
           </>
         )}
-        <span>{isComplete ? `${total} steps` : total > 0 ? `${total} steps` : ""}</span>
+        <span className='truncate'>
+          {isComplete ? `${total} steps` : total > 0 ? `${total} steps` : ""}
+        </span>
       </span>
     </button>
   );

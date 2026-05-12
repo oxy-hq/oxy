@@ -18,17 +18,17 @@ const ThreadHeader = ({ thread }: ThreadHeaderProps) => {
 
   return (
     <PageHeader className='items-center border-border border-b-1'>
-      <div className='flex h-full flex-1 items-center justify-center p-2'>
-        <div className='flex flex-1 items-center justify-end gap-1 text-muted-foreground'>
+      <div className='flex h-full min-w-0 flex-1 flex-col items-stretch gap-1 p-2 md:flex-row md:items-center md:justify-center md:gap-0'>
+        <div className='flex min-w-0 items-center gap-1 text-muted-foreground md:flex-1 md:justify-end'>
           <Bot className='h-4 min-h-4 w-4 min-w-4' />
-          <div className='break-all text-sm'>
+          <div className='truncate text-sm md:break-all'>
             {isPending ? <Skeleton className='h-[16px] w-[80px] rounded-full' /> : agentName}
           </div>
         </div>
-        <div className='flex h-full items-stretch px-4'>
+        <div className='hidden h-full items-stretch px-4 md:flex'>
           <Separator orientation='vertical' />
         </div>
-        <p className='flex-1 text-base-foreground text-sm'>{thread?.title}</p>
+        <p className='min-w-0 truncate text-base-foreground text-sm md:flex-1'>{thread?.title}</p>
       </div>
     </PageHeader>
   );

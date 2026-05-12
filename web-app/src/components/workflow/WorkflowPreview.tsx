@@ -11,6 +11,7 @@ import {
   ResizablePanel,
   ResizablePanelGroup
 } from "@/components/ui/shadcn/resizable";
+import useSidebar from "@/components/ui/shadcn/sidebar-context";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import useWorkflowConfig from "@/hooks/api/workflows/useWorkflowConfig";
 import { decodeBase64 } from "@/libs/encoding";
@@ -47,9 +48,12 @@ export const WorkflowPreview = ({
   direction?: "horizontal" | "vertical";
   projectIdOverride?: string;
 }) => {
+  const { isMobile } = useSidebar();
+  const effectiveDirection = isMobile ? "vertical" : direction;
   const path = useMemo(() => decodeBase64(pathb64), [pathb64]);
   const relativePath = path;
   const [showOutput, setShowOutput] = React.useState(!!runId);
+  const [outputFullScreen, setOutputFullScreen] = React.useState(false);
 
   // Show output panel when runId becomes available
   useEffect(() => {
@@ -211,8 +215,12 @@ export const WorkflowPreview = ({
   }
 
   return (
-    <ResizablePanelGroup direction={direction}>
-      <ResizablePanel defaultSize={50} minSize={20} className={cn(!showOutput && "flex-1!")}>
+    <ResizablePanelGroup direction={effectiveDirection}>
+      <ResizablePanel
+        defaultSize={50}
+        minSize={20}
+        className={cn(!showOutput && "flex-1!", outputFullScreen && "hidden")}
+      >
         <div className='relative h-full w-full'>
           <ReactFlowProvider>
             <Suspense
@@ -301,15 +309,21 @@ export const WorkflowPreview = ({
 
       {showOutput && (
         <>
-          <ResizableHandle withHandle />
+          {!outputFullScreen && <ResizableHandle withHandle />}
 
-          <ResizablePanel defaultSize={50} minSize={20}>
+          <ResizablePanel
+            defaultSize={50}
+            minSize={20}
+            className={cn(outputFullScreen && "flex-1!")}
+          >
             <WorkflowOutput
               workflowId={path}
               logs={logs}
               toggleOutput={toggleOutput}
               isPending={isProcessing}
               runId={runId}
+              isFullScreen={outputFullScreen}
+              onToggleFullScreen={() => setOutputFullScreen((prev) => !prev)}
             />
           </ResizablePanel>
         </>

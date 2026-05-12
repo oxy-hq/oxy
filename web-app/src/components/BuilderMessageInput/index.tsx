@@ -222,13 +222,15 @@ const BuilderMessageInput = ({
         onAutoApproveChange ? (
           <button
             type='button'
+            role='switch'
+            aria-checked={autoApprove}
             onClick={() => onAutoApproveChange(!autoApprove)}
             className={cn(
-              "flex items-center gap-1 rounded px-1.5 py-0.5 text-xs transition-colors hover:bg-accent",
-              autoApprove ? "text-primary" : "text-muted-foreground"
+              "inline-flex h-7 shrink-0 touch-manipulation items-center gap-1 rounded-md px-2 font-medium text-xs transition-colors hover:bg-accent",
+              autoApprove ? "text-primary" : "text-muted-foreground hover:text-foreground"
             )}
           >
-            <Zap className='h-3 w-3' />
+            <Zap className={cn("h-3 w-3 transition-colors", autoApprove && "fill-primary")} />
             Auto-approve
           </button>
         ) : undefined

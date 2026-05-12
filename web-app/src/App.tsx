@@ -35,9 +35,11 @@ import { FileQuickOpen } from "./components/FileQuickOpen";
 import OrgGuard from "./components/OrgGuard";
 import OwnerRedirect from "./components/OwnerRedirect";
 import ProtectedRoute from "./components/ProtectedRoute";
+import SettingsDialog from "./components/settings/SettingsDialog";
 import WorkspaceStatus from "./components/WorkspaceStatus";
 import AgenticSetupPage from "./components/workspaces/components/CreateWorkspaceDialog/components/AgenticSetup";
 import { LocalWorkspaceSetupDialog } from "./components/workspaces/components/LocalWorkspaceSetupDialog";
+import { ManageWorkspacesDialog } from "./components/workspaces/components/ManageWorkspacesDialog";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { useWorkspace } from "./hooks/api/workspaces/useWorkspaces";
 import useAuthConfig from "./hooks/auth/useAuthConfig";
@@ -86,7 +88,7 @@ import type { AuthConfigResponse } from "./types/auth";
 
 const MainPageWrapper = ({ children }: { children: React.ReactNode }) => {
   return (
-    <main className='flex h-full w-full min-w-0 flex-col bg-background'>
+    <main className='flex h-full w-full min-w-0 flex-1 flex-col bg-background'>
       <WorkspaceStatus />
       <div className='w-full min-w-0 flex-1 overflow-hidden'>{children}</div>
     </main>
@@ -185,6 +187,8 @@ const WorkspaceLayout = React.memo(function WorkspaceLayout() {
     <HotkeysProvider>
       <BuilderDialog />
       <FileQuickOpen />
+      <SettingsDialog />
+      <ManageWorkspacesDialog />
       <AppSidebar />
 
       <Routes>

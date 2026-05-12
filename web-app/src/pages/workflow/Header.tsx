@@ -21,29 +21,28 @@ const WorkflowPageHeader: React.FC<WorkflowPageHeaderProps> = ({ path, runId }) 
   const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
 
   return (
-    <PageHeader className='items-center border-border border-b-1'>
-      <div className='flex w-full items-center justify-between'>
-        <div></div>
-        <div className='flex items-center justify-center gap-0.5'>
-          <Workflow className='h-4 w-4' />
-          <span className='truncate text-sm'>
-            {relativePath}
-            {runId ? `/runs/${runId}` : ""}
-          </span>
-        </div>
-        <div className='flex items-center gap-2'>
-          <Button
-            size='sm'
-            variant='ghost'
-            onClick={() => {
-              const fileUri = ROUTES.ORG(orgSlug).WORKSPACE(project.id).IDE.FILES.FILE(pathb64);
-              navigate(fileUri);
-            }}
-          >
-            <Pencil className='h-4 w-4' />
-            <span>Edit</span>
-          </Button>
-        </div>
+    <PageHeader className='items-center gap-2 border-border border-b-1'>
+      <div className='hidden flex-1 md:block' />
+      <div className='flex min-w-0 flex-1 items-center justify-center gap-1'>
+        <Workflow className='h-4 w-4 shrink-0' />
+        <span className='min-w-0 truncate text-sm'>
+          {relativePath}
+          {runId ? `/runs/${runId}` : ""}
+        </span>
+      </div>
+      <div className='flex shrink-0 items-center gap-2 md:flex-1 md:justify-end'>
+        <Button
+          size='sm'
+          variant='ghost'
+          aria-label='Edit'
+          onClick={() => {
+            const fileUri = ROUTES.ORG(orgSlug).WORKSPACE(project.id).IDE.FILES.FILE(pathb64);
+            navigate(fileUri);
+          }}
+        >
+          <Pencil className='h-4 w-4' />
+          <span className='hidden sm:inline'>Edit</span>
+        </Button>
       </div>
     </PageHeader>
   );

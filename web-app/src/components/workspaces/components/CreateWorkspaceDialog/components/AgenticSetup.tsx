@@ -1,5 +1,6 @@
+import { Home } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/shadcn/button";
 import {
@@ -7,6 +8,7 @@ import {
   ResizablePanel,
   ResizablePanelGroup
 } from "@/components/ui/shadcn/resizable";
+import useSidebar from "@/components/ui/shadcn/sidebar-context";
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import useAgents from "@/hooks/api/agents/useAgents";
 import useDatabases from "@/hooks/api/databases/useDatabases";
@@ -20,6 +22,7 @@ import {
   hasPendingOnboardingForWorkspace,
   initOnboardingStateForWorkspace
 } from "@/libs/utils/onboardingStorage";
+import ROUTES from "@/libs/utils/routes";
 import { AnalyticsService, type HumanInputQuestion, type UiBlock } from "@/services/api/analytics";
 import { type OnboardingResetRequest, OnboardingService } from "@/services/api/onboarding";
 import OnboardingRightRail from "./OnboardingRightRail";
@@ -159,6 +162,8 @@ function BlankOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHandl
   const actions = useOnboardingActions(orchestrator);
   const { project } = useCurrentProjectBranch();
   const projectId = project?.id ?? "";
+  const { isMobile } = useSidebar();
+  const navigate = useNavigate();
 
   // One run hook per scalar build phase (config, agent, app, optionally app2).
   // The app2 hook is always instantiated (React hooks can't be conditional),
@@ -1052,6 +1057,16 @@ function BlankOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHandl
             Start over
           </button>
         )}
+        <button
+          type='button'
+          onClick={() => navigate(ROUTES.ROOT)}
+          aria-label='Go home'
+          title='Go home — onboarding state is saved and you can resume later'
+          className='inline-flex items-center gap-1 text-muted-foreground text-xs hover:text-foreground'
+        >
+          <Home className='h-3.5 w-3.5' />
+          Home
+        </button>
       </div>
 
       <StartOverConfirmDialog
@@ -1085,7 +1100,7 @@ function BlankOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHandl
           />
         </div>
       ) : (
-        <ResizablePanelGroup direction='horizontal' className='flex-1'>
+        <ResizablePanelGroup direction={isMobile ? "vertical" : "horizontal"} className='flex-1'>
           <ResizablePanel defaultSize={60} minSize={40}>
             <OnboardingThread
               orchestrator={orchestrator}
@@ -1132,6 +1147,8 @@ function GithubOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHand
   const actions = useOnboardingActions(orchestrator);
   const { project } = useCurrentProjectBranch();
   const projectId = project?.id ?? "";
+  const { isMobile } = useSidebar();
+  const navigate = useNavigate();
 
   // Analytics-run stubs — unused in github mode but required by `OnboardingThread`'s
   // props. They stay in their initial `idle` state and never stream.
@@ -1229,6 +1246,16 @@ function GithubOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHand
             Start over
           </button>
         )}
+        <button
+          type='button'
+          onClick={() => navigate(ROUTES.ROOT)}
+          aria-label='Go home'
+          title='Go home — onboarding state is saved and you can resume later'
+          className='inline-flex items-center gap-1 text-muted-foreground text-xs hover:text-foreground'
+        >
+          <Home className='h-3.5 w-3.5' />
+          Home
+        </button>
       </div>
 
       <StartOverConfirmDialog
@@ -1253,7 +1280,7 @@ function GithubOnboardingPage({ orchestrator }: { orchestrator: OrchestratorHand
           />
         </div>
       ) : (
-        <ResizablePanelGroup direction='horizontal' className='flex-1'>
+        <ResizablePanelGroup direction={isMobile ? "vertical" : "horizontal"} className='flex-1'>
           <ResizablePanel defaultSize={60} minSize={40}>
             <OnboardingThread
               orchestrator={orchestrator}

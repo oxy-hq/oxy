@@ -873,7 +873,7 @@ const AnalyticsStepRow = ({ step, onSelectArtifact, flat = false }: AnalyticsSte
             <div className='flex min-w-0 flex-1 flex-col'>
               <span
                 className={cn(
-                  "text-sm transition-colors duration-200",
+                  "break-words text-sm transition-colors duration-200",
                   isRunning ? "text-foreground" : "text-muted-foreground"
                 )}
               >

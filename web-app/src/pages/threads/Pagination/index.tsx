@@ -1,7 +1,6 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type React from "react";
 import { useMemo } from "react";
-import { useMediaQuery } from "usehooks-ts";
 import { Button } from "@/components/ui/shadcn/button";
 import {
   Pagination,
@@ -10,6 +9,7 @@ import {
   PaginationItem,
   PaginationLink
 } from "@/components/ui/shadcn/pagination";
+import useSidebar from "@/components/ui/shadcn/sidebar-context";
 import { buttonVariants } from "@/components/ui/shadcn/utils/button-variants";
 import { cn } from "@/libs/shadcn/utils";
 import type { PaginationInfo } from "@/types/chat";
@@ -61,7 +61,7 @@ const ThreadsPagination: React.FC<ThreadsPaginationProps> = ({
   isLoading = false
 }) => {
   const { page, total_pages, has_previous, has_next } = pagination;
-  const isMobile = useMediaQuery("(max-width: 767px)");
+  const { isMobile } = useSidebar();
 
   const maxVisiblePages = useMemo(() => {
     if (isMobile) return 3;

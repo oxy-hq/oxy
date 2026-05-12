@@ -26,7 +26,7 @@ const LogRow: React.FC<Props> = ({ log }) => {
         onClick={() => setOpen(true)}
         className='cursor-pointer hover:bg-muted'
       >
-        <TableCell className='whitespace-pre-wrap break-words'>
+        <TableCell data-label='Thread' className='whitespace-pre-wrap break-words'>
           <Link
             to={`/threads/${log.thread_id}`}
             onClick={(e) => {
@@ -37,13 +37,19 @@ const LogRow: React.FC<Props> = ({ log }) => {
             {log.thread?.title || "Untitled Thread"}
           </Link>
         </TableCell>
-        <TableCell className='whitespace-pre-wrap break-words'>
+        <TableCell data-label='Prompt' className='whitespace-pre-wrap break-words'>
           {log.prompts || "No prompt provided"}
         </TableCell>
-        <TableCell className='max-w-[300px] truncate font-mono text-sm'>
+        <TableCell
+          data-label='Query'
+          className='max-w-[300px] truncate font-mono text-sm max-md:max-w-none max-md:whitespace-pre-wrap max-md:break-words'
+        >
           {getFirstQuery()}
         </TableCell>
-        <TableCell className='w-[170px] whitespace-nowrap break-words'>
+        <TableCell
+          data-label='Created'
+          className='w-[170px] whitespace-nowrap break-words max-md:w-auto'
+        >
           {formatDate(log.created_at)}
         </TableCell>
       </TableRow>

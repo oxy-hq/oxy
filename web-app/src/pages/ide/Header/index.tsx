@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/shadcn/button";
 import { Card } from "@/components/ui/shadcn/card";
+import { SidebarTrigger } from "@/components/ui/shadcn/sidebar";
 import useSidebar from "@/components/ui/shadcn/sidebar-context";
 import { FEATURES } from "@/libs/features";
 import ROUTES from "@/libs/utils/routes";
@@ -83,6 +84,7 @@ export const Header = () => {
 
   return (
     <Card className='flex gap-2 rounded-none border-b bg-sidebar-background p-1 shadow-none'>
+      <SidebarTrigger className='h-8 w-8 md:hidden' />
       <Button
         variant='ghost'
         size='sm'

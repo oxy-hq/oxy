@@ -348,10 +348,10 @@ const ChatPanel = ({
         placeholder={placeholder}
         highlight={isBuildMode ? mentionHighlight : undefined}
         overlayClassName='px-0 py-2 text-sm'
-        className='customScrollbar max-h-[200px] resize-none border-none bg-transparent px-0 shadow-none outline-none hover:border-none focus-visible:border-none focus-visible:shadow-none focus-visible:ring-0 focus-visible:ring-offset-0'
+        className='customScrollbar max-h-[200px] resize-none border-none bg-transparent px-0 text-sm shadow-none outline-none placeholder:text-sm hover:border-none focus-visible:border-none focus-visible:shadow-none focus-visible:ring-0 focus-visible:ring-offset-0'
       />
 
-      <div className='flex justify-between'>
+      <div className='flex flex-wrap items-center justify-between gap-2'>
         <div className='flex items-center justify-center'>
           <Select value={mode} onValueChange={setMode}>
             <SelectTrigger size='sm'>
@@ -398,7 +398,7 @@ const ChatPanel = ({
             </SelectContent>
           </Select>
         </div>
-        <div className='flex items-center gap-2'>
+        <div className='flex flex-1 items-center justify-end gap-2'>
           {mode === "ask" && (
             <AgentsDropdown
               onSelect={(a) => {
@@ -416,17 +416,19 @@ const ChatPanel = ({
           {isBuildMode && (
             <button
               type='button'
+              role='switch'
+              aria-checked={autoApprove}
               onClick={() => {
                 const next = !autoApprove;
                 setAutoApprove(next);
                 localStorage.setItem("builder_auto_approve", String(next));
               }}
               className={cn(
-                "flex items-center gap-1 rounded px-1.5 py-0.5 text-xs transition-colors hover:bg-accent",
-                autoApprove ? "text-primary" : "text-muted-foreground"
+                "inline-flex h-7 shrink-0 touch-manipulation items-center gap-1 rounded-md px-2 font-medium text-xs transition-colors hover:bg-accent",
+                autoApprove ? "text-primary" : "text-muted-foreground hover:text-foreground"
               )}
             >
-              <Zap className='h-3 w-3' />
+              <Zap className={cn("h-3 w-3 transition-colors", autoApprove && "fill-primary")} />
               Auto-approve
             </button>
           )}

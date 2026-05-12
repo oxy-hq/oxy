@@ -1,0 +1,54 @@
+/**
+ * Mobile card layout for settings tables.
+ *
+ * On md+ this is a no-op — the table renders normally inside its
+ * x-scrollable border.
+ *
+ * Below md, each <tr> becomes a card and each <td> becomes a stacked
+ * label/value block. The label is read from the cell's `data-label`
+ * attribute and rendered as a small caps line above the value. Cells
+ * that omit `data-label` render their value with no header.
+ */
+@media (max-width: 767px) {
+  .settings-table-wrapper table,
+  .settings-table-wrapper tbody {
+    display: block;
+    width: 100%;
+  }
+
+  .settings-table-wrapper thead {
+    display: none;
+  }
+
+  .settings-table-wrapper tbody > tr {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .settings-table-wrapper tbody > tr:last-child {
+    border-bottom: 0;
+  }
+
+  .settings-table-wrapper tbody > tr > td {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.25rem;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .settings-table-wrapper tbody > tr > td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+}

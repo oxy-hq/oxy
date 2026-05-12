@@ -7,19 +7,19 @@ const Header = ({ thread }: { thread: ThreadItem }) => {
   const isBuilder = thread.source === "__builder__";
   return (
     <PageHeader className='items-center border-border border-b-1'>
-      <div className='flex h-full flex-1 items-center justify-center p-2'>
-        <div className='flex items-center gap-1 text-muted-foreground'>
+      <div className='flex h-full min-w-0 flex-1 flex-col items-stretch gap-1 p-2 md:flex-row md:items-center md:justify-center md:gap-0'>
+        <div className='flex min-w-0 items-center gap-1 text-muted-foreground md:flex-1 md:justify-end'>
           {isBuilder ? (
             <Hammer className='h-4 min-h-4 w-4 min-w-4' />
           ) : (
             <BarChart2 className='h-4 min-h-4 w-4 min-w-4' />
           )}
-          <p className='break-all text-sm'>{isBuilder ? "Builder" : "Analytics"}</p>
+          <p className='truncate text-sm md:break-all'>{isBuilder ? "Builder" : "Analytics"}</p>
         </div>
-        <div className='flex h-full items-stretch px-4'>
+        <div className='hidden h-full items-stretch px-4 md:flex'>
           <Separator orientation='vertical' />
         </div>
-        <p className='truncate text-base-foreground text-sm'>{thread?.title}</p>
+        <p className='min-w-0 truncate text-base-foreground text-sm md:flex-1'>{thread?.title}</p>
       </div>
     </PageHeader>
   );

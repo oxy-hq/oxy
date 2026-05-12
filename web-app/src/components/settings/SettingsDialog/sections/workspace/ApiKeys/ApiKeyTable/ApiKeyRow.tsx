@@ -66,7 +66,7 @@ const ApiKeyRow: React.FC<Props> = ({ apiKey }) => {
 
   return (
     <TableRow key={apiKey.id}>
-      <TableCell>
+      <TableCell data-label='Name'>
         <div>
           <div className='font-medium'>{apiKey.name}</div>
           {apiKey.masked_key && (
@@ -74,9 +74,9 @@ const ApiKeyRow: React.FC<Props> = ({ apiKey }) => {
           )}
         </div>
       </TableCell>
-      <TableCell>{getStatusBadge()}</TableCell>
-      <TableCell>{formatLastUsed()}</TableCell>
-      <TableCell>{ApiKeyService.formatDate(apiKey.created_at)}</TableCell>
+      <TableCell data-label='Status'>{getStatusBadge()}</TableCell>
+      <TableCell data-label='Last used'>{formatLastUsed()}</TableCell>
+      <TableCell data-label='Created'>{ApiKeyService.formatDate(apiKey.created_at)}</TableCell>
       <TableCell>
         <Button variant='ghost' size='sm' onClick={openDeleteDialog} disabled={!apiKey.is_active}>
           <Trash2 className='!text-destructive' />

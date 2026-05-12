@@ -28,6 +28,7 @@ import {
 import useCurrentOrg from "@/stores/useCurrentOrg";
 import useCurrentWorkspace from "@/stores/useCurrentWorkspace";
 import type { OrgRole, WorkspaceMember, WorkspaceRole } from "@/types/organization";
+import TableWrapper from "../../../../components/TableWrapper";
 import SectionHeader from "../../../components/SectionHeader";
 
 // ─── Role badges ─────────────────────────────────────────────────────────────
@@ -260,7 +261,7 @@ export default function WorkspaceMembers() {
             </p>
           </div>
         ) : (
-          <div className='overflow-hidden rounded-md border'>
+          <TableWrapper>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -275,7 +276,7 @@ export default function WorkspaceMembers() {
 
                   return (
                     <TableRow key={member.user_id}>
-                      <TableCell className='px-4 py-3'>
+                      <TableCell data-label='Member' className='px-4 py-3 max-md:px-0 max-md:py-0'>
                         <div className='flex items-center gap-3'>
                           <div className='flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted font-medium text-sm'>
                             {member.name?.[0]?.toUpperCase() ?? "?"}
@@ -288,10 +289,16 @@ export default function WorkspaceMembers() {
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className='w-32 px-4 py-3'>
+                      <TableCell
+                        data-label='Org role'
+                        className='w-32 px-4 py-3 max-md:w-auto max-md:px-0 max-md:py-0'
+                      >
                         <OrgRoleBadge role={member.org_role} />
                       </TableCell>
-                      <TableCell className='w-40 px-4 py-3'>
+                      <TableCell
+                        data-label='Workspace role'
+                        className='w-40 px-4 py-3 max-md:w-auto max-md:px-0 max-md:py-0'
+                      >
                         <RoleSelector
                           member={member}
                           workspaceId={workspaceId}
@@ -303,7 +310,7 @@ export default function WorkspaceMembers() {
                 })}
               </TableBody>
             </Table>
-          </div>
+          </TableWrapper>
         )}
       </div>
     </div>

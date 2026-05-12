@@ -179,7 +179,7 @@ const OutputLogs: React.FC<OutputLogsProps> = ({
     <div
       ref={parentRef}
       onScroll={handleScroll}
-      className='scrollbar-gutter-auto relative h-full overflow-y-auto break-all p-4 pt-0 contain-strict'
+      className='scrollbar-gutter-auto relative h-full overflow-auto break-words p-4 pt-0 contain-strict'
       data-testid='workflow-output-logs'
     >
       {!onlyShowResult && (

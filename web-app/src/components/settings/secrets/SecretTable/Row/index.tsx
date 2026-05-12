@@ -30,18 +30,23 @@ export const SecretRow: React.FC<Props> = ({ secret }) => {
 
   return (
     <TableRow>
-      <TableCell className='w-full max-w-0'>
-        <div className='truncate font-medium'>{secret.name}</div>
+      <TableCell data-label='Secret' className='w-full max-w-0 max-md:w-auto'>
+        <div className='truncate font-medium max-md:whitespace-normal max-md:break-words'>
+          {secret.name}
+        </div>
         {secret.description && (
-          <div className='truncate font-mono text-muted-foreground text-sm'>
+          <div className='truncate font-mono text-muted-foreground text-sm max-md:whitespace-normal max-md:break-words'>
             {secret.description}
           </div>
         )}
       </TableCell>
-      <TableCell className='whitespace-nowrap text-muted-foreground text-sm'>
+      <TableCell
+        data-label='Created'
+        className='whitespace-nowrap text-muted-foreground text-sm max-md:whitespace-normal'
+      >
         {formatDistanceToNow(new Date(secret.created_at), { addSuffix: true })}
       </TableCell>
-      <TableCell className='w-px whitespace-nowrap'>
+      <TableCell className='w-px whitespace-nowrap max-md:w-auto'>
         <div className='flex items-center gap-1'>
           <Button
             variant='ghost'
