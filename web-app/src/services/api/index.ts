@@ -46,4 +46,11 @@ export { TracesService } from "./traces";
 export { UserService } from "./users";
 export { getVersion } from "./version";
 export { WorkflowService } from "./workflows";
-export { type CommitEntry, WorkspaceService, type WorkspaceSummary } from "./workspaces";
+export {
+  type CommitEntry,
+  type DirtyEntry,
+  type DirtyKind,
+  type ResetToCommitResponse,
+  WorkspaceService,
+  type WorkspaceSummary
+} from "./workspaces";

@@ -43,6 +43,9 @@ export default function useAddAirhouseToConfig() {
       queryClient.invalidateQueries({
         queryKey: queryKeys.file.diffSummary(project.id, branchName)
       });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.workspaces.revisionInfo(project.id, branchName)
+      });
     }
   });
 }

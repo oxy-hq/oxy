@@ -453,6 +453,11 @@ const AnalyticsThread = ({ thread }: Props) => {
 
       // Files are always invalidated — any accepted change writes to disk.
       queryClient.invalidateQueries({ queryKey: queryKeys.file.all(project.id, branchName) });
+      // Header CTA gates on revisionInfo.uncommitted_count, so refresh
+      // it whenever the agent pipeline has written files to the working tree.
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.workspaces.revisionInfo(project.id, branchName)
+      });
       if (hasAgent) {
         queryClient.invalidateQueries({ queryKey: queryKeys.agent.list(project.id, branchName) });
       }

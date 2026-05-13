@@ -18,9 +18,14 @@ export default function useSaveFile() {
         queryKeys.file.get(project.id, branchName, variables.pathb64),
         variables.data
       );
-      // Refresh git status immediately so the header badge reflects the save
+      // Refresh git status immediately so the header CTA reflects the save.
+      // The diff list (panel) and revision info (header gate via
+      // uncommitted_count) both need to refresh.
       queryClient.invalidateQueries({
         queryKey: queryKeys.file.diffSummary(project.id, branchName)
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.workspaces.revisionInfo(project.id, branchName)
       });
     }
   });

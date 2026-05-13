@@ -18,8 +18,6 @@ import { FileService } from "@/services/api";
 import { WorkspaceService as ProjectService } from "@/services/api/workspaces";
 import type { FileStatus } from "@/types/file";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
 type ConflictAction = "mine" | "theirs" | "both" | "ignored";
 
 interface ConflictBlock {
@@ -38,8 +36,6 @@ interface ZoneRec {
   id: string;
   dom: HTMLElement;
 }
-
-// ─── Conflict parsing ─────────────────────────────────────────────────────────
 
 function parseConflicts(content: string): ConflictBlock[] {
   const lines = content.split("\n");
@@ -95,9 +91,6 @@ function hasMarkers(content: string): boolean {
   return content.includes("<<<<<<<") || content.includes("|||||||");
 }
 
-// ─── Content transforms ───────────────────────────────────────────────────────
-
-/** Resolve all conflicts to one side, returning resolved text + conflict highlight ranges. */
 function resolveSideWithRanges(
   content: string,
   side: "mine" | "theirs"
@@ -126,7 +119,6 @@ function resolveSideWithRanges(
   return { text: out.join("\n"), ranges };
 }
 
-/** Replace one conflict block (by current index) with the chosen content. */
 function resolveBlock(content: string, blockIndex: number, action: ConflictAction): string {
   const blocks = parseConflicts(content);
   const block = blocks[blockIndex];
@@ -156,7 +148,6 @@ function resolveBlock(content: string, blockIndex: number, action: ConflictActio
   );
 }
 
-/** Resolve all conflicts to a single side at once. */
 function resolveAll(content: string, action: ConflictAction): string {
   let c = content;
   for (let i = 0; hasMarkers(c) && i < 500; i++) {
@@ -166,8 +157,6 @@ function resolveAll(content: string, action: ConflictAction): string {
   }
   return c;
 }
-
-// ─── Monaco CSS injection ─────────────────────────────────────────────────────
 
 const STYLE_ID = "oxy-merge-editor-styles";
 
@@ -187,8 +176,6 @@ function injectStyles() {
   `;
   document.head.appendChild(s);
 }
-
-// ─── Decoration helpers ───────────────────────────────────────────────────────
 
 function applyResultDecs(
   ed: editor.IStandaloneCodeEditor,
@@ -248,8 +235,6 @@ function applyHighlightDecs(
   );
 }
 
-// ─── ViewZone spacer (height reservation only — buttons rendered as React overlay) ─
-
 function makeSpacerDom(): HTMLElement {
   const div = document.createElement("div");
   div.style.height = "22px";
@@ -265,7 +250,7 @@ function clearZones(ed: editor.IStandaloneCodeEditor, recs: ZoneRec[]) {
   });
 }
 
-// Zones only reserve 22px of vertical space — actual buttons are React overlays.
+// Zones only reserve vertical space — actual buttons are React overlays.
 function injectZones(ed: editor.IStandaloneCodeEditor, conflicts: ConflictBlock[]): ZoneRec[] {
   const recs: ZoneRec[] = [];
   ed.changeViewZones((accessor) => {
@@ -282,8 +267,6 @@ function injectZones(ed: editor.IStandaloneCodeEditor, conflicts: ConflictBlock[
   return recs;
 }
 
-// ─── Editor options ───────────────────────────────────────────────────────────
-
 const RO_OPTIONS = {
   readOnly: true,
   minimap: { enabled: false },
@@ -293,8 +276,6 @@ const RO_OPTIONS = {
   wordWrap: "on" as const,
   wrappingStrategy: "advanced" as const
 };
-
-// ─── Component ────────────────────────────────────────────────────────────────
 
 interface MergeConflictEditorProps {
   file: FileStatus;
@@ -321,7 +302,6 @@ export function MergeConflictEditor({ file, onResolved }: MergeConflictEditorPro
     if (rawContent && result === "") setResult(rawContent);
   }, [rawContent, result]);
 
-  // Top panel content: each side resolved, with conflict region ranges
   const { text: incomingText, ranges: incomingRanges } = useMemo(
     () => resolveSideWithRanges(rawContent, "theirs"),
     [rawContent]
@@ -331,41 +311,34 @@ export function MergeConflictEditor({ file, onResolved }: MergeConflictEditorPro
     [rawContent]
   );
 
-  // Current conflict blocks in the result (live-derived)
   const conflicts = useMemo(() => parseConflicts(result), [result]);
   const stillHasMarkers = hasMarkers(result);
   const fileName = file.path.split("/").pop() ?? file.path;
 
-  // Editor refs
   const incomingRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const currentRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const resultRef = useRef<editor.IStandaloneCodeEditor | null>(null);
 
-  // Decoration ID refs
   const incomingDecRef = useRef<DecIds>([]);
   const currentDecRef = useRef<DecIds>([]);
   const resultDecRef = useRef<DecIds>([]);
   const resultZonesRef = useRef<ZoneRec[]>([]);
 
-  // Editor-ready flags (to trigger initial decoration effects)
   const [_incomingReady, setIncomingReady] = useState(false);
   const [_currentReady, setCurrentReady] = useState(false);
   const [resultReady, setResultReady] = useState(false);
 
-  // Overlay button positions computed from Monaco's coordinate APIs
   const [barPositions, setBarPositions] = useState<{ blockIndex: number; top: number }[]>([]);
 
-  // Stable callback refs to avoid stale closures in imperative handlers
   const saveDraftRef = useRef<(() => void) | undefined>(undefined);
 
   const handleConflictAction = useCallback((blockIndex: number, action: ConflictAction) => {
     setResult((prev) => resolveBlock(prev, blockIndex, action));
   }, []);
 
-  // Recompute the Y position of each conflict's action bar using Monaco APIs.
-  // The ViewZone at afterLineNumber = c.startLine - 1 occupies the 22px
-  // immediately before line c.startLine; getTopForLineNumber already accounts
-  // for view zone heights, so the bar top = getTopForLineNumber(start) - 22 - scrollTop.
+  // ViewZone at `c.startLine - 1` occupies the 22px before `c.startLine`;
+  // `getTopForLineNumber` already accounts for view zones, so the bar's
+  // top = getTopForLineNumber(start) - 22 - scrollTop.
   const computeBarPositions = useCallback(() => {
     const ed = resultRef.current;
     if (!ed) return;
@@ -378,7 +351,6 @@ export function MergeConflictEditor({ file, onResolved }: MergeConflictEditorPro
     );
   }, [conflicts]);
 
-  // ── Save draft to disk (Ctrl+S) ───────────────────────────────────────────
   const handleSaveDraft = useCallback(async () => {
     if (!project?.id || !branchName || isSavingDraft) return;
     setIsSavingDraft(true);
@@ -395,7 +367,6 @@ export function MergeConflictEditor({ file, onResolved }: MergeConflictEditorPro
     saveDraftRef.current = handleSaveDraft;
   }, [handleSaveDraft]);
 
-  // Disposable for the Incoming ↔ Current scroll sync — set up once both editors are mounted.
   const scrollSyncRef = useRef<{ dispose: () => void } | null>(null);
 
   const setupScrollSync = useCallback(() => {
@@ -432,7 +403,6 @@ export function MergeConflictEditor({ file, onResolved }: MergeConflictEditorPro
 
   useEffect(() => () => scrollSyncRef.current?.dispose(), []);
 
-  // Subscribe to scroll and layout changes to keep overlay bars aligned
   useEffect(() => {
     const ed = resultRef.current;
     if (!ed || !resultReady) return;
@@ -445,12 +415,10 @@ export function MergeConflictEditor({ file, onResolved }: MergeConflictEditorPro
     };
   }, [resultReady, computeBarPositions]);
 
-  // Inject styles once
   useEffect(() => {
     injectStyles();
   }, []);
 
-  // ── Top panel decorations ─────────────────────────────────────────────────
   useEffect(() => {
     const ed = incomingRef.current;
     if (!ed) return;
@@ -473,25 +441,22 @@ export function MergeConflictEditor({ file, onResolved }: MergeConflictEditorPro
     );
   }, [currentRanges]);
 
-  // ── Result decorations (update on every result change) ────────────────────
   useEffect(() => {
     const ed = resultRef.current;
     if (!ed) return;
     resultDecRef.current = applyResultDecs(ed, conflicts, resultDecRef.current);
   }, [conflicts]);
 
-  // ── Result zones (height reservation only, re-inject when positions change) ─
   useEffect(() => {
     const ed = resultRef.current;
     if (!ed) return;
     clearZones(ed, resultZonesRef.current);
     resultZonesRef.current = injectZones(ed, conflicts);
-    // Recompute overlay positions after zones are re-injected (async layout)
+    // Recompute overlay positions after zones reinject (async layout).
     setTimeout(computeBarPositions, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [computeBarPositions, conflicts]);
 
-  // ── Cleanup zones on unmount ──────────────────────────────────────────────
   useEffect(() => {
     return () => {
       const ed = resultRef.current;
@@ -499,7 +464,6 @@ export function MergeConflictEditor({ file, onResolved }: MergeConflictEditorPro
     };
   }, []);
 
-  // ── Jump to next conflict ─────────────────────────────────────────────────
   const handleJumpNext = () => {
     const ed = resultRef.current;
     if (!ed) return;
@@ -521,7 +485,6 @@ export function MergeConflictEditor({ file, onResolved }: MergeConflictEditorPro
     }
   };
 
-  // ── Save (Complete Merge) ─────────────────────────────────────────────────
   const handleSave = async () => {
     if (!project?.id || !branchName || stillHasMarkers) return;
     setIsSaving(true);

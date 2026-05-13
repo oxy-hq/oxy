@@ -3,7 +3,10 @@ export interface RevisionInfo {
   latest_revision?: string;
   current_commit?: string;
   latest_commit?: string;
-  sync_status: string;
+  ahead_count: number;
+  behind_count: number;
+  uncommitted_count: number;
+  is_in_conflict: boolean;
   last_sync_time?: string;
   remote_url?: string;
 }

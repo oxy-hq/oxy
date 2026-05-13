@@ -53,14 +53,19 @@ export interface CreateWorkspaceResponse {
   success: boolean;
 }
 
+export type BranchOrigin = "local_only" | "remote_only" | "both";
+
 export interface WorkspaceBranch {
   name: string;
-  sync_status: string;
   revision: string;
   id: string;
   created_at: string;
   updated_at: string;
   branch_type: "local" | "remote";
+  /** Where this branch lives. Drives badges + the switch flow:
+   *  `remote_only` requires the server to create a local tracking branch
+   *  before the worktree can be created. */
+  origin: BranchOrigin;
 }
 
 export interface WorkspaceBranchesResponse {

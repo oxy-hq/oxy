@@ -5,8 +5,8 @@ import useRepoBranches from "@/hooks/api/repositories/useRepoBranches";
 import useRepoCheckout from "@/hooks/api/repositories/useRepoCheckout";
 import useRepoCommit from "@/hooks/api/repositories/useRepoCommit";
 import useRepoDiff from "@/hooks/api/repositories/useRepoDiff";
-import { BranchQuickSwitcher } from "../BranchQuickSwitcher";
-import { ChangesPanel } from "../ChangesPanel";
+import { ChangesPanel } from "./ChangesPanel";
+import { RepoBranchSwitcher } from "./RepoBranchSwitcher";
 
 export function LinkedRepoActions({ repoName }: { repoName: string }) {
   const { data: branchData } = useRepoBranch(repoName);
@@ -57,14 +57,14 @@ export function LinkedRepoActions({ repoName }: { repoName: string }) {
 
   return (
     <div className='flex items-center gap-1.5'>
-      <BranchQuickSwitcher
+      <RepoBranchSwitcher
         trigger={pill}
         open={branchOpen}
         onOpenChange={setBranchOpen}
-        externalBranches={branches}
-        externalCurrentBranch={branch}
-        isExternalLoading={branchesFetching && branches.length === 0}
-        onExternalSelect={handleSelect}
+        branches={branches}
+        currentBranch={branch}
+        isLoading={branchesFetching && branches.length === 0}
+        onSelect={handleSelect}
       />
 
       <div className='mx-0.5 h-4 w-px bg-border/50' />
@@ -93,7 +93,6 @@ export function LinkedRepoActions({ repoName }: { repoName: string }) {
       <ChangesPanel
         open={changesPanelOpen}
         onOpenChange={setChangesPanelOpen}
-        diffSummary={changedFiles}
         isPushing={commit.isPending}
         pushLabel='Commit & Push'
         onPush={handleCommit}

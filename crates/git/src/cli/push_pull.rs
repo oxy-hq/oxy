@@ -49,6 +49,21 @@ pub async fn force_push_to_remote(root: &Path, token: Option<&str>) -> Result<()
     Ok(())
 }
 
+/// `git fetch origin <branch>` — non-destructive: updates only the
+/// remote-tracking ref `refs/remotes/origin/<branch>` (and `FETCH_HEAD`).
+/// The local branch is never touched, so this is safe to call from a
+/// worktree that is currently on `branch` regardless of divergence.
+pub async fn fetch_remote_ref(
+    root: &Path,
+    branch: &str,
+    token: Option<&str>,
+) -> Result<(), OxyError> {
+    branch::validate_branch_name(branch)?;
+    info!("Fetching origin/{} in {}", branch, root.display());
+    run::run_with_token(root, &["fetch", "origin", branch], token).await?;
+    Ok(())
+}
+
 /// `git pull --rebase origin <branch>` inside a worktree.
 ///
 /// Runs entirely inside `worktree_root` so rebase state is scoped to the
@@ -72,13 +87,43 @@ pub async fn pull_from_remote(
 /// Returns `true` if `local_sha` is behind `remote_sha`.  `remote_sha` not
 /// being in the local object store is treated as "behind".
 pub async fn is_behind_remote(root: &Path, local_sha: &str, remote_sha: &str) -> bool {
-    if remote_sha.is_empty() || local_sha.is_empty() {
-        return false;
+    get_ahead_behind_counts(root, local_sha, remote_sha).await.1 > 0
+}
+
+/// Returns `(ahead_count, behind_count)` of `local_sha` relative to `remote_sha`.
+/// Returns `(0, 0)` if either SHA is empty. If `remote_sha` is missing from the
+/// local object store, treats as fully behind.
+pub async fn get_ahead_behind_counts(root: &Path, local_sha: &str, remote_sha: &str) -> (u64, u64) {
+    if local_sha.is_empty() || remote_sha.is_empty() {
+        return (0, 0);
     }
-    let range = format!("{local_sha}..{remote_sha}");
-    match run::run(root, &["rev-list", "--count", &range]).await {
-        Ok(output) => output.trim().parse::<u64>().unwrap_or(1) > 0,
-        Err(_) => true,
+    if local_sha == remote_sha {
+        return (0, 0);
+    }
+    let range = format!("{local_sha}...{remote_sha}");
+    match run::run(root, &["rev-list", "--left-right", "--count", &range]).await {
+        Ok(output) => {
+            let mut parts = output.split_whitespace();
+            let ahead = parts
+                .next()
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(0);
+            let behind = parts
+                .next()
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(0);
+            (ahead, behind)
+        }
+        // rev-list failed (parse error, transient git, unreachable remote
+        // SHA). Returning `(0, 1)` would surface a phantom ↓1 with an
+        // enabled Pull button that just fails again; `(0, 0)` lets an
+        // explicit Fetch recover real counts.
+        Err(err) => {
+            tracing::warn!(
+                "get_ahead_behind_counts: rev-list failed for {range}: {err}; reporting (0, 0)"
+            );
+            (0, 0)
+        }
     }
 }
 

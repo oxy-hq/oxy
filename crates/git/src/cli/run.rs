@@ -3,7 +3,7 @@ use std::path::Path;
 use oxy_shared::errors::OxyError;
 use tokio::process::Command;
 
-use crate::cli::auth;
+use crate::cli::{auth, redact};
 use crate::types::Auth;
 
 /// Run `git <args>` in `cwd`, no auth. Returns captured stdout on success.
@@ -11,8 +11,6 @@ pub(crate) async fn run(cwd: &Path, args: &[&str]) -> Result<String, OxyError> {
     run_authed(cwd, args, &Auth::None).await
 }
 
-/// Bridge for callers that hold a raw `Option<&str>` token. Converts
-/// to [`Auth::Bearer`] internally.
 pub(crate) async fn run_with_token(
     cwd: &Path,
     args: &[&str],
@@ -24,9 +22,8 @@ pub(crate) async fn run_with_token(
     }
 }
 
-/// Like [`run`] but sets `GIT_EDITOR=true` and `GIT_TERMINAL_PROMPT=0`
-/// so git never opens an interactive editor or credential prompt.
-/// Used by `rebase --continue` / `merge --continue`.
+/// Like [`run`] but sets `GIT_EDITOR=true` so git never opens an editor —
+/// used by `rebase --continue` / `merge --continue`.
 pub(crate) async fn run_no_editor(cwd: &Path, args: &[&str]) -> Result<String, OxyError> {
     let output = tokio::process::Command::new("git")
         .current_dir(cwd)
@@ -41,6 +38,7 @@ pub(crate) async fn run_no_editor(cwd: &Path, args: &[&str]) -> Result<String, O
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = redact::redact_secrets(&stderr);
         return Err(OxyError::RuntimeError(format!(
             "git {} failed: {stderr}",
             args.join(" ")
@@ -50,10 +48,8 @@ pub(crate) async fn run_no_editor(cwd: &Path, args: &[&str]) -> Result<String, O
 }
 
 /// Run `git <args>` in `cwd` with auth injected via `http.extraHeader`.
-///
-/// Sets `GIT_TERMINAL_PROMPT=0` so that if auth is rejected, git fails
-/// fast with a clear error instead of hanging on an interactive
-/// `Username for 'https://...':` prompt.
+/// `GIT_TERMINAL_PROMPT=0` makes rejected auth fail fast instead of
+/// hanging on a `Username for 'https://...':` prompt.
 pub(crate) async fn run_authed(
     cwd: &Path,
     args: &[&str],
@@ -71,6 +67,7 @@ pub(crate) async fn run_authed(
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = redact::redact_secrets(&stderr);
         return Err(OxyError::RuntimeError(format!(
             "git {} failed: {stderr}",
             args.join(" ")

@@ -7,6 +7,7 @@ pub mod diff;
 pub mod path;
 pub mod push_pull;
 pub mod rebase;
+mod redact;
 pub mod repo;
 pub mod run;
 pub mod staging;
@@ -18,7 +19,7 @@ use async_trait::async_trait;
 use oxy_shared::errors::OxyError;
 
 use crate::client::GitClient;
-use crate::types::FileStatus;
+use crate::types::{DirtyEntry, FileStatus, ResetOutcome};
 
 /// `GitClient` implementation that shells out to the system `git` binary.
 #[derive(Debug, Clone, Default)]
@@ -85,6 +86,14 @@ impl GitClient for CliGitClient {
         branch::list_branches_with_status(workspace_root).await
     }
 
+    async fn list_branches_with_origin(
+        &self,
+        workspace_root: &Path,
+        token: Option<&str>,
+    ) -> Vec<crate::types::BranchInfo> {
+        branch::list_branches_with_origin(workspace_root, token).await
+    }
+
     async fn list_all_branches(
         &self,
         workspace_root: &Path,
@@ -100,6 +109,15 @@ impl GitClient for CliGitClient {
         token: Option<&str>,
     ) -> Result<(), OxyError> {
         branch::checkout_branch(workspace_root, branch_name, token).await
+    }
+
+    async fn ensure_local_ref(
+        &self,
+        workspace_root: &Path,
+        branch_name: &str,
+        token: Option<&str>,
+    ) -> Result<crate::types::LocalRefOrigin, OxyError> {
+        branch::ensure_local_ref(workspace_root, branch_name, token).await
     }
 
     async fn delete_branch(
@@ -138,8 +156,9 @@ impl GitClient for CliGitClient {
         &self,
         root: &Path,
         n: usize,
+        offset: usize,
     ) -> Vec<(String, String, String, String, String)> {
-        commit::get_recent_commits(root, n).await
+        commit::get_recent_commits(root, n, offset).await
     }
 
     async fn get_commit_by_sha(&self, root: &Path, sha: &str) -> (String, String) {
@@ -188,8 +207,30 @@ impl GitClient for CliGitClient {
         push_pull::pull_from_remote(worktree_root, branch_name, token).await
     }
 
+    async fn fetch_remote_ref(
+        &self,
+        root: &Path,
+        branch_name: &str,
+        token: Option<&str>,
+    ) -> Result<(), OxyError> {
+        push_pull::fetch_remote_ref(root, branch_name, token).await
+    }
+
     async fn is_behind_remote(&self, root: &Path, local_sha: &str, remote_sha: &str) -> bool {
         push_pull::is_behind_remote(root, local_sha, remote_sha).await
+    }
+
+    async fn get_ahead_behind_counts(
+        &self,
+        root: &Path,
+        local_sha: &str,
+        remote_sha: &str,
+    ) -> (u64, u64) {
+        push_pull::get_ahead_behind_counts(root, local_sha, remote_sha).await
+    }
+
+    async fn discard_all_changes(&self, root: &Path) -> Result<(), OxyError> {
+        rebase::discard_all_changes(root).await
     }
 
     async fn get_tracking_ref_sha(&self, root: &Path, branch_name: &str) -> Option<String> {
@@ -202,12 +243,21 @@ impl GitClient for CliGitClient {
 
     // ─── Rebase / merge ────────────────────────────────────────────────
 
-    fn is_in_conflict(&self, root: &Path) -> bool {
+    async fn is_in_conflict(&self, root: &Path) -> bool {
         rebase::is_in_conflict(root)
     }
 
-    async fn reset_to_commit(&self, root: &Path, commit_ref: &str) -> Result<(), OxyError> {
-        rebase::reset_to_commit(root, commit_ref).await
+    async fn working_tree_status(&self, root: &Path) -> Result<Vec<DirtyEntry>, OxyError> {
+        rebase::working_tree_status(root).await
+    }
+
+    async fn reset_to_commit(
+        &self,
+        root: &Path,
+        commit_ref: &str,
+        force: bool,
+    ) -> Result<ResetOutcome, OxyError> {
+        rebase::reset_to_commit(root, commit_ref, force).await
     }
 
     async fn abort_rebase(&self, root: &Path) -> Result<(), OxyError> {

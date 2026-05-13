@@ -13,4 +13,6 @@ pub mod client;
 pub mod types;
 
 pub use client::GitClient;
-pub use types::{Auth, FileStatus};
+pub use types::{
+    Auth, BranchInfo, BranchOrigin, DirtyEntry, DirtyKind, FileStatus, LocalRefOrigin, ResetOutcome,
+};

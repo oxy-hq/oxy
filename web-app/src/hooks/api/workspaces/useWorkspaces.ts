@@ -4,7 +4,6 @@ import useCurrentOrg from "@/stores/useCurrentOrg";
 import type { Workspace, WorkspaceBranchesResponse } from "@/types/workspace";
 import queryKeys from "../queryKey";
 
-// Hook to fetch a single workspace
 export const useWorkspace = (workspaceId: string) => {
   return useQuery<Workspace>({
     queryKey: queryKeys.workspaces.item(workspaceId),
@@ -12,7 +11,6 @@ export const useWorkspace = (workspaceId: string) => {
   });
 };
 
-// Hook to fetch workspace branches
 export const useWorkspaceBranches = (workspaceId: string) => {
   return useQuery<WorkspaceBranchesResponse>({
     queryKey: queryKeys.workspaces.branches(workspaceId),
@@ -21,7 +19,6 @@ export const useWorkspaceBranches = (workspaceId: string) => {
   });
 };
 
-// Hook to switch workspace branch
 export const useSwitchWorkspaceBranch = () => {
   const queryClient = useQueryClient();
 
@@ -36,7 +33,6 @@ export const useSwitchWorkspaceBranch = () => {
       baseBranch?: string;
     }) => WorkspaceService.switchWorkspaceBranch(workspaceId, branchName, baseBranch),
     onSuccess: (_, variables) => {
-      // Invalidate workspace details and branches to refetch
       queryClient.invalidateQueries({
         queryKey: queryKeys.workspaces.item(variables.workspaceId)
       });
@@ -47,7 +43,6 @@ export const useSwitchWorkspaceBranch = () => {
   });
 };
 
-// Hook to pull changes
 export const usePullChanges = () => {
   const queryClient = useQueryClient();
 
@@ -55,8 +50,8 @@ export const usePullChanges = () => {
     mutationFn: ({ workspaceId, branchName }: { workspaceId: string; branchName: string }) =>
       WorkspaceService.pullChanges(workspaceId, branchName),
     onSuccess: (_, variables) => {
-      // Refetch revision info immediately after pull, including inactive observers
-      // so the status updates even if BranchInfo unmounts during navigation.
+      // `refetchType: "all"` covers inactive observers so the status
+      // updates even if BranchInfo unmounts during navigation.
       queryClient.invalidateQueries({
         queryKey: queryKeys.workspaces.revisionInfo(variables.workspaceId, variables.branchName),
         refetchType: "all"
@@ -65,11 +60,33 @@ export const usePullChanges = () => {
         queryKey: queryKeys.file.all(variables.workspaceId, variables.branchName),
         refetchType: "all"
       });
+      // Pull does a `git fetch` under the hood — remote refs may have moved.
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.workspaces.branches(variables.workspaceId)
+      });
     }
   });
 };
 
-// Hook to delete a branch
+export const useFetchRemote = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ workspaceId, branchName }: { workspaceId: string; branchName: string }) =>
+      WorkspaceService.fetchRemote(workspaceId, branchName),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.workspaces.revisionInfo(variables.workspaceId, variables.branchName),
+        refetchType: "all"
+      });
+      // Fetch can flip a branch's `origin` (e.g. `local_only` → `both`).
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.workspaces.branches(variables.workspaceId)
+      });
+    }
+  });
+};
+
 export const useDeleteBranch = (workspaceId: string) => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -82,7 +99,6 @@ export const useDeleteBranch = (workspaceId: string) => {
   });
 };
 
-// Hook to force-push the current branch to remote
 export const useForcePush = () => {
   const queryClient = useQueryClient();
 
@@ -93,11 +109,31 @@ export const useForcePush = () => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.workspaces.revisionInfo(variables.workspaceId, variables.branchName)
       });
+      // Force-push may have created the remote ref — refresh the badge.
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.workspaces.branches(variables.workspaceId)
+      });
     }
   });
 };
 
-// Hook to push changes
+export const useDiscardAllChanges = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ workspaceId, branchName }: { workspaceId: string; branchName: string }) =>
+      WorkspaceService.discardAllChanges(workspaceId, branchName),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.workspaces.revisionInfo(variables.workspaceId, variables.branchName)
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.file.all(variables.workspaceId, variables.branchName)
+      });
+    }
+  });
+};
+
 export const usePushChanges = () => {
   const queryClient = useQueryClient();
 
@@ -112,12 +148,16 @@ export const usePushChanges = () => {
       commitMessage?: string;
     }) => WorkspaceService.pushChanges(workspaceId, branchName, commitMessage),
     onSuccess: (_, variables) => {
-      // Invalidate revision info to refetch after push
       queryClient.invalidateQueries({
         queryKey: queryKeys.workspaces.revisionInfo(variables.workspaceId, variables.branchName)
       });
       queryClient.invalidateQueries({
         queryKey: queryKeys.file.all(variables.workspaceId, variables.branchName)
+      });
+      // First push creates the remote ref, flipping `origin` from
+      // `local_only` to `both` — refresh the badge.
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.workspaces.branches(variables.workspaceId)
       });
     }
   });

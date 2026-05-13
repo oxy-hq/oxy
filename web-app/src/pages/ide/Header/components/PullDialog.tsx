@@ -1,4 +1,3 @@
-import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -13,55 +12,52 @@ import {
 import { Spinner } from "@/components/ui/shadcn/spinner";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePullChanges } from "@/hooks/api/workspaces/useWorkspaces";
-import useCurrentProjectBranch from "@/hooks/useCurrentProjectBranch";
-import ROUTES from "@/libs/utils/routes";
-import useCurrentOrg from "@/stores/useCurrentOrg";
+import { useIdeGit } from "../context/IdeGitContext";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onConflict?: () => void;
 }
 
-export const PullDialog = ({ open, onOpenChange }: Props) => {
+export const PullDialog = ({ open, onOpenChange, onConflict }: Props) => {
   const { isLocalMode } = useAuth();
-  const { project, branchName } = useCurrentProjectBranch();
+  const { workspaceId, branch } = useIdeGit();
   const pullChangesMutation = usePullChanges();
-  const navigate = useNavigate();
-  const orgSlug = useCurrentOrg((s) => s.org?.slug) ?? "";
 
   if (isLocalMode) return null;
 
   const onConfirm = async (e: { preventDefault: () => void }) => {
     e.preventDefault();
 
-    if (!project?.id || !branchName) {
+    if (!workspaceId || !branch) {
       toast.error("Workspace or branch information is missing");
       return;
     }
 
     try {
       const result = await pullChangesMutation.mutateAsync({
-        workspaceId: project.id,
-        branchName
+        workspaceId,
+        branchName: branch
       });
 
-      if (result.success) {
+      if (result.state === "Synced") {
         toast.success("Pulled latest changes");
-      } else {
-        const isConflict = result.message?.toLowerCase().includes("conflict");
-        if (!isConflict) {
-          toast.error("Pull failed", {
-            action: result.message
-              ? {
-                  label: "Show details",
-                  onClick: () => toast.message(result.message)
-                }
-              : undefined
-          });
-        }
+      } else if (result.state === "Conflict") {
+        toast.warning("Pull paused with conflicts", {
+          description: "Resolve them in the changes panel."
+        });
+        onConflict?.();
+      } else if (result.state === "Error") {
+        toast.error("Pull failed", {
+          action: result.message
+            ? {
+                label: "Show details",
+                onClick: () => toast.message(result.message)
+              }
+            : undefined
+        });
       }
-      const ideUri = ROUTES.ORG(orgSlug).WORKSPACE(project.id).IDE.ROOT;
-      navigate(ideUri);
     } catch (error) {
       toast.error("Failed to pull changes");
       console.error("Pull changes error:", error);
@@ -70,7 +66,7 @@ export const PullDialog = ({ open, onOpenChange }: Props) => {
     }
   };
 
-  const isDisabled = pullChangesMutation.isPending || !project?.id || !branchName;
+  const isDisabled = pullChangesMutation.isPending || !workspaceId || !branch;
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -78,17 +74,13 @@ export const PullDialog = ({ open, onOpenChange }: Props) => {
         <AlertDialogHeader>
           <AlertDialogTitle>Pull Latest Changes</AlertDialogTitle>
           <AlertDialogDescription>
-            This action will discard all local changes and pull the latest from the remote
-            repository. This action cannot be undone.
+            Fetch updates from <code>origin/{branch}</code> and rebase your local commits on top. If
+            there are conflicts, you'll resolve them in the changes panel.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={isDisabled}>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={onConfirm}
-            disabled={isDisabled}
-            className='bg-destructive hover:bg-destructive/90'
-          >
+          <AlertDialogAction onClick={onConfirm} disabled={isDisabled}>
             {pullChangesMutation.isPending && <Spinner className='mr-2' />}
             Pull Changes
           </AlertDialogAction>

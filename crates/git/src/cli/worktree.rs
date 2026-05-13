@@ -8,11 +8,9 @@ use crate::cli::{branch, config, repo, run};
 /// Directory name for git worktrees inside the project root.
 pub const WORKTREES_DIR: &str = ".worktrees";
 
-/// Converts a branch name to a safe directory name.
-///
-/// `/` is encoded as `--` so that distinct branch names always map to
-/// distinct directory names (e.g. `user/alice` → `user--alice` cannot
-/// collide with the literal branch `user-alice`).
+/// Converts a branch name to a safe directory name by encoding `/` as `--`.
+/// Bijective only because `branch::validate_branch_name` rejects names
+/// containing `--`.
 pub(crate) fn branch_to_dir_name(branch: &str) -> String {
     branch.replace('/', "--")
 }

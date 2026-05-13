@@ -11,12 +11,16 @@ export default function useRevertFile() {
   return useMutation({
     mutationFn: (pathb64: string) => FileService.revertFile(project.id, pathb64, branchName),
     onSuccess: (_, pathb64) => {
-      // Refresh the file content and git status
+      // Refresh the file content and git status (both the diff list seen by
+      // the panel and the revision info that gates the header Commit CTA).
       queryClient.removeQueries({
         queryKey: queryKeys.file.get(project.id, pathb64, branchName)
       });
       queryClient.invalidateQueries({
         queryKey: queryKeys.file.diffSummary(project.id, branchName)
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.workspaces.revisionInfo(project.id, branchName)
       });
     },
     onError: () => {

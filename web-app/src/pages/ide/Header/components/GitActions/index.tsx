@@ -1,147 +1,44 @@
-import { ChevronDown, GitBranch } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { useState } from "react";
+import { Button } from "@/components/ui/shadcn/button";
 import { useAuth } from "@/contexts/AuthContext";
-import type { RevisionInfo } from "@/types/settings";
-import { BranchInfo } from "../../BranchInfo";
-import { BranchQuickSwitcher } from "../../BranchQuickSwitcher";
+import { useIdeGit } from "../../context/IdeGitContext";
+import { BranchInfo } from "../BranchInfo";
+import { WorkspaceBranchSwitcher } from "../BranchPopover/WorkspaceBranchSwitcher";
 import { HistoryPopover } from "../HistoryPopover";
-import { deriveCtaState } from "./ctaState";
-import { PrimaryCta } from "./PrimaryCta";
+import { ActionsRow } from "./ActionsRow";
 
-interface Props {
-  workspaceId?: string;
-  branch: string;
-  isOnMain: boolean;
-
-  // Capability flags (already AND-ed against caps elsewhere)
-  canCommit: boolean;
-  canBrowseHistory: boolean;
-  canPush: boolean;
-  canPull: boolean;
-
-  // Diff / revision derived state
-  hasLocalChanges: boolean;
-  revisionInfo?: RevisionInfo;
-  prUrl: string | null;
-
-  pushLabel: string;
-  isPushing: boolean;
-  isForcePushing: boolean;
-  isFetching: boolean;
-
-  onOpenChanges: () => void;
-  onOpenPullDialog: () => void;
-  onPushDirect: () => void;
-  onForcePush: () => void;
-  onFetch: () => void;
-  onResetSuccess: () => Promise<void> | void;
-}
-
-/**
- * The primary git actions cluster shown in the IDE header for the workspace
- * (non-linked-repo) flow. Composes the branch pill, optional history popover,
- * an on-main "new branch" shortcut, and the state-driven primary CTA.
- *
- * Returns null when git capabilities are unavailable (local/non-git workspace).
- */
-export function GitActions({
-  workspaceId,
-  branch,
-  isOnMain,
-  canCommit,
-  canBrowseHistory,
-  canPush,
-  canPull,
-  hasLocalChanges,
-  revisionInfo,
-  prUrl,
-  pushLabel,
-  isPushing,
-  isForcePushing,
-  isFetching,
-  onOpenChanges,
-  onOpenPullDialog,
-  onPushDirect,
-  onForcePush,
-  onFetch,
-  onResetSuccess
-}: Props) {
+export function GitActions() {
   const { isLocalMode } = useAuth();
+  const { workspaceId, branch, gitState, refresh } = useIdeGit();
   const [isBranchPickerOpen, setIsBranchPickerOpen] = useState(false);
 
-  if (isLocalMode || !canCommit) return null;
+  if (isLocalMode) return null;
 
-  const isBehind = revisionInfo?.sync_status === "behind";
-  const isAhead = revisionInfo?.sync_status === "ahead";
-  const isConflict = revisionInfo?.sync_status === "conflict";
-  const showPull = canPull && isBehind && !isConflict;
-  const showOpenPr = !isOnMain && !!prUrl && !hasLocalChanges && !isConflict && !isAhead;
-
-  const ctaState = deriveCtaState({
-    isOnMain,
-    isAhead,
-    isConflict,
-    hasLocalChanges,
-    showPull,
-    showOpenPr,
-    canPush
-  });
-
-  const showSplit =
-    canPush && (ctaState === "commit" || ctaState === "push" || ctaState === "pr") && !isOnMain;
+  const canBrowseHistory = !!gitState.caps.can_browse_history;
 
   const branchPill = (
-    <button
-      type='button'
-      className='flex h-7 max-w-36 items-center gap-1.5 overflow-hidden rounded border border-border/50 bg-transparent px-2 text-sm transition-colors hover:border-border hover:bg-accent/40'
-    >
+    <Button size='sm' variant='outline'>
       <span className='min-w-0 flex-1'>
         <BranchInfo />
       </span>
-      <ChevronDown className='h-3 w-3 flex-shrink-0 text-muted-foreground/60' />
-    </button>
+      <ChevronDown />
+    </Button>
   );
 
   return (
     <div className='flex items-center gap-1.5'>
-      <BranchQuickSwitcher
+      <WorkspaceBranchSwitcher
         trigger={branchPill}
         open={isBranchPickerOpen}
         onOpenChange={setIsBranchPickerOpen}
       />
 
       {canBrowseHistory && (
-        <HistoryPopover workspaceId={workspaceId} branch={branch} onResetSuccess={onResetSuccess} />
+        <HistoryPopover workspaceId={workspaceId} branch={branch} onResetSuccess={refresh} />
       )}
 
-      <div className='mx-0.5 h-4 w-px bg-border/50' />
-
-      {isOnMain && !hasLocalChanges && (
-        <button
-          type='button'
-          onClick={() => setIsBranchPickerOpen(true)}
-          title='Create a new branch'
-          className='flex h-7 items-center gap-1 rounded border border-primary/30 bg-primary/8 px-2 text-primary text-xs transition-colors hover:border-primary/50 hover:bg-primary/15'
-        >
-          <GitBranch className='h-3 w-3' />
-          New branch
-        </button>
-      )}
-
-      <PrimaryCta
-        state={ctaState}
-        pushLabel={pushLabel}
-        prUrl={prUrl}
-        showSplit={showSplit}
-        isPushing={isPushing}
-        isForcePushing={isForcePushing}
-        isFetching={isFetching}
-        onOpenChanges={onOpenChanges}
-        onOpenPullDialog={onOpenPullDialog}
-        onPushDirect={onPushDirect}
-        onForcePush={onForcePush}
-        onFetch={onFetch}
-      />
+      <ActionsRow />
     </div>
   );
 }

@@ -129,6 +129,7 @@ fn build_git_routes() -> Router<AppState> {
         .route("/branches/{branch_name}", delete(workspaces::delete_branch))
         .route("/switch-branch", post(workspaces::switch_workspace_branch))
         .route("/pull-changes", post(workspaces::pull_changes))
+        .route("/fetch", post(workspaces::fetch_changes))
         .route("/push-changes", post(workspaces::push_changes))
         .route("/abort-rebase", post(workspaces::abort_rebase))
         .route("/continue-rebase", post(workspaces::continue_rebase))
@@ -145,6 +146,7 @@ fn build_git_routes() -> Router<AppState> {
             post(workspaces::resolve_conflict_with_content),
         )
         .route("/force-push", post(workspaces::force_push_branch))
+        .route("/discard-all", post(workspaces::discard_all_changes))
         .route("/recent-commits", get(workspaces::get_recent_commits))
         .route("/revision-info", get(workspaces::get_revision_info))
         .route("/reset-to-commit", post(workspaces::reset_to_commit))
@@ -401,8 +403,10 @@ mod tests {
             ("DELETE", "/branches/foo"),
             ("POST", "/switch-branch"),
             ("POST", "/pull-changes"),
+            ("POST", "/fetch"),
             ("POST", "/push-changes"),
             ("POST", "/force-push"),
+            ("POST", "/discard-all"),
             ("POST", "/abort-rebase"),
             ("POST", "/continue-rebase"),
             ("POST", "/resolve-conflict-file"),

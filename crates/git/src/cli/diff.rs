@@ -128,6 +128,9 @@ pub async fn numstat_ahead(root: &Path) -> Result<Vec<FileStatus>, OxyError> {
 }
 
 /// Return the contents of `file_path` at `commit` (defaults to `HEAD`).
+/// Returns an empty string when the path doesn't exist at that revision —
+/// callers use this for diff baselines, where "missing on the left side"
+/// is a normal state.
 pub async fn file_at_rev(
     repo_path: &Path,
     file_path: &str,
@@ -150,5 +153,16 @@ pub async fn file_at_rev(
         repo_path.display()
     );
 
-    run::run(repo_path, &["show", &show_ref]).await
+    match run::run(repo_path, &["show", &show_ref]).await {
+        Ok(content) => Ok(content),
+        Err(e) if path_missing_at_rev(&e.to_string()) => Ok(String::new()),
+        Err(e) => Err(e),
+    }
+}
+
+/// True when git's stderr indicates `<rev>:<path>` doesn't resolve. Covers
+/// both `does not exist in '<rev>'` and `exists on disk, but not in '<rev>'`.
+fn path_missing_at_rev(stderr: &str) -> bool {
+    let s = stderr.to_ascii_lowercase();
+    s.contains("does not exist") || s.contains("exists on disk, but not in")
 }

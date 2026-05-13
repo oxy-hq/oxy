@@ -1,120 +1,177 @@
+import type { QueryObserverResult } from "@tanstack/react-query";
+import { useCallback, useMemo } from "react";
 import { toast } from "sonner";
-import useDiffSummary from "@/hooks/api/files/useDiffSummary";
 import useRevisionInfo from "@/hooks/api/workspaces/useRevisionInfo";
-import { useForcePush, usePushChanges } from "@/hooks/api/workspaces/useWorkspaces";
+import {
+  useDiscardAllChanges,
+  useFetchRemote,
+  useForcePush,
+  usePushChanges
+} from "@/hooks/api/workspaces/useWorkspaces";
 import { WorkspaceService as ProjectService } from "@/services/api/workspaces";
+import type { RevisionInfo } from "@/types/settings";
+import { useRefreshGitState } from "./useRefreshGitState";
 
 interface Args {
   workspaceId?: string;
   branch: string;
-  /** Whether to fetch diff/revision info (capability-gated by the caller). */
-  enableDiff: boolean;
   enableRevision: boolean;
 }
 
-/**
- * Centralised git mutation handlers + the supporting queries.
- *
- * Returns the diff/revision data so the caller doesn't need to call them
- * separately, and exposes refetch helpers used by every mutation success path.
- * Each handler toasts on success/failure.
- */
-export function useGitMutations({ workspaceId, branch, enableDiff, enableRevision }: Args) {
-  const {
-    data: diffSummary,
-    refetch: refetchDiff,
-    isFetching: isDiffFetching
-  } = useDiffSummary(enableDiff && !!workspaceId);
+export interface GitMutationStatus {
+  revisionInfo: RevisionInfo | undefined;
+  isFetching: boolean;
+  isPushing: boolean;
+  isForcePushing: boolean;
+  isDiscarding: boolean;
+}
+
+export interface GitMutationActions {
+  refetchRevision: () => Promise<QueryObserverResult<RevisionInfo, Error>>;
+  push: (commitMessage: string) => Promise<void>;
+  forcePush: () => Promise<void>;
+  abortRebase: () => Promise<void>;
+  continueRebase: () => Promise<void>;
+  fetchRemote: () => Promise<void>;
+  discardAll: () => Promise<void>;
+}
+
+export interface UseGitMutationsResult {
+  status: GitMutationStatus;
+  actions: GitMutationActions;
+}
+
+interface GitActionResult {
+  success: boolean;
+  message?: string;
+}
+
+// Server-provided `result.message` overrides `errorMsg` on non-success;
+// the catch path falls back to `errorMsg` verbatim.
+async function gitActionToast(
+  errorMsg: string,
+  run: () => Promise<GitActionResult>,
+  successMsg?: string
+): Promise<GitActionResult> {
+  try {
+    const result = await run();
+    if (result.success) {
+      if (successMsg) toast.success(successMsg);
+      return result;
+    }
+    toast.error(result.message || errorMsg);
+    return result;
+  } catch {
+    toast.error(errorMsg);
+    return { success: false };
+  }
+}
+
+export function useGitMutations({
+  workspaceId,
+  branch,
+  enableRevision
+}: Args): UseGitMutationsResult {
   const {
     data: revisionInfo,
     refetch: refetchRevision,
     isFetching: isRevisionFetching
   } = useRevisionInfo(enableRevision && !!workspaceId);
 
-  const pushMutation = usePushChanges();
-  const forcePushMutation = useForcePush();
+  const { mutateAsync: pushMutateAsync, isPending: isPushing } = usePushChanges();
+  const { mutateAsync: forcePushMutateAsync, isPending: isForcePushing } = useForcePush();
+  const { mutateAsync: fetchMutateAsync, isPending: isFetchPending } = useFetchRemote();
+  const { mutateAsync: discardMutateAsync, isPending: isDiscarding } = useDiscardAllChanges();
+  const refreshGitState = useRefreshGitState(workspaceId, branch);
 
-  const fetchAll = async () => {
-    await Promise.all([refetchDiff(), refetchRevision()]);
-  };
-
-  const push = async (commitMessage: string) => {
-    if (!workspaceId || !branch) return;
-    try {
-      const result = await pushMutation.mutateAsync({
-        workspaceId,
-        branchName: branch,
-        commitMessage
-      });
+  const push = useCallback(
+    async (commitMessage: string) => {
+      if (!workspaceId || !branch) return;
+      // Skip `successMsg` so we can toast the server-provided message below.
+      const result = await gitActionToast("Push failed", () =>
+        pushMutateAsync({ workspaceId, branchName: branch, commitMessage })
+      );
       if (result.success) {
         toast.success(result.message || "Changes pushed");
-        await fetchAll();
-      } else {
-        toast.error(result.message || "Push failed");
+        await refetchRevision();
       }
-    } catch {
-      toast.error("Push failed");
-    }
-  };
+    },
+    [workspaceId, branch, pushMutateAsync, refetchRevision]
+  );
 
-  const forcePush = async () => {
+  const forcePush = useCallback(async () => {
     if (!workspaceId || !branch) return;
-    try {
-      const result = await forcePushMutation.mutateAsync({
-        workspaceId,
-        branchName: branch
-      });
-      if (result.success) {
-        toast.success("Force pushed successfully");
-        refetchRevision();
-      } else {
-        toast.error(result.message || "Force push failed");
-      }
-    } catch {
-      toast.error("Force push failed");
-    }
-  };
+    const result = await gitActionToast(
+      "Force push failed",
+      () => forcePushMutateAsync({ workspaceId, branchName: branch }),
+      "Force pushed successfully"
+    );
+    if (result.success) void refetchRevision();
+  }, [workspaceId, branch, forcePushMutateAsync, refetchRevision]);
 
-  const abortRebase = async () => {
+  const abortRebase = useCallback(async () => {
     if (!workspaceId || !branch) return;
-    try {
-      const result = await ProjectService.abortRebase(workspaceId, branch);
-      if (result.success) {
-        toast.success("Rebase aborted — branch restored to previous state");
-        await fetchAll();
-      } else {
-        toast.error(result.message || "Failed to abort");
-      }
-    } catch {
-      toast.error("Failed to abort");
-    }
-  };
+    const result = await gitActionToast(
+      "Failed to abort",
+      () => ProjectService.abortRebase(workspaceId, branch),
+      "Rebase aborted — branch restored to previous state"
+    );
+    if (result.success) await refreshGitState();
+  }, [workspaceId, branch, refreshGitState]);
 
-  const continueRebase = async () => {
+  const continueRebase = useCallback(async () => {
     if (!workspaceId || !branch) return;
-    try {
-      const result = await ProjectService.continueRebase(workspaceId, branch);
-      if (result.success) {
-        toast.success("Conflicts resolved — rebase complete");
-        await fetchAll();
-      } else {
-        toast.error(result.message || "Failed to continue rebase");
-      }
-    } catch {
-      toast.error("Failed to continue rebase");
-    }
-  };
+    const result = await gitActionToast(
+      "Failed to continue rebase",
+      () => ProjectService.continueRebase(workspaceId, branch),
+      "Conflicts resolved — rebase complete"
+    );
+    if (result.success) await refreshGitState();
+  }, [workspaceId, branch, refreshGitState]);
 
-  return {
-    diffSummary,
-    revisionInfo,
-    isFetching: isDiffFetching || isRevisionFetching,
-    isPushing: pushMutation.isPending,
-    isForcePushing: forcePushMutation.isPending,
-    fetchAll,
-    push,
-    forcePush,
-    abortRebase,
-    continueRebase
-  };
+  const fetchRemote = useCallback(async () => {
+    if (!workspaceId || !branch) return;
+    const result = await gitActionToast("Fetch failed", () =>
+      fetchMutateAsync({ workspaceId, branchName: branch })
+    );
+    if (result.success) await refetchRevision();
+  }, [workspaceId, branch, fetchMutateAsync, refetchRevision]);
+
+  const discardAll = useCallback(async () => {
+    if (!workspaceId || !branch) return;
+    // Skip `successMsg` so we can toast the server-provided message below.
+    const result = await gitActionToast("Failed to discard changes", () =>
+      discardMutateAsync({ workspaceId, branchName: branch })
+    );
+    if (result.success) {
+      toast.success(result.message || "Discarded all local changes");
+      await refreshGitState();
+    }
+  }, [workspaceId, branch, discardMutateAsync, refreshGitState]);
+
+  const status = useMemo<GitMutationStatus>(
+    () => ({
+      revisionInfo,
+      isFetching: isRevisionFetching || isFetchPending,
+      isPushing,
+      isForcePushing,
+      isDiscarding
+    }),
+    [revisionInfo, isRevisionFetching, isFetchPending, isPushing, isForcePushing, isDiscarding]
+  );
+
+  const actions = useMemo<GitMutationActions>(
+    () => ({
+      refetchRevision,
+      push,
+      forcePush,
+      abortRebase,
+      continueRebase,
+      fetchRemote,
+      discardAll
+    }),
+    [refetchRevision, push, forcePush, abortRebase, continueRebase, fetchRemote, discardAll]
+  );
+
+  return { status, actions };
 }

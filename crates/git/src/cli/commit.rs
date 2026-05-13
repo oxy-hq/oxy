@@ -40,17 +40,25 @@ pub async fn get_head_commit_relative_date(root: &Path) -> Option<String> {
     }
 }
 
-/// Returns the N most recent commits on the current branch.
+/// Returns up to `n` recent commits starting `offset` commits back from
+/// HEAD on the current branch.
 ///
 /// Each entry: (full hash, short hash, subject, author, relative date).
 pub async fn get_recent_commits(
     root: &Path,
     n: usize,
+    offset: usize,
 ) -> Vec<(String, String, String, String, String)> {
     let n_str = n.to_string();
+    let skip_arg = format!("--skip={offset}");
     match run::run(
         root,
-        &["log", &format!("-{n_str}"), "--format=%H|%h|%s|%an|%ar"],
+        &[
+            "log",
+            &format!("-{n_str}"),
+            &skip_arg,
+            "--format=%H|%h|%s|%an|%ar",
+        ],
     )
     .await
     {

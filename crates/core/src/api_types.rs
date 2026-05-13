@@ -12,6 +12,40 @@ pub enum BranchType {
     Local,
 }
 
+/// Where a branch lives. Drives the BranchQuickSwitcher badges and tells the
+/// backend whether a switch needs to create a local tracking branch first.
+///
+/// `Both` covers the normal case: the branch exists locally **and** as
+/// `origin/<name>`. `LocalOnly` is a never-pushed local branch. `RemoteOnly`
+/// is a branch the user knows about because origin advertises it, but no
+/// local checkout has been created yet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BranchOrigin {
+    LocalOnly,
+    RemoteOnly,
+    Both,
+}
+
+impl From<oxy_git::BranchOrigin> for BranchOrigin {
+    fn from(origin: oxy_git::BranchOrigin) -> Self {
+        match origin {
+            oxy_git::BranchOrigin::LocalOnly => Self::LocalOnly,
+            oxy_git::BranchOrigin::RemoteOnly => Self::RemoteOnly,
+            oxy_git::BranchOrigin::Both => Self::Both,
+        }
+    }
+}
+
+impl From<oxy_git::LocalRefOrigin> for BranchOrigin {
+    fn from(origin: oxy_git::LocalRefOrigin) -> Self {
+        match origin {
+            oxy_git::LocalRefOrigin::LocalOnly => Self::LocalOnly,
+            oxy_git::LocalRefOrigin::Both => Self::Both,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct WorkspaceBranch {
     pub id: Uuid,
@@ -19,9 +53,17 @@ pub struct WorkspaceBranch {
     pub branch_type: BranchType,
     pub name: String,
     pub revision: String,
-    pub sync_status: String,
+    /// Where this branch lives — local-only, remote-only, or both. Drives the
+    /// UI badges in BranchQuickSwitcher. Defaults to `LocalOnly` for
+    /// backward-compatible responses that haven't been updated yet.
+    #[serde(default = "default_branch_origin")]
+    pub origin: BranchOrigin,
     pub created_at: String,
     pub updated_at: String,
+}
+
+fn default_branch_origin() -> BranchOrigin {
+    BranchOrigin::LocalOnly
 }
 
 /// Kept for internal backward compatibility — all external code should use [`WorkspaceBranch`].
@@ -35,7 +77,21 @@ pub struct RevisionInfoResponse {
     pub latest_revision: String,
     pub current_commit: String,
     pub latest_commit: String,
-    pub sync_status: String,
+    /// Number of local commits not on origin. Drives the Push button's
+    /// enabled state and badge.
+    pub ahead_count: u64,
+    /// Number of origin commits not local. Drives the Pull button's enabled
+    /// state and badge.
+    pub behind_count: u64,
+    /// Number of working-tree changes (tracked + untracked + conflicted).
+    /// Drives the Commit button's visibility and the status pill's count.
+    pub uncommitted_count: u64,
+    /// True throughout the rebase/merge lifecycle — from the moment
+    /// `rebase-merge`/`rebase-apply`/`MERGE_HEAD` appears until `--continue`
+    /// or `--abort` clears it. Includes the "all conflicts staged but not yet
+    /// continued" window where HEAD is still detached, so the FE keeps the
+    /// Resolve UI active and the backend refuses pushes.
+    pub is_in_conflict: bool,
     pub last_sync_time: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remote_url: Option<String>,
@@ -53,6 +109,7 @@ pub struct CommitEntry {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct RecentCommitsResponse {
     pub commits: Vec<CommitEntry>,
+    pub has_more: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

@@ -164,6 +164,9 @@ const workspaceKeys = {
 
   members: (workspaceId: string) => [...workspaceKeys.all, "members", workspaceId] as const,
 
+  recentCommits: (workspaceId: string, branchName: string) =>
+    [...workspaceKeys.all, "recentCommits", workspaceId, branchName] as const,
+
   localSetup: (workspaceId: string) => [...workspaceKeys.all, "localSetup", workspaceId] as const
 };
 

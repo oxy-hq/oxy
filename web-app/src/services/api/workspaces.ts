@@ -14,6 +14,25 @@ export interface CommitEntry {
 
 export interface RecentCommitsResponse {
   commits: CommitEntry[];
+  has_more: boolean;
+}
+
+export interface RecentCommitsParams {
+  limit?: number;
+  offset?: number;
+}
+
+export type DirtyKind = "modified" | "staged" | "untracked" | "deleted" | "conflicted";
+
+export interface DirtyEntry {
+  path: string;
+  kind: DirtyKind;
+}
+
+export interface ResetToCommitResponse {
+  success: boolean;
+  message: string;
+  dirty?: DirtyEntry[];
 }
 
 export const WorkspaceService = {
@@ -57,8 +76,18 @@ export const WorkspaceService = {
   async pullChanges(
     workspaceId: string,
     branchName: string
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<{ success: boolean; message: string; state: "Synced" | "Conflict" | "Error" }> {
     const response = await apiClient.post(`/${workspaceId}/pull-changes`, null, {
+      params: { branch: branchName }
+    });
+    return response.data;
+  },
+
+  async fetchRemote(
+    workspaceId: string,
+    branchName: string
+  ): Promise<{ success: boolean; message: string }> {
+    const response = await apiClient.post(`/${workspaceId}/fetch`, null, {
       params: { branch: branchName }
     });
     return response.data;
@@ -154,9 +183,23 @@ export const WorkspaceService = {
     return response.data;
   },
 
-  async getRecentCommits(workspaceId: string, branchName: string): Promise<RecentCommitsResponse> {
-    const response = await apiClient.get(`/${workspaceId}/recent-commits`, {
+  async discardAllChanges(
+    workspaceId: string,
+    branchName: string
+  ): Promise<{ success: boolean; message: string }> {
+    const response = await apiClient.post(`/${workspaceId}/discard-all`, null, {
       params: { branch: branchName }
+    });
+    return response.data;
+  },
+
+  async getRecentCommits(
+    workspaceId: string,
+    branchName: string,
+    params: RecentCommitsParams = {}
+  ): Promise<RecentCommitsResponse> {
+    const response = await apiClient.get(`/${workspaceId}/recent-commits`, {
+      params: { branch: branchName, ...params }
     });
     return response.data;
   },
@@ -164,10 +207,11 @@ export const WorkspaceService = {
   async resetToCommit(
     workspaceId: string,
     branchName: string,
-    commit: string
-  ): Promise<{ success: boolean; message: string }> {
+    commit: string,
+    force = false
+  ): Promise<ResetToCommitResponse> {
     const response = await apiClient.post(`/${workspaceId}/reset-to-commit`, null, {
-      params: { branch: branchName, commit }
+      params: { branch: branchName, commit, force }
     });
     return response.data;
   },

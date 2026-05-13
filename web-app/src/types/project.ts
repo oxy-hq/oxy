@@ -20,14 +20,17 @@ export interface CreateProjectResponse {
   success: boolean;
 }
 
+export type BranchOrigin = "local_only" | "remote_only" | "both";
+
 export interface ProjectBranch {
   name: string;
-  sync_status: string;
   revision: string;
   id: string;
   created_at: string;
   updated_at: string;
   branch_type: "local" | "remote";
+  /** Where this branch lives — drives the WorkspaceBranchSwitcher badges. */
+  origin: BranchOrigin;
 }
 
 export interface ProjectBranchesResponse {
