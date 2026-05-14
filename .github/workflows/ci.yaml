@@ -203,7 +203,7 @@ jobs:
           --health-timeout 5s --health-retries 5
     steps:
       - name: Free disk space
-        if: matrix.task == 'test'
+        if: matrix.task == 'test' && runner.environment == 'github-hosted'
         uses: jlumbroso/free-disk-space@main
         with:
           tool-cache: false
