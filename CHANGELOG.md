@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.55] - 2026-05-14
+
+### 🚀 Features
+
+- Add airhouse local dev compose stack (#2301)
+- Update dependencies and improve component configurations
+- Add additional commands to permissions in settings.json
+
+### 💼 Other
+
+- *(deps)* Bump crate-ci/typos from 1.45.2 to 1.46.1 (#2315)
+- *(deps-dev)* Bump the dev-npm-major-dependencies group across 1 directory with 2 updates (#2320)
+- *(deps)* Bump the prod-cargo-minor-dependencies group across 1 directory with 5 updates (#2322)
+
+### ⚙️ Miscellaneous Tasks
+
+- Update dependencies in sdk/typescript and web-app
+- Simplify public release workflow and speed up builds (#2294)
+
 ## [0.5.54] - 2026-05-12
 
 ### 🚀 Features
@@ -24,6 +43,7 @@ All notable changes to this project will be documented in this file.
 - Clean up formatting and comments in Claude Code Review workflow
 - Update CI workflows and configurations, remove demo README and Fly configuration
 - Update README, bump turbo version in package.json and pnpm-lock.yaml, and fix turbo schema URL
+- Release 0.5.54 (#2306)
 
 ## [0.5.53] - 2026-05-11
 
